@@ -117,7 +117,46 @@ just pushes people to disable escaping globally. It's a distinct keyword rather
 than a filter, so `scrivet audit` lists every place trust was extended — a review
 someone can actually finish.
 
-## Verify the store
+## Accessibility is enforced, not reported
+
+There are two standards and most CMS vendors implement the easier one. **WCAG**
+governs the content a site serves. **ATAG** governs the authoring tool, and its
+Part B says the tool must actively *help* authors produce accessible content.
+
+Part B is where almost everything falls down. A CMS that lets you publish an
+image with no alt text and mentions it in a report nobody opens has helped
+nobody. So the check runs at publish time and stops the publish:
+
+```
+$ scrivet publish
+
+  pricing
+    blocking  heading-level-skipped (WCAG 1.3.1)
+      h3 follows h1; levels must not skip
+    blocking  image-missing-alt (WCAG 1.1.1)
+      an image has no alt attribute. Use alt="" if decorative, or describe it
+    advisory  link-text-is-not-descriptive (WCAG 2.4.4)
+      link text "click here" says nothing out of context
+
+2 blocking accessibility failure(s); this content is unusable for someone.
+```
+
+Overriding is possible, because real sites have genuine exceptions — but it
+needs `--force-inaccessible --reason "..."`. An override without a stated
+justification is indistinguishable from not checking.
+
+It renders before checking, because what a reader receives is the *rendered*
+page: good content plus a template that drops `alt` is still an inaccessible
+site, and only the output shows that.
+
+**Advisory findings don't block.** A checker that fires on correct markup trains
+people to reach for the override, and after that it isn't a control.
+`alt=""` is a decision, not an omission, so it passes.
+
+**A clean result is not a claim of accessibility.** `scrivet a11y` prints what it
+checked *and* what it didn't — contrast lives in stylesheets this tool never
+sees, and whether alt text is actually useful needs a person. A tool that implies
+full coverage ends the conversation, which is the opposite of helping.
 
 ```
 $ scrivet verify

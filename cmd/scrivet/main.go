@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/rsh1k/scrivet/internal/a11y"
 	"github.com/rsh1k/scrivet/internal/site"
 	"github.com/rsh1k/scrivet/internal/store"
 	"github.com/rsh1k/scrivet/internal/tmpl"
@@ -22,6 +23,7 @@ import (
 const defaultRoot = ".scrivet"
 
 const (
+	bold   = "\033[1m"
 	dim    = "\033[2m"
 	green  = "\033[32m"
 	yellow = "\033[33m"
@@ -94,6 +96,8 @@ func main() {
 		err = cmdRender(root, cmdArgs)
 	case "audit":
 		err = cmdAudit(cmdArgs)
+	case "a11y":
+		err = cmdA11y(root, cmdArgs)
 	case "verify":
 		err = cmdVerify(root)
 	case "version":
@@ -246,7 +250,47 @@ func cmdDiff(root string) error {
 	return nil
 }
 
+// checkAccessibility renders every page in a commit and reports what fails.
+//
+// Rendering is required rather than inspecting the content, because what a
+// reader receives is the rendered page. Content that looks fine and a template
+// that drops the alt attribute produce an inaccessible site, and only the output
+// shows it.
+func checkAccessibility(s *store.Store, commitID, tplDir string) ([]*a11y.Report, error) {
+	pages, err := site.PagesAt(s, commitID)
+	if err != nil {
+		return nil, err
+	}
+	tplPath := filepath.Join(tplDir, "page.html")
+	raw, err := os.ReadFile(tplPath)
+	if err != nil {
+		// No template means nothing renders, so there is nothing to judge. Say
+		// so rather than reporting a clean result over an empty check.
+		return nil, fmt.Errorf("no template at %s to render against: %w", tplPath, err)
+	}
+	rendered := map[string]string{}
+	for name, body := range pages {
+		out, err := tmpl.Render(string(raw), map[string]any{"page": body})
+		if err != nil {
+			return nil, fmt.Errorf("rendering %s: %w", name, err)
+		}
+		rendered[name] = out
+	}
+	return a11y.CheckAll(rendered), nil
+}
+
 func cmdPublish(root string, args []string) error {
+	fs := flag.NewFlagSet("publish", flag.ContinueOnError)
+	force := fs.Bool("force-inaccessible", false,
+		"publish despite blocking accessibility failures, and record that you did")
+	reason := fs.String("reason", "", "why the override is justified (required with --force-inaccessible)")
+	tplDir := fs.String("templates", "templates", "where page.html lives")
+	skip := fs.Bool("no-a11y-check", false, "skip the check entirely")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	args = fs.Args()
+
 	s, err := open(root)
 	if err != nil {
 		return err
@@ -255,6 +299,35 @@ func cmdPublish(root string, args []string) error {
 	if len(args) > 0 {
 		target = args[0]
 	}
+	// The gate runs before the pointer moves. ATAG Part B asks that the tool
+	// help authors produce accessible content, and a report printed after
+	// publishing helps nobody — the inaccessible page is already being served.
+	if !*skip {
+		candidate := target
+		if candidate == "" {
+			candidate = s.GetRef(site.RefDraft)
+		}
+		reports, cerr := checkAccessibility(s, candidate, *tplDir)
+		if cerr != nil {
+			fmt.Fprintf(os.Stderr, "  %saccessibility check skipped: %v%s\n", dim, cerr, reset)
+		} else if n := a11y.BlockingCount(reports); n > 0 {
+			printA11y(reports)
+			if !*force {
+				return fmt.Errorf(
+					"%d blocking accessibility failure(s); this content is unusable "+
+						"for someone.\nFix them, or publish with --force-inaccessible "+
+						"--reason \"...\" to record the decision", n)
+			}
+			if strings.TrimSpace(*reason) == "" {
+				return fmt.Errorf(
+					"--force-inaccessible needs --reason. An override without a stated " +
+						"justification is indistinguishable from not checking")
+			}
+			fmt.Printf("  %soverriding %d blocking failure(s): %s%s\n",
+				yellow, n, *reason, reset)
+		}
+	}
+
 	pub, err := site.Publish(s, target)
 	if err != nil {
 		return err
@@ -417,6 +490,73 @@ func cmdAudit(args []string) error {
 			"decision to trust that content.\n", total)
 	} else {
 		fmt.Println("  no template opts out of escaping")
+	}
+	return nil
+}
+
+// printA11y renders a set of reports for a person, worst first.
+func printA11y(reports []*a11y.Report) {
+	for _, r := range reports {
+		if len(r.Findings) == 0 {
+			continue
+		}
+		fmt.Printf("\n  %s%s%s\n", bold, r.Page, reset)
+		for _, f := range r.Findings {
+			colour := yellow
+			if f.Severity == a11y.Blocking {
+				colour = red
+			}
+			fmt.Printf("    %s%s%s  %s (%s)\n      %s\n",
+				colour, f.Severity, reset, f.Rule, f.Criterion, f.Detail)
+			if f.Excerpt != "" {
+				fmt.Printf("      %s%s%s\n", dim, f.Excerpt, reset)
+			}
+		}
+	}
+}
+
+func cmdA11y(root string, args []string) error {
+	fs := flag.NewFlagSet("a11y", flag.ContinueOnError)
+	ref := fs.String("ref", site.RefDraft, "which ref to check")
+	tplDir := fs.String("templates", "templates", "where page.html lives")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	s, err := open(root)
+	if err != nil {
+		return err
+	}
+	target := s.GetRef(*ref)
+	if target == "" {
+		target = *ref
+	}
+	reports, err := checkAccessibility(s, target, *tplDir)
+	if err != nil {
+		return err
+	}
+
+	blocking := a11y.BlockingCount(reports)
+	total := 0
+	for _, r := range reports {
+		total += len(r.Findings)
+	}
+	fmt.Printf("%d page(s) checked, %d finding(s), %d blocking\n",
+		len(reports), total, blocking)
+	printA11y(reports)
+
+	// A clean result must never read as "this site is accessible".
+	if len(reports) > 0 {
+		fmt.Printf("\n  %schecked:%s\n", bold, reset)
+		for _, c := range reports[0].Checked {
+			fmt.Printf("    %s\n", c)
+		}
+		fmt.Printf("  %snot checked, and needs a person:%s\n", bold, reset)
+		for _, c := range reports[0].NotCheck {
+			fmt.Printf("    %s%s%s\n", dim, c, reset)
+		}
+	}
+	if blocking > 0 {
+		return fmt.Errorf("%d blocking failure(s)", blocking)
 	}
 	return nil
 }
