@@ -1,0 +1,33 @@
+{{template "head" .}}
+<h1>Edit {{.Name}}</h1>
+<p><a href="/preview/{{.Name}}">Preview this page</a> — opens the real page, rendered by your browser.</p>
+
+{{if .CanEdit}}
+<form method="post" action="/save">
+  <input type="hidden" name="__name" value="{{.Name}}">
+  {{range .Fields}}
+  <div class="field">
+    <label for="f-{{.Key}}">{{.Key}}</label>
+    {{if .Long}}
+      <textarea id="f-{{.Key}}" name="{{.Key}}" rows="6">{{.Value}}</textarea>
+    {{else}}
+      <input id="f-{{.Key}}" name="{{.Key}}" type="text" value="{{.Value}}">
+    {{end}}
+  </div>
+  {{end}}
+  <div class="field">
+    <label for="f-msg">What changed</label>
+    <input id="f-msg" name="__message" type="text"
+           aria-describedby="msg-help" value="edit {{.Name}}">
+    <p id="msg-help" class="help">Recorded in the commit, so the history explains itself later.</p>
+  </div>
+  <button type="submit">Save to draft</button>
+  <p class="help">Saving writes a draft. Nothing is public until someone publishes.</p>
+</form>
+{{else}}
+<p class="notice">You can view this page but not edit it.</p>
+<dl>
+  {{range .Fields}}<dt>{{.Key}}</dt><dd>{{.Value}}</dd>{{end}}
+</dl>
+{{end}}
+{{template "foot" .}}

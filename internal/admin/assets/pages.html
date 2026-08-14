@@ -1,0 +1,31 @@
+{{template "head" .}}
+<h1>Pages</h1>
+
+{{if .Unpublished}}
+<p class="notice" role="status">
+  <strong>Unpublished changes.</strong> The draft differs from what is live.
+  <a href="/review">Review them</a>.
+</p>
+{{end}}
+
+{{if .Names}}
+<table>
+  <caption>{{len .Names}} page(s) in the current draft</caption>
+  <thead><tr><th scope="col">Page</th><th scope="col">State</th><th scope="col">Actions</th></tr></thead>
+  <tbody>
+  {{range .Names}}
+    <tr>
+      <th scope="row">{{.}}</th>
+      <td>{{if index $.Changed .}}<span class="tag tag-changed">changed</span>{{else}}<span class="tag">unchanged</span>{{end}}</td>
+      <td class="actions">
+        <a href="/page/{{.}}">{{if $.CanEdit}}Edit{{else}}View{{end}} <span class="sr">{{.}}</span></a>
+        <a href="/preview/{{.}}">Preview <span class="sr">{{.}}</span></a>
+      </td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+<p>No pages yet. Add one with <code>scrivet add</code>.</p>
+{{end}}
+{{template "foot" .}}

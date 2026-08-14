@@ -1,0 +1,287 @@
+package admin
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/rsh1k/scrivet/internal/a11y"
+	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/rsh1k/scrivet/internal/site"
+	"github.com/rsh1k/scrivet/internal/store"
+)
+
+// The admin is checked by the same engine it uses on your content.
+//
+// ATAG has two halves: Part B is whether the tool helps you produce accessible
+// content, and Part A is whether the tool is itself usable by a disabled author.
+// Part A is the half that gets skipped, because the people who build admin
+// panels are rarely the people locked out of them. Running our own checker over
+// our own output is the cheapest way to stop that being true here, and it means
+// a regression in the interface fails the build rather than waiting for someone
+// to complain.
+
+const siteTemplate = `<!doctype html><html lang="en"><head><title>{{ page.title }}</title></head>
+<body><h1>{{ page.title }}</h1><p>{{ page.body }}</p></body></html>`
+
+func setup(t *testing.T) (*Server, string) {
+	t.Helper()
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages := map[string]any{
+		"index": map[string]any{"title": "Home", "body": "Welcome."},
+		"about": map[string]any{"title": "About", "body": "Who we are."},
+	}
+	if _, err := site.SaveDraft(s, pages, "first", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	pol := &auth.Policy{}
+	if err := pol.Grant(auth.Binding{
+		Principal: "editor", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	ts := &auth.TokenStore{}
+	secret, _, err := ts.Issue("test", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv, err := New(s, pol, ts, siteTemplate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return srv, secret
+}
+
+func get(t *testing.T, srv *Server, path, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	return w
+}
+
+// The dogfooding test. Every admin page must pass the checks we enforce on
+// content before publishing.
+func TestAdminPagesPassOurOwnAccessibilityChecks(t *testing.T) {
+	srv, token := setup(t)
+
+	for _, path := range []string{"/", "/page/index", "/review", "/access"} {
+		t.Run(path, func(t *testing.T) {
+			w := get(t, srv, path, token)
+			if w.Code != http.StatusOK {
+				t.Fatalf("%s returned %d", path, w.Code)
+			}
+			r := a11y.Check(path, w.Body.String())
+			if r.Blocks() {
+				for _, f := range r.Findings {
+					if f.Severity == a11y.Blocking {
+						t.Errorf("%s: %s (%s) — %s", path, f.Rule, f.Criterion, f.Detail)
+					}
+				}
+				t.Fatal("the authoring interface fails the checks it enforces on content")
+			}
+		})
+	}
+}
+
+// The sign-in page is reached without a token, so it is checked unauthenticated.
+func TestSignInPageIsAccessible(t *testing.T) {
+	srv, _ := setup(t)
+	w := get(t, srv, "/", "")
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without a token, got %d", w.Code)
+	}
+	r := a11y.Check("signin", w.Body.String())
+	for _, f := range r.Findings {
+		if f.Severity == a11y.Blocking {
+			t.Errorf("sign-in: %s (%s) — %s", f.Rule, f.Criterion, f.Detail)
+		}
+	}
+}
+
+func TestEveryPageHasASkipLinkAndLandmarks(t *testing.T) {
+	srv, token := setup(t)
+	body := get(t, srv, "/", token).Body.String()
+
+	for _, want := range []string{
+		`class="skip"`,             // 2.4.1 Bypass Blocks
+		`id="main"`,                // the skip target
+		"<nav", "<main", "<header", // landmarks to navigate by
+		`aria-label="Sections"`, // a named nav, since there is more than one region
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page is missing %s", want)
+		}
+	}
+}
+
+// WCAG 2.2 3.3.8: authentication must not be a cognitive function test. Pasting
+// a token is not; a puzzle or a transcription would be.
+func TestSignInHasNoPuzzle(t *testing.T) {
+	srv, _ := setup(t)
+	body := strings.ToLower(get(t, srv, "/", "").Body.String())
+
+	// Look for the mechanism, not the word. The first version of this grepped
+	// for "solve" and flagged the sentence "no puzzle to solve" — copy that
+	// exists to say the thing is absent. A test that fails on an accurate
+	// description of compliance is a test that gets deleted.
+	for _, bad := range []string{
+		"captcha",         // any of the usual widgets
+		"<img",            // image recognition in the auth form
+		"data-sitekey",    // recaptcha/hcaptcha/turnstile hook
+		"type=\"number\"", // a code to transcribe
+	} {
+		if strings.Contains(body, bad) {
+			t.Errorf("the sign-in form contains %q, which suggests a cognitive "+
+				"function test", bad)
+		}
+	}
+	// And the thing that should be there.
+	if !strings.Contains(body, "type=\"password\"") {
+		t.Error("sign-in should accept a pasted token")
+	}
+}
+
+func TestNoScriptAnywhere(t *testing.T) {
+	srv, token := setup(t)
+	for _, path := range []string{"/", "/page/index", "/review", "/access"} {
+		body := get(t, srv, path, token).Body.String()
+		if strings.Contains(strings.ToLower(body), "<script") {
+			t.Errorf("%s contains a script tag; the admin works without scripting", path)
+		}
+		if strings.Contains(body, "onclick=") || strings.Contains(body, "onload=") {
+			t.Errorf("%s uses an inline event handler", path)
+		}
+	}
+}
+
+func TestSecurityHeadersAreSet(t *testing.T) {
+	srv, token := setup(t)
+	h := get(t, srv, "/", token).Header()
+	csp := h.Get("Content-Security-Policy")
+	if !strings.Contains(csp, "default-src 'none'") {
+		t.Errorf("CSP should deny by default, got %q", csp)
+	}
+	if strings.Contains(csp, "unsafe-inline") {
+		t.Error("CSP must not permit inline script")
+	}
+	if h.Get("X-Content-Type-Options") != "nosniff" {
+		t.Error("missing nosniff")
+	}
+}
+
+// Authorisation is enforced server-side. Hiding a button is presentation; the
+// handler refusing is the control.
+func TestPermissionsAreEnforcedNotJustHidden(t *testing.T) {
+	srv, _ := setup(t)
+
+	// An author may edit drafts but not publish.
+	if err := srv.Policy.Grant(auth.Binding{
+		Principal: "writer", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	secret, _, err := srv.Tokens.Issue("w", "writer", auth.RoleAuthor, "/",
+		time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/publish", nil)
+	req.Header.Set("Authorization", "Bearer "+secret)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("an author posting to /publish should get 403, got %d", w.Code)
+	}
+	// The refusal has to say what was missing, or people ask for more access
+	// than they need just to make the error go away.
+	if !strings.Contains(w.Body.String(), "publisher") {
+		t.Error("the refusal should name the role required")
+	}
+}
+
+func TestBadTokenIsRefused(t *testing.T) {
+	srv, _ := setup(t)
+	if w := get(t, srv, "/", "scv_not_a_real_token"); w.Code != http.StatusUnauthorized {
+		t.Errorf("a bad token should give 401, got %d", w.Code)
+	}
+}
+
+// A.3.7.1: a preview should render in a real user agent rather than an
+// approximation, so it serves the actual page.
+func TestPreviewServesTheRealPage(t *testing.T) {
+	srv, token := setup(t)
+	w := get(t, srv, "/preview/index", token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("preview returned %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "<h1>Home</h1>") {
+		t.Errorf("preview should be the rendered page, got %q", body[:min(120, len(body))])
+	}
+	if strings.Contains(body, "class=\"bar\"") {
+		t.Error("preview must not wrap the page in admin chrome")
+	}
+}
+
+func TestStylesheetIsServedAndSelfContained(t *testing.T) {
+	srv, _ := setup(t)
+	w := get(t, srv, "/style.css", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("stylesheet returned %d", w.Code)
+	}
+	css := stripCSSComments(w.Body.String())
+
+	// Declarations only. Checking the raw text flagged two comments that exist
+	// to say outlines are never removed — the same mistake as grepping the
+	// sign-in page for "solve" and finding "no puzzle to solve". Prose about the
+	// absence of a thing is not the thing.
+	if strings.Contains(css, "outline: none") || strings.Contains(css, "outline:none") {
+		t.Error("the stylesheet removes a focus outline somewhere")
+	}
+	if strings.Contains(css, "http://") || strings.Contains(css, "https://") {
+		t.Error("the stylesheet fetches something external; it should be self-contained")
+	}
+	if !strings.Contains(css, "prefers-reduced-motion") {
+		t.Error("the stylesheet should honour prefers-reduced-motion")
+	}
+}
+
+// stripCSSComments removes /* ... */ so assertions apply to declarations.
+func stripCSSComments(css string) string {
+	var b strings.Builder
+	for {
+		i := strings.Index(css, "/*")
+		if i < 0 {
+			b.WriteString(css)
+			return b.String()
+		}
+		b.WriteString(css[:i])
+		j := strings.Index(css[i:], "*/")
+		if j < 0 {
+			return b.String()
+		}
+		css = css[i+j+2:]
+	}
+}
+
+func TestMain(m *testing.M) { os.Exit(m.Run()) }
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

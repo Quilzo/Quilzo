@@ -1,0 +1,64 @@
+{{template "head" .}}
+<h1>Review</h1>
+
+{{if .Saved}}<p class="notice ok" role="status">Saved <strong>{{.Saved}}</strong> to the draft.</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+
+{{if .Nothing}}
+<p>Nothing to review — the draft matches what is live.</p>
+{{else}}
+
+<h2>Changes</h2>
+{{if .Changes}}
+<table>
+  <caption>{{len .Changes}} change(s) between live and draft</caption>
+  <thead><tr><th scope="col">Page</th><th scope="col">Change</th></tr></thead>
+  <tbody>
+  {{range .Changes}}<tr><th scope="row">{{.Path}}</th><td>{{.Kind}}</td></tr>{{end}}
+  </tbody>
+</table>
+{{else}}<p>No content differences.</p>{{end}}
+
+<h2>Accessibility</h2>
+{{if .Reports}}
+  {{if eq .Blocking 0}}
+    <p class="notice ok" role="status">No blocking failures.</p>
+  {{else}}
+    <p class="notice bad" role="alert">{{.Blocking}} blocking failure(s). This content is unusable for someone.</p>
+  {{end}}
+  {{range .Reports}}
+    {{if .Findings}}
+    <h3>{{.Page}}</h3>
+    <ul class="findings">
+      {{range .Findings}}
+      <li>
+        <span class="tag {{if eq (printf "%s" .Severity) "blocking"}}tag-bad{{else}}tag-warn{{end}}">{{.Severity}}</span>
+        <strong>{{.Rule}}</strong> ({{.Criterion}})
+        <p>{{.Detail}}</p>
+      </li>
+      {{end}}
+    </ul>
+    {{end}}
+  {{end}}
+{{else}}
+<p>No template configured, so nothing was rendered to check.</p>
+{{end}}
+{{end}}
+
+{{if .CanPublish}}
+<h2>Publish</h2>
+<form method="post" action="/publish">
+  {{if gt .Blocking 0}}
+  <div class="field">
+    <label for="reason">Reason for publishing despite {{.Blocking}} blocking failure(s)</label>
+    <input id="reason" name="reason" type="text" required aria-describedby="reason-help">
+    <p id="reason-help" class="help">Recorded. An override with no stated justification is
+      indistinguishable from not checking.</p>
+  </div>
+  {{end}}
+  <button type="submit">Publish to live</button>
+</form>
+{{else}}
+<p class="notice">You can review but not publish.</p>
+{{end}}
+{{template "foot" .}}

@@ -1,0 +1,27 @@
+{{template "head" .}}
+<h1>Access</h1>
+<h2>Who can do what, at the site root</h2>
+<table>
+  <thead><tr><th scope="col">Principal</th>{{range (index .Rows 0).Actions}}<th scope="col">{{.Name}}</th>{{end}}</tr></thead>
+  <tbody>
+  {{range .Rows}}
+  <tr><th scope="row">{{.Principal}}</th>
+    {{range .Actions}}<td>{{if .Allowed}}<span class="tag tag-ok">yes</span>{{else}}<span class="tag tag-bad">no</span>{{end}}</td>{{end}}
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+
+<h2>Bindings</h2>
+<table>
+  <thead><tr><th scope="col">Principal</th><th scope="col">Role</th><th scope="col">Resource</th><th scope="col">Kind</th><th scope="col">Note</th></tr></thead>
+  <tbody>
+  {{range .Bindings}}
+  <tr><th scope="row">{{.Principal}}</th><td>{{.Role}}</td><td><code>{{.Resource}}</code></td>
+      <td>{{if .Deny}}<span class="tag tag-bad">deny</span>{{else}}<span class="tag tag-ok">grant</span>{{end}}</td>
+      <td>{{.Note}}</td></tr>
+  {{end}}
+  </tbody>
+</table>
+<p class="help">A deny wins wherever it sits. Change these with <code>scrivet auth grant</code>.</p>
+{{template "foot" .}}

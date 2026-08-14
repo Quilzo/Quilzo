@@ -1,0 +1,31 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} — scrivet</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="bar">
+  <nav aria-label="Sections">
+    <ul class="nav">
+      <li><a href="/">Pages</a></li>
+      <li><a href="/review">Review</a></li>
+      <li><a href="/access">Access</a></li>
+    </ul>
+  </nav>
+  {{with .Principal}}<p class="who">Signed in as <strong>{{.Name}}</strong> ({{.Role}})</p>{{end}}
+</header>
+<main id="main" tabindex="-1">
+{{end}}
+
+{{define "foot"}}
+</main>
+<footer class="bar">
+  <p><a href="/help">Help</a> — the same link, in the same place, on every page.</p>
+</footer>
+</body>
+</html>
+{{end}}

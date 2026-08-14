@@ -1,0 +1,150 @@
+/* One stylesheet, no build step, no framework.
+   Every number here traces to a WCAG 2.2 success criterion or to a preference
+   the reader has already expressed to their operating system. */
+
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #16191d;          /* 15.8:1 on white — well past the 4.5:1 minimum */
+  --muted: #52585f;       /* 7.4:1 — still passes AAA for body text */
+  --line: #d2d6db;
+  --accent: #0b5c6b;      /* 7.1:1 on white */
+  --ok-bg: #e6f2ea;  --ok-fg: #10502f;
+  --bad-bg: #fbe9e7; --bad-fg: #8c2318;
+  --warn-bg: #fdf3dc; --warn-fg: #6b4a06;
+  --focus: #b8360f;       /* 3:1 against both grounds, per 2.4.13 */
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171a; --fg: #eceff2; --muted: #b4bcc4; --line: #333940;
+    --accent: #6fd3e5;
+    --ok-bg: #123024;  --ok-fg: #86d9a8;
+    --bad-bg: #35190f; --bad-fg: #f0a08f;
+    --warn-bg: #33280d; --warn-fg: #e8c66a;
+    --focus: #ff9d5c;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  /* The system stack respects a font the reader has already chosen, which is
+     what ATAG A.3.6.3 asks for: honour platform settings. */
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 1rem;        /* rem throughout, so browser zoom and a larger
+                             default font size both work */
+  line-height: 1.6;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+/* 2.4.1 Bypass Blocks. Visible the moment it is focused rather than hidden
+   from everyone including the person who needs it. */
+.skip {
+  position: absolute; left: -9999px;
+  padding: 0.75rem 1rem; background: var(--accent); color: var(--bg);
+  z-index: 10;
+}
+.skip:focus { left: 0.5rem; top: 0.5rem; }
+
+/* 2.4.13 Focus Appearance: at least a 2px perimeter at 3:1 contrast.
+   Never `outline: none`, and an offset so it is not swallowed by a border. */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.bar {
+  border-bottom: 1px solid var(--line);
+  padding: 0.75rem 1rem;
+  display: flex; flex-wrap: wrap; gap: 1rem;
+  align-items: center; justify-content: space-between;
+  /* Deliberately not sticky: 2.4.11 Focus Not Obscured is most often broken by
+     a fixed bar covering the element the keyboard just moved to. */
+}
+footer.bar { border-bottom: 0; border-top: 1px solid var(--line); margin-top: 3rem; }
+
+.nav { list-style: none; display: flex; gap: 0.5rem; margin: 0; padding: 0; }
+.nav a, .actions a {
+  display: inline-block;
+  /* 2.5.8 Target Size (Minimum): 24x24 CSS pixels. */
+  min-height: 24px; min-width: 24px;
+  padding: 0.4rem 0.7rem;
+  color: var(--accent);
+}
+.who { margin: 0; color: var(--muted); font-size: 0.9rem; }
+
+main { max-width: 60rem; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+/* No focus suppression here. `main` is focusable only as the skip-link target,
+   and browsers do not treat programmatic focus on a tabindex="-1" container as
+   :focus-visible — so it needs no special case, and a blanket `outline: none`
+   in a stylesheet is precisely what a reviewer should be able to grep for and
+   find nothing. */
+
+h1 { font-size: 1.6rem; margin: 0 0 1rem; }
+h2 { font-size: 1.25rem; margin: 2rem 0 0.75rem; }
+h3 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
+
+a { color: var(--accent); text-underline-offset: 2px; }
+a:hover { text-decoration-thickness: 2px; }
+
+table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+caption { text-align: left; color: var(--muted); padding-bottom: 0.5rem; }
+th, td { text-align: left; padding: 0.6rem 0.5rem; border-bottom: 1px solid var(--line); }
+thead th { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+
+.field { margin: 0 0 1.25rem; max-width: 44rem; }
+label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
+input[type=text], input[type=password], textarea {
+  width: 100%; padding: 0.55rem 0.6rem; font: inherit;
+  color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 3px;
+}
+textarea { resize: vertical; }
+.help { color: var(--muted); font-size: 0.9rem; margin: 0.35rem 0 0; }
+
+button {
+  font: inherit; font-weight: 600;
+  min-height: 44px; padding: 0.6rem 1.1rem;   /* comfortably past 2.5.8 */
+  color: var(--bg); background: var(--accent);
+  border: 1px solid transparent; border-radius: 3px; cursor: pointer;
+}
+button:hover { filter: brightness(1.12); }
+
+.notice {
+  padding: 0.8rem 1rem; margin: 1rem 0;
+  border: 1px solid var(--line); border-left-width: 4px; border-radius: 3px;
+}
+.notice.ok  { background: var(--ok-bg);  border-left-color: var(--ok-fg);  color: var(--ok-fg); }
+.notice.bad { background: var(--bad-bg); border-left-color: var(--bad-fg); color: var(--bad-fg); }
+
+/* 1.4.1 Use of Colour. Every tag carries a word, so meaning survives both
+   colour blindness and a monochrome display. */
+.tag {
+  display: inline-block; padding: 0.1rem 0.45rem; border-radius: 3px;
+  font-size: 0.8rem; font-weight: 600;
+  background: var(--line); color: var(--fg);
+}
+.tag-ok   { background: var(--ok-bg);   color: var(--ok-fg); }
+.tag-bad  { background: var(--bad-bg);  color: var(--bad-fg); }
+.tag-warn, .tag-changed { background: var(--warn-bg); color: var(--warn-fg); }
+
+.findings { list-style: none; padding: 0; }
+.findings li { border-left: 4px solid var(--line); padding: 0.5rem 0 0.5rem 0.8rem; margin-bottom: 0.75rem; }
+.findings p { margin: 0.3rem 0 0; color: var(--muted); }
+
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+
+/* Available to a screen reader, absent from the visual layout. Used to give a
+   repeated link a distinct accessible name (2.4.4) without visual clutter. */
+.sr {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

@@ -1,0 +1,6 @@
+{{template "head" .}}
+<h1>{{.Heading}}</h1>
+<p>{{.Body}}</p>
+{{if .Override}}<p class="notice bad">Published with an accessibility override: {{.Override}}</p>{{end}}
+<p><a href="/">Back to pages</a></p>
+{{template "foot" .}}
