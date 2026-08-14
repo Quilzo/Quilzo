@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/rsh1k/scrivet/internal/assist"
+	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/out"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/site"
@@ -161,6 +162,19 @@ func cmdAssist(root string, args []string) error {
 			"the draft was saved but provenance could not be recorded (%w). "+
 				"Do not publish until `scrivet provenance check` is clean", err)
 	}
+
+	record(root, audit.Record{
+		Action: "assist", Resource: "/", Outcome: audit.Success,
+		// The model is the actor, and it is recorded as one. Logging this as
+		// the human who typed the command would lose the fact the log exists
+		// to preserve.
+		Principal: "assistant", Kind: audit.KindAI, Model: model.Name(),
+		Detail: map[string]string{
+			"pages":        fmt.Sprintf("%d", len(names)),
+			"commit":       short(cid),
+			"on_behalf_of": *author,
+		},
+	})
 
 	w.Human("\ndraft %s\n", short(cid))
 	w.Human("  %severy page the model touched is marked as AI-generated%s\n", dim, reset)

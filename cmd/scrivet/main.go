@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/rsh1k/scrivet/internal/a11y"
+	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/out"
 	"github.com/rsh1k/scrivet/internal/site"
 	"github.com/rsh1k/scrivet/internal/store"
@@ -32,6 +33,28 @@ var (
 	bold, dim, green, yellow, red, reset string
 	w                                    *out.Writer
 )
+
+// authorOrCLI names whoever the shell says is running this.
+//
+// A placeholder until sign-in reaches the CLI, and honest about being one: it
+// records the operating-system user rather than claiming an identity the tool
+// has not actually verified.
+func authorOrCLI() string {
+	if u := os.Getenv("USER"); u != "" {
+		return u
+	}
+	if u := os.Getenv("USERNAME"); u != "" {
+		return u
+	}
+	return "unknown-operator"
+}
+
+func overrideNote(forced bool, reason string) string {
+	if !forced {
+		return ""
+	}
+	return reason
+}
 
 // errBlocked marks a refusal by a gate rather than a failure of the command.
 type errBlocked struct{ error }
@@ -153,6 +176,8 @@ func main() {
 		err = cmdRender(root, cmdArgs)
 	case "audit":
 		err = cmdAudit(cmdArgs)
+	case "auditlog":
+		err = cmdAuditLog(root, cmdArgs)
 	case "assist":
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
@@ -386,6 +411,17 @@ func cmdPublish(root string, args []string) error {
 		} else if n := a11y.BlockingCount(reports); n > 0 {
 			printA11y(reports)
 			if !*force {
+				// A refusal is an audit event in its own right. AU-3 wants the
+				// outcome, and "someone tried to publish inaccessible content"
+				// is exactly the sort of attempt a log exists to preserve.
+				record(root, audit.Record{
+					Action: "publish", Resource: "/", Outcome: audit.Denied,
+					Principal: authorOrCLI(), Kind: audit.KindHuman,
+					Detail: map[string]string{
+						"reason":   "accessibility",
+						"blocking": fmt.Sprintf("%d", n),
+					},
+				})
 				return fmt.Errorf(
 					"%d blocking accessibility failure(s); this content is unusable "+
 						"for someone.\nFix them, or publish with --force-inaccessible "+
@@ -409,6 +445,15 @@ func cmdPublish(root string, args []string) error {
 		fmt.Println("already live")
 		return nil
 	}
+	record(root, audit.Record{
+		Action: "publish", Resource: "/", Outcome: audit.Success,
+		Principal: authorOrCLI(), Kind: audit.KindHuman,
+		Detail: map[string]string{
+			"commit":   short(pub.Published),
+			"changes":  fmt.Sprintf("%d", len(pub.Changes)),
+			"override": overrideNote(*force, *reason),
+		},
+	})
 	fmt.Printf("live is now %s  (%d change(s))\n", short(pub.Published), len(pub.Changes))
 	if pub.Previous != "" {
 		fmt.Printf("  %sprevious %s is still stored; `scrivet rollback` moves the "+
