@@ -10,6 +10,7 @@ import (
 
 	"github.com/rsh1k/scrivet/internal/a11y"
 	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/site"
 	"github.com/rsh1k/scrivet/internal/store"
 )
@@ -57,6 +58,9 @@ func setup(t *testing.T) (*Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	idx := provenance.NewIndex()
+	srv.LoadProvenance = func() (*provenance.Index, error) { return idx, nil }
+	srv.SaveProvenance = func(i *provenance.Index) error { idx = i; return nil }
 	return srv, secret
 }
 
@@ -76,7 +80,9 @@ func get(t *testing.T, srv *Server, path, token string) *httptest.ResponseRecord
 func TestAdminPagesPassOurOwnAccessibilityChecks(t *testing.T) {
 	srv, token := setup(t)
 
-	for _, path := range []string{"/", "/page/index", "/review", "/access"} {
+	for _, path := range []string{
+		"/", "/page/index", "/review", "/access", "/provenance", "/history",
+	} {
 		t.Run(path, func(t *testing.T) {
 			w := get(t, srv, path, token)
 			if w.Code != http.StatusOK {
@@ -155,7 +161,9 @@ func TestSignInHasNoPuzzle(t *testing.T) {
 
 func TestNoScriptAnywhere(t *testing.T) {
 	srv, token := setup(t)
-	for _, path := range []string{"/", "/page/index", "/review", "/access"} {
+	for _, path := range []string{
+		"/", "/page/index", "/review", "/access", "/provenance", "/history",
+	} {
 		body := get(t, srv, path, token).Body.String()
 		if strings.Contains(strings.ToLower(body), "<script") {
 			t.Errorf("%s contains a script tag; the admin works without scripting", path)
@@ -284,4 +292,49 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// A server that answers from what it read at startup lets a revoked credential
+// keep working until somebody restarts the process — revocation that does not
+// revoke, with a window as long as the server's uptime.
+func TestRevokedTokensStopWorkingWithoutARestart(t *testing.T) {
+	srv, token := setup(t)
+	srv.Reload = func() (*auth.Policy, *auth.TokenStore, error) {
+		return srv.Policy, srv.Tokens, nil
+	}
+
+	if w := get(t, srv, "/", token); w.Code != http.StatusOK {
+		t.Fatalf("the token should work first: %d", w.Code)
+	}
+
+	// Revoke it in the store the server reads from.
+	if _, err := srv.Tokens.Revoke(srv.Tokens.Tokens[0].ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if w := get(t, srv, "/", token); w.Code != http.StatusUnauthorized {
+		t.Errorf("a revoked token still worked: %d", w.Code)
+	}
+}
+
+// The same staleness in the other direction: a newly granted role should apply
+// without a restart, which is the half people notice and report.
+func TestNewlyIssuedTokensWorkWithoutARestart(t *testing.T) {
+	srv, _ := setup(t)
+	srv.Reload = func() (*auth.Policy, *auth.TokenStore, error) {
+		return srv.Policy, srv.Tokens, nil
+	}
+
+	if err := srv.Policy.Grant(auth.Binding{
+		Principal: "newcomer", Role: auth.RoleReader, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	secret, _, err := srv.Tokens.Issue("late", "newcomer", auth.RoleReader, "/",
+		time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := get(t, srv, "/", secret); w.Code != http.StatusOK {
+		t.Errorf("a token issued after startup did not work: %d", w.Code)
+	}
 }

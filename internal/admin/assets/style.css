@@ -148,3 +148,11 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+.inline { display: inline; }
+select {
+  width: 100%; padding: 0.55rem 0.6rem; font: inherit;
+  color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 3px;
+  min-height: 44px;   /* 2.5.8, and comfortable for a pointer */
+}

@@ -45,12 +45,23 @@
 {{end}}
 {{end}}
 
+{{if .Unmarked}}
+<h2>Provenance</h2>
+<p class="notice bad" role="alert">
+  {{len .Unmarked}} page(s) have no usable provenance:
+  {{range .Unmarked}}<code>{{.}}</code> {{end}}
+</p>
+<p><a href="/provenance">Record it</a> — Article 50 requires AI-generated
+content to carry a machine-readable mark, and unrecorded is not the same as
+human-written.</p>
+{{end}}
+
 {{if .CanPublish}}
 <h2>Publish</h2>
 <form method="post" action="/publish">
-  {{if gt .Blocking 0}}
+  {{if or (gt .Blocking 0) .Unmarked}}
   <div class="field">
-    <label for="reason">Reason for publishing despite {{.Blocking}} blocking failure(s)</label>
+    <label for="reason">Reason for publishing anyway</label>
     <input id="reason" name="reason" type="text" required aria-describedby="reason-help">
     <p id="reason-help" class="help">Recorded. An override with no stated justification is
       indistinguishable from not checking.</p>

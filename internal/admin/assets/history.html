@@ -1,0 +1,36 @@
+{{template "head" .}}
+<h1>History</h1>
+<p>Every version is still stored. Rolling back moves a pointer, so it cannot
+half-complete and the version you leave stays available.</p>
+
+<table>
+  <caption>{{len .Entries}} commit(s), most recent first</caption>
+  <thead><tr>
+    <th scope="col">Commit</th><th scope="col">Message</th>
+    <th scope="col">Author</th><th scope="col">Live</th>
+    {{if .CanRollback}}<th scope="col">Action</th>{{end}}
+  </tr></thead>
+  <tbody>
+  {{range .Entries}}
+    <tr>
+      <th scope="row"><code>{{.Short}}</code></th>
+      <td>{{.Message}}</td>
+      <td>{{.Author}}</td>
+      <td>{{if .Live}}<span class="tag tag-ok">live</span>{{else}}<span class="help">—</span>{{end}}</td>
+      {{if $.CanRollback}}
+      <td>
+        {{if .Live}}<span class="help">current</span>
+        {{else}}
+        <form method="post" action="/rollback" class="inline">
+          <input type="hidden" name="commit" value="{{.ID}}">
+          <button type="submit">Make live <span class="sr">{{.Short}}: {{.Message}}</span></button>
+        </form>
+        {{end}}
+      </td>
+      {{end}}
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{if not .CanRollback}}<p class="notice">You can view history but not roll back.</p>{{end}}
+{{template "foot" .}}

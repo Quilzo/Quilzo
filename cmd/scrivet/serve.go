@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/rsh1k/scrivet/internal/admin"
+	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/rsh1k/scrivet/internal/provenance"
 )
 
 func cmdServe(root string, args []string) error {
@@ -43,6 +45,21 @@ func cmdServe(root string, args []string) error {
 	srv, err := admin.New(s, pol, toks, siteTpl)
 	if err != nil {
 		return err
+	}
+	// The admin does not need to know where provenance lives, so the host
+	// supplies the two functions and keeps the file layout in one place.
+	srv.LoadProvenance = func() (*provenance.Index, error) { return loadProvenance(root) }
+	srv.SaveProvenance = func(i *provenance.Index) error { return saveJSON(provPath(root), i) }
+	srv.Reload = func() (*auth.Policy, *auth.TokenStore, error) {
+		pol, err := loadPolicy(root)
+		if err != nil {
+			return nil, nil, err
+		}
+		toks, err := loadTokens(root)
+		if err != nil {
+			return nil, nil, err
+		}
+		return pol, toks, nil
 	}
 
 	// Loopback by default. An editing interface that binds every interface the

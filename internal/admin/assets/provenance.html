@@ -1,0 +1,67 @@
+{{template "head" .}}
+<h1>Provenance</h1>
+<p>Who or what wrote each page. The EU AI Act's Article 50 has required a
+machine-readable mark on AI-generated content since 2&nbsp;August&nbsp;2026, and
+<strong>unrecorded is not the same as human-written</strong>.</p>
+
+{{if .Saved}}<p class="notice ok" role="status">Recorded provenance for <strong>{{.Saved}}</strong>.</p>{{end}}
+
+<table>
+  <caption>{{len .Rows}} page(s) in the current draft</caption>
+  <thead><tr>
+    <th scope="col">Page</th><th scope="col">State</th>
+    <th scope="col">Source</th><th scope="col">What readers see</th>
+  </tr></thead>
+  <tbody>
+  {{range .Rows}}
+    <tr>
+      <th scope="row">{{.Page}}</th>
+      <td>
+        {{if eq .State "recorded"}}<span class="tag tag-ok">recorded</span>
+        {{else if eq .State "stale"}}<span class="tag tag-bad">stale</span>
+        {{else}}<span class="tag tag-warn">unrecorded</span>{{end}}
+      </td>
+      <td>{{if .SourceType}}<code>{{.SourceType}}</code>{{if .Model}} <span class="help">{{.Model}}</span>{{end}}{{else}}—{{end}}</td>
+      <td>{{if .Disclosure}}{{.Disclosure}}{{else}}<span class="help">nothing to disclose</span>{{end}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+
+{{if .CanEdit}}
+<h2>Record provenance</h2>
+<form method="post" action="/provenance/set">
+  <div class="field">
+    <label for="page">Page</label>
+    <select id="page" name="page" required>
+      {{range .Rows}}<option value="{{.Page}}">{{.Page}}</option>{{end}}
+    </select>
+  </div>
+  <div class="field">
+    <label for="source">How it was written</label>
+    <select id="source" name="source" required aria-describedby="source-help">
+      <option value="humanEdits">A person wrote it</option>
+      <option value="trainedAlgorithmicMedia">An AI model generated it</option>
+      <option value="compositeWithTrainedAlgorithmicMedia">Part AI, part human</option>
+      <option value="algorithmicMedia">Software, but not a trained model</option>
+    </select>
+    <p id="source-help" class="help">The last option covers imports and template
+      expansion. Marking those as AI would devalue the mark that matters.</p>
+  </div>
+  <div class="field">
+    <label for="model">Which model, if one was involved</label>
+    <input id="model" name="model" type="text" aria-describedby="model-help">
+    <p id="model-help" class="help">Named in the disclosure readers see.</p>
+  </div>
+  <div class="field">
+    <label for="reviewed_by">Who reviewed the output, if anyone</label>
+    <input id="reviewed_by" name="reviewed_by" type="text" aria-describedby="rev-help">
+    <p id="rev-help" class="help">Leave blank if nobody has. The disclosure will
+      then say so, which is a different claim and readers are entitled to it.</p>
+  </div>
+  <button type="submit">Record</button>
+  <p class="help">You are recorded as the accountable author. Article 50 binds a
+    person or organisation, never the tool.</p>
+</form>
+{{end}}
+{{template "foot" .}}

@@ -59,6 +59,7 @@ import (
 
 	"github.com/rsh1k/scrivet/internal/a11y"
 	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/site"
 	"github.com/rsh1k/scrivet/internal/store"
 	"github.com/rsh1k/scrivet/internal/tmpl"
@@ -74,6 +75,40 @@ type Server struct {
 	Tokens   *auth.TokenStore
 	Template string // the site template, for preview and the a11y check
 	tpl      *template.Template
+
+	// Provenance is loaded and saved by the host, so the admin does not need to
+	// know where the store keeps it.
+	LoadProvenance func() (*provenance.Index, error)
+	SaveProvenance func(*provenance.Index) error
+
+	// Reload re-reads credentials and access rules from disk.
+	//
+	// Without it the server answers from whatever it read at startup, and a
+	// revoked token keeps working until somebody restarts the process. That is
+	// the same failure as a session outliving its parent: revocation that does
+	// not revoke, with a window measured in however long the server has been
+	// up. A newly granted role is invisible for just as long, which is the same
+	// bug in the direction people notice.
+	Reload func() (*auth.Policy, *auth.TokenStore, error)
+}
+
+// refresh pulls current credentials and rules before a decision.
+//
+// Called on every request that authenticates or authorises. Re-reading two small
+// JSON files per request is not the bottleneck in a CMS, and the alternative is
+// a cache whose staleness is a security property.
+func (s *Server) refresh() {
+	if s.Reload == nil {
+		return
+	}
+	if pol, toks, err := s.Reload(); err == nil {
+		if pol != nil {
+			s.Policy = pol
+		}
+		if toks != nil {
+			s.Tokens = toks
+		}
+	}
 }
 
 // New builds the server and parses the admin templates once.
@@ -126,6 +161,7 @@ type principal struct {
 // reset flows, and credential stuffing in one go — and pasting a token is not a
 // cognitive function test, which is what WCAG 2.2 3.3.8 is about.
 func (s *Server) authenticate(r *http.Request) (principal, error) {
+	s.refresh()
 	header := r.Header.Get("Authorization")
 	raw := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
 	if raw == "" {
@@ -199,6 +235,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/review", s.handleReview)
 	mux.HandleFunc("/publish", s.handlePublish)
 	mux.HandleFunc("/access", s.handleAccess)
+	mux.HandleFunc("/provenance", s.handleProvenance)
+	mux.HandleFunc("/provenance/set", s.handleProvenanceSet)
+	mux.HandleFunc("/history", s.handleHistory)
+	mux.HandleFunc("/rollback", s.handleRollback)
 	mux.HandleFunc("/preview/", s.handlePreview)
 	mux.HandleFunc("/style.css", s.handleCSS)
 	return securityHeaders(mux)
@@ -445,6 +485,26 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	blocking := a11y.BlockingCount(reports)
 	reason := strings.TrimSpace(r.FormValue("reason"))
 
+	// Provenance is gated here for the same reason accessibility is: a control
+	// present on the command line and absent from the interface is a control
+	// with a hole in whichever one people actually use — and the interface is
+	// the one an editor uses, which is exactly the person likely to be
+	// publishing what an assistant wrote.
+	unmarked := s.unmarkedPages(draft)
+	if len(unmarked) > 0 && reason == "" {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, "review.html", map[string]any{
+			"Title": "Review", "Principal": p, "Reports": reports,
+			"Blocking": blocking, "Unmarked": unmarked, "CanPublish": true,
+			"Error": fmt.Sprintf(
+				"%d page%s without provenance. EU AI Act Article 50 requires "+
+					"AI-generated content to carry a machine-readable mark, and "+
+					"unrecorded is not the same as human-written.",
+				len(unmarked), plural(len(unmarked))),
+		})
+		return
+	}
+
 	// The same gate as the CLI, for the same reason. An override that is
 	// available in the interface but not on the command line, or the reverse, is
 	// a control with a hole in whichever one people actually use.
@@ -511,6 +571,210 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "access.html", map[string]any{
 		"Title": "Access", "Principal": p,
 		"Rows": rows, "Bindings": s.Policy.Bindings,
+	})
+}
+
+// unmarkedPages lists pages with no usable provenance at a commit.
+func (s *Server) unmarkedPages(commitID string) []string {
+	if commitID == "" || s.LoadProvenance == nil {
+		return nil
+	}
+	idx, err := s.LoadProvenance()
+	if err != nil {
+		return nil
+	}
+	c, err := s.Store.GetCommit(commitID)
+	if err != nil {
+		return nil
+	}
+	tree, err := s.Store.GetTree(c.Tree)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, st := range provenance.Unmarked(provenance.Check(idx, tree)) {
+		out = append(out, st.Page)
+	}
+	return out
+}
+
+func (s *Server) handleProvenance(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if !s.can(w, p, auth.ActView, "/") {
+		return
+	}
+	if s.LoadProvenance == nil {
+		http.Error(w, "provenance is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	idx, err := s.LoadProvenance()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	draft := s.Store.GetRef(site.RefDraft)
+	c, err := s.Store.GetCommit(draft)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	tree, _ := s.Store.GetTree(c.Tree)
+
+	type row struct {
+		Page, State, SourceType, Model, Disclosure string
+		NeedsMark                                  bool
+	}
+	var rows []row
+	for _, st := range provenance.Check(idx, tree) {
+		rr := row{Page: st.Page, Disclosure: st.Disclosure, NeedsMark: st.NeedsMark}
+		switch {
+		case !st.Have:
+			rr.State = "unrecorded"
+		case st.Stale:
+			rr.State = "stale"
+		default:
+			rr.State = "recorded"
+			rr.SourceType = string(st.Record.SourceType)
+			rr.Model = st.Record.Model
+		}
+		rows = append(rows, rr)
+	}
+
+	s.render(w, "provenance.html", map[string]any{
+		"Title": "Provenance", "Principal": p, "Rows": rows,
+		"Saved":   r.URL.Query().Get("saved"),
+		"CanEdit": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
+	})
+}
+
+func (s *Server) handleProvenanceSet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	page := r.FormValue("page")
+	if !s.can(w, p, auth.ActEditDraft, "/"+page) {
+		return
+	}
+
+	draft := s.Store.GetRef(site.RefDraft)
+	c, err := s.Store.GetCommit(draft)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	tree, _ := s.Store.GetTree(c.Tree)
+	hash, exists := tree[page]
+	if !exists {
+		http.NotFound(w, r)
+		return
+	}
+
+	idx, err := s.LoadProvenance()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	rec := provenance.Record{
+		ContentHash: hash,
+		SourceType:  provenance.SourceType(r.FormValue("source")),
+		Model:       strings.TrimSpace(r.FormValue("model")),
+		// The person signed in is accountable. Article 50 binds a provider or
+		// deployer, and a form field inviting someone to type a different name
+		// would be an invitation to write down the wrong one.
+		Author:     p.Name,
+		ReviewedBy: strings.TrimSpace(r.FormValue("reviewed_by")),
+	}
+	if err := idx.Set(page, rec); err != nil {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, "message.html", map[string]any{
+			"Title": "Not recorded", "Principal": p,
+			"Heading": "That provenance could not be recorded", "Body": err.Error(),
+		})
+		return
+	}
+	if err := s.SaveProvenance(idx); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/provenance?saved="+page, http.StatusSeeOther)
+}
+
+func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if !s.can(w, p, auth.ActView, "/") {
+		return
+	}
+	live := s.Store.GetRef(site.RefLive)
+	head := s.Store.GetRef(site.RefDraft)
+	if head == "" {
+		head = live
+	}
+
+	type entry struct {
+		ID, Short, Message, Author string
+		Live                       bool
+	}
+	var entries []entry
+	hist, err := s.Store.History(head, 30)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, h := range hist {
+		entries = append(entries, entry{
+			ID: h.ID, Short: h.ID[:12], Message: h.Commit.Message,
+			Author: h.Commit.Author, Live: h.ID == live,
+		})
+	}
+	s.render(w, "history.html", map[string]any{
+		"Title": "History", "Principal": p, "Entries": entries,
+		"CanRollback": s.Policy.Evaluate(p.Name, auth.ActRollback, "/").Allowed,
+	})
+}
+
+func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if !s.can(w, p, auth.ActRollback, "/") {
+		return
+	}
+	target := r.FormValue("commit")
+	if target == "" {
+		http.Error(w, "no commit given", http.StatusBadRequest)
+		return
+	}
+	pub, err := site.Publish(s.Store, target)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.render(w, "message.html", map[string]any{
+		"Title": "Rolled back", "Principal": p, "Heading": "Rolled back",
+		"Body": fmt.Sprintf("live is now %s. %d page%s changed. The version you "+
+			"moved away from is still stored, so this is reversible too.",
+			target[:12], len(pub.Changes), plural(len(pub.Changes))),
 	})
 }
 
