@@ -83,6 +83,7 @@ access
 
 interface
   scrivet serve [--addr HOST:PORT]          the admin, on loopback by default
+  scrivet site  [--addr HOST:PORT]          the published site, PWA-installable
   scrivet audit [DIR]                       templates that disable escaping
 
 global
@@ -168,6 +169,8 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "site":
+		err = cmdSite(root, cmdArgs)
 	case "serve":
 		err = cmdServe(root, cmdArgs)
 	case "auth":

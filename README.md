@@ -117,6 +117,64 @@ just pushes people to disable escaping globally. It's a distinct keyword rather
 than a filter, so `scrivet audit` lists every place trust was extended — a review
 someone can actually finish.
 
+## Serving the site
+
+```bash
+scrivet site --addr :8081 --name "Example Co"
+```
+
+Separate from `serve`, which is the admin. Different audiences, different auth,
+different exposure — running both on one port means one misconfiguration exposes
+the editing interface.
+
+**Caching falls out of the architecture.** A page's ETag *is* its content hash —
+not derived from it, it simply is it. So cache invalidation stops being a
+problem: a change is a different hash, and a conditional request answers itself.
+Nothing needs purging on publish, because publishing moves a pointer and the next
+request computes a different ETag:
+
+```
+$ curl -I /            → ETag: "0764cacd7b08…"
+$ curl -H 'If-None-Match: "0764cacd7b08…"' /   → 304
+$ scrivet publish
+$ curl -H 'If-None-Match: "0764cacd7b08…"' /   → 200
+```
+
+**The Article 50 mark is injected into the page**, not just kept in a file. A
+machine-readable marking has to be in the thing a machine reads:
+
+```html
+<meta name="c2pa:digitalSourceType" content="trainedAlgorithmicMedia">
+<meta name="ai-generated" content="true">
+<meta name="ai-human-reviewed" content="false">
+```
+
+Injected before `</head>` rather than asked of the template author — a legal
+marking that depends on every template remembering a partial is one that will be
+missing from the template nobody checked. Stale records aren't emitted: if the
+page changed after the record was written, no claim is made about it.
+
+## PWA
+
+`/manifest.webmanifest`, `/sw.js` and `/offline` are generated. As of 2026 every
+major browser supports service workers and the manifest, and iOS 26 defaults
+home-screen sites to web-app mode.
+
+The service worker is **network-first**, which is the opposite of the usual
+advice for speed and the right trade for a CMS: publishing must take effect
+immediately, and a stale page is a worse failure than a slow one. A caching bug
+in a service worker persists across reloads and serves stale content to someone
+who can't work out why.
+
+### llms.txt, with a caveat
+
+`/llms.txt` is emitted because it costs a few lines. It's labelled honestly
+rather than sold: adoption sits around one site in ten, roughly **40% of existing
+files are plugin stubs**, and as of early 2026 no major crawler — OpenAI, Google,
+Anthropic, Meta, Mistral — commits to reading it. They fetch the HTML. It's a
+community convention with no standards body behind it. A cheap bet, not a
+feature.
+
 ## Accessibility is enforced, not reported
 
 There are two standards and most CMS vendors implement the easier one. **WCAG**
