@@ -41,19 +41,52 @@ func (e errBlocked) Unwrap() error { return e.error }
 var version = "dev"
 
 func usage() {
-	fmt.Fprint(os.Stderr, `scrivet — a CMS where content is immutable and publishing is a pointer.
+	// The whole surface, because `--help` is how an agent discovers a CLI. The
+	// measured advantage of a CLI over a tool-schema protocol is that nothing is
+	// loaded until it is needed — which only works if asking is complete when it
+	// happens. Half a help page is a schema with holes in it.
+	fmt.Print(`scrivet — a CMS where content is immutable and publishing is a pointer.
 
+content
   scrivet init                              create a content store
   scrivet add NAME=FILE.json [...]          stage pages into a draft
   scrivet diff                              what differs between live and draft
-  scrivet publish [COMMIT]                  move live to the draft
-  scrivet rollback [--steps N]              move live back along its history
   scrivet log [--ref draft|live]            commit history
   scrivet render PAGE TEMPLATE [-o FILE]    render a page
-  scrivet audit [DIR]                       list templates that disable escaping
   scrivet verify                            re-hash every object
 
+publishing
+  scrivet publish [COMMIT]                  move live to the draft
+  scrivet rollback [--steps N]              move live back along its history
+  scrivet a11y [--ref REF]                  accessibility check, blocking publish
+
+the assistant
+  scrivet assist "..." --author WHO         propose changes; marks what it writes
+  scrivet provenance check [--ref REF]      who or what wrote each page
+  scrivet provenance set PAGE --source T    record provenance by hand
+
+access
+  scrivet auth grant WHO ROLE [--on PATH]   reader | author | publisher | admin
+  scrivet auth explain WHO [ACTION]         why someone can or cannot do a thing
+  scrivet auth list | roles
+  scrivet token issue NAME --principal WHO  an API credential, shown once
+  scrivet token list | revoke ID | stale
+
+interface
+  scrivet serve [--addr HOST:PORT]          the admin, on loopback by default
+  scrivet audit [DIR]                       templates that disable escaping
+
+global
   --root DIR    store location (default .scrivet)
+  --json        machine-readable output; stdout carries one document
+  NO_COLOR      suppress colour (also off automatically when not a terminal)
+
+exit codes
+  0 success · 1 failed · 2 misused · 3 refused by a gate · 4 not found
+  5 a required dependency was missing
+
+A gate refusing (3) is not the command failing (1). Branch on the code rather
+than on the wording, which is free to improve.
 `)
 }
 
@@ -120,6 +153,8 @@ func main() {
 		err = cmdRender(root, cmdArgs)
 	case "audit":
 		err = cmdAudit(cmdArgs)
+	case "assist":
+		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
 	case "serve":
