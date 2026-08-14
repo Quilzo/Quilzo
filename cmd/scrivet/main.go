@@ -7,6 +7,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/rsh1k/scrivet/internal/a11y"
+	"github.com/rsh1k/scrivet/internal/out"
 	"github.com/rsh1k/scrivet/internal/site"
 	"github.com/rsh1k/scrivet/internal/store"
 	"github.com/rsh1k/scrivet/internal/tmpl"
@@ -22,14 +24,19 @@ import (
 
 const defaultRoot = ".scrivet"
 
-const (
-	bold   = "\033[1m"
-	dim    = "\033[2m"
-	green  = "\033[32m"
-	yellow = "\033[33m"
-	red    = "\033[31m"
-	reset  = "\033[0m"
+// Colours are resolved at startup from whether stdout is a terminal, so piping
+// or capturing output yields clean text. They were unconditional constants
+// before, which put escape codes into every captured demo in this project's
+// own history.
+var (
+	bold, dim, green, yellow, red, reset string
+	w                                    *out.Writer
 )
+
+// errBlocked marks a refusal by a gate rather than a failure of the command.
+type errBlocked struct{ error }
+
+func (e errBlocked) Unwrap() error { return e.error }
 
 var version = "dev"
 
@@ -55,8 +62,25 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
-	root := defaultRoot
+	// --json is global rather than per-command, because a caller scripting this
+	// should not have to remember which subcommands happen to support it.
 	args := os.Args[1:]
+	jsonMode := false
+	filtered := args[:0]
+	for _, a := range args {
+		if a == "--json" {
+			jsonMode = true
+			continue
+		}
+		filtered = append(filtered, a)
+	}
+	args = filtered
+
+	w = out.New(jsonMode)
+	bold, dim = w.Bold(), w.Dim()
+	green, yellow, red, reset = w.Green(), w.Yellow(), w.Red(), w.Reset()
+
+	root := defaultRoot
 	// A tiny hand-rolled global flag pass, so `--root` works before the
 	// subcommand as well as after it.
 	var rest []string
@@ -118,8 +142,14 @@ func main() {
 		os.Exit(2)
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
+		w.Error(err)
+		// A gate refusing is a different outcome from the command breaking, and
+		// a caller branching on exit status should be able to tell which.
+		var blocked errBlocked
+		if errors.As(err, &blocked) {
+			os.Exit(out.ExitBlocked)
+		}
+		os.Exit(out.ExitFailure)
 	}
 }
 

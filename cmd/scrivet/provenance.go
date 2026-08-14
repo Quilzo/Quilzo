@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/rsh1k/scrivet/internal/out"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/site"
 	"github.com/rsh1k/scrivet/internal/store"
@@ -127,6 +128,50 @@ func provStatus(root string, args []string) error {
 
 	statuses := provenance.Check(idx, hashes)
 	gaps := provenance.Unmarked(statuses)
+
+	// The machine contract. Deliberately not a transcription of the prose
+	// below: it carries the fields a caller branches on, so the wording stays
+	// free to improve without breaking anyone.
+	if w.Mode == out.JSON {
+		type row struct {
+			Page       string `json:"page"`
+			State      string `json:"state"` // ok | marked | stale | unrecorded
+			SourceType string `json:"digital_source_type,omitempty"`
+			NeedsMark  bool   `json:"requires_disclosure"`
+			Disclosure string `json:"disclosure,omitempty"`
+			Model      string `json:"model,omitempty"`
+			Reviewed   bool   `json:"human_reviewed"`
+		}
+		rows := make([]row, 0, len(statuses))
+		for _, st := range statuses {
+			r := row{Page: st.Page, NeedsMark: st.NeedsMark, Disclosure: st.Disclosure}
+			switch {
+			case !st.Have:
+				r.State = "unrecorded"
+			case st.Stale:
+				r.State = "stale"
+			case st.NeedsMark:
+				r.State = "marked"
+			default:
+				r.State = "ok"
+			}
+			if st.Have {
+				r.SourceType = string(st.Record.SourceType)
+				r.Model = st.Record.Model
+				r.Reviewed = st.Record.ReviewedBy != ""
+			}
+			rows = append(rows, r)
+		}
+		w.JSON(map[string]any{
+			"ref": *ref, "pages": rows,
+			"without_provenance": len(gaps),
+			"compliant":          len(gaps) == 0,
+		})
+		if len(gaps) > 0 {
+			return errBlocked{fmt.Errorf("%d page(s) without provenance", len(gaps))}
+		}
+		return nil
+	}
 
 	fmt.Printf("%d page(s) in %s\n\n", len(statuses), *ref)
 	for _, st := range statuses {
