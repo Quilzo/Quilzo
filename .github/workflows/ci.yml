@@ -1,0 +1,21 @@
+name: ci
+
+# The security claims here are the product. If the sandbox tests stop running,
+# "templates cannot execute" becomes marketing.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Sandbox escapes, XSS contexts, termination, tamper detection
+        run: python test_scrivet.py

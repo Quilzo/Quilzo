@@ -1,0 +1,22 @@
+[project]
+name = "scrivet"
+version = "0.1.0"
+description = "A CMS where content is immutable, publishing is a pointer move, and templates cannot execute."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [{ name = "rsh1k" }]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/rsh1k/scrivet"
+
+[project.scripts]
+scrivet = "scrivet.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["scrivet*"]
