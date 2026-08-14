@@ -154,6 +154,65 @@ marking that depends on every template remembering a partial is one that will be
 missing from the template nobody checked. Stale records aren't emitted: if the
 page changed after the record was written, no claim is made about it.
 
+## Proving when you published
+
+```
+$ scrivet timestamp stamp
+root 731c36e8680f5365 stamped by https://freetsa.org/tsr
+  requested at 2026-08-14T15:39:33Z (our clock, not evidence)
+  token 4635 bytes; the authoritative time is inside it
+```
+
+Useful to anyone publishing regulated claims, prices, press statements or terms —
+"the site said this on that date" becomes something you can hand to a third party.
+
+**Why two mechanisms rather than one.** They fail in opposite directions:
+
+- **RFC 3161** carries recognised evidential weight under eIDAS (via ETSI EN 319
+  421/422/401). But the proof rests on the TSA's certificate chain — when it
+  expires the token must be re-stamped, and if the TSA folds, every token it
+  issued lands in a legal grey area.
+- **Blockchain anchoring** has no authority to expire or go out of business, so
+  it doesn't decay. What it lacks is formal legal recognition.
+
+Legal weight that decays, or durability with no standing. The layered answer is
+both: a token for the lawyer, an anchor for the decade. RFC 3161 is implemented;
+the anchor is a defined seam, deliberately not a half-built version that would
+report success before a block confirms.
+
+**One stamp covers the whole site.** Content is content-addressed, so the
+publication root commits to every page at once, and a page's membership is
+provable from the tree afterwards. Per-page stamps would be more requests proving
+less.
+
+**A stamp of an older root is said to be one:**
+
+```
+what is live now has not been stamped; the stamps above cover earlier versions
+```
+
+### What this verifies, and what it doesn't
+
+Requesting and storing a token is implemented. **Cryptographically verifying one
+isn't**, and that's deliberate: an RFC 3161 token is a CMS signed structure, Go's
+standard library has no CMS parser, and a hand-rolled partial verifier is exactly
+the sort of code that looks right and accepts a forgery.
+
+So `scrivet timestamp export` writes the token and its data, and prints the
+command to check them:
+
+```
+openssl ts -verify -in stamp.tsr -token_in -data stamp.data   -CAfile <root> -untrusted <signing cert>
+Verification: OK
+```
+
+That output is from this implementation against the real freetsa.org chain —
+which also proves the ASN.1 encoding is right in a way round-tripping through my
+own decoder could not.
+
+The default TSA is free and **not eIDAS-qualified**. Fine for internal evidence;
+anyone needing legal standing configures a qualified authority.
+
 ## PWA
 
 `/manifest.webmanifest`, `/sw.js` and `/offline` are generated. As of 2026 every

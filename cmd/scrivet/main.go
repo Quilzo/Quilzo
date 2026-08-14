@@ -169,6 +169,8 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "timestamp", "stamp":
+		err = cmdTimestamp(root, cmdArgs)
 	case "site":
 		err = cmdSite(root, cmdArgs)
 	case "serve":
