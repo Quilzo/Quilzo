@@ -96,6 +96,10 @@ func main() {
 		err = cmdRender(root, cmdArgs)
 	case "audit":
 		err = cmdAudit(cmdArgs)
+	case "auth":
+		err = cmdAuth(root, cmdArgs)
+	case "token":
+		err = cmdToken(root, cmdArgs)
 	case "a11y":
 		err = cmdA11y(root, cmdArgs)
 	case "verify":
