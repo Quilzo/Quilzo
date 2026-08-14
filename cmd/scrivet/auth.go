@@ -302,8 +302,9 @@ func cmdToken(root string, args []string) error {
 		fmt.Print(`scrivet token — credentials for API access
 
   issue <name> --principal <who> --role <role> [--on /path] [--ttl 720h]
+  exchange [--role R] [--on /path] [--ttl 15m]   short-lived session from a token
   list
-  revoke <id>
+  revoke <id>                                    cascades to its sessions
   stale [--idle 720h]
 
 Tokens start with ` + auth.TokenPrefix + ` so a secret scanner can spot one in a repository.
@@ -319,6 +320,8 @@ recovered from this machine.
 		return tokenList(root)
 	case "revoke":
 		return tokenRevoke(root, args[1:])
+	case "exchange":
+		return tokenExchange(root, args[1:])
 	case "stale":
 		return tokenStale(root, args[1:])
 	default:
@@ -365,6 +368,56 @@ func tokenIssue(root string, args []string) error {
 	return nil
 }
 
+// tokenExchange mints a session from a long-lived token.
+//
+// Store the durable credential; use one of these. What is stored and what is
+// used stop being the same object, so an exposed session is bounded by a clock
+// rather than by whoever notices.
+func tokenExchange(root string, args []string) error {
+	fs := flag.NewFlagSet("exchange", flag.ContinueOnError)
+	role := fs.String("role", "", "narrow to this role (default: the parent's)")
+	on := fs.String("on", "", "narrow to this path (default: the parent's)")
+	ttl := fs.Duration("ttl", auth.DefaultSessionTTL, "how long the session lasts")
+	tok := fs.String("token", "", "the long-lived token (default: the usual sources)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	parent, from := findToken(*tok)
+	if parent == "" {
+		return fmt.Errorf(
+			"no token to exchange; pass --token, or put one in %s", tokenFile())
+	}
+
+	ts, err := loadTokens(root)
+	if err != nil {
+		return err
+	}
+	secret, t, err := ts.Exchange(parent, auth.Role(*role), *on, *ttl, time.Now())
+	if err != nil {
+		return err
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		return err
+	}
+
+	if w.JSON(map[string]any{
+		"token": secret, "id": t.ID, "role": string(t.Role),
+		"resource": t.Resource, "expires_at": t.ExpiresAt,
+		"expires_in_seconds": t.ExpiresAt - time.Now().Unix(),
+		"parent":             t.Parent,
+	}) {
+		return nil
+	}
+
+	fmt.Printf("%s%s%s\n", bold, secret, reset)
+	fmt.Printf("\n  %s%s on %s · expires in %s · from %s (%s)%s\n", dim,
+		t.Role, t.Resource, time.Until(time.Unix(t.ExpiresAt, 0)).Round(time.Second),
+		t.Parent, from, reset)
+	fmt.Printf("  %srevoking the parent revokes this too%s\n", dim, reset)
+	return nil
+}
+
 func tokenList(root string) error {
 	ts, err := loadTokens(root)
 	if err != nil {
@@ -402,13 +455,19 @@ func tokenRevoke(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := ts.Revoke(args[0]); err != nil {
+	sessions, err := ts.Revoke(args[0])
+	if err != nil {
 		return err
 	}
 	if err := saveJSON(tokensPath(root), ts); err != nil {
 		return err
 	}
 	fmt.Printf("revoked %s\n", args[0])
+	if sessions > 0 {
+		// Said out loud, because a cascade that happens quietly is one nobody
+		// relies on.
+		fmt.Printf("  %sand %d live session(s) minted from it%s\n", yellow, sessions, reset)
+	}
 	fmt.Printf("  %sthe record is kept, so what it was and when it last worked "+
 		"survives the revocation%s\n", dim, reset)
 	return nil

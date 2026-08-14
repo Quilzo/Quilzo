@@ -351,6 +351,16 @@ var tokenEnc = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 // Token is a stored credential. The secret itself is not in this struct and is
 // never written anywhere.
+//
+// Two lifetimes share this type on purpose. A long-lived token is the thing you
+// store — in a secret manager, in a file at 0600 — and it is analogous to an
+// AWS access key. A session is minted from one at the moment of use, lives for
+// minutes, and is analogous to what STS hands back.
+//
+// The distinction matters because "generated rather than hardcoded" is not the
+// same as "short-lived". A 30-day token minted by this program is still a
+// bearer credential sitting somewhere for 30 days, and everything that can read
+// where it sits can use it for a month.
 type Token struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -362,7 +372,25 @@ type Token struct {
 	ExpiresAt int64  `json:"expires_at"`
 	LastUsed  int64  `json:"last_used,omitempty"`
 	Revoked   bool   `json:"revoked,omitempty"`
+
+	// Parent is the id of the token this was exchanged from, empty for a
+	// long-lived one. It is what makes revocation mean what it says: revoking a
+	// parent has to invalidate everything minted from it, or the sessions
+	// outlive the revocation and "revoked" is a claim rather than a fact.
+	Parent string `json:"parent,omitempty"`
 }
+
+// IsSession reports whether this was exchanged from another token.
+func (t *Token) IsSession() bool { return t.Parent != "" }
+
+// MaxSessionTTL caps an exchanged credential. A session that can outlive a
+// working day is not doing the job a session exists for.
+const MaxSessionTTL = 12 * time.Hour
+
+// DefaultSessionTTL is what you get without asking. Short enough that a leaked
+// session is usually expired before anyone finds it, long enough to run a CI
+// job without re-exchanging mid-flight.
+const DefaultSessionTTL = 15 * time.Minute
 
 // Expired reports whether a token is past its expiry.
 func (t *Token) Expired(now time.Time) bool { return now.Unix() >= t.ExpiresAt }
@@ -451,6 +479,84 @@ func (ts *TokenStore) Issue(name, principal string, role Role, resource string,
 	return secret, t, nil
 }
 
+// Exchange mints a short-lived session from a long-lived token.
+//
+// This is the pattern the guidance keeps pointing at: keep the durable
+// credential somewhere protected, and hand the process that actually does the
+// work something that expires in minutes. What is stored and what is used stop
+// being the same object, so exposure of the second is bounded by the clock.
+//
+// A session can only ever narrow. Role is capped at the parent's, scope must sit
+// within the parent's, and the lifetime is capped absolutely — a session that
+// could widen would be an escalation path dressed as convenience.
+func (ts *TokenStore) Exchange(parentSecret string, role Role, resource string,
+	ttl time.Duration, now time.Time) (secret string, t Token, err error) {
+
+	parent, err := ts.Authenticate(parentSecret, now)
+	if err != nil {
+		return "", Token{}, err
+	}
+	if parent.IsSession() {
+		// Chaining would make the revocation walk unbounded and give a session
+		// a way to outlive its parent by re-minting just before expiry.
+		return "", Token{}, fmt.Errorf(
+			"a session cannot be exchanged again; exchange from the long-lived token")
+	}
+
+	if role == RoleNone {
+		role = parent.Role
+	}
+	if !parent.Role.AtLeast(role) {
+		return "", Token{}, fmt.Errorf(
+			"cannot exchange %s for %s: a session narrows, it does not widen",
+			parent.Role, role)
+	}
+	if resource == "" {
+		resource = parent.Resource
+	}
+	if !covers(parent.Resource, resource) {
+		return "", Token{}, fmt.Errorf(
+			"cannot scope a session to %s from a token scoped to %s",
+			normalise(resource), normalise(parent.Resource))
+	}
+
+	if ttl <= 0 {
+		ttl = DefaultSessionTTL
+	}
+	if ttl > MaxSessionTTL {
+		return "", Token{}, fmt.Errorf(
+			"a session may last at most %s; asked for %s", MaxSessionTTL, ttl)
+	}
+	// Never past the parent's own expiry. A session outliving the credential it
+	// came from is the same bug as outliving a revocation.
+	if remaining := time.Unix(parent.ExpiresAt, 0).Sub(now); ttl > remaining {
+		ttl = remaining
+	}
+	if ttl <= 0 {
+		return "", Token{}, fmt.Errorf("the parent token expires too soon to exchange")
+	}
+
+	raw := make([]byte, tokenBytes)
+	if _, err := rand.Read(raw); err != nil {
+		return "", Token{}, err
+	}
+	idRaw := make([]byte, 6)
+	if _, err := rand.Read(idRaw); err != nil {
+		return "", Token{}, err
+	}
+	secret = TokenPrefix + strings.ToLower(tokenEnc.EncodeToString(raw))
+
+	t = Token{
+		ID: hex.EncodeToString(idRaw), Name: parent.Name + " (session)",
+		Hash: hashToken(secret), Principal: parent.Principal,
+		Role: role, Resource: normalise(resource),
+		CreatedAt: now.Unix(), ExpiresAt: now.Add(ttl).Unix(),
+		Parent: parent.ID,
+	}
+	ts.Tokens = append(ts.Tokens, t)
+	return secret, t, nil
+}
+
 // Authenticate resolves a presented secret to a token.
 //
 // The comparison is constant-time. Comparing hashes with == leaks how far the
@@ -481,19 +587,39 @@ func (ts *TokenStore) Authenticate(secret string, now time.Time) (*Token, error)
 	return found, nil
 }
 
-// Revoke marks a token unusable. Kept rather than deleted, so the record of
-// what existed and when it last worked survives the revocation.
-func (ts *TokenStore) Revoke(id string) error {
+// Revoke marks a token unusable, along with every session minted from it.
+//
+// The cascade is the point. Revoking a long-lived token while its sessions keep
+// working would mean revocation does not revoke — the credential you cancelled
+// is still doing work for up to twelve hours under a different id, which is
+// exactly the window an attacker needs.
+//
+// Records are kept rather than deleted, so what existed and when it last worked
+// survives the revocation.
+func (ts *TokenStore) Revoke(id string) (int, error) {
+	found := false
 	for i := range ts.Tokens {
 		if ts.Tokens[i].ID == id {
 			if ts.Tokens[i].Revoked {
-				return fmt.Errorf("token %s was already revoked", id)
+				return 0, fmt.Errorf("token %s was already revoked", id)
 			}
 			ts.Tokens[i].Revoked = true
-			return nil
+			found = true
+			break
 		}
 	}
-	return fmt.Errorf("no token %s", id)
+	if !found {
+		return 0, fmt.Errorf("no token %s", id)
+	}
+
+	sessions := 0
+	for i := range ts.Tokens {
+		if ts.Tokens[i].Parent == id && !ts.Tokens[i].Revoked {
+			ts.Tokens[i].Revoked = true
+			sessions++
+		}
+	}
+	return sessions, nil
 }
 
 // Stale lists tokens that have never been used or have not been used recently.

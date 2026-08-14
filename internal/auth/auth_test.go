@@ -228,11 +228,12 @@ func TestExpiredAndRevokedTokensStopWorking(t *testing.T) {
 	}
 
 	fresh, tok2, _ := ts.Issue("live", "sam", RoleAuthor, "/", time.Hour, RoleAdmin)
-	must(t, ts.Revoke(tok2.ID))
+	_, rerr := ts.Revoke(tok2.ID)
+	must(t, rerr)
 	if _, err := ts.Authenticate(fresh, time.Now()); err == nil {
 		t.Error("a revoked token must not authenticate")
 	}
-	if err := ts.Revoke(tok.ID); err != nil {
+	if _, err := ts.Revoke(tok.ID); err != nil {
 		t.Errorf("revoking an expired token should still work: %v", err)
 	}
 }
@@ -267,5 +268,118 @@ func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// -- exchange ----------------------------------------------------------------
+
+// The point of a session: what you store and what you use stop being the same
+// object, so exposure of the second is bounded by a clock.
+func TestExchangeMintsAShortLivedSession(t *testing.T) {
+	ts := &TokenStore{}
+	parent, _, err := ts.Issue("ci", "alice", RolePublisher, "/", 720*time.Hour, RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+
+	secret, sess, err := ts.Exchange(parent, RoleNone, "", 0, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret == parent {
+		t.Fatal("a session must be a different credential")
+	}
+	if !sess.IsSession() {
+		t.Error("a session should know its parent")
+	}
+	if d := time.Unix(sess.ExpiresAt, 0).Sub(now); d > DefaultSessionTTL+time.Second {
+		t.Errorf("session lives %s, expected about %s", d, DefaultSessionTTL)
+	}
+	if _, err := ts.Authenticate(secret, now); err != nil {
+		t.Errorf("the session should authenticate: %v", err)
+	}
+}
+
+// A session narrows or stays the same. Widening would be an escalation path
+// wearing the clothes of a convenience.
+func TestASessionCannotWiden(t *testing.T) {
+	ts := &TokenStore{}
+	parent, _, _ := ts.Issue("ci", "alice", RoleAuthor, "/blog", 720*time.Hour, RoleAdmin)
+	now := time.Now()
+
+	if _, _, err := ts.Exchange(parent, RolePublisher, "", 0, now); err == nil {
+		t.Error("a session must not carry more than its parent")
+	}
+	if _, _, err := ts.Exchange(parent, RoleNone, "/", 0, now); err == nil {
+		t.Error("a session must not reach outside its parent's scope")
+	}
+	// Narrowing is fine, and is the reason to exchange at all.
+	if _, sess, err := ts.Exchange(parent, RoleReader, "/blog/post", 0, now); err != nil {
+		t.Errorf("narrowing should be allowed: %v", err)
+	} else if sess.Role != RoleReader || sess.Resource != "/blog/post" {
+		t.Errorf("the narrowed session is wrong: %+v", sess)
+	}
+}
+
+func TestSessionLifetimeIsCapped(t *testing.T) {
+	ts := &TokenStore{}
+	parent, _, _ := ts.Issue("ci", "alice", RolePublisher, "/", 720*time.Hour, RoleAdmin)
+	now := time.Now()
+
+	if _, _, err := ts.Exchange(parent, RoleNone, "", 30*24*time.Hour, now); err == nil {
+		t.Error("a session lasting a month is not a session")
+	}
+
+	// And never past the parent, or it outlives the credential it came from.
+	short, _, _ := ts.Issue("short", "alice", RolePublisher, "/", 5*time.Minute, RoleAdmin)
+	_, sess, err := ts.Exchange(short, RoleNone, "", time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Unix(sess.ExpiresAt, 0).After(now.Add(6 * time.Minute)) {
+		t.Error("the session outlived its parent")
+	}
+}
+
+func TestASessionCannotBeExchangedAgain(t *testing.T) {
+	ts := &TokenStore{}
+	parent, _, _ := ts.Issue("ci", "alice", RolePublisher, "/", 720*time.Hour, RoleAdmin)
+	now := time.Now()
+	sessSecret, _, _ := ts.Exchange(parent, RoleNone, "", 0, now)
+
+	// Chaining would let a session re-mint itself just before expiry and so
+	// outlive both its parent and any revocation of it.
+	if _, _, err := ts.Exchange(sessSecret, RoleNone, "", 0, now); err == nil {
+		t.Error("a session should not be exchangeable")
+	}
+}
+
+// Revocation that leaves sessions running is not revocation.
+func TestRevokingAParentKillsItsSessions(t *testing.T) {
+	ts := &TokenStore{}
+	parentSecret, parent, _ := ts.Issue("ci", "alice", RolePublisher, "/", 720*time.Hour, RoleAdmin)
+	now := time.Now()
+
+	a, _, _ := ts.Exchange(parentSecret, RoleNone, "", 0, now)
+	b, _, _ := ts.Exchange(parentSecret, RoleNone, "", 0, now)
+
+	for _, s := range []string{a, b} {
+		if _, err := ts.Authenticate(s, now); err != nil {
+			t.Fatalf("session should work before revocation: %v", err)
+		}
+	}
+
+	n, err := ts.Revoke(parent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Errorf("expected 2 sessions revoked, got %d", n)
+	}
+	for _, s := range []string{a, b} {
+		if _, err := ts.Authenticate(s, now); err == nil {
+			t.Error("a session outlived the revocation of its parent")
+		}
 	}
 }
