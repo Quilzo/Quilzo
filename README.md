@@ -11,6 +11,11 @@ scrivet publish     # move the live pointer
 scrivet rollback    # move it back
 ```
 
+Go, single static binary, **2.6 MB**. The container image is **4.01 MB** on
+`scratch` — no shell, no package manager, no libc. For a CMS that last part is
+not incidental: WordPress's kill chain ends in *upload a plugin*, and an image
+with no interpreter has no terminal step to offer.
+
 Early, and CLI-first on purpose. There's no admin panel yet because a CMS whose
 primitives only exist behind a web UI can't be scripted, reviewed in a pull
 request, or driven by an assistant without pretending to be a browser.
@@ -81,14 +86,18 @@ fifth:
 ```
 
 There's nothing to escape *from*, because there's nothing underneath — values
-come out of a plain dictionary and the only operations are lookup, truthiness
-and iteration. Every classic sandbox escape is refused at parse time:
+come out of decoded JSON and the only operations are lookup, truthiness and
+iteration. Every classic sandbox escape is refused at parse time:
 
 ```
-{{ page.__class__.__mro__ }}
-  → 'page.__class__.__mro__' is not a value path. Names and dots only —
-    there are no calls, operators or attributes in this language.
+{{ page.title.upper() }}
+  → not a value path. Names and dots only — there are no calls,
+    operators or attributes in this language.
 ```
+
+Go's `text/template` would have been the obvious choice and is the wrong one:
+it calls methods on the data it renders, which is exactly the capability this
+needs not to have.
 
 **Escaping picks the context.** The common failure is escaping for HTML and then
 landing inside `href`, where `javascript:alert(1)` contains nothing that needs
@@ -123,9 +132,12 @@ by `verify`, because the id *is* the hash of the content.
 ## Status
 
 Working today: the content store, draft/publish/rollback, diff, history, the
-template engine, and `verify`. 40 tests, including every SSTI payload I could
-find, XSS in all three escaping contexts, termination limits, tamper detection
-and path traversal.
+template engine, and `verify`. Tests cover every SSTI payload I could find, XSS
+in all three escaping contexts, termination limits, tamper detection, and path
+traversal through ids that become filenames.
+
+Runs in the container as a non-root user (65532) and works against a read-only
+mount, so a rendering deployment never needs write access to the store.
 
 Not built yet: the AI assistant, an admin UI, an HTTP server, media handling,
 scheduled publishing, or multi-site. The CLI is the whole product right now.
@@ -136,4 +148,7 @@ rejecting it costs a pointer that never moved. Publishing — the one action wit
 an outside observer — is the thing worth gating, which is what
 [recoup](https://github.com/rsh1k/recoup) is for.
 
-Apache-2.0.
+## Licence
+
+Proprietary. All rights reserved — see [LICENSE](LICENSE). No licence is granted
+by access to this repository.
