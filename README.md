@@ -154,6 +154,65 @@ marking that depends on every template remembering a partial is one that will be
 missing from the template nobody checked. Stale records aren't emitted: if the
 page changed after the record was written, no claim is made about it.
 
+## MCP, for agents
+
+```bash
+scrivet mcp                 # stdio
+scrivet mcp --list          # what an agent can reach
+```
+
+Added now rather than earlier because the earlier research on this project
+concluded MCP earns its cost for **remote, authenticated** access and not for
+local deterministic work. Hosting changes which case this is.
+
+**Four tools, not one per command.** The measured problem with MCP is servers
+preloading every tool definition — naive ones cost roughly 35× an equivalent CLI
+call, with reliability falling as the tool count grows. The 2026 fixes all say
+the same thing: stop preloading. So `scrivet_find` describes the rest on demand:
+
+```
+7 operations behind 4 tools; an agent loads only what it searches for
+```
+
+Registering an operation doesn't add a tool. There's a test asserting that,
+because otherwise the property is accidental.
+
+**The read tool can't reach a write operation.** Without that the split is a
+labelling convention and a read-only client could write by naming the operation.
+
+**A refusal is not a failure.** Refusals carry code `-32001` with
+`retryable: false`, distinct from the internal-error code. An agent reading
+"denied by policy" as "the server broke" will retry, and retrying a refusal turns
+one blocked action into a hundred.
+
+**The gates apply here too.** This is the third interface onto the same content,
+and the two before it each shipped with a control present in one and missing from
+the other. Publishing over MCP runs the same accessibility and provenance checks
+and refuses for the same reasons — with no override, because that's a human
+decision:
+
+```
+error -32001: 1 page(s) have no provenance: index.
+              Article 50 requires AI-generated content to be marked
+```
+
+**Anything an agent writes is marked AI-generated**, without being asked. An
+agent calling a write tool is a model writing content, whatever the tool is
+called — and the interface built for agents is the last place that should need
+reminding.
+
+### On authentication
+
+The 2026-07-28 spec makes an MCP server an OAuth resource server and names the
+pitfall: a server checking a token's signature and expiry but **not its
+audience** will accept a token minted for something else entirely.
+
+scrivet's tokens are opaque and issued by this server, so they're audience-bound
+by construction — there's no other issuer whose token could validate here. That's
+a smaller claim than OAuth 2.1 conformance and it's the true one. Multi-tenant
+hosting behind a shared identity provider needs RFC 9728 discovery and RFC 8707
+resource binding; that's a seam, not something pretended at.
+
 ## Proving when you published
 
 ```
