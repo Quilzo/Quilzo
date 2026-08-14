@@ -55,12 +55,14 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/rsh1k/scrivet/internal/a11y"
 	"github.com/rsh1k/scrivet/internal/auth"
 	"github.com/rsh1k/scrivet/internal/provenance"
+	"github.com/rsh1k/scrivet/internal/schema"
 	"github.com/rsh1k/scrivet/internal/site"
 	"github.com/rsh1k/scrivet/internal/store"
 	"github.com/rsh1k/scrivet/internal/tmpl"
@@ -81,6 +83,15 @@ type Server struct {
 	// know where the store keeps it.
 	LoadProvenance func() (*provenance.Index, error)
 	SaveProvenance func(*provenance.Index) error
+
+	// CheckTypes validates a page set against the site's content types, and is
+	// wired to the same schema.Store the CLI uses. Nil means no types are
+	// configured, which is different from types that pass: a site with no types
+	// is unconstrained, and saying so plainly is better than a silent success.
+	CheckTypes func(map[string]any) []schema.Failure
+	// TypeFor names the type a page must satisfy, so the editor can render the
+	// declared fields rather than whatever keys the page happens to have.
+	TypeFor func(page string) (schema.Type, bool)
 
 	// Reload re-reads credentials and access rules from disk.
 	//
@@ -197,6 +208,24 @@ func (s *Server) can(w http.ResponseWriter, p principal, act auth.Action, resour
 		"Body":    d.Reason,
 	})
 	return false
+}
+
+// renderTypeFailures explains a refused save.
+//
+// The status is 422 rather than 400: the request was well formed and the person
+// is allowed to make it, but the content does not satisfy the shape the site
+// declared. A 400 would suggest they had done something wrong mechanically, and
+// they have not.
+func (s *Server) renderTypeFailures(w http.ResponseWriter, p principal,
+	page string, failures []schema.Failure) {
+
+	w.WriteHeader(http.StatusUnprocessableEntity)
+	s.render(w, "message.html", map[string]any{
+		"Title": "Not saved", "Principal": p,
+		"Heading":  "This does not match its content type",
+		"Page":     page,
+		"Failures": failures,
+	})
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, data map[string]any) {
@@ -427,11 +456,29 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 
 	pages, _ := site.PagesAt(s.Store, site.RefDraft)
 	body, exists := pages[name]
-	fields := flatten(body)
+
+	// A page with a type gets an editor built from the declaration: the right
+	// control for each field, the author's own labels, and the fields that are
+	// missing shown as empty rather than absent. Without one, fall back to
+	// whatever keys the page happens to have — which is all the old editor
+	// could ever do, and the reason it could not offer a date picker or say
+	// what a field was for.
+	var (
+		fields   []field
+		typeName string
+	)
+	if s.TypeFor != nil {
+		if t, ok := s.TypeFor(name); ok {
+			fields, typeName = typedFields(t, body), t.Name
+		}
+	}
+	if fields == nil {
+		fields = flatten(body)
+	}
 
 	s.render(w, "edit.html", map[string]any{
 		"Title": "Edit " + name, "Principal": p, "Name": name,
-		"Fields": fields, "Exists": exists,
+		"Fields": fields, "Exists": exists, "Type": typeName,
 		"CanEdit": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,
 	})
 }
@@ -441,6 +488,121 @@ type field struct {
 	Key   string
 	Value string
 	Long  bool
+
+	// The rest is filled in only when the page has a content type. A field
+	// carrying its own label, help text and constraints is the difference
+	// between an editor and a JSON form with nicer margins.
+	Label    string
+	Help     string
+	Required bool
+	Choices  []string
+	Selected map[string]bool
+	// Input is the HTML input type. It is chosen from the field kind rather
+	// than guessed from the value, so an empty date field is still a date
+	// picker and an empty number field still refuses letters.
+	Input    string
+	MaxLen   int
+	Min      string
+	Max      string
+	Checkbox bool
+	Checked  bool
+	// AltFor names the field this one describes. Surfacing it in the editor is
+	// ATAG 2.0 Part B: the tool helps the author produce accessible content
+	// instead of checking afterwards whether they did.
+	AltFor string
+}
+
+// typedFields builds the editor from a content type.
+//
+// Fields appear in the order the type declares, not alphabetically and not in
+// whatever order the JSON happened to be written. The declaration is the
+// author's sequence of thought, and reordering it makes the form read as a list
+// of unrelated boxes.
+func typedFields(t schema.Type, body any) []field {
+	m, _ := body.(map[string]any)
+
+	out := make([]field, 0, len(t.Fields)+4)
+	declared := map[string]bool{}
+	for _, f := range t.Fields {
+		declared[f.Name] = true
+
+		label := f.Label
+		if label == "" {
+			label = f.Name
+		}
+		e := field{
+			Key: f.Name, Label: label, Help: f.Help, Required: f.Required,
+			MaxLen: f.MaxLen, AltFor: f.AltFor, Input: "text",
+		}
+		switch f.Kind {
+		case schema.LongText:
+			e.Long = true
+		case schema.Number:
+			e.Input = "number"
+			if f.Min != nil {
+				e.Min = fmt.Sprintf("%g", *f.Min)
+			}
+			if f.Max != nil {
+				e.Max = fmt.Sprintf("%g", *f.Max)
+			}
+		case schema.Date:
+			e.Input = "date"
+		case schema.URL:
+			e.Input = "url"
+		case schema.Email:
+			e.Input = "email"
+		case schema.Boolean:
+			e.Checkbox = true
+		case schema.Choice:
+			e.Choices = f.Choices
+		}
+
+		switch v := m[f.Name].(type) {
+		case string:
+			e.Value = v
+		case float64:
+			e.Value = fmt.Sprintf("%v", v)
+		case bool:
+			e.Checked = v
+			e.Value = fmt.Sprintf("%v", v)
+		case []any:
+			// Lists are edited as one value per line. A repeated-input widget
+			// needs script to add and remove rows, and the admin has none: the
+			// CSP forbids it and the absence is the security argument.
+			parts := make([]string, 0, len(v))
+			for _, item := range v {
+				if str, ok := item.(string); ok {
+					parts = append(parts, str)
+				}
+			}
+			e.Value, e.Long = strings.Join(parts, "\n"), true
+			e.Help = strings.TrimSpace(e.Help + " One per line.")
+		}
+		if len(e.Choices) > 0 {
+			e.Selected = map[string]bool{e.Value: true}
+		}
+		out = append(out, e)
+	}
+
+	// Anything the page carries that the type does not declare is shown last
+	// and marked. Hiding it would let a value the type rejects sit in the page
+	// invisibly, blocking every save with an error about a field the editor
+	// never displayed.
+	extra := make([]string, 0)
+	for k := range m {
+		if !declared[k] {
+			extra = append(extra, k)
+		}
+	}
+	sort.Strings(extra)
+	for _, k := range extra {
+		v, _ := m[k].(string)
+		out = append(out, field{
+			Key: k, Label: k, Value: v, Input: "text",
+			Help: "Not declared by " + t.Name + ". Clear this field to remove it.",
+		})
+	}
+	return out
 }
 
 // flatten turns a page into a flat list of editable fields.
@@ -464,14 +626,85 @@ func flatten(body any) []field {
 	for _, k := range keys {
 		switch v := m[k].(type) {
 		case string:
-			out = append(out, field{Key: k, Value: v, Long: len(v) > 80})
+			out = append(out, field{Key: k, Label: k, Value: v, Long: len(v) > 80,
+				Input: "text"})
 		case float64:
-			out = append(out, field{Key: k, Value: fmt.Sprintf("%v", v)})
+			out = append(out, field{Key: k, Label: k, Value: fmt.Sprintf("%v", v),
+				Input: "text"})
 		case bool:
-			out = append(out, field{Key: k, Value: fmt.Sprintf("%v", v)})
+			out = append(out, field{Key: k, Label: k, Value: fmt.Sprintf("%v", v),
+				Input: "text"})
 		}
 	}
 	return out
+}
+
+// coerceForm turns submitted strings into the shapes the type declares.
+//
+// An unparseable number is left as the string the person typed rather than
+// silently dropped or zeroed. Validation then reports "must be a number", which
+// is what happened, instead of the field quietly becoming 0 or vanishing — both
+// of which lose work without saying so.
+func coerceForm(t schema.Type, form url.Values, body map[string]any) {
+	declared := map[string]bool{}
+
+	for _, f := range t.Fields {
+		declared[f.Name] = true
+		values, present := form[f.Name]
+
+		if f.Kind == schema.Boolean {
+			// An unchecked box submits nothing at all, so absence is false
+			// here — the one place where a missing key is a real value rather
+			// than an omission.
+			body[f.Name] = present && len(values) > 0 && values[0] == "true"
+			continue
+		}
+		if !present || len(values) == 0 {
+			continue
+		}
+		raw := values[0]
+
+		switch f.Kind {
+		case schema.Number:
+			if n, err := strconv.ParseFloat(strings.TrimSpace(raw), 64); err == nil {
+				body[f.Name] = n
+			} else if strings.TrimSpace(raw) == "" {
+				delete(body, f.Name)
+			} else {
+				body[f.Name] = raw
+			}
+		case schema.List:
+			items := []any{}
+			for _, line := range strings.Split(raw, "\n") {
+				if line = strings.TrimSpace(line); line != "" {
+					items = append(items, line)
+				}
+			}
+			body[f.Name] = items
+		default:
+			// An optional field left blank is removed rather than stored as an
+			// empty string. "" is a value, and a URL field holding it would be
+			// a page with a link to nowhere.
+			if raw == "" && !f.Required {
+				delete(body, f.Name)
+			} else {
+				body[f.Name] = raw
+			}
+		}
+	}
+
+	// Undeclared keys the editor showed: an empty one is a deletion, which is
+	// the only way to remove a field the type does not know about.
+	for key, values := range form {
+		if strings.HasPrefix(key, "__") || declared[key] {
+			continue
+		}
+		if len(values) == 0 || strings.TrimSpace(values[0]) == "" {
+			delete(body, key)
+			continue
+		}
+		body[key] = values[0]
+	}
 }
 
 func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
@@ -503,11 +736,25 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 			body[k] = v
 		}
 	}
-	for key, values := range r.Form {
-		if strings.HasPrefix(key, "__") || len(values) == 0 {
-			continue
+	// A form submits strings and nothing else. A number field arrives as "4"
+	// and a checkbox arrives as "true" or not at all, so the type is what says
+	// which of those is a number, a boolean or a list. Without this step every
+	// typed page would fail its own validation on the first save from the
+	// browser, and the fix people would reach for is turning validation off.
+	var typ schema.Type
+	typed := false
+	if s.TypeFor != nil {
+		typ, typed = s.TypeFor(name)
+	}
+	if typed {
+		coerceForm(typ, r.Form, body)
+	} else {
+		for key, values := range r.Form {
+			if strings.HasPrefix(key, "__") || len(values) == 0 {
+				continue
+			}
+			body[key] = values[0]
 		}
-		body[key] = values[0]
 	}
 	pages[name] = body
 
@@ -515,6 +762,16 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(msg) == "" {
 		msg = "edit " + name
 	}
+	// Content types are enforced here as well as in the CLI. This project has
+	// twice shipped a rule the terminal honoured and the browser did not, and
+	// the browser is where most editing happens.
+	if s.CheckTypes != nil {
+		if failures := s.CheckTypes(pages); len(failures) > 0 {
+			s.renderTypeFailures(w, p, name, failures)
+			return
+		}
+	}
+
 	if _, err := site.SaveDraft(s.Store, pages, msg, p.Name); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

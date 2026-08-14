@@ -11,6 +11,7 @@ import (
 	"github.com/rsh1k/scrivet/internal/admin"
 	"github.com/rsh1k/scrivet/internal/auth"
 	"github.com/rsh1k/scrivet/internal/provenance"
+	"github.com/rsh1k/scrivet/internal/schema"
 )
 
 func cmdServe(root string, args []string) error {
@@ -50,6 +51,32 @@ func cmdServe(root string, args []string) error {
 	// supplies the two functions and keeps the file layout in one place.
 	srv.LoadProvenance = func() (*provenance.Index, error) { return loadProvenance(root) }
 	srv.SaveProvenance = func(i *provenance.Index) error { return saveJSON(provPath(root), i) }
+	// Types are re-read per request rather than captured once. A type added
+	// from the CLI while the server is running must take effect immediately,
+	// for the same reason revoked tokens do: a control that needs a restart is
+	// a control that is off for as long as nobody restarts.
+	srv.CheckTypes = func(pages map[string]any) []schema.Failure {
+		st, err := schema.Load(root)
+		if err != nil {
+			// Fail closed. An unreadable types file is not the same as a site
+			// with no types, and treating it as one would make corrupting the
+			// file a way to switch validation off.
+			return []schema.Failure{{Page: "(all)", Type: "?", Problems: []schema.Problem{
+				{Field: "types.json", Reason: "cannot be read: " + err.Error()}}}}
+		}
+		return st.Gate(pages)
+	}
+	srv.TypeFor = func(page string) (schema.Type, bool) {
+		st, err := schema.Load(root)
+		if err != nil {
+			return schema.Type{}, false
+		}
+		name, bound := st.Bound[page]
+		if !bound {
+			return schema.Type{}, false
+		}
+		return st.Registry.Get(name)
+	}
 	srv.Reload = func() (*auth.Policy, *auth.TokenStore, error) {
 		pol, err := loadPolicy(root)
 		if err != nil {

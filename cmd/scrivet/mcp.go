@@ -181,6 +181,14 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		isNew := existing == nil
 		pages[name] = body
 
+		// The same gate the CLI and the web UI use. An agent given a looser
+		// contract than a person is the most likely writer to produce content
+		// nobody looks at before it ships.
+		types, err := gateWrite(root, pages)
+		if err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
+
 		cid, err := site.SaveDraft(s, pages, "mcp: write "+name, caller.Name)
 		if err != nil {
 			return nil, err
@@ -194,6 +202,10 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			map[string]bool{name: isNew}, "mcp-client", "written over MCP",
 			caller.Name); err != nil {
 			return nil, fmt.Errorf("the page was written but not marked: %w", err)
+		}
+
+		if err := types.Save(); err != nil {
+			return nil, err
 		}
 
 		record(root, audit.Record{

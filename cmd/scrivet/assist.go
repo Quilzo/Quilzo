@@ -139,9 +139,20 @@ func cmdAssist(root string, args []string) error {
 		merged[k] = v
 	}
 
+	// The same gate as every other write path. A model producing content that
+	// does not fit the declared shape is the likeliest source of it, and this
+	// is the surface where nobody typed the values by hand and noticed.
+	types, err := gateWrite(root, merged)
+	if err != nil {
+		return err
+	}
+
 	cid, err := site.SaveDraft(s, merged,
 		fmt.Sprintf("assist: %s", truncate(instruction, 60)), *author)
 	if err != nil {
+		return err
+	}
+	if err := types.Save(); err != nil {
 		return err
 	}
 

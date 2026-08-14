@@ -64,6 +64,12 @@ content
   scrivet render PAGE TEMPLATE [-o FILE]    render a page
   scrivet verify                            re-hash every object
 
+content types
+  scrivet type add FILE.json                define a type: flat fields, no regex
+  scrivet type list | show NAME             what exists, and its address
+  scrivet type bind PAGE TYPE               the page must satisfy the type
+  scrivet type check                        validate every bound page
+
 publishing
   scrivet publish [COMMIT]                  move live to the draft
   scrivet rollback [--steps N]              move live back along its history
@@ -169,6 +175,8 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "type", "types":
+		err = cmdTypes(root, cmdArgs)
 	case "mcp":
 		err = cmdMCP(root, cmdArgs)
 	case "timestamp", "stamp":
@@ -303,11 +311,27 @@ func cmdAdd(root string, args []string) error {
 		}
 	}
 
+	// Content types are checked before anything is stored. Refusing the write
+	// is the point: the store is immutable, so an invalid page that lands in it
+	// is in the history for good, and "fix it in the next commit" leaves the
+	// broken one addressable forever.
+	types, err := gateWrite(root, pages)
+	if err != nil {
+		return err
+	}
+
 	cid, err := site.SaveDraft(s, pages, *msg, *author)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("draft %s  %d page(s)\n", short(cid), len(pages))
+	// The validation record is written after the content, so a crash between
+	// the two leaves a page with no record rather than a record for a page that
+	// was never stored. Unrecorded reads as unvalidated, which is the safe way
+	// round.
+	if err := types.Save(); err != nil {
+		return err
+	}
+	w.Human("draft %s  %d page(s)\n", short(cid), len(pages))
 	return nil
 }
 

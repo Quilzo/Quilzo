@@ -3,6 +3,7 @@ package admin
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/rsh1k/scrivet/internal/a11y"
 	"github.com/rsh1k/scrivet/internal/auth"
 	"github.com/rsh1k/scrivet/internal/provenance"
+	"github.com/rsh1k/scrivet/internal/schema"
 	"github.com/rsh1k/scrivet/internal/site"
 	"github.com/rsh1k/scrivet/internal/store"
 )
@@ -466,5 +468,215 @@ func TestOversizedRequestsAreRefused(t *testing.T) {
 
 	if w.Code == http.StatusSeeOther || w.Code == http.StatusOK {
 		t.Errorf("a body past the limit was accepted: %d", w.Code)
+	}
+}
+
+// -- content types -----------------------------------------------------------
+
+// withTypes wires the same schema.Store the CLI uses, the way serve.go does.
+func withTypes(t *testing.T, srv *Server) *schema.Store {
+	t.Helper()
+	st, err := schema.Load(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Registry.Add(schema.Type{
+		Name: "article",
+		Fields: []schema.Field{
+			{Name: "title", Kind: schema.Text, Required: true, MaxLen: 40,
+				Label: "Headline"},
+			{Name: "body", Kind: schema.LongText, Required: true},
+			{Name: "canonical", Kind: schema.URL},
+			{Name: "minutes", Kind: schema.Number, Min: fp(1), Max: fp(120)},
+			{Name: "featured", Kind: schema.Boolean},
+			{Name: "tags", Kind: schema.List},
+			{Name: "status", Kind: schema.Choice,
+				Choices: []string{"draft", "final"}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Bind("index", "article"); err != nil {
+		t.Fatal(err)
+	}
+	srv.CheckTypes = st.Gate
+	srv.TypeFor = func(page string) (schema.Type, bool) {
+		name, bound := st.Bound[page]
+		if !bound {
+			return schema.Type{}, false
+		}
+		return st.Registry.Get(name)
+	}
+	return st
+}
+
+func fp(v float64) *float64 { return &v }
+
+func save(t *testing.T, srv *Server, token string, form url.Values,
+) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/save",
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	return w
+}
+
+// The gate has to hold in the browser, not only in the terminal. Twice before,
+// a rule this project enforced in the CLI was absent from the web UI, and the
+// web UI is where most editing happens.
+func TestTheWebEditorRefusesContentThatFailsItsType(t *testing.T) {
+	srv, token := setup(t)
+	withTypes(t, srv)
+
+	form := url.Values{
+		"__name":    {"index"},
+		"title":     {strings.Repeat("x", 60)}, // past MaxLen
+		"body":      {"Prose."},
+		"canonical": {"javascript:alert(1)"},
+		"minutes":   {"999"},
+		"status":    {"FINAL"},
+		"is_admin":  {"true"}, // undeclared
+	}
+	w := save(t, srv, token, form)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("the web editor saved content that fails its type: %d", w.Code)
+	}
+	body := w.Body.String()
+	// Each refusal has to name its field, or the person is told "invalid" and
+	// left to guess which of seven inputs is wrong.
+	for _, want := range []string{"title", "canonical", "minutes", "status", "is_admin"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the refusal does not mention %s: %s", want, body)
+		}
+	}
+
+	// Nothing may have been written. A partial save into an immutable store
+	// leaves the broken version addressable forever.
+	pages, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pages["index"].(map[string]any)["title"]; got != "Home" {
+		t.Errorf("the draft changed despite the refusal: title is now %v", got)
+	}
+}
+
+// A form submits strings and nothing else. Without coercion every typed page
+// would fail its own validation on the first save from the browser, and the fix
+// people reach for is turning validation off.
+func TestTheWebEditorSubmitsValuesInTheShapeTheTypeDeclares(t *testing.T) {
+	srv, token := setup(t)
+	withTypes(t, srv)
+
+	w := save(t, srv, token, url.Values{
+		"__name":   {"index"},
+		"title":    {"Home"},
+		"body":     {"Prose."},
+		"minutes":  {"4"},
+		"featured": {"true"},
+		"tags":     {"one\ntwo\n\n three "},
+		"status":   {"final"},
+	})
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("a valid save was refused: %d — %s", w.Code, w.Body.String())
+	}
+
+	pages, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := pages["index"].(map[string]any)
+
+	if n, ok := body["minutes"].(float64); !ok || n != 4 {
+		t.Errorf("a number field stored %#v, not a number", body["minutes"])
+	}
+	if b, ok := body["featured"].(bool); !ok || !b {
+		t.Errorf("a boolean field stored %#v, not a bool", body["featured"])
+	}
+	tags, ok := body["tags"].([]any)
+	if !ok || len(tags) != 3 {
+		t.Fatalf("a list field stored %#v", body["tags"])
+	}
+	if tags[2] != "three" {
+		t.Errorf("list items should be trimmed, got %q", tags[2])
+	}
+}
+
+// An unchecked box submits nothing at all. If absence were treated as "leave it
+// alone", a boolean could be turned on and never off again through the UI.
+func TestUncheckingABoxTurnsItOff(t *testing.T) {
+	srv, token := setup(t)
+	withTypes(t, srv)
+
+	base := url.Values{"__name": {"index"}, "title": {"Home"}, "body": {"Prose."}}
+	on := url.Values{}
+	for k, v := range base {
+		on[k] = v
+	}
+	on["featured"] = []string{"true"}
+	if w := save(t, srv, token, on); w.Code != http.StatusSeeOther {
+		t.Fatalf("setting the box failed: %d", w.Code)
+	}
+
+	// Submit the same form with the checkbox absent, as a browser does.
+	if w := save(t, srv, token, base); w.Code != http.StatusSeeOther {
+		t.Fatalf("clearing the box failed: %d", w.Code)
+	}
+	pages, _ := site.PagesAt(srv.Store, site.RefDraft)
+	if v := pages["index"].(map[string]any)["featured"]; v != false {
+		t.Errorf("featured is %#v after unchecking; a boolean that cannot be "+
+			"turned off is a one-way switch", v)
+	}
+}
+
+// The editor is built from the declaration, so an empty date field is still a
+// date picker and a choice is still a list of the allowed values.
+func TestTheEditorRendersTheDeclaredFieldsNotWhateverThePageHas(t *testing.T) {
+	srv, token := setup(t)
+	withTypes(t, srv)
+
+	w := get(t, srv, "/page/index", token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("the editor returned %d", w.Code)
+	}
+	html := w.Body.String()
+
+	// Declared but absent from the page: it must still appear, or a required
+	// field nobody can see blocks every save.
+	if !strings.Contains(html, `name="minutes"`) {
+		t.Error("a declared field missing from the page was not rendered")
+	}
+	if !strings.Contains(html, `type="number"`) {
+		t.Error("a number field is not a number input")
+	}
+	if !strings.Contains(html, `type="url"`) {
+		t.Error("a URL field is not a url input")
+	}
+	if !strings.Contains(html, "<select") {
+		t.Error("a choice field is not a select, so the allowed values are a " +
+			"secret the editor keeps")
+	}
+	// The label is followed by a required marker, so match the text and the
+	// association rather than an exact closing bracket.
+	if !strings.Contains(html, `<label for="f-title">Headline`) {
+		t.Error("the author's own label was not used, or is not bound to its input")
+	}
+	if !strings.Contains(html, `maxlength="40"`) {
+		t.Error("a length limit the type declares should reach the browser too")
+	}
+
+	// And it must still pass the accessibility checks the tool enforces on
+	// content — a richer form is the easiest place to lose a label.
+	if r := a11y.Check("/page/index", html); r.Blocks() {
+		for _, f := range r.Findings {
+			if f.Severity == a11y.Blocking {
+				t.Errorf("typed editor: %s (%s) — %s", f.Rule, f.Criterion, f.Detail)
+			}
+		}
+		t.Fatal("the typed editor fails our own accessibility checks")
 	}
 }

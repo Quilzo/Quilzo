@@ -117,6 +117,98 @@ just pushes people to disable escaping globally. It's a distinct keyword rather
 than a filter, so `scrivet audit` lists every place trust was extended — a review
 someone can actually finish.
 
+## Content types
+
+A content type here is a flat list of fields. That's it — no nesting, no
+references, no regular expressions, no `oneOf`. The omissions are the design.
+
+```json
+{"name": "article",
+ "fields": [
+   {"name": "title", "kind": "text", "required": true, "max_len": 120},
+   {"name": "body",  "kind": "longtext", "required": true},
+   {"name": "slug",  "kind": "slug", "required": true},
+   {"name": "status","kind": "choice", "choices": ["draft", "review", "final"]},
+   {"name": "hero",     "kind": "url"},
+   {"name": "hero_alt", "kind": "text", "alt_for": "hero"}]}
+```
+
+```
+$ scrivet type add article.json
+added article with 6 field(s)  477f9cc57750
+$ scrivet type bind news article
+news must now satisfy article
+```
+
+Most CMSes reach for JSON Schema for this, and a CMS whose users define their own
+content types is, by construction, a program accepting schemas from people it
+doesn't fully trust. The standard advice is that untrusted schemas need
+sandboxing. Rather than sandbox the features, I left them out:
+
+| Left out | Why |
+|---|---|
+| `pattern` | Backtracking regex. CVE-2025-69873: a 31-character pattern costs about 44 seconds of CPU. |
+| `$ref` | Fetched as a URL. CVE-2026-54690 is SSRF via a schema reference — `169.254.169.254` included. |
+| recursion | A self-referential schema spins a worker until something kills it. |
+| combinators | `allOf`/`oneOf` make validation cost combinatorial in schema size. |
+
+What's left validates in time linear in the input, with no I/O and no recursion.
+The test that matters measures it: ten times the input takes 0.8× the time,
+because the length bound rejects before any format check runs.
+
+Refusals name the field and say what's wrong:
+
+```
+$ scrivet add news=news.json
+1 page(s) do not satisfy their content type:
+  news does not satisfy article
+    is_admin: not a field on type article
+    slug: must be lowercase words joined by hyphens
+    canonical: scheme "javascript" is not allowed; use http or https
+    status: must be one of: draft, review, final
+```
+
+Undeclared fields are reported rather than ignored — silently accepting them is
+mass assignment coming in through the front door. URL fields refuse
+`javascript:`, `data:` and `file:`, so a validated page can't carry an injection
+vector. Choices are compared literally, so `FINAL` is not `final`.
+
+### Types are content-addressed too
+
+A type has a hash, the same way content does, and a passing write records both:
+this content hash satisfied that type hash.
+
+That's what makes editing a type safe. Tighten `article` tomorrow and yesterday's
+published pages don't retroactively become invalid — they point at the type they
+actually passed, which still exists at its own address. "This page was valid
+under this exact type" stays a checkable claim about two hashes, rather than a
+claim about what a mutable file used to say.
+
+### Enforced everywhere, and a test that says so
+
+Validation runs on every write path: `scrivet add`, `scrivet assist`, the admin
+save handler, and the MCP `write_page` operation. That's not a convention — it's
+a test that parses the source, finds every function calling `SaveDraft`, and
+fails if one of them doesn't consult the gate.
+
+It found a fourth write surface the first time it ran. `scrivet assist` — the AI
+path, the one most likely to produce content nobody typed by hand — wasn't gated.
+Three times before this, a rule this project enforced in the CLI turned out to be
+missing from the web UI. A control present in one interface and absent from
+another is a control with a hole in whichever one people actually use.
+
+### The editor is built from the type
+
+If a page has a type, the admin renders the declared fields rather than whatever
+keys the JSON happens to have: a date picker for a date, a select for a choice,
+a number input with the declared range, the author's own labels and help text.
+Declared-but-empty fields still appear, so a required field can't be invisible
+and block every save.
+
+Fields marked `alt_for` are labelled as descriptions of what they point at —
+ATAG 2.0 Part B, the tool helping produce accessible content rather than checking
+afterwards whether you did.
+
 ## Serving the site
 
 ```bash
@@ -346,22 +438,30 @@ by `verify`, because the id *is* the hash of the content.
 
 ## Status
 
-Working today: the content store, draft/publish/rollback, diff, history, the
-template engine, and `verify`. Tests cover every SSTI payload I could find, XSS
-in all three escaping contexts, termination limits, tamper detection, and path
-traversal through ids that become filenames.
+Working: the content store, draft/publish/rollback, diff, history, the template
+engine, `verify`, content types, RBAC with API tokens, the tamper-evident audit
+log, provenance marking, the accessibility gate, the admin UI, the public server
+with PWA output, RFC 3161 timestamping, the MCP server, and the assistant.
+
+226 tests. The ones worth reading are the negative ones: every SSTI payload I
+could find, XSS in all three escaping contexts, termination limits, tamper
+detection, path traversal through ids that become filenames, over-denial in the
+role ladder, and the source-walking test that checks each gate is wired to every
+interface rather than just the one I was looking at.
+
+A green suite proves nothing on its own, so the gates are mutation-tested:
+removing the check has to break something. Twice now that turned up a control
+with no behavioural test behind it.
 
 Runs in the container as a non-root user (65532) and works against a read-only
 mount, so a rendering deployment never needs write access to the store.
 
-Not built yet: the AI assistant, an admin UI, an HTTP server, media handling,
-scheduled publishing, or multi-site. The CLI is the whole product right now.
+Not built yet: workflow states and approval chains, the chatbot runtime, media
+handling, scheduled publishing, multi-site, and OIDC — the API tokens are the
+bootstrap for that last one, not the destination.
 
-The assistant is the next piece and the reason for this architecture. An agent
-proposing a change writes a commit nobody is serving; reviewing it is a diff, and
-rejecting it costs a pointer that never moved. Publishing — the one action with
-an outside observer — is the thing worth gating, which is what
-[recoup](https://github.com/rsh1k/recoup) is for.
+Publishing is the one action with an outside observer, which is the thing worth
+gating; that's what [recoup](https://github.com/rsh1k/recoup) is for.
 
 ## Licence
 

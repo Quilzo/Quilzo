@@ -1,18 +1,40 @@
 {{template "head" .}}
 <h1>Edit {{.Name}}</h1>
+{{if .Type}}<p class="help">This page is a <strong>{{.Type}}</strong>. The fields below are the ones that type declares; a save that does not satisfy it is refused.</p>{{end}}
 <p><a href="/preview/{{.Name}}">Preview this page</a> — opens the real page, rendered by your browser.</p>
 
 {{if .CanEdit}}
 <form method="post" action="/save">
   <input type="hidden" name="__name" value="{{.Name}}">
+  {{if .Type}}<input type="hidden" name="__type" value="{{.Type}}">{{end}}
   {{range .Fields}}
   <div class="field">
-    <label for="f-{{.Key}}">{{.Key}}</label>
-    {{if .Long}}
-      <textarea id="f-{{.Key}}" name="{{.Key}}" rows="6">{{.Value}}</textarea>
+    {{if .Checkbox}}
+      <input id="f-{{.Key}}" name="{{.Key}}" type="checkbox" value="true"{{if .Checked}} checked{{end}}
+             {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>
+      <label for="f-{{.Key}}">{{.Label}}</label>
     {{else}}
-      <input id="f-{{.Key}}" name="{{.Key}}" type="text" value="{{.Value}}">
+      <label for="f-{{.Key}}">{{.Label}}{{if .Required}} <span class="req" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{{end}}</label>
+      {{if .Choices}}
+        <select id="f-{{.Key}}" name="{{.Key}}"{{if .Required}} required{{end}}
+                {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>
+          {{if not .Required}}<option value="">— not set —</option>{{end}}
+          {{$sel := .Selected}}{{range .Choices}}<option value="{{.}}"{{if index $sel .}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      {{else if .Long}}
+        <textarea id="f-{{.Key}}" name="{{.Key}}" rows="8"{{if .Required}} required{{end}}
+                  {{if .MaxLen}}maxlength="{{.MaxLen}}"{{end}}
+                  {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>{{.Value}}</textarea>
+      {{else}}
+        <input id="f-{{.Key}}" name="{{.Key}}" type="{{if .Input}}{{.Input}}{{else}}text{{end}}"
+               value="{{.Value}}"{{if .Required}} required{{end}}
+               {{if .MaxLen}}maxlength="{{.MaxLen}}"{{end}}
+               {{if .Min}} min="{{.Min}}"{{end}}{{if .Max}} max="{{.Max}}"{{end}}
+               {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>
+      {{end}}
     {{end}}
+    {{if .Help}}<p id="h-{{.Key}}" class="help">{{.Help}}</p>{{end}}
+    {{if .AltFor}}<p class="help">Describes <strong>{{.AltFor}}</strong> for people who cannot see it. Say what it shows, not that it is an image.</p>{{end}}
   </div>
   {{end}}
   <div class="field">
@@ -27,7 +49,7 @@
 {{else}}
 <p class="notice">You can view this page but not edit it.</p>
 <dl>
-  {{range .Fields}}<dt>{{.Key}}</dt><dd>{{.Value}}</dd>{{end}}
+  {{range .Fields}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}
 </dl>
 {{end}}
 {{template "foot" .}}
