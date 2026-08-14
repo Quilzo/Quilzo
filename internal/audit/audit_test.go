@@ -73,12 +73,19 @@ func TestTheThreeKindsOfActorAreDistinguished(t *testing.T) {
 	l, _ := newLog(t, nil)
 	base := Record{Action: "edit", Resource: "/p", Outcome: Success}
 
-	for _, k := range []Kind{KindHuman, KindService} {
-		r := base
-		r.Principal, r.Kind = "someone", k
-		if _, err := l.Append(r); err != nil {
-			t.Errorf("%s should be loggable: %v", k, err)
-		}
+	human := base
+	human.Principal, human.Kind = "someone", KindHuman
+	if _, err := l.Append(human); err != nil {
+		t.Errorf("a human should be loggable: %v", err)
+	}
+
+	// A service is only a service because a credential proved it, so it carries
+	// Verified. This assertion used to omit it and passed, which is what the
+	// new rule caught.
+	svc := base
+	svc.Principal, svc.Kind, svc.Verified = "ci-runner", KindService, true
+	if _, err := l.Append(svc); err != nil {
+		t.Errorf("a verified service should be loggable: %v", err)
 	}
 
 	// A model must name itself. "An AI did it" without saying which is not a
@@ -307,5 +314,60 @@ func TestAMalformedLineIsReportedNotSkipped(t *testing.T) {
 func TestSourceIsRequired(t *testing.T) {
 	if _, err := New(Options{Path: filepath.Join(t.TempDir(), "a")}); err == nil {
 		t.Error("AU-3 requires a source on every record, so a log needs one")
+	}
+}
+
+// -- verified vs asserted ----------------------------------------------------
+
+// The distinction this field exists for. A hash chain proves nobody edited a
+// record after it was written; it says nothing about whether the record was
+// true when written. Conflating the two produces a log that is cryptographically
+// intact and substantively false, which is the worst of the available outcomes
+// because it looks authoritative.
+func TestAnUnprovenIdentityIsRecordedAsUnproven(t *testing.T) {
+	l, path := newLog(t, nil)
+
+	ok(t, l, Record{Action: "publish", Resource: "/", Outcome: Success,
+		Principal: "ceo", Kind: KindHuman, Verified: false})
+	ok(t, l, Record{Action: "publish", Resource: "/", Outcome: Success,
+		Principal: "alice", Kind: KindHuman, Verified: true})
+
+	events, _ := Read(path)
+	if events[0].Verified {
+		t.Error("a record with no proof must not claim to be verified")
+	}
+	if !events[1].Verified {
+		t.Error("a proven identity should be marked verified")
+	}
+	// Both entries are in an intact chain. Integrity is not authenticity, and an
+	// auditor must be able to tell which entries were actually established.
+	if good, _ := Verify(events); !good {
+		t.Fatal("the chain should be intact regardless")
+	}
+}
+
+func TestAServicePrincipalCannotBeUnverified(t *testing.T) {
+	l, _ := newLog(t, nil)
+	_, err := l.Append(Record{
+		Action: "publish", Resource: "/", Outcome: Success,
+		Principal: "ci", Kind: KindService, Verified: false,
+	})
+	if err == nil {
+		t.Fatal("a service identity exists only because a credential proved it")
+	}
+	if !strings.Contains(err.Error(), "credential proved it") {
+		t.Errorf("the refusal should say why, got %q", err)
+	}
+}
+
+func TestVerifiedDefaultsToFalse(t *testing.T) {
+	l, path := newLog(t, nil)
+	// A caller that forgets the field records an honest "unverified" rather than
+	// an unearned claim. The default has to fail closed.
+	ok(t, l, Record{Action: "edit", Resource: "/", Outcome: Success,
+		Principal: "someone", Kind: KindHuman})
+	events, _ := Read(path)
+	if events[0].Verified {
+		t.Error("Verified must default to false")
 	}
 }

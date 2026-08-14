@@ -113,6 +113,20 @@ type Event struct {
 	Principal string `json:"principal"` // AU-3(f), pseudonymised
 	Kind      Kind   `json:"kind"`
 
+	// Verified says whether the identity was proved or merely asserted.
+	//
+	// This is the difference between integrity and authenticity, and conflating
+	// them produces the worst kind of log: one that is cryptographically intact
+	// and substantively false. The chain proves nobody edited a record after it
+	// was written. It says nothing about whether the record was true when
+	// written — and an identity taken from $USER is true only if nobody minds
+	// lying, since `USER=ceo scrivet publish` costs nothing.
+	//
+	// So an unproven identity is recorded as unproven rather than dressed up as
+	// a name. An auditor can then filter for what was actually established,
+	// which is the only thing a log is for.
+	Verified bool `json:"verified"`
+
 	// Detail carries event-specific results. Values are the caller's
 	// responsibility and are documented as never holding content or secrets.
 	Detail map[string]string `json:"detail,omitempty"`
@@ -230,6 +244,11 @@ type Record struct {
 	Kind      Kind
 	Model     string
 	Detail    map[string]string
+
+	// Verified must be set by whoever proved the identity, and only by them.
+	// Defaulting to false means a caller that forgets records an honest
+	// "unverified" rather than an unearned claim.
+	Verified bool
 }
 
 // forbidden names Detail keys that must never appear. Content bodies and
@@ -258,6 +277,14 @@ func (l *Log) Append(r Record) (*Event, error) {
 	if r.Kind == KindAI && strings.TrimSpace(r.Model) == "" {
 		return nil, fmt.Errorf("an AI principal must name its model")
 	}
+	if r.Kind == KindService && !r.Verified {
+		// A service identity exists only because a credential was presented. An
+		// unverified one is a self-declared string wearing a service label,
+		// which is precisely the confusion this field exists to prevent.
+		return nil, fmt.Errorf(
+			"a service principal cannot be unverified: it is only a service " +
+				"because a credential proved it")
+	}
 	for k := range r.Detail {
 		lower := strings.ToLower(k)
 		for _, bad := range forbidden {
@@ -277,7 +304,7 @@ func (l *Log) Append(r Record) (*Event, error) {
 		Seq: l.seq, At: time.Now().UTC().Format(time.RFC3339Nano),
 		Prev: l.last, Action: r.Action, Resource: r.Resource, Source: l.src,
 		Outcome: r.Outcome, Principal: l.pseudonym(r.Principal), Kind: r.Kind,
-		Model: r.Model, Detail: r.Detail,
+		Verified: r.Verified, Model: r.Model, Detail: r.Detail,
 	}
 	h, err := e.computeHash()
 	if err != nil {
