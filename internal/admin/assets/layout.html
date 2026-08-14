@@ -18,7 +18,8 @@
       <li><a href="/access">Access</a></li>
     </ul>
   </nav>
-  {{with .Principal}}<p class="who">Signed in as <strong>{{.Name}}</strong> ({{.Role}})</p>{{end}}
+  {{with .Principal}}<p class="who">Signed in as <strong>{{.Name}}</strong> ({{.Role}})
+    — <a href="/signout">Sign out</a></p>{{end}}
 </header>
 <main id="main" tabindex="-1">
 {{end}}

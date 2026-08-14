@@ -8,7 +8,9 @@
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 <p>Paste an API token. There is no password, and no puzzle to solve —
    WCAG 2.2 treats those as cognitive function tests.</p>
-<form method="get" action="/">
+<p class="help">Submitted as a POST, so the token never appears in the address
+   bar, browser history, or a server log.</p>
+<form method="post" action="/signin">
   <div class="field">
     <label for="tok">API token</label>
     <input id="tok" name="token" type="password" autocomplete="current-password"

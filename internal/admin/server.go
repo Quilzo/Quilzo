@@ -53,6 +53,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -226,6 +227,62 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+// MaxRequestBody caps a POST. Without a limit a single request can make the
+// process allocate until it dies, which needs no credential and no cleverness.
+const MaxRequestBody = 2 << 20 // 2 MiB
+
+func limitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost || r.Method == http.MethodPut {
+			r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBody)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// sameSiteOnly refuses cross-origin state changes.
+//
+// The admin authenticates with a cookie, and a cookie is sent by the browser on
+// any request to this origin — including a form on somebody else's page posting
+// to /publish. That is CSRF, and it needs no vulnerability in this code beyond
+// accepting the request.
+//
+// SameSite=Strict on the cookie is the primary defence and stops the browser
+// sending it at all. This is the second line, because a defence that depends on
+// one attribute being set correctly forever is one line too few: `Sec-Fetch-Site`
+// is sent by current browsers and states the relationship directly, and `Origin`
+// covers the rest. A request that says it came from elsewhere is refused for any
+// method that changes something.
+func sameSiteOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost && r.Method != http.MethodPut &&
+			r.Method != http.MethodDelete {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		switch r.Header.Get("Sec-Fetch-Site") {
+		case "same-origin", "none", "":
+			// same-origin is what we want; none is a direct navigation; empty
+			// means a client that does not send it, handled by the Origin check.
+		default:
+			http.Error(w, "cross-site requests cannot change anything here",
+				http.StatusForbidden)
+			return
+		}
+
+		if origin := r.Header.Get("Origin"); origin != "" {
+			u, err := url.Parse(origin)
+			if err != nil || u.Host != r.Host {
+				http.Error(w, "this request came from another origin",
+					http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // Handler returns the router.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -240,8 +297,54 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/history", s.handleHistory)
 	mux.HandleFunc("/rollback", s.handleRollback)
 	mux.HandleFunc("/preview/", s.handlePreview)
+	mux.HandleFunc("/signin", s.handleSignIn)
+	mux.HandleFunc("/signout", s.handleSignOut)
 	mux.HandleFunc("/style.css", s.handleCSS)
-	return securityHeaders(mux)
+	return securityHeaders(sameSiteOnly(limitBody(mux)))
+}
+
+// handleSignIn exchanges a pasted token for a session cookie.
+//
+// A POST, because the previous version was a GET form: submitting put the token
+// in the URL, and from there into browser history, the server's access log, and
+// the Referer header of every outbound link. A credential in a URL is a
+// credential in several places nobody thinks to clear.
+func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.render(w, "signin.html", map[string]any{"Title": "Sign in"})
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	raw := strings.TrimSpace(r.FormValue("token"))
+	if _, err := s.Tokens.Authenticate(raw, time.Now()); err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		s.render(w, "signin.html", map[string]any{
+			"Title": "Sign in", "Error": err.Error()})
+		return
+	}
+
+	// Secure only over TLS, or the cookie is refused on a loopback deployment
+	// and nobody can sign in at all — which is how a security attribute gets
+	// removed permanently by whoever is trying to get their work done.
+	http.SetCookie(w, &http.Cookie{
+		Name: "scrivet_token", Value: raw, Path: "/",
+		HttpOnly: true,                    // unreadable by script; there is none, but the header outlives that
+		SameSite: http.SameSiteStrictMode, // the primary CSRF defence
+		Secure:   r.TLS != nil,
+		MaxAge:   8 * 3600,
+	})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name: "scrivet_token", Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
+	})
+	http.Redirect(w, r, "/signin", http.StatusSeeOther)
 }
 
 func (s *Server) handleCSS(w http.ResponseWriter, r *http.Request) {

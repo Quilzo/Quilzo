@@ -338,3 +338,133 @@ func TestNewlyIssuedTokensWorkWithoutARestart(t *testing.T) {
 		t.Errorf("a token issued after startup did not work: %d", w.Code)
 	}
 }
+
+// -- vulnerabilities found by audit, kept fixed by these ---------------------
+
+// The sign-in form was a GET, so submitting put the token in the URL — and from
+// there into browser history, the access log, and the Referer of every outbound
+// link. A credential in a URL is a credential in several places nobody clears.
+func TestSignInIsAPostAndNeverPutsTheTokenInAURL(t *testing.T) {
+	srv, _ := setup(t)
+	body := get(t, srv, "/signin", "").Body.String()
+
+	if strings.Contains(body, `method="get"`) {
+		t.Error("the sign-in form is a GET; the token would land in the URL")
+	}
+	if !strings.Contains(body, `method="post"`) {
+		t.Fatal("the sign-in form should POST")
+	}
+}
+
+func TestSignInSetsAHardenedCookie(t *testing.T) {
+	srv, token := setup(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/signin",
+		strings.NewReader("token="+token))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected a redirect after sign-in, got %d", w.Code)
+	}
+	cookies := w.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("no session cookie was set; the form did not actually sign anyone in")
+	}
+	c := cookies[0]
+	if !c.HttpOnly {
+		t.Error("the session cookie should be HttpOnly")
+	}
+	if c.SameSite != http.SameSiteStrictMode {
+		t.Error("SameSite=Strict is the primary CSRF defence and is missing")
+	}
+}
+
+func TestSignInRefusesABadToken(t *testing.T) {
+	srv, _ := setup(t)
+	req := httptest.NewRequest(http.MethodPost, "/signin",
+		strings.NewReader("token=scv_nonsense"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("a bad token should be refused, got %d", w.Code)
+	}
+	if len(w.Result().Cookies()) > 0 {
+		t.Error("a rejected sign-in must not set a session cookie")
+	}
+}
+
+// Cookie authentication means the browser attaches credentials to any request
+// to this origin, including a form on someone else's page posting to /publish.
+func TestCrossSitePostsCannotChangeAnything(t *testing.T) {
+	srv, token := setup(t)
+
+	for _, path := range []string{"/publish", "/save", "/rollback", "/provenance/set"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, path, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			// What a browser sends when another site submits a form here.
+			req.Header.Set("Sec-Fetch-Site", "cross-site")
+			req.Header.Set("Origin", "https://evil.example")
+
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, req)
+
+			if w.Code != http.StatusForbidden {
+				t.Errorf("a cross-site POST reached %s: %d", path, w.Code)
+			}
+		})
+	}
+}
+
+func TestSameOriginPostsStillWork(t *testing.T) {
+	srv, token := setup(t)
+	req := httptest.NewRequest(http.MethodPost, "/publish", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Origin", "http://"+req.Host)
+
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code == http.StatusForbidden {
+		t.Error("the CSRF check is refusing legitimate same-origin requests")
+	}
+}
+
+func TestAnOriginFromAnotherHostIsRefused(t *testing.T) {
+	srv, token := setup(t)
+	req := httptest.NewRequest(http.MethodPost, "/publish", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	// No Sec-Fetch-Site, as an older client would send. Origin has to catch it.
+	req.Header.Set("Origin", "https://evil.example")
+
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("an Origin from another host reached the handler: %d", w.Code)
+	}
+}
+
+// An unbounded body lets one request make the process allocate until it dies,
+// which needs no credential and no cleverness.
+func TestOversizedRequestsAreRefused(t *testing.T) {
+	srv, token := setup(t)
+	huge := strings.Repeat("a", MaxRequestBody+1024)
+
+	req := httptest.NewRequest(http.MethodPost, "/save",
+		strings.NewReader("__name=index&body="+huge))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code == http.StatusSeeOther || w.Code == http.StatusOK {
+		t.Errorf("a body past the limit was accepted: %d", w.Code)
+	}
+}
