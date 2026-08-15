@@ -10,6 +10,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/rsh1k/scrivet/internal/ext"
 	"os"
 	"path/filepath"
 	"sort"
@@ -88,6 +89,7 @@ languages
   scrivet lang translated PAGE LOCALE       record what it was translated from
 
 content types
+  scrivet ext list | add | pin | test        run your own code, sandboxed
   scrivet type example > FILE.json          a definition you can edit
   scrivet type add FILE.json                define a type: flat fields, no regex
   scrivet type list | show NAME             what exists, and its address
@@ -319,6 +321,8 @@ func main() {
 		err = cmdToken(root, cmdArgs)
 	case "a11y":
 		err = cmdA11y(root, cmdArgs)
+	case "ext", "extensions":
+		err = cmdExt(root, cmdArgs)
 	case "scan":
 		err = cmdScan(root, cmdArgs)
 	case "csp":
@@ -457,6 +461,24 @@ func cmdAdd(root string, args []string) error {
 	// is the point: the store is immutable, so an invalid page that lands in it
 	// is in the history for good, and "fix it in the next commit" leaves the
 	// broken one addressable forever.
+	// Extensions run before the type gate, so a transform produces content
+	// that is then validated like anything else. An extension whose output
+	// skipped validation would be a way to store what an author cannot.
+	for name := range pages {
+		fields, ok := pages[name].(map[string]any)
+		if !ok {
+			continue
+		}
+		out, xerr := runExtensions(root, ext.OnTransform, name, fields)
+		if xerr != nil {
+			return xerr
+		}
+		if _, xerr = runExtensions(root, ext.OnValidate, name, out); xerr != nil {
+			return xerr
+		}
+		pages[name] = out
+	}
+
 	types, err := gateWrite(root, pages)
 	if err != nil {
 		return err

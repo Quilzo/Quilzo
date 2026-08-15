@@ -98,6 +98,9 @@ type node struct {
 	path     string
 	loopVar  string
 	children []node
+	// pipe is the filter chain applied to the value before it is escaped.
+	// Empty for everything but nValue and nRaw.
+	pipe []pipeStep
 }
 
 // Parse turns template text into nodes. An unknown tag is an error, not output.
@@ -128,7 +131,11 @@ func Parse(src string) ([]node, error) {
 		pos = m[1]
 
 		if m[2] >= 0 { // {{ … }}
-			emit(node{kind: nValue, path: strings.TrimSpace(src[m[2]:m[3]])})
+			path, pipe, perr := parseExpr(src[m[2]:m[3]])
+			if perr != nil {
+				return nil, perr
+			}
+			emit(node{kind: nValue, path: path, pipe: pipe})
 			continue
 		}
 
@@ -147,7 +154,11 @@ func Parse(src string) ([]node, error) {
 			}
 			stack = append(stack, frame{n: node{kind: nFor, loopVar: v, path: srcPath}})
 		case "raw":
-			emit(node{kind: nRaw, path: rest})
+			path, pipe, perr := parseExpr(rest)
+			if perr != nil {
+				return nil, perr
+			}
+			emit(node{kind: nRaw, path: path, pipe: pipe})
 		case "end":
 			if len(stack) == 0 {
 				return nil, errf("{%% end %%} with nothing open")
@@ -323,6 +334,13 @@ func walk(nodes []node, data map[string]any, out *strings.Builder, b *budget, de
 			if err != nil {
 				return err
 			}
+			// Filters run before escaping, and escaping still happens after —
+			// on the result, in the context it lands in. A filter cannot opt
+			// out of it, which is the difference between this and a `| safe`
+			// at the end of a pipeline in every engine that has one.
+			if v, err = applyFilters(v, n.pipe); err != nil {
+				return err
+			}
 			text := stringify(v)
 			var esc string
 			switch detectContext(tailOf(out, 256)) {
@@ -342,6 +360,9 @@ func walk(nodes []node, data map[string]any, out *strings.Builder, b *budget, de
 		case nRaw:
 			v, err := lookup(data, n.path)
 			if err != nil {
+				return err
+			}
+			if v, err = applyFilters(v, n.pipe); err != nil {
 				return err
 			}
 			text := stringify(v)

@@ -80,6 +80,8 @@ func cmdAuth(root string, args []string) error {
 		return authRevoke(root, args[1:])
 	case "list":
 		return authList(root)
+	case "recover":
+		return cmdRecover(root, args[1:])
 	case "explain":
 		return authExplain(root, args[1:])
 	case "roles":

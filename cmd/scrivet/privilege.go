@@ -156,6 +156,13 @@ var commandNeeds = map[string]need{
 	"config explain": {action: auth.ActView},
 
 	// A webhook is an outbound credential and a data flow to somewhere else.
+	// Registering an extension is registering code that runs beside the
+	// content store. Admin, and the reading subcommands narrow it.
+	"ext":        {action: auth.ActGrant},
+	"extensions": {action: auth.ActGrant},
+	"ext list":   {action: auth.ActView},
+	"ext test":   {action: auth.ActView},
+
 	"webhook":  {action: auth.ActGrant},
 	"webhooks": {action: auth.ActGrant},
 
@@ -178,6 +185,12 @@ var commandNeeds = map[string]need{
 	// -- read-only subcommands of otherwise privileged commands, so that
 	// somebody locked out can still find out why.
 	"auth explain": {action: auth.ActView},
+	// The break-glass. It cannot require authority: the situation it exists
+	// for is that no credential remains to present. It checks for itself that
+	// no usable admin token exists, refuses when one does, and records what it
+	// did in a log this account cannot rewrite.
+	"auth recover": {why: "recovers a store with no usable admin token, which " +
+		"is the one situation where requiring a token is a contradiction"},
 	"auth list":    {action: auth.ActView},
 	"token list":   {action: auth.ActView},
 	"vault status": {action: auth.ActView},
