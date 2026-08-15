@@ -137,18 +137,32 @@ func playgroundHTML(nonce, who string, routes []Route) string {
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>API playground</title>
 <link rel="stylesheet" href="/style.css">
 <style>
+  /* Native controls follow the theme. Without this the select's dropdown is
+     drawn with the OS light palette and inherits a light text colour, which
+     is white on white. */
+  :root { color-scheme: light dark; }
   .pg { max-width: 60rem; margin: 0 auto; padding: 1.5rem; }
   .pg-row { display: flex; gap: .5rem; flex-wrap: wrap; margin: .75rem 0; }
   /* An explicit display beats the user-agent rule that makes [hidden] work,
      so the body field stayed on screen for every GET. Visible in a
      screenshot, invisible in a unit test: nothing asserts on layout. */
   .pg-row[hidden] { display: none; }
+  /* Explicit surface and text, never inherit. Inheriting means the control
+     takes the page's colour and the browser's own background, which is the
+     pair that does not match. */
   .pg select, .pg input, .pg textarea, .pg button {
     font: inherit; padding: .5rem .6rem; border-radius: 8px;
-    border: 1px solid var(--outline, #ccc); background: inherit; color: inherit; }
+    border: 1px solid var(--outline, #8a9199);
+    background: var(--surface, Canvas); color: var(--on-surface, CanvasText); }
+  .pg option { background: var(--surface, Canvas); color: var(--on-surface, CanvasText); }
+  .pg button { cursor: pointer; font-weight: 600; }
+  .pg select:focus-visible, .pg input:focus-visible,
+  .pg textarea:focus-visible, .pg button:focus-visible {
+    outline: 2px solid var(--primary, Highlight); outline-offset: 2px; }
   .pg select { flex: 1 1 22rem; }
   .pg input { flex: 1 1 14rem; }
   .pg textarea { width: 100%; min-height: 7rem; font-family: ui-monospace, monospace; }

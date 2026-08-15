@@ -23,6 +23,15 @@
  */
 
 :root {
+  /* Declared here and not only in a <meta> tag, because this is what the
+     browser consults when it draws the parts of a page nobody styles: the
+     inside of a select's dropdown, checkboxes, scrollbars, spinner arrows.
+     Without it Chrome paints that popup with the OS light palette while the
+     page supplies a light text colour, and the options become white on white
+     — visible only when hovered. The meta tag is weaker and does not cover a
+     page that ships its own stylesheet. */
+  color-scheme: light dark;
+
   /* primary — deep cyan, hue 215 */
   --primary-0:#000409;   --primary-10:#002026;  --primary-20:#003741;
   --primary-24:#00414d;  --primary-30:#00515f;  --primary-40:#006c7e;
@@ -571,6 +580,10 @@ form.inline { display: inline; margin: 0; }
   font: inherit; padding: .5rem .6rem; border-radius: var(--shape-s);
   border: 1px solid var(--outline); background: var(--surface);
   color: var(--on-surface); }
+.row option { background: var(--surface); color: var(--on-surface); }
+.row input:focus-visible, .row select:focus-visible,
+button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 2px; }
 button.danger { background: var(--surface-container-high);
   color: var(--error); border: 1px solid var(--outline-variant); }
 button.danger:hover { background: var(--error); color: var(--on-error); }

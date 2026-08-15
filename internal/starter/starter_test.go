@@ -322,3 +322,15 @@ func keysOf(m map[string]any) []string {
 	sort.Strings(out)
 	return out
 }
+
+// Every stylesheet this project ships has to tell the browser which palette to
+// use for the parts nobody styles — the inside of a select, checkboxes,
+// scrollbars. Without it those are drawn light while the page is dark, and the
+// result is invisible text that no contrast check over the DOM can catch,
+// because the dropdown is not in the DOM.
+func TestTheStarterStylesheetDeclaresAColourScheme(t *testing.T) {
+	if !strings.Contains(CSS(), "color-scheme") {
+		t.Error("the starter stylesheet does not declare color-scheme, so a " +
+			"site built from it renders native controls with the wrong palette")
+	}
+}

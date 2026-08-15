@@ -260,3 +260,60 @@ func mustAsset(t *testing.T, name string) []byte {
 	}
 	return b
 }
+
+// -- what a stylesheet must declare about the browser's own painting --------
+
+// The bug this exists to prevent, and the reason the contrast tests above did
+// not catch it: they check the colours this program chooses. They cannot check
+// the colours the *browser* chooses for the parts nobody styles — the inside
+// of a select's dropdown, checkboxes, scrollbars, spinner arrows.
+//
+// Without `color-scheme`, Chrome paints that dropdown with the OS light
+// palette while the page supplies a light text colour, and the options are
+// white on white: readable only under the hover highlight. Reported from a
+// real browser, invisible to every test here, and invisible in a screenshot
+// too unless the dropdown happens to be open.
+func TestEveryStylesheetDeclaresAColourScheme(t *testing.T) {
+	for _, name := range []string{"style.css"} {
+		css := string(mustAsset(t, name))
+		if !strings.Contains(css, "color-scheme") {
+			t.Errorf("%s does not declare color-scheme, so native controls "+
+				"will be drawn with the wrong palette in one theme", name)
+		}
+	}
+}
+
+// The playground builds its own page rather than using the layout, so it is
+// checked separately — which is exactly why it had neither the declaration nor
+// a palette when it shipped.
+func TestThePlaygroundDeclaresAColourSchemeToo(t *testing.T) {
+	body, _ := fetchPlayground(t)
+	if !strings.Contains(body, "color-scheme") {
+		t.Error("the playground page does not declare color-scheme")
+	}
+	// And it must not hand its controls the page's colour with the browser's
+	// background, which is the pair that does not match.
+	if strings.Contains(body, "background: inherit") ||
+		strings.Contains(body, "color: inherit;") {
+		t.Error("a form control inherits its colours, which is how the " +
+			"select's options became invisible")
+	}
+	// Options styled explicitly, because the popup is the part that breaks.
+	if !strings.Contains(body, ".pg option") {
+		t.Error("the option elements are not given an explicit surface")
+	}
+}
+
+// Anything a keyboard can reach must show where it is. A focus ring that
+// inherits from a theme that does not define one is no focus ring.
+func TestFocusIsVisible(t *testing.T) {
+	css := string(mustAsset(t, "style.css"))
+	if !strings.Contains(css, "focus-visible") {
+		t.Error("nothing declares a focus style, so keyboard users cannot " +
+			"see where they are")
+	}
+	body, _ := fetchPlayground(t)
+	if !strings.Contains(body, "focus-visible") {
+		t.Error("the playground has no focus style")
+	}
+}
