@@ -48,6 +48,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/rsh1k/scrivet/internal/vault"
 	"sync"
 )
 
@@ -82,6 +84,29 @@ type Store struct {
 	root    string
 	objects string
 	refs    string
+	// keys encrypts objects at rest when it is set. Nil means plaintext, which
+	// is the default: a store that silently encrypted with a key generated on
+	// first run would be a store whose contents are lost when that key is.
+	keys *vault.Keyring
+}
+
+// WithKeys turns on encryption at rest.
+//
+// Set after Open rather than as an option to it, because supplying the key is
+// the operator's decision and the failure to supply one has to be visible at
+// the point of that decision rather than swallowed by a constructor.
+func (s *Store) WithKeys(kr *vault.Keyring) *Store {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.keys = kr
+	return s
+}
+
+// Encrypted reports whether this store is writing sealed objects.
+func (s *Store) Encrypted() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.keys != nil
 }
 
 // ObjectID is the address of an object, which is a fact about its bytes.
@@ -185,6 +210,25 @@ func (s *Store) write(kind string, payload []byte) (string, error) {
 		return oid, nil
 	}
 	body := append(append([]byte(kind), 0), payload...)
+
+	// Encryption sits here, at the one place objects reach the disk. Putting it
+	// anywhere else would mean finding every writer, and the next writer added
+	// would not know to look.
+	//
+	// The object id is deliberately computed above, from the plaintext. The
+	// name is load-bearing everywhere else in this system — deduplication key,
+	// ETag, what a content type binds to, what an approval signs — so it stays
+	// the hash of the content and the file holds the sealed form.
+	if s.keys != nil {
+		sealed, err := s.keys.Seal(body, []byte(oid))
+		if err != nil {
+			return "", fmt.Errorf("cannot encrypt %s: %w", kind, err)
+		}
+		if body, err = vault.Marshal(sealed); err != nil {
+			return "", err
+		}
+	}
+
 	if err := writeAtomic(path, body, 0o400); err != nil {
 		return "", fmt.Errorf("cannot store %s: %w", kind, err)
 	}
@@ -248,6 +292,26 @@ func (s *Store) read(oid, expect string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("no object %s", oid)
 	}
+
+	// A store can be half converted: turning encryption on does not rewrite
+	// what is already there, so both forms have to be readable and the reader
+	// cannot be told which to expect.
+	if vault.IsSealed(body) {
+		if s.keys == nil {
+			return nil, fmt.Errorf(
+				"object %s is encrypted and no key was supplied. The content is "+
+					"intact; without the key encryption key it cannot be read, "+
+					"which is the point", oid)
+		}
+		sealed, err := vault.Unmarshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("object %s is malformed: %w", oid, err)
+		}
+		if body, err = s.keys.Open(sealed, []byte(oid)); err != nil {
+			return nil, fmt.Errorf("object %s: %w", oid, err)
+		}
+	}
+
 	i := strings.IndexByte(string(body), 0)
 	if i < 0 {
 		return nil, fmt.Errorf("object %s is malformed", oid)

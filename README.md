@@ -941,6 +941,71 @@ different pages get told the retry is safe, because reporting every concurrent
 edit as equally dangerous is what teaches people to retry blindly — and then
 the real ones get retried blindly too.
 
+## Encryption at rest
+
+```
+$ scrivet vault enable
+IOZrHckhr36l73q7wpvxK2p9NqYcXW8fVJ0mQ1sLbTg=
+
+  this is the only time it is shown. It is not stored here — a key kept
+  beside the data it protects protects nothing against somebody who takes
+  the directory.
+```
+
+**What this defends against:** somebody who obtains the files. A stolen laptop,
+a backup on an open bucket, a disposed disk, a container image with the data
+directory baked in.
+
+**What it does not:** somebody who can run the program. The program has to read
+content to render templates, validate types, check accessibility and build
+sitemaps. End-to-end encryption is the wrong control here — it would mean the
+server cannot read content whose entire purpose is to be read out loud, and
+every feature this tool has would stop working. Saying that plainly beats
+shipping something that sounds stronger and protects less.
+
+### Nonce reuse cannot happen, rather than being avoided
+
+AES-GCM has one catastrophic failure mode: reusing a nonce with the same key
+destroys authentication and leaks the XOR of two plaintexts. Every serious
+implementation is organised around not doing it, usually with a counter somebody
+has to remember not to reset.
+
+There is nothing to remember here. Each object gets its own data key used for
+exactly one encryption, because the store is content-addressed and write-once —
+identical bytes are the same object and are never written twice, different bytes
+are a different object. A key that encrypts one thing once cannot repeat a
+nonce. It is not a rule being followed; it is a shape with no room for the
+mistake.
+
+### The object id is still the hash of the plaintext
+
+The name is load-bearing everywhere: deduplication key, ETag, what a content
+type binds to, what an approval signs. So the id stays the hash of the content
+and the *file* holds the sealed form. The pleasant consequence is two
+independent integrity checks — GCM's tag says the ciphertext was not altered,
+re-hashing says it is the object it claims to be.
+
+The ciphertext is also bound to its address, so swapping two sealed files on
+disk fails to open rather than silently swapping two pages.
+
+### Rotation rewraps, it does not re-encrypt
+
+```
+$ scrivet vault rotate --id k2
+  new objects are sealed with k2. k1 is retained and still needed to read
+  everything written before now
+  nothing was re-encrypted. Rotation rewraps data keys, which is why it is
+  cheap enough to actually do.
+```
+
+The key comes from `SCRIVET_KEY`, `SCRIVET_KEY_FILE`, or `SCRIVET_KEY_COMMAND` —
+and the command form is the interesting one, because it makes a KMS, an HSM, a
+password manager or a hardware token work without this program knowing any of
+them exist.
+
+Enabling encryption does not rewrite what is already there, so a store can be
+half converted and both forms stay readable. Turning it on cannot lose content.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
@@ -951,10 +1016,10 @@ continuous posture scanner with its dashboard, the Material 3 Expressive
 interface, four ready-made templates, import from WordPress/Markdown/JSON,
 validated uploads with an SSRF-hardened URL fetcher, sitemap/redirect
 generation, export to Markdown/WXR/JSON, audit-log export to OCSF/CEF/JSONL
-with an integrity envelope, and concurrent editing with dual authorization
-enforced on every write surface.
+with an integrity envelope, concurrent editing with dual authorization enforced
+on every write surface, and envelope encryption at rest.
 
-401 tests. The ones worth reading are the negative ones: every SSTI payload I
+425 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

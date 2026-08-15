@@ -111,6 +111,12 @@ access
   scrivet token issue NAME --principal WHO  an API credential, shown once
   scrivet token list | revoke ID | stale
 
+encryption at rest
+  scrivet vault status                      whether objects are sealed on disk
+  scrivet vault enable                      seal new objects; prints the key once
+  scrivet vault rotate                      new key, rewraps without re-encrypting
+      SCRIVET_KEY / _KEY_FILE / _KEY_COMMAND  where the key comes from
+
 security posture
   scrivet posture scan [--min SEV]          continuous misconfiguration check
   scrivet posture rules | explain RULE      what is checked, and why it matters
@@ -206,6 +212,8 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "vault":
+		err = cmdVault(root, cmdArgs)
 	case "lock", "locks":
 		err = cmdLock(root, cmdArgs)
 	case "review":
@@ -265,7 +273,10 @@ func main() {
 	}
 }
 
-func open(root string) (*store.Store, error) { return store.Open(root) }
+// open is the one place any command gets a store, which is why encryption is
+// wired here: every command inherits it, including the ones added next year by
+// somebody who has not read this file.
+func open(root string) (*store.Store, error) { return openEncrypted(root) }
 
 // reorder moves flags ahead of positional arguments.
 //
