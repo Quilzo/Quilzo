@@ -28,6 +28,8 @@ func cmdTypes(root string, args []string) error {
 		return typesShow(root, rest)
 	case "bind":
 		return typesBind(root, rest)
+	case "example":
+		return cmdTypeExample(args[1:])
 	case "check":
 		return typesCheck(root)
 	default:
@@ -86,7 +88,8 @@ func typesList(root string) error {
 
 func typesAdd(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: scrivet type add <definition.json>")
+		return fmt.Errorf("usage: scrivet type add <definition.json>\n" +
+			"  scrivet type example > article.json   writes one you can edit")
 	}
 	raw, err := os.ReadFile(args[0])
 	if err != nil {
@@ -313,4 +316,60 @@ func gateWrite(root string, pages map[string]any) (*schema.Store, error) {
 		fmt.Fprintf(&b, "\n  %s", f)
 	}
 	return nil, errBlocked{fmt.Errorf("%s", b.String())}
+}
+
+// cmdTypeExample prints a definition that works.
+//
+// Added because a content type could not be discovered from the tool. The
+// obvious guess is JSON Schema's vocabulary — "type" for a field's type, "max"
+// for a bound — and both are wrong here: the keys are "kind" and "max_len".
+// The error said what this is not ("this is not JSON Schema") and never said
+// what it is, so the only route to a working definition was reading the Go
+// struct tags.
+//
+// An extensibility feature nobody can use is not an extensibility feature.
+func cmdTypeExample(args []string) error {
+	name := "article"
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		name = args[0]
+	}
+	t := schema.Type{
+		Name:        name,
+		Description: "A single piece of writing.",
+		Fields: []schema.Field{
+			{Name: "title", Kind: schema.Text, Required: true, MaxLen: 80,
+				Label: "Headline", Help: "Shown in search results and tabs."},
+			{Name: "slug", Kind: schema.Slug, Required: true},
+			{Name: "published", Kind: schema.Date},
+			{Name: "body", Kind: schema.LongText, Required: true, MinLen: 1},
+			{Name: "section", Kind: schema.Choice,
+				Choices: []string{"news", "opinion", "review"}},
+			{Name: "tags", Kind: schema.List, MaxLen: 8},
+			{Name: "hero", Kind: schema.URL},
+			{Name: "hero_alt", Kind: schema.Text, AltFor: "hero",
+				Help: "What the image conveys, for a reader who cannot see it."},
+			{Name: "featured", Kind: schema.Boolean},
+			{Name: "reading_minutes", Kind: schema.Number},
+		},
+	}
+	if err := schema.Compile(t); err != nil {
+		// If this ever fires, the example in the tool has drifted from what
+		// the tool accepts, which is worse than having no example.
+		return fmt.Errorf("the built-in example no longer compiles: %w", err)
+	}
+	body, err := json.MarshalIndent(t, "", "  ")
+	if err != nil {
+		return err
+	}
+	// The definition goes to stdout on its own so that `scrivet type example >
+	// article.json` produces a file that `scrivet type add` accepts. The
+	// guidance goes to stderr for the same reason.
+	fmt.Println(string(body))
+	fmt.Fprintf(os.Stderr, "\n%severy kind: %s%s\n", dim,
+		strings.Join(schema.Kinds(), ", "), reset)
+	fmt.Fprintf(os.Stderr, "%sno pattern, $ref, oneOf or nesting, deliberately%s\n",
+		dim, reset)
+	fmt.Fprintf(os.Stderr, "%sscrivet type example > %s.json && scrivet type "+
+		"add %s.json%s\n", dim, name, name, reset)
+	return nil
 }

@@ -89,6 +89,8 @@ var commandNeeds = map[string]need{
 	"type list":       {action: auth.ActView},
 	"type show":       {action: auth.ActView},
 	"type check":      {action: auth.ActView},
+	"type example":    {action: auth.ActView},
+	"types example":   {action: auth.ActView},
 	"types list":      {action: auth.ActView},
 	"types show":      {action: auth.ActView},
 	"template list":   {action: auth.ActView},

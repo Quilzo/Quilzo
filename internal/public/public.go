@@ -410,7 +410,11 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	}
 	body, ok := pages[name]
 	if !ok {
-		http.NotFound(w, r)
+		// The site's own 404, not Go's plain-text one. This is the route a
+		// visitor reaches from a stale link; the asset and JSON routes above
+		// keep the plain response, because a stylesheet request answered with
+		// an HTML page is worse than one answered with a string.
+		st.notFound(w, r)
 		return
 	}
 

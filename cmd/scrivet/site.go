@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -40,7 +41,8 @@ func cmdSite(root string, args []string) error {
 		"a redirect map, as written by scrivet import")
 	name := fs.String("name", "", "site name, shown when installing")
 	desc := fs.String("description", "", "site description")
-	index := fs.String("index", "index", "the page served at /")
+	index := fs.String("index", "index",
+		"the page served at / — no need to rename yours")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -63,6 +65,11 @@ func cmdSite(root string, args []string) error {
 		st.Stylesheet = string(css)
 	}
 	st.BaseURL = strings.TrimSpace(*baseURL)
+	// Set before anything reads it. It used to be assigned forty lines below
+	// the startup check that consults it, so --index was applied to the server
+	// and not to the warning: passing --index home still reported that / would
+	// 404, correctly serving the page it had just said was missing.
+	st.Index = *index
 
 	// Languages, if configured. A single-language site never sees this: the
 	// sitemap is byte-identical to what it was before the feature existed.
@@ -74,11 +81,39 @@ func cmdSite(root string, args []string) error {
 	// The index is built from what is live, at startup. Building it from the
 	// draft would make the search box return pages nobody has published, which
 	// is a content leak however it is labelled.
-	if live := s.GetRef(site.RefLive); live != "" {
+	live := s.GetRef(site.RefLive)
+	if live == "" {
+		fmt.Fprintf(os.Stderr, "  %s%snothing is published, so every page will "+
+			"404%s\n", yellow, "", reset)
+		fmt.Fprintf(os.Stderr, "  %sscrivet publish%s\n", dim, reset)
+	}
+	if live != "" {
 		if pages, perr := site.PagesAt(s, live); perr == nil {
 			st.Search = search.Build(live, pages)
 			fmt.Fprintf(os.Stderr, "  %ssearch: %d terms over %d pages%s\n",
 				dim, st.Search.Size(), len(pages), reset)
+
+			// The home page is the one URL every visitor tries and the one
+			// this server cannot infer. It serves whatever page is named
+			// "index"; a site whose pages are called home, main or landing
+			// starts cleanly, reports how many pages it indexed, and answers
+			// / with a 404 — and nothing says why.
+			if _, ok := pages[st.Index]; !ok {
+				fmt.Fprintf(os.Stderr, "  %sno page named %q, so / will 404%s\n",
+					yellow, st.Index, reset)
+				names := make([]string, 0, len(pages))
+				for n := range pages {
+					names = append(names, n)
+				}
+				sort.Strings(names)
+				if len(names) > 6 {
+					names = names[:6]
+				}
+				fmt.Fprintf(os.Stderr, "  %spublished: %s%s\n",
+					dim, strings.Join(names, ", "), reset)
+				fmt.Fprintf(os.Stderr, "  %srename one to index, or pass "+
+					"--index NAME%s\n", dim, reset)
+			}
 		}
 	}
 
@@ -105,7 +140,6 @@ func cmdSite(root string, args []string) error {
 		}
 		st.Redirects = m
 	}
-	st.Index = *index
 	if *name != "" {
 		st.Name = *name
 	}

@@ -380,3 +380,85 @@ func TestTheLicenceIsValidXMLAndCarriesTheTerms(t *testing.T) {
 		t.Error("robots.txt does not advertise the licence")
 	}
 }
+
+// -- the 404 a visitor actually reaches --------------------------------------
+
+// Go's http.NotFound writes "404 page not found" as plain text. On a site
+// whose every other surface is designed, that is the page a visitor is most
+// likely to reach — from a stale link, a search result, a typo — rendered as a
+// debugging string.
+func TestAMissingPageGetsTheSitesOwn404(t *testing.T) {
+	st, _ := setup(t)
+	st.Name = "Acme"
+	st.Stylesheet = "body{}"
+
+	w := get(st, "/nothing", nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("got %d, want 404", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(w.Header().Get("Content-Type"), "text/html") {
+		t.Errorf("the 404 is %q", w.Header().Get("Content-Type"))
+	}
+	for _, want := range []string{"<!doctype html>", "Page not found", "Acme",
+		`href="/site.css"`, `content="noindex"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the 404 page does not contain %q:\n%s", want, body)
+		}
+	}
+}
+
+// It must not reflect the requested path. That is the standard way a 404 page
+// becomes cross-site scripting, and the path is in the visitor's address bar
+// already — showing it back adds nothing they cannot see.
+func TestThe404PageDoesNotReflectTheRequestedPath(t *testing.T) {
+	st, _ := setup(t)
+	// Built by hand rather than through httptest.NewRequest, which parses the
+	// target and rejects the hostile forms before the server sees them —
+	// which is the harness refusing the input, not the server.
+	for _, path := range []string{
+		"/<script>alert(1)</script>",
+		"/%3Cscript%3Ealert(1)%3C/script%3E",
+		`/"><img src=x onerror=alert(1)>`,
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/placeholder", nil)
+		req.URL.Path = path
+		req.URL.RawPath = path
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, req)
+		body := w.Body.String()
+		for _, bad := range []string{"<script>", "onerror=", "<img src=x"} {
+			if strings.Contains(body, bad) {
+				t.Errorf("requesting %q put %q in the 404 body", path, bad)
+			}
+		}
+	}
+}
+
+// A stylesheet request answered with an HTML page is worse than one answered
+// with a string, so the asset and JSON routes keep the plain response.
+func TestAssetRoutesStillAnswerPlainly(t *testing.T) {
+	st, _ := setup(t)
+	st.Stylesheet = "" // so /site.css 404s
+	w := get(st, "/site.css", nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("got %d, want 404", w.Code)
+	}
+	if strings.Contains(w.Body.String(), "<!doctype html>") {
+		t.Error("a missing stylesheet was answered with an HTML page")
+	}
+}
+
+// A HEAD must carry the status and the headers without the body.
+func TestAHeadRequestForAMissingPageHasNoBody(t *testing.T) {
+	st, _ := setup(t)
+	r := httptest.NewRequest("HEAD", "http://h/nothing", nil)
+	w := httptest.NewRecorder()
+	st.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("got %d, want 404", w.Code)
+	}
+	if w.Body.Len() != 0 {
+		t.Errorf("a HEAD returned %d bytes of body", w.Body.Len())
+	}
+}

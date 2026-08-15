@@ -88,6 +88,7 @@ languages
   scrivet lang translated PAGE LOCALE       record what it was translated from
 
 content types
+  scrivet type example > FILE.json          a definition you can edit
   scrivet type add FILE.json                define a type: flat fields, no regex
   scrivet type list | show NAME             what exists, and its address
   scrivet type bind PAGE TYPE               the page must satisfy the type
@@ -565,7 +566,31 @@ func cmdPublish(root string, args []string) error {
 		}
 		reports, cerr := checkAccessibility(s, candidate, *tplDir)
 		if cerr != nil {
-			fmt.Fprintf(os.Stderr, "  %saccessibility check skipped: %v%s\n", dim, cerr, reset)
+			// A gate that cannot run must not exit like a gate that passed.
+			//
+			// This printed "accessibility check skipped" and published, with
+			// status zero. In a pipeline that is a green build: `scrivet
+			// publish && deploy` deploys, and a typo in --templates means the
+			// check never runs again and nothing ever says so. Absence read as
+			// a claim, which is the failure this whole program is arranged to
+			// avoid.
+			//
+			// Refusing here rather than guessing whether the template is
+			// missing on purpose. A headless store that renders elsewhere is a
+			// real case, and --no-a11y-check is how it says so — once, in the
+			// pipeline, deliberately, and recorded in the audit log as a
+			// choice somebody made.
+			record(root, caller.auditRecord("publish", "/", audit.Denied,
+				map[string]string{
+					"reason": "accessibility check could not run",
+					"detail": cerr.Error(),
+				}))
+			return errBlocked{fmt.Errorf(
+				"the accessibility check could not run, so publishing would "+
+					"claim a check that did not happen: %v\n"+
+					"  create the template, point --templates at it, or pass "+
+					"--no-a11y-check if this store is not what renders the "+
+					"pages", cerr)}
 		} else if n := a11y.BlockingCount(reports); n > 0 {
 			printA11y(reports)
 			if !*force {

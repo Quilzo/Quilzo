@@ -454,3 +454,13 @@ func (r *Registry) Names() []string {
 	sort.Strings(out)
 	return out
 }
+
+// Kinds lists every field kind, so the CLI and the editor can show them
+// without keeping their own copy that drifts.
+func Kinds() []string {
+	return []string{
+		string(Text), string(LongText), string(Number), string(Boolean),
+		string(Date), string(URL), string(Email), string(Slug),
+		string(Choice), string(List),
+	}
+}
