@@ -1,6 +1,7 @@
 package public
 
 import (
+	"encoding/xml"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -308,5 +309,74 @@ func TestNoStylesheetIsANotFoundRatherThanASubstitute(t *testing.T) {
 	st.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404 with no stylesheet configured, got %d", w.Code)
+	}
+}
+
+// A licence file asserting terms nobody chose is worse than none, because a
+// crawler will honour it and the operator never agreed to it.
+func TestNoLicenceMeansNoLicenceFile(t *testing.T) {
+	st, _ := setup(t)
+	w := get(st, "/license.xml", nil)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("a licence was served with none configured: %d", w.Code)
+	}
+	// And robots.txt must not point at a file that does not exist.
+	if strings.Contains(get(st, "/robots.txt", nil).Body.String(), "License:") {
+		t.Error("robots.txt advertises a licence that is not served")
+	}
+}
+
+func TestTheLicenceIsValidXMLAndCarriesTheTerms(t *testing.T) {
+	st, _ := setup(t)
+	st.Licence = &Licence{
+		Permits:     []string{"search"},
+		Prohibits:   []string{"train"},
+		Attribution: "Example & Co",
+		Contact:     "licensing@example.com",
+		Standard:    "CC-BY-4.0",
+	}
+
+	w := get(st, "/license.xml", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("returned %d", w.Code)
+	}
+	body := w.Body.String()
+
+	var parsed struct {
+		Content struct {
+			Permits []struct {
+				Type string `xml:"type,attr"`
+			} `xml:"permits"`
+			Prohibits []struct {
+				Type string `xml:"type,attr"`
+			} `xml:"prohibits"`
+			Copyright string `xml:"copyright"`
+			Contact   string `xml:"contact"`
+			Legal     string `xml:"legal"`
+		} `xml:"content"`
+	}
+	if err := xml.Unmarshal([]byte(body), &parsed); err != nil {
+		t.Fatalf("the licence does not parse: %v\n%s", err, body)
+	}
+	if len(parsed.Content.Permits) != 1 || parsed.Content.Permits[0].Type != "search" {
+		t.Errorf("permits not carried: %#v", parsed.Content.Permits)
+	}
+	if len(parsed.Content.Prohibits) != 1 || parsed.Content.Prohibits[0].Type != "train" {
+		t.Errorf("prohibits not carried: %#v", parsed.Content.Prohibits)
+	}
+	// An ampersand in a company name must not make the document unparseable —
+	// a licence nothing can read is a licence nobody honours.
+	if parsed.Content.Copyright != "Example & Co" {
+		t.Errorf("the attribution did not survive escaping: %q",
+			parsed.Content.Copyright)
+	}
+	if parsed.Content.Contact == "" {
+		t.Error("no contact, so a refusal is a wall rather than a negotiation")
+	}
+
+	// And robots.txt points at it, which is how a crawler that already reads
+	// robots.txt finds it.
+	if !strings.Contains(get(st, "/robots.txt", nil).Body.String(), "/license.xml") {
+		t.Error("robots.txt does not advertise the licence")
 	}
 }

@@ -1445,6 +1445,78 @@ unpublished content. A delivery failure never blocks publishing, because making
 it one hands anybody who can take an endpoint offline the ability to stop the
 site being updated.
 
+## Compliance evidence
+
+```
+$ scrivet compliance summary
+github.com/rsh1k/scrivet  3f3ecf09a3db…
+
+  third-party components             0
+  NIST controls with a check         32
+  quantum-broken, generated here     none
+  quantum-broken, verified only      2
+```
+
+The EU **Cyber Resilience Act** brings vulnerability reporting obligations from
+**11 September 2026** — 24 hours for an early warning, 72 for a full
+notification — with penalties up to €15M or 2.5% of turnover. It requires a
+machine-readable SBOM covering at least top-level dependencies, kept current,
+retained ten years.
+
+The reason that is cheap here is the first line of the summary. **Zero
+third-party dependencies** means no transitive tree to track, nothing that can
+reach end of life unnoticed, and no advisory feed to reconcile against — which
+the research identifies as the main CRA problem for everyone else. A test fails
+the build if a dependency is ever added, so that stops being true deliberately
+rather than by discovery during an incident.
+
+Everything here is **derived, not written**. The SBOM comes from the build
+information in the running binary rather than from `go.mod`, because during an
+incident the question is what is deployed. The control mapping is generated from
+the posture rules, so a control listed is one something actually checks. And the
+cryptographic inventory is checked against the source by a test — a compliance
+document maintained by hand is one that was true when somebody wrote it.
+
+### Post-quantum: the inventory is the answer
+
+NIST's guidance is that a migration begins with a cryptographic inventory, so
+that is what this produces:
+
+```
+This program generates no material with an algorithm a quantum computer
+defeats.
+
+It verifies RSA and ECDSA, which quantum computers defeat. Those signatures
+are made by an identity provider, so the algorithm is their choice and the
+migration is theirs to lead.
+
+There is no harvest-now, decrypt-later exposure here, because nothing
+long-lived is protected by an algorithm Shor's algorithm breaks.
+```
+
+That position is not a plan, it is a consequence: content addressing, the audit
+chain, the Merkle log, pseudonymisation, encryption at rest and webhook
+signatures all rest on hashes and symmetric ciphers, whose post-quantum
+weakening is a halving the key and digest sizes already account for. The
+inherited exposure is named rather than omitted, and it will follow whatever a
+provider advertises when they publish a post-quantum algorithm.
+
+### Licensing for AI crawlers
+
+`/license.xml` declares terms under **Really Simple Licensing** (1.0, December
+2025), advertised from `robots.txt`. robots.txt says *whether* to crawl; this
+says *on what terms* — attribution, a named licence, a contact.
+
+Not emitted unless configured. A licence file asserting terms nobody chose is
+worse than none, because a crawler will honour it and the operator never agreed
+to it. Enforcement depends on crawlers choosing to honour it, exactly as
+robots.txt always has — what changes is that "we never said they could" becomes
+a document with a date.
+
+**None of this is a certification.** An SBOM is not a SOC 2 report and a control
+mapping is not an assessment. It is the evidence somebody needs before any of
+that is worth starting, produced accurately rather than approximately.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
@@ -1460,9 +1532,10 @@ on every write surface, envelope encryption at rest, OIDC sign-in wired through
 the admin, Bitcoin anchoring via OpenTimestamps, and multilingual sites with
 exact translation staleness, scheduled publishing, and an RFC 6962
 transparency log with inclusion and consistency proofs written by a
-privilege-separated writer, rogue-agent detection, and signed webhooks.
+privilege-separated writer, rogue-agent detection, signed webhooks, and generated compliance
+evidence.
 
-560 tests. The ones worth reading are the negative ones: every SSTI payload I
+570 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

@@ -125,6 +125,13 @@ encryption at rest
   scrivet vault rotate                      new key, rewraps without re-encrypting
       SCRIVET_KEY / _KEY_FILE / _KEY_COMMAND  where the key comes from
 
+compliance evidence
+  scrivet compliance summary                what a procurement questionnaire asks
+  scrivet compliance sbom [FILE]            CycloneDX 1.6, derived from the build
+  scrivet compliance crypto                 every algorithm, and its post-quantum
+                                            status, checked against the source
+  scrivet compliance controls               NIST 800-53 coverage, from the rules
+
 agents and integrations
   scrivet agents                            what models have been doing, and
                                             which are not accepting refusals
@@ -235,6 +242,8 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "compliance":
+		err = cmdCompliance(root, cmdArgs)
 	case "agents":
 		err = cmdAgents(root, cmdArgs)
 	case "webhook", "webhooks":

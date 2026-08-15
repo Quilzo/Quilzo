@@ -57,6 +57,11 @@ type Site struct {
 	LoadProvenance func() (*provenance.Index, error)
 	// Index is the page served at "/".
 	Index string
+	// Licence declares terms for automated crawlers under Really Simple
+	// Licensing. Empty means no terms are declared, which is not the same as
+	// permitting everything — it is saying nothing, and saying nothing is the
+	// honest default until an operator decides.
+	Licence *Licence
 	// Stylesheet is served at /site.css, held in memory. Empty means the route
 	// 404s rather than falling back to something: a site whose stylesheet
 	// silently comes from somewhere else is a site whose appearance has an
@@ -89,6 +94,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/sw.js", st.serviceWorker)
 	mux.HandleFunc("/offline", st.offline)
 	mux.HandleFunc("/sitemap.xml", st.sitemap)
+	mux.HandleFunc("/license.xml", st.licence)
 	mux.HandleFunc("/site.css", st.stylesheet)
 	mux.HandleFunc("/robots.txt", st.robots)
 	mux.HandleFunc("/llms.txt", st.llms)
@@ -221,6 +227,82 @@ func (st *Site) redirected(w http.ResponseWriter, r *http.Request) bool {
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.WriteHeader(rd.Status())
 	return true
+}
+
+// Licence is the terms an operator sets for automated use of their content.
+//
+// Really Simple Licensing, whose 1.0 specification was finalised in December
+// 2025. The premise is worth stating because it is a change of shape rather
+// than a new file: robots.txt says whether to crawl, and this says on what
+// terms — attribution, a licence to point at, or a fee.
+//
+// Emitted honestly. RSL is young and enforcement depends on crawlers choosing
+// to honour it, exactly as robots.txt always has. What it does is make the
+// terms machine-readable and explicit, so "we never said they could" becomes a
+// document with a date rather than an argument afterwards.
+type Licence struct {
+	// Permits says what automated use is allowed: "train", "search",
+	// "ai-summarize", or "none".
+	Permits []string
+	// Prohibits is the same vocabulary, for what is refused.
+	Prohibits []string
+	// Attribution is a URL a crawler should credit.
+	Attribution string
+	// Contact is where to ask, which is the part that makes a refusal a
+	// negotiation rather than a wall.
+	Contact string
+	// Standard names a well-known licence, if one applies.
+	Standard string
+}
+
+// licence serves the RSL document.
+//
+// Refused rather than invented when nothing is configured: a licence file
+// asserting terms nobody chose is worse than none, because a crawler will
+// honour it and the operator never agreed to it.
+func (st *Site) licence(w http.ResponseWriter, r *http.Request) {
+	if st.Licence == nil {
+		http.NotFound(w, r)
+		return
+	}
+	l := st.Licence
+
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
+	b.WriteString(`<rsl xmlns="https://rslstandard.org/rsl">` + "\n")
+	b.WriteString(`  <content url="/">` + "\n")
+	for _, p := range l.Permits {
+		fmt.Fprintf(&b, "    <permits type=%q/>\n", p)
+	}
+	for _, p := range l.Prohibits {
+		fmt.Fprintf(&b, "    <prohibits type=%q/>\n", p)
+	}
+	if l.Standard != "" {
+		fmt.Fprintf(&b, "    <legal type=\"license\">%s</legal>\n",
+			escapeXMLText(l.Standard))
+	}
+	if l.Attribution != "" {
+		fmt.Fprintf(&b, "    <copyright>%s</copyright>\n",
+			escapeXMLText(l.Attribution))
+	}
+	if l.Contact != "" {
+		fmt.Fprintf(&b, "    <contact>%s</contact>\n", escapeXMLText(l.Contact))
+	}
+	b.WriteString("  </content>\n</rsl>\n")
+
+	w.Header().Set("Content-Type", "application/rsl+xml; charset=utf-8")
+	_, _ = io.WriteString(w, b.String())
+}
+
+// escapeXMLText escapes the characters that must be escaped in XML content.
+//
+// Hand-written rather than reached for, because the set is fixed and a licence
+// document that fails to parse because somebody's company name contains an
+// ampersand is a licence nothing reads.
+func escapeXMLText(s string) string {
+	return strings.NewReplacer(
+		"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;",
+	).Replace(s)
 }
 
 // securityHeaders for a public site.
@@ -440,7 +522,13 @@ Pages you have already opened remain available.</p>
 
 func (st *Site) robots(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	fmt.Fprintf(w, "User-agent: *\nAllow: /\n\nSitemap: /sitemap.txt\n")
+	fmt.Fprintf(w, "User-agent: *\nAllow: /\n\nSitemap: /sitemap.xml\n")
+	// One of the channels RSL uses to advertise terms. Pointing at it from
+	// robots.txt is what makes it discoverable by a crawler that already reads
+	// robots.txt, which is all of them.
+	if st.Licence != nil {
+		fmt.Fprintf(w, "License: /license.xml\n")
+	}
 }
 
 // llms is a curated index for language models.
