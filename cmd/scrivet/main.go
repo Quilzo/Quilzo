@@ -105,6 +105,8 @@ the assistant
   scrivet provenance set PAGE --source T    record provenance by hand
 
 access
+  scrivet oidc configure --issuer ... --client-id ...   sign in with an IdP
+  scrivet oidc check                        talk to the provider, report what it offers
   scrivet auth grant WHO ROLE [--on PATH]   reader | author | publisher | admin
   scrivet auth explain WHO [ACTION]         why someone can or cannot do a thing
   scrivet auth list | roles
@@ -212,6 +214,8 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "oidc":
+		err = cmdOIDC(root, cmdArgs)
 	case "vault":
 		err = cmdVault(root, cmdArgs)
 	case "lock", "locks":

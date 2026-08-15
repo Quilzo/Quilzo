@@ -3,6 +3,7 @@ package fetch
 import (
 	"context"
 	"net"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -256,5 +257,37 @@ func TestIPv4MappedAddressesAreJudgedOnTheirIPv4Value(t *testing.T) {
 	}
 	if why := CheckIP(net.ParseIP("::ffff:93.184.216.34")); why != "" {
 		t.Errorf("a v4-mapped public address was refused: %s", why)
+	}
+}
+
+// PostForm shares the connect-time address check with Get, because a POST to an
+// attacker-chosen address can act rather than merely read. One constructor
+// builds the client for both, so a method added later cannot quietly get an
+// unchecked dialer.
+func TestPostFormIsSubjectToTheSameAddressCheck(t *testing.T) {
+	c := New()
+	c.Resolver = func(ctx context.Context, host string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("169.254.169.254")}, nil
+	}
+	_, err := c.PostForm(context.Background(), "https://idp.example/token",
+		url.Values{"grant_type": {"authorization_code"}}, "client", "secret")
+	if err == nil {
+		t.Fatal("a form was posted to an internal address")
+	}
+	if !strings.Contains(err.Error(), "refusing") {
+		t.Errorf("refused for the wrong reason: %v", err)
+	}
+}
+
+func TestPostFormRefusesTheSameURLsAsGet(t *testing.T) {
+	c := New()
+	for _, raw := range []string{
+		"http://idp.example/token",
+		"https://user:pass@idp.example/token",
+		"https://127.0.0.1/token",
+	} {
+		if _, err := c.PostForm(context.Background(), raw, url.Values{}, "", ""); err == nil {
+			t.Errorf("%s was accepted", raw)
+		}
 	}
 }

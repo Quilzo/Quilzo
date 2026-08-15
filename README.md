@@ -1006,6 +1006,73 @@ them exist.
 Enabling encryption does not rewrite what is already there, so a store can be
 half converted and both forms stay readable. Turning it on cannot lose content.
 
+## Signing in with an identity provider
+
+```
+$ scrivet oidc check --issuer https://accounts.google.com
+discovery
+  issuer       https://accounts.google.com
+  token        https://oauth2.googleapis.com/token
+
+algorithms
+  provider     RS256
+  agreed       RS256
+  a token naming anything outside this list is refused before its
+  signature is examined
+
+keys
+  4 usable signing key(s)
+```
+
+OIDC, not SAML, and the reason is specific rather than a preference. Go's
+`encoding/xml` does not preserve semantics across a parse and re-serialise,
+which lets a crafted document show one thing to signature verification and
+another to data extraction — XML Signature Wrapping. Both major Go SAML
+libraries shipped variants of it. The irony is exact: the loose tokenizer that
+makes `encoding/xml` immune to XXE, which this project relies on for the
+WordPress importer, is what makes the wrapping possible.
+
+An ID token is three base64url segments and the signature covers the first two
+*as received*. There is no canonicalisation step, so there is no gap between
+what was verified and what is read. SAML is still reachable — through a provider
+that speaks both, which moves the XML parsing to software whose full-time job it
+is.
+
+### The algorithm list never comes from the token
+
+The classic JWT failure is trusting the `alg` in the token's own header:
+
+| Header says | What a naive verifier does |
+|---|---|
+| `alg: none` | agrees the token is unsigned |
+| `alg: HS256` | hands the RSA **public** key to HMAC — and the public key is public |
+
+So the algorithm is never read as an instruction. The provider's discovery
+document says what it signs with, that list is intersected with what is
+implemented here, and anything else is refused before the signature is examined.
+The test for this constructs a genuinely valid HMAC over the public modulus —
+the only thing stopping it is that HS256 is not on the agreed list.
+
+Also refused: `crit` headers this does not understand (a `crit` that gets ignored
+is the extension mechanism working backwards), encrypted tokens, EC points that
+are not on the curve, RSA keys under 2048 bits, and an absent `kid` when the
+provider publishes more than one key — trying each until one verifies accepts a
+token signed by *any* of them.
+
+PKCE with S256 always. `state`, `nonce` and the code verifier are three distinct
+random values, because reusing one for two purposes means breaking one breaks
+both, and a sign-in attempt expires in ten minutes.
+
+Discovery and JWKS go through the SSRF-hardened fetcher, which matters here more
+than almost anywhere: an issuer URL is configuration, and "fetch this URL from
+inside the network" is the whole of server-side request forgery. Every endpoint
+in the metadata is revalidated, and the token exchange does not follow redirects
+at all — a redirected form submission replays the client secret to wherever the
+redirect points.
+
+`scrivet oidc check` runs the whole path deliberately, because the alternative is
+finding out from somebody who cannot log in.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
@@ -1017,9 +1084,9 @@ interface, four ready-made templates, import from WordPress/Markdown/JSON,
 validated uploads with an SSRF-hardened URL fetcher, sitemap/redirect
 generation, export to Markdown/WXR/JSON, audit-log export to OCSF/CEF/JSONL
 with an integrity envelope, concurrent editing with dual authorization enforced
-on every write surface, and envelope encryption at rest.
+on every write surface, envelope encryption at rest, and OIDC sign-in.
 
-425 tests. The ones worth reading are the negative ones: every SSTI payload I
+458 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

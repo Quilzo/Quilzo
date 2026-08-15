@@ -230,9 +230,63 @@ func (c *Client) Get(ctx context.Context, raw string) (*Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, lim.Timeout)
 	defer cancel()
 
-	// The security boundary. Control is handed the address the socket is about
-	// to connect to, after resolution — so there is no window between deciding
-	// and dialling, and nothing a second DNS answer can change.
+	client, err := c.httpClient(lim)
+	if err != nil {
+		return nil, err
+	}
+	hops := 0
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		hops++
+		if hops > lim.MaxRedirects {
+			return fmt.Errorf("too many redirects (%d); the source keeps "+
+				"forwarding", hops)
+		}
+		if _, err := ValidateURL(req.URL.String()); err != nil {
+			return fmt.Errorf("redirect to %s refused: %w", req.URL, err)
+		}
+		return nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", c.UserAgent)
+	req.Header.Set("Accept", "*/*")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, unwrapDialError(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s returned %d", u, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, lim.MaxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", u, err)
+	}
+	if int64(len(body)) > lim.MaxBytes {
+		return nil, fmt.Errorf("%s is larger than the %d byte limit", u, lim.MaxBytes)
+	}
+
+	sum := sha256.Sum256(body)
+	return &Result{
+		URL:         raw,
+		FinalURL:    resp.Request.URL.String(),
+		ContentType: resp.Header.Get("Content-Type"),
+		Body:        body,
+		SHA256:      hex.EncodeToString(sum[:]),
+	}, nil
+}
+
+// httpClient builds a client whose every connection passes the address check.
+//
+// One constructor for every request this package makes, so a method added later
+// cannot quietly get an unchecked dialer.
+func (c *Client) httpClient(lim Limits) (*http.Client, error) {
 	dialer := &net.Dialer{
 		Timeout:   10 * time.Second,
 		KeepAlive: 10 * time.Second,
@@ -268,61 +322,7 @@ func (c *Client) Get(ctx context.Context, raw string) (*Result, error) {
 		MaxIdleConns: 0,
 	}
 
-	hops := 0
-	client := &http.Client{
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			hops++
-			if hops > lim.MaxRedirects {
-				return fmt.Errorf("too many redirects (%d); the source keeps "+
-					"forwarding", hops)
-			}
-			// Revalidate the destination. Control will check the address too,
-			// but this produces the useful message and refuses schemes before
-			// a connection is attempted.
-			if _, err := ValidateURL(req.URL.String()); err != nil {
-				return fmt.Errorf("redirect to %s refused: %w", req.URL, err)
-			}
-			return nil
-		},
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", c.UserAgent)
-	req.Header.Set("Accept", "*/*")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, unwrapDialError(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s returned %d", u, resp.StatusCode)
-	}
-
-	// Read one byte past the ceiling so hitting it exactly is distinguishable
-	// from a file that happens to be the maximum size.
-	body, err := io.ReadAll(io.LimitReader(resp.Body, lim.MaxBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", u, err)
-	}
-	truncated := int64(len(body)) > lim.MaxBytes
-	if truncated {
-		return nil, fmt.Errorf("%s is larger than the %d byte limit", u, lim.MaxBytes)
-	}
-
-	sum := sha256.Sum256(body)
-	return &Result{
-		URL:         raw,
-		FinalURL:    resp.Request.URL.String(),
-		ContentType: resp.Header.Get("Content-Type"),
-		Body:        body,
-		SHA256:      hex.EncodeToString(sum[:]),
-	}, nil
+	return &http.Client{Transport: transport}, nil
 }
 
 // dialContext wires the resolver override in, when there is one.
@@ -362,4 +362,65 @@ func unwrapDialError(err error) error {
 		return fmt.Errorf("%s", msg[i:])
 	}
 	return err
+}
+
+// PostForm sends a form to a URL, with the same connect-time address validation
+// as Get.
+//
+// Separate from Get rather than a parameter on it, because the two have
+// genuinely different risk: a POST to an attacker-chosen address can act rather
+// than merely read. The same Control hook covers both, so there is no second
+// path for somebody to forget.
+func (c *Client) PostForm(ctx context.Context, raw string, form url.Values,
+	username, password string) (*Result, error) {
+
+	lim := c.Limits.withDefaults()
+	u, err := ValidateURL(raw)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, lim.Timeout)
+	defer cancel()
+
+	client, err := c.httpClient(lim)
+	if err != nil {
+		return nil, err
+	}
+	// Redirects are not followed on a POST. A redirected form submission
+	// replays the body — including a client secret — to wherever the redirect
+	// points, and a token endpoint has no legitimate reason to redirect.
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(),
+		strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.UserAgent)
+	if username != "" {
+		req.SetBasicAuth(username, password)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, unwrapDialError(err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, lim.MaxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	// A non-200 body is returned rather than discarded: OAuth error responses
+	// are 400 with the reason inside, and swallowing them leaves the caller
+	// with "it failed".
+	return &Result{
+		URL: raw, FinalURL: u.String(),
+		ContentType: resp.Header.Get("Content-Type"),
+		Body:        body,
+	}, nil
 }
