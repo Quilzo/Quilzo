@@ -1,0 +1,14 @@
+{{template "head" .}}
+<h1>What is checked</h1>
+<p>Each rule maps to the NIST SP 800-53 controls it provides evidence for, and to the OWASP Top 10:2025 category it belongs to. Severity is assigned by what an attacker gains.</p>
+
+{{range .Rules}}
+<article class="rule">
+  <h2 id="{{.ID}}"><span class="pill {{.Severity}}">{{.Severity}}</span> {{.Title}}</h2>
+  <p class="meta"><code>{{.ID}}</code>{{if .Controls}} · NIST {{range .Controls}}{{.}} {{end}}{{end}}{{if .OWASP}} · {{.OWASP}}{{end}}</p>
+  <p>{{.Why}}</p>
+</article>
+{{end}}
+
+<p><a href="/security">Back to the posture summary</a></p>
+{{template "foot" .}}

@@ -87,6 +87,11 @@ access
   scrivet token issue NAME --principal WHO  an API credential, shown once
   scrivet token list | revoke ID | stale
 
+security posture
+  scrivet posture scan [--min SEV]          continuous misconfiguration check
+  scrivet posture rules | explain RULE      what is checked, and why it matters
+  scrivet posture suppress ID --reason ...  accept a risk, for at most 90 days
+
 interface
   scrivet serve [--addr HOST:PORT]          the admin, on loopback by default
   scrivet site  [--addr HOST:PORT]          the published site, PWA-installable
@@ -175,6 +180,8 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "posture":
+		err = cmdPosture(root, cmdArgs)
 	case "type", "types":
 		err = cmdTypes(root, cmdArgs)
 	case "mcp":

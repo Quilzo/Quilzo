@@ -10,6 +10,7 @@ import (
 
 	"github.com/rsh1k/scrivet/internal/admin"
 	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/rsh1k/scrivet/internal/posture"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/schema"
 )
@@ -18,6 +19,14 @@ func cmdServe(root string, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := fs.String("addr", "127.0.0.1:8080", "listen address")
 	tplDir := fs.String("templates", "templates", "where page.html lives")
+	// Declared so the posture scan can tell interception from exposure. An
+	// operator who terminates TLS at a proxy should not be told they serve
+	// cleartext — a rule a correct deployment cannot satisfy is a rule people
+	// learn to ignore.
+	behindProxy := fs.Bool("behind-proxy", false,
+		"a reverse proxy terminates TLS in front of this")
+	publicAddr := fs.String("public-addr", "",
+		"where the public site is served, for the posture scan")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -76,6 +85,16 @@ func cmdServe(root string, args []string) error {
 			return schema.Type{}, false
 		}
 		return st.Registry.Get(name)
+	}
+	// The scan runs per request rather than on a timer here, because the
+	// dashboard is the thing being looked at: a cached posture is a posture
+	// from before whatever the person just changed.
+	srv.Posture = func() posture.Report {
+		state := Observe(root, *tplDir, posture.ServerFacts{
+			AdminAddr: *addr, PublicAddr: *publicAddr, BehindProxy: *behindProxy,
+		})
+		sup, _ := loadSuppressions(root)
+		return posture.Scan(state, sup)
 	}
 	srv.Reload = func() (*auth.Policy, *auth.TokenStore, error) {
 		pol, err := loadPolicy(root)

@@ -1,0 +1,60 @@
+{{template "head" .}}
+<h1>Security posture</h1>
+
+<div class="posture-head">
+  <p class="score {{.Band}}"><strong>{{.Report.Score}}</strong><span class="outof">/100</span></p>
+  <p class="score-note">
+    {{if .Report.Findings}}
+      {{range $sev, $n := .Report.Counts}}{{if $n}}<span class="pill {{$sev}}">{{$n}} {{$sev}}</span> {{end}}{{end}}
+    {{else}}
+      <span class="pill ok">No findings</span>
+    {{end}}
+    <br>
+    <span class="help">Checked {{.Report.Checked}} rules at {{.Report.At}}. Unchecked areas cost points too — a scan that looked at nothing is not a clean scan.</span>
+  </p>
+</div>
+
+{{if .Report.NotChecked}}
+<div class="notice warn">
+  <h2>Not checked</h2>
+  <p>These inputs were unavailable, so nothing was concluded about them.</p>
+  <ul>{{range .Report.NotChecked}}<li>{{.}}</li>{{end}}</ul>
+</div>
+{{end}}
+
+{{if .Report.Findings}}
+<h2>Findings</h2>
+<p class="help">Ordered by what an attacker gains, not by how alarming the rule sounds.</p>
+{{range .Report.Findings}}
+<article class="finding {{.Severity}}">
+  <h3><span class="pill {{.Severity}}">{{.Severity}}</span> {{.Title}}</h3>
+  <p>{{.Detail}}</p>
+  {{if .Fix}}<p class="fix"><span class="label">Fix</span> <code>{{.Fix}}</code></p>{{end}}
+  <p class="meta">
+    <a href="/security/rule/{{.Rule}}">{{.Rule}}</a>
+    {{if .Controls}}· NIST {{range .Controls}}{{.}} {{end}}{{end}}
+    {{if .OWASP}}· {{.OWASP}}{{end}}
+  </p>
+</article>
+{{end}}
+{{else}}
+<p class="notice ok">Nothing found at any severity. That is a statement about the {{.Report.Checked}} rules listed under <a href="/security/rules">what is checked</a>, and about nothing else.</p>
+{{end}}
+
+{{if .Report.Suppressed}}
+<h2>Accepted risks</h2>
+<p class="help">Silenced deliberately, and only until a date. When that date passes each one returns as a finding of its own.</p>
+<table>
+  <thead><tr><th scope="col">Finding</th><th scope="col">What it was</th></tr></thead>
+  <tbody>
+    {{range .Report.Suppressed}}<tr><td><code>{{.Rule}}</code></td><td>{{.Detail}}</td></tr>{{end}}
+  </tbody>
+</table>
+{{end}}
+
+<h2>Coverage</h2>
+<p>Every rule maps to a NIST SP 800-53 control, which is what makes a finding evidence for an assessor rather than an opinion. These are the controls this scan touched:</p>
+<p class="controls">{{range .Controls}}<span class="ctl">{{.}}</span> {{end}}</p>
+<p><a href="/security/rules">All {{.Report.Checked}} rules and their reasoning</a></p>
+
+{{template "foot" .}}

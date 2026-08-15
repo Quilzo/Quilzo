@@ -436,14 +436,102 @@ A conventional CMS can't answer "has anything in here been altered outside the
 application". Tampering with an object on disk is detected on the next read and
 by `verify`, because the id *is* the hash of the content.
 
+## Continuous security posture
+
+OWASP moved Security Misconfiguration from fifth place to **second** in the 2025
+Top 10, and reported that essentially every application they tested carried at
+least one instance. Their explanation is the part worth acting on: continuous
+deployment without continuous checking creates an exposure window that widens
+with deployment cadence.
+
+So there's a scanner, and it runs on every admin request rather than when
+somebody remembers.
+
+```
+$ scrivet posture scan
+posture 58/100   2 high  2 low
+  23 rules, 0 suppressed
+
+  high     A sensitive file is readable by other users
+           .scrivet/tokens.json is mode 0644 (token hashes and their roles)
+           fix: chmod 600 .scrivet/tokens.json
+           expose.file-mode  AC-3 AC-6 CM-5  A02:2025 Security Misconfiguration
+
+  high     An API token lasts too long
+           ci (svc-ci, author) is valid for 365 days, until 2027-08-15
+           fix: scrivet token revoke 8ea763bb5952
+           token.long-lived  IA-5 AC-2(3) SC-12  A07:2025 Authentication Failures
+
+  not checked:
+    audit log: the chain was not verified
+```
+
+Every rule maps to the NIST SP 800-53 controls it provides evidence for and to
+an OWASP Top 10:2025 category. That mapping is not decoration — it's what makes
+a finding something you hand an assessor rather than an opinion. `scrivet
+posture explain <rule>` gives the reasoning, and the same reasoning is a page in
+the admin, because a finding somebody doesn't understand is one they argue with.
+
+### The design decisions that make it usable
+
+**The rules are pure functions and the package does no I/O.** Every check
+receives a `State` and returns findings. It cannot open a file, a socket, or a
+subprocess. That makes each rule testable by construction, and it means a rule
+can't be tricked into reading something it shouldn't — a scanner with filesystem
+access is a file-disclosure primitive wearing a badge. One function, `Observe`,
+turns the world into facts; the answer to "what could this possibly touch?" is
+that function and nothing else.
+
+**Not knowing costs points.** A scan that looked at nothing scores 0, not 100.
+Converting absence of information into a claim of health is the single most
+misleading thing a scanner can do, and it's the default behaviour of most of
+them. NIST SP 800-137 is a document about *awareness*; under it, not knowing is
+a deficiency rather than a neutral state, so it's priced like one. Every report
+ends with what it couldn't check.
+
+**Suppressions expire, and expiry is itself a finding.** Ninety days maximum,
+with a required reason and a required name. A permanent exception isn't an
+exception — it's a quiet decision to stop looking, made by somebody who won't be
+the person who inherits it.
+
+**Rules that a correct deployment can't satisfy get people to ignore the
+scanner.** Terminating TLS at a proxy is normal, so `--behind-proxy` makes the
+cleartext rule pass while leaving the *exposure* finding in place at a lower
+severity. Interception and reachability are different problems and the scanner
+says so.
+
+**Severity is what an attacker gains.** A world-writable secret outranks a
+world-readable one. An exchanged fifteen-minute admin session isn't flagged
+while a long-lived admin token is Critical — flagging the fix would teach people
+to skip it.
+
+### What it checks
+
+23 rules across access control, credentials, audit integrity, content
+integrity, network exposure, and the agent surface. A few that are specific to
+this tool rather than generic:
+
+- an MCP operation that writes without declaring a required role
+- a model authenticating with a person's token, which destroys attribution
+  silently in a log that still verifies
+- an audit chain that no longer verifies — Critical, because it invalidates
+  every record including the ones about whoever broke it
+- published content whose provenance record describes an older version
+
+The dashboard at `/security` is server-rendered with no script at all. The CSP
+on every admin response forbids it, and a security dashboard that needs a
+client-side framework to tell you a token is world-readable has the dependency
+the wrong way round.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
 engine, `verify`, content types, RBAC with API tokens, the tamper-evident audit
 log, provenance marking, the accessibility gate, the admin UI, the public server
-with PWA output, RFC 3161 timestamping, the MCP server, and the assistant.
+with PWA output, RFC 3161 timestamping, the MCP server, the assistant, and the
+continuous posture scanner with its dashboard.
 
-226 tests. The ones worth reading are the negative ones: every SSTI payload I
+253 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

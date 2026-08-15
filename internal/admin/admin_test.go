@@ -11,6 +11,7 @@ import (
 
 	"github.com/rsh1k/scrivet/internal/a11y"
 	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/rsh1k/scrivet/internal/posture"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/schema"
 	"github.com/rsh1k/scrivet/internal/site"
@@ -678,5 +679,141 @@ func TestTheEditorRendersTheDeclaredFieldsNotWhateverThePageHas(t *testing.T) {
 			}
 		}
 		t.Fatal("the typed editor fails our own accessibility checks")
+	}
+}
+
+// -- security posture --------------------------------------------------------
+
+func withPosture(srv *Server, rep posture.Report) {
+	srv.Posture = func() posture.Report { return rep }
+}
+
+func brokenPosture() posture.Report {
+	return posture.Scan(posture.State{
+		Policy: &auth.Policy{},
+		Server: posture.ServerFacts{AdminAddr: "0.0.0.0:8080"},
+		Files: []posture.FileFact{{
+			Path: "tokens.json", Mode: 0o644, Exists: true,
+			Description: "token hashes"}},
+		Now: time.Now(),
+	}, nil)
+}
+
+// The dashboard lists exactly where the defences are thin, which is a target
+// list. Least privilege says the people who can read it are the people who
+// could already change it.
+func TestThePostureDashboardNeedsAdministrator(t *testing.T) {
+	srv, _ := setup(t)
+	withPosture(srv, brokenPosture())
+
+	ts := &auth.TokenStore{}
+	secret, _, err := ts.Issue("reader", "kit", auth.RoleReader, "/",
+		time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Tokens = ts
+	if err := srv.Policy.Grant(auth.Binding{
+		Principal: "kit", Role: auth.RoleReader, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{"/security", "/security/rules"} {
+		w := get(t, srv, path, secret)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("%s returned %d to a reader; a map of the weak spots is "+
+				"not view-level information", path, w.Code)
+		}
+	}
+}
+
+// An unwired scanner rendering an empty dashboard would read as a clean one.
+// That is the single most misleading thing this page could do.
+func TestAnUnwiredScannerSaysSoRatherThanLookingClean(t *testing.T) {
+	srv, token := setup(t)
+	srv.Posture = nil
+
+	w := get(t, srv, "/security", token)
+	body := w.Body.String()
+	if strings.Contains(body, "100") && !strings.Contains(body, "not wired") {
+		t.Error("a build with no scanner showed a score")
+	}
+	if !strings.Contains(strings.ToLower(body), "nothing has been checked") {
+		t.Errorf("the page does not say it checked nothing: %s", body)
+	}
+}
+
+func TestTheDashboardShowsFindingsWithTheirFixAndControls(t *testing.T) {
+	srv, token := setup(t)
+	withPosture(srv, brokenPosture())
+
+	w := get(t, srv, "/security", token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("the dashboard returned %d", w.Code)
+	}
+	body := w.Body.String()
+
+	for _, want := range []string{
+		"critical",            // the severity
+		"0.0.0.0:8080",        // the specific resource
+		"chmod 600",           // the remedy
+		"SC-7",                // the NIST control
+		"A02:2025",            // the OWASP category
+		"expose.admin-public", // the rule id, linked to its reasoning
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the dashboard omits %q", want)
+		}
+	}
+
+	// And it must say what it could not check, or the findings read as the
+	// complete picture.
+	if !strings.Contains(body, "Not checked") {
+		t.Error("the dashboard does not admit what it skipped")
+	}
+}
+
+// The reasoning is a page, not a tooltip: a finding somebody does not
+// understand is a finding they argue with, and the argument costs more than
+// the fix.
+func TestEveryRuleCanBeExplainedFromTheDashboard(t *testing.T) {
+	srv, token := setup(t)
+	withPosture(srv, brokenPosture())
+
+	for _, r := range posture.Rules() {
+		w := get(t, srv, "/security/rule/"+r.ID, token)
+		if w.Code != http.StatusOK {
+			t.Errorf("%s has no explanation page: %d", r.ID, w.Code)
+			continue
+		}
+		// Compared with apostrophes stripped from both sides. The template
+		// escapes them to &#39;, which is the correct output and would
+		// otherwise make this assertion a test of HTML escaping.
+		got := strings.ReplaceAll(w.Body.String(), "&#39;", "'")
+		if !strings.Contains(got, r.Why[:30]) {
+			t.Errorf("%s renders without its reasoning", r.ID)
+		}
+	}
+}
+
+// The dogfooding rule applies here too, and a table of severities is the
+// easiest place to signal meaning with colour alone.
+func TestTheSecurityPagesPassOurOwnAccessibilityChecks(t *testing.T) {
+	srv, token := setup(t)
+	withPosture(srv, brokenPosture())
+
+	for _, path := range []string{"/security", "/security/rules"} {
+		w := get(t, srv, path, token)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s returned %d", path, w.Code)
+		}
+		r := a11y.Check(path, w.Body.String())
+		if r.Blocks() {
+			for _, f := range r.Findings {
+				if f.Severity == a11y.Blocking {
+					t.Errorf("%s: %s (%s) — %s", path, f.Rule, f.Criterion, f.Detail)
+				}
+			}
+		}
 	}
 }

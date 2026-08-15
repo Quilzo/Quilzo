@@ -181,3 +181,57 @@ select {
   border: 1px solid var(--line); border-radius: 3px;
   min-height: 44px;   /* 2.5.8, and comfortable for a pointer */
 }
+
+/* -- security posture ------------------------------------------------------
+   The dashboard uses no script, because the CSP on every admin response
+   forbids it. A security dashboard that needs a client-side framework to tell
+   you a token is world-readable has the dependency the wrong way round. */
+
+.notice.warn { background: var(--warn-bg); border-left-color: var(--warn-fg); color: var(--warn-fg); }
+
+.posture-head {
+  display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: baseline;
+  border-bottom: 1px solid var(--line); padding-bottom: 1rem; margin-bottom: 1.5rem;
+}
+.score { font-size: 3rem; line-height: 1; margin: 0; font-variant-numeric: tabular-nums; }
+.score.ok   { color: var(--ok-fg); }
+.score.warn { color: var(--warn-fg); }
+.score.bad  { color: var(--bad-fg); }
+.score .outof { font-size: 1rem; color: var(--muted); font-weight: 400; }
+.score-note { margin: 0; flex: 1 1 18rem; }
+
+/* Severity is never signalled by colour alone: the word is the label and the
+   colour reinforces it. 1.4.1 is the criterion, and a red dot that means
+   "critical" to a sighted reader means nothing to anyone else. */
+.pill {
+  display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px;
+  font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; border: 1px solid transparent;
+}
+.pill.critical, .pill.high { background: var(--bad-bg); color: var(--bad-fg); border-color: var(--bad-fg); }
+.pill.medium               { background: var(--warn-bg); color: var(--warn-fg); border-color: var(--warn-fg); }
+.pill.low, .pill.info      { background: var(--bg); color: var(--muted); border-color: var(--line); }
+.pill.ok                   { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--ok-fg); }
+
+.finding, .rule {
+  border: 1px solid var(--line); border-left-width: 4px;
+  border-radius: 3px; padding: 0.9rem 1.1rem; margin: 0 0 1rem;
+}
+.finding.critical, .finding.high { border-left-color: var(--bad-fg); }
+.finding.medium                  { border-left-color: var(--warn-fg); }
+.finding.low, .finding.info      { border-left-color: var(--line); }
+.finding h3, .rule h2 { margin: 0 0 0.5rem; font-size: 1.05rem; }
+.finding p, .rule p { margin: 0.4rem 0; }
+.fix code { background: var(--ok-bg); color: var(--ok-fg); padding: 0.15rem 0.4rem; border-radius: 3px; }
+.label {
+  font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--muted); font-weight: 700;
+}
+.meta { color: var(--muted); font-size: 0.85rem; }
+
+.controls { line-height: 2.2; }
+.ctl {
+  display: inline-block; padding: 0.15rem 0.5rem; margin-right: 0.3rem;
+  border: 1px solid var(--line); border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem;
+}

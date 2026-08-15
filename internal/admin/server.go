@@ -61,6 +61,7 @@ import (
 
 	"github.com/rsh1k/scrivet/internal/a11y"
 	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/rsh1k/scrivet/internal/posture"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/schema"
 	"github.com/rsh1k/scrivet/internal/site"
@@ -92,6 +93,11 @@ type Server struct {
 	// TypeFor names the type a page must satisfy, so the editor can render the
 	// declared fields rather than whatever keys the page happens to have.
 	TypeFor func(page string) (schema.Type, bool)
+
+	// Posture runs the continuous misconfiguration scan. Nil means the host did
+	// not wire it, and the dashboard says so rather than rendering an empty
+	// page that reads as "nothing is wrong".
+	Posture func() posture.Report
 
 	// Reload re-reads credentials and access rules from disk.
 	//
@@ -318,6 +324,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.handlePages)
 	mux.HandleFunc("/page/", s.handlePage)
 	mux.HandleFunc("/save", s.handleSave)
+	mux.HandleFunc("/security", s.handleSecurity)
+	mux.HandleFunc("/security/rules", s.handleRules)
+	mux.HandleFunc("/security/rule/", s.handleRule)
 	mux.HandleFunc("/review", s.handleReview)
 	mux.HandleFunc("/publish", s.handlePublish)
 	mux.HandleFunc("/access", s.handleAccess)
@@ -705,6 +714,96 @@ func coerceForm(t schema.Type, form url.Values, body map[string]any) {
 		}
 		body[key] = values[0]
 	}
+}
+
+// handleSecurity is the posture dashboard.
+//
+// Server-rendered, with no script at all: the CSP on every admin response
+// forbids it, and a security dashboard that needs a client-side framework to
+// tell you a token is world-readable has the dependency the wrong way round.
+func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	// Reading the posture means reading the access policy, the token store and
+	// the audit log. That is administrator information, and gating it on
+	// ActManageAccess rather than ActView is the least-privilege reading: a
+	// list of exactly where the defences are thin is a target list.
+	if !s.can(w, p, auth.ActGrant, "/") {
+		return
+	}
+	if s.Posture == nil {
+		s.render(w, "message.html", map[string]any{
+			"Title": "Security", "Principal": p,
+			"Heading": "The posture scanner is not wired up",
+			"Body": "This build serves the admin without a posture scanner, so " +
+				"nothing has been checked. An empty dashboard would read as a " +
+				"clean one, which is why this says so instead.",
+		})
+		return
+	}
+
+	rep := s.Posture()
+	var controls []string
+	for c := range rep.Controls {
+		controls = append(controls, c)
+	}
+	sort.Strings(controls)
+
+	s.render(w, "security.html", map[string]any{
+		"Title": "Security posture", "Principal": p,
+		"Report": rep, "Controls": controls, "Band": band(rep.Score),
+	})
+}
+
+// band turns the score into a class name, so the colour is decided once.
+func band(score int) string {
+	switch {
+	case score >= 90:
+		return "ok"
+	case score >= 60:
+		return "warn"
+	default:
+		return "bad"
+	}
+}
+
+func (s *Server) handleRules(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if !s.can(w, p, auth.ActGrant, "/") {
+		return
+	}
+	s.render(w, "rules.html", map[string]any{
+		"Title": "What is checked", "Principal": p, "Rules": posture.Rules(),
+	})
+}
+
+// handleRule answers "why does this matter" for one rule.
+//
+// The reasoning is a first-class page rather than a tooltip because a finding
+// somebody does not understand is a finding they argue with, and the argument
+// costs more than the fix.
+func (s *Server) handleRule(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if !s.can(w, p, auth.ActGrant, "/") {
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/security/rule/")
+	rule, found := posture.Explain(id)
+	if !found {
+		http.NotFound(w, r)
+		return
+	}
+	s.render(w, "rules.html", map[string]any{
+		"Title": rule.Title, "Principal": p, "Rules": []posture.Rule{rule},
+	})
 }
 
 func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
