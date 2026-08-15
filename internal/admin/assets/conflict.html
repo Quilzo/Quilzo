@@ -1,0 +1,35 @@
+{{template "head" .}}
+<h1>Not saved</h1>
+
+<div class="notice bad">
+  <p><strong>{{.Conflict.By}}</strong> changed the draft while you were editing, so
+  your save was refused rather than overwriting theirs. Nothing was lost — your
+  text is still in the form you came from.</p>
+</div>
+
+{{if .Collides}}
+<h2>You both changed {{.Page}}</h2>
+<p>This one needs looking at. Open the page again to see their version, then
+re-apply your change on top of it.</p>
+{{else}}
+<h2>Your change does not overlap theirs</h2>
+<p>They changed {{range .Conflict.Pages}}<code>{{.}}</code> {{end}}and you changed
+<code>{{.Page}}</code>. Going back and saving again will work.</p>
+{{end}}
+
+<dl>
+  <dt>You were editing</dt><dd><code>{{.Conflict.Expected}}</code></dd>
+  <dt>The draft is now</dt><dd><code>{{.Conflict.Actual}}</code></dd>
+</dl>
+
+<div class="btn-group">
+  <a class="btn" href="/page/{{.Page}}">Open the current version</a>
+  <a class="btn btn-outlined" href="/review">See what changed</a>
+</div>
+
+<p class="help">This check is compare-and-swap on the content hash, not a lock.
+Nothing was ever held, nothing expired, and nobody had to remember to release
+anything — the save simply declared what it was based on and that was no longer
+true.</p>
+
+{{template "foot" .}}

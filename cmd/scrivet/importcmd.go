@@ -89,9 +89,10 @@ func cmdImport(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	base := s.GetRef(site.RefDraft)
 	pages := map[string]any{}
-	if ref := s.GetRef(site.RefDraft); ref != "" {
-		if existing, err := site.PagesAt(s, ref); err == nil {
+	if base != "" {
+		if existing, err := site.PagesAt(s, base); err == nil {
 			pages = existing
 		}
 	}
@@ -123,10 +124,14 @@ func cmdImport(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	cid, err := site.SaveDraft(s, pages,
-		fmt.Sprintf("import %d page(s) from %s", len(rep.Pages), src), *author)
+	cid, err := site.SaveDraftFrom(s, pages,
+		fmt.Sprintf("import %d page(s) from %s", len(rep.Pages), src), *author, base)
 	if err != nil {
-		return err
+		var imported []string
+		for _, pg := range rep.Pages {
+			imported = append(imported, *prefix+pg.Name)
+		}
+		return conflictError(err, imported)
 	}
 	if err := types.Save(); err != nil {
 		return err

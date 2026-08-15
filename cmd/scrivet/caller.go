@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/rsh1k/scrivet/internal/site"
 )
 
 // Who is running this, and did anyone check?
@@ -224,4 +226,42 @@ func (c *Caller) auditRecord(action, resource string, outcome audit.Outcome,
 		Action: action, Resource: resource, Outcome: outcome,
 		Principal: c.Name, Kind: c.Kind, Verified: c.Verified, Detail: detail,
 	}
+}
+
+// conflictError turns a compare-and-swap refusal into something a person can
+// act on, and leaves anything else alone.
+//
+// The distinction that matters is whether the other write touched anything this
+// one did. Telling somebody who edited an unrelated page that they have a
+// dangerous conflict is how people learn to retry blindly — and then the real
+// ones get retried blindly too.
+func conflictError(err error, changed []string) error {
+	var c *site.Conflict
+	if !errors.As(err, &c) {
+		return err
+	}
+	both := c.Touches(changed)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s", c.Error())
+	if len(both) == 0 && len(changed) > 0 {
+		fmt.Fprintf(&b, "\n  nothing you changed was touched, so re-running "+
+			"this against the current draft is safe")
+	} else if len(both) > 0 {
+		fmt.Fprintf(&b, "\n  %syou both changed: %s%s — look before retrying",
+			red, strings.Join(both, ", "), reset)
+	}
+	fmt.Fprintf(&b, "\n  current draft: %s", short(c.Actual))
+	return errBlocked{fmt.Errorf("%s", b.String())}
+}
+
+// changedNames extracts page names from NAME=FILE arguments.
+func changedNames(specs []string) []string {
+	var out []string
+	for _, spec := range specs {
+		if name, _, ok := strings.Cut(spec, "="); ok {
+			out = append(out, name)
+		}
+	}
+	return out
 }

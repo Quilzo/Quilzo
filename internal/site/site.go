@@ -124,8 +124,18 @@ func SaveDraftFrom(s *store.Store, pages map[string]any, message, author,
 	if current == "" {
 		current = s.GetRef(RefLive)
 	}
-	if base != "" && base != current {
-		return "", newConflict(s, base, current)
+	// A prefix counts. Every id this tool prints is shortened to twelve
+	// characters, so requiring the full sixty-four from a flag makes the flag
+	// unusable with the only value the user has ever seen — and it fails as a
+	// permanent conflict, which looks like the feature is broken rather than
+	// like the argument was wrong.
+	if base != "" && !sameCommit(base, current) {
+		// Resolved to a full id before the diff. The prefix is what the user
+		// typed and cannot be loaded as an object, so diffing against it
+		// silently produced no changed pages — which reported every collision
+		// as "nothing you changed was touched", the opposite of the truth and
+		// the most dangerous thing this message could say.
+		return "", newConflict(s, resolveCommit(s, base), current)
 	}
 
 	tree, err := store.BuildTree(s, pages)
@@ -291,6 +301,31 @@ func (c *Conflict) Touches(pages []string) []string {
 	return both
 }
 
+// resolveCommit expands a short id by walking back from the current draft.
+//
+// Only commits reachable from the current head are considered, which is the
+// right scope: a base that is not an ancestor is not a base this write could
+// have been made against.
+func resolveCommit(s *store.Store, prefix string) string {
+	if len(prefix) >= 64 {
+		return prefix
+	}
+	head := s.GetRef(RefDraft)
+	if head == "" {
+		head = s.GetRef(RefLive)
+	}
+	history, err := s.History(head, 1000)
+	if err != nil {
+		return prefix
+	}
+	for _, h := range history {
+		if sameCommit(prefix, h.ID) {
+			return h.ID
+		}
+	}
+	return prefix
+}
+
 func newConflict(s *store.Store, base, current string) *Conflict {
 	c := &Conflict{Expected: base, Actual: current}
 	if commit, err := s.GetCommit(current); err == nil {
@@ -315,4 +350,22 @@ func shortID(s string) string {
 		return "(nothing)"
 	}
 	return s
+}
+
+// sameCommit compares ids, allowing either to be a prefix of the other.
+//
+// A prefix shorter than eight characters is refused rather than matched
+// loosely: at that length a prefix can collide, and a base that matches the
+// wrong commit is worse than one that matches none.
+func sameCommit(a, b string) bool {
+	if a == b {
+		return true
+	}
+	if len(a) < 8 || len(b) < 8 {
+		return false
+	}
+	if len(a) > len(b) {
+		a, b = b, a
+	}
+	return strings.HasPrefix(b, a)
 }

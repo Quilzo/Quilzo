@@ -46,7 +46,11 @@ func TestEveryWriteSurfaceConsultsTheTypeGate(t *testing.T) {
 				if !ok || fn.Body == nil {
 					continue
 				}
-				if !calls(fn, "SaveDraft") {
+				// Both names. The test found only one surface when SaveDraft
+				// was renamed to SaveDraftFrom at the call sites, which is the
+				// vacuity guard below doing its job — a source-walking test
+				// that silently stops matching passes forever.
+				if !calls(fn, "SaveDraft") && !calls(fn, "SaveDraftFrom") {
 					continue
 				}
 				found++
@@ -114,4 +118,64 @@ func mentions(fn *ast.FuncDecl, name string) bool {
 		return true
 	})
 	return seen
+}
+
+// Every write surface must go through compare-and-swap.
+//
+// SaveDraft takes whatever the draft is now as its parent, which is correct for
+// a single writer and silently loses the earlier write when there are two. The
+// package exists to make that impossible, and it only does if the callers use
+// it — this project has shipped a library nobody called before.
+//
+// The exception is deliberate and narrow: `scrivet add` without --based-on has
+// nothing to compare against, so it passes an empty base and SaveDraftFrom
+// treats that as "whatever is current". The point is that the call site had to
+// decide.
+func TestEveryWriteSurfaceUsesCompareAndSwap(t *testing.T) {
+	roots := []string{"..", filepath.Join("..", "..", "internal")}
+	found := 0
+
+	for _, root := range roots {
+		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") ||
+				strings.HasSuffix(path, "_test.go") {
+				return err
+			}
+			// The site package defines both; it is not a caller.
+			if strings.Contains(path, filepath.Join("internal", "site")) {
+				return nil
+			}
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, path, nil, 0)
+			if err != nil {
+				return err
+			}
+			for _, decl := range file.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
+				if !ok || fn.Body == nil {
+					continue
+				}
+				if !calls(fn, "SaveDraft") && !calls(fn, "SaveDraftFrom") {
+					continue
+				}
+				found++
+				if calls(fn, "SaveDraft") && !calls(fn, "SaveDraftFrom") {
+					t.Errorf("%s:%s writes through SaveDraft, which takes "+
+						"whatever the draft is now as its parent. Two writers "+
+						"from the same base lose one edit silently. Use "+
+						"SaveDraftFrom and pass the commit that was read — an "+
+						"empty base is allowed, but the call site has to decide.",
+						path, fn.Name.Name)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if found < 4 {
+		t.Fatalf("only %d write surfaces found; this test has stopped looking",
+			found)
+	}
 }

@@ -145,3 +145,73 @@ func TestTheConflictMessageIsActionable(t *testing.T) {
 		}
 	}
 }
+
+// Every id this tool prints is shortened to twelve characters, so a base given
+// as a short id has to work. The first version compared strings exactly, which
+// made --based-on fail as a permanent conflict against the only value a user
+// has ever seen — and a control that always refuses looks broken rather than
+// strict.
+func TestAShortenedCommitIDIsAcceptedAsABase(t *testing.T) {
+	s := newStore(t)
+	full, err := SaveDraft(s, map[string]any{"index": page("Home")}, "first", "dana")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SaveDraftFrom(s, map[string]any{"index": page("Edited")},
+		"second", "dana", full[:12]); err != nil {
+		t.Fatalf("a twelve-character base was refused: %v", err)
+	}
+}
+
+// A prefix short enough to collide must not match. A base that matches the
+// wrong commit is worse than one that matches none.
+func TestATooShortPrefixIsNotAMatch(t *testing.T) {
+	if sameCommit("abc", "abcdef0123456789") {
+		t.Error("a three-character prefix matched")
+	}
+	if !sameCommit("abcdef01", "abcdef0123456789") {
+		t.Error("an eight-character prefix did not match")
+	}
+	if sameCommit("abcdef01", "abcdef99999999") {
+		t.Error("a non-matching prefix matched")
+	}
+	if !sameCommit("abc", "abc") {
+		t.Error("identical short values did not match")
+	}
+}
+
+// The overlap report has to be right, because it is the one that tells somebody
+// whether they can retry safely. The first version diffed against the short
+// prefix the user typed, which cannot be loaded as an object — so the diff
+// failed silently and every collision was reported as "nothing you changed was
+// touched". That is the opposite of the truth and the most dangerous thing this
+// message could say.
+func TestOverlapIsReportedCorrectlyWhenTheBaseIsShortened(t *testing.T) {
+	s := newStore(t)
+	base, _ := SaveDraft(s, map[string]any{
+		"index": page("Home"), "about": page("About")}, "first", "dana")
+
+	if _, err := SaveDraftFrom(s, map[string]any{
+		"index": page("Home, by Dana"), "about": page("About")},
+		"dana edits index", "dana", base[:12]); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sam edits the same page from the same shortened base.
+	_, err := SaveDraftFrom(s, map[string]any{
+		"index": page("Home, by Sam"), "about": page("About")},
+		"sam edits index", "sam", base[:12])
+
+	var c *Conflict
+	if !errors.As(err, &c) {
+		t.Fatalf("expected a conflict, got %v", err)
+	}
+	if both := c.Touches([]string{"index"}); len(both) != 1 {
+		t.Errorf("editing the same page was reported as not colliding: "+
+			"conflict pages %v", c.Pages)
+	}
+	if len(c.Pages) == 0 {
+		t.Error("the conflict reports no changed pages at all, which means the " +
+			"diff failed and the message will claim a retry is safe")
+	}
+}

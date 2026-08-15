@@ -60,6 +60,10 @@ func cmdAssist(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Captured before the model is asked, not after. The gap between reading
+	// and writing is however long the model takes to think, which is the whole
+	// window this is protecting.
+	base := s.GetRef(site.RefDraft)
 	current, err := site.PagesAt(s, site.RefDraft)
 	if err != nil {
 		current = map[string]any{}
@@ -147,10 +151,13 @@ func cmdAssist(root string, args []string) error {
 		return err
 	}
 
-	cid, err := site.SaveDraft(s, merged,
-		fmt.Sprintf("assist: %s", truncate(instruction, 60)), *author)
+	// The draft this proposal was computed against. An assistant that read the
+	// draft, thought for twenty seconds and wrote back is the most likely
+	// concurrent writer in the system, and the least likely to notice.
+	cid, err := site.SaveDraftFrom(s, merged,
+		fmt.Sprintf("assist: %s", truncate(instruction, 60)), *author, base)
 	if err != nil {
-		return err
+		return conflictError(err, names)
 	}
 	if err := types.Save(); err != nil {
 		return err

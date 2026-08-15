@@ -166,6 +166,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			return nil, &mcp.Refusal{Reason: "no fields given; nothing to write"}
 		}
 
+		base := s.GetRef(site.RefDraft)
 		pages, err := site.PagesAt(s, site.RefDraft)
 		if err != nil {
 			pages = map[string]any{}
@@ -189,9 +190,13 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 
-		cid, err := site.SaveDraft(s, pages, "mcp: write "+name, caller.Name)
+		cid, err := site.SaveDraftFrom(s, pages, "mcp: write "+name,
+			caller.Name, base)
 		if err != nil {
-			return nil, err
+			// A refusal, not a failure. An agent that reads "conflict" as "the
+			// server broke" will retry, and retrying a conflict against the
+			// same stale base fails identically forever.
+			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 
 		// Marked without being asked. An agent is a model, and a model writing

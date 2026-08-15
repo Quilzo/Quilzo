@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/rsh1k/scrivet/internal/a11y"
 	"github.com/rsh1k/scrivet/internal/audit"
@@ -86,6 +87,12 @@ content types
   scrivet type list | show NAME             what exists, and its address
   scrivet type bind PAGE TYPE               the page must satisfy the type
   scrivet type check                        validate every bound page
+
+working together
+  scrivet lock PAGE [--note "..."]          advisory claim, expires in 30 min
+  scrivet lock list | release PAGE          who is working on what
+  scrivet review status                     who has agreed to the current draft
+  scrivet review approve [--note "..."]     agree to it; authors cannot
 
 publishing
   scrivet publish [COMMIT]                  move live to the draft
@@ -199,6 +206,10 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "lock", "locks":
+		err = cmdLock(root, cmdArgs)
+	case "review":
+		err = cmdReview(root, cmdArgs)
 	case "export":
 		err = cmdExport(root, cmdArgs)
 	case "siem":
@@ -308,10 +319,15 @@ func cmdInit(root string) error {
 func cmdAdd(root string, args []string) error {
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	msg := fs.String("m", "edit", "commit message")
-	author := fs.String("author", "cli", "author")
+	// Empty by default, filled from the resolved caller below. The literal
+	// "cli" was recorded as the author of every commit, which made a conflict
+	// report that "cli" had changed the draft — true and useless.
+	author := fs.String("author", "", "author; defaults to the caller")
 	remove := fs.String("remove", "", "comma-separated page names to drop")
+	basedOn := fs.String("based-on", "",
+		"the draft commit this edit was made against; refuses if it has moved")
 	if err := fs.Parse(reorder(args, map[string]bool{
-		"m": true, "author": true, "remove": true})); err != nil {
+		"m": true, "author": true, "remove": true, "based-on": true})); err != nil {
 		return err
 	}
 
@@ -360,9 +376,13 @@ func cmdAdd(root string, args []string) error {
 		return err
 	}
 
-	cid, err := site.SaveDraft(s, pages, *msg, *author)
+	who := *author
+	if who == "" {
+		who = resolveCaller(root, "").Name
+	}
+	cid, err := site.SaveDraftFrom(s, pages, *msg, who, *basedOn)
 	if err != nil {
-		return err
+		return conflictError(err, changedNames(fs.Args()))
 	}
 	// The validation record is written after the content, so a crash between
 	// the two leaves a page with no record rather than a record for a page that
@@ -496,6 +516,34 @@ func cmdPublish(root string, args []string) error {
 			}
 			fmt.Printf("  %soverriding %d blocking failure(s): %s%s\n",
 				yellow, n, *reason, reset)
+		}
+	}
+
+	// Dual authorization, last of the gates, because it is the one about people
+	// rather than about content. A change that fails the accessibility or
+	// provenance checks should be told that first — asking two colleagues to
+	// approve something the tool is going to refuse anyway wastes their time
+	// and teaches them the approval is a formality.
+	if pol, perr := loadApprovalPolicy(root); perr == nil {
+		if pol.Required > 0 || pol.RequireHumanForAI {
+			prop, _, cerr := currentProposal(root, s)
+			if cerr == nil {
+				d := pol.Evaluate(*prop, kindOfPrincipal(root), time.Now())
+				if !d.Allowed {
+					record(root, caller.auditRecord("publish", "/", audit.Denied,
+						map[string]string{
+							"reason":     "dual-authorization",
+							"have":       fmt.Sprintf("%d", d.Have),
+							"need":       fmt.Sprintf("%d", d.Need),
+							"content":    prop.Content,
+							"author":     prop.Author,
+							"authorkind": prop.AuthorKind,
+						}))
+					return errBlocked{fmt.Errorf("%s\n  scrivet review status",
+						d.Reason)}
+				}
+				fmt.Printf("  %s%s%s\n", green, d.Reason, reset)
+			}
 		}
 	}
 

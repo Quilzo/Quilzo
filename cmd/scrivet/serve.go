@@ -10,6 +10,7 @@ import (
 
 	"github.com/rsh1k/scrivet/internal/admin"
 	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/rsh1k/scrivet/internal/collab"
 	"github.com/rsh1k/scrivet/internal/posture"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/schema"
@@ -96,6 +97,13 @@ func cmdServe(root string, args []string) error {
 		sup, _ := loadSuppressions(root)
 		return posture.Scan(state, sup)
 	}
+	// Locks live on disk so two server processes, or a server and the CLI, see
+	// the same claims. Re-read per request rather than held in memory for the
+	// same reason tokens are: a claim made in another process has to be visible
+	// in this one or the courtesy is only a courtesy to whoever restarted last.
+	srv.Locks = func() (*collab.Locks, error) { return loadLocks(root) }
+	srv.SaveLocks = func(l *collab.Locks) error { return saveJSON(locksPath(root), l) }
+
 	srv.Reload = func() (*auth.Policy, *auth.TokenStore, error) {
 		pol, err := loadPolicy(root)
 		if err != nil {

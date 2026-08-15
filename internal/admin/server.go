@@ -50,6 +50,7 @@ package admin
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -61,6 +62,7 @@ import (
 
 	"github.com/rsh1k/scrivet/internal/a11y"
 	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/rsh1k/scrivet/internal/collab"
 	"github.com/rsh1k/scrivet/internal/posture"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/schema"
@@ -93,6 +95,12 @@ type Server struct {
 	// TypeFor names the type a page must satisfy, so the editor can render the
 	// declared fields rather than whatever keys the page happens to have.
 	TypeFor func(page string) (schema.Type, bool)
+
+	// Locks are advisory claims on pages, so two people do not each spend an
+	// afternoon on the same one. They never prevent a write — compare-and-swap
+	// does that — and they expire on their own.
+	Locks     func() (*collab.Locks, error)
+	SaveLocks func(*collab.Locks) error
 
 	// Posture runs the continuous misconfiguration scan. Nil means the host did
 	// not wire it, and the dashboard says so rather than rendering an empty
@@ -231,6 +239,24 @@ func (s *Server) renderTypeFailures(w http.ResponseWriter, p principal,
 		"Heading":  "This does not match its content type",
 		"Page":     page,
 		"Failures": failures,
+	})
+}
+
+// renderConflict explains a refused save.
+//
+// 409 rather than 500: nothing failed. Somebody else got there first, which is
+// a normal outcome of two people working, and a 500 would send an operator
+// looking at logs for a problem that is not there.
+func (s *Server) renderConflict(w http.ResponseWriter, p principal, page string,
+	c *site.Conflict) {
+
+	w.WriteHeader(http.StatusConflict)
+	s.render(w, "conflict.html", map[string]any{
+		"Nav": "pages", "Title": "Not saved", "Principal": p,
+		"Page": page, "Conflict": c,
+		// Whether the other change touched this page decides whether the
+		// person has to merge anything or can simply save again.
+		"Collides": len(c.Touches([]string{page})) > 0,
 	})
 }
 
@@ -471,8 +497,24 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The commit this form was rendered from. It travels back with the save so
+	// a change made in another tab, by another person, in the meantime is
+	// refused rather than silently overwritten.
+	base := s.Store.GetRef(site.RefDraft)
+
 	pages, _ := site.PagesAt(s.Store, site.RefDraft)
 	body, exists := pages[name]
+
+	// Claim the page, advisorily. Somebody else holding it does not stop this
+	// edit; it is shown so the two of them can talk before one loses work.
+	var heldBy *collab.Lock
+	if s.Locks != nil && s.SaveLocks != nil {
+		if locks, err := s.Locks(); err == nil {
+			_, existing := locks.Claim(name, p.Name, "", time.Now())
+			heldBy = existing
+			_ = s.SaveLocks(locks)
+		}
+	}
 
 	// A page with a type gets an editor built from the declaration: the right
 	// control for each field, the author's own labels, and the fields that are
@@ -497,6 +539,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		"Nav":   "pages",
 		"Title": "Edit " + name, "Principal": p, "Name": name,
 		"Fields": fields, "Exists": exists, "Type": typeName,
+		"Base": base, "HeldBy": heldBy,
 		"CanEdit": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,
 	})
 }
@@ -883,9 +926,25 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if _, err := site.SaveDraft(s.Store, pages, msg, p.Name); err != nil {
+	if _, err := site.SaveDraftFrom(s.Store, pages, msg, p.Name,
+		r.FormValue("__base")); err != nil {
+
+		var c *site.Conflict
+		if errors.As(err, &c) {
+			s.renderConflict(w, p, name, c)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// The claim is released on save. Holding it after the work is done is how
+	// a lock outlives its purpose.
+	if s.Locks != nil && s.SaveLocks != nil {
+		if locks, err := s.Locks(); err == nil {
+			locks.Release(name, p.Name, time.Now())
+			_ = s.SaveLocks(locks)
+		}
 	}
 	// Redirect after post so a refresh does not re-submit, and so the browser's
 	// back button behaves the way the person expects.

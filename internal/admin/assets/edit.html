@@ -1,11 +1,20 @@
 {{template "head" .}}
 <h1>Edit {{.Name}}</h1>
 {{if .Type}}<p class="help">This page is a <strong>{{.Type}}</strong>. The fields below are the ones that type declares; a save that does not satisfy it is refused.</p>{{end}}
+{{with .HeldBy}}
+<div class="notice warn">
+  <p><strong>{{.Holder}}</strong> opened this page for editing recently{{if .Note}} — {{.Note}}{{end}}.</p>
+  <p class="help">You can still edit it. This is a courtesy, not a lock: if you
+  both save, the second one is refused rather than overwriting the first, and
+  nothing here can expire into a stale claim nobody can clear.</p>
+</div>
+{{end}}
 <p><a href="/preview/{{.Name}}">Preview this page</a> — opens the real page, rendered by your browser.</p>
 
 {{if .CanEdit}}
 <form method="post" action="/save">
   <input type="hidden" name="__name" value="{{.Name}}">
+  <input type="hidden" name="__base" value="{{.Base}}">
   {{if .Type}}<input type="hidden" name="__type" value="{{.Type}}">{{end}}
   {{range .Fields}}
   <div class="field">

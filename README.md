@@ -896,6 +896,24 @@ the numeric threshold to zero does not disable that, and there's a test for it,
 because "Required: 0" would otherwise be a way to let a model publish
 unreviewed.
 
+### Wired to every write, and a test that says so
+
+`SaveDraftFrom` is called by `add`, `assist`, `import`, the MCP write operation
+and the admin save handler. That isn't a convention — a second source-walking
+test finds every function calling either form and fails if one still uses the
+unchecked `SaveDraft`. An empty base is allowed, because a single writer has
+nothing to collide with; the point is that the call site had to decide.
+
+```
+$ scrivet review require 2
+publishing now needs 2 approval(s)
+  and a human on anything a model wrote
+  an author can never approve their own change
+
+$ scrivet review approve            # as dana, who wrote it
+dana wrote this change and cannot approve it
+```
+
 ### Locks are the smaller half, and they say so
 
 The received design is a checkout lock. It scales badly and leaves stale locks
@@ -933,9 +951,10 @@ continuous posture scanner with its dashboard, the Material 3 Expressive
 interface, four ready-made templates, import from WordPress/Markdown/JSON,
 validated uploads with an SSRF-hardened URL fetcher, sitemap/redirect
 generation, export to Markdown/WXR/JSON, audit-log export to OCSF/CEF/JSONL
-with an integrity envelope, and concurrent editing with dual authorization.
+with an integrity envelope, and concurrent editing with dual authorization
+enforced on every write surface.
 
-397 tests. The ones worth reading are the negative ones: every SSTI payload I
+401 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

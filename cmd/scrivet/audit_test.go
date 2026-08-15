@@ -75,6 +75,47 @@ func TestEveryAuditRecordLiteralIsValid(t *testing.T) {
 				}
 			}
 
+			// Detail keys are checked against the same list the audit package
+			// refuses on. A record with a forbidden key is dropped at runtime
+			// with one line of stderr, which is how `review.approve` -- the
+			// record AC-3(2) exists to produce -- was silently not being
+			// written because its key was called "content" and held a hash.
+			for _, elt := range lit.Elts {
+				kv, ok := elt.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				k, ok := kv.Key.(*ast.Ident)
+				if !ok || k.Name != "Detail" {
+					continue
+				}
+				detail, ok := kv.Value.(*ast.CompositeLit)
+				if !ok {
+					continue
+				}
+				for _, d := range detail.Elts {
+					dkv, ok := d.(*ast.KeyValueExpr)
+					if !ok {
+						continue
+					}
+					lit, ok := dkv.Key.(*ast.BasicLit)
+					if !ok {
+						continue
+					}
+					name := strings.ToLower(strings.Trim(lit.Value, `"`))
+					for _, bad := range []string{
+						"token", "secret", "password", "key", "body", "content",
+					} {
+						if strings.Contains(name, bad) {
+							t.Errorf("%s: Detail key %q contains %q, which the "+
+								"audit package refuses. This record is dropped "+
+								"at runtime with one line of stderr.",
+								where, name, bad)
+						}
+					}
+				}
+			}
+
 			// A service principal is only a service because a credential proved
 			// it, so the two cannot be stated separately.
 			if strings.Contains(keys["Kind"], "KindService") {
