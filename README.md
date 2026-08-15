@@ -1304,6 +1304,50 @@ entry 3 is in a log of 6
 | **Inclusion** | this exact entry is in the log with head H, in ~20 hashes for a million entries |
 | **Consistency** | the log with head H2 is an append-only extension of H1 — nothing before H1 changed, moved or vanished |
 
+### The log writer runs as somebody else
+
+```
+$ scrivet logd status
+no log writer
+  this process writes the audit log itself, so anything that can execute
+  code as this account can rewrite the record of what it did
+```
+
+Without separation, the process that publishes content is the process that
+writes the record of it — so a template bug, a dependency, or a mistake in this
+program is enough to rewrite history. `scrivet logd` runs as its own account,
+owns the log file, and accepts submissions over a unix socket. The CMS never
+holds a descriptor that could seek, truncate or reorder.
+
+**The writer computes the chain.** A client sends what happened; it does not
+send a sequence number, a previous hash, or an entry hash. That is not
+validation — the submission type has nowhere to put them. A forged submission
+claiming `seq: 9999` and a chosen hash lands as the next sequence with a
+writer-computed hash, and the demo does exactly that.
+
+**There is no fallback.** If the writer is configured and unreachable, the
+record is not written and the tool says so in red:
+
+```
+audit record NOT written: connect: connection refused
+  the log writer is configured and unreachable. This action is not in
+  the record.
+```
+
+Falling back to writing the file directly would mean anybody who can stop the
+writer regains the ability to edit the log — and where separation is properly
+configured the fallback would fail anyway, because the CMS account cannot open
+the file.
+
+The peer's uid comes from `SO_PEERCRED`, asked of the kernel rather than of the
+client: a uid a client tells you is a claim, one the kernel returns is a fact.
+`logd` refuses to run as root — it needs to append to one file and bind one
+socket, and root buys it nothing.
+
+This does not stop root, and nothing running on the machine can. It moves the
+requirement from *code execution as the web application* to *root*, which is a
+large gap in practice. What makes root's rewrite undeniable is the layer below.
+
 ### Publishing the head is the mechanism
 
 A head kept beside the log protects nothing: whoever can rewrite one can rewrite
@@ -1349,9 +1393,10 @@ with an integrity envelope, concurrent editing with dual authorization enforced
 on every write surface, envelope encryption at rest, OIDC sign-in wired through
 the admin, Bitcoin anchoring via OpenTimestamps, and multilingual sites with
 exact translation staleness, scheduled publishing, and an RFC 6962
-transparency log with inclusion and consistency proofs.
+transparency log with inclusion and consistency proofs written by a
+privilege-separated writer.
 
-526 tests. The ones worth reading are the negative ones: every SSTI payload I
+536 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

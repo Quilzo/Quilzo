@@ -682,6 +682,41 @@ var rules = []Rule{
 	},
 
 	{
+		ID:       "audit.writer-not-separated",
+		Title:    "The CMS writes its own audit log",
+		Severity: Medium,
+		Controls: []string{"AU-9", "AU-9(4)", "AC-5"},
+		OWASP:    "A09:2025 Logging and Alerting Failures",
+		Why: "When the process that publishes content is the process that " +
+			"writes the record of it, anything that can execute code as the CMS " +
+			"can rewrite what it did — a template bug, a dependency, a mistake " +
+			"in this program. A separate writer moves that requirement to root. " +
+			"It does not stop root, and nothing running on the machine can; what " +
+			"stops root's rewrite being deniable is a published tree head.",
+		Check: func(s State) []Finding {
+			state, supplied := s.Extra["log_writer"]
+			if !supplied {
+				return nil
+			}
+			switch state {
+			case "separated":
+				return nil
+			case "unreachable":
+				return []Finding{{
+					Severity: High,
+					Detail: "a log writer is configured and not answering, so " +
+						"actions are being taken and not recorded",
+					Fix: "start it: scrivet logd",
+				}}
+			}
+			return []Finding{{
+				Detail: "the CMS opens the audit log directly, so code " +
+					"execution as this account is enough to rewrite it",
+				Fix: "run `scrivet logd` as an account that owns the log file",
+			}}
+		},
+	},
+	{
 		ID:       "audit.no-published-head",
 		Title:    "The audit log has never been committed to anywhere else",
 		Severity: High,

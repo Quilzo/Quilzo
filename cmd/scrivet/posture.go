@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/rsh1k/scrivet/internal/logd"
 	"os"
 	"path/filepath"
 	"sort"
@@ -54,6 +55,21 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 		}
 		if n := len(heads.Heads); n > 0 {
 			s.Extra["published_head_size"] = fmt.Sprintf("%d", heads.Heads[n-1].Size)
+		}
+
+		// Whether the log writer is separated, and whether it is answering.
+		// Reported as three states rather than a boolean, because "configured
+		// and not answering" is worse than "not configured" and collapsing them
+		// would hide the worse one.
+		switch sock := logSocketPath(root); {
+		case !fileExists(sock):
+			s.Extra["log_writer"] = "none"
+		default:
+			if ok, _ := logd.CheckOwnership(auditPath(root), os.Geteuid()); ok {
+				s.Extra["log_writer"] = "separated"
+			} else {
+				s.Extra["log_writer"] = "same-account"
+			}
 		}
 	}
 

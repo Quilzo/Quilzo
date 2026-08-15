@@ -138,6 +138,8 @@ interface
   scrivet audit [DIR]                       templates that disable escaping
 
 log transparency
+  scrivet logd                              the log writer, run as its own account
+  scrivet logd status                       whether the separation is in force
   scrivet auditlog head --save              a commitment to every entry so far
   scrivet auditlog prove SEQ                one entry is in the log, in ~20 hashes
   scrivet auditlog consistency              nothing before a published head moved
@@ -227,6 +229,12 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "logd":
+		if len(cmdArgs) > 0 && cmdArgs[0] == "status" {
+			err = cmdLogdStatus(root)
+		} else {
+			err = cmdLogd(root, cmdArgs)
+		}
 	case "schedule":
 		err = cmdSchedule(root, cmdArgs)
 	case "lang", "locales":

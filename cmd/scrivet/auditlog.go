@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/rsh1k/scrivet/internal/anchor"
 	"github.com/rsh1k/scrivet/internal/fetch"
+	"github.com/rsh1k/scrivet/internal/logd"
 	"os"
 	"path/filepath"
 	"time"
@@ -57,6 +58,30 @@ func openAudit(root string) (*audit.Log, error) {
 // for an accountability one. Reporting loudly and continuing is the choice, and
 // `scrivet auditlog verify` is what catches a gap afterwards.
 func record(root string, r audit.Record) {
+	// A separate writer, if one is running. Its presence is the configuration:
+	// the socket existing means somebody set this up, and going around it would
+	// make the separation optional at exactly the moment it matters.
+	if sock := logSocketPath(root); fileExists(sock) {
+		_, err := logd.Submit(sock, logd.Submission{
+			Action: r.Action, Resource: r.Resource, Outcome: string(r.Outcome),
+			Principal: r.Principal, Kind: string(r.Kind), Model: r.Model,
+			Verified: r.Verified, Detail: r.Detail,
+		})
+		if err != nil {
+			// Deliberately no fallback to writing the file directly. Falling
+			// back would mean anybody who can stop the writer regains the
+			// ability to edit the log, which is the whole thing this prevents —
+			// and where the separation is properly configured the fallback
+			// would fail anyway, because this account cannot open the file.
+			fmt.Fprintf(os.Stderr,
+				"%saudit record NOT written: %v%s\n"+
+					"  %sthe log writer is configured and unreachable. This "+
+					"action is not in the record.%s\n",
+				red, err, reset, red, reset)
+		}
+		return
+	}
+
 	l, err := openAudit(root)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%saudit log unavailable: %v%s\n", red, err, reset)
@@ -65,6 +90,11 @@ func record(root string, r audit.Record) {
 	if _, err := l.Append(r); err != nil {
 		fmt.Fprintf(os.Stderr, "%saudit record refused: %v%s\n", red, err, reset)
 	}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func cmdAuditLog(root string, args []string) error {
