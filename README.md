@@ -1098,6 +1098,71 @@ rather than a person who cannot log in and no information about why. Starting
 with a provider configured and no client secret is refused outright, rather than
 offering a sign-in button that cannot work.
 
+## Anchoring a publication to Bitcoin
+
+```
+$ scrivet anchor submit
+submitting 869d2ad9de3a
+  accepted  https://alice.btc.calendar.opentimestamps.org
+  accepted  https://bob.btc.calendar.opentimestamps.org
+  accepted  https://finney.calendar.eternitywall.com
+
+  these are pending, which is not anchored. A calendar batches many
+  hashes into one Bitcoin commitment, which takes hours.
+```
+
+A timestamp from an authority proves when something existed, and the proof rests
+on that authority's certificate — when it expires the token needs re-stamping,
+and if the authority folds every token it issued lands in a legal grey area. An
+anchor has the opposite shape: no authority to expire, so the proof does not
+decay.
+
+Until recently it also had no standing anywhere, which is why this project
+shipped RFC 3161 first and left anchoring as a documented seam. That changed.
+**eIDAS 2 (Regulation (EU) 2024/1183)** introduces qualified electronic ledgers
+carrying a presumption of uniqueness, authenticity, accurate date and time and
+sequential ordering, with implementing acts through 2026. Italy's Law 12/2019,
+Vermont and Arizona already give blockchain records legal effect. The layered
+answer — a signed token for the lawyer, an anchor for the decade — is now better
+on both sides.
+
+### One hash, and why nothing else can go on a ledger
+
+What is anchored is the live commit id: a single SHA-256 over the entire
+publication. Not a page, not a field, not anything about a person.
+
+That is not a preference. The **EDPB's guidelines on blockchain and personal
+data** (02/2025 v2.0, adopted July 2026) recommend against registering clear
+text, encrypted **or hashed** personal data on a ledger, because it is immutable
+and Article 17 erasure has to remain possible. The pattern they endorse instead
+is exactly this one: keep the data off-chain, put only a commitment on it, so
+deleting the data renders the on-chain record unlinkable.
+
+A root over a whole site satisfies that. Delete the content and the anchor still
+proves a site existed on a date, and proves nothing about who was in it.
+Publishing content itself to a permanent store — Arweave's pay-once model most
+obviously — is the case the guidelines rule out, and this does not offer it.
+
+### Pending is not anchored, and the code refuses to blur them
+
+A calendar returns a proof immediately, and that proof commits to nothing yet.
+State is derived from the attestations inside the proof, never from how long ago
+it was submitted — a proof submitted a year ago that nobody upgraded is still
+pending, and calling it anchored because time has passed would be a claim about
+Bitcoin made by looking at a clock.
+
+The operation chain is walked and the commitment recomputed, so a proof that
+does not derive from the digest it claims is rejected. Whether a Bitcoin
+attestation names a real block containing that root needs block headers, which
+this does not have — that is delegated to the `ots` client, the same call made
+for RFC 3161 verification. A verifier that is subtly wrong is worse than none,
+because its output is believed.
+
+Operations outside append, prepend and SHA-256 stop the walk rather than being
+skipped. Skipping one carries a value forward that is not what the proof
+describes, and every attestation after it would then be checked against the
+wrong number while appearing to succeed.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
@@ -1109,10 +1174,10 @@ interface, four ready-made templates, import from WordPress/Markdown/JSON,
 validated uploads with an SSRF-hardened URL fetcher, sitemap/redirect
 generation, export to Markdown/WXR/JSON, audit-log export to OCSF/CEF/JSONL
 with an integrity envelope, concurrent editing with dual authorization enforced
-on every write surface, envelope encryption at rest, and OIDC sign-in wired
-through the admin.
+on every write surface, envelope encryption at rest, OIDC sign-in wired through
+the admin, and Bitcoin anchoring via OpenTimestamps.
 
-463 tests. The ones worth reading are the negative ones: every SSTI payload I
+477 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

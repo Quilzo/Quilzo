@@ -41,6 +41,7 @@
 package fetch
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -423,4 +424,56 @@ func (c *Client) PostForm(ctx context.Context, raw string, form url.Values,
 		ContentType: resp.Header.Get("Content-Type"),
 		Body:        body,
 	}, nil
+}
+
+// Post sends raw bytes, with the same connect-time address validation as Get.
+//
+// A third method rather than options on the others, and all three build their
+// client from one constructor — so the check cannot be missed by adding a
+// method, which is the way a defence like this normally gets a hole.
+func (c *Client) Post(ctx context.Context, raw string, body []byte,
+	contentType string) (*Result, error) {
+
+	lim := c.Limits.withDefaults()
+	u, err := ValidateURL(raw)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, lim.Timeout)
+	defer cancel()
+
+	client, err := c.httpClient(lim)
+	if err != nil {
+		return nil, err
+	}
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(),
+		bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	req.Header.Set("User-Agent", c.UserAgent)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, unwrapDialError(err)
+	}
+	defer resp.Body.Close()
+
+	out, err := io.ReadAll(io.LimitReader(resp.Body, lim.MaxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s returned %d: %s", u, resp.StatusCode,
+			strings.TrimSpace(string(out[:min(len(out), 200)])))
+	}
+	return &Result{URL: raw, FinalURL: u.String(), Body: out,
+		ContentType: resp.Header.Get("Content-Type")}, nil
 }

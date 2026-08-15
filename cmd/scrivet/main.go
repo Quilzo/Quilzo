@@ -214,6 +214,8 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "anchor":
+		err = cmdAnchor(root, cmdArgs)
 	case "oidc":
 		err = cmdOIDC(root, cmdArgs)
 	case "vault":
