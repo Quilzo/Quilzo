@@ -155,6 +155,9 @@ interface
       --base-url https://example.com        needed for /sitemap.xml
       --redirects redirects.json            keep old URLs working after a move
   scrivet audit [DIR]                       templates that disable escaping
+  scrivet scan [--fail-on SEV]              XSS, injection and leaked secrets
+  scrivet scan --rules                      what is checked, and why
+  scrivet csp                               the policy your content implies
 
 log transparency
   scrivet logd                              the log writer, run as its own account
@@ -316,6 +319,10 @@ func main() {
 		err = cmdToken(root, cmdArgs)
 	case "a11y":
 		err = cmdA11y(root, cmdArgs)
+	case "scan":
+		err = cmdScan(root, cmdArgs)
+	case "csp":
+		err = cmdCSP(root, cmdArgs)
 	case "config":
 		err = cmdConfig(root, cmdArgs)
 	case "verify":

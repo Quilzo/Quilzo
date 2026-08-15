@@ -56,6 +56,16 @@ type Site struct {
 	Description string
 	// LoadProvenance supplies the marks injected into each page.
 	LoadProvenance func() (*provenance.Index, error)
+	// CSP returns the header name to send and whether to send one, and
+	// CSPValue returns its value. Two functions rather than a struct so this
+	// package does not import the csp package, which would make the dependency
+	// point the wrong way: the policy is built from content, and this is what
+	// serves content.
+	CSP      func() (string, bool)
+	CSPValue func() string
+	// HSTS is Strict-Transport-Security's max-age. Zero sends no header.
+	HSTS time.Duration
+
 	// Index is the page served at "/".
 	Index string
 	// Search is the index over what is published. Nil means the route 404s,
@@ -105,7 +115,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/robots.txt", st.robots)
 	mux.HandleFunc("/llms.txt", st.llms)
 	mux.HandleFunc("/", st.page)
-	return securityHeaders(mux)
+	return st.securityHeaders(mux)
 }
 
 // stylesheet serves the site's CSS.
@@ -352,18 +362,51 @@ func (st *Site) searchAPI(w http.ResponseWriter, r *http.Request) {
 // worker needs to be loadable, and published pages may carry images. Everything
 // executable stays forbidden, which costs nothing because the template language
 // cannot produce script in the first place.
-func securityHeaders(next http.Handler) http.Handler {
+func (st *Site) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy",
-			"default-src 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; "+
-				"script-src 'self'; manifest-src 'self'; connect-src 'self'; "+
-				"frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+
+		// The generated policy when there is one, and the old fixed policy
+		// otherwise.
+		//
+		// The fixed one contained `img-src 'self' data: https:`, and that last
+		// token permits images from every host that speaks TLS — which is
+		// every host. It is what a hand-written policy decays into: widened
+		// once so a page would render, never narrowed again, because narrowing
+		// means knowing what the content references and nobody does. The
+		// generator does: it reads the URLs out of the content and names the
+		// hosts. The fallback is kept only for a server constructed without
+		// one, which is a test.
+		name, value := "Content-Security-Policy", defaultCSP
+		if st.CSP != nil {
+			if n, send := st.CSP(); send {
+				name, value = n, st.CSPValue()
+			} else {
+				name = ""
+			}
+		}
+		if name != "" {
+			h.Set(name, value)
+		}
+
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		if st.HSTS > 0 {
+			// Only when the operator has said this process is the edge. Set
+			// wrongly on a host that later needs plain HTTP, HSTS is not
+			// quickly undone — browsers remember it for the max-age whatever
+			// the server later says.
+			h.Set("Strict-Transport-Security",
+				fmt.Sprintf("max-age=%d", int(st.HSTS.Seconds())))
+		}
 		next.ServeHTTP(w, r)
 	})
 }
+
+// defaultCSP is what a Site with no generated policy serves.
+const defaultCSP = "default-src 'none'; img-src 'self' data:; " +
+	"style-src 'self' 'unsafe-inline'; script-src 'self'; manifest-src 'self'; " +
+	"connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
 // pages returns the live content and the tree that names each page's hash.
 func (st *Site) pages() (map[string]any, map[string]string, error) {

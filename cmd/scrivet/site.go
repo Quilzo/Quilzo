@@ -66,6 +66,29 @@ func cmdSite(root string, args []string) error {
 		st.Stylesheet = string(css)
 	}
 	st.BaseURL = strings.TrimSpace(*baseURL)
+
+	// The policy is generated once, at startup, from what is live — the same
+	// moment and the same content the search index is built from. Regenerating
+	// per request would read every page to set a header.
+	if cfg, cerr := loadConfig(root); cerr == nil {
+		st.HSTS = cfg.Dur("site.hsts")
+		if live := s.GetRef(site.RefLive); live != "" {
+			if pages, perr := site.PagesAt(s, live); perr == nil {
+				policy := buildCSP(cfg, pages)
+				value := policy.Build()
+				st.CSP = policy.Header
+				st.CSPValue = func() string { return value }
+				if n := len(policy.Sources.Img) + len(policy.Sources.Media) +
+					len(policy.Sources.Frame); n > 0 {
+					fmt.Fprintf(os.Stderr, "  %scsp: %s, %d external host(s) "+
+						"named%s\n", dim, policy.Mode, n, reset)
+				} else {
+					fmt.Fprintf(os.Stderr, "  %scsp: %s, nothing external%s\n",
+						dim, policy.Mode, reset)
+				}
+			}
+		}
+	}
 	// Set before anything reads it. It used to be assigned forty lines below
 	// the startup check that consults it, so --index was applied to the server
 	// and not to the warning: passing --index home still reported that / would

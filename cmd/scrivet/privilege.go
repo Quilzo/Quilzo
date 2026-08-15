@@ -55,6 +55,8 @@ var commandNeeds = map[string]need{
 	"siem":       {action: auth.ActView},
 	"a11y":       {action: auth.ActView},
 	"verify":     {action: auth.ActView},
+	"scan":       {action: auth.ActView},
+	"csp":        {action: auth.ActView},
 	"compliance": {action: auth.ActView},
 	"agents":     {action: auth.ActView},
 	"provenance": {action: auth.ActView},
