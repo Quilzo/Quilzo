@@ -101,6 +101,7 @@ working together
 
 publishing
   scrivet publish [COMMIT]                  move live to the draft
+  scrivet schedule add 48h | list | run     publish later; gates run at publish
   scrivet rollback [--steps N]              move live back along its history
   scrivet a11y [--ref REF]                  accessibility check, blocking publish
 
@@ -219,6 +220,8 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "schedule":
+		err = cmdSchedule(root, cmdArgs)
 	case "lang", "locales":
 		err = cmdLang(root, cmdArgs)
 	case "anchor":

@@ -1209,6 +1209,35 @@ The default language keeps its unprefixed paths. Prefixing everything would
 break every existing link on the day a site adds a second language, which is the
 moment people decide multilingual support is not worth it.
 
+## Scheduled publishing
+
+
+
+Publishing is a pointer move, so scheduling it is a note saying which commit and
+when. No staging area, no copy to keep in sync, no half-published state.
+
+**The gates run at publication, not at scheduling.** The usual failure is that
+checks run when somebody clicks the button: a page approved on Monday, edited on
+Tuesday and published by a timer on Wednesday goes out unapproved, and the audit
+trail says it was approved. Here scheduled publishing goes through the ordinary
+publish command, so accessibility, provenance, content types and dual
+authorization all run against the content as it stands then — and approvals are
+bound to a content hash, so an edit invalidates them by construction.
+
+**An entry names a commit, not "the draft".** If the draft moves, the entry is
+stale and is skipped rather than fired:
+
+
+
+"Publish whatever is current at nine on Friday" is a different and much worse
+instruction than the one somebody thought they were giving.
+
+Fired entries stay in the record with who scheduled them and why, because "what
+went out on Friday and who decided that" is the first question an audit asks.
+ is meant for cron or a systemd timer — it does not daemonise,
+since a scheduler that is also a long-lived process is a second thing that can
+be down.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
@@ -1222,9 +1251,9 @@ generation, export to Markdown/WXR/JSON, audit-log export to OCSF/CEF/JSONL
 with an integrity envelope, concurrent editing with dual authorization enforced
 on every write surface, envelope encryption at rest, OIDC sign-in wired through
 the admin, Bitcoin anchoring via OpenTimestamps, and multilingual sites with
-exact translation staleness.
+exact translation staleness, and scheduled publishing.
 
-494 tests. The ones worth reading are the negative ones: every SSTI payload I
+502 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every
