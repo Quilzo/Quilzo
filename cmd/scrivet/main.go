@@ -146,6 +146,8 @@ security posture
 interface
   scrivet serve [--addr HOST:PORT]          the admin, on loopback by default
   scrivet site  [--addr HOST:PORT]          the published site, PWA-installable
+      --api                                 content API at /api/v1, read-only
+      --api-writable                        allow PUT; every write needs If-Match
       --base-url https://example.com        needed for /sitemap.xml
       --redirects redirects.json            keep old URLs working after a move
   scrivet audit [DIR]                       templates that disable escaping

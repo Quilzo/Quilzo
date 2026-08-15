@@ -24,7 +24,14 @@ func TestEveryWriteSurfaceConsultsTheTypeGate(t *testing.T) {
 	// The known gate calls. The CLI and the MCP server call gateWrite directly;
 	// the admin server is a separate package and reaches the same schema.Store
 	// through the CheckTypes function field, wired in serve.go.
-	gates := []string{"gateWrite", "CheckTypes"}
+	// gateWrite and CheckTypes are wrappers; Gate is the underlying call on
+	// schema.Store. Recognising the underlying one as well makes this stronger
+	// rather than weaker — a surface that calls it directly is gated, and a
+	// surface that calls neither is not.
+	//
+	// The API was the fifth write surface this test found, which is what it is
+	// for.
+	gates := []string{"gateWrite", "CheckTypes", "Gate"}
 
 	roots := []string{"..", filepath.Join("..", "..", "internal")}
 	found := 0
@@ -81,8 +88,8 @@ func TestEveryWriteSurfaceConsultsTheTypeGate(t *testing.T) {
 	// add command, the assist command, the MCP write operation and the admin
 	// save handler. The assist path is the one this test found on its first
 	// run, which is the argument for having written it.
-	if found < 4 {
-		t.Fatalf("expected at least 4 write surfaces, found %d — this test has "+
+	if found < 5 {
+		t.Fatalf("expected at least 5 write surfaces, found %d — this test has "+
 			"stopped looking at anything", found)
 	}
 }
@@ -174,7 +181,7 @@ func TestEveryWriteSurfaceUsesCompareAndSwap(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if found < 4 {
+	if found < 5 {
 		t.Fatalf("only %d write surfaces found; this test has stopped looking",
 			found)
 	}

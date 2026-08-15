@@ -1582,6 +1582,72 @@ The release workflow refuses to ship two things:
 
 Artefacts are attested to the workflow run that produced them.
 
+## The content API
+
+```
+$ curl -H "Authorization: Bearer scv_..." /api/v1/pages/pricing
+  ETag: "696c17a4fab044e0…"
+
+$ curl -H 'If-None-Match: "696c17a4fab044e0…"' …   → 304
+$ curl -X PUT …                                     → 428  If-Match required
+$ curl -X PUT -H 'If-Match: "0000"' …               → 412  it has changed
+$ curl -X PUT -H 'If-Match: "696c…"' …              → 200
+```
+
+**REST, not GraphQL**, and the reason is structural rather than preference.
+GraphQL exists so a client can traverse a graph and choose fields. There is no
+graph here — content types are flat by design, with no nesting, references or
+recursion, because those are the three keywords that make schema validators
+exploitable.
+
+So GraphQL would be a query language for a shape that does not exist, arriving
+with an attack surface that must be closed one control at a time: introspection
+disclosing the schema, field suggestions disclosing it anyway once introspection
+is off, query depth turning one request into exponential work, aliasing
+multiplying an expensive field two hundred times inside one operation, and
+batching slipping past any rate limiter that counts HTTP requests. Each is a
+knob somebody has to set correctly forever. REST over a flat collection needs
+none of them: the cost of a request is bounded by its path.
+
+### The ETag is the content hash
+
+Everywhere else this is a heuristic — a modification time, a version column, a
+hash of the serialised response. Here the object id **is** the hash of the
+content, so `If-None-Match` answers exactly the question it appears to ask.
+There is no window where the content changed and the validator did not.
+
+The same identity does concurrency control. `If-Match` on a write is
+compare-and-swap, mapping onto the store's own mechanism rather than being a
+second one alongside it. A write without it is refused with **428**, because a
+blind write overwrites whatever is there now — including somebody else's edit
+made since the client read it.
+
+### What it deliberately does not offer
+
+**No cross-origin access.** A content API answering any origin is one where a
+page on any website can spend a visitor's token, and "it is only reads" stops
+being true the first time somebody enables writes. There is no wildcard switch,
+because the safe version is an allow-list of named origins and shipping the
+switch in the meantime is shipping the thing that gets set to `*`.
+
+**No filter expressions, sort parameters or field selection.** Those are a query
+language arriving through the back door, and the reasoning that removed regular
+expressions from content types applies unchanged.
+
+**Writes are off by default.** A read API and a write API are different products
+with different blast radii.
+
+**Live, never the draft.** An API answering with the draft hands anybody holding
+a read token the unpublished content.
+
+Other decisions with tests behind them: a page the caller cannot see is *omitted
+from a listing* rather than refusing it, since a listing that fails because one
+item is restricted tells the caller that item exists. An oversized `limit` is
+**refused rather than clamped**, because clamping quietly means a client asking
+for a thousand receives a hundred and believes it has everything. And the
+token's own role caps what it can do regardless of the policy, so a read-only
+token stays read-only when its owner is promoted.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
@@ -1598,9 +1664,9 @@ the admin, Bitcoin anchoring via OpenTimestamps, and multilingual sites with
 exact translation staleness, scheduled publishing, and an RFC 6962
 transparency log with inclusion and consistency proofs written by a
 privilege-separated writer, rogue-agent detection, signed webhooks, generated compliance evidence,
-and search.
+search, and a REST content API.
 
-583 tests. The ones worth reading are the negative ones: every SSTI payload I
+603 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

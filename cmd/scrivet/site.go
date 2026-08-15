@@ -9,8 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rsh1k/scrivet/internal/api"
+	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/public"
+	"github.com/rsh1k/scrivet/internal/schema"
 	"github.com/rsh1k/scrivet/internal/search"
 	"github.com/rsh1k/scrivet/internal/seo"
 	"github.com/rsh1k/scrivet/internal/site"
@@ -27,6 +30,10 @@ func cmdSite(root string, args []string) error {
 	fs := flag.NewFlagSet("site", flag.ContinueOnError)
 	addr := fs.String("addr", "127.0.0.1:8081", "listen address")
 	tplDir := fs.String("templates", "templates", "where page.html lives")
+	apiEnable := fs.Bool("api", false,
+		"serve the content API at /api/v1")
+	apiWritable := fs.Bool("api-writable", false,
+		"allow PUT; a read API and a write API are different products")
 	baseURL := fs.String("base-url", "",
 		"absolute origin, e.g. https://example.com — required for the sitemap")
 	redirectFile := fs.String("redirects", "",
@@ -105,9 +112,58 @@ func cmdSite(root string, args []string) error {
 	st.Description = *desc
 	st.LoadProvenance = func() (*provenance.Index, error) { return loadProvenance(root) }
 
+	handler := st.Handler()
+
+	// The API shares the listener but not the routing. Mounted here rather than
+	// inside the public site because it is a different product with different
+	// authentication, and interleaving them would mean one mistake in the
+	// public handler reaching authenticated endpoints.
+	if *apiEnable {
+		pol, perr := loadPolicy(root)
+		toks, terr := loadTokens(root)
+		if perr != nil || terr != nil {
+			return fmt.Errorf("the API needs an access policy and a token store")
+		}
+		apiSrv := &api.Server{
+			Store: s, Policy: pol, Tokens: toks,
+			Writable: *apiWritable,
+			Types:    func() (*schema.Store, error) { return schema.Load(root) },
+			OnWrite: func(principal, page, commit string) {
+				record(root, audit.Record{
+					Action: "api.write", Resource: "/" + page,
+					Outcome: audit.Success, Principal: principal,
+					// Verified: the caller presented a token that
+					// authenticated. This is the one place that word is fully
+					// earned outside a sign-in.
+					Kind: audit.KindService, Verified: true,
+					Detail: map[string]string{"commit": commit},
+				})
+			},
+		}
+		apiHandler := apiSrv.Handler()
+		public := handler
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				apiHandler.ServeHTTP(w, r)
+				return
+			}
+			public.ServeHTTP(w, r)
+		})
+
+		mode := "read-only"
+		if *apiWritable {
+			mode = "writable"
+		}
+		fmt.Fprintf(os.Stderr, "  %sapi: /api/v1, %s%s\n", dim, mode, reset)
+		if *apiWritable {
+			fmt.Fprintf(os.Stderr, "  %severy write needs If-Match, and goes "+
+				"through the same content-type gate as the CLI%s\n", dim, reset)
+		}
+	}
+
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           st.Handler(),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
