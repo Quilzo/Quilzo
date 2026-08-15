@@ -126,9 +126,18 @@ var commandNeeds = map[string]need{
 	"auditlog anchor":      {action: auth.ActView},
 
 	// -- changing what the public sees
-	"publish":  {action: auth.ActPublish},
-	"rollback": {action: auth.ActRollback},
-	"schedule": {action: auth.ActPublish},
+	"publish": {action: auth.ActPublish},
+	// Promotion changes what an environment serves, which for production is
+	// what the public sees. Configuring the set is an operator act.
+	"env":               {action: auth.ActGrant},
+	"environments":      {action: auth.ActGrant},
+	"env list":          {action: auth.ActView},
+	"env status":        {action: auth.ActView},
+	"env diff":          {action: auth.ActView},
+	"env promote":       {action: auth.ActPublish},
+	"environments list": {action: auth.ActView},
+	"rollback":          {action: auth.ActRollback},
+	"schedule":          {action: auth.ActPublish},
 
 	// -- changing who may do anything. Admin.
 	"auth":  {action: auth.ActGrant},

@@ -66,6 +66,11 @@ type Site struct {
 	// HSTS is Strict-Transport-Security's max-age. Zero sends no header.
 	HSTS time.Duration
 
+	// Ref is the store ref this site serves. Empty means the live ref, which
+	// is what every deployment used before environments existed — so a Site
+	// constructed without one behaves exactly as it always did.
+	Ref string
+
 	// Index is the page served at "/".
 	Index string
 	// Search is the index over what is published. Nil means the route 404s,
@@ -155,7 +160,7 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 			http.StatusNotFound)
 		return
 	}
-	live := st.Store.GetRef(site.RefLive)
+	live := st.Store.GetRef(st.ref())
 	if live == "" {
 		http.NotFound(w, r)
 		return
@@ -422,7 +427,7 @@ const defaultCSP = "default-src 'none'; img-src 'self' data:; " +
 
 // pages returns the live content and the tree that names each page's hash.
 func (st *Site) pages() (map[string]any, map[string]string, error) {
-	live := st.Store.GetRef(site.RefLive)
+	live := st.Store.GetRef(st.ref())
 	if live == "" {
 		return nil, nil, fmt.Errorf("nothing is published")
 	}
@@ -704,3 +709,11 @@ func (st *Site) Fingerprint() string {
 }
 
 var _ = time.Now // reserved for cache-age reporting
+
+// ref is the store ref this site serves.
+func (st *Site) ref() string {
+	if st.Ref == "" {
+		return site.RefLive
+	}
+	return st.Ref
+}

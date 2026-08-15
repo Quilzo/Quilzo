@@ -137,6 +137,8 @@ func authGrant(root string, args []string) error {
 	deny := fs.Bool("deny", false, "deny instead of grant; a deny always wins")
 	note := fs.String("note", "", "why this access exists")
 	by := fs.String("by", "cli", "who granted it")
+	ownOnly := fs.Bool("own-only", false,
+		"restrict to content this principal created — the contributor shape")
 	rest, flags := leadingArgs(args, 2)
 	if err := fs.Parse(flags); err != nil {
 		return err
@@ -151,7 +153,7 @@ func authGrant(root string, args []string) error {
 	}
 	b := auth.Binding{
 		Principal: rest[0], Role: auth.Role(rest[1]), Resource: *on,
-		Deny: *deny, GrantedBy: *by, Note: *note,
+		Deny: *deny, GrantedBy: *by, Note: *note, OwnOnly: *ownOnly,
 	}
 	if err := p.Grant(b); err != nil {
 		return err
@@ -181,6 +183,11 @@ func authGrant(root string, args []string) error {
 	})
 
 	fmt.Printf("%s %s to %s on %s\n", verb, rest[1], rest[0], *on)
+	if *ownOnly {
+		fmt.Printf("  %sonly on content %s created — reads are unrestricted, "+
+			"because a team\n  where people cannot see each other's drafts "+
+			"is not a team%s\n", dim, rest[0], reset)
+	}
 	// Show the consequence immediately. A grant whose effect you have to work
 	// out later is one nobody checks.
 	fmt.Printf("  %s%s can now: ", dim, rest[0])

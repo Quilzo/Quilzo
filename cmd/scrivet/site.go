@@ -43,6 +43,8 @@ func cmdSite(root string, args []string) error {
 		"a redirect map, as written by scrivet import")
 	name := fs.String("name", "", "site name, shown when installing")
 	desc := fs.String("description", "", "site description")
+	envName := fs.String("env", "",
+		"which environment to serve; production by default")
 	index := fs.String("index", "index",
 		"the page served at / — no need to rename yours")
 	if err := fs.Parse(args); err != nil {
@@ -111,7 +113,31 @@ func cmdSite(root string, args []string) error {
 	// answer one query.
 	var vecIndex *vector.Index
 
-	live := s.GetRef(site.RefLive)
+	// Which environment this server is serving. Production unless told
+	// otherwise, so a store that has never configured environments behaves
+	// exactly as it always did.
+	envSet, eerr := loadEnvs(root)
+	if eerr != nil {
+		return eerr
+	}
+	serving := envSet.Production()
+	if *envName != "" {
+		env, ok := envSet.Lookup(*envName)
+		if !ok {
+			return fmt.Errorf("there is no environment called %q", *envName)
+		}
+		serving = env
+	}
+	st.Ref = serving.Ref
+	if !serving.Production {
+		// Said loudly. A non-production environment served on a public
+		// address is content somebody believed was not published yet, and the
+		// mistake is silent otherwise.
+		fmt.Fprintf(os.Stderr, "  %sserving the %s environment, which is not "+
+			"production%s\n", yellow, serving.Name, reset)
+	}
+
+	live := s.GetRef(serving.Ref)
 	if live == "" {
 		fmt.Fprintf(os.Stderr, "  %s%snothing is published, so every page will "+
 			"404%s\n", yellow, "", reset)
@@ -266,7 +292,7 @@ func cmdSite(root string, args []string) error {
 	}
 
 	fmt.Printf("site on http://%s\n", *addr)
-	fmt.Printf("  %sserving the live ref; drafts are not public%s\n", dim, reset)
+	fmt.Printf("  %sserving the %s environment; drafts are not public%s\n", dim, serving.Name, reset)
 	fmt.Printf("  %sinstallable: /manifest.webmanifest · offline: /sw.js%s\n", dim, reset)
 	if fp := st.Fingerprint(); fp != "" {
 		fmt.Printf("  %spublished fingerprint %s%s\n", dim, fp, reset)

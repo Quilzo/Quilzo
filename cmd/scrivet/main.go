@@ -103,6 +103,10 @@ working together
   scrivet review approve [--note "..."]     agree to it; authors cannot
 
 publishing
+  scrivet env list                          what is where, and what is waiting
+  scrivet env add staging --before production
+  scrivet env promote staging production    a pointer move; the same bytes
+  scrivet env diff staging production       what would change
   scrivet publish [COMMIT]                  move live to the draft
   scrivet schedule add 48h | list | run     publish later; gates run at publish
   scrivet rollback [--steps N]              move live back along its history
@@ -322,6 +326,8 @@ func main() {
 		err = cmdToken(root, cmdArgs)
 	case "a11y":
 		err = cmdA11y(root, cmdArgs)
+	case "env", "environments":
+		err = cmdEnv(root, cmdArgs)
 	case "ext", "extensions":
 		err = cmdExt(root, cmdArgs)
 	case "scan":

@@ -184,3 +184,119 @@ func TestARefusalNamesTheDimensionThatCausedIt(t *testing.T) {
 		t.Errorf("an allowed call was explained as a refusal: %q", why)
 	}
 }
+
+// -- ownership, and why it is not a role --------------------------------------
+
+// Every CMS vocabulary has a contributor: somebody who writes drafts and
+// cannot publish. Mapping it onto a role ladder gets it wrong, because the
+// distinction is not *less power*. A contributor does exactly what an author
+// does; they do it to a smaller set of pages.
+//
+// So it is a constraint that composes with every role rather than a rung that
+// composes with none.
+func TestOwnOnlyComposesWithAnyRole(t *testing.T) {
+	for _, role := range []Role{RoleAuthor, RolePublisher, RoleAdmin} {
+		p := &Policy{}
+		if err := p.Grant(Binding{
+			Principal: "sam", Role: role, Resource: "/", OwnOnly: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		// Their own page: allowed, at whatever the role permits.
+		if d := p.EvaluateOwned("sam", ActEditDraft, "/mine", "sam"); !d.Allowed {
+			t.Errorf("%s own-only could not edit their own page: %s",
+				role, d.Reason)
+		}
+		// Somebody else's: refused, however senior.
+		if d := p.EvaluateOwned("sam", ActEditDraft, "/theirs", "dana"); d.Allowed {
+			t.Errorf("%s own-only edited a page created by dana", role)
+		}
+	}
+}
+
+// Reads are not restricted by ownership. An editorial team where people cannot
+// read each other's drafts is not a team.
+func TestOwnOnlyDoesNotRestrictReading(t *testing.T) {
+	p := &Policy{}
+	p.Grant(Binding{Principal: "sam", Role: RoleAuthor, Resource: "/",
+		OwnOnly: true})
+	if d := p.EvaluateOwned("sam", ActView, "/theirs", "dana"); !d.Allowed {
+		t.Errorf("an own-only contributor cannot read a colleague's draft: %s",
+			d.Reason)
+	}
+}
+
+// Content whose creator was never recorded is content an own-only principal
+// has no claim to. Treating unknown as "yours" would make every unattributed
+// page editable by everybody holding an own-only grant.
+func TestUnknownOwnershipFailsClosed(t *testing.T) {
+	p := &Policy{}
+	p.Grant(Binding{Principal: "sam", Role: RoleAuthor, Resource: "/",
+		OwnOnly: true})
+	d := p.EvaluateOwned("sam", ActEditDraft, "/orphan", "")
+	if d.Allowed {
+		t.Fatal("a page with no recorded creator was editable by an " +
+			"own-only principal")
+	}
+	if !strings.Contains(d.Reason, "records") {
+		t.Errorf("the refusal does not explain itself: %s", d.Reason)
+	}
+}
+
+// An ordinary binding is unaffected, so this cannot have changed anybody's
+// existing access.
+func TestABindingWithoutOwnOnlyIsUnchanged(t *testing.T) {
+	p := &Policy{}
+	p.Grant(Binding{Principal: "dana", Role: RoleAuthor, Resource: "/"})
+	for _, creator := range []string{"dana", "someone-else", ""} {
+		if d := p.EvaluateOwned("dana", ActEditDraft, "/x", creator); !d.Allowed {
+			t.Errorf("an ordinary author was refused a page created by %q: %s",
+				creator, d.Reason)
+		}
+	}
+	if d := p.Evaluate("dana", ActEditDraft, "/x"); d.OwnsRequired {
+		t.Error("an ordinary binding reported that ownership matters")
+	}
+}
+
+// A caller using the plain Evaluate gets the old behaviour and a flag, rather
+// than a wrong refusal. The flag is what makes the omission findable.
+func TestPlainEvaluateReportsThatOwnershipMatters(t *testing.T) {
+	p := &Policy{}
+	p.Grant(Binding{Principal: "sam", Role: RoleAuthor, Resource: "/",
+		OwnOnly: true})
+	d := p.Evaluate("sam", ActEditDraft, "/anything")
+	if !d.Allowed {
+		t.Fatal("plain Evaluate refused, which would break callers that " +
+			"have not been updated")
+	}
+	if !d.OwnsRequired {
+		t.Error("plain Evaluate did not report that ownership must be checked")
+	}
+}
+
+// The refusal names who does own it, because "not permitted" leaves somebody
+// unable to tell a mistake from a policy.
+func TestTheRefusalNamesTheOwner(t *testing.T) {
+	p := &Policy{}
+	p.Grant(Binding{Principal: "sam", Role: RoleAuthor, Resource: "/",
+		OwnOnly: true})
+	d := p.EvaluateOwned("sam", ActEditDraft, "/theirs", "dana")
+	if !strings.Contains(d.Reason, "dana") {
+		t.Errorf("the refusal does not say who owns it: %s", d.Reason)
+	}
+}
+
+// Own-only stacks with the resource path rather than replacing it: a
+// contributor scoped to /blog cannot reach /legal even for a page they wrote.
+func TestOwnOnlyStacksWithTheResourcePath(t *testing.T) {
+	p := &Policy{}
+	p.Grant(Binding{Principal: "sam", Role: RoleAuthor, Resource: "/blog",
+		OwnOnly: true})
+	if d := p.EvaluateOwned("sam", ActEditDraft, "/blog/post", "sam"); !d.Allowed {
+		t.Errorf("refused inside their own scope: %s", d.Reason)
+	}
+	if d := p.EvaluateOwned("sam", ActEditDraft, "/legal/terms", "sam"); d.Allowed {
+		t.Error("an own-only binding on /blog reached /legal")
+	}
+}

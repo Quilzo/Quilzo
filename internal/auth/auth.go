@@ -146,6 +146,21 @@ type Binding struct {
 	Role      Role   `json:"role"`
 	Resource  string `json:"resource"` // "/" is the whole site
 	Deny      bool   `json:"deny,omitempty"`
+	// OwnOnly restricts this binding to content the principal created.
+	//
+	// This is the answer to "do we need a contributor role", and the answer is
+	// that contributor is not a rung on the ladder. Every CMS vocabulary has
+	// one — somebody who writes drafts and cannot publish — and mapping it
+	// onto a role ladder gets it wrong, because the distinction is not *less
+	// power*. A contributor does exactly what an author does. They do it to a
+	// smaller set of pages.
+	//
+	// So it is a constraint on the binding rather than a role, and it composes
+	// with everything: any role can be own-only, it stacks with the resource
+	// path, and it stacks with a token's type and locale scope. A new rung
+	// would have composed with nothing and would have needed a decision about
+	// where it sits relative to every existing one.
+	OwnOnly   bool   `json:"own_only,omitempty"`
 	GrantedBy string `json:"granted_by,omitempty"`
 	GrantedAt int64  `json:"granted_at,omitempty"`
 	Note      string `json:"note,omitempty"`
@@ -201,6 +216,12 @@ type Decision struct {
 	Reason  string   // why, in one line
 	Binding *Binding // the binding that decided, if any
 	Trail   []string // every binding considered, in order
+	// OwnsRequired reports that the winning binding is own-only, so the caller
+	// must confirm the principal created the resource. Set on an *allowed*
+	// decision, which is deliberate: a caller that ignores it gets the old
+	// behaviour rather than a wrong refusal, and EvaluateOwned is the path
+	// that does not let it be ignored.
+	OwnsRequired bool
 }
 
 // Evaluate answers whether a principal may perform an action on a resource.
@@ -279,9 +300,59 @@ func (p *Policy) Evaluate(principal string, action Action, resource string) Deci
 			Reason: fmt.Sprintf("%s is %s on %s; %s needs %s",
 				principal, best, target, action, required)}
 	}
+	// The binding that won may be own-only, which Evaluate cannot resolve on
+	// its own: it does not know who created the page, and giving this package
+	// access to the store to find out would make the access model depend on
+	// the content it guards.
+	//
+	// So it is reported rather than decided. The caller — which is holding the
+	// page and knows its author — checks OwnsRequired against the creator.
+	// Fail-closed is the caller's job and EvaluateOwned below makes that the
+	// easy path.
 	return Decision{Allowed: true, Role: best, Binding: bestBinding, Trail: trail,
+		OwnsRequired: bestBinding.OwnOnly,
 		Reason: fmt.Sprintf("%s is %s on %s, granted at %s",
 			principal, best, target, normalise(bestBinding.Resource))}
+}
+
+// EvaluateOwned is Evaluate for a caller that knows who created the resource.
+//
+// The creator is passed rather than looked up, because this package must not
+// read content in order to decide who may read content — that dependency runs
+// the wrong way and would make the policy unevaluable without a store.
+//
+// An empty creator means nobody knows, and an own-only binding then refuses.
+// That is the direction that fails closed: content whose author was never
+// recorded is content an own-only principal has no claim to, and treating
+// "unknown" as "yours" would make every unattributed page editable by
+// everybody holding an own-only grant.
+func (p *Policy) EvaluateOwned(principal string, action Action, resource,
+	creator string) Decision {
+
+	d := p.Evaluate(principal, action, resource)
+	if !d.Allowed || !d.OwnsRequired {
+		return d
+	}
+	// Reads are not restricted by ownership. A contributor who cannot see the
+	// site cannot write for it, and an editorial team where people cannot read
+	// each other's drafts is not a team.
+	if action == ActView {
+		return d
+	}
+	if creator != "" && creator == principal {
+		return d
+	}
+	d.Allowed = false
+	if creator == "" {
+		d.Reason = fmt.Sprintf(
+			"%s may only change content they created, and nothing records who "+
+				"created %s", principal, normalise(resource))
+		return d
+	}
+	d.Reason = fmt.Sprintf(
+		"%s may only change content they created; %s was created by %s",
+		principal, normalise(resource), creator)
+	return d
 }
 
 // Grant adds a binding. Refuses a duplicate rather than stacking one.
