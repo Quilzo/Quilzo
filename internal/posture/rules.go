@@ -598,6 +598,16 @@ var rules = []Rule{
 				if f.Mode&0o077 == 0 {
 					continue
 				}
+				// Group read is the point for a file two accounts share: the
+				// separated audit log is owned by the writer and read by the
+				// CMS, which is not trusted to write it. Flagging that told an
+				// operator to undo the deployment this program recommends.
+				// Group *write* is still a finding, and so is anything for
+				// other — sharing with one account is not sharing with the
+				// machine.
+				if f.SharedWithGroup && f.Mode&0o027 == 0 {
+					continue
+				}
 				sev := High
 				if f.Mode&0o022 != 0 {
 					sev = Critical // writable by someone else entirely

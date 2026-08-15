@@ -159,6 +159,7 @@ type Log struct {
 	last string
 	seq  int64
 	src  string
+	mode os.FileMode
 }
 
 // Options configures a Log.
@@ -169,7 +170,30 @@ type Options struct {
 	Key []byte
 	// Source names where events come from: a host, a service, a CLI. AU-3(d).
 	Source string
+	// Mode is the file mode for the log. Zero means ModePrivate.
+	Mode os.FileMode
 }
+
+// The file mode depends on the deployment, and picking one for both is wrong
+// in whichever direction it is picked.
+//
+// Single account: the log lives in the store and the CMS owns it, so 0600 —
+// group-readable would hand the audit record to anybody else on the machine
+// for no benefit, and the posture inspector says so.
+//
+// Separated: the writer owns the log and the CMS is in its group, because the
+// CMS is not trusted to *write* the log, which is a different claim from not
+// being trusted to read it. Every reader — auditlog, siem, the posture
+// inspector itself — needs it, and at 0600 the correct configuration was the
+// one that broke the tooling.
+//
+// Hard-coding 0640 fixed that and made the inspector flag its own default as a
+// high-severity exposure with "fix: chmod 600" — the program telling an
+// operator to undo the thing that makes the recommended deployment work.
+const (
+	ModePrivate os.FileMode = 0o600 // in the store, one account
+	ModeShared  os.FileMode = 0o640 // the writer owns it, readers share its group
+)
 
 // NewKey generates a pseudonymisation key.
 func NewKey() ([]byte, error) {
@@ -193,7 +217,11 @@ func New(opt Options) (*Log, error) {
 	if strings.TrimSpace(opt.Source) == "" {
 		return nil, fmt.Errorf("an audit log needs a source; AU-3 requires it on every record")
 	}
-	l := &Log{path: opt.Path, key: opt.Key, src: opt.Source}
+	mode := opt.Mode
+	if mode == 0 {
+		mode = ModePrivate
+	}
+	l := &Log{path: opt.Path, key: opt.Key, src: opt.Source, mode: mode}
 
 	// The source is pseudonymised too, when there is a key.
 	//
@@ -333,18 +361,7 @@ func (l *Log) Append(r Record) (*Event, error) {
 
 	// Append-only, and fsynced. An audit record still in a buffer when the
 	// process dies is a record of an event that is now invisible.
-	// 0640, not 0600.
-	//
-	// The separated deployment has the writer own this file and the CMS in its
-	// group: the CMS is not trusted to *write* the log, which is a different
-	// claim from not being trusted to read it. At 0600 the writer worked, the
-	// separation held, and every reader — `auditlog head`, `siem`, the posture
-	// inspector — failed with "permission denied", so the configuration that
-	// is correct was the one that broke the tooling.
-	//
-	// The mode is the ceiling, not the grant. Nothing is readable until an
-	// operator puts an account in the file's group.
-	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
+	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, l.mode)
 	if err != nil {
 		l.seq--
 		return nil, err

@@ -88,14 +88,23 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 
 	// File modes. Only files that hold something worth protecting: listing
 	// every file would bury the three that matter.
-	for _, f := range []struct{ path, desc string }{
-		{tokensPath(root), "token hashes and their roles"},
-		{policyPath(root), "who can do what"},
-		{auditPath(root), "the tamper-evident record"},
-		{suppressPath(root), "accepted risks"},
-		{filepath.Join(root, "types.json"), "content types and validation records"},
+	// The audit log and its key are group-shared when the writer has been
+	// separated out, because the CMS has to read what it is not allowed to
+	// write. Everything else stays private to one account.
+	separated := auditDir(root) != root
+	for _, f := range []struct {
+		path, desc string
+		shared     bool
+	}{
+		{tokensPath(root), "token hashes and their roles", false},
+		{policyPath(root), "who can do what", false},
+		{auditPath(root), "the tamper-evident record", separated},
+		{auditKeyPath(root), "the pseudonymisation key", separated},
+		{suppressPath(root), "accepted risks", false},
+		{filepath.Join(root, "types.json"), "content types and validation records", false},
 	} {
-		fact := posture.FileFact{Path: f.path, Description: f.desc}
+		fact := posture.FileFact{
+			Path: f.path, Description: f.desc, SharedWithGroup: f.shared}
 		if info, err := os.Stat(f.path); err == nil {
 			fact.Exists = true
 			fact.Mode = uint32(info.Mode().Perm())

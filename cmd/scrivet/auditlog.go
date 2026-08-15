@@ -107,6 +107,18 @@ func setAuditDir(root, dir string) error {
 		[]byte(abs+"\n"), 0o644)
 }
 
+// keyMode picks the file mode from the deployment rather than from a constant.
+//
+// A log inside the store belongs to one account and stays 0600. A log the
+// operator has moved elsewhere is the separated deployment, where the writer
+// owns the files and the readers are in its group.
+func keyMode(root string) os.FileMode {
+	if auditDir(root) == root {
+		return audit.ModePrivate
+	}
+	return audit.ModeShared
+}
+
 func auditPath(root string) string {
 	return filepath.Join(auditDir(root), "audit.jsonl")
 }
@@ -134,7 +146,7 @@ func openAudit(root string) (*audit.Log, error) {
 		// output — the CMS is not trusted to *write* the log, which is a
 		// different claim from not being trusted to read it. A shared group
 		// is the Unix answer and 0600 made the deployment impossible.
-		if err := os.WriteFile(auditKeyPath(root), key, 0o640); err != nil {
+		if err := os.WriteFile(auditKeyPath(root), key, keyMode(root)); err != nil {
 			return nil, err
 		}
 	} else if err != nil {
@@ -155,6 +167,7 @@ func openAudit(root string) (*audit.Log, error) {
 	}
 	return audit.New(audit.Options{
 		Path: auditPath(root), Key: key, Source: "scrivet-cli@" + host,
+		Mode: keyMode(root),
 	})
 }
 

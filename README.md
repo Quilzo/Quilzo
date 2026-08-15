@@ -1319,6 +1319,49 @@ program is enough to rewrite history. `scrivet logd` runs as its own account,
 owns the log file, and accepts submissions over a unix socket. The CMS never
 holds a descriptor that could seek, truncate or reorder.
 
+#### Setting it up
+
+Three commands, and the order matters because each account can only touch its
+own side.
+
+```bash
+# 1. two accounts and a group they share, so the CMS can read the log
+#    without being able to write it
+groupadd auditors && usermod -aG auditors scrivet
+install -d -o scrivet    -g scrivet  -m 750 /srv/store
+install -d -o scrivetlog -g auditors -m 2750 /srv/audit
+
+# 2. as the account that owns the store: say where the log lives
+scrivet --root /srv/store auditlog dir /srv/audit
+
+# 3. as the log account: run the writer
+scrivet --root /srv/store logd --log-dir /srv/audit --allow-uid "$(id -u scrivet)"
+```
+
+`auditlog dir` is a separate step rather than something `logd` does at startup,
+and the split is the design rather than an inconvenience. The writer has no
+access to the store — that is what makes it separate — so it cannot record
+anything there. The operator records where to look; the writer writes.
+
+The log is created `0640`, not `0600`. The CMS is not trusted to *write* the
+log, which is a different claim from not being trusted to read it, and
+`auditlog`, `siem` and the posture inspector all read it. The mode is a
+ceiling, not a grant: nothing can read it until an operator puts an account in
+the file's group.
+
+Check it took:
+
+```
+$ scrivet --root /srv/store logd status
+log writer at /srv/audit/log.sock
+  /srv/audit/audit.jsonl is owned by uid 4001 and the CMS runs as uid 4000,
+  so the CMS cannot open it for writing
+```
+
+If it says *the writer is running but the separation is not in force*, believe
+it — that state is worse than not running the writer at all, because somebody
+will assume it worked.
+
 **The writer computes the chain.** A client sends what happened; it does not
 send a sequence number, a previous hash, or an entry hash. That is not
 validation — the submission type has nowhere to put them. A forged submission
@@ -1666,7 +1709,7 @@ transparency log with inclusion and consistency proofs written by a
 privilege-separated writer, rogue-agent detection, signed webhooks, generated compliance evidence,
 search, and a REST content API.
 
-603 tests. The ones worth reading are the negative ones: every SSTI payload I
+689 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

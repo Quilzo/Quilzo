@@ -121,6 +121,12 @@ type FileFact struct {
 	Mode        uint32 `json:"mode"`
 	Exists      bool   `json:"exists"`
 	Description string `json:"description"`
+	// SharedWithGroup marks a file that is meant to be group-readable,
+	// because a second account has to read it and is deliberately not allowed
+	// to write it. Without this the inspector flags the separated audit
+	// deployment — the one this program recommends — and tells the operator to
+	// chmod away the access that makes it work.
+	SharedWithGroup bool `json:"shared_with_group,omitempty"`
 }
 
 // ServerFacts describe how the interfaces are exposed.

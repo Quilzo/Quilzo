@@ -596,3 +596,61 @@ func TestNotLookingIsReportedAsNotCheckedRatherThanAsAFinding(t *testing.T) {
 			r.NotChecked)
 	}
 }
+
+// -- a file two accounts share on purpose ------------------------------------
+
+// The inspector flagged the deployment this program recommends.
+//
+// Separating the log writer means the writer owns the log and the CMS is in
+// its group: the CMS is not trusted to write the record of what it did, which
+// is a different claim from not being trusted to read it — and `auditlog`,
+// `siem` and this inspector all read it. The file has to be group-readable.
+//
+// Flagged as High with "fix: chmod 600", that is the program telling an
+// operator to undo the thing that makes the separation work, in the one place
+// they go to find out whether their configuration is right.
+func TestAGroupSharedFileIsNotAnExposure(t *testing.T) {
+	s := clean(t)
+	s.Files = []FileFact{{
+		Path: "/srv/audit/audit.jsonl", Exists: true, Mode: 0o640,
+		Description: "the tamper-evident record", SharedWithGroup: true,
+	}}
+	if f := has(Scan(s, nil), "expose.file-mode"); f != nil {
+		t.Errorf("a deliberately group-readable log was reported as an "+
+			"exposure: %s", f.Detail)
+	}
+}
+
+// Sharing with one account is not sharing with the machine, so world access
+// and group *write* are still findings on the same file.
+func TestSharingWithAGroupDoesNotPermitEverythingElse(t *testing.T) {
+	for _, tc := range []struct {
+		mode uint32
+		why  string
+	}{
+		{0o644, "readable by every account on the host"},
+		{0o660, "writable by the group, so a reader could rewrite the record"},
+		{0o666, "writable by anybody"},
+	} {
+		s := clean(t)
+		s.Files = []FileFact{{
+			Path: "/srv/audit/audit.jsonl", Exists: true, Mode: tc.mode,
+			Description: "the tamper-evident record", SharedWithGroup: true,
+		}}
+		if f := has(Scan(s, nil), "expose.file-mode"); f == nil {
+			t.Errorf("mode %04o was accepted, but it is %s", tc.mode, tc.why)
+		}
+	}
+}
+
+// And a file nobody declared shared is judged as before.
+func TestAnUnsharedFileIsStillJudgedStrictly(t *testing.T) {
+	s := clean(t)
+	s.Files = []FileFact{{
+		Path: "/srv/store/tokens.json", Exists: true, Mode: 0o640,
+		Description: "token hashes and their roles",
+	}}
+	if has(Scan(s, nil), "expose.file-mode") == nil {
+		t.Error("group-readable token hashes were accepted")
+	}
+}
