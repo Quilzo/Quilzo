@@ -2,8 +2,11 @@ package site
 
 import (
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/rsh1k/scrivet/internal/store"
 )
@@ -213,5 +216,145 @@ func TestOverlapIsReportedCorrectlyWhenTheBaseIsShortened(t *testing.T) {
 	if len(c.Pages) == 0 {
 		t.Error("the conflict reports no changed pages at all, which means the " +
 			"diff failed and the message will claim a retry is safe")
+	}
+}
+
+// -- writes are serialised, across processes ---------------------------------
+
+// The bug this exists to prevent, stated as a property.
+//
+// SaveDraftFrom read the current ref, compared it against the caller's base,
+// built a commit and wrote the ref — four steps with nothing held between
+// them. Sixteen concurrent writes carrying the same base all passed the
+// comparison and all committed, and fifteen edits were silently lost. Every
+// mechanism layered on top of this one — --based-on, the API's If-Match, the
+// four-eyes review — inherited the hole, because all three are the same check
+// wearing different clothes.
+//
+// The tests above this one pass without the lock. They write in sequence,
+// which is the case that was never broken.
+func TestExactlyOneConcurrentWriteAgainstOneBaseSucceeds(t *testing.T) {
+	s := newStore(t)
+	base, err := SaveDraft(s, map[string]any{"a": page("A")}, "first", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var mu sync.Mutex
+	var won, lost int
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, err := SaveDraftFrom(s, map[string]any{
+				"a": page(fmt.Sprintf("edit %d", i)),
+			}, "concurrent", "test", base)
+			mu.Lock()
+			defer mu.Unlock()
+			if err == nil {
+				won++
+			} else {
+				lost++
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	if won != 1 {
+		t.Errorf("%d of 16 writes against the same base succeeded; exactly one "+
+			"should, or --based-on is advice rather than a check", won)
+	}
+	if lost != 15 {
+		t.Errorf("%d writes were refused, want 15", lost)
+	}
+}
+
+// And the lock has to hold across processes rather than merely across
+// goroutines, because the CLI, the admin interface and the content API are
+// three processes against one store and that is a normal way to run this.
+//
+// A mutex passes the test above and fails in deployment, which is the worse of
+// the two outcomes: it looks tested.
+func TestTheRefLockHoldsAcrossProcesses(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SaveDraft(s, map[string]any{"a": page("A")}, "first", "t"); err != nil {
+		t.Fatal(err)
+	}
+	// A second Store over the same directory is what a second process holds.
+	other, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entered, release := make(chan struct{}), make(chan struct{})
+	held := make(chan error, 1)
+	go func() {
+		held <- s.WithRefLock(func() error {
+			close(entered)
+			<-release
+			return nil
+		})
+	}()
+	<-entered
+
+	blocked := make(chan struct{})
+	go func() {
+		other.WithRefLock(func() error { return nil })
+		close(blocked)
+	}()
+
+	select {
+	case <-blocked:
+		t.Fatal("a second store took the ref lock while the first held it, so " +
+			"the lock does not cross a process boundary")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	close(release)
+	if err := <-held; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-blocked:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the second store never acquired the lock after release")
+	}
+}
+
+// A compare-and-swap that loses says what it found, because "failed" leaves
+// the caller unable to tell somebody else's write from a broken store, and
+// those need different responses.
+func TestACompareAndSwapThatLosesSaysWhatItFound(t *testing.T) {
+	s := newStore(t)
+	first, err := SaveDraft(s, map[string]any{"a": page("A")}, "first", "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := SaveDraft(s, map[string]any{"a": page("B")}, "second", "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = s.CompareAndSwapRef(RefLive, first, second)
+	if err == nil {
+		t.Fatal("a swap against the wrong expected value succeeded")
+	}
+	var moved *store.RefMoved
+	if !errors.As(err, &moved) {
+		t.Fatalf("lost with %T, want a *store.RefMoved: %v", err, err)
+	}
+	if !strings.Contains(err.Error(), "nothing") {
+		t.Errorf("the message does not say what was found: %v", err)
+	}
+	// And the correct swap must still work.
+	if err := s.CompareAndSwapRef(RefLive, "", second); err != nil {
+		t.Errorf("a correct swap was refused: %v", err)
+	}
+	if got := s.GetRef(RefLive); got != second {
+		t.Errorf("live is %s, want %s", got, second)
 	}
 }

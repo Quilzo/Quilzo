@@ -147,6 +147,29 @@ const MaxProofBytes = 1 << 20
 // endlessly, so the work is capped rather than trusted to terminate.
 const maxOps = 10000
 
+// maxValue bounds the value being carried through the walk, which is a separate
+// thing from bounding the proof and bounding the operation count, and omitting
+// it made both of those useless.
+//
+// hexlify doubles its input and costs one byte of proof. So does the operation
+// budget's accounting: one operation, one unit. Forty bytes of 0xf3 therefore
+// asks for 32 × 2⁴⁰ bytes — thirty-five terabytes from a forty byte input, well
+// inside the megabyte the proof size allows and well inside the ten thousand
+// operations the budget allows. Both existing limits are satisfied while the
+// process dies.
+//
+// A real proof carries a 32 byte digest, prepends and appends 32 byte merkle
+// siblings, and hashes back down to 32. The largest legitimate intermediate is
+// around a hundred bytes, so four kilobytes is generous by a factor of forty and
+// still refuses the bomb at the third doubling.
+const maxValue = 4096
+
+// maxDepth bounds fork nesting. The operation budget technically bounds it too,
+// but at ten thousand frames, and a limit that only stops something after ten
+// thousand stack frames of recursion is not the limit anybody thinks it is. A
+// real proof forks once or twice.
+const maxDepth = 64
+
 // Attestation is a commitment found in a proof.
 type Attestation struct {
 	Kind string
@@ -175,8 +198,11 @@ func Walk(digest, proof []byte) ([]Attestation, error) {
 	}
 	r := &reader{b: proof}
 	var out []Attestation
+	if len(digest) > maxValue {
+		return nil, fmt.Errorf("the digest is %d bytes", len(digest))
+	}
 	budget := maxOps
-	if err := walk(r, digest, &out, &budget); err != nil {
+	if err := walk(r, digest, &out, &budget, 0); err != nil {
 		return nil, err
 	}
 	if len(out) == 0 {
@@ -186,7 +212,11 @@ func Walk(digest, proof []byte) ([]Attestation, error) {
 	return out, nil
 }
 
-func walk(r *reader, current []byte, out *[]Attestation, budget *int) error {
+func walk(r *reader, current []byte, out *[]Attestation, budget *int, depth int) error {
+	if depth > maxDepth {
+		return fmt.Errorf("the proof forks %d deep; no real one nests past a "+
+			"handful", depth)
+	}
 	for {
 		if *budget <= 0 {
 			return fmt.Errorf("the proof has more operations than any real one " +
@@ -215,7 +245,7 @@ func walk(r *reader, current []byte, out *[]Attestation, budget *int) error {
 			// function and it produced proofs that verified against the wrong
 			// value.
 			left := append([]byte(nil), current...)
-			if err := walk(r, left, out, budget); err != nil {
+			if err := walk(r, left, out, budget, depth+1); err != nil {
 				return err
 			}
 			continue
@@ -224,6 +254,15 @@ func walk(r *reader, current []byte, out *[]Attestation, budget *int) error {
 			next, err := apply(op, current, r)
 			if err != nil {
 				return err
+			}
+			// Checked after every operation rather than only after the ones
+			// that look expensive, because the point of a limit is that it
+			// does not depend on somebody having correctly guessed which
+			// operations grow.
+			if len(next) > maxValue {
+				return fmt.Errorf("an operation in this proof produces a %d "+
+					"byte value; a real proof carries about a hundred",
+					len(next))
 			}
 			current = next
 		}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,9 +19,13 @@ var now = time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
 
 func setup(t *testing.T) (*Server, string, string) {
 	t.Helper()
-	s, err := store.Open(t.TempDir())
+	return setupIn(t.TempDir(), func(err error) { t.Fatal(err) })
+}
+
+func setupIn(dir string, fail func(error)) (*Server, string, string) {
+	s, err := store.Open(dir)
 	if err != nil {
-		t.Fatal(err)
+		fail(err)
 	}
 	pages := map[string]any{
 		"index":   map[string]any{"title": "Home", "body": "Welcome."},
@@ -28,10 +33,10 @@ func setup(t *testing.T) (*Server, string, string) {
 		"pricing": map[string]any{"title": "Pricing", "body": "Ten pounds."},
 	}
 	if _, err := site.SaveDraft(s, pages, "first", "test"); err != nil {
-		t.Fatal(err)
+		fail(err)
 	}
 	if _, err := site.Publish(s, ""); err != nil {
-		t.Fatal(err)
+		fail(err)
 	}
 
 	pol := &auth.Policy{}
@@ -40,19 +45,19 @@ func setup(t *testing.T) (*Server, string, string) {
 		{Principal: "writer", Role: auth.RoleAuthor, Resource: "/"},
 	} {
 		if err := pol.Grant(b); err != nil {
-			t.Fatal(err)
+			fail(err)
 		}
 	}
 	ts := &auth.TokenStore{}
 	readTok, _, err := ts.Issue("r", "reader", auth.RoleReader, "/", time.Hour,
 		auth.RoleAdmin)
 	if err != nil {
-		t.Fatal(err)
+		fail(err)
 	}
 	writeTok, _, err := ts.Issue("w", "writer", auth.RoleAuthor, "/", time.Hour,
 		auth.RoleAdmin)
 	if err != nil {
-		t.Fatal(err)
+		fail(err)
 	}
 
 	// The real clock, not a frozen one. Tokens are issued relative to
@@ -494,5 +499,100 @@ func TestAnExhaustedBucketReportsWhenToRetry(t *testing.T) {
 	if wait <= 0 || wait > 2*time.Second {
 		t.Errorf("retry-after is %s; at sixty per minute one token takes a "+
 			"second", wait)
+	}
+}
+
+// setupFuzz is setup against a *testing.F. The fuzzer builds the server once
+// and then runs millions of requests against it, so a store per execution
+// would measure disk speed rather than the handler.
+func setupFuzz(f *testing.F) (*Server, string, string) {
+	f.Helper()
+	return setupIn(f.TempDir(), func(err error) { f.Fatal(err) })
+}
+
+// -- paths are not normalised -----------------------------------------------
+
+// Found by fuzzing. http.ServeMux cleans a path and 301s to the result, which
+// is reasonable for a website and wrong for an API in three separate ways: the
+// redirect body is HTML so a JSON client breaks, the requested path is
+// reflected into it, and the target is wherever cleaning lands — which for
+// /api/v1/pages/x/../../../../admin is /admin.
+//
+// Authentication was never bypassed; the middleware runs first and an
+// unauthenticated request got 401 throughout. The bug is that an authorised
+// request was answered about a different resource than the one authorised.
+func TestATraversingPathIsRefusedRatherThanRedirected(t *testing.T) {
+	s, tok, _ := setup(t)
+	h := s.Handler()
+	for _, p := range []string{
+		"/api/v1/pages/../../etc/passwd",
+		"/api/v1/pages/x/../../../../admin",
+		"/api/v1/pages/./about",
+		"/api/v1/pages//about",
+		"/api/v1/pages/%2e%2e%2f%2e%2e%2fadmin",
+		"/api/v1/pages/a/../about",
+	} {
+		r := httptest.NewRequest("GET", "http://h"+p, nil)
+		r.Header.Set("Authorization", "Bearer "+tok)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+
+		if w.Code == http.StatusMovedPermanently || w.Code == http.StatusPermanentRedirect {
+			t.Errorf("%s was redirected to %q", p, w.Header().Get("Location"))
+		}
+		if w.Code != http.StatusNotFound {
+			t.Errorf("%s gave %d, want 404", p, w.Code)
+		}
+		if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+			t.Errorf("%s answered with %q, so a JSON client cannot read it", p, ct)
+		}
+	}
+}
+
+// The encoded and unencoded forms of the same traversal must be treated
+// alike. They were not: ..%2f gave 404 and ../ gave 301. Nothing was
+// exploitable, but two parsers disagreeing about one path is how bypasses
+// arrive later.
+func TestEncodedAndRawTraversalsAgree(t *testing.T) {
+	s, tok, _ := setup(t)
+	h := s.Handler()
+	code := func(p string) int {
+		r := httptest.NewRequest("GET", "http://h"+p, nil)
+		r.Header.Set("Authorization", "Bearer "+tok)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	if a, b := code("/api/v1/pages/../admin"), code("/api/v1/pages/%2e%2e/admin"); a != b {
+		t.Errorf("raw traversal gave %d and the encoded form gave %d", a, b)
+	}
+}
+
+// And the refusal must not swallow the paths the API exists to serve.
+func TestOrdinaryPathsStillWork(t *testing.T) {
+	s, tok, _ := setup(t)
+	h := s.Handler()
+	for _, p := range []string{"/api/v1/pages", "/api/v1/pages/about"} {
+		r := httptest.NewRequest("GET", "http://h"+p, nil)
+		r.Header.Set("Authorization", "Bearer "+tok)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			t.Errorf("%s gave %d, want 200", p, w.Code)
+		}
+	}
+}
+
+// A traversal must still be refused before authentication decides anything,
+// which is the ordering that kept this from being a bypass.
+func TestAnUnauthenticatedTraversalIsStillUnauthenticated(t *testing.T) {
+	s, _, _ := setup(t)
+	h := s.Handler()
+	r := httptest.NewRequest("GET", "http://h/api/v1/pages/../../etc/passwd", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("got %d, want 401 — the path check must not answer before "+
+			"authentication does", w.Code)
 	}
 }

@@ -358,3 +358,74 @@ func (s stub) Post(ctx context.Context, url string, b []byte) ([]byte, error) {
 func (s stub) Get(ctx context.Context, url string) ([]byte, error) {
 	return s.body, s.err
 }
+
+// -- the walk cannot be made to allocate without bound ----------------------
+
+// Found by fuzzing, and it is the more interesting kind of bug: every limit
+// that existed was satisfied.
+//
+// hexlify doubles its input for one byte of proof and one unit of the
+// operation budget. A proof of forty 0xf3 bytes is forty bytes long, well
+// inside MaxProofBytes, and spends forty of ten thousand operations. It asks
+// the process for thirty-five terabytes.
+//
+// The lesson is not "add a case for hexlify". It is that a budget counting
+// operations does not bound work when one operation's cost is a function of
+// what came before it.
+func TestAProofCannotAmplifyItsWayToAnAllocation(t *testing.T) {
+	bomb := bytes.Repeat([]byte{opHexlify}, 64)
+	done := make(chan error, 1)
+	go func() {
+		_, err := Walk(make([]byte, 32), bomb)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a proof that doubles its value 64 times was accepted")
+		}
+		if !strings.Contains(err.Error(), "byte value") {
+			t.Errorf("refused, but for the wrong reason: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Walk did not return; the value is growing without bound")
+	}
+}
+
+// The bound is on the value, not on the one operation that was found to grow
+// it, so a growth path that arrives some other way is refused too.
+func TestGrowthIsBoundedRegardlessOfWhichOperationCausesIt(t *testing.T) {
+	var b build
+	for i := 0; i < 200; i++ {
+		b.op(opAppend).arg(bytes.Repeat([]byte{'x'}, 64))
+	}
+	if _, err := Walk(make([]byte, 32), b.b); err == nil {
+		t.Error("repeated appends grew the value past the bound unrefused")
+	}
+}
+
+// And the limit must not refuse the proofs it exists to permit. A real
+// commitment is 44 bytes and a merkle path prepends and appends 32 byte
+// siblings around it.
+func TestARealisticallyShapedProofStaysUnderTheBound(t *testing.T) {
+	var b build
+	for i := 0; i < 20; i++ { // a 20-deep merkle path, deeper than Bitcoin's
+		b.op(opPrepend).arg(bytes.Repeat([]byte{'s'}, 32)).op(opSHA256)
+		b.op(opAppend).arg(bytes.Repeat([]byte{'s'}, 32)).op(opSHA256)
+	}
+	b.bitcoin(800000)
+	if _, err := Walk(make([]byte, 32), b.b); err != nil {
+		t.Errorf("a realistic merkle path was refused: %v", err)
+	}
+}
+
+// Fork nesting is bounded on its own terms. The operation budget bounds it at
+// ten thousand frames, which is not a bound anybody would choose deliberately.
+func TestForkNestingIsBoundedBeforeItReachesTenThousandFrames(t *testing.T) {
+	deep := bytes.Repeat([]byte{opFork}, 500)
+	if _, err := Walk(make([]byte, 32), deep); err == nil {
+		t.Error("a 500-deep fork chain was accepted")
+	} else if !strings.Contains(err.Error(), "deep") {
+		t.Errorf("refused, but not as excessive nesting: %v", err)
+	}
+}

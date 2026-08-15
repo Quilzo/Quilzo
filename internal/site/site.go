@@ -120,6 +120,29 @@ func SaveDraft(s *store.Store, pages map[string]any, message, author string) (st
 func SaveDraftFrom(s *store.Store, pages map[string]any, message, author,
 	base string) (string, error) {
 
+	// The whole of this runs under the store's ref lock, because it reads a
+	// ref, decides from what it read, and writes. Doing the base check and
+	// then writing without holding anything makes --based-on and the API's
+	// If-Match into advice: sixteen concurrent writes against one base all
+	// passed the check and all committed, and fifteen edits vanished.
+	var cid string
+	err := s.WithRefLock(func() error {
+		var err error
+		cid, err = SaveDraftLocked(s, pages, message, author, base)
+		return err
+	})
+	return cid, err
+}
+
+// SaveDraftLocked is SaveDraftFrom for a caller already inside WithRefLock.
+//
+// Exported because the content API has to hold the lock across its own read,
+// its If-Match comparison and this write — otherwise the comparison happens
+// against a value that can change before the write lands, which is the bug
+// If-Match exists to prevent rather than a smaller version of it.
+func SaveDraftLocked(s *store.Store, pages map[string]any, message, author,
+	base string) (string, error) {
+
 	current := s.GetRef(RefDraft)
 	if current == "" {
 		current = s.GetRef(RefLive)
@@ -204,6 +227,16 @@ type Publication struct {
 
 // Publish moves live to a commit. The one action with an outside observer.
 func Publish(s *store.Store, commitID string) (Publication, error) {
+	var pub Publication
+	err := s.WithRefLock(func() error {
+		var err error
+		pub, err = publishLocked(s, commitID)
+		return err
+	})
+	return pub, err
+}
+
+func publishLocked(s *store.Store, commitID string) (Publication, error) {
 	target := commitID
 	if target == "" {
 		target = s.GetRef(RefDraft)
@@ -231,6 +264,16 @@ func Publish(s *store.Store, commitID string) (Publication, error) {
 // pointer going back to an object that has been sitting there the whole time.
 // There is no window in which the site is neither one version nor the other.
 func Rollback(s *store.Store, steps int) (Publication, error) {
+	var pub Publication
+	err := s.WithRefLock(func() error {
+		var err error
+		pub, err = rollbackLocked(s, steps)
+		return err
+	})
+	return pub, err
+}
+
+func rollbackLocked(s *store.Store, steps int) (Publication, error) {
 	current := s.GetRef(RefLive)
 	if current == "" {
 		return Publication{}, fmt.Errorf("nothing is live")

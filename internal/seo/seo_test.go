@@ -354,3 +354,70 @@ func TestASingleLanguageSitemapDeclaresNoExtraNamespace(t *testing.T) {
 			out)
 	}
 }
+
+// -- what a redirect target may contain --------------------------------------
+
+// Found by fuzzing. A backslash is a forward slash to a browser — the WHATWG
+// URL standard says so for special schemes — so Location: /\evil.example is
+// read as an authority and the visitor arrives at evil.example. Collapsing
+// repeated slashes without collapsing backslashes checked the separator
+// somebody polite would type.
+func TestABackslashAuthorityIsNotAnOpenRedirect(t *testing.T) {
+	for _, to := range []string{
+		`/\evil.example`, `\\evil.example`, `\/evil.example`,
+		`/\/evil.example`, `//evil.example`, `/\\evil.example/path`,
+	} {
+		m, err := NewMap([]Redirect{{From: "/a", To: to}})
+		if err != nil {
+			continue // refused outright is also correct
+		}
+		r, ok := m.Lookup("/a")
+		if !ok {
+			continue
+		}
+		got := r.To
+		if strings.HasPrefix(got, "//") || strings.HasPrefix(got, `/\`) ||
+			strings.HasPrefix(got, `\`) {
+			t.Errorf("%q became %q, which a browser reads as an authority",
+				to, got)
+		}
+	}
+}
+
+// A control character is refused when the rule is written, not filtered when
+// it is emitted. Go's header writer turns a newline into a space, so this was
+// never response splitting; the map is also exported to CDN and web-server
+// configuration, where a line is a rule.
+func TestControlCharactersAreRefusedInARule(t *testing.T) {
+	for _, bad := range []string{
+		"java\nscript:alert(1)", "/a\nRedirect /b https://evil.example",
+		"/a\r\nX: y", "/a\x00b", "/a\tb", "/ok\x1b[2J",
+	} {
+		if _, err := NewMap([]Redirect{{From: "/x", To: bad}}); err == nil {
+			t.Errorf("target %q was accepted", bad)
+		}
+		if _, err := NewMap([]Redirect{{From: bad, To: "/ok"}}); err == nil {
+			t.Errorf("source %q was accepted", bad)
+		}
+	}
+}
+
+// And the ordinary rules an administrator actually writes must survive all of
+// that, including the off-site redirect that is a legitimate thing to want.
+func TestNormalRedirectRulesAreStillAccepted(t *testing.T) {
+	m, err := NewMap([]Redirect{
+		{From: "/old", To: "/new", Permanent: true},
+		{From: "/shop", To: "https://partner.example/catalogue"},
+		{From: "/a/b/", To: "/a/c?utm_source=x"},
+		{From: "https://old.example/legacy", To: "/modern"},
+	})
+	if err != nil {
+		t.Fatalf("a map of ordinary rules was refused: %v", err)
+	}
+	if m.Len() != 4 {
+		t.Errorf("kept %d of 4 rules", m.Len())
+	}
+	if r, ok := m.Lookup("/shop"); !ok || r.To != "https://partner.example/catalogue" {
+		t.Errorf("the off-site redirect did not survive: %+v", r)
+	}
+}

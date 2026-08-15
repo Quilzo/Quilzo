@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -56,6 +58,27 @@ func (s *Server) Handler() http.Handler {
 	return s.middleware(mux)
 }
 
+// canonicalPath reports whether a path needs no cleaning, checked in both the
+// escaped and the decoded form so that %2e%2e and .. are treated alike.
+func canonicalPath(u *url.URL) bool {
+	for _, p := range []string{u.EscapedPath(), u.Path} {
+		if p == "" || p[0] != '/' {
+			return false
+		}
+		if strings.ContainsAny(p, "\x00\r\n") {
+			return false
+		}
+		c := path.Clean(p)
+		if strings.HasSuffix(p, "/") && c != "/" {
+			c += "/" // a trailing slash is a route here, not noise
+		}
+		if p != c {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Server) now() time.Time {
 	if s.Now != nil {
 		return s.Now()
@@ -102,6 +125,37 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, Error{
 				Error: "not authenticated",
 				Fix:   "send a token: Authorization: Bearer scv_...",
+			})
+			return
+		}
+
+		// Checked after authentication, not before. A syntactic rejection is
+		// cheap enough to do first, but doing it first means an unauthenticated
+		// caller can tell one refusal from another, and a uniform 401 for
+		// everything is the property worth keeping.
+		//
+		// A path that is not already canonical is refused here rather than
+		// tidied up and served, because http.ServeMux tidies it up and
+		// redirects, and everything about that is wrong for an API.
+		//
+		// It answers 301 with an HTML body, so a client parsing JSON gets
+		// markup. It reflects the requested path into that body. And the
+		// target is wherever the cleaning lands, which for
+		// /api/v1/pages/x/../../../../admin is /admin — the content API
+		// pointing a client at the admin interface.
+		//
+		// It also made the encoded and unencoded forms behave differently:
+		// ..%2f gave 404 where ../ gave 301. Nothing was exploitable, but two
+		// parsers disagreeing about what one path means is the shape of the
+		// bug rather than an aesthetic complaint, and the disagreement is
+		// cheaper to delete than to reason about every time a route is added.
+		if !canonicalPath(r.URL) {
+			writeError(w, http.StatusNotFound, Error{
+				Error: "that path is not in canonical form",
+				Detail: "this API does not normalise paths and redirect, " +
+					"because a redirect changes which resource is served " +
+					"after the request has been authorised",
+				Fix: "request the path you mean, without . or .. segments",
 			})
 			return
 		}
@@ -370,21 +424,6 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 		return
 	}
 
-	draft := s.Store.GetRef(site.RefDraft)
-	if draft == "" {
-		draft = s.Store.GetRef(site.RefLive)
-	}
-	pages := map[string]any{}
-	if draft != "" {
-		if existing, err := site.PagesAt(s.Store, draft); err == nil {
-			pages = existing
-		}
-	}
-
-	// If-Match is compare-and-swap, and it maps onto the store's own mechanism
-	// rather than being a second one alongside it. A client that omits it is
-	// writing blind and is told so, rather than being allowed to overwrite
-	// whatever happens to be there.
 	ifMatch := r.Header.Get("If-Match")
 	if ifMatch == "" {
 		writeError(w, http.StatusPreconditionRequired, Error{
@@ -396,51 +435,98 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 		})
 		return
 	}
-	if _, exists := pages[name]; exists {
-		tree, err := s.tree(draft)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, Error{
-				Error: "the draft could not be read"})
-			return
-		}
-		if !matches(ifMatch, quote(tree[name])) {
-			writeError(w, http.StatusPreconditionFailed, Error{
-				Error:  "the page has changed since you read it",
-				Detail: fmt.Sprintf("it is now %s", tree[name]),
-				Fix:    "GET it again, re-apply your change, and PUT with the new ETag",
-			})
-			return
-		}
-	}
-
-	pages[name] = fields
-
-	// The same content-type gate the CLI, the admin and the agent interface go
-	// through. An API that could store content the other surfaces refuse would
-	// be the fifth write path with a hole in it.
-	if s.Types != nil {
-		types, err := s.Types()
-		if err == nil {
-			if failures := types.Gate(pages); len(failures) > 0 {
-				var detail []string
-				for _, f := range failures {
-					detail = append(detail, f.String())
-				}
-				writeError(w, http.StatusUnprocessableEntity, Error{
-					Error:  "the content does not satisfy its type",
-					Detail: strings.Join(detail, "; "),
-				})
-				return
-			}
-		}
-	}
 
 	tok := tokenFrom(r)
-	cid, err := site.SaveDraftFrom(s.Store, pages,
-		"api: write "+name, tok.Principal, draft)
-	if err != nil {
+
+	// Everything from here to the commit runs under the store's ref lock.
+	//
+	// Reading the current tree, comparing If-Match against it and then writing
+	// are three steps, and without the lock another writer lands between them:
+	// sixteen concurrent writes carrying the same ETag all compared equal and
+	// all committed, and fifteen edits were lost. If-Match was doing nothing
+	// that a comment could not have done.
+	//
+	// The response is written after the lock is released. Holding a
+	// store-wide lock while writing to a socket hands any slow client the
+	// ability to stop every writer.
+	var (
+		cid      string
+		conflict *Error
+		status   int
+	)
+	lockErr := s.Store.WithRefLock(func() error {
+		draft := s.Store.GetRef(site.RefDraft)
+		if draft == "" {
+			draft = s.Store.GetRef(site.RefLive)
+		}
+		pages := map[string]any{}
+		if draft != "" {
+			if existing, err := site.PagesAt(s.Store, draft); err == nil {
+				pages = existing
+			}
+		}
+
+		if _, exists := pages[name]; exists {
+			tree, err := s.tree(draft)
+			if err != nil {
+				status, conflict = http.StatusInternalServerError, &Error{
+					Error: "the draft could not be read"}
+				return nil
+			}
+			if !matches(ifMatch, quote(tree[name])) {
+				status, conflict = http.StatusPreconditionFailed, &Error{
+					Error:  "the page has changed since you read it",
+					Detail: fmt.Sprintf("it is now %s", tree[name]),
+					Fix:    "GET it again, re-apply your change, and PUT with the new ETag",
+				}
+				return nil
+			}
+		} else if ifMatch != "*" {
+			// If-Match on a page that does not exist. RFC 9110 says this
+			// fails, and saying so is better than creating it and leaving the
+			// client believing it updated something.
+			status, conflict = http.StatusPreconditionFailed, &Error{
+				Error: "no such page, so nothing matches that validator",
+				Fix:   "use If-Match: * to create a page",
+			}
+			return nil
+		}
+
+		pages[name] = fields
+
+		// The same content-type gate the CLI, the admin and the agent
+		// interface go through. An API that could store content the other
+		// surfaces refuse would be the fifth write path with a hole in it.
+		if s.Types != nil {
+			types, err := s.Types()
+			if err == nil {
+				if failures := types.Gate(pages); len(failures) > 0 {
+					var detail []string
+					for _, f := range failures {
+						detail = append(detail, f.String())
+					}
+					status, conflict = http.StatusUnprocessableEntity, &Error{
+						Error:  "the content does not satisfy its type",
+						Detail: strings.Join(detail, "; "),
+					}
+					return nil
+				}
+			}
+		}
+
+		var err error
+		cid, err = site.SaveDraftLocked(s.Store, pages,
+			"api: write "+name, tok.Principal, draft)
+		return err
+	})
+
+	if conflict != nil {
+		writeError(w, status, *conflict)
+		return
+	}
+	if lockErr != nil {
 		var c *site.Conflict
-		if errors.As(err, &c) {
+		if errors.As(lockErr, &c) {
 			writeError(w, http.StatusConflict, Error{
 				Error:  "the draft moved while this request was in flight",
 				Detail: c.Error(),
@@ -448,7 +534,7 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 			return
 		}
 		writeError(w, http.StatusInternalServerError, Error{
-			Error: "the write failed", Detail: err.Error()})
+			Error: "the write failed", Detail: lockErr.Error()})
 		return
 	}
 

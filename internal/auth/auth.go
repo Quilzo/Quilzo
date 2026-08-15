@@ -49,6 +49,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -152,6 +153,14 @@ type Binding struct {
 
 // Policy is the whole access model: an ordered list of bindings.
 type Policy struct {
+	// mu guards Bindings.
+	//
+	// This began as a CLI type, where one process did one thing and a lock
+	// would have been noise. It is now read by every HTTP request the admin
+	// interface and the content API serve, concurrently, and a type's
+	// thread-safety is a property of its callers rather than of its original
+	// author's intentions.
+	mu       sync.RWMutex
 	Bindings []Binding `json:"bindings"`
 }
 
@@ -202,6 +211,9 @@ type Decision struct {
 //  2. Otherwise the effective role is the highest granted at or above the
 //     resource.
 func (p *Policy) Evaluate(principal string, action Action, resource string) Decision {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	required, known := needs[action]
 	if !known {
 		// An unknown action is refused rather than allowed. A typo in a caller
@@ -274,6 +286,9 @@ func (p *Policy) Evaluate(principal string, action Action, resource string) Deci
 
 // Grant adds a binding. Refuses a duplicate rather than stacking one.
 func (p *Policy) Grant(b Binding) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if strings.TrimSpace(b.Principal) == "" {
 		return fmt.Errorf("a binding needs a principal")
 	}
@@ -296,6 +311,9 @@ func (p *Policy) Grant(b Binding) error {
 
 // Revoke removes matching bindings and reports how many went.
 func (p *Policy) Revoke(principal string, role Role, resource string) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	resource = normalise(resource)
 	kept := p.Bindings[:0]
 	removed := 0
@@ -312,6 +330,9 @@ func (p *Policy) Revoke(principal string, role Role, resource string) int {
 
 // Principals lists everyone with any binding.
 func (p *Policy) Principals() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	seen := map[string]bool{}
 	for _, b := range p.Bindings {
 		seen[b.Principal] = true
@@ -425,6 +446,16 @@ func hashToken(secret string) string {
 
 // TokenStore holds issued tokens.
 type TokenStore struct {
+	// mu guards Tokens. See the note on Policy: the same reasoning applies,
+	// and here the consequence was worse than a torn read of a boolean.
+	//
+	// Authenticate ranges over the slice while Issue appends to it. An append
+	// that reallocates while another goroutine holds an index into the old
+	// array is the textbook case, and the returned *Token pointed into the
+	// slice — so a caller held a pointer to memory that Revoke could flip
+	// underneath it, between the check that the token was usable and the use
+	// of what it authorised.
+	mu     sync.Mutex
 	Tokens []Token `json:"tokens"`
 }
 
@@ -435,6 +466,9 @@ type TokenStore struct {
 // token creation becomes a privilege-escalation path.
 func (ts *TokenStore) Issue(name, principal string, role Role, resource string,
 	ttl time.Duration, issuerRole Role) (secret string, t Token, err error) {
+
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
 
 	if strings.TrimSpace(name) == "" {
 		return "", Token{}, fmt.Errorf("a token needs a name, so it can be recognised later")
@@ -491,8 +525,10 @@ func (ts *TokenStore) Issue(name, principal string, role Role, resource string,
 // could widen would be an escalation path dressed as convenience.
 func (ts *TokenStore) Exchange(parentSecret string, role Role, resource string,
 	ttl time.Duration, now time.Time) (secret string, t Token, err error) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
 
-	parent, err := ts.Authenticate(parentSecret, now)
+	parent, err := ts.authenticate(parentSecret, now)
 	if err != nil {
 		return "", Token{}, err
 	}
@@ -564,6 +600,15 @@ func (ts *TokenStore) Exchange(parentSecret string, role Role, resource string,
 // patience — and the whole point of storing hashes is that the store is not
 // enough to authenticate with.
 func (ts *TokenStore) Authenticate(secret string, now time.Time) (*Token, error) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.authenticate(secret, now)
+}
+
+// authenticate is Authenticate with the lock already held, so that Exchange —
+// which authenticates the parent and then mints a child — does both under one
+// lock rather than deadlocking on a re-entrant call.
+func (ts *TokenStore) authenticate(secret string, now time.Time) (*Token, error) {
 	if !strings.HasPrefix(secret, TokenPrefix) {
 		return nil, fmt.Errorf("that is not a scrivet token (they start with %s)", TokenPrefix)
 	}
@@ -584,7 +629,14 @@ func (ts *TokenStore) Authenticate(secret string, now time.Time) (*Token, error)
 		return nil, fmt.Errorf("%s", why)
 	}
 	found.LastUsed = now.Unix()
-	return found, nil
+
+	// A copy, not the address of a slice element. The caller keeps this for
+	// the length of a request; the slice underneath it can be reallocated by
+	// Issue and rewritten by Revoke in that time. Handing out an alias into
+	// mutable shared state makes every caller responsible for a lock they
+	// cannot see.
+	out := *found
+	return &out, nil
 }
 
 // Revoke marks a token unusable, along with every session minted from it.
@@ -597,6 +649,9 @@ func (ts *TokenStore) Authenticate(secret string, now time.Time) (*Token, error)
 // Records are kept rather than deleted, so what existed and when it last worked
 // survives the revocation.
 func (ts *TokenStore) Revoke(id string) (int, error) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+
 	found := false
 	for i := range ts.Tokens {
 		if ts.Tokens[i].ID == id {
@@ -625,6 +680,9 @@ func (ts *TokenStore) Revoke(id string) (int, error) {
 // Stale lists tokens that have never been used or have not been used recently.
 // Unused credentials are the ones nobody notices are still valid.
 func (ts *TokenStore) Stale(now time.Time, idle time.Duration) []Token {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+
 	var out []Token
 	for _, t := range ts.Tokens {
 		if t.Revoked || t.Expired(now) {

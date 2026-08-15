@@ -277,6 +277,18 @@ func normalisePath(p string) (string, error) {
 	if p == "" {
 		return "", fmt.Errorf("empty")
 	}
+	if err := noControls(p); err != nil {
+		return "", err
+	}
+	// A backslash is a forward slash to a browser.
+	//
+	// The WHATWG URL standard says so for special schemes, which is every
+	// scheme that matters here, and it is why /\evil.example is an open
+	// redirect: the browser reads the leading /\ as an authority just as it
+	// reads //, and goes to evil.example. Collapsing repeated slashes below
+	// therefore has to see backslashes as slashes, or the whole check is
+	// defeated by typing the separator the other way round.
+	p = strings.ReplaceAll(p, "\\", "/")
 	// A full URL is accepted and reduced to its path, because that is what a
 	// WordPress export contains and asking people to strip it by hand is asking
 	// for a map with hostnames in half the rows.
@@ -319,6 +331,9 @@ func normaliseTarget(p string) (string, error) {
 	if p == "" {
 		return "", fmt.Errorf("empty")
 	}
+	if err := noControls(p); err != nil {
+		return "", err
+	}
 	// Any scheme at all, not just the ones written with "://". The first
 	// version tested for "://" and let javascript: and data: through to be
 	// treated as relative paths — mangled rather than exploited, but a check
@@ -350,6 +365,29 @@ func normaliseTarget(p string) (string, error) {
 		return norm + "?" + query, nil
 	}
 	return norm, nil
+}
+
+// noControls refuses control characters anywhere in a rule.
+//
+// Go's own header writer replaces a newline with a space, so this is not a
+// response-splitting bug as it stands. It is a bug because the map does not
+// only become a Location header: it is exported to CDN and web-server
+// configuration, where a line is a rule and a newline in a value starts
+// another one. Refusing at the point the rule is written keeps the guarantee
+// from depending on which of several emitters is in use, and on all of them
+// remembering.
+//
+// A tab is included because it is legal in a header value and therefore
+// survives to whatever reads the export next.
+func noControls(s string) error {
+	for i, r := range s {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("byte %d is control character %#02x; a redirect "+
+				"rule is exported to configuration where a newline starts a "+
+				"new rule", i, r)
+		}
+	}
+	return nil
 }
 
 // schemeOf returns the URI scheme of a reference, or empty if it is relative.
