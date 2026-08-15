@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/rsh1k/scrivet/internal/audit"
 	"os"
 	"path/filepath"
 	"sort"
@@ -126,6 +127,10 @@ func templateUse(root string, args []string) error {
 		}
 	}
 
+	// A template is what renders every page, so writing one is a change to
+	// what the public sees the moment the server restarts.
+	record(root, resolveCaller(root, "").auditRecord("template.use", "/",
+		audit.Success, map[string]string{"starter": t.Name, "dir": *dir}))
 	w.Human("wrote %s%s%s from the %s starter\n",
 		bold, filepath.Join(*dir, "page.html"), reset, t.Name)
 	w.Human("wrote %s%s%s\n", bold, filepath.Join(*dir, "site.css"), reset)

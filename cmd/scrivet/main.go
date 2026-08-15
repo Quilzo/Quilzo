@@ -450,13 +450,23 @@ func cmdAdd(root string, args []string) error {
 		return err
 	}
 
+	caller := resolveCaller(root, "")
 	who := *author
 	if who == "" {
-		who = resolveCaller(root, "").Name
+		who = caller.Name
 	}
+	changed := changedNames(fs.Args())
 	cid, err := site.SaveDraftFrom(s, pages, *msg, who, *basedOn)
 	if err != nil {
-		return conflictError(err, changedNames(fs.Args()))
+		// A refused write is worth recording. Somebody tried to save over
+		// somebody else's edit, and the fact that the store stopped them is
+		// exactly the sort of thing a log exists to preserve.
+		record(root, caller.auditRecord("content.add", "/", audit.Denied,
+			map[string]string{
+				"pages":  strings.Join(changed, ","),
+				"reason": "conflict",
+			}))
+		return conflictError(err, changed)
 	}
 	// The validation record is written after the content, so a crash between
 	// the two leaves a page with no record rather than a record for a page that
@@ -465,6 +475,15 @@ func cmdAdd(root string, args []string) error {
 	if err := types.Save(); err != nil {
 		return err
 	}
+	// The most ordinary write in the program, and it recorded nothing. AU-3
+	// wants who did what; a log that holds every grant and no content change
+	// answers a much narrower question than anyone reading it will assume.
+	record(root, caller.auditRecord("content.add", "/", audit.Success,
+		map[string]string{
+			"commit": short(cid),
+			"pages":  strings.Join(changed, ","),
+			"author": who,
+		}))
 	w.Human("draft %s  %d page(s)\n", short(cid), len(pages))
 	return nil
 }
@@ -690,10 +709,22 @@ func cmdRollback(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	caller := resolveCaller(root, "")
 	pub, err := site.Rollback(s, *steps)
 	if err != nil {
+		record(root, caller.auditRecord("rollback", "/", audit.Denied,
+			map[string]string{"steps": fmt.Sprintf("%d", *steps),
+				"reason": err.Error()}))
 		return err
 	}
+	// Rollback changes what the public is served and recorded nothing, which
+	// made it the quietest way to change the live site in the whole program.
+	record(root, caller.auditRecord("rollback", "/", audit.Success,
+		map[string]string{
+			"from":  short(pub.Previous),
+			"to":    short(pub.Published),
+			"steps": fmt.Sprintf("%d", *steps),
+		}))
 	fmt.Printf("live is now %s  (%d change(s) reverted)\n",
 		short(pub.Published), len(pub.Changes))
 	fmt.Printf("  %srolled back from %s, which is still stored and can be "+

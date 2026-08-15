@@ -13,7 +13,20 @@ import (
 	"github.com/rsh1k/scrivet/internal/logd"
 )
 
-func logSocketPath(root string) string { return filepath.Join(root, "log.sock") }
+// The socket lives beside the log, not inside the store.
+//
+// Both ends have to reach it, and only one of them owns the store. Defaulting
+// it into the store meant the writer could not bind it — `listen unix
+// /srv/store/log.sock: bind: permission denied` — which is not a permissions
+// mistake to work around but the separation working: an account that can
+// create files in the store is an account that can edit the store.
+//
+// So the writer needs nothing from the store at all. It is given a directory
+// it owns, and the store holds a pointer to that directory which the readers
+// follow.
+func logSocketPath(root string) string {
+	return filepath.Join(auditDir(root), "log.sock")
+}
 
 // cmdLogd runs the log writer.
 //
@@ -27,6 +40,9 @@ func cmdLogd(root string, args []string) error {
 	allow := fs.String("allow-uid", "",
 		"comma-separated uids permitted to submit; empty means anyone who can "+
 			"reach the socket")
+	logDir := fs.String("log-dir", "",
+		"directory this account owns, where the log and its key live; "+
+			"recorded in the store so other commands find it")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -42,9 +58,27 @@ func cmdLogd(root string, args []string) error {
 				"  Run it as a dedicated account that owns the log file")
 	}
 
+	// Set before anything computes a default from it.
+	//
+	// The store is deliberately not consulted to check the two agree. This
+	// account may have no access to the store at all, which is the point of
+	// the separation, so a check here would report a disagreement precisely
+	// when the deployment is correct. `scrivet logd status`, run by the
+	// account that does own the store, is where they are compared.
+	if *logDir != "" {
+		if err := os.MkdirAll(*logDir, 0o750); err != nil {
+			return err
+		}
+		logDirOverride = *logDir
+	}
+
 	path := *socket
 	if path == "" {
-		path = logSocketPath(root)
+		if *logDir != "" {
+			path = filepath.Join(*logDir, "log.sock")
+		} else {
+			path = logSocketPath(root)
+		}
 	}
 
 	var uids []int

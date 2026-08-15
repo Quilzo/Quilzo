@@ -1,8 +1,11 @@
 package audit
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/rsh1k/scrivet/internal/translog"
@@ -58,16 +61,64 @@ type Head struct {
 // Over the entry hashes rather than the raw lines, so the tree and the chain
 // commit to the same thing: an entry that fails the chain also fails the tree,
 // and the two cannot disagree about what an entry was.
+// tree builds the Merkle log over the entries.
+//
+// The leaf is recomputed from the entry's content. It used to be the entry's
+// own Hash field, read out and trusted, and that made the whole transparency
+// story circular: an administrator who edited an entry and left its hash
+// alone changed the log without changing the tree.
+//
+// Verify caught that, because Verify recomputes. Consistency did not, and
+// reported "every entry behind the published head is still there, unchanged"
+// about a log whose second entry had just been rewritten. Worse, `auditlog
+// anchor` puts this root into Bitcoin — so the anchor attested to a list of
+// self-declared strings rather than to the content of the log, and the one
+// claim that cannot be walked back was the one that was not true.
+//
+// The leaf commits to both, and it has to, because there are two ways to edit
+// an entry and each defeats one of them.
+//
+// Using the stored Hash alone — what this did — misses a content edit that
+// leaves the hash field untouched. Using the recomputed content hash alone
+// misses an edit to the hash field itself, which breaks the chain that an
+// auditor following inclusion proofs never looks at.
+//
+// So the leaf is over the pair. An honest entry has them equal and the leaf is
+// then a deterministic function of the content; a tampered one has them differ
+// and the leaf differs from either. The tree still builds either way, which
+// matters: a consistency proof that can be produced and shown to fail against
+// an anchored head is evidence somebody else can check, where a local refusal
+// to build is a message from the same machine that holds the log.
+func LeafHash(e Event) ([]byte, error) {
+	want, err := e.computeHash()
+	if err != nil {
+		return nil, fmt.Errorf("entry %d cannot be re-hashed: %w", e.Seq, err)
+	}
+	h := sha256.New()
+	// Domain-separated and length-prefixed, so no pair of fields can be slid
+	// across the boundary to produce another pair's leaf.
+	h.Write([]byte("scrivet.audit.leaf.v1\n"))
+	writeField(h, want)
+	writeField(h, e.Hash)
+	writeField(h, e.Prev)
+	return h.Sum(nil), nil
+}
+
+func writeField(h io.Writer, s string) {
+	var n [8]byte
+	binary.BigEndian.PutUint64(n[:], uint64(len(s)))
+	h.Write(n[:])
+	h.Write([]byte(s))
+}
+
 func tree(events []Event) (*translog.Log, error) {
 	l := translog.New()
 	for _, e := range events {
-		h, err := hex.DecodeString(e.Hash)
-		if err != nil || len(h) != 32 {
-			return nil, fmt.Errorf(
-				"entry %d has a hash that is not a SHA-256, so no tree can be "+
-					"built over it", e.Seq)
+		leaf, err := LeafHash(e)
+		if err != nil {
+			return nil, err
 		}
-		l.Append(h)
+		l.Append(leaf)
 	}
 	return l, nil
 }
@@ -119,9 +170,13 @@ func Inclusion(events []Event, seq int64) ([]string, Head, error) {
 // they trust can confirm the entry is in that log, on a machine that has never
 // seen the log file.
 func VerifyInclusion(e Event, index int, proof []string, head Head) error {
-	leaf, err := hex.DecodeString(e.Hash)
+	// Derived from the entry rather than read off it, which is the same
+	// reasoning as the tree: an auditor handed one entry and a proof must be
+	// checking the entry they were handed, not a field inside it claiming
+	// what the entry is.
+	leaf, err := LeafHash(e)
 	if err != nil {
-		return fmt.Errorf("the entry's hash is not hex: %w", err)
+		return err
 	}
 	root, err := hex.DecodeString(head.Root)
 	if err != nil {

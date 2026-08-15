@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/out"
 	"github.com/rsh1k/scrivet/internal/schema"
 	"github.com/rsh1k/scrivet/internal/site"
@@ -119,6 +120,12 @@ func typesAdd(root string, args []string) error {
 	if err := st.Save(); err != nil {
 		return err
 	}
+	// A content type is the gate every write passes through, so changing one
+	// changes what every author may store from now on.
+	record(root, resolveCaller(root, "").auditRecord("type.add", "/",
+		audit.Success, map[string]string{"type": t.Name,
+			"fields": fmt.Sprintf("%d", len(t.Fields)),
+			"hash":   short(schema.Hash(t))}))
 	w.Human("added %s%s%s with %d field(s)  %s%s%s\n",
 		bold, t.Name, reset, len(t.Fields), dim, short(schema.Hash(t)), reset)
 	return nil

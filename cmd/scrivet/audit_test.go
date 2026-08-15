@@ -174,9 +174,16 @@ func exprText(e ast.Expr) string {
 // mode is an absent call and a behavioural test can only find those one at a
 // time.
 func TestEveryPrivilegedCommandWritesAnAuditRecord(t *testing.T) {
-	// Function name to the action string its record must carry. Adding a
-	// privileged command means adding a line here, which is the point: the list
-	// is short enough to read and the omission is the bug.
+	// Function name to the action string its record must carry.
+	//
+	// This list is no longer the coverage check — TestEveryMutatingCommand-
+	// CanReachTheAuditLog derives that from the privilege table, because this
+	// list passed for months while `scrivet add` recorded nothing at all. A
+	// list maintained by the same person who forgets the call is not a check.
+	//
+	// It is kept for what it does test and the derived one cannot: that these
+	// records carry the specific action strings a SIEM rule will match on.
+	// Renaming "token.issue" would still break somebody's alerting.
 	required := map[string]string{
 		"authGrant":     "auth.",
 		"authRevoke":    "auth.revoke",

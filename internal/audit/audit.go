@@ -333,7 +333,18 @@ func (l *Log) Append(r Record) (*Event, error) {
 
 	// Append-only, and fsynced. An audit record still in a buffer when the
 	// process dies is a record of an event that is now invisible.
-	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	// 0640, not 0600.
+	//
+	// The separated deployment has the writer own this file and the CMS in its
+	// group: the CMS is not trusted to *write* the log, which is a different
+	// claim from not being trusted to read it. At 0600 the writer worked, the
+	// separation held, and every reader — `auditlog head`, `siem`, the posture
+	// inspector — failed with "permission denied", so the configuration that
+	// is correct was the one that broke the tooling.
+	//
+	// The mode is the ceiling, not the grant. Nothing is readable until an
+	// operator puts an account in the file's group.
+	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
 	if err != nil {
 		l.seq--
 		return nil, err

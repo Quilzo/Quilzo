@@ -199,3 +199,116 @@ func TestAnEmptyLogHasAWellDefinedHead(t *testing.T) {
 			"size zero, or the first published head has nothing to extend")
 	}
 }
+
+// -- the leaf must not be self-declared --------------------------------------
+
+// The bug this exists to prevent, and it was in the one claim that cannot be
+// walked back.
+//
+// The tree was built over each entry's own Hash field, read out and trusted.
+// So an administrator who edited an entry's content and left its hash alone
+// changed the log without changing the root — and `auditlog consistency`
+// reported "every entry behind the published head is still there, unchanged"
+// about a log whose entry had just been rewritten. Verify caught it, because
+// Verify recomputes; the tree did not, and the tree is what `auditlog anchor`
+// puts into Bitcoin. The anchor was attesting to a list of self-declared
+// strings.
+//
+// Found by running the separated deployment in a container and editing the log
+// as root, which is precisely the threat the design names.
+func TestEditingContentWithoutRepairingTheHashChangesTheRoot(t *testing.T) {
+	events := logOf(t, 50)
+	published, err := TreeHead(events, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The lazy tamper: change what an entry says, leave its hash alone so the
+	// file still looks well-formed to anything that does not recompute.
+	// Every entry logOf writes is already a successful publish by dana, so
+	// the edit has to be to something that differs — assigning a field the
+	// value it already holds is not a test of anything.
+	tampered := append([]Event{}, events...)
+	tampered[20].Action = "rollback"
+
+	after, err := TreeHead(tampered, time.Now())
+	if err != nil {
+		return // refusing to build is also a detection
+	}
+	if after.Root == published.Root {
+		t.Fatal("editing an entry's content left the tree root unchanged, so " +
+			"an anchored head commits to nothing about what the log says")
+	}
+}
+
+// And the same log must fail consistency against a head published before the
+// edit — which is the check an auditor actually runs.
+func TestAContentEditFailsConsistencyAgainstAnEarlierHead(t *testing.T) {
+	events := logOf(t, 200)
+	published, err := TreeHead(events[:80], time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tampered := append([]Event{}, events...)
+	tampered[40].Resource = "/somewhere-else"
+
+	proof, now, err := Consistency(tampered, 80)
+	if err != nil {
+		return // refused outright, which is a detection
+	}
+	if err := VerifyConsistency(published, now, proof); err == nil {
+		t.Fatal("a log with an edited entry passed consistency against a head " +
+			"published before the edit")
+	}
+}
+
+// Both kinds of edit, stated together, because covering one and not the other
+// is exactly how this got through: the leaf has to commit to the content and
+// to the chain hash, since each field defeats the other's check.
+func TestEitherKindOfEditIsCaught(t *testing.T) {
+	base := logOf(t, 30)
+	original, err := TreeHead(base, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		edit func(e *Event)
+	}{
+		{"content edited, hash left alone", func(e *Event) { e.Action = "rollback" }},
+		{"hash edited to hide a chain break", func(e *Event) {
+			e.Hash = strings.Repeat("b", 64)
+		}},
+		{"principal swapped", func(e *Event) { e.Principal = "someone-else" }},
+		{"outcome flipped", func(e *Event) { e.Outcome = Denied }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			events := append([]Event{}, base...)
+			tc.edit(&events[15])
+			after, err := TreeHead(events, time.Now())
+			if err != nil {
+				return
+			}
+			if after.Root == original.Root {
+				t.Errorf("%s left the root unchanged", tc.name)
+			}
+		})
+	}
+}
+
+// An inclusion proof has to check the entry the auditor was handed, not a
+// field inside it claiming what the entry is.
+func TestAnInclusionProofChecksTheEntryNotItsSelfDeclaredHash(t *testing.T) {
+	events := logOf(t, 100)
+	proof, head, err := Inclusion(events, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shown := events[49]
+	shown.Action = "something-else-entirely"
+	if err := VerifyInclusion(shown, 49, proof, head); err == nil {
+		t.Fatal("an auditor was shown an altered entry and its proof verified")
+	}
+}

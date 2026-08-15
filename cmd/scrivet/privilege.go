@@ -59,10 +59,13 @@ var commandNeeds = map[string]need{
 	"agents":     {action: auth.ActView},
 	"provenance": {action: auth.ActView},
 	"prov":       {action: auth.ActView},
-	"auditlog":   {action: auth.ActView},
-	"anchor":     {action: auth.ActView},
-	"timestamp":  {action: auth.ActView},
-	"stamp":      {action: auth.ActView},
+	// Strict parent, narrowing children — see the note on posture. Pointing
+	// every reader at a different audit log is an operator act, so the parent
+	// takes that answer and the seven reading subcommands step down from it.
+	"auditlog":  {action: auth.ActGrant},
+	"anchor":    {action: auth.ActView},
+	"timestamp": {action: auth.ActView},
+	"stamp":     {action: auth.ActView},
 
 	// -- writing content
 	"add":       {action: auth.ActEditDraft},
@@ -111,6 +114,14 @@ var commandNeeds = map[string]need{
 	"webhooks list":   {action: auth.ActView},
 	"oidc check":      {action: auth.ActView},
 	"logd status":     {action: auth.ActView},
+
+	"auditlog verify":      {action: auth.ActView},
+	"auditlog show":        {action: auth.ActView},
+	"auditlog export":      {action: auth.ActView},
+	"auditlog head":        {action: auth.ActView},
+	"auditlog prove":       {action: auth.ActView},
+	"auditlog consistency": {action: auth.ActView},
+	"auditlog anchor":      {action: auth.ActView},
 
 	// -- changing what the public sees
 	"publish":  {action: auth.ActPublish},

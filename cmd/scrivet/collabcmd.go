@@ -60,6 +60,8 @@ func lockClaim(root string, args []string) error {
 	if w.JSON(map[string]any{"claim": mine, "already_held_by": existing}) {
 		return nil
 	}
+	record(root, resolveCaller(root, "").auditRecord("lock.claim", "/"+pos[0],
+		audit.Success, nil))
 	w.Human("%s is yours until %s\n", pos[0],
 		time.Unix(mine.Until, 0).Format("15:04"))
 	if existing != nil {

@@ -10,15 +10,109 @@ import (
 	"github.com/rsh1k/scrivet/internal/logd"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/out"
 )
 
-func auditPath(root string) string { return filepath.Join(root, "audit.jsonl") }
+// Where the audit log lives.
+//
+// By default inside the store, which is the single-account bootstrap. A
+// separated deployment puts it somewhere the CMS account cannot write, and
+// that directory is recorded in the store so every command finds it without
+// each one growing a flag — a flag that has to be passed identically to
+// `auditlog`, `siem` and `logd status` forever is a flag that will eventually
+// be passed to two of the three.
+//
+// The pointer file is deliberately plain and inside the store. It is not a
+// security boundary: it says where to look, and lying in it points the reader
+// at a file that fails verification rather than at a forged one that passes.
+// What protects the log is the ownership of the directory it names and the
+// hash chain inside it.
+// logDirOverride is set by `logd --log-dir`, which knows where it is writing
+// and must not consult the store to find out — the store belongs to the other
+// account and may point somewhere stale.
+var logDirOverride string
+
+func auditDir(root string) string {
+	if logDirOverride != "" {
+		return logDirOverride
+	}
+	b, err := os.ReadFile(filepath.Join(root, "auditlog.dir"))
+	if err != nil {
+		return root
+	}
+	if dir := strings.TrimSpace(string(b)); dir != "" {
+		return dir
+	}
+	return root
+}
+
+// cmdAuditDir shows or sets where the audit log lives.
+//
+// Run by whoever owns the store, which in a separated deployment is not the
+// account that writes the log. That asymmetry is the reason this is a command
+// rather than something logd does at startup.
+func cmdAuditDir(root string, args []string) error {
+	if len(args) == 0 {
+		dir := auditDir(root)
+		if dir == root {
+			w.Human("  the log is in the store: %s", auditPath(root))
+			w.Human("  %sthat means this account writes its own audit record%s",
+				dim, reset)
+			w.Human("  %sscrivet auditlog dir /srv/audit — after creating it "+
+				"for the log account%s", dim, reset)
+			return nil
+		}
+		w.Human("  the log is at %s", filepath.Join(dir, "audit.jsonl"))
+		return nil
+	}
+	dir := args[0]
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	if fi, err := os.Stat(abs); err != nil {
+		return fmt.Errorf("%s: %w\n  create it first, owned by the account "+
+			"that will run `scrivet logd`", abs, err)
+	} else if !fi.IsDir() {
+		return fmt.Errorf("%s is not a directory", abs)
+	}
+	// Repointing every reader at a different log is the single most sensitive
+	// thing in this command, and it recorded nothing. Written to the OLD log
+	// before the pointer moves, so the change is in the record that was being
+	// kept at the time rather than only in the one it moves to.
+	record(root, resolveCaller(root, "").auditRecord("auditlog.dir", "/",
+		audit.Success, map[string]string{"from": auditDir(root), "to": abs}))
+	if err := setAuditDir(root, abs); err != nil {
+		return err
+	}
+	w.Human("  the log is now read from %s", filepath.Join(abs, "audit.jsonl"))
+	w.Human("  %sstart the writer: scrivet --root %s logd --log-dir %s%s",
+		dim, root, abs, reset)
+	return nil
+}
+
+func setAuditDir(root, dir string) error {
+	if dir == "" || dir == root {
+		return os.Remove(filepath.Join(root, "auditlog.dir"))
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(root, "auditlog.dir"),
+		[]byte(abs+"\n"), 0o644)
+}
+
+func auditPath(root string) string {
+	return filepath.Join(auditDir(root), "audit.jsonl")
+}
+
 func auditKeyPath(root string) string {
-	return filepath.Join(root, "audit.key")
+	return filepath.Join(auditDir(root), "audit.key")
 }
 
 // openAudit returns a log, creating a pseudonymisation key on first use.
@@ -35,10 +129,24 @@ func openAudit(root string) (*audit.Log, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(auditKeyPath(root), key, 0o600); err != nil {
+		// 0640, not 0600. In a separated deployment the writer owns this and
+		// the CMS account has to read it to render `auditlog` and `siem`
+		// output — the CMS is not trusted to *write* the log, which is a
+		// different claim from not being trusted to read it. A shared group
+		// is the Unix answer and 0600 made the deployment impossible.
+		if err := os.WriteFile(auditKeyPath(root), key, 0o640); err != nil {
 			return nil, err
 		}
 	} else if err != nil {
+		if os.IsPermission(err) {
+			return nil, fmt.Errorf(
+				"cannot read %s: %w\n"+
+					"  the audit key belongs to the account that writes the "+
+					"log. This account needs to be in its group, and the key "+
+					"needs to be group-readable:\n"+
+					"    chgrp <shared-group> %s && chmod 640 %s",
+				auditKeyPath(root), err, auditKeyPath(root), auditKeyPath(root))
+		}
 		return nil, err
 	}
 	host, _ := os.Hostname()
@@ -102,6 +210,8 @@ func cmdAuditLog(root string, args []string) error {
 		args = []string{"show"}
 	}
 	switch args[0] {
+	case "dir":
+		return cmdAuditDir(root, args[1:])
 	case "verify":
 		return auditVerify(root)
 	case "show":
@@ -120,6 +230,21 @@ func cmdAuditLog(root string, args []string) error {
 		return fmt.Errorf("unknown auditlog command %q; try show, verify, "+
 			"export, head, prove, consistency or anchor", args[0])
 	}
+}
+
+// unreadable reports whether every problem is the file refusing to open,
+// rather than its contents failing to verify.
+func unreadable(problems []audit.Problem) bool {
+	if len(problems) == 0 {
+		return false
+	}
+	for _, p := range problems {
+		if !strings.Contains(p.Reason, "permission denied") &&
+			!strings.Contains(p.Reason, "no such file") {
+			return false
+		}
+	}
+	return true
 }
 
 func auditVerify(root string) error {
@@ -151,6 +276,21 @@ func auditVerify(root string) error {
 	w.Human("  %s%d problem(s)%s\n", red, len(problems), reset)
 	for _, p := range problems {
 		w.Human("    entry %d: %s\n", p.Seq, p.Reason)
+	}
+	// A log that cannot be read is not a log that has been tampered with, and
+	// saying so is worse than saying nothing.
+	//
+	// A permission error reported as "the audit log has been tampered with" is
+	// the alert that cries wolf — and it fires in exactly the deployment this
+	// program recommends, where the writer owns the file and a reader has not
+	// been put in its group yet. An operator who sees a tamper alert resolved
+	// by a chmod learns to resolve the next one the same way.
+	if unreadable(problems) {
+		return fmt.Errorf(
+			"the audit log could not be read, so nothing was verified.\n" +
+				"  This is not evidence of tampering — it is a permission " +
+				"problem. The log belongs to the account that writes it; this " +
+				"account needs to be in its group")
 	}
 	return errBlocked{fmt.Errorf("the audit log has been tampered with")}
 }

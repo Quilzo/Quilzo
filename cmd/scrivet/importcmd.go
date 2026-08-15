@@ -245,6 +245,10 @@ func mediaAdd(root string, args []string) error {
 	if w.JSON(f) {
 		return nil
 	}
+	// An accepted upload is a file this site will serve to the public.
+	record(root, resolveCaller(root, "").auditRecord("media.add", "/",
+		audit.Success, map[string]string{"file": f.Name, "id": short(f.ID),
+			"format": string(f.Format)}))
 	w.Human("accepted %s%s%s\n", bold, f.Name, reset)
 	w.Human("  %s%s · %s · %d bytes", dim, f.Format, f.Kind, f.Size)
 	if f.Width > 0 {
@@ -288,6 +292,9 @@ func mediaGet(root string, args []string) error {
 	if w.JSON(f) {
 		return nil
 	}
+	record(root, resolveCaller(root, "").auditRecord("media.get", "/",
+		audit.Success, map[string]string{"file": f.Name, "id": short(f.ID),
+			"format": string(f.Format), "source": f.Source}))
 	w.Human("fetched and accepted %s%s%s\n", bold, f.Name, reset)
 	w.Human("  %sfrom %s%s\n", dim, res.FinalURL, reset)
 	w.Human("  %s%s · %d bytes · id %s%s\n", dim, f.Format, f.Size, f.ID[:32], reset)
