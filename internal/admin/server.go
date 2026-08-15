@@ -365,10 +365,30 @@ func sameSiteOnly(next http.Handler) http.Handler {
 			return
 		}
 
+		// Sec-Fetch-Site is authoritative when the browser sends it.
+		//
+		// It is set by the browser itself and a page cannot forge it, so
+		// "same-origin" is a stronger statement than anything Origin can make
+		// — and once it has been made, re-checking Origin can only produce
+		// disagreements with a request that is already known to be fine.
+		//
+		// It did. Signing in from Brave failed with "this request came from
+		// another origin" while the same POST from curl succeeded: the
+		// browser said same-origin, and then sent an Origin the comparison
+		// did not like — privacy-hardened browsers send `null` in situations
+		// where a stricter one sends the real value. Both lines of defence
+		// were present, and the second one refused what the first had just
+		// approved.
+		//
+		// So Sec-Fetch-Site decides when it is there, and Origin is the
+		// fallback for clients that do not send it. Belt and braces, with the
+		// braces no longer able to drop the trousers.
 		switch r.Header.Get("Sec-Fetch-Site") {
-		case "same-origin", "none", "":
-			// same-origin is what we want; none is a direct navigation; empty
-			// means a client that does not send it, handled by the Origin check.
+		case "same-origin", "none":
+			next.ServeHTTP(w, r)
+			return
+		case "":
+			// Not sent. Fall through to Origin.
 		default:
 			http.Error(w, "cross-site requests cannot change anything here",
 				http.StatusForbidden)
@@ -378,8 +398,14 @@ func sameSiteOnly(next http.Handler) http.Handler {
 		if origin := r.Header.Get("Origin"); origin != "" {
 			u, err := url.Parse(origin)
 			if err != nil || u.Host != r.Host {
-				http.Error(w, "this request came from another origin",
-					http.StatusForbidden)
+				// Named, because "another origin" gives somebody staring at a
+				// blank page nothing to act on. This is the message an
+				// operator behind a proxy that rewrites Host will need.
+				http.Error(w, fmt.Sprintf(
+					"this request says it came from %q and this server is "+
+						"%q. If something in front of this rewrites the Host "+
+						"header, it needs to preserve it.",
+					origin, r.Host), http.StatusForbidden)
 				return
 			}
 		}

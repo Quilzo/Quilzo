@@ -1,0 +1,30 @@
+:root{--ink:#14181b;--dim:#5a6570;--line:#dfe4e8;--bg:#fbfcfd;--acc:#0b6b62;--soft:#eef4f3}
+@media(prefers-color-scheme:dark){:root{--ink:#e6eaed;--dim:#9aa6b0;--line:#2a3138;--bg:#101417;--acc:#5fd3c4;--soft:#17211f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.65 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+header.site{display:flex;flex-wrap:wrap;gap:1rem;align-items:baseline;
+  justify-content:space-between;padding:1.1rem 1.5rem;border-bottom:1px solid var(--line)}
+.brand{font-weight:750;font-size:1.05rem;text-decoration:none;color:var(--ink);letter-spacing:-.01em}
+.brand span{color:var(--acc);margin-left:.35rem;font-weight:600}
+header.site nav{display:flex;gap:1.25rem;flex-wrap:wrap}
+header.site nav a{color:var(--dim);text-decoration:none;font-size:.9375rem}
+header.site nav a:hover{color:var(--acc)}
+main{max-width:44rem;margin:0 auto;padding:3rem 1.5rem 4rem}
+.eyebrow{color:var(--acc);font-size:.75rem;font-weight:700;letter-spacing:.09em;margin:0 0 .5rem}
+h1{font-size:clamp(2rem,5vw,3rem);line-height:1.1;letter-spacing:-.022em;margin:0 0 .75rem}
+.lede{font-size:1.2rem;color:var(--dim);margin:0 0 2rem;line-height:1.55}
+.hero{margin:0 0 2rem}
+.hero img{width:100%;height:auto;border-radius:14px;display:block;border:1px solid var(--line)}
+.hero figcaption{color:var(--dim);font-size:.8125rem;margin-top:.6rem}
+.prose{font-size:1.05rem}
+.points{list-style:none;padding:0;margin:2rem 0;display:grid;gap:.6rem}
+.points li{background:var(--soft);border-radius:12px;padding:.85rem 1.1rem;font-size:.95rem}
+.price{margin:2rem 0;padding:1.1rem 1.25rem;border:1px solid var(--line);
+  border-radius:14px;font-size:1.05rem}
+.price strong{color:var(--acc);font-size:1.25rem}
+.meta{color:var(--dim);font-size:.8125rem;margin-top:2.5rem;padding-top:1.25rem;
+  border-top:1px solid var(--line)}
+footer.site{border-top:1px solid var(--line);padding:1.5rem;color:var(--dim);font-size:.8125rem}
+footer.site p{margin:.2rem 0}
+.fine{opacity:.6}

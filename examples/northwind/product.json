@@ -1,0 +1,13 @@
+{"name":"product","description":"An instrument we sell.",
+ "fields":[
+  {"name":"title","kind":"text","required":true,"max_len":80},
+  {"name":"eyebrow","kind":"text","max_len":40},
+  {"name":"summary","kind":"text","required":true,"max_len":200},
+  {"name":"body","kind":"longtext","required":true},
+  {"name":"hero","kind":"url"},
+  {"name":"hero_alt","kind":"text","alt_for":"hero"},
+  {"name":"points","kind":"list","max_len":6},
+  {"name":"price_from","kind":"text","max_len":20},
+  {"name":"lead_time","kind":"text","max_len":40},
+  {"name":"updated","kind":"date"},
+  {"name":"author","kind":"text","max_len":60}]}

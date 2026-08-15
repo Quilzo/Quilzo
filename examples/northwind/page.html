@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ page.title }} — Northwind Instruments</title>
+<meta name="description" content="{{ page.summary }}">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<header class="site">
+  <a class="brand" href="/">Northwind<span>Instruments</span></a>
+  <nav>
+    <a href="/instruments">Instruments</a>
+    <a href="/calibration">Calibration</a>
+    <a href="/about">About</a>
+    <a href="/contact">Contact</a>
+  </nav>
+</header>
+
+<main>
+  {% if page.eyebrow %}<p class="eyebrow">{{ page.eyebrow | upper }}</p>{% end %}
+  <h1>{{ page.title }}</h1>
+  {% if page.summary %}<p class="lede">{{ page.summary }}</p>{% end %}
+
+  {% if page.hero %}
+  <figure class="hero">
+    <img src="{{ page.hero }}" alt="{{ page.hero_alt }}">
+    {% if page.hero_alt %}<figcaption>{{ page.hero_alt }}</figcaption>{% end %}
+  </figure>
+  {% end %}
+
+  <div class="prose">{{ page.body }}</div>
+
+  {% if page.points %}
+  <ul class="points">
+    {% for point in page.points %}<li>{{ point }}</li>{% end %}
+  </ul>
+  {% end %}
+
+  {% if page.price_from %}
+  <p class="price">From <strong>{{ page.price_from }}</strong>
+     {% if page.lead_time %}· {{ page.lead_time }}{% end %}</p>
+  {% end %}
+
+  {% if page.updated %}
+  <p class="meta">Updated {{ page.updated | date:"2 January 2006" }}
+     {% if page.author %}· {{ page.author | title }}{% end %}</p>
+  {% end %}
+</main>
+
+<footer class="site">
+  <p>Northwind Instruments · Sheffield · Est. 1974</p>
+  <p class="fine">{{ page.title | slug }} · built with scrivet</p>
+</footer>
+</body>
+</html>

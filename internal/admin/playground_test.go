@@ -284,3 +284,59 @@ func fetchPeople(t *testing.T, s *Server) (string, int) {
 	}
 	return w.Body.String(), w.Code
 }
+
+// -- the check that refused a real sign-in -----------------------------------
+
+// Sec-Fetch-Site is set by the browser and a page cannot forge it, so when it
+// says same-origin that is a stronger statement than Origin can make. Checking
+// Origin as well could only ever produce disagreements — and it did: signing
+// in from a privacy-hardened browser failed with "this request came from
+// another origin" while the identical POST from curl succeeded.
+func TestSecFetchSiteDecidesWhenItIsPresent(t *testing.T) {
+	s, tok := setup(t)
+	for _, tc := range []struct {
+		name   string
+		fetch  string
+		origin string
+		want   bool // allowed
+	}{
+		{"browser says same-origin, odd Origin", "same-origin", "null", true},
+		{"browser says same-origin, no Origin", "same-origin", "", true},
+		{"direct navigation", "none", "", true},
+		{"browser says cross-site", "cross-site", "http://h", false},
+		{"no fetch metadata, matching Origin", "", "http://h", true},
+		{"no fetch metadata, foreign Origin", "", "https://evil.example", false},
+	} {
+		r := httptest.NewRequest("POST", "http://h/signin", strings.NewReader(
+			"token="+tok))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if tc.fetch != "" {
+			r.Header.Set("Sec-Fetch-Site", tc.fetch)
+		}
+		if tc.origin != "" {
+			r.Header.Set("Origin", tc.origin)
+		}
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, r)
+
+		blocked := w.Code == http.StatusForbidden
+		if blocked == tc.want {
+			t.Errorf("%s: got %d, allowed=%v want allowed=%v",
+				tc.name, w.Code, !blocked, tc.want)
+		}
+	}
+}
+
+// A refusal has to say what it saw, because "another origin" gives somebody
+// staring at a blank page nothing to act on.
+func TestTheOriginRefusalNamesBothSides(t *testing.T) {
+	s, _ := setup(t)
+	r := httptest.NewRequest("POST", "http://h/signin", nil)
+	r.Header.Set("Origin", "https://evil.example")
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, r)
+	body := w.Body.String()
+	if !strings.Contains(body, "evil.example") || !strings.Contains(body, "\"h\"") {
+		t.Errorf("the refusal does not name what it compared: %s", body)
+	}
+}
