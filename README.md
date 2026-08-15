@@ -1517,6 +1517,71 @@ a document with a date.
 mapping is not an assessment. It is the evidence somebody needs before any of
 that is worth starting, produced accurately rather than approximately.
 
+## Search, without a search engine
+
+```
+$ curl "/search.json?q=pricing"
+  pricing   Pricing                     score 22.7  body,slug,title
+  faq       Frequently asked questions  score  1.7  body
+```
+
+An inverted index with positional postings, built at publish time from content
+this program already holds. **No dependency**, because the zero-dependency
+position is load-bearing — it is what makes the CRA obligations cheap and the
+bill of materials one line, and trading that for a search cluster in an 8 MB
+static binary would be a bad exchange for most sites this size.
+
+The ranking is deliberately coarse and each part earns its place:
+
+| | Why |
+|---|---|
+| Field weighting | somebody searching "pricing" wants the pricing page, not the FAQ sentence mentioning it |
+| Inverse document frequency | a word on every page says nothing about which page is wanted |
+| Diminishing returns on repetition | otherwise a page repeating a term wins every time — tested against 200 repetitions |
+| All terms must match | "any term" on a two-word query returns most of the site |
+
+**What it does not do, said plainly:** stemming, synonyms, fuzzy matching,
+relevance tuning, or millions of pages. No stemmer specifically because a site
+here can be in more than one language, and an English stemmer applied to German
+produces confident nonsense. Beyond a few thousand pages the honest answer is a
+search engine, and the index exports cleanly enough to feed one.
+
+The index records the commit it was built from and is built from **live**, never
+the draft. A search box returning unpublished pages is a content leak however it
+is labelled.
+
+`/search.json` is JSON rather than a rendered page, because the template
+language deliberately cannot loop over something computed at request time —
+adding that to serve a results page would reintroduce exactly the execution this
+project removed.
+
+## Releases carry their own evidence
+
+```
+$ make release VERSION=v0.1.0
+release v0.1.0
+  5774d924…  scrivet
+  8363ca6b…  scrivet.cdx.json
+  b83ad1f9…  scrivet.crypto.json
+```
+
+The bill of materials is produced **by the binary being released**, not from the
+source tree. `debug.ReadBuildInfo` reads what actually went into the artefact;
+asking the source describes what *would* be built now, and during an incident
+the question is what is deployed. The binary's own SHA-256 goes into the
+document, so the SBOM is tied to a file rather than to a version string —
+verified in the demo above.
+
+The release workflow refuses to ship two things:
+
+- **A modified build.** An SBOM for a binary built from uncommitted changes
+  names a revision nobody can fetch.
+- **Undeclared dependencies.** The zero-dependency property is what the CRA
+  position rests on, so it stops being true deliberately rather than by
+  discovery during an incident.
+
+Artefacts are attested to the workflow run that produced them.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
@@ -1532,10 +1597,10 @@ on every write surface, envelope encryption at rest, OIDC sign-in wired through
 the admin, Bitcoin anchoring via OpenTimestamps, and multilingual sites with
 exact translation staleness, scheduled publishing, and an RFC 6962
 transparency log with inclusion and consistency proofs written by a
-privilege-separated writer, rogue-agent detection, signed webhooks, and generated compliance
-evidence.
+privilege-separated writer, rogue-agent detection, signed webhooks, generated compliance evidence,
+and search.
 
-570 tests. The ones worth reading are the negative ones: every SSTI payload I
+583 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

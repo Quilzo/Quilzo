@@ -11,6 +11,7 @@ import (
 
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/public"
+	"github.com/rsh1k/scrivet/internal/search"
 	"github.com/rsh1k/scrivet/internal/seo"
 	"github.com/rsh1k/scrivet/internal/site"
 )
@@ -61,6 +62,17 @@ func cmdSite(root string, args []string) error {
 	if locales, lerr := loadLocales(root); lerr == nil && locales != nil &&
 		len(locales.Locales) > 1 {
 		st.Locales = locales
+	}
+
+	// The index is built from what is live, at startup. Building it from the
+	// draft would make the search box return pages nobody has published, which
+	// is a content leak however it is labelled.
+	if live := s.GetRef(site.RefLive); live != "" {
+		if pages, perr := site.PagesAt(s, live); perr == nil {
+			st.Search = search.Build(live, pages)
+			fmt.Fprintf(os.Stderr, "  %ssearch: %d terms over %d pages%s\n",
+				dim, st.Search.Size(), len(pages), reset)
+		}
 	}
 
 	// lastmod is computed per request rather than cached, because it is derived

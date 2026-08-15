@@ -40,6 +40,7 @@ import (
 
 	"github.com/rsh1k/scrivet/internal/i18n"
 	"github.com/rsh1k/scrivet/internal/provenance"
+	"github.com/rsh1k/scrivet/internal/search"
 	"github.com/rsh1k/scrivet/internal/seo"
 	"github.com/rsh1k/scrivet/internal/site"
 	"github.com/rsh1k/scrivet/internal/store"
@@ -57,6 +58,10 @@ type Site struct {
 	LoadProvenance func() (*provenance.Index, error)
 	// Index is the page served at "/".
 	Index string
+	// Search is the index over what is published. Nil means the route 404s,
+	// which is the honest state for a site that has not built one — a search
+	// box that returns nothing is worse than no search box.
+	Search *search.Index
 	// Licence declares terms for automated crawlers under Really Simple
 	// Licensing. Empty means no terms are declared, which is not the same as
 	// permitting everything — it is saying nothing, and saying nothing is the
@@ -95,6 +100,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/offline", st.offline)
 	mux.HandleFunc("/sitemap.xml", st.sitemap)
 	mux.HandleFunc("/license.xml", st.licence)
+	mux.HandleFunc("/search.json", st.searchAPI)
 	mux.HandleFunc("/site.css", st.stylesheet)
 	mux.HandleFunc("/robots.txt", st.robots)
 	mux.HandleFunc("/llms.txt", st.llms)
@@ -303,6 +309,41 @@ func escapeXMLText(s string) string {
 	return strings.NewReplacer(
 		"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;",
 	).Replace(s)
+}
+
+// searchAPI answers a query.
+//
+// JSON rather than a rendered page, because the template language deliberately
+// cannot loop over something the server computed at request time — and adding
+// that capability to serve a search page would be reintroducing the execution
+// this project removed on purpose. A site that wants a rendered results page
+// fetches this, which is the one place a published site legitimately needs a
+// script.
+func (st *Site) searchAPI(w http.ResponseWriter, r *http.Request) {
+	if st.Search == nil {
+		http.NotFound(w, r)
+		return
+	}
+	q := r.URL.Query().Get("q")
+	if len(q) > 200 {
+		// Bounded before tokenising. A very long query is not a search, and
+		// the work of tokenising it is work somebody else chose for this
+		// machine to do.
+		http.Error(w, "the query is too long", http.StatusBadRequest)
+		return
+	}
+
+	results := st.Search.Search(q, 20)
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	// No caching. A results page cached by a proxy is a results page served to
+	// somebody who searched for something else.
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"query":   q,
+		"results": results,
+		"count":   len(results),
+	})
 }
 
 // securityHeaders for a public site.

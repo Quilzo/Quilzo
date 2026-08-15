@@ -1,0 +1,93 @@
+name: release
+
+# The bill of materials is a release artefact rather than a document somebody
+# maintains, and it is produced by the binary being released rather than from
+# the source tree. debug.ReadBuildInfo reads what actually went into the
+# artefact; asking the source describes what would be built now, and during an
+# incident the question is what is deployed.
+#
+# The Cyber Resilience Act needs this to exist before a vulnerability report
+# does, since a report has to say what is affected, and needs it retained for
+# ten years — which a release asset does without anybody remembering to.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  # Needed to publish an attestation binding the artefacts to this workflow run.
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The full history, so the build stamps a real revision rather than a
+          # shallow-clone placeholder that would make the SBOM name a commit
+          # nobody can fetch.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: The suite must pass before anything is built
+        run: go test -count=1 ./...
+
+      - name: Build
+        run: make build VERSION=${{ github.ref_name }}
+
+      - name: Bill of materials, from the binary
+        run: |
+          ./bin/scrivet compliance sbom bin/scrivet.cdx.json
+          ./bin/scrivet compliance crypto --json > bin/scrivet.crypto.json
+
+      - name: Refuse to ship a modified build
+        run: |
+          # A build from uncommitted changes describes source nobody else can
+          # obtain, and an SBOM for it names a revision that does not exist.
+          if grep -q '+modified' bin/scrivet.cdx.json; then
+            echo "the working tree was dirty; this SBOM describes source nobody can fetch"
+            exit 1
+          fi
+
+      - name: Refuse to ship undeclared dependencies
+        run: |
+          # The zero-dependency property is what makes the CRA obligations here
+          # cheap. If it ever stops being true that should be a deliberate
+          # decision, not something discovered during an incident.
+          count=$(./bin/scrivet --json compliance summary | \
+            python3 -c "import json,sys; print(json.load(sys.stdin)['third_party_components'])")
+          echo "third-party components: $count"
+          test "$count" -eq 0
+
+      - name: Checksums
+        run: cd bin && sha256sum scrivet scrivet.cdx.json scrivet.crypto.json > SHA256SUMS
+
+      - name: Attest the artefacts
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            bin/scrivet
+            bin/scrivet.cdx.json
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            bin/scrivet
+            bin/scrivet.cdx.json
+            bin/scrivet.crypto.json
+            bin/SHA256SUMS
+          body: |
+            Every artefact here carries its SHA-256 in `SHA256SUMS`, and the
+            bill of materials was produced by this binary rather than from the
+            source tree — so it describes what is in the file you downloaded.
+
+            `scrivet.cdx.json` is CycloneDX 1.6.
+            `scrivet.crypto.json` is the cryptographic inventory, including
+            post-quantum status.
