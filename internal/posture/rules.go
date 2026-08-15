@@ -681,6 +681,73 @@ var rules = []Rule{
 		},
 	},
 
+	{
+		ID:       "audit.no-published-head",
+		Title:    "The audit log has never been committed to anywhere else",
+		Severity: High,
+		Controls: []string{"AU-9", "AU-9(2)", "AU-10"},
+		OWASP:    "A09:2025 Logging and Alerting Failures",
+		Why: "A hash chain proves nobody edited the log without also editing " +
+			"every entry after it. It does not stop somebody who can edit the " +
+			"whole file, which on this machine is anybody with root — including " +
+			"whoever would most want to. What fixes history is a commitment " +
+			"published somewhere they do not control: a tree head exported to a " +
+			"SIEM, handed to an auditor, or anchored to Bitcoin. Until one " +
+			"exists, the log is evidence only to people who already trust the " +
+			"machine it is on.",
+		Check: func(s State) []Finding {
+			if len(s.Audit) < 10 {
+				return nil
+			}
+			// An absent key means the caller did not look, which is different
+			// from looking and finding none. Reporting the first as the second
+			// is how a scanner produces a finding about something it never
+			// checked — the failure this package is built to avoid.
+			raw, supplied := s.Extra["published_heads"]
+			if !supplied {
+				return nil
+			}
+			if raw != "" && raw != "0" {
+				return nil
+			}
+			return []Finding{{
+				Detail: fmt.Sprintf("%d entries and no head has ever been "+
+					"published", len(s.Audit)),
+				Fix: "scrivet auditlog anchor  # or `auditlog head --save` and " +
+					"export it",
+			}}
+		},
+	},
+	{
+		ID:       "audit.head-is-stale",
+		Title:    "The published log head is far behind",
+		Severity: Medium,
+		Controls: []string{"AU-9", "AU-10"},
+		OWASP:    "A09:2025 Logging and Alerting Failures",
+		Why: "A published head only fixes the history behind it. Everything " +
+			"since is protected by the chain alone, which is to say by nothing " +
+			"an administrator could not undo. The gap between the last published " +
+			"head and the current log is the window in which entries can still " +
+			"be quietly rewritten.",
+		Check: func(s State) []Finding {
+			published := atoiSafe(s.Extra["published_head_size"])
+			if published == 0 || len(s.Audit) == 0 {
+				return nil
+			}
+			gap := len(s.Audit) - published
+			if gap < 500 {
+				return nil
+			}
+			return []Finding{{
+				Detail: fmt.Sprintf(
+					"%d entries have been written since the last published head, "+
+						"and none of them is fixed by anything outside this "+
+						"machine", gap),
+				Fix: "scrivet auditlog anchor",
+			}}
+		},
+	},
+
 	// -- evidence -----------------------------------------------------------
 
 	{
@@ -733,4 +800,17 @@ func dedupe(in []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// atoiSafe reads a count from the caller-supplied Extra map, treating anything
+// unparseable as absent rather than as zero-with-confidence.
+func atoiSafe(s string) int {
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n
 }

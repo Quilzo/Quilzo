@@ -137,6 +137,13 @@ interface
       --redirects redirects.json            keep old URLs working after a move
   scrivet audit [DIR]                       templates that disable escaping
 
+log transparency
+  scrivet auditlog head --save              a commitment to every entry so far
+  scrivet auditlog prove SEQ                one entry is in the log, in ~20 hashes
+  scrivet auditlog consistency              nothing before a published head moved
+  scrivet auditlog anchor                   put the head in Bitcoin, so rewriting
+                                            history contradicts a block
+
 global
   --root DIR    store location (default .scrivet)
   --json        machine-readable output; stdout carries one document

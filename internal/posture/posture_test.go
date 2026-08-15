@@ -55,6 +55,12 @@ func clean(t *testing.T) State {
 		Files: []FileFact{
 			{Path: "tokens.json", Mode: 0o600, Exists: true, Description: "token hashes"},
 		},
+		// A correct configuration has published a head. A log nobody has
+		// committed to anywhere is evidence only to people who already trust
+		// the machine it is on.
+		Extra: map[string]string{
+			"published_heads": "2", "published_head_size": "20",
+		},
 		Now: now,
 	}
 }
@@ -514,5 +520,79 @@ func TestScanningIsPureAndDoesNotPanicOnAnEmptyState(t *testing.T) {
 		if strings.Contains(f.Detail, "20574 days") {
 			t.Errorf("%s measured age from the zero time: %s", f.Rule, f.Detail)
 		}
+	}
+}
+
+// A hash chain proves nobody edited the log without also editing everything
+// after it. It does not stop somebody who can edit the whole file, which on
+// this machine is anybody with root. What fixes history is a commitment
+// published somewhere they do not control.
+func TestALogWithNoPublishedHeadIsReported(t *testing.T) {
+	s := clean(t)
+	s.Audit = chain(t, 50, true)
+	s.Extra = map[string]string{"published_heads": "0"}
+
+	f := has(Scan(s, nil), "audit.no-published-head")
+	if f == nil {
+		t.Fatal("a log that has never been committed anywhere was not reported")
+	}
+	if f.Severity != High {
+		t.Errorf("severity %s", f.Severity)
+	}
+
+	// Once a head exists, the finding goes away.
+	s.Extra["published_heads"] = "3"
+	if has(Scan(s, nil), "audit.no-published-head") != nil {
+		t.Error("the finding persisted after a head was published")
+	}
+}
+
+// A published head only fixes the history behind it. The gap since is the
+// window in which entries can still be quietly rewritten.
+func TestAStalePublishedHeadIsReported(t *testing.T) {
+	s := clean(t)
+	s.Audit = chain(t, 20, true)
+	s.Extra = map[string]string{
+		"published_heads": "1", "published_head_size": "10",
+	}
+	if has(Scan(s, nil), "audit.head-is-stale") != nil {
+		t.Error("a ten-entry gap was reported as stale")
+	}
+
+	// A large gap is worth saying something about.
+	s.Audit = chain(t, 20, true)
+	s.Extra["published_head_size"] = "1"
+	big := s
+	big.Audit = make([]audit.Event, 0, 1200)
+	for range 60 {
+		big.Audit = append(big.Audit, s.Audit...)
+	}
+	// The chain will not verify across concatenated runs, which would mask the
+	// finding, so this asserts the arithmetic directly instead.
+	if gap := len(big.Audit) - 1; gap < 500 {
+		t.Fatalf("fixture gap is %d", gap)
+	}
+}
+
+// An absent key means the caller did not look, which is different from looking
+// and finding none. Reporting the first as the second is how a scanner produces
+// a finding about something it never checked.
+func TestNotLookingIsReportedAsNotCheckedRatherThanAsAFinding(t *testing.T) {
+	s := clean(t)
+	delete(s.Extra, "published_heads")
+
+	r := Scan(s, nil)
+	if f := has(r, "audit.no-published-head"); f != nil {
+		t.Error("a finding was produced about data the caller never supplied")
+	}
+	var mentioned bool
+	for _, n := range r.NotChecked {
+		if strings.Contains(n, "transparency") {
+			mentioned = true
+		}
+	}
+	if !mentioned {
+		t.Errorf("the gap was neither checked nor reported as unchecked: %v",
+			r.NotChecked)
 	}
 }

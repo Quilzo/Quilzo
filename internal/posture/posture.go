@@ -343,6 +343,10 @@ func missing(s State) []string {
 	if len(s.Files) == 0 {
 		out = append(out, "file permissions: nothing on disk was inspected")
 	}
+	if _, ok := s.Extra["published_heads"]; !ok && len(s.Audit) > 0 {
+		out = append(out, "log transparency: whether any audit head has been "+
+			"published outside this machine was not checked")
+	}
 	return out
 }
 

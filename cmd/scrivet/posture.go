@@ -43,6 +43,20 @@ type suppressionFile struct {
 func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 	s := posture.State{Now: time.Now(), Server: srv}
 
+	// Whether any log head has been published outside this machine. Supplied
+	// even when the answer is none, because an absent key means "not looked at"
+	// and the scanner reports those separately — a finding about data nobody
+	// gathered is the failure that makes a scanner ignorable.
+	heads := &headFile{}
+	if err := loadJSON(headsPath(root), heads); err == nil {
+		s.Extra = map[string]string{
+			"published_heads": fmt.Sprintf("%d", len(heads.Heads)),
+		}
+		if n := len(heads.Heads); n > 0 {
+			s.Extra["published_head_size"] = fmt.Sprintf("%d", heads.Heads[n-1].Size)
+		}
+	}
+
 	if pol, err := loadPolicy(root); err == nil {
 		s.Policy = pol
 	}

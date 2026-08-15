@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/rsh1k/scrivet/internal/anchor"
+	"github.com/rsh1k/scrivet/internal/fetch"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/out"
@@ -73,8 +78,17 @@ func cmdAuditLog(root string, args []string) error {
 		return auditShow(root, args[1:])
 	case "export":
 		return auditExport(root)
+	case "head":
+		return auditHead(root, args[1:])
+	case "prove":
+		return auditProve(root, args[1:])
+	case "consistency":
+		return auditConsistency(root, args[1:])
+	case "anchor":
+		return auditAnchor(root)
 	default:
-		return fmt.Errorf("unknown auditlog command %q; try show, verify or export", args[0])
+		return fmt.Errorf("unknown auditlog command %q; try show, verify, "+
+			"export, head, prove, consistency or anchor", args[0])
 	}
 }
 
@@ -163,4 +177,232 @@ func plural(n int) string {
 		return "y"
 	}
 	return "ies"
+}
+
+// -- transparency ------------------------------------------------------------
+
+func headsPath(root string) string { return filepath.Join(root, "log-heads.json") }
+
+type headFile struct {
+	Heads []audit.Head `json:"heads"`
+}
+
+// auditHead publishes a commitment to the log as it stands.
+//
+// Publishing is the whole mechanism. A head kept on the same machine as the log
+// protects nothing — whoever can rewrite one can rewrite the other. A head that
+// has left the building fixes history before it, and an administrator can still
+// alter yesterday's entries but cannot make the altered version consistent with
+// a head somebody else is holding.
+func auditHead(root string, args []string) error {
+	fs := flag.NewFlagSet("head", flag.ContinueOnError)
+	save := fs.Bool("save", false, "record this head locally as well")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	events, err := audit.Read(auditPath(root))
+	if err != nil {
+		return err
+	}
+	head, err := audit.TreeHead(events, time.Now())
+	if err != nil {
+		return err
+	}
+
+	if *save {
+		f := &headFile{}
+		if err := loadJSON(headsPath(root), f); err != nil {
+			return err
+		}
+		f.Heads = append(f.Heads, head)
+		if err := saveJSON(headsPath(root), f); err != nil {
+			return err
+		}
+	}
+
+	if w.JSON(head) {
+		return nil
+	}
+	w.Human("%s%d entries%s\n", bold, head.Size, reset)
+	w.Human("  root %s\n", head.Root)
+	w.Human("\n  %sthis commits to every entry. Get it out of this machine —\n"+
+		"  export it to a SIEM, hand it to an auditor, or anchor it:%s\n",
+		dim, reset)
+	w.Human("    %sscrivet auditlog anchor%s\n", dim, reset)
+	w.Human("\n  %sa head kept only here protects nothing: whoever can rewrite\n"+
+		"  the log can rewrite the head beside it%s\n", yellow, reset)
+	return nil
+}
+
+// auditProve produces an inclusion proof for one entry.
+func auditProve(root string, args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: scrivet auditlog prove <sequence>")
+	}
+	var seq int64
+	if _, err := fmt.Sscanf(args[0], "%d", &seq); err != nil {
+		return fmt.Errorf("%q is not a sequence number", args[0])
+	}
+
+	events, err := audit.Read(auditPath(root))
+	if err != nil {
+		return err
+	}
+	proof, head, err := audit.Inclusion(events, seq)
+	if err != nil {
+		return err
+	}
+
+	var entry audit.Event
+	index := -1
+	for i, e := range events {
+		if e.Seq == seq {
+			entry, index = e, i
+			break
+		}
+	}
+
+	if w.JSON(map[string]any{
+		"entry": entry, "index": index, "proof": proof, "head": head,
+	}) {
+		return nil
+	}
+	w.Human("%sentry %d is in a log of %d%s\n", bold, seq, head.Size, reset)
+	w.Human("  root  %s\n", head.Root)
+	w.Human("  proof %d hashes\n", len(proof))
+	w.Human("\n  %sthat is the whole proof. Somebody holding this entry, these\n"+
+		"  %d hashes and a root they trust can confirm it is in the log without\n"+
+		"  ever seeing the log — which also means without seeing every other\n"+
+		"  entry in it%s\n", dim, len(proof), reset)
+	return nil
+}
+
+// auditConsistency proves the log only grew since a published head.
+func auditConsistency(root string, args []string) error {
+	fs := flag.NewFlagSet("consistency", flag.ContinueOnError)
+	against := fs.Int("since", 0, "the size of a previously published head")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	events, err := audit.Read(auditPath(root))
+	if err != nil {
+		return err
+	}
+
+	// Against the most recently saved head if none was named, because that is
+	// the check somebody wants and remembering a number is not.
+	oldSize := *against
+	var published audit.Head
+	f := &headFile{}
+	if err := loadJSON(headsPath(root), f); err != nil {
+		return err
+	}
+	if oldSize == 0 {
+		if len(f.Heads) == 0 {
+			return fmt.Errorf(
+				"no head has been published, so there is nothing to check " +
+					"against.\n  `scrivet auditlog head --save` records one; a " +
+					"head only proves anything once it exists somewhere the log " +
+					"cannot be quietly rewritten alongside")
+		}
+		published = f.Heads[len(f.Heads)-1]
+		oldSize = published.Size
+	} else {
+		for _, h := range f.Heads {
+			if h.Size == oldSize {
+				published = h
+			}
+		}
+		if published.Root == "" {
+			return fmt.Errorf("no published head covers %d entries", oldSize)
+		}
+	}
+
+	proof, now, err := audit.Consistency(events, oldSize)
+	if err != nil {
+		return errBlocked{err}
+	}
+	if err := audit.VerifyConsistency(published, now, proof); err != nil {
+		return errBlocked{fmt.Errorf(
+			"this log is NOT an append-only extension of the head published at "+
+				"%d entries.\n  %v\n  Entries before that point have been "+
+				"changed, reordered or removed", oldSize, err)}
+	}
+
+	if w.JSON(map[string]any{
+		"consistent": true, "from": published, "to": now, "proof": proof,
+	}) {
+		return nil
+	}
+	w.Human("%sconsistent%s  %d → %d entries\n", green, reset, oldSize, now.Size)
+	w.Human("  %severy entry behind the published head is still there, unchanged,\n"+
+		"  in the same order%s\n", dim, reset)
+	return nil
+}
+
+// auditAnchor commits the log head to Bitcoin.
+//
+// This is what turns "detectable" into "provable". Once a head is in a block,
+// rewriting anything behind it produces a log that cannot pass consistency
+// against a value nobody involved can alter.
+func auditAnchor(root string) error {
+	events, err := audit.Read(auditPath(root))
+	if err != nil {
+		return err
+	}
+	head, err := audit.TreeHead(events, time.Now())
+	if err != nil {
+		return err
+	}
+	if head.Size == 0 {
+		return fmt.Errorf("the log is empty")
+	}
+
+	digest, err := hex.DecodeString(head.Root)
+	if err != nil {
+		return fmt.Errorf("the root is not hex: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	proofs, errs := anchor.Submit(ctx, httpSubmitter{fetch.New()}, digest, nil,
+		time.Now())
+	for _, e := range errs {
+		w.Human("  %s%v%s\n", yellow, e, reset)
+	}
+	if len(proofs) == 0 {
+		return errBlocked{fmt.Errorf("no calendar accepted the log head")}
+	}
+
+	// The head is saved alongside, because a proof about a root nobody kept is
+	// a proof about a number nobody can reconstruct.
+	f := &headFile{}
+	if err := loadJSON(headsPath(root), f); err != nil {
+		return err
+	}
+	f.Heads = append(f.Heads, head)
+	if err := saveJSON(headsPath(root), f); err != nil {
+		return err
+	}
+
+	af := &anchorFile{}
+	if err := loadJSON(anchorPath(root), af); err != nil {
+		return err
+	}
+	af.Proofs = append(af.Proofs, proofs...)
+	if err := saveJSON(anchorPath(root), af); err != nil {
+		return err
+	}
+
+	w.Human("submitted the log head at %d entries\n", head.Size)
+	for _, p := range proofs {
+		w.Human("  %saccepted%s %s\n", green, reset, p.Calendar)
+	}
+	w.Human("\n  %sonce this is in a block, entries before it cannot be rewritten\n"+
+		"  without producing a log that fails consistency against a value\n"+
+		"  nobody involved can alter — including whoever runs this machine%s\n",
+		dim, reset)
+	return nil
 }

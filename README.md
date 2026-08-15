@@ -1276,6 +1276,65 @@ went out on Friday and who decided that" is the first question an audit asks.
 since a scheduler that is also a long-lived process is a second thing that can
 be down.
 
+## Log transparency: what "immutable" can honestly mean
+
+You cannot make logs unmodifiable by an administrator on a machine they control.
+Anyone selling that is selling something. What you can do is make modification
+**provable to somebody who does not trust that machine**, and the difference is
+the whole design.
+
+A hash chain says whether the log was altered — but verifying it means walking
+the whole log, and being convinced nothing was removed between Tuesday and
+Friday means having held Tuesday's copy. Neither is how an auditor works.
+
+An RFC 6962 Merkle tree over the same entries gives both, logarithmically:
+
+```
+$ scrivet auditlog prove 3
+entry 3 is in a log of 6
+  proof 3 hashes
+
+  that is the whole proof. Somebody holding this entry, these 3 hashes
+  and a root they trust can confirm it is in the log without ever seeing
+  the log — which also means without seeing every other entry in it
+```
+
+| Proof | What it establishes |
+|---|---|
+| **Inclusion** | this exact entry is in the log with head H, in ~20 hashes for a million entries |
+| **Consistency** | the log with head H2 is an append-only extension of H1 — nothing before H1 changed, moved or vanished |
+
+### Publishing the head is the mechanism
+
+A head kept beside the log protects nothing: whoever can rewrite one can rewrite
+the other. A head that has *left the building* fixes history before it.
+
+```
+$ scrivet auditlog anchor
+submitted the log head at 9 entries
+  accepted  https://alice.btc.calendar.opentimestamps.org
+
+  once this is in a block, entries before it cannot be rewritten without
+  producing a log that fails consistency against a value nobody involved
+  can alter — including whoever runs this machine
+```
+
+Demonstrated: rewriting entry 3 and recomputing every hash after it produces a
+file whose chain can be made to look intact, and which still fails consistency
+against a head published beforehand.
+
+```
+this log is NOT an append-only extension of the head published at 6 entries.
+  the old root does not follow from the proof; the log may have rewritten history
+```
+
+The posture scanner reports a log with no published head as a **high** finding,
+and a head far behind the log as medium — the gap since the last one is exactly
+the window in which entries can still be quietly rewritten. If nobody supplied
+the answer, that is reported as *not checked* rather than as a finding, because
+a scanner that reports on data it never gathered is a scanner people learn to
+ignore.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
@@ -1289,9 +1348,10 @@ generation, export to Markdown/WXR/JSON, audit-log export to OCSF/CEF/JSONL
 with an integrity envelope, concurrent editing with dual authorization enforced
 on every write surface, envelope encryption at rest, OIDC sign-in wired through
 the admin, Bitcoin anchoring via OpenTimestamps, and multilingual sites with
-exact translation staleness, and scheduled publishing.
+exact translation staleness, scheduled publishing, and an RFC 6962
+transparency log with inclusion and consistency proofs.
 
-502 tests. The ones worth reading are the negative ones: every SSTI payload I
+526 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every
