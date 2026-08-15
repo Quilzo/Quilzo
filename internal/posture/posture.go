@@ -116,6 +116,17 @@ func (f Finding) ID() string {
 //
 // A fact rather than a path, because the scanner does not open files. The
 // caller stats them and reports; the rule reasons about what it was told.
+// WeakenedSetting is a configuration value running below its default.
+type WeakenedSetting struct {
+	Key      string `json:"key"`
+	Value    string `json:"value"`
+	Why      string `json:"why"`
+	Reason   string `json:"reason,omitempty"`
+	By       string `json:"by,omitempty"`
+	Accepted bool   `json:"accepted"`
+	Expired  bool   `json:"expired,omitempty"`
+}
+
 type FileFact struct {
 	Path        string `json:"path"`
 	Mode        uint32 `json:"mode"`
@@ -167,16 +178,17 @@ type AgentFacts struct {
 // Assembled by the caller. The scanner reads this and nothing else — there is
 // no path from a rule to the filesystem, the network or the clock.
 type State struct {
-	Policy  *auth.Policy      `json:"-"`
-	Tokens  *auth.TokenStore  `json:"-"`
-	Types   *schema.Store     `json:"-"`
-	Audit   []audit.Event     `json:"-"`
-	Files   []FileFact        `json:"files"`
-	Server  ServerFacts       `json:"server"`
-	Content ContentFacts      `json:"content"`
-	Agents  AgentFacts        `json:"agents"`
-	Now     time.Time         `json:"-"`
-	Extra   map[string]string `json:"extra,omitempty"`
+	Policy   *auth.Policy      `json:"-"`
+	Tokens   *auth.TokenStore  `json:"-"`
+	Types    *schema.Store     `json:"-"`
+	Audit    []audit.Event     `json:"-"`
+	Files    []FileFact        `json:"files"`
+	Weakened []WeakenedSetting `json:"weakened,omitempty"`
+	Server   ServerFacts       `json:"server"`
+	Content  ContentFacts      `json:"content"`
+	Agents   AgentFacts        `json:"agents"`
+	Now      time.Time         `json:"-"`
+	Extra    map[string]string `json:"extra,omitempty"`
 }
 
 // Rule is one check.

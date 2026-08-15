@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/rsh1k/scrivet/internal/throttle"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -57,9 +58,29 @@ func cmdServe(root string, args []string) error {
 			"are unavailable%s\n", dim, filepath.Join(*tplDir, "page.html"), reset)
 	}
 
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return err
+	}
 	srv, err := admin.New(s, pol, toks, siteTpl)
 	if err != nil {
 		return err
+	}
+	srv.Throttle = throttle.New(throttlePolicy(cfg))
+	srv.OnAuthFailure = func(source string, failures int) {
+		// ASVS 5.0 asks for a reaction above five failures an hour. An audit
+		// record is the reaction: a SIEM rule can match it, and this program
+		// does not send email.
+		record(root, audit.Record{
+			Action: "auth.failures", Resource: "/admin",
+			// Unknown, not service: nobody proved who they were.
+			Outcome: audit.Denied, Principal: source,
+			Kind: audit.KindUnknown,
+			Detail: map[string]string{
+				"failures": fmt.Sprintf("%d", failures),
+				"surface":  "admin",
+			},
+		})
 	}
 	// The admin does not need to know where provenance lives, so the host
 	// supplies the two functions and keeps the file layout in one place.

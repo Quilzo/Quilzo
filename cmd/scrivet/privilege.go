@@ -145,6 +145,14 @@ var commandNeeds = map[string]need{
 	// they arrive over-guarded, which is a bug report rather than a breach.
 	"posture": {action: auth.ActGrant},
 
+	// Configuration decides how every other control behaves, so changing it is
+	// an admin act. Reading it is not: an author who cannot see the settings
+	// cannot tell why a publish was refused.
+	"config":         {action: auth.ActGrant},
+	"config show":    {action: auth.ActView},
+	"config list":    {action: auth.ActView},
+	"config explain": {action: auth.ActView},
+
 	// A webhook is an outbound credential and a data flow to somewhere else.
 	"webhook":  {action: auth.ActGrant},
 	"webhooks": {action: auth.ActGrant},

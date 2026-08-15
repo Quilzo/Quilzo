@@ -78,10 +78,23 @@ const (
 	// KindAI is a model. Recorded separately because "a model wrote this" is a
 	// different fact from "a person did", and Article 50 turns on the difference.
 	KindAI Kind = "ai"
+	// KindUnknown is an actor whose nature cannot be known.
+	//
+	// There is exactly one thing this is for: a failed authentication. Nobody
+	// proved who they were — that is what failing means — so calling the actor
+	// a person is a claim the log has no basis for, and calling it a service
+	// is one the validation below correctly refuses. A credential-stuffing run
+	// is not a human, and recording it as one would put a person's shape on
+	// every graph drawn from this log.
+	//
+	// It is never verified, and never carries a principal that resolves to
+	// anybody: the identifier is whatever was presented or where it came from.
+	KindUnknown Kind = "unknown"
 )
 
 func (k Kind) Valid() bool {
-	return k == KindHuman || k == KindService || k == KindAI
+	return k == KindHuman || k == KindService || k == KindAI ||
+		k == KindUnknown
 }
 
 // Outcome is AU-3(e). Denied is kept apart from Failure: being refused is not
@@ -316,6 +329,14 @@ func (l *Log) Append(r Record) (*Event, error) {
 	}
 	if r.Kind == KindAI && strings.TrimSpace(r.Model) == "" {
 		return nil, fmt.Errorf("an AI principal must name its model")
+	}
+	if r.Kind == KindUnknown && r.Verified {
+		// The inverse of the service rule below. An unknown actor that is
+		// somehow verified is a contradiction: verification is what makes an
+		// actor known.
+		return nil, fmt.Errorf(
+			"an unknown principal cannot be verified: verification is what " +
+				"would make it known")
 	}
 	if r.Kind == KindService && !r.Verified {
 		// A service identity exists only because a credential was presented. An

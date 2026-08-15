@@ -112,6 +112,19 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 		s.Files = append(s.Files, fact)
 	}
 
+	if cfg, err := loadConfig(root); err == nil {
+		for _, e := range cfg.Weakened() {
+			ws := posture.WeakenedSetting{
+				Key: e.Setting.Key, Value: e.Value, Why: e.Why,
+				Expired: e.Expired,
+			}
+			if e.Accepted != nil {
+				ws.Accepted, ws.Reason, ws.By = true, e.Accepted.Reason, e.Accepted.By
+			}
+			s.Weakened = append(s.Weakened, ws)
+		}
+	}
+
 	st, err := open(root)
 	if err != nil {
 		return s

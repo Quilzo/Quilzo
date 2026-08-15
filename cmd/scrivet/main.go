@@ -140,6 +140,9 @@ agents and integrations
   scrivet webhook list | test               signed, timestamped, replay-proof
 
 security posture
+  scrivet config show | list                everything settable, and its default
+  scrivet config explain KEY                what it is for, and what it costs
+  scrivet config set KEY VALUE              --accept-risk "why" if it weakens
   scrivet posture scan [--min SEV]          continuous misconfiguration check
   scrivet posture rules | explain RULE      what is checked, and why it matters
   scrivet posture suppress ID --reason ...  accept a risk, for at most 90 days
@@ -313,6 +316,8 @@ func main() {
 		err = cmdToken(root, cmdArgs)
 	case "a11y":
 		err = cmdA11y(root, cmdArgs)
+	case "config":
+		err = cmdConfig(root, cmdArgs)
 	case "verify":
 		err = cmdVerify(root)
 	case "version":

@@ -624,6 +624,50 @@ var rules = []Rule{
 		},
 	},
 
+	{
+		ID:       "config.weakened",
+		Title:    "A setting is running weaker than its default",
+		Severity: Medium,
+		Controls: []string{"CM-6", "CM-7"},
+		OWASP:    "A02:2025 Security Misconfiguration",
+		Why: "Every setting here can be changed, and some of them cost " +
+			"security when they are. Refusing to allow those would only mean " +
+			"they get changed somewhere this cannot see. Allowing them " +
+			"quietly would mean nobody can tell a considered decision from an " +
+			"accident. So they are allowed, with a reason, and reported here " +
+			"until the reason lapses or the value goes back.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, wk := range s.Weakened {
+				f := Finding{
+					Resource: wk.Key,
+					Detail:   wk.Key + " = " + wk.Value + ": " + wk.Why,
+					Fix: "scrivet config unset " + wk.Key +
+						"  # or renew the acceptance",
+				}
+				switch {
+				case !wk.Accepted:
+					// Nobody wrote down why. That is the case worth raising:
+					// a weakened setting with a reason is a decision, and one
+					// without is indistinguishable from a mistake.
+					f.Severity = High
+					f.Detail += " — with no recorded reason, so this cannot be " +
+						"told apart from an accident"
+					f.Fix = "scrivet config set " + wk.Key + " " + wk.Value +
+						" --accept-risk \"why\"  # or unset it"
+				case wk.Expired:
+					f.Severity = High
+					f.Detail += " — accepted by " + wk.By + " (" + wk.Reason +
+						"), and that acceptance has lapsed"
+				default:
+					f.Detail += " — accepted by " + wk.By + ": " + wk.Reason
+				}
+				out = append(out, f)
+			}
+			return out
+		},
+	},
+
 	// -- agents -------------------------------------------------------------
 
 	{

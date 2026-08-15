@@ -52,7 +52,9 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"github.com/rsh1k/scrivet/internal/throttle"
 	"html/template"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -76,11 +78,22 @@ var assets embed.FS
 
 // Server holds everything a request needs.
 type Server struct {
-	Store    *store.Store
-	Policy   *auth.Policy
-	Tokens   *auth.TokenStore
-	Template string // the site template, for preview and the a11y check
-	tpl      *template.Template
+	Store  *store.Store
+	Policy *auth.Policy
+	Tokens *auth.TokenStore
+	// Throttle slows repeated authentication failures. Nil means no
+	// throttling, which is only right in tests: the host wires one in from
+	// configuration, and a nil check here rather than a panic means a caller
+	// who forgets gets an unthrottled server rather than a crashed one — so
+	// the CLI is where the wiring is asserted, by a test that walks it.
+	Throttle *throttle.Limiter
+	// OnAuthFailure is called when the alerting threshold is crossed, so the
+	// host can write an audit record. The admin package does not open the
+	// audit log itself: it does not know where it lives, and after the
+	// separated-writer work it deliberately must not.
+	OnAuthFailure func(source string, failures int)
+	Template      string // the site template, for preview and the a11y check
+	tpl           *template.Template
 
 	// Provenance is loaded and saved by the host, so the admin does not need to
 	// know where the store keeps it.
@@ -443,15 +456,80 @@ func (s *Server) handleCSS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal, bool) {
+	// Throttled before the credential is looked at, so that a refused attempt
+	// costs nothing to check and, more importantly, so the time taken to
+	// answer does not depend on whether the presented token exists.
+	// The throttle blocks failures, not successes. See the note in the API
+	// middleware: only the source is known before authentication, so refusing
+	// on its history alone locks out everyone behind one address. A throttled
+	// request is still authenticated and a valid credential is let through.
+	sub := throttle.Subject{Source: sourceOf(r)}
+	throttled := false
+	var tdec throttle.Decision
+	if s.Throttle != nil {
+		if tdec = s.Throttle.Check(sub); !tdec.Allowed {
+			throttled = true
+		}
+	}
+
 	p, err := s.authenticate(r)
 	if err != nil {
+		if throttled {
+			s.tooManyAttempts(w, tdec)
+			return principal{}, false
+		}
+		if s.Throttle != nil {
+			d, alert := s.Throttle.Fail(sub)
+			if alert && s.OnAuthFailure != nil {
+				s.OnAuthFailure(sub.Source, d.Failures)
+			}
+			if !d.Allowed {
+				s.tooManyAttempts(w, d)
+				return principal{}, false
+			}
+		}
 		w.WriteHeader(http.StatusUnauthorized)
 		s.render(w, "signin.html", map[string]any{
 			"Title": "Sign in", "Error": err.Error(),
 		})
 		return principal{}, false
 	}
+	if s.Throttle != nil {
+		// The principal, not the address: see the note in the API middleware.
+		s.Throttle.Succeed(throttle.Subject{Principal: p.Name})
+	}
 	return p, true
+}
+
+// tooManyAttempts answers a throttled request.
+//
+// 429 with Retry-After rather than a delay held open on the server. Sleeping
+// here would let an attacker exhaust this process's own handlers by failing
+// authentication in parallel, which turns the control into the outage.
+func (s *Server) tooManyAttempts(w http.ResponseWriter, d throttle.Decision) {
+	secs := int(d.RetryAfter.Seconds())
+	if secs < 1 {
+		secs = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(secs))
+	w.WriteHeader(http.StatusTooManyRequests)
+	s.render(w, "signin.html", map[string]any{
+		"Title": "Too many attempts", "Error": d.Why,
+	})
+}
+
+// sourceOf is the address an attempt came from.
+//
+// RemoteAddr only. A forwarded header is set by whatever is in front, and a
+// throttle keyed on a value the client controls is a throttle the client
+// switches off by varying it. An operator running behind a proxy wants the
+// proxy to do this — it is the thing that can see the real address.
+func sourceOf(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {

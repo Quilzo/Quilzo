@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/rsh1k/scrivet/internal/throttle"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -158,10 +159,37 @@ func cmdSite(root string, args []string) error {
 		if perr != nil || terr != nil {
 			return fmt.Errorf("the API needs an access policy and a token store")
 		}
+		cfg, cerr := loadConfig(root)
+		if cerr != nil {
+			return cerr
+		}
 		apiSrv := &api.Server{
 			Store: s, Policy: pol, Tokens: toks,
 			Writable: *apiWritable,
-			Types:    func() (*schema.Store, error) { return schema.Load(root) },
+			Limits: api.Limits{
+				PerMinute: cfg.Int("api.rate.per_minute"),
+				Burst:     cfg.Int("api.rate.burst"),
+			},
+			Throttle: throttle.New(throttlePolicy(cfg)),
+			OnAuthFailure: func(source string, failures int) {
+				// The reaction ASVS 5.0 asks for above five failures an hour.
+				// An audit record rather than an email, because this program
+				// does not send email and a control that claims to notify
+				// somebody and does not is worse than one that does not claim.
+				record(root, audit.Record{
+					Action: "auth.failures", Resource: "/api",
+					Outcome: audit.Denied, Principal: source,
+					// Unknown, not service: nobody proved who they were, which is
+					// what failing to authenticate means. The identifier is the
+					// address the attempts came from.
+					Kind: audit.KindUnknown,
+					Detail: map[string]string{
+						"failures": fmt.Sprintf("%d", failures),
+						"surface":  "api",
+					},
+				})
+			},
+			Types: func() (*schema.Store, error) { return schema.Load(root) },
 			OnWrite: func(principal, page, commit string) {
 				record(root, audit.Record{
 					Action: "api.write", Resource: "/" + page,

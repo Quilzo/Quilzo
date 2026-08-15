@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rsh1k/scrivet/internal/throttle"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +42,14 @@ type Server struct {
 	// Types validates writes, so the API cannot put content into the store that
 	// the CLI and the admin would have refused.
 	Types func() (*schema.Store, error)
+	// Throttle slows repeated authentication failures. Nil disables it, which
+	// is for tests; the CLI wires one in from configuration.
+	Throttle *throttle.Limiter
+	// OnAuthFailure fires when the alerting threshold is crossed, so the host
+	// can write an audit record. This package does not open the audit log: it
+	// does not know where the log lives, and since the writer was separated
+	// out it must not.
+	OnAuthFailure func(source string, failures int)
 	// OnWrite records a successful write, so the audit trail does not have a
 	// hole shaped like the API.
 	OnWrite func(principal, page, commit string)
@@ -116,8 +127,64 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// Failed-authentication throttling, separate from the per-token rate
+		// limit below. That one bounds what an authenticated client may do;
+		// this one bounds how many times an unauthenticated one may guess,
+		// and a rate limiter keyed on the token cannot do it because a failed
+		// attempt has no token to key on.
+		// The throttle blocks failures, not successes.
+		//
+		// The first version checked the throttle and refused before looking at
+		// the credential, which is the obvious order and is wrong. Only the
+		// source is known before authentication — a failed attempt carries no
+		// identity to count against — so refusing on the source's history
+		// means one attacker locks out every legitimate user sharing that
+		// address. Behind a NAT or a corporate proxy that is the whole office,
+		// and it is precisely the malicious-lockout property the soft delay
+		// exists to preserve. Verified in a live run: five bad tokens, and a
+		// valid one was then answered 429.
+		//
+		// So a throttled request is still authenticated, and a valid
+		// credential is let through. That is safe because it gives an attacker
+		// nothing: a wrong token is still refused, and they learn only what
+		// they already knew. Verifying costs one constant-time comparison
+		// against a stored hash — deliberately not a slow KDF, because a token
+		// is 256 bits of entropy rather than a password — so the check itself
+		// is not the expensive thing a throttle is protecting.
+		authSub := throttle.Subject{Source: sourceOf(r)}
+		throttled := false
+		var tdec throttle.Decision
+		if s.Throttle != nil {
+			if tdec = s.Throttle.Check(authSub); !tdec.Allowed {
+				throttled = true
+			}
+		}
+
 		tok, err := s.authenticate(r)
 		if err != nil {
+			if throttled {
+				retryAfter(w, tdec)
+				writeError(w, http.StatusTooManyRequests, Error{
+					Error:  "too many failed authentication attempts",
+					Detail: tdec.Why,
+					Fix:    "wait for the period in the Retry-After header",
+				})
+				return
+			}
+			if s.Throttle != nil {
+				d, alert := s.Throttle.Fail(authSub)
+				if alert && s.OnAuthFailure != nil {
+					s.OnAuthFailure(authSub.Source, d.Failures)
+				}
+				if !d.Allowed {
+					retryAfter(w, d)
+					writeError(w, http.StatusTooManyRequests, Error{
+						Error:  "too many failed authentication attempts",
+						Detail: d.Why,
+					})
+					return
+				}
+			}
 			// 401 with no hint about whether the token exists. Distinguishing
 			// "no such token" from "wrong password" is how an enumeration
 			// oracle gets built by accident.
@@ -127,6 +194,14 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 				Fix:   "send a token: Authorization: Bearer scv_...",
 			})
 			return
+		}
+		if s.Throttle != nil {
+			// Keyed on the authenticated principal, not on the source. A
+			// success clears that principal's history; the address keeps its
+			// failures until they expire, because an address is shared and one
+			// person signing in is not evidence that the guessing from it
+			// stopped.
+			s.Throttle.Succeed(throttle.Subject{Principal: tok.Principal})
 		}
 
 		// Checked after authentication, not before. A syntactic rejection is
@@ -213,6 +288,26 @@ func tokenFrom(r *http.Request) *auth.Token {
 		return t
 	}
 	return nil
+}
+
+// retryAfter sets the header a well-behaved client obeys.
+func retryAfter(w http.ResponseWriter, d throttle.Decision) {
+	secs := int(d.RetryAfter.Seconds())
+	if secs < 1 {
+		secs = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(secs))
+}
+
+// sourceOf is the address an attempt came from. RemoteAddr only: a forwarded
+// header is set by whatever is in front, and a throttle keyed on a value the
+// client controls is one the client switches off by varying it.
+func sourceOf(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 func (s *Server) authenticate(r *http.Request) (*auth.Token, error) {
