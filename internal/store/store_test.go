@@ -133,7 +133,10 @@ func TestTreeEntriesCannotTraverse(t *testing.T) {
 	for _, bad := range []string{
 		"../evil", ".hidden", "", "with space",
 		"a/../b", "a/..", "../a", "./a", "a/./b",
-		"a//b", "/a", "a/", "a/b/c",
+		"a//b", "/a", "a/",
+		// Depth is bounded rather than unlimited: nesting needs five levels
+		// and nothing needs nine.
+		"a/b/c/d/e/f/g/h/i",
 		"..", ".", "a\\b",
 	} {
 		if _, err := s.PutTree(map[string]string{bad: oid}); err == nil {
@@ -207,7 +210,8 @@ func TestPageNamesAllowOneSlashAndNothingElse(t *testing.T) {
 	}
 
 	for _, name := range []string{
-		"../etc/passwd", "a/b/c", "/leading", "trailing/", "a//b",
+		"../etc/passwd", "/leading", "trailing/", "a//b",
+		"a/b/c/d/e/f/g/h/i",
 		"..", "a/..", "../a", "./a", "a/./b", "", "/", "//",
 		".hidden", "a/.hidden", "a b", "a\\b", "a\x00b",
 	} {

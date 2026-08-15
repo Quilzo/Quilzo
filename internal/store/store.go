@@ -53,6 +53,13 @@ import (
 	"sync"
 )
 
+// MaxPathSegments bounds how deep a tree entry may be nested.
+//
+// Five is what the record layout needs — data/<collection>/<aa>/<bb>/<id> — and
+// eight leaves room without letting a caller choose the depth of the tree the
+// reader has to walk.
+const MaxPathSegments = 8
+
 const (
 	KindBlob   = "blob"
 	KindTree   = "tree"
@@ -73,8 +80,10 @@ var (
 	// refused, and no name can begin or end with a separator. A tree name never
 	// becomes a filesystem path (objects are filed under their hash), so what
 	// this protects is the URL and the tree's own structure.
-	reSegment = regexp.MustCompile(
-		`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(/[A-Za-z0-9][A-Za-z0-9._-]{0,63})?$`)
+	// One segment. Paths are split on the separator and each part checked
+	// against this, so the pattern no longer has to describe the separator —
+	// which is what let "a/../b" through a pattern that tried to.
+	reSegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 )
 
 // Commit records a tree and how it came to be.
@@ -256,10 +265,34 @@ func (s *Store) PutBlob(v any) (string, error) {
 // PutTree stores a named mapping from path segment to object id.
 func (s *Store) PutTree(entries map[string]string) (string, error) {
 	for name, oid := range entries {
-		if !reSegment.MatchString(name) {
+		// A key may be a path of segments, each of which must still be a
+		// usable segment.
+		//
+		// Nesting is what makes a write proportional to the edit rather than
+		// to the store: a record at data/users/ab/cd/id is addressable without
+		// every page beside it being re-hashed to reach it. Every segment is
+		// validated individually, so allowing the separator has not allowed a
+		// traversal — "a/../b" fails on the ".." segment exactly as "a/.." did
+		// when it was one name.
+		segs := strings.Split(name, "/")
+		// Bounded, not unbounded. The old rule allowed at most one slash,
+		// which was a real limit and not an accident; nesting needs five
+		// levels (data/<collection>/<aa>/<bb>/<id>) and nothing needs more.
+		// Relaxing a bound to what the design requires is different from
+		// removing it, and an unbounded path is a tree an attacker chooses
+		// the depth of.
+		if len(segs) > MaxPathSegments {
 			return "", fmt.Errorf(
-				"%q is not a usable path segment: letters, digits, dot, dash and "+
-					"underscore, starting with a letter or digit", name)
+				"%q has %d segments and the limit is %d", name, len(segs),
+				MaxPathSegments)
+		}
+		for _, seg := range segs {
+			if !reSegment.MatchString(seg) {
+				return "", fmt.Errorf(
+					"%q is not a usable path: %q is not a segment of letters, "+
+						"digits, dot, dash and underscore, starting with a "+
+						"letter or digit", name, seg)
+			}
 		}
 		if !reID.MatchString(oid) {
 			return "", fmt.Errorf("%q points at %q, which is not an object id", name, oid)
