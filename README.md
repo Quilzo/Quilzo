@@ -1379,6 +1379,72 @@ the answer, that is reported as *not checked* rather than as a finding, because
 a scanner that reports on data it never gathered is a scanner people learn to
 ignore.
 
+## Watching the agents
+
+```
+$ scrivet agents
+  flagged  pushy-agent        claude
+           6 repeated-refusal, 1 escalation across 7 actions
+           · seq 10  publish /legal — reached for something above the role it holds
+           · seq 11  publish /legal — the same request has now been refused 2 times
+  ok       polite-agent       claude
+           9 actions, nothing refused
+```
+
+Both agents above were refused eight times. One is flagged and one is not, and
+the difference is the whole point.
+
+**Being refused is not misbehaving.** An agent that attempts something, is told
+it needs approval, and stops has behaved correctly — it asked. Counting that
+against it quarantines the well-behaved agents fastest, because they are the
+ones that try things and accept the answer. What counts is *not accepting the
+answer*: retrying a refusal, reaching above the role it holds, producing content
+a gate rejects.
+
+The only input is the audit log. That means an agent cannot avoid detection by
+taking a path nobody instrumented, because the log is what the system already
+believes happened — and every strike names an audit entry, so each one is
+checkable rather than being the detector's opinion.
+
+**Nothing is revoked automatically.** Automatic revocation on a heuristic means
+a busy afternoon of legitimate work looks like an incident, the agent doing that
+work is cut off, and then somebody turns the detector off — after which it
+detects nothing at all.
+
+## Webhooks
+
+A webhook is an SSRF primitive with a friendly name: the endpoint is a URL
+somebody configured and this program requests it from inside the network. So it
+goes through the same connect-time address check as importing — one defence, not
+two that can disagree.
+
+**The signature covers a timestamp as well as the body**, because a request
+captured today verifies next year otherwise: the signature is over bytes that
+have not changed. And it covers them *length-prefixed*, not concatenated —
+with `HMAC(secret, timestamp + body)` an attacker can move the boundary, so
+`("1", "23x")` and `("12", "3x")` produce the same digest and a signature valid
+for one is valid for the other.
+
+The scheme is specified rather than implied. A golden test asserts the signature
+against a value computed by an independent implementation:
+
+```python
+def field(b): return struct.pack('>Q', len(b)) + b
+m = hmac.new(secret, digestmod=hashlib.sha256)
+m.update(field(timestamp_ascii)); m.update(field(body))
+```
+
+If that test fails after a change, every receiver written against the documented
+scheme has silently stopped verifying.
+
+Delivery is at-least-once and says so: the id is stable across retries, so a
+receiver can deduplicate. A 4xx is not retried — the receiver is saying the
+request is wrong and repeating it will not make it right. Payloads name what
+changed rather than carrying it, so a misconfigured endpoint cannot be sent
+unpublished content. A delivery failure never blocks publishing, because making
+it one hands anybody who can take an endpoint offline the ability to stop the
+site being updated.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
@@ -1394,9 +1460,9 @@ on every write surface, envelope encryption at rest, OIDC sign-in wired through
 the admin, Bitcoin anchoring via OpenTimestamps, and multilingual sites with
 exact translation staleness, scheduled publishing, and an RFC 6962
 transparency log with inclusion and consistency proofs written by a
-privilege-separated writer.
+privilege-separated writer, rogue-agent detection, and signed webhooks.
 
-536 tests. The ones worth reading are the negative ones: every SSTI payload I
+560 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

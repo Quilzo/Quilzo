@@ -87,6 +87,7 @@ func (l Limits) withDefaults() Limits {
 type Result struct {
 	URL         string
 	FinalURL    string
+	Status      int
 	ContentType string
 	Body        []byte
 	SHA256      string
@@ -475,5 +476,56 @@ func (c *Client) Post(ctx context.Context, raw string, body []byte,
 			strings.TrimSpace(string(out[:min(len(out), 200)])))
 	}
 	return &Result{URL: raw, FinalURL: u.String(), Body: out,
+		ContentType: resp.Header.Get("Content-Type")}, nil
+}
+
+// PostSigned sends a body with caller-supplied headers, through the same
+// connect-time address check as everything else here.
+//
+// Used for webhooks, where the headers carry a signature the receiver checks.
+// The status is returned rather than turned into an error, because a webhook
+// caller needs to distinguish a 4xx that will never succeed from a 5xx worth
+// retrying — and an error type cannot carry that without being unwrapped.
+func (c *Client) PostSigned(ctx context.Context, raw string, body []byte,
+	headers map[string]string) (*Result, error) {
+
+	lim := c.Limits.withDefaults()
+	u, err := ValidateURL(raw)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, lim.Timeout)
+	defer cancel()
+
+	client, err := c.httpClient(lim)
+	if err != nil {
+		return nil, err
+	}
+	// Redirects are not followed. A redirected webhook replays a signed body to
+	// wherever the redirect points, and a receiver has no reason to redirect.
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(),
+		bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	req.Header.Set("User-Agent", c.UserAgent)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, unwrapDialError(err)
+	}
+	defer resp.Body.Close()
+	// The response body is read and discarded up to a small limit, so a
+	// receiver cannot make this hold memory by answering with a stream.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+
+	return &Result{URL: raw, FinalURL: u.String(), Status: resp.StatusCode,
 		ContentType: resp.Header.Get("Content-Type")}, nil
 }

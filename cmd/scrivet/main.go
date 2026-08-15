@@ -125,6 +125,12 @@ encryption at rest
   scrivet vault rotate                      new key, rewraps without re-encrypting
       SCRIVET_KEY / _KEY_FILE / _KEY_COMMAND  where the key comes from
 
+agents and integrations
+  scrivet agents                            what models have been doing, and
+                                            which are not accepting refusals
+  scrivet webhook add https://...           tell another system when you publish
+  scrivet webhook list | test               signed, timestamped, replay-proof
+
 security posture
   scrivet posture scan [--min SEV]          continuous misconfiguration check
   scrivet posture rules | explain RULE      what is checked, and why it matters
@@ -229,6 +235,10 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "agents":
+		err = cmdAgents(root, cmdArgs)
+	case "webhook", "webhooks":
+		err = cmdWebhook(root, cmdArgs)
 	case "logd":
 		if len(cmdArgs) > 0 && cmdArgs[0] == "status" {
 			err = cmdLogdStatus(root)
@@ -603,6 +613,16 @@ func cmdPublish(root string, args []string) error {
 			"changes":  fmt.Sprintf("%d", len(pub.Changes)),
 			"override": overrideNote(*force, *reason),
 		}))
+
+	// Told after the fact, never before, and a failure here never blocks. A
+	// receiver being down is not a reason to stop publishing — making it one
+	// hands anybody who can take an endpoint offline the ability to stop the
+	// site being updated.
+	var changed []string
+	for _, c := range pub.Changes {
+		changed = append(changed, c.Path)
+	}
+	notify(root, "published", pub.Published, changed)
 	fmt.Printf("live is now %s  (%d change(s))\n", short(pub.Published), len(pub.Changes))
 	if pub.Previous != "" {
 		fmt.Printf("  %sprevious %s is still stored; `scrivet rollback` moves the "+
