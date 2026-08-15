@@ -858,6 +858,71 @@ re-identified them in the same record. The source is now pseudonymised too —
 AU-3(d) wants to know *where* an event came from, and a stable pseudonym answers
 that.
 
+## More than one person
+
+Concurrent editing, four-eyes approval and keeping a human in the loop on AI
+changes look like three features. They are one mechanism: every write says what
+it was based on, and every release says who agreed to exactly what.
+
+### Approval is a signature over content, not a flag on a ticket
+
+Everywhere else, approval is a state — a row moves to "approved", somebody with
+edit rights changes the content afterwards, and the approval survives because it
+was attached to the *request* rather than to what was in it. Most review systems
+have this hole and most people never notice.
+
+Here an approval names a content hash:
+
+```go
+prop.Approve("sam", "looks right", now)   // approves hash aaa
+prop.Approve("kit", "agreed", now)        // approves hash aaa  → 2 of 2, allowed
+
+prop.Rebase("bbb", "dana", now)           // dana edits one character
+// → 0 of 2. Nothing detected the edit; the approvals are simply about
+//   different bytes now.
+```
+
+The superseded approvals are kept, not deleted — "who signed off the version
+before this one" is a real question and silently dropping the record answers it
+with nothing.
+
+### Human in the loop falls out of the same rule
+
+A model's change cannot be approved by the model, for the same reason Dana
+cannot approve Dana's: approvers must be principals and authors cannot
+self-approve. On top of that, an AI-authored change needs at least one approval
+from a *human* — two machines agreeing with each other is not review. Setting
+the numeric threshold to zero does not disable that, and there's a test for it,
+because "Required: 0" would otherwise be a way to let a model publish
+unreviewed.
+
+### Locks are the smaller half, and they say so
+
+The received design is a checkout lock. It scales badly and leaves stale locks
+because people close laptops, so every CMS that does it grows a break-lock
+button, the button gets used constantly, and the lock guarantees nothing.
+
+The guarantee here is compare-and-swap, which content addressing makes exact
+rather than a heuristic about timestamps:
+
+```
+$ scrivet add index=index.json --based-on 4f2a1c
+the draft moved while you were working; dana changed it
+  you were working from 4f2a1c9b8e01, the draft is now 7d3e5a2f01bb
+  changed since: index
+```
+
+Locks still exist — they stop two people spending an afternoon on the same page
+— but they are **advisory**, they expire in 30 minutes on their own, and taking
+one somebody else holds is permitted and tells you whose it is. Refusing would
+make it a real lock, a real lock needs a break-glass button, and the button is
+the problem.
+
+A conflict also knows whether it *actually* collides. Two people editing
+different pages get told the retry is safe, because reporting every concurrent
+edit as equally dangerous is what teaches people to retry blindly — and then
+the real ones get retried blindly too.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
@@ -867,10 +932,10 @@ with PWA output, RFC 3161 timestamping, the MCP server, the assistant, the
 continuous posture scanner with its dashboard, the Material 3 Expressive
 interface, four ready-made templates, import from WordPress/Markdown/JSON,
 validated uploads with an SSRF-hardened URL fetcher, sitemap/redirect
-generation, export to Markdown/WXR/JSON, and audit-log export to OCSF/CEF/JSONL
-with an integrity envelope.
+generation, export to Markdown/WXR/JSON, audit-log export to OCSF/CEF/JSONL
+with an integrity envelope, and concurrent editing with dual authorization.
 
-376 tests. The ones worth reading are the negative ones: every SSTI payload I
+397 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

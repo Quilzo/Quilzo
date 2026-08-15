@@ -23,6 +23,7 @@ package site
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/rsh1k/scrivet/internal/store"
@@ -101,14 +102,37 @@ func Diff(s *store.Store, oldCommit, newCommit string) ([]Change, error) {
 
 // SaveDraft writes a new draft commit on top of whatever draft points at.
 func SaveDraft(s *store.Store, pages map[string]any, message, author string) (string, error) {
+	// The unchecked form: whatever the draft is now becomes the parent. Kept
+	// because a single-writer store has nothing to collide with, and because
+	// requiring a base id from every caller would make the common case worse to
+	// serve the uncommon one.
+	return SaveDraftFrom(s, pages, message, author, "")
+}
+
+// SaveDraftFrom writes a draft that must be based on a specific commit.
+//
+// This is compare-and-swap, and in a content-addressed store it is exact rather
+// than a heuristic: the caller says which commit they read, and if the draft
+// has moved since, the write is refused with what changed. No timestamps, no
+// version columns, no lock to go stale.
+//
+// An empty base means "whatever is current", which is the single-writer case.
+func SaveDraftFrom(s *store.Store, pages map[string]any, message, author,
+	base string) (string, error) {
+
+	current := s.GetRef(RefDraft)
+	if current == "" {
+		current = s.GetRef(RefLive)
+	}
+	if base != "" && base != current {
+		return "", newConflict(s, base, current)
+	}
+
 	tree, err := store.BuildTree(s, pages)
 	if err != nil {
 		return "", err
 	}
-	parent := s.GetRef(RefDraft)
-	if parent == "" {
-		parent = s.GetRef(RefLive)
-	}
+	parent := current
 	var parents []string
 	if parent != "" {
 		parents = []string{parent}
@@ -219,4 +243,76 @@ func Rollback(s *store.Store, steps int) (Publication, error) {
 		return Publication{}, err
 	}
 	return Publication{Published: target, Previous: current, Changes: changes}, nil
+}
+
+// Conflict is a write refused because the draft moved underneath it.
+//
+// It carries what changed rather than only that something did, because "there
+// was a conflict" makes somebody go looking and a list of pages makes them go
+// asking.
+type Conflict struct {
+	Expected string
+	Actual   string
+	By       string
+	At       int64
+	Pages    []string
+}
+
+func (c *Conflict) Error() string {
+	var b strings.Builder
+	b.WriteString("the draft moved while you were working")
+	if c.By != "" {
+		fmt.Fprintf(&b, "; %s changed it", c.By)
+	}
+	fmt.Fprintf(&b, "\n  you were working from %s, the draft is now %s",
+		shortID(c.Expected), shortID(c.Actual))
+	if len(c.Pages) > 0 {
+		fmt.Fprintf(&b, "\n  changed since: %s", strings.Join(c.Pages, ", "))
+	}
+	return b.String()
+}
+
+// Touches reports which of the given pages the conflicting change also
+// altered. Empty means the two writes do not actually collide, which is the
+// common case and the one worth telling people about — otherwise every
+// concurrent edit looks equally dangerous and people learn to retry blindly.
+func (c *Conflict) Touches(pages []string) []string {
+	mine := map[string]bool{}
+	for _, p := range pages {
+		mine[p] = true
+	}
+	var both []string
+	for _, p := range c.Pages {
+		if mine[p] {
+			both = append(both, p)
+		}
+	}
+	sort.Strings(both)
+	return both
+}
+
+func newConflict(s *store.Store, base, current string) *Conflict {
+	c := &Conflict{Expected: base, Actual: current}
+	if commit, err := s.GetCommit(current); err == nil {
+		c.By, c.At = commit.Author, commit.At
+	}
+	// What differs, so the caller can tell a real collision from a ref that
+	// merely moved.
+	if changes, err := Diff(s, base, current); err == nil {
+		for _, ch := range changes {
+			c.Pages = append(c.Pages, ch.Path)
+		}
+		sort.Strings(c.Pages)
+	}
+	return c
+}
+
+func shortID(s string) string {
+	if len(s) > 12 {
+		return s[:12]
+	}
+	if s == "" {
+		return "(nothing)"
+	}
+	return s
 }
