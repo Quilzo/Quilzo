@@ -257,7 +257,11 @@ func exportJSON(s Site) ([]File, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, File{Path: "content/last-changed.json", Body: append(b, '\n')})
+		// Beside content/ rather than inside it. A directory called content
+		// should hold content: this sat next to pages.json, so the obvious
+		// `scrivet import content/*.json` failed on a file this tool wrote
+		// itself, which reads as the importer being broken.
+		out = append(out, File{Path: "last-changed.json", Body: append(b, '\n')})
 	}
 
 	out = append(out, readme(JSON, s))
@@ -405,7 +409,7 @@ func readme(f Format, s Site) File {
 	case JSON:
 		b.WriteString("`content/pages.json` maps each page name to its fields.\n\n")
 		b.WriteString("This is the lossless format: nothing was flattened or\n")
-		b.WriteString("dropped to produce it. `content/last-changed.json` records\n")
+		b.WriteString("dropped to produce it. `last-changed.json` records\n")
 		b.WriteString("when each page's content actually last changed, which is\n")
 		b.WriteString("worth carrying across so the new system's sitemap is not\n")
 		b.WriteString("wrong from its first day.\n")

@@ -452,7 +452,9 @@ func importJSON(body []byte, now time.Time) (*Report, error) {
 				rep.Skipped = append(rep.Skipped, "stopped at the page limit")
 				break
 			}
-			p, err := jsonPage(item, fmt.Sprintf("page-%d", i+1))
+			// An array carries no names, so "page-3" is a last resort and a
+			// title is a better guess than a position.
+			p, err := jsonPage(item, fmt.Sprintf("page-%d", i+1), false)
 			if err != nil {
 				rep.Skipped = append(rep.Skipped, fmt.Sprintf("item %d: %v", i+1, err))
 				continue
@@ -477,7 +479,18 @@ func importJSON(body []byte, now time.Time) (*Report, error) {
 				"%q is a %T, not a page object", name, v))
 			continue
 		}
-		p, err := jsonPage(item, name)
+		// A map's key is the page's identity, not a fallback.
+		//
+		// This is what makes an export re-importable. The exporter writes
+		// {"index": {"title": "Home"}}, and preferring the title over the key
+		// imported it as "home" — so a round trip renamed every page whose
+		// title was not its name, and the front page in particular became
+		// unreachable because / serves whatever is called "index".
+		//
+		// "there is no lock-in here, and this is how it is proved" is a claim
+		// this tool makes in its own help text. It has to survive the round
+		// trip exactly, or it is not proved.
+		p, err := jsonPage(item, name, true)
 		if err != nil {
 			rep.Skipped = append(rep.Skipped, fmt.Sprintf("%q: %v", name, err))
 			continue
@@ -493,7 +506,10 @@ func importJSON(body []byte, now time.Time) (*Report, error) {
 	return rep, nil
 }
 
-func jsonPage(item map[string]any, fallback string) (Page, error) {
+// jsonPage converts one object. authoritative says whether the given name is
+// the page's identity — true when it came from a map key, false when it is a
+// positional placeholder for an array element.
+func jsonPage(item map[string]any, given string, authoritative bool) (Page, error) {
 	fields := map[string]any{}
 	var dropped []string
 	for k, v := range item {
@@ -509,7 +525,13 @@ func jsonPage(item map[string]any, fallback string) (Page, error) {
 			dropped = append(dropped, k+" (nested object)")
 		}
 	}
-	name := slug(str(fields["slug"]))
+	name := ""
+	if authoritative {
+		name = slug(given)
+	}
+	if name == "" {
+		name = slug(str(fields["slug"]))
+	}
 	if name == "" {
 		name = slug(str(fields["name"]))
 	}
@@ -517,7 +539,7 @@ func jsonPage(item map[string]any, fallback string) (Page, error) {
 		name = slug(str(fields["title"]))
 	}
 	if name == "" {
-		name = slug(fallback)
+		name = slug(given)
 	}
 	if name == "" {
 		return Page{}, fmt.Errorf("no usable name")
