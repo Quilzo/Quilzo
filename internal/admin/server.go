@@ -52,6 +52,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/throttle"
 	"html/template"
 	"net"
@@ -81,6 +82,23 @@ type Server struct {
 	Store  *store.Store
 	Policy *auth.Policy
 	Tokens *auth.TokenStore
+	// LoadAudit reads the audit log. Nil means the log page says it has no
+	// access rather than showing an empty list, because an empty list and no
+	// access look identical and mean opposite things.
+	//
+	// A function rather than a path: this process does not know where the log
+	// lives, and after the writer was separated out it deliberately must not
+	// open it for writing. Reading is all it is given.
+	LoadAudit func() ([]audit.Event, error)
+	// ResolvePrincipal turns a pseudonym back into a name, for principals this
+	// store knows. It cannot reverse the HMAC — it computes forward for each
+	// known principal and matches — so somebody the policy has never heard of
+	// stays opaque, which is the right outcome rather than a limitation.
+	ResolvePrincipal func(pseudonym string) string
+	// LogSeparated reports whether the writer runs as another account, so the
+	// page can say what the record is worth rather than implying it.
+	LogSeparated bool
+
 	// API is the content API, served under /api/ so the playground can call
 	// it same-origin. Nil means the routes 404, which is what a server built
 	// without one should do.
@@ -425,6 +443,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/review", s.handleReview)
 	mux.HandleFunc("/publish", s.handlePublish)
 	mux.HandleFunc("/access", s.handleAccess)
+	mux.HandleFunc("/logs", s.handleLogs)
 	mux.HandleFunc("/people", s.handlePeople)
 	mux.HandleFunc("/people/grant", s.handlePeopleGrant)
 	mux.HandleFunc("/people/revoke", s.handlePeopleRevoke)

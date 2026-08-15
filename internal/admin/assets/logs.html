@@ -1,0 +1,91 @@
+{{template "head" .}}
+<h1>Audit log</h1>
+
+{{if .Unavailable}}
+  <p class="notice">{{.Unavailable}}</p>
+{{else}}
+
+<div class="card {{if .Intact}}ok{{else}}bad{{end}}">
+  {{if .Intact}}
+    <p><strong>Chain intact</strong> &mdash; {{.Entries}} entries, each one
+    re-hashed and linked to the one before it.</p>
+  {{else}}
+    <p><strong>This log has been altered.</strong></p>
+    <ul>{{range .Problems}}<li>Entry {{.Seq}}: {{.Reason}}</li>{{end}}</ul>
+  {{end}}
+  <p class="hint">
+    {{if .Separated}}Written by a separate account, so code running as this one
+    cannot rewrite it.{{else}}This process writes the log itself, so code
+    running as this account could rewrite it.{{end}}
+    Nothing here can edit or delete an entry.
+  </p>
+</div>
+
+<form method="get" action="/logs" class="stack">
+  <div class="row">
+    <label>Action
+      <select name="action">
+        <option value="">any</option>
+        {{range .Actions}}<option value="{{.}}"{{if eq . $.Action}} selected{{end}}>{{.}}</option>{{end}}
+      </select>
+    </label>
+    <label>Outcome
+      <select name="outcome">
+        <option value="">any</option>
+        <option value="success"{{if eq .Outcome "success"}} selected{{end}}>success</option>
+        <option value="denied"{{if eq .Outcome "denied"}} selected{{end}}>denied</option>
+      </select>
+    </label>
+    <label>Who
+      <input name="who" value="{{.Who}}" spellcheck="false" autocomplete="off">
+    </label>
+    <label class="check"><button type="submit">Filter</button></label>
+  </div>
+</form>
+
+<p class="hint">{{.Total}} of {{.Entries}} entries</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">#</th><th scope="col">When</th><th scope="col">Who</th>
+    <th scope="col">Did</th><th scope="col">To</th><th scope="col">Outcome</th>
+  </tr></thead>
+  <tbody>
+  {{range .Rows}}
+  <tr>
+    <th scope="row">{{.Seq}}</th>
+    <td class="mono">{{.At}}</td>
+    <td>
+      {{if .Resolved}}{{.Who}}{{else}}<span class="mono hint">{{.Who}}</span>{{end}}
+      {{if not .Verified}}<span class="tag">unverified</span>{{end}}
+      {{if eq .Kind "unknown"}}<span class="tag">unknown</span>{{end}}
+    </td>
+    <td class="mono">{{.Action}}</td>
+    <td class="mono">{{.Resource}}</td>
+    <td>{{if .Failed}}<span class="tag tag-bad">{{.Outcome}}</span>
+        {{else}}<span class="tag tag-ok">{{.Outcome}}</span>{{end}}</td>
+  </tr>
+  {{if .Detail}}
+  <tr class="detail">
+    <td></td>
+    <td colspan="5">{{range $k, $v := .Detail}}<span class="kv"><b>{{$k}}</b> {{$v}}</span>{{end}}</td>
+  </tr>
+  {{end}}
+  {{end}}
+  </tbody>
+</table>
+</div>
+
+{{if .HasNext}}
+<p><a href="/logs?offset={{.Next}}&action={{.Action}}&outcome={{.Outcome}}&who={{.Who}}">Older entries</a></p>
+{{end}}
+
+<p class="hint">
+  Principals are stored HMAC&rsquo;d so the log can be exported without carrying
+  identities. That cannot be reversed; names shown here were matched forwards
+  against the people this store knows, and anyone it does not know stays a
+  pseudonym.
+</p>
+{{end}}
+{{template "foot" .}}

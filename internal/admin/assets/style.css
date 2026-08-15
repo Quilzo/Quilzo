@@ -592,3 +592,18 @@ table caption { text-align: left; font-size: .8125rem; font-weight: 600;
   color: var(--on-surface-variant); padding: .5rem .75rem; }
 .notice { background: var(--surface-container-high); border-radius: var(--shape-m);
   padding: .75rem 1rem; margin: 0 0 1rem; }
+
+/* -- audit log -------------------------------------------------------------- */
+
+.card { border: 1px solid var(--outline-variant); border-radius: var(--shape-m);
+  padding: 1rem 1.15rem; margin: 0 0 1.25rem; background: var(--surface-container-low); }
+.card.ok { border-left: 4px solid var(--primary); }
+.card.bad { border-left: 4px solid var(--error); background: var(--error-container); }
+.card p { margin: .2rem 0; }
+.card ul { margin: .4rem 0 0; padding-left: 1.1rem; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .8125rem; }
+tr.detail td { padding-top: 0; border-top: 0; }
+.kv { display: inline-block; margin: 0 .9rem .2rem 0; font-size: .75rem;
+  color: var(--on-surface-variant); }
+.kv b { font-weight: 600; color: var(--on-surface); }

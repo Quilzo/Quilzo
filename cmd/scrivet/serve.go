@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/rsh1k/scrivet/internal/api"
+	"github.com/rsh1k/scrivet/internal/logd"
 	"github.com/rsh1k/scrivet/internal/throttle"
 	"net/http"
 	"os"
@@ -86,6 +87,37 @@ func cmdServe(root string, args []string) error {
 	}
 
 	srv.ReloadTokens = tokenReloader(root, toks)
+
+	// The audit log, read-only. This process cannot write it where the writer
+	// has been separated out, so there is no edit path to withhold.
+	srv.LoadAudit = func() ([]audit.Event, error) {
+		return audit.Read(auditPath(root))
+	}
+	srv.LogSeparated = func() bool {
+		ok, _ := logd.CheckOwnership(auditPath(root), os.Geteuid())
+		return ok
+	}()
+	// Forward matching only. The HMAC cannot be reversed; this computes the
+	// pseudonym for each principal the store knows and compares, so somebody
+	// the policy has never heard of stays opaque — which is itself worth
+	// seeing on the page.
+	srv.ResolvePrincipal = func(pseudonym string) string {
+		l, err := openAudit(root)
+		if err != nil {
+			return ""
+		}
+		for _, name := range pol.Principals() {
+			if l.Matches(pseudonym, name) {
+				return name
+			}
+		}
+		for _, t := range toks.Snapshot() {
+			if l.Matches(pseudonym, t.Principal) {
+				return t.Principal
+			}
+		}
+		return ""
+	}
 	srv.Throttle = throttle.New(throttlePolicy(cfg))
 
 	// The content API, same-origin with the playground. Read-only here: this
