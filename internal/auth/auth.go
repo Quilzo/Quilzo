@@ -793,3 +793,35 @@ func (ts *TokenStore) Stale(now time.Time, idle time.Duration) []Token {
 	}
 	return out
 }
+
+// Snapshot returns a copy of the bindings.
+//
+// A copy, because both of these types are now mutex-guarded and handing out
+// the slice would let a caller read it while another goroutine appends. That
+// was the shape of the race the admin already had once.
+func (p *Policy) Snapshot() []Binding {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return append([]Binding(nil), p.Bindings...)
+}
+
+// Snapshot returns a copy of the tokens, hashes included — callers that render
+// these must not print the Hash field, which is why nothing here does.
+func (ts *TokenStore) Snapshot() []Token {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return append([]Token(nil), ts.Tokens...)
+}
+
+// Replace swaps the token set, under the lock.
+//
+// For a host that re-reads the store from disk because another process may
+// have changed it. Revocation is the reason this exists: a token store loaded
+// once at startup means a credential revoked in one process keeps working in
+// every other one until it restarts, which makes "revoked" a claim about a
+// file rather than a fact about a credential.
+func (ts *TokenStore) Replace(tokens []Token) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.Tokens = tokens
+}

@@ -67,6 +67,25 @@ func cmdServe(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Persistence and auditing for the changes the admin can now make.
+	// Without these an access change lives until the process restarts, and the
+	// administrator has already been told it worked.
+	srv.SavePolicy = func(p *auth.Policy) error {
+		return saveJSON(policyPath(root), p)
+	}
+	srv.SaveTokens = func(t *auth.TokenStore) error {
+		return saveJSON(tokensPath(root), t)
+	}
+	srv.Audit = func(action, resource string, detail map[string]string) {
+		by := detail["by"]
+		record(root, audit.Record{
+			Action: action, Resource: resource, Outcome: audit.Success,
+			Principal: by, Kind: audit.KindHuman, Verified: true,
+			Detail: detail,
+		})
+	}
+
+	srv.ReloadTokens = tokenReloader(root, toks)
 	srv.Throttle = throttle.New(throttlePolicy(cfg))
 
 	// The content API, same-origin with the playground. Read-only here: this

@@ -552,3 +552,30 @@ footer { margin-top: 3rem; padding-top: 1.5rem;
   button, .btn { border: 1px solid ButtonText; }
   :focus-visible { outline: 3px solid Highlight; }
 }
+
+/* -- people ---------------------------------------------------------------- */
+
+.person { margin: 1.5rem 0 2rem; padding-top: .5rem;
+  border-top: 1px solid var(--outline-variant); }
+.person h3 { margin: 0 0 .15rem; }
+
+form.stack { margin: 0 0 1rem; }
+form.inline { display: inline; margin: 0; }
+.row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: end;
+  margin: 0 0 .6rem; }
+.row label { display: flex; flex-direction: column; gap: .2rem;
+  font-size: .8125rem; color: var(--on-surface-variant); flex: 1 1 12rem; }
+.row label.check { flex-direction: row; align-items: center; gap: .45rem;
+  flex: 0 0 auto; padding-bottom: .55rem; }
+.row input[type=text], .row input:not([type]), .row select {
+  font: inherit; padding: .5rem .6rem; border-radius: var(--shape-s);
+  border: 1px solid var(--outline); background: var(--surface);
+  color: var(--on-surface); }
+button.danger { background: var(--surface-container-high);
+  color: var(--error); border: 1px solid var(--outline-variant); }
+button.danger:hover { background: var(--error); color: var(--on-error); }
+td.right, th.right { text-align: right; }
+table caption { text-align: left; font-size: .8125rem; font-weight: 600;
+  color: var(--on-surface-variant); padding: .5rem .75rem; }
+.notice { background: var(--surface-container-high); border-radius: var(--shape-m);
+  padding: .75rem 1rem; margin: 0 0 1rem; }

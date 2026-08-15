@@ -53,6 +53,9 @@ type Server struct {
 	// token, for same-origin requests only. Off unless this server is mounted
 	// inside the admin, which is the one place a session exists.
 	SessionAuth bool
+	// ReloadTokens re-reads the credential store when it has changed on disk.
+	// Nil means never, which is only right for a test.
+	ReloadTokens func()
 	// Throttle slows repeated authentication failures. Nil disables it, which
 	// is for tests; the CLI wires one in from configuration.
 	Throttle *throttle.Limiter
@@ -164,6 +167,21 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		// against a stored hash — deliberately not a slow KDF, because a token
 		// is 256 bits of entropy rather than a password — so the check itself
 		// is not the expensive thing a throttle is protecting.
+		// Re-read the credentials before deciding anything.
+		//
+		// The store is shared between processes — the admin, the public site and
+		// the CLI all hold the same file — and each loaded it once at startup.
+		// So a credential revoked through the admin kept working on the site
+		// until that container restarted, which makes "revoked" a claim about a
+		// file rather than a fact about a credential. Found by revoking a token
+		// in one container and watching another keep accepting it.
+		//
+		// The hook stats the file and reloads only when it has changed, so this
+		// is one stat per request rather than a parse.
+		if s.ReloadTokens != nil {
+			s.ReloadTokens()
+		}
+
 		authSub := throttle.Subject{Source: sourceOf(r)}
 		throttled := false
 		var tdec throttle.Decision

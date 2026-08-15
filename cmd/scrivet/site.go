@@ -230,9 +230,10 @@ func cmdSite(root string, args []string) error {
 				PerMinute: cfg.Int("api.rate.per_minute"),
 				Burst:     cfg.Int("api.rate.burst"),
 			},
-			Throttle: throttle.New(throttlePolicy(cfg)),
-			Tokenise: search.Tokenise,
-			Vectors:  func() *vector.Index { return vecIndex },
+			Throttle:     throttle.New(throttlePolicy(cfg)),
+			ReloadTokens: tokenReloader(root, toks),
+			Tokenise:     search.Tokenise,
+			Vectors:      func() *vector.Index { return vecIndex },
 			OnAuthFailure: func(source string, failures int) {
 				// The reaction ASVS 5.0 asks for above five failures an hour.
 				// An audit record rather than an email, because this program

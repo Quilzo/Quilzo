@@ -85,6 +85,9 @@ type Server struct {
 	// it same-origin. Nil means the routes 404, which is what a server built
 	// without one should do.
 	API http.Handler
+	// ReloadTokens re-reads the credential store when it has changed on disk.
+	// Nil means never, which is only right for a test.
+	ReloadTokens func()
 	// Throttle slows repeated authentication failures. Nil means no
 	// throttling, which is only right in tests: the host wires one in from
 	// configuration, and a nil check here rather than a panic means a caller
@@ -119,6 +122,12 @@ type Server struct {
 	// SaveTokens persists a session minted after an OIDC sign-in, so it
 	// survives a restart and so revoking it is possible from the CLI.
 	SaveTokens func(*auth.TokenStore) error
+	// SavePolicy persists an access change made from the admin.
+	SavePolicy func(*auth.Policy) error
+	// Audit records an action. The admin does not open the audit log itself:
+	// it does not know where the log lives, and since the writer was separated
+	// out it must not.
+	Audit func(action, resource string, detail map[string]string)
 	// OnSignIn records an authentication. Separate from the handler so the
 	// audit log stays the host's concern.
 	OnSignIn func(principal, tokenID string)
@@ -390,6 +399,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/review", s.handleReview)
 	mux.HandleFunc("/publish", s.handlePublish)
 	mux.HandleFunc("/access", s.handleAccess)
+	mux.HandleFunc("/people", s.handlePeople)
+	mux.HandleFunc("/people/grant", s.handlePeopleGrant)
+	mux.HandleFunc("/people/revoke", s.handlePeopleRevoke)
+	mux.HandleFunc("/sessions/revoke", s.handleSessionRevoke)
 	mux.HandleFunc("/provenance", s.handleProvenance)
 	mux.HandleFunc("/provenance/set", s.handleProvenanceSet)
 	mux.HandleFunc("/history", s.handleHistory)
@@ -478,6 +491,21 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 	// middleware: only the source is known before authentication, so refusing
 	// on its history alone locks out everyone behind one address. A throttled
 	// request is still authenticated and a valid credential is let through.
+	// Re-read the credentials before deciding anything.
+	//
+	// The store is shared between processes — the admin, the public site and
+	// the CLI all hold the same file — and each loaded it once at startup.
+	// So a credential revoked through the admin kept working on the site
+	// until that container restarted, which makes "revoked" a claim about a
+	// file rather than a fact about a credential. Found by revoking a token
+	// in one container and watching another keep accepting it.
+	//
+	// The hook stats the file and reloads only when it has changed, so this
+	// is one stat per request rather than a parse.
+	if s.ReloadTokens != nil {
+		s.ReloadTokens()
+	}
+
 	sub := throttle.Subject{Source: sourceOf(r)}
 	throttled := false
 	var tdec throttle.Decision

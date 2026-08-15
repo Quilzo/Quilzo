@@ -2,6 +2,9 @@ package admin
 
 import (
 	"net/http"
+	"time"
+
+	"github.com/rsh1k/scrivet/internal/auth"
 	"net/http/httptest"
 	"regexp"
 	"strings"
@@ -193,4 +196,91 @@ func TestTheHiddenRuleSurvivesTheFlexLayout(t *testing.T) {
 	if !strings.Contains(body, `href="/"`) {
 		t.Error("the playground has no link back to the admin")
 	}
+}
+
+// -- people and credentials ---------------------------------------------------
+
+// The bug this page exists to prevent an administrator from believing they
+// have avoided: removing a grant does not invalidate a token already in
+// somebody's hand, because the token carries its own role.
+func TestRemovingAGrantDoesNotRevokeTheirCredential(t *testing.T) {
+	s, _ := setup(t)
+	tok, _, err := s.Tokens.Issue("theirs", "sam", auth.RoleAuthor, "/",
+		time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Policy.Grant(auth.Binding{Principal: "sam", Role: auth.RoleAuthor,
+		Resource: "/"})
+	s.Policy.Revoke("sam", auth.RoleAuthor, "/")
+
+	if _, err := s.Tokens.Authenticate(tok, time.Now()); err != nil {
+		t.Fatal("the token stopped authenticating, which is not what a policy " +
+			"change does")
+	}
+	// Which is exactly why the page shows both, and says so.
+	body, _ := fetchPeople(t, s)
+	if !strings.Contains(body, "Credentials they hold") {
+		t.Error("the page does not show credentials alongside grants")
+	}
+	if !strings.Contains(body, "does not invalidate a token") {
+		t.Error("the page does not warn that removing a grant is not enough")
+	}
+}
+
+// Somebody holding a credential but named in no binding must still appear.
+// A person invisible on this screen is a person nobody removes.
+func TestSomebodyWithNoGrantsStillAppears(t *testing.T) {
+	s, _ := setup(t)
+	if _, _, err := s.Tokens.Issue("orphan", "ghost", auth.RoleReader, "/",
+		time.Hour, auth.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := fetchPeople(t, s)
+	if !strings.Contains(body, "ghost") {
+		t.Error("a principal with a credential and no binding is not listed")
+	}
+}
+
+// The write handlers are POST-only and authorised, like everything else that
+// changes state here.
+func TestThePeopleWritesAreGuarded(t *testing.T) {
+	s, tok := setup(t)
+	for _, path := range []string{"/people/grant", "/people/revoke",
+		"/sessions/revoke"} {
+		// GET is refused.
+		r := httptest.NewRequest("GET", "http://h"+path, nil)
+		r.Header.Set("Authorization", "Bearer "+tok)
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, r)
+		if w.Code != http.StatusMethodNotAllowed {
+			t.Errorf("GET %s gave %d, want 405", path, w.Code)
+		}
+		// Unauthenticated POST is refused.
+		w = httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, httptest.NewRequest("POST", "http://h"+path, nil))
+		if w.Code == http.StatusSeeOther {
+			t.Errorf("POST %s acted without authentication", path)
+		}
+	}
+}
+
+// fetchPeople renders the page for an admin.
+func fetchPeople(t *testing.T, s *Server) (string, int) {
+	t.Helper()
+	tok, _, err := s.Tokens.Issue("admin-view", "dana", auth.RoleAdmin, "/",
+		time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Policy.Grant(auth.Binding{Principal: "dana", Role: auth.RoleAdmin,
+		Resource: "/"})
+	r := httptest.NewRequest("GET", "http://h/people", nil)
+	r.Header.Set("Authorization", "Bearer "+tok)
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("/people gave %d: %s", w.Code, w.Body.String())
+	}
+	return w.Body.String(), w.Code
 }

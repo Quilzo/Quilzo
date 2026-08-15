@@ -1,0 +1,140 @@
+{{template "head" .}}
+<h1>People</h1>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+
+<h2>Add or change access</h2>
+<form method="post" action="/people/grant" class="stack">
+  <div class="row">
+    <label>Who
+      <input name="principal" required autocomplete="off" spellcheck="false"
+             placeholder="their name, or the subject their IdP sends">
+    </label>
+    <label>Role
+      <select name="role">{{range .Roles}}<option value="{{.}}">{{.}}</option>{{end}}</select>
+    </label>
+    <label>On
+      <input name="resource" value="/" spellcheck="false">
+    </label>
+  </div>
+  <div class="row">
+    <label class="check"><input type="checkbox" name="own_only">
+      only content they created</label>
+    <label class="check"><input type="checkbox" name="deny">
+      deny instead of grant</label>
+    <label>Why
+      <input name="note" placeholder="optional, and worth writing">
+    </label>
+  </div>
+  <p><button type="submit">Save</button></p>
+</form>
+<p class="hint">
+  <strong>Only content they created</strong> is the contributor shape: the same
+  powers as the role, over a smaller set of pages. Reading is never restricted
+  by it &mdash; a team where people cannot see each other&rsquo;s drafts is not a team.
+</p>
+
+<h2>Everybody</h2>
+{{if not .People}}
+  <p class="hint">Nobody has been granted anything, so access is decided by the
+  built-in default rather than by anything you configured.</p>
+{{end}}
+
+{{range .People}}
+<section class="person">
+  <h3>{{.Name}}{{if .IsSelf}} <span class="tag">you</span>{{end}}</h3>
+  <p class="hint">
+    {{if .LastSeen.IsZero}}has never used a credential
+    {{else}}last seen {{.LastSeen.Format "2 Jan 2006, 15:04"}}{{end}}
+  </p>
+
+  {{if .Bindings}}
+  <div class="table-wrap">
+  <table>
+    <caption>What they may do</caption>
+    <thead><tr>
+      <th scope="col">Grant</th><th scope="col">Where</th><th scope="col"></th>
+    </tr></thead>
+    <tbody>
+    {{$who := .Name}}
+    {{range .Bindings}}
+    <tr>
+      <th scope="row">
+        {{if .Deny}}<span class="tag tag-bad">deny</span> {{end}}{{.Role}}
+      </th>
+      <td>
+        <code>{{.Resource}}</code>
+        {{if .OwnOnly}} <span class="tag">own content only</span>{{end}}
+        {{if .Note}}<div class="hint">{{.Note}}</div>{{end}}
+      </td>
+      <td class="right">
+        <form method="post" action="/people/revoke" class="inline">
+          <input type="hidden" name="principal" value="{{$who}}">
+          <input type="hidden" name="role" value="{{.Role}}">
+          <input type="hidden" name="resource" value="{{.Resource}}">
+          <button type="submit" class="danger">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <p class="hint">No grants. They hold a credential but the policy gives them
+  nothing, which usually means a binding was removed and the token was not.</p>
+  {{end}}
+
+  {{if .Sessions}}
+  <div class="table-wrap">
+  <table>
+    <caption>Credentials they hold</caption>
+    <thead><tr>
+      <th scope="col">Credential</th><th scope="col">Role</th>
+      <th scope="col">Last used</th><th scope="col">Expires</th><th scope="col"></th>
+    </tr></thead>
+    <tbody>
+    {{range .Sessions}}
+    <tr>
+      <th scope="row">
+        {{.Name}}
+        {{if .Active}}<span class="tag tag-ok">active now</span>{{end}}
+        {{if .IsSession}}<span class="tag">session</span>{{end}}
+        <div class="hint"><code>{{.ID}}</code>{{if .Scope}} &middot; {{.Scope}}{{end}}</div>
+      </th>
+      <td>{{.Role}}</td>
+      <td>{{if .Never}}<span class="hint">never used</span>
+          {{else}}{{.LastUsed.Format "2 Jan, 15:04"}}{{end}}</td>
+      <td>{{.Expires.Format "2 Jan 2006"}}</td>
+      <td class="right">
+        <form method="post" action="/sessions/revoke" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <button type="submit" class="danger">Revoke</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <p class="hint">Holds no usable credential, so they cannot act right now
+  whatever the grants above say.</p>
+  {{end}}
+</section>
+{{end}}
+
+<h2>Two different questions</h2>
+<p class="hint">
+  <strong>Grants</strong> decide what somebody is allowed to do. <strong>Credentials</strong>
+  decide what they can do right now. Removing a grant does not invalidate a token
+  already in somebody&rsquo;s hand &mdash; the token carries its own role, which is what
+  makes a narrow token narrow. Removing somebody means doing both, and revoking a
+  credential also revokes every session minted from it.
+</p>
+<p class="hint">
+  There is no session table here to inspect: signing in produces a bearer token and
+  the token <em>is</em> the session. &ldquo;Active now&rdquo; means used within the last
+  {{.ActiveWithin}} &mdash; the closest honest answer to who is logged in.
+</p>
+{{template "foot" .}}
