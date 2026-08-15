@@ -310,6 +310,21 @@ func normalisePath(p string) (string, error) {
 			"or fragment; parameter order is not fixed, so the rule would " +
 			"match unpredictably")
 	}
+	// Checked again on the way out, and this is not belt and braces.
+	//
+	// The check above sees what was written; this sees what it became. A
+	// target of ...%00... is three printable characters going in, and if
+	// anything between here and there percent-decodes it — url.Parse does,
+	// for the branch that strips a hostname — it is a NUL coming out. The
+	// invariant that matters is about the value this map hands to a Location
+	// header and to an exported web-server config, so it has to be checked
+	// there.
+	//
+	// Found by fuzzing, via a route that also shows why: the backslash
+	// collapsing above turned \:\\ into /://, manufacturing the scheme
+	// separator that sent the value down the URL-parsing branch in the first
+	// place. A check placed before a transformation is a check on a different
+	// string.
 	// Collapse repeated slashes and strip the trailing one, so /a//b/ and /a/b
 	// are the same key.
 	for strings.Contains(p, "//") {
@@ -320,6 +335,9 @@ func normalisePath(p string) (string, error) {
 	}
 	if strings.Contains(p, "..") {
 		return "", fmt.Errorf("a redirect path cannot contain ..")
+	}
+	if err := noControls(p); err != nil {
+		return "", err
 	}
 	return p, nil
 }
@@ -352,7 +370,11 @@ func normaliseTarget(p string) (string, error) {
 		if u.Host == "" {
 			return "", fmt.Errorf("a redirect target with a scheme needs a host")
 		}
-		return u.String(), nil
+		out := u.String()
+		if err := noControls(out); err != nil {
+			return "", err
+		}
+		return out, nil
 	}
 	// A relative target is a path, and gets the same treatment as a source
 	// except that a query string is fine on the way out.

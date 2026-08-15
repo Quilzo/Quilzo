@@ -421,3 +421,53 @@ func TestNormalRedirectRulesAreStillAccepted(t *testing.T) {
 		t.Errorf("the off-site redirect did not survive: %+v", r)
 	}
 }
+
+// A percent-encoded control character is three printable characters going in
+// and a raw one coming out, if anything in between decodes it — and url.Parse
+// does, on the branch that strips a hostname from a target.
+//
+// Found by fuzzing, by a route that also explains it: collapsing backslashes
+// to slashes turned \:\\ into /://, manufacturing the scheme separator that
+// sent the value down the URL-parsing branch in the first place. A check
+// placed before a transformation is a check on a different string, so the
+// value is checked again on the way out.
+func TestAPercentEncodedControlCharacterCannotSurviveNormalisation(t *testing.T) {
+	for _, to := range []string{
+		"/a%00b",
+		"/a%0Ab",
+		"/a%0D%0AX-Injected:%20yes",
+		`0000000000000000000\:\\%00x`,
+		"https://ok.example/a%0Ab",
+		"/a%09b",
+	} {
+		m, err := NewMap([]Redirect{{From: "/x", To: to}})
+		if err != nil {
+			continue // refused outright is the other correct answer
+		}
+		r, ok := m.Lookup("/x")
+		if !ok {
+			continue
+		}
+		if err := noControls(r.To); err != nil {
+			t.Errorf("%q normalised to %q, which carries a control "+
+				"character: %v", to, r.To, err)
+		}
+	}
+}
+
+// And the same on the source side, since a rule's key is exported too.
+func TestAPercentEncodedControlCharacterIsRefusedInASource(t *testing.T) {
+	for _, from := range []string{"/a%00b", "/a%0D%0Ab", `/a\:\\%0Ab`} {
+		if _, err := NewMap([]Redirect{{From: from, To: "/ok"}}); err == nil {
+			// Accepted is only correct if the stored key is clean, and the
+			// key is what normalisePath returned.
+			got, nerr := normalisePath(from)
+			if nerr != nil {
+				continue
+			}
+			if err := noControls(got); err != nil {
+				t.Errorf("%q normalised to %q: %v", from, got, err)
+			}
+		}
+	}
+}

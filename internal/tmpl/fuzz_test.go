@@ -47,9 +47,30 @@ func containsScript(s string) bool {
 	return false
 }
 
-func containsRaw(s string) bool {
-	for i := 0; i+5 <= len(s); i++ {
-		if s[i:i+5] == "% raw" {
+// containsRaw asks the parser rather than matching text.
+//
+// It used to look for the literal "% raw", which misses {%raw x%} — the parser
+// trims before dispatching on the keyword, so the space is optional. The
+// fuzzer duly produced {%raw page.html%}, got the unescaped output the
+// template asked for, and this reported it as an escaping failure.
+//
+// A detector that models the mechanism instead of grepping the prose: parse
+// the template and look for a raw node. If it will not parse, Render returned
+// an error and we never got here.
+func containsRaw(src string) bool {
+	nodes, err := Parse(src)
+	if err != nil {
+		return true // unparseable; the render already failed
+	}
+	return hasRaw(nodes)
+}
+
+func hasRaw(nodes []node) bool {
+	for _, n := range nodes {
+		if n.kind == nRaw {
+			return true
+		}
+		if hasRaw(n.children) {
 			return true
 		}
 	}
