@@ -64,6 +64,12 @@ content
   scrivet render PAGE TEMPLATE [-o FILE]    render a page
   scrivet verify                            re-hash every object
 
+importing
+  scrivet import FILE [--from wordpress]    bring in another CMS's export
+  scrivet media add FILE --alt "..."        validate and accept an upload
+  scrivet media get https://... --alt "..." fetch one, checked at connect time
+  scrivet media formats                     what is accepted, and what is not
+
 templates
   scrivet template list | show NAME         ready-made starting points
   scrivet template use NAME [--dir DIR]     write it, its stylesheet and sample
@@ -184,6 +190,10 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "import":
+		err = cmdImport(root, cmdArgs)
+	case "media":
+		err = cmdMedia(root, cmdArgs)
 	case "template", "templates":
 		err = cmdTemplate(root, cmdArgs)
 	case "posture":

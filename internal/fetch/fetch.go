@@ -1,0 +1,365 @@
+// Package fetch retrieves things from the internet without becoming a way to
+// reach the inside of the network.
+//
+// # The bug this is built to not have
+//
+// "Import from a URL" is server-side request forgery with a friendly label. The
+// server makes a request the user chose, from inside the network, with whatever
+// the server can reach. On a cloud instance that includes the metadata endpoint
+// at 169.254.169.254, which hands out credentials.
+//
+// The usual defence is to resolve the hostname, check the address against a
+// deny list, and then make the request. Craft CMS shipped exactly that and it
+// was bypassed, because the check and the request are two separate DNS lookups.
+// An attacker returns a public address for the first and 169.254.169.254 for
+// the second — DNS rebinding — and the validated address is not the one dialled.
+//
+// The fix is not a better list. It is to stop separating the check from the
+// connection:
+//
+//	dialer.Control = func(network, address string, _ syscall.RawConn) error
+//
+// Control runs after the address is resolved and before the socket connects,
+// with the exact address being dialled. There is no second lookup to poison,
+// because there is no second lookup. Every connection this package makes goes
+// through it, including the ones made for redirects, which is the other place
+// validation is normally forgotten.
+//
+// # What else is refused
+//
+// Only https. A plain http URL is an unauthenticated channel where a network
+// position rewrites what the site imports, and the whole point of importing is
+// that the result gets published.
+//
+// Userinfo (https://user@host/) is refused rather than stripped, because
+// parsers disagree about which part is the host and disagreeing is how a filter
+// and a fetcher end up looking at different strings.
+//
+// Redirects are followed at most twice and revalidated each time. Not following
+// them at all was tempting, but every CDN in existence redirects once, and a
+// rule a correct source cannot satisfy is a rule people work around.
+package fetch
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"strings"
+	"syscall"
+	"time"
+)
+
+// Limits bound what a fetch may cost. Zero values take the defaults.
+type Limits struct {
+	// MaxBytes caps the response body. A fetch with no ceiling is a way to
+	// exhaust disk with one request.
+	MaxBytes int64
+	// Timeout bounds the whole exchange, not just the connection: a server
+	// that sends one byte a second would otherwise hold the request open
+	// indefinitely.
+	Timeout time.Duration
+	// MaxRedirects is how many hops are allowed. Each one is revalidated.
+	MaxRedirects int
+}
+
+func (l Limits) withDefaults() Limits {
+	if l.MaxBytes <= 0 {
+		l.MaxBytes = 32 << 20 // 32 MiB
+	}
+	if l.Timeout <= 0 {
+		l.Timeout = 20 * time.Second
+	}
+	if l.MaxRedirects < 0 {
+		l.MaxRedirects = 0
+	} else if l.MaxRedirects == 0 {
+		l.MaxRedirects = 2
+	}
+	return l
+}
+
+// Result is what came back.
+type Result struct {
+	URL         string
+	FinalURL    string
+	ContentType string
+	Body        []byte
+	SHA256      string
+	// Truncated says the body hit the ceiling. Reported rather than silently
+	// returning a partial file, because a truncated PDF that validates is worse
+	// than a refused one.
+	Truncated bool
+}
+
+// blocked lists the address ranges a fetch may never reach.
+//
+// Named individually rather than as "not public", because the interesting ones
+// each have a story and a reader should be able to see why each is here.
+var blocked = []struct {
+	cidr string
+	why  string
+}{
+	{"0.0.0.0/8", "this host"},
+	{"10.0.0.0/8", "private (RFC 1918)"},
+	{"100.64.0.0/10", "carrier-grade NAT (RFC 6598)"},
+	{"127.0.0.0/8", "loopback — the server itself"},
+	{"169.254.0.0/16", "link-local, which is where cloud metadata lives"},
+	{"172.16.0.0/12", "private (RFC 1918)"},
+	{"192.0.0.0/24", "IETF protocol assignments"},
+	{"192.0.2.0/24", "documentation"},
+	{"192.168.0.0/16", "private (RFC 1918)"},
+	{"198.18.0.0/15", "benchmarking"},
+	{"198.51.100.0/24", "documentation"},
+	{"203.0.113.0/24", "documentation"},
+	{"224.0.0.0/4", "multicast"},
+	{"240.0.0.0/4", "reserved"},
+	{"255.255.255.255/32", "broadcast"},
+
+	{"::/128", "unspecified"},
+	{"::1/128", "loopback — the server itself"},
+	{"64:ff9b::/96", "NAT64, which translates back to v4"},
+	{"100::/64", "discard"},
+	{"2001:db8::/32", "documentation"},
+	{"fc00::/7", "unique local — the v6 private range"},
+	{"fe80::/10", "link-local"},
+	{"ff00::/8", "multicast"},
+}
+
+var blockedNets = func() []*net.IPNet {
+	out := make([]*net.IPNet, 0, len(blocked))
+	for _, b := range blocked {
+		_, n, err := net.ParseCIDR(b.cidr)
+		if err != nil {
+			panic("fetch: bad CIDR " + b.cidr)
+		}
+		out = append(out, n)
+	}
+	return out
+}()
+
+// CheckIP reports why an address is refused, or empty if it is allowed.
+//
+// Exported so the reason can be surfaced to whoever pasted the URL. "Blocked"
+// with no explanation makes people assume the tool is broken and go looking for
+// a way around it.
+func CheckIP(ip net.IP) string {
+	if ip == nil {
+		return "the address could not be parsed"
+	}
+	// An IPv4-mapped v6 address is a v4 target, so unmap it and let the v4
+	// ranges below decide. This is why there is no ::ffff:0:0/96 entry in the
+	// list: net.ParseCIDR normalises that prefix to a 4-byte network, which
+	// truncates the /96 mask to its last four bytes — all zeroes — leaving
+	// 0.0.0.0/0. The entry looked like it blocked v4-mapped addresses and in
+	// fact blocked the entire IPv4 internet. A test asserting that a public
+	// address is reachable is what caught it.
+	if v4 := ip.To4(); v4 != nil {
+		ip = v4
+	}
+	for i, n := range blockedNets {
+		if n.Contains(ip) {
+			return fmt.Sprintf("%s is %s", ip, blocked[i].why)
+		}
+	}
+	return ""
+}
+
+// Client fetches URLs.
+type Client struct {
+	Limits Limits
+	// Resolver is swappable so the tests can return a hostile answer without
+	// needing a hostile DNS server.
+	Resolver func(ctx context.Context, host string) ([]net.IP, error)
+	// UserAgent identifies the fetch. Sites block anonymous fetchers, and a
+	// blank agent is also a way to fetch things nobody can attribute.
+	UserAgent string
+}
+
+// New returns a Client with the defaults.
+func New() *Client {
+	return &Client{Limits: Limits{}.withDefaults(),
+		UserAgent: "scrivet/1 (+content import)"}
+}
+
+// ValidateURL checks a URL before anything is dialled.
+//
+// This is the cheap first pass, and it is deliberately *not* the security
+// boundary — that is Control, below. Doing it here as well means an obviously
+// wrong URL gets a useful message rather than a connection error.
+func ValidateURL(raw string) (*url.URL, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, fmt.Errorf("that is not a URL: %w", err)
+	}
+	if u.Scheme != "https" {
+		return nil, fmt.Errorf("only https is allowed, not %q. Imported content "+
+			"gets published, and over plain http anyone on the path chooses "+
+			"what you publish", u.Scheme)
+	}
+	if u.User != nil {
+		return nil, fmt.Errorf("a URL with credentials in it is refused. " +
+			"Parsers disagree about which part of user@host is the host, and " +
+			"a filter and a fetcher reading it differently is the bug")
+	}
+	if u.Host == "" {
+		return nil, fmt.Errorf("the URL has no host")
+	}
+	// A literal address skips DNS, so check it here too — Control will check it
+	// again, but saying so now is a better error.
+	host := u.Hostname()
+	if ip := net.ParseIP(host); ip != nil {
+		if why := CheckIP(ip); why != "" {
+			return nil, fmt.Errorf("refusing to fetch: %s", why)
+		}
+	}
+	return u, nil
+}
+
+// Get fetches a URL.
+func (c *Client) Get(ctx context.Context, raw string) (*Result, error) {
+	lim := c.Limits.withDefaults()
+	u, err := ValidateURL(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, lim.Timeout)
+	defer cancel()
+
+	// The security boundary. Control is handed the address the socket is about
+	// to connect to, after resolution — so there is no window between deciding
+	// and dialling, and nothing a second DNS answer can change.
+	dialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 10 * time.Second,
+		Control: func(network, address string, _ syscall.RawConn) error {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return fmt.Errorf("refusing to dial %q", address)
+			}
+			ip := net.ParseIP(host)
+			if why := CheckIP(ip); why != "" {
+				return fmt.Errorf("refusing to connect: %s", why)
+			}
+			return nil
+		},
+	}
+	if c.Resolver != nil {
+		dialer.Resolver = &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				return nil, fmt.Errorf("no resolver")
+			},
+		}
+	}
+
+	transport := &http.Transport{
+		DialContext:           c.dialContext(dialer),
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 15 * time.Second,
+		DisableKeepAlives:     true,
+		// One connection per fetch. Pooling would let a later fetch reuse a
+		// socket opened for an earlier host, and the address that was validated
+		// belongs to the first request.
+		MaxIdleConns: 0,
+	}
+
+	hops := 0
+	client := &http.Client{
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			hops++
+			if hops > lim.MaxRedirects {
+				return fmt.Errorf("too many redirects (%d); the source keeps "+
+					"forwarding", hops)
+			}
+			// Revalidate the destination. Control will check the address too,
+			// but this produces the useful message and refuses schemes before
+			// a connection is attempted.
+			if _, err := ValidateURL(req.URL.String()); err != nil {
+				return fmt.Errorf("redirect to %s refused: %w", req.URL, err)
+			}
+			return nil
+		},
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", c.UserAgent)
+	req.Header.Set("Accept", "*/*")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, unwrapDialError(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s returned %d", u, resp.StatusCode)
+	}
+
+	// Read one byte past the ceiling so hitting it exactly is distinguishable
+	// from a file that happens to be the maximum size.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, lim.MaxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", u, err)
+	}
+	truncated := int64(len(body)) > lim.MaxBytes
+	if truncated {
+		return nil, fmt.Errorf("%s is larger than the %d byte limit", u, lim.MaxBytes)
+	}
+
+	sum := sha256.Sum256(body)
+	return &Result{
+		URL:         raw,
+		FinalURL:    resp.Request.URL.String(),
+		ContentType: resp.Header.Get("Content-Type"),
+		Body:        body,
+		SHA256:      hex.EncodeToString(sum[:]),
+	}, nil
+}
+
+// dialContext wires the resolver override in, when there is one.
+func (c *Client) dialContext(d *net.Dialer) func(context.Context, string, string) (net.Conn, error) {
+	if c.Resolver == nil {
+		return d.DialContext
+	}
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		ips, err := c.Resolver(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		if len(ips) == 0 {
+			return nil, fmt.Errorf("%s does not resolve", host)
+		}
+		// Every answer is checked, not just the first. A resolver returning one
+		// public address and one internal one is the whole trick, and taking
+		// the first would make the refusal depend on ordering.
+		for _, ip := range ips {
+			if why := CheckIP(ip); why != "" {
+				return nil, fmt.Errorf("refusing to connect: %s", why)
+			}
+		}
+		return d.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+	}
+}
+
+// unwrapDialError surfaces the refusal rather than the transport's wrapper,
+// which buries it under "dial tcp: connect: ...".
+func unwrapDialError(err error) error {
+	msg := err.Error()
+	if i := strings.Index(msg, "refusing to "); i >= 0 {
+		return fmt.Errorf("%s", msg[i:])
+	}
+	return err
+}
