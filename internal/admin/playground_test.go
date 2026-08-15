@@ -175,3 +175,22 @@ func scriptSrc(csp string) string {
 	}
 	return ""
 }
+
+// The body field must be hidden for a GET.
+//
+// It was not, and no unit test could have caught it: `hidden` works through a
+// user-agent rule that any explicit `display` beats, and .pg-row is
+// display:flex. The bug was in the stylesheet, the symptom was in the layout,
+// and it took a screenshot to see. This asserts the rule that fixes it, which
+// is the closest a test in this package can get to asserting the rendering.
+func TestTheHiddenRuleSurvivesTheFlexLayout(t *testing.T) {
+	body, _ := fetchPlayground(t)
+	if !strings.Contains(body, ".pg-row[hidden]") {
+		t.Error("nothing overrides display:flex for a hidden row, so the " +
+			"request body field will show for GET requests")
+	}
+	// And the page must still offer a way back, or it is a dead end.
+	if !strings.Contains(body, `href="/"`) {
+		t.Error("the playground has no link back to the admin")
+	}
+}

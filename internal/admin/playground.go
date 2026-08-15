@@ -142,6 +142,10 @@ func playgroundHTML(nonce, who string, routes []Route) string {
 <style>
   .pg { max-width: 60rem; margin: 0 auto; padding: 1.5rem; }
   .pg-row { display: flex; gap: .5rem; flex-wrap: wrap; margin: .75rem 0; }
+  /* An explicit display beats the user-agent rule that makes [hidden] work,
+     so the body field stayed on screen for every GET. Visible in a
+     screenshot, invisible in a unit test: nothing asserts on layout. */
+  .pg-row[hidden] { display: none; }
   .pg select, .pg input, .pg textarea, .pg button {
     font: inherit; padding: .5rem .6rem; border-radius: 8px;
     border: 1px solid var(--outline, #ccc); background: inherit; color: inherit; }
@@ -158,6 +162,7 @@ func playgroundHTML(nonce, who string, routes []Route) string {
 </style>
 </head><body>
 <main class="pg">
+<p class="hint"><a href="/">&larr; back to scrivet</a></p>
 <h1>API playground</h1>
 <p class="hint">Signed in as ` + html.EscapeString(who) + `. Requests go to this
 server, through the same middleware your own code will meet, using your session

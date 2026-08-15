@@ -81,6 +81,10 @@ type Server struct {
 	Store  *store.Store
 	Policy *auth.Policy
 	Tokens *auth.TokenStore
+	// API is the content API, served under /api/ so the playground can call
+	// it same-origin. Nil means the routes 404, which is what a server built
+	// without one should do.
+	API http.Handler
 	// Throttle slows repeated authentication failures. Nil means no
 	// throttling, which is only right in tests: the host wires one in from
 	// configuration, and a nil check here rather than a panic means a caller
@@ -396,6 +400,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/auth/callback", s.handleOIDCCallback)
 	mux.HandleFunc("/signout", s.handleSignOut)
 	mux.HandleFunc("/playground", s.playground)
+	// The content API, mounted here so the playground can reach it.
+	//
+	// Its relative URLs resolve against this origin, and there is deliberately
+	// no CORS, so an API on another port is an API the console cannot call —
+	// which is what it did before this. Read-only unless the operator asked
+	// otherwise: the playground exists to show people the API, and showing
+	// them is a read.
+	if s.API != nil {
+		mux.Handle("/api/", s.API)
+	}
 	mux.HandleFunc("/style.css", s.handleCSS)
 	return securityHeaders(sameSiteOnly(limitBody(mux)))
 }

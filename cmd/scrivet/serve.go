@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/rsh1k/scrivet/internal/api"
 	"github.com/rsh1k/scrivet/internal/throttle"
 	"net/http"
 	"os"
@@ -67,6 +68,21 @@ func cmdServe(root string, args []string) error {
 		return err
 	}
 	srv.Throttle = throttle.New(throttlePolicy(cfg))
+
+	// The content API, same-origin with the playground. Read-only here: this
+	// is the console, and a console that can rewrite production by accident
+	// is a different product. `scrivet site --api-writable` is where writes
+	// are turned on deliberately.
+	apiSrv := &api.Server{
+		Store: s, Policy: pol, Tokens: toks,
+		SessionAuth: true,
+		Limits: api.Limits{
+			PerMinute: cfg.Int("api.rate.per_minute"),
+			Burst:     cfg.Int("api.rate.burst"),
+		},
+		Types: func() (*schema.Store, error) { return schema.Load(root) },
+	}
+	srv.API = apiSrv.Handler()
 	srv.OnAuthFailure = func(source string, failures int) {
 		// ASVS 5.0 asks for a reaction above five failures an hour. An audit
 		// record is the reaction: a SIEM rule can match it, and this program

@@ -697,3 +697,66 @@ func TestAnUnscopedTokenIsUnaffected(t *testing.T) {
 		t.Errorf("an unscoped token saw %d of 3 pages", got.Total)
 	}
 }
+
+// -- the session cookie, and why it is dangerous ------------------------------
+
+// The API is otherwise bearer-only, which is what lets it have no CSRF defence
+// at all: a header does not travel automatically and a cookie does. Accepting
+// a cookie without an origin check would hand every route the vulnerability
+// the bearer-only rule exists to avoid.
+func TestASessionCookieIsRefusedCrossSite(t *testing.T) {
+	s, tok, _ := setup(t)
+	s.SessionAuth = true
+	h := s.Handler()
+
+	for _, tc := range []struct {
+		name    string
+		headers map[string]string
+		want    int
+	}{
+		{"same-origin", map[string]string{"Sec-Fetch-Site": "same-origin"}, 200},
+		{"no fetch metadata", nil, 200},
+		{"cross-site", map[string]string{"Sec-Fetch-Site": "cross-site"}, 401},
+		{"same-site", map[string]string{"Sec-Fetch-Site": "same-site"}, 401},
+		{"foreign origin", map[string]string{"Origin": "https://evil.example"}, 401},
+	} {
+		r := httptest.NewRequest("GET", "http://h/api/v1/pages", nil)
+		r.AddCookie(&http.Cookie{Name: "scrivet_token", Value: tok})
+		for k, v := range tc.headers {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != tc.want {
+			t.Errorf("%s gave %d, want %d", tc.name, w.Code, tc.want)
+		}
+	}
+}
+
+// And the cookie is not accepted at all unless this server was mounted inside
+// the admin, which is the one place a session exists.
+func TestASessionCookieIsIgnoredWhenNotMountedInTheAdmin(t *testing.T) {
+	s, tok, _ := setup(t)
+	// SessionAuth deliberately left false, which is the default.
+	r := httptest.NewRequest("GET", "http://h/api/v1/pages", nil)
+	r.AddCookie(&http.Cookie{Name: "scrivet_token", Value: tok})
+	r.Header.Set("Sec-Fetch-Site", "same-origin")
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("got %d; a standalone API server must stay bearer-only",
+			w.Code)
+	}
+}
+
+// A bearer token keeps working regardless, so nothing about the existing
+// contract changed.
+func TestABearerTokenIsUnaffectedBySessionAuth(t *testing.T) {
+	s, tok, _ := setup(t)
+	s.SessionAuth = true
+	w := req(t, s, "GET", "/api/v1/pages", tok, nil,
+		map[string]string{"Sec-Fetch-Site": "cross-site"})
+	if w.Code != http.StatusOK {
+		t.Errorf("a bearer token was refused cross-site: %d", w.Code)
+	}
+}

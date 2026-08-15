@@ -49,6 +49,10 @@ type Server struct {
 	// similar" rather than "nothing was indexed".
 	Vectors  func() *vector.Index
 	Tokenise func(string) []string
+	// SessionAuth accepts the admin's session cookie in place of a bearer
+	// token, for same-origin requests only. Off unless this server is mounted
+	// inside the admin, which is the one place a session exists.
+	SessionAuth bool
 	// Throttle slows repeated authentication failures. Nil disables it, which
 	// is for tests; the CLI wires one in from configuration.
 	Throttle *throttle.Limiter
@@ -320,10 +324,32 @@ func sourceOf(r *http.Request) string {
 }
 
 func (s *Server) authenticate(r *http.Request) (*auth.Token, error) {
-	h := r.Header.Get("Authorization")
-	raw, ok := strings.CutPrefix(h, "Bearer ")
+	raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok {
-		return nil, fmt.Errorf("no bearer token")
+		// The admin's session cookie, accepted only when this server is
+		// mounted inside the admin and only for a same-origin request.
+		//
+		// Both conditions matter. The API is otherwise bearer-only, which is
+		// what lets it have no CSRF defence at all: a header does not travel
+		// automatically and a cookie does. Accepting a cookie without the
+		// origin check would hand every API route the vulnerability the
+		// bearer-only rule exists to avoid — any page on any site could make
+		// a browser send a write with the visitor's session attached.
+		//
+		// This exists because the playground could not reach the API. Its
+		// relative URLs resolve against the admin's origin, the API was on
+		// another port, and there is deliberately no CORS — so the console
+		// could render perfectly and could not make a single request. Found by
+		// clicking Send in a screenshot; no test asserted that a request
+		// arrived anywhere.
+		if !s.SessionAuth || !sameOrigin(r) {
+			return nil, fmt.Errorf("no bearer token")
+		}
+		c, err := r.Cookie("scrivet_token")
+		if err != nil || c.Value == "" {
+			return nil, fmt.Errorf("no bearer token")
+		}
+		raw = c.Value
 	}
 	if s.Tokens == nil {
 		return nil, fmt.Errorf("no token store")
@@ -891,4 +917,24 @@ func (s *Server) answerNeighbours(w http.ResponseWriter, r *http.Request,
 		"commit":  idx.Commit,
 		"results": out,
 	})
+}
+
+// sameOrigin reports whether a request came from this site's own pages.
+//
+// Sec-Fetch-Site first, because a current browser states the relationship
+// directly and cannot be talked out of it. Origin second, for clients that do
+// not send it. A request with neither is not a browser and therefore not a
+// cross-site request forgery — nothing attached a cookie to it automatically.
+func sameOrigin(r *http.Request) bool {
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "same-origin", "none":
+		return true
+	case "cross-site", "same-site":
+		return false
+	}
+	if o := r.Header.Get("Origin"); o != "" {
+		host := r.Host
+		return strings.HasSuffix(o, "//"+host)
+	}
+	return true
 }
