@@ -220,6 +220,16 @@ func main() {
 	}
 
 	cmd, cmdArgs := rest[0], rest[1:]
+
+	// Authorisation happens here, once, for every command. See privilege.go
+	// for why it is a table rather than a call at the top of each one.
+	if cmd != "help" && cmd != "-h" && cmd != "--help" {
+		if err := authoriseCommand(root, cmd, cmdArgs); err != nil {
+			w.Error(err)
+			os.Exit(out.ExitFailure)
+		}
+	}
+
 	var err error
 	switch cmd {
 	case "init":
