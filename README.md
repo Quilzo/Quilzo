@@ -1238,6 +1238,44 @@ went out on Friday and who decided that" is the first question an audit asks.
 since a scheduler that is also a long-lived process is a second thing that can
 be down.
 
+## Scheduled publishing
+
+```
+$ scrivet schedule add 48h --note "embargo lifts"
+8cfacf43ca06 will publish at 09:00 on 17 Aug 2026
+  this names that exact commit. Editing the draft afterwards does not
+  change what is scheduled — it makes the entry stale, and a stale entry
+  is reported rather than fired
+  every gate runs at publication, not now
+```
+
+Publishing is a pointer move, so scheduling it is a note saying which commit and
+when. No staging area, no copy to keep in sync, no half-published state.
+
+**The gates run at publication, not at scheduling.** The usual failure is that
+checks run when somebody clicks the button: a page approved on Monday, edited on
+Tuesday and published by a timer on Wednesday goes out unapproved, and the audit
+trail says it was approved. Here scheduled publishing goes through the ordinary
+publish command, so accessibility, provenance, content types and dual
+authorization all run against the content as it stands then — and approvals are
+bound to a content hash, so an edit invalidates them by construction.
+
+**An entry names a commit, not "the draft".** If the draft moves, the entry is
+stale and is skipped rather than fired:
+
+```
+skipped 5cf6f2ab63c5 — the draft has moved since this was scheduled
+```
+
+"Publish whatever is current at nine on Friday" is a different and much worse
+instruction than the one somebody thought they were giving.
+
+Fired entries stay in the record with who scheduled them and why, because "what
+went out on Friday and who decided that" is the first question an audit asks.
+`schedule run` is meant for cron or a systemd timer — it does not daemonise,
+since a scheduler that is also a long-lived process is a second thing that can
+be down.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
