@@ -63,9 +63,18 @@ var (
 	// An object id becomes part of a filesystem path, so it is validated at the
 	// boundary rather than trusted from every caller.
 	reID = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	// Path segments in a tree. Deliberately narrow: no separators, no traversal,
-	// no leading dot.
-	reSegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+	// Names in a tree. Deliberately narrow: no traversal, no leading dot, and a
+	// single optional slash.
+	//
+	// The slash exists for one reason — a site in more than one language stores
+	// its French pages as fr/about — and it is bounded to one because that is
+	// all that use needs. Each half must independently satisfy the same rule as
+	// a bare name, so ".." cannot appear on either side, an empty half is
+	// refused, and no name can begin or end with a separator. A tree name never
+	// becomes a filesystem path (objects are filed under their hash), so what
+	// this protects is the URL and the tree's own structure.
+	reSegment = regexp.MustCompile(
+		`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(/[A-Za-z0-9][A-Za-z0-9._-]{0,63})?$`)
 )
 
 // Commit records a tree and how it came to be.

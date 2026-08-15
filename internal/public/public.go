@@ -38,6 +38,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rsh1k/scrivet/internal/i18n"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/seo"
 	"github.com/rsh1k/scrivet/internal/site"
@@ -68,6 +69,10 @@ type Site struct {
 	BaseURL string
 	// Redirects preserves old URLs after a migration. Nil is inert.
 	Redirects *seo.Map
+	// Locales is the site's language configuration, when it has more than one.
+	// Nil means a single-language site and nothing about this feature appears
+	// in the output.
+	Locales *i18n.Config
 	// LastChanged supplies each page's real modification time.
 	LastChanged func() (map[string]time.Time, error)
 }
@@ -151,13 +156,36 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(names)
 
 	base := strings.TrimSuffix(st.BaseURL, "/")
+	present := map[string]bool{}
+	for _, name := range names {
+		present[name] = true
+	}
+
 	entries := make([]seo.Entry, 0, len(names))
 	for _, name := range names {
 		loc := base + "/" + name
 		if name == st.Index {
 			loc = base + "/"
 		}
-		entries = append(entries, seo.Entry{Loc: loc, LastMod: changed[name]})
+		e := seo.Entry{Loc: loc, LastMod: changed[name]}
+
+		// hreflang, for the languages this page genuinely exists in. Computed
+		// from what is actually published rather than from what is configured,
+		// because a declared language with no translation is the case that
+		// sends a reader to a page that is not there.
+		if st.Locales != nil {
+			_, page := st.Locales.Split(name)
+			for _, a := range st.Locales.Alternates(page, base, present) {
+				e.Alternates = append(e.Alternates, seo.Alternate{
+					Locale: string(a.Locale), Href: a.Href})
+			}
+			if len(e.Alternates) < 2 {
+				// One alternate is the page pointing at itself, which says
+				// nothing and adds bytes to every crawl.
+				e.Alternates = nil
+			}
+		}
+		entries = append(entries, e)
 	}
 
 	out, err := seo.Sitemap(entries)

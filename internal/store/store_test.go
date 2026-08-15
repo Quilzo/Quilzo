@@ -126,7 +126,16 @@ func TestIDsCannotEscapeTheStore(t *testing.T) {
 func TestTreeEntriesCannotTraverse(t *testing.T) {
 	s := newStore(t)
 	oid, _ := s.PutBlob(map[string]any{"x": 1})
-	for _, bad := range []string{"../evil", "a/b", ".hidden", "", "with space"} {
+	// "a/b" was on this list until a multilingual site needed fr/about. One
+	// slash is now permitted and the traversal cases below are unchanged —
+	// relaxing the rule must not be relaxing the defence, so the list of
+	// refusals got longer rather than shorter.
+	for _, bad := range []string{
+		"../evil", ".hidden", "", "with space",
+		"a/../b", "a/..", "../a", "./a", "a/./b",
+		"a//b", "/a", "a/", "a/b/c",
+		"..", ".", "a\\b",
+	} {
 		if _, err := s.PutTree(map[string]string{bad: oid}); err == nil {
 			t.Errorf("tree entry %q was accepted", bad)
 		}
@@ -173,5 +182,37 @@ func TestCommitRejectsBadReferences(t *testing.T) {
 	tree, _ := BuildTree(s, map[string]any{"i": map[string]any{}})
 	if _, err := s.PutCommit(Commit{Tree: tree, Parents: []string{"nope"}}); err == nil {
 		t.Fatal("a commit with a bogus parent was stored")
+	}
+}
+
+// A single slash is allowed so a multilingual site can store fr/about. Bounded
+// to one, with each half satisfying the same rule as a bare name — the point is
+// that relaxing this must not reintroduce traversal.
+func TestPageNamesAllowOneSlashAndNothingElse(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	oid, err := s.PutBlob(map[string]any{"title": "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{
+		"about", "fr/about", "zh-Hant/about", "news.2026", "a/b",
+	} {
+		if _, err := s.PutTree(map[string]string{name: oid}); err != nil {
+			t.Errorf("%q was refused: %v", name, err)
+		}
+	}
+
+	for _, name := range []string{
+		"../etc/passwd", "a/b/c", "/leading", "trailing/", "a//b",
+		"..", "a/..", "../a", "./a", "a/./b", "", "/", "//",
+		".hidden", "a/.hidden", "a b", "a\\b", "a\x00b",
+	} {
+		if _, err := s.PutTree(map[string]string{name: oid}); err == nil {
+			t.Errorf("%q was accepted as a page name", name)
+		}
 	}
 }

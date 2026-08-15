@@ -300,3 +300,57 @@ func TestRelativeTargetsWithColonsStillWork(t *testing.T) {
 		t.Errorf("the target was altered: %q", r.To)
 	}
 }
+
+// A sitemap declares hreflang with xhtml:link. Only for translations that
+// exist — telling a crawler a page is available in a language it is not means
+// offering it to a reader who then finds it missing.
+func TestAlternatesAreEmittedAsXHTMLLinks(t *testing.T) {
+	out, err := Sitemap([]Entry{{
+		Loc: "https://example.com/about",
+		Alternates: []Alternate{
+			{Locale: "en", Href: "https://example.com/about"},
+			{Locale: "fr", Href: "https://example.com/fr/about"},
+			{Locale: "x-default", Href: "https://example.com/about"},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`xmlns:xhtml="http://www.w3.org/1999/xhtml"`,
+		`hreflang="fr"`, `href="https://example.com/fr/about"`,
+		`hreflang="x-default"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the sitemap omits %q:\n%s", want, out)
+		}
+	}
+	var parsed struct {
+		URLs []struct {
+			Loc   string `xml:"loc"`
+			Links []struct {
+				Rel      string `xml:"rel,attr"`
+				Hreflang string `xml:"hreflang,attr"`
+				Href     string `xml:"href,attr"`
+			} `xml:"link"`
+		} `xml:"url"`
+	}
+	if err := xml.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("the sitemap does not parse: %v", err)
+	}
+	if len(parsed.URLs[0].Links) != 3 {
+		t.Errorf("got %d alternates", len(parsed.URLs[0].Links))
+	}
+}
+
+// A single-language site's sitemap must be unchanged by this feature existing.
+func TestASingleLanguageSitemapDeclaresNoExtraNamespace(t *testing.T) {
+	out, err := Sitemap([]Entry{{Loc: "https://example.com/"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "xhtml") {
+		t.Errorf("a sitemap with no alternates declares the xhtml namespace:\n%s",
+			out)
+	}
+}

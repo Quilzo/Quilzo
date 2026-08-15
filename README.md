@@ -1163,6 +1163,52 @@ skipped. Skipping one carries a value forward that is not what the proof
 describes, and every attestation after it would then be checked against the
 wrong number while appearing to succeed.
 
+## More than one language
+
+Serving `/fr/about` instead of `/about` is bookkeeping. The bug every
+multilingual CMS has is worse: somebody edits the English page, the French
+translation is now wrong, and nothing says so. The site keeps serving a fluent
+translation of a paragraph that no longer exists, often for months.
+
+Other systems handle this with a flag set by hand, or by comparing modification
+timestamps — which move when a page is saved unchanged, so they cannot tell
+"edited" from "opened and saved". Both degrade into a warning nobody believes.
+
+```
+$ scrivet lang check
+  stale     about                fr
+            translated from 4e2d62d7f0fc, the source is now 1f2e26786654
+            dana made the translation
+```
+
+A translation records the hash of the source it was made from. Change one
+character and the hash stops matching, so "out of date" is a fact about two
+values rather than a guess about two clocks. **Re-saving the source unchanged
+does not mark anything stale** — the case a timestamp comparison cannot handle,
+and the one that turns the warning into noise.
+
+This is the third time content addressing has given an exact answer where
+everyone else has a heuristic: a content type records the hash of what it
+validated, an approval records the hash of what was agreed, a translation
+records the hash of what it was translated from.
+
+### Deliberately absent
+
+No machine translation, no `Accept-Language` sniffing, and **no automatic
+fallback to the default language**. That last refusal is the interesting one:
+serving the English page to somebody who asked for French, without saying so, is
+how a reader comes to believe a page exists in their language when it does not.
+
+`hreflang` is emitted only for translations that actually exist, computed from
+what is published rather than what is configured — declaring a language a page
+is not available in means a search engine offers it to a reader who then finds
+it missing. A single-language site's sitemap is byte-identical to what it was
+before this feature existed.
+
+The default language keeps its unprefixed paths. Prefixing everything would
+break every existing link on the day a site adds a second language, which is the
+moment people decide multilingual support is not worth it.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
@@ -1175,9 +1221,10 @@ validated uploads with an SSRF-hardened URL fetcher, sitemap/redirect
 generation, export to Markdown/WXR/JSON, audit-log export to OCSF/CEF/JSONL
 with an integrity envelope, concurrent editing with dual authorization enforced
 on every write surface, envelope encryption at rest, OIDC sign-in wired through
-the admin, and Bitcoin anchoring via OpenTimestamps.
+the admin, Bitcoin anchoring via OpenTimestamps, and multilingual sites with
+exact translation staleness.
 
-477 tests. The ones worth reading are the negative ones: every SSTI payload I
+494 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

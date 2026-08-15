@@ -82,6 +82,11 @@ templates
   scrivet template list | show NAME         ready-made starting points
   scrivet template use NAME [--dir DIR]     write it, its stylesheet and sample
 
+languages
+  scrivet lang init en | add fr             a site in more than one language
+  scrivet lang check                        which translations are stale or missing
+  scrivet lang translated PAGE LOCALE       record what it was translated from
+
 content types
   scrivet type add FILE.json                define a type: flat fields, no regex
   scrivet type list | show NAME             what exists, and its address
@@ -214,6 +219,8 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "lang", "locales":
+		err = cmdLang(root, cmdArgs)
 	case "anchor":
 		err = cmdAnchor(root, cmdArgs)
 	case "oidc":

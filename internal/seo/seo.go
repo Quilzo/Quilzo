@@ -53,6 +53,12 @@ const MaxURLsPerSitemap = 50000
 // MaxSitemapBytes is the other hard limit, uncompressed.
 const MaxSitemapBytes = 50 << 20
 
+// Alternate is one hreflang link for an entry.
+type Alternate struct {
+	Locale string
+	Href   string
+}
+
 // Entry is one URL in a sitemap.
 type Entry struct {
 	// Loc is the absolute URL.
@@ -63,6 +69,12 @@ type Entry struct {
 	// today — a guessed lastmod is exactly the lie that makes crawlers stop
 	// trusting the field.
 	LastMod time.Time
+	// Alternates are the other languages this page exists in. Emitted as
+	// xhtml:link rel="alternate", which is how a sitemap declares hreflang —
+	// and only for translations that actually exist, because telling a crawler
+	// a page is available in a language it is not means offering it to a reader
+	// who finds it missing.
+	Alternates []Alternate
 }
 
 // Sitemap renders a sitemap.
@@ -79,10 +91,28 @@ func Sitemap(entries []Entry) (string, error) {
 
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
-	b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + "\n")
+	// The xhtml namespace is declared only when something uses it, so a
+	// single-language site's sitemap is unchanged by this feature existing.
+	needsXHTML := false
+	for _, e := range entries {
+		if len(e.Alternates) > 0 {
+			needsXHTML = true
+			break
+		}
+	}
+	if needsXHTML {
+		b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"` +
+			"\n        " + `xmlns:xhtml="http://www.w3.org/1999/xhtml">` + "\n")
+	} else {
+		b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + "\n")
+	}
 	for _, e := range entries {
 		b.WriteString("  <url>\n")
 		b.WriteString("    <loc>" + escapeXML(e.Loc) + "</loc>\n")
+		for _, a := range e.Alternates {
+			b.WriteString(`    <xhtml:link rel="alternate" hreflang="` +
+				escapeXML(a.Locale) + `" href="` + escapeXML(a.Href) + `"/>` + "\n")
+		}
 		if !e.LastMod.IsZero() {
 			// W3C Datetime. Date-only is permitted and is the honest precision:
 			// the commit has a timestamp, but "this changed on this day" is the

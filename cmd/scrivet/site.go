@@ -56,6 +56,13 @@ func cmdSite(root string, args []string) error {
 	}
 	st.BaseURL = strings.TrimSpace(*baseURL)
 
+	// Languages, if configured. A single-language site never sees this: the
+	// sitemap is byte-identical to what it was before the feature existed.
+	if locales, lerr := loadLocales(root); lerr == nil && locales != nil &&
+		len(locales.Locales) > 1 {
+		st.Locales = locales
+	}
+
 	// lastmod is computed per request rather than cached, because it is derived
 	// from history and history only grows. A cached value would go stale
 	// exactly when a page changed, which is the one moment it matters.
