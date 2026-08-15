@@ -96,6 +96,16 @@ type Server struct {
 	// declared fields rather than whatever keys the page happens to have.
 	TypeFor func(page string) (schema.Type, bool)
 
+	// OIDC, when an identity provider is configured. Nil means the only way in
+	// is a token, which is the default and is a complete configuration.
+	OIDC *OIDC
+	// SaveTokens persists a session minted after an OIDC sign-in, so it
+	// survives a restart and so revoking it is possible from the CLI.
+	SaveTokens func(*auth.TokenStore) error
+	// OnSignIn records an authentication. Separate from the handler so the
+	// audit log stays the host's concern.
+	OnSignIn func(principal, tokenID string)
+
 	// Locks are advisory claims on pages, so two people do not each spend an
 	// afternoon on the same one. They never prevent a write — compare-and-swap
 	// does that — and they expire on their own.
@@ -369,6 +379,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/rollback", s.handleRollback)
 	mux.HandleFunc("/preview/", s.handlePreview)
 	mux.HandleFunc("/signin", s.handleSignIn)
+	mux.HandleFunc("/signin/oidc", s.handleOIDCStart)
+	mux.HandleFunc("/auth/callback", s.handleOIDCCallback)
 	mux.HandleFunc("/signout", s.handleSignOut)
 	mux.HandleFunc("/style.css", s.handleCSS)
 	return securityHeaders(sameSiteOnly(limitBody(mux)))
@@ -382,7 +394,8 @@ func (s *Server) Handler() http.Handler {
 // credential in several places nobody thinks to clear.
 func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		s.render(w, "signin.html", map[string]any{"Title": "Sign in"})
+		s.render(w, "signin.html", map[string]any{
+			"Title": "Sign in", "OIDC": s.OIDC != nil})
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -393,7 +406,7 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.Tokens.Authenticate(raw, time.Now()); err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 		s.render(w, "signin.html", map[string]any{
-			"Title": "Sign in", "Error": err.Error()})
+			"Title": "Sign in", "Error": err.Error(), "OIDC": s.OIDC != nil})
 		return
 	}
 

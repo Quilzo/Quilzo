@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
@@ -9,8 +10,11 @@ import (
 	"time"
 
 	"github.com/rsh1k/scrivet/internal/admin"
+	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/auth"
 	"github.com/rsh1k/scrivet/internal/collab"
+	"github.com/rsh1k/scrivet/internal/fetch"
+	"github.com/rsh1k/scrivet/internal/oidc"
 	"github.com/rsh1k/scrivet/internal/posture"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/schema"
@@ -101,6 +105,49 @@ func cmdServe(root string, args []string) error {
 	// the same claims. Re-read per request rather than held in memory for the
 	// same reason tokens are: a claim made in another process has to be visible
 	// in this one or the courtesy is only a courtesy to whoever restarted last.
+	// An identity provider, if one is configured. Discovery happens at startup
+	// rather than on the first sign-in, so a misconfiguration is a failure to
+	// start rather than a person who cannot log in and no information about why.
+	if cfg, cerr := loadOIDC(root); cerr == nil && cfg != nil {
+		secret := os.Getenv(oidcSecretEnv)
+		if secret == "" {
+			return fmt.Errorf(
+				"%s is configured as the identity provider but %s is not set.\n"+
+					"  Refusing to start rather than offering a sign-in button "+
+					"that cannot work", cfg.Issuer, oidcSecretEnv)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		provider, derr := oidc.Discover(ctx, cfg.Issuer, fetch.New())
+		cancel()
+		if derr != nil {
+			return fmt.Errorf("cannot reach the identity provider: %w", derr)
+		}
+		if err := provider.Warm(context.Background()); err != nil {
+			return fmt.Errorf("cannot read the provider's signing keys: %w", err)
+		}
+		srv.OIDC = &admin.OIDC{
+			Provider: provider, ClientID: cfg.ClientID, Secret: secret,
+			RedirectURI: cfg.RedirectURI, Claim: cfg.Claim,
+			RequireVerifiedEmail: cfg.RequireVerifiedEmail,
+		}
+		srv.SaveTokens = func(ts *auth.TokenStore) error {
+			return saveJSON(tokensPath(root), ts)
+		}
+		srv.OnSignIn = func(principal, tokenID string) {
+			record(root, audit.Record{
+				Action: "signin.oidc", Resource: "/", Outcome: audit.Success,
+				// Verified, and this is the one place that word is fully
+				// earned: the provider proved the identity cryptographically
+				// rather than it being taken from an environment variable.
+				Principal: principal, Kind: audit.KindHuman, Verified: true,
+				Detail: map[string]string{
+					"issuer": cfg.Issuer, "session": tokenID,
+				},
+			})
+		}
+		fmt.Fprintf(os.Stderr, "  %ssign-in via %s%s\n", dim, cfg.Issuer, reset)
+	}
+
 	srv.Locks = func() (*collab.Locks, error) { return loadLocks(root) }
 	srv.SaveLocks = func(l *collab.Locks) error { return saveJSON(locksPath(root), l) }
 

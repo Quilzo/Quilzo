@@ -11,6 +11,7 @@ import (
 
 	"github.com/rsh1k/scrivet/internal/a11y"
 	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/rsh1k/scrivet/internal/oidc"
 	"github.com/rsh1k/scrivet/internal/posture"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/schema"
@@ -815,5 +816,106 @@ func TestTheSecurityPagesPassOurOwnAccessibilityChecks(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// -- OIDC sign-in ------------------------------------------------------------
+
+// The decision that matters most in this whole path. A verified ID token proves
+// the provider knows this person; it does not say they may edit anything.
+// Creating a principal on first sign-in would mean everybody with an account at
+// the provider — which for a public provider is everybody — becomes a user.
+func TestAVerifiedSignInForAnUnknownPrincipalIsRefused(t *testing.T) {
+	srv, _ := setup(t)
+	srv.OIDC = &OIDC{ClientID: "c", Claim: "email"}
+
+	if srv.knownPrincipal("stranger@example.com") {
+		t.Fatal("a principal nobody granted anything to is known")
+	}
+	if !srv.knownPrincipal("editor") {
+		t.Error("the principal from the access policy is not known")
+	}
+	if srv.knownPrincipal("") {
+		t.Error("an empty principal is known")
+	}
+}
+
+// An unverified address is a claim by whoever signed up. Honouring it would let
+// somebody choose which principal to be.
+func TestAnUnverifiedEmailIsRefusedByDefault(t *testing.T) {
+	o := &OIDC{Claim: "email", RequireVerifiedEmail: true}
+
+	_, err := o.principalFor(oidcClaims("dana@example.com", false))
+	if err == nil {
+		t.Fatal("an unverified address was mapped to a principal")
+	}
+	if !strings.Contains(err.Error(), "choose which principal") {
+		t.Errorf("the refusal does not say what the risk is: %v", err)
+	}
+
+	got, err := o.principalFor(oidcClaims("dana@example.com", true))
+	if err != nil || got != "dana@example.com" {
+		t.Errorf("a verified address was refused: %q %v", got, err)
+	}
+
+	// sub is the stable identifier and carries no verification question.
+	o.Claim = "sub"
+	if got, err := o.principalFor(oidcClaims("", false)); err != nil ||
+		got != "subject-1" {
+		t.Errorf("the subject claim was not used: %q %v", got, err)
+	}
+}
+
+// A state parameter must be single-use, or a callback URL in somebody's history
+// is a replay.
+func TestAStateIsConsumedExactlyOnce(t *testing.T) {
+	o := &OIDC{RedirectURI: "https://cms.example/auth/callback"}
+	req, err := oidc.NewRequest(o.RedirectURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.pending = map[string]*oidc.Request{req.State: req}
+
+	if got := o.take(req.State); got == nil {
+		t.Fatal("a valid state was not found")
+	}
+	if got := o.take(req.State); got != nil {
+		t.Error("the same state was accepted twice; a callback URL in a " +
+			"browser's history would be a replay")
+	}
+	if got := o.take("something-else"); got != nil {
+		t.Error("an unknown state resolved")
+	}
+}
+
+// The session a sign-in mints cannot exceed what the policy already grants: it
+// is a session, not a promotion.
+func TestTheSessionRoleComesFromThePolicy(t *testing.T) {
+	srv, _ := setup(t)
+	if got := srv.roleFor("editor"); got != auth.RoleAdmin {
+		t.Errorf("the admin in the policy got %q", got)
+	}
+	// Somebody with no bindings falls to the lowest role rather than to
+	// whatever the caller asked for.
+	if got := srv.roleFor("stranger"); got != auth.RoleReader {
+		t.Errorf("an unknown principal got %q", got)
+	}
+}
+
+// Without a provider configured the routes must not exist, rather than
+// half-existing and erroring.
+func TestTheOIDCRoutesAreAbsentWhenNoProviderIsConfigured(t *testing.T) {
+	srv, _ := setup(t)
+	for _, path := range []string{"/signin/oidc", "/auth/callback"} {
+		w := get(t, srv, path, "")
+		if w.Code != http.StatusNotFound {
+			t.Errorf("%s returned %d with no provider configured", path, w.Code)
+		}
+	}
+}
+
+func oidcClaims(email string, verified bool) *oidc.Claims {
+	return &oidc.Claims{
+		Subject: "subject-1", Email: email, EmailVerified: verified,
 	}
 }

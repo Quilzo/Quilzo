@@ -6,6 +6,20 @@
 <main id="main">
 <h1>Sign in</h1>
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Hint}}<p class="help">{{.Hint}}</p>{{end}}
+
+{{if .OIDC}}
+<div class="card">
+  <h2>Sign in with your organisation</h2>
+  <p>You will be sent to your identity provider and back here.</p>
+  <div class="actions"><a class="btn" href="/signin/oidc">Continue</a></div>
+</div>
+<p class="help">Signing in there proves who you are. What you can do here is
+decided by this site&rsquo;s access policy, which an administrator maintains &mdash;
+so having an account with the provider is not by itself access to this site.</p>
+
+<h2>Or paste an API token</h2>
+{{end}}
 <p>Paste an API token. There is no password, and no puzzle to solve —
    WCAG 2.2 treats those as cognitive function tests.</p>
 <p class="help">Submitted as a POST, so the token never appears in the address

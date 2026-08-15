@@ -1073,6 +1073,31 @@ redirect points.
 `scrivet oidc check` runs the whole path deliberately, because the alternative is
 finding out from somebody who cannot log in.
 
+### The provider authenticates; this program authorises
+
+A verified ID token is exchanged for an ordinary scrivet session token. Every
+existing mechanism — the role ladder, path bindings, revocation, the audit trail
+— applies unchanged, and none of it had to learn about OIDC. Revocation stays
+local: cutting somebody off does not depend on the provider noticing, or on a
+token expiring, or on a back-channel logout arriving.
+
+**There is no auto-provisioning, and that is the decision that matters most
+here.** A verified token proves the provider knows this person. It does not say
+they may edit anything. Creating a principal on first sign-in would mean
+everybody with an account at the identity provider — which for a public provider
+is everybody — becomes a user of this system.
+
+```
+dana@example.com signed in successfully, but is not in the access policy
+for this site.
+An administrator can add them:  scrivet auth grant dana@example.com author
+```
+
+Discovery happens at startup, so a misconfigured provider is a failure to start
+rather than a person who cannot log in and no information about why. Starting
+with a provider configured and no client secret is refused outright, rather than
+offering a sign-in button that cannot work.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
@@ -1084,9 +1109,10 @@ interface, four ready-made templates, import from WordPress/Markdown/JSON,
 validated uploads with an SSRF-hardened URL fetcher, sitemap/redirect
 generation, export to Markdown/WXR/JSON, audit-log export to OCSF/CEF/JSONL
 with an integrity envelope, concurrent editing with dual authorization enforced
-on every write surface, envelope encryption at rest, and OIDC sign-in.
+on every write surface, envelope encryption at rest, and OIDC sign-in wired
+through the admin.
 
-458 tests. The ones worth reading are the negative ones: every SSTI payload I
+467 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every
