@@ -1112,7 +1112,7 @@ with an integrity envelope, concurrent editing with dual authorization enforced
 on every write surface, envelope encryption at rest, and OIDC sign-in wired
 through the admin.
 
-467 tests. The ones worth reading are the negative ones: every SSTI payload I
+463 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every
