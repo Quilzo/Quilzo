@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/auth"
 )
 
@@ -161,6 +162,22 @@ func authGrant(root string, args []string) error {
 	if *deny {
 		verb = "denied"
 	}
+
+	// AU-2 names privileged actions as the ones that must be logged, and a
+	// change to who holds a role is the most privileged action this program
+	// performs: it decides who may perform every other one. This was missing
+	// until a demo showed an empty log after granting somebody admin.
+	caller := resolveCaller(root, "")
+	record(root, audit.Record{
+		Action:    "auth." + verb,
+		Resource:  *on,
+		Outcome:   audit.Success,
+		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Detail: map[string]string{
+			"subject": rest[0], "role": rest[1], "deny": fmt.Sprintf("%t", *deny),
+		},
+	})
+
 	fmt.Printf("%s %s to %s on %s\n", verb, rest[1], rest[0], *on)
 	// Show the consequence immediately. A grant whose effect you have to work
 	// out later is one nobody checks.
@@ -201,6 +218,15 @@ func authRevoke(root string, args []string) error {
 	if err := saveJSON(policyPath(root), p); err != nil {
 		return err
 	}
+	caller := resolveCaller(root, "")
+	record(root, audit.Record{
+		Action: "auth.revoke", Resource: *on, Outcome: audit.Success,
+		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Detail: map[string]string{
+			"subject": rest[0], "bindings_removed": fmt.Sprintf("%d", n),
+		},
+	})
+
 	fmt.Printf("removed %d binding(s)\n", n)
 	// Inherited access survives revoking a narrow binding, and someone who does
 	// not notice will think they removed access they did not.
@@ -360,6 +386,19 @@ func tokenIssue(root string, args []string) error {
 		return err
 	}
 
+	caller := resolveCaller(root, "")
+	record(root, audit.Record{
+		Action: "token.issue", Resource: tok.Resource, Outcome: audit.Success,
+		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Detail: map[string]string{
+			// The id, never the secret. The audit package refuses Detail keys
+			// containing "token" or "secret" for exactly this reason, and the
+			// keys here are named so that check keeps working.
+			"issued_id": tok.ID, "for": tok.Principal, "role": string(tok.Role),
+			"expires": time.Unix(tok.ExpiresAt, 0).UTC().Format(time.RFC3339),
+		},
+	})
+
 	fmt.Printf("%s%s%s\n", bold, secret, reset)
 	fmt.Printf("\n  %sid %s · %s on %s · expires %s%s\n", dim, tok.ID, tok.Role,
 		tok.Resource, time.Unix(tok.ExpiresAt, 0).UTC().Format("2006-01-02"), reset)
@@ -409,6 +448,19 @@ func tokenExchange(root string, args []string) error {
 	}) {
 		return nil
 	}
+
+	// An exchange is a privileged action too: it mints a live credential. The
+	// parent is recorded, so a compromised long-lived token can be traced to
+	// every session it produced rather than only to itself.
+	caller := resolveCaller(root, "")
+	record(root, audit.Record{
+		Action: "token.exchange", Resource: t.Resource, Outcome: audit.Success,
+		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Detail: map[string]string{
+			"session_id": t.ID, "parent_id": t.Parent, "role": string(t.Role),
+			"expires": time.Unix(t.ExpiresAt, 0).UTC().Format(time.RFC3339),
+		},
+	})
 
 	fmt.Printf("%s%s%s\n", bold, secret, reset)
 	fmt.Printf("\n  %s%s on %s · expires in %s · from %s (%s)%s\n", dim,
@@ -462,6 +514,16 @@ func tokenRevoke(root string, args []string) error {
 	if err := saveJSON(tokensPath(root), ts); err != nil {
 		return err
 	}
+	caller := resolveCaller(root, "")
+	record(root, audit.Record{
+		Action: "token.revoke", Resource: "/", Outcome: audit.Success,
+		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Detail: map[string]string{
+			"revoked_id":        args[0],
+			"sessions_cascaded": fmt.Sprintf("%d", sessions),
+		},
+	})
+
 	fmt.Printf("revoked %s\n", args[0])
 	if sessions > 0 {
 		// Said out loud, because a cascade that happens quietly is one nobody

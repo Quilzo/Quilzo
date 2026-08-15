@@ -763,6 +763,101 @@ by ordering would make behaviour depend on which line someone added first.
 308 rather than 301. They're equivalent to search engines, and 308 preserves the
 request method where 301 lets a browser silently turn a POST into a GET.
 
+## Leaving
+
+Every CMS has an export button. Most produce something only that CMS can read,
+and nobody finds out until the day they try to leave — which is the day the
+vendor's incentive to have fixed it was lowest.
+
+So export here is checked the only way that means anything: a round trip. Export
+a site, re-import what came out, compare. A single changed field fails the test.
+
+```
+$ scrivet export markdown --to out
+2 page(s) as markdown into out
+  content/about.md
+  content/hello-world.md
+  README.md
+  redirects.json
+```
+
+Three formats, chosen by where people actually go:
+
+| Format | Why |
+|---|---|
+| **Markdown + front matter** | Hugo, Astro, Eleventy and Jekyll read it directly; every other CMS has an importer |
+| **WXR** | WordPress's own format, so "move to WordPress" is a file copy |
+| **JSON** | Lossless, and what this tool's own importer reads |
+
+The output is a directory of ordinary files — no archive, no manifest. `ls` and
+`cat` are enough to recover a single page by hand. Redirects and per-page change
+dates travel with it, because an export without them hands somebody a site that
+loses its rankings on arrival.
+
+There is something faintly absurd about writing an exporter for a competitor.
+That is the point: a tool that makes leaving hard is a tool that has stopped
+needing to be good.
+
+### Round-tripping is harder than it looks
+
+The round-trip test found three real bugs on its first run, two of them in code
+I'd already shipped:
+
+- Front-matter values were quoted on the way out and the quotes stripped without
+  unescaping on the way back in, so `"a \"quoted\" title"` came back with
+  literal backslashes.
+- A legitimately quoted `"&notreal"` was refused as a YAML anchor, because the
+  anchor check ran *after* the quotes were stripped. A quoted scalar cannot be
+  an anchor — and quoting everything is exactly what stops YAML reading `no` as
+  false and `12:30` as a sexagesimal integer.
+
+## Exporting the audit log
+
+```
+$ scrivet siem ocsf --envelope env.json -o audit.ocsf
+4 event(s) as ocsf, sequences 1-4
+  identifiers are as the log stored them
+  envelope in env.json — verify with `scrivet siem verify`
+
+$ scrivet siem verify audit.ocsf --envelope env.json
+verified  4 event(s), sequences 1-4
+  nothing was added, removed, reordered or altered since export
+```
+
+**OCSF**, **CEF** and **JSON Lines**. OCSF is where the industry is converging;
+CEF is the widest-supported thing that exists. LEEF is deliberately absent —
+QRadar-specific, and QRadar reads CEF.
+
+### Tamper evidence usually dies at the export boundary
+
+A SIEM re-serialises what it ingests: fields renamed, types coerced, order
+changed. Whatever integrity the source had is gone, and from then on the log is
+trusted because it is *in the SIEM* rather than because anything checks out.
+
+Every export carries an envelope: every event's hash in order, the sequence
+range, and the anchor the first event links back to. A verifier on a machine
+that never held the original can confirm nothing was added, removed, reordered
+or altered. `siem verify` is that check, and it states what it does **not**
+prove — a partial export is a partial export, and it says which event the range
+links back to.
+
+A broken chain is refused rather than exported. Shipping one to a SIEM launders
+it.
+
+### Privacy survives the export
+
+Pseudonymisation is worth nothing if the export undoes it, and an export is
+exactly where it gets undone — the receiving system asks for usernames and
+somebody adds a flag. So exports carry whatever the log carries, `--reveal` is
+not the default, and asking for it is itself written to the log.
+
+Building this found the hole that makes the rest pointless: the principal was
+pseudonymised while `Source` carried `scrivet-cli@hostname` in clear. On a
+single-user machine a hostname is a person's name, so the two fields together
+re-identified them in the same record. The source is now pseudonymised too —
+AU-3(d) wants to know *where* an event came from, and a stable pseudonym answers
+that.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
@@ -771,10 +866,11 @@ log, provenance marking, the accessibility gate, the admin UI, the public server
 with PWA output, RFC 3161 timestamping, the MCP server, the assistant, the
 continuous posture scanner with its dashboard, the Material 3 Expressive
 interface, four ready-made templates, import from WordPress/Markdown/JSON,
-validated uploads with an SSRF-hardened URL fetcher, and sitemap/redirect
-generation for migrations.
+validated uploads with an SSRF-hardened URL fetcher, sitemap/redirect
+generation, export to Markdown/WXR/JSON, and audit-log export to OCSF/CEF/JSONL
+with an integrity envelope.
 
-346 tests. The ones worth reading are the negative ones: every SSTI payload I
+376 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

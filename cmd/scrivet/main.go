@@ -64,6 +64,13 @@ content
   scrivet render PAGE TEMPLATE [-o FILE]    render a page
   scrivet verify                            re-hash every object
 
+leaving (there is no lock-in here, and this is how it is proved)
+  scrivet export markdown --to DIR          Hugo, Astro, Eleventy, Jekyll
+  scrivet export wxr --to DIR               WordPress reads this natively
+  scrivet export json --to DIR              lossless; this tool re-imports it
+  scrivet siem ocsf|cef|jsonl --envelope F  the audit log, still verifiable
+  scrivet siem verify FILE --envelope F     check an export was not altered
+
 importing
   scrivet import FILE [--from wordpress]    bring in another CMS's export
   scrivet media add FILE --alt "..."        validate and accept an upload
@@ -192,6 +199,14 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "export":
+		err = cmdExport(root, cmdArgs)
+	case "siem":
+		if len(cmdArgs) > 0 && cmdArgs[0] == "verify" {
+			err = cmdSiemVerify(root, cmdArgs[1:])
+		} else {
+			err = cmdSiem(root, cmdArgs)
+		}
 	case "import":
 		err = cmdImport(root, cmdArgs)
 	case "media":

@@ -382,11 +382,26 @@ func importMarkdown(body []byte, now time.Time) (*Report, error) {
 					continue
 				}
 				key = strings.TrimSpace(key)
-				value = strings.Trim(strings.TrimSpace(value), `"'`)
-				if strings.ContainsAny(value, "&*!|>%@`") &&
-					(strings.HasPrefix(value, "&") || strings.HasPrefix(value, "*") ||
-						strings.HasPrefix(value, "!")) {
-					// Anchors, aliases and tags. Refused rather than
+				value = strings.TrimSpace(value)
+
+				// Quoting is decided before anything else, because it decides
+				// everything else. A quoted scalar cannot be an anchor, an
+				// alias or a tag whatever it starts with — and the previous
+				// version stripped the quotes first and then judged the
+				// contents, so a legitimately quoted "&notreal" was refused as
+				// an anchor. That is not a theoretical case: it is what this
+				// tool's own exporter writes, since quoting everything is what
+				// stops YAML reinterpreting `no` as false.
+				if quoted, ok := unquoteYAML(value); ok {
+					if key != "" {
+						fields[key] = quoted
+					}
+					continue
+				}
+
+				if strings.HasPrefix(value, "&") || strings.HasPrefix(value, "*") ||
+					strings.HasPrefix(value, "!") {
+					// Anchors, aliases and tags, unquoted. Refused rather than
 					// interpreted, since interpreting them is the whole class
 					// of YAML deserialisation bugs.
 					rep.Skipped = append(rep.Skipped, fmt.Sprintf(
@@ -729,4 +744,53 @@ func dedupe(in []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// unquoteYAML reads a quoted scalar, returning false if the value is not one.
+//
+// Only the escapes a flat scalar can carry, and only inside double quotes —
+// single-quoted YAML has no escapes at all except a doubled quote. Anything
+// beyond that is a full YAML parser, which is the thing this deliberately is
+// not.
+func unquoteYAML(v string) (string, bool) {
+	if len(v) < 2 {
+		return "", false
+	}
+	q := v[0]
+	if (q != '"' && q != '\'') || v[len(v)-1] != q {
+		return "", false
+	}
+	inner := v[1 : len(v)-1]
+
+	if q == '\'' {
+		// Single quotes: the only escape is a doubled quote.
+		return strings.ReplaceAll(inner, "''", "'"), true
+	}
+
+	var b strings.Builder
+	for i := 0; i < len(inner); i++ {
+		if inner[i] != '\\' || i+1 >= len(inner) {
+			b.WriteByte(inner[i])
+			continue
+		}
+		i++
+		switch inner[i] {
+		case 'n':
+			b.WriteByte('\n')
+		case 'r':
+			b.WriteByte('\r')
+		case 't':
+			b.WriteByte('\t')
+		case '"':
+			b.WriteByte('"')
+		case '\\':
+			b.WriteByte('\\')
+		default:
+			// An escape this does not know is kept literally rather than
+			// guessed at, so nothing is silently altered.
+			b.WriteByte('\\')
+			b.WriteByte(inner[i])
+		}
+	}
+	return b.String(), true
 }

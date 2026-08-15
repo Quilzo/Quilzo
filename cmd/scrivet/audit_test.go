@@ -112,6 +112,105 @@ func exprText(e ast.Expr) string {
 		return v.Value
 	case *ast.CallExpr:
 		return exprText(v.Fun) + "(...)"
+	case *ast.BinaryExpr:
+		// `"auth." + verb` — concatenation is how an action gets a variable
+		// suffix, and returning "?" for it made this test unable to see a
+		// record that was there.
+		return exprText(v.X) + exprText(v.Y)
 	}
 	return "?"
+}
+
+// Every privileged command must leave a record.
+//
+// NIST AU-2 names privileged actions as the set that has to be logged, and a
+// change to who holds a role is the most privileged thing this program does:
+// it decides who may do everything else. A demo found `auth grant`, `auth
+// revoke`, `token issue`, `token exchange` and `token revoke` all writing
+// nothing — granting somebody admin left no trace at all.
+//
+// Checked in the source rather than by running commands, because the failure
+// mode is an absent call and a behavioural test can only find those one at a
+// time.
+func TestEveryPrivilegedCommandWritesAnAuditRecord(t *testing.T) {
+	// Function name to the action string its record must carry. Adding a
+	// privileged command means adding a line here, which is the point: the list
+	// is short enough to read and the omission is the bug.
+	required := map[string]string{
+		"authGrant":     "auth.",
+		"authRevoke":    "auth.revoke",
+		"tokenIssue":    "token.issue",
+		"tokenExchange": "token.exchange",
+		"tokenRevoke":   "token.revoke",
+		"cmdImport":     "import",
+		"cmdExport":     "export",
+		"cmdSiem":       "auditlog.export",
+	}
+
+	found := map[string]string{}
+	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") ||
+			strings.HasSuffix(path, "_test.go") {
+			return err
+		}
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			return err
+		}
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			if _, want := required[fn.Name.Name]; !want {
+				continue
+			}
+			var actions []string
+			ast.Inspect(fn, func(n ast.Node) bool {
+				lit, ok := n.(*ast.CompositeLit)
+				if !ok {
+					return true
+				}
+				sel, ok := lit.Type.(*ast.SelectorExpr)
+				if !ok || sel.Sel.Name != "Record" {
+					return true
+				}
+				for _, elt := range lit.Elts {
+					kv, ok := elt.(*ast.KeyValueExpr)
+					if !ok {
+						continue
+					}
+					if k, ok := kv.Key.(*ast.Ident); ok && k.Name == "Action" {
+						actions = append(actions, exprText(kv.Value))
+					}
+				}
+				return true
+			})
+			found[fn.Name.Name] = strings.Join(actions, ",")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, wantAction := range required {
+		got, present := found[name]
+		if !present {
+			t.Errorf("%s was not found; if it was renamed, update this list "+
+				"rather than deleting the entry", name)
+			continue
+		}
+		if got == "" {
+			t.Errorf("%s performs a privileged action and writes no audit "+
+				"record. AU-2 names exactly this set as the one that must be "+
+				"logged", name)
+			continue
+		}
+		if !strings.Contains(got, wantAction) {
+			t.Errorf("%s records %q, expected an action containing %q",
+				name, got, wantAction)
+		}
+	}
 }

@@ -195,6 +195,18 @@ func New(opt Options) (*Log, error) {
 	}
 	l := &Log{path: opt.Path, key: opt.Key, src: opt.Source}
 
+	// The source is pseudonymised too, when there is a key.
+	//
+	// AU-3(d) wants to know where an event came from, and a stable pseudonym
+	// answers that: every event from one host still groups together, which is
+	// what the field is for. What it stops is the case that makes
+	// pseudonymising the principal pointless — a hostname on a single-user
+	// machine is a person's name, so emitting it in clear beside a protected
+	// principal re-identifies them in the same record.
+	if len(l.key) > 0 {
+		l.src = l.pseudonym(opt.Source)
+	}
+
 	// Resume from the existing chain so appending after a restart continues it
 	// rather than starting a second one.
 	events, err := Read(opt.Path)
@@ -383,9 +395,21 @@ type Problem struct {
 // whose own hash does not match was altered; one whose prev does not match was
 // inserted or had a neighbour removed; a sequence gap means an entry was
 // deleted.
-func Verify(events []Event) (bool, []Problem) {
+func Verify(events []Event) (bool, []Problem) { return VerifyFrom(events, "") }
+
+// VerifyFrom verifies a run of entries that begins partway along a chain.
+//
+// A slice of a chain cannot be checked with Verify, because the first entry
+// links back to one that was not included — so Verify reports a break that is
+// not there. That matters for exports: sending last week's entries to a SIEM is
+// the normal case, and a verifier on the other end has to be able to check what
+// it received.
+//
+// anchor is the hash the first entry is expected to link to. Empty means the
+// start of the chain, which is what Verify passes.
+func VerifyFrom(events []Event, anchor string) (bool, []Problem) {
 	var problems []Problem
-	prev := ""
+	prev := anchor
 	var lastSeq int64
 
 	for i := range events {
