@@ -10,6 +10,7 @@
 
 <h2>Changes</h2>
 {{if .Changes}}
+<div class="table-wrap">
 <table>
   <caption>{{len .Changes}} change(s) between live and draft</caption>
   <thead><tr><th scope="col">Page</th><th scope="col">Change</th></tr></thead>
@@ -17,6 +18,7 @@
   {{range .Changes}}<tr><th scope="row">{{.Path}}</th><td>{{.Kind}}</td></tr>{{end}}
   </tbody>
 </table>
+</div>
 {{else}}<p>No content differences.</p>{{end}}
 
 <h2>Accessibility</h2>

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{ page.title }}</title>
+{% if page.description %}<meta name="description" content="{{ page.description }}">{% end %}
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="site">
+  <div class="wrap">
+    {% if page.brand %}<a class="brand" href="/">{{ page.brand }}</a>{% end %}
+    {% if page.nav %}<nav class="site" aria-label="Main">
+      <ul>
+        {% for item in page.nav %}<li><a href="{{ item.href }}">{{ item.label }}</a></li>{% end %}
+      </ul>
+    </nav>{% end %}
+  </div>
+</header>
+
+<main id="main" tabindex="-1" class="wrap">
+  <div class="hero">
+    <h1>{{ page.title }}</h1>
+    {% if page.subtitle %}<p class="lead">{{ page.subtitle }}</p>{% end %}
+    {% if page.available %}<p><span class="chip">{{ page.available }}</span></p>{% end %}
+  </div>
+
+  {% if page.work %}
+  <h2>{{ page.work_title }}</h2>
+  <div class="grid">
+    {% for w in page.work %}
+    <article class="card">
+      {% if w.image %}<img src="{{ w.image }}" alt="{{ w.image_alt }}" width="600" height="400">{% end %}
+      {% if w.title %}<h3><a href="{{ w.href }}">{{ w.title }}</a></h3>{% end %}
+      <p>{{ w.body }}</p>
+      {% if w.role %}<p><span class="chip">{{ w.role }}</span></p>{% end %}
+    </article>
+    {% end %}
+  </div>
+  {% end %}
+
+  {% if page.about %}
+  <div class="narrow">
+    <h2>{{ page.about_title }}</h2>
+    <p>{{ page.about }}</p>
+  </div>
+  {% end %}
+
+  {% if page.contact_href %}
+  <div class="card card-accent">
+    <h2>{{ page.contact_title }}</h2>
+    <p>{{ page.contact_body }}</p>
+    <div class="actions"><a class="btn" href="{{ page.contact_href }}">{{ page.contact_label }}</a></div>
+  </div>
+  {% end %}
+</main>
+
+<footer class="site">
+  <div class="wrap">{% if page.footer %}<p>{{ page.footer }}</p>{% end %}</div>
+</footer>
+</body>
+</html>

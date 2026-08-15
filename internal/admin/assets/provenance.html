@@ -6,6 +6,7 @@ machine-readable mark on AI-generated content since 2&nbsp;August&nbsp;2026, and
 
 {{if .Saved}}<p class="notice ok" role="status">Recorded provenance for <strong>{{.Saved}}</strong>.</p>{{end}}
 
+<div class="table-wrap">
 <table>
   <caption>{{len .Rows}} page(s) in the current draft</caption>
   <thead><tr>
@@ -27,6 +28,7 @@ machine-readable mark on AI-generated content since 2&nbsp;August&nbsp;2026, and
   {{end}}
   </tbody>
 </table>
+</div>
 
 {{if .CanEdit}}
 <h2>Record provenance</h2>

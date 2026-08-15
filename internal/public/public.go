@@ -32,6 +32,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -54,6 +55,11 @@ type Site struct {
 	LoadProvenance func() (*provenance.Index, error)
 	// Index is the page served at "/".
 	Index string
+	// Stylesheet is served at /site.css, held in memory. Empty means the route
+	// 404s rather than falling back to something: a site whose stylesheet
+	// silently comes from somewhere else is a site whose appearance has an
+	// owner nobody named.
+	Stylesheet string
 }
 
 // New returns a Site with sensible defaults.
@@ -67,10 +73,37 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/manifest.webmanifest", st.manifest)
 	mux.HandleFunc("/sw.js", st.serviceWorker)
 	mux.HandleFunc("/offline", st.offline)
+	mux.HandleFunc("/site.css", st.stylesheet)
 	mux.HandleFunc("/robots.txt", st.robots)
 	mux.HandleFunc("/llms.txt", st.llms)
 	mux.HandleFunc("/", st.page)
 	return securityHeaders(mux)
+}
+
+// stylesheet serves the site's CSS.
+//
+// Served from memory rather than from disk on each request, and never resolved
+// against a caller-supplied path: a public server that maps a URL onto a
+// filename is one traversal bug away from serving the token store. There is one
+// stylesheet, it was loaded at startup, and the route returns it or 404s.
+func (st *Site) stylesheet(w http.ResponseWriter, r *http.Request) {
+	if st.Stylesheet == "" {
+		http.NotFound(w, r)
+		return
+	}
+	// The stylesheet changes only when the operator restarts, so it can be
+	// cached hard — but it is validated by ETag anyway, so a proxy that ignores
+	// max-age still cannot serve a stale one after a redeploy.
+	sum := sha256.Sum256([]byte(st.Stylesheet))
+	etag := `"` + hex.EncodeToString(sum[:8]) + `"`
+	if match := r.Header.Get("If-None-Match"); match == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = io.WriteString(w, st.Stylesheet)
 }
 
 // securityHeaders for a public site.

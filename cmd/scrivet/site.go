@@ -41,6 +41,12 @@ func cmdSite(root string, args []string) error {
 	}
 
 	st := public.New(s, string(raw))
+	// The stylesheet beside the template, if there is one. A starter writes
+	// both into the same directory, so this is the file `template use` just
+	// produced — and it is read once here rather than resolved per request.
+	if css, err := os.ReadFile(filepath.Join(*tplDir, "site.css")); err == nil {
+		st.Stylesheet = string(css)
+	}
 	st.Index = *index
 	if *name != "" {
 		st.Name = *name

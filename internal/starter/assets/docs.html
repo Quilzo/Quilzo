@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{ page.title }}</title>
+{% if page.description %}<meta name="description" content="{{ page.description }}">{% end %}
+<link rel="stylesheet" href="/site.css">
+<style>
+.docs { display: grid; gap: 2.5rem; grid-template-columns: 1fr; }
+@media (min-width: 60rem) { .docs { grid-template-columns: 15rem 1fr; } }
+.toc { position: sticky; top: 1.5rem; align-self: start; }
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc a { display: block; min-height: 44px; line-height: 44px; padding: 0 0.9rem;
+         border-radius: var(--shape-sm); text-decoration: none;
+         color: var(--on-surface-variant); font-weight: 600; font-size: 0.9375rem; }
+.toc a:hover { background: var(--surface-container); }
+.toc a[aria-current="page"] { background: var(--secondary-container);
+                              color: var(--on-secondary-container); }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="site">
+  <div class="wrap">
+    {% if page.brand %}<a class="brand" href="/">{{ page.brand }}</a>{% end %}
+    {% if page.nav %}<nav class="site" aria-label="Main">
+      <ul>
+        {% for item in page.nav %}<li><a href="{{ item.href }}">{{ item.label }}</a></li>{% end %}
+      </ul>
+    </nav>{% end %}
+  </div>
+</header>
+
+<div class="wrap docs">
+  {% if page.contents %}<nav class="toc" aria-label="On this page">
+    <h2 class="visually-hidden">Contents</h2>
+    <ul>
+      {% for s in page.contents %}<li><a href="{{ s.href }}">{{ s.label }}</a></li>{% end %}
+    </ul>
+  </nav>{% end %}
+
+  <main id="main" tabindex="-1">
+    <h1>{{ page.title }}</h1>
+    {% if page.standfirst %}<p class="lead">{{ page.standfirst }}</p>{% end %}
+    <p>{{ page.body }}</p>
+
+    {% if page.example %}
+    <h2>{{ page.example_title }}</h2>
+    <pre><code>{{ page.example }}</code></pre>
+    {% end %}
+
+    {% if page.rows %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">{{ page.col_a }}</th><th scope="col">{{ page.col_b }}</th></tr></thead>
+        <tbody>
+          {% for r in page.rows %}<tr><td><code>{{ r.name }}</code></td><td>{{ r.detail }}</td></tr>{% end %}
+        </tbody>
+      </table>
+    </div>
+    {% end %}
+  </main>
+</div>
+
+<footer class="site">
+  <div class="wrap">{% if page.footer %}<p>{{ page.footer }}</p>{% end %}</div>
+</footer>
+</body>
+</html>

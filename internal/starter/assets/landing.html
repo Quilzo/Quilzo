@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{ page.title }}</title>
+{% if page.description %}<meta name="description" content="{{ page.description }}">{% end %}
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="site">
+  <div class="wrap">
+    {% if page.brand %}<a class="brand" href="/">{{ page.brand }}</a>{% end %}
+    {% if page.nav %}<nav class="site" aria-label="Main">
+      <ul>
+        {% for item in page.nav %}<li><a href="{{ item.href }}">{{ item.label }}</a></li>{% end %}
+      </ul>
+    </nav>{% end %}
+  </div>
+</header>
+
+<main id="main" tabindex="-1" class="wrap">
+  <div class="hero">
+    {% if page.eyebrow %}<p class="chip">{{ page.eyebrow }}</p>{% end %}
+    <h1>{{ page.title }}</h1>
+    {% if page.subtitle %}<p class="lead">{{ page.subtitle }}</p>{% end %}
+    <div class="actions">
+      {% if page.cta_href %}<a class="btn btn-tonal" href="{{ page.cta_href }}">{{ page.cta_label }}</a>{% end %}
+      {% if page.secondary_href %}<a class="btn btn-outlined" href="{{ page.secondary_href }}">{{ page.secondary_label }}</a>{% end %}
+    </div>
+  </div>
+
+  {% if page.features %}
+  <h2>{{ page.features_title }}</h2>
+  <div class="grid">
+    {% for f in page.features %}
+    <div class="card">
+      <h3>{{ f.title }}</h3>
+      <p>{{ f.body }}</p>
+    </div>
+    {% end %}
+  </div>
+  {% end %}
+
+  {% if page.quote %}
+  <blockquote>
+    <p>{{ page.quote }}</p>
+    {% if page.quote_by %}<footer>— {{ page.quote_by }}</footer>{% end %}
+  </blockquote>
+  {% end %}
+
+  {% if page.body %}<div class="narrow"><p>{{ page.body }}</p></div>{% end %}
+</main>
+
+<footer class="site">
+  <div class="wrap">{% if page.footer %}<p>{{ page.footer }}</p>{% end %}</div>
+</footer>
+</body>
+</html>

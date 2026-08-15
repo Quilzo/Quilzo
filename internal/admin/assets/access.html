@@ -1,6 +1,7 @@
 {{template "head" .}}
 <h1>Access</h1>
 <h2>Who can do what, at the site root</h2>
+<div class="table-wrap">
 <table>
   <thead><tr><th scope="col">Principal</th>{{range (index .Rows 0).Actions}}<th scope="col">{{.Name}}</th>{{end}}</tr></thead>
   <tbody>
@@ -11,8 +12,10 @@
   {{end}}
   </tbody>
 </table>
+</div>
 
 <h2>Bindings</h2>
+<div class="table-wrap">
 <table>
   <thead><tr><th scope="col">Principal</th><th scope="col">Role</th><th scope="col">Resource</th><th scope="col">Kind</th><th scope="col">Note</th></tr></thead>
   <tbody>
@@ -23,5 +26,6 @@
   {{end}}
   </tbody>
 </table>
+</div>
 <p class="help">A deny wins wherever it sits. Change these with <code>scrivet auth grant</code>.</p>
 {{template "foot" .}}

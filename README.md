@@ -523,15 +523,100 @@ on every admin response forbids it, and a security dashboard that needs a
 client-side framework to tell you a token is world-readable has the dependency
 the wrong way round.
 
+## Material 3 Expressive, as CSS
+
+The interface follows Material 3 Expressive — the design language, not the
+framework. Every admin response carries `default-src 'none'; style-src 'self'`,
+so there is no Compose, no web-component bundle and no JavaScript anywhere. The
+shapes, the spring motion and the state layers are one stylesheet and add no
+execution surface.
+
+What that gets you: the ten-step shape scale including the Expressive
+`large-increased` and `extra-large-increased` steps, the five-role type scale
+with emphasized weights, the full set of colour roles with six surface-container
+levels, and spring-physics motion expressed with CSS `linear()` — a sampled
+spring curve rather than a bezier that only matches at the endpoints. Spatial
+tokens overshoot, effect tokens don't, which is the M3 rule: a colour that
+overshoots lands on a hue nobody chose.
+
+### One deliberate departure, and a test that enforces it
+
+M3's *standard* light scheme puts primary at tone 40, which lands near 4.5:1 on
+white — WCAG AA. Adopting the baseline unchanged would have quietly downgraded
+this interface from AAA. So the roles are drawn from the tones M3's own
+high-contrast scheme uses, primary at tone 30, and every text pairing clears
+7:1.
+
+That isn't a claim, it's computed. `contrast_test.go` parses the stylesheet,
+resolves the `var()` chains, and calculates every ratio in both schemes:
+
+```
+$ # swap primary back to M3's standard tone 40
+$ go test ./internal/admin/ -run AAA
+--- FAIL: TestEveryTextPairingMeetsAAAInBothSchemes
+    light/filled button label: --on-primary is 5.94:1 (#f1ffff on #006c7e) — AAA needs 7:1
+    light/link: --primary is 5.78:1 (#006c7e on #f8f9fa) — AAA needs 7:1
+```
+
+A palette checked once by hand is a palette that was correct on the day somebody
+checked it. Nothing in a stylesheet fails when the contrast drops, so this does.
+The same file also fails the build if anything sets `outline: none`, if a role
+exists in one scheme and not the other, or if reduced-motion stops neutralising
+the springs.
+
+Targets are 48px rather than 44 — Material asks for 48dp and WCAG 2.5.8 asks for
+24, and taking the stricter of the two costs nothing.
+
+## Ready-made templates
+
+Four starting points, covering the shapes people actually ask for:
+
+```
+$ scrivet template list
+article     A single piece of writing: headline, standfirst, byline, date,
+            body, tags. For news, a blog, or a long-form page.
+docs        A documentation page: sticky contents on the side, a code
+            example, a reference table.
+landing     A marketing or product page: hero, feature cards, a quote. The
+            shape most requested for SaaS and launches.
+portfolio   Personal or studio work: a hero, a grid of projects with images
+            and roles, an about section and a contact card.
+
+$ scrivet template use landing
+wrote templates/page.html from the landing starter
+wrote templates/site.css
+wrote templates/landing.json
+```
+
+They're **embedded in the binary**, not fetched. The usual shape for a theme
+library is a registry you download from, and a CMS theme is markup that runs on
+every page of a site — the highest-value place in the system to put something.
+`template use` cannot be pointed at a URL. A template that ships with the tool
+has the same provenance as the tool.
+
+Each one is also a test fixture. The suite parses it, renders it with its own
+sample content, and runs it through the accessibility gate — because a starter
+is the first HTML most people publish with this tool, and shipping one the tool
+would refuse to publish is the most embarrassing bug available. The same tests
+check no starter reaches an external origin, none uses `raw`, and all of them
+escape hostile content in every field.
+
+They also have to degrade. Pages arrive with fields missing, so a structural
+element whose label comes from absent content must not render at all — an empty
+`<a>` is announced as just "link". That one was found by running the real gate
+over a real store: a page left over from an unrelated demo had no `brand` field
+and the header rendered an empty link on it.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
 engine, `verify`, content types, RBAC with API tokens, the tamper-evident audit
 log, provenance marking, the accessibility gate, the admin UI, the public server
-with PWA output, RFC 3161 timestamping, the MCP server, the assistant, and the
-continuous posture scanner with its dashboard.
+with PWA output, RFC 3161 timestamping, the MCP server, the assistant, the
+continuous posture scanner with its dashboard, the Material 3 Expressive
+interface, and four ready-made templates.
 
-253 tests. The ones worth reading are the negative ones: every SSTI payload I
+274 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

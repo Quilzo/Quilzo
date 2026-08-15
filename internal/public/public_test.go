@@ -254,3 +254,59 @@ func TestSecurityHeadersOnPublicPages(t *testing.T) {
 		t.Error("missing nosniff")
 	}
 }
+
+// The starter templates link /site.css, so the public server has to serve it or
+// every shipped template renders unstyled — which looks like the tool is broken
+// rather than like a route is missing.
+func TestTheStylesheetIsServedAndCachedByContent(t *testing.T) {
+	st, _ := setup(t)
+	st.Stylesheet = ":root { --x: 1 }"
+
+	req := httptest.NewRequest(http.MethodGet, "/site.css", nil)
+	w := httptest.NewRecorder()
+	st.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("/site.css returned %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/css") {
+		t.Errorf("served as %q", ct)
+	}
+	etag := w.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("no ETag, so a redeploy cannot invalidate a cached stylesheet")
+	}
+
+	// The same ETag must produce a 304, or the cache header is a promise the
+	// server does not keep.
+	req = httptest.NewRequest(http.MethodGet, "/site.css", nil)
+	req.Header.Set("If-None-Match", etag)
+	w = httptest.NewRecorder()
+	st.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNotModified {
+		t.Errorf("a matching ETag returned %d", w.Code)
+	}
+
+	// Changing the stylesheet must change the tag, or a redeploy serves stale
+	// CSS until every cache expires.
+	st.Stylesheet = ":root { --x: 2 }"
+	req = httptest.NewRequest(http.MethodGet, "/site.css", nil)
+	req.Header.Set("If-None-Match", etag)
+	w = httptest.NewRecorder()
+	st.Handler().ServeHTTP(w, req)
+	if w.Code == http.StatusNotModified {
+		t.Error("an edited stylesheet still matched the old ETag")
+	}
+}
+
+// No stylesheet means 404, not a fallback. A site whose appearance silently
+// comes from somewhere else has an owner nobody named.
+func TestNoStylesheetIsANotFoundRatherThanASubstitute(t *testing.T) {
+	st, _ := setup(t)
+	req := httptest.NewRequest(http.MethodGet, "/site.css", nil)
+	w := httptest.NewRecorder()
+	st.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 with no stylesheet configured, got %d", w.Code)
+	}
+}

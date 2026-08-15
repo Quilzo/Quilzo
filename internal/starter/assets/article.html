@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{ page.title }}</title>
+{% if page.description %}<meta name="description" content="{{ page.description }}">{% end %}
+{% if page.canonical %}<link rel="canonical" href="{{ page.canonical }}">{% end %}
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="site">
+  <div class="wrap">
+    {% if page.brand %}<a class="brand" href="/">{{ page.brand }}</a>{% end %}
+    {% if page.nav %}<nav class="site" aria-label="Main">
+      <ul>
+        {% for item in page.nav %}<li><a href="{{ item.href }}">{{ item.label }}</a></li>{% end %}
+      </ul>
+    </nav>{% end %}
+  </div>
+</header>
+
+<main id="main" tabindex="-1" class="wrap narrow">
+  <article>
+    <header>
+      {% if page.section %}<p class="chip">{{ page.section }}</p>{% end %}
+      <h1>{{ page.title }}</h1>
+      {% if page.standfirst %}<p class="lead">{{ page.standfirst }}</p>{% end %}
+      <p class="meta">
+        {% if page.byline %}By {{ page.byline }}{% end %}
+        {% if page.published %}<time datetime="{{ page.published }}">{{ page.published }}</time>{% end %}
+      </p>
+    </header>
+
+    {% if page.hero %}
+    <img src="{{ page.hero }}" alt="{{ page.hero_alt }}" width="1200" height="630">
+    {% end %}
+
+    <p>{{ page.body }}</p>
+
+    {% if page.tags %}
+    <p>{% for t in page.tags %}<span class="chip">{{ t }}</span>{% end %}</p>
+    {% end %}
+  </article>
+</main>
+
+<footer class="site">
+  <div class="wrap">{% if page.footer %}<p>{{ page.footer }}</p>{% end %}</div>
+</footer>
+</body>
+</html>

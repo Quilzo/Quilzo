@@ -1,237 +1,554 @@
-/* One stylesheet, no build step, no framework.
-   Every number here traces to a WCAG 2.2 success criterion or to a preference
-   the reader has already expressed to their operating system. */
+/* Material 3 Expressive, written by hand as tokens and CSS.
+ *
+ * Not the framework — the design language. Every admin response carries
+ * `default-src 'none'; style-src 'self'`, so there is no Compose, no web
+ * component bundle and no JavaScript of any kind. Everything below is a
+ * stylesheet, which means the shapes, the spring motion and the state layers
+ * cost one file and add no execution surface.
+ *
+ * # The one deliberate departure from the baseline scheme
+ *
+ * M3's standard light scheme puts primary at tone 40, which lands around 4.5:1
+ * on white — WCAG AA. That would have been a downgrade: the palette this
+ * replaced was AAA throughout. So the roles are drawn from the tones M3's own
+ * high-contrast scheme uses, primary at tone 30 rather than 40, and every text
+ * pairing clears 7:1. The ratios are not a claim; contrast_test.go parses this
+ * file and computes them.
+ *
+ * # Tonal palettes
+ *
+ * Generated in CIE LCh, one hue and chroma per palette, lightness tracking the
+ * M3 tone number. Chroma tapers toward both ends or the conversion clips and
+ * the hue visibly drifts at tone 10 and tone 95.
+ */
 
 :root {
-  color-scheme: light dark;
-  --bg: #ffffff;
-  --fg: #16191d;          /* 15.8:1 on white — well past the 4.5:1 minimum */
-  --muted: #52585f;       /* 7.4:1 — still passes AAA for body text */
-  --line: #d2d6db;
-  --accent: #0b5c6b;      /* 7.1:1 on white */
-  --ok-bg: #e6f2ea;  --ok-fg: #10502f;
-  --bad-bg: #fbe9e7; --bad-fg: #8c2318;
-  --warn-bg: #fdf3dc; --warn-fg: #6b4a06;
-  --focus: #b8360f;       /* 3:1 against both grounds, per 2.4.13 */
+  /* primary — deep cyan, hue 215 */
+  --primary-0:#000409;   --primary-10:#002026;  --primary-20:#003741;
+  --primary-24:#00414d;  --primary-30:#00515f;  --primary-40:#006c7e;
+  --primary-50:#00889f;  --primary-60:#00a0b3;  --primary-70:#5eb8c7;
+  --primary-80:#93d0dc;  --primary-90:#c2e9f1;  --primary-95:#daf6fb;
+  --primary-98:#e7fdff;  --primary-100:#f1ffff;
+
+  /* secondary — the same hue, muted, for supporting emphasis */
+  --secondary-10:#121d1f; --secondary-20:#213337; --secondary-30:#304b50;
+  --secondary-40:#41646a; --secondary-80:#b5cace; --secondary-90:#d7e5e8;
+  --secondary-95:#e8f3f5;
+
+  /* tertiary — the expressive third voice, a shifted hue so accents read as
+     deliberate rather than as a lighter primary */
+  --tertiary-10:#251723; --tertiary-20:#40293d; --tertiary-30:#5c3c58;
+  --tertiary-40:#7b5076; --tertiary-80:#dbbed6; --tertiary-90:#f0dded;
+  --tertiary-95:#fbedf8;
+
+  --error-10:#33100e; --error-20:#571d1d; --error-24:#662222;
+  --error-30:#7d2a2b; --error-80:#ffb3ad; --error-90:#ffd6d1; --error-95:#ffe8e4;
+
+  /* Kept as roles rather than palettes: success and warning are not M3 roles,
+     but a CMS that reports gate results needs them, and inventing them here
+     keeps the pairing explicit instead of reaching for a raw green. */
+  --ok-10:#032111;  --ok-30:#0d5730;  --ok-80:#8fd9ae;  --ok-90:#b9ecce;
+  --warn-10:#231a00; --warn-30:#5c4600; --warn-80:#e8c95c; --warn-90:#f6e2a0;
+
+  --neutral-0:#000001;  --neutral-4:#0d0e0f;  --neutral-6:#121414;
+  --neutral-10:#1a1c1d; --neutral-12:#1e2021; --neutral-17:#282a2b;
+  --neutral-22:#323537; --neutral-24:#373a3b; --neutral-90:#e1e3e4;
+  --neutral-92:#e6e8e9; --neutral-94:#eceeef; --neutral-95:#eff1f2;
+  --neutral-96:#f2f4f5; --neutral-98:#f8f9fa; --neutral-100:#feffff;
+
+  --nvariant-30:#3d484e; --nvariant-50:#677a84; --nvariant-60:#83939c;
+  --nvariant-70:#a0adb4; --nvariant-80:#bec8cd; --nvariant-90:#dde3e7;
+
+  /* -- semantic roles, light ------------------------------------------------
+     "on-X" is what goes on top of X. "X-container" is a fill for foreground
+     elements and never a text colour. Following the naming exactly is what
+     makes the dark scheme a swap of eight lines rather than a re-audit. */
+  --primary: var(--primary-30);
+  --on-primary: var(--primary-100);
+  --primary-container: var(--primary-90);
+  --on-primary-container: var(--primary-10);
+
+  --secondary: var(--secondary-30);
+  --on-secondary: #ffffff;
+  --secondary-container: var(--secondary-90);
+  --on-secondary-container: var(--secondary-10);
+
+  --tertiary: var(--tertiary-30);
+  --on-tertiary: #ffffff;
+  --tertiary-container: var(--tertiary-90);
+  --on-tertiary-container: var(--tertiary-10);
+
+  --error: var(--error-30);
+  --on-error: #ffffff;
+  --error-container: var(--error-90);
+  --on-error-container: var(--error-10);
+
+  --ok: var(--ok-30);
+  --ok-container: var(--ok-90);
+  --on-ok-container: var(--ok-10);
+  --warning: var(--warn-30);
+  --warning-container: var(--warn-90);
+  --on-warning-container: var(--warn-10);
+
+  --surface: var(--neutral-98);
+  --on-surface: var(--neutral-10);
+  --surface-variant: var(--nvariant-90);
+  --on-surface-variant: var(--nvariant-30);
+
+  /* Six container levels replace elevation-by-shadow. A card is distinguished
+     from the page by tone, not by a drop shadow, which is what keeps the
+     interface legible at high zoom and in forced-colours mode. */
+  --surface-container-lowest: var(--neutral-100);
+  --surface-container-low: var(--neutral-96);
+  --surface-container: var(--neutral-94);
+  --surface-container-high: var(--neutral-92);
+  --surface-container-highest: var(--neutral-90);
+  --inverse-surface: var(--neutral-22);
+  --inverse-on-surface: var(--neutral-95);
+
+  --outline: var(--nvariant-50);
+  --outline-variant: var(--nvariant-80);
+  --scrim: rgb(0 0 0 / 0.32);
+
+  /* -- shape scale ----------------------------------------------------------
+     The M3 corner radius steps, in full. `large-increased` and
+     `extra-large-increased` are the Expressive additions and are what make a
+     card read as a card rather than as a rectangle with softened corners. */
+  --shape-none: 0;
+  --shape-xs: 4px;
+  --shape-sm: 8px;
+  --shape-md: 12px;
+  --shape-lg: 16px;
+  --shape-lg-inc: 20px;
+  --shape-xl: 28px;
+  --shape-xl-inc: 32px;
+  --shape-xxl: 48px;
+  --shape-full: 999px;
+
+  /* -- type scale -----------------------------------------------------------
+     Five roles at three sizes. The emphasized variants carry more weight at
+     the same size, which is the Expressive hierarchy device: emphasis comes
+     from weight and size rather than from colour, so it survives being read
+     in monochrome. */
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --display-lg: 3.5625rem/1.12 var(--font);   /* 57 */
+  --display-md: 2.8125rem/1.16 var(--font);   /* 45 */
+  --display-sm: 2.25rem/1.22 var(--font);     /* 36 */
+  --headline-lg: 2rem/1.25 var(--font);       /* 32 */
+  --headline-md: 1.75rem/1.29 var(--font);    /* 28 */
+  --headline-sm: 1.5rem/1.33 var(--font);     /* 24 */
+  --title-lg: 1.375rem/1.27 var(--font);      /* 22 */
+  --title-md: 1rem/1.5 var(--font);           /* 16 */
+  --title-sm: 0.875rem/1.43 var(--font);      /* 14 */
+  --body-lg: 1rem/1.5 var(--font);
+  --body-md: 0.875rem/1.43 var(--font);
+  --body-sm: 0.75rem/1.33 var(--font);
+  --label-lg: 0.875rem/1.43 var(--font);
+  --label-md: 0.75rem/1.33 var(--font);
+  --label-sm: 0.6875rem/1.45 var(--font);
+
+  /* -- motion ---------------------------------------------------------------
+     M3 Expressive replaced duration-and-curve with spring physics: stiffness,
+     damping, initial velocity. CSS has no spring primitive, but linear() takes
+     a sampled curve, so a real spring can be expressed rather than faked with
+     a bezier that only looks similar at the endpoints.
+
+     Spatial tokens animate position, size and shape, and overshoot — that is
+     the Expressive part, low damping and a visible settle. Effect tokens
+     animate colour and opacity at damping 1.0, because a colour that
+     overshoots lands on a hue nobody chose. */
+  --spring-spatial-fast: linear(
+    0, 0.32 6%, 0.62 12%, 0.86 18%, 1.04 25%, 1.08 30%, 1.05 38%,
+    0.995 50%, 0.998 62%, 1);
+  --spring-spatial-default: linear(
+    0, 0.19 5%, 0.44 11%, 0.71 18%, 0.92 25%, 1.05 32%, 1.08 39%,
+    1.03 50%, 0.99 66%, 1);
+  --spring-spatial-slow: linear(
+    0, 0.12 6%, 0.31 13%, 0.55 21%, 0.78 30%, 0.95 39%, 1.05 48%,
+    1.04 60%, 0.998 80%, 1);
+  --spring-effects: cubic-bezier(0.2, 0, 0, 1);
+
+  --dur-short: 150ms;
+  --dur-medium: 300ms;
+  --dur-long: 450ms;
+
+  /* State layer opacities, straight from the spec. Applied as a colour-mix
+     against the role's own "on" colour so a hover looks correct on every
+     surface without a hand-picked value per component. */
+  --state-hover: 8%;
+  --state-focus: 10%;
+  --state-press: 10%;
+
+  --focus-ring: var(--primary-40);
 }
+
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14171a; --fg: #eceff2; --muted: #b4bcc4; --line: #333940;
-    --accent: #6fd3e5;
-    --ok-bg: #123024;  --ok-fg: #86d9a8;
-    --bad-bg: #35190f; --bad-fg: #f0a08f;
-    --warn-bg: #33280d; --warn-fg: #e8c66a;
-    --focus: #ff9d5c;
+  :root:not([data-theme="light"]) {
+    --primary: var(--primary-80);
+    --on-primary: var(--primary-20);
+    --primary-container: var(--primary-24);
+    --on-primary-container: var(--primary-90);
+
+    --secondary: var(--secondary-80);
+    --on-secondary: var(--secondary-20);
+    --secondary-container: var(--secondary-30);
+    --on-secondary-container: var(--secondary-90);
+
+    --tertiary: var(--tertiary-80);
+    --on-tertiary: var(--tertiary-20);
+    --tertiary-container: var(--tertiary-30);
+    --on-tertiary-container: var(--tertiary-90);
+
+    --error: var(--error-80);
+    --on-error: var(--error-20);
+    --error-container: var(--error-24);
+    --on-error-container: var(--error-90);
+
+    --ok: var(--ok-80);
+    --ok-container: var(--ok-10);
+    --on-ok-container: var(--ok-80);
+    --warning: var(--warn-80);
+    --warning-container: var(--warn-10);
+    --on-warning-container: var(--warn-80);
+
+    --surface: var(--neutral-6);
+    --on-surface: var(--neutral-90);
+    --surface-variant: var(--nvariant-30);
+    --on-surface-variant: var(--nvariant-80);
+
+    --surface-container-lowest: var(--neutral-4);
+    --surface-container-low: var(--neutral-10);
+    --surface-container: var(--neutral-12);
+    --surface-container-high: var(--neutral-17);
+    --surface-container-highest: var(--neutral-22);
+    --inverse-surface: var(--neutral-90);
+    --inverse-on-surface: var(--neutral-22);
+
+    --outline: var(--nvariant-60);
+    --outline-variant: var(--nvariant-30);
+    --focus-ring: var(--primary-70);
   }
 }
+
+/* -- base ------------------------------------------------------------------ */
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  /* The system stack respects a font the reader has already chosen, which is
-     what ATAG A.3.6.3 asks for: honour platform settings. */
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  font-size: 1rem;        /* rem throughout, so browser zoom and a larger
-                             default font size both work */
-  line-height: 1.6;
-  color: var(--fg);
-  background: var(--bg);
+  font: var(--body-lg);
+  color: var(--on-surface);
+  background: var(--surface);
+  -webkit-text-size-adjust: 100%;
 }
 
-/* 2.4.1 Bypass Blocks. Visible the moment it is focused rather than hidden
-   from everyone including the person who needs it. */
-.skip {
-  position: absolute; left: -9999px;
-  padding: 0.75rem 1rem; background: var(--accent); color: var(--bg);
-  z-index: 10;
-}
-.skip:focus { left: 0.5rem; top: 0.5rem; }
+.shell { max-width: 68rem; margin: 0 auto; padding: 0 1.25rem 4rem; }
 
-/* 2.4.13 Focus Appearance: at least a 2px perimeter at 3:1 contrast.
-   Never `outline: none`, and an offset so it is not swallowed by a border. */
-:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-  border-radius: 2px;
-}
+/* Expressive type: display weight for the page title, so the hierarchy is
+   carried by size and weight rather than by a coloured heading. */
+h1 { font: var(--headline-lg); font-weight: 700; letter-spacing: -0.015em;
+     margin: 2rem 0 0.5rem; }
+h2 { font: var(--title-lg); font-weight: 700; margin: 2rem 0 0.75rem; }
+h3 { font: var(--title-md); font-weight: 700; margin: 1.25rem 0 0.5rem; }
+p  { margin: 0.75rem 0; max-width: 68ch; }
 
-.bar {
-  border-bottom: 1px solid var(--line);
-  padding: 0.75rem 1rem;
-  display: flex; flex-wrap: wrap; gap: 1rem;
-  align-items: center; justify-content: space-between;
-  /* Deliberately not sticky: 2.4.11 Focus Not Obscured is most often broken by
-     a fixed bar covering the element the keyboard just moved to. */
-}
-footer.bar { border-bottom: 0; border-top: 1px solid var(--line); margin-top: 3rem; }
-
-.nav { list-style: none; display: flex; gap: 0.5rem; margin: 0; padding: 0; }
-.nav a, .actions a {
-  display: inline-block;
-  /* 2.5.8 Target Size (Minimum): 24x24 CSS pixels. */
-  min-height: 24px; min-width: 24px;
-  padding: 0.4rem 0.7rem;
-  color: var(--accent);
-}
-.who { margin: 0; color: var(--muted); font-size: 0.9rem; }
-
-main { max-width: 60rem; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
-/* No focus suppression here. `main` is focusable only as the skip-link target,
-   and browsers do not treat programmatic focus on a tabindex="-1" container as
-   :focus-visible — so it needs no special case, and a blanket `outline: none`
-   in a stylesheet is precisely what a reviewer should be able to grep for and
-   find nothing. */
-
-h1 { font-size: 1.6rem; margin: 0 0 1rem; }
-h2 { font-size: 1.25rem; margin: 2rem 0 0.75rem; }
-h3 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
-
-a { color: var(--accent); text-underline-offset: 2px; }
+a { color: var(--primary); text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
 a:hover { text-decoration-thickness: 2px; }
 
-table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
-caption { text-align: left; color: var(--muted); padding-bottom: 0.5rem; }
-th, td { text-align: left; padding: 0.6rem 0.5rem; border-bottom: 1px solid var(--line); }
-thead th { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+code { font-family: var(--mono); font-size: 0.9em; }
 
-.field { margin: 0 0 1.25rem; max-width: 44rem; }
-label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
-input[type=text], input[type=password], input[type=number],
-input[type=date], input[type=url], input[type=email], textarea {
-  width: 100%; padding: 0.55rem 0.6rem; font: inherit;
-  color: var(--fg); background: var(--bg);
-  border: 1px solid var(--line); border-radius: 3px;
+/* One focus treatment everywhere. 2.4.13 asks for a 2px-minimum indicator at
+   3:1 against both the component and the page, and an offset so it is not
+   swallowed by the component's own border. Nothing in this file sets
+   `outline: none` — a removed focus ring is a keyboard user locked out. */
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--shape-xs);
 }
-textarea { resize: vertical; }
 
-/* A checkbox is the one control that reads better beside its label than under
-   it, and it is also the one browsers draw too small: 2.5.8 asks for 24x24 and
-   the default is closer to 13. */
-input[type=checkbox] {
-  width: 24px; height: 24px; margin: 0 0.5rem 0 0;
-  vertical-align: -0.35rem; accent-color: var(--accent);
-}
-input[type=checkbox] + label { display: inline; }
-
-/* The required marker. It is aria-hidden and paired with visually hidden text,
-   because a red asterisk announced as "asterisk" tells a screen-reader user
-   nothing, and announced as nothing tells them less. */
-.req { color: var(--bad-fg); font-weight: 700; }
-
-/* Present to assistive technology, absent from the page. The clip-path form
-   rather than display:none, which removes it from both. */
 .visually-hidden {
   position: absolute; width: 1px; height: 1px;
   margin: -1px; padding: 0; overflow: hidden;
   clip-path: inset(50%); white-space: nowrap; border: 0;
 }
 
-.dim { color: var(--muted); font-weight: 400; }
-.help { color: var(--muted); font-size: 0.9rem; margin: 0.35rem 0 0; }
-
-button {
-  font: inherit; font-weight: 600;
-  min-height: 44px; padding: 0.6rem 1.1rem;   /* comfortably past 2.5.8 */
-  color: var(--bg); background: var(--accent);
-  border: 1px solid transparent; border-radius: 3px; cursor: pointer;
+.skip {
+  position: absolute; left: 0; top: -4rem;
+  background: var(--primary); color: var(--on-primary);
+  padding: 0.75rem 1.25rem; border-radius: 0 0 var(--shape-lg) 0;
+  z-index: 10; transition: top var(--dur-short) var(--spring-effects);
 }
-button:hover { filter: brightness(1.12); }
+.skip:focus { top: 0; }
+
+/* -- top app bar and navigation -------------------------------------------- */
+
+.bar {
+  background: var(--surface-container);
+  border-bottom: 1px solid var(--outline-variant);
+  padding: 0.75rem 1.25rem 0;
+  margin-bottom: 1rem;
+}
+.bar-inner {
+  max-width: 68rem; margin: 0 auto;
+  display: flex; flex-wrap: wrap; gap: 1rem;
+  align-items: baseline; justify-content: space-between;
+}
+.brand { font: var(--title-lg); font-weight: 800; letter-spacing: -0.01em;
+         color: var(--on-surface); text-decoration: none; }
+.who { font: var(--body-md); color: var(--on-surface-variant); margin: 0; }
+
+/* A navigation bar of pill-shaped destinations. Full-radius is the M3
+   Expressive signature for an active destination, and the active item is
+   marked by fill *and* by aria-current, never by colour alone. */
+.nav { list-style: none; display: flex; flex-wrap: wrap; gap: 0.25rem;
+       margin: 0.5rem 0 0; padding: 0; max-width: 68rem; }
+.nav li { margin: 0; }
+.nav a {
+  display: inline-flex; align-items: center; min-height: 48px;
+  padding: 0 1.1rem; border-radius: var(--shape-full);
+  font: var(--label-lg); font-weight: 600;
+  color: var(--on-surface-variant); text-decoration: none;
+  transition: background-color var(--dur-short) var(--spring-effects),
+              color var(--dur-short) var(--spring-effects);
+}
+.nav a:hover { background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
+.nav a[aria-current="page"] {
+  background: var(--secondary-container); color: var(--on-secondary-container);
+  font-weight: 700;
+}
+
+/* -- buttons --------------------------------------------------------------- */
+
+/* 48px, not 44. M3 asks for a 48dp target and WCAG 2.5.8 asks for 24; taking
+   the stricter of the two costs nothing and the pointer accuracy research
+   behind 48 is the reason it is the default here. */
+button, .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  min-height: 48px; padding: 0 1.5rem;
+  font: var(--label-lg); font-weight: 700; letter-spacing: 0.01em;
+  color: var(--on-primary); background: var(--primary);
+  border: 1px solid transparent; border-radius: var(--shape-full);
+  cursor: pointer; text-decoration: none;
+  transition: border-radius var(--dur-medium) var(--spring-spatial-default),
+              background-color var(--dur-short) var(--spring-effects),
+              box-shadow var(--dur-short) var(--spring-effects);
+}
+/* Shape morph on press: full radius relaxes toward the medium step. This is
+   the Expressive shape-change-as-state-change idea, and it is the whole reason
+   border-radius is in the transition list. */
+button:active, .btn:active { border-radius: var(--shape-md); }
+button:hover, .btn:hover {
+  background: color-mix(in srgb, var(--on-primary) var(--state-hover), var(--primary));
+}
+
+.btn-tonal { background: var(--secondary-container); color: var(--on-secondary-container); }
+.btn-tonal:hover {
+  background: color-mix(in srgb, var(--on-secondary-container) var(--state-hover),
+              var(--secondary-container));
+}
+.btn-outlined {
+  background: transparent; color: var(--primary); border-color: var(--outline);
+}
+.btn-outlined:hover {
+  background: color-mix(in srgb, var(--primary) var(--state-hover), transparent);
+}
+.btn-text { background: transparent; color: var(--primary); padding: 0 1rem; }
+.btn-text:hover {
+  background: color-mix(in srgb, var(--primary) var(--state-hover), transparent);
+}
+.btn-danger { background: var(--error); color: var(--on-error); }
+
+/* A button group: adjacent actions sharing one shape, the outer corners full
+   and the inner ones tight. */
+.btn-group { display: flex; flex-wrap: wrap; gap: 2px; margin: 1rem 0; }
+.btn-group > button, .btn-group > .btn { border-radius: var(--shape-xs); }
+.btn-group > :first-child { border-start-start-radius: var(--shape-full);
+                            border-end-start-radius: var(--shape-full); }
+.btn-group > :last-child  { border-start-end-radius: var(--shape-full);
+                            border-end-end-radius: var(--shape-full); }
+
+/* -- cards ----------------------------------------------------------------- */
+
+.card {
+  background: var(--surface-container-low);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--shape-lg-inc);
+  padding: 1.25rem 1.4rem;
+  margin: 0 0 1rem;
+}
+.card > :first-child { margin-top: 0; }
+.card > :last-child { margin-bottom: 0; }
+.card-filled { background: var(--surface-container-high); border-color: transparent; }
+
+/* -- forms ----------------------------------------------------------------- */
+
+.field { margin: 0 0 1.5rem; max-width: 44rem; }
+label { display: block; font: var(--label-lg); font-weight: 700;
+        color: var(--on-surface); margin-bottom: 0.4rem; }
+
+input[type=text], input[type=password], input[type=number], input[type=date],
+input[type=url], input[type=email], input[type=search], textarea, select {
+  width: 100%; min-height: 48px; padding: 0.7rem 0.9rem;
+  font: var(--body-lg); color: var(--on-surface);
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--outline);
+  border-radius: var(--shape-sm);
+  transition: border-color var(--dur-short) var(--spring-effects),
+              box-shadow var(--dur-short) var(--spring-effects);
+}
+input:hover, textarea:hover, select:hover { border-color: var(--on-surface-variant); }
+input:focus, textarea:focus, select:focus {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+textarea { resize: vertical; min-height: 8rem; line-height: 1.6; }
+
+/* A checkbox is the one control that reads better beside its label, and the
+   one browsers draw too small. 24px is the WCAG 2.5.8 floor; the padded label
+   carries the rest of the target. */
+input[type=checkbox] {
+  width: 24px; height: 24px; min-height: 0; margin: 0 0.6rem 0 0;
+  vertical-align: -0.35rem; accent-color: var(--primary);
+}
+input[type=checkbox] + label { display: inline; font-weight: 600; }
+
+.help { font: var(--body-md); color: var(--on-surface-variant);
+        margin: 0.4rem 0 0; max-width: 60ch; }
+.req { color: var(--error); font-weight: 700; }
+
+/* -- notices and chips ----------------------------------------------------- */
 
 .notice {
-  padding: 0.8rem 1rem; margin: 1rem 0;
-  border: 1px solid var(--line); border-left-width: 4px; border-radius: 3px;
+  border-radius: var(--shape-lg);
+  border: 1px solid var(--outline-variant);
+  border-left-width: 6px;
+  padding: 1rem 1.2rem; margin: 1.25rem 0;
+  background: var(--surface-container);
 }
-.notice.ok  { background: var(--ok-bg);  border-left-color: var(--ok-fg);  color: var(--ok-fg); }
-.notice.bad { background: var(--bad-bg); border-left-color: var(--bad-fg); color: var(--bad-fg); }
+.notice.ok   { background: var(--ok-container); color: var(--on-ok-container);
+               border-color: var(--ok); }
+.notice.bad  { background: var(--error-container); color: var(--on-error-container);
+               border-color: var(--error); }
+.notice.warn { background: var(--warning-container); color: var(--on-warning-container);
+               border-color: var(--warning); }
+.notice > :first-child { margin-top: 0; }
+.notice > :last-child { margin-bottom: 0; }
 
-/* 1.4.1 Use of Colour. Every tag carries a word, so meaning survives both
-   colour blindness and a monochrome display. */
-.tag {
-  display: inline-block; padding: 0.1rem 0.45rem; border-radius: 3px;
-  font-size: 0.8rem; font-weight: 600;
-  background: var(--line); color: var(--fg);
-}
-.tag-ok   { background: var(--ok-bg);   color: var(--ok-fg); }
-.tag-bad  { background: var(--bad-bg);  color: var(--bad-fg); }
-.tag-warn, .tag-changed { background: var(--warn-bg); color: var(--warn-fg); }
-
-.findings { list-style: none; padding: 0; }
-.findings li { border-left: 4px solid var(--line); padding: 0.5rem 0 0.5rem 0.8rem; margin-bottom: 0.75rem; }
-.findings p { margin: 0.3rem 0 0; color: var(--muted); }
-
-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
-
-/* Available to a screen reader, absent from the visual layout. Used to give a
-   repeated link a distinct accessible name (2.4.4) without visual clutter. */
-.sr {
-  position: absolute; width: 1px; height: 1px;
-  padding: 0; margin: -1px; overflow: hidden;
-  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  * { animation: none !important; transition: none !important; }
-}
-
-.inline { display: inline; }
-select {
-  width: 100%; padding: 0.55rem 0.6rem; font: inherit;
-  color: var(--fg); background: var(--bg);
-  border: 1px solid var(--line); border-radius: 3px;
-  min-height: 44px;   /* 2.5.8, and comfortable for a pointer */
-}
-
-/* -- security posture ------------------------------------------------------
-   The dashboard uses no script, because the CSP on every admin response
-   forbids it. A security dashboard that needs a client-side framework to tell
-   you a token is world-readable has the dependency the wrong way round. */
-
-.notice.warn { background: var(--warn-bg); border-left-color: var(--warn-fg); color: var(--warn-fg); }
-
-.posture-head {
-  display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: baseline;
-  border-bottom: 1px solid var(--line); padding-bottom: 1rem; margin-bottom: 1.5rem;
-}
-.score { font-size: 3rem; line-height: 1; margin: 0; font-variant-numeric: tabular-nums; }
-.score.ok   { color: var(--ok-fg); }
-.score.warn { color: var(--warn-fg); }
-.score.bad  { color: var(--bad-fg); }
-.score .outof { font-size: 1rem; color: var(--muted); font-weight: 400; }
-.score-note { margin: 0; flex: 1 1 18rem; }
-
-/* Severity is never signalled by colour alone: the word is the label and the
-   colour reinforces it. 1.4.1 is the criterion, and a red dot that means
+/* Chips carry the severity word, never colour alone — 1.4.1. A red dot meaning
    "critical" to a sighted reader means nothing to anyone else. */
 .pill {
-  display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px;
-  font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.04em; border: 1px solid transparent;
+  display: inline-flex; align-items: center; min-height: 26px;
+  padding: 0 0.7rem; border-radius: var(--shape-sm);
+  font: var(--label-md); font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface-container-high); color: var(--on-surface-variant);
 }
-.pill.critical, .pill.high { background: var(--bad-bg); color: var(--bad-fg); border-color: var(--bad-fg); }
-.pill.medium               { background: var(--warn-bg); color: var(--warn-fg); border-color: var(--warn-fg); }
-.pill.low, .pill.info      { background: var(--bg); color: var(--muted); border-color: var(--line); }
-.pill.ok                   { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--ok-fg); }
+.pill.critical, .pill.high { background: var(--error-container);
+                             color: var(--on-error-container); border-color: var(--error); }
+.pill.medium { background: var(--warning-container); color: var(--on-warning-container);
+               border-color: var(--warning); }
+.pill.ok     { background: var(--ok-container); color: var(--on-ok-container);
+               border-color: var(--ok); }
+
+/* -- tables and lists ------------------------------------------------------ */
+
+.table-wrap { overflow-x: auto; border-radius: var(--shape-lg);
+              border: 1px solid var(--outline-variant); margin: 1rem 0; }
+table { width: 100%; border-collapse: collapse; font: var(--body-md); }
+th, td { text-align: left; padding: 0.85rem 1rem;
+         border-bottom: 1px solid var(--outline-variant); }
+thead th {
+  font: var(--label-lg); font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--on-surface-variant); background: var(--surface-container);
+}
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: color-mix(in srgb, var(--on-surface) 4%, transparent); }
+
+dl { margin: 1rem 0; }
+dt { font: var(--label-lg); font-weight: 700; color: var(--on-surface-variant);
+     margin-top: 1rem; }
+dd { margin: 0.25rem 0 0; }
+
+/* -- security posture ------------------------------------------------------ */
+
+.posture-head {
+  display: flex; flex-wrap: wrap; gap: 1.75rem; align-items: center;
+  background: var(--surface-container-low);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--shape-xl);
+  padding: 1.5rem 1.75rem; margin: 1.5rem 0 2rem;
+}
+/* Display-scale numeral. The score is the one number on the page somebody
+   reads from across a room, which is exactly what the display role is for. */
+.score { font: var(--display-md); font-weight: 800; margin: 0;
+         font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.score.ok   { color: var(--ok); }
+.score.warn { color: var(--warning); }
+.score.bad  { color: var(--error); }
+.score .outof { font: var(--title-md); color: var(--on-surface-variant);
+                font-weight: 500; }
+.score-note { margin: 0; flex: 1 1 20rem; }
 
 .finding, .rule {
-  border: 1px solid var(--line); border-left-width: 4px;
-  border-radius: 3px; padding: 0.9rem 1.1rem; margin: 0 0 1rem;
+  background: var(--surface-container-low);
+  border: 1px solid var(--outline-variant);
+  border-left-width: 6px;
+  border-radius: var(--shape-lg);
+  padding: 1.1rem 1.3rem; margin: 0 0 1rem;
+  transition: border-radius var(--dur-medium) var(--spring-spatial-default);
 }
-.finding.critical, .finding.high { border-left-color: var(--bad-fg); }
-.finding.medium                  { border-left-color: var(--warn-fg); }
-.finding.low, .finding.info      { border-left-color: var(--line); }
-.finding h3, .rule h2 { margin: 0 0 0.5rem; font-size: 1.05rem; }
-.finding p, .rule p { margin: 0.4rem 0; }
-.fix code { background: var(--ok-bg); color: var(--ok-fg); padding: 0.15rem 0.4rem; border-radius: 3px; }
-.label {
-  font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;
-  color: var(--muted); font-weight: 700;
-}
-.meta { color: var(--muted); font-size: 0.85rem; }
+.finding:hover, .rule:hover { border-radius: var(--shape-xl); }
+.finding.critical, .finding.high { border-left-color: var(--error); }
+.finding.medium { border-left-color: var(--warning); }
+.finding.low, .finding.info { border-left-color: var(--outline); }
+.finding h3, .rule h2 { margin: 0 0 0.6rem; display: flex; flex-wrap: wrap;
+                        align-items: center; gap: 0.6rem; }
+.fix code { background: var(--ok-container); color: var(--on-ok-container);
+            padding: 0.2rem 0.5rem; border-radius: var(--shape-xs); }
+.label { font: var(--label-sm); text-transform: uppercase; letter-spacing: 0.07em;
+         color: var(--on-surface-variant); font-weight: 800; }
+.meta { font: var(--body-sm); color: var(--on-surface-variant); }
 
-.controls { line-height: 2.2; }
+.controls { line-height: 2.4; }
 .ctl {
-  display: inline-block; padding: 0.15rem 0.5rem; margin-right: 0.3rem;
-  border: 1px solid var(--line); border-radius: 3px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem;
+  display: inline-block; padding: 0.2rem 0.6rem; margin: 0 0.3rem 0.3rem 0;
+  border: 1px solid var(--outline-variant); border-radius: var(--shape-sm);
+  background: var(--surface-container); font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+.dim { color: var(--on-surface-variant); font-weight: 400; }
+.inline { display: inline; }
+
+footer { margin-top: 3rem; padding-top: 1.5rem;
+         border-top: 1px solid var(--outline-variant);
+         font: var(--body-md); color: var(--on-surface-variant); }
+
+/* -- reduced motion --------------------------------------------------------
+   The Expressive springs overshoot by design, and overshoot is exactly what
+   2.3.3 is about. Everything above degrades to an instant state change, which
+   is why none of it carries meaning that only the animation conveys. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Forced colours: hand every decision to the user's palette rather than
+   fighting it. The tonal surfaces disappear, so borders have to carry the
+   structure on their own. */
+@media (forced-colors: active) {
+  .card, .notice, .finding, .rule, .pill, .posture-head, .table-wrap {
+    border: 1px solid CanvasText;
+  }
+  button, .btn { border: 1px solid ButtonText; }
+  :focus-visible { outline: 3px solid Highlight; }
 }

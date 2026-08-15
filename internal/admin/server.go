@@ -235,6 +235,13 @@ func (s *Server) renderTypeFailures(w http.ResponseWriter, p principal,
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, data map[string]any) {
+	// Nav marks the current destination so the navigation can carry
+	// aria-current. Defaulted rather than required: a missing key would make
+	// the template compare a nil against a string, and template comparison
+	// errors surface as a half-rendered page rather than as a failure.
+	if _, ok := data["Nav"]; !ok {
+		data["Nav"] = ""
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tpl.ExecuteTemplate(w, name, data); err != nil {
 		// The status is already sent by now, so this can only be logged, not
@@ -441,6 +448,7 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "pages.html", map[string]any{
+		"Nav":   "pages",
 		"Title": "Pages", "Principal": p, "Names": names,
 		"Changed": changed, "Draft": draft, "Live": live,
 		"Unpublished": draft != "" && draft != live,
@@ -486,6 +494,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "edit.html", map[string]any{
+		"Nav":   "pages",
 		"Title": "Edit " + name, "Principal": p, "Name": name,
 		"Fields": fields, "Exists": exists, "Type": typeName,
 		"CanEdit": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,
@@ -752,6 +761,7 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(controls)
 
 	s.render(w, "security.html", map[string]any{
+		"Nav":   "security",
 		"Title": "Security posture", "Principal": p,
 		"Report": rep, "Controls": controls, "Band": band(rep.Score),
 	})
@@ -778,6 +788,7 @@ func (s *Server) handleRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, "rules.html", map[string]any{
+		"Nav":   "security",
 		"Title": "What is checked", "Principal": p, "Rules": posture.Rules(),
 	})
 }
@@ -802,6 +813,7 @@ func (s *Server) handleRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, "rules.html", map[string]any{
+		"Nav":   "security",
 		"Title": rule.Title, "Principal": p, "Rules": []posture.Rule{rule},
 	})
 }
@@ -898,6 +910,7 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 
 	reports := s.checkAll(draft)
 	s.render(w, "review.html", map[string]any{
+		"Nav":   "review",
 		"Title": "Review", "Principal": p, "Changes": changes,
 		"Reports": reports, "Blocking": a11y.BlockingCount(reports),
 		"Saved":      r.URL.Query().Get("saved"),
@@ -953,6 +966,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	if len(unmarked) > 0 && reason == "" {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		s.render(w, "review.html", map[string]any{
+			"Nav":   "review",
 			"Title": "Review", "Principal": p, "Reports": reports,
 			"Blocking": blocking, "Unmarked": unmarked, "CanPublish": true,
 			"Error": fmt.Sprintf(
@@ -970,6 +984,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	if blocking > 0 && reason == "" {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		s.render(w, "review.html", map[string]any{
+			"Nav":   "review",
 			"Title": "Review", "Principal": p, "Reports": reports,
 			"Blocking":   blocking,
 			"CanPublish": true,
@@ -1028,6 +1043,7 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "access.html", map[string]any{
+		"Nav":   "access",
 		"Title": "Access", "Principal": p,
 		"Rows": rows, "Bindings": s.Policy.Bindings,
 	})
@@ -1104,6 +1120,7 @@ func (s *Server) handleProvenance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "provenance.html", map[string]any{
+		"Nav":   "provenance",
 		"Title": "Provenance", "Principal": p, "Rows": rows,
 		"Saved":   r.URL.Query().Get("saved"),
 		"CanEdit": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
@@ -1202,6 +1219,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	s.render(w, "history.html", map[string]any{
+		"Nav":   "history",
 		"Title": "History", "Principal": p, "Entries": entries,
 		"CanRollback": s.Policy.Evaluate(p.Name, auth.ActRollback, "/").Allowed,
 	})

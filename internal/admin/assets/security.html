@@ -44,12 +44,14 @@
 {{if .Report.Suppressed}}
 <h2>Accepted risks</h2>
 <p class="help">Silenced deliberately, and only until a date. When that date passes each one returns as a finding of its own.</p>
+<div class="table-wrap">
 <table>
   <thead><tr><th scope="col">Finding</th><th scope="col">What it was</th></tr></thead>
   <tbody>
     {{range .Report.Suppressed}}<tr><td><code>{{.Rule}}</code></td><td>{{.Detail}}</td></tr>{{end}}
   </tbody>
 </table>
+</div>
 {{end}}
 
 <h2>Coverage</h2>

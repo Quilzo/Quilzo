@@ -64,6 +64,10 @@ content
   scrivet render PAGE TEMPLATE [-o FILE]    render a page
   scrivet verify                            re-hash every object
 
+templates
+  scrivet template list | show NAME         ready-made starting points
+  scrivet template use NAME [--dir DIR]     write it, its stylesheet and sample
+
 content types
   scrivet type add FILE.json                define a type: flat fields, no regex
   scrivet type list | show NAME             what exists, and its address
@@ -180,6 +184,8 @@ func main() {
 		err = cmdAssist(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
+	case "template", "templates":
+		err = cmdTemplate(root, cmdArgs)
 	case "posture":
 		err = cmdPosture(root, cmdArgs)
 	case "type", "types":

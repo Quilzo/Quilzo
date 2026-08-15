@@ -127,6 +127,19 @@ func SaveDraft(s *store.Store, pages map[string]any, message, author string) (st
 func PagesAt(s *store.Store, refOrCommit string) (map[string]any, error) {
 	cid := s.GetRef(refOrCommit)
 	if cid == "" {
+		// A known ref that resolves to nothing means the ref exists as a
+		// concept and has never been set — nothing published, or no draft yet.
+		// Falling straight through to "not an object id: live" tells the truth
+		// about the lookup and nothing about the situation, which sends people
+		// hunting for a corrupt store.
+		switch refOrCommit {
+		case RefLive:
+			return nil, fmt.Errorf("nothing is published yet; " +
+				"`scrivet publish` moves live to the draft")
+		case RefDraft:
+			return nil, fmt.Errorf("there is no draft yet; " +
+				"`scrivet add NAME=FILE.json` starts one")
+		}
 		cid = refOrCommit
 	}
 	c, err := s.GetCommit(cid)

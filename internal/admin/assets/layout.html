@@ -3,31 +3,36 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>{{.Title}} — scrivet</title>
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <a class="skip" href="#main">Skip to main content</a>
 <header class="bar">
+  <div class="bar-inner">
+    <a class="brand" href="/">scrivet</a>
+    {{with .Principal}}<p class="who">Signed in as <strong>{{.Name}}</strong> ({{.Role}})
+      — <a href="/signout">Sign out</a></p>{{end}}
+  </div>
   <nav aria-label="Sections">
     <ul class="nav">
-      <li><a href="/">Pages</a></li>
-      <li><a href="/review">Review</a></li>
-      <li><a href="/provenance">Provenance</a></li>
-      <li><a href="/history">History</a></li>
-      <li><a href="/access">Access</a></li>
-      <li><a href="/security">Security</a></li>
+      {{$n := .Nav}}
+      <li><a href="/"{{if eq $n "pages"}} aria-current="page"{{end}}>Pages</a></li>
+      <li><a href="/review"{{if eq $n "review"}} aria-current="page"{{end}}>Review</a></li>
+      <li><a href="/provenance"{{if eq $n "provenance"}} aria-current="page"{{end}}>Provenance</a></li>
+      <li><a href="/history"{{if eq $n "history"}} aria-current="page"{{end}}>History</a></li>
+      <li><a href="/access"{{if eq $n "access"}} aria-current="page"{{end}}>Access</a></li>
+      <li><a href="/security"{{if eq $n "security"}} aria-current="page"{{end}}>Security</a></li>
     </ul>
   </nav>
-  {{with .Principal}}<p class="who">Signed in as <strong>{{.Name}}</strong> ({{.Role}})
-    — <a href="/signout">Sign out</a></p>{{end}}
 </header>
-<main id="main" tabindex="-1">
+<main id="main" tabindex="-1" class="shell">
 {{end}}
 
 {{define "foot"}}
 </main>
-<footer class="bar">
+<footer class="shell">
   <p><a href="/help">Help</a> — the same link, in the same place, on every page.</p>
 </footer>
 </body>

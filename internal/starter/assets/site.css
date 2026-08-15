@@ -1,0 +1,203 @@
+/* Material 3 Expressive for the published site.
+ *
+ * Same token system as the authoring interface, so a site looks like the tool
+ * that made it. Self-contained: no font import, no CDN, no script. A published
+ * page that reaches a third-party origin for a stylesheet has handed that
+ * origin the ability to change what the page says.
+ */
+:root {
+  --primary-10:#002026; --primary-20:#003741; --primary-24:#00414d;
+  --primary-30:#00515f; --primary-40:#006c7e; --primary-70:#5eb8c7;
+  --primary-80:#93d0dc; --primary-90:#c2e9f1; --primary-100:#f1ffff;
+  --secondary-10:#121d1f; --secondary-20:#213337; --secondary-30:#304b50;
+  --secondary-80:#b5cace; --secondary-90:#d7e5e8;
+  --tertiary-10:#251723; --tertiary-20:#40293d; --tertiary-30:#5c3c58;
+  --tertiary-80:#dbbed6; --tertiary-90:#f0dded;
+  --neutral-4:#0d0e0f; --neutral-6:#121414; --neutral-10:#1a1c1d;
+  --neutral-12:#1e2021; --neutral-17:#282a2b; --neutral-22:#323537;
+  --neutral-90:#e1e3e4; --neutral-92:#e6e8e9; --neutral-94:#eceeef;
+  --neutral-96:#f2f4f5; --neutral-98:#f8f9fa; --neutral-100:#feffff;
+  --nvariant-30:#3d484e; --nvariant-50:#677a84; --nvariant-60:#83939c;
+  --nvariant-80:#bec8cd; --nvariant-90:#dde3e7;
+
+  --primary: var(--primary-30); --on-primary: var(--primary-100);
+  --primary-container: var(--primary-90); --on-primary-container: var(--primary-10);
+  --secondary-container: var(--secondary-90); --on-secondary-container: var(--secondary-10);
+  --tertiary-container: var(--tertiary-90); --on-tertiary-container: var(--tertiary-10);
+  --surface: var(--neutral-98); --on-surface: var(--neutral-10);
+  --on-surface-variant: var(--nvariant-30);
+  --surface-container-lowest: var(--neutral-100);
+  --surface-container-low: var(--neutral-96);
+  --surface-container: var(--neutral-94);
+  --surface-container-high: var(--neutral-92);
+  --outline: var(--nvariant-50); --outline-variant: var(--nvariant-80);
+  --focus-ring: var(--primary-40);
+
+  --shape-xs:4px; --shape-sm:8px; --shape-md:12px; --shape-lg:16px;
+  --shape-lg-inc:20px; --shape-xl:28px; --shape-xl-inc:32px; --shape-full:999px;
+
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --spring: linear(0, 0.19 5%, 0.44 11%, 0.71 18%, 0.92 25%, 1.05 32%,
+            1.08 39%, 1.03 50%, 0.99 66%, 1);
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur: 300ms;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --primary: var(--primary-80); --on-primary: var(--primary-20);
+    --primary-container: var(--primary-24); --on-primary-container: var(--primary-90);
+    --secondary-container: var(--secondary-30); --on-secondary-container: var(--secondary-90);
+    --tertiary-container: var(--tertiary-30); --on-tertiary-container: var(--tertiary-90);
+    --surface: var(--neutral-6); --on-surface: var(--neutral-90);
+    --on-surface-variant: var(--nvariant-80);
+    --surface-container-lowest: var(--neutral-4);
+    --surface-container-low: var(--neutral-10);
+    --surface-container: var(--neutral-12);
+    --surface-container-high: var(--neutral-17);
+    --outline: var(--nvariant-60); --outline-variant: var(--nvariant-30);
+    --focus-ring: var(--primary-70);
+  }
+}
+
+* { box-sizing: border-box; }
+html { color-scheme: light dark; }
+body {
+  margin: 0; font-family: var(--font); font-size: 1.0625rem; line-height: 1.65;
+  color: var(--on-surface); background: var(--surface);
+  -webkit-text-size-adjust: 100%;
+}
+.wrap { max-width: 64rem; margin: 0 auto; padding: 0 1.25rem; }
+.narrow { max-width: 42rem; }
+
+a { color: var(--primary); text-underline-offset: 0.2em; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px;
+                 border-radius: var(--shape-xs); }
+img, video, svg { max-width: 100%; height: auto; }
+
+.skip { position: absolute; left: 0; top: -4rem; z-index: 10;
+        background: var(--primary); color: var(--on-primary);
+        padding: 0.75rem 1.25rem; border-radius: 0 0 var(--shape-lg) 0;
+        transition: top 150ms var(--ease); }
+.skip:focus { top: 0; }
+
+/* Expressive typography: the hierarchy is carried by size and weight, so it
+   survives being read in monochrome or with author styles overridden. */
+h1 { font-size: clamp(2rem, 1.3rem + 3.2vw, 3.5rem); line-height: 1.08;
+     font-weight: 800; letter-spacing: -0.025em; margin: 0 0 1rem; }
+h2 { font-size: clamp(1.5rem, 1.2rem + 1.4vw, 2rem); line-height: 1.2;
+     font-weight: 700; letter-spacing: -0.015em; margin: 2.5rem 0 0.75rem; }
+h3 { font-size: 1.25rem; font-weight: 700; margin: 1.75rem 0 0.5rem; }
+p { margin: 1rem 0; max-width: 68ch; }
+.lead { font-size: clamp(1.125rem, 1rem + 0.6vw, 1.375rem);
+        color: var(--on-surface-variant); max-width: 56ch; }
+
+header.site {
+  background: var(--surface-container); border-bottom: 1px solid var(--outline-variant);
+}
+header.site .wrap { display: flex; flex-wrap: wrap; gap: 1rem;
+                    align-items: center; justify-content: space-between;
+                    padding-block: 0.75rem; }
+.brand { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.01em;
+         color: var(--on-surface); text-decoration: none; }
+nav.site ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0.25rem;
+              margin: 0; padding: 0; }
+nav.site a {
+  display: inline-flex; align-items: center; min-height: 48px; padding: 0 1rem;
+  border-radius: var(--shape-full); font-weight: 600; font-size: 0.9375rem;
+  color: var(--on-surface-variant); text-decoration: none;
+  transition: background-color 150ms var(--ease);
+}
+nav.site a:hover { background: color-mix(in srgb, var(--on-surface) 8%, transparent); }
+nav.site a[aria-current="page"] { background: var(--secondary-container);
+                                  color: var(--on-secondary-container); font-weight: 700; }
+
+/* Hero. A full-radius container at the extra-large-increased step is the
+   Expressive signature — the shape does the work a background image usually
+   does, at no bandwidth cost. */
+.hero {
+  background: var(--primary-container); color: var(--on-primary-container);
+  border-radius: var(--shape-xl-inc);
+  padding: clamp(2rem, 1rem + 5vw, 4.5rem) clamp(1.25rem, 0.5rem + 3vw, 3.5rem);
+  margin: 2rem 0 3rem;
+}
+.hero h1 { margin-top: 0; }
+.hero .lead { color: inherit; opacity: 0.86; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1.75rem 0 0; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 48px; padding: 0 1.75rem; border-radius: var(--shape-full);
+  font-weight: 700; font-size: 0.9375rem; text-decoration: none;
+  background: var(--primary); color: var(--on-primary);
+  border: 1px solid transparent;
+  transition: border-radius var(--dur) var(--spring),
+              background-color 150ms var(--ease);
+}
+.btn:active { border-radius: var(--shape-md); }
+.btn-outlined { background: transparent; color: inherit; border-color: currentColor; }
+.btn-tonal { background: var(--surface-container-lowest); color: var(--primary); }
+
+.grid { display: grid; gap: 1rem; margin: 2rem 0;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); }
+.card {
+  background: var(--surface-container-low); border: 1px solid var(--outline-variant);
+  border-radius: var(--shape-lg-inc); padding: 1.5rem;
+  transition: border-radius var(--dur) var(--spring);
+}
+.card:hover { border-radius: var(--shape-xl); }
+.card > :first-child { margin-top: 0; }
+.card > :last-child { margin-bottom: 0; }
+.card h3 { margin-top: 0; }
+.card-accent { background: var(--tertiary-container); color: var(--on-tertiary-container);
+               border-color: transparent; }
+
+.chip { display: inline-flex; align-items: center; min-height: 32px;
+        padding: 0 0.85rem; border-radius: var(--shape-sm);
+        background: var(--secondary-container); color: var(--on-secondary-container);
+        font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.03em;
+        text-transform: uppercase; margin: 0 0.35rem 0.35rem 0; }
+
+blockquote { margin: 2rem 0; padding: 1.25rem 1.5rem;
+             background: var(--surface-container); border-radius: var(--shape-lg);
+             border-left: 6px solid var(--primary); }
+blockquote p:first-child { margin-top: 0; }
+blockquote p:last-child { margin-bottom: 0; }
+blockquote footer { font-size: 0.9rem; color: var(--on-surface-variant); }
+
+pre { background: var(--surface-container); border: 1px solid var(--outline-variant);
+      border-radius: var(--shape-md); padding: 1rem 1.15rem; overflow-x: auto; }
+code { font-family: var(--mono); font-size: 0.9em; }
+:not(pre) > code { background: var(--surface-container); padding: 0.15rem 0.4rem;
+                   border-radius: var(--shape-xs); }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--outline-variant);
+              border-radius: var(--shape-lg); margin: 1.5rem 0; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
+th, td { text-align: left; padding: 0.8rem 1rem;
+         border-bottom: 1px solid var(--outline-variant); }
+thead th { background: var(--surface-container); font-weight: 800;
+           text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.8125rem;
+           color: var(--on-surface-variant); }
+tbody tr:last-child td { border-bottom: 0; }
+
+footer.site { margin-top: 4rem; padding: 2rem 0 3rem;
+              border-top: 1px solid var(--outline-variant);
+              color: var(--on-surface-variant); font-size: 0.9375rem; }
+
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px;
+                   padding: 0; overflow: hidden; clip-path: inset(50%);
+                   white-space: nowrap; border: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important; scroll-behavior: auto !important;
+  }
+}
+@media (forced-colors: active) {
+  .card, .hero, .chip, blockquote, .table-wrap { border: 1px solid CanvasText; }
+  .btn { border: 1px solid ButtonText; }
+  :focus-visible { outline: 3px solid Highlight; }
+}
