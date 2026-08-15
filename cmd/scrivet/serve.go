@@ -86,6 +86,7 @@ func cmdServe(root string, args []string) error {
 		})
 	}
 
+	srv.NavPosition = cfg.Raw("admin.nav")
 	srv.ReloadTokens = tokenReloader(root, toks)
 
 	// The audit log, read-only. This process cannot write it where the writer

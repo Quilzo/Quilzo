@@ -176,7 +176,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 
 	principal, err := s.OIDC.callback(ctx, r)
 	if err != nil {
-		s.refuseSignIn(w, err.Error(), "")
+		s.refuseSignIn(w, r, err.Error(), "")
 		return
 	}
 
@@ -189,7 +189,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// The access policy is the list of who may work here, and it is maintained
 	// deliberately.
 	if !s.knownPrincipal(principal) {
-		s.refuseSignIn(w,
+		s.refuseSignIn(w, r,
 			fmt.Sprintf("%s signed in successfully, but is not in the access "+
 				"policy for this site.", principal),
 			fmt.Sprintf("An administrator can add them:  scrivet auth grant %s author",
@@ -203,12 +203,12 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		"oidc:"+principal, principal, s.roleFor(principal), "/",
 		s.OIDC.ttl(), auth.RoleAdmin)
 	if err != nil {
-		s.refuseSignIn(w, "the session could not be created: "+err.Error(), "")
+		s.refuseSignIn(w, r, "the session could not be created: "+err.Error(), "")
 		return
 	}
 	if s.SaveTokens != nil {
 		if err := s.SaveTokens(s.Tokens); err != nil {
-			s.refuseSignIn(w, "the session could not be stored: "+err.Error(), "")
+			s.refuseSignIn(w, r, "the session could not be stored: "+err.Error(), "")
 			return
 		}
 	}
@@ -238,9 +238,9 @@ func (o *OIDC) ttl() time.Duration {
 
 // refuseSignIn renders a failure without leaking whether the principal exists
 // beyond what the person already knows about themselves.
-func (s *Server) refuseSignIn(w http.ResponseWriter, reason, hint string) {
+func (s *Server) refuseSignIn(w http.ResponseWriter, r *http.Request, reason, hint string) {
 	w.WriteHeader(http.StatusForbidden)
-	s.render(w, "signin.html", map[string]any{
+	s.render(w, r, "signin.html", map[string]any{
 		"Title": "Sign in", "Error": reason, "Hint": hint,
 		"OIDC": s.OIDC != nil,
 	})

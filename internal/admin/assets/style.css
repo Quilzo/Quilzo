@@ -607,3 +607,49 @@ tr.detail td { padding-top: 0; border-top: 0; }
 .kv { display: inline-block; margin: 0 .9rem .2rem 0; font-size: .75rem;
   color: var(--on-surface-variant); }
 .kv b { font-weight: 600; color: var(--on-surface); }
+
+/* -- navigation position ---------------------------------------------------- */
+/*
+   One layout, two positions, driven by a class on <body>. The markup is
+   identical either way — the header, the nav and the main region are in the
+   same order in the document — so the reading order a screen reader follows
+   and the order the keyboard moves through do not change when somebody moves
+   the bar. A layout that reorders the DOM to move a menu is a layout that is
+   correct for one of its two settings.
+*/
+.navtoggle { margin: 0; }
+.navtoggle button { font-size: .75rem; padding: .3rem .6rem;
+  border-radius: var(--shape-s); border: 1px solid var(--outline-variant);
+  background: var(--surface-container-high); color: var(--on-surface); cursor: pointer; }
+.navtoggle button:hover { background: var(--surface-container-highest); }
+
+@media (min-width: 60rem) {
+  /* The footer needs a named area too. Without one it lands in the first
+     free cell, which is under the sidebar, and wraps to three lines in a
+     column meant for menu items. */
+  body.nav-left { display: grid; grid-template-columns: 14rem 1fr;
+    grid-template-areas: "bar bar" "nav main" "nav foot";
+    grid-template-rows: auto 1fr auto; min-height: 100vh; }
+  body.nav-left > footer { grid-area: foot; }
+  body.nav-left > .bar { grid-area: bar; }
+  body.nav-left > .bar > nav { display: none; }
+  /* The sidebar is the same list, moved by CSS rather than duplicated in the
+     markup — two copies would mean a screen reader announcing every section
+     twice. */
+  body.nav-left > .sidenav { grid-area: nav; border-right: 1px solid var(--outline-variant);
+    padding: 1rem .75rem; background: var(--surface-container-low); }
+  body.nav-left > main { grid-area: main; }
+  body.nav-left .sidenav .nav { flex-direction: column; gap: .15rem; align-items: stretch; }
+  body.nav-left .sidenav .nav a { display: block; padding: .5rem .75rem;
+    border-radius: var(--shape-s); }
+  body.nav-left .sidenav .nav a[aria-current="page"] { background: var(--secondary-container); }
+}
+body.nav-top > .sidenav { display: none; }
+@media (max-width: 59.99rem) {
+  /* Below the breakpoint there is no room for a sidebar, so both settings
+     render as the top bar. Saying so here rather than letting it happen by
+     accident: a person who chose the side nav on a laptop and opens the same
+     page on a phone should not think the setting was lost. */
+  body.nav-left > .sidenav { display: none; }
+  body.nav-left > .bar > nav { display: block; }
+}

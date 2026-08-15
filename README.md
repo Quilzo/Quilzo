@@ -1709,7 +1709,7 @@ transparency log with inclusion and consistency proofs written by a
 privilege-separated writer, rogue-agent detection, signed webhooks, generated compliance evidence,
 search, and a REST content API.
 
-853 tests. The ones worth reading are the negative ones: every SSTI payload I
+856 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

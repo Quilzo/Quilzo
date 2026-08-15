@@ -82,6 +82,11 @@ type Server struct {
 	Store  *store.Store
 	Policy *auth.Policy
 	Tokens *auth.TokenStore
+	// NavPosition is "top" or "left", from configuration. A person can flip it
+	// for themselves with a cookie, which is what the toggle in the header
+	// does — it is a preference about a screen rather than a setting about a
+	// store, and forcing everybody to share one would make it an argument.
+	NavPosition string
 	// LoadAudit reads the audit log. Nil means the log page says it has no
 	// access rather than showing an empty list, because an empty list and no
 	// access look identical and mean opposite things.
@@ -264,13 +269,14 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 // The refusal says which role was needed. "Forbidden" with no explanation makes
 // someone guess or ask an admin for more than they need, which is how access
 // creeps upward.
-func (s *Server) can(w http.ResponseWriter, p principal, act auth.Action, resource string) bool {
+func (s *Server) can(w http.ResponseWriter, r *http.Request, p principal,
+	act auth.Action, resource string) bool {
 	d := s.Policy.Evaluate(p.Name, act, resource)
 	if d.Allowed {
 		return true
 	}
 	w.WriteHeader(http.StatusForbidden)
-	s.render(w, "message.html", map[string]any{
+	s.render(w, r, "message.html", map[string]any{
 		"Title": "Not permitted", "Principal": p,
 		"Heading": "You cannot do that here",
 		"Body":    d.Reason,
@@ -284,11 +290,11 @@ func (s *Server) can(w http.ResponseWriter, p principal, act auth.Action, resour
 // is allowed to make it, but the content does not satisfy the shape the site
 // declared. A 400 would suggest they had done something wrong mechanically, and
 // they have not.
-func (s *Server) renderTypeFailures(w http.ResponseWriter, p principal,
-	page string, failures []schema.Failure) {
+func (s *Server) renderTypeFailures(w http.ResponseWriter, r *http.Request,
+	p principal, page string, failures []schema.Failure) {
 
 	w.WriteHeader(http.StatusUnprocessableEntity)
-	s.render(w, "message.html", map[string]any{
+	s.render(w, r, "message.html", map[string]any{
 		"Title": "Not saved", "Principal": p,
 		"Heading":  "This does not match its content type",
 		"Page":     page,
@@ -301,11 +307,11 @@ func (s *Server) renderTypeFailures(w http.ResponseWriter, p principal,
 // 409 rather than 500: nothing failed. Somebody else got there first, which is
 // a normal outcome of two people working, and a 500 would send an operator
 // looking at logs for a problem that is not there.
-func (s *Server) renderConflict(w http.ResponseWriter, p principal, page string,
+func (s *Server) renderConflict(w http.ResponseWriter, r *http.Request, p principal, page string,
 	c *site.Conflict) {
 
 	w.WriteHeader(http.StatusConflict)
-	s.render(w, "conflict.html", map[string]any{
+	s.render(w, r, "conflict.html", map[string]any{
 		"Nav": "pages", "Title": "Not saved", "Principal": p,
 		"Page": page, "Conflict": c,
 		// Whether the other change touched this page decides whether the
@@ -314,7 +320,14 @@ func (s *Server) renderConflict(w http.ResponseWriter, p principal, page string,
 	})
 }
 
-func (s *Server) render(w http.ResponseWriter, name string, data map[string]any) {
+func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
+	data map[string]any) {
+
+	// Where the navigation sits, resolved per request from the person's own
+	// cookie and the store's default. Set here rather than in every handler,
+	// so a page added later cannot forget it and render with an empty class.
+	data["NavPosition"] = s.navFor(r)
+
 	// Nav marks the current destination so the navigation can carry
 	// aria-current. Defaulted rather than required: a missing key would make
 	// the template compare a nil against a string, and template comparison
@@ -443,6 +456,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/review", s.handleReview)
 	mux.HandleFunc("/publish", s.handlePublish)
 	mux.HandleFunc("/access", s.handleAccess)
+	mux.HandleFunc("/nav", s.handleNav)
 	mux.HandleFunc("/logs", s.handleLogs)
 	mux.HandleFunc("/people", s.handlePeople)
 	mux.HandleFunc("/people/grant", s.handlePeopleGrant)
@@ -480,7 +494,7 @@ func (s *Server) Handler() http.Handler {
 // credential in several places nobody thinks to clear.
 func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		s.render(w, "signin.html", map[string]any{
+		s.render(w, r, "signin.html", map[string]any{
 			"Title": "Sign in", "OIDC": s.OIDC != nil})
 		return
 	}
@@ -491,7 +505,7 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	raw := strings.TrimSpace(r.FormValue("token"))
 	if _, err := s.Tokens.Authenticate(raw, time.Now()); err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
-		s.render(w, "signin.html", map[string]any{
+		s.render(w, r, "signin.html", map[string]any{
 			"Title": "Sign in", "Error": err.Error(), "OIDC": s.OIDC != nil})
 		return
 	}
@@ -563,7 +577,7 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 	p, err := s.authenticate(r)
 	if err != nil {
 		if throttled {
-			s.tooManyAttempts(w, tdec)
+			s.tooManyAttempts(w, r, tdec)
 			return principal{}, false
 		}
 		if s.Throttle != nil {
@@ -572,12 +586,12 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 				s.OnAuthFailure(sub.Source, d.Failures)
 			}
 			if !d.Allowed {
-				s.tooManyAttempts(w, d)
+				s.tooManyAttempts(w, r, d)
 				return principal{}, false
 			}
 		}
 		w.WriteHeader(http.StatusUnauthorized)
-		s.render(w, "signin.html", map[string]any{
+		s.render(w, r, "signin.html", map[string]any{
 			"Title": "Sign in", "Error": err.Error(),
 		})
 		return principal{}, false
@@ -594,14 +608,14 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 // 429 with Retry-After rather than a delay held open on the server. Sleeping
 // here would let an attacker exhaust this process's own handlers by failing
 // authentication in parallel, which turns the control into the outage.
-func (s *Server) tooManyAttempts(w http.ResponseWriter, d throttle.Decision) {
+func (s *Server) tooManyAttempts(w http.ResponseWriter, r *http.Request, d throttle.Decision) {
 	secs := int(d.RetryAfter.Seconds())
 	if secs < 1 {
 		secs = 1
 	}
 	w.Header().Set("Retry-After", strconv.Itoa(secs))
 	w.WriteHeader(http.StatusTooManyRequests)
-	s.render(w, "signin.html", map[string]any{
+	s.render(w, r, "signin.html", map[string]any{
 		"Title": "Too many attempts", "Error": d.Why,
 	})
 }
@@ -629,7 +643,7 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, p, auth.ActView, "/") {
+	if !s.can(w, r, p, auth.ActView, "/") {
 		return
 	}
 
@@ -652,7 +666,7 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.render(w, "pages.html", map[string]any{
+	s.render(w, r, "pages.html", map[string]any{
 		"Nav":   "pages",
 		"Title": "Pages", "Principal": p, "Names": names,
 		"Changed": changed, "Draft": draft, "Live": live,
@@ -672,7 +686,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if !s.can(w, p, auth.ActView, "/"+name) {
+	if !s.can(w, r, p, auth.ActView, "/"+name) {
 		return
 	}
 
@@ -714,7 +728,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		fields = flatten(body)
 	}
 
-	s.render(w, "edit.html", map[string]any{
+	s.render(w, r, "edit.html", map[string]any{
 		"Nav":   "pages",
 		"Title": "Edit " + name, "Principal": p, "Name": name,
 		"Fields": fields, "Exists": exists, "Type": typeName,
@@ -961,11 +975,11 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 	// the audit log. That is administrator information, and gating it on
 	// ActManageAccess rather than ActView is the least-privilege reading: a
 	// list of exactly where the defences are thin is a target list.
-	if !s.can(w, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActGrant, "/") {
 		return
 	}
 	if s.Posture == nil {
-		s.render(w, "message.html", map[string]any{
+		s.render(w, r, "message.html", map[string]any{
 			"Title": "Security", "Principal": p,
 			"Heading": "The posture scanner is not wired up",
 			"Body": "This build serves the admin without a posture scanner, so " +
@@ -982,7 +996,7 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(controls)
 
-	s.render(w, "security.html", map[string]any{
+	s.render(w, r, "security.html", map[string]any{
 		"Nav":   "security",
 		"Title": "Security posture", "Principal": p,
 		"Report": rep, "Controls": controls, "Band": band(rep.Score),
@@ -1006,10 +1020,10 @@ func (s *Server) handleRules(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActGrant, "/") {
 		return
 	}
-	s.render(w, "rules.html", map[string]any{
+	s.render(w, r, "rules.html", map[string]any{
 		"Nav":   "security",
 		"Title": "What is checked", "Principal": p, "Rules": posture.Rules(),
 	})
@@ -1025,7 +1039,7 @@ func (s *Server) handleRule(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActGrant, "/") {
 		return
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/security/rule/")
@@ -1034,7 +1048,7 @@ func (s *Server) handleRule(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	s.render(w, "rules.html", map[string]any{
+	s.render(w, r, "rules.html", map[string]any{
 		"Nav":   "security",
 		"Title": rule.Title, "Principal": p, "Rules": []posture.Rule{rule},
 	})
@@ -1058,7 +1072,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no page name", http.StatusBadRequest)
 		return
 	}
-	if !s.can(w, p, auth.ActEditDraft, "/"+name) {
+	if !s.can(w, r, p, auth.ActEditDraft, "/"+name) {
 		return
 	}
 
@@ -1100,7 +1114,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	// the browser is where most editing happens.
 	if s.CheckTypes != nil {
 		if failures := s.CheckTypes(pages); len(failures) > 0 {
-			s.renderTypeFailures(w, p, name, failures)
+			s.renderTypeFailures(w, r, p, name, failures)
 			return
 		}
 	}
@@ -1110,7 +1124,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 
 		var c *site.Conflict
 		if errors.As(err, &c) {
-			s.renderConflict(w, p, name, c)
+			s.renderConflict(w, r, p, name, c)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1135,7 +1149,7 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, p, auth.ActView, "/") {
+	if !s.can(w, r, p, auth.ActView, "/") {
 		return
 	}
 
@@ -1147,7 +1161,7 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reports := s.checkAll(draft)
-	s.render(w, "review.html", map[string]any{
+	s.render(w, r, "review.html", map[string]any{
 		"Nav":   "review",
 		"Title": "Review", "Principal": p, "Changes": changes,
 		"Reports": reports, "Blocking": a11y.BlockingCount(reports),
@@ -1186,7 +1200,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, p, auth.ActPublish, "/") {
+	if !s.can(w, r, p, auth.ActPublish, "/") {
 		return
 	}
 
@@ -1203,7 +1217,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	unmarked := s.unmarkedPages(draft)
 	if len(unmarked) > 0 && reason == "" {
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.render(w, "review.html", map[string]any{
+		s.render(w, r, "review.html", map[string]any{
 			"Nav":   "review",
 			"Title": "Review", "Principal": p, "Reports": reports,
 			"Blocking": blocking, "Unmarked": unmarked, "CanPublish": true,
@@ -1221,7 +1235,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// a control with a hole in whichever one people actually use.
 	if blocking > 0 && reason == "" {
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.render(w, "review.html", map[string]any{
+		s.render(w, r, "review.html", map[string]any{
 			"Nav":   "review",
 			"Title": "Review", "Principal": p, "Reports": reports,
 			"Blocking":   blocking,
@@ -1239,7 +1253,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, "message.html", map[string]any{
+	s.render(w, r, "message.html", map[string]any{
 		"Title": "Published", "Principal": p,
 		"Heading": "Published",
 		"Body": fmt.Sprintf("%d change%s are now live. The previous version is "+
@@ -1254,7 +1268,7 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActGrant, "/") {
 		return
 	}
 
@@ -1280,7 +1294,7 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, rr)
 	}
 
-	s.render(w, "access.html", map[string]any{
+	s.render(w, r, "access.html", map[string]any{
 		"Nav":   "access",
 		"Title": "Access", "Principal": p,
 		"Rows": rows, "Bindings": s.Policy.Bindings,
@@ -1316,7 +1330,7 @@ func (s *Server) handleProvenance(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, p, auth.ActView, "/") {
+	if !s.can(w, r, p, auth.ActView, "/") {
 		return
 	}
 	if s.LoadProvenance == nil {
@@ -1357,7 +1371,7 @@ func (s *Server) handleProvenance(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, rr)
 	}
 
-	s.render(w, "provenance.html", map[string]any{
+	s.render(w, r, "provenance.html", map[string]any{
 		"Nav":   "provenance",
 		"Title": "Provenance", "Principal": p, "Rows": rows,
 		"Saved":   r.URL.Query().Get("saved"),
@@ -1379,7 +1393,7 @@ func (s *Server) handleProvenanceSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page := r.FormValue("page")
-	if !s.can(w, p, auth.ActEditDraft, "/"+page) {
+	if !s.can(w, r, p, auth.ActEditDraft, "/"+page) {
 		return
 	}
 
@@ -1413,7 +1427,7 @@ func (s *Server) handleProvenanceSet(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := idx.Set(page, rec); err != nil {
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.render(w, "message.html", map[string]any{
+		s.render(w, r, "message.html", map[string]any{
 			"Title": "Not recorded", "Principal": p,
 			"Heading": "That provenance could not be recorded", "Body": err.Error(),
 		})
@@ -1431,7 +1445,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, p, auth.ActView, "/") {
+	if !s.can(w, r, p, auth.ActView, "/") {
 		return
 	}
 	live := s.Store.GetRef(site.RefLive)
@@ -1456,7 +1470,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 			Author: h.Commit.Author, Live: h.ID == live,
 		})
 	}
-	s.render(w, "history.html", map[string]any{
+	s.render(w, r, "history.html", map[string]any{
 		"Nav":   "history",
 		"Title": "History", "Principal": p, "Entries": entries,
 		"CanRollback": s.Policy.Evaluate(p.Name, auth.ActRollback, "/").Allowed,
@@ -1472,7 +1486,7 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, p, auth.ActRollback, "/") {
+	if !s.can(w, r, p, auth.ActRollback, "/") {
 		return
 	}
 	target := r.FormValue("commit")
@@ -1485,7 +1499,7 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, "message.html", map[string]any{
+	s.render(w, r, "message.html", map[string]any{
 		"Title": "Rolled back", "Principal": p, "Heading": "Rolled back",
 		"Body": fmt.Sprintf("live is now %s. %d page%s changed. The version you "+
 			"moved away from is still stored, so this is reversible too.",
@@ -1505,7 +1519,7 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/preview/")
-	if !s.can(w, p, auth.ActView, "/"+name) {
+	if !s.can(w, r, p, auth.ActView, "/"+name) {
 		return
 	}
 	pages, err := site.PagesAt(s.Store, site.RefDraft)

@@ -255,6 +255,18 @@ var settings = []Setting{
 			"quickly undone. Set it here when this process is the edge.",
 	},
 
+	// -- the admin interface --------------------------------------------------
+	{
+		Key: "admin.nav", Kind: Text, Default: "top",
+		Summary: "top | left — where the navigation sits",
+		Why: "Top reads well with a handful of sections and stops working once " +
+			"there are more than about eight, because they wrap and the order " +
+			"stops meaning anything. Left holds more, keeps them in a stable " +
+			"order, and costs horizontal room the editor would otherwise use. " +
+			"Neither is better; it depends on how much is in the install, and " +
+			"a person can override it for themselves.",
+	},
+
 	// -- media ----------------------------------------------------------------
 	{
 		Key: "media.max_width", Kind: Int, Default: "2400",
@@ -416,6 +428,13 @@ func (s Setting) Validate(v string) error {
 			return fmt.Errorf("%q is not true or false", v)
 		}
 	case Text:
+		if s.Key == "admin.nav" {
+			switch v {
+			case "top", "left":
+			default:
+				return fmt.Errorf("%q is not top or left", v)
+			}
+		}
 		if s.Key == "site.csp.mode" {
 			switch v {
 			case "enforce", "report-only", "off":

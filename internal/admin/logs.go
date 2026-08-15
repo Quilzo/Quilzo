@@ -2,6 +2,7 @@ package admin
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -65,11 +66,11 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	// Reading the audit log is an administrative act: it holds who did what,
 	// across everybody, and is the one record that is worth reading to plan an
 	// attack as well as to investigate one.
-	if !s.can(w, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActGrant, "/") {
 		return
 	}
 	if s.LoadAudit == nil {
-		s.render(w, "logs.html", map[string]any{
+		s.render(w, r, "logs.html", map[string]any{
 			"Title": "Audit log", "Principal": p,
 			"Unavailable": "this server was started without access to the " +
 				"audit log",
@@ -79,7 +80,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 
 	events, err := s.LoadAudit()
 	if err != nil {
-		s.render(w, "logs.html", map[string]any{
+		s.render(w, r, "logs.html", map[string]any{
 			"Title": "Audit log", "Principal": p,
 			"Unavailable": err.Error(),
 		})
@@ -153,7 +154,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	sortStrings(names)
 
-	s.render(w, "logs.html", map[string]any{
+	s.render(w, r, "logs.html", map[string]any{
 		"Title": "Audit log", "Principal": p,
 		"Rows": page, "Total": total, "Entries": len(events),
 		"Offset": offset, "Next": end, "HasNext": end < total,
@@ -169,4 +170,62 @@ func sortStrings(s []string) {
 			s[j], s[j-1] = s[j-1], s[j]
 		}
 	}
+}
+
+// handleNav flips the navigation between the top bar and the side.
+//
+// A cookie rather than a stored setting. Where the menu sits is a preference
+// about a screen — its width, and how many sections that person keeps open —
+// not a property of the content store, and making everybody share one value
+// turns a preference into an argument. The configured value is the default for
+// anybody who has not chosen.
+func (s *Server) handleNav(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	// Authenticated, because it sets a cookie on this origin and there is no
+	// reason for an unauthenticated request to be doing that.
+	if _, ok := s.requireAuth(w, r); !ok {
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	to := r.FormValue("to")
+	if to != "top" && to != "left" {
+		http.Error(w, "nav must be top or left", http.StatusBadRequest)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: "scrivet_nav", Value: to, Path: "/",
+		MaxAge: 365 * 24 * 3600, HttpOnly: true,
+		SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
+	})
+	// Back where they were. Referer is only used to return to a path on this
+	// same server — an open redirect through a preference toggle would be an
+	// embarrassing way to acquire one.
+	back := "/"
+	if ref := r.Referer(); ref != "" {
+		if u, err := url.Parse(ref); err == nil && u.Host == r.Host &&
+			strings.HasPrefix(u.Path, "/") {
+			back = u.Path
+		}
+	}
+	http.Redirect(w, r, back, http.StatusSeeOther)
+}
+
+// navFor resolves the position for one request: the person's choice, else the
+// store's configured default, else top.
+func (s *Server) navFor(r *http.Request) string {
+	if c, err := r.Cookie("scrivet_nav"); err == nil {
+		if c.Value == "top" || c.Value == "left" {
+			return c.Value
+		}
+	}
+	if s.NavPosition == "left" {
+		return "left"
+	}
+	return "top"
 }

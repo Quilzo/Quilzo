@@ -71,7 +71,7 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActGrant, "/") {
 		return
 	}
 	now := time.Now()
@@ -143,7 +143,7 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Slice(people, func(i, j int) bool { return people[i].Name < people[j].Name })
 
-	s.render(w, "people.html", map[string]any{
+	s.render(w, r, "people.html", map[string]any{
 		"Title": "People", "Principal": p, "People": people,
 		"Roles": auth.Roles, "ActiveWithin": activeWithin.String(),
 		"Message": r.URL.Query().Get("m"),
@@ -265,7 +265,7 @@ func (s *Server) postFrom(w http.ResponseWriter, r *http.Request, act auth.Actio
 	if !ok {
 		return principal{}, false
 	}
-	if !s.can(w, p, act, "/") {
+	if !s.can(w, r, p, act, "/") {
 		return principal{}, false
 	}
 	if err := r.ParseForm(); err != nil {
