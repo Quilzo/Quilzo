@@ -708,6 +708,61 @@ mask to `0.0.0.0/0` — it was blocking the entire IPv4 internet while looking
 correct. A test asserting that public addresses stay *reachable* is what caught
 it. Every defence needs one of those.
 
+## Migration continuity: sitemap and redirects
+
+A migration loses rankings in two ways — old URLs stop resolving, and crawlers
+stop trusting what the sitemap says. Both are handled at import time, because
+the export already contains everything needed and typing it by hand afterwards
+is where it doesn't get done.
+
+```
+$ scrivet import old-blog.xml
+  1 page(s) kept the same path, so they need no redirect.
+  1 redirects were generated from the old URLs, so links published before the
+  migration keep working. Google asks for at least a year, and there is
+  rarely a reason to remove them.
+
+  wrote redirects.json with 1 redirect(s)
+
+$ curl -sI /2019/03/04/hello-world/
+308 → /hello-world
+```
+
+### lastmod that is actually true
+
+Google and Bing both say lastmod is the field that matters and both ignore
+`priority` and `changefreq`, so those aren't emitted. Google also says something
+less often quoted: it may stop trusting lastmod entirely on sites where the
+value moves without the content moving.
+
+That caveat exists because almost every CMS lies. `lastmod` comes from the row's
+`updated_at`, which moves when an editor opens a page and saves it unchanged,
+when a bulk operation touches every row, when a plugin rewrites metadata. The
+date is real; the claim it makes is not.
+
+Here it can't be wrong. Content is addressed by hash, so "when did this page
+last change" has an exact answer: the commit where its object id stopped
+matching the previous one. Re-saving identical bytes produces the same id, so
+the date doesn't move. Republishing the whole site doesn't move it either.
+There's a test for precisely that.
+
+This is the one place where a decision made for a completely different reason —
+content addressing, chosen for rollback and integrity — turns out to satisfy an
+external requirement that nobody using a row-based store can meet.
+
+### Redirects that can't chain
+
+Google's crawler follows a limited number of hops, so a URL three or four deep
+in a chain may never be crawled to its destination and the PageRank at the
+origin never arrives. Rather than documenting that chains are bad, chains are
+flattened at write time: `a → b → c` is stored as `a → c` and `b → c`, so a
+chain is impossible to create rather than something to remember to avoid. Loops
+are refused, and so is a source with two different destinations — resolving that
+by ordering would make behaviour depend on which line someone added first.
+
+308 rather than 301. They're equivalent to search engines, and 308 preserves the
+request method where 301 lets a browser silently turn a POST into a GET.
+
 ## Status
 
 Working: the content store, draft/publish/rollback, diff, history, the template
@@ -715,10 +770,11 @@ engine, `verify`, content types, RBAC with API tokens, the tamper-evident audit
 log, provenance marking, the accessibility gate, the admin UI, the public server
 with PWA output, RFC 3161 timestamping, the MCP server, the assistant, the
 continuous posture scanner with its dashboard, the Material 3 Expressive
-interface, four ready-made templates, import from WordPress/Markdown/JSON, and
-validated uploads with an SSRF-hardened URL fetcher.
+interface, four ready-made templates, import from WordPress/Markdown/JSON,
+validated uploads with an SSRF-hardened URL fetcher, and sitemap/redirect
+generation for migrations.
 
-323 tests. The ones worth reading are the negative ones: every SSTI payload I
+346 tests. The ones worth reading are the negative ones: every SSTI payload I
 could find, XSS in all three escaping contexts, termination limits, tamper
 detection, path traversal through ids that become filenames, over-denial in the
 role ladder, and the source-walking test that checks each gate is wired to every

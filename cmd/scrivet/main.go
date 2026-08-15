@@ -105,6 +105,8 @@ security posture
 interface
   scrivet serve [--addr HOST:PORT]          the admin, on loopback by default
   scrivet site  [--addr HOST:PORT]          the published site, PWA-installable
+      --base-url https://example.com        needed for /sitemap.xml
+      --redirects redirects.json            keep old URLs working after a move
   scrivet audit [DIR]                       templates that disable escaping
 
 global

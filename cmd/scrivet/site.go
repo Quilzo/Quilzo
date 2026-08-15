@@ -6,10 +6,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/public"
+	"github.com/rsh1k/scrivet/internal/seo"
+	"github.com/rsh1k/scrivet/internal/site"
 )
 
 // cmdSite serves the published site.
@@ -23,6 +26,10 @@ func cmdSite(root string, args []string) error {
 	fs := flag.NewFlagSet("site", flag.ContinueOnError)
 	addr := fs.String("addr", "127.0.0.1:8081", "listen address")
 	tplDir := fs.String("templates", "templates", "where page.html lives")
+	baseURL := fs.String("base-url", "",
+		"absolute origin, e.g. https://example.com — required for the sitemap")
+	redirectFile := fs.String("redirects", "",
+		"a redirect map, as written by scrivet import")
 	name := fs.String("name", "", "site name, shown when installing")
 	desc := fs.String("description", "", "site description")
 	index := fs.String("index", "index", "the page served at /")
@@ -46,6 +53,31 @@ func cmdSite(root string, args []string) error {
 	// produced — and it is read once here rather than resolved per request.
 	if css, err := os.ReadFile(filepath.Join(*tplDir, "site.css")); err == nil {
 		st.Stylesheet = string(css)
+	}
+	st.BaseURL = strings.TrimSpace(*baseURL)
+
+	// lastmod is computed per request rather than cached, because it is derived
+	// from history and history only grows. A cached value would go stale
+	// exactly when a page changed, which is the one moment it matters.
+	st.LastChanged = func() (map[string]time.Time, error) {
+		return seo.LastChanged(s, s.GetRef(site.RefLive), 5000)
+	}
+
+	if *redirectFile != "" {
+		var file struct {
+			Redirects []seo.Redirect `json:"redirects"`
+		}
+		if err := loadJSON(*redirectFile, &file); err != nil {
+			return err
+		}
+		m, err := seo.NewMap(file.Redirects)
+		if err != nil {
+			// Refused at startup rather than at request time. A redirect map
+			// with a loop in it should stop the server coming up, not send
+			// visitors round in circles.
+			return fmt.Errorf("%s: %w", *redirectFile, err)
+		}
+		st.Redirects = m
 	}
 	st.Index = *index
 	if *name != "" {

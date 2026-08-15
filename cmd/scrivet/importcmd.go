@@ -13,6 +13,7 @@ import (
 	"github.com/rsh1k/scrivet/internal/importer"
 	"github.com/rsh1k/scrivet/internal/media"
 	"github.com/rsh1k/scrivet/internal/out"
+	"github.com/rsh1k/scrivet/internal/seo"
 	"github.com/rsh1k/scrivet/internal/site"
 )
 
@@ -23,6 +24,8 @@ func cmdImport(root string, args []string) error {
 	dryRun := fs.Bool("dry-run", false, "report what would happen and write nothing")
 	prefix := fs.String("prefix", "", "prepend this to every imported page name")
 	author := fs.String("author", "import", "who to record as the author")
+	redirectsOut := fs.String("redirects-out", "redirects.json",
+		"where to write the generated redirect map")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
@@ -129,14 +132,40 @@ func cmdImport(root string, args []string) error {
 		return err
 	}
 
+	// The caller's real identity and its real verification state. The first
+	// version recorded this as a verified service principal, which the audit
+	// package refused outright — a service is only a service because a
+	// credential proved it. The record was silently dropped, leaving the least
+	// trustworthy operation in the system as the one with no log entry.
+	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "import", Resource: "/", Outcome: audit.Success,
-		Principal: *author, Kind: audit.KindService,
+		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
 		Detail: map[string]string{
 			"source": string(src), "pages": fmt.Sprintf("%d", len(rep.Pages)),
-			"skipped": fmt.Sprintf("%d", len(rep.Skipped)), "commit": short(cid),
+			"skipped":   fmt.Sprintf("%d", len(rep.Skipped)),
+			"redirects": fmt.Sprintf("%d", len(rep.Redirects)),
+			"commit":    short(cid), "author": *author,
 		},
 	})
+
+	// Written, not just described. The report says to serve this file, and a
+	// message naming a file the tool did not produce is the kind of instruction
+	// people follow once and then stop trusting.
+	if len(rep.Redirects) > 0 && *redirectsOut != "" {
+		out := struct {
+			Redirects []seo.Redirect `json:"redirects"`
+		}{rep.Redirects}
+		if err := saveJSON(*redirectsOut, out); err != nil {
+			return fmt.Errorf("the pages were imported but the redirect map "+
+				"could not be written (%w). Links to the old URLs will break "+
+				"until it exists", err)
+		}
+		w.Human("\n  wrote %s%s%s with %d redirect(s)\n",
+			bold, *redirectsOut, reset, len(rep.Redirects))
+		w.Human("  %sserve them: scrivet site --redirects %s%s\n",
+			dim, *redirectsOut, reset)
+	}
 
 	w.Human("\n  draft %s\n", short(cid))
 	w.Human("  %snothing is public until someone publishes%s\n", dim, reset)

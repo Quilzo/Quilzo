@@ -49,6 +49,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/rsh1k/scrivet/internal/seo"
 )
 
 // Source is a format that can be imported.
@@ -91,6 +93,12 @@ type Report struct {
 	Skipped []string `json:"skipped,omitempty"`
 	// Notes are things the operator has to decide about.
 	Notes []string `json:"notes,omitempty"`
+	// Redirects map every URL the content had in the old system to its new
+	// path. This is the artefact that decides whether a migration keeps its
+	// search rankings, and the export already contains everything needed to
+	// build it — so leaving it to be typed by hand afterwards is leaving the
+	// most valuable output on the floor.
+	Redirects []seo.Redirect `json:"redirects,omitempty"`
 }
 
 // Import reads an export and returns pages.
@@ -187,6 +195,7 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 	}
 
 	seen := map[string]bool{}
+	unchanged := 0
 	for _, item := range doc.Channel.Items {
 		if len(rep.Pages) >= MaxPages {
 			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
@@ -258,6 +267,55 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 		}
 
 		rep.Pages = append(rep.Pages, Page{Name: name, Fields: fields, Dropped: dropped})
+
+		// The old URL, so the link somebody published in 2019 still resolves.
+		// Permanent, because the content genuinely moved and a temporary
+		// redirect does not transfer ranking.
+		//
+		// Pages whose path is unchanged are skipped rather than emitted. Most
+		// of them are: WordPress serves /about-us/ and this serves /about-us,
+		// which is the same place. Emitting those as redirects would make every
+		// real import produce a map full of self-references, and NewMap refuses
+		// those — correctly, since a page redirecting to itself is a loop. The
+		// first version did exactly that and generated no redirects at all.
+		if item.Link != "" {
+			if from, err := seo.SourcePath(item.Link); err == nil {
+				if from != "/"+name {
+					rep.Redirects = append(rep.Redirects, seo.Redirect{
+						From: item.Link, To: "/" + name, Permanent: true,
+						Note: "imported from WordPress",
+					})
+				} else {
+					unchanged++
+				}
+			}
+		}
+	}
+
+	if unchanged > 0 {
+		rep.Notes = append(rep.Notes, fmt.Sprintf(
+			"%d page(s) kept the same path, so they need no redirect.", unchanged))
+	}
+
+	// Validated here rather than at write time, so a contradictory or looping
+	// map is a failed import instead of a site that redirects in circles.
+	if len(rep.Redirects) > 0 {
+		m, err := seo.NewMap(rep.Redirects)
+		if err != nil {
+			rep.Notes = append(rep.Notes, fmt.Sprintf(
+				"the old URLs could not be turned into a redirect map (%v), so "+
+					"no redirects were generated. Existing links to this "+
+					"content will break.", err))
+			rep.Redirects = nil
+		} else {
+			rep.Redirects = m.Redirects
+			rep.Notes = append(rep.Notes, fmt.Sprintf(
+				"%d redirects were generated from the old URLs, so links "+
+					"published before the migration keep working. Google asks "+
+					"for at least a year, and there is rarely a reason to "+
+					"remove them.",
+				len(rep.Redirects)))
+		}
 	}
 
 	rep.Media = dedupe(rep.Media)

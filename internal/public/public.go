@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"github.com/rsh1k/scrivet/internal/provenance"
+	"github.com/rsh1k/scrivet/internal/seo"
 	"github.com/rsh1k/scrivet/internal/site"
 	"github.com/rsh1k/scrivet/internal/store"
 	"github.com/rsh1k/scrivet/internal/tmpl"
@@ -60,6 +61,15 @@ type Site struct {
 	// silently comes from somewhere else is a site whose appearance has an
 	// owner nobody named.
 	Stylesheet string
+	// BaseURL is the absolute origin, needed because a sitemap must carry
+	// absolute URLs and a server cannot reliably infer its own public name from
+	// a request — Host is attacker-controlled, and trusting it turns the
+	// sitemap into a way to make Google crawl somewhere else.
+	BaseURL string
+	// Redirects preserves old URLs after a migration. Nil is inert.
+	Redirects *seo.Map
+	// LastChanged supplies each page's real modification time.
+	LastChanged func() (map[string]time.Time, error)
 }
 
 // New returns a Site with sensible defaults.
@@ -73,6 +83,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/manifest.webmanifest", st.manifest)
 	mux.HandleFunc("/sw.js", st.serviceWorker)
 	mux.HandleFunc("/offline", st.offline)
+	mux.HandleFunc("/sitemap.xml", st.sitemap)
 	mux.HandleFunc("/site.css", st.stylesheet)
 	mux.HandleFunc("/robots.txt", st.robots)
 	mux.HandleFunc("/llms.txt", st.llms)
@@ -104,6 +115,84 @@ func (st *Site) stylesheet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	_, _ = io.WriteString(w, st.Stylesheet)
+}
+
+// sitemap lists the live pages with the date each last actually changed.
+func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
+	if st.BaseURL == "" {
+		// Refused rather than guessed from the Host header. Host is
+		// attacker-controlled, and a sitemap built from it is a way to make a
+		// crawler fetch somebody else's URLs believing they are yours.
+		http.Error(w, "no base URL is configured, so absolute URLs cannot be "+
+			"produced; run with --base-url https://example.com",
+			http.StatusNotFound)
+		return
+	}
+	live := st.Store.GetRef(site.RefLive)
+	if live == "" {
+		http.NotFound(w, r)
+		return
+	}
+	pages, err := site.PagesAt(st.Store, live)
+	if err != nil {
+		http.Error(w, "the site could not be read", http.StatusInternalServerError)
+		return
+	}
+
+	var changed map[string]time.Time
+	if st.LastChanged != nil {
+		changed, _ = st.LastChanged()
+	}
+
+	names := make([]string, 0, len(pages))
+	for name := range pages {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	base := strings.TrimSuffix(st.BaseURL, "/")
+	entries := make([]seo.Entry, 0, len(names))
+	for _, name := range names {
+		loc := base + "/" + name
+		if name == st.Index {
+			loc = base + "/"
+		}
+		entries = append(entries, seo.Entry{Loc: loc, LastMod: changed[name]})
+	}
+
+	out, err := seo.Sitemap(entries)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	_, _ = io.WriteString(w, out)
+}
+
+// redirected sends the response if this path has moved, and reports whether it
+// did.
+//
+// Checked before anything else, because a redirect that only fires when the
+// target does not exist is a redirect that stops working the moment somebody
+// creates a page with the old name.
+func (st *Site) redirected(w http.ResponseWriter, r *http.Request) bool {
+	rd, ok := st.Redirects.Lookup(r.URL.Path)
+	if !ok {
+		return false
+	}
+	target := rd.To
+	// A relative target keeps the query string, so a link with tracking
+	// parameters survives the move.
+	if r.URL.RawQuery != "" && !strings.Contains(target, "?") &&
+		!strings.Contains(target, "://") {
+		target += "?" + r.URL.RawQuery
+	}
+	w.Header().Set("Location", target)
+	// A permanent redirect is cached by browsers effectively forever, so it is
+	// worth being explicit that this is deliberate.
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.WriteHeader(rd.Status())
+	return true
 }
 
 // securityHeaders for a public site.
@@ -151,6 +240,13 @@ func (st *Site) pages() (map[string]any, map[string]string, error) {
 }
 
 func (st *Site) page(w http.ResponseWriter, r *http.Request) {
+	// Redirects first. One that only fires when the target is missing stops
+	// working the moment somebody creates a page with the old name — which is
+	// the most likely thing to happen after a migration.
+	if st.redirected(w, r) {
+		return
+	}
+
 	name := strings.Trim(r.URL.Path, "/")
 	if name == "" {
 		name = st.Index

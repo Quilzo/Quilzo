@@ -426,3 +426,88 @@ func TestTheBodyComesFromContentNotExcerpt(t *testing.T) {
 		t.Errorf("the excerpt was imported as the body: %q", body)
 	}
 }
+
+// The export already contains every URL the content had in the old system.
+// Leaving the redirect map to be typed by hand afterwards is leaving the most
+// valuable output of a migration on the floor — it is the artefact that decides
+// whether the rankings survive.
+func TestOldURLsBecomeRedirects(t *testing.T) {
+	doc := `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+<item><title>Hello</title><link>https://old.example/2019/03/hello-world/</link>
+  <wp:post_name>hello-world</wp:post_name><wp:post_type>post</wp:post_type>
+  <wp:status>publish</wp:status></item>
+<item><title>About</title><link>https://old.example/about-us/</link>
+  <wp:post_name>about-us</wp:post_name><wp:post_type>page</wp:post_type>
+  <wp:status>publish</wp:status></item>
+</channel></rss>`
+
+	rep, err := Import(WordPress, strings.NewReader(doc), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One redirect, not two. The dated permalink /2019/03/hello-world moved to
+	// /hello-world, but /about-us is /about-us in both systems — most pages
+	// keep their path across a migration, and a self-redirect is a loop.
+	if len(rep.Redirects) != 1 {
+		t.Fatalf("got %d redirects; expected only the page that moved: %#v",
+			len(rep.Redirects), rep.Redirects)
+	}
+	r := rep.Redirects[0]
+	if !r.Permanent {
+		t.Error("the redirect is temporary; the content genuinely moved and a " +
+			"temporary redirect does not transfer ranking")
+	}
+	// The hostname is dropped: a map carrying hostnames breaks when the site
+	// moves again.
+	if r.From != "/2019/03/hello-world" || r.To != "/hello-world" {
+		t.Errorf("the old path did not map to the new one: %s -> %s", r.From, r.To)
+	}
+	// And the pages that did not move are accounted for, so nobody wonders
+	// where the other redirect went.
+	if !strings.Contains(strings.Join(rep.Notes, " "), "same path") {
+		t.Errorf("the unchanged page was not mentioned: %v", rep.Notes)
+	}
+	// And the operator is told what to do with them.
+	if !strings.Contains(strings.Join(rep.Notes, " "), "redirects") {
+		t.Errorf("the redirects were generated without being mentioned: %v",
+			rep.Notes)
+	}
+}
+
+// A contradictory or looping map has to fail the import rather than produce a
+// site that redirects in circles.
+func TestAnUnusableRedirectMapIsReportedNotShipped(t *testing.T) {
+	// Two different posts claiming the same old URL.
+	doc := `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+<item><title>One</title><link>https://old.example/same/</link>
+  <wp:post_name>one</wp:post_name><wp:post_type>post</wp:post_type>
+  <wp:status>publish</wp:status></item>
+<item><title>Two</title><link>https://old.example/same/</link>
+  <wp:post_name>two</wp:post_name><wp:post_type>post</wp:post_type>
+  <wp:status>publish</wp:status></item>
+</channel></rss>`
+
+	rep, err := Import(WordPress, strings.NewReader(doc), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Redirects) != 0 {
+		t.Error("a contradictory redirect map was shipped anyway")
+	}
+	joined := strings.Join(rep.Notes, " ")
+	if !strings.Contains(joined, "break") {
+		t.Errorf("the consequence was not stated: %v", rep.Notes)
+	}
+	// The pages themselves must still import — losing the content because the
+	// redirects were ambiguous would be the wrong trade.
+	if len(rep.Pages) != 2 {
+		t.Errorf("imported %d pages; the content should survive a redirect "+
+			"problem", len(rep.Pages))
+	}
+}
