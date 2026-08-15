@@ -255,6 +255,51 @@ var settings = []Setting{
 			"quickly undone. Set it here when this process is the edge.",
 	},
 
+	// -- media ----------------------------------------------------------------
+	{
+		Key: "media.max_width", Kind: Int, Default: "2400",
+		Summary: "widest an uploaded image is stored at; 0 keeps the original",
+		Why: "A six-thousand-pixel photograph shown in an eight-hundred-pixel " +
+			"column is the actual page weight, and no codec recovers it. 2400 " +
+			"is generous for a hero image on a high-density display and still " +
+			"a fraction of what a modern camera produces.",
+	},
+	{
+		Key: "media.max_height", Kind: Int, Default: "2400",
+		Summary: "tallest an uploaded image is stored at; 0 keeps the original",
+		Why: "The other dimension, so a very tall image is bounded too. " +
+			"Aspect ratio is always preserved.",
+	},
+	{
+		Key: "media.jpeg_quality", Kind: Int, Default: "82",
+		Summary: "JPEG quality when an image is re-encoded",
+		Why: "82 is where most viewers stop being able to tell and the file is " +
+			"roughly half the size of 95. Raise it for photography, lower it " +
+			"for thumbnails.",
+	},
+	{
+		Key: "media.webp", Kind: Bool, Default: "false",
+		Summary: "convert to WebP when an external encoder is available",
+		Why: "Off because it depends on cwebp being installed, and a setting " +
+			"that silently does nothing is worse than one that is off. Neither " +
+			"WebP nor AVIF is in Go's standard library, so this cannot be done " +
+			"in-process without a dependency this program does not have. " +
+			"Metadata stripping and resizing happen either way, and between " +
+			"them they are usually the larger saving.",
+	},
+	{
+		Key: "media.strip_metadata", Kind: Bool, Default: "true",
+		Summary:  "remove EXIF and other embedded metadata from images",
+		Controls: []string{"SI-12", "PM-30"},
+		Why: "A photograph from a phone carries GPS coordinates, a device " +
+			"serial number, and often a full-size embedded thumbnail that " +
+			"survives cropping. Publishing an author's home address alongside " +
+			"their article is a worse failure than serving a file that is 20% " +
+			"too large, and it is the one nobody notices.",
+		Weaker: offIsWeaker("uploaded photographs keep their GPS coordinates " +
+			"and device identifiers, which are then published"),
+	},
+
 	// -- extensions -----------------------------------------------------------
 	{
 		Key: "ext.enabled", Kind: Bool, Default: "false",

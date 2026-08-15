@@ -151,6 +151,7 @@ security posture
 
 interface
   scrivet serve [--addr HOST:PORT]          the admin, on loopback by default
+      /playground                            try the API against your own store
   scrivet site  [--addr HOST:PORT]          the published site, PWA-installable
       --api                                 content API at /api/v1, read-only
       --api-writable                        allow PUT; every write needs If-Match

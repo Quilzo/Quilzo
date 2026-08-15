@@ -1,0 +1,177 @@
+package admin
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"regexp"
+	"strings"
+	"testing"
+)
+
+// The playground is the first script this program has ever served, so the
+// property that matters is that it did not cost the admin its policy.
+func TestThePlaygroundUsesANonceRatherThanWideningThePolicy(t *testing.T) {
+	body, headers := fetchPlayground(t)
+	csp := headers.Get("Content-Security-Policy")
+
+	if !strings.Contains(csp, "script-src 'nonce-") {
+		t.Fatalf("the playground does not use a nonce: %s", csp)
+	}
+	for _, forbidden := range []string{
+		"'unsafe-inline'", "'unsafe-eval'", "https:", "*", "'self' 'unsafe",
+	} {
+		if strings.Contains(csp, "script-src") &&
+			strings.Contains(scriptSrc(csp), forbidden) {
+			t.Errorf("script-src permits %q: %s", forbidden, scriptSrc(csp))
+		}
+	}
+	if !strings.Contains(csp, "frame-ancestors 'none'") ||
+		!strings.Contains(csp, "base-uri 'none'") {
+		t.Errorf("the page lost a directive it had before: %s", csp)
+	}
+
+	// The nonce in the header must be the one on the tag, or nothing runs.
+	n := regexp.MustCompile(`'nonce-([A-Za-z0-9+/]+)'`).FindStringSubmatch(csp)
+	if len(n) != 2 {
+		t.Fatalf("no nonce in %s", csp)
+	}
+	if !strings.Contains(body, `<script nonce="`+n[1]+`">`) {
+		t.Error("the script tag does not carry the nonce from the header")
+	}
+}
+
+// A nonce reused across responses is one an attacker reads from one page and
+// uses in an injection into another, which is the same as not having one.
+func TestTheNonceIsFreshPerResponse(t *testing.T) {
+	seen := map[string]bool{}
+	for i := 0; i < 8; i++ {
+		_, h := fetchPlayground(t)
+		n := regexp.MustCompile(`'nonce-([A-Za-z0-9+/]+)'`).
+			FindStringSubmatch(h.Get("Content-Security-Policy"))
+		if len(n) != 2 {
+			t.Fatal("no nonce")
+		}
+		if seen[n[1]] {
+			t.Fatal("a nonce was reused across responses")
+		}
+		seen[n[1]] = true
+		if len(n[1]) < 20 {
+			t.Errorf("the nonce is only %d characters", len(n[1]))
+		}
+	}
+}
+
+// Everything else in the admin keeps default-src 'none' with no script at all.
+// A page that can run script is a decision made once, for one page.
+func TestTheRestOfTheAdminStillForbidsScriptEntirely(t *testing.T) {
+	s, tok := setup(t)
+	r := httptest.NewRequest("GET", "http://h/", nil)
+	r.Header.Set("Authorization", "Bearer "+tok)
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, r)
+
+	csp := w.Header().Get("Content-Security-Policy")
+	if strings.Contains(csp, "script-src") {
+		t.Errorf("the main admin page now has a script-src: %s", csp)
+	}
+	if !strings.Contains(csp, "default-src 'none'") {
+		t.Errorf("the main admin page lost default-src 'none': %s", csp)
+	}
+}
+
+// It is behind the same authentication as everything else.
+func TestThePlaygroundNeedsAuthentication(t *testing.T) {
+	s, _ := setup(t)
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, httptest.NewRequest("GET", "http://h/playground", nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("got %d, want 401", w.Code)
+	}
+}
+
+// The console must not put a working credential into somebody's clipboard,
+// from where it reaches a terminal history and a support ticket.
+func TestTheCurlHelperDoesNotEmitTheSessionCredential(t *testing.T) {
+	body, _ := fetchPlayground(t)
+	if strings.Contains(body, "document.cookie") {
+		t.Error("the script reads the session cookie")
+	}
+	if !strings.Contains(body, "$SCRIVET_TOKEN") {
+		t.Error("the curl helper does not use a placeholder for the token")
+	}
+}
+
+// No eval, no innerHTML: the response is content somebody wrote, and this page
+// lives in the admin's origin.
+func TestTheScriptUsesNoDangerousSinks(t *testing.T) {
+	body, _ := fetchPlayground(t)
+	script := body[strings.Index(body, "<script"):]
+	for _, sink := range []string{"innerHTML", "outerHTML", "eval(",
+		"document.write", "new Function", "setTimeout(\""} {
+		if strings.Contains(script, sink) {
+			t.Errorf("the playground script uses %s", sink)
+		}
+	}
+}
+
+// It loads nothing from anywhere else, which is what lets connect-src stay
+// 'self' and script-src stay nonce-only.
+func TestThePlaygroundLoadsNothingExternal(t *testing.T) {
+	body, _ := fetchPlayground(t)
+	for _, ext := range []string{"http://", "https://", "//cdn", "integrity="} {
+		if strings.Contains(body, ext) {
+			t.Errorf("the page references something external: %q", ext)
+		}
+	}
+}
+
+// The route list is hand-written, which is a real limitation: a route added to
+// the API and not added here is invisible. This is the test that keeps the two
+// from diverging silently.
+func TestEveryPlaygroundRouteIsUsable(t *testing.T) {
+	s, _ := setup(t)
+	for _, rt := range s.playgroundRoutes() {
+		if !strings.HasPrefix(rt.Path, "/api/v1/") {
+			t.Errorf("%s is not an API path", rt.Path)
+		}
+		if rt.Method != "GET" && rt.Method != "PUT" {
+			t.Errorf("%s %s uses a method the API does not serve",
+				rt.Method, rt.Path)
+		}
+		if len(rt.Summary) < 8 {
+			t.Errorf("%s has no summary", rt.Path)
+		}
+		if rt.Method == "PUT" {
+			if rt.Body == "" {
+				t.Errorf("%s is a write with no example body", rt.Path)
+			}
+			if !strings.Contains(rt.Note, "If-Match") {
+				t.Errorf("%s does not warn about If-Match, so the first "+
+					"attempt will be a confusing 428", rt.Path)
+			}
+		}
+	}
+}
+
+func fetchPlayground(t *testing.T) (string, http.Header) {
+	t.Helper()
+	s, tok := setup(t)
+	r := httptest.NewRequest("GET", "http://h/playground", nil)
+	r.Header.Set("Authorization", "Bearer "+tok)
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("playground gave %d: %s", w.Code, w.Body.String())
+	}
+	return w.Body.String(), w.Header()
+}
+
+func scriptSrc(csp string) string {
+	for _, part := range strings.Split(csp, ";") {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "script-src") {
+			return part
+		}
+	}
+	return ""
+}

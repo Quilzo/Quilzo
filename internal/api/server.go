@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/rsh1k/scrivet/internal/throttle"
+	"github.com/rsh1k/scrivet/internal/vector"
 	"io"
 	"net"
 	"net/http"
@@ -42,6 +43,12 @@ type Server struct {
 	// Types validates writes, so the API cannot put content into the store that
 	// the CLI and the admin would have refused.
 	Types func() (*schema.Store, error)
+	// Vectors answers similarity queries. Nil means the two vector routes 404,
+	// which is the honest state for a server that has not built an index —
+	// better than answering with no results, which reads as "nothing is
+	// similar" rather than "nothing was indexed".
+	Vectors  func() *vector.Index
+	Tokenise func(string) []string
 	// Throttle slows repeated authentication failures. Nil disables it, which
 	// is for tests; the CLI wires one in from configuration.
 	Throttle *throttle.Limiter
@@ -65,6 +72,8 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/pages/", s.page)
 	mux.HandleFunc("/api/v1/pages", s.list)
+	mux.HandleFunc("/api/v1/similar/", s.similar)
+	mux.HandleFunc("/api/v1/search/vector", s.vectorSearch)
 	mux.HandleFunc("/api/v1/", s.notFound)
 	return s.middleware(mux)
 }
@@ -748,4 +757,138 @@ func (s *Server) Sweep(before time.Time) {
 	if s.limiter != nil {
 		s.limiter.forget(before)
 	}
+}
+
+// -- similarity ---------------------------------------------------------------
+
+// similar returns the pages nearest to a given one.
+func (s *Server) similar(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, Error{Error: "GET only"})
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/api/v1/similar/")
+	if name == "" {
+		writeError(w, http.StatusNotFound, Error{
+			Error: "name a page", Fix: "GET /api/v1/similar/{name}"})
+		return
+	}
+	if err := s.may(r, auth.ActView, "/"+name); err != nil {
+		writeError(w, http.StatusForbidden, Error{Error: "not permitted",
+			Detail: err.Error()})
+		return
+	}
+	idx := s.index(w)
+	if idx == nil {
+		return
+	}
+	v, ok := idx.Vectors[name]
+	if !ok {
+		// Not indexed and not found answer alike, because distinguishing them
+		// tells a caller which pages exist but hold no text — which is a
+		// question about the store, not about similarity.
+		writeError(w, http.StatusNotFound, Error{
+			Error: "no such page, or it has no text to compare"})
+		return
+	}
+	s.answerNeighbours(w, r, idx, v, name)
+}
+
+// vectorSearch returns the pages nearest to a query.
+func (s *Server) vectorSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, Error{Error: "GET only"})
+		return
+	}
+	if err := s.may(r, auth.ActView, "/"); err != nil {
+		writeError(w, http.StatusForbidden, Error{Error: "not permitted",
+			Detail: err.Error()})
+		return
+	}
+	q := r.URL.Query().Get("q")
+	if strings.TrimSpace(q) == "" {
+		writeError(w, http.StatusBadRequest, Error{
+			Error: "no query", Fix: "GET /api/v1/search/vector?q=..."})
+		return
+	}
+	if len(q) > 2000 {
+		// Bounded before tokenising. A very long query is not a query, and
+		// the work of embedding it is work somebody else chose for this
+		// machine to do.
+		writeError(w, http.StatusRequestEntityTooLarge, Error{
+			Error: "the query is too long"})
+		return
+	}
+	idx := s.index(w)
+	if idx == nil {
+		return
+	}
+	s.answerNeighbours(w, r, idx, idx.Embed(q, s.Tokenise), "")
+}
+
+func (s *Server) index(w http.ResponseWriter) *vector.Index {
+	if s.Vectors == nil || s.Tokenise == nil {
+		writeError(w, http.StatusNotFound, Error{
+			Error: "no vector index",
+			Detail: "this server was started without one, so there is nothing " +
+				"to compare against",
+			Fix: "scrivet site --vectors",
+		})
+		return nil
+	}
+	idx := s.Vectors()
+	if idx == nil {
+		writeError(w, http.StatusServiceUnavailable, Error{
+			Error: "nothing is published, so nothing is indexed"})
+		return nil
+	}
+	return idx
+}
+
+// answerNeighbours writes a result set, filtered by what the caller may see.
+func (s *Server) answerNeighbours(w http.ResponseWriter, r *http.Request,
+	idx *vector.Index, q vector.Vector, exclude string) {
+
+	limit := 10
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > MaxPageSize {
+			writeError(w, http.StatusBadRequest, Error{
+				Error: fmt.Sprintf("limit must be 1 to %d", MaxPageSize)})
+			return
+		}
+		limit = n
+	}
+
+	// Over-fetched, then filtered, then trimmed. Filtering after the limit
+	// would silently return fewer than asked for whenever a neighbour is out
+	// of the caller's reach — and the caller cannot tell that from "there were
+	// only three".
+	found, err := idx.Nearest(q, limit*4, exclude)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, Error{
+			Error: "the index could not be queried", Detail: err.Error()})
+		return
+	}
+	tok := tokenFrom(r)
+	out := make([]vector.Neighbour, 0, limit)
+	for _, n := range found {
+		if len(out) >= limit {
+			break
+		}
+		if err := s.may(r, auth.ActView, "/"+n.Page); err != nil {
+			continue
+		}
+		if visible, _ := s.visibleTo(tok, n.Page, nil); !visible {
+			continue
+		}
+		out = append(out, n)
+	}
+
+	w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"model":   idx.Model,
+		"commit":  idx.Commit,
+		"results": out,
+	})
 }

@@ -391,6 +391,18 @@ func (st *Site) securityHeaders(next http.Handler) http.Handler {
 
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+
+		// Vary, whenever this site has more than one language.
+		//
+		// Not cosmetic and not optional. A response that depends on
+		// Accept-Language and does not say so is one a shared cache hands to
+		// the next visitor in the wrong language — and the bug is invisible
+		// from the origin, which is serving everybody correctly. It is found
+		// by a customer in another country, weeks later, and is very hard to
+		// believe.
+		if st.Locales != nil && len(st.Locales.Locales) > 1 {
+			h.Add("Vary", i18n.VaryHeader)
+		}
 		if st.HSTS > 0 {
 			// Only when the operator has said this process is the edge. Set
 			// wrongly on a host that later needs plain HTTP, HSTS is not

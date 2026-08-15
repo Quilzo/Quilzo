@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/rsh1k/scrivet/internal/throttle"
+	"github.com/rsh1k/scrivet/internal/vector"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -105,6 +106,11 @@ func cmdSite(root string, args []string) error {
 	// The index is built from what is live, at startup. Building it from the
 	// draft would make the search box return pages nobody has published, which
 	// is a content leak however it is labelled.
+	// The vector index is built once, from what is live, at the same moment
+	// the search index is. Rebuilding per request would embed every page to
+	// answer one query.
+	var vecIndex *vector.Index
+
 	live := s.GetRef(site.RefLive)
 	if live == "" {
 		fmt.Fprintf(os.Stderr, "  %s%snothing is published, so every page will "+
@@ -116,6 +122,11 @@ func cmdSite(root string, args []string) error {
 			st.Search = search.Build(live, pages)
 			fmt.Fprintf(os.Stderr, "  %ssearch: %d terms over %d pages%s\n",
 				dim, st.Search.Size(), len(pages), reset)
+
+			vecIndex = vector.Build(live, pages, search.Tokenise)
+			vp, vt := vecIndex.Size()
+			fmt.Fprintf(os.Stderr, "  %svectors: %d page(s), %d term(s), "+
+				"model %s%s\n", dim, vp, vt, vecIndex.Model, reset)
 
 			// The home page is the one URL every visitor tries and the one
 			// this server cannot infer. It serves whatever page is named
@@ -194,6 +205,8 @@ func cmdSite(root string, args []string) error {
 				Burst:     cfg.Int("api.rate.burst"),
 			},
 			Throttle: throttle.New(throttlePolicy(cfg)),
+			Tokenise: search.Tokenise,
+			Vectors:  func() *vector.Index { return vecIndex },
 			OnAuthFailure: func(source string, failures int) {
 				// The reaction ASVS 5.0 asks for above five failures an hour.
 				// An audit record rather than an email, because this program

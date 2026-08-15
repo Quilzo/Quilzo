@@ -395,6 +395,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/signin/oidc", s.handleOIDCStart)
 	mux.HandleFunc("/auth/callback", s.handleOIDCCallback)
 	mux.HandleFunc("/signout", s.handleSignOut)
+	mux.HandleFunc("/playground", s.playground)
 	mux.HandleFunc("/style.css", s.handleCSS)
 	return securityHeaders(sameSiteOnly(limitBody(mux)))
 }

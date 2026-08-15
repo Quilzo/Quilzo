@@ -231,6 +231,54 @@ func mediaAdd(root string, args []string) error {
 	if err != nil {
 		return errBlocked{err}
 	}
+
+	// Optimised after acceptance, never before. Accept decodes the file to
+	// prove it is what it claims to be, and optimising first would mean
+	// re-encoding bytes nothing had validated — handing the optimiser the
+	// polyglot the format check exists to catch.
+	if f.Kind == media.Image {
+		cfg, cerr := loadConfig(root)
+		if cerr != nil {
+			return cerr
+		}
+		opt, oerr := media.Optimise(f.Format, body, media.Options{
+			MaxWidth:    cfg.Int("media.max_width"),
+			MaxHeight:   cfg.Int("media.max_height"),
+			JPEGQuality: cfg.Int("media.jpeg_quality"),
+			WebP:        cfg.Bool("media.webp"),
+		})
+		if oerr != nil {
+			// Reported, not fatal. The file has already been proved to be a
+			// valid image; failing the upload because the optimiser could not
+			// improve it would refuse something acceptable.
+			fmt.Fprintf(os.Stderr, "  %snot optimised: %v%s\n", dim, oerr, reset)
+		} else if len(opt.Did) > 0 {
+			body = opt.Body
+			for _, did := range opt.Did {
+				fmt.Fprintf(os.Stderr, "  %s%s%s\n", dim, did, reset)
+			}
+			if opt.StrippedMetadata {
+				fmt.Fprintf(os.Stderr, "  %sthe original carried metadata — a "+
+					"photograph from a phone usually holds GPS coordinates%s\n",
+					yellow, reset)
+			}
+			// Re-accepted so the stored id is the hash of what is actually
+			// stored. Skipping this would file the optimised bytes under the
+			// original's hash, and every integrity check downstream would be
+			// verifying a claim about a file that no longer exists.
+			f, err = media.Accept(pos[0], body, time.Now())
+			if err != nil {
+				return fmt.Errorf("the optimised image no longer validates, "+
+					"so it has not been stored: %w", err)
+			}
+		}
+		if len(body) > media.SingleFileWarn {
+			fmt.Fprintf(os.Stderr, "  %sthis one file is %d KB; a page carrying "+
+				"a few of these will be slow on a phone%s\n",
+				yellow, len(body)/1024, reset)
+		}
+	}
+
 	// Alt text is required at the point an image enters, not checked later. A
 	// library full of undescribed images is a library somebody has to go back
 	// through, and nobody ever does.
