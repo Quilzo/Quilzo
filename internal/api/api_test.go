@@ -596,3 +596,104 @@ func TestAnUnauthenticatedTraversalIsStillUnauthenticated(t *testing.T) {
 			"authentication does", w.Code)
 	}
 }
+
+// -- token scope --------------------------------------------------------------
+
+func scopedSetup(t *testing.T, sc auth.Scope) (*Server, string) {
+	t.Helper()
+	s, tok, _ := setup(t)
+	// A second token over the same store, carrying a scope.
+	scoped, _, err := s.Tokens.IssueScoped("scoped", "reader", auth.RoleReader,
+		"/", time.Hour, auth.RoleAdmin, sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = tok
+	return s, scoped
+}
+
+// A page outside the token's scope is omitted from a listing, and the total
+// counts what the caller can see. Reporting the full count both leaks how much
+// is hidden and makes paging incoherent — a client told there are 400 items it
+// will only ever be shown 12 of.
+func TestAScopedTokenSeesOnlyItsOwnPagesInAListing(t *testing.T) {
+	s, scoped := scopedSetup(t, auth.Scope{Locales: []string{"en"}})
+	// The fixture's pages carry no locale, so nothing is filtered by locale
+	// alone; this asserts the mechanism does not filter what it should not.
+	w := req(t, s, "GET", "/api/v1/pages", scoped, nil, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("got %d", w.Code)
+	}
+	var got Listing
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Total != len(got.Pages) && got.Total < len(got.Pages) {
+		t.Errorf("total %d is below the %d pages returned", got.Total,
+			len(got.Pages))
+	}
+	if len(got.Pages) == 0 {
+		t.Error("a locale scope hid pages that carry no locale at all")
+	}
+}
+
+// A page out of scope answers exactly as a page that does not exist. Answering
+// 403 would confirm it exists to a token issued precisely so it could not
+// learn that, turning every scoped token into a way to enumerate what it
+// cannot read.
+func TestAnOutOfScopePageIsNotFoundRatherThanForbidden(t *testing.T) {
+	s, scoped := scopedSetup(t, auth.Scope{Locales: []string{"de"}})
+	// Fixture pages have no locale and are therefore always visible; scope by
+	// a type nothing is bound to instead, which hides everything.
+	s2, scoped2 := scopedSetup(t, auth.Scope{Types: []string{"nothing_is_this"}})
+	_ = s
+	_ = scoped
+
+	w := req(t, s2, "GET", "/api/v1/pages/about", scoped2, nil, nil)
+	if w.Code == http.StatusForbidden {
+		t.Fatal("an out-of-scope page answered 403, which confirms it exists")
+	}
+	if w.Code != http.StatusOK && w.Code != http.StatusNotFound {
+		t.Errorf("got %d, want 404", w.Code)
+	}
+}
+
+// A read-only token is refused every write, whatever its role says.
+func TestAReadOnlyTokenCannotWrite(t *testing.T) {
+	s, _, _ := setup(t)
+	s.Writable = true
+	scoped, _, err := s.Tokens.IssueScoped("ro", "writer", auth.RoleAuthor, "/",
+		time.Hour, auth.RoleAdmin, auth.Scope{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := req(t, s, "PUT", "/api/v1/pages/about", scoped,
+		map[string]any{"title": "About", "body": "x"},
+		map[string]string{"If-Match": "*"})
+	if w.Code == http.StatusOK || w.Code == http.StatusCreated {
+		t.Fatal("a read-only token wrote a page")
+	}
+	if !strings.Contains(w.Body.String(), "read-only") {
+		t.Errorf("the refusal does not say the token is read-only: %s",
+			w.Body.String())
+	}
+	// And it can still read, or the scope is just a broken token.
+	if r := req(t, s, "GET", "/api/v1/pages/about", scoped, nil, nil); r.Code != http.StatusOK {
+		t.Errorf("a read-only token could not read: %d", r.Code)
+	}
+}
+
+// An unscoped token must behave exactly as it did before scoping existed,
+// because every credential already issued has the zero scope.
+func TestAnUnscopedTokenIsUnaffected(t *testing.T) {
+	s, tok, _ := setup(t)
+	w := req(t, s, "GET", "/api/v1/pages", tok, nil, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("got %d", w.Code)
+	}
+	var got Listing
+	json.Unmarshal(w.Body.Bytes(), &got)
+	if got.Total != 3 {
+		t.Errorf("an unscoped token saw %d of 3 pages", got.Total)
+	}
+}

@@ -399,6 +399,11 @@ type Token struct {
 	// parent has to invalidate everything minted from it, or the sessions
 	// outlive the revocation and "revoked" is a claim rather than a fact.
 	Parent string `json:"parent,omitempty"`
+
+	// Scope narrows what this credential reaches beneath what the policy
+	// grants its principal. Zero value means unrestricted, which is what every
+	// token issued before this existed has.
+	Scope Scope `json:"scope,omitempty"`
 }
 
 // IsSession reports whether this was exchanged from another token.
@@ -467,6 +472,24 @@ type TokenStore struct {
 func (ts *TokenStore) Issue(name, principal string, role Role, resource string,
 	ttl time.Duration, issuerRole Role) (secret string, t Token, err error) {
 
+	return ts.IssueScoped(name, principal, role, resource, ttl, issuerRole,
+		Scope{})
+}
+
+// IssueScoped mints a token narrowed to particular content types, locales, or
+// to reading only.
+//
+// A separate entry point rather than a longer Issue, because every existing
+// caller means "unrestricted" and rewriting twenty call sites to pass an empty
+// struct is how a default gets typed wrongly somewhere.
+func (ts *TokenStore) IssueScoped(name, principal string, role Role,
+	resource string, ttl time.Duration, issuerRole Role, scope Scope) (
+	secret string, t Token, err error) {
+
+	if err := scope.Validate(); err != nil {
+		return "", Token{}, err
+	}
+
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 
@@ -509,6 +532,7 @@ func (ts *TokenStore) Issue(name, principal string, role Role, resource string,
 		CreatedAt: now.Unix(),
 		ExpiresAt: now.Add(ttl).Unix(),
 	}
+	t.Scope = scope
 	ts.Tokens = append(ts.Tokens, t)
 	return secret, t, nil
 }

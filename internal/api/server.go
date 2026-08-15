@@ -339,6 +339,14 @@ func (s *Server) may(r *http.Request, act auth.Action, resource string) error {
 		return fmt.Errorf("this token carries the %s role and %s needs %s",
 			tok.Role, act, needed)
 	}
+	// The token's scope, checked before the policy. A scope only ever narrows
+	// — it is intersected with what the policy allows, never unioned — so
+	// checking it first is free and gives a better message: the caller learns
+	// which of five dimensions stopped them rather than a bare refusal that
+	// could be any of them.
+	if !tok.Scope.AllowsAction(act) {
+		return fmt.Errorf("%s", tok.Scope.Why(act, "", ""))
+	}
 	if s.Policy != nil {
 		if d := s.Policy.Evaluate(tok.Principal, act, resource); !d.Allowed {
 			return fmt.Errorf("%s", d.Reason)
@@ -398,7 +406,20 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	}
 	names := sortedNames(pages)
 
-	out := Listing{Total: len(names), Offset: offset, Limit: limit,
+	// Total counts what this caller can see, not what exists. Reporting the
+	// full count to a scoped token both leaks how much is being hidden and
+	// makes paging incoherent: a client asked to fetch 400 items that it will
+	// only ever be shown 12 of.
+	visible := 0
+	for _, n := range names {
+		if err := s.may(r, auth.ActView, "/"+n); err != nil {
+			continue
+		}
+		if ok, _ := s.visibleTo(tokenFrom(r), n, pages[n]); ok {
+			visible++
+		}
+	}
+	out := Listing{Total: visible, Offset: offset, Limit: limit,
 		Commit: commit}
 	for i := offset; i < len(names) && i < offset+limit; i++ {
 		name := names[i]
@@ -409,6 +430,12 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		fields, _ := pages[name].(map[string]any)
+		if ok, _ := s.visibleTo(tokenFrom(r), name, pages[name]); !ok {
+			// Out of the token's scope, and omitted for the same reason as
+			// above: a listing that refuses because one item is out of scope
+			// tells the caller that item exists.
+			continue
+		}
 		out.Pages = append(out.Pages, Page{
 			Name: name, Fields: fields, ETag: tree[name],
 		})
@@ -443,6 +470,47 @@ func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// visibleTo reports whether a scoped token may see a page, and why not.
+//
+// A page the caller cannot see is omitted from a listing rather than refused,
+// for the same reason the resource check already does that: a listing that
+// fails because one item is out of scope tells the caller that item exists.
+func (s *Server) visibleTo(tok *auth.Token, name string, fields any) (bool, string) {
+	if tok == nil || tok.Scope.Empty() {
+		return true, ""
+	}
+	typeName, locale := s.describe(name, fields)
+	if !tok.Scope.AllowsType(typeName) || !tok.Scope.AllowsLocale(locale) {
+		return false, tok.Scope.Why(auth.ActView, typeName, locale)
+	}
+	return true, ""
+}
+
+// describe finds the content type and locale of a page.
+//
+// The type comes from the schema store's bindings, which is authoritative. The
+// locale comes from the page's own field, because a locale is a property of
+// the content rather than of its type — the same type exists in every
+// language, which is the entire point of having locales.
+func (s *Server) describe(name string, fields any) (typeName, locale string) {
+	if s.Types != nil {
+		if store, err := s.Types(); err == nil && store != nil {
+			if bound, ok := store.Bound[name]; ok {
+				typeName = bound
+			}
+		}
+	}
+	if m, ok := fields.(map[string]any); ok {
+		for _, key := range []string{"locale", "lang", "language"} {
+			if v, ok := m[key].(string); ok && v != "" {
+				locale = v
+				break
+			}
+		}
+	}
+	return typeName, locale
+}
+
 func (s *Server) get(w http.ResponseWriter, r *http.Request, name string) {
 	if err := s.may(r, auth.ActView, "/"+name); err != nil {
 		writeError(w, http.StatusForbidden, Error{Error: "not permitted",
@@ -459,6 +527,14 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request, name string) {
 	}
 	oid, ok := tree[name]
 	if !ok {
+		writeError(w, http.StatusNotFound, Error{Error: "no such page"})
+		return
+	}
+	// Out of scope answers exactly as not-found does, and deliberately so.
+	// Answering 403 here would confirm the page exists to a token that was
+	// issued precisely so it could not learn that, which turns every scoped
+	// token into a way to enumerate the pages it cannot read.
+	if visible, _ := s.visibleTo(tokenFrom(r), name, pages[name]); !visible {
 		writeError(w, http.StatusNotFound, Error{Error: "no such page"})
 		return
 	}

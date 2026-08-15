@@ -360,8 +360,16 @@ func tokenIssue(root string, args []string) error {
 	principal := fs.String("principal", "", "who the token acts as")
 	role := fs.String("role", string(auth.RoleReader), "role the token carries")
 	on := fs.String("on", "/", "resource path the token is scoped to")
-	ttl := fs.Duration("ttl", 720*time.Hour, "how long it lasts")
+	ttl := fs.Duration("ttl", 0, "how long it lasts (default from config)")
 	as := fs.String("as", string(auth.RoleAdmin), "role of whoever is issuing")
+	types := fs.String("types", "",
+		"comma-separated content types this token may touch; all if unset")
+	locales := fs.String("locales", "",
+		"comma-separated locales this token may touch; all if unset")
+	readOnly := fs.Bool("read-only", false,
+		"refuse every write regardless of role")
+	forAPI := fs.Bool("api", false,
+		"short-lived and read-only: the shape an integration should hold")
 	rest, flags := leadingArgs(args, 1)
 	if err := fs.Parse(flags); err != nil {
 		return err
@@ -373,12 +381,48 @@ func tokenIssue(root string, args []string) error {
 		return fmt.Errorf("--principal is required: a token acts as somebody")
 	}
 
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return err
+	}
+
+	scope := auth.Scope{
+		Types:    splitList(*types),
+		Locales:  splitList(*locales),
+		ReadOnly: *readOnly,
+	}
+	// --api is a shorthand for the shape an integration should hold, because
+	// the right answer is several flags and nobody types several flags. A
+	// program that reads content needs to read content; anything else it needs
+	// is a decision somebody should make explicitly.
+	if *forAPI {
+		scope.ReadOnly = true
+	}
+
+	life := *ttl
+	if life == 0 {
+		life = cfg.Dur("token.ttl.default")
+		if *forAPI {
+			life = cfg.Dur("token.api.ttl.default")
+		}
+	}
+	// The ceiling is checked here rather than inside Issue, because it is a
+	// deployment policy rather than a property of tokens, and the message has
+	// to name the setting that produced it or nobody can find what to change.
+	if max := cfg.Dur("token.ttl.max"); life > max {
+		return fmt.Errorf(
+			"a %s token is longer than token.ttl.max (%s).\n"+
+				"  Raise the ceiling deliberately if that is right:\n"+
+				"    scrivet config set token.ttl.max %s --accept-risk \"why\"",
+			life, max, life)
+	}
+
 	ts, err := loadTokens(root)
 	if err != nil {
 		return err
 	}
-	secret, tok, err := ts.Issue(rest[0], *principal, auth.Role(*role), *on, *ttl,
-		auth.Role(*as))
+	secret, tok, err := ts.IssueScoped(rest[0], *principal, auth.Role(*role),
+		*on, life, auth.Role(*as), scope)
 	if err != nil {
 		return err
 	}
@@ -402,6 +446,12 @@ func tokenIssue(root string, args []string) error {
 	fmt.Printf("%s%s%s\n", bold, secret, reset)
 	fmt.Printf("\n  %sid %s · %s on %s · expires %s%s\n", dim, tok.ID, tok.Role,
 		tok.Resource, time.Unix(tok.ExpiresAt, 0).UTC().Format("2006-01-02"), reset)
+	if !tok.Scope.Empty() {
+		// Shown at issue time because this is the only moment anybody looks.
+		// A scope nobody can see is a scope nobody trusts, and an operator who
+		// cannot confirm the token is narrow will issue a wide one.
+		fmt.Printf("  %sscope: %s%s\n", dim, tok.Scope, reset)
+	}
 	fmt.Printf("  %sthis is the only time it is shown; only a hash is stored%s\n",
 		yellow, reset)
 	return nil
@@ -561,4 +611,17 @@ func tokenStale(root string, args []string) error {
 	fmt.Printf("\n  %sa credential nobody uses is one nobody notices is still "+
 		"valid%s\n", dim, reset)
 	return nil
+}
+
+// splitList turns a comma-separated flag into a list, dropping blanks so that
+// `--types article,` does not produce a scope containing an empty name — which
+// would fail validation and read as though the flag itself were rejected.
+func splitList(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
