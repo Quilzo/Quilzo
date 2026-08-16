@@ -12,7 +12,7 @@ import "strings"
 // depth counting the table check does.
 //
 // Keeping it hand-written keeps the binary dependency-free, which for something
-// that ships as a 4 MB scratch image is worth more than the convenience of a
+// that ships as a scratch image is worth more than the convenience of a
 // parser. The risk of hand-rolling is real though — the places people get this
 // wrong are quoted attribute values containing `>`, comments containing markup,
 // and the raw-text elements — so each of those is handled explicitly below and

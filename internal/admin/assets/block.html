@@ -6,6 +6,12 @@
 {{else if eq .Kind "code"}}<pre class="code"><code>{{.Text}}</code></pre>
 {{else if eq .Kind "list"}}<ul>{{range .Items}}<li>{{.}}</li>{{end}}</ul>
 {{else if eq .Kind "steps"}}<ol>{{range .Items}}<li>{{.}}</li>{{end}}</ol>
+{{else if eq .Kind "shot"}}
+<figure class="shot">
+  <img src="/docs/img/{{.Src}}.png" alt="{{.Text}}" width="500" height="360"
+       loading="lazy">
+  <figcaption>{{.Text}}</figcaption>
+</figure>
 {{else if eq .Kind "table"}}
 <div class="table-wrap">
 <table>

@@ -49,10 +49,12 @@ var chapterStart = chapter{
 				sub("What it is made of"),
 				p("One static binary with no third-party dependencies at all — " +
 					"not vendored, not pinned, none. The container image is " +
-					"about four megabytes and contains the binary and nothing " +
-					"else: no shell, no package manager, no interpreter. There " +
-					"is nothing in it to exploit and nothing in it to patch on a " +
-					"Tuesday."),
+					"built FROM scratch and contains the binary and nothing " +
+					"else: no shell, no package manager, no interpreter, no " +
+					"libc. There is nothing in it to exploit and nothing in it " +
+					"to patch on a Tuesday, which is a different property from " +
+					"being small — it is currently about 23 MB, and most of that " +
+					"is the Go runtime and this manual."),
 				note("Everything in this manual is reachable from the interface " +
 					"you are in. Where a section names a command, that command " +
 					"does the same thing from a terminal — they are the same " +
@@ -93,6 +95,8 @@ var chapterStart = chapter{
 					"development server ends up on the internet, so widening it " +
 					"has to be a decision somebody typed."),
 				code("scrivet serve --addr 127.0.0.1:8080"),
+				shot("signin", "The sign-in screen. One field, and an "+
+					"explanation of why there is no second one."),
 				p("Open it, paste the token, and you are signed in. There is no " +
 					"password: no password storage, no reset flow, no credential " +
 					"stuffing, and no puzzle to solve — WCAG 2.2 treats those as " +
@@ -102,6 +106,8 @@ var chapterStart = chapter{
 					"page to one means every write to that page has to satisfy " +
 					"it — from this interface, from the command line, from the " +
 					"API and from an agent, with no way to write around it."),
+				shot("types", "The Types screen, with a content type that has "+
+					"six fields and the pages required to satisfy it."),
 				p("Do this before writing much content. Adding a required field " +
 					"to a type that fifty pages are bound to means fifty pages " +
 					"that cannot be saved until somebody fills it in."),
@@ -111,22 +117,33 @@ var chapterStart = chapter{
 					"labels, and the fields that are missing shown as empty " +
 					"rather than absent. A page with no type gets a plain form " +
 					"over whatever keys it happens to have."),
+				shot("pages", "Pages: everything in the draft, and which of it "+
+					"differs from what is live."),
+				shot("editor", "The editor for a page with a type — the "+
+					"declared fields, in the order the type declares them, with "+
+					"the author's own labels."),
 				sub("7. Look at it before anybody else does"),
 				p("Review shows what differs from what is live, and runs the " +
 					"accessibility checks over the rendered result. A blocking " +
 					"failure stops publication unless somebody gives a reason, " +
 					"and the reason is recorded."),
+				shot("review", "Review: what is about to change, and what the "+
+					"accessibility checks say about it."),
 				sub("8. Publish"),
 				p("Publishing moves the live pointer. Everything that was " +
 					"checked is what goes out, and the version you moved away " +
 					"from is still stored — so rolling back is another pointer " +
 					"move rather than a restore from a backup."),
+				shot("publishing", "Publishing: each environment, what it is "+
+					"serving, and what is waiting to go out."),
 				sub("9. Serve it"),
 				code("scrivet site --addr 0.0.0.0:8081 --base-url https://example.org"),
 				p("Two processes rather than one. The public site serves " +
 					"published content and has no editing surface at all, so " +
 					"the part of the system exposed to the internet cannot write " +
 					"anything even if it is wrong."),
+				shot("security", "The security posture scan, which reads this "+
+					"deployment rather than a checklist."),
 				warn("Before this is reachable from outside: read the Security " +
 					"chapter, put TLS in front of both processes, and open the " +
 					"Security screen — it scans this deployment and lists what " +

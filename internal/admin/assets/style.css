@@ -836,6 +836,22 @@ body.nav-top > .sidenav { display: none; }
 .toc ul { list-style: none; margin: 0; padding: 0; }
 .toc li { margin: 0 0 .3rem; }
 
+/* A screenshot with its caption.
+ *
+ * Bordered rather than floated: these sit in the reading order between two
+ * paragraphs, which is where a step-by-step walkthrough wants them. The
+ * caption is the alternative text as well as the visible label, so it is a
+ * real figcaption rather than a paragraph that happens to be underneath. */
+.shot { margin: 1.25rem 0 1.75rem; max-width: 68ch; }
+.shot img {
+  display: block; max-width: 100%; height: auto;
+  border: 1px solid var(--outline-variant); border-radius: var(--shape-md);
+  background: var(--surface-container-lowest);
+}
+.shot figcaption {
+  margin-top: .5rem; font: var(--body-md); color: var(--on-surface-variant);
+}
+
 pre.code {
   background: var(--surface-container-high); color: var(--on-surface);
   border: 1px solid var(--outline-variant); border-radius: var(--shape-sm);

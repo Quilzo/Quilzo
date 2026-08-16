@@ -100,6 +100,8 @@ var chapterAdmin = chapter{
 					"because they are two halves of one question and keeping " +
 					"them on separate screens is how somebody ends up revoking a " +
 					"grant and leaving a working token."),
+				shot("people", "People: grants and live sessions side by side, "+
+					"because they are two halves of one question."),
 				steps(
 					"Grant the role first. The policy is what decides; a credential only proves identity.",
 					"Issue a credential for that principal. The secret is shown once.",

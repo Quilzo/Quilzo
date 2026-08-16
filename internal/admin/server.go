@@ -9,7 +9,7 @@
 // app reimplements each one and usually gets at least one wrong — focus after
 // navigation, the back button, find-in-page across virtualised lists.
 //
-// The other reasons point the same way. scrivet is one static binary in a 4 MB
+// The other reasons point the same way. scrivet is one static binary in a
 // scratch image with no dependencies; adding a JavaScript build would bring a
 // node toolchain, several hundred transitive packages, and a bundle larger than
 // the entire program. For a CMS whose argument is that nothing in it executes,
@@ -621,6 +621,7 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("/api/", s.API)
 	}
 	mux.HandleFunc("/docs", s.handleDocs)
+	mux.HandleFunc("/docs/img/", s.handleDocImage)
 	mux.HandleFunc("/style.css", s.handleCSS)
 	return securityHeaders(sameSiteOnly(limitBody(mux)))
 }

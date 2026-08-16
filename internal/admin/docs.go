@@ -1,7 +1,9 @@
 package admin
 
 import (
+	"io/fs"
 	"net/http"
+	"path"
 	"strings"
 )
 
@@ -41,8 +43,10 @@ type section struct {
 // else — every block renders through one template, so the documentation cannot
 // drift into eleven different visual treatments for the same idea.
 type block struct {
-	Kind string // "p", "list", "steps", "table", "code", "note", "warn", "sub"
-	Text string // for p, code, note, warn, sub
+	Kind string // "p", "list", "steps", "table", "code", "note", "warn", "sub", "shot"
+	Text string // for p, code, note, warn, sub; the caption for shot
+	// Src names an embedded screenshot, without its extension.
+	Src string
 	// Items is the content of a list or the ordered content of steps.
 	Items []string
 	// Head and Rows make a table.
@@ -57,6 +61,18 @@ func warn(text string) block      { return block{Kind: "warn", Text: text} }
 func code(text string) block      { return block{Kind: "code", Text: text} }
 func list(items ...string) block  { return block{Kind: "list", Items: items} }
 func steps(items ...string) block { return block{Kind: "steps", Items: items} }
+
+// shot places a screenshot with a caption.
+//
+// The caption is required and is not decoration: a picture of a screen tells
+// somebody what it looks like and never what to look at, and a manual whose
+// images are unlabelled is a manual that is inaccessible to anybody using a
+// screen reader. The caption is the alternative text and the visible label,
+// which is the right shape when the two would say the same thing.
+func shot(src, caption string) block {
+	return block{Kind: "shot", Src: src, Text: caption}
+}
+
 func table(head []string, rows ...[]string) block {
 	return block{Kind: "table", Head: head, Rows: rows}
 }
@@ -65,6 +81,48 @@ func table(head []string, rows ...[]string) block {
 type chapter struct {
 	Name     string
 	Sections []section
+}
+
+// docImages is the set of embedded screenshots, so a section naming one that
+// does not exist fails a test rather than rendering a broken image.
+func docImages() map[string]bool {
+	out := map[string]bool{}
+	names, err := fs.Glob(assets, "assets/docimg/*.png")
+	if err != nil {
+		return out
+	}
+	for _, n := range names {
+		out[strings.TrimSuffix(path.Base(n), ".png")] = true
+	}
+	return out
+}
+
+// handleDocImage serves one.
+//
+// From the embedded set by exact name, never by a path built from the request.
+// The name is matched against what is embedded rather than joined onto a
+// directory, so there is no traversal to get wrong — the same rule the media
+// route follows, for the same reason.
+func (s *Server) handleDocImage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireAuth(w, r); !ok {
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/docs/img/")
+	if !docImages()[strings.TrimSuffix(name, ".png")] {
+		http.NotFound(w, r)
+		return
+	}
+	body, err := assets.ReadFile("assets/docimg/" + strings.TrimSuffix(name, ".png") + ".png")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "image/png")
+	h.Set("X-Content-Type-Options", "nosniff")
+	// Shipped in the binary, so they change only when the binary does.
+	h.Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write(body)
 }
 
 func (s *Server) handleDocs(w http.ResponseWriter, r *http.Request) {

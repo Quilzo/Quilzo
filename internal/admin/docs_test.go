@@ -200,3 +200,42 @@ var notADestination = map[string]string{
 	"/integrations": "in the table",
 	"/profile":      "in the table",
 }
+
+// A section naming a screenshot that is not embedded renders a broken image.
+//
+// Which is worse in documentation than anywhere else: the reader concludes the
+// manual is stale and stops trusting the rest of it.
+func TestEveryScreenshotIsEmbedded(t *testing.T) {
+	have := docImages()
+	if len(have) == 0 {
+		t.Fatal("no screenshots are embedded; the glob is wrong")
+	}
+	used := map[string]bool{}
+	for _, c := range manual {
+		for _, sec := range c.Sections {
+			for _, b := range sec.Body {
+				if b.Kind != "shot" {
+					continue
+				}
+				used[b.Src] = true
+				if !have[b.Src] {
+					t.Errorf("section %q shows %q and no such image is embedded",
+						sec.ID, b.Src)
+				}
+				// The caption is the alternative text as well as the visible
+				// label, so an empty one is an image nobody using a screen
+				// reader can make sense of.
+				if strings.TrimSpace(b.Text) == "" {
+					t.Errorf("the %q screenshot in %q has no caption",
+						b.Src, sec.ID)
+				}
+			}
+		}
+	}
+	for name := range have {
+		if !used[name] {
+			t.Errorf("%s.png is embedded and no section shows it, so it is "+
+				"weight in the binary for nothing", name)
+		}
+	}
+}
