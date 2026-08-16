@@ -462,3 +462,43 @@ func TestAHeadRequestForAMissingPageHasNoBody(t *testing.T) {
 		t.Errorf("a HEAD returned %d bytes of body", w.Body.Len())
 	}
 }
+
+// robots.txt must not advertise a sitemap that is not there.
+//
+// It did, unconditionally and relatively. A site started without a base URL —
+// the default — told every crawler to fetch /sitemap.xml, which answers 404
+// precisely because there is no base URL to build absolute entries from. And
+// the directive was relative, which the robots.txt specification does not allow
+// for this field: a sitemap may live on another host, so it is the one line
+// that has to be absolute.
+func TestRobotsAdvertisesTheSitemapOnlyWhenThereIsOne(t *testing.T) {
+	st := published(t, map[string]any{"index": map[string]any{"title": "Home"}})
+
+	// published() sets a base URL, so start by taking it away: that is the
+	// default a person gets from `scrivet site` with no flags.
+	st.BaseURL = ""
+	body := get(st, "/robots.txt", nil).Body.String()
+	if strings.Contains(body, "Sitemap:") {
+		t.Errorf("robots.txt advertises a sitemap on a site that cannot "+
+			"produce one:\n%s", body)
+	}
+	if code := get(st, "/sitemap.xml", nil).Code; code == http.StatusOK {
+		t.Fatal("the fixture is wrong: this site should have no sitemap")
+	}
+
+	// With one: absolute, and the sitemap answers.
+	st.BaseURL = "https://example.org"
+	body = get(st, "/robots.txt", nil).Body.String()
+	if !strings.Contains(body, "Sitemap: https://example.org/sitemap.xml") {
+		t.Errorf("robots.txt does not point at the sitemap absolutely:\n%s", body)
+	}
+	if code := get(st, "/sitemap.xml", nil).Code; code != http.StatusOK {
+		t.Errorf("the advertised sitemap answered %d", code)
+	}
+
+	// A trailing slash on the base URL must not produce a doubled one.
+	st.BaseURL = "https://example.org/"
+	if body = get(st, "/robots.txt", nil).Body.String(); strings.Contains(body, "org//sitemap") {
+		t.Errorf("a trailing slash produced a doubled path:\n%s", body)
+	}
+}

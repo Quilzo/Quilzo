@@ -713,12 +713,31 @@ Pages you have already opened remain available.</p>
 
 func (st *Site) robots(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	fmt.Fprintf(w, "User-agent: *\nAllow: /\n\nSitemap: /sitemap.xml\n")
+	fmt.Fprintf(w, "User-agent: *\nAllow: /\n")
+
+	// The sitemap is advertised only when there is one to advertise, and only
+	// as an absolute URL.
+	//
+	// Both halves were wrong. The directive was emitted unconditionally, so a
+	// site started without a base URL — which is the default — told every
+	// crawler to fetch a sitemap that answers 404. And it was relative, which
+	// the robots.txt specification does not permit for this directive: it is
+	// the one field that must be absolute, because a sitemap may live on
+	// another host.
+	if st.BaseURL != "" {
+		fmt.Fprintf(w, "\nSitemap: %s/sitemap.xml\n",
+			strings.TrimRight(st.BaseURL, "/"))
+	}
 	// One of the channels RSL uses to advertise terms. Pointing at it from
 	// robots.txt is what makes it discoverable by a crawler that already reads
 	// robots.txt, which is all of them.
 	if st.Licence != nil {
-		fmt.Fprintf(w, "License: /license.xml\n")
+		if st.BaseURL != "" {
+			fmt.Fprintf(w, "License: %s/license.xml\n",
+				strings.TrimRight(st.BaseURL, "/"))
+		} else {
+			fmt.Fprintf(w, "License: /license.xml\n")
+		}
 	}
 }
 

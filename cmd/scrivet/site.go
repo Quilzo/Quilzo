@@ -229,6 +229,16 @@ func cmdSite(root string, args []string) error {
 			// "index"; a site whose pages are called home, main or landing
 			// starts cleanly, reports how many pages it indexed, and answers
 			// / with a 404 — and nothing says why.
+			// The same class of silence as the index warning below: without a
+			// base URL the sitemap answers 404 and robots.txt no longer
+			// advertises one, so a site starts cleanly and is invisible to
+			// every crawler. Said at startup, because nobody checks
+			// /sitemap.xml on a site they have just brought up.
+			if st.BaseURL == "" {
+				fmt.Fprintf(os.Stderr, "  %sno --base-url, so there is no "+
+					"sitemap and robots.txt does not advertise one%s\n",
+					yellow, reset)
+			}
 			if _, ok := pages[st.Index]; !ok {
 				fmt.Fprintf(os.Stderr, "  %sno page named %q, so / will 404%s\n",
 					yellow, st.Index, reset)
