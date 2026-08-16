@@ -6,6 +6,8 @@ import (
 
 	"github.com/rsh1k/scrivet/internal/admin"
 	"github.com/rsh1k/scrivet/internal/anchor"
+	"github.com/rsh1k/scrivet/internal/config"
+	"github.com/rsh1k/scrivet/internal/form"
 	"github.com/rsh1k/scrivet/internal/medialib"
 	"github.com/rsh1k/scrivet/internal/site"
 	"github.com/rsh1k/scrivet/internal/store"
@@ -24,6 +26,18 @@ func mediaDir(root string) string { return filepath.Join(root, "media") }
 
 func openMedia(root string) (*medialib.Library, error) {
 	return medialib.Open(mediaDir(root))
+}
+
+func formsPath(root string) string     { return filepath.Join(root, "forms.json") }
+func submissionDir(root string) string { return filepath.Join(root, "submissions") }
+
+func loadForms(root string) (*form.Set, error) {
+	s := &form.Set{}
+	return s, loadJSON(formsPath(root), s)
+}
+
+func openSubmissions(root string) (*form.Store, error) {
+	return form.Open(submissionDir(root))
 }
 
 func profilesPath(root string) string { return filepath.Join(root, "profiles.json") }
@@ -155,4 +169,17 @@ func describeStampAnchor(a *timestamp.Anchor) string {
 		return a.Method + " submitted, not yet confirmed"
 	}
 	return a.Method + " " + a.Reference
+}
+
+// mustConfig reads configuration, falling back to defaults.
+//
+// The defaults are the recommended configuration, so a store whose config file
+// is missing gets the safe values rather than zero values — which for a rate
+// limit would mean no limit at all.
+func mustConfig(root string) *config.Config {
+	c, err := loadConfig(root)
+	if err != nil || c == nil {
+		return config.New()
+	}
+	return c
 }

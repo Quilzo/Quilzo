@@ -78,6 +78,7 @@ importing
   scrivet media add FILE --alt "..."        validate and accept an upload
   scrivet media get https://... --alt "..." fetch one, checked at connect time
   scrivet media formats                     what is accepted, and what is not
+  scrivet form list | expire | erase VALUE  forms, retention and erasure
   scrivet listing list | run NAME           declared queries a page can show
   scrivet terms list | check                the controlled vocabularies
   scrivet menu list | check                 navigation, and whether it resolves
@@ -316,6 +317,8 @@ func main() {
 		err = cmdImport(root, cmdArgs)
 	case "media":
 		err = cmdMedia(root, cmdArgs)
+	case "form", "forms":
+		err = cmdForms(root, cmdArgs)
 	case "listing", "listings":
 		err = cmdListings(root, cmdArgs)
 	case "terms", "taxonomy":

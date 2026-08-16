@@ -129,6 +129,8 @@ type Server struct {
 	// Decentralised renders the published site so its IPFS identifier can be
 	// computed here rather than taken from whoever stores it.
 	Decentralised *Decentralised
+	// Forms is what visitors sent, and the declarations that shaped it.
+	Forms *Forms
 	// Approvals is dual authorisation: how many people must agree before
 	// anything is published, and who has.
 	Approvals *Approvals
@@ -579,6 +581,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/integrations/extension", s.handleExtensionSave)
 	mux.HandleFunc("/integrations/extension/remove", s.handleExtensionRemove)
 	mux.HandleFunc("/integrations/siem", s.handleSIEMExport)
+	mux.HandleFunc("/forms", s.handleForms)
+	mux.HandleFunc("/forms/save", s.handleFormSave)
+	mux.HandleFunc("/forms/close", s.handleFormClose)
+	mux.HandleFunc("/forms/export", s.handleFormExport)
+	mux.HandleFunc("/forms/expire", s.handleFormExpire)
+	mux.HandleFunc("/forms/purge", s.handleFormPurge)
+	mux.HandleFunc("/forms/submission/delete", s.handleSubmissionDelete)
 	mux.HandleFunc("/listings", s.handleListings)
 	mux.HandleFunc("/listings/save", s.handleListingSave)
 	mux.HandleFunc("/listings/remove", s.handleListingRemove)

@@ -66,6 +66,8 @@ var coverage = map[string]surfaces{
 	"agents":     {GUI: "/security/agents", MCP: []string{"agent_activity"}},
 	"export":     {GUI: "/transfer", MCP: []string{"export_site"}},
 	"ipfs":       {GUI: "/decentralised", MCP: []string{"content_id"}},
+	"form":       {GUI: "/forms", NoMCP: "submissions are what members of the public typed; an agent that can read the postbag is a data breach with a tool call"},
+	"forms":      {GUI: "/forms", NoMCP: "as form"},
 	"listing":    {GUI: "/listings", MCP: []string{"run_listing"}},
 	"listings":   {GUI: "/listings", MCP: []string{"run_listing"}},
 	"terms":      {GUI: "/structure", MCP: []string{"list_terms"}},

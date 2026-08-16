@@ -117,6 +117,68 @@ var chapterContent = chapter{
 			},
 		},
 		{
+			ID:      "forms",
+			Title:   "Forms and submissions",
+			Summary: "What visitors send, kept deliberately outside the immutable store.",
+			Body: []block{
+				p("A form is a declared set of questions. Visitors post to " +
+					"<code>/form/&lt;name&gt;</code> on the published site, " +
+					"and what they send is read here."),
+				sub("Why submissions are not in the content store"),
+				p("Everything else in this product lives in a " +
+					"content-addressed, append-only store, and that is the " +
+					"central argument: nothing is overwritten, history is " +
+					"free, any claim about the content is checkable."),
+				p("A submission must not go anywhere near it. A submission is " +
+					"personal data, somebody has a right to have it erased, " +
+					"and an append-only merkle store cannot erase anything — " +
+					"removing an object breaks every hash above it, and those " +
+					"hashes being stable is the whole point. A store that " +
+					"cannot forget is right for published content and wrong " +
+					"for a message from a member of the public."),
+				p("So submissions are plain files: mutable, individually " +
+					"deletable, with a retention period that removes them " +
+					"without anybody asking. It is the least sophisticated " +
+					"storage here and that is the feature."),
+				sub("What the public server may do"),
+				p("Append a submission, and nothing else. It has no handle on " +
+					"the content store, cannot reach a ref, cannot cause a " +
+					"commit, and has no route that reads, edits or removes a " +
+					"submission. Somebody who owns that process can add " +
+					"rubbish and cannot read the postbag."),
+				sub("Spam, without a puzzle"),
+				list(
+					"A hidden field people never see and scripts fill in.",
+					"A minimum time between the form being served and coming back — a person cannot read and answer in under two seconds; a script does it in twenty milliseconds.",
+					"A per-source rate limit, where a failed attempt counts too, so probing is slowed by its own failures.",
+				),
+				p("No CAPTCHA. WCAG 2.2 treats image recognition and " +
+					"transcription as cognitive function tests, and the " +
+					"sign-in screen already refuses to use one — putting one " +
+					"on a public form would hold the public to a stricter " +
+					"standard than staff."),
+				note("A refusal never says which check caught it. Telling a " +
+					"script that it failed the timing check tells it what to " +
+					"change."),
+				sub("Erasure"),
+				p("Somebody asking to be forgotten gives an address, not a " +
+					"submission identifier, so the screen searches every " +
+					"form's values for one. Individual submissions can be " +
+					"deleted, a whole form's can be purged, and everything " +
+					"expires on its own at the retention period — which is a " +
+					"property of the form, because an enquiry and a job " +
+					"application have different answers."),
+				sub("Exporting"),
+				warn("A CSV cell beginning =, +, - or @ is a formula in Excel, " +
+					"Numbers and Sheets, and =WEBSERVICE will send the rest of " +
+					"the sheet to whoever typed it. Quoting does not help — " +
+					"the escaping is correct CSV and the spreadsheet evaluates " +
+					"it anyway. Exports prefix those values with an " +
+					"apostrophe, at export rather than at collection, so the " +
+					"stored submission keeps what the person actually wrote."),
+			},
+		},
+		{
 			ID:      "listings",
 			Title:   "Listings",
 			Summary: "A declared query a page can show — the feature people leave for Drupal to get.",

@@ -61,6 +61,10 @@ var commandNeeds = map[string]need{
 	// Editing either is done through the interface, where the existing terms
 	// and their usage counts are visible — changing what everybody is allowed
 	// to say about the content is a governance act, not a shell one-liner.
+	// Retention and erasure change what is stored about members of the
+	// public, so they need the permission to write rather than to read.
+	"form":       {action: auth.ActEditDraft},
+	"forms":      {action: auth.ActEditDraft},
 	"listing":    {action: auth.ActView},
 	"listings":   {action: auth.ActView},
 	"terms":      {action: auth.ActView},

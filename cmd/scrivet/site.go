@@ -15,6 +15,7 @@ import (
 	"github.com/rsh1k/scrivet/internal/api"
 	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/collection"
+	"github.com/rsh1k/scrivet/internal/form"
 	"github.com/rsh1k/scrivet/internal/listing"
 	"github.com/rsh1k/scrivet/internal/media"
 	"github.com/rsh1k/scrivet/internal/provenance"
@@ -72,6 +73,30 @@ func cmdSite(root string, args []string) error {
 		st.Stylesheet = string(css)
 	}
 	st.BaseURL = strings.TrimSpace(*baseURL)
+	// The one write capability this process gets: append a submission to a
+	// store that is not the content store. It cannot read one back — that is
+	// the admin's job, behind authentication, in a different process.
+	if fs, ferr := openSubmissions(root); ferr == nil {
+		st.Forms = &public.Forms{
+			Set:   func() (*form.Set, error) { return loadForms(root) },
+			Store: fs,
+			Limit: throttle.New(throttlePolicy(mustConfig(root))),
+			Audit: func(name, source string, accepted bool) {
+				outcome := audit.Success
+				if !accepted {
+					outcome = audit.Denied
+				}
+				// The form and the source, never the content. A log outliving
+				// the retention period must not be where the deleted data
+				// survives.
+				record(root, audit.Record{
+					Action: "form.submit", Resource: "/" + name,
+					Outcome: outcome, Principal: source,
+					Kind: audit.KindUnknown,
+				})
+			},
+		}
+	}
 	// The declared listings, and one index cache for the process. Without
 	// these a page that shows a query renders without it — which is what
 	// happened the first time, and is invisible because an absent section

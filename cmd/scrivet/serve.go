@@ -24,6 +24,7 @@ import (
 	"github.com/rsh1k/scrivet/internal/csp"
 	"github.com/rsh1k/scrivet/internal/ext"
 	"github.com/rsh1k/scrivet/internal/fetch"
+	"github.com/rsh1k/scrivet/internal/form"
 	"github.com/rsh1k/scrivet/internal/i18n"
 	"github.com/rsh1k/scrivet/internal/listing"
 	"github.com/rsh1k/scrivet/internal/media"
@@ -242,6 +243,13 @@ func cmdServe(root string, args []string) error {
 	// Dual authorisation. The same files and the same engine the command line
 	// uses — a second implementation of an approval rule would be a second
 	// answer to "may this be published".
+	if fs, ferr := openSubmissions(root); ferr == nil {
+		srv.Forms = &admin.Forms{
+			Load:  func() (*form.Set, error) { return loadForms(root) },
+			Save:  func(set *form.Set) error { return saveJSON(formsPath(root), set) },
+			Store: fs,
+		}
+	}
 	srv.Approvals = &admin.Approvals{
 		Policy: func() (collab.Policy, error) { return loadApprovalPolicy(root) },
 		Current: func() (*collab.Proposal, error) {

@@ -1,0 +1,177 @@
+{{template "head" .}}
+<h1>Forms</h1>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+<p class="lead">
+  What visitors sent, kept deliberately outside the content store. A submission
+  is personal data somebody may ask you to erase, and an append-only store
+  cannot erase anything — so these live in plain files that can be deleted one
+  at a time and disappear on their own after their retention period.
+</p>
+
+{{if not .Forms}}
+<p>No forms yet.</p>
+{{else}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Form</th><th scope="col">Held</th>
+    <th scope="col">Kept for</th><th scope="col">State</th><th scope="col"></th>
+  </tr></thead>
+  <tbody>
+  {{range .Forms}}
+  <tr>
+    <th scope="row"><a href="/forms?f={{.Name}}">{{.Name}}</a>
+      {{if .Label}}<div class="hint">{{.Label}}</div>{{end}}</th>
+    <td>{{.Count}}{{if .Oldest}}<div class="hint">oldest {{ago .Oldest}}</div>{{end}}</td>
+    <td class="hint">{{.Retention}} days</td>
+    <td>{{if .Closed}}<span class="tag tag-warn">closed</span>
+        {{else}}<span class="tag tag-ok">open</span>{{end}}</td>
+    <td>
+      <form method="post" action="/forms/close" class="inline">
+        <input type="hidden" name="form" value="{{.Name}}">
+        <button type="submit">{{if .Closed}}Reopen{{else}}Close{{end}}</button>
+      </form>
+      <form method="post" action="/forms/export" class="inline">
+        <input type="hidden" name="form" value="{{.Name}}">
+        <button type="submit">Export</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+<p class="hint">
+  Put a form on a page by posting to <code>/form/&lt;name&gt;</code>. The public
+  server can append a submission and cannot read one — everything on this screen
+  is behind your sign-in, in a different process.
+</p>
+<form method="post" action="/forms/expire" class="inline">
+  <button type="submit">Run retention now</button>
+</form>
+{{end}}
+
+{{if .Submissions}}
+<h2>{{.Selected}}</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Received</th>
+    {{range .Fields}}<th scope="col">{{.Label}}</th>{{end}}
+    <th scope="col"></th>
+  </tr></thead>
+  <tbody>
+  {{range $sub := .Submissions}}
+  <tr>
+    <th scope="row" class="hint">{{ago $sub.At}}
+      <div class="hint"><code>{{short $sub.ID}}</code></div></th>
+    {{range $f := $.Fields}}
+    <td>{{if $f.Sensitive}}<span class="hint">held, not shown</span>
+        {{else}}{{index $sub.Values $f.Name}}{{end}}</td>
+    {{end}}
+    <td>
+      <form method="post" action="/forms/submission/delete" class="inline">
+        <input type="hidden" name="form" value="{{$sub.Form}}">
+        <input type="hidden" name="id" value="{{$sub.ID}}">
+        <button type="submit" class="danger">Delete</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<h2 id="erasure">Find and erase</h2>
+<p class="hint">
+  Somebody asking to be forgotten gives you an address, not a submission
+  identifier. This searches every form's values for it.
+</p>
+<form method="get" action="/forms" class="inline">
+  <label for="q">Search submissions for</label>
+  <input id="q" name="q" value="{{.Query}}" size="32"
+         placeholder="dana@example.org">
+  <button type="submit">Find</button>
+</form>
+{{if .Found}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Form</th><th scope="col">Received</th>
+    <th scope="col">Values</th><th scope="col"></th>
+  </tr></thead>
+  <tbody>
+  {{range .Found}}
+  <tr>
+    <th scope="row">{{.Form}}</th>
+    <td class="hint">{{ago .At}}</td>
+    <td class="hint">{{range $k, $v := .Values}}{{$k}}={{$v}} {{end}}</td>
+    <td>
+      <form method="post" action="/forms/submission/delete" class="inline">
+        <input type="hidden" name="form" value="{{.Form}}">
+        <input type="hidden" name="id" value="{{.ID}}">
+        <button type="submit" class="danger">Erase</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<h2>Declare a form, or add a field</h2>
+<form method="post" action="/forms/save">
+  <div class="grid2">
+    <p><label for="f-name">Form</label>
+      <input id="f-name" name="form" required spellcheck="false"
+             placeholder="contact"></p>
+    <p><label for="f-label">Label</label>
+      <input id="f-label" name="label" placeholder="Contact us"></p>
+    <p><label for="f-notice">Privacy notice</label>
+      <input id="f-notice" name="notice"
+             placeholder="what happens to what they send">
+      <span class="hint">Required when the form is created. A form collecting
+        personal data has to say what happens to it.</span></p>
+    <p><label for="f-ret">Kept for, in days</label>
+      <input id="f-ret" name="retention" inputmode="numeric" placeholder="90">
+      <span class="hint">At most {{.MaxRetention}}.</span></p>
+    <p><label for="f-field">Field</label>
+      <input id="f-field" name="field" spellcheck="false" placeholder="email"></p>
+    <p><label for="f-flabel">Its label</label>
+      <input id="f-flabel" name="field_label" placeholder="Your email"></p>
+    <p><label for="f-kind">Accepts</label>
+      <select id="f-kind" name="field_kind">
+        {{range .Kinds}}<option value="{{.}}">{{.}}</option>{{end}}
+      </select></p>
+    <p><label for="f-choices">Choices</label>
+      <input id="f-choices" name="choices" placeholder="sales, support">
+      <span class="hint">Comma separated, for a choice field.</span></p>
+    <p><label for="f-req">Required</label>
+      <input id="f-req" type="checkbox" name="required" value="1"></p>
+    <p><label for="f-sens">Sensitive</label>
+      <input id="f-sens" type="checkbox" name="sensitive" value="1">
+      <span class="hint">Held but not shown in listings.</span></p>
+  </div>
+  <button type="submit">Save</button>
+</form>
+
+{{if .CanErase}}
+<h2>Erase everything a form gathered</h2>
+<form method="post" action="/forms/purge" class="inline">
+  <label for="p-form">Form</label>
+  <input id="p-form" name="form" required spellcheck="false">
+  <label for="p-conf">Type its name again</label>
+  <input id="p-conf" name="confirm" required spellcheck="false">
+  <button type="submit" class="danger">Erase all</button>
+</form>
+<p class="hint">
+  Irreversible across the whole form. This is the operation an append-only
+  store cannot offer, and the reason submissions are not in one.
+</p>
+{{end}}
+{{template "foot" .}}

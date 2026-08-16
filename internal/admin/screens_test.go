@@ -18,6 +18,7 @@ import (
 	"github.com/rsh1k/scrivet/internal/config"
 	"github.com/rsh1k/scrivet/internal/csp"
 	"github.com/rsh1k/scrivet/internal/ext"
+	"github.com/rsh1k/scrivet/internal/form"
 	"github.com/rsh1k/scrivet/internal/i18n"
 	"github.com/rsh1k/scrivet/internal/listing"
 	"github.com/rsh1k/scrivet/internal/media"
@@ -314,6 +315,24 @@ func fullyWired(t *testing.T) (*Server, string) {
 				At: "2026-08-16T09:00:00Z",
 			}}, nil
 		},
+	}
+
+	fstore, err := form.Open(filepath.Join(t.TempDir(), "submissions"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	forms := &form.Set{Forms: []form.Form{{
+		Name: "contact", Label: "Contact us",
+		Notice: "Kept for 90 days and used only to reply.",
+		Fields: []form.Field{
+			{Name: "name", Label: "Name", Kind: form.Line, Required: true},
+			{Name: "email", Label: "Email", Kind: form.Email},
+		},
+	}}}
+	srv.Forms = &Forms{
+		Load:  func() (*form.Set, error) { return forms, nil },
+		Save:  func(*form.Set) error { return nil },
+		Store: fstore,
 	}
 
 	lists := &listing.Set{}

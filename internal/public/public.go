@@ -105,6 +105,9 @@ type Site struct {
 	// fails to assemble rather than rendering without it — a listing-shaped
 	// hole is not noticed until somebody asks why the table is empty.
 	Listings *listing.Resolver
+	// Forms is the one write capability this server has: append a submission,
+	// to a store that is not the content store. Nil means /form/ 404s.
+	Forms *Forms
 	// Media serves the asset library at /media/. Nil means the route 404s,
 	// which is right for a deployment with no library — and was, until this
 	// field existed, the behaviour of every deployment including the ones with
@@ -130,6 +133,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/robots.txt", st.robots)
 	mux.HandleFunc("/llms.txt", st.llms)
 	mux.HandleFunc("/media/", st.mediaFile)
+	mux.HandleFunc("/form/", st.submit)
 	mux.HandleFunc("/", st.page)
 	return st.securityHeaders(mux)
 }
