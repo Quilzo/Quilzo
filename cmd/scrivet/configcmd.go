@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rsh1k/scrivet/internal/atomicfile"
 	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/config"
 	"github.com/rsh1k/scrivet/internal/throttle"
@@ -42,7 +43,7 @@ func saveConfig(root string, c *config.Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(configPath(root), append(body, '\n'), 0o600)
+	return atomicfile.Write(configPath(root), append(body, '\n'), 0o600)
 }
 
 // throttlePolicy turns the configuration into a throttle policy.

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rsh1k/scrivet/internal/atomicfile"
 	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/auth"
 )
@@ -56,7 +57,11 @@ func saveJSON(path string, v any) error {
 	}
 	// 0600: the token file holds hashes, and the policy names who can publish.
 	// Neither is world-readable material.
-	return os.WriteFile(path, append(b, '\n'), 0o600)
+	// Atomic, because the site process reads this file while the admin
+	// process writes it. A truncated token store is not stale data, it is a
+	// parse error, and a store whose tokens cannot be read is correctly
+	// treated as one nobody may write to — so the site refuses to start.
+	return atomicfile.Write(path, append(b, '\n'), 0o600)
 }
 
 func loadPolicy(root string) (*auth.Policy, error) {

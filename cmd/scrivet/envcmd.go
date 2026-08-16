@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rsh1k/scrivet/internal/atomicfile"
 	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/site"
 )
@@ -45,7 +46,7 @@ func saveEnvs(root string, e *site.Envs) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(envsPath(root), append(body, '\n'), 0o600)
+	return atomicfile.Write(envsPath(root), append(body, '\n'), 0o600)
 }
 
 func cmdEnv(root string, args []string) error {

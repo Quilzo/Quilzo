@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/rsh1k/scrivet/internal/atomicfile"
 	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/config"
 	"github.com/rsh1k/scrivet/internal/ext"
@@ -46,7 +47,7 @@ func saveExts(root string, f *extFile) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(extPath(root), append(body, '\n'), 0o600)
+	return atomicfile.Write(extPath(root), append(body, '\n'), 0o600)
 }
 
 // extLimits reads the runner's bounds from configuration.

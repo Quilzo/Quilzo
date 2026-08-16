@@ -513,3 +513,64 @@ func aliasesOf(t *testing.T) map[string]string {
 	}
 	return out
 }
+
+// State that two processes share must be written atomically.
+//
+// The admin and the site are separate processes over one store. os.WriteFile
+// truncates and then writes, so a reader landing in that window gets a parse
+// error rather than stale data — and a store whose token file will not parse is
+// correctly treated as one nobody may write to, so the site refuses to start.
+// Starting both together reproduced it; under load it would not be rare.
+//
+// A source check rather than a behavioural one, because the failure is a race
+// and the next writer somebody adds will be correct by inspection or not at all.
+func TestSharedStateIsWrittenAtomically(t *testing.T) {
+	// Files both processes read. Anything here must go through atomicfile.
+	shared := []string{
+		"tokensPath", "policyPath", "configPath", "envsPath", "extPath",
+		"menuPath", "listingPath", "vocabPath", "formsPath", "provPath",
+		"storePath",
+	}
+	// Writes that are not shared state, each with the reason.
+	exempt := map[string]string{
+		"compliancecmd.go": "writes an SBOM to a path the operator named",
+		"democmd.go":       "writes a template and a stylesheet, once, into a new directory",
+		"main.go":          "renders a page to a file the operator named",
+		"auditlog.go":      "the audit key and its directory marker, written once at setup",
+		"timestamp.go":     "writes a token or a root to a path the operator named",
+	}
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") ||
+			strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		body := readFile(t, e.Name())
+		for _, line := range strings.Split(body, "\n") {
+			if !strings.Contains(line, "os.WriteFile(") {
+				continue
+			}
+			found++
+			if _, ok := exempt[e.Name()]; ok {
+				continue
+			}
+			for _, p := range shared {
+				if strings.Contains(line, p+"(") {
+					t.Errorf("%s writes %s with os.WriteFile, which truncates "+
+						"before it writes. The other process reads this file, "+
+						"and half a document is a parse error rather than old "+
+						"data. Use atomicfile.Write.", e.Name(), p)
+				}
+			}
+		}
+	}
+	if found == 0 {
+		t.Fatal("no os.WriteFile calls were found at all; the pattern has " +
+			"stopped matching and this test is checking nothing")
+	}
+}

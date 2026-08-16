@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/rsh1k/scrivet/internal/atomicfile"
 )
 
 // Store is the one place that decides whether content is allowed to be written.
@@ -106,7 +108,8 @@ func (s *Store) Save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(storePath(s.dir), b, 0o600)
+	// Atomic: the admin writes this while the site is reading it to render.
+	return atomicfile.Write(storePath(s.dir), b, 0o600)
 }
 
 // Bind declares that a page must satisfy a type.
