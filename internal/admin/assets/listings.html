@@ -1,0 +1,175 @@
+{{template "head" .}}
+<h1>Listings</h1>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+<p class="lead">
+  A declared query a page can show. Name one in a page's <code>listings</code>
+  field and the template gets its rows — no query language, no expressions, and
+  a cost that is known before the page is built.
+</p>
+
+{{if not .Listings}}
+<p>No listings yet. A page can only show records once one exists.</p>
+{{end}}
+
+{{range $l := .Listings}}
+<h2>{{$l.Name}}{{if $l.Label}} — {{$l.Label}}{{end}}</h2>
+{{if $l.Description}}<p>{{$l.Description}}</p>{{end}}
+
+{{if $l.Problem}}
+<p class="notice bad">{{$l.Problem}}</p>
+{{else}}
+<p class="hint">
+  Reads <code>{{$l.Collection}}</code> ·
+  {{$l.Total}} match, showing {{$l.Shown}}
+  {{if $l.Sort}}· sorted by {{$l.Sort}}{{if $l.Descending}}, descending{{end}}{{end}}
+  {{if index $.UsedBy $l.Name}}· embedded by
+    {{range $i, $p := index $.UsedBy $l.Name}}{{if $i}}, {{end}}<code>{{$p}}</code>{{end}}
+  {{else}}· <span class="warn">no page shows it</span>{{end}}
+</p>
+{{end}}
+
+{{if $l.Unrestricted}}
+<p class="notice warn">
+  This exposes every field on every matching record. That is a legitimate
+  choice for an internal listing and a liability on a public page: adding a
+  field to the content type will put it on the page, and nobody will re-review
+  it. Name the fields to fix that.
+</p>
+{{end}}
+
+{{if $l.Where}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Field</th><th scope="col">Compares</th><th scope="col">To</th>
+  </tr></thead>
+  <tbody>
+  {{range $l.Where}}
+  <tr>
+    <th scope="row"><code>{{.Field}}</code></th>
+    <td>{{.Match}}</td>
+    <td>{{if .Param}}<span class="tag">from {{.Param}}</span>
+        {{else}}<code>{{.Value}}</code>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+{{if $l.Params}}
+<p class="hint">Takes from the page's context:</p>
+<ul>
+{{range $l.Params}}
+  <li><code>{{.Name}}</code> — {{.Kind}}{{if .Default}}, defaults to
+    <code>{{.Default}}</code>{{else}}, and with no value the listing returns
+    nothing rather than everything{{end}}{{if .Help}}. {{.Help}}{{end}}</li>
+{{end}}
+</ul>
+{{end}}
+
+{{if $l.Sample}}
+<p class="hint">What it returns right now:</p>
+<div class="table-wrap">
+<table>
+  <tbody>
+  {{range $l.Sample}}
+  <tr><td class="hint">{{range $k, $v := .}}<code>{{$k}}</code>={{$v}} {{end}}</td></tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+{{if $.CanWrite}}
+<form method="post" action="/listings/remove" class="inline">
+  <input type="hidden" name="name" value="{{$l.Name}}">
+  <button type="submit" class="danger">Remove</button>
+</form>
+{{end}}
+{{end}}
+
+{{if .CanWrite}}
+<h2>Declare a listing, or add to one</h2>
+<p class="hint">
+  Naming one that does not exist creates it. The collection, fields and sort
+  are set at creation; conditions and parameters are added one at a time.
+</p>
+<form method="post" action="/listings/save">
+  <div class="grid2">
+    <p><label for="l-name">Name</label>
+      <input id="l-name" name="name" required spellcheck="false"
+             placeholder="unmet_controls"></p>
+    <p><label for="l-label">Label</label>
+      <input id="l-label" name="label" placeholder="Controls not yet met"></p>
+    <p><label for="l-coll">Reads</label>
+      <input id="l-coll" name="collection" spellcheck="false" list="colls">
+      <datalist id="colls">
+        {{range .Collections}}<option value="{{.}}"></option>{{end}}
+      </datalist></p>
+    <p><label for="l-fields">Shows these fields</label>
+      <input id="l-fields" name="fields" placeholder="title, owner, status">
+      <span class="hint">Comma separated. Leave blank to expose everything,
+        which is worth avoiding on a public page.</span></p>
+    <p><label for="l-sort">Sorted by</label>
+      <input id="l-sort" name="sort" spellcheck="false"
+             placeholder="updated"></p>
+    <p><label for="l-desc">Newest or highest first</label>
+      <input id="l-desc" type="checkbox" name="descending" value="1"></p>
+    <p><label for="l-rows">Rows</label>
+      <input id="l-rows" name="rows" inputmode="numeric" placeholder="20">
+      <span class="hint">At most {{.MaxRows}}.</span></p>
+    <p><label for="l-descr">Description</label>
+      <input id="l-descr" name="description"></p>
+  </div>
+
+  <fieldset>
+    <legend>Add a parameter</legend>
+    <div class="grid2">
+      <p><label for="p-name">Name</label>
+        <input id="p-name" name="param" spellcheck="false" placeholder="who"></p>
+      <p><label for="p-kind">Accepts</label>
+        <select id="p-kind" name="param_kind">
+          {{range .Kinds}}<option value="{{.}}">{{.}}</option>{{end}}
+        </select></p>
+      <p><label for="p-def">Default</label>
+        <input id="p-def" name="param_default"></p>
+      <p><label for="p-help">Help</label>
+        <input id="p-help" name="param_help"></p>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Add a condition</legend>
+    <div class="grid2">
+      <p><label for="w-field">Field</label>
+        <input id="w-field" name="where_field" spellcheck="false"
+               placeholder="status"></p>
+      <p><label for="w-match">Compares</label>
+        <select id="w-match" name="where_match">
+          {{range .Matches}}<option value="{{.}}">{{.}}</option>{{end}}
+        </select></p>
+      <p><label for="w-value">To this value</label>
+        <input id="w-value" name="where_value" placeholder="unmet"></p>
+      <p><label for="w-param">Or to this parameter</label>
+        <input id="w-param" name="where_param" spellcheck="false">
+        <span class="hint">One or the other, never both.</span></p>
+    </div>
+  </fieldset>
+
+  <button type="submit">Save</button>
+</form>
+
+<h2>Showing one on a page</h2>
+<p class="hint">
+  Put the listing's name in a page's <code>listings</code> field, then read it
+  in the template. Resolution happens before the template runs, because the
+  template language has no calls in it — which is also why a listing cannot be
+  smuggled in through content.
+</p>
+<pre class="code"><code>{{.Example}}</code></pre>
+{{end}}
+{{template "foot" .}}

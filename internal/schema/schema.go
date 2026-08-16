@@ -138,6 +138,44 @@ var (
 	reDate = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 )
 
+// reserved names the fields every page may carry, whatever its type.
+//
+// These are not content. They are how a page is classified and what it
+// composes, and both are cross-cutting: a vocabulary is site-wide, and a
+// listing can be shown by any page. Requiring a type to declare them would
+// mean adding two fields to every type in the site before anything could be
+// tagged or could show a query, and forgetting one would make a page silently
+// unclassifiable.
+//
+// Found by binding a page to a type and then trying to put a listing on it.
+// The gate refused, correctly by its own rule and wrongly for the product, and
+// nothing had noticed because no test had a typed page carrying a system field.
+//
+// The list is closed and short on purpose. Every name here is one an author
+// cannot use for their own field, so each one costs something.
+var reserved = map[string]bool{
+	// taxonomy.Field — the terms a page carries, per vocabulary.
+	"terms": true,
+	// listing.Field — the declared queries a page shows.
+	"listings": true,
+}
+
+// Reserved reports whether a field name belongs to the system.
+//
+// Exported so the editor can show these separately from an author's own fields
+// rather than listing them as undeclared extras.
+func Reserved(name string) bool { return reserved[name] }
+
+// ReservedNames lists them, for help text and for the editor.
+func ReservedNames() []string {
+	out := make([]string, 0, len(reserved))
+	for k := range reserved {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Compile checks a type definition and refuses anything unusable.
 //
 // Every rejection here is a bound the validator later relies on, so this is the
@@ -174,6 +212,12 @@ func Compile(t Type) error {
 		}
 		seen[f.Name] = true
 
+		if Reserved(f.Name) {
+			return fmt.Errorf(
+				"field %q is a reserved name: every page may carry it "+
+					"whatever its type, so a type declaring it would be "+
+					"describing something it does not own", f.Name)
+		}
 		if !f.Kind.Valid() {
 			return fmt.Errorf("field %q: %q is not a field kind. The kinds are "+
 				"%s, and the list is closed — that is what keeps validation "+
@@ -232,7 +276,7 @@ func Validate(t Type, content map[string]any) []Problem {
 	// mass assignment, arriving through the front door.
 	extra := make([]string, 0)
 	for k := range content {
-		if _, ok := known[k]; !ok {
+		if _, ok := known[k]; !ok && !Reserved(k) {
 			extra = append(extra, k)
 		}
 	}

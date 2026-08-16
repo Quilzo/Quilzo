@@ -19,6 +19,7 @@ import (
 	"github.com/rsh1k/scrivet/internal/csp"
 	"github.com/rsh1k/scrivet/internal/ext"
 	"github.com/rsh1k/scrivet/internal/i18n"
+	"github.com/rsh1k/scrivet/internal/listing"
 	"github.com/rsh1k/scrivet/internal/media"
 	"github.com/rsh1k/scrivet/internal/medialib"
 	"github.com/rsh1k/scrivet/internal/menu"
@@ -313,6 +314,18 @@ func fullyWired(t *testing.T) (*Server, string) {
 				At: "2026-08-16T09:00:00Z",
 			}}, nil
 		},
+	}
+
+	lists := &listing.Set{}
+	if err := lists.Add(listing.Listing{
+		Name: "recent", Label: "Recently updated", Collection: "notes",
+		Fields: []string{"title"}, Sort: "updated", Descending: true, Rows: 5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	srv.Listings = &Listings{
+		Load: func() (*listing.Set, error) { return lists, nil },
+		Save: func(*listing.Set) error { return nil },
 	}
 
 	vocabs := &taxonomy.Set{}

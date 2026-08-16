@@ -289,3 +289,49 @@ func itoa(n int) string {
 	}
 	return string(b)
 }
+
+// A typed page may carry the system fields without declaring them.
+//
+// Found by binding a page to a type and then trying to put a listing on it.
+// The gate refused — correctly by its own rule, and wrongly for the product,
+// because a vocabulary is site-wide and a listing can be shown by any page.
+// Requiring every type to declare both would mean editing every type in the
+// site before anything could be tagged, and forgetting one would make a page
+// silently unclassifiable.
+func TestATypedPageMayCarryTheSystemFields(t *testing.T) {
+	typ := Type{Name: "article", Fields: []Field{
+		{Name: "title", Kind: Text, Required: true},
+	}}
+	if err := Compile(typ); err != nil {
+		t.Fatal(err)
+	}
+
+	problems := Validate(typ, map[string]any{
+		"title":    "A page",
+		"terms":    map[string]any{"topics": []any{"reports"}},
+		"listings": []any{"recent"},
+	})
+	for _, p := range problems {
+		t.Errorf("a system field was refused: %s", p)
+	}
+
+	// And a genuinely undeclared field is still refused, or the exemption has
+	// swallowed the rule it is an exception to.
+	problems = Validate(typ, map[string]any{"title": "A page", "invented": "x"})
+	if len(problems) == 0 {
+		t.Error("an undeclared field was accepted; reserving the system " +
+			"fields must not disable the check for everything else")
+	}
+}
+
+// A type cannot claim a reserved name as its own field.
+func TestATypeCannotDeclareAReservedField(t *testing.T) {
+	for _, name := range ReservedNames() {
+		err := Compile(Type{Name: "article", Fields: []Field{
+			{Name: name, Kind: Text},
+		}})
+		if err == nil {
+			t.Errorf("a type declared %q, which every page carries anyway", name)
+		}
+	}
+}

@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"github.com/rsh1k/scrivet/internal/i18n"
+	"github.com/rsh1k/scrivet/internal/listing"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/search"
 	"github.com/rsh1k/scrivet/internal/seo"
@@ -100,6 +101,10 @@ type Site struct {
 	Locales *i18n.Config
 	// LastChanged supplies each page's real modification time.
 	LastChanged func() (map[string]time.Time, error)
+	// Listings resolves the queries a page embeds. Nil means a page naming one
+	// fails to assemble rather than rendering without it — a listing-shaped
+	// hole is not noticed until somebody asks why the table is empty.
+	Listings *listing.Resolver
 	// Media serves the asset library at /media/. Nil means the route 404s,
 	// which is right for a deployment with no library — and was, until this
 	// field existed, the behaviour of every deployment including the ones with
@@ -485,7 +490,23 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The ETag is the content hash. Not derived from it — it is it.
+	// The page's own content hash is its identity — until the page embeds a
+	// listing, and then it is not.
+	//
+	// A listing reads records, so the rendered output depends on content this
+	// page's hash says nothing about. Serving the page's hash as the ETag
+	// would mean a listing that never updates: the records change, the page
+	// body does not, the conditional request answers 304, and every reader
+	// sees yesterday's rows for as long as the page is untouched.
+	//
+	// So a page with listings mixes in the tree the listings read and the
+	// arguments they were given. Both are part of what was rendered, so both
+	// belong in the name of it.
 	etag := `"` + tree[name] + `"`
+	args := firstOf(r.URL.Query())
+	if names := listing.On(body); len(names) > 0 {
+		etag = `"` + renderTag(tree[name], st.dataTree(), names, args) + `"`
+	}
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
 	if match := r.Header.Get("If-None-Match"); match == etag {
@@ -493,9 +514,36 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html, err := tmpl.Render(st.Template, map[string]any{
+	ctx := map[string]any{
 		"page": body, "site": map[string]any{"name": st.Name},
-	})
+	}
+	if names := listing.On(body); len(names) > 0 && st.Listings == nil {
+		// The hole this was written to prevent, and it happened anyway: the
+		// admin got a resolver and the public server did not, so a page that
+		// showed its listing in preview rendered without it for readers —
+		// silently, because a missing section looks like a section with
+		// nothing in it. Found by publishing the page and looking at it.
+		http.Error(w, "this page could not be assembled",
+			http.StatusInternalServerError)
+		return
+	}
+	if st.Listings != nil {
+		data, lerr := st.Listings.For(body, args)
+		if lerr != nil {
+			// A page whose listings cannot be resolved is a broken page, not a
+			// page with an empty section. Rendering it without them would ship
+			// a listing-shaped hole that nobody notices until somebody asks
+			// why the table is empty.
+			http.Error(w, "this page could not be assembled",
+				http.StatusInternalServerError)
+			return
+		}
+		if data != nil {
+			ctx[listing.Data] = data
+		}
+	}
+
+	html, err := tmpl.Render(st.Template, ctx)
 	if err != nil {
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return

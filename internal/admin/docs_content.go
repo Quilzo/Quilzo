@@ -117,6 +117,80 @@ var chapterContent = chapter{
 			},
 		},
 		{
+			ID:      "listings",
+			Title:   "Listings",
+			Summary: "A declared query a page can show — the feature people leave for Drupal to get.",
+			Body: []block{
+				p("Drupal's Views is the most-cited reason organisations pick " +
+					"Drupal: content listings built through an interface, " +
+					"embedded anywhere, without writing SQL. This is that, " +
+					"with four differences that all come from the same place."),
+				sub("How it works"),
+				steps(
+					"Declare a listing: a name, a collection, some conditions, a row limit.",
+					"Name it in a page's listings field.",
+					"Read it in the template.",
+				),
+				code("{% for row in listings.unmet_controls.rows %}\n" +
+					"  <li>{{ row.title }} — {{ row.owner }}</li>\n" +
+					"{% end %}\n" +
+					"<p>{{ listings.unmet_controls.total }} in total</p>"),
+				p("Resolution happens before the template runs, because the " +
+					"template language has no calls in it. That is not a " +
+					"limitation being worked around — it is why a listing " +
+					"cannot be smuggled into a page through content."),
+				sub("A declared query, not a built one"),
+				p("A listing is a name, a collection, conditions and a limit. " +
+					"There is no expression anywhere in it and no evaluator to " +
+					"reach: the conditions become a set of values to compare. " +
+					"A query language is the thing that eventually gets an " +
+					"injection, and this does not have one."),
+				sub("Parameters are declared and typed"),
+				p("Drupal calls these contextual filters and they take their " +
+					"value from the URL — the correct feature, and an obvious " +
+					"way to hand user input to a query. Here a parameter has a " +
+					"name and a kind, and a value that does not satisfy the " +
+					"kind is refused before it reaches the filter."),
+				warn("A parameter with no value and no default makes the " +
+					"listing return nothing. The other reasonable-looking " +
+					"choice is to drop the condition, which is what Drupal " +
+					"does by default and which turns a page meant to show one " +
+					"person's records into a page showing everybody's."),
+				sub("Fields are an allowlist"),
+				p("A listing names what it exposes, and rows carry only that. " +
+					"Views hands the template the whole entity and relies on " +
+					"the template not to print the wrong field — which works " +
+					"until somebody adds a field to a content type and it " +
+					"appears on a public page nobody re-reviewed. Here adding " +
+					"a field changes nothing about what a listing shows."),
+				sub("The cost is bounded, and the bound is checked"),
+				p("Every listing has a row limit with a ceiling, a page may " +
+					"embed only so many, and a page that would exceed the " +
+					"budget fails to build rather than being served slowly. A " +
+					"page assembled from a dozen unbounded queries is how this " +
+					"feature becomes the reason a site is slow, and that is " +
+					"available in every product that has it."),
+				sub("Why this is affordable"),
+				p("Because a collection is indexed, keyed by the tree it was " +
+					"read from — which means the index cannot be stale, since " +
+					"different content is a different tree. Resolving a " +
+					"listing is a filter over records already decoded: about " +
+					"two milliseconds over ten thousand records rather than " +
+					"the four hundred a scan costs. Without that this feature " +
+					"could exist and could not be used."),
+				sub("Caching a page that shows a query"),
+				p("A page's identifier is normally the hash of its own bytes, " +
+					"which makes its ETag exact and free. That stops being " +
+					"true the moment the page shows a listing: the output " +
+					"depends on records the page's hash says nothing about. So " +
+					"a page with listings takes an identifier mixing its own " +
+					"hash, the tree the listings read, and the arguments they " +
+					"were given. Without that, a listing would never update — " +
+					"the records change, the page body does not, and every " +
+					"reader sees yesterday's rows."),
+			},
+		},
+		{
 			ID:      "structure",
 			Title:   "Classification and navigation",
 			Summary: "Vocabularies that stay controlled, and menus that cannot point at nothing.",

@@ -78,6 +78,7 @@ importing
   scrivet media add FILE --alt "..."        validate and accept an upload
   scrivet media get https://... --alt "..." fetch one, checked at connect time
   scrivet media formats                     what is accepted, and what is not
+  scrivet listing list | run NAME           declared queries a page can show
   scrivet terms list | check                the controlled vocabularies
   scrivet menu list | check                 navigation, and whether it resolves
   scrivet ipfs id                           what the permanent web will call this site
@@ -315,6 +316,8 @@ func main() {
 		err = cmdImport(root, cmdArgs)
 	case "media":
 		err = cmdMedia(root, cmdArgs)
+	case "listing", "listings":
+		err = cmdListings(root, cmdArgs)
 	case "terms", "taxonomy":
 		err = cmdTerms(root, cmdArgs)
 	case "menu", "menus":

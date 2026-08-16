@@ -14,6 +14,8 @@ import (
 
 	"github.com/rsh1k/scrivet/internal/api"
 	"github.com/rsh1k/scrivet/internal/audit"
+	"github.com/rsh1k/scrivet/internal/collection"
+	"github.com/rsh1k/scrivet/internal/listing"
 	"github.com/rsh1k/scrivet/internal/media"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/public"
@@ -70,6 +72,22 @@ func cmdSite(root string, args []string) error {
 		st.Stylesheet = string(css)
 	}
 	st.BaseURL = strings.TrimSpace(*baseURL)
+	// The declared listings, and one index cache for the process. Without
+	// these a page that shows a query renders without it — which is what
+	// happened the first time, and is invisible because an absent section
+	// looks exactly like an empty one.
+	if set, lerr := loadListings(root); lerr == nil {
+		commit := s.GetRef(site.RefLive)
+		tree := ""
+		if commit != "" {
+			if c, cerr := s.GetCommit(commit); cerr == nil {
+				tree = c.Tree
+			}
+		}
+		st.Listings = &listing.Resolver{
+			Store: s, Index: collection.NewCache(), Tree: tree, Set: set,
+		}
+	}
 	// The asset library. Opened once and looked up per request: the files are
 	// immutable and named by their own hash, so there is nothing to reload and
 	// a cached handle cannot go stale.

@@ -60,6 +60,8 @@ var commandNeeds = map[string]need{
 	// Editing either is done through the interface, where the existing terms
 	// and their usage counts are visible — changing what everybody is allowed
 	// to say about the content is a governance act, not a shell one-liner.
+	"listing":    {action: auth.ActView},
+	"listings":   {action: auth.ActView},
 	"terms":      {action: auth.ActView},
 	"taxonomy":   {action: auth.ActView},
 	"menu":       {action: auth.ActView},

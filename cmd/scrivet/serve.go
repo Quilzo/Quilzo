@@ -25,6 +25,7 @@ import (
 	"github.com/rsh1k/scrivet/internal/ext"
 	"github.com/rsh1k/scrivet/internal/fetch"
 	"github.com/rsh1k/scrivet/internal/i18n"
+	"github.com/rsh1k/scrivet/internal/listing"
 	"github.com/rsh1k/scrivet/internal/media"
 	"github.com/rsh1k/scrivet/internal/medialib"
 	"github.com/rsh1k/scrivet/internal/menu"
@@ -237,6 +238,10 @@ func cmdServe(root string, args []string) error {
 			return agentwatch.Look(events, time.Now()), nil
 		},
 		Evidence: func() ([]admin.Evidence, error) { return evidenceRows(root) },
+	}
+	srv.Listings = &admin.Listings{
+		Load: func() (*listing.Set, error) { return loadListings(root) },
+		Save: func(set *listing.Set) error { return saveJSON(listingPath(root), set) },
 	}
 	srv.Structure = &admin.Structure{
 		Vocabularies: func() (*taxonomy.Set, error) { return loadVocabularies(root) },

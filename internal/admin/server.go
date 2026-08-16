@@ -129,6 +129,8 @@ type Server struct {
 	// Decentralised renders the published site so its IPFS identifier can be
 	// computed here rather than taken from whoever stores it.
 	Decentralised *Decentralised
+	// Listings are the declared queries a page can embed.
+	Listings *Listings
 	// Structure is classification and navigation: the vocabularies terms come
 	// from, and the menus that point at pages.
 	Structure *Structure
@@ -574,6 +576,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/integrations/extension", s.handleExtensionSave)
 	mux.HandleFunc("/integrations/extension/remove", s.handleExtensionRemove)
 	mux.HandleFunc("/integrations/siem", s.handleSIEMExport)
+	mux.HandleFunc("/listings", s.handleListings)
+	mux.HandleFunc("/listings/save", s.handleListingSave)
+	mux.HandleFunc("/listings/remove", s.handleListingRemove)
 	mux.HandleFunc("/structure", s.handleStructure)
 	mux.HandleFunc("/structure/vocabulary", s.handleVocabularySave)
 	mux.HandleFunc("/structure/term/remove", s.handleTermRemove)
@@ -1717,13 +1722,41 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	out, err := tmpl.Render(s.Template, map[string]any{"page": body})
+	// Listings resolved against the draft, because this is a preview: showing
+	// published data on a preview of an unpublished page would be a preview of
+	// something that does not exist.
+	ctx := map[string]any{"page": body}
+	if res := s.resolver(site.RefDraft); res != nil {
+		built, berr := res.Context(body, firstOf(r.URL.Query()))
+		if berr != nil {
+			http.Error(w, berr.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		ctx = built
+	}
+	out, err := tmpl.Render(s.Template, ctx)
 	if err != nil {
 		http.Error(w, "template: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(out))
+}
+
+// firstOf flattens a query string to one value per name.
+//
+// A repeated parameter is somebody probing, or a link built wrong. Taking the
+// first is what every framework does; the point of doing it explicitly is that
+// a listing parameter then has exactly one value and cannot be given two that
+// disagree.
+func firstOf(v url.Values) map[string]string {
+	out := make(map[string]string, len(v))
+	for k, vals := range v {
+		if len(vals) > 0 {
+			out[k] = vals[0]
+		}
+	}
+	return out
 }
 
 func plural(n int) string {

@@ -1,18 +1,28 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
+	"github.com/rsh1k/scrivet/internal/collection"
+	"github.com/rsh1k/scrivet/internal/listing"
 	"github.com/rsh1k/scrivet/internal/menu"
 	"github.com/rsh1k/scrivet/internal/out"
 	"github.com/rsh1k/scrivet/internal/site"
 	"github.com/rsh1k/scrivet/internal/taxonomy"
 )
 
-func vocabPath(root string) string { return filepath.Join(root, "vocabularies.json") }
-func menuPath(root string) string  { return filepath.Join(root, "menus.json") }
+func vocabPath(root string) string   { return filepath.Join(root, "vocabularies.json") }
+func menuPath(root string) string    { return filepath.Join(root, "menus.json") }
+func listingPath(root string) string { return filepath.Join(root, "listings.json") }
+
+func loadListings(root string) (*listing.Set, error) {
+	s := &listing.Set{}
+	return s, loadJSON(listingPath(root), s)
+}
 
 func loadVocabularies(root string) (*taxonomy.Set, error) {
 	s := &taxonomy.Set{}
@@ -224,4 +234,116 @@ func menusCheck(root string) error {
 	w.Human("\n  %sthese work for you and 404 for everybody else%s\n", dim, reset)
 	return errBlocked{fmt.Errorf("%d navigation entr(y/ies) point at pages "+
 		"that are not published", len(broken))}
+}
+
+// cmdListings reads and runs the declared queries.
+//
+// `run` is the one that earns its place on this surface: a pipeline can check
+// that a listing still returns what a page expects before a deploy, which is
+// the difference between an empty table in production and a build failure.
+func cmdListings(root string, args []string) error {
+	if len(args) == 0 {
+		args = []string{"list"}
+	}
+	switch args[0] {
+	case "list":
+		return listingsList(root)
+	case "run":
+		return listingsRun(root, args[1:])
+	default:
+		return fmt.Errorf("unknown listing command %q; try list or run", args[0])
+	}
+}
+
+func listingsList(root string) error {
+	set, err := loadListings(root)
+	if err != nil {
+		return err
+	}
+	if w.Mode == out.JSON {
+		w.JSON(set)
+		return nil
+	}
+	if len(set.Listings) == 0 {
+		w.Human("no listings\n")
+		w.Human("  %sa listing is a declared query a page can show%s\n", dim, reset)
+		return nil
+	}
+	for _, name := range set.Names() {
+		l, _ := set.Get(name)
+		w.Human("%s%s%s  %sreads %s%s\n", bold, l.Name, reset, dim, l.Collection, reset)
+		if l.Exposes() {
+			w.Human("  %severy field — worth naming them for a public page%s\n",
+				yellow, reset)
+		}
+		for _, c := range l.Where {
+			to := c.Value
+			if c.Param != "" {
+				to = "<" + c.Param + ">"
+			}
+			w.Human("  %s%s %s %s%s\n", dim, c.Field, c.Match, to, reset)
+		}
+	}
+	return nil
+}
+
+func listingsRun(root string, args []string) error {
+	pos, flags := leadingArgs(args, 1)
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+	arg := fs.String("arg", "", "parameter values, as name=value,name=value")
+	if err := fs.Parse(flags); err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return fmt.Errorf("usage: scrivet listing run <name> [--arg k=v,k=v]")
+	}
+
+	set, err := loadListings(root)
+	if err != nil {
+		return err
+	}
+	l, ok := set.Get(pos[0])
+	if !ok {
+		return fmt.Errorf("there is no listing %q", pos[0])
+	}
+	s, err := open(root)
+	if err != nil {
+		return err
+	}
+	tree, err := draftTree(s)
+	if err != nil {
+		return err
+	}
+	idx, err := collection.Build(s, tree, l.Collection, nil)
+	if err != nil {
+		return err
+	}
+
+	values := map[string]string{}
+	for _, pair := range strings.Split(*arg, ",") {
+		if k, v, found := strings.Cut(pair, "="); found {
+			values[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+	}
+	res, err := listing.Resolve(l, idx, values)
+	if err != nil {
+		return errBlocked{err}
+	}
+
+	if w.JSON(res) {
+		return nil
+	}
+	w.Human("%d match, showing %d\n", res.Total, len(res.Rows))
+	for _, row := range res.Rows {
+		keys := make([]string, 0, len(row))
+		for k := range row {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			w.Human("  %s%-14s%s %v\n", dim, k, reset, row[k])
+		}
+		w.Human("\n")
+	}
+	return nil
 }

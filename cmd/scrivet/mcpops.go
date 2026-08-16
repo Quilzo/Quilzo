@@ -16,6 +16,7 @@ import (
 	"github.com/rsh1k/scrivet/internal/export"
 	"github.com/rsh1k/scrivet/internal/i18n"
 	"github.com/rsh1k/scrivet/internal/ipfs"
+	"github.com/rsh1k/scrivet/internal/listing"
 	"github.com/rsh1k/scrivet/internal/mcp"
 	"github.com/rsh1k/scrivet/internal/schema"
 	"github.com/rsh1k/scrivet/internal/site"
@@ -383,6 +384,70 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 				r.Actions, len(r.Strikes), r.Summary)
 		}
 		return strings.TrimSpace(b.String()), nil
+	})
+
+	srv.Register(mcp.Operation{
+		Name:    "run_listing",
+		Summary: "run a declared listing and return its rows",
+		Detail: "A listing is a query somebody already declared and named. " +
+			"You cannot write one here and cannot widen one: the conditions, " +
+			"the fields it exposes and the row limit are fixed, and a " +
+			"parameter is refused unless its value satisfies the kind the " +
+			"listing declared. Call it with no name to see what exists.",
+		Args: map[string]string{
+			"listing": "the listing name; omit to list what exists",
+			"args":    "optional object of parameter name to value",
+		},
+		Keywords: []string{"listing", "query", "view", "rows", "report", "filter"},
+	}, func(a map[string]any) (any, error) {
+		set, err := loadListings(root)
+		if err != nil {
+			return nil, err
+		}
+		name, _ := a["listing"].(string)
+		if name == "" {
+			if len(set.Listings) == 0 {
+				return "no listings are declared", nil
+			}
+			var b strings.Builder
+			for _, n := range set.Names() {
+				l, _ := set.Get(n)
+				fmt.Fprintf(&b, "%s reads %s", l.Name, l.Collection)
+				if len(l.Params) > 0 {
+					b.WriteString(" (takes")
+					for _, p := range l.Params {
+						fmt.Fprintf(&b, " %s:%s", p.Name, p.Kind)
+					}
+					b.WriteString(")")
+				}
+				b.WriteString("\n")
+			}
+			return strings.TrimSpace(b.String()), nil
+		}
+		l, ok := set.Get(name)
+		if !ok {
+			return nil, &mcp.Refusal{Reason: "there is no listing " + name}
+		}
+		tree, err := draftTree(s)
+		if err != nil {
+			return nil, err
+		}
+		idx, err := collection.Build(s, tree, l.Collection, nil)
+		if err != nil {
+			return nil, err
+		}
+		values := map[string]string{}
+		if raw, ok := a["args"].(map[string]any); ok {
+			for k, v := range raw {
+				values[k] = fmt.Sprint(v)
+			}
+		}
+		res, err := listing.Resolve(l, idx, values)
+		if err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
+		b, _ := json.MarshalIndent(res, "", "  ")
+		return string(b), nil
 	})
 
 	srv.Register(mcp.Operation{
