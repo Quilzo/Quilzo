@@ -40,7 +40,12 @@ jobs:
         run: go test -count=1 ./...
 
       - name: Build
-        run: make build VERSION=${{ github.ref_name }}
+        run: |
+          make build VERSION=${{ github.ref_name }}
+          # Every platform a release carries. Cross-compiled with CGO off, so
+          # these are genuinely static; the tree failed to build for macOS at
+          # all until the first time anybody tried.
+          make build-all VERSION=${{ github.ref_name }}
 
       - name: Bill of materials, from the binary
         run: |
@@ -67,19 +72,24 @@ jobs:
           test "$count" -eq 0
 
       - name: Checksums
-        run: cd bin && sha256sum scrivet scrivet.cdx.json scrivet.crypto.json > SHA256SUMS
+        run: cd bin && sha256sum scrivet scrivet-* scrivet.cdx.json scrivet.crypto.json > SHA256SUMS
 
       - name: Attest the artefacts
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
             bin/scrivet
+            bin/scrivet-*
             bin/scrivet.cdx.json
 
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             bin/scrivet
+            bin/scrivet-linux-amd64
+            bin/scrivet-linux-arm64
+            bin/scrivet-darwin-amd64
+            bin/scrivet-darwin-arm64
             bin/scrivet.cdx.json
             bin/scrivet.crypto.json
             bin/SHA256SUMS

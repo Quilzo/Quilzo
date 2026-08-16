@@ -1,7 +1,16 @@
-GO ?= $(HOME)/.local/go/bin/go
+# Whatever go is on PATH. This used to default to one contributor's home
+# directory, which worked on exactly one machine and would have failed the
+# release workflow on the first tag — where the only symptom is a job that
+# cannot find a compiler.
+GO ?= go
 VERSION ?= dev
 
-.PHONY: all fmt test build image sbom release clean
+# The platforms a release carries. linux/arm64 is not optional any more: a
+# large share of server capacity is Graviton and Ampere, and a CMS that ships
+# amd64 only is one those operators cross-compile themselves.
+PLATFORMS ?= linux/amd64 linux/arm64 darwin/arm64 darwin/amd64
+
+.PHONY: all fmt test build build-all image sbom release clean
 
 all: fmt test
 
@@ -15,6 +24,19 @@ test:
 build:
 	$(GO) build -trimpath -ldflags="-s -w -X main.version=$(VERSION)" -o bin/scrivet ./cmd/scrivet
 	@echo "binary: $$(du -h bin/scrivet | cut -f1)"
+
+# One binary per platform, named so a person downloading can tell which is
+# which. CGO is off so these are genuinely static and genuinely
+# cross-compiled — with it on, every target but the host needs a toolchain.
+build-all:
+	@mkdir -p bin
+	@for p in $(PLATFORMS); do \
+		os=$${p%/*}; arch=$${p#*/}; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath \
+			-ldflags="-s -w -X main.version=$(VERSION)" \
+			-o bin/scrivet-$$os-$$arch ./cmd/scrivet || exit 1; \
+		echo "  $$os/$$arch  $$(du -h bin/scrivet-$$os-$$arch | cut -f1)"; \
+	done
 
 image:
 	docker build --build-arg VERSION=$(VERSION) -t scrivet:$(VERSION) .
@@ -37,8 +59,8 @@ sbom: build
 # Under the Cyber Resilience Act this has to exist before a vulnerability
 # report does -- a report has to say what is affected -- and it has to be
 # retained for ten years, which a release asset does for free.
-release: test sbom
-	@cd bin && sha256sum scrivet scrivet.cdx.json scrivet.crypto.json > SHA256SUMS
+release: test sbom build-all
+	@cd bin && sha256sum scrivet scrivet-* scrivet.cdx.json scrivet.crypto.json > SHA256SUMS
 	@echo
 	@echo "release $(VERSION)"
 	@sed 's/^/  /' bin/SHA256SUMS
