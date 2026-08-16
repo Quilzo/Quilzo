@@ -27,12 +27,14 @@ import (
 	"github.com/rsh1k/scrivet/internal/i18n"
 	"github.com/rsh1k/scrivet/internal/media"
 	"github.com/rsh1k/scrivet/internal/medialib"
+	"github.com/rsh1k/scrivet/internal/menu"
 	"github.com/rsh1k/scrivet/internal/oidc"
 	"github.com/rsh1k/scrivet/internal/posture"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/schedule"
 	"github.com/rsh1k/scrivet/internal/schema"
 	"github.com/rsh1k/scrivet/internal/site"
+	"github.com/rsh1k/scrivet/internal/taxonomy"
 	"github.com/rsh1k/scrivet/internal/webhook"
 )
 
@@ -235,6 +237,16 @@ func cmdServe(root string, args []string) error {
 			return agentwatch.Look(events, time.Now()), nil
 		},
 		Evidence: func() ([]admin.Evidence, error) { return evidenceRows(root) },
+	}
+	srv.Structure = &admin.Structure{
+		Vocabularies: func() (*taxonomy.Set, error) { return loadVocabularies(root) },
+		SaveVocabularies: func(set *taxonomy.Set) error {
+			return saveJSON(vocabPath(root), set)
+		},
+		Menus: func() (*menu.Set, error) { return loadMenus(root) },
+		SaveMenus: func(set *menu.Set) error {
+			return saveJSON(menuPath(root), set)
+		},
 	}
 	srv.Decentralised = &admin.Decentralised{
 		Pages: func() (map[string]any, error) { return site.PagesAt(s, site.RefLive) },

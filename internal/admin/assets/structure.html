@@ -1,0 +1,191 @@
+{{template "head" .}}
+<h1>Structure</h1>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+<p class="lead">
+  What content can be classified as, and what the navigation points at. Both
+  refer to things that can be deleted, which is why both are checked here and
+  again at the publish gate.
+</p>
+
+{{if .WouldBreak}}
+<div class="card bad">
+  <p><strong>{{len .WouldBreak}} navigation entr(y/ies) would 404 for readers
+    right now.</strong> They point at pages that are not published, so they work
+    for you and not for anybody else. Publishing is refused until these resolve
+    or somebody gives a recorded reason.</p>
+  <ul>{{range .WouldBreak}}<li>{{.}}</li>{{end}}</ul>
+</div>
+{{end}}
+
+<h2>Vocabularies</h2>
+<p class="hint">
+  A vocabulary is closed unless somebody opens it. That is the difference
+  between a controlled list and free-text tags, which reliably become two
+  thousand entries with "marketing", "Marketing" and "mktg" as three unrelated
+  categories. Spellings go in as synonyms and resolve to the real term.
+</p>
+
+{{if not .Vocabularies}}
+<p>No vocabularies yet, so nothing can be classified.</p>
+{{end}}
+
+{{range $v := .Vocabularies}}
+<h3>{{$v.Name}}{{if $v.Label}} — {{$v.Label}}{{end}}
+  {{if $v.Open}}<span class="tag tag-warn">open</span>
+  {{else}}<span class="tag tag-ok">closed</span>{{end}}</h3>
+{{if not $v.Terms}}
+<p class="hint">No terms yet.</p>
+{{else}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Term</th><th scope="col">Means</th>
+    <th scope="col">Also spelled</th><th scope="col">Used by</th>
+    {{if $.CanWrite}}<th scope="col"></th>{{end}}
+  </tr></thead>
+  <tbody>
+  {{range $t := $v.Terms}}
+  <tr>
+    <th scope="row">{{if $t.Depth}}<span class="hint">{{range $i := $t.Depth}}{{end}}└ </span>{{end}}<code>{{$t.ID}}</code>
+      {{if $t.Label}}<div class="hint">{{$t.Label}}</div>{{end}}</th>
+    <td class="hint">{{$t.Description}}</td>
+    <td class="hint">{{range $i, $s := $t.Synonyms}}{{if $i}}, {{end}}{{$s}}{{end}}</td>
+    <td>{{if $t.Count}}{{$t.Count}} item(s){{else}}<span class="hint">nothing</span>{{end}}</td>
+    {{if $.CanWrite}}
+    <td>
+      <form method="post" action="/structure/term/remove" class="inline">
+        <input type="hidden" name="vocabulary" value="{{$v.Name}}">
+        <input type="hidden" name="term" value="{{$t.ID}}">
+        <button type="submit" class="danger">Remove</button>
+      </form>
+    </td>
+    {{end}}
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+{{end}}
+
+{{if .CanWrite}}
+<h3>Add a vocabulary, or a term to one</h3>
+<form method="post" action="/structure/vocabulary">
+  <div class="grid2">
+    <p><label for="v-name">Vocabulary</label>
+      <input id="v-name" name="vocabulary" required spellcheck="false"
+             placeholder="topics"></p>
+    <p><label for="v-label">Label</label>
+      <input id="v-label" name="label" placeholder="used when it is created"></p>
+    <p><label for="v-open">Accept terms nobody declared</label>
+      <input id="v-open" type="checkbox" name="open" value="1">
+      <span class="hint">Leave this off. An open vocabulary is how a tag list
+        becomes unusable.</span></p>
+    <p><label for="v-term">Term</label>
+      <input id="v-term" name="term" spellcheck="false" placeholder="marketing">
+      <span class="hint">Optional — a vocabulary with no terms yet is a
+        legitimate state.</span></p>
+    <p><label for="v-tlabel">Term label</label>
+      <input id="v-tlabel" name="term_label" placeholder="Marketing"></p>
+    <p><label for="v-desc">What it means</label>
+      <input id="v-desc" name="description"
+             placeholder="the field that decides whether two people tag alike">
+    </p>
+    <p><label for="v-parent">Sits under</label>
+      <input id="v-parent" name="parent" spellcheck="false">
+      <span class="hint">Filtering by a parent finds everything beneath it.</span></p>
+    <p><label for="v-syn">Also spelled</label>
+      <input id="v-syn" name="synonyms" placeholder="mktg, marketting">
+      <span class="hint">Comma separated. These resolve to the term rather
+        than becoming terms.</span></p>
+  </div>
+  <button type="submit">Save</button>
+</form>
+{{end}}
+
+<h2>Menus</h2>
+<p class="hint">
+  Every internal entry is checked against the pages that exist when it is saved,
+  and again against the pages being published. A menu here cannot point at
+  nothing.
+</p>
+
+{{if not .Menus}}
+<p>No menus yet.</p>
+{{end}}
+
+{{range $m := .Menus}}
+<h3>{{$m.Name}}{{if $m.Label}} — {{$m.Label}}{{end}}
+  {{if $m.Broken}}<span class="tag tag-bad">{{$m.Broken}} broken</span>{{end}}</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Entry</th><th scope="col">Points at</th>
+    <th scope="col">State</th>{{if $.CanWrite}}<th scope="col"></th>{{end}}
+  </tr></thead>
+  <tbody>
+  {{range $it := $m.Items}}
+  <tr>
+    <th scope="row">{{if $it.Depth}}<span class="hint">└ </span>{{end}}{{$it.Label}}
+      {{if $it.Note}}<div class="hint">{{$it.Note}}</div>{{end}}</th>
+    <td class="hint">{{if eq $it.Kind "heading"}}<em>a heading</em>
+      {{else}}<code>{{$it.Target}}</code>{{end}}</td>
+    <td>
+      {{if not $it.Resolves}}<span class="tag tag-bad">no such page</span>
+      {{else if not $it.Live}}<span class="tag tag-warn">not published</span>
+      {{else}}<span class="tag tag-ok">resolves</span>{{end}}
+    </td>
+    {{if $.CanWrite}}
+    <td>
+      <form method="post" action="/structure/menu/item/remove" class="inline">
+        <input type="hidden" name="menu" value="{{$m.Name}}">
+        <input type="hidden" name="id" value="{{$it.ID}}">
+        <button type="submit" class="danger">Remove</button>
+      </form>
+    </td>
+    {{end}}
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+{{if .CanWrite}}
+<h3>Add a menu, or an entry to one</h3>
+<form method="post" action="/structure/menu">
+  <div class="grid2">
+    <p><label for="m-name">Menu</label>
+      <input id="m-name" name="menu" required spellcheck="false"
+             placeholder="main"></p>
+    <p><label for="m-label">Label</label>
+      <input id="m-label" name="label" placeholder="used when it is created"></p>
+    <p><label for="m-ilabel">Entry</label>
+      <input id="m-ilabel" name="item_label" placeholder="About us"></p>
+    <p><label for="m-kind">Kind</label>
+      <select id="m-kind" name="kind">
+        {{range .Kinds}}<option value="{{.}}">{{.}}</option>{{end}}
+      </select></p>
+    <p><label for="m-target">Points at</label>
+      <input id="m-target" name="target" spellcheck="false" list="pagenames">
+      <datalist id="pagenames">
+        {{range .Pages}}<option value="{{.}}"></option>{{end}}
+      </datalist>
+      <span class="hint">A page name, or an https URL. Checked before it
+        saves.</span></p>
+    <p><label for="m-parent">Nests under</label>
+      <input id="m-parent" name="parent" spellcheck="false"
+             placeholder="another entry's id"></p>
+    <p><label for="m-order">Order</label>
+      <input id="m-order" name="order" inputmode="numeric" value="0"></p>
+    <p><label for="m-note">Why</label>
+      <input id="m-note" name="note"
+             placeholder="for whoever finds this in two years"></p>
+  </div>
+  <button type="submit">Save</button>
+</form>
+{{end}}
+{{template "foot" .}}

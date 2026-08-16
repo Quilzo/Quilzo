@@ -386,6 +386,80 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	})
 
 	srv.Register(mcp.Operation{
+		Name:    "list_terms",
+		Summary: "the controlled vocabularies and what each term means",
+		Detail: "Read this before classifying anything. Vocabularies are " +
+			"closed by default, so a term that is not here will be refused — " +
+			"and the point of that is that inventing one is how a tag list " +
+			"becomes two thousand entries with three spellings of each idea.",
+		Keywords: []string{"taxonomy", "terms", "tags", "categories",
+			"vocabulary", "classify"},
+	}, func(map[string]any) (any, error) {
+		set, err := loadVocabularies(root)
+		if err != nil {
+			return nil, err
+		}
+		if len(set.Vocabularies) == 0 {
+			return "no vocabularies, so nothing can be classified", nil
+		}
+		var b strings.Builder
+		for _, name := range set.Names() {
+			v, _ := set.Get(name)
+			state := "closed"
+			if v.Open {
+				state = "open"
+			}
+			fmt.Fprintf(&b, "%s (%s)\n", v.Name, state)
+			for _, t := range v.Sorted() {
+				fmt.Fprintf(&b, "%s  %s", strings.Repeat("  ", t.Depth), t.ID)
+				if t.Description != "" {
+					fmt.Fprintf(&b, " — %s", t.Description)
+				}
+				if len(t.Synonyms) > 0 {
+					fmt.Fprintf(&b, " [also: %s]", strings.Join(t.Synonyms, ", "))
+				}
+				b.WriteString("\n")
+			}
+		}
+		return strings.TrimSpace(b.String()), nil
+	})
+
+	srv.Register(mcp.Operation{
+		Name:    "list_menus",
+		Summary: "the navigation, and whether every entry resolves for a reader",
+		Detail: "An entry pointing at a page that is not published works for " +
+			"an editor and 404s for everybody else. Publishing refuses while " +
+			"that is true, so this is worth checking before proposing one.",
+		Keywords: []string{"menu", "navigation", "links", "nav", "broken"},
+	}, func(map[string]any) (any, error) {
+		set, err := loadMenus(root)
+		if err != nil {
+			return nil, err
+		}
+		if len(set.Menus) == 0 {
+			return "no menus", nil
+		}
+		draft := site.PagesOf(s, s.GetRef(site.RefDraft))
+		live := site.PagesOf(s, s.GetRef(site.RefLive))
+		var b strings.Builder
+		for _, name := range set.Names() {
+			m, _ := set.Get(name)
+			fmt.Fprintf(&b, "%s\n", m.Name)
+			for _, it := range m.Render(draft, live) {
+				state := "ok"
+				if !it.Resolves {
+					state = "MISSING"
+				} else if !it.Live {
+					state = "not published"
+				}
+				fmt.Fprintf(&b, "%s  %s -> %s [%s]\n",
+					strings.Repeat("  ", it.Depth), it.Label, it.Target, state)
+			}
+		}
+		return strings.TrimSpace(b.String()), nil
+	})
+
+	srv.Register(mcp.Operation{
 		Name:    "content_id",
 		Summary: "the IPFS identifier the published site would have",
 		Detail: "Computed from the bytes, locally, with nothing asked of any " +

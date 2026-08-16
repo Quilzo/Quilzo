@@ -78,6 +78,8 @@ importing
   scrivet media add FILE --alt "..."        validate and accept an upload
   scrivet media get https://... --alt "..." fetch one, checked at connect time
   scrivet media formats                     what is accepted, and what is not
+  scrivet terms list | check                the controlled vocabularies
+  scrivet menu list | check                 navigation, and whether it resolves
   scrivet ipfs id                           what the permanent web will call this site
   scrivet ipfs write -o site                render it for 'ipfs add -r'      
   scrivet ipfs verify CID                   check what a pinning service claimed
@@ -313,6 +315,10 @@ func main() {
 		err = cmdImport(root, cmdArgs)
 	case "media":
 		err = cmdMedia(root, cmdArgs)
+	case "terms", "taxonomy":
+		err = cmdTerms(root, cmdArgs)
+	case "menu", "menus":
+		err = cmdMenus(root, cmdArgs)
 	case "ipfs":
 		err = cmdIPFS(root, cmdArgs)
 	case "template", "templates":

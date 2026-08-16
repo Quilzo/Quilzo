@@ -128,6 +128,9 @@ type Server struct {
 	// Decentralised renders the published site so its IPFS identifier can be
 	// computed here rather than taken from whoever stores it.
 	Decentralised *Decentralised
+	// Structure is classification and navigation: the vocabularies terms come
+	// from, and the menus that point at pages.
+	Structure *Structure
 	// Assist proposes a site from a description. Nil means no model is
 	// configured, which is a complete configuration and the screen says so.
 	Assist *Assist
@@ -563,6 +566,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/integrations/extension", s.handleExtensionSave)
 	mux.HandleFunc("/integrations/extension/remove", s.handleExtensionRemove)
 	mux.HandleFunc("/integrations/siem", s.handleSIEMExport)
+	mux.HandleFunc("/structure", s.handleStructure)
+	mux.HandleFunc("/structure/vocabulary", s.handleVocabularySave)
+	mux.HandleFunc("/structure/term/remove", s.handleTermRemove)
+	mux.HandleFunc("/structure/menu", s.handleMenuSave)
+	mux.HandleFunc("/structure/menu/item/remove", s.handleMenuItemRemove)
 	mux.HandleFunc("/decentralised", s.handleDecentralised)
 	mux.HandleFunc("/decentralised/bundle", s.handleBundleDownload)
 	mux.HandleFunc("/decentralised/verify", s.handleVerifyCID)
@@ -1374,6 +1382,27 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 					"AI-generated content to carry a machine-readable mark, and "+
 					"unrecorded is not the same as human-written.",
 				len(unmarked), plural(len(unmarked))),
+		})
+		return
+	}
+
+	// Navigation integrity, gated rather than warned about.
+	//
+	// A menu entry pointing at a page that is not going live works for the
+	// person who wrote it and 404s for every reader — which is the version of
+	// the dangling-link bug that actually ships. Drupal has an open issue and
+	// five contributed modules for this; here it is the same kind of refusal
+	// as an inaccessible page, with the same override.
+	if broken := s.brokenLinks(site.PagesOf(s.Store, draft)); len(broken) > 0 && reason == "" {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, r, "review.html", map[string]any{
+			"Nav": "review", "Title": "Review", "Principal": p,
+			"Reports": reports, "Blocking": blocking, "CanPublish": true,
+			"BrokenLinks": broken,
+			"Error": fmt.Sprintf(
+				"%d navigation entr%s point at pages that are not being "+
+					"published. They work for you and 404 for every reader.",
+				len(broken), map[bool]string{true: "y", false: "ies"}[len(broken) == 1]),
 		})
 		return
 	}

@@ -1,4 +1,4 @@
-# scrivet
+# Scrivet
 
 A CMS where content can't be edited, only added to — and publishing is a pointer
 moving.

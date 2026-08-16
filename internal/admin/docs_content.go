@@ -117,6 +117,69 @@ var chapterContent = chapter{
 			},
 		},
 		{
+			ID:      "structure",
+			Title:   "Classification and navigation",
+			Summary: "Vocabularies that stay controlled, and menus that cannot point at nothing.",
+			Body: []block{
+				p("Two features every CMS has, and the two places the big ones " +
+					"reliably rot. They share a screen because they share a " +
+					"failure: both are structure that refers to content, and " +
+					"content can be deleted."),
+				sub("Why vocabularies are closed by default"),
+				p("Free-text tags do not stay a small list. The documented " +
+					"outcomes are an organisation with over two thousand tags, " +
+					"and another with fourteen hundred entries in one dropdown, " +
+					"most of them duplicates. \"Marketing\", \"marketing\" " +
+					"and \"mktg\" become three unrelated categories, a filter " +
+					"on any one returns a third of the content, and nobody can " +
+					"tell a gap from a spelling."),
+				p("That is not a discipline problem. It is what happens when " +
+					"inventing a permanent category costs one keystroke and " +
+					"somebody else pays for the fragmentation later. So a " +
+					"vocabulary here is closed: terms are declared, and only " +
+					"declared terms apply. Opening one is possible and is a " +
+					"decision about that vocabulary."),
+				list(
+					"Spellings go in as synonyms and resolve to the real term, so the variants stop existing rather than accumulating.",
+					"Terms nest, so filtering by a parent finds everything under it without anybody maintaining a list.",
+					"A term in use cannot be deleted — the refusal names what carries it.",
+					"Every term has a description, which is the field that decides whether two people tag alike.",
+				),
+				sub("Why menus cannot point at nothing"),
+				p("Drupal's issue queue carries this as an open problem: menu " +
+					"links keep the reference to a deleted target, and at least " +
+					"five contributed modules exist to patch around it. " +
+					"WordPress is quieter and no better — delete a page and the " +
+					"menu entry stays, silently linking to a 404."),
+				p("It happens everywhere because the menu is stored in one place " +
+					"and the pages in another, so nothing owns the question " +
+					"\"is this still true\". Here it is asked three times:"),
+				steps(
+					"When an entry is saved, an internal target that does not exist is refused.",
+					"When a menu is read, every entry carries whether it resolves, so a broken one is shown rather than rendered.",
+					"When a site is published, an entry pointing at a page that is not going live refuses the publication.",
+				),
+				p("That third one catches the version nobody checks for: an " +
+					"entry pointing at a page that exists in the draft and is " +
+					"not live yet. The link works for the person who made it " +
+					"and 404s for every reader, which is the worst place to " +
+					"find out. It is the same kind of refusal as an " +
+					"inaccessible page, with the same recorded override."),
+				sub("External links"),
+				p("Checked for shape and never fetched. Making requests from a " +
+					"publish gate would turn this into a scanner of somebody " +
+					"else's infrastructure. Only http and https are accepted: " +
+					"a menu entry becomes a link in a page a reader clicks, so " +
+					"a javascript: or data: target is script execution with a " +
+					"friendly label on it."),
+				sub("Renaming a page"),
+				p("Retargeting rewrites every entry that named the old page. " +
+					"Without it, a rename means finding every menu by hand — " +
+					"which is the manual step that does not happen, and is how " +
+					"the dangling entry gets there."),
+			},
+		},
+		{
 			ID:      "media",
 			Title:   "Media",
 			Summary: "Images and files: what is accepted, what happens to them, and why an SVG is not.",

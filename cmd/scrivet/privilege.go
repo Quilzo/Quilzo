@@ -55,7 +55,15 @@ var commandNeeds = map[string]need{
 	// Reading published content and hashing it. The identifier of a public
 	// page is not a secret — anybody who can fetch the page can compute it —
 	// but rendering the whole site is still a read of the store.
-	"ipfs":       {action: auth.ActView},
+	"ipfs": {action: auth.ActView},
+	// Reading the vocabularies, the menus, and the content they classify.
+	// Editing either is done through the interface, where the existing terms
+	// and their usage counts are visible — changing what everybody is allowed
+	// to say about the content is a governance act, not a shell one-liner.
+	"terms":      {action: auth.ActView},
+	"taxonomy":   {action: auth.ActView},
+	"menu":       {action: auth.ActView},
+	"menus":      {action: auth.ActView},
 	"siem":       {action: auth.ActView},
 	"a11y":       {action: auth.ActView},
 	"verify":     {action: auth.ActView},

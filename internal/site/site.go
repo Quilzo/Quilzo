@@ -472,3 +472,18 @@ func buildTreeKeepingRecords(s *store.Store, pages map[string]any,
 	}
 	return s.PutNested(flat, carried)
 }
+
+// PagesOf is PagesAt without the error, for callers that already treat an
+// unreadable commit as "no pages".
+//
+// Used by gates: a gate that cannot read the content must not silently pass,
+// and every caller here treats an empty set as "nothing to check", which is
+// the same outcome as a commit that holds nothing. Returning an error they
+// would all discard would only invite one of them to discard it wrongly.
+func PagesOf(s *store.Store, commit string) map[string]any {
+	pages, err := PagesAt(s, commit)
+	if err != nil {
+		return nil
+	}
+	return pages
+}

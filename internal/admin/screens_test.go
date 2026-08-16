@@ -21,9 +21,11 @@ import (
 	"github.com/rsh1k/scrivet/internal/i18n"
 	"github.com/rsh1k/scrivet/internal/media"
 	"github.com/rsh1k/scrivet/internal/medialib"
+	"github.com/rsh1k/scrivet/internal/menu"
 	"github.com/rsh1k/scrivet/internal/schedule"
 	"github.com/rsh1k/scrivet/internal/schema"
 	"github.com/rsh1k/scrivet/internal/site"
+	"github.com/rsh1k/scrivet/internal/taxonomy"
 	"github.com/rsh1k/scrivet/internal/webhook"
 )
 
@@ -313,6 +315,30 @@ func fullyWired(t *testing.T) (*Server, string) {
 		},
 	}
 
+	vocabs := &taxonomy.Set{}
+	if err := vocabs.Add(taxonomy.Vocabulary{
+		Name: "topics", Label: "Topics", Terms: []taxonomy.Term{
+			{ID: "reports", Label: "Reports", Description: "Anything periodic."},
+			{ID: "quarterly", Label: "Quarterly", Parent: "reports"},
+			{ID: "marketing", Label: "Marketing", Synonyms: []string{"mktg"}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	menus := &menu.Set{}
+	if err := menus.Add(menu.Menu{Name: "main", Label: "Main", Items: []menu.Item{
+		{ID: "i1", Label: "Home", Kind: menu.Page, Target: "index", Order: 1},
+		{ID: "i2", Label: "Elsewhere", Kind: menu.External,
+			Target: "https://example.org", Order: 2},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	srv.Structure = &Structure{
+		Vocabularies:     func() (*taxonomy.Set, error) { return vocabs, nil },
+		SaveVocabularies: func(*taxonomy.Set) error { return nil },
+		Menus:            func() (*menu.Set, error) { return menus, nil },
+		SaveMenus:        func(*menu.Set) error { return nil },
+	}
 	srv.Decentralised = &Decentralised{
 		Pages:      func() (map[string]any, error) { return srv.draftPages() },
 		Stylesheet: func() string { return "body{font-family:system-ui}" },

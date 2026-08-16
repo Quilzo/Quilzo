@@ -66,6 +66,10 @@ var coverage = map[string]surfaces{
 	"agents":     {GUI: "/security/agents", MCP: []string{"agent_activity"}},
 	"export":     {GUI: "/transfer", MCP: []string{"export_site"}},
 	"ipfs":       {GUI: "/decentralised", MCP: []string{"content_id"}},
+	"terms":      {GUI: "/structure", MCP: []string{"list_terms"}},
+	"taxonomy":   {GUI: "/structure", MCP: []string{"list_terms"}},
+	"menu":       {GUI: "/structure", MCP: []string{"list_menus"}},
+	"menus":      {GUI: "/structure", MCP: []string{"list_menus"}},
 
 	// -- in the interface, and off the agent surface on purpose ---------------
 	"rollback": {GUI: "/rollback",
