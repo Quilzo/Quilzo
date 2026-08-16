@@ -83,7 +83,7 @@ var destinations = []destination{
 	{"people", "People", "/people", "Administration", "users", auth.ActGrant},
 	{"access", "Access", "/access", "Administration", "auth", auth.ActGrant},
 	{"integrations", "Integrations", "/integrations", "Administration", "integrations", auth.ActGrant},
-	{"settings", "Settings", "/settings", "Administration", "settings", auth.ActView},
+	{"settings", "Settings", "/settings", "Administration", "settings", auth.ActEditDraft},
 
 	{"playground", "API", "/playground", "Reference", "api", auth.ActView},
 	{"docs", "Docs", "/docs", "Reference", "start", auth.ActView},

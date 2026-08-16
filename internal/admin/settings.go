@@ -33,9 +33,18 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Reading is a view: an author who cannot see the settings cannot tell why
-	// their publish was refused.
-	if !s.can(w, r, p, auth.ActView, "/") {
+	// Reading these needs the permission to write, not merely to read.
+	//
+	// The reason to show them at all is that somebody whose write was refused
+	// has to be able to find out which limit refused it. That argument covers
+	// an author and stops there: a reader never writes, so there is no
+	// refusal to explain to them, and the list does say which security
+	// controls this deployment has relaxed — which is a small target list for
+	// the lowest-privileged account in the building.
+	//
+	// Changing one still needs more than this; the save handler is gated
+	// separately and a weakening also needs a recorded reason.
+	if !s.can(w, r, p, auth.ActEditDraft, "/") {
 		return
 	}
 	if s.Settings == nil || s.Settings.Load == nil {
