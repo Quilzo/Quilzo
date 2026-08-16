@@ -260,8 +260,8 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	})
 
 	srv.Register(mcp.Operation{
-		Name:    "check_translations",
-		Summary: "which pages are missing a translation or were translated from content that has since changed",
+		Name:     "check_translations",
+		Summary:  "which pages are missing a translation or were translated from content that has since changed",
 		Keywords: []string{"languages", "locales", "translation", "stale", "i18n"},
 	}, func(map[string]any) (any, error) {
 		cfg, err := loadLocales(root)
@@ -328,8 +328,8 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	})
 
 	srv.Register(mcp.Operation{
-		Name:    "verify_store",
-		Summary: "re-hash every object and report whether each is still what its name says",
+		Name:     "verify_store",
+		Summary:  "re-hash every object and report whether each is still what its name says",
 		Keywords: []string{"verify", "integrity", "corruption", "check", "hash"},
 	}, func(map[string]any) (any, error) {
 		n, err := s.Verify()

@@ -93,6 +93,9 @@ func envStatus(root string) error {
 		switch {
 		case b.Empty:
 			mark, note = "!", yellow+"nothing promoted here yet"+reset
+		case b.Ahead:
+			mark, note = " ", dim+"ahead of "+prevName(st, b.Env.Name)+
+				", which holds nothing"+reset
 		case b.Same:
 			note = green + "up to date" + reset
 		default:
@@ -113,6 +116,16 @@ func envStatus(root string) error {
 		w.Human("\n  %sscrivet env add staging --before production%s\n", dim, reset)
 	}
 	return nil
+}
+
+// prevName is the environment before this one in the sequence, for the message.
+func prevName(states []site.Behind, name string) string {
+	for i, b := range states {
+		if b.Env.Name == name && i > 0 {
+			return states[i-1].Env.Name
+		}
+	}
+	return "the draft"
 }
 
 func envAdd(root string, args []string) error {

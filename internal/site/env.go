@@ -272,6 +272,15 @@ type Behind struct {
 	Same bool `json:"same"`
 	// Empty is true when nothing has ever been promoted here.
 	Empty bool `json:"empty"`
+	// Ahead is true when the environment before this one holds nothing, so
+	// there is nothing for this one to be waiting on.
+	//
+	// Separate from Pending being zero, because those are different
+	// situations and the first version of this conflated them: an environment
+	// inserted before one that is already live reported "0 change(s) waiting",
+	// which reads as a state somebody should act on and is the opposite of
+	// what is true.
+	Ahead bool `json:"ahead,omitempty"`
 }
 
 // Status describes every environment.
@@ -296,6 +305,20 @@ func Status(s *store.Store, envs *Envs) ([]Behind, error) {
 			}
 		case commit == prevCommit:
 			b.Same = true
+		case prevCommit == "":
+			// Nothing behind this one to be behind. An environment inserted
+			// before another that is already live is in exactly this state:
+			// staging holds nothing, production holds what was published
+			// before staging existed, and production is not waiting on
+			// anything.
+			//
+			// This branch was missing, and Diff was called with an empty
+			// commit — which failed with "not an object id: \"\"" and took the
+			// whole listing with it. `scrivet env list` and the publishing
+			// screen both stopped working the moment somebody added a staging
+			// environment to a site that was already published, which is the
+			// first thing anybody does with this feature.
+			b.Pending, b.Ahead = 0, true
 		default:
 			changes, err := Diff(s, commit, prevCommit)
 			if err != nil {

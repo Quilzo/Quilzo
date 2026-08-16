@@ -28,6 +28,8 @@ what production serves is the bytes that were checked — not a copy of them.</p
     <td><code>{{if $e.Commit}}{{$e.Commit}}{{else}}—{{end}}</code></td>
     <td>
       {{if $e.Empty}}<span class="warn">nothing promoted here yet</span>
+      {{else if $e.Ahead}}<span class="ok">ahead of the step before it, which
+        holds nothing</span>
       {{else if $e.Same}}<span class="ok">up to date</span>
       {{else}}<span class="warn">{{$e.Pending}} change(s) waiting</span>{{end}}
     </td>
