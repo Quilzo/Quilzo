@@ -54,6 +54,21 @@
 </form>
 {{end}}
 
+{{if .Embed}}
+<h2 id="embed">Put {{.Selected}} on a page</h2>
+<p>Paste this into your template. Two of the fields are not ones you declared
+and both are required: the honeypot catches anything that fills in every field
+it finds, and the timestamp refuses a submission that arrives faster than a
+person can type. A form without them is refused, and the refusal is deliberately
+vague because a spam script reads it too.</p>
+<p class="hint">Set the timestamp to the moment the page was rendered. A static
+page can carry the time it was published; the check is that some time passed,
+not that the number is fresh.</p>
+<div class="table-wrap">
+<pre><code>{{.Embed}}</code></pre>
+</div>
+{{end}}
+
 {{if .Submissions}}
 <h2>{{.Selected}}</h2>
 <div class="table-wrap">

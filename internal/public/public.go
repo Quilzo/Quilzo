@@ -40,6 +40,7 @@ import (
 
 	"github.com/rsh1k/scrivet/internal/i18n"
 	"github.com/rsh1k/scrivet/internal/listing"
+	"github.com/rsh1k/scrivet/internal/menu"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/search"
 	"github.com/rsh1k/scrivet/internal/seo"
@@ -113,6 +114,18 @@ type Site struct {
 	// field existed, the behaviour of every deployment including the ones with
 	// one.
 	Media MediaLookup
+	// Menus are the site's navigation, as templates see it.
+	//
+	// This was the whole feature's missing half. Menus could be built, were
+	// validated for depth and for dangling targets, and blocked a publish that
+	// would have put a link to nothing in front of readers — and no reader ever
+	// saw one, because nothing put them in the render context. menu.Render had
+	// no caller outside its own package. Found by building a site with a
+	// navigation bar and getting a page with no navigation bar.
+	//
+	// Nil means templates get an empty menus map, which is right for a site
+	// that has not defined any.
+	Menus func() (*menu.Set, error)
 }
 
 // New returns a Site with sensible defaults.
@@ -538,6 +551,7 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 
 	ctx := map[string]any{
 		"page": body, "site": map[string]any{"name": st.Name},
+		"menus": st.menus(pages, name),
 	}
 	if names := listing.On(body); len(names) > 0 && st.Listings == nil {
 		// The hole this was written to prevent, and it happened anyway: the

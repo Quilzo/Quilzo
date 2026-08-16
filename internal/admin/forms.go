@@ -80,10 +80,20 @@ func (s *Server) handleForms(w http.ResponseWriter, r *http.Request) {
 
 	var subs []form.Submission
 	var fields []form.Field
+	// The markup to paste into a template.
+	//
+	// A form needs two fields nobody declares — the honeypot and the timestamp
+	// — and both are refused when missing. Neither appeared anywhere a person
+	// could see them, so a form built entirely through this screen could not be
+	// made to work: every submission came back with the deliberately
+	// uninformative answer a spam script gets, and there was nothing else to
+	// read. Printing the markup is the fix, because the rule is about markup.
+	embed := ""
 	if selected != "" {
 		subs, _ = s.Forms.Store.List(selected)
 		if f, ok := set.Get(selected); ok {
 			fields = f.Fields
+			embed = form.Embed(f)
 		}
 		if len(subs) > 50 {
 			subs = subs[:50]
@@ -100,6 +110,7 @@ func (s *Server) handleForms(w http.ResponseWriter, r *http.Request) {
 		"Nav": "forms", "Title": "Forms", "Principal": p,
 		"Forms": rows, "Selected": selected, "Submissions": subs,
 		"Fields": fields, "Found": found, "Query": r.URL.Query().Get("q"),
+		"Embed": embed,
 		"Kinds": []form.Kind{form.Line, form.Para, form.Email, form.Number,
 			form.Choice, form.Agree},
 		"MaxRetention": form.MaxRetentionDays,

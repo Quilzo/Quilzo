@@ -18,6 +18,7 @@ import (
 	"github.com/rsh1k/scrivet/internal/form"
 	"github.com/rsh1k/scrivet/internal/listing"
 	"github.com/rsh1k/scrivet/internal/media"
+	"github.com/rsh1k/scrivet/internal/menu"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/public"
 	"github.com/rsh1k/scrivet/internal/schema"
@@ -124,6 +125,14 @@ func cmdSite(root string, args []string) error {
 			return lib.Get(id)
 		}
 	}
+
+	// Navigation. Re-read per request rather than captured, because a menu
+	// edited while the site is running should take effect the way a published
+	// page does, and because the file is small.
+	//
+	// Without this a site could have menus defined, validated and gating its
+	// publishes, and serve every page without any navigation at all.
+	st.Menus = func() (*menu.Set, error) { return loadMenus(root) }
 
 	// The policy is generated once, at startup, from what is live — the same
 	// moment and the same content the search index is built from. Regenerating
