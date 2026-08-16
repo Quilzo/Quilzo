@@ -349,3 +349,93 @@ func readFile(t *testing.T, path string) string {
 	}
 	return string(b)
 }
+
+// A capability hiding inside a flag.
+//
+// The table above is keyed by command, and that granularity is what let a whole
+// operation go missing from the interface for months: removing a page lived at
+// `scrivet add --remove NAME`, so the row for "add" pointed at /page/ and was
+// perfectly true about writing pages while saying nothing about deleting them.
+// Every screen test passed, because a capability with no screen has nothing to
+// fail on. It was found by building an application and wanting to delete
+// something.
+//
+// Most flags are parameters — a message, an address, an author — and belong to
+// whatever their command already covers. The ones that are separate
+// capabilities are the ones that take something away, so those are the ones
+// asked about here: a flag whose name is a verb of removal has to be reachable
+// from the interface, or say why not.
+func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
+	// Where each removal flag lives in the admin, or why it does not.
+	removal := map[string]surfaces{
+		"add.remove": {GUI: "/page/delete",
+			MCP:   []string{"write_page"},
+			NoMCP: ""},
+	}
+
+	verbs := regexp.MustCompile(
+		`^(remove|delete|drop|purge|erase|revoke|unbind|cancel|clear)`)
+	declared := regexp.MustCompile(
+		`fs\.(?:String|Bool|Int|Duration|Float64)\("([a-z-]+)"`)
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes := map[string]bool{}
+	for _, r := range adminRoutes(t) {
+		routes[r] = true
+	}
+
+	found := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") ||
+			strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		body := readFile(t, e.Name())
+		// The command a flag belongs to is the flag set it was created on,
+		// which is named at the NewFlagSet call above it.
+		command := ""
+		for _, line := range strings.Split(body, "\n") {
+			if i := strings.Index(line, `NewFlagSet("`); i >= 0 {
+				rest := line[i+len(`NewFlagSet("`):]
+				if j := strings.Index(rest, `"`); j > 0 {
+					command = rest[:j]
+				}
+			}
+			m := declared.FindStringSubmatch(line)
+			if m == nil || !verbs.MatchString(m[1]) {
+				continue
+			}
+			found++
+			key := command + "." + m[1]
+			s, listed := removal[key]
+			if !listed {
+				t.Errorf("%s takes something away and is not in the removal "+
+					"table.\n  A flag that removes is a capability, not a "+
+					"parameter, and the command-level table above cannot see "+
+					"it. Add %q with the admin path that reaches it, or a "+
+					"written reason there is none.", key, key)
+				continue
+			}
+			if s.GUI == "" {
+				if !isRealReason(s.Why) {
+					t.Errorf("%s has no interface and no reason worth the name",
+						key)
+				}
+				continue
+			}
+			if !routes[s.GUI] {
+				t.Errorf("%s claims the interface serves %q and it does not",
+					key, s.GUI)
+			}
+		}
+	}
+	// The guard every source-walking test in this repo needs: one that matches
+	// nothing passes forever.
+	if found == 0 {
+		t.Fatal("no removal flags were found at all, so this test is checking " +
+			"nothing — the pattern has stopped matching the source")
+	}
+}

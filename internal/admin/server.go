@@ -563,6 +563,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.handlePages)
 	mux.HandleFunc("/page/", s.handlePage)
 	mux.HandleFunc("/save", s.handleSave)
+	mux.HandleFunc("/page/delete", s.handlePageDelete)
 	mux.HandleFunc("/security", s.handleSecurity)
 	mux.HandleFunc("/security/rules", s.handleRules)
 	mux.HandleFunc("/security/rule/", s.handleRule)
@@ -859,6 +860,8 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "pages.html", map[string]any{
 		"Windows": windows,
 		"Nav":     "pages",
+		"Message": r.URL.Query().Get("m"),
+		"Error":   r.URL.Query().Get("e"),
 		"Title":   "Pages", "Principal": p, "Names": names,
 		"Changed": changed, "Draft": draft, "Live": live,
 		"Unpublished": draft != "" && draft != live,

@@ -1,6 +1,9 @@
 {{template "head" .}}
 <h1>Pages</h1>
 
+{{if .Message}}<p class="notice" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+
 {{if .Unpublished}}
 <p class="notice" role="status">
   <strong>Unpublished changes.</strong> The draft differs from what is live.
@@ -27,6 +30,12 @@
       <td class="actions">
         <a href="/page/{{.}}">{{if $.CanEdit}}Edit{{else}}View{{end}} <span class="sr">{{.}}</span></a>
         <a href="/preview/{{.}}">Preview <span class="sr">{{.}}</span></a>
+        {{if $.CanEdit}}
+        <form method="post" action="/page/delete" class="inline">
+          <input type="hidden" name="name" value="{{.}}">
+          <button type="submit" class="danger">Remove <span class="sr">{{.}} from the draft</span></button>
+        </form>
+        {{end}}
       </td>
     </tr>
   {{end}}
@@ -34,6 +43,10 @@
 </table>
 </div>
 {{else}}
-<p>No pages yet. Add one with <code>scrivet add</code>.</p>
+<p>No pages yet. Open <a href="/page/index">index</a> to write the first one,
+or stage one from a file with <code>scrivet add</code>.</p>
 {{end}}
+<p class="hint">Removing a page takes it out of the draft and, once you publish,
+off the live site. Nothing is erased: the store keeps every commit, so an
+earlier version of the page is still there and still addressable.</p>
 {{template "foot" .}}

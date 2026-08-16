@@ -126,7 +126,7 @@ func TestAReaderIsRefusedByEveryWriteEndpoint(t *testing.T) {
 		"/transfer/import", "/transfer/starter",
 		"/assist/accept",
 		"/people/grant", "/people/revoke", "/sessions/revoke",
-		"/settings/save", "/security/verify",
+		"/settings/save", "/security/verify", "/page/delete",
 	}
 	sort.Strings(writes)
 
