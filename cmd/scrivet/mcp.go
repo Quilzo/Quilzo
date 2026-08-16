@@ -295,6 +295,11 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			len(unmarked), strings.Join(unmarked, ", ")), nil
 	})
 
+	// Records, types, media, the pipeline and the read-only assurance
+	// operations. In another file because this one was already the length where
+	// somebody adding an operation stops reading the gates at the top.
+	registerContentOps(srv, root, s, caller)
+
 	return srv
 }
 
