@@ -653,3 +653,19 @@ body.nav-top > .sidenav { display: none; }
   body.nav-left > .sidenav { display: none; }
   body.nav-left > .bar > nav { display: block; }
 }
+
+/* -- data ------------------------------------------------------------------- */
+.chips { display: flex; gap: .4rem; flex-wrap: wrap; margin: 0 0 1rem; }
+.chips a { display: inline-flex; gap: .4rem; align-items: center;
+  padding: .35rem .75rem; border-radius: 999px; text-decoration: none;
+  border: 1px solid var(--outline-variant); color: var(--on-surface);
+  background: var(--surface-container-low); font-size: .875rem; }
+.chips a.on { background: var(--secondary-container);
+  color: var(--on-secondary-container); border-color: transparent; }
+.chips .count { font-size: .75rem; opacity: .7; }
+.row textarea { font: inherit; font-family: ui-monospace, monospace;
+  padding: .5rem .6rem; border-radius: var(--shape-s);
+  border: 1px solid var(--outline); background: var(--surface);
+  color: var(--on-surface); width: 100%; }
+tr.weak th { border-left: 3px solid var(--error); padding-left: .6rem; }
+.hint.warn { color: var(--error); }

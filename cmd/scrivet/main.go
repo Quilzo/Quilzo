@@ -90,6 +90,10 @@ languages
 
 content types
   scrivet ext list | add | pin | test        run your own code, sandboxed
+  scrivet records collections               what data this application holds
+  scrivet records list NAME [--where k=v]   query records
+  scrivet records add NAME field=value      write one
+  scrivet records import NAME rows.json     write many, in one commit
   scrivet type example > FILE.json          a definition you can edit
   scrivet type add FILE.json                define a type: flat fields, no regex
   scrivet type list | show NAME             what exists, and its address
@@ -326,6 +330,8 @@ func main() {
 		err = cmdToken(root, cmdArgs)
 	case "a11y":
 		err = cmdA11y(root, cmdArgs)
+	case "records", "record":
+		err = cmdRecords(root, cmdArgs)
 	case "env", "environments":
 		err = cmdEnv(root, cmdArgs)
 	case "ext", "extensions":

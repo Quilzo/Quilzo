@@ -104,6 +104,12 @@ type Server struct {
 	// page can say what the record is worth rather than implying it.
 	LogSeparated bool
 
+	// Settings gives the admin the store's configuration.
+	Settings *Settings
+	// Data gives the admin access to records. Nil means the screen says it has
+	// no access rather than showing an empty list, because empty and absent
+	// look identical and mean opposite things.
+	Data *Data
 	// API is the content API, served under /api/ so the playground can call
 	// it same-origin. Nil means the routes 404, which is what a server built
 	// without one should do.
@@ -457,6 +463,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/publish", s.handlePublish)
 	mux.HandleFunc("/access", s.handleAccess)
 	mux.HandleFunc("/nav", s.handleNav)
+	mux.HandleFunc("/settings", s.handleSettings)
+	mux.HandleFunc("/settings/save", s.handleSettingSave)
+	mux.HandleFunc("/records", s.handleRecords)
+	mux.HandleFunc("/records/save", s.handleRecordSave)
+	mux.HandleFunc("/records/delete", s.handleRecordDelete)
 	mux.HandleFunc("/logs", s.handleLogs)
 	mux.HandleFunc("/people", s.handlePeople)
 	mux.HandleFunc("/people/grant", s.handlePeopleGrant)

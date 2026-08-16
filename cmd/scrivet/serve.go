@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/rsh1k/scrivet/internal/api"
+	"github.com/rsh1k/scrivet/internal/config"
 	"github.com/rsh1k/scrivet/internal/logd"
 	"github.com/rsh1k/scrivet/internal/throttle"
 	"net/http"
@@ -86,6 +87,16 @@ func cmdServe(root string, args []string) error {
 		})
 	}
 
+	srv.Settings = &admin.Settings{
+		Load: func() (*config.Config, error) { return loadConfig(root) },
+		Save: func(c *config.Config) error { return saveConfig(root, c) },
+	}
+	srv.Data = &admin.Data{
+		Tree: func() (string, error) { return draftTree(s) },
+		Commit: func(tree, message, author string) error {
+			return commitTreeNoLock(s, tree, message, author)
+		},
+	}
 	srv.NavPosition = cfg.Raw("admin.nav")
 	srv.ReloadTokens = tokenReloader(root, toks)
 
@@ -133,6 +144,16 @@ func cmdServe(root string, args []string) error {
 			Burst:     cfg.Int("api.rate.burst"),
 		},
 		Types: func() (*schema.Store, error) { return schema.Load(root) },
+		Records: &api.Records{
+			// Writable from the admin, because the admin is where somebody
+			// edits things and a console that can only read is a console
+			// people stop opening.
+			Writable: true,
+			Tree:     func() (string, error) { return draftTree(s) },
+			Commit: func(tree, message, author string) error {
+				return commitTreeNoLock(s, tree, message, author)
+			},
+		},
 	}
 	srv.API = apiSrv.Handler()
 	srv.OnAuthFailure = func(source string, failures int) {

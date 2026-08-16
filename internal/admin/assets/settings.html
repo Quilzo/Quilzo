@@ -1,0 +1,71 @@
+{{template "head" .}}
+<h1>Settings</h1>
+
+{{if .Unavailable}}<p class="notice">{{.Unavailable}}</p>{{else}}
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+
+{{if .Weakened}}
+<div class="card bad">
+  <p><strong>{{len .Weakened}} setting(s) are running weaker than the default.</strong></p>
+  <ul>
+  {{range .Weakened}}
+    <li><code>{{.Setting.Key}}</code> = {{.Value}} &mdash; {{.Why}}
+      {{if not .Accepted}}<br><strong>No reason was recorded.</strong>
+      {{else if .Expired}}<br>Accepted by {{.Accepted.By}}, and that has lapsed.
+      {{else}}<br>Accepted by {{.Accepted.By}}: {{.Accepted.Reason}}{{end}}</li>
+  {{end}}
+  </ul>
+</div>
+{{end}}
+
+{{range .Groups}}
+<h2>{{.Name}}</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Setting</th><th scope="col">Value</th>
+    <th scope="col">Default</th>{{if $.CanWrite}}<th scope="col"></th>{{end}}
+  </tr></thead>
+  <tbody>
+  {{range .Items}}
+  <tr{{if .Weaker}} class="weak"{{end}}>
+    <th scope="row">
+      <code>{{.Setting.Key}}</code>
+      <div class="hint">{{.Setting.Summary}}</div>
+      {{if .Weaker}}<div class="hint warn">{{.Why}}</div>{{end}}
+    </th>
+    <td>{{if .Overriden}}<strong>{{.Value}}</strong>{{else}}{{.Value}}{{end}}</td>
+    <td class="hint">{{.Setting.Default}}</td>
+    {{if $.CanWrite}}
+    <td>
+      <form method="post" action="/settings/save" class="inline">
+        <input type="hidden" name="key" value="{{.Setting.Key}}">
+        <input name="value" value="{{.Value}}" size="10" spellcheck="false">
+        {{if .Setting.Weaker}}<input name="reason" placeholder="reason, if weaker"
+          size="16">{{end}}
+        <button type="submit">Set</button>
+      </form>
+      {{if .Overriden}}
+      <form method="post" action="/settings/save" class="inline">
+        <input type="hidden" name="key" value="{{.Setting.Key}}">
+        <input type="hidden" name="reset" value="1">
+        <button type="submit">Reset</button>
+      </form>
+      {{end}}
+    </td>
+    {{end}}
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<p class="hint">
+  A setting weaker than its default is allowed and needs a reason. The reason
+  goes in the audit log, lapses after {{.Days}} days, and is reported by the
+  security posture until it is changed back or renewed. Nothing here is
+  forbidden and nothing is silent.
+</p>
+{{end}}
+{{template "foot" .}}

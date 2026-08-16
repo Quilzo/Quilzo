@@ -1,0 +1,88 @@
+{{template "head" .}}
+<h1>Data</h1>
+
+{{if .Unavailable}}<p class="notice">{{.Unavailable}}</p>{{else}}
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+
+{{if .Collections}}
+<nav class="chips" aria-label="Collections">
+  {{range .Collections}}
+  <a href="/records?c={{.Name}}"{{if eq .Name $.Selected}} class="on"{{end}}>
+    {{.Name}} <span class="count">{{.Count}}</span></a>
+  {{end}}
+</nav>
+{{else}}
+<p class="hint">No collections yet. A collection is many records of one shape,
+which is what an application holds rather than what a page does.</p>
+{{end}}
+
+{{if .Selected}}
+<form method="get" action="/records" class="row">
+  <input type="hidden" name="c" value="{{.Selected}}">
+  <label>Find <input name="find" value="{{.Find}}" spellcheck="false"
+    placeholder="any field"></label>
+  <label class="check"><button type="submit">Search</button></label>
+</form>
+
+<p class="hint">{{.Total}} record(s) in {{.Selected}}</p>
+
+{{if .Records}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">id</th>
+    {{range .Columns}}<th scope="col">{{.}}</th>{{end}}
+    <th scope="col">updated</th>
+    {{if $.CanWrite}}<th scope="col"></th>{{end}}
+  </tr></thead>
+  <tbody>
+  {{range .Records}}
+  <tr>
+    <th scope="row" class="mono">{{slice .ID 0 12}}</th>
+    {{$r := .}}
+    {{range $.Columns}}<td>{{index $r.Fields .}}</td>{{end}}
+    <td class="mono">{{.Updated}}</td>
+    {{if $.CanWrite}}
+    <td class="right">
+      <form method="post" action="/records/delete" class="inline">
+        <input type="hidden" name="collection" value="{{$.Selected}}">
+        <input type="hidden" name="id" value="{{.ID}}">
+        <button type="submit" class="danger">Delete</button>
+      </form>
+    </td>
+    {{end}}
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+{{end}}
+
+{{if .CanWrite}}
+<h2>Write a record</h2>
+<form method="post" action="/records/save" class="stack">
+  <div class="row">
+    <label>Collection
+      <input name="collection" value="{{.Selected}}" required spellcheck="false"
+        placeholder="devices">
+    </label>
+    <label>Id
+      <input name="id" spellcheck="false" placeholder="blank creates a new one">
+    </label>
+  </div>
+  <div class="row">
+    <label style="flex:1 1 100%">Fields
+      <textarea name="fields" rows="6" spellcheck="false"
+        placeholder='{"hostname": "laptop-14", "encrypted": true}'></textarea>
+    </label>
+  </div>
+  <p><button type="submit">Save</button></p>
+</form>
+<p class="hint">
+  An id is assigned by the store, never taken from the fields &mdash; it is the
+  address of the record rather than a claim about it. Leave it blank to create.
+</p>
+{{end}}
+{{end}}
+{{template "foot" .}}

@@ -70,17 +70,24 @@ var commandNeeds = map[string]need{
 	"stamp":     {action: auth.ActView},
 
 	// -- writing content
-	"add":       {action: auth.ActEditDraft},
-	"import":    {action: auth.ActEditDraft},
-	"assist":    {action: auth.ActEditDraft},
-	"media":     {action: auth.ActEditDraft},
-	"lang":      {action: auth.ActEditDraft},
-	"locales":   {action: auth.ActEditDraft},
-	"lock":      {action: auth.ActEditDraft},
-	"locks":     {action: auth.ActEditDraft},
-	"review":    {action: auth.ActEditDraft},
-	"template":  {action: auth.ActEditDraft},
-	"templates": {action: auth.ActEditDraft},
+	"add": {action: auth.ActEditDraft},
+	// Records are content: writing them is an author's act, reading them a
+	// reader's.
+	"records":             {action: auth.ActEditDraft},
+	"record":              {action: auth.ActEditDraft},
+	"records list":        {action: auth.ActView},
+	"records get":         {action: auth.ActView},
+	"records collections": {action: auth.ActView},
+	"import":              {action: auth.ActEditDraft},
+	"assist":              {action: auth.ActEditDraft},
+	"media":               {action: auth.ActEditDraft},
+	"lang":                {action: auth.ActEditDraft},
+	"locales":             {action: auth.ActEditDraft},
+	"lock":                {action: auth.ActEditDraft},
+	"locks":               {action: auth.ActEditDraft},
+	"review":              {action: auth.ActEditDraft},
+	"template":            {action: auth.ActEditDraft},
+	"templates":           {action: auth.ActEditDraft},
 
 	// -- content types gate every write, so changing one is a change to what
 	// every author may store. Publisher, not author.

@@ -43,6 +43,10 @@ type Server struct {
 	// Types validates writes, so the API cannot put content into the store that
 	// the CLI and the admin would have refused.
 	Types func() (*schema.Store, error)
+	// Records serves the collections API. Nil means those routes report that
+	// this server does not serve records, which is different from serving an
+	// empty one.
+	Records *Records
 	// Vectors answers similarity queries. Nil means the two vector routes 404,
 	// which is the honest state for a server that has not built an index —
 	// better than answering with no results, which reads as "nothing is
@@ -79,6 +83,8 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/pages/", s.page)
 	mux.HandleFunc("/api/v1/pages", s.list)
+	mux.HandleFunc("/api/v1/collections", s.collections)
+	mux.HandleFunc("/api/v1/records/", s.records)
 	mux.HandleFunc("/api/v1/similar/", s.similar)
 	mux.HandleFunc("/api/v1/search/vector", s.vectorSearch)
 	mux.HandleFunc("/api/v1/", s.notFound)
