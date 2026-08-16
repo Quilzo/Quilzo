@@ -327,6 +327,8 @@ func main() {
 		err = cmdMenus(root, cmdArgs)
 	case "ipfs":
 		err = cmdIPFS(root, cmdArgs)
+	case "demo":
+		err = cmdDemo(root, cmdArgs)
 	case "template", "templates":
 		err = cmdTemplate(root, cmdArgs)
 	case "posture":

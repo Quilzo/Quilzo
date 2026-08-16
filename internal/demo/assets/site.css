@@ -1,0 +1,212 @@
+/* Gram — the demonstration site.
+   One stylesheet, no fonts fetched, nothing external: the generated CSP for
+   this site names no third-party host, and that is only true if the design
+   does not quietly want one. */
+
+:root {
+  --ink:        #1b1a1f;
+  --ink-soft:   #5c5a66;
+  --ground:     #fbfaf8;
+  --panel:      #ffffff;
+  --line:       #e6e3dd;
+  --accent:     #b8452f;
+  --accent-ink: #ffffff;
+  --shadow:     0 1px 2px rgba(27,26,31,.06), 0 8px 24px rgba(27,26,31,.05);
+  --radius:     14px;
+  --measure:    64ch;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink:      #f2f0ec;
+    --ink-soft: #a8a4b0;
+    --ground:   #131217;
+    --panel:    #1c1b21;
+    --line:     #2e2c35;
+    --accent:   #ff8a6b;
+    --accent-ink: #241009;
+    --shadow:   0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap { width: min(100% - 2rem, 1080px); margin-inline: auto; }
+
+.skip {
+  position: absolute; left: -9999px;
+  background: var(--accent); color: var(--accent-ink);
+  padding: .6rem 1rem; border-radius: 0 0 var(--radius) 0; z-index: 10;
+}
+.skip:focus { left: 0; top: 0; }
+
+/* --- header ------------------------------------------------------------- */
+
+.topbar {
+  position: sticky; top: 0; z-index: 5;
+  background: color-mix(in srgb, var(--ground) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.bar {
+  display: flex; align-items: center; gap: 1.5rem;
+  min-height: 60px; flex-wrap: wrap;
+}
+.wordmark {
+  font-weight: 700; font-size: 1.25rem; letter-spacing: -.02em;
+  color: var(--ink); text-decoration: none;
+}
+.mainnav {
+  display: flex; gap: .25rem; list-style: none; margin: 0; padding: 0;
+  flex-wrap: wrap;
+}
+.mainnav a {
+  display: block; padding: .4rem .7rem; border-radius: 999px;
+  color: var(--ink-soft); text-decoration: none; font-size: .95rem;
+}
+.mainnav a:hover { color: var(--ink); background: var(--panel); }
+.mainnav a[aria-current="page"] {
+  color: var(--accent-ink); background: var(--accent); font-weight: 600;
+}
+
+/* --- headings ----------------------------------------------------------- */
+
+main { padding-block: 2.5rem 4rem; }
+h1 {
+  font-size: clamp(1.8rem, 1.2rem + 2.4vw, 2.6rem);
+  line-height: 1.15; letter-spacing: -.02em; margin: 0 0 .4rem;
+  text-wrap: balance;
+}
+.intro {
+  color: var(--ink-soft); font-size: 1.1rem; max-width: var(--measure);
+  margin: 0 0 2rem;
+}
+
+/* --- the feed ----------------------------------------------------------- */
+
+.grid {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: 1.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+.card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow);
+}
+.shot { display: block; }
+.card img { display: block; width: 100%; height: auto; }
+.cap { padding: .9rem 1rem 1.1rem; }
+.by { margin: 0 0 .35rem; font-size: .9rem; }
+.handle { font-weight: 650; }
+.handle::before { content: "@"; opacity: .5; }
+.where { color: var(--ink-soft); }
+.where::before { content: " · "; color: var(--line); }
+.text { margin: 0 0 .6rem; }
+.meta {
+  margin: 0; font-size: .82rem; color: var(--ink-soft);
+  display: flex; gap: .75rem; flex-wrap: wrap;
+  font-variant-numeric: tabular-nums;
+}
+.likes { font-weight: 600; color: var(--ink); }
+.topic::before { content: "#"; opacity: .5; }
+
+/* --- most liked --------------------------------------------------------- */
+
+.chart { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+.rank {
+  display: grid; grid-template-columns: 120px 1fr; gap: 1rem;
+  align-items: center;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: .75rem; box-shadow: var(--shadow);
+}
+.rank img { border-radius: 10px; width: 120px; height: 120px; object-fit: cover; }
+
+/* --- topic chips -------------------------------------------------------- */
+
+.chips { display: flex; gap: .5rem; flex-wrap: wrap; margin: 0 0 1.5rem; }
+.chips a {
+  padding: .35rem .8rem; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--panel);
+  color: var(--ink); text-decoration: none; font-size: .9rem;
+}
+.chips a::before { content: "#"; opacity: .5; }
+.chips a:hover { border-color: var(--accent); color: var(--accent); }
+
+/* --- a single image, and profiles --------------------------------------- */
+
+.single { margin: 0 0 2rem; max-width: 480px; }
+.single img {
+  width: 100%; height: auto; border-radius: var(--radius);
+  border: 1px solid var(--line);
+}
+.single figcaption { color: var(--ink-soft); padding-top: .6rem; }
+
+.profile {
+  display: grid; grid-template-columns: 160px 1fr; gap: 1.5rem;
+  align-items: start; margin-bottom: 2rem;
+}
+.avatar { border-radius: 50%; width: 160px; height: 160px; }
+.display { font-size: 1.4rem; font-weight: 700; margin: 0; }
+.profile .handle { color: var(--ink-soft); margin: 0 0 .8rem; }
+.bio { max-width: var(--measure); }
+
+/* --- the message form --------------------------------------------------- */
+
+.compose {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1.5rem;
+  max-width: 34rem; box-shadow: var(--shadow);
+}
+.field { display: grid; gap: .3rem; margin: 0 0 1rem; }
+.field label { font-weight: 600; font-size: .9rem; }
+.compose input, .compose select, .compose textarea {
+  font: inherit; color: inherit; background: var(--ground);
+  border: 1px solid var(--line); border-radius: 8px; padding: .55rem .7rem;
+  width: 100%;
+}
+.compose textarea { resize: vertical; }
+.compose button {
+  font: inherit; font-weight: 600; cursor: pointer;
+  background: var(--accent); color: var(--accent-ink);
+  border: 0; border-radius: 999px; padding: .6rem 1.4rem;
+}
+.privacy { font-size: .85rem; color: var(--ink-soft); margin: 1rem 0 0; }
+
+/* The honeypot. Hidden from sight and from assistive technology, because a
+   screen reader user filling it in would be silently rejected — which is the
+   accessibility bug every honeypot ships with unless it says aria-hidden. */
+.hp { position: absolute; left: -9999px; }
+
+/* --- prose and footer --------------------------------------------------- */
+
+.prose { max-width: var(--measure); }
+.prose h2 { margin-top: 2rem; letter-spacing: -.01em; }
+
+.foot {
+  border-top: 1px solid var(--line); margin-top: 4rem; padding-block: 2rem;
+  color: var(--ink-soft); font-size: .9rem;
+}
+.foot p { margin: 0 0 .3rem; }
+
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+img { max-width: 100%; }
+
+@media (max-width: 560px) {
+  .profile { grid-template-columns: 1fr; }
+  .rank { grid-template-columns: 84px 1fr; }
+  .rank img { width: 84px; height: 84px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

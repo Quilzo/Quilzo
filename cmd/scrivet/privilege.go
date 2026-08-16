@@ -105,6 +105,10 @@ var commandNeeds = map[string]need{
 	"lock":                {action: auth.ActEditDraft},
 	"locks":               {action: auth.ActEditDraft},
 	"review":              {action: auth.ActEditDraft},
+	// Writes content, types, listings, menus and forms, and publishes. That is
+	// the whole store, so it needs the permission that covers the whole store —
+	// and it refuses outright on a store that already has anything in it.
+	"demo":                {action: auth.ActPublish},
 	"template":            {action: auth.ActEditDraft},
 	"templates":           {action: auth.ActEditDraft},
 

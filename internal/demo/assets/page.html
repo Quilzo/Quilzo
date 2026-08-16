@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ page.title }} — {{ site.name }}</title>
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="wrap bar">
+    <a class="wordmark" href="/">{{ site.name }}</a>
+    <nav aria-label="Main">
+      <ul class="mainnav">
+      {% for item in menus.main %}
+        <li><a href="{{ item.href }}"{% if item.current %} aria-current="page"{% end %}>{{ item.label }}</a></li>
+      {% end %}
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+  <h1>{{ page.title }}</h1>
+  {% if page.intro %}<p class="intro">{{ page.intro }}</p>{% end %}
+
+  {% if page.screen %}{% end %}
+
+  {% if listings.feed %}
+  <ul class="grid" role="list">
+    {% for row in listings.feed.rows %}
+    <li class="card">
+      <a class="shot" href="/explore?topic={{ row.topic }}">
+        <img src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy">
+      </a>
+      <div class="cap">
+        <p class="by"><span class="handle">{{ row.author }}</span> <span class="where">{{ row.place }}</span></p>
+        <p class="text">{{ row.caption }}</p>
+        <p class="meta"><span class="likes">{{ row.likes }} likes</span> <span class="when">{{ row.posted }}</span> <span class="topic">{{ row.topic }}</span></p>
+      </div>
+    </li>
+    {% end %}
+  </ul>
+  {% end %}
+
+  {% if listings.popular %}
+  <ol class="chart" role="list">
+    {% for row in listings.popular.rows %}
+    <li class="rank">
+      <img src="/media/{{ row.image }}" alt="{{ row.alt }}" width="120" height="120" loading="lazy">
+      <div>
+        <p class="text">{{ row.caption | truncate:90 }}</p>
+        <p class="meta"><span class="likes">{{ row.likes }} likes</span> <span class="handle">{{ row.author }}</span></p>
+      </div>
+    </li>
+    {% end %}
+  </ol>
+  {% end %}
+
+  {% if listings.by_topic %}
+  <p class="chips">
+    <a href="/explore?topic=travel">travel</a>
+    <a href="/explore?topic=food">food</a>
+    <a href="/explore?topic=design">design</a>
+    <a href="/explore?topic=music">music</a>
+    <a href="/explore?topic=photography">photography</a>
+  </p>
+  <ul class="grid" role="list">
+    {% for row in listings.by_topic.rows %}
+    <li class="card">
+      <div class="shot"><img src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy"></div>
+      <div class="cap">
+        <p class="by"><span class="handle">{{ row.author }}</span> <span class="where">{{ row.place }}</span></p>
+        <p class="text">{{ row.caption }}</p>
+        <p class="meta"><span class="likes">{{ row.likes }} likes</span> <span class="when">{{ row.posted }}</span></p>
+      </div>
+    </li>
+    {% end %}
+  </ul>
+  {% end %}
+
+  {% if page.image %}
+  <figure class="single">
+    <img src="/media/{{ page.image }}" alt="{{ page.alt }}" width="480" height="480">
+    {% if page.caption %}<figcaption>{{ page.caption }}</figcaption>{% end %}
+  </figure>
+  {% end %}
+
+  {% if page.handle %}
+  <div class="profile">
+    {% if page.avatar %}<img class="avatar" src="/media/{{ page.avatar }}" alt="{{ page.avatar_alt }}" width="160" height="160">{% end %}
+    <div>
+      <p class="display">{{ page.display }}</p>
+      <p class="handle">@{{ page.handle }}</p>
+      {% if page.bio %}<p class="bio">{{ page.bio }}</p>{% end %}
+      {% if page.link %}<p><a href="{{ page.link }}">{{ page.link }}</a></p>{% end %}
+      {% if page.joined %}<p class="meta">Here since {{ page.joined }}</p>{% end %}
+    </div>
+  </div>
+  {% end %}
+
+  {% if page.form %}
+  <form class="compose" method="post" action="/form/{{ page.form }}">
+    <p class="field"><label for="f-name">Your name</label>
+      <input id="f-name" name="name" type="text" autocomplete="name" required></p>
+    <p class="field"><label for="f-email">Email</label>
+      <input id="f-email" name="email" type="email" autocomplete="email" required></p>
+    <p class="field"><label for="f-subject">About</label>
+      <select id="f-subject" name="subject">
+        <option>a photo</option><option>a collaboration</option><option>something else</option>
+      </select></p>
+    <p class="field"><label for="f-body">Message</label>
+      <textarea id="f-body" name="body" rows="5" required></textarea></p>
+    <p class="hp" aria-hidden="true"><label for="f-url">Leave this empty</label>
+      <input id="f-url" name="website_url" type="text" tabindex="-1" autocomplete="off"></p>
+    <input type="hidden" name="form_started" value="{{ page.stamp }}">
+    <p><button type="submit">Send</button></p>
+    <p class="privacy">{{ page.privacy }}</p>
+  </form>
+  {% end %}
+
+  {% if page.body %}<div class="prose">{% raw page.body %}</div>{% end %}
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <p>{{ site.name }} — a demonstration site, built entirely through the Scrivet interface.</p>
+    <p class="meta">Every photograph here is generated. The people are invented.</p>
+  </div>
+</footer>
+</body>
+</html>

@@ -97,6 +97,10 @@ var coverage = map[string]surfaces{
 	"csp":       {GUI: "/security/policy", NoMCP: "is derived from published content and read on a screen; there is nothing an agent does with it"},
 	"lock":      {GUI: "/publishing", NoMCP: "is a courtesy between people about who is mid-edit, and an agent is not one of them"},
 	"import":    {GUI: "/transfer", NoMCP: "reads a file from disk this process was handed; there is no path by which an agent supplies one"},
+	"demo": {GUI: "/transfer",
+		NoMCP: "installs a whole application over an empty store, including " +
+			"content types and a template; an agent that could do this could " +
+			"replace a site with a demonstration of one"},
 	"template":  {GUI: "/transfer", NoMCP: "replaces a whole page with sample content, which is a destructive operation with a friendly name"},
 	"templates": {GUI: "/transfer", NoMCP: "as template"},
 	"assist":    {GUI: "/assist", NoMCP: "asks a model to write a site, and this surface is already being driven by one"},
