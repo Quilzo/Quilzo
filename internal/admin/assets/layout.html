@@ -1,5 +1,5 @@
 {{define "head"}}<!doctype html>
-<html lang="en">
+<html lang="en"{{if .Theme}} data-theme="{{.Theme}}"{{end}}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,12 +12,16 @@
 <header class="bar">
   <div class="bar-inner">
     <a class="brand" href="/">scrivet</a>
-    {{with .Principal}}<p class="who">Signed in as <strong>{{.Name}}</strong> ({{.Role}})
+    {{with .Principal}}<p class="who">Signed in as
+      <a href="/profile"><strong>{{.Name}}</strong></a> ({{.Role}})
       — <a href="/signout">Sign out</a></p>{{end}}
-    <form method="post" action="/nav" class="navtoggle">
-      <input type="hidden" name="to" value="{{if eq .NavPosition "left"}}top{{else}}left{{end}}">
-      <button type="submit">{{if eq .NavPosition "left"}}Top nav{{else}}Side nav{{end}}</button>
-    </form>
+    <div class="prefs">
+      {{template "themetoggle" .}}
+      <form method="post" action="/nav" class="navtoggle">
+        <input type="hidden" name="to" value="{{if eq .NavPosition "left"}}top{{else}}left{{end}}">
+        <button type="submit">{{if eq .NavPosition "left"}}Top nav{{else}}Side nav{{end}}</button>
+      </form>
+    </div>
   </div>
   {{template "navlist" .}}
 </header>
@@ -29,65 +33,79 @@
 {{end}}
 
 {{/*
-  The navigation, written once.
+  The sun that becomes a moon.
 
-  It used to be written twice — once for the top bar and once for the side —
-  and the second copy was already a screen behind the first. Two lists that
-  have to agree will not, and the one that falls behind is whichever one the
-  person changing things does not have open.
+  Inline SVG rather than an image file or a character: the content policy on
+  every admin response is `img-src 'self' data:`, so a remote icon set is not
+  an option and a data URI would be an unreadable blob in the markup. An inline
+  <svg> is part of the document, costs no request, inherits currentColor so it
+  follows the theme it is switching, and can be given a title nobody has to
+  guess at.
 
-  The groups are named on the wrapper rather than in visible text, so the
-  structure reaches a screen reader in both orientations while the labels are
-  only drawn where there is room for them.
+  Three states, so the button says which one it is in rather than implying two.
+*/}}
+{{define "themetoggle"}}
+<form method="post" action="/theme" class="themetoggle">
+  <input type="hidden" name="to" value="{{.ThemeNext}}">
+  <button type="submit" title="Currently {{.ThemeNow}}. Switch to {{.ThemeNextLabel}}.">
+    <span class="visually-hidden">Appearance: currently {{.ThemeNow}}.
+      Switch to {{.ThemeNextLabel}}.</span>
+    {{if eq .Theme "dark"}}
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"
+            fill="none" stroke="currentColor" stroke-width="1.8"
+            stroke-linejoin="round"/>
+    </svg>
+    {{else if eq .Theme "light"}}
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor"
+              stroke-width="1.8"/>
+      <g stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4"/>
+        <path d="M5.2 5.2l1.7 1.7M17.1 17.1l1.7 1.7M18.8 5.2l-1.7 1.7M6.9 17.1l-1.7 1.7"/>
+      </g>
+    </svg>
+    {{else}}
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor"
+              stroke-width="1.8"/>
+      <path d="M12 3.6a8.4 8.4 0 0 0 0 16.8Z" fill="currentColor"/>
+    </svg>
+    {{end}}
+  </button>
+</form>
+{{end}}
+
+{{/*
+  The navigation, rendered from the table in nav.go.
+
+  It used to be written out twice, once per orientation, and the second copy
+  was already a screen behind. Then it was one template with the destinations
+  hard-coded, which could not answer the three questions now being asked of it:
+  what order does this person want, what may this person actually use, and
+  where is this screen documented.
 */}}
 {{define "navlist"}}
-{{$n := .Nav}}
 <nav class="navgroups" aria-label="Sections">
-  <div class="navgroup" aria-label="Build" role="group">
-    <h2>Build</h2>
+  {{range .NavGroups}}
+  <div class="navgroup" role="group" aria-label="{{.Name}}">
+    <h2>{{.Name}}</h2>
     <ul class="nav">
-      <li><a href="/"{{if eq $n "pages"}} aria-current="page"{{end}}>Pages</a></li>
-      <li><a href="/records"{{if eq $n "records"}} aria-current="page"{{end}}>Data</a></li>
-      <li><a href="/types"{{if eq $n "types"}} aria-current="page"{{end}}>Types</a></li>
-      <li><a href="/media"{{if eq $n "media"}} aria-current="page"{{end}}>Media</a></li>
-      <li><a href="/languages"{{if eq $n "languages"}} aria-current="page"{{end}}>Languages</a></li>
-      <li><a href="/assist"{{if eq $n "assist"}} aria-current="page"{{end}}>Assistant</a></li>
+      {{range .Items}}
+      <li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>
+      {{end}}
     </ul>
   </div>
-  <div class="navgroup" aria-label="Publish" role="group">
-    <h2>Publish</h2>
-    <ul class="nav">
-      <li><a href="/review"{{if eq $n "review"}} aria-current="page"{{end}}>Review</a></li>
-      <li><a href="/publishing"{{if eq $n "publishing"}} aria-current="page"{{end}}>Publishing</a></li>
-      <li><a href="/history"{{if eq $n "history"}} aria-current="page"{{end}}>History</a></li>
-      <li><a href="/transfer"{{if eq $n "transfer"}} aria-current="page"{{end}}>Transfer</a></li>
-    </ul>
-  </div>
-  <div class="navgroup" aria-label="Trust" role="group">
-    <h2>Trust</h2>
-    <ul class="nav">
-      <li><a href="/provenance"{{if eq $n "provenance"}} aria-current="page"{{end}}>Provenance</a></li>
-      <li><a href="/logs"{{if eq $n "logs"}} aria-current="page"{{end}}>Log</a></li>
-      <li><a href="/security"{{if eq $n "security"}} aria-current="page"{{end}}>Security</a></li>
-    </ul>
-  </div>
-  <div class="navgroup" aria-label="Administer" role="group">
-    <h2>Administer</h2>
-    <ul class="nav">
-      <li><a href="/people"{{if eq $n "people"}} aria-current="page"{{end}}>People</a></li>
-      <li><a href="/access"{{if eq $n "access"}} aria-current="page"{{end}}>Access</a></li>
-      <li><a href="/integrations"{{if eq $n "integrations"}} aria-current="page"{{end}}>Integrations</a></li>
-      <li><a href="/settings"{{if eq $n "settings"}} aria-current="page"{{end}}>Settings</a></li>
-      <li><a href="/playground"{{if eq $n "playground"}} aria-current="page"{{end}}>API</a></li>
-    </ul>
-  </div>
+  {{end}}
 </nav>
 {{end}}
 
 {{define "foot"}}
 </main>
 <footer class="shell">
-  <p><a href="/help">Help</a> — the same link, in the same place, on every page.</p>
+  <p><a href="/docs#{{.Doc}}">Help with this screen</a>
+    — the same link, in the same place, on every page.
+    <a href="/docs">All documentation</a>.</p>
 </footer>
 </body>
 </html>

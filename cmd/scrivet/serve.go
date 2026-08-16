@@ -262,6 +262,15 @@ func cmdServe(root string, args []string) error {
 			return recordAssisted(root, s, pages, model, author)
 		},
 	}
+	// What people say about themselves. A display name and a way to reach
+	// them, and deliberately nothing else — every field here is data this
+	// system did not need before and now holds about a person.
+	srv.Profile = &admin.Profile{
+		Load: func() (map[string]admin.PersonDetails, error) { return loadProfiles(root) },
+		Save: func(m map[string]admin.PersonDetails) error {
+			return saveJSON(profilesPath(root), m)
+		},
+	}
 	srv.NavPosition = cfg.Raw("admin.nav")
 	srv.ReloadTokens = tokenReloader(root, toks)
 

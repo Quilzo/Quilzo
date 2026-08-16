@@ -2,13 +2,20 @@
 <h1>People</h1>
 
 {{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
 
 <h2>Add or change access</h2>
 <form method="post" action="/people/grant" class="stack">
   <div class="row">
     <label>Who
-      <input name="principal" required autocomplete="off" spellcheck="false"
-        aria-label="Principal"
+      <select name="principal" aria-label="Principal">
+        <option value="">— somebody new, named below —</option>
+        {{range .Known}}<option value="{{.}}">{{.}}</option>{{end}}
+      </select>
+    </label>
+    <label>Somebody new
+      <input name="new_principal" autocomplete="off" spellcheck="false"
+             aria-label="New principal"
              placeholder="their name, or the subject their IdP sends">
     </label>
     <label>Role
@@ -30,6 +37,11 @@
   </div>
   <p><button type="submit">Save</button></p>
 </form>
+<p class="hint">
+  Pick somebody this store already knows, or name a new person. Typing a name
+  that is nearly right is how a grant ends up applying to nobody and looking
+  as though it applies to somebody.
+</p>
 <p class="hint">
   <strong>Only content they created</strong> is the contributor shape: the same
   powers as the role, over a smaller set of pages. Reading is never restricted

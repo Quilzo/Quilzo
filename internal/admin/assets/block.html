@@ -1,0 +1,21 @@
+{{define "block"}}
+{{if eq .Kind "p"}}<p>{{.Text}}</p>
+{{else if eq .Kind "sub"}}<h4>{{.Text}}</h4>
+{{else if eq .Kind "note"}}<p class="notice">{{.Text}}</p>
+{{else if eq .Kind "warn"}}<p class="notice warn">{{.Text}}</p>
+{{else if eq .Kind "code"}}<pre class="code"><code>{{.Text}}</code></pre>
+{{else if eq .Kind "list"}}<ul>{{range .Items}}<li>{{.}}</li>{{end}}</ul>
+{{else if eq .Kind "steps"}}<ol>{{range .Items}}<li>{{.}}</li>{{end}}</ol>
+{{else if eq .Kind "table"}}
+<div class="table-wrap">
+<table>
+  <thead><tr>{{range .Head}}<th scope="col">{{.}}</th>{{end}}</tr></thead>
+  <tbody>
+    {{range .Rows}}<tr>
+      {{range $i, $cell := .}}{{if eq $i 0}}<th scope="row">{{$cell}}</th>{{else}}<td>{{$cell}}</td>{{end}}{{end}}
+    </tr>{{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+{{end}}

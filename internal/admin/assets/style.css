@@ -705,7 +705,19 @@ tr.detail td { padding-top: 0; border-top: 0; }
    the bar. A layout that reorders the DOM to move a menu is a layout that is
    correct for one of its two settings.
 */
+/* The preference controls in the header: appearance, then position. */
+.prefs { display: flex; align-items: center; gap: .4rem; }
 .navtoggle { margin: 0; }
+.themetoggle { margin: 0; }
+.themetoggle button {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; min-height: 40px; padding: 0;
+  border-radius: var(--shape-full); border: 1px solid var(--outline-variant);
+  background: var(--surface-container-high); color: var(--on-surface);
+  cursor: pointer;
+}
+.themetoggle button:hover { background: var(--surface-container-highest); }
+.icon { width: 20px; height: 20px; display: block; }
 .navtoggle button { font-size: .75rem; padding: .3rem .6rem;
   border-radius: var(--shape-s); border: 1px solid var(--outline-variant);
   background: var(--surface-container-high); color: var(--on-surface); cursor: pointer; }
@@ -748,6 +760,89 @@ body.nav-top > .sidenav { display: none; }
   body.nav-left > .sidenav { display: none; }
   body.nav-left > .bar > nav { display: block; }
 }
+
+/* -- signing in --------------------------------------------------------------
+ *
+ * Two columns on a wide screen: the form, and what somebody standing in front
+ * of an unfamiliar tool is entitled to know about it. One column below that,
+ * with the form first — the explanation is worth reading and is not worth
+ * scrolling past on a phone. */
+.signin-page { display: grid; place-items: center; min-height: 100vh;
+  padding: 2rem 1.25rem;
+  background:
+    radial-gradient(1100px 620px at 12% -10%,
+      color-mix(in srgb, var(--primary) 14%, transparent), transparent 60%),
+    radial-gradient(900px 520px at 100% 110%,
+      color-mix(in srgb, var(--tertiary) 12%, transparent), transparent 60%),
+    var(--surface);
+}
+.signin { display: grid; gap: 2rem; max-width: 62rem; width: 100%;
+          grid-template-columns: 1fr; }
+@media (min-width: 56rem) {
+  .signin { grid-template-columns: minmax(0, 24rem) minmax(0, 1fr);
+            gap: 3rem; align-items: start; }
+}
+.signin-panel {
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--shape-xl);
+  padding: 2rem;
+}
+.signin-panel .brand { font: var(--title-lg); font-weight: 800;
+  letter-spacing: -0.01em; color: var(--primary); margin: 0 0 .25rem; }
+.signin-panel h1 { margin: 0 0 1.25rem; }
+.signin-panel form { margin: 0; }
+.signin-panel button[type=submit] { width: 100%; }
+.signin-aside { color: var(--on-surface-variant); max-width: 46ch; }
+.signin-aside h2 { font: var(--title-md); font-weight: 700;
+  color: var(--on-surface); margin: 0 0 .5rem; }
+.signin-aside h2 + p, .signin-aside h2 + ul { margin-top: 0; }
+.signin-aside p, .signin-aside li { font: var(--body-md); }
+.signin-aside ul { padding-left: 1.2rem; margin: 0 0 1.5rem; }
+.signin-aside li { margin: 0 0 .45rem; }
+.signin-aside > h2 + * + h2, .signin-aside > h2 ~ h2 { margin-top: 1.75rem; }
+
+/* A rule with a word in it, for "or". Drawn with borders rather than a
+   pseudo-element image so it inherits the theme and needs no asset. */
+.rule { display: flex; align-items: center; gap: .75rem; margin: 1.5rem 0;
+        color: var(--on-surface-variant); font: var(--label-lg); }
+.rule::before, .rule::after {
+  content: ""; flex: 1 1 auto; height: 1px; background: var(--outline-variant);
+}
+
+/* -- documentation ---------------------------------------------------------- */
+
+/* Prose, at a width somebody can read. The measure matters more here than
+   anywhere else in the product: a manual set to the full width of a desktop
+   window is a manual people skim and then say was not clear. */
+.doc { max-width: 68ch; margin: 0 0 2.5rem; scroll-margin-top: 1rem; }
+.doc h3 { margin: 0 0 .35rem; }
+.doc h4 { margin: 1.75rem 0 .5rem; font: var(--title-md); font-weight: 700; }
+.doc p { max-width: 68ch; }
+.doc .table-wrap, .doc pre { max-width: 68ch; }
+.doc ul, .doc ol { max-width: 66ch; padding-left: 1.4rem; }
+.doc li { margin: 0 0 .5rem; }
+.chapter { margin: 2.5rem 0 1rem; padding-top: .75rem;
+           border-top: 2px solid var(--outline-variant); }
+
+.toc { margin: 0 0 2rem; padding: 1rem 1.25rem;
+       background: var(--surface-container-low);
+       border: 1px solid var(--outline-variant);
+       border-radius: var(--shape-lg); max-width: 68ch; }
+.toc h2 { margin: 0 0 .5rem; font: var(--title-md); font-weight: 700; }
+.toc h3 { margin: 1rem 0 .35rem; font: var(--label-lg); font-weight: 800;
+          text-transform: uppercase; letter-spacing: .06em;
+          color: var(--on-surface-variant); }
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: 0 0 .3rem; }
+
+pre.code {
+  background: var(--surface-container-high); color: var(--on-surface);
+  border: 1px solid var(--outline-variant); border-radius: var(--shape-sm);
+  padding: .8rem 1rem; overflow-x: auto; font: var(--body-md);
+  font-family: var(--mono); line-height: 1.55;
+}
+pre.code code { background: none; padding: 0; }
 
 /* -- data ------------------------------------------------------------------- */
 .chips { display: flex; gap: .4rem; flex-wrap: wrap; margin: 0 0 1rem; }

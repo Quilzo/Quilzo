@@ -128,6 +128,10 @@ type Server struct {
 	// Assist proposes a site from a description. Nil means no model is
 	// configured, which is a complete configuration and the screen says so.
 	Assist *Assist
+	// Profile holds what people say about themselves — a display name and a
+	// way to reach them, and nothing else. Nil means the screen shows their
+	// permissions and sessions and offers no details to edit.
+	Profile *Profile
 	// Data gives the admin access to records. Nil means the screen says it has
 	// no access rather than showing an empty list, because empty and absent
 	// look identical and mean opposite things.
@@ -273,6 +277,16 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, siteTemplate strin
 	return &Server{Store: s, Policy: p, Tokens: ts, Template: siteTemplate, tpl: t}, nil
 }
 
+// errNoCredential means nothing was presented, as distinct from something
+// being rejected.
+//
+// The two used to be one error, and the sign-in screen showed "no token" in a
+// red alert box to everybody arriving for the first time — announcing a
+// failure to somebody who had not yet done anything. An error message is for
+// something that went wrong, and opening a page you are not signed in to is
+// not that.
+var errNoCredential = errors.New("no token")
+
 // principal is who the current request is acting as.
 type principal struct {
 	Name string
@@ -294,7 +308,7 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 		}
 	}
 	if raw == "" {
-		return principal{}, fmt.Errorf("no token")
+		return principal{}, errNoCredential
 	}
 	tok, err := s.Tokens.Authenticate(raw, time.Now())
 	if err != nil {
@@ -362,17 +376,35 @@ func (s *Server) renderConflict(w http.ResponseWriter, r *http.Request, p princi
 func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	data map[string]any) {
 
-	// Where the navigation sits, resolved per request from the person's own
-	// cookie and the store's default. Set here rather than in every handler,
-	// so a page added later cannot forget it and render with an empty class.
+	// Everything the shell needs, resolved here rather than in each handler.
+	//
+	// Set in one place because a screen added later cannot forget it. The
+	// earlier version required each handler to pass "Nav", and a handler that
+	// did not made the template compare a nil against a string — which surfaces
+	// as a half-rendered page rather than as a failure, so it is exactly the
+	// kind of mistake that ships.
 	data["NavPosition"] = s.navFor(r)
-
-	// Nav marks the current destination so the navigation can carry
-	// aria-current. Defaulted rather than required: a missing key would make
-	// the template compare a nil against a string, and template comparison
-	// errors surface as a half-rendered page rather than as a failure.
 	if _, ok := data["Nav"]; !ok {
 		data["Nav"] = ""
+	}
+	navKey, _ := data["Nav"].(string)
+
+	theme := themeOf(r)
+	next, nextLabel := nextTheme(theme)
+	data["Theme"] = theme
+	data["ThemeNow"] = themeLabel(theme)
+	data["ThemeNext"] = next
+	data["ThemeNextLabel"] = nextLabel
+
+	// The documentation anchor for the screen being rendered, so the footer
+	// link means "help with this" rather than "help".
+	data["Doc"] = docFor(navKey)
+
+	// The navigation itself, filtered to what this person may use and sorted
+	// into the order they chose.
+	if p, ok := data["Principal"].(principal); ok {
+		data["Nav"] = navKey
+		data["NavGroups"] = s.navigation(r, p, navKey)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tpl.ExecuteTemplate(w, name, data); err != nil {
@@ -538,6 +570,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/publish", s.handlePublish)
 	mux.HandleFunc("/access", s.handleAccess)
 	mux.HandleFunc("/nav", s.handleNav)
+	mux.HandleFunc("/theme", s.handleTheme)
+	mux.HandleFunc("/nav/order", s.handleNavOrder)
+	mux.HandleFunc("/profile", s.handleProfile)
+	mux.HandleFunc("/profile/session/end", s.handleSessionEnd)
 	mux.HandleFunc("/settings", s.handleSettings)
 	mux.HandleFunc("/settings/save", s.handleSettingSave)
 	mux.HandleFunc("/media", s.handleMedia)
@@ -584,7 +620,7 @@ func (s *Server) Handler() http.Handler {
 	if s.API != nil {
 		mux.Handle("/api/", s.API)
 	}
-	mux.HandleFunc("/help", s.handleHelp)
+	mux.HandleFunc("/docs", s.handleDocs)
 	mux.HandleFunc("/style.css", s.handleCSS)
 	return securityHeaders(sameSiteOnly(limitBody(mux)))
 }
@@ -694,9 +730,11 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 			}
 		}
 		w.WriteHeader(http.StatusUnauthorized)
-		s.render(w, r, "signin.html", map[string]any{
-			"Title": "Sign in", "Error": err.Error(),
-		})
+		data := map[string]any{"Title": "Sign in", "OIDC": s.OIDC != nil}
+		if !errors.Is(err, errNoCredential) {
+			data["Error"] = err.Error()
+		}
+		s.render(w, r, "signin.html", data)
 		return principal{}, false
 	}
 	if s.Throttle != nil {

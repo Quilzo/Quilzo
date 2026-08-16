@@ -26,6 +26,20 @@ func openMedia(root string) (*medialib.Library, error) {
 	return medialib.Open(mediaDir(root))
 }
 
+func profilesPath(root string) string { return filepath.Join(root, "profiles.json") }
+
+// loadProfiles reads the self-supplied details.
+//
+// A missing file is an empty map rather than an error: a store where nobody
+// has set a display name is the ordinary state, not a broken one.
+func loadProfiles(root string) (map[string]admin.PersonDetails, error) {
+	out := map[string]admin.PersonDetails{}
+	if err := loadJSON(profilesPath(root), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func loadHooks(root string) (*hookFile, error) {
 	f := &hookFile{}
 	return f, loadJSON(hooksPath(root), f)

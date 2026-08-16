@@ -143,10 +143,32 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Slice(people, func(i, j int) bool { return people[i].Name < people[j].Name })
 
+	// Everybody this store has heard of, for the grant form.
+	//
+	// Free text was a way to create a principal nobody notices: "dana " with a
+	// trailing space, or "Dana", is a grant that silently applies to nobody,
+	// and the screen showed it beside the real one as though both were real.
+	// The store knows who exists — from the policy and from the credentials —
+	// so the form offers them, and adding somebody genuinely new is a separate
+	// field that says so.
+	known := map[string]bool{}
+	for _, who := range s.Policy.Principals() {
+		known[who] = true
+	}
+	for _, t := range s.Tokens.Snapshot() {
+		known[t.Principal] = true
+	}
+	names := make([]string, 0, len(known))
+	for who := range known {
+		names = append(names, who)
+	}
+	sort.Strings(names)
+
 	s.render(w, r, "people.html", map[string]any{
-		"Title": "People", "Principal": p, "People": people,
+		"Nav": "people", "Title": "People", "Principal": p, "People": people,
 		"Roles": auth.Roles, "ActiveWithin": activeWithin.String(),
-		"Message": r.URL.Query().Get("m"),
+		"Known": names, "Message": r.URL.Query().Get("m"),
+		"Error": r.URL.Query().Get("e"),
 	})
 }
 
@@ -156,7 +178,13 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// The list, or the new-person field when the list's blank option was
+	// chosen. Named separately rather than overloading one input, so "I meant
+	// to pick from the list and typed instead" cannot happen silently.
 	who := strings.TrimSpace(r.FormValue("principal"))
+	if who == "" {
+		who = strings.TrimSpace(r.FormValue("new_principal"))
+	}
 	role := auth.Role(strings.TrimSpace(r.FormValue("role")))
 	on := strings.TrimSpace(r.FormValue("resource"))
 	if on == "" {
@@ -190,7 +218,13 @@ func (s *Server) handlePeopleRevoke(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// The list, or the new-person field when the list's blank option was
+	// chosen. Named separately rather than overloading one input, so "I meant
+	// to pick from the list and typed instead" cannot happen silently.
 	who := strings.TrimSpace(r.FormValue("principal"))
+	if who == "" {
+		who = strings.TrimSpace(r.FormValue("new_principal"))
+	}
 	role := auth.Role(strings.TrimSpace(r.FormValue("role")))
 	on := strings.TrimSpace(r.FormValue("resource"))
 

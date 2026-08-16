@@ -1,0 +1,169 @@
+{{template "head" .}}
+<h1>You</h1>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+<p class="lead">Signed in as <strong>{{.Principal.Name}}</strong>, holding the
+role <strong>{{.Principal.Role}}</strong>.</p>
+
+<h2 id="details">Your details</h2>
+<p class="hint">
+  A display name is shown beside your principal, never instead of it — an audit
+  record that says who but not which principal acted cannot be checked against
+  the policy. These two fields are the only things this stores about you beyond
+  what access control needs.
+</p>
+<form method="post" action="/profile">
+  <div class="grid2">
+    <p><label for="pf-name">Display name</label>
+      <input id="pf-name" name="display_name" maxlength="120"
+             value="{{.Details.DisplayName}}" placeholder="how colleagues know you"></p>
+    <p><label for="pf-contact">Contact</label>
+      <input id="pf-contact" name="contact" maxlength="120"
+             value="{{.Details.Contact}}" placeholder="a room, a handle, a rota">
+      <span class="hint">Free text. Nothing here is emailed — this program
+        sends no mail.</span></p>
+  </div>
+  <button type="submit">Save</button>
+</form>
+
+<h2 id="permissions">What you may do</h2>
+<p class="hint">
+  Resolved against the access policy as written, not inferred from your role: a
+  grant can be limited to a subtree or to content you created, and a denial
+  wins wherever it applies. Changing any of this is an administrator's job.
+</p>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Action</th><th scope="col">You</th><th scope="col">Because</th>
+  </tr></thead>
+  <tbody>
+  {{range .May}}
+  <tr>
+    <th scope="row"><code>{{.Action}}</code></th>
+    <td>{{if .Allowed}}<span class="tag tag-ok">yes</span>
+        {{else}}<span class="tag tag-bad">no</span>{{end}}</td>
+    <td class="hint">{{.Reason}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+
+<h2 id="sessions">Your sessions</h2>
+{{if not .Sessions}}
+<p>You have no active sessions, which is odd given that you are reading this —
+  it means you signed in with a credential that has since been revoked.</p>
+{{else}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Session</th><th scope="col">Role</th>
+    <th scope="col">Scope</th><th scope="col">Issued</th>
+    <th scope="col">Expires</th><th scope="col"></th>
+  </tr></thead>
+  <tbody>
+  {{range .Sessions}}
+  <tr>
+    <th scope="row"><code>{{short .ID}}</code>
+      {{if .Current}} <span class="tag tag-ok">this one</span>{{end}}</th>
+    <td>{{.Role}}</td>
+    <td class="hint"><code>{{.Resource}}</code></td>
+    <td class="hint">{{ago .Issued}}</td>
+    <td class="hint">{{when .Expires}}</td>
+    <td>
+      <form method="post" action="/profile/session/end" class="inline">
+        <input type="hidden" name="id" value="{{.ID}}">
+        <button type="submit" class="danger">{{if .Current}}End and sign out{{else}}End{{end}}</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+<p class="hint">
+  You do not need an administrator to end a session. One you think has been
+  taken should end now rather than tomorrow. Ending a session takes effect
+  everywhere on the next request, because every process re-reads the credential
+  store rather than trusting what it loaded at startup.
+</p>
+
+<h2 id="arrangement">How this looks to you</h2>
+<p class="hint">
+  Yours, stored in your browser rather than in the store, so it does not become
+  an argument between two people sharing a screen.
+</p>
+
+<h3>Appearance</h3>
+<form method="post" action="/theme" class="inline">
+  <input type="hidden" name="to" value="system">
+  <button type="submit">Follow my system</button>
+</form>
+<form method="post" action="/theme" class="inline">
+  <input type="hidden" name="to" value="light">
+  <button type="submit">Light</button>
+</form>
+<form method="post" action="/theme" class="inline">
+  <input type="hidden" name="to" value="dark">
+  <button type="submit">Dark</button>
+</form>
+<p class="hint">Currently {{.ThemeNow}}. The button in the header cycles
+  through the same three.</p>
+
+<h3>Where the navigation sits</h3>
+<form method="post" action="/nav" class="inline">
+  <input type="hidden" name="to" value="top">
+  <button type="submit">Across the top</button>
+</form>
+<form method="post" action="/nav" class="inline">
+  <input type="hidden" name="to" value="left">
+  <button type="submit">Down the side</button>
+</form>
+
+<h3>The order of your tabs</h3>
+<p class="hint">
+  Buttons rather than dragging: WCAG 2.2 forbids requiring a drag gesture for
+  any function, and pressing a button also works on a phone and from a
+  keyboard. A tab moves within its own group — the groups are the structure
+  rather than a preference.
+</p>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Tab</th><th scope="col">Group</th><th scope="col">Move</th>
+  </tr></thead>
+  <tbody>
+  {{range .Arrangement}}
+  <tr>
+    <th scope="row">{{.Label}}</th>
+    <td class="hint">{{.Group}}</td>
+    <td>
+      {{if not .First}}
+      <form method="post" action="/nav/order" class="inline">
+        <input type="hidden" name="key" value="{{.Key}}">
+        <input type="hidden" name="direction" value="up">
+        <button type="submit">Up<span class="sr">: move {{.Label}} earlier</span></button>
+      </form>
+      {{end}}
+      {{if not .Last}}
+      <form method="post" action="/nav/order" class="inline">
+        <input type="hidden" name="key" value="{{.Key}}">
+        <input type="hidden" name="direction" value="down">
+        <button type="submit">Down<span class="sr">: move {{.Label}} later</span></button>
+      </form>
+      {{end}}
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+<form method="post" action="/nav/order" class="inline">
+  <input type="hidden" name="reset" value="1">
+  <button type="submit">Put them back the way they were</button>
+</form>
+{{template "foot" .}}

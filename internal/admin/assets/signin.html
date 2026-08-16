@@ -1,39 +1,98 @@
+{{/*
+  The first thing anybody sees.
+
+  Its own document rather than the shell, because there is no navigation to
+  render for somebody who is not signed in and no preferences to read from
+  somebody with no session. It carries the theme attribute anyway, so a person
+  who chose dark does not get a white page thrown at them on the way back in.
+
+  What it says is deliberate. Every other sign-in screen apologises for asking;
+  this one explains what it is not doing and why, because "there is no
+  password" reads as a missing feature until somebody says out loud that
+  password storage, reset flows and credential stuffing are what is missing
+  with it.
+*/}}
 <!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in — scrivet</title><link rel="stylesheet" href="/style.css"></head>
-<body>
-<main id="main">
-<h1>Sign in</h1>
-{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
-{{if .Hint}}<p class="help">{{.Hint}}</p>{{end}}
+<html lang="en"{{if .Theme}} data-theme="{{.Theme}}"{{end}}>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Sign in — scrivet</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body class="signin-page">
+<main id="main" class="signin">
 
-{{if .OIDC}}
-<div class="card">
-  <h2>Sign in with your organisation</h2>
-  <p>You will be sent to your identity provider and back here.</p>
-  <div class="actions"><a class="btn" href="/signin/oidc">Continue</a></div>
-</div>
-<p class="help">Signing in there proves who you are. What you can do here is
-decided by this site&rsquo;s access policy, which an administrator maintains &mdash;
-so having an account with the provider is not by itself access to this site.</p>
+  <section class="signin-panel">
+    <p class="brand">scrivet</p>
+    <h1>Sign in</h1>
 
-<h2>Or paste an API token</h2>
-{{end}}
-<p>Paste an API token. There is no password, and no puzzle to solve —
-   WCAG 2.2 treats those as cognitive function tests.</p>
-<p class="help">Submitted as a POST, so the token never appears in the address
-   bar, browser history, or a server log.</p>
-<form method="post" action="/signin">
-  <div class="field">
-    <label for="tok">API token</label>
-    <input id="tok" name="token" type="password" autocomplete="current-password"
-           aria-describedby="tok-help" required>
-    <p id="tok-help" class="help">Starts with <code>scv_</code>. Create one with
-      <code>scrivet token issue</code>.</p>
-  </div>
-  <button type="submit">Sign in</button>
-</form>
+    {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+    {{if .Hint}}<p class="help">{{.Hint}}</p>{{end}}
+
+    {{if .OIDC}}
+    <div class="card">
+      <h2>Continue with your organisation</h2>
+      <p>You will be sent to your identity provider and back here.</p>
+      <p class="actions"><a class="btn" href="/signin/oidc">Continue</a></p>
+    </div>
+    <p class="help">Signing in there proves who you are. What you may do here
+      is decided by this site’s access policy, which an administrator
+      maintains — so an account with the provider is not by itself access to
+      this site.</p>
+    <p class="rule"><span>or</span></p>
+    {{end}}
+
+    <form method="post" action="/signin">
+      <div class="field">
+        <label for="tok">API token</label>
+        <input id="tok" name="token" type="password"
+               autocomplete="current-password" autofocus
+               aria-describedby="tok-help" required
+               placeholder="scv_…">
+        <p id="tok-help" class="help">Create one with
+          <code>scrivet token issue you --principal you --role admin</code>.</p>
+      </div>
+      <button type="submit">Sign in</button>
+    </form>
+
+    <p class="help">
+      Submitted as a POST, so the token never reaches the address bar, the
+      browser’s history, or a server log.
+    </p>
+  </section>
+
+  <aside class="signin-aside">
+    <h2>Why there is no password</h2>
+    <p>
+      Because then there is no password store to leak, no reset flow to
+      subvert, and nothing for credential stuffing to stuff. A token is
+      generated, shown once, and stored only as a hash.
+    </p>
+    <p>
+      There is also no puzzle. WCAG 2.2 treats image recognition and
+      transcription as cognitive function tests and prohibits relying on them,
+      and pasting a string is something every person and every password
+      manager can already do.
+    </p>
+
+    <h2>What this is</h2>
+    <ul>
+      <li>Content addressed by the hash of its own bytes, so history is free
+        and rollback is a pointer move.</li>
+      <li>Nothing executes: no plugin runtime, no scripting in templates, no
+        expressions in queries, no JavaScript in this interface.</li>
+      <li>No third-party dependencies at all, in a four-megabyte image with no
+        shell in it.</li>
+    </ul>
+    <p class="help">
+      Repeated failures here are slowed rather than locked out — a hard lockout
+      is a denial of service somebody aims at you by failing your logins for
+      you.
+    </p>
+  </aside>
+
 </main>
 </body>
 </html>
