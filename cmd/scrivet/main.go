@@ -87,6 +87,7 @@ importing
   scrivet ipfs verify CID                   check what a pinning service claimed
 
 templates
+  scrivet demo                              a whole example application, in one go
   scrivet template list | show NAME         ready-made starting points
   scrivet template use NAME [--dir DIR]     write it, its stylesheet and sample
 
@@ -185,6 +186,11 @@ log transparency
   scrivet auditlog consistency              nothing before a published head moved
   scrivet auditlog anchor                   put the head in Bitcoin, so rewriting
                                             history contradicts a block
+  scrivet timestamp stamp | list | verify   RFC 3161 proof of when you published
+  scrivet anchor submit | list | verify     one hash over a whole publication
+
+  scrivet mcp [--list]                      the agent interface, over stdio
+  scrivet version                           what this binary is
 
 global
   --root DIR    store location (default .scrivet)

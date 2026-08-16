@@ -1,2 +1,20 @@
+# Build output
 bin/
+scrivet
+*.exe
+
+# A store, which is data and not source. `scrivet init` makes one in the
+# working directory, so this is the file every contributor would otherwise
+# commit on their first run.
 .scrivet/
+
+# What a running site writes beside its store.
+templates/
+export/
+*.log
+
+# Python packaging left over from an earlier life. Named rather than covered by
+# a pattern, because the file that got committed declared a different licence
+# from the one this project ships under and nobody noticed for months.
+*.egg-info/
+__pycache__/

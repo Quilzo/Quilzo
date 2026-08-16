@@ -443,3 +443,73 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 			"nothing — the pattern has stopped matching the source")
 	}
 }
+
+// A command nobody can find is a command nobody has.
+//
+// `scrivet demo` shipped working, declared its privilege, sat in the coverage
+// table with a screen and a reason — and was absent from the help text, so the
+// only way to discover it was to read the dispatch switch. Every check above
+// passed, because each of them asks whether a command is *declared* somewhere
+// and none of them asks whether a person could find it.
+//
+// The help output is the index of this program. A command missing from it is
+// missing, whatever the tables say.
+func TestEveryCommandAppearsInTheHelp(t *testing.T) {
+	help := readFile(t, "main.go")
+	// The help text is a raw string literal in main.go, and every line in it
+	// begins "  scrivet ". Reading the source rather than running the command
+	// keeps this a source check like the others around it.
+	listed := map[string]bool{}
+	for _, line := range strings.Split(help, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "scrivet ") {
+			continue
+		}
+		rest := strings.TrimPrefix(line, "scrivet ")
+		if i := strings.IndexAny(rest, " \t"); i > 0 {
+			rest = rest[:i]
+		}
+		listed[rest] = true
+	}
+	if len(listed) < 30 {
+		t.Fatalf("only %d commands were found in the help text; the parse is "+
+			"wrong and a test that reads nothing passes", len(listed))
+	}
+
+	// Aliases are read out of the dispatch switch rather than listed here.
+	// `case "records", "record":` makes the second an alias of the first, and
+	// help rightly documents one of them. A hand-written list would need
+	// maintaining and would quietly excuse the next real omission that happened
+	// to be added to it.
+	alias := aliasesOf(t)
+
+	// Self-referential, and the only entries excused. A person reading `scrivet
+	// help` has already found help.
+	selfEvident := map[string]bool{"help": true, "-h": true, "--help": true}
+
+	for _, c := range dispatchedCommands(t) {
+		if listed[c] || selfEvident[c] {
+			continue
+		}
+		if primary, is := alias[c]; is && listed[primary] {
+			continue
+		}
+		t.Errorf("%q is dispatched and does not appear in `scrivet help`. "+
+			"The only way to find it is to read the source, which means it "+
+			"ships for nobody.", c)
+	}
+}
+
+// aliasesOf maps every secondary name in a dispatch case to the first one.
+func aliasesOf(t *testing.T) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	re := regexp.MustCompile(`case ("[a-z-]+"(?:, "[a-z-]+")+):`)
+	for _, m := range re.FindAllStringSubmatch(readFile(t, "main.go"), -1) {
+		names := regexp.MustCompile(`"([a-z-]+)"`).FindAllStringSubmatch(m[1], -1)
+		for _, n := range names[1:] {
+			out[n[1]] = names[0][1]
+		}
+	}
+	return out
+}
