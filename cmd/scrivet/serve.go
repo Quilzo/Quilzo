@@ -423,6 +423,9 @@ func cmdServe(root string, args []string) error {
 	}
 	// The admin does not need to know where provenance lives, so the host
 	// supplies the two functions and keeps the file layout in one place.
+	// The same name the site serves under, so the preview and the publish gate
+	// render the page readers get rather than one with a blank site name.
+	srv.SiteName = siteName(root)
 	srv.LoadProvenance = func() (*provenance.Index, error) { return loadProvenance(root) }
 	srv.SaveProvenance = func(i *provenance.Index) error { return saveJSON(provPath(root), i) }
 	// Types are re-read per request rather than captured once. A type added

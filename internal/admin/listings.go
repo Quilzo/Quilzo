@@ -11,6 +11,7 @@ import (
 	"github.com/rsh1k/scrivet/internal/auth"
 	"github.com/rsh1k/scrivet/internal/collection"
 	"github.com/rsh1k/scrivet/internal/listing"
+	"github.com/rsh1k/scrivet/internal/render"
 	"github.com/rsh1k/scrivet/internal/site"
 )
 
@@ -294,6 +295,16 @@ func draftTreeOf(s *Server) (string, error) {
 
 // resolver builds the listing resolver for a render.
 func (s *Server) resolver(ref string) *listing.Resolver {
+	return s.resolverAt(s.Store.GetRef(ref))
+}
+
+// resolverAt is the same thing for a commit that has already been resolved.
+//
+// The accessibility gate holds a commit id rather than a ref name, and passing
+// one to the version above quietly produced a resolver with no tree — so every
+// listing on every page came back empty and the check ran against a page with
+// its main content missing.
+func (s *Server) resolverAt(commit string) *listing.Resolver {
 	if s.Listings == nil {
 		return nil
 	}
@@ -301,7 +312,6 @@ func (s *Server) resolver(ref string) *listing.Resolver {
 	if err != nil {
 		return nil
 	}
-	commit := s.Store.GetRef(ref)
 	tree := ""
 	if commit != "" {
 		if c, cerr := s.Store.GetCommit(commit); cerr == nil {
@@ -310,4 +320,21 @@ func (s *Server) resolver(ref string) *listing.Resolver {
 	}
 	return &listing.Resolver{Store: s.Store, Index: s.Records, Tree: tree,
 		Set: set}
+}
+
+// sources is what a template may see, built the way the public server builds
+// it so that anything rendering here judges the same document readers get.
+//
+// ref is the commit being rendered and pages is its content — passed in rather
+// than re-read, because the caller already has them and a second read could
+// answer differently.
+func (s *Server) sources(commit string, pages map[string]any) render.Sources {
+	src := render.Sources{Name: s.SiteName, Pages: pages,
+		Listings: s.resolverAt(commit)}
+	if s.Structure != nil && s.Structure.Menus != nil {
+		if set, err := s.Structure.Menus(); err == nil {
+			src.Menus = set
+		}
+	}
+	return src
 }

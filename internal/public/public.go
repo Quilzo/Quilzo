@@ -42,6 +42,7 @@ import (
 	"github.com/rsh1k/scrivet/internal/listing"
 	"github.com/rsh1k/scrivet/internal/menu"
 	"github.com/rsh1k/scrivet/internal/provenance"
+	"github.com/rsh1k/scrivet/internal/render"
 	"github.com/rsh1k/scrivet/internal/search"
 	"github.com/rsh1k/scrivet/internal/seo"
 	"github.com/rsh1k/scrivet/internal/site"
@@ -549,10 +550,6 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := map[string]any{
-		"page": body, "site": map[string]any{"name": st.Name},
-		"menus": st.menus(pages, name),
-	}
 	if names := listing.On(body); len(names) > 0 && st.Listings == nil {
 		// The hole this was written to prevent, and it happened anyway: the
 		// admin got a resolver and the public server did not, so a page that
@@ -563,20 +560,19 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 			http.StatusInternalServerError)
 		return
 	}
-	if st.Listings != nil {
-		data, lerr := st.Listings.For(body, args)
-		if lerr != nil {
-			// A page whose listings cannot be resolved is a broken page, not a
-			// page with an empty section. Rendering it without them would ship
-			// a listing-shaped hole that nobody notices until somebody asks
-			// why the table is empty.
-			http.Error(w, "this page could not be assembled",
-				http.StatusInternalServerError)
-			return
-		}
-		if data != nil {
-			ctx[listing.Data] = data
-		}
+	// One context builder, shared with the accessibility gate, the preview and
+	// every export. They used to build their own and disagree: the gate that
+	// refuses a publish was judging a page with no navigation and no listings
+	// in it, which is not the page anybody is served.
+	ctx, cerr := st.sources().For(name, body, args)
+	if cerr != nil {
+		// A page whose listings cannot be resolved is a broken page, not a
+		// page with an empty section. Rendering it without them would ship a
+		// listing-shaped hole that nobody notices until somebody asks why the
+		// table is empty.
+		http.Error(w, "this page could not be assembled",
+			http.StatusInternalServerError)
+		return
 	}
 
 	html, err := tmpl.Render(st.Template, ctx)
@@ -806,4 +802,26 @@ func (st *Site) ref() string {
 		return site.RefLive
 	}
 	return st.Ref
+}
+
+// sources is what a template may see on this server.
+//
+// Built per request rather than held, because the menus are re-read per request
+// and the published page set is what menu targets are checked against — an
+// entry naming a page whose expiry has passed disappears from the navigation at
+// the same moment the page stops answering, rather than at the next publish.
+func (st *Site) sources() render.Sources {
+	src := render.Sources{Name: st.Name, Listings: st.Listings}
+	if st.Menus != nil {
+		if set, err := st.Menus(); err == nil {
+			src.Menus = set
+		}
+		// A navigation that cannot be read is a site with no navigation, not a
+		// page that fails to render: one unreadable file must not take the
+		// whole site down when the page itself is fine.
+	}
+	if pages, _, err := st.pages(); err == nil {
+		src.Pages = pages
+	}
+	return src
 }

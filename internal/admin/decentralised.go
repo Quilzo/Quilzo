@@ -268,9 +268,18 @@ func (s *Server) bundle() (map[string][]byte, error) {
 				"response", len(pages))
 	}
 
+	// The same context the public server uses. A bundle is somebody's durable
+	// copy of their site — pinned, handed over, served from a gateway — and it
+	// used to come out with no navigation on any page.
+	src := s.sources(s.Store.GetRef(site.RefLive), pages)
+
 	out := map[string][]byte{}
 	for name, body := range pages {
-		html, err := tmpl.Render(s.Template, map[string]any{"page": body})
+		ctx, cerr := src.For(name, body, nil)
+		if cerr != nil {
+			return nil, fmt.Errorf("%s: %w", name, cerr)
+		}
+		html, err := tmpl.Render(s.Template, ctx)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}

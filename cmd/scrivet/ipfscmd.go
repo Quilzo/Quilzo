@@ -210,9 +210,17 @@ func renderBundle(root, tplDir string) (map[string][]byte, error) {
 		return nil, err
 	}
 
+	// The same context the site serves. A bundle pinned to IPFS is the copy
+	// somebody keeps, and it used to come out with no navigation on any page.
+	src := sourcesFor(root, s, s.GetRef(site.RefLive), siteName(root), pages)
+
 	files := map[string][]byte{}
 	for name, body := range pages {
-		html, rerr := tmpl.Render(string(raw), map[string]any{"page": body})
+		ctx, cerr := src.For(name, body, nil)
+		if cerr != nil {
+			return nil, fmt.Errorf("%s: %w", name, cerr)
+		}
+		html, rerr := tmpl.Render(string(raw), ctx)
 		if rerr != nil {
 			return nil, fmt.Errorf("%s: %w", name, rerr)
 		}

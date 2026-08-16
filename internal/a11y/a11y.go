@@ -222,12 +222,40 @@ func (r *Report) checkLinks(tags []tag, html string) {
 		if _, hasHref := t.attrs["href"]; !hasHref {
 			continue // an anchor without href is not a link
 		}
-		text := strings.TrimSpace(stripTags(textUntilClose(tags, html, i, "a")))
+		inner := textUntilClose(tags, html, i, "a")
+		text := strings.TrimSpace(stripTags(inner))
 		if text == "" {
 			if _, ok := t.attrs["aria-label"]; ok {
 				continue
 			}
 			if _, ok := t.attrs["title"]; ok {
+				continue
+			}
+			// An image inside the link names it.
+			//
+			// stripTags throws the img away along with its alt, so a link
+			// wrapping a described picture looked nameless — and this rule
+			// blocks, so the most ordinary pattern on an image-led site could
+			// not be published. What that teaches is to add a redundant
+			// aria-label, or to override the gate, and a gate people override
+			// out of habit has stopped being one.
+			//
+			// alt on a nested img is the link's accessible name, which is what
+			// the specification says and what every screen reader does.
+			if alt, has := firstImageAlt(inner); has {
+				if alt != "" {
+					continue
+				}
+				// alt="" is a deliberate claim that the image is decorative,
+				// and a decorative image is the entire content of this link —
+				// so there is genuinely nothing to announce. Worth its own
+				// message, because the fix is not the same one.
+				r.add("image-link-has-no-name", Blocking, "WCAG 2.4.4",
+					"this link contains only an image marked decorative "+
+						"(alt=\"\"), so it is announced as just \"link\". The "+
+						"alt text of an image inside a link is the link's name, "+
+						"so describe where it goes rather than what it shows",
+					t.raw)
 				continue
 			}
 			r.add("link-has-no-text", Blocking, "WCAG 2.4.4",
@@ -438,4 +466,52 @@ func BlockingCount(reports []*Report) int {
 		}
 	}
 	return n
+}
+
+// firstImageAlt returns the alt of the first img in a fragment, and whether
+// there was an img at all.
+//
+// The two answers are separate because they mean different things: no image is
+// a link with nothing in it, and an image with alt="" is a link whose only
+// content was declared decorative. Both are unusable and the advice differs.
+//
+// Deliberately a scan rather than a parse. This package reads HTML with a
+// tokeniser it owns precisely so that checking a page cannot become a way to
+// run something, and pulling in a full parser to read one attribute would be
+// the wrong trade for the one place it is needed.
+func firstImageAlt(fragment string) (string, bool) {
+	low := strings.ToLower(fragment)
+	i := strings.Index(low, "<img")
+	if i < 0 {
+		return "", false
+	}
+	end := strings.IndexByte(fragment[i:], '>')
+	if end < 0 {
+		return "", true
+	}
+	tagText := fragment[i : i+end]
+	lowTag := strings.ToLower(tagText)
+	j := strings.Index(lowTag, "alt=")
+	if j < 0 {
+		// No alt at all is not the same as alt="": the image is undescribed,
+		// which its own rule already reports. Here it means the link has no
+		// name either.
+		return "", true
+	}
+	rest := strings.TrimSpace(tagText[j+len("alt="):])
+	if rest == "" {
+		return "", true
+	}
+	quote := rest[0]
+	if quote != '"' && quote != '\'' {
+		// Unquoted: runs to the next space.
+		if k := strings.IndexAny(rest, " \t\r\n"); k >= 0 {
+			return strings.TrimSpace(rest[:k]), true
+		}
+		return strings.TrimSpace(rest), true
+	}
+	if k := strings.IndexByte(rest[1:], quote); k >= 0 {
+		return strings.TrimSpace(rest[1 : 1+k]), true
+	}
+	return "", true
 }

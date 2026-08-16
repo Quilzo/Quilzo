@@ -220,3 +220,72 @@ func TestReportStatesItsOwnLimits(t *testing.T) {
 		}
 	}
 }
+
+// A link wrapping a described image is a named link.
+//
+// This blocked, and image links are the most ordinary thing on an image-led
+// site, so the gate refused to publish a perfectly accessible page. Found by
+// building one. What a false blocking failure teaches is to add a redundant
+// aria-label or to reach for the override, and an override used from habit has
+// stopped being a decision.
+func TestALinkAroundADescribedImageHasAName(t *testing.T) {
+	ok := `<html lang="en"><head><title>T</title></head><body>
+	  <a href="/harbour"><img src="/m/1" alt="Dawn over a still harbour"></a>
+	</body></html>`
+	for _, f := range Check("p", ok).Findings {
+		if f.Rule == "link-has-no-text" || f.Rule == "image-link-has-no-name" {
+			t.Fatalf("a link around an image with alt text was reported as "+
+				"nameless: %s", f)
+		}
+	}
+
+	// Single quotes and extra attributes after alt must not confuse it.
+	odd := `<html lang="en"><head><title>T</title></head><body>
+	  <a href="/x"><img alt='A quiet coast road' src="/m/2" loading="lazy"></a>
+	</body></html>`
+	for _, f := range Check("p", odd).Findings {
+		if f.Rule == "link-has-no-text" || f.Rule == "image-link-has-no-name" {
+			t.Fatalf("alt in single quotes was not read: %s", f)
+		}
+	}
+}
+
+// A link whose only content is a decorative image really has no name.
+func TestALinkAroundADecorativeImageIsStillReported(t *testing.T) {
+	page := `<html lang="en"><head><title>T</title></head><body>
+	  <a href="/x"><img src="/m/1" alt=""></a>
+	</body></html>`
+	found := false
+	for _, f := range Check("p", page).Findings {
+		if f.Rule == "image-link-has-no-name" {
+			found = true
+			if f.Severity != Blocking {
+				t.Error("a link with no accessible name should block")
+			}
+			// The advice has to be the advice for this case.
+			if !strings.Contains(f.Detail, "where it goes") {
+				t.Errorf("the message does not say what to do: %s", f.Detail)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("a link containing only a decorative image was accepted; it " +
+			"is announced as just \"link\"")
+	}
+}
+
+// A genuinely empty link is still a genuinely empty link.
+func TestAnEmptyLinkIsStillReported(t *testing.T) {
+	page := `<html lang="en"><head><title>T</title></head><body>
+	  <a href="/x"></a>
+	</body></html>`
+	found := false
+	for _, f := range Check("p", page).Findings {
+		if f.Rule == "link-has-no-text" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("an empty link was not reported")
+	}
+}

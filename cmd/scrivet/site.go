@@ -67,6 +67,12 @@ func cmdSite(root string, args []string) error {
 	}
 
 	st := public.New(s, string(raw))
+	// The configured name, which the flag overrides for one run. Keeping it in
+	// configuration is what lets the accessibility gate, the preview and the
+	// exports render the same page this serves.
+	if n := siteName(root); n != "" {
+		st.Name = n
+	}
 	// The stylesheet beside the template, if there is one. A starter writes
 	// both into the same directory, so this is the file `template use` just
 	// produced — and it is read once here rather than resolved per request.

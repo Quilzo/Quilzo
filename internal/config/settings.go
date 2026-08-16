@@ -246,6 +246,18 @@ var settings = []Setting{
 			"other way people solve this.",
 	},
 	{
+		Key: "site.name", Kind: Text, Default: "",
+		Summary: "what this site is called, for templates and for install",
+		Why: "It was a flag on `scrivet site` and nothing else, so it existed " +
+			"only inside the process serving the site. Everything else that " +
+			"renders a page — the accessibility gate, the preview, the static " +
+			"and IPFS exports — rendered it blank, which means each of them " +
+			"was working on a document readers never receive. A template that " +
+			"prints the name in a link produced an empty link and failed the " +
+			"gate on every page. The name belongs to the site, so it is kept " +
+			"with the site; the flag still overrides it for one run.",
+	},
+	{
 		Key: "site.hsts", Kind: Duration, Default: "0s",
 		Summary:  "Strict-Transport-Security max-age; 0 disables the header",
 		Controls: []string{"SC-8", "SC-23"},

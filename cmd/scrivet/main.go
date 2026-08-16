@@ -588,7 +588,7 @@ func cmdDiff(root string) error {
 // reader receives is the rendered page. Content that looks fine and a template
 // that drops the alt attribute produce an inaccessible site, and only the output
 // shows it.
-func checkAccessibility(s *store.Store, commitID, tplDir string) ([]*a11y.Report, error) {
+func checkAccessibility(root string, s *store.Store, commitID, tplDir string) ([]*a11y.Report, error) {
 	pages, err := site.PagesAt(s, commitID)
 	if err != nil {
 		return nil, err
@@ -600,9 +600,19 @@ func checkAccessibility(s *store.Store, commitID, tplDir string) ([]*a11y.Report
 		// so rather than reporting a clean result over an empty check.
 		return nil, fmt.Errorf("no template at %s to render against: %w", tplPath, err)
 	}
+	// Rendered the way the site serves them. Checking a page with its
+	// navigation and its listings missing is checking a different document,
+	// and it fails in both directions: a link that is only empty because the
+	// name was not supplied blocks a publish, and a genuine failure inside a
+	// menu is never seen.
+	src := sourcesFor(root, s, commitID, siteName(root), pages)
 	rendered := map[string]string{}
 	for name, body := range pages {
-		out, err := tmpl.Render(string(raw), map[string]any{"page": body})
+		ctx, cerr := src.For(name, body, nil)
+		if cerr != nil {
+			return nil, fmt.Errorf("assembling %s: %w", name, cerr)
+		}
+		out, err := tmpl.Render(string(raw), ctx)
 		if err != nil {
 			return nil, fmt.Errorf("rendering %s: %w", name, err)
 		}
@@ -647,7 +657,7 @@ func cmdPublish(root string, args []string) error {
 		if candidate == "" {
 			candidate = s.GetRef(site.RefDraft)
 		}
-		reports, cerr := checkAccessibility(s, candidate, *tplDir)
+		reports, cerr := checkAccessibility(root, s, candidate, *tplDir)
 		if cerr != nil {
 			// A gate that cannot run must not exit like a gate that passed.
 			//
@@ -958,7 +968,7 @@ func cmdA11y(root string, args []string) error {
 	if target == "" {
 		target = *ref
 	}
-	reports, err := checkAccessibility(s, target, *tplDir)
+	reports, err := checkAccessibility(root, s, target, *tplDir)
 	if err != nil {
 		return err
 	}

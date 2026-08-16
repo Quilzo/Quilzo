@@ -110,7 +110,13 @@ type Server struct {
 	// Types gives the admin the site's content types, so what an application
 	// stores can be declared from the interface rather than only from a
 	// terminal. Nil means the screen says so rather than showing none.
-	Types *Types
+	// SiteName is what the public server calls this site, so anything rendered
+	// here renders the same page readers get rather than one where the name is
+	// blank. Empty behaves as it always did and matters only to a template that
+	// prints it — which is exactly the template that failed the accessibility
+	// gate when it wrapped the name in a link.
+	SiteName string
+	Types    *Types
 	// Publishing is the deployment pipeline: environments, promotion and work
 	// queued for later.
 	Publishing *Publishing
@@ -1410,9 +1416,25 @@ func (s *Server) checkAll(commitID string) []*a11y.Report {
 	if err != nil {
 		return nil
 	}
+	// Rendered the way the public server renders them, which is not what this
+	// did before: it passed the page and nothing else, so every check ran
+	// against a document with no navigation and no listings in it.
+	//
+	// That is wrong in both directions and both directions happened. A site
+	// whose header wrapped its name in a link failed thirteen times over,
+	// because in this version of the page the link had nothing inside it — and
+	// the only way past was the override, which is meant for judgement calls
+	// and not for the gate being wrong. The quieter direction is worse: a real
+	// failure inside a menu or a listing is invisible to a check that renders
+	// neither.
+	src := s.sources(commitID, pages)
 	rendered := map[string]string{}
 	for name, body := range pages {
-		out, err := tmpl.Render(s.Template, map[string]any{"page": body})
+		ctx, cerr := src.For(name, body, nil)
+		if cerr != nil {
+			continue
+		}
+		out, err := tmpl.Render(s.Template, ctx)
 		if err != nil {
 			continue
 		}
@@ -1888,17 +1910,16 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// Listings resolved against the draft, because this is a preview: showing
-	// published data on a preview of an unpublished page would be a preview of
-	// something that does not exist.
-	ctx := map[string]any{"page": body}
-	if res := s.resolver(site.RefDraft); res != nil {
-		built, berr := res.Context(body, firstOf(r.URL.Query()))
-		if berr != nil {
-			http.Error(w, berr.Error(), http.StatusUnprocessableEntity)
-			return
-		}
-		ctx = built
+	// Resolved against the draft, because this is a preview: showing published
+	// data on a preview of an unpublished page would be a preview of something
+	// that does not exist. Menu targets are checked against the draft too, so
+	// an entry pointing at a page that is written and not yet published shows
+	// here and not to readers — which is what a preview is for.
+	ctx, cerr := s.sources(s.Store.GetRef(site.RefDraft), pages).
+		For(name, body, firstOf(r.URL.Query()))
+	if cerr != nil {
+		http.Error(w, cerr.Error(), http.StatusUnprocessableEntity)
+		return
 	}
 	out, err := tmpl.Render(s.Template, ctx)
 	if err != nil {

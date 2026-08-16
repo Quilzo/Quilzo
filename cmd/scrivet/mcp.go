@@ -234,7 +234,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		}
 		draft := s.GetRef(site.RefDraft)
 
-		if reports, err := checkAccessibility(s, draft, tplDir); err == nil {
+		if reports, err := checkAccessibility(root, s, draft, tplDir); err == nil {
 			if n := a11y.BlockingCount(reports); n > 0 {
 				return nil, &mcp.Refusal{Reason: fmt.Sprintf(
 					"%d blocking accessibility failure(s); this content is unusable "+
@@ -265,7 +265,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		Name: "check_accessibility", Summary: "run the accessibility checks on the draft",
 		Keywords: []string{"check", "accessibility", "a11y", "wcag", "blocking"},
 	}, func(map[string]any) (any, error) {
-		reports, err := checkAccessibility(s, s.GetRef(site.RefDraft), tplDir)
+		reports, err := checkAccessibility(root, s, s.GetRef(site.RefDraft), tplDir)
 		if err != nil {
 			return nil, err
 		}

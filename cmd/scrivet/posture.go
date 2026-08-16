@@ -188,7 +188,7 @@ func observeContent(root, tplDir string, st *store.Store) posture.ContentFacts {
 
 		// Accessibility of what is actually live. The gate runs before publish;
 		// this asks whether anything got past it.
-		if reports, err := checkAccessibility(st, live, tplDir); err == nil {
+		if reports, err := checkAccessibility(root, st, live, tplDir); err == nil {
 			c.BlockingA11y = a11y.BlockingCount(reports)
 		}
 	}
