@@ -22,6 +22,7 @@ package site
 
 import (
 	"fmt"
+	"github.com/rsh1k/scrivet/internal/collection"
 	"sort"
 	"strings"
 	"time"
@@ -161,7 +162,19 @@ func SaveDraftLocked(s *store.Store, pages map[string]any, message, author,
 		return "", newConflict(s, resolveCommit(s, base), current)
 	}
 
-	tree, err := store.BuildTree(s, pages)
+	// Records are carried across.
+	//
+	// This builds a tree from the page set, so anything else living in the
+	// tree — every record under data/ — would simply stop being in it. No
+	// error, no conflict, no diff: the next time somebody edited a page, the
+	// application's data would be gone. Nothing about a flat rebuild says it
+	// is destroying something it was never told about, which is exactly why
+	// it has to be handled here rather than noticed later.
+	//
+	// Cheap, because the record objects already exist under their hashes:
+	// re-applying them writes no blobs and only rebuilds the trees on their
+	// paths.
+	tree, err := buildTreeKeepingRecords(s, pages, current)
 	if err != nil {
 		return "", err
 	}
@@ -209,6 +222,18 @@ func PagesAt(s *store.Store, refOrCommit string) (map[string]any, error) {
 	}
 	out := make(map[string]any, len(tree))
 	for name, oid := range tree {
+		// Pages are the blobs at the root. Anything that is a tree is another
+		// kind of thing sharing the store — records live under data/ — and
+		// reading it as a page fails with "object is a tree, not a blob",
+		// which is what every listing did the moment the first record was
+		// written.
+		//
+		// Skipped by what the object *is* rather than by name. A list of
+		// reserved names would have to be updated by whoever adds the next
+		// branch, and they will not know to.
+		if s.IsTree(oid) {
+			continue
+		}
 		var v any
 		if err := s.GetBlob(oid, &v); err != nil {
 			return nil, err
@@ -411,4 +436,39 @@ func sameCommit(a, b string) bool {
 		a, b = b, a
 	}
 	return strings.HasPrefix(b, a)
+}
+
+// buildTreeKeepingRecords builds a tree from pages without discarding the
+// records that share it.
+//
+// The seam between two things that do not know about each other: pages are a
+// flat map rebuilt whole, records are a nested subtree written sparsely, and
+// this is the one place both are true at once.
+func buildTreeKeepingRecords(s *store.Store, pages map[string]any,
+	from string) (string, error) {
+
+	flat, err := store.BuildTree(s, pages)
+	if err != nil {
+		return "", err
+	}
+	// `from` is a commit, and Preserve reads a tree. Resolved here rather than
+	// changing Preserve's argument, because a function that took "a commit or
+	// a tree" would eventually be given the wrong one and would have no way to
+	// tell.
+	fromTree := ""
+	if from != "" {
+		c, cerr := s.GetCommit(from)
+		if cerr != nil {
+			return "", cerr
+		}
+		fromTree = c.Tree
+	}
+	carried, err := collection.Preserve(s, fromTree)
+	if err != nil {
+		return "", err
+	}
+	if len(carried) == 0 {
+		return flat, nil
+	}
+	return s.PutNested(flat, carried)
 }

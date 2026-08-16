@@ -147,6 +147,13 @@ func (s *Store) walk(oid, prefix string, out map[string]string, depth int) error
 	return nil
 }
 
+// IsTree reports whether an object id names a tree.
+//
+// Exported because callers outside this package have to tell a page from a
+// branch of the tree, and asking what the object is beats keeping a list of
+// reserved names that whoever adds the next branch will not know to update.
+func (s *Store) IsTree(oid string) bool { return s.isTree(oid) }
+
 // isTree reports whether an object id names a tree.
 func (s *Store) isTree(oid string) bool {
 	_, err := s.read(oid, KindTree)
