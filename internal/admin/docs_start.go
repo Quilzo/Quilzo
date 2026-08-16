@@ -12,10 +12,10 @@ var chapterStart = chapter{
 	Sections: []section{
 		{
 			ID:      "start",
-			Title:   "What Scrivet is",
+			Title:   "What Lithoform is",
 			Summary: "A content management system whose defining property is that nothing in it executes.",
 			Body: []block{
-				p("Scrivet manages content and publishes it. That much it shares " +
+				p("Lithoform manages content and publishes it. That much it shares " +
 					"with every other CMS. What it does differently is refuse to " +
 					"execute anything: there is no plugin runtime in the server, " +
 					"no scripting language in the templates, no expression " +

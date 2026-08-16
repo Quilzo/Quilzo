@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/fetch"
+	"github.com/lithoform/lithoform/internal/fetch"
 )
 
 // Discovery is the subset of the provider metadata this needs.

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/export"
-	"github.com/rsh1k/scrivet/internal/importer"
+	"github.com/lithoform/lithoform/internal/export"
+	"github.com/lithoform/lithoform/internal/importer"
 )
 
 var when = time.Unix(1786000000, 0)

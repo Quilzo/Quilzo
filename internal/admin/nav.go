@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/lithoform/lithoform/internal/auth"
 )
 
 // The navigation, as data.

@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/auth"
-	"github.com/rsh1k/scrivet/internal/provenance"
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/lithoform/lithoform/internal/provenance"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 // The state every installation is in for its first few minutes.

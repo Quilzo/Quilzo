@@ -9,13 +9,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rsh1k/scrivet/internal/a11y"
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/auth"
-	"github.com/rsh1k/scrivet/internal/mcp"
-	"github.com/rsh1k/scrivet/internal/provenance"
-	"github.com/rsh1k/scrivet/internal/site"
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/a11y"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/lithoform/lithoform/internal/mcp"
+	"github.com/lithoform/lithoform/internal/provenance"
+	"github.com/lithoform/lithoform/internal/site"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 // The MCP surface is the third interface onto the same content, and the two

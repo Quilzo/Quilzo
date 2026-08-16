@@ -37,7 +37,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
+	"github.com/lithoform/lithoform/internal/audit"
 )
 
 // Window is how far back behaviour is considered.

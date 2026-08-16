@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rsh1k/scrivet/internal/a11y"
-	"github.com/rsh1k/scrivet/internal/tmpl"
+	"github.com/lithoform/lithoform/internal/a11y"
+	"github.com/lithoform/lithoform/internal/tmpl"
 )
 
 // A starter template is the first HTML most people will publish with this tool.

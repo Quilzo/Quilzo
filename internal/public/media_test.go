@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/media"
+	"github.com/lithoform/lithoform/internal/media"
 )
 
 // An asset that nothing serves is an asset no page can use.

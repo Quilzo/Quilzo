@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/auth"
-	"github.com/rsh1k/scrivet/internal/site"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/lithoform/lithoform/internal/site"
 )
 
 // Who is running this, and did anyone check?
@@ -33,8 +33,17 @@ type Caller struct {
 	Name string
 	// Role and Scope are the token's own limits, which cap what this session
 	// may do regardless of what the principal is permitted in general.
-	Role     auth.Role
-	Scope    string
+	Role  auth.Role
+	Scope string
+	// Limits is the rest of what the token narrows: read-only, and any
+	// restriction to particular content types or locales.
+	//
+	// This was dropped on the floor. The Caller kept the token's role and its
+	// resource path and threw the Scope struct away, so `--read-only` was
+	// enforced on the content API — the one surface that reads the token
+	// directly — and nowhere else. A read-only token could write a page and
+	// publish it from the command line or the browser.
+	Limits   auth.Scope
 	Kind     audit.Kind
 	Verified bool
 	// Why explains an unverified caller, for the message a refusal prints.
@@ -113,7 +122,7 @@ func resolveCaller(root, explicitToken string) *Caller {
 	}
 	return &Caller{
 		Name: tok.Principal, Role: tok.Role, Scope: tok.Resource,
-		Kind: kind, Verified: true,
+		Limits: tok.Scope, Kind: kind, Verified: true,
 	}
 }
 
@@ -181,6 +190,12 @@ func authorise(root string, c *Caller, action auth.Action, resource string) erro
 	if c.Scope != "" && !coversPath(c.Scope, resource) {
 		return fmt.Errorf(
 			"this token is scoped to %s and does not reach %s", c.Scope, resource)
+	}
+	// And the rest of the token's own limits: read-only, and any restriction to
+	// particular types or locales. Checked here rather than only in the API,
+	// which is where it used to live and therefore where it used to work.
+	if !c.Limits.AllowsAction(action) {
+		return fmt.Errorf("%s", c.Limits.Why(action, "", ""))
 	}
 	return nil
 }

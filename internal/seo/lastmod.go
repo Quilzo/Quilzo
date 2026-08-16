@@ -3,7 +3,7 @@ package seo
 import (
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 // LastChanged returns, for every page live at head, the time its content last

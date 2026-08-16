@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rsh1k/scrivet/internal/auth"
-	"github.com/rsh1k/scrivet/internal/menu"
-	"github.com/rsh1k/scrivet/internal/site"
-	"github.com/rsh1k/scrivet/internal/taxonomy"
+	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/lithoform/lithoform/internal/menu"
+	"github.com/lithoform/lithoform/internal/site"
+	"github.com/lithoform/lithoform/internal/taxonomy"
 )
 
 // Classification and navigation — the two features every CMS has and neither

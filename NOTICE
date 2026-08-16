@@ -1,4 +1,4 @@
-Scrivet
+Lithoform
 Copyright (C) 2026 rsh1k
 
 This program is free software: you can redistribute it and/or modify it under
@@ -17,12 +17,12 @@ with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 Why the Affero variant, and not something more permissive.
 
-Scrivet is a thing people run as a service for other people. An ordinary GPL
+Lithoform is a thing people run as a service for other people. An ordinary GPL
 obligation is triggered by *distributing* software, and nobody distributes a
 CMS they are hosting — so under GPL-3.0 a company could take this, run it for
 customers, modify it, and never publish a line. The Affero clause closes that:
 offering it over a network is the trigger, so anybody running a modified
-Scrivet for others has to offer their users the source.
+Lithoform for others has to offer their users the source.
 
 That is the whole reason to pick it. The author is not trying to stop anybody
 using this, charging for it, or building a business on it — all of that is

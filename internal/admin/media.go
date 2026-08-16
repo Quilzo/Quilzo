@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/auth"
-	"github.com/rsh1k/scrivet/internal/media"
-	"github.com/rsh1k/scrivet/internal/medialib"
+	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/lithoform/lithoform/internal/media"
+	"github.com/lithoform/lithoform/internal/medialib"
 )
 
 // The media library, in the interface, and stored at all.

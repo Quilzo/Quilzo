@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/export"
-	"github.com/rsh1k/scrivet/internal/out"
-	"github.com/rsh1k/scrivet/internal/seo"
-	"github.com/rsh1k/scrivet/internal/siem"
-	"github.com/rsh1k/scrivet/internal/site"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/export"
+	"github.com/lithoform/lithoform/internal/out"
+	"github.com/lithoform/lithoform/internal/seo"
+	"github.com/lithoform/lithoform/internal/siem"
+	"github.com/lithoform/lithoform/internal/site"
 )
 
 func cmdExport(root string, args []string) error {

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/form"
-	"github.com/rsh1k/scrivet/internal/throttle"
+	"github.com/lithoform/lithoform/internal/form"
+	"github.com/lithoform/lithoform/internal/throttle"
 )
 
 // The one thing this server is allowed to write.

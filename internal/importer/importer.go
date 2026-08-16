@@ -50,7 +50,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/seo"
+	"github.com/lithoform/lithoform/internal/seo"
 )
 
 // Source is a format that can be imported.

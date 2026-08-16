@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/lithoform/lithoform/internal/auth"
 )
 
 // Your own account, and only your own.

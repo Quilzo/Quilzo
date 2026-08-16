@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/lithoform/lithoform/internal/auth"
 )
 
 // Every command that changes something must leave a record of having done it.

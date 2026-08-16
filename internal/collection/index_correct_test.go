@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 // The index has to answer exactly what the scan answers.

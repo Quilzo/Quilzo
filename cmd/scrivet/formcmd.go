@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/out"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/out"
 )
 
 // Forms from a terminal: the operations a pipeline and an obligation need.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 // Environments: staging, production, and whatever else a customer needs

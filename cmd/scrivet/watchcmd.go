@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/agentwatch"
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/out"
+	"github.com/lithoform/lithoform/internal/agentwatch"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/out"
 )
 
 // cmdAgents reports on what models have been doing.

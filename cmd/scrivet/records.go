@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/collection"
-	"github.com/rsh1k/scrivet/internal/site"
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/collection"
+	"github.com/lithoform/lithoform/internal/site"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 // Records on the command line.

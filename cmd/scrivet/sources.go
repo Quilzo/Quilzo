@@ -1,10 +1,10 @@
 package main
 
 import (
-	"github.com/rsh1k/scrivet/internal/collection"
-	"github.com/rsh1k/scrivet/internal/listing"
-	"github.com/rsh1k/scrivet/internal/render"
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/collection"
+	"github.com/lithoform/lithoform/internal/listing"
+	"github.com/lithoform/lithoform/internal/render"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 // What a template may see, built once for every command that renders one.

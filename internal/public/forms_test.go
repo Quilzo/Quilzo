@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/form"
-	"github.com/rsh1k/scrivet/internal/site"
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/form"
+	"github.com/lithoform/lithoform/internal/site"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 func withForm(t *testing.T) (*Site, *form.Store) {

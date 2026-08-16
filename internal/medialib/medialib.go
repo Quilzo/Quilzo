@@ -43,7 +43,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/media"
+	"github.com/lithoform/lithoform/internal/media"
 )
 
 // Library is a directory of accepted uploads.

@@ -27,8 +27,8 @@
 package render
 
 import (
-	"github.com/rsh1k/scrivet/internal/listing"
-	"github.com/rsh1k/scrivet/internal/menu"
+	"github.com/lithoform/lithoform/internal/listing"
+	"github.com/lithoform/lithoform/internal/menu"
 )
 
 // Sources is everything a template can be shown.

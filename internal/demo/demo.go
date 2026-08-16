@@ -41,12 +41,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rsh1k/scrivet/internal/collection"
-	"github.com/rsh1k/scrivet/internal/form"
-	"github.com/rsh1k/scrivet/internal/listing"
-	"github.com/rsh1k/scrivet/internal/menu"
-	"github.com/rsh1k/scrivet/internal/schema"
-	"github.com/rsh1k/scrivet/internal/taxonomy"
+	"github.com/lithoform/lithoform/internal/collection"
+	"github.com/lithoform/lithoform/internal/form"
+	"github.com/lithoform/lithoform/internal/listing"
+	"github.com/lithoform/lithoform/internal/menu"
+	"github.com/lithoform/lithoform/internal/schema"
+	"github.com/lithoform/lithoform/internal/taxonomy"
 )
 
 //go:embed assets/*

@@ -1,3 +1,3 @@
-module github.com/rsh1k/scrivet
+module github.com/lithoform/lithoform
 
 go 1.24

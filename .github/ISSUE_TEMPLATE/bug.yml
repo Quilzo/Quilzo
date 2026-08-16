@@ -1,0 +1,38 @@
+name: Bug
+description: Something does not do what it says
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a security problem, use
+        [private reporting](https://github.com/lithoform/lithoform/security/advisories/new)
+        instead. Do not describe it here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: >
+        Commands from `scrivet init` onwards, if you can. A reproduction that
+        starts from an empty store is the most useful kind — a whole class of
+        bugs in this project has been things that only happen on a fresh
+        install.
+      render: shell
+    validations: {required: true}
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `scrivet version`, or the commit.
+    validations: {required: true}
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: linux/amd64, darwin/arm64, the container image…

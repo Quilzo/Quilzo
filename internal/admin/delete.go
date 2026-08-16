@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/auth"
-	"github.com/rsh1k/scrivet/internal/schema"
-	"github.com/rsh1k/scrivet/internal/site"
+	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/lithoform/lithoform/internal/schema"
+	"github.com/lithoform/lithoform/internal/site"
 )
 
 // Removing a page, which the interface could not do.

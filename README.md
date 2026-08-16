@@ -1,7 +1,11 @@
-# Scrivet
+# Lithoform
 
 A content management system where stored content is immutable, publishing moves
 a pointer, and the template language cannot execute anything.
+
+[![ci](https://github.com/lithoform/lithoform/actions/workflows/ci.yml/badge.svg)](https://github.com/lithoform/lithoform/actions/workflows/ci.yml)
+[![licence: AGPL-3.0-or-later](https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue)](LICENSE)
+[![dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen)](go.mod)
 
 ```bash
 scrivet init          # a store in the current directory
@@ -10,15 +14,69 @@ scrivet site          # serve it on 127.0.0.1:8081
 scrivet serve         # the admin interface on 127.0.0.1:8080
 ```
 
+The command is `scrivet` — the project's working name, kept as the binary the
+way Chromium ships `chrome`. Everywhere you see it in a command or an import,
+that is deliberate.
+
 Go, no third-party dependencies, one static binary. Everything below is
 reachable from the command line, the browser and the agent interface, and a test
 fails when one of them falls behind the others.
 
 ---
 
+## What this project is for
+
+**A CMS that cannot be exploited in the two ways CMSs are actually exploited.**
+
+Look at how content management systems fall over in practice. Almost every
+serious one is some combination of two things: a query an attacker can influence,
+and a place where writing data means writing something that later executes.
+WordPress's 2026 pre-auth RCE chained exactly those two. Drupal's CVE-2026-9082
+was the first half on its own.
+
+You do not harden that chain. You remove its links, and you can only remove them
+at the level of the storage model and the template language — which is why this
+is a new CMS rather than a hardening guide for an existing one.
+
+So there are three goals, in order:
+
+1. **Whole vulnerability classes absent by construction, not by patching.** No
+   query language over content, so nothing to inject into. No executable
+   template language, so nothing to escape from. These are properties of the
+   design; the tests assert them and the fuzzers attack them.
+
+2. **Every control enforced where it is used, not where it is documented.** This
+   project has repeatedly shipped a rule the terminal honoured and the browser
+   did not. So the test suite walks its own source and fails on the gap: every
+   command declares its privilege, every capability exists in all three
+   interfaces or carries a written reason, every write surface consults the
+   content-type gate.
+
+3. **Refuse rather than warn.** A warning nobody reads is a feature nobody has.
+   When Lithoform detects an inaccessible page, an unmarked AI-generated page, a
+   menu pointing at nothing, or content that violates its own type, it stops the
+   publish. Overriding is possible, explicit, and recorded in the commit.
+
+### What it is deliberately not
+
+Not a plugin marketplace — the extension point is a sandbox, not a way to run
+arbitrary code in the request path. Not a framework. Not a JavaScript
+application; the admin is server-rendered and its own CSP forbids script
+entirely. And not a general database with a CMS on top, because that is the
+thing whose absence makes the first goal possible.
+
+### Where it is honest about its age
+
+One maintainer, and the project is looking for more — [GOVERNANCE.md](GOVERNANCE.md)
+says three merged pull requests of substance and you can have commit access.
+Nothing in the release path depends on one person's machine or account. There is
+no 1.0 yet and no backports to earlier tags.
+
+---
+
 ## What it is
 
-Scrivet manages structured content and publishes a website from it. It does the
+Lithoform manages structured content and publishes a website from it. It does the
 things a CMS is expected to do — content types, media, taxonomies, menus, views
 over structured data, forms, workflow, multiple languages, staged environments,
 scheduled publication, an audit trail — and it does them on a storage model
@@ -58,7 +116,7 @@ Server-side template injection exists because the popular template languages are
 programming languages. Give one an attacker-influenced string and it reaches a
 constructor, a class hierarchy, a filesystem, a subprocess.
 
-Scrivet's template language has four constructs and no way to add a fifth:
+Lithoform's template language has four constructs and no way to add a fifth:
 
 ```
 {{ page.title }}                  a value, escaped for the context it lands in
@@ -209,23 +267,47 @@ OIDC discovery walk.
 ## Getting started
 
 ```bash
-go build -o scrivet ./cmd/scrivet
-
+go build -o scrivet ./cmd/scrivet     # Go 1.24+, nothing to fetch
 mkdir mysite && cd mysite
 scrivet init
-scrivet token issue laptop --principal you --role admin   # shown once
-export SCRIVET_TOKEN=scv_…
-scrivet auth grant you admin
-
-scrivet template use landing        # or `scrivet demo` for a whole application
-scrivet add index=index.json -m "first page"
-scrivet publish
-
-scrivet serve --addr 127.0.0.1:8080      # admin
-scrivet site  --addr 127.0.0.1:8081      # site
 ```
 
-`scrivet help` lists all 92 commands. The admin interface carries a manual with
+### Getting a token
+
+There is no default password and no default account. Nothing is admin until you
+say so, so there is no state in which a fresh install is reachable with a
+credential somebody already knows.
+
+```bash
+scrivet auth grant you admin                            # "you" is any name
+scrivet token issue laptop --principal you --role admin # shown once
+export SCRIVET_TOKEN=scv_…
+```
+
+A token can carry **less** authority than the person holding it and never more:
+`--role reader` on an admin's token makes a read-only credential, `--read-only`
+refuses every write whatever the role, `--on /blog` scopes it to a path, and
+`--ttl 24h` expires it. `scrivet token revoke ID` takes effect on the next use,
+not at the next restart.
+
+### Then either
+
+```bash
+scrivet demo                              # a whole example application
+# or
+scrivet template use landing
+scrivet add index=index.json -m "first page"
+scrivet publish
+```
+
+### And run it
+
+```bash
+scrivet serve --addr 127.0.0.1:8080                                    # admin
+scrivet site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
+```
+
+`scrivet help` lists all 92 commands. The admin carries a manual with
 screenshots at `/docs`, and every screen's Help link points at its own section.
 
 ## Deployment
@@ -251,5 +333,19 @@ AGPL-3.0-or-later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 Affero specifically, because nobody distributes a CMS — they host it. A licence
 whose obligations trigger on distribution would never trigger at all for the
-software this is. Running a modified Scrivet as a service for other people means
+software this is. Running a modified Lithoform as a service for other people means
 those people can have the source.
+
+## Contributing
+
+This project wants maintainers, not only patches. Three merged pull requests of
+substance and you can have commit access — the bar is written down in
+[GOVERNANCE.md](GOVERNANCE.md) so that nobody has to guess when they qualify.
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the two-minute path from clone to running
+site, the one rule that will surprise you (no dependencies), and how review
+works here. Security reports go through [SECURITY.md](SECURITY.md), privately.
+
+One thing to know before you spend time: **some employers forbid contributing to
+AGPL projects**, Google's policy explicitly. That is a real cost of the licence
+and it is better said here than discovered later.

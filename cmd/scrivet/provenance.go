@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/rsh1k/scrivet/internal/out"
-	"github.com/rsh1k/scrivet/internal/provenance"
-	"github.com/rsh1k/scrivet/internal/site"
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/out"
+	"github.com/lithoform/lithoform/internal/provenance"
+	"github.com/lithoform/lithoform/internal/site"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 func provPath(root string) string { return filepath.Join(root, "provenance.json") }

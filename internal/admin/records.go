@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/auth"
-	"github.com/rsh1k/scrivet/internal/collection"
+	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/lithoform/lithoform/internal/collection"
 )
 
 // Records in the admin.

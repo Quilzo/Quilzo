@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/auth"
-	"github.com/rsh1k/scrivet/internal/ext"
-	"github.com/rsh1k/scrivet/internal/siem"
-	"github.com/rsh1k/scrivet/internal/webhook"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/lithoform/lithoform/internal/ext"
+	"github.com/lithoform/lithoform/internal/siem"
+	"github.com/lithoform/lithoform/internal/webhook"
 )
 
 // Everything this store talks to, on one screen.

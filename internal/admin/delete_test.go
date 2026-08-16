@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/lithoform/lithoform/internal/auth"
 
-	"github.com/rsh1k/scrivet/internal/menu"
-	"github.com/rsh1k/scrivet/internal/site"
+	"github.com/lithoform/lithoform/internal/menu"
+	"github.com/lithoform/lithoform/internal/site"
 )
 
 // Removing a page through the interface.

@@ -52,8 +52,8 @@ import (
 	"embed"
 	"errors"
 	"fmt"
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/throttle"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/throttle"
 	"html/template"
 	"net"
 	"net/http"
@@ -63,16 +63,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/a11y"
-	"github.com/rsh1k/scrivet/internal/auth"
-	"github.com/rsh1k/scrivet/internal/collab"
-	"github.com/rsh1k/scrivet/internal/collection"
-	"github.com/rsh1k/scrivet/internal/posture"
-	"github.com/rsh1k/scrivet/internal/provenance"
-	"github.com/rsh1k/scrivet/internal/schema"
-	"github.com/rsh1k/scrivet/internal/site"
-	"github.com/rsh1k/scrivet/internal/store"
-	"github.com/rsh1k/scrivet/internal/tmpl"
+	"github.com/lithoform/lithoform/internal/a11y"
+	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/lithoform/lithoform/internal/collab"
+	"github.com/lithoform/lithoform/internal/collection"
+	"github.com/lithoform/lithoform/internal/posture"
+	"github.com/lithoform/lithoform/internal/provenance"
+	"github.com/lithoform/lithoform/internal/schema"
+	"github.com/lithoform/lithoform/internal/site"
+	"github.com/lithoform/lithoform/internal/store"
+	"github.com/lithoform/lithoform/internal/tmpl"
 )
 
 //go:embed assets/*
@@ -318,6 +318,15 @@ var errNoCredential = errors.New("no token")
 type principal struct {
 	Name string
 	Role auth.Role
+	// Limits is what the token itself narrows, over and above the role: it may
+	// be read-only, or restricted to particular content types or locales.
+	//
+	// Dropped here for a long time. authenticate() kept the principal's name
+	// and the token's role and discarded the rest, so `--read-only` was
+	// enforced in internal/api — the one place that reads the token directly —
+	// and nowhere else. A read-only token could save a page and publish it
+	// through this interface, which is the interface most people use.
+	Limits auth.Scope
 }
 
 // authenticate resolves a request to a principal.
@@ -341,7 +350,8 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 	if err != nil {
 		return principal{}, err
 	}
-	return principal{Name: tok.Principal, Role: tok.Role}, nil
+	return principal{
+		Name: tok.Principal, Role: tok.Role, Limits: tok.Scope}, nil
 }
 
 // can checks a permission and writes the refusal itself if there is one.
@@ -351,6 +361,21 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 // creeps upward.
 func (s *Server) can(w http.ResponseWriter, r *http.Request, p principal,
 	act auth.Action, resource string) bool {
+
+	// The token's own limits first, because they cap the session regardless of
+	// what the principal may do in general. A publisher holding a read-only
+	// token is, for this request, not a publisher — that is the entire reason
+	// to issue one.
+	if !p.Limits.AllowsAction(act) {
+		w.WriteHeader(http.StatusForbidden)
+		s.render(w, r, "message.html", map[string]any{
+			"Title": "Not permitted", "Principal": p,
+			"Heading": "This credential cannot do that",
+			"Body":    p.Limits.Why(act, "", ""),
+		})
+		return false
+	}
+
 	d := s.Policy.Evaluate(p.Name, act, resource)
 	if d.Allowed {
 		return true
@@ -564,6 +589,47 @@ func sameSiteOnly(next http.Handler) http.Handler {
 }
 
 // Handler returns the router.
+// readOnlyTokens refuses a state-changing request from a credential that says
+// it makes none.
+//
+// In middleware rather than in each handler, and keyed on the method rather
+// than the action, because the per-action check inside can() can be — and was —
+// reached after a handler has already validated its input. /save answered 400
+// "no page name" to a read-only token, which is a handler deciding the request
+// is malformed before anything decided the caller may make it at all. Ordering
+// like that is not wrong by much, and it is wrong in the direction where the
+// next handler somebody writes gets it wrong too.
+//
+// GET and HEAD pass through; everything else with a read-only token is refused
+// here, before a single field is read. can() still carries the finer checks —
+// a token limited to some content types or locales needs to know which page is
+// being touched, and only the handler knows that.
+func (s *Server) readOnlyTokens(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			next.ServeHTTP(w, r)
+			return
+		}
+		// An unauthenticated request is not this middleware's problem: the
+		// handler will refuse it, and answering here would tell an anonymous
+		// caller which routes exist.
+		p, err := s.authenticate(r)
+		if err != nil || !p.Limits.ReadOnly {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+		s.render(w, r, "message.html", map[string]any{
+			"Title": "Not permitted", "Principal": p,
+			"Heading": "This credential cannot change anything",
+			"Body": "This token was issued read-only, so it refuses every " +
+				"write whatever the role it carries. Use a token without " +
+				"--read-only, or ask for one.",
+		})
+	})
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handlePages)
@@ -671,7 +737,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/docs", s.handleDocs)
 	mux.HandleFunc("/docs/img/", s.handleDocImage)
 	mux.HandleFunc("/style.css", s.handleCSS)
-	return securityHeaders(sameSiteOnly(limitBody(mux)))
+	return securityHeaders(sameSiteOnly(limitBody(s.readOnlyTokens(mux))))
 }
 
 // handleSignIn exchanges a pasted token for a session cookie.

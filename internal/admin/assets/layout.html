@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{{.Title}} — Scrivet</title>
+<title>{{.Title}} — Lithoform</title>
 <link rel="stylesheet" href="/style.css">
 </head>
 <body class="nav-{{.NavPosition}}">
 <a class="skip" href="#main">Skip to main content</a>
 <header class="bar">
   <div class="bar-inner">
-    <a class="brand" href="/">Scrivet</a>
+    <a class="brand" href="/"><svg class="mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M12 2 3 7v10l9 5 9-5V7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 7 7.5 9.5v5L12 17l4.5-2.5v-5z" fill="currentColor" opacity=".9"/></svg><span>Lithoform</span></a>
     {{with .Principal}}<p class="who">Signed in as
       <a href="/profile"><strong>{{.Name}}</strong></a> ({{.Role}})
       — <a href="/signout">Sign out</a></p>{{end}}

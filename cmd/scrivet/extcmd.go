@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/rsh1k/scrivet/internal/atomicfile"
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/config"
-	"github.com/rsh1k/scrivet/internal/ext"
+	"github.com/lithoform/lithoform/internal/atomicfile"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/config"
+	"github.com/lithoform/lithoform/internal/ext"
 )
 
 func extPath(root string) string { return filepath.Join(root, "extensions.json") }

@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/listing"
-	"github.com/rsh1k/scrivet/internal/media"
-	"github.com/rsh1k/scrivet/internal/schema"
-	"github.com/rsh1k/scrivet/internal/site"
-	"github.com/rsh1k/scrivet/internal/tmpl"
+	"github.com/lithoform/lithoform/internal/listing"
+	"github.com/lithoform/lithoform/internal/media"
+	"github.com/lithoform/lithoform/internal/schema"
+	"github.com/lithoform/lithoform/internal/site"
+	"github.com/lithoform/lithoform/internal/tmpl"
 )
 
 // The demonstration has to satisfy the product it demonstrates.

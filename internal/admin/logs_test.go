@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/auth"
 )
 
 func logServer(t *testing.T, events []audit.Event, sep bool) (*Server, string) {

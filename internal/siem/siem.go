@@ -49,7 +49,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
+	"github.com/lithoform/lithoform/internal/audit"
 )
 
 // Format is an export format.

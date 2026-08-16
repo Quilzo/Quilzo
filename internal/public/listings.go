@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"sort"
 
-	"github.com/rsh1k/scrivet/internal/listing"
-	"github.com/rsh1k/scrivet/internal/site"
+	"github.com/lithoform/lithoform/internal/listing"
+	"github.com/lithoform/lithoform/internal/site"
 )
 
 // Serving a page that shows a query.

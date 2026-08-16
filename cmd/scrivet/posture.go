@@ -3,22 +3,22 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/rsh1k/scrivet/internal/logd"
+	"github.com/lithoform/lithoform/internal/logd"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/a11y"
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/out"
-	"github.com/rsh1k/scrivet/internal/posture"
-	"github.com/rsh1k/scrivet/internal/provenance"
-	"github.com/rsh1k/scrivet/internal/schema"
-	"github.com/rsh1k/scrivet/internal/site"
-	"github.com/rsh1k/scrivet/internal/store"
-	"github.com/rsh1k/scrivet/internal/tmpl"
+	"github.com/lithoform/lithoform/internal/a11y"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/out"
+	"github.com/lithoform/lithoform/internal/posture"
+	"github.com/lithoform/lithoform/internal/provenance"
+	"github.com/lithoform/lithoform/internal/schema"
+	"github.com/lithoform/lithoform/internal/site"
+	"github.com/lithoform/lithoform/internal/store"
+	"github.com/lithoform/lithoform/internal/tmpl"
 )
 
 func suppressPath(root string) string {

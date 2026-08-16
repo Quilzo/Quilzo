@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/auth"
-	"github.com/rsh1k/scrivet/internal/collab"
-	"github.com/rsh1k/scrivet/internal/schedule"
-	"github.com/rsh1k/scrivet/internal/site"
+	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/lithoform/lithoform/internal/collab"
+	"github.com/lithoform/lithoform/internal/schedule"
+	"github.com/lithoform/lithoform/internal/site"
 )
 
 // Running a site: where the work is, when it goes out, and who is holding it.

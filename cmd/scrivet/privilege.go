@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/auth"
 )
 
 // What every command needs before it is allowed to run.

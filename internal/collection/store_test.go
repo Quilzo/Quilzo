@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 var when = time.Unix(1786000000, 0)

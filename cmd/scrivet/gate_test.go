@@ -186,3 +186,50 @@ func TestEveryWriteSurfaceUsesCompareAndSwap(t *testing.T) {
 			found)
 	}
 }
+
+// A token's own limits have to be checked wherever the token is used.
+//
+// `--read-only` was enforced in internal/api and nowhere else, because that is
+// the one surface holding the token object directly. Both the command line and
+// the admin resolved a token into a name and a role and threw the rest away, so
+// a read-only token could save a page and publish it from either — which is
+// every interface a person actually uses.
+//
+// This is the same failure this file already guards against for the type gate:
+// a control present in one interface and absent from another. So it is checked
+// the same way, on the source, because the next surface somebody adds will
+// resolve a token too.
+func TestEverySurfaceChecksTheTokensOwnLimits(t *testing.T) {
+	// Each surface, the file that turns a token into an identity, and the call
+	// that must appear in it.
+	surfaces := []struct{ what, file string }{
+		{"the command line", "caller.go"},
+		{"the admin interface", "../../internal/admin/server.go"},
+		{"the content API", "../../internal/api/server.go"},
+	}
+	for _, s := range surfaces {
+		body := readFile(t, s.file)
+		if !strings.Contains(body, "AllowsAction") {
+			t.Errorf("%s (%s) resolves a token and never calls "+
+				"Scope.AllowsAction.\n  A token may carry less authority than "+
+				"the principal holding it — read-only, or limited to some "+
+				"types or locales — and that is the entire reason to issue a "+
+				"narrow one. A surface that checks only the role enforces none "+
+				"of it.", s.what, s.file)
+		}
+	}
+
+	// And the limits must survive being carried: a surface that calls
+	// AllowsAction on a zero Scope is a surface that always allows.
+	for _, pair := range []struct{ file, field string }{
+		{"caller.go", "Limits"},
+		{"../../internal/admin/server.go", "Limits"},
+	} {
+		body := readFile(t, pair.file)
+		if !strings.Contains(body, pair.field+": tok.Scope") &&
+			!strings.Contains(body, pair.field+" auth.Scope") {
+			t.Errorf("%s never copies the token's Scope onto the identity it "+
+				"builds, so whatever it checks is a zero value", pair.file)
+		}
+	}
+}

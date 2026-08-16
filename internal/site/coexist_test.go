@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/collection"
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/collection"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 // The integration that would otherwise destroy data: a page edit must not

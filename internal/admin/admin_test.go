@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/a11y"
-	"github.com/rsh1k/scrivet/internal/auth"
-	"github.com/rsh1k/scrivet/internal/oidc"
-	"github.com/rsh1k/scrivet/internal/posture"
-	"github.com/rsh1k/scrivet/internal/provenance"
-	"github.com/rsh1k/scrivet/internal/schema"
-	"github.com/rsh1k/scrivet/internal/site"
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/a11y"
+	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/lithoform/lithoform/internal/oidc"
+	"github.com/lithoform/lithoform/internal/posture"
+	"github.com/lithoform/lithoform/internal/provenance"
+	"github.com/lithoform/lithoform/internal/schema"
+	"github.com/lithoform/lithoform/internal/site"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 // The admin is checked by the same engine it uses on your content.

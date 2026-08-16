@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/rsh1k/scrivet/internal/out"
-	"github.com/rsh1k/scrivet/internal/public"
-	"github.com/rsh1k/scrivet/internal/timestamp"
+	"github.com/lithoform/lithoform/internal/out"
+	"github.com/lithoform/lithoform/internal/public"
+	"github.com/lithoform/lithoform/internal/timestamp"
 )
 
 func stampPath(root string) string { return filepath.Join(root, "timestamps.json") }

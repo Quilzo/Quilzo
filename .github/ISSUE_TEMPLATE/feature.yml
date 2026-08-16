@@ -1,0 +1,28 @@
+name: Feature
+description: Something it should be able to do
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >
+        What are you trying to do that you cannot? Describe the situation
+        rather than the feature — the best version of a feature is often not
+        the one first asked for.
+    validations: {required: true}
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you had in mind
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints this has to live with
+      description: >
+        These are the properties the project is built on. A feature that needs
+        one relaxed can still be right, but it needs saying out loud.
+      options:
+        - label: This needs no third-party dependency
+        - label: This adds no way to execute anything from content
+        - label: This is reachable from the CLI, the browser and the agent interface — or there is a reason it should not be

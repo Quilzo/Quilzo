@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/collab"
-	"github.com/rsh1k/scrivet/internal/out"
-	"github.com/rsh1k/scrivet/internal/site"
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/collab"
+	"github.com/lithoform/lithoform/internal/out"
+	"github.com/lithoform/lithoform/internal/site"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 func locksPath(root string) string { return filepath.Join(root, "locks.json") }

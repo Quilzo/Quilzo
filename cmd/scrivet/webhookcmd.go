@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/fetch"
-	"github.com/rsh1k/scrivet/internal/webhook"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/fetch"
+	"github.com/lithoform/lithoform/internal/webhook"
 )
 
 func hooksPath(root string) string { return filepath.Join(root, "webhooks.json") }

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/lithoform/lithoform/internal/auth"
 )
 
 // Managing people, and managing the credentials they hold.

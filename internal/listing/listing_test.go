@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/collection"
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/collection"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 func index(t *testing.T) *collection.Index {

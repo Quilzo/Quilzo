@@ -5,16 +5,16 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/rsh1k/scrivet/internal/anchor"
-	"github.com/rsh1k/scrivet/internal/fetch"
-	"github.com/rsh1k/scrivet/internal/logd"
+	"github.com/lithoform/lithoform/internal/anchor"
+	"github.com/lithoform/lithoform/internal/fetch"
+	"github.com/lithoform/lithoform/internal/logd"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/out"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/out"
 )
 
 // Where the audit log lives.

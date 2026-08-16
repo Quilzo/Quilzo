@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/vault"
+	"github.com/lithoform/lithoform/internal/vault"
 )
 
 // Base64 ends in `=` padding, and the first version split the environment

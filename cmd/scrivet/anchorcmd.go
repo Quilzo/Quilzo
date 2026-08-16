@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/anchor"
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/fetch"
-	"github.com/rsh1k/scrivet/internal/site"
+	"github.com/lithoform/lithoform/internal/anchor"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/fetch"
+	"github.com/lithoform/lithoform/internal/site"
 )
 
 func anchorPath(root string) string { return filepath.Join(root, "anchors.json") }

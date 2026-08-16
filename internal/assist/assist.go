@@ -53,7 +53,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/tmpl"
+	"github.com/lithoform/lithoform/internal/tmpl"
 )
 
 // Limits on what a proposal may contain. A model asked for one page that returns

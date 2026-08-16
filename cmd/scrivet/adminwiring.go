@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/rsh1k/scrivet/internal/admin"
-	"github.com/rsh1k/scrivet/internal/anchor"
-	"github.com/rsh1k/scrivet/internal/config"
-	"github.com/rsh1k/scrivet/internal/form"
-	"github.com/rsh1k/scrivet/internal/medialib"
-	"github.com/rsh1k/scrivet/internal/site"
-	"github.com/rsh1k/scrivet/internal/store"
-	"github.com/rsh1k/scrivet/internal/timestamp"
+	"github.com/lithoform/lithoform/internal/admin"
+	"github.com/lithoform/lithoform/internal/anchor"
+	"github.com/lithoform/lithoform/internal/config"
+	"github.com/lithoform/lithoform/internal/form"
+	"github.com/lithoform/lithoform/internal/medialib"
+	"github.com/lithoform/lithoform/internal/site"
+	"github.com/lithoform/lithoform/internal/store"
+	"github.com/lithoform/lithoform/internal/timestamp"
 )
 
 // What the admin server needs that only this package knows.

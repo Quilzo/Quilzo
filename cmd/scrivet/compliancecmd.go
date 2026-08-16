@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/compliance"
-	"github.com/rsh1k/scrivet/internal/posture"
+	"github.com/lithoform/lithoform/internal/compliance"
+	"github.com/lithoform/lithoform/internal/posture"
 )
 
 func cmdCompliance(root string, args []string) error {

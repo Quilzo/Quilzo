@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/assist"
-	"github.com/rsh1k/scrivet/internal/auth"
-	"github.com/rsh1k/scrivet/internal/provenance"
-	"github.com/rsh1k/scrivet/internal/site"
+	"github.com/lithoform/lithoform/internal/assist"
+	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/lithoform/lithoform/internal/provenance"
+	"github.com/lithoform/lithoform/internal/site"
 )
 
 // The assistant, in the interface.

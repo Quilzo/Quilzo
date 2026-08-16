@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/codescan"
-	"github.com/rsh1k/scrivet/internal/config"
-	"github.com/rsh1k/scrivet/internal/csp"
-	"github.com/rsh1k/scrivet/internal/out"
-	"github.com/rsh1k/scrivet/internal/site"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/codescan"
+	"github.com/lithoform/lithoform/internal/config"
+	"github.com/lithoform/lithoform/internal/csp"
+	"github.com/lithoform/lithoform/internal/out"
+	"github.com/lithoform/lithoform/internal/site"
 )
 
 func cmdScan(root string, args []string) error {

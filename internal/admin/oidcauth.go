@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/auth"
-	"github.com/rsh1k/scrivet/internal/oidc"
+	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/lithoform/lithoform/internal/oidc"
 )
 
 // OIDC wires an identity provider into the admin.

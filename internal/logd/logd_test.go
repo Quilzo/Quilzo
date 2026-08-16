@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
+	"github.com/lithoform/lithoform/internal/audit"
 )
 
 func writer(t *testing.T) (string, *audit.Log, string) {

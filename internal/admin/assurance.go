@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/agentwatch"
-	"github.com/rsh1k/scrivet/internal/auth"
-	"github.com/rsh1k/scrivet/internal/codescan"
-	"github.com/rsh1k/scrivet/internal/compliance"
-	"github.com/rsh1k/scrivet/internal/csp"
+	"github.com/lithoform/lithoform/internal/agentwatch"
+	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/lithoform/lithoform/internal/codescan"
+	"github.com/lithoform/lithoform/internal/compliance"
+	"github.com/lithoform/lithoform/internal/csp"
 )
 
 // The evidence, in the interface.

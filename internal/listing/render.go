@@ -3,8 +3,8 @@ package listing
 import (
 	"fmt"
 
-	"github.com/rsh1k/scrivet/internal/collection"
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/collection"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 // Resolving a page's listings before it renders.

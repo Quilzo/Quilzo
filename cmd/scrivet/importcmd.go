@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/fetch"
-	"github.com/rsh1k/scrivet/internal/importer"
-	"github.com/rsh1k/scrivet/internal/media"
-	"github.com/rsh1k/scrivet/internal/out"
-	"github.com/rsh1k/scrivet/internal/seo"
-	"github.com/rsh1k/scrivet/internal/site"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/fetch"
+	"github.com/lithoform/lithoform/internal/importer"
+	"github.com/lithoform/lithoform/internal/media"
+	"github.com/lithoform/lithoform/internal/out"
+	"github.com/lithoform/lithoform/internal/seo"
+	"github.com/lithoform/lithoform/internal/site"
 )
 
 func cmdImport(root string, args []string) error {

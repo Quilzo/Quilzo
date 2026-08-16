@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 func newStore(t *testing.T) *store.Store {

@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/auth"
-	"github.com/rsh1k/scrivet/internal/export"
-	"github.com/rsh1k/scrivet/internal/importer"
-	"github.com/rsh1k/scrivet/internal/site"
-	"github.com/rsh1k/scrivet/internal/starter"
+	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/lithoform/lithoform/internal/export"
+	"github.com/lithoform/lithoform/internal/importer"
+	"github.com/lithoform/lithoform/internal/site"
+	"github.com/lithoform/lithoform/internal/starter"
 )
 
 // Getting a site in and out, and starting from something.

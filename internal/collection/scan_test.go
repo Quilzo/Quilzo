@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 func seed(tb testing.TB, n int) (*store.Store, string) {

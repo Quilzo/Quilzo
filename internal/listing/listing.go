@@ -50,7 +50,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rsh1k/scrivet/internal/collection"
+	"github.com/lithoform/lithoform/internal/collection"
 )
 
 // Bounds. Each is a refusal rather than a truncation: a listing that silently

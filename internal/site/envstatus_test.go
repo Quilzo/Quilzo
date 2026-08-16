@@ -3,7 +3,7 @@ package site
 import (
 	"testing"
 
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 // Adding staging to a site that is already published.

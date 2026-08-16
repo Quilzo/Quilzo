@@ -10,7 +10,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/rsh1k/scrivet/internal/logd"
+	"github.com/lithoform/lithoform/internal/logd"
 )
 
 // The socket lives beside the log, not inside the store.

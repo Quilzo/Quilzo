@@ -4,7 +4,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 // Reading a collection without reading it again.

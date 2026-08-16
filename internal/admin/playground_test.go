@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/lithoform/lithoform/internal/auth"
 	"net/http/httptest"
 	"regexp"
 	"strings"

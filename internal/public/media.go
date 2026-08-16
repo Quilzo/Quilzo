@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/rsh1k/scrivet/internal/media"
+	"github.com/lithoform/lithoform/internal/media"
 )
 
 // Serving the assets, which nothing did.

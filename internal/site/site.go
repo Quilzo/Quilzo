@@ -22,12 +22,12 @@ package site
 
 import (
 	"fmt"
-	"github.com/rsh1k/scrivet/internal/collection"
+	"github.com/lithoform/lithoform/internal/collection"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/store"
+	"github.com/lithoform/lithoform/internal/store"
 )
 
 const (

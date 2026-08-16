@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/fetch"
-	"github.com/rsh1k/scrivet/internal/oidc"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/fetch"
+	"github.com/lithoform/lithoform/internal/oidc"
 )
 
 func oidcPath(root string) string { return filepath.Join(root, "oidc.json") }

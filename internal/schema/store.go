@@ -10,7 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/atomicfile"
+	"github.com/lithoform/lithoform/internal/atomicfile"
 )
 
 // Store is the one place that decides whether content is allowed to be written.

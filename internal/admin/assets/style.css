@@ -313,8 +313,14 @@ code { font-family: var(--mono); font-size: 0.9em; }
   display: flex; flex-wrap: wrap; gap: 1rem;
   align-items: baseline; justify-content: space-between;
 }
+/* The wordmark: a mark and the name, kept on one baseline.
+   The mark is inline SVG using currentColor, because the admin's own CSP
+   forbids external assets — a logo fetched from a CDN would be the one thing
+   on the page that could be replaced by somebody else. */
 .brand { font: var(--title-lg); font-weight: 800; letter-spacing: -0.01em;
-         color: var(--on-surface); text-decoration: none; }
+         color: var(--on-surface); text-decoration: none;
+         display: inline-flex; align-items: center; gap: 0.5rem; }
+.brand .mark { flex: none; color: var(--primary); }
 .who { font: var(--body-md); color: var(--on-surface-variant); margin: 0; }
 
 /* A navigation bar of pill-shaped destinations. Full-radius is the M3

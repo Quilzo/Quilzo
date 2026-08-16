@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/lithoform/lithoform/internal/auth"
 )
 
 // Every command the dispatcher can reach must declare what it needs.

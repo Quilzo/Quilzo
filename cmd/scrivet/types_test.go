@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rsh1k/scrivet/internal/out"
-	"github.com/rsh1k/scrivet/internal/schema"
+	"github.com/lithoform/lithoform/internal/out"
+	"github.com/lithoform/lithoform/internal/schema"
 )
 
 // gate_test.go proves every write surface calls gateWrite. This proves gateWrite

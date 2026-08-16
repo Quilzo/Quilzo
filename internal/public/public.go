@@ -38,16 +38,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/i18n"
-	"github.com/rsh1k/scrivet/internal/listing"
-	"github.com/rsh1k/scrivet/internal/menu"
-	"github.com/rsh1k/scrivet/internal/provenance"
-	"github.com/rsh1k/scrivet/internal/render"
-	"github.com/rsh1k/scrivet/internal/search"
-	"github.com/rsh1k/scrivet/internal/seo"
-	"github.com/rsh1k/scrivet/internal/site"
-	"github.com/rsh1k/scrivet/internal/store"
-	"github.com/rsh1k/scrivet/internal/tmpl"
+	"github.com/lithoform/lithoform/internal/i18n"
+	"github.com/lithoform/lithoform/internal/listing"
+	"github.com/lithoform/lithoform/internal/menu"
+	"github.com/lithoform/lithoform/internal/provenance"
+	"github.com/lithoform/lithoform/internal/render"
+	"github.com/lithoform/lithoform/internal/search"
+	"github.com/lithoform/lithoform/internal/seo"
+	"github.com/lithoform/lithoform/internal/site"
+	"github.com/lithoform/lithoform/internal/store"
+	"github.com/lithoform/lithoform/internal/tmpl"
 )
 
 // Site serves the live ref.

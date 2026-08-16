@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/lithoform/lithoform/internal/auth"
 )
 
 // Keeping a long-running server's credentials current.

@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/rsh1k/scrivet/internal/audit"
+	"github.com/lithoform/lithoform/internal/audit"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/rsh1k/scrivet/internal/starter"
+	"github.com/lithoform/lithoform/internal/starter"
 )
 
 func cmdTemplate(root string, args []string) error {

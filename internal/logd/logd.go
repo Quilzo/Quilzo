@@ -51,7 +51,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
+	"github.com/lithoform/lithoform/internal/audit"
 )
 
 // MaxRecordBytes bounds one submission.

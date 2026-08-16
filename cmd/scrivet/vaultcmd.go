@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/store"
-	"github.com/rsh1k/scrivet/internal/vault"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/store"
+	"github.com/lithoform/lithoform/internal/vault"
 )
 
 func keyringPath(root string) string { return filepath.Join(root, "keyring.json") }

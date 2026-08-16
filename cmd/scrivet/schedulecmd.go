@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/audit"
-	"github.com/rsh1k/scrivet/internal/schedule"
-	"github.com/rsh1k/scrivet/internal/site"
+	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/lithoform/lithoform/internal/schedule"
+	"github.com/lithoform/lithoform/internal/site"
 )
 
 func schedulePath(root string) string { return filepath.Join(root, "schedule.json") }

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/lithoform/lithoform/internal/auth"
 )
 
 // Each role gets what it needs to do its job, and nothing above it.
@@ -175,4 +175,55 @@ func post(t *testing.T, srv *Server, path, token string) *httptest.ResponseRecor
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	return w
+}
+
+// A read-only token cannot write, whatever its principal may do.
+//
+// It could. `--read-only` was enforced in internal/api, the one surface that
+// reads the token object directly; this one resolved a token into a name and a
+// role and discarded the scope, so a read-only token held by an admin saved
+// pages and published them through the interface most people use. Found by
+// checking a claim in the README against the running program.
+func TestAReadOnlyTokenCannotWriteThroughTheInterface(t *testing.T) {
+	srv, _ := setup(t)
+
+	pol := &auth.Policy{}
+	if err := pol.Grant(auth.Binding{
+		Principal: "ada", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	ts := &auth.TokenStore{}
+	// Issued scoped, not issued and then mutated: the store holds the token and
+	// a copy returned to the caller is not it.
+	secret, _, err := ts.IssueScoped("ci", "ada", auth.RoleAdmin, "/",
+		time.Hour, auth.RoleAdmin, auth.Scope{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Policy, srv.Tokens = pol, ts
+
+	// Reading is what it is for.
+	if w := get(t, srv, "/", secret); w.Code != http.StatusOK {
+		t.Fatalf("a read-only token could not read: %d", w.Code)
+	}
+
+	// Writing is what it is not for. Every one of these is an action an admin
+	// may take and this credential may not.
+	for _, path := range []string{
+		"/save", "/publish", "/rollback", "/records/save", "/types/save",
+		"/people/grant", "/settings/save", "/page/delete",
+	} {
+		w := post(t, srv, path, secret)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("POST %s with a read-only token answered %d, want 403",
+				path, w.Code)
+		}
+	}
+
+	// And the refusal says which of the five possible reasons it was.
+	w := post(t, srv, "/save", secret)
+	if !strings.Contains(w.Body.String(), "read-only") {
+		t.Error("the refusal does not say the token is read-only, so somebody " +
+			"will go asking for a wider role they already have")
+	}
 }
