@@ -1267,7 +1267,27 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pages, _ := site.PagesAt(s.Store, site.RefDraft)
+	// Two different situations arrive here as the same error, and only one of
+	// them may be turned into an empty page set.
+	//
+	// A store where nobody has saved anything has no draft ref, and that is
+	// exactly the state the first save runs in — the page being written is the
+	// first page. Starting from empty is correct.
+	//
+	// A store whose draft ref is set and whose objects will not load is corrupt,
+	// and starting from empty there would commit a one-page draft over the top
+	// of whatever could not be read. That is the failure worth being careful
+	// about: it turns a recoverable read error into silent data loss.
+	//
+	// The ref itself is what separates them, so it is what gets asked.
+	pages, err := site.PagesAt(s.Store, site.RefDraft)
+	if err != nil {
+		if s.Store.GetRef(site.RefDraft) != "" {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		pages = map[string]any{}
+	}
 	body := map[string]any{}
 	if existing, ok := pages[name].(map[string]any); ok {
 		for k, v := range existing {
@@ -1501,6 +1521,23 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Publishing with nothing to publish is a thing somebody did, not a thing
+	// that went wrong, so it is answered on the screen they pressed the button
+	// on rather than as a server error. Every other refusal in this handler
+	// already does that; this one was reaching the store first and reporting
+	// whatever came back.
+	if draft == "" {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, r, "review.html", map[string]any{
+			"Nav":   "review",
+			"Title": "Review", "Principal": p, "Reports": reports,
+			"Blocking": blocking, "CanPublish": true,
+			"Error": "There is no draft to publish. Save a page first, and it " +
+				"becomes the draft that publishing makes live.",
+		})
+		return
+	}
+
 	pub, err := site.Publish(s.Store, "")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1596,13 +1633,19 @@ func (s *Server) handleProvenance(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	draft := s.Store.GetRef(site.RefDraft)
-	c, err := s.Store.GetCommit(draft)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	// An empty store has no draft ref, and asking the store for commit "" gets
+	// back "not an object id", which is a true statement about the lookup and
+	// tells somebody who has just run init that their new installation is
+	// broken. Nothing to describe is not a failure; it renders as no rows.
+	var tree map[string]string
+	if draft := s.Store.GetRef(site.RefDraft); draft != "" {
+		c, err := s.Store.GetCommit(draft)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		tree, _ = s.Store.GetTree(c.Tree)
 	}
-	tree, _ := s.Store.GetTree(c.Tree)
 
 	type row struct {
 		Page, State, SourceType, Model, Disclosure string
@@ -1650,7 +1693,14 @@ func (s *Server) handleProvenanceSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// No draft means no page to mark, which is the same answer as a page that
+	// is not in the draft: not found. Reaching the store for commit "" would
+	// answer it with a 500 instead.
 	draft := s.Store.GetRef(site.RefDraft)
+	if draft == "" {
+		http.NotFound(w, r)
+		return
+	}
 	c, err := s.Store.GetCommit(draft)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
