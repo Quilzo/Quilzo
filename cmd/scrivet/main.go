@@ -78,6 +78,9 @@ importing
   scrivet media add FILE --alt "..."        validate and accept an upload
   scrivet media get https://... --alt "..." fetch one, checked at connect time
   scrivet media formats                     what is accepted, and what is not
+  scrivet ipfs id                           what the permanent web will call this site
+  scrivet ipfs write -o site                render it for 'ipfs add -r'      
+  scrivet ipfs verify CID                   check what a pinning service claimed
 
 templates
   scrivet template list | show NAME         ready-made starting points
@@ -310,6 +313,8 @@ func main() {
 		err = cmdImport(root, cmdArgs)
 	case "media":
 		err = cmdMedia(root, cmdArgs)
+	case "ipfs":
+		err = cmdIPFS(root, cmdArgs)
 	case "template", "templates":
 		err = cmdTemplate(root, cmdArgs)
 	case "posture":

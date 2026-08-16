@@ -236,6 +236,37 @@ func cmdServe(root string, args []string) error {
 		},
 		Evidence: func() ([]admin.Evidence, error) { return evidenceRows(root) },
 	}
+	srv.Decentralised = &admin.Decentralised{
+		Pages: func() (map[string]any, error) { return site.PagesAt(s, site.RefLive) },
+		Stylesheet: func() string {
+			b, err := os.ReadFile(filepath.Join(*tplDir, "site.css"))
+			if err != nil {
+				return ""
+			}
+			return string(b)
+		},
+		Media: func() (map[string][]byte, error) {
+			lib, err := openMedia(root)
+			if err != nil {
+				return nil, err
+			}
+			all, err := lib.List()
+			if err != nil {
+				return nil, err
+			}
+			out := map[string][]byte{}
+			for _, f := range all {
+				_, body, gerr := lib.Get(f.ID)
+				if gerr != nil {
+					continue
+				}
+				// The same path the public server uses, so an image reference
+				// in a page resolves identically on IPFS.
+				out["media/"+f.ID] = body
+			}
+			return out, nil
+		},
+	}
 	srv.Transfer = &admin.Transfer{
 		Pages: func() (map[string]any, error) { return draftPages(root) },
 		Save: func(p map[string]any, msg, by, base string) error {

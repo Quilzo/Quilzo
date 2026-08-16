@@ -48,10 +48,14 @@ type need struct {
 var commandNeeds = map[string]need{
 	// -- reading. A reader role, so a store with access control does not leak
 	// its contents to anybody with a shell on the box.
-	"diff":       {action: auth.ActView},
-	"log":        {action: auth.ActView},
-	"render":     {action: auth.ActView},
-	"export":     {action: auth.ActView},
+	"diff":   {action: auth.ActView},
+	"log":    {action: auth.ActView},
+	"render": {action: auth.ActView},
+	"export": {action: auth.ActView},
+	// Reading published content and hashing it. The identifier of a public
+	// page is not a secret — anybody who can fetch the page can compute it —
+	// but rendering the whole site is still a read of the store.
+	"ipfs":       {action: auth.ActView},
 	"siem":       {action: auth.ActView},
 	"a11y":       {action: auth.ActView},
 	"verify":     {action: auth.ActView},

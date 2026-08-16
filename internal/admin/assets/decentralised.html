@@ -1,0 +1,98 @@
+{{template "head" .}}
+<h1>Permanent web</h1>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+{{if .Unavailable}}
+<p class="notice warn">{{.Unavailable}}</p>
+{{else}}
+
+<p class="lead">
+  Your published site, addressed by the hash of its own bytes. Put it on IPFS
+  and its address is the content — nobody can change what it points at, and we
+  cannot take it down because we are not holding it.
+</p>
+
+<div class="card">
+  <p class="label">This site's identifier</p>
+  <p><code>{{.Root}}</code></p>
+  <p class="hint">
+    {{len .Files}} file(s), {{.Total}} bytes, {{.Blocks}} block(s). Computed
+    here, from your bytes, before anything is uploaded anywhere.
+  </p>
+</div>
+
+<h2>Putting it there</h2>
+<ol>
+  <li>Download the bundle below and expand it.</li>
+  <li>Run <code>ipfs add -r --cid-version=1 site/</code>, or drop the folder into
+    any pinning service.</li>
+  <li>Check that what you get back is the identifier above. If it differs,
+    something changed your bytes on the way.</li>
+  <li>Point a name at it: set your ENS <code>contenthash</code> to
+    <code>ipfs://{{.Root}}</code>, and readers reach it at
+    <code>yourname.eth.limo</code>.</li>
+</ol>
+
+{{if .CanBuild}}
+<p class="actions"><a class="btn" href="/decentralised/bundle">Download the bundle</a></p>
+<p class="hint">
+  A <code>.tar.gz</code> of exactly what was hashed. The archive carries no
+  timestamps, so the same content always produces the same bytes.
+</p>
+{{end}}
+
+<h2>Check what a service told you</h2>
+<form method="post" action="/decentralised/verify" class="inline">
+  <label for="v-cid">Identifier your service returned</label>
+  <input id="v-cid" name="cid" size="52" spellcheck="false" value="{{.Claimed}}"
+         placeholder="bafybei…">
+  <button type="submit">Check it</button>
+</form>
+{{if .Verdict}}
+<p class="notice {{if eq .VerdictKind "ok"}}ok{{else}}bad{{end}}">{{.Verdict}}</p>
+{{end}}
+<p class="hint">
+  Worth doing every time. A service that returns an identifier for something
+  other than what you uploaded — by bug, by re-chunking, or by compromise — is
+  only detectable if you already know what the answer should be.
+</p>
+
+<h2>Every file</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Path</th><th scope="col">Identifier</th><th scope="col">Bytes</th>
+  </tr></thead>
+  <tbody>
+  {{range .Files}}
+  <tr>
+    <th scope="row"><code>{{.Path}}</code></th>
+    <td class="hint"><code>{{.CID}}</code></td>
+    <td class="hint">{{.Size}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+<p class="hint">
+  A single file's identifier is the hash of its bytes and nothing else — no
+  name, no timestamp, no metadata. Two people with the same file always get the
+  same answer, which is what makes any of this checkable.
+</p>
+
+<h2>What this does and does not promise</h2>
+<p>
+  It promises that we are not hosting your site and cannot remove it, and that
+  the address is the content rather than a pointer somebody controls.
+</p>
+<p>
+  It does not promise that every reader can always reach it. Readers arrive
+  through gateways, gateways run on ordinary DNS, and in 2026 the main one was
+  hijacked through its registrar, seized by a previous registrar, and blocked by
+  a large ISP. The content survived all three; the path to it did not. Publish
+  to a conventional host as well — two addresses, one hash.
+</p>
+{{end}}
+{{template "foot" .}}

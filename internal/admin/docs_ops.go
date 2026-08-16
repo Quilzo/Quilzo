@@ -84,6 +84,82 @@ var chapterRelease = chapter{
 			},
 		},
 		{
+			ID:      "ipfs",
+			Title:   "The permanent web",
+			Summary: "Publishing where the address is the content, and nobody — including us — can take it down.",
+			Body: []block{
+				p("IPFS is a way of naming files by what they contain rather " +
+					"than by where they live. An ordinary URL says \"ask this " +
+					"server for this path\", and everything depends on that " +
+					"server still being there and still willing. An IPFS " +
+					"address says \"find me the bytes whose hash is this\", " +
+					"and any machine holding them can answer."),
+				p("The consequence is that the address cannot lie. Change one " +
+					"character of a page and it has a different address, so " +
+					"nobody can substitute content behind a link somebody " +
+					"already has. There is no \"the site changed under me\" " +
+					"and no cache to invalidate."),
+				sub("Why this fits Scrivet particularly well"),
+				p("Because it is the same idea Scrivet already uses. Every " +
+					"object in the store is named by the SHA-256 of its own " +
+					"bytes, arranged in nested trees, published by moving a " +
+					"pointer. IPFS names content by the SHA-256 of its own " +
+					"bytes, arranged in nested nodes, addressed by a root. " +
+					"Publishing to it is a serialisation format, not a new " +
+					"architecture."),
+				sub("What this screen does"),
+				steps(
+					"Renders your published site — what is live, never the draft.",
+					"Computes the IPFS identifier for it here, from your bytes.",
+					"Hands you a bundle to upload wherever you like.",
+					"Checks whatever identifier the service gives you back against the one it should be.",
+				),
+				p("That third step matters more than it looks. Upload a site " +
+					"and the service returns an identifier; use that " +
+					"identifier and the service is now the authority on what " +
+					"your content is. It can return one for something else — " +
+					"by bug, by re-chunking, or by compromise — and nothing " +
+					"downstream would notice, because the only copy of the " +
+					"answer came from the party being checked."),
+				sub("What this deliberately does not do"),
+				p("It does not hold your pinning credentials, does not hold a " +
+					"wallet, does not sign a transaction, and does not talk to " +
+					"a service on your behalf. The moment this program stores " +
+					"a token it becomes worth attacking for a reason unrelated " +
+					"to content; the moment it holds a key it is a custodian. " +
+					"Neither is needed — the hard part is knowing what the " +
+					"identifier should be, and that needs no third party at all."),
+				sub("Pointing a name at it"),
+				p("Set your ENS name's contenthash record to " +
+					"<code>ipfs://</code> followed by the identifier, and " +
+					"readers reach it at <code>yourname.eth.limo</code>. You " +
+					"hold that key, not us. Updating the site means updating " +
+					"one record."),
+				sub("What \"cannot be taken down\" honestly means"),
+				p("It means we are not hosting your site, so we cannot remove " +
+					"it, and neither can anybody who serves a legal order on " +
+					"us. That is a real and unusual property and it is worth " +
+					"having."),
+				warn("It does not mean unreachable-by-anybody. Readers arrive " +
+					"through gateways, gateways run on ordinary DNS, and in " +
+					"2026 the main ENS gateway was hijacked through its " +
+					"registrar, seized by a previous registrar, and blocked by " +
+					"a large ISP. The content survived all three; the path to " +
+					"it did not. Publish to a conventional host as well — two " +
+					"addresses, one hash."),
+				sub("Cost"),
+				p("Pinning a typical site runs to pennies a month, or a single " +
+					"payment of well under a dollar for permanent storage on " +
+					"Arweave. You pay it directly to whoever stores your " +
+					"content. Nothing in this passes through us."),
+				warn("Permanent means permanent. A site put on Arweave cannot " +
+					"be withdrawn, by you or by anybody. If your pages carry " +
+					"personal data, that collides with an erasure obligation, " +
+					"and the time to decide is before you publish rather than " +
+					"after."),
+			},
+		},
+		{
 			ID:      "history",
 			Title:   "History",
 			Summary: "Every commit, and going back to one.",

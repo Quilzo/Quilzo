@@ -125,6 +125,9 @@ type Server struct {
 	Assurance *Assurance
 	// Transfer moves whole sites in and out, and applies starters.
 	Transfer *Transfer
+	// Decentralised renders the published site so its IPFS identifier can be
+	// computed here rather than taken from whoever stores it.
+	Decentralised *Decentralised
 	// Assist proposes a site from a description. Nil means no model is
 	// configured, which is a complete configuration and the screen says so.
 	Assist *Assist
@@ -560,6 +563,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/integrations/extension", s.handleExtensionSave)
 	mux.HandleFunc("/integrations/extension/remove", s.handleExtensionRemove)
 	mux.HandleFunc("/integrations/siem", s.handleSIEMExport)
+	mux.HandleFunc("/decentralised", s.handleDecentralised)
+	mux.HandleFunc("/decentralised/bundle", s.handleBundleDownload)
+	mux.HandleFunc("/decentralised/verify", s.handleVerifyCID)
 	mux.HandleFunc("/transfer", s.handleTransfer)
 	mux.HandleFunc("/transfer/export", s.handleExport)
 	mux.HandleFunc("/transfer/import", s.handleImport)

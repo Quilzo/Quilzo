@@ -164,6 +164,8 @@ var notAScreen = map[string]string{
 	"/auth/callback": "receives one, and is never opened directly",
 	"/signout":       "clears the cookie and redirects; there is nothing to render",
 	"/style.css":     "is a stylesheet",
+	"/decentralised/bundle": "sends a tar.gz of the rendered site, not a page; " +
+		"it redirects with an explanation when there is nothing published",
 }
 
 // fullyWired builds a server with every capability connected, the way the
@@ -311,6 +313,10 @@ func fullyWired(t *testing.T) (*Server, string) {
 		},
 	}
 
+	srv.Decentralised = &Decentralised{
+		Pages:      func() (map[string]any, error) { return srv.draftPages() },
+		Stylesheet: func() string { return "body{font-family:system-ui}" },
+	}
 	srv.Transfer = &Transfer{
 		Pages:    func() (map[string]any, error) { return srv.draftPages() },
 		Save:     func(map[string]any, string, string, string) error { return nil },

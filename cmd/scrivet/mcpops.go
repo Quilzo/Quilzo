@@ -15,6 +15,7 @@ import (
 	"github.com/rsh1k/scrivet/internal/compliance"
 	"github.com/rsh1k/scrivet/internal/export"
 	"github.com/rsh1k/scrivet/internal/i18n"
+	"github.com/rsh1k/scrivet/internal/ipfs"
 	"github.com/rsh1k/scrivet/internal/mcp"
 	"github.com/rsh1k/scrivet/internal/schema"
 	"github.com/rsh1k/scrivet/internal/site"
@@ -382,6 +383,32 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 				r.Actions, len(r.Strikes), r.Summary)
 		}
 		return strings.TrimSpace(b.String()), nil
+	})
+
+	srv.Register(mcp.Operation{
+		Name:    "content_id",
+		Summary: "the IPFS identifier the published site would have",
+		Detail: "Computed from the bytes, locally, with nothing asked of any " +
+			"service. Use it to check what a pinning service claims: a " +
+			"service that returns a different identifier stored something " +
+			"other than what it was given.",
+		Args:     map[string]string{"templates": "where page.html lives; defaults to templates"},
+		Keywords: []string{"ipfs", "cid", "permanent", "decentralised", "hash", "web3"},
+	}, func(a map[string]any) (any, error) {
+		dir, _ := a["templates"].(string)
+		if dir == "" {
+			dir = "templates"
+		}
+		files, err := renderBundle(root, dir)
+		if err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
+		node, err := ipfs.Tree(files)
+		if err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
+		return fmt.Sprintf("%s\n%d file(s), %d block(s)\nipfs://%s",
+			node.Block.CID, len(files), len(node.All()), node.Block.CID), nil
 	})
 
 	srv.Register(mcp.Operation{
