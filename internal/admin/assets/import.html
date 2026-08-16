@@ -1,0 +1,75 @@
+{{template "head" .}}
+<h1>Import</h1>
+
+<p class="lead">
+  {{.Filename}}, read as {{.Source}}.
+  {{if .Written}}<strong>{{len .Report.Pages}} page(s) were written into the
+  draft.</strong>{{else}}Nothing has been written.{{end}}
+</p>
+
+{{if .Report.Skipped}}
+<div class="card bad">
+  <p><strong>{{len .Report.Skipped}} thing(s) were not imported.</strong>
+    This is the half worth reading: an importer that quietly drops half an
+    export is worse than one that refuses, because the loss is found months
+    later by a reader.</p>
+  <ul>{{range .Report.Skipped}}<li>{{.}}</li>{{end}}</ul>
+</div>
+{{end}}
+
+{{if .Report.Notes}}
+<div class="card warn">
+  <p><strong>Decisions for you.</strong></p>
+  <ul>{{range .Report.Notes}}<li>{{.}}</li>{{end}}</ul>
+</div>
+{{end}}
+
+<h2>{{len .Report.Pages}} page(s)</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Page</th><th scope="col">Fields</th>
+    <th scope="col">Dropped</th>
+  </tr></thead>
+  <tbody>
+  {{range .Report.Pages}}
+  <tr>
+    <th scope="row">{{.Name}}</th>
+    <td class="hint">{{range $k, $v := .Fields}}{{$k}} {{end}}</td>
+    <td class="hint">{{range $i, $d := .Dropped}}{{if $i}}, {{end}}{{$d}}{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+
+{{if .Report.Redirects}}
+<h2>{{len .Report.Redirects}} redirect(s)</h2>
+<p class="hint">
+  Every URL the content had in the old system, pointing at its new path. This
+  is the artefact that decides whether a migration keeps its search rankings.
+</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">From</th><th scope="col">To</th></tr></thead>
+  <tbody>
+  {{range .Report.Redirects}}
+  <tr><th scope="row"><code>{{.From}}</code></th><td><code>{{.To}}</code></td></tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+{{if .Report.Media}}
+<h2>{{len .Report.Media}} media reference(s)</h2>
+<p class="hint">
+  Collected and deliberately not fetched. Following a URL during an import turns
+  a file somebody sent you into a request from inside your network to a host
+  they chose.
+</p>
+<ul>{{range .Report.Media}}<li><code>{{.}}</code></li>{{end}}</ul>
+{{end}}
+
+<p><a class="btn" href="/transfer">Back to transfer</a></p>
+{{template "foot" .}}

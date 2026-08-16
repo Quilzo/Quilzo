@@ -1,0 +1,70 @@
+{{template "head" .}}
+<h1>Integrity</h1>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+<h2>The store</h2>
+<p class="lead">
+  Every object is named by the hash of its own bytes, so verifying the store is
+  re-hashing all of it and checking that each object is still what its name
+  says.
+</p>
+{{if .CanRun}}
+<form method="post" action="/security/verify" class="inline">
+  <button type="submit">Verify now</button>
+</form>
+<p class="hint">
+  Not run on page load. This reads and re-hashes the whole store, and doing that
+  every time somebody opens a dashboard is how a check ends up switched off.
+</p>
+{{end}}
+
+<h2>Encryption at rest</h2>
+{{if .Encrypted}}
+<p>Objects are sealed. The active key is <code>{{.ActiveKey}}</code>,
+  and the keyring holds {{len .Keys}}.</p>
+<p class="hint">
+  Old keys are kept so objects sealed under them stay readable. Rotation adds a
+  key and changes which one new objects use; it does not rewrite what is already
+  stored, because rewriting an immutable store is a contradiction.
+</p>
+{{else}}
+<p>Objects are stored unencrypted. That is the default, and it is the right
+  default when the filesystem is already the trust boundary — encryption at rest
+  protects against a stolen disk, not against a process that can read the
+  directory.</p>
+{{end}}
+
+<h2>Timestamps and anchors</h2>
+{{if not .Evidence}}
+<p>Nothing has been timestamped or anchored.</p>
+{{else}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Kind</th><th scope="col">Subject</th>
+    <th scope="col">Authority</th><th scope="col">State</th>
+    <th scope="col">When</th>
+  </tr></thead>
+  <tbody>
+  {{range .Evidence}}
+  <tr>
+    <th scope="row">{{.Kind}}</th>
+    <td><code>{{short .Subject}}</code></td>
+    <td class="hint">{{.Authority}}</td>
+    <td>{{.State}}{{if .Detail}}<div class="hint">{{.Detail}}</div>{{end}}</td>
+    <td class="hint">{{.At}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+<p class="hint">
+  An anchor that has been submitted and not yet committed to a block is evidence
+  of an intention rather than of a time, which is why its state is shown rather
+  than a tick.
+</p>
+<p class="hint"><a href="/security">Back to the posture dashboard.</a></p>
+{{template "foot" .}}

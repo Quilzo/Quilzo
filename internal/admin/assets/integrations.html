@@ -1,0 +1,202 @@
+{{template "head" .}}
+<h1>Integrations</h1>
+
+<p class="lead">What leaves this system, and what runs inside it that we did not
+write.</p>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+<h2>Webhooks</h2>
+{{if not .Endpoints}}
+<p>Nothing is notified when content changes.</p>
+{{else}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Endpoint</th><th scope="col">Events</th>
+    <th scope="col">Key</th><th scope="col">State</th><th scope="col"></th>
+  </tr></thead>
+  <tbody>
+  {{range .Endpoints}}
+  <tr>
+    <th scope="row"><code>{{.URL}}</code>
+      {{if .Note}}<div class="hint">{{.Note}}</div>{{end}}</th>
+    <td>{{if .Types}}{{range $i, $t := .Types}}{{if $i}}, {{end}}{{$t}}{{end}}
+        {{else}}<span class="hint">everything</span>{{end}}</td>
+    <td class="hint"><code>{{index $.Hints .URL}}</code></td>
+    <td>{{if .Disabled}}<span class="warn">off</span>{{else}}<span class="ok">on</span>{{end}}</td>
+    <td>
+      <form method="post" action="/integrations/webhook/remove" class="inline">
+        <input type="hidden" name="url" value="{{.URL}}">
+        <input type="hidden" name="disable" value="1">
+        <button type="submit">{{if .Disabled}}Turn on{{else}}Turn off{{end}}</button>
+      </form>
+      <form method="post" action="/integrations/webhook/remove" class="inline">
+        <input type="hidden" name="url" value="{{.URL}}">
+        <button type="submit" class="danger">Remove</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<form method="post" action="/integrations/webhook" class="inline">
+  <label for="w-url">Endpoint</label>
+  <input id="w-url" name="url" required spellcheck="false" size="36"
+         placeholder="https://example.org/hooks/scrivet">
+  <label for="w-types">Events</label>
+  <input id="w-types" name="types" placeholder="blank means all">
+  <label for="w-note">Note</label>
+  <input id="w-note" name="note">
+  <button type="submit">Add</button>
+</form>
+<p class="hint">
+  https only. Over cleartext the payload is readable and the signature is
+  replayable by anyone on the path, so it is refused rather than warned about.
+  The signing key is shown once, when the endpoint is created.
+</p>
+
+{{if .Deliveries}}
+<h3>Recent deliveries</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">When</th><th scope="col">Endpoint</th>
+    <th scope="col">Event</th><th scope="col">Result</th>
+  </tr></thead>
+  <tbody>
+  {{range .Deliveries}}
+  <tr>
+    <th scope="row">{{.At}}</th>
+    <td class="hint"><code>{{.URL}}</code></td>
+    <td>{{.Type}}</td>
+    <td>{{if .Succeeded}}<span class="ok">{{.Status}}</span>
+      {{else}}<span class="bad">{{if .Status}}{{.Status}}{{else}}failed{{end}}</span>
+      {{if .Error}}<div class="hint">{{.Error}}</div>{{end}}{{end}}
+      <div class="hint">attempt {{.Attempt}}</div></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<h2>Extensions</h2>
+{{if .ExtError}}
+<div class="card bad"><p>{{.ExtError}}</p></div>
+{{end}}
+{{if not .Extensions}}
+<p>Nothing outside this binary runs during a write or a publish.</p>
+{{else}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Extension</th><th scope="col">Runs at</th>
+    <th scope="col">Sees</th><th scope="col">On failure</th>
+    <th scope="col">Pinned to</th><th scope="col"></th>
+  </tr></thead>
+  <tbody>
+  {{range .Extensions}}
+  <tr>
+    <th scope="row">{{.Name}} <span class="hint">{{.Version}}</span>
+      {{if .Description}}<div class="hint">{{.Description}}</div>{{end}}
+      <div class="hint"><code>{{range $i, $c := .Command}}{{if $i}} {{end}}{{$c}}{{end}}</code></div></th>
+    <td>{{range $i, $h := .Hooks}}{{if $i}}, {{end}}{{$h}}{{end}}</td>
+    <td>{{if .Fields}}{{range $i, $f := .Fields}}{{if $i}}, {{end}}{{$f}}{{end}}
+        {{else}}<span class="hint">nothing</span>{{end}}</td>
+    <td>{{if .Optional}}<span class="warn">carries on</span>
+        {{else}}<span class="ok">blocks</span>{{end}}</td>
+    <td class="hint"><code>{{short .SHA256}}</code></td>
+    <td>
+      <form method="post" action="/integrations/extension/remove" class="inline">
+        <input type="hidden" name="name" value="{{.Name}}">
+        <button type="submit" class="danger">Remove</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<form method="post" action="/integrations/extension">
+  <div class="grid2">
+    <p><label for="x-name">Name</label>
+      <input id="x-name" name="name" required spellcheck="false"></p>
+    <p><label for="x-version">Version</label>
+      <input id="x-version" name="version" required spellcheck="false"></p>
+    <p><label for="x-cmd">Command</label>
+      <input id="x-cmd" name="command" required spellcheck="false"
+             placeholder="/usr/local/bin/house-style --json">
+      <span class="hint">Hashed when it is registered, so the binary that runs
+        is the binary that was reviewed.</span></p>
+    <p><label for="x-desc">Description</label>
+      <input id="x-desc" name="description"></p>
+    <p><label for="x-fields">Fields it is sent</label>
+      <input id="x-fields" name="fields" placeholder="title, body">
+      <span class="hint">Comma separated. Blank means nothing — not
+        everything.</span></p>
+    <p><label for="x-opt">Carry on if it fails</label>
+      <input id="x-opt" type="checkbox" name="optional" value="1">
+      <span class="hint">Off means a failure blocks the write. An extension
+        registered to validate content exists to refuse some of it, so if it
+        crashes, nothing validated that page.</span></p>
+  </div>
+  <fieldset>
+    <legend>Runs at</legend>
+    {{range .Hooks}}
+    <p><label><input type="checkbox" name="hooks" value="{{.}}"> {{.}}</label></p>
+    {{end}}
+  </fieldset>
+  <button type="submit">Register</button>
+</form>
+
+<h2>Sign-in provider</h2>
+{{if .OIDC}}
+<div class="table-wrap">
+<table>
+  <tbody>
+  <tr><th scope="row">Issuer</th><td><code>{{.Issuer}}</code></td></tr>
+  <tr><th scope="row">Client</th><td><code>{{.ClientID}}</code></td></tr>
+  <tr><th scope="row">Redirect</th><td><code>{{.Redirect}}</code></td></tr>
+  <tr><th scope="row">Principal comes from</th><td><code>{{.Claim}}</code></td></tr>
+  <tr><th scope="row">Unverified addresses</th>
+    <td>{{if .RequireVerified}}<span class="ok">refused</span>
+        {{else}}<span class="bad">accepted</span>{{end}}</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="hint">
+  The client secret is read from the environment and never from this store, so
+  it is not here to show. Changing any of this is a configuration file and a
+  restart, deliberately: a provider misconfiguration should stop the server
+  rather than produce a sign-in button that cannot work.
+</p>
+{{else}}
+<p>No identity provider is configured, so the only way in is a token. That is
+  the default and it is a complete configuration.</p>
+{{end}}
+
+<h2>Send the audit log to a SIEM</h2>
+<form method="post" action="/integrations/siem" class="inline">
+  <label for="s-format">Format</label>
+  <select id="s-format" name="format">
+    {{range .Formats}}<option value="{{.}}">{{.}}</option>{{end}}
+  </select>
+  <label for="s-reveal">Show identifiers</label>
+  <input id="s-reveal" type="checkbox" name="reveal" value="1">
+  <button type="submit">Export</button>
+</form>
+<p class="hint">
+  The export carries an envelope over the events it contains, so the receiver
+  can check that nothing was added or dropped in transit. Identifiers stay
+  pseudonymous unless asked for, and asking is itself recorded — revealing
+  cannot recover what the log never stored in the clear, it only stops this from
+  redacting what the log does hold.
+</p>
+{{template "foot" .}}

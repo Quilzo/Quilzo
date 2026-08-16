@@ -8,13 +8,14 @@
   <div class="row">
     <label>Who
       <input name="principal" required autocomplete="off" spellcheck="false"
+        aria-label="Principal"
              placeholder="their name, or the subject their IdP sends">
     </label>
     <label>Role
-      <select name="role">{{range .Roles}}<option value="{{.}}">{{.}}</option>{{end}}</select>
+      <select name="role" aria-label="Role">{{range .Roles}}<option value="{{.}}">{{.}}</option>{{end}}</select>
     </label>
     <label>On
-      <input name="resource" value="/" spellcheck="false">
+      <input name="resource" value="/" spellcheck="false" aria-label="Resource">
     </label>
   </div>
   <div class="row">
@@ -23,7 +24,8 @@
     <label class="check"><input type="checkbox" name="deny">
       deny instead of grant</label>
     <label>Why
-      <input name="note" placeholder="optional, and worth writing">
+      <input name="note" placeholder="optional, and worth writing"
+        aria-label="Note">
     </label>
   </div>
   <p><button type="submit">Save</button></p>

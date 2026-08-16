@@ -287,11 +287,45 @@ func (r *Report) checkInputs(tags []tag) {
 			}
 		}
 	}
-	for _, t := range tags {
+
+	// A control inside its own label is labelled, and this rule used to say it
+	// was not.
+	//
+	// `<label>Find <input name="find"></label>` is valid HTML and the standard
+	// way to associate a label with a checkbox — the HTML specification calls
+	// it implicit association, and every screen reader implements it. Reporting
+	// it as a blocking failure was a false positive, and a blocking one: it
+	// fires on other people's content as well as on ours, so it was telling
+	// authors to fix markup that was already correct. That is worse than a
+	// missed finding, because a checker people learn to override is a checker
+	// that no longer stops anything.
+	//
+	// Found by running this checker over every screen in our own admin, which
+	// nothing had done: the test that ran it named six pages, and none of the
+	// six had a wrapped control.
+	inLabel := 0
+	wrapped := map[int]bool{}
+	for i, t := range tags {
+		switch {
+		case t.name == "label" && !t.closing:
+			inLabel++
+		case t.name == "label" && t.closing:
+			if inLabel > 0 {
+				inLabel--
+			}
+		case inLabel > 0:
+			wrapped[i] = true
+		}
+	}
+
+	for i, t := range tags {
 		if t.closing {
 			continue
 		}
 		if t.name != "input" && t.name != "select" && t.name != "textarea" {
+			continue
+		}
+		if wrapped[i] {
 			continue
 		}
 		if typ := strings.ToLower(t.attrs["type"]); typ == "hidden" ||

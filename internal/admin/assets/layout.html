@@ -19,43 +19,69 @@
       <button type="submit">{{if eq .NavPosition "left"}}Top nav{{else}}Side nav{{end}}</button>
     </form>
   </div>
-  <nav aria-label="Sections">
-    <ul class="nav">
-      {{$n := .Nav}}
-      <li><a href="/"{{if eq $n "pages"}} aria-current="page"{{end}}>Pages</a></li>
-      <li><a href="/records"{{if eq $n "records"}} aria-current="page"{{end}}>Data</a></li>
-      <li><a href="/review"{{if eq $n "review"}} aria-current="page"{{end}}>Review</a></li>
-      <li><a href="/provenance"{{if eq $n "provenance"}} aria-current="page"{{end}}>Provenance</a></li>
-      <li><a href="/history"{{if eq $n "history"}} aria-current="page"{{end}}>History</a></li>
-      <li><a href="/logs"{{if eq $n "logs"}} aria-current="page"{{end}}>Log</a></li>
-      <li><a href="/people"{{if eq $n "people"}} aria-current="page"{{end}}>People</a></li>
-      <li><a href="/access"{{if eq $n "access"}} aria-current="page"{{end}}>Access</a></li>
-      <li><a href="/playground"{{if eq $n "playground"}} aria-current="page"{{end}}>API</a></li>
-      <li><a href="/settings"{{if eq $n "settings"}} aria-current="page"{{end}}>Settings</a></li>
-      <li><a href="/security"{{if eq $n "security"}} aria-current="page"{{end}}>Security</a></li>
-    </ul>
-  </nav>
+  {{template "navlist" .}}
 </header>
 <div class="sidenav">
-  <nav aria-label="Sections (side)">
-    <ul class="nav">
-      {{$n := .Nav}}
-      <li><a href="/"{{if eq $n "pages"}} aria-current="page"{{end}}>Pages</a></li>
-      <li><a href="/records"{{if eq $n "records"}} aria-current="page"{{end}}>Data</a></li>
-      <li><a href="/review"{{if eq $n "review"}} aria-current="page"{{end}}>Review</a></li>
-      <li><a href="/provenance"{{if eq $n "provenance"}} aria-current="page"{{end}}>Provenance</a></li>
-      <li><a href="/history"{{if eq $n "history"}} aria-current="page"{{end}}>History</a></li>
-      <li><a href="/logs"{{if eq $n "logs"}} aria-current="page"{{end}}>Log</a></li>
-      <li><a href="/people"{{if eq $n "people"}} aria-current="page"{{end}}>People</a></li>
-      <li><a href="/access"{{if eq $n "access"}} aria-current="page"{{end}}>Access</a></li>
-      <li><a href="/playground"{{if eq $n "playground"}} aria-current="page"{{end}}>API</a></li>
-      <li><a href="/settings"{{if eq $n "settings"}} aria-current="page"{{end}}>Settings</a></li>
-      <li><a href="/security"{{if eq $n "security"}} aria-current="page"{{end}}>Security</a></li>
-    </ul>
-  </nav>
+  {{template "navlist" .}}
 </div>
 
 <main id="main" tabindex="-1" class="shell">
+{{end}}
+
+{{/*
+  The navigation, written once.
+
+  It used to be written twice — once for the top bar and once for the side —
+  and the second copy was already a screen behind the first. Two lists that
+  have to agree will not, and the one that falls behind is whichever one the
+  person changing things does not have open.
+
+  The groups are named on the wrapper rather than in visible text, so the
+  structure reaches a screen reader in both orientations while the labels are
+  only drawn where there is room for them.
+*/}}
+{{define "navlist"}}
+{{$n := .Nav}}
+<nav class="navgroups" aria-label="Sections">
+  <div class="navgroup" aria-label="Build" role="group">
+    <h2>Build</h2>
+    <ul class="nav">
+      <li><a href="/"{{if eq $n "pages"}} aria-current="page"{{end}}>Pages</a></li>
+      <li><a href="/records"{{if eq $n "records"}} aria-current="page"{{end}}>Data</a></li>
+      <li><a href="/types"{{if eq $n "types"}} aria-current="page"{{end}}>Types</a></li>
+      <li><a href="/media"{{if eq $n "media"}} aria-current="page"{{end}}>Media</a></li>
+      <li><a href="/languages"{{if eq $n "languages"}} aria-current="page"{{end}}>Languages</a></li>
+      <li><a href="/assist"{{if eq $n "assist"}} aria-current="page"{{end}}>Assistant</a></li>
+    </ul>
+  </div>
+  <div class="navgroup" aria-label="Publish" role="group">
+    <h2>Publish</h2>
+    <ul class="nav">
+      <li><a href="/review"{{if eq $n "review"}} aria-current="page"{{end}}>Review</a></li>
+      <li><a href="/publishing"{{if eq $n "publishing"}} aria-current="page"{{end}}>Publishing</a></li>
+      <li><a href="/history"{{if eq $n "history"}} aria-current="page"{{end}}>History</a></li>
+      <li><a href="/transfer"{{if eq $n "transfer"}} aria-current="page"{{end}}>Transfer</a></li>
+    </ul>
+  </div>
+  <div class="navgroup" aria-label="Trust" role="group">
+    <h2>Trust</h2>
+    <ul class="nav">
+      <li><a href="/provenance"{{if eq $n "provenance"}} aria-current="page"{{end}}>Provenance</a></li>
+      <li><a href="/logs"{{if eq $n "logs"}} aria-current="page"{{end}}>Log</a></li>
+      <li><a href="/security"{{if eq $n "security"}} aria-current="page"{{end}}>Security</a></li>
+    </ul>
+  </div>
+  <div class="navgroup" aria-label="Administer" role="group">
+    <h2>Administer</h2>
+    <ul class="nav">
+      <li><a href="/people"{{if eq $n "people"}} aria-current="page"{{end}}>People</a></li>
+      <li><a href="/access"{{if eq $n "access"}} aria-current="page"{{end}}>Access</a></li>
+      <li><a href="/integrations"{{if eq $n "integrations"}} aria-current="page"{{end}}>Integrations</a></li>
+      <li><a href="/settings"{{if eq $n "settings"}} aria-current="page"{{end}}>Settings</a></li>
+      <li><a href="/playground"{{if eq $n "playground"}} aria-current="page"{{end}}>API</a></li>
+    </ul>
+  </div>
+</nav>
 {{end}}
 
 {{define "foot"}}

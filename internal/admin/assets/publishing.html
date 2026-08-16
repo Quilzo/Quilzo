@@ -1,0 +1,175 @@
+{{template "head" .}}
+<h1>Publishing</h1>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+<h2>Environments</h2>
+<p class="lead">Promotion moves a pointer to an object that already exists, so
+what production serves is the bytes that were checked — not a copy of them.</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Environment</th><th scope="col">Holding</th>
+    <th scope="col">State</th>{{if .CanPromote}}<th scope="col"></th>{{end}}
+  </tr></thead>
+  <tbody>
+  <tr>
+    <th scope="row">draft</th>
+    <td><code>{{.Draft}}</code></td>
+    <td class="hint">where work happens</td>
+    {{if .CanPromote}}<td></td>{{end}}
+  </tr>
+  {{range $e := .Envs}}
+  <tr>
+    <th scope="row">{{$e.Env.Name}}{{if $e.Env.Production}} <span class="hint">public</span>{{end}}
+      {{if $e.Env.Description}}<div class="hint">{{$e.Env.Description}}</div>{{end}}</th>
+    <td><code>{{if $e.Commit}}{{$e.Commit}}{{else}}—{{end}}</code></td>
+    <td>
+      {{if $e.Empty}}<span class="warn">nothing promoted here yet</span>
+      {{else if $e.Same}}<span class="ok">up to date</span>
+      {{else}}<span class="warn">{{$e.Pending}} change(s) waiting</span>{{end}}
+    </td>
+    {{if $.CanPromote}}
+    <td>
+      {{if $e.Next}}
+      <form method="post" action="/publishing/promote" class="inline">
+        <input type="hidden" name="from" value="{{$e.Env.Name}}">
+        <input type="hidden" name="to" value="{{$e.Next}}">
+        <button type="submit">Promote to {{$e.Next}}</button>
+      </form>
+      {{end}}
+      {{if not $e.Env.Production}}
+      <form method="post" action="/publishing/environment/remove" class="inline">
+        <input type="hidden" name="name" value="{{$e.Env.Name}}">
+        <button type="submit" class="danger">Remove</button>
+      </form>
+      {{end}}
+    </td>
+    {{end}}
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+
+{{if .CanPromote}}
+<h3>Promote across the sequence</h3>
+<form method="post" action="/publishing/promote" class="inline">
+  <label for="p-from">From</label>
+  <input id="p-from" name="from" required spellcheck="false">
+  <label for="p-to">To</label>
+  <input id="p-to" name="to" required spellcheck="false">
+  <label for="p-skip">Skip what is between</label>
+  <input id="p-skip" type="checkbox" name="skip" value="1">
+  <button type="submit">Promote</button>
+</form>
+<p class="hint">
+  Skipping has to be asked for, and it is recorded. A pipeline that can quietly
+  bypass staging is one that eventually does, in a hurry, at the worst moment.
+</p>
+
+<h3>Add an environment</h3>
+<form method="post" action="/publishing/environment" class="inline">
+  <label for="e-name">Name</label>
+  <input id="e-name" name="name" required spellcheck="false" placeholder="staging">
+  <label for="e-before">Before</label>
+  <input id="e-before" name="before" spellcheck="false" placeholder="production">
+  <label for="e-desc">Description</label>
+  <input id="e-desc" name="description">
+  <button type="submit">Add</button>
+</form>
+{{end}}
+
+<h2>Scheduled</h2>
+{{if not .Pending}}
+<p>Nothing is scheduled.</p>
+{{else}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">When</th><th scope="col">Commit</th>
+    <th scope="col">By</th><th scope="col">State</th>
+    {{if .CanPromote}}<th scope="col"></th>{{end}}
+  </tr></thead>
+  <tbody>
+  {{range .Pending}}
+  <tr>
+    <th scope="row">{{when .Entry.At}}</th>
+    <td><code>{{short .Entry.Commit}}</code></td>
+    <td>{{.Entry.By}}{{if .Entry.Note}}<div class="hint">{{.Entry.Note}}</div>{{end}}</td>
+    <td>
+      {{if .Stale}}<span class="warn">stale — the draft has moved to
+        {{short .Current}} since this was scheduled, so it describes content
+        nobody has looked at since</span>
+      {{else}}<span class="ok">pending</span>{{end}}
+    </td>
+    {{if $.CanPromote}}
+    <td>
+      <form method="post" action="/publishing/schedule/cancel" class="inline">
+        <input type="hidden" name="commit" value="{{.Entry.Commit}}">
+        <button type="submit" class="danger">Cancel</button>
+      </form>
+    </td>
+    {{end}}
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+{{if .CanPromote}}
+<form method="post" action="/publishing/schedule" class="inline">
+  <label for="s-when">Publish the current draft at</label>
+  <input id="s-when" name="when" required spellcheck="false"
+         placeholder="48h or 2026-09-01T09:00:00Z">
+  <label for="s-note">Note</label>
+  <input id="s-note" name="note" placeholder="why, for whoever finds this next week">
+  <button type="submit">Schedule</button>
+</form>
+<p class="hint">
+  This names one exact commit. Editing the draft afterwards does not change what
+  is scheduled — it makes the entry stale, and a stale entry is reported rather
+  than fired. Every gate runs at publication, not now.
+</p>
+{{end}}
+
+<h2>Who is holding what</h2>
+{{if not .Locks}}
+<p>Nobody is editing anything right now.</p>
+{{else}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Page</th><th scope="col">Held by</th>
+    <th scope="col">Since</th>{{if .CanEdit}}<th scope="col"></th>{{end}}
+  </tr></thead>
+  <tbody>
+  {{range .Locks}}
+  <tr>
+    <th scope="row"><a href="/page/{{.Page}}">{{.Page}}</a></th>
+    <td>{{.Holder}}{{if .Note}}<div class="hint">{{.Note}}</div>{{end}}</td>
+    <td class="hint">{{ago .Since}}</td>
+    {{if $.CanEdit}}
+    <td>
+      <form method="post" action="/publishing/lock/release" class="inline">
+        <input type="hidden" name="page" value="{{.Page}}">
+        <input type="hidden" name="holder" value="{{.Holder}}">
+        <button type="submit">Release</button>
+      </form>
+    </td>
+    {{end}}
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+<p class="hint">
+  A claim is advisory and expires on its own. It never prevents a write —
+  compare-and-swap does that, exactly and without a timeout. This exists so two
+  people do not each spend an afternoon on the same page and find out at the end.
+</p>
+{{template "foot" .}}

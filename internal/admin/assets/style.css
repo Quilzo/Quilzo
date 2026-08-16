@@ -329,6 +329,16 @@ code { font-family: var(--mono); font-size: 0.9em; }
   font-weight: 700;
 }
 
+/* Eighteen destinations do not fit one row of pills, and a row that wraps
+   three deep is a header taller than the page under it. So they are grouped,
+   and the group name is drawn only where there is room for it — the side nav.
+   The name is on the wrapper as an aria-label either way, so the structure
+   reaches a screen reader in both orientations rather than only in the one
+   with space for a heading. */
+.navgroups { display: flex; flex-wrap: wrap; gap: 0 1.25rem;
+             max-width: 68rem; margin: 0 auto; }
+.navgroup > h2 { display: none; }
+
 /* -- buttons --------------------------------------------------------------- */
 
 /* 48px, not 44. M3 asks for a 48dp target and WCAG 2.5.8 asks for 24; taking
@@ -633,15 +643,22 @@ tr.detail td { padding-top: 0; border-top: 0; }
   body.nav-left > footer { grid-area: foot; }
   body.nav-left > .bar { grid-area: bar; }
   body.nav-left > .bar > nav { display: none; }
-  /* The sidebar is the same list, moved by CSS rather than duplicated in the
-     markup — two copies would mean a screen reader announcing every section
-     twice. */
+  /* The sidebar renders the same template, and exactly one of the two is
+     displayed at a time. display:none takes the hidden one out of the
+     accessibility tree as well as off the screen, so a screen reader hears
+     every section once rather than twice. */
   body.nav-left > .sidenav { grid-area: nav; border-right: 1px solid var(--outline-variant);
     padding: 1rem .75rem; background: var(--surface-container-low); }
   body.nav-left > main { grid-area: main; }
-  body.nav-left .sidenav .nav { flex-direction: column; gap: .15rem; align-items: stretch; }
+  body.nav-left .sidenav .navgroups { flex-direction: column; gap: 1rem; }
+  /* There is room for the group name here, so it is drawn. */
+  body.nav-left .sidenav .navgroup > h2 { display: block; margin: 0 0 .25rem .75rem;
+    font: var(--label-md); font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--on-surface-variant); }
+  body.nav-left .sidenav .nav { flex-direction: column; gap: .15rem; align-items: stretch;
+    margin-top: 0; }
   body.nav-left .sidenav .nav a { display: block; padding: .5rem .75rem;
-    border-radius: var(--shape-s); }
+    border-radius: var(--shape-s); min-height: 40px; line-height: 1.6; }
   body.nav-left .sidenav .nav a[aria-current="page"] { background: var(--secondary-container); }
 }
 body.nav-top > .sidenav { display: none; }

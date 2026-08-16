@@ -183,7 +183,7 @@ server, through the same middleware your own code will meet, using your session
 &mdash; so what you see here is what you will get.</p>
 
 <div class="pg-row">
-  <select id="route">` + opts.String() + `</select>
+  <select id="route" aria-label="Operation">` + opts.String() + `</select>
 </div>
 <div class="pg-row">
   <input id="path" spellcheck="false" aria-label="Request path">

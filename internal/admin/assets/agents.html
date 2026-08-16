@@ -1,0 +1,49 @@
+{{template "head" .}}
+<h1>Agents</h1>
+
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+
+<p class="lead">
+  What non-human principals have been doing, from the audit log. A principal is
+  flagged at {{.Threshold}} strikes in {{.Window}} — which is a signal to look,
+  not a decision, and nothing here blocks anything on its own.
+</p>
+
+{{if .Flagged}}
+<div class="card bad">
+  <p><strong>{{len .Flagged}} agent(s) crossed the threshold.</strong></p>
+  <ul>{{range .Flagged}}<li>{{.Principal}} — {{.Summary}}</li>{{end}}</ul>
+</div>
+{{end}}
+
+{{if not .Reports}}
+<p>No agent has done anything in the window.</p>
+{{else}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Principal</th><th scope="col">Actions</th>
+    <th scope="col">Strikes</th><th scope="col">What happened</th>
+  </tr></thead>
+  <tbody>
+  {{range .Reports}}
+  <tr>
+    <th scope="row">{{.Principal}}{{if .Model}}<div class="hint">{{.Model}}</div>{{end}}</th>
+    <td>{{.Actions}}</td>
+    <td>{{if .Flagged}}<span class="bad">{{len .Strikes}}</span>
+        {{else}}{{len .Strikes}}{{end}}</td>
+    <td>{{.Summary}}
+      {{if .Counts}}<div class="hint">{{range $k, $v := .Counts}}{{$k}}: {{$v}} {{end}}</div>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+<p class="hint">
+  Six strikes in six actions is a different agent from six in six thousand,
+  which is why the total is next to the count rather than the count alone.
+</p>
+{{end}}
+<p class="hint"><a href="/security">Back to the posture dashboard.</a></p>
+{{template "foot" .}}

@@ -65,15 +65,17 @@ which is what an application holds rather than what a page does.</p>
   <div class="row">
     <label>Collection
       <input name="collection" value="{{.Selected}}" required spellcheck="false"
+        aria-label="Collection"
         placeholder="devices">
     </label>
     <label>Id
-      <input name="id" spellcheck="false" placeholder="blank creates a new one">
+      <input name="id" spellcheck="false" placeholder="blank creates a new one"
+        aria-label="Record id">
     </label>
   </div>
   <div class="row">
     <label style="flex:1 1 100%">Fields
-      <textarea name="fields" rows="6" spellcheck="false"
+      <textarea name="fields" rows="6" spellcheck="false" aria-label="Fields"
         placeholder='{"hostname": "laptop-14", "encrypted": true}'></textarea>
     </label>
   </div>

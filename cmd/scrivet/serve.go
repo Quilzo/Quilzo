@@ -14,14 +14,26 @@ import (
 	"time"
 
 	"github.com/rsh1k/scrivet/internal/admin"
+	"github.com/rsh1k/scrivet/internal/agentwatch"
+	"github.com/rsh1k/scrivet/internal/assist"
 	"github.com/rsh1k/scrivet/internal/audit"
 	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/rsh1k/scrivet/internal/codescan"
 	"github.com/rsh1k/scrivet/internal/collab"
+	"github.com/rsh1k/scrivet/internal/compliance"
+	"github.com/rsh1k/scrivet/internal/csp"
+	"github.com/rsh1k/scrivet/internal/ext"
 	"github.com/rsh1k/scrivet/internal/fetch"
+	"github.com/rsh1k/scrivet/internal/i18n"
+	"github.com/rsh1k/scrivet/internal/media"
+	"github.com/rsh1k/scrivet/internal/medialib"
 	"github.com/rsh1k/scrivet/internal/oidc"
 	"github.com/rsh1k/scrivet/internal/posture"
 	"github.com/rsh1k/scrivet/internal/provenance"
+	"github.com/rsh1k/scrivet/internal/schedule"
 	"github.com/rsh1k/scrivet/internal/schema"
+	"github.com/rsh1k/scrivet/internal/site"
+	"github.com/rsh1k/scrivet/internal/webhook"
 )
 
 func cmdServe(root string, args []string) error {
@@ -91,10 +103,163 @@ func cmdServe(root string, args []string) error {
 		Load: func() (*config.Config, error) { return loadConfig(root) },
 		Save: func(c *config.Config) error { return saveConfig(root, c) },
 	}
+	// Content types, re-read per call for the same reason CheckTypes is: a type
+	// added from the CLI while this is running must take effect immediately.
+	srv.Types = &admin.Types{
+		Load:  func() (*schema.Store, error) { return schema.Load(root) },
+		Save:  func(st *schema.Store) error { return st.Save() },
+		Pages: func() (map[string]any, error) { return draftPages(root) },
+	}
 	srv.Data = &admin.Data{
 		Tree: func() (string, error) { return draftTree(s) },
 		Commit: func(tree, message, author string) error {
 			return commitTreeNoLock(s, tree, message, author)
+		},
+	}
+	// Everything below is the same wiring pattern: the admin package holds no
+	// knowledge of where this store keeps its files, so the host hands it
+	// functions. Each one may be left nil, and each screen says "this build has
+	// no access to X" rather than rendering an empty list — because empty and
+	// absent look identical on a page and mean opposite things.
+	srv.Publishing = &admin.Publishing{
+		Envs:         func() (*site.Envs, error) { return loadEnvs(root) },
+		SaveEnvs:     func(e *site.Envs) error { return saveEnvs(root, e) },
+		Schedule:     func() (*schedule.Schedule, error) { return loadSchedule(root) },
+		SaveSchedule: func(sc *schedule.Schedule) error { return saveJSON(schedulePath(root), sc) },
+	}
+	srv.Media = &admin.Media{
+		Library: func() (*medialib.Library, error) { return openMedia(root) },
+		Options: func() media.Options {
+			c, err := loadConfig(root)
+			if err != nil {
+				return media.Options{}
+			}
+			return media.Options{
+				MaxWidth:    c.Int("media.max_width"),
+				MaxHeight:   c.Int("media.max_height"),
+				JPEGQuality: c.Int("media.jpeg_quality"),
+				WebP:        c.Bool("media.webp"),
+			}
+		},
+	}
+	srv.Languages = &admin.Languages{
+		Load: func() (*i18n.Config, error) { return loadLocales(root) },
+		Save: func(c *i18n.Config) error { return saveJSON(localesPath(root), c) },
+		Hashes: func() (map[string]string, error) {
+			ref := site.RefDraft
+			if s.GetRef(ref) == "" {
+				ref = site.RefLive
+			}
+			return pageHashes(s, ref)
+		},
+	}
+	srv.Integrations = &admin.Integrations{
+		Webhooks: func() ([]webhook.Endpoint, []webhook.Delivery, error) {
+			f, err := loadHooks(root)
+			if err != nil {
+				return nil, nil, err
+			}
+			return f.Endpoints, f.Deliveries, nil
+		},
+		SaveWebhooks: func(e []webhook.Endpoint) error {
+			f, err := loadHooks(root)
+			if err != nil {
+				return err
+			}
+			f.Endpoints = e
+			return saveJSON(hooksPath(root), f)
+		},
+		Extensions: func() ([]ext.Manifest, error) {
+			f, err := loadExts(root)
+			if err != nil {
+				return nil, err
+			}
+			return f.Extensions, nil
+		},
+		SaveExtensions: func(m []ext.Manifest) error {
+			return saveExts(root, &extFile{Extensions: m})
+		},
+		Pin:    ext.Pin,
+		Events: func() ([]audit.Event, error) { return audit.Read(auditPath(root)) },
+		Provider: func() (string, string, string, string, bool, bool) {
+			c, err := loadOIDC(root)
+			if err != nil || c == nil {
+				return "", "", "", "", false, false
+			}
+			return c.Issuer, c.ClientID, c.RedirectURI, c.Claim,
+				c.RequireVerifiedEmail, true
+		},
+	}
+	srv.Assurance = &admin.Assurance{
+		Scan: func() (int, []codescan.Finding, error) {
+			inputs, err := collectInputs(root, *tplDir, site.RefDraft)
+			if err != nil {
+				return 0, nil, err
+			}
+			return len(inputs), codescan.Scan(inputs), nil
+		},
+		CSP: func() (string, string, csp.Sources, int, error) {
+			c, err := loadConfig(root)
+			if err != nil {
+				return "", "", csp.Sources{}, 0, err
+			}
+			commit := s.GetRef(site.RefLive)
+			if commit == "" {
+				return "", "", csp.Sources{}, 0, fmt.Errorf(
+					"nothing is published, so there is no content to derive a " +
+						"policy from. One generated from an empty site would " +
+						"permit nothing, which is correct and useless")
+			}
+			pages, err := site.PagesAt(s, commit)
+			if err != nil {
+				return "", "", csp.Sources{}, 0, err
+			}
+			pol := buildCSP(c, pages)
+			name, _ := pol.Header()
+			return name, pol.Build(), pol.Sources, len(pages), nil
+		},
+		SBOM:   func() (*compliance.SBOM, error) { return compliance.Generate(time.Now()) },
+		Verify: func() (int, error) { return s.Verify() },
+		Vault: func() (bool, string, []string) {
+			kr, err := loadKeyring(root)
+			if err != nil || kr == nil {
+				return false, "", nil
+			}
+			return true, kr.Active, kr.IDs()
+		},
+		Agents: func() ([]agentwatch.Report, error) {
+			events, err := audit.Read(auditPath(root))
+			if err != nil {
+				return nil, err
+			}
+			return agentwatch.Look(events, time.Now()), nil
+		},
+		Evidence: func() ([]admin.Evidence, error) { return evidenceRows(root) },
+	}
+	srv.Transfer = &admin.Transfer{
+		Pages: func() (map[string]any, error) { return draftPages(root) },
+		Save: func(p map[string]any, msg, by, base string) error {
+			return saveDraft(root, s, p, msg, by, base)
+		},
+		SiteName: cfg.Raw("site.name"), BaseURL: cfg.Raw("site.base_url"),
+	}
+	srv.Assist = &admin.Assist{
+		Model: func() (assist.Model, error) {
+			m, err := assist.NewHTTPModel()
+			if err != nil {
+				// No model configured is not an error condition, it is a
+				// configuration. The screen says so and offers nothing rather
+				// than offering a box that cannot answer.
+				return nil, nil
+			}
+			return m, nil
+		},
+		Pages: func() (map[string]any, error) { return draftPages(root) },
+		Save: func(p map[string]any, msg, by, base string) error {
+			return saveDraft(root, s, p, msg, by, base)
+		},
+		Record: func(pages []string, model, author string) error {
+			return recordAssisted(root, s, pages, model, author)
 		},
 	}
 	srv.NavPosition = cfg.Raw("admin.nav")

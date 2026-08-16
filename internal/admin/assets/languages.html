@@ -1,0 +1,114 @@
+{{template "head" .}}
+<h1>Languages</h1>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+{{if .Uninitialised}}
+<p class="lead">This site has no declared language, which is the state a
+monolingual site is in and works perfectly well. Declaring one is what makes a
+second one possible.</p>
+{{if .CanWrite}}
+<form method="post" action="/languages/add" class="inline">
+  <label for="l-init">Default language</label>
+  <input id="l-init" name="locale" required spellcheck="false" placeholder="en">
+  <button type="submit">Set</button>
+</form>
+<p class="hint">Pages stay where they are. A second language is added under a
+  prefix, so nothing that exists moves.</p>
+{{end}}
+
+{{else}}
+<p class="lead">Default is <strong>{{.Default}}</strong>. Pages in it keep
+their names; every other language lives under its own prefix.</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Language</th><th scope="col">Reads</th>
+    <th scope="col">Path</th>
+  </tr></thead>
+  <tbody>
+  {{range .Locales}}
+  <tr>
+    <th scope="row">{{.Locale}}{{if .Default}} <span class="hint">default</span>{{end}}</th>
+    <td>{{if eq .Dir "rtl"}}right to left{{else}}left to right{{end}}</td>
+    <td class="hint">{{if .Default}}(no prefix){{else}}{{.Locale}}/{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+
+{{if .CanWrite}}
+<form method="post" action="/languages/add" class="inline">
+  <label for="l-add">Add a language</label>
+  <input id="l-add" name="locale" required spellcheck="false" placeholder="fr">
+  <button type="submit">Add</button>
+</form>
+{{end}}
+
+<h2>Translations</h2>
+{{if not .States}}
+<p>One language, so there is nothing to compare.</p>
+{{else}}
+<p>
+  {{.Current}} current, {{.Stale}} stale, {{.Missing}} missing,
+  {{.Untracked}} untracked.
+</p>
+{{if .Stale}}
+<div class="card bad">
+  <p><strong>{{.Stale}} translation(s) are of content that has since
+    changed.</strong> A stale translation reads perfectly and says something
+    the source no longer says, which is why it is counted rather than left to
+    be noticed.</p>
+</div>
+{{end}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Page</th><th scope="col">Language</th>
+    <th scope="col">State</th><th scope="col">Made from</th>
+  </tr></thead>
+  <tbody>
+  {{range .States}}
+  <tr>
+    <th scope="row">{{.Page}}</th>
+    <td>{{.Locale}}</td>
+    <td>
+      {{if eq .Status "current"}}<span class="ok">current</span>
+      {{else if eq .Status "stale"}}<span class="bad">stale</span>
+      {{else if eq .Status "missing"}}<span class="warn">missing</span>
+      {{else}}<span class="hint">untracked — it exists with no record of what
+        it was made from, so nothing can be said about whether it is
+        current</span>{{end}}
+    </td>
+    <td class="hint">
+      {{if .TranslatedFrom}}<code>{{short .TranslatedFrom}}</code>
+        {{if eq .Status "stale"}}, source is now <code>{{short .SourceHash}}</code>{{end}}
+        {{if .TranslatedBy}}<br>by {{.TranslatedBy}}{{end}}{{end}}
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+{{if .CanWrite}}
+<h3>Record a translation</h3>
+<form method="post" action="/languages/translated" class="inline">
+  <label for="t-page">Page</label>
+  <input id="t-page" name="page" required spellcheck="false">
+  <label for="t-locale">Language</label>
+  <input id="t-locale" name="locale" required spellcheck="false">
+  <button type="submit">Record</button>
+</form>
+<p class="hint">
+  This names the source as it currently stands. It is what makes staleness
+  answerable at all: without a record of which version a translation was made
+  from, the honest answer to "is this up to date" is that nothing can be said.
+</p>
+{{end}}
+{{end}}
+{{template "foot" .}}

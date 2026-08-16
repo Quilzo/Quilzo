@@ -1,0 +1,67 @@
+{{template "head" .}}
+<h1>Inventory</h1>
+
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{end}}
+
+<h2>Cryptography</h2>
+<p class="lead">{{.Posture}}</p>
+
+{{if .Concerns}}
+<div class="card warn">
+  <p><strong>{{len .Concerns}} algorithm(s) would not survive a
+    cryptographically relevant quantum computer.</strong> Listed rather than
+    left implicit: the migration is a decision with a lead time, and the first
+    step is knowing what is in use.</p>
+  <ul>{{range .Concerns}}<li><code>{{.Name}}</code> — {{.Purpose}}</li>{{end}}</ul>
+</div>
+{{end}}
+
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Algorithm</th><th scope="col">Used for</th>
+    <th scope="col">Where</th><th scope="col">Quantum</th>
+  </tr></thead>
+  <tbody>
+  {{range .Crypto}}
+  <tr>
+    <th scope="row"><code>{{.Name}}</code>
+      <div class="hint">{{.Package}}</div></th>
+    <td>{{.Purpose}}{{if .Note}}<div class="hint">{{.Note}}</div>{{end}}</td>
+    <td class="hint">{{.Where}}</td>
+    <td>{{.Quantum}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+
+<h2>Bill of materials</h2>
+{{if .SBOM}}
+<p>
+  {{.SBOM.Format}} {{.SBOM.SpecVersion}}, {{len .SBOM.Components}} component(s),
+  of which {{len .ThirdParty}} are not this project.
+</p>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Component</th><th scope="col">Version</th>
+    <th scope="col">Licence</th><th scope="col">Direct</th>
+  </tr></thead>
+  <tbody>
+  {{range .SBOM.Components}}
+  <tr>
+    <th scope="row">{{.Name}}<div class="hint">{{.PURL}}</div></th>
+    <td>{{.Version}}</td>
+    <td class="hint">{{range $i, $l := .Licenses}}{{if $i}}, {{end}}{{$l}}{{end}}</td>
+    <td>{{if .Direct}}yes{{else}}<span class="hint">transitive</span>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p>The bill of materials is not available in this build.</p>
+{{end}}
+<p class="hint"><a href="/security">Back to the posture dashboard.</a></p>
+{{template "foot" .}}

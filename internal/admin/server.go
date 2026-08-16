@@ -106,6 +106,28 @@ type Server struct {
 
 	// Settings gives the admin the store's configuration.
 	Settings *Settings
+	// Types gives the admin the site's content types, so what an application
+	// stores can be declared from the interface rather than only from a
+	// terminal. Nil means the screen says so rather than showing none.
+	Types *Types
+	// Publishing is the deployment pipeline: environments, promotion and work
+	// queued for later.
+	Publishing *Publishing
+	// Media is the asset store.
+	Media *Media
+	// Languages is the locale set and how much of the site each one has.
+	Languages *Languages
+	// Integrations is everything this store talks to: webhooks, log
+	// forwarding, the identity provider and extensions.
+	Integrations *Integrations
+	// Assurance is the evidence: the code scanner, the generated policy, the
+	// inventory, the store's own integrity, the vault and the anchors.
+	Assurance *Assurance
+	// Transfer moves whole sites in and out, and applies starters.
+	Transfer *Transfer
+	// Assist proposes a site from a description. Nil means no model is
+	// configured, which is a complete configuration and the screen says so.
+	Assist *Assist
 	// Data gives the admin access to records. Nil means the screen says it has
 	// no access rather than showing an empty list, because empty and absent
 	// look identical and mean opposite things.
@@ -216,6 +238,17 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, siteTemplate strin
 				return id[:12]
 			}
 			return id
+		},
+		// A moment, stated rather than described relative to now. "ago" is
+		// right for history and wrong for a schedule: a publication set for
+		// next Tuesday rendered through it reads "just now", because
+		// time.Since of a future instant is negative and every branch below
+		// assumes it is not.
+		"when": func(unix int64) string {
+			if unix == 0 {
+				return "—"
+			}
+			return time.Unix(unix, 0).UTC().Format("15:04 on 2 Jan 2006") + " UTC"
 		},
 		"ago": func(unix int64) string {
 			if unix == 0 {
@@ -374,12 +407,33 @@ const MaxRequestBody = 2 << 20 // 2 MiB
 
 func limitBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost || r.Method == http.MethodPut {
-			r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBody)
+		if r.Method != http.MethodPost && r.Method != http.MethodPut {
+			next.ServeHTTP(w, r)
+			return
 		}
+		// A file upload is exempt here and limited by its own handler, which
+		// applies MaxUpload. Wrapping it twice would leave the tighter limit
+		// in place: MaxBytesReader wraps the body it is given, so the 2 MiB
+		// intended for a form would still be the effective cap and every
+		// photograph larger than a paragraph of text would be refused with an
+		// error about the request body. The limit is not removed, it is moved
+		// to the handler that knows what is being sent.
+		if r.URL.Path == uploadPath {
+			next.ServeHTTP(w, r)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBody)
 		next.ServeHTTP(w, r)
 	})
 }
+
+// uploadPath is the one route that carries a file rather than a form.
+//
+// Named here rather than written twice, so the exemption in limitBody and the
+// registration in Handler cannot drift apart — a mismatch would silently
+// restore the 2 MiB cap on uploads, which is exactly the bug this constant
+// exists to prevent.
+const uploadPath = "/media/upload"
 
 // sameSiteOnly refuses cross-origin state changes.
 //
@@ -459,12 +513,49 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security", s.handleSecurity)
 	mux.HandleFunc("/security/rules", s.handleRules)
 	mux.HandleFunc("/security/rule/", s.handleRule)
+	mux.HandleFunc("/security/scan", s.handleScanScreen)
+	mux.HandleFunc("/security/policy", s.handleCSPScreen)
+	mux.HandleFunc("/security/inventory", s.handleComplianceScreen)
+	mux.HandleFunc("/security/integrity", s.handleIntegrityScreen)
+	mux.HandleFunc("/security/verify", s.handleVerify)
+	mux.HandleFunc("/security/agents", s.handleAgentsScreen)
+	mux.HandleFunc("/languages", s.handleLanguages)
+	mux.HandleFunc("/languages/add", s.handleLanguageAdd)
+	mux.HandleFunc("/languages/translated", s.handleLanguageTranslated)
+	mux.HandleFunc("/integrations", s.handleIntegrations)
+	mux.HandleFunc("/integrations/webhook", s.handleWebhookSave)
+	mux.HandleFunc("/integrations/webhook/remove", s.handleWebhookRemove)
+	mux.HandleFunc("/integrations/extension", s.handleExtensionSave)
+	mux.HandleFunc("/integrations/extension/remove", s.handleExtensionRemove)
+	mux.HandleFunc("/integrations/siem", s.handleSIEMExport)
+	mux.HandleFunc("/transfer", s.handleTransfer)
+	mux.HandleFunc("/transfer/export", s.handleExport)
+	mux.HandleFunc("/transfer/import", s.handleImport)
+	mux.HandleFunc("/transfer/starter", s.handleStarter)
+	mux.HandleFunc("/assist", s.handleAssist)
+	mux.HandleFunc("/assist/accept", s.handleAssistAccept)
 	mux.HandleFunc("/review", s.handleReview)
 	mux.HandleFunc("/publish", s.handlePublish)
 	mux.HandleFunc("/access", s.handleAccess)
 	mux.HandleFunc("/nav", s.handleNav)
 	mux.HandleFunc("/settings", s.handleSettings)
 	mux.HandleFunc("/settings/save", s.handleSettingSave)
+	mux.HandleFunc("/media", s.handleMedia)
+	mux.HandleFunc(uploadPath, s.handleMediaUpload)
+	mux.HandleFunc("/media/delete", s.handleMediaDelete)
+	mux.HandleFunc("/media/file/", s.handleMediaFile)
+	mux.HandleFunc("/publishing", s.handlePublishing)
+	mux.HandleFunc("/publishing/promote", s.handlePromote)
+	mux.HandleFunc("/publishing/environment", s.handleEnvSave)
+	mux.HandleFunc("/publishing/environment/remove", s.handleEnvRemove)
+	mux.HandleFunc("/publishing/schedule", s.handleScheduleAdd)
+	mux.HandleFunc("/publishing/schedule/cancel", s.handleScheduleCancel)
+	mux.HandleFunc("/publishing/lock/release", s.handleLockRelease)
+	mux.HandleFunc("/types", s.handleTypes)
+	mux.HandleFunc("/types/save", s.handleTypeSave)
+	mux.HandleFunc("/types/field/remove", s.handleTypeFieldRemove)
+	mux.HandleFunc("/types/delete", s.handleTypeDelete)
+	mux.HandleFunc("/types/bind", s.handleTypeBind)
 	mux.HandleFunc("/records", s.handleRecords)
 	mux.HandleFunc("/records/save", s.handleRecordSave)
 	mux.HandleFunc("/records/delete", s.handleRecordDelete)
@@ -493,6 +584,7 @@ func (s *Server) Handler() http.Handler {
 	if s.API != nil {
 		mux.Handle("/api/", s.API)
 	}
+	mux.HandleFunc("/help", s.handleHelp)
 	mux.HandleFunc("/style.css", s.handleCSS)
 	return securityHeaders(sameSiteOnly(limitBody(mux)))
 }

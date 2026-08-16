@@ -40,9 +40,10 @@
     <td>
       <form method="post" action="/settings/save" class="inline">
         <input type="hidden" name="key" value="{{.Setting.Key}}">
-        <input name="value" value="{{.Value}}" size="10" spellcheck="false">
+        <input name="value" value="{{.Value}}" size="10" spellcheck="false"
+          aria-label="Value for {{.Setting.Key}}">
         {{if .Setting.Weaker}}<input name="reason" placeholder="reason, if weaker"
-          size="16">{{end}}
+          size="16" aria-label="Reason for weakening {{.Setting.Key}}">{{end}}
         <button type="submit">Set</button>
       </form>
       {{if .Overriden}}

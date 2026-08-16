@@ -1,0 +1,45 @@
+{{template "head" .}}
+<h1>Content policy</h1>
+
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+
+<p class="lead">Derived from {{.Pages}} published page(s). This is what the site
+serves; it is not a template somebody filled in.</p>
+
+<div class="card">
+  <p><strong>{{.Header}}</strong></p>
+  <p><code>{{.Value}}</code></p>
+</div>
+
+<h2>Where these came from</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Directive</th><th scope="col">Hosts named</th></tr></thead>
+  <tbody>
+  <tr><th scope="row">img-src</th><td>{{if .Sources.Img}}{{range $i, $h := .Sources.Img}}{{if $i}}, {{end}}<code>{{$h}}</code>{{end}}{{else}}<span class="hint">none</span>{{end}}</td></tr>
+  <tr><th scope="row">media-src</th><td>{{if .Sources.Media}}{{range $i, $h := .Sources.Media}}{{if $i}}, {{end}}<code>{{$h}}</code>{{end}}{{else}}<span class="hint">none</span>{{end}}</td></tr>
+  <tr><th scope="row">frame-src</th><td>{{if .Sources.Frame}}{{range $i, $h := .Sources.Frame}}{{if $i}}, {{end}}<code>{{$h}}</code>{{end}}{{else}}<span class="hint">none</span>{{end}}</td></tr>
+  <tr><th scope="row">connect-src</th><td>{{if .Sources.Connect}}{{range $i, $h := .Sources.Connect}}{{if $i}}, {{end}}<code>{{$h}}</code>{{end}}{{else}}<span class="hint">none</span>{{end}}</td></tr>
+  </tbody>
+</table>
+</div>
+
+{{if .Widened}}
+<div class="card warn">
+  <p><strong>This policy is wider than the default in {{len .Widened}}
+    place(s).</strong> Named here because the header alone does not say which
+    of its allowances were forced.</p>
+  <ul>{{range .Widened}}<li><code>{{.}}</code></li>{{end}}</ul>
+</div>
+{{end}}
+
+<p class="hint">
+  Hosts referenced from inside rich text are invisible to this — nothing parses
+  prose looking for URLs — so they have to be named in
+  <code>site.csp.extra_img</code> and <code>site.csp.extra_frame</code>.
+  Whether the policy is enforced or only reported is
+  <code>site.csp.mode</code>, on the <a href="/settings">settings</a> screen.
+</p>
+{{end}}
+<p class="hint"><a href="/security">Back to the posture dashboard.</a></p>
+{{template "foot" .}}

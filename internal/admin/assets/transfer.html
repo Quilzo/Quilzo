@@ -1,0 +1,71 @@
+{{template "head" .}}
+<h1>Transfer</h1>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+<h2>Take this site out</h2>
+<form method="post" action="/transfer/export" class="inline">
+  <label for="x-format">Format</label>
+  <select id="x-format" name="format">
+    {{range .Formats}}<option value="{{.}}">{{.}}</option>{{end}}
+  </select>
+  <button type="submit">Export</button>
+</form>
+<p class="hint">
+  The export carries when each page last actually changed, and the redirects,
+  because both are real information most systems cannot reconstruct — losing
+  them on the way out hands somebody a site whose sitemap is wrong from its
+  first day.
+</p>
+
+{{if .CanWrite}}
+<h2>Bring a site in</h2>
+<form method="post" action="/transfer/import" enctype="multipart/form-data">
+  <p><label for="i-file">Export file</label>
+    <input id="i-file" type="file" name="file" required></p>
+  <p><label for="i-source">Format</label>
+    <input id="i-source" name="source" placeholder="blank to detect"
+           spellcheck="false"></p>
+  <p><label for="i-write">Write the pages into the draft</label>
+    <input id="i-write" type="checkbox" name="write" value="1">
+    <span class="hint">Leave this off to see what would come in, and what
+      would be skipped, before anything is written.</span></p>
+  <button type="submit">Read it</button>
+</form>
+
+<h2>Start from something</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Starter</th><th scope="col">What it is for</th>
+    <th scope="col">Fields</th><th scope="col"></th>
+  </tr></thead>
+  <tbody>
+  {{range .Starters}}
+  <tr>
+    <th scope="row">{{.Name}}</th>
+    <td>{{.Summary}}</td>
+    <td class="hint">{{range $i, $f := .Fields}}{{if $i}}, {{end}}{{$f}}{{end}}</td>
+    <td>
+      <form method="post" action="/transfer/starter" class="inline">
+        <input type="hidden" name="name" value="{{.Name}}">
+        <label for="s-{{.Name}}">as page</label>
+        <input id="s-{{.Name}}" name="page" size="10" placeholder="index"
+               spellcheck="false">
+        <label>replace <input type="checkbox" name="overwrite" value="1"></label>
+        <button type="submit">Apply</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+<p class="hint">
+  A starter's sample content is a whole page, so applying one over a page
+  somebody wrote replaces their work with an example. That is refused unless
+  replace is ticked.
+</p>
+{{end}}
+{{template "foot" .}}

@@ -1,0 +1,46 @@
+{{template "head" .}}
+<h1>Code scan</h1>
+
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+
+<p class="lead">{{.Scanned}} file(s) and field(s) scanned, {{len .Findings}}
+finding(s).</p>
+
+{{if not .Findings}}
+<p>Nothing matched. That is not the same as being safe: these are patterns
+rather than proofs, and a scanner only finds what somebody thought to look
+for.</p>
+{{else}}
+{{range .Findings}}
+<div class="card {{if or (eq .Severity "critical") (eq .Severity "high")}}bad{{else}}warn{{end}}">
+  <h2>{{.Severity}} — {{.Where}}{{if .Line}}:{{.Line}}{{end}}</h2>
+  <p>{{.Detail}}</p>
+  {{if .Excerpt}}<p><code>{{.Excerpt}}</code></p>{{end}}
+  <p><strong>Fix:</strong> {{.Fix}}</p>
+  <p class="hint">{{.Rule}}{{if .OWASP}} · {{.OWASP}}{{end}}
+    {{if .Controls}} · {{range $i, $c := .Controls}}{{if $i}} {{end}}{{$c}}{{end}}{{end}}</p>
+</div>
+{{end}}
+{{end}}
+{{end}}
+
+<h2>What is checked</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Rule</th><th scope="col">Severity</th>
+    <th scope="col">What it looks for</th>
+  </tr></thead>
+  <tbody>
+  {{range .Rules}}
+  <tr>
+    <th scope="row"><code>{{.ID}}</code></th>
+    <td>{{.Severity}}</td>
+    <td>{{.Detail}}<div class="hint">{{.Fix}}</div></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+<p class="hint"><a href="/security">Back to the posture dashboard.</a></p>
+{{template "foot" .}}

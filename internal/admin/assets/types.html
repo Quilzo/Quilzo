@@ -1,0 +1,171 @@
+{{template "head" .}}
+<h1>Types</h1>
+
+<p class="lead">A type is a flat list of fields. There is no regex, no
+reference and no nesting — those three are the whole published attack surface
+of schema validators, and content does not need them.</p>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+{{if .Orphans}}
+<div class="card bad">
+  <p><strong>{{len .Orphans}} page(s) are bound to a type that no longer exists.</strong>
+    Validation fails closed on that, so those pages cannot be written until the
+    type is recreated or the binding removed.</p>
+  <ul>{{range .Orphans}}<li><code>{{.}}</code></li>{{end}}</ul>
+</div>
+{{end}}
+
+{{if not .Rows}}
+<p>No types are defined, so every page may contain anything.</p>
+{{end}}
+
+{{range $row := .Rows}}
+<h2>{{$row.Type.Name}} <span class="hint">{{$row.Hash}}</span></h2>
+{{if $row.Type.Description}}<p>{{$row.Type.Description}}</p>{{end}}
+
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Field</th><th scope="col">Kind</th>
+    <th scope="col">Rules</th><th scope="col">Label and help</th>
+    {{if $.CanWrite}}<th scope="col"></th>{{end}}
+  </tr></thead>
+  <tbody>
+  {{range $f := $row.Type.Fields}}
+  <tr>
+    <th scope="row"><code>{{$f.Name}}</code></th>
+    <td>{{$f.Kind}}</td>
+    <td class="hint">
+      {{if $f.Required}}required{{end}}
+      {{if $f.MaxLen}} at most {{$f.MaxLen}}{{end}}
+      {{if $f.Choices}} one of: {{range $i, $c := $f.Choices}}{{if $i}}, {{end}}{{$c}}{{end}}{{end}}
+      {{if $f.AltFor}} alt text for {{$f.AltFor}}{{end}}
+    </td>
+    <td class="hint">{{$f.Label}}{{if $f.Help}} — {{$f.Help}}{{end}}</td>
+    {{if $.CanWrite}}
+    <td>
+      <form method="post" action="/types/field/remove" class="inline">
+        <input type="hidden" name="type" value="{{$row.Type.Name}}">
+        <input type="hidden" name="field" value="{{$f.Name}}">
+        <button type="submit" class="danger">Remove</button>
+      </form>
+    </td>
+    {{end}}
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+
+<p class="hint">
+  {{if $row.Bound}}Required of: {{range $i, $p := $row.Bound}}{{if $i}}, {{end}}<code>{{$p}}</code>{{end}}.
+  {{else}}Nothing is required to satisfy this type yet.{{end}}
+</p>
+
+{{if $row.Failing}}
+<div class="card bad">
+  <p><strong>{{len $row.Failing}} page(s) bound to this do not satisfy it.</strong>
+    The next write to each will be refused until they do.</p>
+  <ul>
+  {{range $row.Failing}}
+    <li><code>{{.Page}}</code>
+      <ul>{{range .Problems}}<li>{{.}}</li>{{end}}</ul>
+    </li>
+  {{end}}
+  </ul>
+</div>
+{{end}}
+{{end}}
+
+{{if .CanWrite}}
+<h2>Add or change a field</h2>
+<p class="hint">
+  Naming a type that does not exist creates it. A type with no fields cannot be
+  stored — it would describe nothing — so a type is created together with its
+  first field. Reusing a field name replaces that field.
+</p>
+<form method="post" action="/types/save">
+  <div class="grid2">
+    <p><label for="t-type">Type</label>
+      <input id="t-type" name="type" required spellcheck="false"
+             placeholder="article"></p>
+    <p><label for="t-desc">Description</label>
+      <input id="t-desc" name="description"
+             placeholder="used only when the type is created"></p>
+    <p><label for="t-field">Field</label>
+      <input id="t-field" name="field" required spellcheck="false"
+             placeholder="title"></p>
+    <p><label for="t-kind">Kind</label>
+      <select id="t-kind" name="kind">
+        {{range .Kinds}}<option value="{{.}}">{{.}}</option>{{end}}
+      </select></p>
+    <p><label for="t-label">Label</label>
+      <input id="t-label" name="label" placeholder="Headline"></p>
+    <p><label for="t-help">Help</label>
+      <input id="t-help" name="help"
+             placeholder="Shown under the field in the editor"></p>
+    <p><label for="t-choices">Choices</label>
+      <input id="t-choices" name="choices" placeholder="news, opinion, review">
+      <span class="hint">Comma separated. Required for a choice field.</span></p>
+    <p><label for="t-maxlen">Maximum length</label>
+      <input id="t-maxlen" name="max_len" inputmode="numeric"></p>
+    <p><label for="t-min">Minimum</label>
+      <input id="t-min" name="min" inputmode="decimal">
+      <span class="hint">Numbers only.</span></p>
+    <p><label for="t-max">Maximum</label>
+      <input id="t-max" name="max" inputmode="decimal"></p>
+    <p><label for="t-alt">Alt text for</label>
+      <input id="t-alt" name="alt_for" placeholder="hero">
+      <span class="hint">Names the field this one describes, so the
+        accessibility check knows the image has a description.</span></p>
+    <p><label for="t-req">Required</label>
+      <input id="t-req" type="checkbox" name="required" value="true"></p>
+  </div>
+  <button type="submit">Save field</button>
+</form>
+
+<h2>What must satisfy what</h2>
+<form method="post" action="/types/bind" class="inline">
+  <label for="b-page">Page</label>
+  <input id="b-page" name="page" required spellcheck="false" list="pagelist">
+  <datalist id="pagelist">
+    {{range .Unbound}}<option value="{{.}}"></option>{{end}}
+  </datalist>
+  <label for="b-type">Type</label>
+  <select id="b-type" name="type">
+    {{range .Rows}}<option value="{{.Type.Name}}">{{.Type.Name}}</option>{{end}}
+  </select>
+  <button type="submit">Bind</button>
+</form>
+<form method="post" action="/types/bind" class="inline">
+  <input type="hidden" name="unbind" value="1">
+  <label for="u-page">Stop requiring a type of</label>
+  <input id="u-page" name="page" required spellcheck="false">
+  <button type="submit">Unbind</button>
+</form>
+
+<h2>Delete a type</h2>
+<form method="post" action="/types/delete" class="inline">
+  <label for="d-type">Type</label>
+  <input id="d-type" name="type" required spellcheck="false">
+  <button type="submit" class="danger">Delete</button>
+</form>
+<p class="hint">
+  Refused while any page is bound to it. A binding pointing at a type that is
+  gone fails closed, so deleting one in use would break every page under it
+  with an error about the configuration rather than about the content.
+</p>
+{{end}}
+
+{{if .Unbound}}
+<h2>Pages with no type</h2>
+<p class="hint">
+  {{len .Unbound}} page(s) may contain anything. That is a legitimate state and
+  it is also the state a site is in when nobody has decided yet, so it is
+  counted rather than left implicit.
+</p>
+<p>{{range $i, $p := .Unbound}}{{if $i}}, {{end}}<code>{{$p}}</code>{{end}}</p>
+{{end}}
+{{template "foot" .}}

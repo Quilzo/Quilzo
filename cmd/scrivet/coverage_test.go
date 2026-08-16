@@ -45,37 +45,37 @@ var coverage = map[string]surfaces{
 	"record":     {GUI: "/records"},
 	"a11y":       {GUI: "/page/", MCP: "check_accessibility"},
 
-	// -- built, and not yet visible -------------------------------------------
+	// -- closed, and how ------------------------------------------------------
 	//
-	// Each of these is a real gap with a real cost, listed rather than left to
-	// be discovered. They are the work queue, in rough order of how much of the
-	// product is invisible without them.
+	// Every row below was a gap. The list of twenty-six is what the previous
+	// commit could measure and this one is the answer to; the routes are what
+	// somebody can now open.
 	"config":     {GUI: "/settings"},
-	"type":       {Why: "GAP: content types define what may be stored and cannot be seen"},
-	"types":      {Why: "GAP: same as type"},
-	"env":        {Why: "GAP: environments and promotion are terminal-only"},
-	"media":      {Why: "GAP: uploads cannot be made from the interface people use"},
-	"scan":       {Why: "GAP: the security scanner has no screen"},
-	"csp":        {Why: "GAP: the generated policy is not shown anywhere"},
-	"schedule":   {Why: "GAP: scheduled publishing is invisible"},
-	"lang":       {Why: "GAP: languages are terminal-only"},
-	"lock":       {Why: "GAP: locks are advisory and unlistable in the admin"},
-	"ext":        {Why: "GAP: extensions are registered from a terminal only"},
-	"webhook":    {Why: "GAP: webhooks are terminal-only"},
-	"vault":      {Why: "GAP: encryption at rest is terminal-only"},
-	"compliance": {Why: "GAP: the SBOM and crypto inventory have no screen"},
-	"export":     {Why: "GAP: no way to export from the interface"},
-	"import":     {Why: "GAP: no way to import from the interface"},
-	"verify":     {Why: "GAP: integrity checking is terminal-only"},
-	"agents":     {Why: "GAP: agent activity is terminal-only"},
-	"anchor":     {Why: "GAP: timestamping is terminal-only"},
-	"timestamp":  {Why: "GAP: as anchor"},
-	"stamp":      {Why: "GAP: as anchor"},
-	"siem":       {Why: "GAP: export to a SIEM is terminal-only"},
-	"assist":     {Why: "GAP: the assistant has no screen"},
-	"template":   {Why: "GAP: starters can only be applied from a terminal"},
-	"templates":  {Why: "GAP: as template"},
-	"oidc":       {Why: "GAP: identity provider setup is terminal-only"},
+	"type":       {GUI: "/types"},
+	"types":      {GUI: "/types"},
+	"env":        {GUI: "/publishing"},
+	"media":      {GUI: "/media"},
+	"scan":       {GUI: "/security/scan"},
+	"csp":        {GUI: "/security/policy"},
+	"schedule":   {GUI: "/publishing"},
+	"lang":       {GUI: "/languages"},
+	"lock":       {GUI: "/publishing"},
+	"ext":        {GUI: "/integrations"},
+	"webhook":    {GUI: "/integrations"},
+	"vault":      {GUI: "/security/integrity"},
+	"compliance": {GUI: "/security/inventory"},
+	"export":     {GUI: "/transfer"},
+	"import":     {GUI: "/transfer"},
+	"verify":     {GUI: "/security/integrity"},
+	"agents":     {GUI: "/security/agents"},
+	"anchor":     {GUI: "/security/integrity"},
+	"timestamp":  {GUI: "/security/integrity"},
+	"stamp":      {GUI: "/security/integrity"},
+	"siem":       {GUI: "/integrations"},
+	"assist":     {GUI: "/assist"},
+	"template":   {GUI: "/transfer"},
+	"templates":  {GUI: "/transfer"},
+	"oidc":       {GUI: "/integrations"},
 
 	// -- deliberately not in the interface ------------------------------------
 	"init": {Why: "creates the store, which is what you do before there is an " +

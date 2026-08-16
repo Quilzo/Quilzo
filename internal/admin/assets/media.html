@@ -1,0 +1,78 @@
+{{template "head" .}}
+<h1>Media</h1>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+<p class="lead">
+  {{len .Files}} file(s), {{.Total}} bytes. Every accepted format is decoded
+  rather than sniffed — magic bytes are bypassable with a polyglot, so a file
+  has to actually parse before it is stored.
+</p>
+
+{{if .CanWrite}}
+<h2>Upload</h2>
+<form method="post" action="/media/upload" enctype="multipart/form-data">
+  <p><label for="m-file">File</label>
+    <input id="m-file" type="file" name="file" required></p>
+  <p><label for="m-alt">Description</label>
+    <input id="m-alt" name="alt" size="60"
+           placeholder="what the image conveys, not that it is an image">
+    <span class="hint">Required for images. WCAG 1.1.1, asked for here rather
+      than audited later — a library of undescribed images is one somebody has
+      to go back through, and nobody ever does.</span></p>
+  <p><label for="m-dec">Decorative, and needs no description</label>
+    <input id="m-dec" type="checkbox" name="decorative" value="1"></p>
+  <button type="submit">Upload</button>
+</form>
+<p class="hint">
+  Accepted: {{range $i, $a := .Accepted}}{{if $i}}, {{end}}{{$a}}{{end}}.
+  Images are resized, re-encoded and stripped of metadata according to the
+  media settings. {{if .HaveWebP}}WebP conversion is available via
+  <code>{{.WebP}}</code>.{{else}}WebP conversion needs an external encoder,
+  which is not installed here, so uploads are optimised natively instead.{{end}}
+</p>
+{{end}}
+
+{{if not .Files}}
+<p>Nothing has been uploaded yet.</p>
+{{else}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">File</th><th scope="col">Format</th>
+    <th scope="col">Size</th><th scope="col">Description</th>
+    <th scope="col">Uploaded</th>{{if .CanWrite}}<th scope="col"></th>{{end}}
+  </tr></thead>
+  <tbody>
+  {{range .Files}}
+  <tr>
+    <th scope="row">
+      <a href="/media/file/{{.ID}}">{{.Name}}</a>
+      <div class="hint"><code>{{short .ID}}</code></div>
+    </th>
+    <td>{{.Format}}<div class="hint">{{.Kind}}{{if not .Inline}} · download only{{end}}</div></td>
+    <td>{{.Size}}{{if .Width}}<div class="hint">{{.Width}}×{{.Height}}</div>{{end}}</td>
+    <td>{{if .Alt}}{{.Alt}}{{else}}<span class="hint">decorative</span>{{end}}</td>
+    <td class="hint">{{ago .UploadedAt}}{{if .UploadedBy}}<br>{{.UploadedBy}}{{end}}</td>
+    {{if $.CanWrite}}
+    <td>
+      <form method="post" action="/media/delete" class="inline">
+        <input type="hidden" name="id" value="{{.ID}}">
+        <button type="submit" class="danger">Delete</button>
+      </form>
+    </td>
+    {{end}}
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<p class="hint">
+  A file's name is the hash of its bytes, so the same photograph uploaded twice
+  is stored once and a change is a different address. That is also why these can
+  be cached forever and never purged: different content is a different URL.
+</p>
+{{template "foot" .}}

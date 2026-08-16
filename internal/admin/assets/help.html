@@ -1,0 +1,34 @@
+{{template "head" .}}
+<h1>Help</h1>
+
+<p class="lead">Every screen, what it is for, and the command that does the same
+thing.</p>
+
+{{range .Groups}}
+<h2>{{.Group}}</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Screen</th><th scope="col">What it is for</th>
+    <th scope="col">On the command line</th>
+  </tr></thead>
+  <tbody>
+  {{range .Rows}}
+  <tr>
+    <th scope="row"><a href="{{.Path}}">{{.Name}}</a></th>
+    <td>{{.Does}}</td>
+    <td>{{if .Command}}<code>{{.Command}}</code>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<h2>What is not here</h2>
+<p>
+  Creating the store, starting a server and the machine interface are commands
+  and have no screen, because a button inside a running interface cannot start
+  the interface it is inside. Everything else in this product is above.
+</p>
+{{template "foot" .}}
