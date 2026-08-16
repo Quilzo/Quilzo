@@ -147,7 +147,7 @@ are.
 **Decentralised publication.** Content-addressed storage maps onto IPFS
 naturally: `scrivet ipfs` computes CIDv1 identifiers and produces a bundle that
 pins as-is. Zero dependencies here too — the DAG-PB and CID encoding is about
-three hundred lines, verified against published identifiers and an independent
+four hundred lines, verified against published identifiers and an independent
 reimplementation.
 
 ## The demonstration

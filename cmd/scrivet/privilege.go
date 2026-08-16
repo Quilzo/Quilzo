@@ -108,9 +108,9 @@ var commandNeeds = map[string]need{
 	// Writes content, types, listings, menus and forms, and publishes. That is
 	// the whole store, so it needs the permission that covers the whole store —
 	// and it refuses outright on a store that already has anything in it.
-	"demo":                {action: auth.ActPublish},
-	"template":            {action: auth.ActEditDraft},
-	"templates":           {action: auth.ActEditDraft},
+	"demo":      {action: auth.ActPublish},
+	"template":  {action: auth.ActEditDraft},
+	"templates": {action: auth.ActEditDraft},
 
 	// -- content types gate every write, so changing one is a change to what
 	// every author may store. Publisher, not author.

@@ -1,8 +1,13 @@
-// Command scrivet is the whole CMS. There is no admin panel yet, and that
-// ordering is deliberate: a CMS whose primitives only exist behind a web UI
-// cannot be scripted, reviewed in a pull request, or driven by an assistant
-// without pretending to be a browser. Building the UI on a complete CLI keeps
-// every action available to a person, a script and an agent on equal terms.
+// Command scrivet is the whole CMS: the command line, the admin interface, the
+// public site and the agent interface, in one binary.
+//
+// The command line came first and that ordering was deliberate. A CMS whose
+// primitives only exist behind a web UI cannot be scripted, reviewed in a pull
+// request, or driven by an assistant without pretending to be a browser.
+// Building the interface on a complete command line keeps every action
+// available to a person, a script and an agent on equal terms — which is now a
+// property the test suite asserts rather than an intention, because the gap
+// between the three had grown to twenty-six capabilities before anybody counted.
 package main
 
 import (
@@ -56,7 +61,8 @@ func usage() {
 	// measured advantage of a CLI over a tool-schema protocol is that nothing is
 	// loaded until it is needed — which only works if asking is complete when it
 	// happens. Half a help page is a schema with holes in it.
-	fmt.Print(`scrivet — a CMS where content is immutable and publishing is a pointer.
+	fmt.Print(`scrivet — content is immutable, publishing moves a pointer, and
+          templates cannot execute anything.
 
 content
   scrivet init                              create a content store
