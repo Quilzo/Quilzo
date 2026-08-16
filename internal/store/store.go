@@ -106,6 +106,10 @@ type Store struct {
 	// is the default: a store that silently encrypted with a key generated on
 	// first run would be a store whose contents are lost when that key is.
 	keys *vault.Keyring
+	// durability chooses fsync-per-object or fsync-per-commit.
+	durability Durability
+	// pending holds object files written but not yet flushed.
+	pending map[string]bool
 }
 
 // WithKeys turns on encryption at rest.
@@ -186,7 +190,7 @@ func (s *Store) Has(oid string) bool {
 //
 // A reader must never observe a half-written object. Rename within a directory
 // is atomic on POSIX, so either the whole object is there or none of it is.
-func writeAtomic(path string, body []byte, perm os.FileMode) error {
+func writeAtomic(path string, body []byte, perm os.FileMode, sync bool) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
@@ -201,9 +205,11 @@ func writeAtomic(path string, body []byte, perm os.FileMode) error {
 		f.Close()
 		return err
 	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
+	if sync {
+		if err := f.Sync(); err != nil {
+			f.Close()
+			return err
+		}
 	}
 	if err := f.Close(); err != nil {
 		return err
@@ -247,8 +253,22 @@ func (s *Store) write(kind string, payload []byte) (string, error) {
 		}
 	}
 
-	if err := writeAtomic(path, body, 0o400); err != nil {
+	// Objects are deferred by default: immutable, named by their own hash, and
+	// unreachable until a ref points at them, so an unflushed one is garbage
+	// rather than corruption.
+	if err := writeAtomic(path, body, 0o400, s.durability == SyncEach); err != nil {
 		return "", fmt.Errorf("cannot store %s: %w", kind, err)
+	}
+	if s.durability != SyncEach {
+		// Recorded inline rather than through a helper, because write already
+		// holds the mutex and a Go mutex is not reentrant. Calling a locking
+		// helper from here deadlocked on the very first object written, which
+		// is about as quiet as a failure gets: no error, no panic, just a
+		// process that stops.
+		if s.pending == nil {
+			s.pending = map[string]bool{}
+		}
+		s.pending[path] = true
 	}
 	return oid, nil
 }
@@ -427,9 +447,20 @@ func (s *Store) SetRef(name, oid string) error {
 	if err != nil {
 		return err
 	}
+	// Everything this ref reaches is made durable first. Reverse the order and
+	// a crash leaves a ref pointing at an object that is not there — a store
+	// that verifies as broken rather than as incomplete.
+	//
+	// Outside the lock, because Flush takes it and a Go mutex is not
+	// reentrant: calling it from inside deadlocked the process on the first
+	// commit, which is a very quiet way for a store to stop working.
+	if err := s.Flush(); err != nil {
+		return err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return writeAtomic(path, []byte(oid), 0o600)
+	return writeAtomic(path, []byte(oid), 0o600, true)
 }
 
 // GetRef returns what a ref points at, or "" if it does not exist.
