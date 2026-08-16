@@ -177,7 +177,20 @@ func (s *Server) listRecords(w http.ResponseWriter, r *http.Request, name string
 			Error: "the store could not be read"})
 		return
 	}
-	recs, total, err := collection.List(s.Store, tree, name, q)
+	// Through the index when the server has one. An API is the surface most
+	// likely to be polled, so paying the scan per request is the difference
+	// between a listing endpoint and an outage.
+	var recs []collection.Record
+	var total int
+	if s.Index != nil {
+		var idx *collection.Index
+		idx, err = s.Index.For(s.Store, tree, name)
+		if err == nil {
+			recs, total = idx.Query(q)
+		}
+	} else {
+		recs, total, err = collection.List(s.Store, tree, name, q)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, Error{
 			Error: "the collection could not be read", Detail: err.Error()})

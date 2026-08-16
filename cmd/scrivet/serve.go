@@ -355,6 +355,10 @@ func cmdServe(root string, args []string) error {
 	// are turned on deliberately.
 	apiSrv := &api.Server{
 		Store: s, Policy: pol, Tokens: toks,
+		// The same cache the admin uses. One process, one decoded copy of a
+		// collection — two would be the same memory spent twice and two
+		// chances for one of them to be built wrong.
+		Index:       srv.Records,
 		SessionAuth: true,
 		Limits: api.Limits{
 			PerMinute: cfg.Int("api.rate.per_minute"),

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/rsh1k/scrivet/internal/auth"
+	"github.com/rsh1k/scrivet/internal/collection"
 	"github.com/rsh1k/scrivet/internal/schema"
 	"github.com/rsh1k/scrivet/internal/site"
 	"github.com/rsh1k/scrivet/internal/store"
@@ -43,6 +44,10 @@ type Server struct {
 	// Types validates writes, so the API cannot put content into the store that
 	// the CLI and the admin would have refused.
 	Types func() (*schema.Store, error)
+	// Index is the decoded-collection cache, shared with the admin when both
+	// run in one process. Nil means every listing pays the full scan, which is
+	// correct for a test and wrong for anything serving traffic.
+	Index *collection.Cache
 	// Records serves the collections API. Nil means those routes report that
 	// this server does not serve records, which is different from serving an
 	// empty one.

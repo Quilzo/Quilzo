@@ -66,6 +66,7 @@ import (
 	"github.com/rsh1k/scrivet/internal/a11y"
 	"github.com/rsh1k/scrivet/internal/auth"
 	"github.com/rsh1k/scrivet/internal/collab"
+	"github.com/rsh1k/scrivet/internal/collection"
 	"github.com/rsh1k/scrivet/internal/posture"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/schema"
@@ -138,6 +139,12 @@ type Server struct {
 	// way to reach them, and nothing else. Nil means the screen shows their
 	// permissions and sessions and offers no details to edit.
 	Profile *Profile
+	// Records is the decoded-collection cache, shared across requests.
+	//
+	// Keyed by tree, so it can never be stale: a different content is a
+	// different tree identifier. Nil is safe and means every query pays the
+	// full scan, which is correct for a test and wrong for a server.
+	Records *collection.Cache
 	// Data gives the admin access to records. Nil means the screen says it has
 	// no access rather than showing an empty list, because empty and absent
 	// look identical and mean opposite things.
@@ -280,7 +287,8 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, siteTemplate strin
 	if err != nil {
 		return nil, fmt.Errorf("admin templates: %w", err)
 	}
-	return &Server{Store: s, Policy: p, Tokens: ts, Template: siteTemplate, tpl: t}, nil
+	return &Server{Store: s, Policy: p, Tokens: ts, Template: siteTemplate,
+		Records: collection.NewCache(), tpl: t}, nil
 }
 
 // errNoCredential means nothing was presented, as distinct from something

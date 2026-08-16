@@ -237,6 +237,18 @@ func equal(got, want any) bool {
 	return fmt.Sprint(got) == fmt.Sprint(want)
 }
 
+// cmpInt is a three-way comparison, because a boolean less-than cannot express
+// "equal" and equality is exactly what the tie-break needs to know about.
+func cmpInt(a, b int64) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	}
+	return 0
+}
+
 func toFloat(v any) (float64, bool) {
 	switch t := v.(type) {
 	case float64:
@@ -265,23 +277,51 @@ func (q Query) Apply(in []Record) (out []Record, total int) {
 	}
 	total = len(out)
 
+	// A total order, with the identifier as the final tie-break.
+	//
+	// Two bugs lived here and both were found by building an index and asking
+	// whether it agreed with the scan. It did not, on exactly one query shape:
+	// sorted by a field with repeated values.
+	//
+	// The first was the missing tie-break. sort.SliceStable keeps the input
+	// order for ties, and the input arrived from a map walk, whose order Go
+	// deliberately randomises. So a listing sorted by a field with twenty
+	// distinct values across three hundred records returned its rows in a
+	// different arrangement on every single call — a page that appears to
+	// shuffle itself on refresh, with no change to the content.
+	//
+	// The second is worse and was invisible. `if descending { return !less }`
+	// reports that a is before b *and* that b is before a whenever the two
+	// compare equal, which is not a valid ordering. sort is entitled to do
+	// anything at all when given one, and "anything at all" is a class of bug
+	// that reproduces on one machine and not another.
+	//
+	// So: compare three ways, apply the direction to the result, and fall back
+	// to the identifier — which is unique, so the order is total and there are
+	// no ties left for either problem to live in.
 	field := q.Sort
 	sort.SliceStable(out, func(i, j int) bool {
-		var less bool
+		c := 0
 		switch field {
-		case "":
-			less = out[i].ID < out[j].ID
+		case "", "id":
+			// Already the tie-break below; nothing to compare first.
 		case "created":
-			less = out[i].Created < out[j].Created
+			c = cmpInt(out[i].Created, out[j].Created)
 		case "updated":
-			less = out[i].Updated < out[j].Updated
+			c = cmpInt(out[i].Updated, out[j].Updated)
 		default:
-			less = compare(out[i].Fields[field], out[j].Fields[field]) < 0
+			c = compare(out[i].Fields[field], out[j].Fields[field])
 		}
 		if q.Descending {
-			return !less
+			c = -c
 		}
-		return less
+		if c != 0 {
+			return c < 0
+		}
+		// The identifier never reverses. A stable secondary key that flipped
+		// with the direction would make page two of a descending listing
+		// overlap page one, which is the paging bug nobody reproduces.
+		return out[i].ID < out[j].ID
 	})
 
 	limit := q.Limit
