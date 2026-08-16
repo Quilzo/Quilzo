@@ -100,6 +100,11 @@ type Site struct {
 	Locales *i18n.Config
 	// LastChanged supplies each page's real modification time.
 	LastChanged func() (map[string]time.Time, error)
+	// Media serves the asset library at /media/. Nil means the route 404s,
+	// which is right for a deployment with no library — and was, until this
+	// field existed, the behaviour of every deployment including the ones with
+	// one.
+	Media MediaLookup
 }
 
 // New returns a Site with sensible defaults.
@@ -119,6 +124,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/site.css", st.stylesheet)
 	mux.HandleFunc("/robots.txt", st.robots)
 	mux.HandleFunc("/llms.txt", st.llms)
+	mux.HandleFunc("/media/", st.mediaFile)
 	mux.HandleFunc("/", st.page)
 	return st.securityHeaders(mux)
 }

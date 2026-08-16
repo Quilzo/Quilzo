@@ -49,7 +49,7 @@
   <tr>
     <th scope="row">
       <a href="/media/file/{{.ID}}">{{.Name}}</a>
-      <div class="hint"><code>{{short .ID}}</code></div>
+      <div class="hint">On the published site: <code>/media/{{.ID}}</code></div>
     </th>
     <td>{{.Format}}<div class="hint">{{.Kind}}{{if not .Inline}} · download only{{end}}</div></td>
     <td>{{.Size}}{{if .Width}}<div class="hint">{{.Width}}×{{.Height}}</div>{{end}}</td>
@@ -70,6 +70,11 @@
 </div>
 {{end}}
 
+<p class="hint">
+  Put the path above in a page field to use an asset — <code>/media/…</code> is
+  where the published site serves it, and the link on the name is the same file
+  through this interface, which needs a sign-in.
+</p>
 <p class="hint">
   A file's name is the hash of its bytes, so the same photograph uploaded twice
   is stored once and a change is a different address. That is also why these can

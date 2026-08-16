@@ -14,6 +14,7 @@ import (
 
 	"github.com/rsh1k/scrivet/internal/api"
 	"github.com/rsh1k/scrivet/internal/audit"
+	"github.com/rsh1k/scrivet/internal/media"
 	"github.com/rsh1k/scrivet/internal/provenance"
 	"github.com/rsh1k/scrivet/internal/public"
 	"github.com/rsh1k/scrivet/internal/schema"
@@ -69,6 +70,17 @@ func cmdSite(root string, args []string) error {
 		st.Stylesheet = string(css)
 	}
 	st.BaseURL = strings.TrimSpace(*baseURL)
+	// The asset library. Opened once and looked up per request: the files are
+	// immutable and named by their own hash, so there is nothing to reload and
+	// a cached handle cannot go stale.
+	//
+	// Without this an uploaded image could be stored, described and listed and
+	// never appear on a page, which is what every deployment did until now.
+	if lib, lerr := openMedia(root); lerr == nil {
+		st.Media = func(id string) (media.File, []byte, error) {
+			return lib.Get(id)
+		}
+	}
 
 	// The policy is generated once, at startup, from what is live — the same
 	// moment and the same content the search index is built from. Regenerating
