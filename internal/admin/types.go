@@ -311,6 +311,23 @@ func (s *Server) handleTypeBind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A binding for a page that is not there is a rule about nothing. It is
+	// silently accepted otherwise, and the mistake it hides is the ordinary
+	// one: a typo in the page name, which then looks like a type that simply
+	// never applies. Checked only when the page list is available, because a
+	// server without it cannot tell absent from unknown.
+	if s.Types.Pages != nil {
+		if pages, err := s.Types.Pages(); err == nil {
+			if _, there := pages[page]; !there {
+				s.typeRedirect(w, r, "", fmt.Sprintf(
+					"there is no page called %q, so binding %s to it would be a "+
+						"rule about nothing. Check the name against the list of "+
+						"pages.", page, name))
+				return
+			}
+		}
+	}
+
 	if err := st.Bind(page, name); err != nil {
 		s.typeRedirect(w, r, "", err.Error())
 		return
@@ -333,9 +350,17 @@ func (s *Server) handleTypeBind(w http.ResponseWriter, r *http.Request) {
 					for _, pr := range problems {
 						parts = append(parts, pr.String())
 					}
+					// What this actually costs, rather than a softer version
+					// of it. The binding is saved and the page is now invalid,
+					// which does not stop other people editing other pages and
+					// does stop the whole draft being published until it is
+					// fixed. Saying "the next write to it will be refused"
+					// described neither.
 					s.typeRedirect(w, r, "", fmt.Sprintf(
-						"%s. It does not yet, and the next write to it will be "+
-							"refused until it does: %s",
+						"%s, and it does not: %s. The binding is saved. Nothing "+
+							"else is blocked, and this draft cannot be published "+
+							"until the page matches its type or the type is "+
+							"unbound.",
 						msg, strings.Join(parts, "; ")))
 					return
 				}

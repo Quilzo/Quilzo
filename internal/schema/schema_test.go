@@ -335,3 +335,40 @@ func TestATypeCannotDeclareAReservedField(t *testing.T) {
 		}
 	}
 }
+
+// A blank optional field is empty, not malformed.
+//
+// Found by building an application with this: a page written before it had a
+// type, then given one, reported "link: must include http:// or https://" for
+// a box nobody had typed in. The editor drops blanks before storing them, so
+// the rule here is the same rule, applied to content that arrived any other
+// way — an import, the API, a page that predates the type.
+func TestBlankOptionalFieldIsAbsentNotMalformed(t *testing.T) {
+	ty := Type{Name: "profile", Fields: []Field{
+		{Name: "handle", Kind: Slug, Required: true},
+		{Name: "link", Kind: URL},
+		{Name: "contact", Kind: Email},
+		{Name: "joined", Kind: Date},
+		{Name: "topic", Kind: Choice, Choices: []string{"a", "b"}},
+	}}
+	blank := map[string]any{
+		"handle": "nel", "link": "", "contact": "", "joined": "", "topic": "",
+	}
+	if p := Validate(ty, blank); len(p) != 0 {
+		t.Fatalf("blank optional fields reported as problems: %v", p)
+	}
+
+	// A blank required field says what is actually wrong with it.
+	req := Type{Name: "profile", Fields: []Field{{
+		Name: "link", Kind: URL, Required: true}}}
+	p := Validate(req, map[string]any{"link": ""})
+	if len(p) != 1 || p[0].Reason != "required" {
+		t.Fatalf("blank required URL reported %v, want a single \"required\"", p)
+	}
+
+	// And a value that is genuinely wrong is still wrong.
+	if p := Validate(ty, map[string]any{
+		"handle": "nel", "link": "javascript:alert(1)"}); len(p) != 1 {
+		t.Fatalf("a bad URL should still fail; got %v", p)
+	}
+}

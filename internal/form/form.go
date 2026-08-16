@@ -102,6 +102,18 @@ const (
 	Agree  Kind = "agree"  // a box that must be ticked
 )
 
+// KindList names every kind, for the error somebody gets when they guess.
+//
+// Guessing is the normal case: these are not the same words the content types
+// use — a form has "line" and "para" where a type has "text" and "longtext" —
+// and the two sets sitting next to each other in the same product is exactly
+// the situation where an error has to say what is allowed rather than only
+// that the guess was wrong.
+func KindList() string {
+	return string(Line) + ", " + string(Para) + ", " + string(Email) + ", " +
+		string(Number) + ", " + string(Choice) + " or " + string(Agree)
+}
+
 // Field is one thing a form asks for.
 type Field struct {
 	Name     string   `json:"name"`
@@ -223,8 +235,8 @@ func (f *Form) Validate() error {
 					fl.Name)
 			}
 		default:
-			return fmt.Errorf("%q has kind %q, which is not one of the "+
-				"accepted kinds", fl.Name, fl.Kind)
+			return fmt.Errorf("%q has kind %q; a form field is %s",
+				fl.Name, fl.Kind, KindList())
 		}
 	}
 	// The honeypot's name must not collide with a real field, or a person

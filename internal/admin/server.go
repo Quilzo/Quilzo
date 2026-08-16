@@ -1323,8 +1323,22 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	// Content types are enforced here as well as in the CLI. This project has
 	// twice shipped a rule the terminal honoured and the browser did not, and
 	// the browser is where most editing happens.
+	//
+	// The page being written, and not the whole draft. Checking everything on
+	// every save sounds stricter and is worse in the one way that matters: any
+	// page can be made invalid without being written to — give an existing page
+	// a type it does not satisfy — and from that moment nobody can save
+	// anything. The error names a page the author was not touching and may not
+	// have permission to fix, so an author scoped to their own posts is simply
+	// stuck until somebody else notices.
+	//
+	// Nothing is lost by narrowing it, because the whole-draft check now runs
+	// at publish, which is where it belongs and where it was missing: types
+	// were checked on every save and not at all on the way out, so binding a
+	// type after saving was enough to put content on the live site that
+	// violated its own type.
 	if s.CheckTypes != nil {
-		if failures := s.CheckTypes(pages); len(failures) > 0 {
+		if failures := s.CheckTypes(map[string]any{name: body}); len(failures) > 0 {
 			s.renderTypeFailures(w, r, p, name, failures)
 			return
 		}
@@ -1480,6 +1494,42 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 				len(stale), plural(len(stale))),
 		})
 		return
+	}
+
+	// Every page satisfies its type, checked over the whole draft.
+	//
+	// This is the check that used to run on every save and never here, which is
+	// exactly backwards. Saving is per-page because a page can be made invalid
+	// without being written to, and one such page blocking every author is a
+	// worse failure than the one being prevented. Publishing is the whole set,
+	// because that is the moment the site becomes something readers see, and
+	// "only the pages you touched" is the exception somebody routes around by
+	// touching something else.
+	//
+	// No override. The other gates here take a written reason because an
+	// accessibility finding can be a judgement call; content that violates the
+	// shape it was declared to have is not a judgement call, and the type is
+	// the thing whoever set it up asked to be true.
+	if s.CheckTypes != nil {
+		if failures := s.CheckTypes(site.PagesOf(s.Store, draft)); len(failures) > 0 {
+			names := make([]string, 0, len(failures))
+			for _, f := range failures {
+				names = append(names, f.Page)
+			}
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			s.render(w, r, "review.html", map[string]any{
+				"Nav": "review", "Title": "Review", "Principal": p,
+				"Reports": reports, "Blocking": blocking, "CanPublish": true,
+				"TypeFailures": failures,
+				"Error": fmt.Sprintf(
+					"%d page%s in this draft do not satisfy the type they were "+
+						"given: %s. A page can end up here without being edited — "+
+						"giving an existing page a type it does not match is "+
+						"enough — so this is checked on the way out.",
+					len(failures), plural(len(failures)), strings.Join(names, ", ")),
+			})
+			return
+		}
 	}
 
 	// Navigation integrity, gated rather than warned about.

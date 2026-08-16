@@ -292,7 +292,20 @@ func Validate(t Type, content map[string]any) []Problem {
 
 	for _, f := range t.Fields {
 		v, present := content[f.Name]
-		if !present || v == nil {
+		// An empty string is the absence of a value, not a malformed one.
+		//
+		// The editor already drops blank optional fields before storing them,
+		// so this agrees with what the browser does — and the two disagreeing
+		// is what made a normal workflow impossible: write a page, then give it
+		// a type, and every optional field left blank before the type existed
+		// was reported as badly formatted rather than empty. The page could not
+		// then be saved, and the message pointed at the format of a value
+		// nobody had typed.
+		//
+		// It also fixes what a required field says when it is blank. "must
+		// include http://" describes a URL somebody got wrong; "required"
+		// describes the actual situation, which is that the box is empty.
+		if !present || v == nil || v == "" {
 			if f.Required {
 				out = append(out, Problem{f.Name, "required"})
 			}
