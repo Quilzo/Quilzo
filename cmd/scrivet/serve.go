@@ -239,6 +239,22 @@ func cmdServe(root string, args []string) error {
 		},
 		Evidence: func() ([]admin.Evidence, error) { return evidenceRows(root) },
 	}
+	// Dual authorisation. The same files and the same engine the command line
+	// uses — a second implementation of an approval rule would be a second
+	// answer to "may this be published".
+	srv.Approvals = &admin.Approvals{
+		Policy: func() (collab.Policy, error) { return loadApprovalPolicy(root) },
+		Current: func() (*collab.Proposal, error) {
+			prop, _, err := currentProposal(root, s)
+			return prop, err
+		},
+		Save: func(prop *collab.Proposal) error {
+			return saveProposal(root, s, prop)
+		},
+		KindOf: func(principal string) string {
+			return principalKind(root, principal)
+		},
+	}
 	srv.Listings = &admin.Listings{
 		Load: func() (*listing.Set, error) { return loadListings(root) },
 		Save: func(set *listing.Set) error { return saveJSON(listingPath(root), set) },

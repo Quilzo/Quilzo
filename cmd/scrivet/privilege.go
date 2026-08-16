@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/rsh1k/scrivet/internal/audit"
@@ -232,6 +233,81 @@ var commandNeeds = map[string]need{
 // worth more than no gate.
 func commandResource(cmd string, args []string) string { return "/" }
 
+// unknownCommand explains a name nothing recognises.
+//
+// Suggestions come from the same table that decides privileges, so a command
+// that exists is always offered — there is no second list to fall behind.
+func unknownCommand(cmd string) error {
+	// The threshold is relative to the shorter word, not to a constant.
+	//
+	// A fixed two edits is most of a four-letter word and a rounding error in
+	// a twelve-letter one, which is how "prov" came back as the suggestion for
+	// "aprove". Requiring the distance to be under half the shorter word keeps
+	// short aliases from matching everything and still catches a transposition
+	// in a five-letter name.
+	var near []string
+	for known := range commandNeeds {
+		if strings.HasPrefix(known, cmd) || strings.HasPrefix(cmd, known) {
+			near = append(near, known)
+			continue
+		}
+		shorter := len(cmd)
+		if len(known) < shorter {
+			shorter = len(known)
+		}
+		if d := editDistance(cmd, known); d*2 < shorter {
+			near = append(near, known)
+		}
+	}
+	sort.Strings(near)
+	if len(near) > 4 {
+		near = near[:4]
+	}
+	if len(near) > 0 {
+		return fmt.Errorf("there is no %q command. Did you mean %s?\n"+
+			"  scrivet help — every command", cmd, strings.Join(near, ", "))
+	}
+	return fmt.Errorf("there is no %q command.\n  scrivet help — every command",
+		cmd)
+}
+
+// editDistance is Levenshtein, bounded by the length of the shorter word.
+//
+// Two rows rather than a full matrix: the words are command names, so this is
+// never the expensive part, and the small version is easier to be sure of.
+func editDistance(a, b string) int {
+	if len(a) > 24 || len(b) > 24 {
+		return 99
+	}
+	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		curr[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			curr[j] = min3(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
+		}
+		prev, curr = curr, prev
+	}
+	return prev[len(b)]
+}
+
+func min3(a, b, c int) int {
+	if b < a {
+		a = b
+	}
+	if c < a {
+		a = c
+	}
+	return a
+}
+
 // authoriseCommand is the single point every command passes through.
 func authoriseCommand(root, cmd string, args []string) error {
 	n, ok := lookupNeed(cmd, args)
@@ -239,8 +315,19 @@ func authoriseCommand(root, cmd string, args []string) error {
 		// A command nobody declared. Refusing is the only safe answer: the
 		// alternative is that adding a command silently adds an unguarded one,
 		// which is exactly how this hole appeared.
-		return fmt.Errorf("%q has no declared privilege, so it will not run. "+
-			"Add it to commandNeeds in cmd/scrivet/privilege.go", cmd)
+		//
+		// What it *says* depends on who is reading. A developer who added a
+		// command and forgot the table needs the file name. A person who
+		// mistyped needs to know they mistyped — and telling them to edit a Go
+		// source file is the worst possible answer to a typo. Every unknown
+		// command took the developer message for as long as this check has
+		// existed, because the two cases were never distinguished.
+		//
+		// They are distinguishable: a command in the dispatch switch and
+		// absent from the table is the developer's; anything else is a typo,
+		// and a test walks the source to guarantee the first case never
+		// reaches a user.
+		return unknownCommand(cmd)
 	}
 	if n.action == "" {
 		return nil

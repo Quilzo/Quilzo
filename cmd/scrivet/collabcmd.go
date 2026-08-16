@@ -401,3 +401,57 @@ func reviewRequire(root string, args []string) error {
 	w.Human("  %san author can never approve their own change%s\n", dim, reset)
 	return nil
 }
+
+// saveProposal writes one proposal back into the file.
+//
+// Read-modify-write on the whole file rather than an append, because a
+// proposal is edited in place — rebasing changes its content hash and adding
+// an approval changes its list — and an append-only record of edits would
+// leave the reader to work out which version is current.
+func saveProposal(root string, s *store.Store, prop *collab.Proposal) error {
+	f := &proposalFile{}
+	if err := loadJSON(proposalsPath(root), f); err != nil {
+		return err
+	}
+	replaced := false
+	for i := range f.Proposals {
+		if f.Proposals[i].Author == prop.Author &&
+			f.Proposals[i].CreatedAt == prop.CreatedAt {
+			f.Proposals[i] = *prop
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		f.Proposals = append(f.Proposals, *prop)
+	}
+	return saveJSON(proposalsPath(root), f)
+}
+
+// principalKind says whether a name belongs to a person, a service or a model.
+//
+// Derived from the credential store rather than guessed from the name, because
+// the human-approver rule turns on it: a rule that decided "sam" is a person
+// because the string looks like one would be satisfied by naming a service
+// account after a colleague.
+func principalKind(root, principal string) string {
+	toks, err := loadTokens(root)
+	if err != nil {
+		return "human"
+	}
+	for _, t := range toks.Snapshot() {
+		if t.Principal == principal {
+			// A token issued to a machine is the marker. Nothing else in the
+			// store distinguishes them, and inventing a second place to say so
+			// would be a second thing to keep true.
+			if strings.HasPrefix(t.Name, "service-") ||
+				strings.HasPrefix(t.Name, "mcp-") {
+				return "service"
+			}
+		}
+	}
+	if strings.HasPrefix(principal, "mcp-") || principal == "assistant" {
+		return "ai"
+	}
+	return "human"
+}

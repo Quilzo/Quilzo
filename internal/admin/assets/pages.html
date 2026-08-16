@@ -17,7 +17,13 @@
   {{range .Names}}
     <tr>
       <th scope="row">{{.}}</th>
-      <td>{{if index $.Changed .}}<span class="tag tag-changed">changed</span>{{else}}<span class="tag">unchanged</span>{{end}}</td>
+      <td>{{if index $.Changed .}}<span class="tag tag-changed">changed</span>{{else}}<span class="tag">unchanged</span>{{end}}
+        {{with index $.Windows .}}
+          {{if eq . "expired"}}<span class="tag tag-bad">expired</span>
+          {{else if eq . "embargoed"}}<span class="tag tag-warn">embargoed</span>
+          {{else if eq . "expiring"}}<span class="tag">expires later</span>
+          {{else if eq . "unreadable"}}<span class="tag tag-bad">bad date</span>{{end}}
+        {{end}}</td>
       <td class="actions">
         <a href="/page/{{.}}">{{if $.CanEdit}}Edit{{else}}View{{end}} <span class="sr">{{.}}</span></a>
         <a href="/preview/{{.}}">Preview <span class="sr">{{.}}</span></a>

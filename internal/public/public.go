@@ -176,7 +176,9 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	pages, err := site.PagesAt(st.Store, live)
+	// Through the same accessor as everything else, so the sitemap cannot
+	// advertise a page the page handler refuses to serve.
+	pages, _, err := st.pages()
 	if err != nil {
 		http.Error(w, "the site could not be read", http.StatusInternalServerError)
 		return
@@ -451,14 +453,30 @@ func (st *Site) pages() (map[string]any, map[string]string, error) {
 		return nil, nil, err
 	}
 	out := map[string]any{}
+	visible := map[string]string{}
+	now := time.Now()
 	for name, oid := range tree {
 		var body any
 		if err := st.Store.GetBlob(oid, &body); err != nil {
 			continue
 		}
+		// The publish window, evaluated here rather than by a scheduler.
+		//
+		// Every read path on this server goes through this function — the
+		// page, the sitemap, the search index, the machine-readable listing —
+		// so filtering once is what stops a page being excluded from one and
+		// linked from another. A page the sitemap advertises and the page
+		// handler 404s is worse than either alone.
+		//
+		// A malformed date hides the page. Failing closed is the whole
+		// argument: the alternative is a typo silently lifting an embargo.
+		if wnd, werr := site.WindowOf(body); werr != nil || !wnd.Public(now) {
+			continue
+		}
 		out[name] = body
+		visible[name] = oid
 	}
-	return out, tree, nil
+	return out, visible, nil
 }
 
 func (st *Site) page(w http.ResponseWriter, r *http.Request) {

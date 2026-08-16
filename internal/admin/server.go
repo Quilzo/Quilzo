@@ -129,6 +129,9 @@ type Server struct {
 	// Decentralised renders the published site so its IPFS identifier can be
 	// computed here rather than taken from whoever stores it.
 	Decentralised *Decentralised
+	// Approvals is dual authorisation: how many people must agree before
+	// anything is published, and who has.
+	Approvals *Approvals
 	// Listings are the declared queries a page can embed.
 	Listings *Listings
 	// Structure is classification and navigation: the vocabularies terms come
@@ -595,6 +598,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/assist/accept", s.handleAssistAccept)
 	mux.HandleFunc("/review", s.handleReview)
 	mux.HandleFunc("/publish", s.handlePublish)
+	mux.HandleFunc("/review/propose", s.handlePropose)
+	mux.HandleFunc("/review/approve", s.handleApprove)
 	mux.HandleFunc("/access", s.handleAccess)
 	mux.HandleFunc("/nav", s.handleNav)
 	mux.HandleFunc("/theme", s.handleTheme)
@@ -835,9 +840,17 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// When each page is public, so an embargo or an expiry is visible in the
+	// listing rather than only on the page itself.
+	windows := map[string]string{}
+	for _, h := range site.Windows(pages, time.Now()) {
+		windows[h.Page] = h.State
+	}
+
 	s.render(w, r, "pages.html", map[string]any{
-		"Nav":   "pages",
-		"Title": "Pages", "Principal": p, "Names": names,
+		"Windows": windows,
+		"Nav":     "pages",
+		"Title":   "Pages", "Principal": p, "Names": names,
 		"Changed": changed, "Draft": draft, "Live": live,
 		"Unpublished": draft != "" && draft != live,
 		"CanEdit":     s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
@@ -1331,8 +1344,10 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 
 	reports := s.checkAll(draft)
 	s.render(w, r, "review.html", map[string]any{
-		"Nav":   "review",
-		"Title": "Review", "Principal": p, "Changes": changes,
+		"Approval": s.approvalFor(p, draft),
+		"Message":  r.URL.Query().Get("m"),
+		"Nav":      "review",
+		"Title":    "Review", "Principal": p, "Changes": changes,
 		"Reports": reports, "Blocking": a11y.BlockingCount(reports),
 		"Saved":      r.URL.Query().Get("saved"),
 		"CanPublish": s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed,
@@ -1395,6 +1410,45 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 					"AI-generated content to carry a machine-readable mark, and "+
 					"unrecorded is not the same as human-written.",
 				len(unmarked), plural(len(unmarked))),
+		})
+		return
+	}
+
+	// Dual authorisation, and this one has no override.
+	//
+	// The other gates accept a written reason because an accessibility failure
+	// somebody takes responsibility for is a judgement call. "Publish without
+	// the approvals the policy requires" is the thing the policy exists to
+	// prevent, so accepting a reason here would be offering a button that
+	// switches the control off.
+	if blocked := s.blockedByApproval(p, draft); blocked != "" {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, r, "review.html", map[string]any{
+			"Nav": "review", "Title": "Review", "Principal": p,
+			"Reports": reports, "Blocking": blocking, "CanPublish": true,
+			"Approval": s.approvalFor(p, draft),
+			"Error":    blocked,
+		})
+		return
+	}
+
+	// A page that expired before it was published.
+	//
+	// Almost always a date typed with the wrong year, or a draft that sat for
+	// a month. Publishing it writes content that is invisible from the instant
+	// it goes live, which looks exactly like a broken publish and is very hard
+	// to diagnose from outside.
+	if stale := site.AlreadyExpired(site.PagesOf(s.Store, draft),
+		time.Now()); len(stale) > 0 && reason == "" {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, r, "review.html", map[string]any{
+			"Nav": "review", "Title": "Review", "Principal": p,
+			"Reports": reports, "Blocking": blocking, "CanPublish": true,
+			"Expired": stale,
+			"Error": fmt.Sprintf(
+				"%d page%s already past the date it stops being public. "+
+					"Publishing would put up content nobody can see.",
+				len(stale), plural(len(stale))),
 		})
 		return
 	}

@@ -158,6 +158,11 @@ var reserved = map[string]bool{
 	"terms": true,
 	// listing.Field — the declared queries a page shows.
 	"listings": true,
+	// site.Starts and site.Expires — when a page is public. Cross-cutting for
+	// the same reason: an embargo applies to any kind of content, and a type
+	// that had to declare it would be a type somebody forgot to.
+	"starts":  true,
+	"expires": true,
 }
 
 // Reserved reports whether a field name belongs to the system.

@@ -1,4 +1,66 @@
 {{template "head" .}}
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{with .Approval}}{{if .Configured}}
+<section class="card {{if .Allowed}}ok{{else}}warn{{end}}">
+  <h2>Approval</h2>
+  {{if not .Proposed}}
+  <p>This store requires <strong>{{.Need}}</strong> approval(s) before anything
+    is published, and nothing has been offered for review yet.</p>
+  {{else}}
+  <p>
+    <strong>{{.Have}} of {{.Need}}</strong> approval(s), on the content
+    proposed by <strong>{{.Author}}</strong>{{if .AuthorKind}}
+    ({{.AuthorKind}}){{end}}.
+    {{if not .Matches}}<span class="bad">The draft has moved since — these
+      approvals name content that is no longer proposed.</span>{{end}}
+  </p>
+  {{if .Message}}<p class="hint">{{.Message}}</p>{{end}}
+  {{if .Approvals}}
+  <ul>{{range .Approvals}}<li>{{.By}}{{if .Note}} — {{.Note}}{{end}}</li>{{end}}</ul>
+  {{end}}
+  {{if .Stale}}
+  <p class="hint">
+    {{len .Stale}} earlier approval(s) no longer count, because the content
+    changed after they were given. An approval names the exact bytes it agreed
+    to, so nothing had to detect the change.
+  </p>
+  {{end}}
+  {{if not .Allowed}}<p class="hint">{{.Reason}}</p>{{end}}
+  {{end}}
+
+  {{if and .Configured (or (not .Proposed) (not .Matches))}}
+  <form method="post" action="/review/propose" class="inline">
+    <label for="ap-msg">What changed, and why</label>
+    <input id="ap-msg" name="message" size="40">
+    <button type="submit">Offer this for review</button>
+  </form>
+  {{end}}
+
+  {{if .CanApprove}}
+  <form method="post" action="/review/approve" class="inline">
+    <label for="ap-note">Why you agree</label>
+    <input id="ap-note" name="note" size="40"
+           placeholder="the part an auditor reads">
+    <button type="submit">Approve</button>
+  </form>
+  {{else if .Why}}<p class="hint">{{.Why}}</p>{{end}}
+</section>
+{{end}}{{end}}
+{{with .Approval}}{{if and .Configured (not .Proposed)}}{{end}}{{end}}
+{{if .Expired}}
+<div class="card bad">
+  <p><strong>{{len .Expired}} page(s) are already past the date they stop
+    being public.</strong> Publishing would put up content nobody can see.</p>
+  <ul>{{range .Expired}}<li>{{.}}</li>{{end}}</ul>
+</div>
+{{end}}
+{{if .BrokenLinks}}
+<div class="card bad">
+  <p><strong>{{len .BrokenLinks}} navigation entr(y/ies) point at pages that
+    are not being published.</strong> They work for you and 404 for readers.</p>
+  <ul>{{range .BrokenLinks}}<li>{{.}}</li>{{end}}</ul>
+</div>
+{{end}}
 <h1>Review</h1>
 
 {{if .Saved}}<p class="notice ok" role="status">Saved <strong>{{.Saved}}</strong> to the draft.</p>{{end}}

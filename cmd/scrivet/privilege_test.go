@@ -318,3 +318,47 @@ func TestHelpNeedsNoAuthority(t *testing.T) {
 		t.Errorf("publish --help was refused: %v", err)
 	}
 }
+
+// A typo must not tell a user to edit a Go source file.
+//
+// Every unknown command took the developer's message for as long as this check
+// has existed — "add it to commandNeeds in cmd/scrivet/privilege.go" — because
+// "somebody added a command and forgot the table" and "somebody mistyped" were
+// never distinguished. The first is a real condition worth a loud message; the
+// second is the overwhelmingly common one.
+//
+// The developer case is prevented rather than reported: the test above walks
+// the dispatch switch and fails when a command is missing from the table, so
+// by the time this runs, an unrecognised name can only be a typo.
+func TestATypoGetsAHumanMessage(t *testing.T) {
+	for _, typo := range []string{"wibble", "aprove", "pubish", "recrods"} {
+		err := unknownCommand(typo)
+		if err == nil {
+			t.Fatalf("%q was accepted", typo)
+		}
+		msg := err.Error()
+		if strings.Contains(msg, "commandNeeds") ||
+			strings.Contains(msg, ".go") {
+			t.Errorf("%q told a user to edit source: %s", typo, msg)
+		}
+		if !strings.Contains(msg, "scrivet help") {
+			t.Errorf("%q does not say how to find the real commands: %s",
+				typo, msg)
+		}
+	}
+}
+
+// A near-miss suggests the command it is near.
+func TestANearMissSuggestsTheRealCommand(t *testing.T) {
+	for typo, want := range map[string]string{
+		"pubish":  "publish",
+		"recrods": "records",
+		"revew":   "review",
+		"medai":   "media",
+	} {
+		msg := unknownCommand(typo).Error()
+		if !strings.Contains(msg, want) {
+			t.Errorf("%q did not suggest %q: %s", typo, want, msg)
+		}
+	}
+}
