@@ -9,16 +9,16 @@ the scanner clean, and a Content-Security-Policy that names nothing external
 because the content references nothing external.
 
 ```bash
-scrivet init
+quilzo init
 cp page.html site.css templates/
-scrivet type add product.json
-scrivet add index=index.json instruments=instruments.json \
+quilzo type add product.json
+quilzo add index=index.json instruments=instruments.json \
              calibration=calibration.json about=about.json contact=contact.json
 for p in index instruments calibration about contact; do
-  scrivet type bind $p product
+  quilzo type bind $p product
 done
-scrivet publish
-scrivet site --addr 127.0.0.1:8080
+quilzo publish
+quilzo site --addr 127.0.0.1:8080
 ```
 
 ## What it demonstrates
@@ -51,5 +51,5 @@ naming convention.
 
 It has no images, because a repository is a bad place to keep them and a
 made-up photograph would not show anything the field types do not already say.
-Add one with `scrivet media add photo.jpg --alt "..."` and the pipeline will
+Add one with `quilzo media add photo.jpg --alt "..."` and the pipeline will
 strip its metadata and resize it.

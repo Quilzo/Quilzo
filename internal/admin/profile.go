@@ -288,7 +288,7 @@ func presentedToken(r *http.Request) string {
 	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
 		return strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
 	}
-	if c, err := r.Cookie("scrivet_token"); err == nil {
+	if c, err := r.Cookie("quilzo_token"); err == nil {
 		return c.Value
 	}
 	return ""

@@ -251,7 +251,7 @@ func TestAPersonalChoiceOverridesTheConfiguredDefault(t *testing.T) {
 
 	r := httptest.NewRequest("GET", "http://h/logs", nil)
 	r.Header.Set("Authorization", "Bearer "+tok)
-	r.AddCookie(&http.Cookie{Name: "scrivet_nav", Value: "left"})
+	r.AddCookie(&http.Cookie{Name: "quilzo_nav", Value: "left"})
 	w := httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, r)
 	if !strings.Contains(w.Body.String(), "nav-left") {
@@ -276,7 +276,7 @@ func TestTheNavToggleIsGuarded(t *testing.T) {
 	s.Handler().ServeHTTP(w, httptest.NewRequest("POST", "http://h/nav",
 		strings.NewReader("to=left")))
 	for _, c := range w.Result().Cookies() {
-		if c.Name == "scrivet_nav" {
+		if c.Name == "quilzo_nav" {
 			t.Error("an unauthenticated request set the preference")
 		}
 	}

@@ -97,7 +97,7 @@ func LeafHash(e Event) ([]byte, error) {
 	h := sha256.New()
 	// Domain-separated and length-prefixed, so no pair of fields can be slid
 	// across the boundary to produce another pair's leaf.
-	h.Write([]byte("scrivet.audit.leaf.v1\n"))
+	h.Write([]byte("quilzo.audit.leaf.v1\n"))
 	writeField(h, want)
 	writeField(h, e.Hash)
 	writeField(h, e.Prev)

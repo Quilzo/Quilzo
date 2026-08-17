@@ -15,7 +15,7 @@ import (
 
 // Removing a page, which the interface could not do.
 //
-// The command line has had `scrivet add --remove NAME` since early on. The
+// The command line has had `quilzo add --remove NAME` since early on. The
 // browser had nothing — no button, no route, no way to get rid of a page that
 // should not be there. It went unnoticed because every test that checks the
 // interface covers the screens that exist, and a missing capability has no

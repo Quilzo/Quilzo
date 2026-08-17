@@ -276,7 +276,7 @@ func fullyWired(t *testing.T) (*Server, string) {
 		Pin:            func(string) (string, error) { return strings.Repeat("b", 64), nil },
 		Events:         func() ([]audit.Event, error) { return nil, nil },
 		Provider: func() (string, string, string, string, bool, bool) {
-			return "https://id.example.org", "scrivet",
+			return "https://id.example.org", "quilzo",
 				"https://cms.example.org/auth/callback", "email", true, true
 		},
 	}

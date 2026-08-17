@@ -264,7 +264,7 @@ func (s *Server) bundle() (map[string][]byte, error) {
 	if len(pages) > MaxBundlePages {
 		return nil, fmt.Errorf(
 			"%d pages is more than this screen renders in one request; use "+
-				"`scrivet ipfs` from a terminal, where nothing is waiting on a "+
+				"`quilzo ipfs` from a terminal, where nothing is waiting on a "+
 				"response", len(pages))
 	}
 

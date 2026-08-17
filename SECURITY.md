@@ -35,7 +35,7 @@ is false is a vulnerability even without a working exploit:
 - **Templates cannot execute.** Any input reaching `tmpl.Render` that causes
   code execution, unbounded resource use, or non-termination.
 - **The public process cannot read content it should not.** Any path by which
-  `scrivet site` reads a draft, a submission, a token, or a file outside the
+  `quilzo site` reads a draft, a submission, a token, or a file outside the
   media library.
 - **Stored content cannot become executable.** Any content field that reaches
   a browser unescaped without passing through `{% raw %}`.
@@ -45,7 +45,7 @@ is false is a vulnerability even without a working exploit:
 - **Tokens are scoped.** Any way a token performs an action outside its scope,
   or a principal's own grant.
 - **The store is append-only and verifiable.** Any way to alter stored content
-  such that `scrivet verify` still passes.
+  such that `quilzo verify` still passes.
 - **Nothing is executed from content.** Any way an extension, template, or
   imported document causes execution outside the sandbox.
 
@@ -57,7 +57,7 @@ it.
 ## What does not count
 
 - Findings against a deployment that has the admin interface on a public
-  interface. `scrivet serve` belongs on loopback behind your own authentication;
+  interface. `quilzo serve` belongs on loopback behind your own authentication;
   the README and the manual both say so.
 - Missing hardening headers on a response that carries no content.
 - Denial of service by sending very large or very many requests. Rate limiting
@@ -81,5 +81,5 @@ a report is most useful when it makes one of those tests fail. Relevant places:
 - `internal/tmpl` — the template language and its fuzz target
 - `internal/a11y`, `internal/codescan` — the scanners
 - `internal/auth` — roles, scopes, throttling
-- `cmd/scrivet/gate_test.go` — every write surface consults the type gate
+- `cmd/quilzo/gate_test.go` — every write surface consults the type gate
 - `internal/admin/roles_test.go` — every role can do its own job and no more

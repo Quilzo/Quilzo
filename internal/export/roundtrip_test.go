@@ -109,7 +109,7 @@ func TestAnArrayOfPagesStillTakesItsNamesFromTheContent(t *testing.T) {
 }
 
 // And the export's own sidecar must not be in the directory somebody will
-// glob. `scrivet import content/*.json` hit last-changed.json and failed on a
+// glob. `quilzo import content/*.json` hit last-changed.json and failed on a
 // file this tool wrote itself, which reads as the importer being broken.
 func TestTheContentDirectoryHoldsOnlyContent(t *testing.T) {
 	files, err := export.Export(export.JSON, export.Site{

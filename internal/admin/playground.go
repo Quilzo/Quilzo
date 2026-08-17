@@ -176,7 +176,7 @@ func playgroundHTML(nonce, who string, routes []Route) string {
 </style>
 </head><body>
 <main class="pg">
-<p class="hint"><a href="/">&larr; back to scrivet</a></p>
+<p class="hint"><a href="/">&larr; back to quilzo</a></p>
 <h1>API playground</h1>
 <p class="hint">Signed in as ` + html.EscapeString(who) + `. Requests go to this
 server, through the same middleware your own code will meet, using your session
@@ -266,7 +266,7 @@ server, through the same middleware your own code will meet, using your session
 
   $("curl").addEventListener("click", function () {
     var parts = ["curl -X " + method(),
-                 "-H 'Authorization: Bearer $SCRIVET_TOKEN'"];
+                 "-H 'Authorization: Bearer $QUILZO_TOKEN'"];
     if (ifmatch.value) { parts.push("-H 'If-Match: " + ifmatch.value + "'"); }
     if (!bodyrow.hidden) {
       parts.push("-H 'Content-Type: application/json'");
@@ -278,7 +278,7 @@ server, through the same middleware your own code will meet, using your session
     // Emitting a working credential into somebody's clipboard, and from there
     // into a terminal history and a support ticket, is how tokens leak.
     $("out").textContent = cmd;
-    $("status").textContent = "copied below — set SCRIVET_TOKEN yourself";
+    $("status").textContent = "copied below — set QUILZO_TOKEN yourself";
     $("status").className = "status";
   });
 }());

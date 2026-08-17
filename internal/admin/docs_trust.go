@@ -69,15 +69,15 @@ var chapterAdmin = chapter{
 					"at the first sign-in, so a misconfiguration is a server " +
 					"that refuses to start rather than a person staring at a " +
 					"button that does not work and no explanation."),
-				code("# scrivet-root/oidc.json\n" +
+				code("# quilzo-root/oidc.json\n" +
 					"{\n" +
 					"  \"issuer\": \"https://id.example.org\",\n" +
-					"  \"client_id\": \"scrivet\",\n" +
+					"  \"client_id\": \"quilzo\",\n" +
 					"  \"redirect_uri\": \"https://cms.example.org/auth/callback\",\n" +
 					"  \"claim\": \"email\",\n" +
 					"  \"require_verified_email\": true\n" +
 					"}"),
-				code("export SCRIVET_OIDC_SECRET=...   # never in the store"),
+				code("export QUILZO_OIDC_SECRET=...   # never in the store"),
 				warn("require_verified_email defaults to true and should stay " +
 					"true. An unverified address is a claim by whoever signed " +
 					"up, and mapping it to a principal lets them choose who to be."),

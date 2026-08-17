@@ -158,10 +158,10 @@ func TestGarbageOutputIsAnErrorRatherThanAPanic(t *testing.T) {
 // holds tokens and store paths, and an allow-list is a list somebody forgets
 // to update.
 func TestAnExtensionGetsNoEnvironment(t *testing.T) {
-	os.Setenv("SCRIVET_TOKEN", "scv_thismustnotleak")
-	defer os.Unsetenv("SCRIVET_TOKEN")
+	os.Setenv("QUILZO_TOKEN", "qlz_thismustnotleak")
+	defer os.Unsetenv("QUILZO_TOKEN")
 
-	m := script(t, `printf '{"note":"%s"}' "${SCRIVET_TOKEN:-empty}"`, Manifest{})
+	m := script(t, `printf '{"note":"%s"}' "${QUILZO_TOKEN:-empty}"`, Manifest{})
 	res := run(t, m, Request{Hook: OnValidate}, Limits{})
 	if res.Err != nil {
 		t.Fatal(res.Err)

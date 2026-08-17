@@ -230,10 +230,10 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			// 401 with no hint about whether the token exists. Distinguishing
 			// "no such token" from "wrong password" is how an enumeration
 			// oracle gets built by accident.
-			w.Header().Set("WWW-Authenticate", `Bearer realm="scrivet"`)
+			w.Header().Set("WWW-Authenticate", `Bearer realm="quilzo"`)
 			writeError(w, http.StatusUnauthorized, Error{
 				Error: "not authenticated",
-				Fix:   "send a token: Authorization: Bearer scv_...",
+				Fix:   "send a token: Authorization: Bearer qlz_...",
 			})
 			return
 		}
@@ -374,7 +374,7 @@ func (s *Server) authenticate(r *http.Request) (*auth.Token, error) {
 		if !s.SessionAuth || !sameOrigin(r) {
 			return nil, fmt.Errorf("no bearer token")
 		}
-		c, err := r.Cookie("scrivet_token")
+		c, err := r.Cookie("quilzo_token")
 		if err != nil || c.Value == "" {
 			return nil, fmt.Errorf("no bearer token")
 		}
@@ -449,7 +449,7 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	if commit == "" {
 		writeError(w, http.StatusServiceUnavailable, Error{
 			Error: "nothing is published",
-			Fix:   "scrivet publish"})
+			Fix:   "quilzo publish"})
 		return
 	}
 	// The listing's validator is the commit: if the site has not changed,
@@ -631,7 +631,7 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 			Error: "this API is read-only",
 			Detail: "a read API and a write API are different products with " +
 				"different blast radii, so writes are off unless turned on",
-			Fix: "scrivet serve --api-writable",
+			Fix: "quilzo serve --api-writable",
 		})
 		return
 	}
@@ -887,7 +887,7 @@ func (s *Server) index(w http.ResponseWriter) *vector.Index {
 			Error: "no vector index",
 			Detail: "this server was started without one, so there is nothing " +
 				"to compare against",
-			Fix: "scrivet site --vectors",
+			Fix: "quilzo site --vectors",
 		})
 		return nil
 	}

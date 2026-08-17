@@ -23,4 +23,4 @@ jobs:
       - name: Sandbox escapes, XSS contexts, termination, tamper detection
         run: go test -count=1 ./...
       - name: The image must build and stay static
-        run: docker build -t scrivet:ci .
+        run: docker build -t quilzo:ci .

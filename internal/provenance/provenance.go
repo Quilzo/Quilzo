@@ -7,7 +7,7 @@
 // 2026. Where an AI system generates content, the provider must apply a
 // machine-readable mark identifying it as artificially generated, and the
 // penalty for getting it wrong is up to EUR 15 million or 3% of worldwide
-// turnover. scrivet ships an assistant that writes pages, so this is not a
+// turnover. quilzo ships an assistant that writes pages, so this is not a
 // feature it would be nice to have — it is the condition for the assistant being
 // usable by anyone publishing into the EU.
 //

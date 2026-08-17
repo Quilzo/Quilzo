@@ -47,7 +47,7 @@ import (
 type Filter struct {
 	Name string
 	// Arg describes the argument, empty when the filter takes none. Shown by
-	// `scrivet template filters`.
+	// `quilzo template filters`.
 	Arg     string
 	Summary string
 	Apply   func(v any, arg string) (any, error)

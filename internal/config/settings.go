@@ -11,7 +11,7 @@ import (
 //
 // A table rather than scattered constants for the same reason the privilege
 // table is one: a knob nobody can find is a knob nobody can audit, and
-// `scrivet config list` has to be able to print all of them. Adding a setting
+// `quilzo config list` has to be able to print all of them. Adding a setting
 // anywhere else in the program is a setting that does not appear here, and a
 // test refuses that.
 //
@@ -248,7 +248,7 @@ var settings = []Setting{
 	{
 		Key: "site.name", Kind: Text, Default: "",
 		Summary: "what this site is called, for templates and for install",
-		Why: "It was a flag on `scrivet site` and nothing else, so it existed " +
+		Why: "It was a flag on `quilzo site` and nothing else, so it existed " +
 			"only inside the process serving the site. Everything else that " +
 			"renders a page — the accessibility gate, the preview, the static " +
 			"and IPFS exports — rendered it blank, which means each of them " +

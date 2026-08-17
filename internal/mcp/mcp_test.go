@@ -8,7 +8,7 @@ import (
 )
 
 func testServer() *Server {
-	s := NewServer("scrivet", "test")
+	s := NewServer("quilzo", "test")
 	s.Register(Operation{
 		Name: "list_pages", Summary: "list the pages in the draft",
 		Keywords: []string{"pages", "list", "content"},
@@ -85,7 +85,7 @@ func TestOnlyFourToolsAreEverPreloaded(t *testing.T) {
 func TestFindDescribesOnlyWhatWasAskedFor(t *testing.T) {
 	s := testServer()
 	out := text(t, call(t, s, "tools/call", callParams{
-		Name: "scrivet_find", Arguments: map[string]any{"query": "publish the site"}}))
+		Name: "quilzo_find", Arguments: map[string]any{"query": "publish the site"}}))
 
 	if !strings.Contains(out, "publish") {
 		t.Errorf("the matching operation is missing: %q", out)
@@ -99,7 +99,7 @@ func TestFindDescribesOnlyWhatWasAskedFor(t *testing.T) {
 func TestFindWithNoMatchReturnsTheMenu(t *testing.T) {
 	s := testServer()
 	out := text(t, call(t, s, "tools/call", callParams{
-		Name: "scrivet_find", Arguments: map[string]any{"query": "xyzzy"}}))
+		Name: "quilzo_find", Arguments: map[string]any{"query": "xyzzy"}}))
 
 	// An agent that searched badly should see what exists rather than a dead
 	// end it will guess around.
@@ -115,13 +115,13 @@ func TestFindWithNoMatchReturnsTheMenu(t *testing.T) {
 func TestAReadToolCannotReachAWriteOperation(t *testing.T) {
 	s := testServer()
 	r := call(t, s, "tools/call", callParams{
-		Name:      "scrivet_read",
+		Name:      "quilzo_read",
 		Arguments: map[string]any{"operation": "write_page"}})
 
 	if r.Error == nil {
 		t.Fatal("a write operation was reachable through the read tool")
 	}
-	if !strings.Contains(r.Error.Message, "scrivet_write") {
+	if !strings.Contains(r.Error.Message, "quilzo_write") {
 		t.Errorf("the error should name the right tool, got %q", r.Error.Message)
 	}
 }
@@ -129,7 +129,7 @@ func TestAReadToolCannotReachAWriteOperation(t *testing.T) {
 func TestAWriteToolCannotBeUsedForAReadOperation(t *testing.T) {
 	s := testServer()
 	r := call(t, s, "tools/call", callParams{
-		Name:      "scrivet_write",
+		Name:      "quilzo_write",
 		Arguments: map[string]any{"operation": "list_pages"}})
 	if r.Error == nil {
 		t.Error("a read operation should not be invoked through the write tool")
@@ -141,7 +141,7 @@ func TestAWriteToolCannotBeUsedForAReadOperation(t *testing.T) {
 func TestARefusalIsDistinguishableFromAFailure(t *testing.T) {
 	s := testServer()
 	r := call(t, s, "tools/call", callParams{
-		Name:      "scrivet_write",
+		Name:      "quilzo_write",
 		Arguments: map[string]any{"operation": "publish"}})
 
 	if r.Error == nil {
@@ -168,7 +168,7 @@ func TestAnInternalFailureIsNotDressedAsARefusal(t *testing.T) {
 		func(map[string]any) (any, error) { return nil, fmt.Errorf("disk on fire") })
 
 	r := call(t, s, "tools/call", callParams{
-		Name: "scrivet_write", Arguments: map[string]any{"operation": "broken"}})
+		Name: "quilzo_write", Arguments: map[string]any{"operation": "broken"}})
 	if r.Error.Code != CodeInternal {
 		t.Errorf("a genuine failure should be an internal error, got %d", r.Error.Code)
 	}
@@ -178,12 +178,12 @@ func TestUnknownOperationsAndToolsAreRefusedClearly(t *testing.T) {
 	s := testServer()
 
 	r := call(t, s, "tools/call", callParams{
-		Name: "scrivet_read", Arguments: map[string]any{"operation": "nonsense"}})
-	if r.Error == nil || !strings.Contains(r.Error.Message, "scrivet_find") {
+		Name: "quilzo_read", Arguments: map[string]any{"operation": "nonsense"}})
+	if r.Error == nil || !strings.Contains(r.Error.Message, "quilzo_find") {
 		t.Error("an unknown operation should point at how to discover the real ones")
 	}
 
-	r = call(t, s, "tools/call", callParams{Name: "scrivet_delete_everything"})
+	r = call(t, s, "tools/call", callParams{Name: "quilzo_delete_everything"})
 	if r.Error == nil || r.Error.Code != CodeMethodNotFound {
 		t.Error("an unknown tool should be a method-not-found")
 	}
@@ -199,7 +199,7 @@ func TestInitializeAnnouncesTheConstraints(t *testing.T) {
 	}
 	instructions, _ := m["instructions"].(string)
 	// The two things an agent must know before it writes anything.
-	if !strings.Contains(instructions, "scrivet_find") {
+	if !strings.Contains(instructions, "quilzo_find") {
 		t.Error("initialize should tell the agent to search first")
 	}
 	if !strings.Contains(strings.ToLower(instructions), "never publish") {

@@ -152,7 +152,7 @@ func (s *Server) navigation(r *http.Request, p principal, current string) []navG
 }
 
 // NavOrderCookie holds a person's chosen arrangement.
-const NavOrderCookie = "scrivet_nav_order"
+const NavOrderCookie = "quilzo_nav_order"
 
 // storedOrder reads the arrangement from the request.
 //

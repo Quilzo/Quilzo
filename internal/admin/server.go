@@ -9,7 +9,7 @@
 // app reimplements each one and usually gets at least one wrong — focus after
 // navigation, the back button, find-in-page across virtualised lists.
 //
-// The other reasons point the same way. scrivet is one static binary in a
+// The other reasons point the same way. quilzo is one static binary in a
 // scratch image with no dependencies; adding a JavaScript build would bring a
 // node toolchain, several hundred transitive packages, and a bundle larger than
 // the entire program. For a CMS whose argument is that nothing in it executes,
@@ -256,8 +256,8 @@ func (s *Server) refresh() {
 
 // New builds the server and parses the admin templates once.
 //
-// html/template rather than scrivet's own engine, and the distinction matters.
-// scrivet's language is deliberately powerless because *users* write in it and
+// html/template rather than quilzo's own engine, and the distinction matters.
+// quilzo's language is deliberately powerless because *users* write in it and
 // user templates are an injection surface. These templates are ours, shipped in
 // the binary, and never author-supplied — so the stdlib's contextual escaping is
 // exactly right and there is no surface to remove.
@@ -339,7 +339,7 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 	header := r.Header.Get("Authorization")
 	raw := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
 	if raw == "" {
-		if c, err := r.Cookie("scrivet_token"); err == nil {
+		if c, err := r.Cookie("quilzo_token"); err == nil {
 			raw = c.Value
 		}
 	}
@@ -768,7 +768,7 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	// and nobody can sign in at all — which is how a security attribute gets
 	// removed permanently by whoever is trying to get their work done.
 	http.SetCookie(w, &http.Cookie{
-		Name: "scrivet_token", Value: raw, Path: "/",
+		Name: "quilzo_token", Value: raw, Path: "/",
 		HttpOnly: true,                    // unreadable by script; there is none, but the header outlives that
 		SameSite: http.SameSiteStrictMode, // the primary CSRF defence
 		Secure:   r.TLS != nil,
@@ -779,7 +779,7 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
-		Name: "scrivet_token", Value: "", Path: "/", MaxAge: -1,
+		Name: "quilzo_token", Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
 	})
 	http.Redirect(w, r, "/signin", http.StatusSeeOther)

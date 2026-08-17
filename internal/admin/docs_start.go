@@ -75,26 +75,26 @@ var chapterStart = chapter{
 					"the access policy and the credentials, and it is the only " +
 					"state this program has — back it up and you have backed up " +
 					"everything."),
-				code("scrivet init"),
+				code("quilzo init"),
 				sub("2. Grant the first administrator"),
 				p("Access is granted before any credential exists. That ordering " +
 					"is deliberate: the policy names who may do what, and a " +
 					"token is only ever a way to prove you are one of those " +
 					"people. Issuing a credential for somebody the policy has " +
 					"never heard of gets you a credential that can do nothing."),
-				code("scrivet auth grant dana admin"),
+				code("quilzo auth grant dana admin"),
 				sub("3. Issue a credential"),
 				p("The secret is shown once and only a hash is stored, so it " +
 					"cannot be recovered — losing it means issuing another and " +
 					"revoking the first, which takes ten seconds and is the " +
 					"correct outcome."),
-				code("scrivet token issue laptop --principal dana --role admin"),
+				code("quilzo token issue laptop --principal dana --role admin"),
 				sub("4. Start the interface"),
 				p("Loopback by default. An editing interface that binds every " +
 					"network interface the moment somebody runs it is how a " +
 					"development server ends up on the internet, so widening it " +
 					"has to be a decision somebody typed."),
-				code("scrivet serve --addr 127.0.0.1:8080"),
+				code("quilzo serve --addr 127.0.0.1:8080"),
 				shot("signin", "The sign-in screen. One field, and an "+
 					"explanation of why there is no second one."),
 				p("Open it, paste the token, and you are signed in. There is no " +
@@ -137,7 +137,7 @@ var chapterStart = chapter{
 				shot("publishing", "Publishing: each environment, what it is "+
 					"serving, and what is waiting to go out."),
 				sub("9. Serve it"),
-				code("scrivet site --addr 0.0.0.0:8081 --base-url https://example.org"),
+				code("quilzo site --addr 0.0.0.0:8081 --base-url https://example.org"),
 				p("Two processes rather than one. The public site serves " +
 					"published content and has no editing surface at all, so " +
 					"the part of the system exposed to the internet cannot write " +

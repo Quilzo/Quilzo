@@ -76,7 +76,7 @@ var chapterRelease = chapter{
 					"makes the entry stale, and a stale entry is reported rather " +
 					"than fired. Every gate runs at publication, against the " +
 					"content as it stands then."),
-				code("scrivet schedule run   # from cron, systemd, or a CronJob"),
+				code("quilzo schedule run   # from cron, systemd, or a CronJob"),
 				note("There is no scheduler daemon. A long-lived process that " +
 					"fires timers is a second thing that can be down, and every " +
 					"system this runs on already has something that runs a " +
@@ -258,12 +258,12 @@ var chapterInterfaces = chapter{
 					"they are the same code path rather than two implementations " +
 					"that agree. Where this manual names a command beside a " +
 					"screen, that is what it means."),
-				code("scrivet help          # every command\n" +
-					"scrivet <command> -h  # one command\n" +
-					"scrivet --json ...    # machine-readable output"),
+				code("quilzo help          # every command\n" +
+					"quilzo <command> -h  # one command\n" +
+					"quilzo --json ...    # machine-readable output"),
 				sub("Authenticating"),
-				p("A token, from --token, from SCRIVET_TOKEN, or from a file at " +
-					"~/.scrivet/token. Reads need one too, once a store has " +
+				p("A token, from --token, from QUILZO_TOKEN, or from a file at " +
+					"~/.quilzo/token. Reads need one too, once a store has " +
 					"access control configured: a store where anybody who can " +
 					"reach the directory can read every draft is not access " +
 					"control."),
@@ -280,8 +280,8 @@ var chapterInterfaces = chapter{
 			Title:   "The machine interface",
 			Summary: "What an agent can do here, and the larger list of what it cannot.",
 			Body: []block{
-				code("scrivet mcp --list          # the operations\n" +
-					"scrivet mcp --token scv_...  # speak MCP on stdin"),
+				code("quilzo mcp --list          # the operations\n" +
+					"quilzo mcp --token qlz_...  # speak MCP on stdin"),
 				p("Operations are data rather than tools, so none of their " +
 					"descriptions enter a context window until an agent searches " +
 					"for one. Nineteen operations sit behind four tools."),

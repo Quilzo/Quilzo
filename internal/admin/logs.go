@@ -199,7 +199,7 @@ func (s *Server) handleNav(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: "scrivet_nav", Value: to, Path: "/",
+		Name: "quilzo_nav", Value: to, Path: "/",
 		MaxAge: 365 * 24 * 3600, HttpOnly: true,
 		SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
 	})
@@ -219,7 +219,7 @@ func (s *Server) handleNav(w http.ResponseWriter, r *http.Request) {
 // navFor resolves the position for one request: the person's choice, else the
 // store's configured default, else top.
 func (s *Server) navFor(r *http.Request) string {
-	if c, err := r.Cookie("scrivet_nav"); err == nil {
+	if c, err := r.Cookie("quilzo_nav"); err == nil {
 		if c.Value == "top" || c.Value == "left" {
 			return c.Value
 		}

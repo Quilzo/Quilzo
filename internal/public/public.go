@@ -1,6 +1,6 @@
 // Package public serves the published site.
 //
-// Until now scrivet could store, review, mark and publish content and then not
+// Until now quilzo could store, review, mark and publish content and then not
 // show it to anybody. `serve` was the admin. This is the half that makes it a
 // website rather than a filing system.
 //
@@ -131,7 +131,7 @@ type Site struct {
 
 // New returns a Site with sensible defaults.
 func New(s *store.Store, template string) *Site {
-	return &Site{Store: s, Template: template, Index: "index", Name: "scrivet site"}
+	return &Site{Store: s, Template: template, Index: "index", Name: "quilzo site"}
 }
 
 // Handler routes the public surface.
@@ -643,7 +643,7 @@ func (st *Site) manifest(w http.ResponseWriter, r *http.Request) {
 // serviceWorker caches published pages so the site survives losing the network.
 //
 // Deliberately small and deliberately conservative. A service worker is the one
-// piece of script a scrivet site ships, and a caching bug in one is uniquely
+// piece of script a quilzo site ships, and a caching bug in one is uniquely
 // unpleasant: it persists across reloads and serves stale content to somebody
 // who cannot work out why. So it is network-first — the network wins whenever it
 // answers, and the cache is only consulted when it does not.
@@ -652,9 +652,9 @@ func (st *Site) manifest(w http.ResponseWriter, r *http.Request) {
 // CMS: publishing must take effect immediately, and a stale page is a worse
 // failure than a slow one.
 func (st *Site) serviceWorker(w http.ResponseWriter, r *http.Request) {
-	js := `// scrivet service worker. Network-first: publishing must take effect at once,
+	js := `// quilzo service worker. Network-first: publishing must take effect at once,
 // and a stale page is worse than a slow one.
-const CACHE = 'scrivet-v1';
+const CACHE = 'quilzo-v1';
 const OFFLINE = '/offline';
 
 self.addEventListener('install', (e) => {

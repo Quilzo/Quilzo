@@ -49,14 +49,14 @@ jobs:
 
       - name: Bill of materials, from the binary
         run: |
-          ./bin/scrivet compliance sbom bin/scrivet.cdx.json
-          ./bin/scrivet compliance crypto --json > bin/scrivet.crypto.json
+          ./bin/quilzo compliance sbom bin/quilzo.cdx.json
+          ./bin/quilzo compliance crypto --json > bin/quilzo.crypto.json
 
       - name: Refuse to ship a modified build
         run: |
           # A build from uncommitted changes describes source nobody else can
           # obtain, and an SBOM for it names a revision that does not exist.
-          if grep -q '+modified' bin/scrivet.cdx.json; then
+          if grep -q '+modified' bin/quilzo.cdx.json; then
             echo "the working tree was dirty; this SBOM describes source nobody can fetch"
             exit 1
           fi
@@ -66,38 +66,38 @@ jobs:
           # The zero-dependency property is what makes the CRA obligations here
           # cheap. If it ever stops being true that should be a deliberate
           # decision, not something discovered during an incident.
-          count=$(./bin/scrivet --json compliance summary | \
+          count=$(./bin/quilzo --json compliance summary | \
             python3 -c "import json,sys; print(json.load(sys.stdin)['third_party_components'])")
           echo "third-party components: $count"
           test "$count" -eq 0
 
       - name: Checksums
-        run: cd bin && sha256sum scrivet scrivet-* scrivet.cdx.json scrivet.crypto.json > SHA256SUMS
+        run: cd bin && sha256sum quilzo quilzo-* quilzo.cdx.json quilzo.crypto.json > SHA256SUMS
 
       - name: Attest the artefacts
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
-            bin/scrivet
-            bin/scrivet-*
-            bin/scrivet.cdx.json
+            bin/quilzo
+            bin/quilzo-*
+            bin/quilzo.cdx.json
 
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            bin/scrivet
-            bin/scrivet-linux-amd64
-            bin/scrivet-linux-arm64
-            bin/scrivet-darwin-amd64
-            bin/scrivet-darwin-arm64
-            bin/scrivet.cdx.json
-            bin/scrivet.crypto.json
+            bin/quilzo
+            bin/quilzo-linux-amd64
+            bin/quilzo-linux-arm64
+            bin/quilzo-darwin-amd64
+            bin/quilzo-darwin-arm64
+            bin/quilzo.cdx.json
+            bin/quilzo.crypto.json
             bin/SHA256SUMS
           body: |
             Every artefact here carries its SHA-256 in `SHA256SUMS`, and the
             bill of materials was produced by this binary rather than from the
             source tree — so it describes what is in the file you downloaded.
 
-            `scrivet.cdx.json` is CycloneDX 1.6.
-            `scrivet.crypto.json` is the cryptographic inventory, including
+            `quilzo.cdx.json` is CycloneDX 1.6.
+            `quilzo.crypto.json` is the cryptographic inventory, including
             post-quantum status.

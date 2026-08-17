@@ -111,12 +111,12 @@ var rules = []Rule{
 		Fix: "remove it and rotate the key; it is in the published history for good",
 	},
 	{
-		ID: "secret.scrivet-token", Severity: Critical,
-		Pattern:  regexp.MustCompile(`\bscv_[a-z0-9]{40,}\b`),
+		ID: "secret.quilzo-token", Severity: Critical,
+		Pattern:  regexp.MustCompile(`\bqlz_[a-z0-9]{40,}\b`),
 		Controls: []string{"IA-5"},
-		Detail: "a scrivet token. Tokens are shown once and stored as a hash " +
+		Detail: "a quilzo token. Tokens are shown once and stored as a hash " +
 			"precisely so they do not end up in files",
-		Fix: "scrivet token revoke <id>, then issue a new one",
+		Fix: "quilzo token revoke <id>, then issue a new one",
 	},
 	{
 		ID: "secret.cloud-key", Severity: Critical,
@@ -177,5 +177,5 @@ var rules = []Rule{
 	},
 }
 
-// Rules returns every rule, for `scrivet scan --rules`.
+// Rules returns every rule, for `quilzo scan --rules`.
 func Rules() []Rule { return append([]Rule(nil), rules...) }

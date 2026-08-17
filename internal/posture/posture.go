@@ -318,7 +318,7 @@ func Scan(s State, suppressions []Suppression) Report {
 				Resource: sp.ID,
 				Detail: fmt.Sprintf("%q was suppressed by %s until %s; that has passed",
 					sp.ID, sp.By, time.Unix(sp.Until, 0).UTC().Format("2006-01-02")),
-				Fix:      "scrivet posture suppress " + sp.ID + " --days 90 --reason ...",
+				Fix:      "quilzo posture suppress " + sp.ID + " --days 90 --reason ...",
 				Controls: []string{"CA-5", "RA-5"},
 			}
 			rep.Findings = append(rep.Findings, f)

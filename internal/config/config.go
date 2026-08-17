@@ -132,7 +132,7 @@ func Parse(body []byte) (*Config, error) {
 		if !ok {
 			return nil, fmt.Errorf(
 				"%q is not a setting this version knows about. Remove it, or "+
-					"check `scrivet config list` for the current name", key)
+					"check `quilzo config list` for the current name", key)
 		}
 		if err := s.Validate(v); err != nil {
 			return nil, fmt.Errorf("%s: %w", key, err)
@@ -232,9 +232,9 @@ func (e *ErrNeedsAcceptance) Error() string {
 	return fmt.Sprintf(
 		"%s = %s gives up security: %s\n"+
 			"  This is allowed. It needs a reason, which is recorded in the "+
-			"audit log and reported by `scrivet posture scan` until it is "+
+			"audit log and reported by `quilzo posture scan` until it is "+
 			"changed back or renewed:\n"+
-			"    scrivet config set %s %s --accept-risk \"why this is right here\"",
+			"    quilzo config set %s %s --accept-risk \"why this is right here\"",
 		e.Key, e.Value, e.Why, e.Key, e.Value)
 }
 
@@ -247,7 +247,7 @@ func (e *ErrNeedsAcceptance) Error() string {
 func (c *Config) Set(key, value, reason, by string) error {
 	s, ok := Lookup(key)
 	if !ok {
-		return fmt.Errorf("%q is not a setting; `scrivet config list` shows "+
+		return fmt.Errorf("%q is not a setting; `quilzo config list` shows "+
 			"every one", key)
 	}
 	if err := s.Validate(value); err != nil {

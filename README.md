@@ -8,13 +8,13 @@ a pointer, and the template language cannot execute anything.
 [![dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen)](go.mod)
 
 ```bash
-scrivet init          # a store in the current directory
-scrivet demo          # install a complete example application
-scrivet site          # serve it on 127.0.0.1:8081
-scrivet serve         # the admin interface on 127.0.0.1:8080
+quilzo init          # a store in the current directory
+quilzo demo          # install a complete example application
+quilzo site          # serve it on 127.0.0.1:8081
+quilzo serve         # the admin interface on 127.0.0.1:8080
 ```
 
-The command is `scrivet` — the project's working name, kept as the binary the
+The command is `quilzo` — the project's working name, kept as the binary the
 way Chromium ships `chrome`. Everywhere you see it in a command or an import,
 that is deliberate.
 
@@ -106,7 +106,7 @@ Drupal's CVE-2026-9082 depended on.
 derived from it, not a proxy for it. Different content is a different hash, so a
 conditional request answers itself and nothing has to be purged on publish.
 
-**Integrity is checkable.** `scrivet verify` recomputes every hash. A store that
+**Integrity is checkable.** `quilzo verify` recomputes every hash. A store that
 has been tampered with does not verify, and the check does not depend on a log
 that the tamperer could also edit.
 
@@ -141,8 +141,8 @@ not a hope.
 ## The two processes
 
 ```
-scrivet serve   the admin      loopback, behind your own auth
-scrivet site    the website    the thing you point the internet at
+quilzo serve   the admin      loopback, behind your own auth
+quilzo site    the website    the thing you point the internet at
 ```
 
 Separate binaries-in-one, separate ports, separate exposure. The public process
@@ -203,14 +203,14 @@ covering anything that changes who may do what, what code runs, or what the keys
 are.
 
 **Decentralised publication.** Content-addressed storage maps onto IPFS
-naturally: `scrivet ipfs` computes CIDv1 identifiers and produces a bundle that
+naturally: `quilzo ipfs` computes CIDv1 identifiers and produces a bundle that
 pins as-is. Zero dependencies here too — the DAG-PB and CID encoding is about
 four hundred lines, verified against published identifiers and an independent
 reimplementation.
 
 ## The demonstration
 
-`scrivet demo` installs **Gram**: a photo-sharing site with a feed over
+`quilzo demo` installs **Gram**: a photo-sharing site with a feed over
 structured records, an explore page with a working filter, profiles under a
 content type, stories carrying publish windows, and a message box.
 
@@ -271,12 +271,12 @@ You need Go 1.24 or later. There are no dependencies to fetch.
 ```bash
 git clone https://github.com/quilzo/quilzo
 cd quilzo
-go build -o scrivet ./cmd/scrivet
-# or: make build   →  bin/scrivet, stripped and version-stamped (see Makefile)
+go build -o quilzo ./cmd/quilzo
+# or: make build   →  bin/quilzo, stripped and version-stamped (see Makefile)
 
-export PATH="$PWD:$PATH"   # so the `scrivet` commands below just work
+export PATH="$PWD:$PATH"   # so the `quilzo` commands below just work
 mkdir mysite && cd mysite
-scrivet init
+quilzo init
 ```
 
 ### Getting a token
@@ -286,35 +286,35 @@ say so, so there is no state in which a fresh install is reachable with a
 credential somebody already knows.
 
 ```bash
-scrivet auth grant you admin                            # "you" is any name
-scrivet token issue laptop --principal you --role admin # shown once
-export SCRIVET_TOKEN=scv_…
+quilzo auth grant you admin                            # "you" is any name
+quilzo token issue laptop --principal you --role admin # shown once
+export QUILZO_TOKEN=qlz_…
 ```
 
 A token can carry **less** authority than the person holding it and never more:
 `--role reader` on an admin's token makes a read-only credential, `--read-only`
 refuses every write whatever the role, `--on /blog` scopes it to a path, and
-`--ttl 24h` expires it. `scrivet token revoke ID` takes effect on the next use,
+`--ttl 24h` expires it. `quilzo token revoke ID` takes effect on the next use,
 not at the next restart.
 
 ### Then either
 
 ```bash
-scrivet demo                              # a whole example application
+quilzo demo                              # a whole example application
 # or
-scrivet template use landing
-scrivet add index=index.json -m "first page"
-scrivet publish
+quilzo template use landing
+quilzo add index=index.json -m "first page"
+quilzo publish
 ```
 
 ### And run it
 
 ```bash
-scrivet serve --addr 127.0.0.1:8080                                    # admin
-scrivet site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
+quilzo serve --addr 127.0.0.1:8080                                    # admin
+quilzo site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
 ```
 
-`scrivet help` lists all 92 commands. The admin carries a manual with
+`quilzo help` lists all 92 commands. The admin carries a manual with
 screenshots at `/docs`, and every screen's Help link points at its own section.
 
 ## Deployment
@@ -329,8 +329,8 @@ process on the interface facing the internet. They share a store directory and
 nothing else.
 
 ```bash
-docker build -t scrivet .
-docker run --rm -p 8081:8081 -v "$PWD/store:/store" scrivet \
+docker build -t quilzo .
+docker run --rm -p 8081:8081 -v "$PWD/store:/store" quilzo \
   site --addr 0.0.0.0:8081 --base-url https://example.org
 ```
 

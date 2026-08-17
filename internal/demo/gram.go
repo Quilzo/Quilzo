@@ -309,7 +309,7 @@ func (s *Site) addScreens() {
 const aboutBody = `<h2>What this is</h2>
 <p>Gram is a demonstration. Eight photographs, four people, a feed, an explore
 page with a real filter, stories that take themselves down, and a message box.
-Everything you can see was built through the Scrivet admin interface — no
+Everything you can see was built through the Quilzo admin interface — no
 configuration files were edited, and no code was written for it beyond one HTML
 template and one stylesheet.</p>
 

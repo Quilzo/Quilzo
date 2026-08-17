@@ -83,7 +83,7 @@ func (o Options) withDefaults() Options {
 		o.Vendor = "rsh1k"
 	}
 	if o.Product == "" {
-		o.Product = "scrivet"
+		o.Product = "quilzo"
 	}
 	if o.Version == "" {
 		o.Version = "1"

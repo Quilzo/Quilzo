@@ -1,12 +1,12 @@
 # Build output
 bin/
-scrivet
+quilzo
 *.exe
 
-# A store, which is data and not source. `scrivet init` makes one in the
+# A store, which is data and not source. `quilzo init` makes one in the
 # working directory, so this is the file every contributor would otherwise
 # commit on their first run.
-.scrivet/
+.quilzo/
 
 # What a running site writes beside its store.
 templates/

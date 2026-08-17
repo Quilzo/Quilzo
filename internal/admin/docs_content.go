@@ -381,7 +381,7 @@ var chapterContent = chapter{
 					"code execution, because the language cannot execute, but " +
 					"is close enough to it that the blast radius stops matching " +
 					"the permission. Templates are files an operator deploys, " +
-					"and `scrivet audit` checks them before they go."),
+					"and `quilzo audit` checks them before they go."),
 				sub("Escaping"),
 				p("Output is escaped by context — inside an attribute, inside a " +
 					"URL, inside text — and there is no way to turn it off. A " +
@@ -429,7 +429,7 @@ var chapterContent = chapter{
 					"gateway, a hosted provider. Which one is a decision about " +
 					"where this site's content is allowed to go, so it is " +
 					"configuration rather than a default, set with " +
-					"SCRIVET_MODEL_URL and SCRIVET_MODEL_KEY. No model configured " +
+					"QUILZO_MODEL_URL and QUILZO_MODEL_KEY. No model configured " +
 					"is a complete configuration and the screen says so."),
 				sub("The mark"),
 				p("Accepted pages are recorded as model-generated. EU AI Act " +

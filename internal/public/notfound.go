@@ -41,14 +41,14 @@ func (st *Site) notFound(w http.ResponseWriter, r *http.Request) {
 <title>Page not found — %s</title>
 %s
 <style>
-  .scrivet-404 { max-width: 40rem; margin: 12vh auto; padding: 0 1.5rem;
+  .quilzo-404 { max-width: 40rem; margin: 12vh auto; padding: 0 1.5rem;
     font-family: system-ui, sans-serif; line-height: 1.6; }
-  .scrivet-404 h1 { font-size: 2rem; margin: 0 0 .5rem; }
-  .scrivet-404 p { margin: 0 0 1rem; }
+  .quilzo-404 h1 { font-size: 2rem; margin: 0 0 .5rem; }
+  .quilzo-404 p { margin: 0 0 1rem; }
 </style>
 </head>
 <body>
-<main class="scrivet-404">
+<main class="quilzo-404">
   <h1>Page not found</h1>
   <p>There is nothing at this address on %s. It may have been moved or
      removed.</p>

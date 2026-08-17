@@ -99,7 +99,7 @@ func TestTheCurlHelperDoesNotEmitTheSessionCredential(t *testing.T) {
 	if strings.Contains(body, "document.cookie") {
 		t.Error("the script reads the session cookie")
 	}
-	if !strings.Contains(body, "$SCRIVET_TOKEN") {
+	if !strings.Contains(body, "$QUILZO_TOKEN") {
 		t.Error("the curl helper does not use a placeholder for the token")
 	}
 }

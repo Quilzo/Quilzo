@@ -184,7 +184,7 @@ type Client struct {
 // New returns a Client with the defaults.
 func New() *Client {
 	return &Client{Limits: Limits{}.withDefaults(),
-		UserAgent: "scrivet/1 (+content import)"}
+		UserAgent: "quilzo/1 (+content import)"}
 }
 
 // ValidateURL checks a URL before anything is dialled.
