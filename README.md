@@ -266,8 +266,15 @@ OIDC discovery walk.
 
 ## Getting started
 
+You need Go 1.24 or later. There are no dependencies to fetch.
+
 ```bash
-go build -o scrivet ./cmd/scrivet     # Go 1.24+, nothing to fetch
+git clone https://github.com/quilzo/quilzo
+cd quilzo
+go build -o scrivet ./cmd/scrivet
+# or: make build   →  bin/scrivet, stripped and version-stamped (see Makefile)
+
+export PATH="$PWD:$PATH"   # so the `scrivet` commands below just work
 mkdir mysite && cd mysite
 scrivet init
 ```
