@@ -1,0 +1,4223 @@
+diff --git a/.github/ISSUE_TEMPLATE/bug.yml b/.github/ISSUE_TEMPLATE/bug.yml
+index 41b8447..b97b695 100644
+--- a/.github/ISSUE_TEMPLATE/bug.yml
++++ b/.github/ISSUE_TEMPLATE/bug.yml
+@@ -19,7 +19,7 @@ body:
+     attributes:
+       label: How to reproduce
+       description: >
+-        Commands from `scrivet init` onwards, if you can. A reproduction that
++        Commands from `quilzo init` onwards, if you can. A reproduction that
+         starts from an empty store is the most useful kind — a whole class of
+         bugs in this project has been things that only happen on a fresh
+         install.
+@@ -29,7 +29,7 @@ body:
+     id: version
+     attributes:
+       label: Version
+-      description: Output of `scrivet version`, or the commit.
++      description: Output of `quilzo version`, or the commit.
+     validations: {required: true}
+   - type: input
+     id: platform
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index a6c58b3..ec1159c 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -23,4 +23,4 @@ jobs:
+       - name: Sandbox escapes, XSS contexts, termination, tamper detection
+         run: go test -count=1 ./...
+       - name: The image must build and stay static
+-        run: docker build -t scrivet:ci .
++        run: docker build -t quilzo:ci .
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 95d5ec8..d026fdb 100644
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -49,14 +49,14 @@ jobs:
+ 
+       - name: Bill of materials, from the binary
+         run: |
+-          ./bin/scrivet compliance sbom bin/scrivet.cdx.json
+-          ./bin/scrivet compliance crypto --json > bin/scrivet.crypto.json
++          ./bin/quilzo compliance sbom bin/quilzo.cdx.json
++          ./bin/quilzo compliance crypto --json > bin/quilzo.crypto.json
+ 
+       - name: Refuse to ship a modified build
+         run: |
+           # A build from uncommitted changes describes source nobody else can
+           # obtain, and an SBOM for it names a revision that does not exist.
+-          if grep -q '+modified' bin/scrivet.cdx.json; then
++          if grep -q '+modified' bin/quilzo.cdx.json; then
+             echo "the working tree was dirty; this SBOM describes source nobody can fetch"
+             exit 1
+           fi
+@@ -66,38 +66,38 @@ jobs:
+           # The zero-dependency property is what makes the CRA obligations here
+           # cheap. If it ever stops being true that should be a deliberate
+           # decision, not something discovered during an incident.
+-          count=$(./bin/scrivet --json compliance summary | \
++          count=$(./bin/quilzo --json compliance summary | \
+             python3 -c "import json,sys; print(json.load(sys.stdin)['third_party_components'])")
+           echo "third-party components: $count"
+           test "$count" -eq 0
+ 
+       - name: Checksums
+-        run: cd bin && sha256sum scrivet scrivet-* scrivet.cdx.json scrivet.crypto.json > SHA256SUMS
++        run: cd bin && sha256sum quilzo quilzo-* quilzo.cdx.json quilzo.crypto.json > SHA256SUMS
+ 
+       - name: Attest the artefacts
+         uses: actions/attest-build-provenance@v2
+         with:
+           subject-path: |
+-            bin/scrivet
+-            bin/scrivet-*
+-            bin/scrivet.cdx.json
++            bin/quilzo
++            bin/quilzo-*
++            bin/quilzo.cdx.json
+ 
+       - uses: softprops/action-gh-release@v2
+         with:
+           files: |
+-            bin/scrivet
+-            bin/scrivet-linux-amd64
+-            bin/scrivet-linux-arm64
+-            bin/scrivet-darwin-amd64
+-            bin/scrivet-darwin-arm64
+-            bin/scrivet.cdx.json
+-            bin/scrivet.crypto.json
++            bin/quilzo
++            bin/quilzo-linux-amd64
++            bin/quilzo-linux-arm64
++            bin/quilzo-darwin-amd64
++            bin/quilzo-darwin-arm64
++            bin/quilzo.cdx.json
++            bin/quilzo.crypto.json
+             bin/SHA256SUMS
+           body: |
+             Every artefact here carries its SHA-256 in `SHA256SUMS`, and the
+             bill of materials was produced by this binary rather than from the
+             source tree — so it describes what is in the file you downloaded.
+ 
+-            `scrivet.cdx.json` is CycloneDX 1.6.
+-            `scrivet.crypto.json` is the cryptographic inventory, including
++            `quilzo.cdx.json` is CycloneDX 1.6.
++            `quilzo.crypto.json` is the cryptographic inventory, including
+             post-quantum status.
+diff --git a/.gitignore b/.gitignore
+index 59b462c..7fd6d2b 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,12 +1,12 @@
+ # Build output
+ bin/
+-scrivet
++quilzo
+ *.exe
+ 
+-# A store, which is data and not source. `scrivet init` makes one in the
++# A store, which is data and not source. `quilzo init` makes one in the
+ # working directory, so this is the file every contributor would otherwise
+ # commit on their first run.
+-.scrivet/
++.quilzo/
+ 
+ # What a running site writes beside its store.
+ templates/
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 2aae996..bbe2bdc 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -6,9 +6,9 @@ short.
+ 
+ ## The name, so it does not confuse you
+ 
+-The project is **Quilzo**. The command is **`scrivet`**, which was the
++The project is **Quilzo**. The command is **`quilzo`**, which was the
+ working name and stayed as the binary — the same way Chromium ships `chrome`.
+-Anywhere you see `scrivet` in a command, a path, or a Go import, that is
++Anywhere you see `quilzo` in a command, a path, or a Go import, that is
+ deliberate and not a leftover.
+ 
+ ## Try it first, in about two minutes
+@@ -18,14 +18,14 @@ You need Go 1.24 or later and nothing else. There are no dependencies to fetch.
+ ```bash
+ git clone https://github.com/quilzo/quilzo   # or your fork
+ cd quilzo
+-go build -o scrivet ./cmd/scrivet
++go build -o quilzo ./cmd/quilzo
+ 
+ mkdir /tmp/try && cd /tmp/try
+-../scrivet init      # wherever you put the binary
+-../scrivet demo      # a complete example application
++../quilzo init      # wherever you put the binary
++../quilzo demo      # a complete example application
+ ```
+ 
+-`scrivet demo` installs Gram — a photo-sharing site with a feed over structured
++`quilzo demo` installs Gram — a photo-sharing site with a feed over structured
+ records, an explore page with a working filter, profiles under a content type,
+ stories that stop being served on a date, and a message box.
+ 
+@@ -38,21 +38,21 @@ reachable with a known credential.
+ Two commands. The order matters, and the token is shown once:
+ 
+ ```bash
+-../scrivet auth grant you admin          # "you" is any name you like
+-../scrivet token issue laptop --principal you --role admin
++../quilzo auth grant you admin          # "you" is any name you like
++../quilzo token issue laptop --principal you --role admin
+ ```
+ 
+-That prints a secret starting `scv_`. Put it in the environment:
++That prints a secret starting `qlz_`. Put it in the environment:
+ 
+ ```bash
+-export SCRIVET_TOKEN=scv_…
++export QUILZO_TOKEN=qlz_…
+ ```
+ 
+ Then start both processes:
+ 
+ ```bash
+-../scrivet serve --addr 127.0.0.1:8080                                # admin
+-../scrivet site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
++../quilzo serve --addr 127.0.0.1:8080                                # admin
++../quilzo site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
+ ```
+ 
+ Open `http://127.0.0.1:8080` for the admin and `http://127.0.0.1:8081` for the
+@@ -66,12 +66,12 @@ Things worth trying, because they are the parts that are hard to believe:
+ | `/explore?topic=travel` on the site | A declared query with a typed parameter, filtered per request |
+ | `/stories/sol-rooftop` | 404s until September — the window is checked when the page is asked for, not by a job |
+ | Remove a page the menu points at | Refused, naming the menu entry |
+-| `scrivet verify` | Every object re-hashed against the id it is filed under |
+-| `scrivet rollback` | Instant, because it is a pointer move |
++| `quilzo verify` | Every object re-hashed against the id it is filed under |
++| `quilzo rollback` | Instant, because it is a pointer move |
+ 
+ Token notes: `--role` may be narrower than the principal (a token can carry less
+ than the person holding it, never more), `--read-only` refuses every write
+-whatever the role, `--ttl` sets expiry, and `scrivet token revoke ID` kills one
++whatever the role, `--ttl` sets expiry, and `quilzo token revoke ID` kills one
+ immediately — revocation is checked on use, not only at issue.
+ 
+ ## Building and testing
+diff --git a/Dockerfile b/Dockerfile
+index 0080963..c9849c7 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -6,16 +6,16 @@
+ FROM golang:1.24-bookworm AS build
+ WORKDIR /src
+ COPY . .
+-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/scrivet ./cmd/scrivet
++RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/quilzo ./cmd/quilzo
+ 
+ # Run.
+ FROM gcr.io/distroless/static-debian12:nonroot
+-COPY --from=build /out/scrivet /usr/local/bin/scrivet
++COPY --from=build /out/quilzo /usr/local/bin/quilzo
+ # nonroot is uid 65532. The store is a volume so content survives the
+ # container, which is the whole point of a content store.
+ USER nonroot:nonroot
+ WORKDIR /srv
+ VOLUME /srv/store
+ EXPOSE 8080 8081
+-ENTRYPOINT ["/usr/local/bin/scrivet"]
++ENTRYPOINT ["/usr/local/bin/quilzo"]
+ CMD ["--root", "/srv/store", "serve", "--addr", "0.0.0.0:8080"]
+diff --git a/Makefile b/Makefile
+index 90d0cde..cf79cf9 100644
+--- a/Makefile
++++ b/Makefile
+@@ -22,8 +22,8 @@ test:
+ 	$(GO) test -count=1 ./...
+ 
+ build:
+-	$(GO) build -trimpath -ldflags="-s -w -X main.version=$(VERSION)" -o bin/scrivet ./cmd/scrivet
+-	@echo "binary: $$(du -h bin/scrivet | cut -f1)"
++	$(GO) build -trimpath -ldflags="-s -w -X main.version=$(VERSION)" -o bin/quilzo ./cmd/quilzo
++	@echo "binary: $$(du -h bin/quilzo | cut -f1)"
+ 
+ # One binary per platform, named so a person downloading can tell which is
+ # which. CGO is off so these are genuinely static and genuinely
+@@ -34,12 +34,12 @@ build-all:
+ 		os=$${p%/*}; arch=$${p#*/}; \
+ 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath \
+ 			-ldflags="-s -w -X main.version=$(VERSION)" \
+-			-o bin/scrivet-$$os-$$arch ./cmd/scrivet || exit 1; \
+-		echo "  $$os/$$arch  $$(du -h bin/scrivet-$$os-$$arch | cut -f1)"; \
++			-o bin/quilzo-$$os-$$arch ./cmd/quilzo || exit 1; \
++		echo "  $$os/$$arch  $$(du -h bin/quilzo-$$os-$$arch | cut -f1)"; \
+ 	done
+ 
+ image:
+-	docker build --build-arg VERSION=$(VERSION) -t scrivet:$(VERSION) .
++	docker build --build-arg VERSION=$(VERSION) -t quilzo:$(VERSION) .
+ 
+ # The bill of materials is produced BY the binary, not alongside it.
+ #
+@@ -49,10 +49,10 @@ image:
+ # question is what is deployed. The binary's own hash goes in the document, so
+ # the SBOM is tied to an artefact rather than to a version string.
+ sbom: build
+-	./bin/scrivet compliance sbom bin/scrivet.cdx.json
+-	@./bin/scrivet compliance crypto --json > bin/scrivet.crypto.json
+-	@echo "sbom:   bin/scrivet.cdx.json"
+-	@echo "crypto: bin/scrivet.crypto.json"
++	./bin/quilzo compliance sbom bin/quilzo.cdx.json
++	@./bin/quilzo compliance crypto --json > bin/quilzo.crypto.json
++	@echo "sbom:   bin/quilzo.cdx.json"
++	@echo "crypto: bin/quilzo.crypto.json"
+ 
+ # Everything a release needs, produced from the artefact being released.
+ #
+@@ -60,7 +60,7 @@ sbom: build
+ # report does -- a report has to say what is affected -- and it has to be
+ # retained for ten years, which a release asset does for free.
+ release: test sbom build-all
+-	@cd bin && sha256sum scrivet scrivet-* scrivet.cdx.json scrivet.crypto.json > SHA256SUMS
++	@cd bin && sha256sum quilzo quilzo-* quilzo.cdx.json quilzo.crypto.json > SHA256SUMS
+ 	@echo
+ 	@echo "release $(VERSION)"
+ 	@sed 's/^/  /' bin/SHA256SUMS
+diff --git a/README.md b/README.md
+index 617c1af..0977a7b 100644
+--- a/README.md
++++ b/README.md
+@@ -8,13 +8,13 @@ a pointer, and the template language cannot execute anything.
+ [![dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen)](go.mod)
+ 
+ ```bash
+-scrivet init          # a store in the current directory
+-scrivet demo          # install a complete example application
+-scrivet site          # serve it on 127.0.0.1:8081
+-scrivet serve         # the admin interface on 127.0.0.1:8080
++quilzo init          # a store in the current directory
++quilzo demo          # install a complete example application
++quilzo site          # serve it on 127.0.0.1:8081
++quilzo serve         # the admin interface on 127.0.0.1:8080
+ ```
+ 
+-The command is `scrivet` — the project's working name, kept as the binary the
++The command is `quilzo` — the project's working name, kept as the binary the
+ way Chromium ships `chrome`. Everywhere you see it in a command or an import,
+ that is deliberate.
+ 
+@@ -106,7 +106,7 @@ Drupal's CVE-2026-9082 depended on.
+ derived from it, not a proxy for it. Different content is a different hash, so a
+ conditional request answers itself and nothing has to be purged on publish.
+ 
+-**Integrity is checkable.** `scrivet verify` recomputes every hash. A store that
++**Integrity is checkable.** `quilzo verify` recomputes every hash. A store that
+ has been tampered with does not verify, and the check does not depend on a log
+ that the tamperer could also edit.
+ 
+@@ -141,8 +141,8 @@ not a hope.
+ ## The two processes
+ 
+ ```
+-scrivet serve   the admin      loopback, behind your own auth
+-scrivet site    the website    the thing you point the internet at
++quilzo serve   the admin      loopback, behind your own auth
++quilzo site    the website    the thing you point the internet at
+ ```
+ 
+ Separate binaries-in-one, separate ports, separate exposure. The public process
+@@ -203,14 +203,14 @@ covering anything that changes who may do what, what code runs, or what the keys
+ are.
+ 
+ **Decentralised publication.** Content-addressed storage maps onto IPFS
+-naturally: `scrivet ipfs` computes CIDv1 identifiers and produces a bundle that
++naturally: `quilzo ipfs` computes CIDv1 identifiers and produces a bundle that
+ pins as-is. Zero dependencies here too — the DAG-PB and CID encoding is about
+ four hundred lines, verified against published identifiers and an independent
+ reimplementation.
+ 
+ ## The demonstration
+ 
+-`scrivet demo` installs **Gram**: a photo-sharing site with a feed over
++`quilzo demo` installs **Gram**: a photo-sharing site with a feed over
+ structured records, an explore page with a working filter, profiles under a
+ content type, stories carrying publish windows, and a message box.
+ 
+@@ -271,12 +271,12 @@ You need Go 1.24 or later. There are no dependencies to fetch.
+ ```bash
+ git clone https://github.com/quilzo/quilzo
+ cd quilzo
+-go build -o scrivet ./cmd/scrivet
+-# or: make build   →  bin/scrivet, stripped and version-stamped (see Makefile)
++go build -o quilzo ./cmd/quilzo
++# or: make build   →  bin/quilzo, stripped and version-stamped (see Makefile)
+ 
+-export PATH="$PWD:$PATH"   # so the `scrivet` commands below just work
++export PATH="$PWD:$PATH"   # so the `quilzo` commands below just work
+ mkdir mysite && cd mysite
+-scrivet init
++quilzo init
+ ```
+ 
+ ### Getting a token
+@@ -286,35 +286,35 @@ say so, so there is no state in which a fresh install is reachable with a
+ credential somebody already knows.
+ 
+ ```bash
+-scrivet auth grant you admin                            # "you" is any name
+-scrivet token issue laptop --principal you --role admin # shown once
+-export SCRIVET_TOKEN=scv_…
++quilzo auth grant you admin                            # "you" is any name
++quilzo token issue laptop --principal you --role admin # shown once
++export QUILZO_TOKEN=qlz_…
+ ```
+ 
+ A token can carry **less** authority than the person holding it and never more:
+ `--role reader` on an admin's token makes a read-only credential, `--read-only`
+ refuses every write whatever the role, `--on /blog` scopes it to a path, and
+-`--ttl 24h` expires it. `scrivet token revoke ID` takes effect on the next use,
++`--ttl 24h` expires it. `quilzo token revoke ID` takes effect on the next use,
+ not at the next restart.
+ 
+ ### Then either
+ 
+ ```bash
+-scrivet demo                              # a whole example application
++quilzo demo                              # a whole example application
+ # or
+-scrivet template use landing
+-scrivet add index=index.json -m "first page"
+-scrivet publish
++quilzo template use landing
++quilzo add index=index.json -m "first page"
++quilzo publish
+ ```
+ 
+ ### And run it
+ 
+ ```bash
+-scrivet serve --addr 127.0.0.1:8080                                    # admin
+-scrivet site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
++quilzo serve --addr 127.0.0.1:8080                                    # admin
++quilzo site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
+ ```
+ 
+-`scrivet help` lists all 92 commands. The admin carries a manual with
++`quilzo help` lists all 92 commands. The admin carries a manual with
+ screenshots at `/docs`, and every screen's Help link points at its own section.
+ 
+ ## Deployment
+@@ -329,8 +329,8 @@ process on the interface facing the internet. They share a store directory and
+ nothing else.
+ 
+ ```bash
+-docker build -t scrivet .
+-docker run --rm -p 8081:8081 -v "$PWD/store:/store" scrivet \
++docker build -t quilzo .
++docker run --rm -p 8081:8081 -v "$PWD/store:/store" quilzo \
+   site --addr 0.0.0.0:8081 --base-url https://example.org
+ ```
+ 
+diff --git a/SECURITY.md b/SECURITY.md
+index 3290524..70e2cbb 100644
+--- a/SECURITY.md
++++ b/SECURITY.md
+@@ -35,7 +35,7 @@ is false is a vulnerability even without a working exploit:
+ - **Templates cannot execute.** Any input reaching `tmpl.Render` that causes
+   code execution, unbounded resource use, or non-termination.
+ - **The public process cannot read content it should not.** Any path by which
+-  `scrivet site` reads a draft, a submission, a token, or a file outside the
++  `quilzo site` reads a draft, a submission, a token, or a file outside the
+   media library.
+ - **Stored content cannot become executable.** Any content field that reaches
+   a browser unescaped without passing through `{% raw %}`.
+@@ -45,7 +45,7 @@ is false is a vulnerability even without a working exploit:
+ - **Tokens are scoped.** Any way a token performs an action outside its scope,
+   or a principal's own grant.
+ - **The store is append-only and verifiable.** Any way to alter stored content
+-  such that `scrivet verify` still passes.
++  such that `quilzo verify` still passes.
+ - **Nothing is executed from content.** Any way an extension, template, or
+   imported document causes execution outside the sandbox.
+ 
+@@ -57,7 +57,7 @@ it.
+ ## What does not count
+ 
+ - Findings against a deployment that has the admin interface on a public
+-  interface. `scrivet serve` belongs on loopback behind your own authentication;
++  interface. `quilzo serve` belongs on loopback behind your own authentication;
+   the README and the manual both say so.
+ - Missing hardening headers on a response that carries no content.
+ - Denial of service by sending very large or very many requests. Rate limiting
+@@ -81,5 +81,5 @@ a report is most useful when it makes one of those tests fail. Relevant places:
+ - `internal/tmpl` — the template language and its fuzz target
+ - `internal/a11y`, `internal/codescan` — the scanners
+ - `internal/auth` — roles, scopes, throttling
+-- `cmd/scrivet/gate_test.go` — every write surface consults the type gate
++- `cmd/quilzo/gate_test.go` — every write surface consults the type gate
+ - `internal/admin/roles_test.go` — every role can do its own job and no more
+diff --git a/cmd/quilzo/anchorcmd.go b/cmd/quilzo/anchorcmd.go
+index d58dbe8..79607d3 100644
+--- a/cmd/quilzo/anchorcmd.go
++++ b/cmd/quilzo/anchorcmd.go
+@@ -155,7 +155,7 @@ func anchorSubmit(root string, args []string) error {
+ 	w.Human("\n  %sthese are pending, which is not anchored. A calendar batches\n"+
+ 		"  many hashes into one Bitcoin commitment, which takes hours.%s\n",
+ 		yellow, reset)
+-	w.Human("  %srun `scrivet anchor upgrade` later%s\n", dim, reset)
++	w.Human("  %srun `quilzo anchor upgrade` later%s\n", dim, reset)
+ 	return nil
+ }
+ 
+@@ -213,7 +213,7 @@ func anchorStatus(root string) error {
+ 	}
+ 	if len(file.Proofs) == 0 {
+ 		w.Human("nothing has been anchored\n")
+-		w.Human("  %sscrivet anchor submit — commit this publication's "+
++		w.Human("  %squilzo anchor submit — commit this publication's "+
+ 			"fingerprint%s\n", dim, reset)
+ 		w.Human("  %sone hash over the whole site. Nothing about a page or a\n"+
+ 			"  person goes to a public ledger, because a ledger cannot forget.%s\n",
+diff --git a/cmd/quilzo/assist.go b/cmd/quilzo/assist.go
+index c5cee1a..b623c28 100644
+--- a/cmd/quilzo/assist.go
++++ b/cmd/quilzo/assist.go
+@@ -38,7 +38,7 @@ func cmdAssist(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(pos) != 1 {
+-		return fmt.Errorf(`usage: scrivet assist "what to change" --author <who>`)
++		return fmt.Errorf(`usage: quilzo assist "what to change" --author <who>`)
+ 	}
+ 	instruction := pos[0]
+ 
+@@ -178,7 +178,7 @@ func cmdAssist(root string, args []string) error {
+ 		// exists to prevent. Say so loudly rather than reporting success.
+ 		return fmt.Errorf(
+ 			"the draft was saved but provenance could not be recorded (%w). "+
+-				"Do not publish until `scrivet provenance check` is clean", err)
++				"Do not publish until `quilzo provenance check` is clean", err)
+ 	}
+ 
+ 	record(root, audit.Record{
+@@ -196,7 +196,7 @@ func cmdAssist(root string, args []string) error {
+ 
+ 	w.Human("\ndraft %s\n", short(cid))
+ 	w.Human("  %severy page the model touched is marked as AI-generated%s\n", dim, reset)
+-	w.Human("  %sreview it: scrivet diff · scrivet provenance check%s\n", dim, reset)
++	w.Human("  %sreview it: quilzo diff · quilzo provenance check%s\n", dim, reset)
+ 	return nil
+ }
+ 
+diff --git a/cmd/quilzo/audit_test.go b/cmd/quilzo/audit_test.go
+index de44dec..a5b8a1d 100644
+--- a/cmd/quilzo/audit_test.go
++++ b/cmd/quilzo/audit_test.go
+@@ -15,7 +15,7 @@ import (
+ // logging problem should not stop somebody publishing. The cost is that an
+ // invalid record is a bug that shows up as one line of stderr nobody reads.
+ //
+-// This found exactly that: `scrivet import` constructed a service-kind record
++// This found exactly that: `quilzo import` constructed a service-kind record
+ // without Verified, the audit package refused it because a service principal is
+ // only a service if a credential proved it, and the least trustworthy operation
+ // in the system was the one with no log entry.
+@@ -178,7 +178,7 @@ func TestEveryPrivilegedCommandWritesAnAuditRecord(t *testing.T) {
+ 	//
+ 	// This list is no longer the coverage check — TestEveryMutatingCommand-
+ 	// CanReachTheAuditLog derives that from the privilege table, because this
+-	// list passed for months while `scrivet add` recorded nothing at all. A
++	// list passed for months while `quilzo add` recorded nothing at all. A
+ 	// list maintained by the same person who forgets the call is not a check.
+ 	//
+ 	// It is kept for what it does test and the derived one cannot: that these
+diff --git a/cmd/quilzo/auditcover_test.go b/cmd/quilzo/auditcover_test.go
+index b1c78f6..b1652be 100644
+--- a/cmd/quilzo/auditcover_test.go
++++ b/cmd/quilzo/auditcover_test.go
+@@ -13,7 +13,7 @@ import (
+ 
+ // Every command that changes something must leave a record of having done it.
+ //
+-// There was already a test for this and it passed while `scrivet add` — the
++// There was already a test for this and it passed while `quilzo add` — the
+ // most common write in the entire program — wrote nothing at all. It passed
+ // because it checked a hand-maintained list of eight function names, and the
+ // comment above that list said the quiet part: "adding a privileged command
+diff --git a/cmd/quilzo/auditlog.go b/cmd/quilzo/auditlog.go
+index e7c02ef..c28bce8 100644
+--- a/cmd/quilzo/auditlog.go
++++ b/cmd/quilzo/auditlog.go
+@@ -62,7 +62,7 @@ func cmdAuditDir(root string, args []string) error {
+ 			w.Human("  the log is in the store: %s", auditPath(root))
+ 			w.Human("  %sthat means this account writes its own audit record%s",
+ 				dim, reset)
+-			w.Human("  %sscrivet auditlog dir /srv/audit — after creating it "+
++			w.Human("  %squilzo auditlog dir /srv/audit — after creating it "+
+ 				"for the log account%s", dim, reset)
+ 			return nil
+ 		}
+@@ -76,7 +76,7 @@ func cmdAuditDir(root string, args []string) error {
+ 	}
+ 	if fi, err := os.Stat(abs); err != nil {
+ 		return fmt.Errorf("%s: %w\n  create it first, owned by the account "+
+-			"that will run `scrivet logd`", abs, err)
++			"that will run `quilzo logd`", abs, err)
+ 	} else if !fi.IsDir() {
+ 		return fmt.Errorf("%s is not a directory", abs)
+ 	}
+@@ -90,7 +90,7 @@ func cmdAuditDir(root string, args []string) error {
+ 		return err
+ 	}
+ 	w.Human("  the log is now read from %s", filepath.Join(abs, "audit.jsonl"))
+-	w.Human("  %sstart the writer: scrivet --root %s logd --log-dir %s%s",
++	w.Human("  %sstart the writer: quilzo --root %s logd --log-dir %s%s",
+ 		dim, root, abs, reset)
+ 	return nil
+ }
+@@ -166,7 +166,7 @@ func openAudit(root string) (*audit.Log, error) {
+ 		host = "unknown-host"
+ 	}
+ 	return audit.New(audit.Options{
+-		Path: auditPath(root), Key: key, Source: "scrivet-cli@" + host,
++		Path: auditPath(root), Key: key, Source: "quilzo-cli@" + host,
+ 		Mode: keyMode(root),
+ 	})
+ }
+@@ -177,7 +177,7 @@ func openAudit(root string) (*audit.Log, error) {
+ // trade: NIST allows for alerting on audit failure, and the alternative — a
+ // publish refused because a log file is full — trades an availability problem
+ // for an accountability one. Reporting loudly and continuing is the choice, and
+-// `scrivet auditlog verify` is what catches a gap afterwards.
++// `quilzo auditlog verify` is what catches a gap afterwards.
+ func record(root string, r audit.Record) {
+ 	// A separate writer, if one is running. Its presence is the configuration:
+ 	// the socket existing means somebody set this up, and going around it would
+@@ -412,7 +412,7 @@ func auditHead(root string, args []string) error {
+ 	w.Human("\n  %sthis commits to every entry. Get it out of this machine —\n"+
+ 		"  export it to a SIEM, hand it to an auditor, or anchor it:%s\n",
+ 		dim, reset)
+-	w.Human("    %sscrivet auditlog anchor%s\n", dim, reset)
++	w.Human("    %squilzo auditlog anchor%s\n", dim, reset)
+ 	w.Human("\n  %sa head kept only here protects nothing: whoever can rewrite\n"+
+ 		"  the log can rewrite the head beside it%s\n", yellow, reset)
+ 	return nil
+@@ -421,7 +421,7 @@ func auditHead(root string, args []string) error {
+ // auditProve produces an inclusion proof for one entry.
+ func auditProve(root string, args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet auditlog prove <sequence>")
++		return fmt.Errorf("usage: quilzo auditlog prove <sequence>")
+ 	}
+ 	var seq int64
+ 	if _, err := fmt.Sscanf(args[0], "%d", &seq); err != nil {
+@@ -486,7 +486,7 @@ func auditConsistency(root string, args []string) error {
+ 		if len(f.Heads) == 0 {
+ 			return fmt.Errorf(
+ 				"no head has been published, so there is nothing to check " +
+-					"against.\n  `scrivet auditlog head --save` records one; a " +
++					"against.\n  `quilzo auditlog head --save` records one; a " +
+ 					"head only proves anything once it exists somewhere the log " +
+ 					"cannot be quietly rewritten alongside")
+ 		}
+diff --git a/cmd/quilzo/auth.go b/cmd/quilzo/auth.go
+index fd72bd1..64dbdd4 100644
+--- a/cmd/quilzo/auth.go
++++ b/cmd/quilzo/auth.go
+@@ -98,7 +98,7 @@ func cmdAuth(root string, args []string) error {
+ }
+ 
+ func authUsage() error {
+-	fmt.Print(`scrivet auth — who can do what
++	fmt.Print(`quilzo auth — who can do what
+ 
+   grant <principal> <role> [--on /path] [--deny] [--note "..."]
+   revoke <principal> <role> [--on /path]
+@@ -149,7 +149,7 @@ func authGrant(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(rest) != 2 {
+-		return fmt.Errorf("usage: scrivet auth grant <principal> <role> [--on /path] [--deny]")
++		return fmt.Errorf("usage: quilzo auth grant <principal> <role> [--on /path] [--deny]")
+ 	}
+ 
+ 	p, err := loadPolicy(root)
+@@ -218,7 +218,7 @@ func authRevoke(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(rest) != 2 {
+-		return fmt.Errorf("usage: scrivet auth revoke <principal> <role> [--on /path]")
++		return fmt.Errorf("usage: quilzo auth revoke <principal> <role> [--on /path]")
+ 	}
+ 
+ 	p, err := loadPolicy(root)
+@@ -290,7 +290,7 @@ func authExplain(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(rest) < 1 {
+-		return fmt.Errorf("usage: scrivet auth explain <principal> [action] [--on /path]")
++		return fmt.Errorf("usage: quilzo auth explain <principal> [action] [--on /path]")
+ 	}
+ 	principal := rest[0]
+ 
+@@ -339,7 +339,7 @@ func authExplain(root string, args []string) error {
+ 
+ func cmdToken(root string, args []string) error {
+ 	if len(args) == 0 {
+-		fmt.Print(`scrivet token — credentials for API access
++		fmt.Print(`quilzo token — credentials for API access
+ 
+   issue <name> --principal <who> --role <role> [--on /path] [--ttl 720h]
+   exchange [--role R] [--on /path] [--ttl 15m]   short-lived session from a token
+@@ -389,7 +389,7 @@ func tokenIssue(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(rest) != 1 {
+-		return fmt.Errorf("usage: scrivet token issue <name> --principal <who> --role <role>")
++		return fmt.Errorf("usage: quilzo token issue <name> --principal <who> --role <role>")
+ 	}
+ 	if strings.TrimSpace(*principal) == "" {
+ 		return fmt.Errorf("--principal is required: a token acts as somebody")
+@@ -427,7 +427,7 @@ func tokenIssue(root string, args []string) error {
+ 		return fmt.Errorf(
+ 			"a %s token is longer than token.ttl.max (%s).\n"+
+ 				"  Raise the ceiling deliberately if that is right:\n"+
+-				"    scrivet config set token.ttl.max %s --accept-risk \"why\"",
++				"    quilzo config set token.ttl.max %s --accept-risk \"why\"",
+ 			life, max, life)
+ 	}
+ 
+@@ -565,7 +565,7 @@ func tokenList(root string) error {
+ 
+ func tokenRevoke(root string, args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet token revoke <id>")
++		return fmt.Errorf("usage: quilzo token revoke <id>")
+ 	}
+ 	ts, err := loadTokens(root)
+ 	if err != nil {
+diff --git a/cmd/quilzo/caller.go b/cmd/quilzo/caller.go
+index 75753e7..5fda27b 100644
+--- a/cmd/quilzo/caller.go
++++ b/cmd/quilzo/caller.go
+@@ -16,7 +16,7 @@ import (
+ // Who is running this, and did anyone check?
+ //
+ // The audit log shipped before this could record any name the caller fancied,
+-// because the principal came from $USER. `USER=ceo scrivet publish` wrote a
++// because the principal came from $USER. `USER=ceo quilzo publish` wrote a
+ // distinct, plausible principal into a tamper-evident chain — integrity
+ // without authenticity, which is the worse of the two failures because the
+ // record looks authoritative.
+@@ -53,12 +53,12 @@ type Caller struct {
+ // tokenFile is preferred over the environment.
+ //
+ // The research reason, not a stylistic one: every process a user starts
+-// inherits their environment, so a token in SCRIVET_TOKEN is readable by any
++// inherits their environment, so a token in QUILZO_TOKEN is readable by any
+ // subprocess — including an agent this CLI is designed to be driven by. A file
+ // at 0600 is read by what opens it deliberately.
+ func tokenFile() string {
+ 	if h, err := os.UserHomeDir(); err == nil {
+-		return filepath.Join(h, ".scrivet", "token")
++		return filepath.Join(h, ".quilzo", "token")
+ 	}
+ 	return ""
+ }
+@@ -75,8 +75,8 @@ func findToken(explicit string) (string, string) {
+ 			}
+ 		}
+ 	}
+-	if t := strings.TrimSpace(os.Getenv("SCRIVET_TOKEN")); t != "" {
+-		return t, "SCRIVET_TOKEN"
++	if t := strings.TrimSpace(os.Getenv("QUILZO_TOKEN")); t != "" {
++		return t, "QUILZO_TOKEN"
+ 	}
+ 	return "", ""
+ }
+@@ -161,7 +161,7 @@ func authorise(root string, c *Caller, action auth.Action, resource string) erro
+ 	if !c.Verified {
+ 		return fmt.Errorf(
+ 			"this store has access control configured, so %s needs a verified "+
+-				"identity (%s).\nPresent one with --token, %s, or SCRIVET_TOKEN",
++				"identity (%s).\nPresent one with --token, %s, or QUILZO_TOKEN",
+ 			action, c.Why, tokenFile())
+ 	}
+ 	p, err := loadPolicy(root)
+diff --git a/cmd/quilzo/collabcmd.go b/cmd/quilzo/collabcmd.go
+index 9ac5733..6f83743 100644
+--- a/cmd/quilzo/collabcmd.go
++++ b/cmd/quilzo/collabcmd.go
+@@ -44,7 +44,7 @@ func lockClaim(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(pos) != 1 {
+-		return fmt.Errorf("usage: scrivet lock <page> [--note \"...\"]")
++		return fmt.Errorf("usage: quilzo lock <page> [--note \"...\"]")
+ 	}
+ 
+ 	locks, err := loadLocks(root)
+@@ -79,7 +79,7 @@ func lockClaim(root string, args []string) error {
+ 
+ func lockRelease(root string, args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet lock release <page>")
++		return fmt.Errorf("usage: quilzo lock release <page>")
+ 	}
+ 	locks, err := loadLocks(root)
+ 	if err != nil {
+@@ -226,7 +226,7 @@ func reviewStatus(root string) error {
+ 	w.Human("\n")
+ 	if pol.Required == 0 && !pol.RequireHumanForAI {
+ 		w.Human("  %sdual authorization is not configured%s\n", dim, reset)
+-		w.Human("  %sscrivet review require 2 — two people must agree before "+
++		w.Human("  %squilzo review require 2 — two people must agree before "+
+ 			"publishing%s\n", dim, reset)
+ 		return nil
+ 	}
+@@ -310,7 +310,7 @@ func reviewApprove(root string, args []string) error {
+ 	w.Human("  %s%s%s\n", map[bool]string{true: green, false: dim}[d.Allowed],
+ 		d.Reason, reset)
+ 	if d.Allowed {
+-		w.Human("  %sscrivet publish%s\n", dim, reset)
++		w.Human("  %squilzo publish%s\n", dim, reset)
+ 	}
+ 	return nil
+ }
+@@ -355,7 +355,7 @@ func reviewRequire(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(pos) != 1 {
+-		return fmt.Errorf("usage: scrivet review require <n> [--approvers a,b]")
++		return fmt.Errorf("usage: quilzo review require <n> [--approvers a,b]")
+ 	}
+ 	var n int
+ 	if _, err := fmt.Sscanf(pos[0], "%d", &n); err != nil || n < 0 {
+diff --git a/cmd/quilzo/compliancecmd.go b/cmd/quilzo/compliancecmd.go
+index 7510b28..533af86 100644
+--- a/cmd/quilzo/compliancecmd.go
++++ b/cmd/quilzo/compliancecmd.go
+@@ -177,14 +177,14 @@ func complianceSummary(root string) error {
+ 	w.Human("  %-34s %s%d%s\n", "quantum-broken, verified only", dim,
+ 		len(compliance.Concerns()), reset)
+ 
+-	w.Human("\n  %sscrivet compliance sbom      CycloneDX 1.6, machine-readable%s\n",
++	w.Human("\n  %squilzo compliance sbom      CycloneDX 1.6, machine-readable%s\n",
+ 		dim, reset)
+-	w.Human("  %sscrivet compliance crypto    every algorithm and its posture%s\n",
++	w.Human("  %squilzo compliance crypto    every algorithm and its posture%s\n",
+ 		dim, reset)
+-	w.Human("  %sscrivet compliance controls  what is checked, mapped to 800-53%s\n",
++	w.Human("  %squilzo compliance controls  what is checked, mapped to 800-53%s\n",
+ 		dim, reset)
+-	w.Human("  %sscrivet posture scan         the current findings%s\n", dim, reset)
+-	w.Human("  %sscrivet auditlog head        a commitment to the record%s\n",
++	w.Human("  %squilzo posture scan         the current findings%s\n", dim, reset)
++	w.Human("  %squilzo auditlog head        a commitment to the record%s\n",
+ 		dim, reset)
+ 
+ 	w.Human("\n  %snone of this is a certification. An SBOM is not a SOC 2 "+
+diff --git a/cmd/quilzo/configcmd.go b/cmd/quilzo/configcmd.go
+index b210f81..2544ad1 100644
+--- a/cmd/quilzo/configcmd.go
++++ b/cmd/quilzo/configcmd.go
+@@ -137,7 +137,7 @@ func configShow(root string) error {
+ 	}
+ 	if weak > 0 {
+ 		w.Human("\n  %s%d setting(s) are weaker than the default and are "+
+-			"reported by `scrivet posture scan`%s\n", dim, weak, reset)
++			"reported by `quilzo posture scan`%s\n", dim, weak, reset)
+ 	}
+ 	return nil
+ }
+@@ -162,17 +162,17 @@ func configList() error {
+ 	w.Human("\n  %s· marked settings give up security if changed; they are "+
+ 		"still changeable,%s\n", dim, reset)
+ 	w.Human("  %s  with --accept-risk and a reason that is recorded%s\n", dim, reset)
+-	w.Human("  %sscrivet config explain KEY%s\n", dim, reset)
++	w.Human("  %squilzo config explain KEY%s\n", dim, reset)
+ 	return nil
+ }
+ 
+ func configExplain(args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet config explain <key>")
++		return fmt.Errorf("usage: quilzo config explain <key>")
+ 	}
+ 	s, ok := config.Lookup(args[0])
+ 	if !ok {
+-		return fmt.Errorf("%q is not a setting; `scrivet config list` shows "+
++		return fmt.Errorf("%q is not a setting; `quilzo config list` shows "+
+ 			"every one", args[0])
+ 	}
+ 	if w.JSON(s) {
+@@ -210,7 +210,7 @@ func configSet(root string, args []string) error {
+ 		}
+ 	}
+ 	if len(rest) != 2 {
+-		return fmt.Errorf("usage: scrivet config set <key> <value> " +
++		return fmt.Errorf("usage: quilzo config set <key> <value> " +
+ 			"[--accept-risk \"reason\"]")
+ 	}
+ 	key, value = rest[0], rest[1]
+@@ -248,7 +248,7 @@ func configSet(root string, args []string) error {
+ 	if reason != "" {
+ 		w.Human("  %srisk accepted for %d days: %q%s\n", yellow,
+ 			int(config.MaxAcceptance.Hours()/24), reason, reset)
+-		w.Human("  %s`scrivet posture scan` reports this until it is changed "+
++		w.Human("  %s`quilzo posture scan` reports this until it is changed "+
+ 			"back or renewed%s\n", dim, reset)
+ 	}
+ 	return nil
+@@ -256,7 +256,7 @@ func configSet(root string, args []string) error {
+ 
+ func configUnset(root string, args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet config unset <key>")
++		return fmt.Errorf("usage: quilzo config unset <key>")
+ 	}
+ 	c, err := loadConfig(root)
+ 	if err != nil {
+diff --git a/cmd/quilzo/coverage_test.go b/cmd/quilzo/coverage_test.go
+index 310e39a..4a12aee 100644
+--- a/cmd/quilzo/coverage_test.go
++++ b/cmd/quilzo/coverage_test.go
+@@ -358,7 +358,7 @@ func readFile(t *testing.T, path string) string {
+ //
+ // The table above is keyed by command, and that granularity is what let a whole
+ // operation go missing from the interface for months: removing a page lived at
+-// `scrivet add --remove NAME`, so the row for "add" pointed at /page/ and was
++// `quilzo add --remove NAME`, so the row for "add" pointed at /page/ and was
+ // perfectly true about writing pages while saying nothing about deleting them.
+ // Every screen test passed, because a capability with no screen has nothing to
+ // fail on. It was found by building an application and wanting to delete
+@@ -446,7 +446,7 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
+ 
+ // A command nobody can find is a command nobody has.
+ //
+-// `scrivet demo` shipped working, declared its privilege, sat in the coverage
++// `quilzo demo` shipped working, declared its privilege, sat in the coverage
+ // table with a screen and a reason — and was absent from the help text, so the
+ // only way to discover it was to read the dispatch switch. Every check above
+ // passed, because each of them asks whether a command is *declared* somewhere
+@@ -457,15 +457,15 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
+ func TestEveryCommandAppearsInTheHelp(t *testing.T) {
+ 	help := readFile(t, "main.go")
+ 	// The help text is a raw string literal in main.go, and every line in it
+-	// begins "  scrivet ". Reading the source rather than running the command
++	// begins "  quilzo ". Reading the source rather than running the command
+ 	// keeps this a source check like the others around it.
+ 	listed := map[string]bool{}
+ 	for _, line := range strings.Split(help, "\n") {
+ 		line = strings.TrimSpace(line)
+-		if !strings.HasPrefix(line, "scrivet ") {
++		if !strings.HasPrefix(line, "quilzo ") {
+ 			continue
+ 		}
+-		rest := strings.TrimPrefix(line, "scrivet ")
++		rest := strings.TrimPrefix(line, "quilzo ")
+ 		if i := strings.IndexAny(rest, " \t"); i > 0 {
+ 			rest = rest[:i]
+ 		}
+@@ -483,7 +483,7 @@ func TestEveryCommandAppearsInTheHelp(t *testing.T) {
+ 	// to be added to it.
+ 	alias := aliasesOf(t)
+ 
+-	// Self-referential, and the only entries excused. A person reading `scrivet
++	// Self-referential, and the only entries excused. A person reading `quilzo
+ 	// help` has already found help.
+ 	selfEvident := map[string]bool{"help": true, "-h": true, "--help": true}
+ 
+@@ -494,7 +494,7 @@ func TestEveryCommandAppearsInTheHelp(t *testing.T) {
+ 		if primary, is := alias[c]; is && listed[primary] {
+ 			continue
+ 		}
+-		t.Errorf("%q is dispatched and does not appear in `scrivet help`. "+
++		t.Errorf("%q is dispatched and does not appear in `quilzo help`. "+
+ 			"The only way to find it is to read the source, which means it "+
+ 			"ships for nobody.", c)
+ 	}
+diff --git a/cmd/quilzo/democmd.go b/cmd/quilzo/democmd.go
+index aa000d7..8a193ff 100644
+--- a/cmd/quilzo/democmd.go
++++ b/cmd/quilzo/democmd.go
+@@ -55,7 +55,7 @@ func cmdDemo(root string, args []string) error {
+ 			"this store already has content, and the demonstration would " +
+ 				"write over the content types, listings, menus and forms that " +
+ 				"share a name with its own.\n  Run it in an empty directory:\n" +
+-				"    mkdir gram && cd gram && scrivet init && scrivet demo")
++				"    mkdir gram && cd gram && quilzo init && quilzo demo")
+ 	}
+ 
+ 	d := demo.Gram()
+@@ -172,7 +172,7 @@ func cmdDemo(root string, args []string) error {
+ 		}
+ 	}
+ 
+-	// The template and the stylesheet, beside the store where `scrivet site`
++	// The template and the stylesheet, beside the store where `quilzo site`
+ 	// looks for them.
+ 	if merr := os.MkdirAll(*tplDir, 0o700); merr != nil {
+ 		return merr
+@@ -208,8 +208,8 @@ func cmdDemo(root string, args []string) error {
+ 		len(d.Pages), len(d.Records["posts"]), len(d.Media), len(d.Listings),
+ 		len(d.Forms))
+ 	w.Human("\n  %sto look at it%s\n", bold, reset)
+-	w.Human("    scrivet site  --addr 127.0.0.1:8081   %sthe site%s\n", dim, reset)
+-	w.Human("    scrivet serve --addr 127.0.0.1:8080   %sthe admin%s\n", dim, reset)
++	w.Human("    quilzo site  --addr 127.0.0.1:8081   %sthe site%s\n", dim, reset)
++	w.Human("    quilzo serve --addr 127.0.0.1:8080   %sthe admin%s\n", dim, reset)
+ 	w.Human("\n  %sthings worth trying%s\n", bold, reset)
+ 	w.Human("    /explore?topic=travel   %sa listing with a parameter%s\n", dim, reset)
+ 	w.Human("    /stories/sol-rooftop    %s404s until September: its window "+
+diff --git a/cmd/quilzo/envcmd.go b/cmd/quilzo/envcmd.go
+index b6951b4..2bfec0c 100644
+--- a/cmd/quilzo/envcmd.go
++++ b/cmd/quilzo/envcmd.go
+@@ -114,7 +114,7 @@ func envStatus(root string) error {
+ 	w.Human("  %salready exists, so production gets the bytes that were "+
+ 		"checked — not a copy%s\n", dim, reset)
+ 	if len(st) == 1 {
+-		w.Human("\n  %sscrivet env add staging --before production%s\n", dim, reset)
++		w.Human("\n  %squilzo env add staging --before production%s\n", dim, reset)
+ 	}
+ 	return nil
+ }
+@@ -149,7 +149,7 @@ func envAdd(root string, args []string) error {
+ 		}
+ 	}
+ 	if len(rest) != 1 {
+-		return fmt.Errorf("usage: scrivet env add <name> [--before production]")
++		return fmt.Errorf("usage: quilzo env add <name> [--before production]")
+ 	}
+ 	name = rest[0]
+ 
+@@ -196,13 +196,13 @@ func envAdd(root string, args []string) error {
+ 		}
+ 		w.Human("  %s%s\n", arrow, env.Name)
+ 	}
+-	w.Human("\n  %sscrivet publish --to %s%s\n", dim, name, reset)
++	w.Human("\n  %squilzo publish --to %s%s\n", dim, name, reset)
+ 	return nil
+ }
+ 
+ func envRemove(root string, args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet env remove <name>")
++		return fmt.Errorf("usage: quilzo env remove <name>")
+ 	}
+ 	e, err := loadEnvs(root)
+ 	if err != nil {
+@@ -250,7 +250,7 @@ func envPromote(root string, args []string) error {
+ 		rest = append(rest, a)
+ 	}
+ 	if len(rest) != 2 {
+-		return fmt.Errorf("usage: scrivet env promote <from> <to> [--skip]")
++		return fmt.Errorf("usage: quilzo env promote <from> <to> [--skip]")
+ 	}
+ 
+ 	e, err := loadEnvs(root)
+@@ -299,7 +299,7 @@ func envPromote(root string, args []string) error {
+ 
+ func envDiff(root string, args []string) error {
+ 	if len(args) != 2 {
+-		return fmt.Errorf("usage: scrivet env diff <a> <b>")
++		return fmt.Errorf("usage: quilzo env diff <a> <b>")
+ 	}
+ 	e, err := loadEnvs(root)
+ 	if err != nil {
+diff --git a/cmd/quilzo/exportcmd.go b/cmd/quilzo/exportcmd.go
+index 0a6d4c8..c460519 100644
+--- a/cmd/quilzo/exportcmd.go
++++ b/cmd/quilzo/exportcmd.go
+@@ -207,7 +207,7 @@ func cmdSiem(root string, args []string) error {
+ 			yellow, reset)
+ 	} else {
+ 		fmt.Fprintf(os.Stderr, "  %senvelope in %s — verify with "+
+-			"`scrivet siem verify`%s\n", dim, *envelopePath, reset)
++			"`quilzo siem verify`%s\n", dim, *envelopePath, reset)
+ 	}
+ 	return nil
+ }
+@@ -225,7 +225,7 @@ func cmdSiemVerify(root string, args []string) error {
+ 	}
+ 	if len(pos) != 1 || *envelopePath == "" {
+ 		return fmt.Errorf(
+-			"usage: scrivet siem verify EXPORT.jsonl --envelope envelope.json")
++			"usage: quilzo siem verify EXPORT.jsonl --envelope envelope.json")
+ 	}
+ 
+ 	raw, err := os.ReadFile(pos[0])
+diff --git a/cmd/quilzo/extcmd.go b/cmd/quilzo/extcmd.go
+index 5c79ebe..9e30cf9 100644
+--- a/cmd/quilzo/extcmd.go
++++ b/cmd/quilzo/extcmd.go
+@@ -115,7 +115,7 @@ func runExtensions(root string, hook ext.Hook, page string,
+ 				return out, errBlocked{fmt.Errorf(
+ 					"%s could not run, so %s was not checked: %v\n"+
+ 						"  Fix it, mark it optional if it is advisory, or "+
+-						"remove it:\n    scrivet ext remove %s",
++						"remove it:\n    quilzo ext remove %s",
+ 					m.Name, page, res.Err, m.Name)}
+ 			}
+ 			fmt.Fprintf(os.Stderr, "  %s%s did not run: %v%s\n",
+@@ -200,7 +200,7 @@ func extList(root string) error {
+ 		w.Human("no extensions\n")
+ 		w.Human("  %san extension is a program that sees the fields it "+
+ 			"declares and nothing else%s\n", dim, reset)
+-		w.Human("  %sscrivet ext add NAME --command /path/to/it --on validate "+
++		w.Human("  %squilzo ext add NAME --command /path/to/it --on validate "+
+ 			"--fields title,body%s\n", dim, reset)
+ 		return nil
+ 	}
+@@ -268,7 +268,7 @@ func extAdd(root string, args []string) error {
+ 		}
+ 	}
+ 	if len(rest) != 1 || command == "" {
+-		return fmt.Errorf("usage: scrivet ext add <name> --command /abs/path " +
++		return fmt.Errorf("usage: quilzo ext add <name> --command /abs/path " +
+ 			"--on validate[,transform,publish] [--fields title,body]")
+ 	}
+ 	name = rest[0]
+@@ -322,7 +322,7 @@ func extAdd(root string, args []string) error {
+ 	}
+ 	cfg, _ := loadConfig(root)
+ 	if cfg != nil && !cfg.Bool("ext.enabled") {
+-		w.Human("  %sextensions are off; scrivet config set ext.enabled true%s\n",
++		w.Human("  %sextensions are off; quilzo config set ext.enabled true%s\n",
+ 			dim, reset)
+ 	}
+ 	return nil
+@@ -330,7 +330,7 @@ func extAdd(root string, args []string) error {
+ 
+ func extRemove(root string, args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet ext remove <name>")
++		return fmt.Errorf("usage: quilzo ext remove <name>")
+ 	}
+ 	f, err := loadExts(root)
+ 	if err != nil {
+@@ -360,7 +360,7 @@ func extRemove(root string, args []string) error {
+ 
+ func extPin(root string, args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet ext pin <name>")
++		return fmt.Errorf("usage: quilzo ext pin <name>")
+ 	}
+ 	f, err := loadExts(root)
+ 	if err != nil {
+@@ -396,7 +396,7 @@ func extPin(root string, args []string) error {
+ // what it does before it runs inside a publish.
+ func extTest(root string, args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet ext test <name>")
++		return fmt.Errorf("usage: quilzo ext test <name>")
+ 	}
+ 	f, err := loadExts(root)
+ 	if err != nil {
+diff --git a/cmd/quilzo/formcmd.go b/cmd/quilzo/formcmd.go
+index 7963670..e04a832 100644
+--- a/cmd/quilzo/formcmd.go
++++ b/cmd/quilzo/formcmd.go
+@@ -116,7 +116,7 @@ func formsErase(root string, args []string) error {
+ 	}
+ 	if len(pos) != 1 {
+ 		return fmt.Errorf(
+-			"usage: scrivet form erase <value> [--dry-run]\n" +
++			"usage: quilzo form erase <value> [--dry-run]\n" +
+ 				"  the value is what the person gave you — usually an address")
+ 	}
+ 
+diff --git a/cmd/quilzo/gate_test.go b/cmd/quilzo/gate_test.go
+index ae9cfd7..8c46b60 100644
+--- a/cmd/quilzo/gate_test.go
++++ b/cmd/quilzo/gate_test.go
+@@ -134,7 +134,7 @@ func mentions(fn *ast.FuncDecl, name string) bool {
+ // package exists to make that impossible, and it only does if the callers use
+ // it — this project has shipped a library nobody called before.
+ //
+-// The exception is deliberate and narrow: `scrivet add` without --based-on has
++// The exception is deliberate and narrow: `quilzo add` without --based-on has
+ // nothing to compare against, so it passes an empty base and SaveDraftFrom
+ // treats that as "whatever is current". The point is that the call site had to
+ // decide.
+diff --git a/cmd/quilzo/i18ncmd.go b/cmd/quilzo/i18ncmd.go
+index 1e34fe6..c2dc123 100644
+--- a/cmd/quilzo/i18ncmd.go
++++ b/cmd/quilzo/i18ncmd.go
+@@ -48,7 +48,7 @@ func cmdLang(root string, args []string) error {
+ 
+ func langInit(root string, args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet lang init <default-locale>")
++		return fmt.Errorf("usage: quilzo lang init <default-locale>")
+ 	}
+ 	l, err := i18n.ParseLocale(args[0])
+ 	if err != nil {
+@@ -70,14 +70,14 @@ func langInit(root string, args []string) error {
+ 
+ func langAdd(root string, args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet lang add <locale>")
++		return fmt.Errorf("usage: quilzo lang add <locale>")
+ 	}
+ 	c, err := loadLocales(root)
+ 	if err != nil {
+ 		return err
+ 	}
+ 	if c == nil {
+-		return fmt.Errorf("run `scrivet lang init <locale>` first, so there is " +
++		return fmt.Errorf("run `quilzo lang init <locale>` first, so there is " +
+ 			"a default language for translations to be made from")
+ 	}
+ 	l, err := i18n.ParseLocale(args[0])
+@@ -101,7 +101,7 @@ func langAdd(root string, args []string) error {
+ 	w.Human("added %s%s%s\n", bold, l, reset)
+ 	w.Human("  %spages go under %s/, and %s is %s%s\n",
+ 		dim, l, l, l.Dir(), reset)
+-	w.Human("  %sscrivet lang check — which translations are missing or stale%s\n",
++	w.Human("  %squilzo lang check — which translations are missing or stale%s\n",
+ 		dim, reset)
+ 	return nil
+ }
+@@ -112,7 +112,7 @@ func langCheck(root string) error {
+ 		return err
+ 	}
+ 	if c == nil {
+-		return fmt.Errorf("no languages are configured; run `scrivet lang init`")
++		return fmt.Errorf("no languages are configured; run `quilzo lang init`")
+ 	}
+ 	s, err := open(root)
+ 	if err != nil {
+@@ -194,7 +194,7 @@ func langTranslated(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(pos) != 2 {
+-		return fmt.Errorf("usage: scrivet lang translated <page> <locale>")
++		return fmt.Errorf("usage: quilzo lang translated <page> <locale>")
+ 	}
+ 
+ 	c, err := loadLocales(root)
+@@ -257,7 +257,7 @@ func langStatus(root string) error {
+ 			return nil
+ 		}
+ 		w.Human("one language, unconfigured\n")
+-		w.Human("  %sscrivet lang init en — then `lang add fr` for a second%s\n",
++		w.Human("  %squilzo lang init en — then `lang add fr` for a second%s\n",
+ 			dim, reset)
+ 		return nil
+ 	}
+diff --git a/cmd/quilzo/importcmd.go b/cmd/quilzo/importcmd.go
+index f7494a3..c0119ca 100644
+--- a/cmd/quilzo/importcmd.go
++++ b/cmd/quilzo/importcmd.go
+@@ -30,7 +30,7 @@ func cmdImport(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(pos) != 1 {
+-		return fmt.Errorf("usage: scrivet import <export-file> [--from wordpress]")
++		return fmt.Errorf("usage: quilzo import <export-file> [--from wordpress]")
+ 	}
+ 
+ 	body, err := os.ReadFile(pos[0])
+@@ -168,7 +168,7 @@ func cmdImport(root string, args []string) error {
+ 		}
+ 		w.Human("\n  wrote %s%s%s with %d redirect(s)\n",
+ 			bold, *redirectsOut, reset, len(rep.Redirects))
+-		w.Human("  %sserve them: scrivet site --redirects %s%s\n",
++		w.Human("  %sserve them: quilzo site --redirects %s%s\n",
+ 			dim, *redirectsOut, reset)
+ 	}
+ 
+@@ -220,7 +220,7 @@ func mediaAdd(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(pos) != 1 {
+-		return fmt.Errorf("usage: scrivet media add <file> [--alt \"...\"]")
++		return fmt.Errorf("usage: quilzo media add <file> [--alt \"...\"]")
+ 	}
+ 
+ 	body, err := os.ReadFile(pos[0])
+@@ -319,7 +319,7 @@ func mediaGet(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(pos) != 1 {
+-		return fmt.Errorf("usage: scrivet media get <https://...> [--alt \"...\"]")
++		return fmt.Errorf("usage: quilzo media get <https://...> [--alt \"...\"]")
+ 	}
+ 
+ 	c := fetch.New()
+diff --git a/cmd/quilzo/ipfscmd.go b/cmd/quilzo/ipfscmd.go
+index 6396c87..da0669b 100644
+--- a/cmd/quilzo/ipfscmd.go
++++ b/cmd/quilzo/ipfscmd.go
+@@ -144,7 +144,7 @@ func ipfsVerify(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(pos) != 1 {
+-		return fmt.Errorf("usage: scrivet ipfs verify <cid>")
++		return fmt.Errorf("usage: quilzo ipfs verify <cid>")
+ 	}
+ 	claimed := pos[0]
+ 
+diff --git a/cmd/quilzo/logdcmd.go b/cmd/quilzo/logdcmd.go
+index 2ce82b8..4a97a0f 100644
+--- a/cmd/quilzo/logdcmd.go
++++ b/cmd/quilzo/logdcmd.go
+@@ -63,7 +63,7 @@ func cmdLogd(root string, args []string) error {
+ 	// The store is deliberately not consulted to check the two agree. This
+ 	// account may have no access to the store at all, which is the point of
+ 	// the separation, so a check here would report a disagreement precisely
+-	// when the deployment is correct. `scrivet logd status`, run by the
++	// when the deployment is correct. `quilzo logd status`, run by the
+ 	// account that does own the store, is where they are compared.
+ 	if *logDir != "" {
+ 		if err := os.MkdirAll(*logDir, 0o750); err != nil {
+@@ -158,7 +158,7 @@ func cmdLogdStatus(root string) error {
+ 		w.Human("  %sthis process writes the audit log itself, so anything that "+
+ 			"can\n  execute code as this account can rewrite the record of what "+
+ 			"it did%s\n", yellow, reset)
+-		w.Human("\n  %srun `scrivet logd` as a separate account that owns %s%s\n",
++		w.Human("\n  %srun `quilzo logd` as a separate account that owns %s%s\n",
+ 			dim, logPath, reset)
+ 		w.Human("  %sthat moves the requirement from code execution as the CMS "+
+ 			"to root%s\n", dim, reset)
+@@ -175,7 +175,7 @@ func cmdLogdStatus(root string) error {
+ 			yellow, reset)
+ 	}
+ 	w.Human("\n  %sroot can still rewrite the log. What stops that being "+
+-		"deniable is a\n  published tree head — `scrivet auditlog anchor`%s\n",
++		"deniable is a\n  published tree head — `quilzo auditlog anchor`%s\n",
+ 		dim, reset)
+ 	return nil
+ }
+diff --git a/cmd/quilzo/main.go b/cmd/quilzo/main.go
+index 76db0b9..8add3b1 100644
+--- a/cmd/quilzo/main.go
++++ b/cmd/quilzo/main.go
+@@ -1,4 +1,4 @@
+-// Command scrivet is the whole CMS: the command line, the admin interface, the
++// Command quilzo is the whole CMS: the command line, the admin interface, the
+ // public site and the agent interface, in one binary.
+ //
+ // The command line came first and that ordering was deliberate. A CMS whose
+@@ -31,7 +31,7 @@ import (
+ 	"github.com/quilzo/quilzo/internal/tmpl"
+ )
+ 
+-const defaultRoot = ".scrivet"
++const defaultRoot = ".quilzo"
+ 
+ // Colours are resolved at startup from whether stdout is a terminal, so piping
+ // or capturing output yields clean text. They were unconditional constants
+@@ -61,145 +61,145 @@ func usage() {
+ 	// measured advantage of a CLI over a tool-schema protocol is that nothing is
+ 	// loaded until it is needed — which only works if asking is complete when it
+ 	// happens. Half a help page is a schema with holes in it.
+-	fmt.Print(`scrivet — content is immutable, publishing moves a pointer, and
++	fmt.Print(`quilzo — content is immutable, publishing moves a pointer, and
+           templates cannot execute anything.
+ 
+ content
+-  scrivet init                              create a content store
+-  scrivet add NAME=FILE.json [...]          stage pages into a draft
+-  scrivet diff                              what differs between live and draft
+-  scrivet log [--ref draft|live]            commit history
+-  scrivet render PAGE TEMPLATE [-o FILE]    render a page
+-  scrivet verify                            re-hash every object
++  quilzo init                              create a content store
++  quilzo add NAME=FILE.json [...]          stage pages into a draft
++  quilzo diff                              what differs between live and draft
++  quilzo log [--ref draft|live]            commit history
++  quilzo render PAGE TEMPLATE [-o FILE]    render a page
++  quilzo verify                            re-hash every object
+ 
+ leaving (there is no lock-in here, and this is how it is proved)
+-  scrivet export markdown --to DIR          Hugo, Astro, Eleventy, Jekyll
+-  scrivet export wxr --to DIR               WordPress reads this natively
+-  scrivet export json --to DIR              lossless; this tool re-imports it
+-  scrivet siem ocsf|cef|jsonl --envelope F  the audit log, still verifiable
+-  scrivet siem verify FILE --envelope F     check an export was not altered
++  quilzo export markdown --to DIR          Hugo, Astro, Eleventy, Jekyll
++  quilzo export wxr --to DIR               WordPress reads this natively
++  quilzo export json --to DIR              lossless; this tool re-imports it
++  quilzo siem ocsf|cef|jsonl --envelope F  the audit log, still verifiable
++  quilzo siem verify FILE --envelope F     check an export was not altered
+ 
+ importing
+-  scrivet import FILE [--from wordpress]    bring in another CMS's export
+-  scrivet media add FILE --alt "..."        validate and accept an upload
+-  scrivet media get https://... --alt "..." fetch one, checked at connect time
+-  scrivet media formats                     what is accepted, and what is not
+-  scrivet form list | expire | erase VALUE  forms, retention and erasure
+-  scrivet listing list | run NAME           declared queries a page can show
+-  scrivet terms list | check                the controlled vocabularies
+-  scrivet menu list | check                 navigation, and whether it resolves
+-  scrivet ipfs id                           what the permanent web will call this site
+-  scrivet ipfs write -o site                render it for 'ipfs add -r'      
+-  scrivet ipfs verify CID                   check what a pinning service claimed
++  quilzo import FILE [--from wordpress]    bring in another CMS's export
++  quilzo media add FILE --alt "..."        validate and accept an upload
++  quilzo media get https://... --alt "..." fetch one, checked at connect time
++  quilzo media formats                     what is accepted, and what is not
++  quilzo form list | expire | erase VALUE  forms, retention and erasure
++  quilzo listing list | run NAME           declared queries a page can show
++  quilzo terms list | check                the controlled vocabularies
++  quilzo menu list | check                 navigation, and whether it resolves
++  quilzo ipfs id                           what the permanent web will call this site
++  quilzo ipfs write -o site                render it for 'ipfs add -r'      
++  quilzo ipfs verify CID                   check what a pinning service claimed
+ 
+ templates
+-  scrivet demo                              a whole example application, in one go
+-  scrivet template list | show NAME         ready-made starting points
+-  scrivet template use NAME [--dir DIR]     write it, its stylesheet and sample
++  quilzo demo                              a whole example application, in one go
++  quilzo template list | show NAME         ready-made starting points
++  quilzo template use NAME [--dir DIR]     write it, its stylesheet and sample
+ 
+ languages
+-  scrivet lang init en | add fr             a site in more than one language
+-  scrivet lang check                        which translations are stale or missing
+-  scrivet lang translated PAGE LOCALE       record what it was translated from
++  quilzo lang init en | add fr             a site in more than one language
++  quilzo lang check                        which translations are stale or missing
++  quilzo lang translated PAGE LOCALE       record what it was translated from
+ 
+ content types
+-  scrivet ext list | add | pin | test        run your own code, sandboxed
+-  scrivet records collections               what data this application holds
+-  scrivet records list NAME [--where k=v]   query records
+-  scrivet records add NAME field=value      write one
+-  scrivet records import NAME rows.json     write many, in one commit
+-  scrivet type example > FILE.json          a definition you can edit
+-  scrivet type add FILE.json                define a type: flat fields, no regex
+-  scrivet type list | show NAME             what exists, and its address
+-  scrivet type bind PAGE TYPE               the page must satisfy the type
+-  scrivet type check                        validate every bound page
++  quilzo ext list | add | pin | test        run your own code, sandboxed
++  quilzo records collections               what data this application holds
++  quilzo records list NAME [--where k=v]   query records
++  quilzo records add NAME field=value      write one
++  quilzo records import NAME rows.json     write many, in one commit
++  quilzo type example > FILE.json          a definition you can edit
++  quilzo type add FILE.json                define a type: flat fields, no regex
++  quilzo type list | show NAME             what exists, and its address
++  quilzo type bind PAGE TYPE               the page must satisfy the type
++  quilzo type check                        validate every bound page
+ 
+ working together
+-  scrivet lock PAGE [--note "..."]          advisory claim, expires in 30 min
+-  scrivet lock list | release PAGE          who is working on what
+-  scrivet review status                     who has agreed to the current draft
+-  scrivet review approve [--note "..."]     agree to it; authors cannot
++  quilzo lock PAGE [--note "..."]          advisory claim, expires in 30 min
++  quilzo lock list | release PAGE          who is working on what
++  quilzo review status                     who has agreed to the current draft
++  quilzo review approve [--note "..."]     agree to it; authors cannot
+ 
+ publishing
+-  scrivet env list                          what is where, and what is waiting
+-  scrivet env add staging --before production
+-  scrivet env promote staging production    a pointer move; the same bytes
+-  scrivet env diff staging production       what would change
+-  scrivet publish [COMMIT]                  move live to the draft
+-  scrivet schedule add 48h | list | run     publish later; gates run at publish
+-  scrivet rollback [--steps N]              move live back along its history
+-  scrivet a11y [--ref REF]                  accessibility check, blocking publish
++  quilzo env list                          what is where, and what is waiting
++  quilzo env add staging --before production
++  quilzo env promote staging production    a pointer move; the same bytes
++  quilzo env diff staging production       what would change
++  quilzo publish [COMMIT]                  move live to the draft
++  quilzo schedule add 48h | list | run     publish later; gates run at publish
++  quilzo rollback [--steps N]              move live back along its history
++  quilzo a11y [--ref REF]                  accessibility check, blocking publish
+ 
+ the assistant
+-  scrivet assist "..." --author WHO         propose changes; marks what it writes
+-  scrivet provenance check [--ref REF]      who or what wrote each page
+-  scrivet provenance set PAGE --source T    record provenance by hand
++  quilzo assist "..." --author WHO         propose changes; marks what it writes
++  quilzo provenance check [--ref REF]      who or what wrote each page
++  quilzo provenance set PAGE --source T    record provenance by hand
+ 
+ access
+-  scrivet oidc configure --issuer ... --client-id ...   sign in with an IdP
+-  scrivet oidc check                        talk to the provider, report what it offers
+-  scrivet auth grant WHO ROLE [--on PATH]   reader | author | publisher | admin
+-  scrivet auth explain WHO [ACTION]         why someone can or cannot do a thing
+-  scrivet auth list | roles
+-  scrivet token issue NAME --principal WHO  an API credential, shown once
+-  scrivet token list | revoke ID | stale
++  quilzo oidc configure --issuer ... --client-id ...   sign in with an IdP
++  quilzo oidc check                        talk to the provider, report what it offers
++  quilzo auth grant WHO ROLE [--on PATH]   reader | author | publisher | admin
++  quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
++  quilzo auth list | roles
++  quilzo token issue NAME --principal WHO  an API credential, shown once
++  quilzo token list | revoke ID | stale
+ 
+ encryption at rest
+-  scrivet vault status                      whether objects are sealed on disk
+-  scrivet vault enable                      seal new objects; prints the key once
+-  scrivet vault rotate                      new key, rewraps without re-encrypting
+-      SCRIVET_KEY / _KEY_FILE / _KEY_COMMAND  where the key comes from
++  quilzo vault status                      whether objects are sealed on disk
++  quilzo vault enable                      seal new objects; prints the key once
++  quilzo vault rotate                      new key, rewraps without re-encrypting
++      QUILZO_KEY / _KEY_FILE / _KEY_COMMAND  where the key comes from
+ 
+ compliance evidence
+-  scrivet compliance summary                what a procurement questionnaire asks
+-  scrivet compliance sbom [FILE]            CycloneDX 1.6, derived from the build
+-  scrivet compliance crypto                 every algorithm, and its post-quantum
++  quilzo compliance summary                what a procurement questionnaire asks
++  quilzo compliance sbom [FILE]            CycloneDX 1.6, derived from the build
++  quilzo compliance crypto                 every algorithm, and its post-quantum
+                                             status, checked against the source
+-  scrivet compliance controls               NIST 800-53 coverage, from the rules
++  quilzo compliance controls               NIST 800-53 coverage, from the rules
+ 
+ agents and integrations
+-  scrivet agents                            what models have been doing, and
++  quilzo agents                            what models have been doing, and
+                                             which are not accepting refusals
+-  scrivet webhook add https://...           tell another system when you publish
+-  scrivet webhook list | test               signed, timestamped, replay-proof
++  quilzo webhook add https://...           tell another system when you publish
++  quilzo webhook list | test               signed, timestamped, replay-proof
+ 
+ security posture
+-  scrivet config show | list                everything settable, and its default
+-  scrivet config explain KEY                what it is for, and what it costs
+-  scrivet config set KEY VALUE              --accept-risk "why" if it weakens
+-  scrivet posture scan [--min SEV]          continuous misconfiguration check
+-  scrivet posture rules | explain RULE      what is checked, and why it matters
+-  scrivet posture suppress ID --reason ...  accept a risk, for at most 90 days
++  quilzo config show | list                everything settable, and its default
++  quilzo config explain KEY                what it is for, and what it costs
++  quilzo config set KEY VALUE              --accept-risk "why" if it weakens
++  quilzo posture scan [--min SEV]          continuous misconfiguration check
++  quilzo posture rules | explain RULE      what is checked, and why it matters
++  quilzo posture suppress ID --reason ...  accept a risk, for at most 90 days
+ 
+ interface
+-  scrivet serve [--addr HOST:PORT]          the admin, on loopback by default
++  quilzo serve [--addr HOST:PORT]          the admin, on loopback by default
+       /playground                            try the API against your own store
+-  scrivet site  [--addr HOST:PORT]          the published site, PWA-installable
++  quilzo site  [--addr HOST:PORT]          the published site, PWA-installable
+       --api                                 content API at /api/v1, read-only
+       --api-writable                        allow PUT; every write needs If-Match
+       --base-url https://example.com        needed for /sitemap.xml
+       --redirects redirects.json            keep old URLs working after a move
+-  scrivet audit [DIR]                       templates that disable escaping
+-  scrivet scan [--fail-on SEV]              XSS, injection and leaked secrets
+-  scrivet scan --rules                      what is checked, and why
+-  scrivet csp                               the policy your content implies
++  quilzo audit [DIR]                       templates that disable escaping
++  quilzo scan [--fail-on SEV]              XSS, injection and leaked secrets
++  quilzo scan --rules                      what is checked, and why
++  quilzo csp                               the policy your content implies
+ 
+ log transparency
+-  scrivet logd                              the log writer, run as its own account
+-  scrivet logd status                       whether the separation is in force
+-  scrivet auditlog head --save              a commitment to every entry so far
+-  scrivet auditlog prove SEQ                one entry is in the log, in ~20 hashes
+-  scrivet auditlog consistency              nothing before a published head moved
+-  scrivet auditlog anchor                   put the head in Bitcoin, so rewriting
++  quilzo logd                              the log writer, run as its own account
++  quilzo logd status                       whether the separation is in force
++  quilzo auditlog head --save              a commitment to every entry so far
++  quilzo auditlog prove SEQ                one entry is in the log, in ~20 hashes
++  quilzo auditlog consistency              nothing before a published head moved
++  quilzo auditlog anchor                   put the head in Bitcoin, so rewriting
+                                             history contradicts a block
+-  scrivet timestamp stamp | list | verify   RFC 3161 proof of when you published
+-  scrivet anchor submit | list | verify     one hash over a whole publication
++  quilzo timestamp stamp | list | verify   RFC 3161 proof of when you published
++  quilzo anchor submit | list | verify     one hash over a whole publication
+ 
+-  scrivet mcp [--list]                      the agent interface, over stdio
+-  scrivet version                           what this binary is
++  quilzo mcp [--list]                      the agent interface, over stdio
++  quilzo version                           what this binary is
+ 
+ global
+-  --root DIR    store location (default .scrivet)
++  --root DIR    store location (default .quilzo)
+   --json        machine-readable output; stdout carries one document
+   NO_COLOR      suppress colour (also off automatically when not a terminal)
+ 
+@@ -676,7 +676,7 @@ func cmdPublish(root string, args []string) error {
+ 			// A gate that cannot run must not exit like a gate that passed.
+ 			//
+ 			// This printed "accessibility check skipped" and published, with
+-			// status zero. In a pipeline that is a green build: `scrivet
++			// status zero. In a pipeline that is a green build: `quilzo
+ 			// publish && deploy` deploys, and a typo in --templates means the
+ 			// check never runs again and nothing ever says so. Absence read as
+ 			// a claim, which is the failure this whole program is arranged to
+@@ -744,7 +744,7 @@ func cmdPublish(root string, args []string) error {
+ 							"author":     prop.Author,
+ 							"authorkind": prop.AuthorKind,
+ 						}))
+-					return errBlocked{fmt.Errorf("%s\n  scrivet review status",
++					return errBlocked{fmt.Errorf("%s\n  quilzo review status",
+ 						d.Reason)}
+ 				}
+ 				fmt.Printf("  %s%s%s\n", green, d.Reason, reset)
+@@ -778,7 +778,7 @@ func cmdPublish(root string, args []string) error {
+ 	notify(root, "published", pub.Published, changed)
+ 	fmt.Printf("live is now %s  (%d change(s))\n", short(pub.Published), len(pub.Changes))
+ 	if pub.Previous != "" {
+-		fmt.Printf("  %sprevious %s is still stored; `scrivet rollback` moves the "+
++		fmt.Printf("  %sprevious %s is still stored; `quilzo rollback` moves the "+
+ 			"pointer back%s\n", dim, short(pub.Previous), reset)
+ 	}
+ 	// Said plainly because it is the one thing a pointer cannot fix.
+@@ -860,7 +860,7 @@ func cmdRender(root string, args []string) error {
+ 		return err
+ 	}
+ 	if fs.NArg() < 2 {
+-		return fmt.Errorf("usage: scrivet render PAGE TEMPLATE")
++		return fmt.Errorf("usage: quilzo render PAGE TEMPLATE")
+ 	}
+ 	pageName, templatePath := fs.Arg(0), fs.Arg(1)
+ 
+diff --git a/cmd/quilzo/mcp.go b/cmd/quilzo/mcp.go
+index 16a3425..7fd290f 100644
+--- a/cmd/quilzo/mcp.go
++++ b/cmd/quilzo/mcp.go
+@@ -85,7 +85,7 @@ func cmdMCP(root string, args []string) error {
+ }
+ 
+ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.Server {
+-	srv := mcp.NewServer("scrivet", version)
++	srv := mcp.NewServer("quilzo", version)
+ 
+ 	// -- reading ------------------------------------------------------------
+ 
+diff --git a/cmd/quilzo/oidccmd.go b/cmd/quilzo/oidccmd.go
+index 46790a0..7643230 100644
+--- a/cmd/quilzo/oidccmd.go
++++ b/cmd/quilzo/oidccmd.go
+@@ -25,7 +25,7 @@ type oidcConfig struct {
+ 	Issuer      string `json:"issuer"`
+ 	ClientID    string `json:"client_id"`
+ 	RedirectURI string `json:"redirect_uri"`
+-	// Claim is which claim becomes the scrivet principal. Defaults to email,
++	// Claim is which claim becomes the quilzo principal. Defaults to email,
+ 	// because that is what an access policy is written in terms of — but sub is
+ 	// the stable one, and an operator whose provider recycles addresses should
+ 	// say so.
+@@ -36,7 +36,7 @@ type oidcConfig struct {
+ 	RequireVerifiedEmail bool `json:"require_verified_email"`
+ }
+ 
+-const oidcSecretEnv = "SCRIVET_OIDC_SECRET"
++const oidcSecretEnv = "QUILZO_OIDC_SECRET"
+ 
+ func loadOIDC(root string) (*oidcConfig, error) {
+ 	c := &oidcConfig{}
+@@ -82,7 +82,7 @@ func oidcConfigure(root string, args []string) error {
+ 	}
+ 	if *issuer == "" || *clientID == "" || *redirect == "" {
+ 		return fmt.Errorf(
+-			"usage: scrivet oidc configure --issuer https://idp.example \\\n" +
++			"usage: quilzo oidc configure --issuer https://idp.example \\\n" +
+ 				"    --client-id ... --redirect-uri https://cms.example/auth/callback")
+ 	}
+ 	if _, err := fetch.ValidateURL(*issuer); err != nil {
+@@ -121,7 +121,7 @@ func oidcConfigure(root string, args []string) error {
+ 		dim, oidcSecretEnv, reset)
+ 	w.Human("  %sa secret kept beside the data it protects travels with every "+
+ 		"backup%s\n", dim, reset)
+-	w.Human("\n  %sscrivet oidc check — talk to the provider and report what it "+
++	w.Human("\n  %squilzo oidc check — talk to the provider and report what it "+
+ 		"offers%s\n", dim, reset)
+ 	return nil
+ }
+@@ -136,7 +136,7 @@ func oidcStatus(root string) error {
+ 			return nil
+ 		}
+ 		w.Human("no identity provider is configured\n")
+-		w.Human("  %sscrivet oidc configure --issuer ... --client-id ...%s\n",
++		w.Human("  %squilzo oidc configure --issuer ... --client-id ...%s\n",
+ 			dim, reset)
+ 		w.Human("\n  %sSAML is not implemented, deliberately. Go's encoding/xml "+
+ 			"does not\n  preserve semantics across a parse and re-serialise, "+
+diff --git a/cmd/quilzo/posture.go b/cmd/quilzo/posture.go
+index 98b5d10..dfe2d2c 100644
+--- a/cmd/quilzo/posture.go
++++ b/cmd/quilzo/posture.go
+@@ -372,11 +372,11 @@ func colourFor(s posture.Severity) string {
+ 
+ func postureExplain(args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet posture explain <rule-id>")
++		return fmt.Errorf("usage: quilzo posture explain <rule-id>")
+ 	}
+ 	r, ok := posture.Explain(args[0])
+ 	if !ok {
+-		return fmt.Errorf("there is no rule %q; run scrivet posture rules", args[0])
++		return fmt.Errorf("there is no rule %q; run quilzo posture rules", args[0])
+ 	}
+ 	if w.JSON(map[string]any{
+ 		"id": r.ID, "title": r.Title, "severity": r.Severity,
+@@ -405,7 +405,7 @@ func postureRules() error {
+ 			colourFor(r.Severity), r.Severity, reset, r.Title)
+ 		w.Human("  %s%s%s\n", dim, strings.Join(r.Controls, " "), reset)
+ 	}
+-	w.Human("\n%s%d rules. scrivet posture explain <id> for the reasoning.%s\n",
++	w.Human("\n%s%d rules. quilzo posture explain <id> for the reasoning.%s\n",
+ 		dim, len(rules), reset)
+ 	return nil
+ }
+@@ -420,7 +420,7 @@ func postureSuppress(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(pos) != 1 {
+-		return fmt.Errorf("usage: scrivet posture suppress <finding-id> " +
++		return fmt.Errorf("usage: quilzo posture suppress <finding-id> " +
+ 			"--reason ... --by ... [--days N]")
+ 	}
+ 	if strings.TrimSpace(*reason) == "" {
+diff --git a/cmd/quilzo/privilege.go b/cmd/quilzo/privilege.go
+index 0106071..8a87419 100644
+--- a/cmd/quilzo/privilege.go
++++ b/cmd/quilzo/privilege.go
+@@ -273,9 +273,9 @@ func unknownCommand(cmd string) error {
+ 	}
+ 	if len(near) > 0 {
+ 		return fmt.Errorf("there is no %q command. Did you mean %s?\n"+
+-			"  scrivet help — every command", cmd, strings.Join(near, ", "))
++			"  quilzo help — every command", cmd, strings.Join(near, ", "))
+ 	}
+-	return fmt.Errorf("there is no %q command.\n  scrivet help — every command",
++	return fmt.Errorf("there is no %q command.\n  quilzo help — every command",
+ 		cmd)
+ }
+ 
+diff --git a/cmd/quilzo/privilege_test.go b/cmd/quilzo/privilege_test.go
+index 577c2d8..77453e5 100644
+--- a/cmd/quilzo/privilege_test.go
++++ b/cmd/quilzo/privilege_test.go
+@@ -168,7 +168,7 @@ func TestPrivilegedCommandsAreRefusedWithoutAToken(t *testing.T) {
+ 	if err := saveJSON(policyPath(root), pol); err != nil {
+ 		t.Fatal(err)
+ 	}
+-	t.Setenv("SCRIVET_TOKEN", "")
++	t.Setenv("QUILZO_TOKEN", "")
+ 
+ 	for _, tc := range []struct {
+ 		cmd  string
+@@ -205,7 +205,7 @@ func TestReadsAreAlsoRefusedWithoutAToken(t *testing.T) {
+ 	if err := saveJSON(policyPath(root), pol); err != nil {
+ 		t.Fatal(err)
+ 	}
+-	t.Setenv("SCRIVET_TOKEN", "")
++	t.Setenv("QUILZO_TOKEN", "")
+ 	for _, cmd := range []string{"log", "diff", "verify", "export", "siem"} {
+ 		if err := authoriseCommand(root, cmd, nil); err == nil {
+ 			t.Errorf("%s read the store with no token", cmd)
+@@ -227,7 +227,7 @@ func TestTheFirstTokenCanBeIssuedAfterTheFirstGrant(t *testing.T) {
+ 	if err := saveJSON(policyPath(root), pol); err != nil {
+ 		t.Fatal(err)
+ 	}
+-	t.Setenv("SCRIVET_TOKEN", "")
++	t.Setenv("QUILZO_TOKEN", "")
+ 
+ 	if err := authoriseCommand(root, "token",
+ 		[]string{"issue", "laptop", "--principal", "alice", "--role", "admin"}); err != nil {
+@@ -256,7 +256,7 @@ func TestTheBootstrapClosesOnceATokenExists(t *testing.T) {
+ 	if err := saveJSON(tokensPath(root), ts); err != nil {
+ 		t.Fatal(err)
+ 	}
+-	t.Setenv("SCRIVET_TOKEN", "")
++	t.Setenv("QUILZO_TOKEN", "")
+ 
+ 	if err := authoriseCommand(root, "token",
+ 		[]string{"issue", "second", "--principal", "alice", "--role", "admin"}); err == nil {
+@@ -277,7 +277,7 @@ func TestTheBootstrapOnlyIssuesToAPrincipalThePolicyKnows(t *testing.T) {
+ 	if err := saveJSON(policyPath(root), pol); err != nil {
+ 		t.Fatal(err)
+ 	}
+-	t.Setenv("SCRIVET_TOKEN", "")
++	t.Setenv("QUILZO_TOKEN", "")
+ 
+ 	if err := authoriseCommand(root, "token",
+ 		[]string{"issue", "evil", "--principal", "mallory", "--role", "admin"}); err == nil {
+@@ -287,14 +287,14 @@ func TestTheBootstrapOnlyIssuesToAPrincipalThePolicyKnows(t *testing.T) {
+ }
+ 
+ // A store nobody has configured must stay usable without ceremony. Requiring a
+-// token before anybody has been granted anything would make `scrivet init`
+-// followed by `scrivet add` fail, which is the first thing anyone does.
++// token before anybody has been granted anything would make `quilzo init`
++// followed by `quilzo add` fail, which is the first thing anyone does.
+ func TestAnUnconfiguredStoreNeedsNoToken(t *testing.T) {
+ 	root := t.TempDir()
+ 	if err := cmdInit(root); err != nil {
+ 		t.Fatal(err)
+ 	}
+-	t.Setenv("SCRIVET_TOKEN", "")
++	t.Setenv("QUILZO_TOKEN", "")
+ 	for _, cmd := range []string{"add", "publish", "log", "auth", "token"} {
+ 		if err := authoriseCommand(root, cmd, nil); err != nil {
+ 			t.Errorf("%s needed a token on a store with no policy: %v", cmd, err)
+@@ -313,7 +313,7 @@ func TestHelpNeedsNoAuthority(t *testing.T) {
+ 	if err := saveJSON(policyPath(root), pol); err != nil {
+ 		t.Fatal(err)
+ 	}
+-	t.Setenv("SCRIVET_TOKEN", "")
++	t.Setenv("QUILZO_TOKEN", "")
+ 	if err := authoriseCommand(root, "publish", []string{"--help"}); err != nil {
+ 		t.Errorf("publish --help was refused: %v", err)
+ 	}
+@@ -322,7 +322,7 @@ func TestHelpNeedsNoAuthority(t *testing.T) {
+ // A typo must not tell a user to edit a Go source file.
+ //
+ // Every unknown command took the developer's message for as long as this check
+-// has existed — "add it to commandNeeds in cmd/scrivet/privilege.go" — because
++// has existed — "add it to commandNeeds in cmd/quilzo/privilege.go" — because
+ // "somebody added a command and forgot the table" and "somebody mistyped" were
+ // never distinguished. The first is a real condition worth a loud message; the
+ // second is the overwhelmingly common one.
+@@ -341,7 +341,7 @@ func TestATypoGetsAHumanMessage(t *testing.T) {
+ 			strings.Contains(msg, ".go") {
+ 			t.Errorf("%q told a user to edit source: %s", typo, msg)
+ 		}
+-		if !strings.Contains(msg, "scrivet help") {
++		if !strings.Contains(msg, "quilzo help") {
+ 			t.Errorf("%q does not say how to find the real commands: %s",
+ 				typo, msg)
+ 		}
+diff --git a/cmd/quilzo/provenance.go b/cmd/quilzo/provenance.go
+index 95c16ad..93a529f 100644
+--- a/cmd/quilzo/provenance.go
++++ b/cmd/quilzo/provenance.go
+@@ -62,7 +62,7 @@ func provSet(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(pos) != 1 {
+-		return fmt.Errorf("usage: scrivet provenance set <page> --source <type> --author <who>")
++		return fmt.Errorf("usage: quilzo provenance set <page> --source <type> --author <who>")
+ 	}
+ 	page := pos[0]
+ 
+diff --git a/cmd/quilzo/records.go b/cmd/quilzo/records.go
+index c866f19..b64e1f4 100644
+--- a/cmd/quilzo/records.go
++++ b/cmd/quilzo/records.go
+@@ -114,7 +114,7 @@ func recordsCollections(root string) error {
+ 		w.Human("no collections\n")
+ 		w.Human("  %sa collection is many records of one shape, which is what "+
+ 			"an application holds%s\n", dim, reset)
+-		w.Human("  %sscrivet records add devices hostname=laptop-14%s\n", dim, reset)
++		w.Human("  %squilzo records add devices hostname=laptop-14%s\n", dim, reset)
+ 		return nil
+ 	}
+ 	for _, r := range rows {
+@@ -136,7 +136,7 @@ func recordsList(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(rest) != 1 {
+-		return fmt.Errorf("usage: scrivet records list <collection> [--where field=value]")
++		return fmt.Errorf("usage: quilzo records list <collection> [--where field=value]")
+ 	}
+ 	s, err := open(root)
+ 	if err != nil {
+@@ -173,7 +173,7 @@ func recordsList(root string, args []string) error {
+ 
+ func recordsGet(root string, args []string) error {
+ 	if len(args) != 2 {
+-		return fmt.Errorf("usage: scrivet records get <collection> <id>")
++		return fmt.Errorf("usage: quilzo records get <collection> <id>")
+ 	}
+ 	s, err := open(root)
+ 	if err != nil {
+@@ -230,8 +230,8 @@ func recordsAdd(root string, args []string) error {
+ 	}
+ 	if len(rest) < 1 {
+ 		return fmt.Errorf(
+-			"usage: scrivet records add <collection> field=value [...]\n" +
+-				"   or: scrivet records add <collection> --from record.json")
++			"usage: quilzo records add <collection> field=value [...]\n" +
++				"   or: quilzo records add <collection> --from record.json")
+ 	}
+ 	coll := rest[0]
+ 
+@@ -285,7 +285,7 @@ func recordsAdd(root string, args []string) error {
+ 
+ func recordsDelete(root string, args []string) error {
+ 	if len(args) != 2 {
+-		return fmt.Errorf("usage: scrivet records delete <collection> <id>")
++		return fmt.Errorf("usage: quilzo records delete <collection> <id>")
+ 	}
+ 	s, err := open(root)
+ 	if err != nil {
+@@ -318,7 +318,7 @@ func recordsDelete(root string, args []string) error {
+ // pays for ten thousand tree rebuilds and ten thousand ref moves.
+ func recordsImport(root string, args []string) error {
+ 	if len(args) != 2 {
+-		return fmt.Errorf("usage: scrivet records import <collection> <file.json>")
++		return fmt.Errorf("usage: quilzo records import <collection> <file.json>")
+ 	}
+ 	body, err := os.ReadFile(args[1])
+ 	if err != nil {
+diff --git a/cmd/quilzo/recover.go b/cmd/quilzo/recover.go
+index 39c4900..c3565e7 100644
+--- a/cmd/quilzo/recover.go
++++ b/cmd/quilzo/recover.go
+@@ -88,7 +88,7 @@ func cmdRecover(root string, args []string) error {
+ 		return fmt.Errorf(
+ 			"%d admin token(s) are still usable, so this is not needed.\n"+
+ 				"  Ask whoever holds one to issue you another:\n"+
+-				"    scrivet token issue you --principal you --role admin\n"+
++				"    quilzo token issue you --principal you --role admin\n"+
+ 				"  This command exists only for a store nobody can administer "+
+ 				"at all", usable)
+ 	}
+@@ -103,7 +103,7 @@ func cmdRecover(root string, args []string) error {
+ 				"everything about whether\n  it is recorded: a hand edit " +
+ 				"leaves no trace, this leaves one in a log\n  written by a " +
+ 				"different account.\n\n" +
+-				"    scrivet auth recover --principal WHO --reason \"why\" " +
++				"    quilzo auth recover --principal WHO --reason \"why\" " +
+ 				"--i-have-filesystem-access\n")}
+ 	}
+ 
+diff --git a/cmd/quilzo/scancmd.go b/cmd/quilzo/scancmd.go
+index 3ffe3d3..9a78416 100644
+--- a/cmd/quilzo/scancmd.go
++++ b/cmd/quilzo/scancmd.go
+@@ -229,7 +229,7 @@ func cmdCSP(root string, args []string) error {
+ }
+ 
+ // buildCSP is the one place a policy is assembled, so the header the site
+-// serves and the header `scrivet csp` prints cannot drift apart.
++// serves and the header `quilzo csp` prints cannot drift apart.
+ func buildCSP(cfg *config.Config, pages map[string]any) csp.Policy {
+ 	src := csp.Collect(pages)
+ 	src.Img = append(src.Img, cfg.Strings("site.csp.extra_img")...)
+diff --git a/cmd/quilzo/schedulecmd.go b/cmd/quilzo/schedulecmd.go
+index e2a6e26..7b1e47f 100644
+--- a/cmd/quilzo/schedulecmd.go
++++ b/cmd/quilzo/schedulecmd.go
+@@ -46,7 +46,7 @@ func scheduleAdd(root string, args []string) error {
+ 	}
+ 	if len(pos) != 1 {
+ 		return fmt.Errorf(
+-			"usage: scrivet schedule add <when>\n" +
++			"usage: quilzo schedule add <when>\n" +
+ 				"  when is RFC 3339 (2026-09-01T09:00:00Z) or a duration (48h)")
+ 	}
+ 
+@@ -115,7 +115,7 @@ func parseWhen(s string, now time.Time) (time.Time, error) {
+ 
+ func scheduleCancel(root string, args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet schedule cancel <commit>")
++		return fmt.Errorf("usage: quilzo schedule cancel <commit>")
+ 	}
+ 	sch, err := loadSchedule(root)
+ 	if err != nil {
+@@ -154,7 +154,7 @@ func scheduleList(root string) error {
+ 	}
+ 	if len(states) == 0 {
+ 		w.Human("nothing is scheduled\n")
+-		w.Human("  %sscrivet schedule add 48h — publish the current draft then%s\n",
++		w.Human("  %squilzo schedule add 48h — publish the current draft then%s\n",
+ 			dim, reset)
+ 		return nil
+ 	}
+@@ -221,7 +221,7 @@ func scheduleRun(root string, args []string) error {
+ 			// clock said so is how a scheduled publish surprises everyone.
+ 			w.Human("  %sskipped%s %s — the draft has moved since this was "+
+ 				"scheduled\n", yellow, reset, short(e.Commit))
+-			w.Human("          %sscrivet schedule cancel %s, then schedule "+
++			w.Human("          %squilzo schedule cancel %s, then schedule "+
+ 				"again%s\n", dim, short(e.Commit), reset)
+ 			continue
+ 		}
+diff --git a/cmd/quilzo/serve.go b/cmd/quilzo/serve.go
+index 5a5d172..8af6450 100644
+--- a/cmd/quilzo/serve.go
++++ b/cmd/quilzo/serve.go
+@@ -380,7 +380,7 @@ func cmdServe(root string, args []string) error {
+ 
+ 	// The content API, same-origin with the playground. Read-only here: this
+ 	// is the console, and a console that can rewrite production by accident
+-	// is a different product. `scrivet site --api-writable` is where writes
++	// is a different product. `quilzo site --api-writable` is where writes
+ 	// are turned on deliberately.
+ 	apiSrv := &api.Server{
+ 		Store: s, Policy: pol, Tokens: toks,
+@@ -536,7 +536,7 @@ func cmdServe(root string, args []string) error {
+ 	}
+ 
+ 	fmt.Printf("admin on http://%s\n", *addr)
+-	fmt.Printf("  %ssign in with a token: scrivet token issue you --principal you "+
++	fmt.Printf("  %ssign in with a token: quilzo token issue you --principal you "+
+ 		"--role admin%s\n", dim, reset)
+ 	if len(toks.Tokens) == 0 {
+ 		fmt.Printf("  %sno tokens exist yet, so nobody can sign in%s\n", yellow, reset)
+diff --git a/cmd/quilzo/site.go b/cmd/quilzo/site.go
+index bf8acac..0b9ae69 100644
+--- a/cmd/quilzo/site.go
++++ b/cmd/quilzo/site.go
+@@ -45,7 +45,7 @@ func cmdSite(root string, args []string) error {
+ 	baseURL := fs.String("base-url", "",
+ 		"absolute origin, e.g. https://example.com — required for the sitemap")
+ 	redirectFile := fs.String("redirects", "",
+-		"a redirect map, as written by scrivet import")
++		"a redirect map, as written by quilzo import")
+ 	name := fs.String("name", "", "site name, shown when installing")
+ 	desc := fs.String("description", "", "site description")
+ 	envName := fs.String("env", "",
+@@ -211,7 +211,7 @@ func cmdSite(root string, args []string) error {
+ 	if live == "" {
+ 		fmt.Fprintf(os.Stderr, "  %s%snothing is published, so every page will "+
+ 			"404%s\n", yellow, "", reset)
+-		fmt.Fprintf(os.Stderr, "  %sscrivet publish%s\n", dim, reset)
++		fmt.Fprintf(os.Stderr, "  %squilzo publish%s\n", dim, reset)
+ 	}
+ 	if live != "" {
+ 		if pages, perr := site.PagesAt(s, live); perr == nil {
+@@ -378,7 +378,7 @@ func cmdSite(root string, args []string) error {
+ 	if fp := st.Fingerprint(); fp != "" {
+ 		fmt.Printf("  %spublished fingerprint %s%s\n", dim, fp, reset)
+ 	} else {
+-		fmt.Printf("  %snothing is published yet; run scrivet publish%s\n", yellow, reset)
++		fmt.Printf("  %snothing is published yet; run quilzo publish%s\n", yellow, reset)
+ 	}
+ 	return srv.ListenAndServe()
+ }
+diff --git a/cmd/quilzo/sources.go b/cmd/quilzo/sources.go
+index 6f4b491..4292ba1 100644
+--- a/cmd/quilzo/sources.go
++++ b/cmd/quilzo/sources.go
+@@ -38,7 +38,7 @@ func sourcesFor(root string, s *store.Store, commit, siteName string,
+ // siteName is what this site calls itself.
+ //
+ // Configuration rather than a flag, so that the gate, the preview and the
+-// exports agree with the server. `scrivet site --name` still overrides it for
++// exports agree with the server. `quilzo site --name` still overrides it for
+ // one run, which is how a staging copy gets a different title without editing
+ // anything.
+ func siteName(root string) string {
+diff --git a/cmd/quilzo/structurecmd.go b/cmd/quilzo/structurecmd.go
+index fd61033..83978d1 100644
+--- a/cmd/quilzo/structurecmd.go
++++ b/cmd/quilzo/structurecmd.go
+@@ -295,7 +295,7 @@ func listingsRun(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(pos) != 1 {
+-		return fmt.Errorf("usage: scrivet listing run <name> [--arg k=v,k=v]")
++		return fmt.Errorf("usage: quilzo listing run <name> [--arg k=v,k=v]")
+ 	}
+ 
+ 	set, err := loadListings(root)
+diff --git a/cmd/quilzo/template.go b/cmd/quilzo/template.go
+index 6549da2..e6f1482 100644
+--- a/cmd/quilzo/template.go
++++ b/cmd/quilzo/template.go
+@@ -37,10 +37,10 @@ func templateList() error {
+ 	}
+ 	for _, t := range all {
+ 		w.Human("%s%-11s%s %s\n", bold, t.Name, reset, wrapIndent(t.Summary, 62, 12))
+-		w.Human("  %s%d fields · scrivet template show %s%s\n\n",
++		w.Human("  %s%d fields · quilzo template show %s%s\n\n",
+ 			dim, len(t.Fields), t.Name, reset)
+ 	}
+-	w.Human("%sscrivet template use NAME  writes the template, its stylesheet%s\n",
++	w.Human("%squilzo template use NAME  writes the template, its stylesheet%s\n",
+ 		dim, reset)
+ 	w.Human("%s                           and sample content you can edit%s\n",
+ 		dim, reset)
+@@ -49,7 +49,7 @@ func templateList() error {
+ 
+ func templateShow(args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet template show <name>")
++		return fmt.Errorf("usage: quilzo template show <name>")
+ 	}
+ 	t, ok := starter.Get(args[0])
+ 	if !ok {
+@@ -91,7 +91,7 @@ func templateUse(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(pos) != 1 {
+-		return fmt.Errorf("usage: scrivet template use <name> [--dir templates]")
++		return fmt.Errorf("usage: quilzo template use <name> [--dir templates]")
+ 	}
+ 	t, ok := starter.Get(pos[0])
+ 	if !ok {
+@@ -155,10 +155,10 @@ func templateUse(root string, args []string) error {
+ 	}
+ 
+ 	w.Human("\n  %snext:%s\n", dim, reset)
+-	w.Human("    scrivet add %s=%s\n", *page, sample)
+-	w.Human("    scrivet render %s %s -o preview.html\n",
++	w.Human("    quilzo add %s=%s\n", *page, sample)
++	w.Human("    quilzo render %s %s -o preview.html\n",
+ 		*page, filepath.Join(*dir, "page.html"))
+-	w.Human("\n  %sthe stylesheet is served at /site.css by scrivet site%s\n",
++	w.Human("\n  %sthe stylesheet is served at /site.css by quilzo site%s\n",
+ 		dim, reset)
+ 	return nil
+ }
+diff --git a/cmd/quilzo/timestamp.go b/cmd/quilzo/timestamp.go
+index 0c6176d..3d8a8a0 100644
+--- a/cmd/quilzo/timestamp.go
++++ b/cmd/quilzo/timestamp.go
+@@ -98,7 +98,7 @@ func stampNow(root string, args []string) error {
+ 		return nil
+ 	}
+ 	w.Human("\n%s", timestamp.Describe(stamp))
+-	w.Human("  %sexport it with `scrivet timestamp export` and verify with openssl%s\n",
++	w.Human("  %sexport it with `quilzo timestamp export` and verify with openssl%s\n",
+ 		dim, reset)
+ 	return nil
+ }
+diff --git a/cmd/quilzo/types.go b/cmd/quilzo/types.go
+index 6632a99..40ed25d 100644
+--- a/cmd/quilzo/types.go
++++ b/cmd/quilzo/types.go
+@@ -54,7 +54,7 @@ func typesList(root string) error {
+ 		w.Human("no content types\n")
+ 		w.Human("  %sa type is a flat list of fields: no regex, no references, "+
+ 			"no nesting%s\n", dim, reset)
+-		w.Human("  %sdefine one with: scrivet type add article.json%s\n", dim, reset)
++		w.Human("  %sdefine one with: quilzo type add article.json%s\n", dim, reset)
+ 		return nil
+ 	}
+ 	for _, name := range names {
+@@ -89,8 +89,8 @@ func typesList(root string) error {
+ 
+ func typesAdd(root string, args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet type add <definition.json>\n" +
+-			"  scrivet type example > article.json   writes one you can edit")
++		return fmt.Errorf("usage: quilzo type add <definition.json>\n" +
++			"  quilzo type example > article.json   writes one you can edit")
+ 	}
+ 	raw, err := os.ReadFile(args[0])
+ 	if err != nil {
+@@ -133,7 +133,7 @@ func typesAdd(root string, args []string) error {
+ 
+ func typesShow(root string, args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet type show <name>")
++		return fmt.Errorf("usage: quilzo type show <name>")
+ 	}
+ 	st, err := schema.Load(root)
+ 	if err != nil {
+@@ -190,7 +190,7 @@ func typesBind(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(pos) != 2 {
+-		return fmt.Errorf("usage: scrivet type bind <page> <type>")
++		return fmt.Errorf("usage: quilzo type bind <page> <type>")
+ 	}
+ 	page, typeName := pos[0], pos[1]
+ 
+@@ -252,7 +252,7 @@ func typesCheck(root string) error {
+ 
+ 	if len(st.Bound) == 0 {
+ 		w.Human("no page is bound to a type\n")
+-		w.Human("  %sscrivet type bind <page> <type>%s\n", dim, reset)
++		w.Human("  %squilzo type bind <page> <type>%s\n", dim, reset)
+ 		return nil
+ 	}
+ 	names := make([]string, 0, len(st.Bound))
+@@ -368,15 +368,15 @@ func cmdTypeExample(args []string) error {
+ 	if err != nil {
+ 		return err
+ 	}
+-	// The definition goes to stdout on its own so that `scrivet type example >
+-	// article.json` produces a file that `scrivet type add` accepts. The
++	// The definition goes to stdout on its own so that `quilzo type example >
++	// article.json` produces a file that `quilzo type add` accepts. The
+ 	// guidance goes to stderr for the same reason.
+ 	fmt.Println(string(body))
+ 	fmt.Fprintf(os.Stderr, "\n%severy kind: %s%s\n", dim,
+ 		strings.Join(schema.Kinds(), ", "), reset)
+ 	fmt.Fprintf(os.Stderr, "%sno pattern, $ref, oneOf or nesting, deliberately%s\n",
+ 		dim, reset)
+-	fmt.Fprintf(os.Stderr, "%sscrivet type example > %s.json && scrivet type "+
++	fmt.Fprintf(os.Stderr, "%squilzo type example > %s.json && quilzo type "+
+ 		"add %s.json%s\n", dim, name, name, reset)
+ 	return nil
+ }
+diff --git a/cmd/quilzo/vaultcmd.go b/cmd/quilzo/vaultcmd.go
+index eb966f1..7138180 100644
+--- a/cmd/quilzo/vaultcmd.go
++++ b/cmd/quilzo/vaultcmd.go
+@@ -25,9 +25,9 @@ func keyringPath(root string) string { return filepath.Join(root, "keyring.json"
+ // HSM, a cloud KMS, a password manager or a hardware token work without this
+ // program knowing any of them exist.
+ const (
+-	keyEnv     = "SCRIVET_KEY"
+-	keyCmdEnv  = "SCRIVET_KEY_COMMAND"
+-	keyFileEnv = "SCRIVET_KEY_FILE"
++	keyEnv     = "QUILZO_KEY"
++	keyCmdEnv  = "QUILZO_KEY_COMMAND"
++	keyFileEnv = "QUILZO_KEY_FILE"
+ )
+ 
+ // loadKeyring reads the keyring and supplies key material from outside.
+@@ -205,7 +205,7 @@ func vaultStatus(root string) error {
+ 			return nil
+ 		}
+ 		w.Human("objects are stored in the clear\n")
+-		w.Human("  %sscrivet vault enable — encrypt new objects at rest%s\n",
++		w.Human("  %squilzo vault enable — encrypt new objects at rest%s\n",
+ 			dim, reset)
+ 		w.Human("  %sthis protects against somebody obtaining the files: a lost\n"+
+ 			"  laptop, a backup on an open bucket, a disposed disk. It cannot\n"+
+@@ -287,7 +287,7 @@ func vaultEnable(root string, args []string) error {
+ 		"  somebody who takes the directory.%s\n", yellow, reset)
+ 	w.Human("\n  %ssupply it with one of:%s\n", dim, reset)
+ 	w.Human("    export %s='%s'\n", keyEnv, "…")
+-	w.Human("    export %s=/run/secrets/scrivet.key\n", keyFileEnv)
++	w.Human("    export %s=/run/secrets/quilzo.key\n", keyFileEnv)
+ 	w.Human("    export %s='aws kms decrypt … --output text'\n", keyCmdEnv)
+ 	w.Human("\n  %sobjects already written stay in the clear; only new ones are\n"+
+ 		"  sealed. Nothing is rewritten, so enabling this cannot lose content.%s\n",
+diff --git a/cmd/quilzo/webhookcmd.go b/cmd/quilzo/webhookcmd.go
+index d908383..e45894e 100644
+--- a/cmd/quilzo/webhookcmd.go
++++ b/cmd/quilzo/webhookcmd.go
+@@ -65,7 +65,7 @@ func hookAdd(root string, args []string) error {
+ 		return err
+ 	}
+ 	if len(pos) != 1 {
+-		return fmt.Errorf("usage: scrivet webhook add https://receiver.example/hook")
++		return fmt.Errorf("usage: quilzo webhook add https://receiver.example/hook")
+ 	}
+ 	if _, err := fetch.ValidateURL(pos[0]); err != nil {
+ 		return fmt.Errorf("that endpoint is not usable: %w", err)
+@@ -119,7 +119,7 @@ func hookAdd(root string, args []string) error {
+ 
+ func hookRemove(root string, args []string) error {
+ 	if len(args) != 1 {
+-		return fmt.Errorf("usage: scrivet webhook remove <url>")
++		return fmt.Errorf("usage: quilzo webhook remove <url>")
+ 	}
+ 	f := &hookFile{}
+ 	if err := loadJSON(hooksPath(root), f); err != nil {
+@@ -167,7 +167,7 @@ func hookList(root string) error {
+ 	}
+ 	if len(f.Endpoints) == 0 {
+ 		w.Human("no webhooks\n")
+-		w.Human("  %sscrivet webhook add https://receiver.example/hook%s\n",
++		w.Human("  %squilzo webhook add https://receiver.example/hook%s\n",
+ 			dim, reset)
+ 		return nil
+ 	}
+diff --git a/examples/northwind/README.md b/examples/northwind/README.md
+index 45715b8..2594fbb 100644
+--- a/examples/northwind/README.md
++++ b/examples/northwind/README.md
+@@ -9,16 +9,16 @@ the scanner clean, and a Content-Security-Policy that names nothing external
+ because the content references nothing external.
+ 
+ ```bash
+-scrivet init
++quilzo init
+ cp page.html site.css templates/
+-scrivet type add product.json
+-scrivet add index=index.json instruments=instruments.json \
++quilzo type add product.json
++quilzo add index=index.json instruments=instruments.json \
+              calibration=calibration.json about=about.json contact=contact.json
+ for p in index instruments calibration about contact; do
+-  scrivet type bind $p product
++  quilzo type bind $p product
+ done
+-scrivet publish
+-scrivet site --addr 127.0.0.1:8080
++quilzo publish
++quilzo site --addr 127.0.0.1:8080
+ ```
+ 
+ ## What it demonstrates
+@@ -51,5 +51,5 @@ naming convention.
+ 
+ It has no images, because a repository is a bad place to keep them and a
+ made-up photograph would not show anything the field types do not already say.
+-Add one with `scrivet media add photo.jpg --alt "..."` and the pipeline will
++Add one with `quilzo media add photo.jpg --alt "..."` and the pipeline will
+ strip its metadata and resize it.
+diff --git a/examples/northwind/page.html b/examples/northwind/page.html
+index 6825ff2..9b76eac 100644
+--- a/examples/northwind/page.html
++++ b/examples/northwind/page.html
+@@ -51,7 +51,7 @@
+ 
+ <footer class="site">
+   <p>Northwind Instruments · Sheffield · Est. 1974</p>
+-  <p class="fine">{{ page.title | slug }} · built with scrivet</p>
++  <p class="fine">{{ page.title | slug }} · built with quilzo</p>
+ </footer>
+ </body>
+ </html>
+diff --git a/internal/admin/admin_test.go b/internal/admin/admin_test.go
+index cfa7807..c8e1018 100644
+--- a/internal/admin/admin_test.go
++++ b/internal/admin/admin_test.go
+@@ -226,7 +226,7 @@ func TestPermissionsAreEnforcedNotJustHidden(t *testing.T) {
+ 
+ func TestBadTokenIsRefused(t *testing.T) {
+ 	srv, _ := setup(t)
+-	if w := get(t, srv, "/", "scv_not_a_real_token"); w.Code != http.StatusUnauthorized {
++	if w := get(t, srv, "/", "qlz_not_a_real_token"); w.Code != http.StatusUnauthorized {
+ 		t.Errorf("a bad token should give 401, got %d", w.Code)
+ 	}
+ }
+@@ -388,7 +388,7 @@ func TestSignInSetsAHardenedCookie(t *testing.T) {
+ func TestSignInRefusesABadToken(t *testing.T) {
+ 	srv, _ := setup(t)
+ 	req := httptest.NewRequest(http.MethodPost, "/signin",
+-		strings.NewReader("token=scv_nonsense"))
++		strings.NewReader("token=qlz_nonsense"))
+ 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+ 	w := httptest.NewRecorder()
+ 	srv.Handler().ServeHTTP(w, req)
+diff --git a/internal/admin/assets/access.html b/internal/admin/assets/access.html
+index 7146022..3bfeae7 100644
+--- a/internal/admin/assets/access.html
++++ b/internal/admin/assets/access.html
+@@ -27,5 +27,5 @@
+   </tbody>
+ </table>
+ </div>
+-<p class="help">A deny wins wherever it sits. Change these with <code>scrivet auth grant</code>.</p>
++<p class="help">A deny wins wherever it sits. Change these with <code>quilzo auth grant</code>.</p>
+ {{template "foot" .}}
+diff --git a/internal/admin/assets/assist.html b/internal/admin/assets/assist.html
+index c68cc48..1c758f7 100644
+--- a/internal/admin/assets/assist.html
++++ b/internal/admin/assets/assist.html
+@@ -10,8 +10,8 @@
+   That is a complete configuration rather than a missing feature. The assistant
+   talks to any OpenAI-compatible endpoint — a self-hosted server, a gateway, a
+   hosted provider — and which one is a decision about where this site's content
+-  is allowed to go. It is set with <code>SCRIVET_MODEL_URL</code> and
+-  <code>SCRIVET_MODEL_KEY</code>.
++  is allowed to go. It is set with <code>QUILZO_MODEL_URL</code> and
++  <code>QUILZO_MODEL_KEY</code>.
+ </p>
+ 
+ {{else}}
+diff --git a/internal/admin/assets/integrations.html b/internal/admin/assets/integrations.html
+index ab14ea2..0886f03 100644
+--- a/internal/admin/assets/integrations.html
++++ b/internal/admin/assets/integrations.html
+@@ -47,7 +47,7 @@ write.</p>
+ <form method="post" action="/integrations/webhook" class="inline">
+   <label for="w-url">Endpoint</label>
+   <input id="w-url" name="url" required spellcheck="false" size="36"
+-         placeholder="https://example.org/hooks/scrivet">
++         placeholder="https://example.org/hooks/quilzo">
+   <label for="w-types">Events</label>
+   <input id="w-types" name="types" placeholder="blank means all">
+   <label for="w-note">Note</label>
+diff --git a/internal/admin/assets/pages.html b/internal/admin/assets/pages.html
+index 0dc381b..9cc069d 100644
+--- a/internal/admin/assets/pages.html
++++ b/internal/admin/assets/pages.html
+@@ -44,7 +44,7 @@
+ </div>
+ {{else}}
+ <p>No pages yet. Open <a href="/page/index">index</a> to write the first one,
+-or stage one from a file with <code>scrivet add</code>.</p>
++or stage one from a file with <code>quilzo add</code>.</p>
+ {{end}}
+ <p class="hint">Removing a page takes it out of the draft and, once you publish,
+ off the live site. Nothing is erased: the store keeps every commit, so an
+diff --git a/internal/admin/assets/signin.html b/internal/admin/assets/signin.html
+index 1cf81ec..0788f93 100644
+--- a/internal/admin/assets/signin.html
++++ b/internal/admin/assets/signin.html
+@@ -50,9 +50,9 @@
+         <input id="tok" name="token" type="password"
+                autocomplete="current-password" autofocus
+                aria-describedby="tok-help" required
+-               placeholder="scv_…">
++               placeholder="qlz_…">
+         <p id="tok-help" class="help">Create one with
+-          <code>scrivet token issue you --principal you --role admin</code>.</p>
++          <code>quilzo token issue you --principal you --role admin</code>.</p>
+       </div>
+       <button type="submit">Sign in</button>
+     </form>
+diff --git a/internal/admin/decentralised.go b/internal/admin/decentralised.go
+index 1e66206..21a13a3 100644
+--- a/internal/admin/decentralised.go
++++ b/internal/admin/decentralised.go
+@@ -264,7 +264,7 @@ func (s *Server) bundle() (map[string][]byte, error) {
+ 	if len(pages) > MaxBundlePages {
+ 		return nil, fmt.Errorf(
+ 			"%d pages is more than this screen renders in one request; use "+
+-				"`scrivet ipfs` from a terminal, where nothing is waiting on a "+
++				"`quilzo ipfs` from a terminal, where nothing is waiting on a "+
+ 				"response", len(pages))
+ 	}
+ 
+diff --git a/internal/admin/delete.go b/internal/admin/delete.go
+index 0163781..d183e02 100644
+--- a/internal/admin/delete.go
++++ b/internal/admin/delete.go
+@@ -15,7 +15,7 @@ import (
+ 
+ // Removing a page, which the interface could not do.
+ //
+-// The command line has had `scrivet add --remove NAME` since early on. The
++// The command line has had `quilzo add --remove NAME` since early on. The
+ // browser had nothing — no button, no route, no way to get rid of a page that
+ // should not be there. It went unnoticed because every test that checks the
+ // interface covers the screens that exist, and a missing capability has no
+diff --git a/internal/admin/docs_content.go b/internal/admin/docs_content.go
+index 4f736bd..076f029 100644
+--- a/internal/admin/docs_content.go
++++ b/internal/admin/docs_content.go
+@@ -381,7 +381,7 @@ var chapterContent = chapter{
+ 					"code execution, because the language cannot execute, but " +
+ 					"is close enough to it that the blast radius stops matching " +
+ 					"the permission. Templates are files an operator deploys, " +
+-					"and `scrivet audit` checks them before they go."),
++					"and `quilzo audit` checks them before they go."),
+ 				sub("Escaping"),
+ 				p("Output is escaped by context — inside an attribute, inside a " +
+ 					"URL, inside text — and there is no way to turn it off. A " +
+@@ -429,7 +429,7 @@ var chapterContent = chapter{
+ 					"gateway, a hosted provider. Which one is a decision about " +
+ 					"where this site's content is allowed to go, so it is " +
+ 					"configuration rather than a default, set with " +
+-					"SCRIVET_MODEL_URL and SCRIVET_MODEL_KEY. No model configured " +
++					"QUILZO_MODEL_URL and QUILZO_MODEL_KEY. No model configured " +
+ 					"is a complete configuration and the screen says so."),
+ 				sub("The mark"),
+ 				p("Accepted pages are recorded as model-generated. EU AI Act " +
+diff --git a/internal/admin/docs_ops.go b/internal/admin/docs_ops.go
+index 8e4473a..d790b68 100644
+--- a/internal/admin/docs_ops.go
++++ b/internal/admin/docs_ops.go
+@@ -76,7 +76,7 @@ var chapterRelease = chapter{
+ 					"makes the entry stale, and a stale entry is reported rather " +
+ 					"than fired. Every gate runs at publication, against the " +
+ 					"content as it stands then."),
+-				code("scrivet schedule run   # from cron, systemd, or a CronJob"),
++				code("quilzo schedule run   # from cron, systemd, or a CronJob"),
+ 				note("There is no scheduler daemon. A long-lived process that " +
+ 					"fires timers is a second thing that can be down, and every " +
+ 					"system this runs on already has something that runs a " +
+@@ -258,12 +258,12 @@ var chapterInterfaces = chapter{
+ 					"they are the same code path rather than two implementations " +
+ 					"that agree. Where this manual names a command beside a " +
+ 					"screen, that is what it means."),
+-				code("scrivet help          # every command\n" +
+-					"scrivet <command> -h  # one command\n" +
+-					"scrivet --json ...    # machine-readable output"),
++				code("quilzo help          # every command\n" +
++					"quilzo <command> -h  # one command\n" +
++					"quilzo --json ...    # machine-readable output"),
+ 				sub("Authenticating"),
+-				p("A token, from --token, from SCRIVET_TOKEN, or from a file at " +
+-					"~/.scrivet/token. Reads need one too, once a store has " +
++				p("A token, from --token, from QUILZO_TOKEN, or from a file at " +
++					"~/.quilzo/token. Reads need one too, once a store has " +
+ 					"access control configured: a store where anybody who can " +
+ 					"reach the directory can read every draft is not access " +
+ 					"control."),
+@@ -280,8 +280,8 @@ var chapterInterfaces = chapter{
+ 			Title:   "The machine interface",
+ 			Summary: "What an agent can do here, and the larger list of what it cannot.",
+ 			Body: []block{
+-				code("scrivet mcp --list          # the operations\n" +
+-					"scrivet mcp --token scv_...  # speak MCP on stdin"),
++				code("quilzo mcp --list          # the operations\n" +
++					"quilzo mcp --token qlz_...  # speak MCP on stdin"),
+ 				p("Operations are data rather than tools, so none of their " +
+ 					"descriptions enter a context window until an agent searches " +
+ 					"for one. Nineteen operations sit behind four tools."),
+diff --git a/internal/admin/docs_start.go b/internal/admin/docs_start.go
+index cb1b00a..fe7a482 100644
+--- a/internal/admin/docs_start.go
++++ b/internal/admin/docs_start.go
+@@ -75,26 +75,26 @@ var chapterStart = chapter{
+ 					"the access policy and the credentials, and it is the only " +
+ 					"state this program has — back it up and you have backed up " +
+ 					"everything."),
+-				code("scrivet init"),
++				code("quilzo init"),
+ 				sub("2. Grant the first administrator"),
+ 				p("Access is granted before any credential exists. That ordering " +
+ 					"is deliberate: the policy names who may do what, and a " +
+ 					"token is only ever a way to prove you are one of those " +
+ 					"people. Issuing a credential for somebody the policy has " +
+ 					"never heard of gets you a credential that can do nothing."),
+-				code("scrivet auth grant dana admin"),
++				code("quilzo auth grant dana admin"),
+ 				sub("3. Issue a credential"),
+ 				p("The secret is shown once and only a hash is stored, so it " +
+ 					"cannot be recovered — losing it means issuing another and " +
+ 					"revoking the first, which takes ten seconds and is the " +
+ 					"correct outcome."),
+-				code("scrivet token issue laptop --principal dana --role admin"),
++				code("quilzo token issue laptop --principal dana --role admin"),
+ 				sub("4. Start the interface"),
+ 				p("Loopback by default. An editing interface that binds every " +
+ 					"network interface the moment somebody runs it is how a " +
+ 					"development server ends up on the internet, so widening it " +
+ 					"has to be a decision somebody typed."),
+-				code("scrivet serve --addr 127.0.0.1:8080"),
++				code("quilzo serve --addr 127.0.0.1:8080"),
+ 				shot("signin", "The sign-in screen. One field, and an "+
+ 					"explanation of why there is no second one."),
+ 				p("Open it, paste the token, and you are signed in. There is no " +
+@@ -137,7 +137,7 @@ var chapterStart = chapter{
+ 				shot("publishing", "Publishing: each environment, what it is "+
+ 					"serving, and what is waiting to go out."),
+ 				sub("9. Serve it"),
+-				code("scrivet site --addr 0.0.0.0:8081 --base-url https://example.org"),
++				code("quilzo site --addr 0.0.0.0:8081 --base-url https://example.org"),
+ 				p("Two processes rather than one. The public site serves " +
+ 					"published content and has no editing surface at all, so " +
+ 					"the part of the system exposed to the internet cannot write " +
+diff --git a/internal/admin/docs_trust.go b/internal/admin/docs_trust.go
+index 7837b72..74e9e14 100644
+--- a/internal/admin/docs_trust.go
++++ b/internal/admin/docs_trust.go
+@@ -69,15 +69,15 @@ var chapterAdmin = chapter{
+ 					"at the first sign-in, so a misconfiguration is a server " +
+ 					"that refuses to start rather than a person staring at a " +
+ 					"button that does not work and no explanation."),
+-				code("# scrivet-root/oidc.json\n" +
++				code("# quilzo-root/oidc.json\n" +
+ 					"{\n" +
+ 					"  \"issuer\": \"https://id.example.org\",\n" +
+-					"  \"client_id\": \"scrivet\",\n" +
++					"  \"client_id\": \"quilzo\",\n" +
+ 					"  \"redirect_uri\": \"https://cms.example.org/auth/callback\",\n" +
+ 					"  \"claim\": \"email\",\n" +
+ 					"  \"require_verified_email\": true\n" +
+ 					"}"),
+-				code("export SCRIVET_OIDC_SECRET=...   # never in the store"),
++				code("export QUILZO_OIDC_SECRET=...   # never in the store"),
+ 				warn("require_verified_email defaults to true and should stay " +
+ 					"true. An unverified address is a claim by whoever signed " +
+ 					"up, and mapping it to a principal lets them choose who to be."),
+diff --git a/internal/admin/links_test.go b/internal/admin/links_test.go
+index a46b0ee..2187370 100644
+--- a/internal/admin/links_test.go
++++ b/internal/admin/links_test.go
+@@ -20,7 +20,7 @@ import (
+ //
+ // So: parse the hrefs out of the templates, parse the registrations out of the
+ // mux, and require the first set to be inside the second. It is the same shape
+-// as the coverage test in cmd/scrivet — walk the source rather than trust a
++// as the coverage test in cmd/quilzo — walk the source rather than trust a
+ // list somebody maintains — and for the same reason, which is that the list
+ // somebody maintains is the thing that was wrong.
+ func TestEveryLinkInTheInterfaceIsServed(t *testing.T) {
+diff --git a/internal/admin/logs.go b/internal/admin/logs.go
+index 5cddc58..ebde0c0 100644
+--- a/internal/admin/logs.go
++++ b/internal/admin/logs.go
+@@ -199,7 +199,7 @@ func (s *Server) handleNav(w http.ResponseWriter, r *http.Request) {
+ 		return
+ 	}
+ 	http.SetCookie(w, &http.Cookie{
+-		Name: "scrivet_nav", Value: to, Path: "/",
++		Name: "quilzo_nav", Value: to, Path: "/",
+ 		MaxAge: 365 * 24 * 3600, HttpOnly: true,
+ 		SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
+ 	})
+@@ -219,7 +219,7 @@ func (s *Server) handleNav(w http.ResponseWriter, r *http.Request) {
+ // navFor resolves the position for one request: the person's choice, else the
+ // store's configured default, else top.
+ func (s *Server) navFor(r *http.Request) string {
+-	if c, err := r.Cookie("scrivet_nav"); err == nil {
++	if c, err := r.Cookie("quilzo_nav"); err == nil {
+ 		if c.Value == "top" || c.Value == "left" {
+ 			return c.Value
+ 		}
+diff --git a/internal/admin/logs_test.go b/internal/admin/logs_test.go
+index b519cd4..68e0ebf 100644
+--- a/internal/admin/logs_test.go
++++ b/internal/admin/logs_test.go
+@@ -251,7 +251,7 @@ func TestAPersonalChoiceOverridesTheConfiguredDefault(t *testing.T) {
+ 
+ 	r := httptest.NewRequest("GET", "http://h/logs", nil)
+ 	r.Header.Set("Authorization", "Bearer "+tok)
+-	r.AddCookie(&http.Cookie{Name: "scrivet_nav", Value: "left"})
++	r.AddCookie(&http.Cookie{Name: "quilzo_nav", Value: "left"})
+ 	w := httptest.NewRecorder()
+ 	s.Handler().ServeHTTP(w, r)
+ 	if !strings.Contains(w.Body.String(), "nav-left") {
+@@ -276,7 +276,7 @@ func TestTheNavToggleIsGuarded(t *testing.T) {
+ 	s.Handler().ServeHTTP(w, httptest.NewRequest("POST", "http://h/nav",
+ 		strings.NewReader("to=left")))
+ 	for _, c := range w.Result().Cookies() {
+-		if c.Name == "scrivet_nav" {
++		if c.Name == "quilzo_nav" {
+ 			t.Error("an unauthenticated request set the preference")
+ 		}
+ 	}
+diff --git a/internal/admin/media.go b/internal/admin/media.go
+index 6a2152e..c62ab75 100644
+--- a/internal/admin/media.go
++++ b/internal/admin/media.go
+@@ -17,7 +17,7 @@ import (
+ // The media library, in the interface, and stored at all.
+ //
+ // Two problems at once. The screen was missing, which was the known gap; and
+-// the thing the screen would have shown did not exist, which was not. `scrivet
++// the thing the screen would have shown did not exist, which was not. `quilzo
+ // media add` validated an upload thoroughly and then discarded it — see
+ // internal/medialib for what that looked like from the outside.
+ //
+diff --git a/internal/admin/nav.go b/internal/admin/nav.go
+index f144df1..c15484e 100644
+--- a/internal/admin/nav.go
++++ b/internal/admin/nav.go
+@@ -152,7 +152,7 @@ func (s *Server) navigation(r *http.Request, p principal, current string) []navG
+ }
+ 
+ // NavOrderCookie holds a person's chosen arrangement.
+-const NavOrderCookie = "scrivet_nav_order"
++const NavOrderCookie = "quilzo_nav_order"
+ 
+ // storedOrder reads the arrangement from the request.
+ //
+diff --git a/internal/admin/oidcauth.go b/internal/admin/oidcauth.go
+index 9e973a1..7337a8c 100644
+--- a/internal/admin/oidcauth.go
++++ b/internal/admin/oidcauth.go
+@@ -16,7 +16,7 @@ import (
+ //
+ // The division is deliberate: the provider says *who* somebody is, and this
+ // program's own access policy says what they may do. A verified ID token is
+-// exchanged for an ordinary scrivet session token, which means every existing
++// exchanged for an ordinary quilzo session token, which means every existing
+ // mechanism — the role ladder, path bindings, revocation, the audit trail —
+ // applies unchanged and none of it had to learn about OIDC.
+ //
+@@ -192,7 +192,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
+ 		s.refuseSignIn(w, r,
+ 			fmt.Sprintf("%s signed in successfully, but is not in the access "+
+ 				"policy for this site.", principal),
+-			fmt.Sprintf("An administrator can add them:  scrivet auth grant %s author",
++			fmt.Sprintf("An administrator can add them:  quilzo auth grant %s author",
+ 				principal))
+ 		return
+ 	}
+@@ -217,7 +217,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
+ 	}
+ 
+ 	http.SetCookie(w, &http.Cookie{
+-		Name: "scrivet_token", Value: secret, Path: "/",
++		Name: "quilzo_token", Value: secret, Path: "/",
+ 		HttpOnly: true, SameSite: http.SameSiteLaxMode,
+ 		// Lax rather than Strict, and only here: a redirect arriving from the
+ 		// identity provider is a cross-site navigation, and Strict would drop
+diff --git a/internal/admin/playground.go b/internal/admin/playground.go
+index 01eb456..a7af299 100644
+--- a/internal/admin/playground.go
++++ b/internal/admin/playground.go
+@@ -176,7 +176,7 @@ func playgroundHTML(nonce, who string, routes []Route) string {
+ </style>
+ </head><body>
+ <main class="pg">
+-<p class="hint"><a href="/">&larr; back to scrivet</a></p>
++<p class="hint"><a href="/">&larr; back to quilzo</a></p>
+ <h1>API playground</h1>
+ <p class="hint">Signed in as ` + html.EscapeString(who) + `. Requests go to this
+ server, through the same middleware your own code will meet, using your session
+@@ -266,7 +266,7 @@ server, through the same middleware your own code will meet, using your session
+ 
+   $("curl").addEventListener("click", function () {
+     var parts = ["curl -X " + method(),
+-                 "-H 'Authorization: Bearer $SCRIVET_TOKEN'"];
++                 "-H 'Authorization: Bearer $QUILZO_TOKEN'"];
+     if (ifmatch.value) { parts.push("-H 'If-Match: " + ifmatch.value + "'"); }
+     if (!bodyrow.hidden) {
+       parts.push("-H 'Content-Type: application/json'");
+@@ -278,7 +278,7 @@ server, through the same middleware your own code will meet, using your session
+     // Emitting a working credential into somebody's clipboard, and from there
+     // into a terminal history and a support ticket, is how tokens leak.
+     $("out").textContent = cmd;
+-    $("status").textContent = "copied below — set SCRIVET_TOKEN yourself";
++    $("status").textContent = "copied below — set QUILZO_TOKEN yourself";
+     $("status").className = "status";
+   });
+ }());
+diff --git a/internal/admin/playground_test.go b/internal/admin/playground_test.go
+index 3095983..cf11c12 100644
+--- a/internal/admin/playground_test.go
++++ b/internal/admin/playground_test.go
+@@ -99,7 +99,7 @@ func TestTheCurlHelperDoesNotEmitTheSessionCredential(t *testing.T) {
+ 	if strings.Contains(body, "document.cookie") {
+ 		t.Error("the script reads the session cookie")
+ 	}
+-	if !strings.Contains(body, "$SCRIVET_TOKEN") {
++	if !strings.Contains(body, "$QUILZO_TOKEN") {
+ 		t.Error("the curl helper does not use a placeholder for the token")
+ 	}
+ }
+diff --git a/internal/admin/profile.go b/internal/admin/profile.go
+index cf43e03..a7302d0 100644
+--- a/internal/admin/profile.go
++++ b/internal/admin/profile.go
+@@ -288,7 +288,7 @@ func presentedToken(r *http.Request) string {
+ 	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+ 		return strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+ 	}
+-	if c, err := r.Cookie("scrivet_token"); err == nil {
++	if c, err := r.Cookie("quilzo_token"); err == nil {
+ 		return c.Value
+ 	}
+ 	return ""
+diff --git a/internal/admin/screens_test.go b/internal/admin/screens_test.go
+index d5ae669..b8d8220 100644
+--- a/internal/admin/screens_test.go
++++ b/internal/admin/screens_test.go
+@@ -276,7 +276,7 @@ func fullyWired(t *testing.T) (*Server, string) {
+ 		Pin:            func(string) (string, error) { return strings.Repeat("b", 64), nil },
+ 		Events:         func() ([]audit.Event, error) { return nil, nil },
+ 		Provider: func() (string, string, string, string, bool, bool) {
+-			return "https://id.example.org", "scrivet",
++			return "https://id.example.org", "quilzo",
+ 				"https://cms.example.org/auth/callback", "email", true, true
+ 		},
+ 	}
+diff --git a/internal/admin/server.go b/internal/admin/server.go
+index 49c376c..6c348ec 100644
+--- a/internal/admin/server.go
++++ b/internal/admin/server.go
+@@ -9,7 +9,7 @@
+ // app reimplements each one and usually gets at least one wrong — focus after
+ // navigation, the back button, find-in-page across virtualised lists.
+ //
+-// The other reasons point the same way. scrivet is one static binary in a
++// The other reasons point the same way. quilzo is one static binary in a
+ // scratch image with no dependencies; adding a JavaScript build would bring a
+ // node toolchain, several hundred transitive packages, and a bundle larger than
+ // the entire program. For a CMS whose argument is that nothing in it executes,
+@@ -256,8 +256,8 @@ func (s *Server) refresh() {
+ 
+ // New builds the server and parses the admin templates once.
+ //
+-// html/template rather than scrivet's own engine, and the distinction matters.
+-// scrivet's language is deliberately powerless because *users* write in it and
++// html/template rather than quilzo's own engine, and the distinction matters.
++// quilzo's language is deliberately powerless because *users* write in it and
+ // user templates are an injection surface. These templates are ours, shipped in
+ // the binary, and never author-supplied — so the stdlib's contextual escaping is
+ // exactly right and there is no surface to remove.
+@@ -339,7 +339,7 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
+ 	header := r.Header.Get("Authorization")
+ 	raw := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+ 	if raw == "" {
+-		if c, err := r.Cookie("scrivet_token"); err == nil {
++		if c, err := r.Cookie("quilzo_token"); err == nil {
+ 			raw = c.Value
+ 		}
+ 	}
+@@ -768,7 +768,7 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
+ 	// and nobody can sign in at all — which is how a security attribute gets
+ 	// removed permanently by whoever is trying to get their work done.
+ 	http.SetCookie(w, &http.Cookie{
+-		Name: "scrivet_token", Value: raw, Path: "/",
++		Name: "quilzo_token", Value: raw, Path: "/",
+ 		HttpOnly: true,                    // unreadable by script; there is none, but the header outlives that
+ 		SameSite: http.SameSiteStrictMode, // the primary CSRF defence
+ 		Secure:   r.TLS != nil,
+@@ -779,7 +779,7 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
+ 
+ func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
+ 	http.SetCookie(w, &http.Cookie{
+-		Name: "scrivet_token", Value: "", Path: "/", MaxAge: -1,
++		Name: "quilzo_token", Value: "", Path: "/", MaxAge: -1,
+ 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
+ 	})
+ 	http.Redirect(w, r, "/signin", http.StatusSeeOther)
+diff --git a/internal/admin/theme.go b/internal/admin/theme.go
+index 811d658..835d2d0 100644
+--- a/internal/admin/theme.go
++++ b/internal/admin/theme.go
+@@ -19,7 +19,7 @@ import (
+ // already had.
+ 
+ // ThemeCookie holds the choice. Absent means follow the system.
+-const ThemeCookie = "scrivet_theme"
++const ThemeCookie = "quilzo_theme"
+ 
+ // themeOf resolves the request to a value for the root element's data-theme.
+ //
+diff --git a/internal/anchor/anchor.go b/internal/anchor/anchor.go
+index 37a69bb..3d3002c 100644
+--- a/internal/anchor/anchor.go
++++ b/internal/anchor/anchor.go
+@@ -460,7 +460,7 @@ func Describe(p Proof) string {
+ 		fmt.Fprintf(&b, "pending at %s\n", p.PendingAt)
+ 		fmt.Fprintf(&b, "  this is NOT an anchor yet. The calendar has the hash "+
+ 			"and will\n  include it in its next commitment, which takes hours.\n")
+-		fmt.Fprintf(&b, "  run `scrivet anchor upgrade` after that\n")
++		fmt.Fprintf(&b, "  run `quilzo anchor upgrade` after that\n")
+ 	default:
+ 		fmt.Fprintf(&b, "the proof carries no attestation this understands\n")
+ 	}
+diff --git a/internal/api/api_test.go b/internal/api/api_test.go
+index 6ca9ea8..fd23459 100644
+--- a/internal/api/api_test.go
++++ b/internal/api/api_test.go
+@@ -721,7 +721,7 @@ func TestASessionCookieIsRefusedCrossSite(t *testing.T) {
+ 		{"foreign origin", map[string]string{"Origin": "https://evil.example"}, 401},
+ 	} {
+ 		r := httptest.NewRequest("GET", "http://h/api/v1/pages", nil)
+-		r.AddCookie(&http.Cookie{Name: "scrivet_token", Value: tok})
++		r.AddCookie(&http.Cookie{Name: "quilzo_token", Value: tok})
+ 		for k, v := range tc.headers {
+ 			r.Header.Set(k, v)
+ 		}
+@@ -739,7 +739,7 @@ func TestASessionCookieIsIgnoredWhenNotMountedInTheAdmin(t *testing.T) {
+ 	s, tok, _ := setup(t)
+ 	// SessionAuth deliberately left false, which is the default.
+ 	r := httptest.NewRequest("GET", "http://h/api/v1/pages", nil)
+-	r.AddCookie(&http.Cookie{Name: "scrivet_token", Value: tok})
++	r.AddCookie(&http.Cookie{Name: "quilzo_token", Value: tok})
+ 	r.Header.Set("Sec-Fetch-Site", "same-origin")
+ 	w := httptest.NewRecorder()
+ 	s.Handler().ServeHTTP(w, r)
+diff --git a/internal/api/fuzz_test.go b/internal/api/fuzz_test.go
+index 49dfc5c..583ffeb 100644
+--- a/internal/api/fuzz_test.go
++++ b/internal/api/fuzz_test.go
+@@ -53,7 +53,7 @@ func FuzzRequest(f *testing.F) {
+ 		}
+ 		// No response may ever carry a filesystem path or a token.
+ 		body := w.Body.String()
+-		for _, leak := range []string{"/home/", "/etc/passwd", "scv_", "goroutine "} {
++		for _, leak := range []string{"/home/", "/etc/passwd", "qlz_", "goroutine "} {
+ 			if strings.Contains(body, leak) {
+ 				t.Errorf("%s?%s leaked %q in: %s", path, query, leak, body)
+ 			}
+diff --git a/internal/api/records.go b/internal/api/records.go
+index f184764..b783637 100644
+--- a/internal/api/records.go
++++ b/internal/api/records.go
+@@ -238,7 +238,7 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
+ 	if !s.Records.Writable {
+ 		writeError(w, http.StatusMethodNotAllowed, Error{
+ 			Error: "this API is read-only",
+-			Fix:   "scrivet site --api-writable",
++			Fix:   "quilzo site --api-writable",
+ 		})
+ 		return
+ 	}
+diff --git a/internal/api/server.go b/internal/api/server.go
+index 15a6d3e..d9a46ce 100644
+--- a/internal/api/server.go
++++ b/internal/api/server.go
+@@ -230,10 +230,10 @@ func (s *Server) middleware(next http.Handler) http.Handler {
+ 			// 401 with no hint about whether the token exists. Distinguishing
+ 			// "no such token" from "wrong password" is how an enumeration
+ 			// oracle gets built by accident.
+-			w.Header().Set("WWW-Authenticate", `Bearer realm="scrivet"`)
++			w.Header().Set("WWW-Authenticate", `Bearer realm="quilzo"`)
+ 			writeError(w, http.StatusUnauthorized, Error{
+ 				Error: "not authenticated",
+-				Fix:   "send a token: Authorization: Bearer scv_...",
++				Fix:   "send a token: Authorization: Bearer qlz_...",
+ 			})
+ 			return
+ 		}
+@@ -374,7 +374,7 @@ func (s *Server) authenticate(r *http.Request) (*auth.Token, error) {
+ 		if !s.SessionAuth || !sameOrigin(r) {
+ 			return nil, fmt.Errorf("no bearer token")
+ 		}
+-		c, err := r.Cookie("scrivet_token")
++		c, err := r.Cookie("quilzo_token")
+ 		if err != nil || c.Value == "" {
+ 			return nil, fmt.Errorf("no bearer token")
+ 		}
+@@ -449,7 +449,7 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
+ 	if commit == "" {
+ 		writeError(w, http.StatusServiceUnavailable, Error{
+ 			Error: "nothing is published",
+-			Fix:   "scrivet publish"})
++			Fix:   "quilzo publish"})
+ 		return
+ 	}
+ 	// The listing's validator is the commit: if the site has not changed,
+@@ -631,7 +631,7 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
+ 			Error: "this API is read-only",
+ 			Detail: "a read API and a write API are different products with " +
+ 				"different blast radii, so writes are off unless turned on",
+-			Fix: "scrivet serve --api-writable",
++			Fix: "quilzo serve --api-writable",
+ 		})
+ 		return
+ 	}
+@@ -887,7 +887,7 @@ func (s *Server) index(w http.ResponseWriter) *vector.Index {
+ 			Error: "no vector index",
+ 			Detail: "this server was started without one, so there is nothing " +
+ 				"to compare against",
+-			Fix: "scrivet site --vectors",
++			Fix: "quilzo site --vectors",
+ 		})
+ 		return nil
+ 	}
+diff --git a/internal/assist/assist.go b/internal/assist/assist.go
+index adac83a..4ec1087 100644
+--- a/internal/assist/assist.go
++++ b/internal/assist/assist.go
+@@ -315,20 +315,20 @@ func (h *HTTPModel) Name() string { return h.Model }
+ 
+ // NewHTTPModel reads configuration from the environment.
+ func NewHTTPModel() (*HTTPModel, error) {
+-	base := os.Getenv("SCRIVET_MODEL_URL")
++	base := os.Getenv("QUILZO_MODEL_URL")
+ 	if base == "" {
+ 		base = "https://ollama.com/v1"
+ 	}
+-	key := os.Getenv("SCRIVET_MODEL_KEY")
++	key := os.Getenv("QUILZO_MODEL_KEY")
+ 	if key == "" {
+ 		key = os.Getenv("OLLAMA_API_KEY")
+ 	}
+ 	if key == "" {
+ 		return nil, fmt.Errorf(
+-			"no model key: set SCRIVET_MODEL_KEY (or OLLAMA_API_KEY). " +
+-				"SCRIVET_MODEL_URL selects the endpoint, SCRIVET_MODEL the model")
++			"no model key: set QUILZO_MODEL_KEY (or OLLAMA_API_KEY). " +
++				"QUILZO_MODEL_URL selects the endpoint, QUILZO_MODEL the model")
+ 	}
+-	model := os.Getenv("SCRIVET_MODEL")
++	model := os.Getenv("QUILZO_MODEL")
+ 	if model == "" {
+ 		model = "gpt-oss:20b"
+ 	}
+diff --git a/internal/atomicfile/atomicfile.go b/internal/atomicfile/atomicfile.go
+index e857783..31d6fc9 100644
+--- a/internal/atomicfile/atomicfile.go
++++ b/internal/atomicfile/atomicfile.go
+@@ -2,7 +2,7 @@
+ //
+ // # Why this is not a nicety
+ //
+-// Two processes share a store: `scrivet serve` is the admin and `scrivet site`
++// Two processes share a store: `quilzo serve` is the admin and `quilzo site`
+ // is the website, and running them separately is the deployment this project
+ // recommends because it keeps credentials out of the internet-facing half.
+ //
+diff --git a/internal/audit/audit.go b/internal/audit/audit.go
+index 0b6d813..ddaf6ca 100644
+--- a/internal/audit/audit.go
++++ b/internal/audit/audit.go
+@@ -133,7 +133,7 @@ type Event struct {
+ 	// and substantively false. The chain proves nobody edited a record after it
+ 	// was written. It says nothing about whether the record was true when
+ 	// written — and an identity taken from $USER is true only if nobody minds
+-	// lying, since `USER=ceo scrivet publish` costs nothing.
++	// lying, since `USER=ceo quilzo publish` costs nothing.
+ 	//
+ 	// So an unproven identity is recorded as unproven rather than dressed up as
+ 	// a name. An auditor can then filter for what was actually established,
+diff --git a/internal/audit/merkle.go b/internal/audit/merkle.go
+index def882b..29e8e35 100644
+--- a/internal/audit/merkle.go
++++ b/internal/audit/merkle.go
+@@ -97,7 +97,7 @@ func LeafHash(e Event) ([]byte, error) {
+ 	h := sha256.New()
+ 	// Domain-separated and length-prefixed, so no pair of fields can be slid
+ 	// across the boundary to produce another pair's leaf.
+-	h.Write([]byte("scrivet.audit.leaf.v1\n"))
++	h.Write([]byte("quilzo.audit.leaf.v1\n"))
+ 	writeField(h, want)
+ 	writeField(h, e.Hash)
+ 	writeField(h, e.Prev)
+diff --git a/internal/auth/auth.go b/internal/auth/auth.go
+index 1406420..5771b25 100644
+--- a/internal/auth/auth.go
++++ b/internal/auth/auth.go
+@@ -426,13 +426,13 @@ func roleList() string {
+ 
+ // -- API tokens ---------------------------------------------------------------
+ 
+-// TokenPrefix marks a scrivet token in logs, repositories and paste sites.
++// TokenPrefix marks a quilzo token in logs, repositories and paste sites.
+ //
+ // GitHub's `ghp_` convention exists so secret scanners can spot a leaked
+ // credential without knowing what it belongs to. It costs six characters and it
+ // is the difference between a token found by a scanner and one found by whoever
+ // picked it up.
+-const TokenPrefix = "scv_"
++const TokenPrefix = "qlz_"
+ 
+ // tokenBytes is 256 bits. Tokens are generated, not chosen, so the whole
+ // dictionary-attack problem that motivates slow password hashing does not exist
+@@ -705,7 +705,7 @@ func (ts *TokenStore) Authenticate(secret string, now time.Time) (*Token, error)
+ // lock rather than deadlocking on a re-entrant call.
+ func (ts *TokenStore) authenticate(secret string, now time.Time) (*Token, error) {
+ 	if !strings.HasPrefix(secret, TokenPrefix) {
+-		return nil, fmt.Errorf("that is not a scrivet token (they start with %s)", TokenPrefix)
++		return nil, fmt.Errorf("that is not a quilzo token (they start with %s)", TokenPrefix)
+ 	}
+ 	want := []byte(hashToken(secret))
+ 
+diff --git a/internal/codescan/codescan_test.go b/internal/codescan/codescan_test.go
+index 135e79e..9d27c1a 100644
+--- a/internal/codescan/codescan_test.go
++++ b/internal/codescan/codescan_test.go
+@@ -46,7 +46,7 @@ func TestItFindsCredentials(t *testing.T) {
+ 		body string
+ 	}{
+ 		{"secret.private-key", "-----BEGIN RSA PRIVATE KEY-----"},
+-		{"secret.scrivet-token", "token: scv_6zukocv7ecidrejjyojgsdn7ekl3w2v3qph3ef6ylsm6usaqbtdq"},
++		{"secret.quilzo-token", "token: qlz_6zukocv7ecidrejjyojgsdn7ekl3w2v3qph3ef6ylsm6usaqbtdq"},
+ 		{"secret.cloud-key", "aws: AKIAIOSFODNN7EXAMPLE"},
+ 		{"secret.cloud-key", "gh: ghp_16CharsAndThenSomeMoreCharacters1234"},
+ 		{"secret.connection-string", "postgres://admin:hunter2ButLonger@db.internal/app"},
+@@ -133,9 +133,9 @@ func TestACredentialIsNeverEchoedBack(t *testing.T) {
+ 		}
+ 	}
+ 	// The same for tokens matched as a whole rather than as an assignment.
+-	f = scan(Config, "scv_6zukocv7ecidrejjyojgsdn7ekl3w2v3qph3ef6ylsm6usaqbtdq")
++	f = scan(Config, "qlz_6zukocv7ecidrejjyojgsdn7ekl3w2v3qph3ef6ylsm6usaqbtdq")
+ 	for _, x := range f {
+-		if strings.Contains(x.Excerpt, "scv_6zuk") {
++		if strings.Contains(x.Excerpt, "qlz_6zuk") {
+ 			t.Errorf("a token was echoed: %s", x.Excerpt)
+ 		}
+ 	}
+diff --git a/internal/codescan/rules.go b/internal/codescan/rules.go
+index ec7cfce..dc203d7 100644
+--- a/internal/codescan/rules.go
++++ b/internal/codescan/rules.go
+@@ -111,12 +111,12 @@ var rules = []Rule{
+ 		Fix: "remove it and rotate the key; it is in the published history for good",
+ 	},
+ 	{
+-		ID: "secret.scrivet-token", Severity: Critical,
+-		Pattern:  regexp.MustCompile(`\bscv_[a-z0-9]{40,}\b`),
++		ID: "secret.quilzo-token", Severity: Critical,
++		Pattern:  regexp.MustCompile(`\bqlz_[a-z0-9]{40,}\b`),
+ 		Controls: []string{"IA-5"},
+-		Detail: "a scrivet token. Tokens are shown once and stored as a hash " +
++		Detail: "a quilzo token. Tokens are shown once and stored as a hash " +
+ 			"precisely so they do not end up in files",
+-		Fix: "scrivet token revoke <id>, then issue a new one",
++		Fix: "quilzo token revoke <id>, then issue a new one",
+ 	},
+ 	{
+ 		ID: "secret.cloud-key", Severity: Critical,
+@@ -177,5 +177,5 @@ var rules = []Rule{
+ 	},
+ }
+ 
+-// Rules returns every rule, for `scrivet scan --rules`.
++// Rules returns every rule, for `quilzo scan --rules`.
+ func Rules() []Rule { return append([]Rule(nil), rules...) }
+diff --git a/internal/compliance/sbom.go b/internal/compliance/sbom.go
+index 25fdae8..f029167 100644
+--- a/internal/compliance/sbom.go
++++ b/internal/compliance/sbom.go
+@@ -142,7 +142,7 @@ func Generate(now time.Time) (*SBOM, error) {
+ 			Timestamp: now.UTC().Format(time.RFC3339),
+ 			Component: self,
+ 			Tools: []Component{{
+-				Type: "application", Name: "scrivet", Version: version,
++				Type: "application", Name: "quilzo", Version: version,
+ 			}},
+ 		},
+ 		Components: components,
+diff --git a/internal/config/config.go b/internal/config/config.go
+index 7fbf326..b7dbfa3 100644
+--- a/internal/config/config.go
++++ b/internal/config/config.go
+@@ -132,7 +132,7 @@ func Parse(body []byte) (*Config, error) {
+ 		if !ok {
+ 			return nil, fmt.Errorf(
+ 				"%q is not a setting this version knows about. Remove it, or "+
+-					"check `scrivet config list` for the current name", key)
++					"check `quilzo config list` for the current name", key)
+ 		}
+ 		if err := s.Validate(v); err != nil {
+ 			return nil, fmt.Errorf("%s: %w", key, err)
+@@ -232,9 +232,9 @@ func (e *ErrNeedsAcceptance) Error() string {
+ 	return fmt.Sprintf(
+ 		"%s = %s gives up security: %s\n"+
+ 			"  This is allowed. It needs a reason, which is recorded in the "+
+-			"audit log and reported by `scrivet posture scan` until it is "+
++			"audit log and reported by `quilzo posture scan` until it is "+
+ 			"changed back or renewed:\n"+
+-			"    scrivet config set %s %s --accept-risk \"why this is right here\"",
++			"    quilzo config set %s %s --accept-risk \"why this is right here\"",
+ 		e.Key, e.Value, e.Why, e.Key, e.Value)
+ }
+ 
+@@ -247,7 +247,7 @@ func (e *ErrNeedsAcceptance) Error() string {
+ func (c *Config) Set(key, value, reason, by string) error {
+ 	s, ok := Lookup(key)
+ 	if !ok {
+-		return fmt.Errorf("%q is not a setting; `scrivet config list` shows "+
++		return fmt.Errorf("%q is not a setting; `quilzo config list` shows "+
+ 			"every one", key)
+ 	}
+ 	if err := s.Validate(value); err != nil {
+diff --git a/internal/config/settings.go b/internal/config/settings.go
+index 802fe1e..5bdfc21 100644
+--- a/internal/config/settings.go
++++ b/internal/config/settings.go
+@@ -11,7 +11,7 @@ import (
+ //
+ // A table rather than scattered constants for the same reason the privilege
+ // table is one: a knob nobody can find is a knob nobody can audit, and
+-// `scrivet config list` has to be able to print all of them. Adding a setting
++// `quilzo config list` has to be able to print all of them. Adding a setting
+ // anywhere else in the program is a setting that does not appear here, and a
+ // test refuses that.
+ //
+@@ -248,7 +248,7 @@ var settings = []Setting{
+ 	{
+ 		Key: "site.name", Kind: Text, Default: "",
+ 		Summary: "what this site is called, for templates and for install",
+-		Why: "It was a flag on `scrivet site` and nothing else, so it existed " +
++		Why: "It was a flag on `quilzo site` and nothing else, so it existed " +
+ 			"only inside the process serving the site. Everything else that " +
+ 			"renders a page — the accessibility gate, the preview, the static " +
+ 			"and IPFS exports — rendered it blank, which means each of them " +
+diff --git a/internal/demo/assets/page.html b/internal/demo/assets/page.html
+index 5f667c2..ad406a9 100644
+--- a/internal/demo/assets/page.html
++++ b/internal/demo/assets/page.html
+@@ -126,7 +126,7 @@
+ 
+ <footer class="foot">
+   <div class="wrap">
+-    <p>{{ site.name }} — a demonstration site, built entirely through the Scrivet interface.</p>
++    <p>{{ site.name }} — a demonstration site, built entirely through the Quilzo interface.</p>
+     <p class="meta">Every photograph here is generated. The people are invented.</p>
+   </div>
+ </footer>
+diff --git a/internal/demo/gram.go b/internal/demo/gram.go
+index 36e03f2..52c88b1 100644
+--- a/internal/demo/gram.go
++++ b/internal/demo/gram.go
+@@ -309,7 +309,7 @@ func (s *Site) addScreens() {
+ const aboutBody = `<h2>What this is</h2>
+ <p>Gram is a demonstration. Eight photographs, four people, a feed, an explore
+ page with a real filter, stories that take themselves down, and a message box.
+-Everything you can see was built through the Scrivet admin interface — no
++Everything you can see was built through the Quilzo admin interface — no
+ configuration files were edited, and no code was written for it beyond one HTML
+ template and one stylesheet.</p>
+ 
+diff --git a/internal/export/export.go b/internal/export/export.go
+index 85f3df1..89a27ae 100644
+--- a/internal/export/export.go
++++ b/internal/export/export.go
+@@ -259,7 +259,7 @@ func exportJSON(s Site) ([]File, error) {
+ 		}
+ 		// Beside content/ rather than inside it. A directory called content
+ 		// should hold content: this sat next to pages.json, so the obvious
+-		// `scrivet import content/*.json` failed on a file this tool wrote
++		// `quilzo import content/*.json` failed on a file this tool wrote
+ 		// itself, which reads as the importer being broken.
+ 		out = append(out, File{Path: "last-changed.json", Body: append(b, '\n')})
+ 	}
+diff --git a/internal/export/roundtrip_test.go b/internal/export/roundtrip_test.go
+index 88e6da7..3261057 100644
+--- a/internal/export/roundtrip_test.go
++++ b/internal/export/roundtrip_test.go
+@@ -109,7 +109,7 @@ func TestAnArrayOfPagesStillTakesItsNamesFromTheContent(t *testing.T) {
+ }
+ 
+ // And the export's own sidecar must not be in the directory somebody will
+-// glob. `scrivet import content/*.json` hit last-changed.json and failed on a
++// glob. `quilzo import content/*.json` hit last-changed.json and failed on a
+ // file this tool wrote itself, which reads as the importer being broken.
+ func TestTheContentDirectoryHoldsOnlyContent(t *testing.T) {
+ 	files, err := export.Export(export.JSON, export.Site{
+diff --git a/internal/ext/ext.go b/internal/ext/ext.go
+index 88f0b04..7879a86 100644
+--- a/internal/ext/ext.go
++++ b/internal/ext/ext.go
+@@ -147,7 +147,7 @@ func (m Manifest) Validate() error {
+ 		}
+ 	}
+ 	// A relative command would resolve against the working directory, which is
+-	// wherever the operator happened to be. That is how "./scrivet publish" in
++	// wherever the operator happened to be. That is how "./quilzo publish" in
+ 	// a checkout runs a binary from the checkout.
+ 	if !strings.HasPrefix(m.Command[0], "/") {
+ 		return fmt.Errorf(
+@@ -231,7 +231,7 @@ func (r *Runner) Run(ctx context.Context, m Manifest, req Request) Result {
+ 		if m.SHA256 == "" {
+ 			res.Err = fmt.Errorf(
+ 				"%s has no recorded hash and ext.require_pinned is on. Record "+
+-					"one with `scrivet ext pin %s`", m.Name, m.Name)
++					"one with `quilzo ext pin %s`", m.Name, m.Name)
+ 			return res
+ 		}
+ 		sum, err := hashFile(m.Command[0])
+diff --git a/internal/ext/ext_test.go b/internal/ext/ext_test.go
+index 964d459..f02d969 100644
+--- a/internal/ext/ext_test.go
++++ b/internal/ext/ext_test.go
+@@ -158,10 +158,10 @@ func TestGarbageOutputIsAnErrorRatherThanAPanic(t *testing.T) {
+ // holds tokens and store paths, and an allow-list is a list somebody forgets
+ // to update.
+ func TestAnExtensionGetsNoEnvironment(t *testing.T) {
+-	os.Setenv("SCRIVET_TOKEN", "scv_thismustnotleak")
+-	defer os.Unsetenv("SCRIVET_TOKEN")
++	os.Setenv("QUILZO_TOKEN", "qlz_thismustnotleak")
++	defer os.Unsetenv("QUILZO_TOKEN")
+ 
+-	m := script(t, `printf '{"note":"%s"}' "${SCRIVET_TOKEN:-empty}"`, Manifest{})
++	m := script(t, `printf '{"note":"%s"}' "${QUILZO_TOKEN:-empty}"`, Manifest{})
+ 	res := run(t, m, Request{Hook: OnValidate}, Limits{})
+ 	if res.Err != nil {
+ 		t.Fatal(res.Err)
+diff --git a/internal/fetch/fetch.go b/internal/fetch/fetch.go
+index 9f00e15..2728291 100644
+--- a/internal/fetch/fetch.go
++++ b/internal/fetch/fetch.go
+@@ -184,7 +184,7 @@ type Client struct {
+ // New returns a Client with the defaults.
+ func New() *Client {
+ 	return &Client{Limits: Limits{}.withDefaults(),
+-		UserAgent: "scrivet/1 (+content import)"}
++		UserAgent: "quilzo/1 (+content import)"}
+ }
+ 
+ // ValidateURL checks a URL before anything is dialled.
+diff --git a/internal/importer/importer.go b/internal/importer/importer.go
+index f5e261e..fbaf4b7 100644
+--- a/internal/importer/importer.go
++++ b/internal/importer/importer.go
+@@ -72,7 +72,7 @@ const MaxBytes = 256 << 20
+ // MaxPages bounds how many pages one import may create.
+ const MaxPages = 20000
+ 
+-// Page is one imported page, in scrivet's own shape.
++// Page is one imported page, in quilzo's own shape.
+ type Page struct {
+ 	Name    string         `json:"name"`
+ 	Fields  map[string]any `json:"fields"`
+@@ -324,7 +324,7 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
+ 			"%d media URLs were found and NOT downloaded. Fetching them during "+
+ 				"an import would make this file a way to make requests from "+
+ 				"inside your network. Fetch the ones you want with "+
+-				"`scrivet media get <url>`, which validates the address at "+
++				"`quilzo media get <url>`, which validates the address at "+
+ 				"connect time rather than before it.",
+ 			len(rep.Media)))
+ 	}
+diff --git a/internal/ipfs/ipfs.go b/internal/ipfs/ipfs.go
+index b7e2bab..32bf5ac 100644
+--- a/internal/ipfs/ipfs.go
++++ b/internal/ipfs/ipfs.go
+@@ -2,7 +2,7 @@
+ //
+ // # Why this exists at all
+ //
+-// Scrivet already stores every object under the SHA-256 of its own bytes, in
++// Quilzo already stores every object under the SHA-256 of its own bytes, in
+ // nested trees, and publishes by moving a pointer at a root hash. IPFS names
+ // content by the SHA-256 of its own bytes, in nested DAG nodes, and addresses a
+ // site by its root. These are the same idea arriving from two directions, so
+diff --git a/internal/ipfs/ipfs_test.go b/internal/ipfs/ipfs_test.go
+index 0327c4b..564c396 100644
+--- a/internal/ipfs/ipfs_test.go
++++ b/internal/ipfs/ipfs_test.go
+@@ -118,7 +118,7 @@ func TestDirectoryIdentifierDoesNotDependOnInputOrder(t *testing.T) {
+ 
+ // A file larger than one chunk becomes a dag-pb node over raw leaves.
+ func TestALargeFileIsChunked(t *testing.T) {
+-	body := bytes.Repeat([]byte("scrivet"), ChunkSize) // comfortably over
++	body := bytes.Repeat([]byte("quilzo"), ChunkSize) // comfortably over
+ 	n := File(body)
+ 
+ 	if len(n.Children) < 2 {
+diff --git a/internal/mcp/mcp.go b/internal/mcp/mcp.go
+index 53afc1f..57e1dc3 100644
+--- a/internal/mcp/mcp.go
++++ b/internal/mcp/mcp.go
+@@ -1,10 +1,10 @@
+-// Package mcp exposes scrivet to agents over the Model Context Protocol.
++// Package mcp exposes quilzo to agents over the Model Context Protocol.
+ //
+ // # Why now, and not before
+ //
+ // Earlier research on this project concluded that MCP is worth its cost for
+ // remote, authenticated access and not for local, deterministic work — a CLI
+-// wins the second case outright, and scrivet was local. Hosting changes which
++// wins the second case outright, and quilzo was local. Hosting changes which
+ // case this is, so the conclusion changes with it.
+ //
+ // # Four tools, not fifteen
+@@ -39,7 +39,7 @@
+ // names the pitfall plainly: a server that checks a token's signature and expiry
+ // but not its audience will accept a token minted for something else entirely.
+ //
+-// scrivet's tokens are opaque and issued by this server, so they are
++// quilzo's tokens are opaque and issued by this server, so they are
+ // audience-bound by construction — there is no other issuer whose token could
+ // validate here, and the class of confusion the specification warns about cannot
+ // arise. That is a smaller claim than OAuth 2.1 conformance, and it is the true
+@@ -156,8 +156,8 @@ func (s *Server) Register(op Operation, h Handler) {
+ func (s *Server) tools() []Tool {
+ 	return []Tool{
+ 		{
+-			Name: "scrivet_find",
+-			Description: "Find the scrivet operation for a task. Call this first; " +
++			Name: "quilzo_find",
++			Description: "Find the quilzo operation for a task. Call this first; " +
+ 				"it returns the exact arguments for the operation you need.",
+ 			InputSchema: map[string]any{
+ 				"type": "object",
+@@ -171,21 +171,21 @@ func (s *Server) tools() []Tool {
+ 			},
+ 		},
+ 		{
+-			Name:        "scrivet_read",
+-			Description: "Read content or state. Use scrivet_find to learn the operations.",
+-			InputSchema: opSchema("a read operation name from scrivet_find"),
++			Name:        "quilzo_read",
++			Description: "Read content or state. Use quilzo_find to learn the operations.",
++			InputSchema: opSchema("a read operation name from quilzo_find"),
+ 		},
+ 		{
+-			Name: "scrivet_write",
++			Name: "quilzo_write",
+ 			Description: "Change a draft. Never publishes. Content written here is " +
+ 				"recorded as AI-generated.",
+-			InputSchema: opSchema("a write operation name from scrivet_find"),
++			InputSchema: opSchema("a write operation name from quilzo_find"),
+ 		},
+ 		{
+-			Name: "scrivet_check",
++			Name: "quilzo_check",
+ 			Description: "Run the checks that gate publishing: accessibility and " +
+ 				"content provenance.",
+-			InputSchema: opSchema("a check operation name from scrivet_find"),
++			InputSchema: opSchema("a check operation name from quilzo_find"),
+ 		},
+ 	}
+ }
+@@ -197,7 +197,7 @@ func opSchema(desc string) map[string]any {
+ 			"operation": map[string]any{"type": "string", "description": desc},
+ 			"arguments": map[string]any{
+ 				"type":        "object",
+-				"description": "arguments for the operation, as scrivet_find described them",
++				"description": "arguments for the operation, as quilzo_find described them",
+ 			},
+ 		},
+ 		"required": []string{"operation"},
+@@ -266,7 +266,7 @@ func (s *Server) Handle(req Request) *Response {
+ 			"protocolVersion": Protocol,
+ 			"capabilities":    map[string]any{"tools": map[string]any{}},
+ 			"serverInfo":      map[string]any{"name": s.Name, "version": s.Version},
+-			"instructions": "Call scrivet_find first to discover operations. " +
++			"instructions": "Call quilzo_find first to discover operations. " +
+ 				"Writes go to a draft and never publish. Content you write is " +
+ 				"recorded as AI-generated, which the EU AI Act requires.",
+ 		}
+@@ -298,29 +298,29 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
+ 		return nil, &Error{Code: CodeInvalidParams, Message: err.Error()}
+ 	}
+ 
+-	if p.Name == "scrivet_find" {
++	if p.Name == "quilzo_find" {
+ 		query, _ := p.Arguments["query"].(string)
+ 		return textResult(s.describe(s.find(query))), nil
+ 	}
+ 
+ 	kind := map[string]string{
+-		"scrivet_read": "read", "scrivet_write": "write", "scrivet_check": "check",
++		"quilzo_read": "read", "quilzo_write": "write", "quilzo_check": "check",
+ 	}[p.Name]
+ 	if kind == "" {
+ 		return nil, &Error{Code: CodeMethodNotFound,
+-			Message: fmt.Sprintf("no tool %q; the tools are scrivet_find, "+
+-				"scrivet_read, scrivet_write and scrivet_check", p.Name)}
++			Message: fmt.Sprintf("no tool %q; the tools are quilzo_find, "+
++				"quilzo_read, quilzo_write and quilzo_check", p.Name)}
+ 	}
+ 
+ 	opName, _ := p.Arguments["operation"].(string)
+ 	if opName == "" {
+ 		return nil, &Error{Code: CodeInvalidParams,
+-			Message: "no operation given; call scrivet_find to get one"}
++			Message: "no operation given; call quilzo_find to get one"}
+ 	}
+ 	op, ok := s.operations[opName]
+ 	if !ok {
+ 		return nil, &Error{Code: CodeInvalidParams,
+-			Message: fmt.Sprintf("no operation %q; call scrivet_find", opName)}
++			Message: fmt.Sprintf("no operation %q; call quilzo_find", opName)}
+ 	}
+ 
+ 	// A read tool must not be able to reach a write operation. Without this the
+@@ -328,11 +328,11 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
+ 	// and a client permitted only to read could write by naming the operation.
+ 	if op.Writes && kind == "read" {
+ 		return nil, &Error{Code: CodeInvalidParams,
+-			Message: fmt.Sprintf("%q changes content; call it through scrivet_write", opName)}
++			Message: fmt.Sprintf("%q changes content; call it through quilzo_write", opName)}
+ 	}
+ 	if !op.Writes && kind == "write" {
+ 		return nil, &Error{Code: CodeInvalidParams,
+-			Message: fmt.Sprintf("%q does not change anything; use scrivet_read", opName)}
++			Message: fmt.Sprintf("%q does not change anything; use quilzo_read", opName)}
+ 	}
+ 
+ 	args, _ := p.Arguments["arguments"].(map[string]any)
+@@ -369,12 +369,12 @@ func (s *Server) describe(ops []Operation) string {
+ 		return "no operations available"
+ 	}
+ 	for _, op := range ops {
+-		tool := "scrivet_read"
++		tool := "quilzo_read"
+ 		if op.Writes {
+-			tool = "scrivet_write"
++			tool = "quilzo_write"
+ 		}
+ 		if strings.HasPrefix(op.Name, "check") {
+-			tool = "scrivet_check"
++			tool = "quilzo_check"
+ 		}
+ 		fmt.Fprintf(&b, "%s — %s\n", op.Name, op.Summary)
+ 		fmt.Fprintf(&b, "  call: %s{operation:%q, arguments:{...}}\n", tool, op.Name)
+@@ -405,7 +405,7 @@ func textResult(text string) map[string]any {
+ 	}
+ }
+ 
+-// Operations lists what is registered, for tests and for `scrivet mcp --list`.
++// Operations lists what is registered, for tests and for `quilzo mcp --list`.
+ func (s *Server) Operations() []Operation {
+ 	out := make([]Operation, 0, len(s.operations))
+ 	for _, op := range s.operations {
+diff --git a/internal/mcp/mcp_test.go b/internal/mcp/mcp_test.go
+index 38a227b..f4a2ef4 100644
+--- a/internal/mcp/mcp_test.go
++++ b/internal/mcp/mcp_test.go
+@@ -8,7 +8,7 @@ import (
+ )
+ 
+ func testServer() *Server {
+-	s := NewServer("scrivet", "test")
++	s := NewServer("quilzo", "test")
+ 	s.Register(Operation{
+ 		Name: "list_pages", Summary: "list the pages in the draft",
+ 		Keywords: []string{"pages", "list", "content"},
+@@ -85,7 +85,7 @@ func TestOnlyFourToolsAreEverPreloaded(t *testing.T) {
+ func TestFindDescribesOnlyWhatWasAskedFor(t *testing.T) {
+ 	s := testServer()
+ 	out := text(t, call(t, s, "tools/call", callParams{
+-		Name: "scrivet_find", Arguments: map[string]any{"query": "publish the site"}}))
++		Name: "quilzo_find", Arguments: map[string]any{"query": "publish the site"}}))
+ 
+ 	if !strings.Contains(out, "publish") {
+ 		t.Errorf("the matching operation is missing: %q", out)
+@@ -99,7 +99,7 @@ func TestFindDescribesOnlyWhatWasAskedFor(t *testing.T) {
+ func TestFindWithNoMatchReturnsTheMenu(t *testing.T) {
+ 	s := testServer()
+ 	out := text(t, call(t, s, "tools/call", callParams{
+-		Name: "scrivet_find", Arguments: map[string]any{"query": "xyzzy"}}))
++		Name: "quilzo_find", Arguments: map[string]any{"query": "xyzzy"}}))
+ 
+ 	// An agent that searched badly should see what exists rather than a dead
+ 	// end it will guess around.
+@@ -115,13 +115,13 @@ func TestFindWithNoMatchReturnsTheMenu(t *testing.T) {
+ func TestAReadToolCannotReachAWriteOperation(t *testing.T) {
+ 	s := testServer()
+ 	r := call(t, s, "tools/call", callParams{
+-		Name:      "scrivet_read",
++		Name:      "quilzo_read",
+ 		Arguments: map[string]any{"operation": "write_page"}})
+ 
+ 	if r.Error == nil {
+ 		t.Fatal("a write operation was reachable through the read tool")
+ 	}
+-	if !strings.Contains(r.Error.Message, "scrivet_write") {
++	if !strings.Contains(r.Error.Message, "quilzo_write") {
+ 		t.Errorf("the error should name the right tool, got %q", r.Error.Message)
+ 	}
+ }
+@@ -129,7 +129,7 @@ func TestAReadToolCannotReachAWriteOperation(t *testing.T) {
+ func TestAWriteToolCannotBeUsedForAReadOperation(t *testing.T) {
+ 	s := testServer()
+ 	r := call(t, s, "tools/call", callParams{
+-		Name:      "scrivet_write",
++		Name:      "quilzo_write",
+ 		Arguments: map[string]any{"operation": "list_pages"}})
+ 	if r.Error == nil {
+ 		t.Error("a read operation should not be invoked through the write tool")
+@@ -141,7 +141,7 @@ func TestAWriteToolCannotBeUsedForAReadOperation(t *testing.T) {
+ func TestARefusalIsDistinguishableFromAFailure(t *testing.T) {
+ 	s := testServer()
+ 	r := call(t, s, "tools/call", callParams{
+-		Name:      "scrivet_write",
++		Name:      "quilzo_write",
+ 		Arguments: map[string]any{"operation": "publish"}})
+ 
+ 	if r.Error == nil {
+@@ -168,7 +168,7 @@ func TestAnInternalFailureIsNotDressedAsARefusal(t *testing.T) {
+ 		func(map[string]any) (any, error) { return nil, fmt.Errorf("disk on fire") })
+ 
+ 	r := call(t, s, "tools/call", callParams{
+-		Name: "scrivet_write", Arguments: map[string]any{"operation": "broken"}})
++		Name: "quilzo_write", Arguments: map[string]any{"operation": "broken"}})
+ 	if r.Error.Code != CodeInternal {
+ 		t.Errorf("a genuine failure should be an internal error, got %d", r.Error.Code)
+ 	}
+@@ -178,12 +178,12 @@ func TestUnknownOperationsAndToolsAreRefusedClearly(t *testing.T) {
+ 	s := testServer()
+ 
+ 	r := call(t, s, "tools/call", callParams{
+-		Name: "scrivet_read", Arguments: map[string]any{"operation": "nonsense"}})
+-	if r.Error == nil || !strings.Contains(r.Error.Message, "scrivet_find") {
++		Name: "quilzo_read", Arguments: map[string]any{"operation": "nonsense"}})
++	if r.Error == nil || !strings.Contains(r.Error.Message, "quilzo_find") {
+ 		t.Error("an unknown operation should point at how to discover the real ones")
+ 	}
+ 
+-	r = call(t, s, "tools/call", callParams{Name: "scrivet_delete_everything"})
++	r = call(t, s, "tools/call", callParams{Name: "quilzo_delete_everything"})
+ 	if r.Error == nil || r.Error.Code != CodeMethodNotFound {
+ 		t.Error("an unknown tool should be a method-not-found")
+ 	}
+@@ -199,7 +199,7 @@ func TestInitializeAnnouncesTheConstraints(t *testing.T) {
+ 	}
+ 	instructions, _ := m["instructions"].(string)
+ 	// The two things an agent must know before it writes anything.
+-	if !strings.Contains(instructions, "scrivet_find") {
++	if !strings.Contains(instructions, "quilzo_find") {
+ 		t.Error("initialize should tell the agent to search first")
+ 	}
+ 	if !strings.Contains(strings.ToLower(instructions), "never publish") {
+diff --git a/internal/medialib/medialib.go b/internal/medialib/medialib.go
+index 1b44091..9a913b7 100644
+--- a/internal/medialib/medialib.go
++++ b/internal/medialib/medialib.go
+@@ -1,6 +1,6 @@
+ // Package medialib stores accepted uploads, which nothing did.
+ //
+-// `scrivet media add photo.jpg --alt "..."` printed "accepted", wrote an audit
++// `quilzo media add photo.jpg --alt "..."` printed "accepted", wrote an audit
+ // record, and threw the bytes away. There was no library, nothing served the
+ // file, and no page could refer to it. The validation was real and thorough —
+ // magic bytes, a full decode, format-specific size caps, metadata stripping —
+diff --git a/internal/oidc/verify_test.go b/internal/oidc/verify_test.go
+index 7f0b824..fdbc777 100644
+--- a/internal/oidc/verify_test.go
++++ b/internal/oidc/verify_test.go
+@@ -95,7 +95,7 @@ func pad(v *big.Int, n int) []byte {
+ func goodClaims() map[string]any {
+ 	return map[string]any{
+ 		"iss": "https://idp.example", "sub": "user-1",
+-		"aud": "scrivet-client", "nonce": "the-nonce",
++		"aud": "quilzo-client", "nonce": "the-nonce",
+ 		"exp": now.Add(time.Hour).Unix(), "iat": now.Unix(),
+ 		"email": "dana@example.com", "email_verified": true,
+ 	}
+@@ -112,7 +112,7 @@ func verifier(s *signer, algs ...Algorithm) *Verifier {
+ 		}
+ 	}
+ 	return &Verifier{
+-		Issuer: "https://idp.example", ClientID: "scrivet-client",
++		Issuer: "https://idp.example", ClientID: "quilzo-client",
+ 		Algorithms: algs, Keys: oneKey{key},
+ 		Now: func() time.Time { return now },
+ 	}
+@@ -276,7 +276,7 @@ func TestMultipleAudiencesNeedAnAuthorizedParty(t *testing.T) {
+ 	s := newSigner(t)
+ 
+ 	claims := goodClaims()
+-	claims["aud"] = []any{"scrivet-client", "another-client"}
++	claims["aud"] = []any{"quilzo-client", "another-client"}
+ 	if _, err := verifier(s).Verify(s.sign(t, "RS256", nil, claims),
+ 		"the-nonce"); err == nil {
+ 		t.Fatal("a multi-audience token with no azp was accepted")
+@@ -289,7 +289,7 @@ func TestMultipleAudiencesNeedAnAuthorizedParty(t *testing.T) {
+ 			"client was listed as a secondary audience")
+ 	}
+ 
+-	claims["azp"] = "scrivet-client"
++	claims["azp"] = "quilzo-client"
+ 	if _, err := verifier(s).Verify(s.sign(t, "RS256", nil, claims),
+ 		"the-nonce"); err != nil {
+ 		t.Errorf("a correct multi-audience token was refused: %v", err)
+diff --git a/internal/out/out.go b/internal/out/out.go
+index 054ce98..fbc5bcc 100644
+--- a/internal/out/out.go
++++ b/internal/out/out.go
+@@ -144,7 +144,7 @@ func (w *Writer) Error(err error) {
+ //
+ // An agent branching on output text breaks the first time somebody rewords a
+ // sentence. Branching on an exit code does not, so the codes are part of the
+-// interface and are listed in `scrivet help`.
++// interface and are listed in `quilzo help`.
+ const (
+ 	OK              = 0 // did what was asked
+ 	ExitFailure     = 1 // the operation failed
+diff --git a/internal/posture/posture.go b/internal/posture/posture.go
+index 27c4a0a..c8afa46 100644
+--- a/internal/posture/posture.go
++++ b/internal/posture/posture.go
+@@ -318,7 +318,7 @@ func Scan(s State, suppressions []Suppression) Report {
+ 				Resource: sp.ID,
+ 				Detail: fmt.Sprintf("%q was suppressed by %s until %s; that has passed",
+ 					sp.ID, sp.By, time.Unix(sp.Until, 0).UTC().Format("2006-01-02")),
+-				Fix:      "scrivet posture suppress " + sp.ID + " --days 90 --reason ...",
++				Fix:      "quilzo posture suppress " + sp.ID + " --days 90 --reason ...",
+ 				Controls: []string{"CA-5", "RA-5"},
+ 			}
+ 			rep.Findings = append(rep.Findings, f)
+diff --git a/internal/posture/rules.go b/internal/posture/rules.go
+index ecd3904..55a3898 100644
+--- a/internal/posture/rules.go
++++ b/internal/posture/rules.go
+@@ -36,7 +36,7 @@ var rules = []Rule{
+ 			return []Finding{{
+ 				Detail: "the policy is empty, so access is decided by the " +
+ 					"built-in default rather than by anything you configured",
+-				Fix: "scrivet auth grant YOU admin",
++				Fix: "quilzo auth grant YOU admin",
+ 			}}
+ 		},
+ 	},
+@@ -62,7 +62,7 @@ var rules = []Rule{
+ 			return []Finding{{
+ 				Detail: fmt.Sprintf("%d binding(s), none of them a deny",
+ 					len(s.Policy.Bindings)),
+-				Fix: "scrivet auth deny WHO ROLE --on /some/sensitive/path",
++				Fix: "quilzo auth deny WHO ROLE --on /some/sensitive/path",
+ 			}}
+ 		},
+ 	},
+@@ -94,7 +94,7 @@ var rules = []Rule{
+ 			return []Finding{{
+ 				Detail: fmt.Sprintf("%d administrators: %s",
+ 					len(admins), joinShort(admins, 6)),
+-				Fix: "scrivet auth grant WHO publisher  # then revoke the admin role",
++				Fix: "quilzo auth grant WHO publisher  # then revoke the admin role",
+ 			}}
+ 		},
+ 	},
+@@ -125,7 +125,7 @@ var rules = []Rule{
+ 				Resource: admins[0],
+ 				Detail: fmt.Sprintf("%s is the only administrator; there is no "+
+ 					"recovery path if that credential is lost", admins[0]),
+-				Fix: "scrivet auth grant SOMEONE-ELSE admin",
++				Fix: "quilzo auth grant SOMEONE-ELSE admin",
+ 			}}
+ 		},
+ 	},
+@@ -165,7 +165,7 @@ var rules = []Rule{
+ 					Detail: fmt.Sprintf("%s (%s, %s) is valid for %s, until %s",
+ 						t.Name, t.Principal, t.Role, days(life),
+ 						time.Unix(t.ExpiresAt, 0).UTC().Format("2006-01-02")),
+-					Fix: "scrivet token revoke " + t.ID +
++					Fix: "quilzo token revoke " + t.ID +
+ 						"  # then issue with --ttl 720h and exchange for sessions",
+ 				})
+ 			}
+@@ -200,7 +200,7 @@ var rules = []Rule{
+ 					Resource: t.ID,
+ 					Detail: fmt.Sprintf("%s belongs to %s and can change the "+
+ 						"access policy itself", t.Name, t.Principal),
+-					Fix: "scrivet token issue " + t.Name +
++					Fix: "quilzo token issue " + t.Name +
+ 						" --principal " + t.Principal + " --role publisher",
+ 				})
+ 			}
+@@ -233,7 +233,7 @@ var rules = []Rule{
+ 					Resource: t.ID,
+ 					Detail: fmt.Sprintf("%s was issued %s ago and has never "+
+ 						"authenticated", t.Name, days(age)),
+-					Fix: "scrivet token revoke " + t.ID,
++					Fix: "quilzo token revoke " + t.ID,
+ 				})
+ 			}
+ 			return out
+@@ -261,7 +261,7 @@ var rules = []Rule{
+ 					Resource: t.ID,
+ 					Detail: fmt.Sprintf("%s last authenticated %s ago",
+ 						t.Name, days(s.Now.Sub(time.Unix(t.LastUsed, 0)))),
+-					Fix: "scrivet token revoke " + t.ID,
++					Fix: "quilzo token revoke " + t.ID,
+ 				})
+ 			}
+ 			return out
+@@ -293,7 +293,7 @@ var rules = []Rule{
+ 			return []Finding{{
+ 				Detail: fmt.Sprintf("%d expired %s still listed",
+ 					n, plural(n, "token is", "tokens are")),
+-				Fix: "scrivet token prune",
++				Fix: "quilzo token prune",
+ 			}}
+ 		},
+ 	},
+@@ -324,7 +324,7 @@ var rules = []Rule{
+ 			return []Finding{{
+ 				Detail: fmt.Sprintf("%d break(s) — %s",
+ 					len(problems), joinShort(where, 3)),
+-				Fix: "scrivet auditlog verify  # then treat the log as evidence " +
++				Fix: "quilzo auditlog verify  # then treat the log as evidence " +
+ 					"of tampering, not as a record of events",
+ 			}}
+ 		},
+@@ -347,7 +347,7 @@ var rules = []Rule{
+ 			}
+ 			return []Finding{{
+ 				Detail: "the site has been published but the audit log is empty",
+-				Fix:    "scrivet auditlog  # check the log path is writable",
++				Fix:    "quilzo auditlog  # check the log path is writable",
+ 			}}
+ 		},
+ 	},
+@@ -380,7 +380,7 @@ var rules = []Rule{
+ 				Detail: fmt.Sprintf("%d%% of %d records (%d) name a principal "+
+ 					"that was asserted rather than authenticated",
+ 					pct, len(s.Audit), unverified),
+-				Fix: "scrivet auth grant WHO ROLE  # a policy with bindings " +
++				Fix: "quilzo auth grant WHO ROLE  # a policy with bindings " +
+ 					"turns on identity enforcement",
+ 			}}
+ 		},
+@@ -403,7 +403,7 @@ var rules = []Rule{
+ 				out = append(out, Finding{
+ 					Resource: t,
+ 					Detail:   t + " uses raw, so content is emitted unescaped",
+-					Fix:      "scrivet audit  # review each use, or remove it",
++					Fix:      "quilzo audit  # review each use, or remove it",
+ 				})
+ 			}
+ 			return out
+@@ -428,7 +428,7 @@ var rules = []Rule{
+ 				Detail: fmt.Sprintf("%d published %s no provenance record: %s",
+ 					n, plural(n, "page has", "pages have"),
+ 					joinShort(s.Content.UnmarkedPages, 5)),
+-				Fix: "scrivet provenance set PAGE --source humanEdits",
++				Fix: "quilzo provenance set PAGE --source humanEdits",
+ 			}}
+ 		},
+ 	},
+@@ -450,7 +450,7 @@ var rules = []Rule{
+ 				Detail: fmt.Sprintf("%d %s changed since being marked: %s",
+ 					n, plural(n, "page has", "pages have"),
+ 					joinShort(s.Content.StalePages, 5)),
+-				Fix: "scrivet provenance check",
++				Fix: "quilzo provenance check",
+ 			}}
+ 		},
+ 	},
+@@ -486,7 +486,7 @@ var rules = []Rule{
+ 			return []Finding{{
+ 				Detail: fmt.Sprintf("%d of %d live pages are unvalidated: %s",
+ 					len(untyped), len(s.Content.LivePages), joinShort(untyped, 5)),
+-				Fix: "scrivet type bind PAGE TYPE",
++				Fix: "quilzo type bind PAGE TYPE",
+ 			}}
+ 		},
+ 	},
+@@ -507,7 +507,7 @@ var rules = []Rule{
+ 			return []Finding{{
+ 				Detail: fmt.Sprintf("%d blocking failure(s) are live, which "+
+ 					"means the publish gate was bypassed", s.Content.BlockingA11y),
+-				Fix: "scrivet a11y --ref live",
++				Fix: "quilzo a11y --ref live",
+ 			}}
+ 		},
+ 	},
+@@ -541,7 +541,7 @@ var rules = []Rule{
+ 				Severity: sev,
+ 				Resource: addr,
+ 				Detail:   detail,
+-				Fix:      "scrivet serve --addr 127.0.0.1:8080  # and reach it over a tunnel",
++				Fix:      "quilzo serve --addr 127.0.0.1:8080  # and reach it over a tunnel",
+ 			}}
+ 		},
+ 	},
+@@ -642,7 +642,7 @@ var rules = []Rule{
+ 				f := Finding{
+ 					Resource: wk.Key,
+ 					Detail:   wk.Key + " = " + wk.Value + ": " + wk.Why,
+-					Fix: "scrivet config unset " + wk.Key +
++					Fix: "quilzo config unset " + wk.Key +
+ 						"  # or renew the acceptance",
+ 				}
+ 				switch {
+@@ -653,7 +653,7 @@ var rules = []Rule{
+ 					f.Severity = High
+ 					f.Detail += " — with no recorded reason, so this cannot be " +
+ 						"told apart from an accident"
+-					f.Fix = "scrivet config set " + wk.Key + " " + wk.Value +
++					f.Fix = "quilzo config set " + wk.Key + " " + wk.Value +
+ 						" --accept-risk \"why\"  # or unset it"
+ 				case wk.Expired:
+ 					f.Severity = High
+@@ -727,7 +727,7 @@ var rules = []Rule{
+ 					Resource: t.ID,
+ 					Detail: fmt.Sprintf("%s authenticates as %s, who is also a "+
+ 						"person in the access policy", t.Name, t.Principal),
+-					Fix: "scrivet token issue " + t.Name +
++					Fix: "quilzo token issue " + t.Name +
+ 						" --principal svc-" + t.Principal + " --role author",
+ 				})
+ 			}
+@@ -760,13 +760,13 @@ var rules = []Rule{
+ 					Severity: High,
+ 					Detail: "a log writer is configured and not answering, so " +
+ 						"actions are being taken and not recorded",
+-					Fix: "start it: scrivet logd",
++					Fix: "start it: quilzo logd",
+ 				}}
+ 			}
+ 			return []Finding{{
+ 				Detail: "the CMS opens the audit log directly, so code " +
+ 					"execution as this account is enough to rewrite it",
+-				Fix: "run `scrivet logd` as an account that owns the log file",
++				Fix: "run `quilzo logd` as an account that owns the log file",
+ 			}}
+ 		},
+ 	},
+@@ -802,7 +802,7 @@ var rules = []Rule{
+ 			return []Finding{{
+ 				Detail: fmt.Sprintf("%d entries and no head has ever been "+
+ 					"published", len(s.Audit)),
+-				Fix: "scrivet auditlog anchor  # or `auditlog head --save` and " +
++				Fix: "quilzo auditlog anchor  # or `auditlog head --save` and " +
+ 					"export it",
+ 			}}
+ 		},
+@@ -832,7 +832,7 @@ var rules = []Rule{
+ 					"%d entries have been written since the last published head, "+
+ 						"and none of them is fixed by anything outside this "+
+ 						"machine", gap),
+-				Fix: "scrivet auditlog anchor",
++				Fix: "quilzo auditlog anchor",
+ 			}}
+ 		},
+ 	},
+@@ -857,7 +857,7 @@ var rules = []Rule{
+ 			}
+ 			return []Finding{{
+ 				Detail: "the current live content has never been timestamped",
+-				Fix:    "scrivet timestamp",
++				Fix:    "quilzo timestamp",
+ 			}}
+ 		},
+ 	},
+diff --git a/internal/provenance/provenance.go b/internal/provenance/provenance.go
+index be77459..27d4409 100644
+--- a/internal/provenance/provenance.go
++++ b/internal/provenance/provenance.go
+@@ -7,7 +7,7 @@
+ // 2026. Where an AI system generates content, the provider must apply a
+ // machine-readable mark identifying it as artificially generated, and the
+ // penalty for getting it wrong is up to EUR 15 million or 3% of worldwide
+-// turnover. scrivet ships an assistant that writes pages, so this is not a
++// turnover. quilzo ships an assistant that writes pages, so this is not a
+ // feature it would be nice to have — it is the condition for the assistant being
+ // usable by anyone publishing into the EU.
+ //
+diff --git a/internal/public/media.go b/internal/public/media.go
+index bb3d462..192873d 100644
+--- a/internal/public/media.go
++++ b/internal/public/media.go
+@@ -34,9 +34,9 @@ type MediaLookup func(id string) (media.File, []byte, error)
+ //
+ // Go's ServeMux normalises a path before routing, so `/media/../../x` never
+ // reaches this handler — it is answered with a redirect. That is not the whole
+-// story, and a test found the rest: `..%2f..%2f.scrivet%2ftokens.json` and
+-// `....//....//.scrivet/tokens.json` both survive normalisation and arrive
+-// here as `../../.scrivet/tokens.json`. Nothing was served either way, because
++// story, and a test found the rest: `..%2f..%2f.quilzo%2ftokens.json` and
++// `....//....//.quilzo/tokens.json` both survive normalisation and arrive
++// here as `../../.quilzo/tokens.json`. Nothing was served either way, because
+ // the library validates the identifier before it builds a path — but the
+ // handler was passing a relative path to a function field somebody else
+ // supplies, and "it is safe because the callee checks" is a property of the
+diff --git a/internal/public/media_test.go b/internal/public/media_test.go
+index 7db6752..9722fa2 100644
+--- a/internal/public/media_test.go
++++ b/internal/public/media_test.go
+@@ -104,16 +104,16 @@ func TestATraversalInAnAssetPathGetsNothing(t *testing.T) {
+ 		return media.File{}, nil, http.ErrMissingFile
+ 	}}
+ 	for _, id := range []string{
+-		"../../.scrivet/tokens.json",
+-		"..%2f..%2f.scrivet%2ftokens.json",
+-		"....//....//.scrivet/tokens.json",
++		"../../.quilzo/tokens.json",
++		"..%2f..%2f.quilzo%2ftokens.json",
++		"....//....//.quilzo/tokens.json",
+ 	} {
+ 		w := httptest.NewRecorder()
+ 		st.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/media/"+id, nil))
+ 		if w.Code == http.StatusOK {
+ 			t.Errorf("%q was served", id)
+ 		}
+-		if strings.Contains(w.Body.String(), "scv_") {
++		if strings.Contains(w.Body.String(), "qlz_") {
+ 			t.Fatalf("%q returned something that looks like a credential", id)
+ 		}
+ 		if strings.Contains(reached, "..") {
+diff --git a/internal/public/notfound.go b/internal/public/notfound.go
+index 9da1416..5cac0a5 100644
+--- a/internal/public/notfound.go
++++ b/internal/public/notfound.go
+@@ -41,14 +41,14 @@ func (st *Site) notFound(w http.ResponseWriter, r *http.Request) {
+ <title>Page not found — %s</title>
+ %s
+ <style>
+-  .scrivet-404 { max-width: 40rem; margin: 12vh auto; padding: 0 1.5rem;
++  .quilzo-404 { max-width: 40rem; margin: 12vh auto; padding: 0 1.5rem;
+     font-family: system-ui, sans-serif; line-height: 1.6; }
+-  .scrivet-404 h1 { font-size: 2rem; margin: 0 0 .5rem; }
+-  .scrivet-404 p { margin: 0 0 1rem; }
++  .quilzo-404 h1 { font-size: 2rem; margin: 0 0 .5rem; }
++  .quilzo-404 p { margin: 0 0 1rem; }
+ </style>
+ </head>
+ <body>
+-<main class="scrivet-404">
++<main class="quilzo-404">
+   <h1>Page not found</h1>
+   <p>There is nothing at this address on %s. It may have been moved or
+      removed.</p>
+diff --git a/internal/public/public.go b/internal/public/public.go
+index 79a996f..4ca3c9b 100644
+--- a/internal/public/public.go
++++ b/internal/public/public.go
+@@ -1,6 +1,6 @@
+ // Package public serves the published site.
+ //
+-// Until now scrivet could store, review, mark and publish content and then not
++// Until now quilzo could store, review, mark and publish content and then not
+ // show it to anybody. `serve` was the admin. This is the half that makes it a
+ // website rather than a filing system.
+ //
+@@ -131,7 +131,7 @@ type Site struct {
+ 
+ // New returns a Site with sensible defaults.
+ func New(s *store.Store, template string) *Site {
+-	return &Site{Store: s, Template: template, Index: "index", Name: "scrivet site"}
++	return &Site{Store: s, Template: template, Index: "index", Name: "quilzo site"}
+ }
+ 
+ // Handler routes the public surface.
+@@ -643,7 +643,7 @@ func (st *Site) manifest(w http.ResponseWriter, r *http.Request) {
+ // serviceWorker caches published pages so the site survives losing the network.
+ //
+ // Deliberately small and deliberately conservative. A service worker is the one
+-// piece of script a scrivet site ships, and a caching bug in one is uniquely
++// piece of script a quilzo site ships, and a caching bug in one is uniquely
+ // unpleasant: it persists across reloads and serves stale content to somebody
+ // who cannot work out why. So it is network-first — the network wins whenever it
+ // answers, and the cache is only consulted when it does not.
+@@ -652,9 +652,9 @@ func (st *Site) manifest(w http.ResponseWriter, r *http.Request) {
+ // CMS: publishing must take effect immediately, and a stale page is a worse
+ // failure than a slow one.
+ func (st *Site) serviceWorker(w http.ResponseWriter, r *http.Request) {
+-	js := `// scrivet service worker. Network-first: publishing must take effect at once,
++	js := `// quilzo service worker. Network-first: publishing must take effect at once,
+ // and a stale page is worse than a slow one.
+-const CACHE = 'scrivet-v1';
++const CACHE = 'quilzo-v1';
+ const OFFLINE = '/offline';
+ 
+ self.addEventListener('install', (e) => {
+diff --git a/internal/public/public_test.go b/internal/public/public_test.go
+index 93b40a6..93d036e 100644
+--- a/internal/public/public_test.go
++++ b/internal/public/public_test.go
+@@ -475,7 +475,7 @@ func TestRobotsAdvertisesTheSitemapOnlyWhenThereIsOne(t *testing.T) {
+ 	st := published(t, map[string]any{"index": map[string]any{"title": "Home"}})
+ 
+ 	// published() sets a base URL, so start by taking it away: that is the
+-	// default a person gets from `scrivet site` with no flags.
++	// default a person gets from `quilzo site` with no flags.
+ 	st.BaseURL = ""
+ 	body := get(st, "/robots.txt", nil).Body.String()
+ 	if strings.Contains(body, "Sitemap:") {
+diff --git a/internal/schema/store.go b/internal/schema/store.go
+index 4ceb942..385e517 100644
+--- a/internal/schema/store.go
++++ b/internal/schema/store.go
+@@ -20,7 +20,7 @@ import (
+ // the CLI and absent from the web UI, or present in both and absent from the
+ // agent interface, is not a rule. It is a rule-shaped thing in whichever
+ // interface the person happened to read. Type validation has three write
+-// surfaces — `scrivet add`, the admin save handler, and the MCP write_page
++// surfaces — `quilzo add`, the admin save handler, and the MCP write_page
+ // operation — and all three call Gate. Adding a fourth without calling it is
+ // caught by a test that walks the source.
+ type Store struct {
+@@ -115,7 +115,7 @@ func (s *Store) Save() error {
+ // Bind declares that a page must satisfy a type.
+ func (s *Store) Bind(page, typeName string) error {
+ 	if _, ok := s.Registry.Get(typeName); !ok {
+-		return fmt.Errorf("there is no type %q; run scrivet type list", typeName)
++		return fmt.Errorf("there is no type %q; run quilzo type list", typeName)
+ 	}
+ 	if s.Bound == nil {
+ 		s.Bound = map[string]string{}
+diff --git a/internal/siem/siem.go b/internal/siem/siem.go
+index dc16849..4e16c1f 100644
+--- a/internal/siem/siem.go
++++ b/internal/siem/siem.go
+@@ -83,7 +83,7 @@ func (o Options) withDefaults() Options {
+ 		o.Vendor = "rsh1k"
+ 	}
+ 	if o.Product == "" {
+-		o.Product = "scrivet"
++		o.Product = "quilzo"
+ 	}
+ 	if o.Version == "" {
+ 		o.Version = "1"
+diff --git a/internal/site/env.go b/internal/site/env.go
+index 53968a4..d16973c 100644
+--- a/internal/site/env.go
++++ b/internal/site/env.go
+@@ -314,7 +314,7 @@ func Status(s *store.Store, envs *Envs) ([]Behind, error) {
+ 			//
+ 			// This branch was missing, and Diff was called with an empty
+ 			// commit — which failed with "not an object id: \"\"" and took the
+-			// whole listing with it. `scrivet env list` and the publishing
++			// whole listing with it. `quilzo env list` and the publishing
+ 			// screen both stopped working the moment somebody added a staging
+ 			// environment to a site that was already published, which is the
+ 			// first thing anybody does with this feature.
+diff --git a/internal/site/envstatus_test.go b/internal/site/envstatus_test.go
+index fad4863..eda48c0 100644
+--- a/internal/site/envstatus_test.go
++++ b/internal/site/envstatus_test.go
+@@ -15,7 +15,7 @@ import (
+ // fell through to a Diff against an empty string, which is not an object id,
+ // and the error took the whole listing with it.
+ //
+-// So `scrivet env list` and the publishing screen both stopped working at the
++// So `quilzo env list` and the publishing screen both stopped working at the
+ // exact moment the feature started being used.
+ func TestAnEnvironmentInsertedBeforeALiveOneDoesNotBreakTheListing(t *testing.T) {
+ 	dir := t.TempDir()
+diff --git a/internal/site/site.go b/internal/site/site.go
+index 7693686..82f4706 100644
+--- a/internal/site/site.go
++++ b/internal/site/site.go
+@@ -205,10 +205,10 @@ func PagesAt(s *store.Store, refOrCommit string) (map[string]any, error) {
+ 		switch refOrCommit {
+ 		case RefLive:
+ 			return nil, fmt.Errorf("nothing is published yet; " +
+-				"`scrivet publish` moves live to the draft")
++				"`quilzo publish` moves live to the draft")
+ 		case RefDraft:
+ 			return nil, fmt.Errorf("there is no draft yet; " +
+-				"`scrivet add NAME=FILE.json` starts one")
++				"`quilzo add NAME=FILE.json` starts one")
+ 		}
+ 		cid = refOrCommit
+ 	}
+diff --git a/internal/starter/starter.go b/internal/starter/starter.go
+index 6758a9d..64ce484 100644
+--- a/internal/starter/starter.go
++++ b/internal/starter/starter.go
+@@ -8,7 +8,7 @@
+ // worst years are a catalogue of exactly this.
+ //
+ // So these compile into the binary. There is no fetch, no registry, no
+-// signature to verify because there is no transport, and `scrivet template use`
++// signature to verify because there is no transport, and `quilzo template use`
+ // cannot be pointed at a URL. A template that ships with the tool has the same
+ // provenance as the tool.
+ //
+@@ -35,7 +35,7 @@ type Template struct {
+ 	Name string
+ 	// Summary is what it is for, in the terms someone choosing would use.
+ 	Summary string
+-	// Fields names the content keys it reads, so `scrivet template show` can
++	// Fields names the content keys it reads, so `quilzo template show` can
+ 	// answer "what do I have to fill in" without anyone reading the markup.
+ 	Fields []string
+ 	// Sample is content that renders the template completely. It doubles as
+@@ -96,7 +96,7 @@ var templates = map[string]Template{
+ 			"quote":    "We moved a decade of pages across in an afternoon and nothing was lost.",
+ 			"quote_by": "A person who has not said this, because this is sample text",
+ 			"body":     "Replace this with whatever the page is actually about.",
+-			"footer":   "© Example. Built with scrivet.",
++			"footer":   "© Example. Built with quilzo.",
+ 		},
+ 	},
+ 	"article": {
+@@ -116,7 +116,7 @@ var templates = map[string]Template{
+ 			"tags":       []any{"architecture", "storage"},
+ 			"brand":      "Example",
+ 			"nav":        nav,
+-			"footer":     "© Example. Built with scrivet.",
++			"footer":     "© Example. Built with quilzo.",
+ 		},
+ 	},
+ 	"docs": {
+@@ -136,15 +136,15 @@ var templates = map[string]Template{
+ 				map[string]any{"href": "#publish", "label": "Publish"},
+ 			},
+ 			"example_title": "A first publish",
+-			"example":       "scrivet init\nscrivet add index=index.json\nscrivet publish",
++			"example":       "quilzo init\nquilzo add index=index.json\nquilzo publish",
+ 			"col_a":         "Command", "col_b": "What it does",
+ 			"rows": []any{
+-				map[string]any{"name": "scrivet init", "detail": "Creates a content store."},
+-				map[string]any{"name": "scrivet publish", "detail": "Moves the live pointer."},
++				map[string]any{"name": "quilzo init", "detail": "Creates a content store."},
++				map[string]any{"name": "quilzo publish", "detail": "Moves the live pointer."},
+ 			},
+ 			"brand":  "Example",
+ 			"nav":    nav,
+-			"footer": "© Example. Built with scrivet.",
++			"footer": "© Example. Built with quilzo.",
+ 		},
+ 	},
+ 	"portfolio": {
+@@ -174,7 +174,7 @@ var templates = map[string]Template{
+ 			"contact_label": "Send an email", "contact_href": "mailto:hello@example.com",
+ 			"brand":  "Example",
+ 			"nav":    nav,
+-			"footer": "© Example. Built with scrivet.",
++			"footer": "© Example. Built with quilzo.",
+ 		},
+ 	},
+ }
+diff --git a/internal/store/durability_test.go b/internal/store/durability_test.go
+index e1113cd..416947f 100644
+--- a/internal/store/durability_test.go
++++ b/internal/store/durability_test.go
+@@ -68,7 +68,7 @@ func TestTheFsyncFloorIsPerCommitNotPerRecord(t *testing.T) {
+ 	//
+ 	// Dropping those is a real option — it is what git does by default, and
+ 	// this store can detect the damage because an object's name is the hash of
+-	// its content, so `scrivet verify` finds a partial write rather than
++	// its content, so `quilzo verify` finds a partial write rather than
+ 	// trusting it. That is a durability trade with a security argument
+ 	// attached and it deserves its own change, not a footnote in this one.
+ 	if batched < one*2 {
+diff --git a/internal/throttle/throttle.go b/internal/throttle/throttle.go
+index 1f82935..34f63c9 100644
+--- a/internal/throttle/throttle.go
++++ b/internal/throttle/throttle.go
+@@ -379,7 +379,7 @@ func (l *Limiter) hash(kind, v string) string {
+ 	return hex.EncodeToString(m.Sum(nil)[:16])
+ }
+ 
+-// Snapshot describes the current state, for `scrivet auth throttled`.
++// Snapshot describes the current state, for `quilzo auth throttled`.
+ type Snapshot struct {
+ 	// Subjects are opaque: the map holds HMACs, so this reports counts and
+ 	// timings without being able to say who. That is deliberate — the list of
+diff --git a/internal/timestamp/live_test.go b/internal/timestamp/live_test.go
+index f6f13c7..ee9ebfc 100644
+--- a/internal/timestamp/live_test.go
++++ b/internal/timestamp/live_test.go
+@@ -5,16 +5,16 @@ import (
+ 	"testing"
+ )
+ 
+-// Talks to a real authority. Skipped unless SCRIVET_LIVE_TSA is set, because a
++// Talks to a real authority. Skipped unless QUILZO_LIVE_TSA is set, because a
+ // test that needs the network fails for reasons that have nothing to do with the
+ // code — but the encoding is only actually proved by a TSA accepting it. Round
+ // tripping my own encoder through my own decoder proves the pair agree, not that
+ // either is right.
+ func TestAgainstARealAuthority(t *testing.T) {
+-	if os.Getenv("SCRIVET_LIVE_TSA") == "" {
+-		t.Skip("set SCRIVET_LIVE_TSA=1 to talk to a real TSA")
++	if os.Getenv("QUILZO_LIVE_TSA") == "" {
++		t.Skip("set QUILZO_LIVE_TSA=1 to talk to a real TSA")
+ 	}
+-	s, err := Request(nil, DefaultTSA, "scrivet-live-test-root")
++	s, err := Request(nil, DefaultTSA, "quilzo-live-test-root")
+ 	if err != nil {
+ 		t.Fatalf("a real TSA refused our request, so the encoding is wrong: %v", err)
+ 	}
+diff --git a/internal/tmpl/filters.go b/internal/tmpl/filters.go
+index d20df68..d2db80e 100644
+--- a/internal/tmpl/filters.go
++++ b/internal/tmpl/filters.go
+@@ -47,7 +47,7 @@ import (
+ type Filter struct {
+ 	Name string
+ 	// Arg describes the argument, empty when the filter takes none. Shown by
+-	// `scrivet template filters`.
++	// `quilzo template filters`.
+ 	Arg     string
+ 	Summary string
+ 	Apply   func(v any, arg string) (any, error)
+diff --git a/internal/webhook/webhook.go b/internal/webhook/webhook.go
+index b393c3a..3ef5a7d 100644
+--- a/internal/webhook/webhook.go
++++ b/internal/webhook/webhook.go
+@@ -230,10 +230,10 @@ func Send(s Sender, e Endpoint, ev Event, now time.Time) []Delivery {
+ 		at := now
+ 		headers := map[string]string{
+ 			"Content-Type":        "application/json",
+-			"X-Scrivet-Event":     ev.Type,
+-			"X-Scrivet-Delivery":  ev.ID,
+-			"X-Scrivet-Timestamp": strconv.FormatInt(at.Unix(), 10),
+-			"X-Scrivet-Signature": Sign(e.Secret, at, body),
++			"X-Quilzo-Event":     ev.Type,
++			"X-Quilzo-Delivery":  ev.ID,
++			"X-Quilzo-Timestamp": strconv.FormatInt(at.Unix(), 10),
++			"X-Quilzo-Signature": Sign(e.Secret, at, body),
+ 		}
+ 		status, err := s.Post(e.URL, body, headers)
+ 		d := Delivery{
+diff --git a/internal/webhook/webhook_test.go b/internal/webhook/webhook_test.go
+index daa4486..541edba 100644
+--- a/internal/webhook/webhook_test.go
++++ b/internal/webhook/webhook_test.go
+@@ -145,19 +145,19 @@ func TestDeliveryCarriesEverythingAReceiverNeeds(t *testing.T) {
+ 	}
+ 	h := r.posts[0]
+ 	for _, want := range []string{
+-		"X-Scrivet-Event", "X-Scrivet-Delivery", "X-Scrivet-Timestamp",
+-		"X-Scrivet-Signature",
++		"X-Quilzo-Event", "X-Quilzo-Delivery", "X-Quilzo-Timestamp",
++		"X-Quilzo-Signature",
+ 	} {
+ 		if h[want] == "" {
+ 			t.Errorf("the request omits %s", want)
+ 		}
+ 	}
+ 	// And the receiver, running the exported verifier, must accept it.
+-	ts, err := strconv.ParseInt(h["X-Scrivet-Timestamp"], 10, 64)
++	ts, err := strconv.ParseInt(h["X-Quilzo-Timestamp"], 10, 64)
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+-	if err := Verify(secret, h["X-Scrivet-Signature"], time.Unix(ts, 0),
++	if err := Verify(secret, h["X-Quilzo-Signature"], time.Unix(ts, 0),
+ 		r.bodies[0], now); err != nil {
+ 		t.Errorf("a receiver running the shipped verifier rejected our own "+
+ 			"delivery: %v", err)
+@@ -184,7 +184,7 @@ func TestRetriesReuseTheSameDeliveryID(t *testing.T) {
+ 		t.Error("the third attempt did not succeed")
+ 	}
+ 	for _, h := range r.posts {
+-		if h["X-Scrivet-Delivery"] != "abc123" {
++		if h["X-Quilzo-Delivery"] != "abc123" {
+ 			t.Error("the header id changed between retries")
+ 		}
+ 	}
