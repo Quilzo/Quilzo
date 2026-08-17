@@ -14,8 +14,7 @@ quilzo site          # serve it on 127.0.0.1:8081
 quilzo serve         # the admin interface on 127.0.0.1:8080
 ```
 
-The command is `quilzo` — the project's working name, kept as the binary the
-way Chromium ships `chrome`. Everywhere you see it in a command or an import,
+The command is `quilzo` — the project's working name. Everywhere you see it in a command or an import,
 that is deliberate.
 
 Go, no third-party dependencies, one static binary. Everything below is
