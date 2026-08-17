@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/lithoform/lithoform/internal/out"
-	"github.com/lithoform/lithoform/internal/provenance"
-	"github.com/lithoform/lithoform/internal/site"
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/provenance"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 func provPath(root string) string { return filepath.Join(root, "provenance.json") }

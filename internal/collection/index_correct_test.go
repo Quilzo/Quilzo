@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // The index has to answer exactly what the scan answers.

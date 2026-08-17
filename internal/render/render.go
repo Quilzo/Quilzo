@@ -27,8 +27,8 @@
 package render
 
 import (
-	"github.com/lithoform/lithoform/internal/listing"
-	"github.com/lithoform/lithoform/internal/menu"
+	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/menu"
 )
 
 // Sources is everything a template can be shown.

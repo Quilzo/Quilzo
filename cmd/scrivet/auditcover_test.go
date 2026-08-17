@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // Every command that changes something must leave a record of having done it.

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // Each role gets what it needs to do its job, and nothing above it.

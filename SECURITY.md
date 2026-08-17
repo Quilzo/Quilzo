@@ -29,7 +29,7 @@ credited.
 
 ## What counts
 
-Lithoform makes specific structural claims, and a demonstration that any of them
+Quilzo makes specific structural claims, and a demonstration that any of them
 is false is a vulnerability even without a working exploit:
 
 - **Templates cannot execute.** Any input reaching `tmpl.Render` that causes

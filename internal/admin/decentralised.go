@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/lithoform/lithoform/internal/auth"
-	"github.com/lithoform/lithoform/internal/ipfs"
-	"github.com/lithoform/lithoform/internal/site"
-	"github.com/lithoform/lithoform/internal/tmpl"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/ipfs"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 // Publishing somewhere nobody can take it down.

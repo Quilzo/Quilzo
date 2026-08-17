@@ -1,9 +1,9 @@
-# Lithoform
+# Quilzo
 
 A content management system where stored content is immutable, publishing moves
 a pointer, and the template language cannot execute anything.
 
-[![ci](https://github.com/lithoform/lithoform/actions/workflows/ci.yml/badge.svg)](https://github.com/lithoform/lithoform/actions/workflows/ci.yml)
+[![ci](https://github.com/quilzo/quilzo/actions/workflows/ci.yml/badge.svg)](https://github.com/quilzo/quilzo/actions/workflows/ci.yml)
 [![licence: AGPL-3.0-or-later](https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue)](LICENSE)
 [![dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen)](go.mod)
 
@@ -53,7 +53,7 @@ So there are three goals, in order:
    content-type gate.
 
 3. **Refuse rather than warn.** A warning nobody reads is a feature nobody has.
-   When Lithoform detects an inaccessible page, an unmarked AI-generated page, a
+   When Quilzo detects an inaccessible page, an unmarked AI-generated page, a
    menu pointing at nothing, or content that violates its own type, it stops the
    publish. Overriding is possible, explicit, and recorded in the commit.
 
@@ -76,7 +76,7 @@ no 1.0 yet and no backports to earlier tags.
 
 ## What it is
 
-Lithoform manages structured content and publishes a website from it. It does the
+Quilzo manages structured content and publishes a website from it. It does the
 things a CMS is expected to do — content types, media, taxonomies, menus, views
 over structured data, forms, workflow, multiple languages, staged environments,
 scheduled publication, an audit trail — and it does them on a storage model
@@ -116,7 +116,7 @@ Server-side template injection exists because the popular template languages are
 programming languages. Give one an attacker-influenced string and it reaches a
 constructor, a class hierarchy, a filesystem, a subprocess.
 
-Lithoform's template language has four constructs and no way to add a fifth:
+Quilzo's template language has four constructs and no way to add a fifth:
 
 ```
 {{ page.title }}                  a value, escaped for the context it lands in
@@ -333,7 +333,7 @@ AGPL-3.0-or-later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 Affero specifically, because nobody distributes a CMS — they host it. A licence
 whose obligations trigger on distribution would never trigger at all for the
-software this is. Running a modified Lithoform as a service for other people means
+software this is. Running a modified Quilzo as a service for other people means
 those people can have the source.
 
 ## Contributing

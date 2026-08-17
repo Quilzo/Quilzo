@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/agentwatch"
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/out"
+	"github.com/quilzo/quilzo/internal/agentwatch"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // cmdAgents reports on what models have been doing.

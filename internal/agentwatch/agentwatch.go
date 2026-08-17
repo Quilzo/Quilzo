@@ -37,7 +37,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/quilzo/quilzo/internal/audit"
 )
 
 // Window is how far back behaviour is considered.

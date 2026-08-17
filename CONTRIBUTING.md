@@ -1,4 +1,4 @@
-# Contributing to Lithoform
+# Contributing to Quilzo
 
 This project is looking for maintainers, not just patches. If you want commit
 access, the path is written down in [GOVERNANCE.md](GOVERNANCE.md) and it is
@@ -6,7 +6,7 @@ short.
 
 ## The name, so it does not confuse you
 
-The project is **Lithoform**. The command is **`scrivet`**, which was the
+The project is **Quilzo**. The command is **`scrivet`**, which was the
 working name and stayed as the binary — the same way Chromium ships `chrome`.
 Anywhere you see `scrivet` in a command, a path, or a Go import, that is
 deliberate and not a leftover.
@@ -16,8 +16,8 @@ deliberate and not a leftover.
 You need Go 1.24 or later and nothing else. There are no dependencies to fetch.
 
 ```bash
-git clone https://github.com/lithoform/lithoform   # or your fork
-cd lithoform
+git clone https://github.com/quilzo/quilzo   # or your fork
+cd quilzo
 go build -o scrivet ./cmd/scrivet
 
 mkdir /tmp/try && cd /tmp/try
@@ -31,7 +31,7 @@ stories that stop being served on a date, and a message box.
 
 ### Getting a token, which you need for anything that writes
 
-Lithoform has no default password and creates no default account. Nothing is
+Quilzo has no default password and creates no default account. Nothing is
 "admin" until you say so, and there is no state where an unconfigured install is
 reachable with a known credential.
 
@@ -138,7 +138,7 @@ That certifies the [Developer Certificate of Origin](https://developercertificat
 **There is deliberately no contributor licence agreement.** A CLA would assign
 your copyright to whoever holds the project, and that party could then relicense
 the whole thing — including away from AGPL. Under a DCO, copyright stays with
-each contributor, so no single person can ever take Lithoform closed or move it to
+each contributor, so no single person can ever take Quilzo closed or move it to
 a permissive licence. The guarantee the AGPL makes to users is only as strong as
 the impossibility of quietly revoking it, and distributed copyright is what makes
 it impossible.
@@ -148,10 +148,10 @@ community. A project one person can relicense is a project one person still owns
 
 ### About the licence, honestly
 
-Lithoform is **AGPL-3.0-or-later**. Two consequences worth knowing before you
+Quilzo is **AGPL-3.0-or-later**. Two consequences worth knowing before you
 spend time:
 
-- If you run a modified Lithoform as a service for other people, those people can
+- If you run a modified Quilzo as a service for other people, those people can
   have your source. That is the point of choosing it.
 - **Some employers forbid contributing to AGPL projects.** Google's open source
   policy is explicit about this and others follow it. Please check before

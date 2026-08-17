@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 func logServer(t *testing.T, events []audit.Event, sep bool) (*Server, string) {

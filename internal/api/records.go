@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/auth"
-	"github.com/lithoform/lithoform/internal/collection"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collection"
 )
 
 // Records over HTTP.

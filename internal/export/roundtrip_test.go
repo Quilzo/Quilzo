@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/export"
-	"github.com/lithoform/lithoform/internal/importer"
+	"github.com/quilzo/quilzo/internal/export"
+	"github.com/quilzo/quilzo/internal/importer"
 )
 
 var when = time.Unix(1786000000, 0)

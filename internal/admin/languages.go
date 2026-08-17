@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/auth"
-	"github.com/lithoform/lithoform/internal/i18n"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/i18n"
 )
 
 // Languages, in the interface.

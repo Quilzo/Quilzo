@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/media"
+	"github.com/quilzo/quilzo/internal/media"
 )
 
 // An asset that nothing serves is an asset no page can use.

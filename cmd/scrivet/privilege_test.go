@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // Every command the dispatcher can reach must declare what it needs.

@@ -3,7 +3,7 @@ package seo
 import (
 	"time"
 
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // LastChanged returns, for every page live at head, the time its content last

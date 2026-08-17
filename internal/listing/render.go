@@ -3,8 +3,8 @@ package listing
 import (
 	"fmt"
 
-	"github.com/lithoform/lithoform/internal/collection"
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Resolving a page's listings before it renders.

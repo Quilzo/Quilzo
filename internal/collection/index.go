@@ -4,7 +4,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Reading a collection without reading it again.

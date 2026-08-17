@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/form"
-	"github.com/lithoform/lithoform/internal/throttle"
+	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/throttle"
 )
 
 // The one thing this server is allowed to write.

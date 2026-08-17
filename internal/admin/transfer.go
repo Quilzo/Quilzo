@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/auth"
-	"github.com/lithoform/lithoform/internal/export"
-	"github.com/lithoform/lithoform/internal/importer"
-	"github.com/lithoform/lithoform/internal/site"
-	"github.com/lithoform/lithoform/internal/starter"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/export"
+	"github.com/quilzo/quilzo/internal/importer"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/starter"
 )
 
 // Getting a site in and out, and starting from something.

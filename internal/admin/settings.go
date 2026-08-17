@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/lithoform/lithoform/internal/auth"
-	"github.com/lithoform/lithoform/internal/config"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/config"
 )
 
 // Configuration in the admin.

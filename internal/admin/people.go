@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // Managing people, and managing the credentials they hold.

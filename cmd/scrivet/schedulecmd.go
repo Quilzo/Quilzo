@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/schedule"
-	"github.com/lithoform/lithoform/internal/site"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/schedule"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 func schedulePath(root string) string { return filepath.Join(root, "schedule.json") }

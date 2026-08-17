@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/store"
-	"github.com/lithoform/lithoform/internal/vault"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/store"
+	"github.com/quilzo/quilzo/internal/vault"
 )
 
 func keyringPath(root string) string { return filepath.Join(root, "keyring.json") }

@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lithoform/lithoform/internal/auth"
-	"github.com/lithoform/lithoform/internal/menu"
-	"github.com/lithoform/lithoform/internal/site"
-	"github.com/lithoform/lithoform/internal/taxonomy"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/menu"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/taxonomy"
 )
 
 // Classification and navigation — the two features every CMS has and neither

@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/quilzo/quilzo/internal/audit"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/lithoform/lithoform/internal/starter"
+	"github.com/quilzo/quilzo/internal/starter"
 )
 
 func cmdTemplate(root string, args []string) error {

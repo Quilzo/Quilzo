@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/auth"
-	"github.com/lithoform/lithoform/internal/ext"
-	"github.com/lithoform/lithoform/internal/siem"
-	"github.com/lithoform/lithoform/internal/webhook"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/ext"
+	"github.com/quilzo/quilzo/internal/siem"
+	"github.com/quilzo/quilzo/internal/webhook"
 )
 
 // Everything this store talks to, on one screen.

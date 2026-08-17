@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/collection"
-	"github.com/lithoform/lithoform/internal/site"
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Records on the command line.

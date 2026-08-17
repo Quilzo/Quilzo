@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/vault"
+	"github.com/quilzo/quilzo/internal/vault"
 )
 
 // Base64 ends in `=` padding, and the first version split the environment

@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/fetch"
-	"github.com/lithoform/lithoform/internal/importer"
-	"github.com/lithoform/lithoform/internal/media"
-	"github.com/lithoform/lithoform/internal/out"
-	"github.com/lithoform/lithoform/internal/seo"
-	"github.com/lithoform/lithoform/internal/site"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/importer"
+	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/seo"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 func cmdImport(root string, args []string) error {

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // The navigation, as data.

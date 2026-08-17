@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/auth"
-	"github.com/lithoform/lithoform/internal/oidc"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/oidc"
 )
 
 // OIDC wires an identity provider into the admin.

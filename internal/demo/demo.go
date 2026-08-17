@@ -41,12 +41,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/lithoform/lithoform/internal/collection"
-	"github.com/lithoform/lithoform/internal/form"
-	"github.com/lithoform/lithoform/internal/listing"
-	"github.com/lithoform/lithoform/internal/menu"
-	"github.com/lithoform/lithoform/internal/schema"
-	"github.com/lithoform/lithoform/internal/taxonomy"
+	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/menu"
+	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/taxonomy"
 )
 
 //go:embed assets/*

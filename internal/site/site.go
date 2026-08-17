@@ -22,12 +22,12 @@ package site
 
 import (
 	"fmt"
-	"github.com/lithoform/lithoform/internal/collection"
+	"github.com/quilzo/quilzo/internal/collection"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 const (

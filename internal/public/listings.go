@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"sort"
 
-	"github.com/lithoform/lithoform/internal/listing"
-	"github.com/lithoform/lithoform/internal/site"
+	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // Serving a page that shows a query.

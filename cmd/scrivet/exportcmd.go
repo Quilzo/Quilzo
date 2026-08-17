@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/export"
-	"github.com/lithoform/lithoform/internal/out"
-	"github.com/lithoform/lithoform/internal/seo"
-	"github.com/lithoform/lithoform/internal/siem"
-	"github.com/lithoform/lithoform/internal/site"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/export"
+	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/seo"
+	"github.com/quilzo/quilzo/internal/siem"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 func cmdExport(root string, args []string) error {

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/site"
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 const tpl = `<!doctype html><html lang="en"><head><title>{{ page.title }}</title>

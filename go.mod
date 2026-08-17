@@ -1,3 +1,3 @@
-module github.com/lithoform/lithoform
+module github.com/quilzo/quilzo
 
 go 1.24

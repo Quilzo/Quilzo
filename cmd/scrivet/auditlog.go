@@ -5,16 +5,16 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/lithoform/lithoform/internal/anchor"
-	"github.com/lithoform/lithoform/internal/fetch"
-	"github.com/lithoform/lithoform/internal/logd"
+	"github.com/quilzo/quilzo/internal/anchor"
+	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/logd"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/out"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // Where the audit log lives.

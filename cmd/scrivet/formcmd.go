@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/out"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // Forms from a terminal: the operations a pipeline and an obligation need.

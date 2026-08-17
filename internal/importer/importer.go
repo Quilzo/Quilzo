@@ -50,7 +50,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/seo"
+	"github.com/quilzo/quilzo/internal/seo"
 )
 
 // Source is a format that can be imported.

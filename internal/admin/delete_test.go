@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/quilzo/quilzo/internal/auth"
 
-	"github.com/lithoform/lithoform/internal/menu"
-	"github.com/lithoform/lithoform/internal/site"
+	"github.com/quilzo/quilzo/internal/menu"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // Removing a page through the interface.

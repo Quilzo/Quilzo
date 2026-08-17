@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/compliance"
-	"github.com/lithoform/lithoform/internal/posture"
+	"github.com/quilzo/quilzo/internal/compliance"
+	"github.com/quilzo/quilzo/internal/posture"
 )
 
 func cmdCompliance(root string, args []string) error {

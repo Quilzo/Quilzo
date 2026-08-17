@@ -8,14 +8,14 @@ import (
 	"sort"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/collection"
-	"github.com/lithoform/lithoform/internal/demo"
-	"github.com/lithoform/lithoform/internal/form"
-	"github.com/lithoform/lithoform/internal/listing"
-	"github.com/lithoform/lithoform/internal/media"
-	"github.com/lithoform/lithoform/internal/schema"
-	"github.com/lithoform/lithoform/internal/site"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/demo"
+	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // Installing a whole application, so somebody can see one.

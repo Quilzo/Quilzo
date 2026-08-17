@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/fetch"
-	"github.com/lithoform/lithoform/internal/webhook"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/webhook"
 )
 
 func hooksPath(root string) string { return filepath.Join(root, "webhooks.json") }

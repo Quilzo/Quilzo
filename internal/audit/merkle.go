@@ -8,7 +8,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/translog"
+	"github.com/quilzo/quilzo/internal/translog"
 )
 
 // The hash chain says whether this log was altered. A Merkle tree over the same

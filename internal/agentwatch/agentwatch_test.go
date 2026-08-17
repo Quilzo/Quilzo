@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/audit"
+	"github.com/quilzo/quilzo/internal/audit"
 )
 
 var now = time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)

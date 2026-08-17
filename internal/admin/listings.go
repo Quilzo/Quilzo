@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lithoform/lithoform/internal/auth"
-	"github.com/lithoform/lithoform/internal/collection"
-	"github.com/lithoform/lithoform/internal/listing"
-	"github.com/lithoform/lithoform/internal/render"
-	"github.com/lithoform/lithoform/internal/site"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/render"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // Listings: the feature people leave for Drupal to get.

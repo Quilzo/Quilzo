@@ -43,7 +43,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/media"
+	"github.com/quilzo/quilzo/internal/media"
 )
 
 // Library is a directory of accepted uploads.

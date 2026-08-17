@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/collection"
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 func index(t *testing.T) *collection.Index {

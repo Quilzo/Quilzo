@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/atomicfile"
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // Access lives beside the content rather than inside it. The object store is

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/auth"
-	"github.com/lithoform/lithoform/internal/site"
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 var now = time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)

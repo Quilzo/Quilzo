@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/auth"
-	"github.com/lithoform/lithoform/internal/provenance"
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/provenance"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // The state every installation is in for its first few minutes.

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 func seed(tb testing.TB, n int) (*store.Store, string) {

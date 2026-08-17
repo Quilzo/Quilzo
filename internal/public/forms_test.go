@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/form"
-	"github.com/lithoform/lithoform/internal/site"
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 func withForm(t *testing.T) (*Site, *form.Store) {

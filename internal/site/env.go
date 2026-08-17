@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Environments: staging, production, and whatever else a customer needs

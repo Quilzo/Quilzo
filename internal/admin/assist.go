@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/assist"
-	"github.com/lithoform/lithoform/internal/auth"
-	"github.com/lithoform/lithoform/internal/provenance"
-	"github.com/lithoform/lithoform/internal/site"
+	"github.com/quilzo/quilzo/internal/assist"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/provenance"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // The assistant, in the interface.

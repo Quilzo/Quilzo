@@ -53,7 +53,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/tmpl"
+	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 // Limits on what a proposal may contain. A model asked for one page that returns

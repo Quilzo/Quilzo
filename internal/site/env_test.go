@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 func envs(t *testing.T) *Envs {

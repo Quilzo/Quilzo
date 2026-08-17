@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/listing"
-	"github.com/lithoform/lithoform/internal/media"
-	"github.com/lithoform/lithoform/internal/schema"
-	"github.com/lithoform/lithoform/internal/site"
-	"github.com/lithoform/lithoform/internal/tmpl"
+	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 // The demonstration has to satisfy the product it demonstrates.

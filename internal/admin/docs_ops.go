@@ -99,8 +99,8 @@ var chapterRelease = chapter{
 					"nobody can substitute content behind a link somebody " +
 					"already has. There is no \"the site changed under me\" " +
 					"and no cache to invalidate."),
-				sub("Why this fits Lithoform particularly well"),
-				p("Because it is the same idea Lithoform already uses. Every " +
+				sub("Why this fits Quilzo particularly well"),
+				p("Because it is the same idea Quilzo already uses. Every " +
 					"object in the store is named by the SHA-256 of its own " +
 					"bytes, arranged in nested trees, published by moving a " +
 					"pointer. IPFS names content by the SHA-256 of its own " +

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/lithoform/lithoform/internal/logd"
+	"github.com/quilzo/quilzo/internal/logd"
 )
 
 // The socket lives beside the log, not inside the store.

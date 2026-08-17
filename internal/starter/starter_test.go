@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lithoform/lithoform/internal/a11y"
-	"github.com/lithoform/lithoform/internal/tmpl"
+	"github.com/quilzo/quilzo/internal/a11y"
+	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 // A starter template is the first HTML most people will publish with this tool.

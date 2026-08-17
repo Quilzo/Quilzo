@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/lithoform/lithoform/internal/out"
-	"github.com/lithoform/lithoform/internal/public"
-	"github.com/lithoform/lithoform/internal/timestamp"
+	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/public"
+	"github.com/quilzo/quilzo/internal/timestamp"
 )
 
 func stampPath(root string) string { return filepath.Join(root, "timestamps.json") }

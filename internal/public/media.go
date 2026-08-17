@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/lithoform/lithoform/internal/media"
+	"github.com/quilzo/quilzo/internal/media"
 )
 
 // Serving the assets, which nothing did.

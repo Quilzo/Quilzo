@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lithoform/lithoform/internal/provenance"
-	"github.com/lithoform/lithoform/internal/site"
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/provenance"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 const pageTemplate = `<!doctype html>

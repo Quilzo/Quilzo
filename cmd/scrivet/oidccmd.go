@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/fetch"
-	"github.com/lithoform/lithoform/internal/oidc"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/oidc"
 )
 
 func oidcPath(root string) string { return filepath.Join(root, "oidc.json") }

@@ -3,22 +3,22 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/lithoform/lithoform/internal/logd"
+	"github.com/quilzo/quilzo/internal/logd"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/a11y"
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/out"
-	"github.com/lithoform/lithoform/internal/posture"
-	"github.com/lithoform/lithoform/internal/provenance"
-	"github.com/lithoform/lithoform/internal/schema"
-	"github.com/lithoform/lithoform/internal/site"
-	"github.com/lithoform/lithoform/internal/store"
-	"github.com/lithoform/lithoform/internal/tmpl"
+	"github.com/quilzo/quilzo/internal/a11y"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/posture"
+	"github.com/quilzo/quilzo/internal/provenance"
+	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
+	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 func suppressPath(root string) string {

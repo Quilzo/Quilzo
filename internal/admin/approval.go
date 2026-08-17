@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/auth"
-	"github.com/lithoform/lithoform/internal/collab"
-	"github.com/lithoform/lithoform/internal/site"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collab"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // Dual authorisation, on the screen where publishing happens.

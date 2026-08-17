@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/lithoform/lithoform/internal/audit"
-	"github.com/lithoform/lithoform/internal/codescan"
-	"github.com/lithoform/lithoform/internal/config"
-	"github.com/lithoform/lithoform/internal/csp"
-	"github.com/lithoform/lithoform/internal/out"
-	"github.com/lithoform/lithoform/internal/site"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/codescan"
+	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/csp"
+	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 func cmdScan(root string, args []string) error {

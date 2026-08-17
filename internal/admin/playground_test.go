@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/quilzo/quilzo/internal/auth"
 	"net/http/httptest"
 	"regexp"
 	"strings"

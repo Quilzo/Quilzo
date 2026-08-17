@@ -1,10 +1,10 @@
 package main
 
 import (
-	"github.com/lithoform/lithoform/internal/collection"
-	"github.com/lithoform/lithoform/internal/listing"
-	"github.com/lithoform/lithoform/internal/render"
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/render"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // What a template may see, built once for every command that renders one.

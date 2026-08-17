@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/site"
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // The property every other CMS cannot offer: saving a page without changing it

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/vault"
+	"github.com/quilzo/quilzo/internal/vault"
 )
 
 func encrypted(t *testing.T, dir string) *Store {

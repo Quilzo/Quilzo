@@ -49,7 +49,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/lithoform/lithoform/internal/vault"
+	"github.com/quilzo/quilzo/internal/vault"
 	"sync"
 )
 

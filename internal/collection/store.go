@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Reading and writing records against a commit.

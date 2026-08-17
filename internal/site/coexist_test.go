@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/collection"
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // The integration that would otherwise destroy data: a page edit must not

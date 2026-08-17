@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/auth"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // Keeping a long-running server's credentials current.

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/auth"
-	"github.com/lithoform/lithoform/internal/media"
-	"github.com/lithoform/lithoform/internal/medialib"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/medialib"
 )
 
 // The media library, in the interface, and stored at all.

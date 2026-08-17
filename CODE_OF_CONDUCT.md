@@ -3,7 +3,7 @@
 This project uses the Contributor Covenant 2.1, unmodified except for the
 reporting channel.
 
-While Lithoform has only one maintainer, a report about that maintainer has
+While Quilzo has only one maintainer, a report about that maintainer has
 nowhere independent to go. That gap is named in GOVERNANCE.md rather than
 papered over, and anybody uncomfortable reporting privately is invited to
 raise it publicly instead.
@@ -49,7 +49,7 @@ This Code of Conduct applies within all community spaces, and also applies when 
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement at GitHub's private reporting on this repository —
-https://github.com/lithoform/lithoform/security/advisories/new. All complaints will be reviewed and investigated promptly and fairly.
+https://github.com/quilzo/quilzo/security/advisories/new. All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 

@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/fetch"
+	"github.com/quilzo/quilzo/internal/fetch"
 )
 
 // Discovery is the subset of the provider metadata this needs.

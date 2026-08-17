@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         For a security problem, use
-        [private reporting](https://github.com/lithoform/lithoform/security/advisories/new)
+        [private reporting](https://github.com/quilzo/quilzo/security/advisories/new)
         instead. Do not describe it here.
   - type: textarea
     id: what

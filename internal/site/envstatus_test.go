@@ -3,7 +3,7 @@ package site
 import (
 	"testing"
 
-	"github.com/lithoform/lithoform/internal/store"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Adding staging to a site that is already published.

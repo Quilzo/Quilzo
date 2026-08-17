@@ -2,7 +2,7 @@
 
 ## Where this project is, stated plainly
 
-Lithoform was written by one person. It is being opened not to collect patches for
+Quilzo was written by one person. It is being opened not to collect patches for
 a project that stays under one person's control, but to find people who will
 take it over. That is the actual goal, so this document exists before there is
 anybody to govern.
@@ -62,26 +62,26 @@ must not disappear with them.
 
 ## The licence, and why it cannot be quietly changed
 
-Lithoform is AGPL-3.0-or-later, and contributions are taken under a
+Quilzo is AGPL-3.0-or-later, and contributions are taken under a
 [DCO](https://developercertificate.org/) rather than a CLA. Copyright stays with
 each contributor.
 
 This is a structural decision, not an administrative one. Because no single
-party holds the copyright, no single party can relicense Lithoform — not the
+party holds the copyright, no single party can relicense Quilzo — not the
 original author, not a company that hires them, not a foundation that adopts it.
 Changing the licence would require every contributor's agreement, which is
 exactly as hard as it should be for a promise made to users.
 
 ## Moving to a foundation
 
-The intention is to place Lithoform under a neutral non-profit. That is not
+The intention is to place Quilzo under a neutral non-profit. That is not
 possible yet, and the reasons are worth writing down so nobody has to rediscover
 them:
 
 - **Software Freedom Conservancy** requires "an existing, vibrant, diverse
   community" and does not take projects under a year old. AGPL is fine with
   them. This is the target, and the gate is community, not code.
-- **The Apache Software Foundation** is permanently unavailable while Lithoform is
+- **The Apache Software Foundation** is permanently unavailable while Quilzo is
   AGPL — GPLv3-family licences are Category X under ASF policy. Moving there
   would mean relicensing, which the paragraph above makes deliberately hard.
 - **NLnet / NGI Zero** funds individuals rather than adopting projects, accepts

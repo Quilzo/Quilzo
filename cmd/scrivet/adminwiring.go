@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/lithoform/lithoform/internal/admin"
-	"github.com/lithoform/lithoform/internal/anchor"
-	"github.com/lithoform/lithoform/internal/config"
-	"github.com/lithoform/lithoform/internal/form"
-	"github.com/lithoform/lithoform/internal/medialib"
-	"github.com/lithoform/lithoform/internal/site"
-	"github.com/lithoform/lithoform/internal/store"
-	"github.com/lithoform/lithoform/internal/timestamp"
+	"github.com/quilzo/quilzo/internal/admin"
+	"github.com/quilzo/quilzo/internal/anchor"
+	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/medialib"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
+	"github.com/quilzo/quilzo/internal/timestamp"
 )
 
 // What the admin server needs that only this package knows.

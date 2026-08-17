@@ -38,16 +38,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/i18n"
-	"github.com/lithoform/lithoform/internal/listing"
-	"github.com/lithoform/lithoform/internal/menu"
-	"github.com/lithoform/lithoform/internal/provenance"
-	"github.com/lithoform/lithoform/internal/render"
-	"github.com/lithoform/lithoform/internal/search"
-	"github.com/lithoform/lithoform/internal/seo"
-	"github.com/lithoform/lithoform/internal/site"
-	"github.com/lithoform/lithoform/internal/store"
-	"github.com/lithoform/lithoform/internal/tmpl"
+	"github.com/quilzo/quilzo/internal/i18n"
+	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/menu"
+	"github.com/quilzo/quilzo/internal/provenance"
+	"github.com/quilzo/quilzo/internal/render"
+	"github.com/quilzo/quilzo/internal/search"
+	"github.com/quilzo/quilzo/internal/seo"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
+	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 // Site serves the live ref.

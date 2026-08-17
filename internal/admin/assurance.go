@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithoform/lithoform/internal/agentwatch"
-	"github.com/lithoform/lithoform/internal/auth"
-	"github.com/lithoform/lithoform/internal/codescan"
-	"github.com/lithoform/lithoform/internal/compliance"
-	"github.com/lithoform/lithoform/internal/csp"
+	"github.com/quilzo/quilzo/internal/agentwatch"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/codescan"
+	"github.com/quilzo/quilzo/internal/compliance"
+	"github.com/quilzo/quilzo/internal/csp"
 )
 
 // The evidence, in the interface.
