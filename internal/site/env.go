@@ -314,7 +314,7 @@ func Status(s *store.Store, envs *Envs) ([]Behind, error) {
 			//
 			// This branch was missing, and Diff was called with an empty
 			// commit — which failed with "not an object id: \"\"" and took the
-			// whole listing with it. `scrivet env list` and the publishing
+			// whole listing with it. `quilzo env list` and the publishing
 			// screen both stopped working the moment somebody added a staging
 			// environment to a site that was already published, which is the
 			// first thing anybody does with this feature.

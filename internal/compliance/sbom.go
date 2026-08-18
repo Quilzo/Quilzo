@@ -142,7 +142,7 @@ func Generate(now time.Time) (*SBOM, error) {
 			Timestamp: now.UTC().Format(time.RFC3339),
 			Component: self,
 			Tools: []Component{{
-				Type: "application", Name: "scrivet", Version: version,
+				Type: "application", Name: "quilzo", Version: version,
 			}},
 		},
 		Components: components,

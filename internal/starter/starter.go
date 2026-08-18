@@ -8,7 +8,7 @@
 // worst years are a catalogue of exactly this.
 //
 // So these compile into the binary. There is no fetch, no registry, no
-// signature to verify because there is no transport, and `scrivet template use`
+// signature to verify because there is no transport, and `quilzo template use`
 // cannot be pointed at a URL. A template that ships with the tool has the same
 // provenance as the tool.
 //
@@ -35,7 +35,7 @@ type Template struct {
 	Name string
 	// Summary is what it is for, in the terms someone choosing would use.
 	Summary string
-	// Fields names the content keys it reads, so `scrivet template show` can
+	// Fields names the content keys it reads, so `quilzo template show` can
 	// answer "what do I have to fill in" without anyone reading the markup.
 	Fields []string
 	// Sample is content that renders the template completely. It doubles as
@@ -96,7 +96,7 @@ var templates = map[string]Template{
 			"quote":    "We moved a decade of pages across in an afternoon and nothing was lost.",
 			"quote_by": "A person who has not said this, because this is sample text",
 			"body":     "Replace this with whatever the page is actually about.",
-			"footer":   "© Example. Built with scrivet.",
+			"footer":   "© Example. Built with quilzo.",
 		},
 	},
 	"article": {
@@ -116,7 +116,7 @@ var templates = map[string]Template{
 			"tags":       []any{"architecture", "storage"},
 			"brand":      "Example",
 			"nav":        nav,
-			"footer":     "© Example. Built with scrivet.",
+			"footer":     "© Example. Built with quilzo.",
 		},
 	},
 	"docs": {
@@ -136,15 +136,15 @@ var templates = map[string]Template{
 				map[string]any{"href": "#publish", "label": "Publish"},
 			},
 			"example_title": "A first publish",
-			"example":       "scrivet init\nscrivet add index=index.json\nscrivet publish",
+			"example":       "quilzo init\nquilzo add index=index.json\nquilzo publish",
 			"col_a":         "Command", "col_b": "What it does",
 			"rows": []any{
-				map[string]any{"name": "scrivet init", "detail": "Creates a content store."},
-				map[string]any{"name": "scrivet publish", "detail": "Moves the live pointer."},
+				map[string]any{"name": "quilzo init", "detail": "Creates a content store."},
+				map[string]any{"name": "quilzo publish", "detail": "Moves the live pointer."},
 			},
 			"brand":  "Example",
 			"nav":    nav,
-			"footer": "© Example. Built with scrivet.",
+			"footer": "© Example. Built with quilzo.",
 		},
 	},
 	"portfolio": {
@@ -174,7 +174,7 @@ var templates = map[string]Template{
 			"contact_label": "Send an email", "contact_href": "mailto:hello@example.com",
 			"brand":  "Example",
 			"nav":    nav,
-			"footer": "© Example. Built with scrivet.",
+			"footer": "© Example. Built with quilzo.",
 		},
 	},
 }

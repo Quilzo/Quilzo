@@ -20,7 +20,7 @@ import (
 // the CLI and absent from the web UI, or present in both and absent from the
 // agent interface, is not a rule. It is a rule-shaped thing in whichever
 // interface the person happened to read. Type validation has three write
-// surfaces — `scrivet add`, the admin save handler, and the MCP write_page
+// surfaces — `quilzo add`, the admin save handler, and the MCP write_page
 // operation — and all three call Gate. Adding a fourth without calling it is
 // caught by a test that walks the source.
 type Store struct {
@@ -115,7 +115,7 @@ func (s *Store) Save() error {
 // Bind declares that a page must satisfy a type.
 func (s *Store) Bind(page, typeName string) error {
 	if _, ok := s.Registry.Get(typeName); !ok {
-		return fmt.Errorf("there is no type %q; run scrivet type list", typeName)
+		return fmt.Errorf("there is no type %q; run quilzo type list", typeName)
 	}
 	if s.Bound == nil {
 		s.Bound = map[string]string{}

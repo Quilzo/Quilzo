@@ -133,7 +133,7 @@ type Event struct {
 	// and substantively false. The chain proves nobody edited a record after it
 	// was written. It says nothing about whether the record was true when
 	// written — and an identity taken from $USER is true only if nobody minds
-	// lying, since `USER=ceo scrivet publish` costs nothing.
+	// lying, since `USER=ceo quilzo publish` costs nothing.
 	//
 	// So an unproven identity is recorded as unproven rather than dressed up as
 	// a name. An auditor can then filter for what was actually established,

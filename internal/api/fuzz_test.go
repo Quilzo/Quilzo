@@ -53,7 +53,7 @@ func FuzzRequest(f *testing.F) {
 		}
 		// No response may ever carry a filesystem path or a token.
 		body := w.Body.String()
-		for _, leak := range []string{"/home/", "/etc/passwd", "scv_", "goroutine "} {
+		for _, leak := range []string{"/home/", "/etc/passwd", "qz_", "goroutine "} {
 			if strings.Contains(body, leak) {
 				t.Errorf("%s?%s leaked %q in: %s", path, query, leak, body)
 			}

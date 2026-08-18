@@ -147,7 +147,7 @@ func (m Manifest) Validate() error {
 		}
 	}
 	// A relative command would resolve against the working directory, which is
-	// wherever the operator happened to be. That is how "./scrivet publish" in
+	// wherever the operator happened to be. That is how "./quilzo publish" in
 	// a checkout runs a binary from the checkout.
 	if !strings.HasPrefix(m.Command[0], "/") {
 		return fmt.Errorf(
@@ -231,7 +231,7 @@ func (r *Runner) Run(ctx context.Context, m Manifest, req Request) Result {
 		if m.SHA256 == "" {
 			res.Err = fmt.Errorf(
 				"%s has no recorded hash and ext.require_pinned is on. Record "+
-					"one with `scrivet ext pin %s`", m.Name, m.Name)
+					"one with `quilzo ext pin %s`", m.Name, m.Name)
 			return res
 		}
 		sum, err := hashFile(m.Command[0])

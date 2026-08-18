@@ -15,7 +15,7 @@ import (
 // fell through to a Diff against an empty string, which is not an object id,
 // and the error took the whole listing with it.
 //
-// So `scrivet env list` and the publishing screen both stopped working at the
+// So `quilzo env list` and the publishing screen both stopped working at the
 // exact moment the feature started being used.
 func TestAnEnvironmentInsertedBeforeALiveOneDoesNotBreakTheListing(t *testing.T) {
 	dir := t.TempDir()

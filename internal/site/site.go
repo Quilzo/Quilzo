@@ -205,10 +205,10 @@ func PagesAt(s *store.Store, refOrCommit string) (map[string]any, error) {
 		switch refOrCommit {
 		case RefLive:
 			return nil, fmt.Errorf("nothing is published yet; " +
-				"`scrivet publish` moves live to the draft")
+				"`quilzo publish` moves live to the draft")
 		case RefDraft:
 			return nil, fmt.Errorf("there is no draft yet; " +
-				"`scrivet add NAME=FILE.json` starts one")
+				"`quilzo add NAME=FILE.json` starts one")
 		}
 		cid = refOrCommit
 	}

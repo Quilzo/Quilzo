@@ -34,9 +34,9 @@ type MediaLookup func(id string) (media.File, []byte, error)
 //
 // Go's ServeMux normalises a path before routing, so `/media/../../x` never
 // reaches this handler — it is answered with a redirect. That is not the whole
-// story, and a test found the rest: `..%2f..%2f.scrivet%2ftokens.json` and
-// `....//....//.scrivet/tokens.json` both survive normalisation and arrive
-// here as `../../.scrivet/tokens.json`. Nothing was served either way, because
+// story, and a test found the rest: `..%2f..%2f.quilzo%2ftokens.json` and
+// `....//....//.quilzo/tokens.json` both survive normalisation and arrive
+// here as `../../.quilzo/tokens.json`. Nothing was served either way, because
 // the library validates the identifier before it builds a path — but the
 // handler was passing a relative path to a function field somebody else
 // supplies, and "it is safe because the callee checks" is a property of the

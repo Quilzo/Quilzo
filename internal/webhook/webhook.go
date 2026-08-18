@@ -229,11 +229,11 @@ func Send(s Sender, e Endpoint, ev Event, now time.Time) []Delivery {
 	for attempt := 1; attempt <= MaxAttempts; attempt++ {
 		at := now
 		headers := map[string]string{
-			"Content-Type":        "application/json",
-			"X-Scrivet-Event":     ev.Type,
-			"X-Scrivet-Delivery":  ev.ID,
-			"X-Scrivet-Timestamp": strconv.FormatInt(at.Unix(), 10),
-			"X-Scrivet-Signature": Sign(e.Secret, at, body),
+			"Content-Type":       "application/json",
+			"X-Quilzo-Event":     ev.Type,
+			"X-Quilzo-Delivery":  ev.ID,
+			"X-Quilzo-Timestamp": strconv.FormatInt(at.Unix(), 10),
+			"X-Quilzo-Signature": Sign(e.Secret, at, body),
 		}
 		status, err := s.Post(e.URL, body, headers)
 		d := Delivery{

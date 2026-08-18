@@ -721,7 +721,7 @@ func TestASessionCookieIsRefusedCrossSite(t *testing.T) {
 		{"foreign origin", map[string]string{"Origin": "https://evil.example"}, 401},
 	} {
 		r := httptest.NewRequest("GET", "http://h/api/v1/pages", nil)
-		r.AddCookie(&http.Cookie{Name: "scrivet_token", Value: tok})
+		r.AddCookie(&http.Cookie{Name: "quilzo_token", Value: tok})
 		for k, v := range tc.headers {
 			r.Header.Set(k, v)
 		}
@@ -739,7 +739,7 @@ func TestASessionCookieIsIgnoredWhenNotMountedInTheAdmin(t *testing.T) {
 	s, tok, _ := setup(t)
 	// SessionAuth deliberately left false, which is the default.
 	r := httptest.NewRequest("GET", "http://h/api/v1/pages", nil)
-	r.AddCookie(&http.Cookie{Name: "scrivet_token", Value: tok})
+	r.AddCookie(&http.Cookie{Name: "quilzo_token", Value: tok})
 	r.Header.Set("Sec-Fetch-Site", "same-origin")
 	w := httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, r)

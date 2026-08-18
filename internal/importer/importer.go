@@ -72,7 +72,7 @@ const MaxBytes = 256 << 20
 // MaxPages bounds how many pages one import may create.
 const MaxPages = 20000
 
-// Page is one imported page, in scrivet's own shape.
+// Page is one imported page, in quilzo's own shape.
 type Page struct {
 	Name    string         `json:"name"`
 	Fields  map[string]any `json:"fields"`
@@ -324,7 +324,7 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 			"%d media URLs were found and NOT downloaded. Fetching them during "+
 				"an import would make this file a way to make requests from "+
 				"inside your network. Fetch the ones you want with "+
-				"`scrivet media get <url>`, which validates the address at "+
+				"`quilzo media get <url>`, which validates the address at "+
 				"connect time rather than before it.",
 			len(rep.Media)))
 	}

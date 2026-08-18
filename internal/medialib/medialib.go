@@ -1,6 +1,6 @@
 // Package medialib stores accepted uploads, which nothing did.
 //
-// `scrivet media add photo.jpg --alt "..."` printed "accepted", wrote an audit
+// `quilzo media add photo.jpg --alt "..."` printed "accepted", wrote an audit
 // record, and threw the bytes away. There was no library, nothing served the
 // file, and no page could refer to it. The validation was real and thorough —
 // magic bytes, a full decode, format-specific size caps, metadata stripping —

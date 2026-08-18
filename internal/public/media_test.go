@@ -104,16 +104,16 @@ func TestATraversalInAnAssetPathGetsNothing(t *testing.T) {
 		return media.File{}, nil, http.ErrMissingFile
 	}}
 	for _, id := range []string{
-		"../../.scrivet/tokens.json",
-		"..%2f..%2f.scrivet%2ftokens.json",
-		"....//....//.scrivet/tokens.json",
+		"../../.quilzo/tokens.json",
+		"..%2f..%2f.quilzo%2ftokens.json",
+		"....//....//.quilzo/tokens.json",
 	} {
 		w := httptest.NewRecorder()
 		st.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/media/"+id, nil))
 		if w.Code == http.StatusOK {
 			t.Errorf("%q was served", id)
 		}
-		if strings.Contains(w.Body.String(), "scv_") {
+		if strings.Contains(w.Body.String(), "qz_") {
 			t.Fatalf("%q returned something that looks like a credential", id)
 		}
 		if strings.Contains(reached, "..") {

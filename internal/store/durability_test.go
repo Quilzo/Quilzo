@@ -68,7 +68,7 @@ func TestTheFsyncFloorIsPerCommitNotPerRecord(t *testing.T) {
 	//
 	// Dropping those is a real option — it is what git does by default, and
 	// this store can detect the damage because an object's name is the hash of
-	// its content, so `scrivet verify` finds a partial write rather than
+	// its content, so `quilzo verify` finds a partial write rather than
 	// trusting it. That is a durability trade with a security argument
 	// attached and it deserves its own change, not a footnote in this one.
 	if batched < one*2 {

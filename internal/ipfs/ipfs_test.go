@@ -118,7 +118,7 @@ func TestDirectoryIdentifierDoesNotDependOnInputOrder(t *testing.T) {
 
 // A file larger than one chunk becomes a dag-pb node over raw leaves.
 func TestALargeFileIsChunked(t *testing.T) {
-	body := bytes.Repeat([]byte("scrivet"), ChunkSize) // comfortably over
+	body := bytes.Repeat([]byte("quilzo"), ChunkSize) // comfortably over
 	n := File(body)
 
 	if len(n.Children) < 2 {

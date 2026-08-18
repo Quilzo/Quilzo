@@ -2,7 +2,7 @@
 //
 // # Why this exists at all
 //
-// Scrivet already stores every object under the SHA-256 of its own bytes, in
+// Quilzo already stores every object under the SHA-256 of its own bytes, in
 // nested trees, and publishes by moving a pointer at a root hash. IPFS names
 // content by the SHA-256 of its own bytes, in nested DAG nodes, and addresses a
 // site by its root. These are the same idea arriving from two directions, so

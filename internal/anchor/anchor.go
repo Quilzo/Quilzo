@@ -460,7 +460,7 @@ func Describe(p Proof) string {
 		fmt.Fprintf(&b, "pending at %s\n", p.PendingAt)
 		fmt.Fprintf(&b, "  this is NOT an anchor yet. The calendar has the hash "+
 			"and will\n  include it in its next commitment, which takes hours.\n")
-		fmt.Fprintf(&b, "  run `scrivet anchor upgrade` after that\n")
+		fmt.Fprintf(&b, "  run `quilzo anchor upgrade` after that\n")
 	default:
 		fmt.Fprintf(&b, "the proof carries no attestation this understands\n")
 	}

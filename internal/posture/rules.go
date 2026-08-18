@@ -36,7 +36,7 @@ var rules = []Rule{
 			return []Finding{{
 				Detail: "the policy is empty, so access is decided by the " +
 					"built-in default rather than by anything you configured",
-				Fix: "scrivet auth grant YOU admin",
+				Fix: "quilzo auth grant YOU admin",
 			}}
 		},
 	},
@@ -62,7 +62,7 @@ var rules = []Rule{
 			return []Finding{{
 				Detail: fmt.Sprintf("%d binding(s), none of them a deny",
 					len(s.Policy.Bindings)),
-				Fix: "scrivet auth deny WHO ROLE --on /some/sensitive/path",
+				Fix: "quilzo auth deny WHO ROLE --on /some/sensitive/path",
 			}}
 		},
 	},
@@ -94,7 +94,7 @@ var rules = []Rule{
 			return []Finding{{
 				Detail: fmt.Sprintf("%d administrators: %s",
 					len(admins), joinShort(admins, 6)),
-				Fix: "scrivet auth grant WHO publisher  # then revoke the admin role",
+				Fix: "quilzo auth grant WHO publisher  # then revoke the admin role",
 			}}
 		},
 	},
@@ -125,7 +125,7 @@ var rules = []Rule{
 				Resource: admins[0],
 				Detail: fmt.Sprintf("%s is the only administrator; there is no "+
 					"recovery path if that credential is lost", admins[0]),
-				Fix: "scrivet auth grant SOMEONE-ELSE admin",
+				Fix: "quilzo auth grant SOMEONE-ELSE admin",
 			}}
 		},
 	},
@@ -165,7 +165,7 @@ var rules = []Rule{
 					Detail: fmt.Sprintf("%s (%s, %s) is valid for %s, until %s",
 						t.Name, t.Principal, t.Role, days(life),
 						time.Unix(t.ExpiresAt, 0).UTC().Format("2006-01-02")),
-					Fix: "scrivet token revoke " + t.ID +
+					Fix: "quilzo token revoke " + t.ID +
 						"  # then issue with --ttl 720h and exchange for sessions",
 				})
 			}
@@ -200,7 +200,7 @@ var rules = []Rule{
 					Resource: t.ID,
 					Detail: fmt.Sprintf("%s belongs to %s and can change the "+
 						"access policy itself", t.Name, t.Principal),
-					Fix: "scrivet token issue " + t.Name +
+					Fix: "quilzo token issue " + t.Name +
 						" --principal " + t.Principal + " --role publisher",
 				})
 			}
@@ -233,7 +233,7 @@ var rules = []Rule{
 					Resource: t.ID,
 					Detail: fmt.Sprintf("%s was issued %s ago and has never "+
 						"authenticated", t.Name, days(age)),
-					Fix: "scrivet token revoke " + t.ID,
+					Fix: "quilzo token revoke " + t.ID,
 				})
 			}
 			return out
@@ -261,7 +261,7 @@ var rules = []Rule{
 					Resource: t.ID,
 					Detail: fmt.Sprintf("%s last authenticated %s ago",
 						t.Name, days(s.Now.Sub(time.Unix(t.LastUsed, 0)))),
-					Fix: "scrivet token revoke " + t.ID,
+					Fix: "quilzo token revoke " + t.ID,
 				})
 			}
 			return out
@@ -293,7 +293,7 @@ var rules = []Rule{
 			return []Finding{{
 				Detail: fmt.Sprintf("%d expired %s still listed",
 					n, plural(n, "token is", "tokens are")),
-				Fix: "scrivet token prune",
+				Fix: "quilzo token prune",
 			}}
 		},
 	},
@@ -324,7 +324,7 @@ var rules = []Rule{
 			return []Finding{{
 				Detail: fmt.Sprintf("%d break(s) — %s",
 					len(problems), joinShort(where, 3)),
-				Fix: "scrivet auditlog verify  # then treat the log as evidence " +
+				Fix: "quilzo auditlog verify  # then treat the log as evidence " +
 					"of tampering, not as a record of events",
 			}}
 		},
@@ -347,7 +347,7 @@ var rules = []Rule{
 			}
 			return []Finding{{
 				Detail: "the site has been published but the audit log is empty",
-				Fix:    "scrivet auditlog  # check the log path is writable",
+				Fix:    "quilzo auditlog  # check the log path is writable",
 			}}
 		},
 	},
@@ -380,7 +380,7 @@ var rules = []Rule{
 				Detail: fmt.Sprintf("%d%% of %d records (%d) name a principal "+
 					"that was asserted rather than authenticated",
 					pct, len(s.Audit), unverified),
-				Fix: "scrivet auth grant WHO ROLE  # a policy with bindings " +
+				Fix: "quilzo auth grant WHO ROLE  # a policy with bindings " +
 					"turns on identity enforcement",
 			}}
 		},
@@ -403,7 +403,7 @@ var rules = []Rule{
 				out = append(out, Finding{
 					Resource: t,
 					Detail:   t + " uses raw, so content is emitted unescaped",
-					Fix:      "scrivet audit  # review each use, or remove it",
+					Fix:      "quilzo audit  # review each use, or remove it",
 				})
 			}
 			return out
@@ -428,7 +428,7 @@ var rules = []Rule{
 				Detail: fmt.Sprintf("%d published %s no provenance record: %s",
 					n, plural(n, "page has", "pages have"),
 					joinShort(s.Content.UnmarkedPages, 5)),
-				Fix: "scrivet provenance set PAGE --source humanEdits",
+				Fix: "quilzo provenance set PAGE --source humanEdits",
 			}}
 		},
 	},
@@ -450,7 +450,7 @@ var rules = []Rule{
 				Detail: fmt.Sprintf("%d %s changed since being marked: %s",
 					n, plural(n, "page has", "pages have"),
 					joinShort(s.Content.StalePages, 5)),
-				Fix: "scrivet provenance check",
+				Fix: "quilzo provenance check",
 			}}
 		},
 	},
@@ -486,7 +486,7 @@ var rules = []Rule{
 			return []Finding{{
 				Detail: fmt.Sprintf("%d of %d live pages are unvalidated: %s",
 					len(untyped), len(s.Content.LivePages), joinShort(untyped, 5)),
-				Fix: "scrivet type bind PAGE TYPE",
+				Fix: "quilzo type bind PAGE TYPE",
 			}}
 		},
 	},
@@ -507,7 +507,7 @@ var rules = []Rule{
 			return []Finding{{
 				Detail: fmt.Sprintf("%d blocking failure(s) are live, which "+
 					"means the publish gate was bypassed", s.Content.BlockingA11y),
-				Fix: "scrivet a11y --ref live",
+				Fix: "quilzo a11y --ref live",
 			}}
 		},
 	},
@@ -541,7 +541,7 @@ var rules = []Rule{
 				Severity: sev,
 				Resource: addr,
 				Detail:   detail,
-				Fix:      "scrivet serve --addr 127.0.0.1:8080  # and reach it over a tunnel",
+				Fix:      "quilzo serve --addr 127.0.0.1:8080  # and reach it over a tunnel",
 			}}
 		},
 	},
@@ -642,7 +642,7 @@ var rules = []Rule{
 				f := Finding{
 					Resource: wk.Key,
 					Detail:   wk.Key + " = " + wk.Value + ": " + wk.Why,
-					Fix: "scrivet config unset " + wk.Key +
+					Fix: "quilzo config unset " + wk.Key +
 						"  # or renew the acceptance",
 				}
 				switch {
@@ -653,7 +653,7 @@ var rules = []Rule{
 					f.Severity = High
 					f.Detail += " — with no recorded reason, so this cannot be " +
 						"told apart from an accident"
-					f.Fix = "scrivet config set " + wk.Key + " " + wk.Value +
+					f.Fix = "quilzo config set " + wk.Key + " " + wk.Value +
 						" --accept-risk \"why\"  # or unset it"
 				case wk.Expired:
 					f.Severity = High
@@ -727,7 +727,7 @@ var rules = []Rule{
 					Resource: t.ID,
 					Detail: fmt.Sprintf("%s authenticates as %s, who is also a "+
 						"person in the access policy", t.Name, t.Principal),
-					Fix: "scrivet token issue " + t.Name +
+					Fix: "quilzo token issue " + t.Name +
 						" --principal svc-" + t.Principal + " --role author",
 				})
 			}
@@ -760,13 +760,13 @@ var rules = []Rule{
 					Severity: High,
 					Detail: "a log writer is configured and not answering, so " +
 						"actions are being taken and not recorded",
-					Fix: "start it: scrivet logd",
+					Fix: "start it: quilzo logd",
 				}}
 			}
 			return []Finding{{
 				Detail: "the CMS opens the audit log directly, so code " +
 					"execution as this account is enough to rewrite it",
-				Fix: "run `scrivet logd` as an account that owns the log file",
+				Fix: "run `quilzo logd` as an account that owns the log file",
 			}}
 		},
 	},
@@ -802,7 +802,7 @@ var rules = []Rule{
 			return []Finding{{
 				Detail: fmt.Sprintf("%d entries and no head has ever been "+
 					"published", len(s.Audit)),
-				Fix: "scrivet auditlog anchor  # or `auditlog head --save` and " +
+				Fix: "quilzo auditlog anchor  # or `auditlog head --save` and " +
 					"export it",
 			}}
 		},
@@ -832,7 +832,7 @@ var rules = []Rule{
 					"%d entries have been written since the last published head, "+
 						"and none of them is fixed by anything outside this "+
 						"machine", gap),
-				Fix: "scrivet auditlog anchor",
+				Fix: "quilzo auditlog anchor",
 			}}
 		},
 	},
@@ -857,7 +857,7 @@ var rules = []Rule{
 			}
 			return []Finding{{
 				Detail: "the current live content has never been timestamped",
-				Fix:    "scrivet timestamp",
+				Fix:    "quilzo timestamp",
 			}}
 		},
 	},

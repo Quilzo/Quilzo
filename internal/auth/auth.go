@@ -426,13 +426,13 @@ func roleList() string {
 
 // -- API tokens ---------------------------------------------------------------
 
-// TokenPrefix marks a scrivet token in logs, repositories and paste sites.
+// TokenPrefix marks a quilzo token in logs, repositories and paste sites.
 //
 // GitHub's `ghp_` convention exists so secret scanners can spot a leaked
 // credential without knowing what it belongs to. It costs six characters and it
 // is the difference between a token found by a scanner and one found by whoever
 // picked it up.
-const TokenPrefix = "scv_"
+const TokenPrefix = "qz_"
 
 // tokenBytes is 256 bits. Tokens are generated, not chosen, so the whole
 // dictionary-attack problem that motivates slow password hashing does not exist
@@ -705,7 +705,7 @@ func (ts *TokenStore) Authenticate(secret string, now time.Time) (*Token, error)
 // lock rather than deadlocking on a re-entrant call.
 func (ts *TokenStore) authenticate(secret string, now time.Time) (*Token, error) {
 	if !strings.HasPrefix(secret, TokenPrefix) {
-		return nil, fmt.Errorf("that is not a scrivet token (they start with %s)", TokenPrefix)
+		return nil, fmt.Errorf("that is not a quilzo token (they start with %s)", TokenPrefix)
 	}
 	want := []byte(hashToken(secret))
 

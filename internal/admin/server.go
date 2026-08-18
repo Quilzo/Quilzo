@@ -9,7 +9,7 @@
 // app reimplements each one and usually gets at least one wrong — focus after
 // navigation, the back button, find-in-page across virtualised lists.
 //
-// The other reasons point the same way. scrivet is one static binary in a
+// The other reasons point the same way. quilzo is one static binary in a
 // scratch image with no dependencies; adding a JavaScript build would bring a
 // node toolchain, several hundred transitive packages, and a bundle larger than
 // the entire program. For a CMS whose argument is that nothing in it executes,
@@ -83,11 +83,6 @@ type Server struct {
 	Store  *store.Store
 	Policy *auth.Policy
 	Tokens *auth.TokenStore
-	// NavPosition is "top" or "left", from configuration. A person can flip it
-	// for themselves with a cookie, which is what the toggle in the header
-	// does — it is a preference about a screen rather than a setting about a
-	// store, and forcing everybody to share one would make it an argument.
-	NavPosition string
 	// LoadAudit reads the audit log. Nil means the log page says it has no
 	// access rather than showing an empty list, because an empty list and no
 	// access look identical and mean opposite things.
@@ -117,6 +112,11 @@ type Server struct {
 	// gate when it wrapped the name in a link.
 	SiteName string
 	Types    *Types
+	// Agents are the declared agent manifests: what a model in this store is
+	// permitted to do. Nil means the screen says so rather than showing none,
+	// because an empty list and no access look identical and mean opposite
+	// things.
+	Agents *Agents
 	// Publishing is the deployment pipeline: environments, promotion and work
 	// queued for later.
 	Publishing *Publishing
@@ -256,8 +256,8 @@ func (s *Server) refresh() {
 
 // New builds the server and parses the admin templates once.
 //
-// html/template rather than scrivet's own engine, and the distinction matters.
-// scrivet's language is deliberately powerless because *users* write in it and
+// html/template rather than quilzo's own engine, and the distinction matters.
+// quilzo's language is deliberately powerless because *users* write in it and
 // user templates are an injection surface. These templates are ours, shipped in
 // the binary, and never author-supplied — so the stdlib's contextual escaping is
 // exactly right and there is no surface to remove.
@@ -317,7 +317,15 @@ var errNoCredential = errors.New("no token")
 // principal is who the current request is acting as.
 type principal struct {
 	Name string
+	// Role is the role the *token* carries, which may be narrower than the one
+	// the policy grants Name. It was captured here and then used only to print
+	// "Signed in as … (role)" in the header — a decorative field that looked
+	// like an enforced one.
 	Role auth.Role
+	// Scope is the subtree the token is confined to, from `token issue --on`.
+	// It was not captured at all, so a token issued for /blog reached every
+	// screen in the interface.
+	Scope string
 	// Limits is what the token itself narrows, over and above the role: it may
 	// be read-only, or restricted to particular content types or locales.
 	//
@@ -339,7 +347,7 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 	header := r.Header.Get("Authorization")
 	raw := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
 	if raw == "" {
-		if c, err := r.Cookie("scrivet_token"); err == nil {
+		if c, err := r.Cookie("quilzo_token"); err == nil {
 			raw = c.Value
 		}
 	}
@@ -351,7 +359,8 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 		return principal{}, err
 	}
 	return principal{
-		Name: tok.Principal, Role: tok.Role, Limits: tok.Scope}, nil
+		Name: tok.Principal, Role: tok.Role, Scope: tok.Resource,
+		Limits: tok.Scope}, nil
 }
 
 // can checks a permission and writes the refusal itself if there is one.
@@ -366,12 +375,22 @@ func (s *Server) can(w http.ResponseWriter, r *http.Request, p principal,
 	// what the principal may do in general. A publisher holding a read-only
 	// token is, for this request, not a publisher — that is the entire reason
 	// to issue one.
-	if !p.Limits.AllowsAction(act) {
+	//
+	// All of them, through the shared check. This used to consult only
+	// Limits — the read-only/type/locale dimensions — and ignore the two the
+	// README advertises first: `--role reader` and `--on /path`. The token's
+	// role was captured into the principal and used to render a label, which
+	// is how it passed for enforcement. The consequence was not subtle: a
+	// credential issued `--role reader` to an administrator was refused a
+	// publish on the command line and could POST /people/grant here to make
+	// anybody an admin, because Evaluate was asked about the person and never
+	// about the credential.
+	if err := auth.CheckCredential(p.Role, p.Scope, p.Limits, act, resource); err != nil {
 		w.WriteHeader(http.StatusForbidden)
 		s.render(w, r, "message.html", map[string]any{
 			"Title": "Not permitted", "Principal": p,
 			"Heading": "This credential cannot do that",
-			"Body":    p.Limits.Why(act, "", ""),
+			"Body":    err.Error(),
 		})
 		return false
 	}
@@ -435,7 +454,6 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	// did not made the template compare a nil against a string — which surfaces
 	// as a half-rendered page rather than as a failure, so it is exactly the
 	// kind of mistake that ships.
-	data["NavPosition"] = s.navFor(r)
 	if _, ok := data["Nav"]; !ok {
 		data["Nav"] = ""
 	}
@@ -448,9 +466,16 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	data["ThemeNext"] = next
 	data["ThemeNextLabel"] = nextLabel
 
-	// The documentation anchor for the screen being rendered, so the footer
-	// link means "help with this" rather than "help".
-	data["Doc"] = docFor(navKey)
+	// The documentation link for the screen being rendered, so the footer link
+	// means "help with this" rather than "help".
+	//
+	// A whole URL rather than an anchor the template concatenates. The manual
+	// is published separately now, and a template that builds
+	// "/docs#{{.Doc}}" against an external site would have to know the host —
+	// which is how a relative link to a page that no longer exists survives a
+	// move and 404s quietly on every screen.
+	data["DocURL"] = DocURL(docFor(navKey))
+	data["DocsBase"] = DocsBase
 
 	// The navigation itself, filtered to what this person may use and sorted
 	// into the order they chose.
@@ -683,7 +708,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/review/propose", s.handlePropose)
 	mux.HandleFunc("/review/approve", s.handleApprove)
 	mux.HandleFunc("/access", s.handleAccess)
-	mux.HandleFunc("/nav", s.handleNav)
 	mux.HandleFunc("/theme", s.handleTheme)
 	mux.HandleFunc("/nav/order", s.handleNavOrder)
 	mux.HandleFunc("/profile", s.handleProfile)
@@ -723,6 +747,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/signin/oidc", s.handleOIDCStart)
 	mux.HandleFunc("/auth/callback", s.handleOIDCCallback)
 	mux.HandleFunc("/signout", s.handleSignOut)
+	mux.HandleFunc("/agents", s.handleAgents)
+	mux.HandleFunc("/start", s.handleStart)
+	mux.HandleFunc("/start/done", s.handleStartDone)
 	mux.HandleFunc("/playground", s.playground)
 	// The content API, mounted here so the playground can reach it.
 	//
@@ -734,8 +761,11 @@ func (s *Server) Handler() http.Handler {
 	if s.API != nil {
 		mux.Handle("/api/", s.API)
 	}
-	mux.HandleFunc("/docs", s.handleDocs)
-	mux.HandleFunc("/docs/img/", s.handleDocImage)
+	// /docs and /docs/img/ used to be served from here. The manual is now
+	// published at DocsBase and the footer links straight to it — deliberately
+	// not redirected from this origin, because a redirect would keep the admin
+	// answering for documentation it no longer has and make a dead external
+	// site look like a broken admin.
 	mux.HandleFunc("/style.css", s.handleCSS)
 	return securityHeaders(sameSiteOnly(limitBody(s.readOnlyTokens(mux))))
 }
@@ -768,18 +798,31 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	// and nobody can sign in at all — which is how a security attribute gets
 	// removed permanently by whoever is trying to get their work done.
 	http.SetCookie(w, &http.Cookie{
-		Name: "scrivet_token", Value: raw, Path: "/",
+		Name: "quilzo_token", Value: raw, Path: "/",
 		HttpOnly: true,                    // unreadable by script; there is none, but the header outlives that
 		SameSite: http.SameSiteStrictMode, // the primary CSRF defence
 		Secure:   r.TLS != nil,
 		MaxAge:   8 * 3600,
 	})
+	// Somebody signing in for the first time lands on the getting started
+	// screen instead of the page list.
+	//
+	// Here rather than on "/", which was the first attempt and was wrong: it
+	// made the landing page answer differently depending on a cookie, so a
+	// bookmark, a link somebody shared and every script that fetches the root
+	// got a redirect instead of the thing they asked for. Signing in is the
+	// moment this belongs to — it is the one request that is unambiguously a
+	// person arriving.
+	if !startDismissed(r) {
+		http.Redirect(w, r, "/start", http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
-		Name: "scrivet_token", Value: "", Path: "/", MaxAge: -1,
+		Name: "quilzo_token", Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
 	})
 	http.Redirect(w, r, "/signin", http.StatusSeeOther)

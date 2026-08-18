@@ -1,10 +1,10 @@
-// Package mcp exposes scrivet to agents over the Model Context Protocol.
+// Package mcp exposes quilzo to agents over the Model Context Protocol.
 //
 // # Why now, and not before
 //
 // Earlier research on this project concluded that MCP is worth its cost for
 // remote, authenticated access and not for local, deterministic work — a CLI
-// wins the second case outright, and scrivet was local. Hosting changes which
+// wins the second case outright, and quilzo was local. Hosting changes which
 // case this is, so the conclusion changes with it.
 //
 // # Four tools, not fifteen
@@ -39,7 +39,7 @@
 // names the pitfall plainly: a server that checks a token's signature and expiry
 // but not its audience will accept a token minted for something else entirely.
 //
-// scrivet's tokens are opaque and issued by this server, so they are
+// quilzo's tokens are opaque and issued by this server, so they are
 // audience-bound by construction — there is no other issuer whose token could
 // validate here, and the class of confusion the specification warns about cannot
 // arise. That is a smaller claim than OAuth 2.1 conformance, and it is the true
@@ -156,8 +156,8 @@ func (s *Server) Register(op Operation, h Handler) {
 func (s *Server) tools() []Tool {
 	return []Tool{
 		{
-			Name: "scrivet_find",
-			Description: "Find the scrivet operation for a task. Call this first; " +
+			Name: "quilzo_find",
+			Description: "Find the quilzo operation for a task. Call this first; " +
 				"it returns the exact arguments for the operation you need.",
 			InputSchema: map[string]any{
 				"type": "object",
@@ -171,21 +171,21 @@ func (s *Server) tools() []Tool {
 			},
 		},
 		{
-			Name:        "scrivet_read",
-			Description: "Read content or state. Use scrivet_find to learn the operations.",
-			InputSchema: opSchema("a read operation name from scrivet_find"),
+			Name:        "quilzo_read",
+			Description: "Read content or state. Use quilzo_find to learn the operations.",
+			InputSchema: opSchema("a read operation name from quilzo_find"),
 		},
 		{
-			Name: "scrivet_write",
+			Name: "quilzo_write",
 			Description: "Change a draft. Never publishes. Content written here is " +
 				"recorded as AI-generated.",
-			InputSchema: opSchema("a write operation name from scrivet_find"),
+			InputSchema: opSchema("a write operation name from quilzo_find"),
 		},
 		{
-			Name: "scrivet_check",
+			Name: "quilzo_check",
 			Description: "Run the checks that gate publishing: accessibility and " +
 				"content provenance.",
-			InputSchema: opSchema("a check operation name from scrivet_find"),
+			InputSchema: opSchema("a check operation name from quilzo_find"),
 		},
 	}
 }
@@ -197,7 +197,7 @@ func opSchema(desc string) map[string]any {
 			"operation": map[string]any{"type": "string", "description": desc},
 			"arguments": map[string]any{
 				"type":        "object",
-				"description": "arguments for the operation, as scrivet_find described them",
+				"description": "arguments for the operation, as quilzo_find described them",
 			},
 		},
 		"required": []string{"operation"},
@@ -266,7 +266,7 @@ func (s *Server) Handle(req Request) *Response {
 			"protocolVersion": Protocol,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": s.Name, "version": s.Version},
-			"instructions": "Call scrivet_find first to discover operations. " +
+			"instructions": "Call quilzo_find first to discover operations. " +
 				"Writes go to a draft and never publish. Content you write is " +
 				"recorded as AI-generated, which the EU AI Act requires.",
 		}
@@ -298,29 +298,29 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 		return nil, &Error{Code: CodeInvalidParams, Message: err.Error()}
 	}
 
-	if p.Name == "scrivet_find" {
+	if p.Name == "quilzo_find" {
 		query, _ := p.Arguments["query"].(string)
 		return textResult(s.describe(s.find(query))), nil
 	}
 
 	kind := map[string]string{
-		"scrivet_read": "read", "scrivet_write": "write", "scrivet_check": "check",
+		"quilzo_read": "read", "quilzo_write": "write", "quilzo_check": "check",
 	}[p.Name]
 	if kind == "" {
 		return nil, &Error{Code: CodeMethodNotFound,
-			Message: fmt.Sprintf("no tool %q; the tools are scrivet_find, "+
-				"scrivet_read, scrivet_write and scrivet_check", p.Name)}
+			Message: fmt.Sprintf("no tool %q; the tools are quilzo_find, "+
+				"quilzo_read, quilzo_write and quilzo_check", p.Name)}
 	}
 
 	opName, _ := p.Arguments["operation"].(string)
 	if opName == "" {
 		return nil, &Error{Code: CodeInvalidParams,
-			Message: "no operation given; call scrivet_find to get one"}
+			Message: "no operation given; call quilzo_find to get one"}
 	}
 	op, ok := s.operations[opName]
 	if !ok {
 		return nil, &Error{Code: CodeInvalidParams,
-			Message: fmt.Sprintf("no operation %q; call scrivet_find", opName)}
+			Message: fmt.Sprintf("no operation %q; call quilzo_find", opName)}
 	}
 
 	// A read tool must not be able to reach a write operation. Without this the
@@ -328,11 +328,11 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	// and a client permitted only to read could write by naming the operation.
 	if op.Writes && kind == "read" {
 		return nil, &Error{Code: CodeInvalidParams,
-			Message: fmt.Sprintf("%q changes content; call it through scrivet_write", opName)}
+			Message: fmt.Sprintf("%q changes content; call it through quilzo_write", opName)}
 	}
 	if !op.Writes && kind == "write" {
 		return nil, &Error{Code: CodeInvalidParams,
-			Message: fmt.Sprintf("%q does not change anything; use scrivet_read", opName)}
+			Message: fmt.Sprintf("%q does not change anything; use quilzo_read", opName)}
 	}
 
 	args, _ := p.Arguments["arguments"].(map[string]any)
@@ -369,12 +369,12 @@ func (s *Server) describe(ops []Operation) string {
 		return "no operations available"
 	}
 	for _, op := range ops {
-		tool := "scrivet_read"
+		tool := "quilzo_read"
 		if op.Writes {
-			tool = "scrivet_write"
+			tool = "quilzo_write"
 		}
 		if strings.HasPrefix(op.Name, "check") {
-			tool = "scrivet_check"
+			tool = "quilzo_check"
 		}
 		fmt.Fprintf(&b, "%s — %s\n", op.Name, op.Summary)
 		fmt.Fprintf(&b, "  call: %s{operation:%q, arguments:{...}}\n", tool, op.Name)
@@ -405,7 +405,7 @@ func textResult(text string) map[string]any {
 	}
 }
 
-// Operations lists what is registered, for tests and for `scrivet mcp --list`.
+// Operations lists what is registered, for tests and for `quilzo mcp --list`.
 func (s *Server) Operations() []Operation {
 	out := make([]Operation, 0, len(s.operations))
 	for _, op := range s.operations {

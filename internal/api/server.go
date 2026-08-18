@@ -230,10 +230,10 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			// 401 with no hint about whether the token exists. Distinguishing
 			// "no such token" from "wrong password" is how an enumeration
 			// oracle gets built by accident.
-			w.Header().Set("WWW-Authenticate", `Bearer realm="scrivet"`)
+			w.Header().Set("WWW-Authenticate", `Bearer realm="quilzo"`)
 			writeError(w, http.StatusUnauthorized, Error{
 				Error: "not authenticated",
-				Fix:   "send a token: Authorization: Bearer scv_...",
+				Fix:   "send a token: Authorization: Bearer qz_...",
 			})
 			return
 		}
@@ -374,7 +374,7 @@ func (s *Server) authenticate(r *http.Request) (*auth.Token, error) {
 		if !s.SessionAuth || !sameOrigin(r) {
 			return nil, fmt.Errorf("no bearer token")
 		}
-		c, err := r.Cookie("scrivet_token")
+		c, err := r.Cookie("quilzo_token")
 		if err != nil || c.Value == "" {
 			return nil, fmt.Errorf("no bearer token")
 		}
@@ -392,24 +392,19 @@ func (s *Server) may(r *http.Request, act auth.Action, resource string) error {
 	if tok == nil {
 		return fmt.Errorf("not authenticated")
 	}
-	// The token's own role caps what this session may do, whatever the policy
-	// grants the principal in general. Checking only the policy would make a
-	// read-only token a full one the moment its owner was promoted.
-	needed, ok := auth.Needs(act)
-	if !ok {
-		return fmt.Errorf("unknown action")
-	}
-	if !tok.Role.AtLeast(needed) {
-		return fmt.Errorf("this token carries the %s role and %s needs %s",
-			tok.Role, act, needed)
-	}
-	// The token's scope, checked before the policy. A scope only ever narrows
-	// — it is intersected with what the policy allows, never unioned — so
-	// checking it first is free and gives a better message: the caller learns
-	// which of five dimensions stopped them rather than a bare refusal that
-	// could be any of them.
-	if !tok.Scope.AllowsAction(act) {
-		return fmt.Errorf("%s", tok.Scope.Why(act, "", ""))
+	// The credential's own limits, checked before the policy. They only ever
+	// narrow — a scope is intersected with what the policy allows, never
+	// unioned — so checking first is free and gives a better message: the
+	// caller learns which dimension stopped them rather than a bare refusal
+	// that could be any of them.
+	//
+	// Through the shared check rather than inline, which is what added the
+	// missing one: this consulted the token's role and its scope and not its
+	// resource path, so a token issued `--on /blog` reached every page in the
+	// store through this API while the command line refused it.
+	if err := auth.CheckCredential(tok.Role, tok.Resource, tok.Scope, act,
+		resource); err != nil {
+		return err
 	}
 	if s.Policy != nil {
 		if d := s.Policy.Evaluate(tok.Principal, act, resource); !d.Allowed {
@@ -449,7 +444,7 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	if commit == "" {
 		writeError(w, http.StatusServiceUnavailable, Error{
 			Error: "nothing is published",
-			Fix:   "scrivet publish"})
+			Fix:   "quilzo publish"})
 		return
 	}
 	// The listing's validator is the commit: if the site has not changed,
@@ -631,7 +626,7 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 			Error: "this API is read-only",
 			Detail: "a read API and a write API are different products with " +
 				"different blast radii, so writes are off unless turned on",
-			Fix: "scrivet serve --api-writable",
+			Fix: "quilzo serve --api-writable",
 		})
 		return
 	}
@@ -887,7 +882,7 @@ func (s *Server) index(w http.ResponseWriter) *vector.Index {
 			Error: "no vector index",
 			Detail: "this server was started without one, so there is nothing " +
 				"to compare against",
-			Fix: "scrivet site --vectors",
+			Fix: "quilzo site --vectors",
 		})
 		return nil
 	}

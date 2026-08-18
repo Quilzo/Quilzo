@@ -144,7 +144,7 @@ func (w *Writer) Error(err error) {
 //
 // An agent branching on output text breaks the first time somebody rewords a
 // sentence. Branching on an exit code does not, so the codes are part of the
-// interface and are listed in `scrivet help`.
+// interface and are listed in `quilzo help`.
 const (
 	OK              = 0 // did what was asked
 	ExitFailure     = 1 // the operation failed

@@ -20,7 +20,7 @@ import (
 //
 // So: parse the hrefs out of the templates, parse the registrations out of the
 // mux, and require the first set to be inside the second. It is the same shape
-// as the coverage test in cmd/scrivet — walk the source rather than trust a
+// as the coverage test in cmd/quilzo — walk the source rather than trust a
 // list somebody maintains — and for the same reason, which is that the list
 // somebody maintains is the thing that was wrong.
 func TestEveryLinkInTheInterfaceIsServed(t *testing.T) {

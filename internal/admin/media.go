@@ -17,7 +17,7 @@ import (
 // The media library, in the interface, and stored at all.
 //
 // Two problems at once. The screen was missing, which was the known gap; and
-// the thing the screen would have shown did not exist, which was not. `scrivet
+// the thing the screen would have shown did not exist, which was not. `quilzo
 // media add` validated an upload thoroughly and then discarded it — see
 // internal/medialib for what that looked like from the outside.
 //

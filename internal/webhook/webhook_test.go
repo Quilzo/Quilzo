@@ -145,19 +145,19 @@ func TestDeliveryCarriesEverythingAReceiverNeeds(t *testing.T) {
 	}
 	h := r.posts[0]
 	for _, want := range []string{
-		"X-Scrivet-Event", "X-Scrivet-Delivery", "X-Scrivet-Timestamp",
-		"X-Scrivet-Signature",
+		"X-Quilzo-Event", "X-Quilzo-Delivery", "X-Quilzo-Timestamp",
+		"X-Quilzo-Signature",
 	} {
 		if h[want] == "" {
 			t.Errorf("the request omits %s", want)
 		}
 	}
 	// And the receiver, running the exported verifier, must accept it.
-	ts, err := strconv.ParseInt(h["X-Scrivet-Timestamp"], 10, 64)
+	ts, err := strconv.ParseInt(h["X-Quilzo-Timestamp"], 10, 64)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Verify(secret, h["X-Scrivet-Signature"], time.Unix(ts, 0),
+	if err := Verify(secret, h["X-Quilzo-Signature"], time.Unix(ts, 0),
 		r.bodies[0], now); err != nil {
 		t.Errorf("a receiver running the shipped verifier rejected our own "+
 			"delivery: %v", err)
@@ -184,7 +184,7 @@ func TestRetriesReuseTheSameDeliveryID(t *testing.T) {
 		t.Error("the third attempt did not succeed")
 	}
 	for _, h := range r.posts {
-		if h["X-Scrivet-Delivery"] != "abc123" {
+		if h["X-Quilzo-Delivery"] != "abc123" {
 			t.Error("the header id changed between retries")
 		}
 	}

@@ -226,7 +226,7 @@ func TestPermissionsAreEnforcedNotJustHidden(t *testing.T) {
 
 func TestBadTokenIsRefused(t *testing.T) {
 	srv, _ := setup(t)
-	if w := get(t, srv, "/", "scv_not_a_real_token"); w.Code != http.StatusUnauthorized {
+	if w := get(t, srv, "/", "qz_not_a_real_token"); w.Code != http.StatusUnauthorized {
 		t.Errorf("a bad token should give 401, got %d", w.Code)
 	}
 }
@@ -388,7 +388,7 @@ func TestSignInSetsAHardenedCookie(t *testing.T) {
 func TestSignInRefusesABadToken(t *testing.T) {
 	srv, _ := setup(t)
 	req := httptest.NewRequest(http.MethodPost, "/signin",
-		strings.NewReader("token=scv_nonsense"))
+		strings.NewReader("token=qz_nonsense"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)

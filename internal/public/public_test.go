@@ -475,7 +475,7 @@ func TestRobotsAdvertisesTheSitemapOnlyWhenThereIsOne(t *testing.T) {
 	st := published(t, map[string]any{"index": map[string]any{"title": "Home"}})
 
 	// published() sets a base URL, so start by taking it away: that is the
-	// default a person gets from `scrivet site` with no flags.
+	// default a person gets from `quilzo site` with no flags.
 	st.BaseURL = ""
 	body := get(st, "/robots.txt", nil).Body.String()
 	if strings.Contains(body, "Sitemap:") {

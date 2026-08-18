@@ -238,7 +238,7 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 	if !s.Records.Writable {
 		writeError(w, http.StatusMethodNotAllowed, Error{
 			Error: "this API is read-only",
-			Fix:   "scrivet site --api-writable",
+			Fix:   "quilzo site --api-writable",
 		})
 		return
 	}

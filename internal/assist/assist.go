@@ -315,20 +315,20 @@ func (h *HTTPModel) Name() string { return h.Model }
 
 // NewHTTPModel reads configuration from the environment.
 func NewHTTPModel() (*HTTPModel, error) {
-	base := os.Getenv("SCRIVET_MODEL_URL")
+	base := os.Getenv("QUILZO_MODEL_URL")
 	if base == "" {
 		base = "https://ollama.com/v1"
 	}
-	key := os.Getenv("SCRIVET_MODEL_KEY")
+	key := os.Getenv("QUILZO_MODEL_KEY")
 	if key == "" {
 		key = os.Getenv("OLLAMA_API_KEY")
 	}
 	if key == "" {
 		return nil, fmt.Errorf(
-			"no model key: set SCRIVET_MODEL_KEY (or OLLAMA_API_KEY). " +
-				"SCRIVET_MODEL_URL selects the endpoint, SCRIVET_MODEL the model")
+			"no model key: set QUILZO_MODEL_KEY (or OLLAMA_API_KEY). " +
+				"QUILZO_MODEL_URL selects the endpoint, QUILZO_MODEL the model")
 	}
-	model := os.Getenv("SCRIVET_MODEL")
+	model := os.Getenv("QUILZO_MODEL")
 	if model == "" {
 		model = "gpt-oss:20b"
 	}

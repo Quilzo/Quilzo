@@ -22,8 +22,8 @@ test:
 	$(GO) test -count=1 ./...
 
 build:
-	$(GO) build -trimpath -ldflags="-s -w -X main.version=$(VERSION)" -o bin/scrivet ./cmd/scrivet
-	@echo "binary: $$(du -h bin/scrivet | cut -f1)"
+	$(GO) build -trimpath -ldflags="-s -w -X main.version=$(VERSION)" -o bin/quilzo ./cmd/quilzo
+	@echo "binary: $$(du -h bin/quilzo | cut -f1)"
 
 # One binary per platform, named so a person downloading can tell which is
 # which. CGO is off so these are genuinely static and genuinely
@@ -34,12 +34,12 @@ build-all:
 		os=$${p%/*}; arch=$${p#*/}; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath \
 			-ldflags="-s -w -X main.version=$(VERSION)" \
-			-o bin/scrivet-$$os-$$arch ./cmd/scrivet || exit 1; \
-		echo "  $$os/$$arch  $$(du -h bin/scrivet-$$os-$$arch | cut -f1)"; \
+			-o bin/quilzo-$$os-$$arch ./cmd/quilzo || exit 1; \
+		echo "  $$os/$$arch  $$(du -h bin/quilzo-$$os-$$arch | cut -f1)"; \
 	done
 
 image:
-	docker build --build-arg VERSION=$(VERSION) -t scrivet:$(VERSION) .
+	docker build --build-arg VERSION=$(VERSION) -t quilzo:$(VERSION) .
 
 # The bill of materials is produced BY the binary, not alongside it.
 #
@@ -49,10 +49,10 @@ image:
 # question is what is deployed. The binary's own hash goes in the document, so
 # the SBOM is tied to an artefact rather than to a version string.
 sbom: build
-	./bin/scrivet compliance sbom bin/scrivet.cdx.json
-	@./bin/scrivet compliance crypto --json > bin/scrivet.crypto.json
-	@echo "sbom:   bin/scrivet.cdx.json"
-	@echo "crypto: bin/scrivet.crypto.json"
+	./bin/quilzo compliance sbom bin/quilzo.cdx.json
+	@./bin/quilzo compliance crypto --json > bin/quilzo.crypto.json
+	@echo "sbom:   bin/quilzo.cdx.json"
+	@echo "crypto: bin/quilzo.crypto.json"
 
 # Everything a release needs, produced from the artefact being released.
 #
@@ -60,7 +60,7 @@ sbom: build
 # report does -- a report has to say what is affected -- and it has to be
 # retained for ten years, which a release asset does for free.
 release: test sbom build-all
-	@cd bin && sha256sum scrivet scrivet-* scrivet.cdx.json scrivet.crypto.json > SHA256SUMS
+	@cd bin && sha256sum quilzo quilzo-* quilzo.cdx.json quilzo.crypto.json > SHA256SUMS
 	@echo
 	@echo "release $(VERSION)"
 	@sed 's/^/  /' bin/SHA256SUMS
