@@ -8,15 +8,11 @@ a pointer, and the template language cannot execute anything.
 [![dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen)](go.mod)
 
 ```bash
-scrivet init          # a store in the current directory
-scrivet demo          # install a complete example application
-scrivet site          # serve it on 127.0.0.1:8081
-scrivet serve         # the admin interface on 127.0.0.1:8080
+quilzo init          # a store in the current directory
+quilzo demo          # install a complete example application
+quilzo site          # serve it on 127.0.0.1:8081
+quilzo serve         # the admin interface on 127.0.0.1:8080
 ```
-
-The command is `scrivet` — the project's working name, kept as the binary the
-way Chromium ships `chrome`. Everywhere you see it in a command or an import,
-that is deliberate.
 
 Go, no third-party dependencies, one static binary. Everything below is
 reachable from the command line, the browser and the agent interface, and a test
@@ -59,8 +55,10 @@ So there are three goals, in order:
 
 ### What it is deliberately not
 
-Not a plugin marketplace — the extension point is a sandbox, not a way to run
-arbitrary code in the request path. Not a framework. Not a JavaScript
+Not a plugin marketplace — the extension point is an out-of-process hook with
+a timeout and no inherited environment, not a way to run arbitrary code in the
+request path. It is not a capability sandbox; SECURITY.md says exactly what it
+does and does not bound. Not a framework. Not a JavaScript
 application; the admin is server-rendered and its own CSP forbids script
 entirely. And not a general database with a CMS on top, because that is the
 thing whose absence makes the first goal possible.
@@ -106,7 +104,7 @@ Drupal's CVE-2026-9082 depended on.
 derived from it, not a proxy for it. Different content is a different hash, so a
 conditional request answers itself and nothing has to be purged on publish.
 
-**Integrity is checkable.** `scrivet verify` recomputes every hash. A store that
+**Integrity is checkable.** `quilzo verify` recomputes every hash. A store that
 has been tampered with does not verify, and the check does not depend on a log
 that the tamperer could also edit.
 
@@ -141,8 +139,8 @@ not a hope.
 ## The two processes
 
 ```
-scrivet serve   the admin      loopback, behind your own auth
-scrivet site    the website    the thing you point the internet at
+quilzo serve   the admin      loopback, behind your own auth
+quilzo site    the website    the thing you point the internet at
 ```
 
 Separate binaries-in-one, separate ports, separate exposure. The public process
@@ -196,21 +194,21 @@ Content-Security-Policy generated from what your content actually references, a
 software inventory, store integrity verification, and a posture report.
 
 **Interfaces.** A browser interface covering every capability, grouped into five
-sections and reorderable per person, with a light/dark toggle and a manual with
-screenshots. A command line covering the same ground. An agent interface over
+sections and reorderable per person, with a light/dark toggle and a Help link on
+every screen into the manual. A command line covering the same ground. An agent interface over
 MCP covering everything that reads or authors content — and deliberately not
 covering anything that changes who may do what, what code runs, or what the keys
 are.
 
 **Decentralised publication.** Content-addressed storage maps onto IPFS
-naturally: `scrivet ipfs` computes CIDv1 identifiers and produces a bundle that
+naturally: `quilzo ipfs` computes CIDv1 identifiers and produces a bundle that
 pins as-is. Zero dependencies here too — the DAG-PB and CID encoding is about
 four hundred lines, verified against published identifiers and an independent
 reimplementation.
 
 ## The demonstration
 
-`scrivet demo` installs **Gram**: a photo-sharing site with a feed over
+`quilzo demo` installs **Gram**: a photo-sharing site with a feed over
 structured records, an explore page with a working filter, profiles under a
 content type, stories carrying publish windows, and a message box.
 
@@ -271,12 +269,12 @@ You need Go 1.24 or later. There are no dependencies to fetch.
 ```bash
 git clone https://github.com/quilzo/quilzo
 cd quilzo
-go build -o scrivet ./cmd/scrivet
-# or: make build   →  bin/scrivet, stripped and version-stamped (see Makefile)
+go build -o quilzo ./cmd/quilzo
+# or: make build   →  bin/quilzo, stripped and version-stamped (see Makefile)
 
-export PATH="$PWD:$PATH"   # so the `scrivet` commands below just work
+export PATH="$PWD:$PATH"   # so the `quilzo` commands below just work
 mkdir mysite && cd mysite
-scrivet init
+quilzo init
 ```
 
 ### Getting a token
@@ -286,36 +284,48 @@ say so, so there is no state in which a fresh install is reachable with a
 credential somebody already knows.
 
 ```bash
-scrivet auth grant you admin                            # "you" is any name
-scrivet token issue laptop --principal you --role admin # shown once
-export SCRIVET_TOKEN=scv_…
+quilzo auth grant you admin                            # "you" is any name
+quilzo token issue laptop --principal you --role admin # shown once
+export QUILZO_TOKEN=qz_…
 ```
 
 A token can carry **less** authority than the person holding it and never more:
 `--role reader` on an admin's token makes a read-only credential, `--read-only`
 refuses every write whatever the role, `--on /blog` scopes it to a path, and
-`--ttl 24h` expires it. `scrivet token revoke ID` takes effect on the next use,
+`--ttl 24h` expires it. `quilzo token revoke ID` takes effect on the next use,
 not at the next restart.
 
 ### Then either
 
 ```bash
-scrivet demo                              # a whole example application
+quilzo demo                              # a whole example application
 # or
-scrivet template use landing
-scrivet add index=index.json -m "first page"
-scrivet publish
+quilzo template use landing
+quilzo add index=index.json -m "first page"
+quilzo publish
 ```
 
 ### And run it
 
 ```bash
-scrivet serve --addr 127.0.0.1:8080                                    # admin
-scrivet site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
+quilzo serve --addr 127.0.0.1:8080                                    # admin
+quilzo site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
 ```
 
-`scrivet help` lists all 92 commands. The admin carries a manual with
-screenshots at `/docs`, and every screen's Help link points at its own section.
+`quilzo help` lists all 92 commands.
+
+## Documentation
+
+**[quilzo.github.io](https://quilzo.github.io)** — setup, content modelling,
+publishing, the three interfaces, access control and security, with screenshots.
+
+Every screen in the admin carries a Help link in the same place, pointing at the
+section for the screen you are looking at rather than at the top of the manual.
+
+The manual used to be compiled into the binary and served at `/docs`. It is a
+site of its own now, in [its own repository](https://github.com/Quilzo/quilzo.github.io),
+so a wording fix or a corrected screenshot ships the day somebody notices rather
+than waiting for a release.
 
 ## Deployment
 
@@ -329,8 +339,8 @@ process on the interface facing the internet. They share a store directory and
 nothing else.
 
 ```bash
-docker build -t scrivet .
-docker run --rm -p 8081:8081 -v "$PWD/store:/store" scrivet \
+docker build -t quilzo .
+docker run --rm -p 8081:8081 -v "$PWD/store:/store" quilzo \
   site --addr 0.0.0.0:8081 --base-url https://example.org
 ```
 

@@ -4,12 +4,15 @@ This project is looking for maintainers, not just patches. If you want commit
 access, the path is written down in [GOVERNANCE.md](GOVERNANCE.md) and it is
 short.
 
-## The name, so it does not confuse you
+## The name, if you are reading older material
 
-The project is **Quilzo**. The command is **`scrivet`**, which was the
-working name and stayed as the binary — the same way Chromium ships `chrome`.
-Anywhere you see `scrivet` in a command, a path, or a Go import, that is
-deliberate and not a leftover.
+The project and the command are both **Quilzo**. Earlier releases shipped the
+binary as `scrivet`, an old working name, and that is gone: the command, the
+store directory, the environment variables, the token prefix and the agent
+tool names are all `quilzo` now. There is no compatibility path — a store
+created by the old binary is not found by this one, and tokens have to be
+reissued. Pre-1.0, one name is worth more than a migration shim nobody would
+delete later.
 
 ## Try it first, in about two minutes
 
@@ -18,14 +21,14 @@ You need Go 1.24 or later and nothing else. There are no dependencies to fetch.
 ```bash
 git clone https://github.com/quilzo/quilzo   # or your fork
 cd quilzo
-go build -o scrivet ./cmd/scrivet
+go build -o quilzo ./cmd/quilzo
 
 mkdir /tmp/try && cd /tmp/try
-../scrivet init      # wherever you put the binary
-../scrivet demo      # a complete example application
+../quilzo init      # wherever you put the binary
+../quilzo demo      # a complete example application
 ```
 
-`scrivet demo` installs Gram — a photo-sharing site with a feed over structured
+`quilzo demo` installs Gram — a photo-sharing site with a feed over structured
 records, an explore page with a working filter, profiles under a content type,
 stories that stop being served on a date, and a message box.
 
@@ -38,21 +41,21 @@ reachable with a known credential.
 Two commands. The order matters, and the token is shown once:
 
 ```bash
-../scrivet auth grant you admin          # "you" is any name you like
-../scrivet token issue laptop --principal you --role admin
+../quilzo auth grant you admin          # "you" is any name you like
+../quilzo token issue laptop --principal you --role admin
 ```
 
-That prints a secret starting `scv_`. Put it in the environment:
+That prints a secret starting `qz_`. Put it in the environment:
 
 ```bash
-export SCRIVET_TOKEN=scv_…
+export QUILZO_TOKEN=qz_…
 ```
 
 Then start both processes:
 
 ```bash
-../scrivet serve --addr 127.0.0.1:8080                                # admin
-../scrivet site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
+../quilzo serve --addr 127.0.0.1:8080                                # admin
+../quilzo site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
 ```
 
 Open `http://127.0.0.1:8080` for the admin and `http://127.0.0.1:8081` for the
@@ -66,12 +69,12 @@ Things worth trying, because they are the parts that are hard to believe:
 | `/explore?topic=travel` on the site | A declared query with a typed parameter, filtered per request |
 | `/stories/sol-rooftop` | 404s until September — the window is checked when the page is asked for, not by a job |
 | Remove a page the menu points at | Refused, naming the menu entry |
-| `scrivet verify` | Every object re-hashed against the id it is filed under |
-| `scrivet rollback` | Instant, because it is a pointer move |
+| `quilzo verify` | Every object re-hashed against the id it is filed under |
+| `quilzo rollback` | Instant, because it is a pointer move |
 
 Token notes: `--role` may be narrower than the principal (a token can carry less
 than the person holding it, never more), `--read-only` refuses every write
-whatever the role, `--ttl` sets expiry, and `scrivet token revoke ID` kills one
+whatever the role, `--ttl` sets expiry, and `quilzo token revoke ID` kills one
 immediately — revocation is checked on use, not only at issue.
 
 ## Building and testing
