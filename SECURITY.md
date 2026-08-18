@@ -35,7 +35,7 @@ is false is a vulnerability even without a working exploit:
 - **Templates cannot execute.** Any input reaching `tmpl.Render` that causes
   code execution, unbounded resource use, or non-termination.
 - **The public process cannot read content it should not.** Any path by which
-  `scrivet site` reads a draft, a submission, a token, or a file outside the
+  `quilzo site` reads a draft, a submission, a token, or a file outside the
   media library.
 - **Stored content cannot become executable.** Any content field that reaches
   a browser unescaped without passing through `{% raw %}`.
@@ -45,9 +45,33 @@ is false is a vulnerability even without a working exploit:
 - **Tokens are scoped.** Any way a token performs an action outside its scope,
   or a principal's own grant.
 - **The store is append-only and verifiable.** Any way to alter stored content
-  such that `scrivet verify` still passes.
-- **Nothing is executed from content.** Any way an extension, template, or
-  imported document causes execution outside the sandbox.
+  such that `quilzo verify` still passes.
+- **Nothing is executed from content.** Any way a template or an imported
+  document causes code to run, or any way content decides what an extension is.
+
+### What the extension boundary actually is, so nobody reports it as a bug
+
+An extension is a subprocess. It gets an empty environment, a working directory
+in the temporary area, a timeout, a bounded output, and a process group that is
+killed as a unit. Those bound what it *inherits* and what it *costs*.
+
+They do not bound what it can *read*. An extension runs with the uid of the
+process that started it, so on a normal single-account deployment it can read
+the token store, the policy and the key file — the same as any other program
+that account runs. The mitigation today is operational: run extensions as an
+account that owns nothing.
+
+That is a real limitation and it is written here rather than implied away,
+because "sandbox" is a word that promises more than a subprocess delivers.
+Registering an extension is already an admin-only action for this reason.
+
+**In scope**: an extension escaping the timeout, the output bound or the process
+group; content choosing which extension runs or what it is given; an extension
+reaching the store through the application rather than through the filesystem.
+
+**Not currently in scope**: an extension reading files its uid can read. That is
+the documented limit above, and closing it needs a capability-based sandbox
+rather than a subprocess.
 
 Also in scope: authentication bypass, privilege escalation between roles,
 IDOR on any resource, path traversal, SSRF from any fetcher, injection of any
@@ -57,7 +81,7 @@ it.
 ## What does not count
 
 - Findings against a deployment that has the admin interface on a public
-  interface. `scrivet serve` belongs on loopback behind your own authentication;
+  interface. `quilzo serve` belongs on loopback behind your own authentication;
   the README and the manual both say so.
 - Missing hardening headers on a response that carries no content.
 - Denial of service by sending very large or very many requests. Rate limiting
@@ -81,5 +105,5 @@ a report is most useful when it makes one of those tests fail. Relevant places:
 - `internal/tmpl` — the template language and its fuzz target
 - `internal/a11y`, `internal/codescan` — the scanners
 - `internal/auth` — roles, scopes, throttling
-- `cmd/scrivet/gate_test.go` — every write surface consults the type gate
+- `cmd/quilzo/gate_test.go` — every write surface consults the type gate
 - `internal/admin/roles_test.go` — every role can do its own job and no more
