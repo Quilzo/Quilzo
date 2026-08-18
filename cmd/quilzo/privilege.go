@@ -220,6 +220,10 @@ var commandNeeds = map[string]need{
 	"mcp":   {action: auth.ActEditDraft},
 
 	// -- deliberately unauthenticated, each with the reason.
+	"__sandbox": {why: "is the sandbox shim this program re-executes itself as: " +
+		"it restricts its own thread and execve's the extension, and never " +
+		"opens the store. Requiring authority here would mean resolving a " +
+		"token inside the process that is about to be confined"},
 	"init": {why: "creates the store; there is no policy to consult until one exists"},
 	"logd": {why: "runs as its own account and derives its authority from the " +
 		"socket peer's uid, not from a token in this store"},

@@ -163,6 +163,20 @@ type Limits struct {
 	Timeout    time.Duration
 	MaxOutput  int
 	RequirePin bool
+	// Wrap rewrites the command line before it is run, so a host can put the
+	// extension inside a sandbox.
+	//
+	// A hook rather than the sandbox itself, because this package must not
+	// know where the binary is or how the host chooses to confine things — and
+	// because the confinement is Linux-only, while this is not. Nil runs the
+	// command directly, which is what every existing caller does and what the
+	// tests here rely on.
+	//
+	// The host that sets this is cmd/quilzo, which re-executes itself as a
+	// shim: Landlock restricts a thread and execve keeps the domain, so the
+	// extension starts already confined. See internal/sandbox for why that is
+	// the only correct sequence from Go.
+	Wrap func(argv []string) []string
 }
 
 func (l Limits) withDefaults() Limits {
@@ -267,7 +281,11 @@ func (r *Runner) Run(ctx context.Context, m Manifest, req Request) Result {
 	ctx, cancel := context.WithTimeout(ctx, lim.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, m.Command[0], m.Command[1:]...)
+	argv := m.Command
+	if lim.Wrap != nil {
+		argv = lim.Wrap(argv)
+	}
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 
 	// Killing the extension has to kill what the extension started.
 	//

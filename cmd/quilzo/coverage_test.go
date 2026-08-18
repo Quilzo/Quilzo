@@ -131,6 +131,10 @@ var coverage = map[string]surfaces{
 	"render": {Why: "renders to a file for a pipeline; the admin previews " +
 		"instead, at /preview/",
 		NoMCP: "writes a file for a pipeline"},
+	"__sandbox": {Why: "is not a command anybody types: it is the shim this " +
+		"program re-executes itself as to confine an extension",
+		NoMCP: "is a shim, and confining an extension is not an operation an " +
+			"agent performs"},
 	"config-show": {Why: "not a command", NoMCP: "not a command"},
 	"help": {Why: "prints usage",
 		NoMCP: "prints usage; the operation list is how an agent discovers this"},

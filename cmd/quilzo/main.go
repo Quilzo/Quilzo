@@ -199,6 +199,13 @@ log transparency
   quilzo anchor submit | list | verify     one hash over a whole publication
 
   quilzo mcp [--list]                      the agent interface, over stdio
+  quilzo __sandbox --allow DIR -- CMD       run CMD confined to DIR. Not a
+                                            command you type: this program
+                                            re-executes itself as this to put
+                                            an extension in a Landlock sandbox,
+                                            and it is listed because anything
+                                            dispatched and undocumented ships
+                                            for nobody
   quilzo version                           what this binary is
 
 global
@@ -300,6 +307,11 @@ func main() {
 		err = cmdAgents(root, cmdArgs)
 	case "agent":
 		err = cmdAgent(root, cmdArgs)
+	// The literal rather than sandboxCmd, because the test that keeps the
+	// privilege table honest reads this switch from the source and cannot
+	// resolve a constant.
+	case "__sandbox":
+		err = cmdSandbox(cmdArgs)
 	case "webhook", "webhooks":
 		err = cmdWebhook(root, cmdArgs)
 	case "logd":
