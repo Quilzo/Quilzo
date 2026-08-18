@@ -11,7 +11,7 @@ import (
 //
 // A table rather than scattered constants for the same reason the privilege
 // table is one: a knob nobody can find is a knob nobody can audit, and
-// `scrivet config list` has to be able to print all of them. Adding a setting
+// `quilzo config list` has to be able to print all of them. Adding a setting
 // anywhere else in the program is a setting that does not appear here, and a
 // test refuses that.
 //
@@ -248,7 +248,7 @@ var settings = []Setting{
 	{
 		Key: "site.name", Kind: Text, Default: "",
 		Summary: "what this site is called, for templates and for install",
-		Why: "It was a flag on `scrivet site` and nothing else, so it existed " +
+		Why: "It was a flag on `quilzo site` and nothing else, so it existed " +
 			"only inside the process serving the site. Everything else that " +
 			"renders a page — the accessibility gate, the preview, the static " +
 			"and IPFS exports — rendered it blank, which means each of them " +
@@ -268,16 +268,15 @@ var settings = []Setting{
 	},
 
 	// -- the admin interface --------------------------------------------------
-	{
-		Key: "admin.nav", Kind: Text, Default: "top",
-		Summary: "top | left — where the navigation sits",
-		Why: "Top reads well with a handful of sections and stops working once " +
-			"there are more than about eight, because they wrap and the order " +
-			"stops meaning anything. Left holds more, keeps them in a stable " +
-			"order, and costs horizontal room the editor would otherwise use. " +
-			"Neither is better; it depends on how much is in the install, and " +
-			"a person can override it for themselves.",
-	},
+	//
+	// "admin.nav" was here, choosing between a top bar and a side column. The
+	// reason it is gone rather than defaulted: supporting both meant the
+	// navigation was rendered twice into every page so CSS could hide one, and
+	// the top arrangement could not draw the group headings for want of room.
+	// One arrangement is one copy in the document and one thing to keep
+	// accessible. Removing a key is a change an operator sees — `config set
+	// admin.nav left` now fails as unknown rather than being quietly ignored,
+	// which is the honest failure of the two.
 
 	// -- media ----------------------------------------------------------------
 	{
@@ -440,13 +439,6 @@ func (s Setting) Validate(v string) error {
 			return fmt.Errorf("%q is not true or false", v)
 		}
 	case Text:
-		if s.Key == "admin.nav" {
-			switch v {
-			case "top", "left":
-			default:
-				return fmt.Errorf("%q is not top or left", v)
-			}
-		}
 		if s.Key == "site.csp.mode" {
 			switch v {
 			case "enforce", "report-only", "off":
