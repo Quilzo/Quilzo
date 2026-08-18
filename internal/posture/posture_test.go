@@ -708,3 +708,27 @@ func ruleByID(t *testing.T, id string) Rule {
 	t.Fatalf("no rule %q", id)
 	return Rule{}
 }
+
+// A filesystem-only sandbox is reported as what it is.
+//
+// Rounding "confined to a filesystem" up to "confined" would tell an operator
+// their extensions cannot call out when they can. It is a smaller finding than
+// no sandbox at all, and it is still a finding.
+func TestAFilesystemOnlySandboxIsStillReported(t *testing.T) {
+	rule := ruleByID(t, "ext.unconfined")
+
+	got := rule.Check(State{Ext: ExtFacts{
+		Registered: 1, Checked: true, Sandboxed: true, NetworkOpen: true}})
+	if len(got) != 1 {
+		t.Fatalf("%d findings for a filesystem-only sandbox, want 1", len(got))
+	}
+	if !strings.Contains(got[0].Detail, "network") {
+		t.Errorf("the finding does not name what is unbounded: %s", got[0].Detail)
+	}
+
+	// Fully confined: silent.
+	if n := rule.Check(State{Ext: ExtFacts{
+		Registered: 1, Checked: true, Sandboxed: true}}); len(n) != 0 {
+		t.Errorf("%d findings when extensions are fully confined", len(n))
+	}
+}

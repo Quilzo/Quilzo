@@ -4,11 +4,13 @@ package sandbox
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The decisive test: a sandboxed process must not be able to read the secret.
@@ -186,5 +188,151 @@ func TestAnUnsupportedKernelIsReportedNotHidden(t *testing.T) {
 	}
 	if st.Why == "" {
 		t.Error("nothing explains why there is no sandbox")
+	}
+}
+
+// A sandboxed process cannot open a TCP connection.
+//
+// An extension is handed its input on stdin and answers on stdout. A socket it
+// opens is either a fetch nobody asked for or a way out with the data, so the
+// default is that it has none.
+//
+// Tested against a listener in this process rather than a public address:
+// asserting on a remote host would make the test depend on the network being
+// there, and a security test that passes because the internet was down is a
+// test that will one day pass for the wrong reason.
+func TestASandboxedProcessCannotOpenATCPConnection(t *testing.T) {
+	requireSandbox(t)
+	if ABI() < 4 {
+		t.Skip("this kernel has no Landlock network rules (ABI 4 or later)")
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+
+	// Unsandboxed first, so a failure to connect cannot be mistaken for the
+	// sandbox working.
+	c, err := net.DialTimeout("tcp", ln.Addr().String(), 2*time.Second)
+	if err != nil {
+		t.Fatalf("the listener is not reachable unsandboxed: %v", err)
+	}
+	c.Close()
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestSandboxDialHelper")
+	cmd.Env = append(os.Environ(),
+		"QUILZO_SANDBOX_HELPER=1",
+		"QUILZO_SANDBOX_ALLOW="+t.TempDir(),
+		"QUILZO_SANDBOX_DIAL="+ln.Addr().String(),
+	)
+	out, err := cmd.CombinedOutput()
+	if strings.Contains(string(out), "dialled") {
+		t.Fatalf("a sandboxed process opened a TCP connection\n%s", out)
+	}
+	// The denial has to be the reason. Accepting any failure would let a
+	// helper that crashed early stand in for a sandbox that worked.
+	if !strings.Contains(string(out), "dial-denied") {
+		t.Fatalf("the helper did not reach the dial, so this proves nothing "+
+			"about the sandbox: %v\n%s", err, out)
+	}
+}
+
+func TestSandboxDialHelper(t *testing.T) {
+	if os.Getenv("QUILZO_SANDBOX_HELPER") != "1" {
+		t.Skip("not the helper")
+	}
+	allowNet := os.Getenv("QUILZO_SANDBOX_ALLOW_NET") == "1"
+	st, err := Restrict(Rules{
+		Read:         []string{os.Getenv("QUILZO_SANDBOX_ALLOW")},
+		AllowNetwork: allowNet,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.NetworkDenied == allowNet {
+		t.Fatalf("network restriction is %v with AllowNetwork=%v: %+v",
+			st.NetworkDenied, allowNet, st)
+	}
+	c, err := net.DialTimeout("tcp", os.Getenv("QUILZO_SANDBOX_DIAL"), 2*time.Second)
+	if err != nil {
+		// A distinct marker, printed rather than logged. The parent must be
+		// able to tell "the connection was refused by the sandbox" from "the
+		// helper fell over before it got that far" — without this, a helper
+		// that dies for any reason looks like a working sandbox, which is how
+		// the first version of this test passed against a build with the
+		// network restriction removed.
+		fmt.Println("dial-denied")
+		return
+	}
+	c.Close()
+	fmt.Println("dialled")
+}
+
+// Asking for the network leaves it alone.
+//
+// Handling no network rights is how Landlock expresses "do not restrict this",
+// and it is easy to confuse with declaring the rights and granting none — which
+// denies everything. The two are opposite and this is the test that keeps them
+// apart.
+//
+// In a subprocess, like every other test here, and the first version of it was
+// not: calling Restrict in the test process sandboxes the test process, and it
+// then failed cleaning up its own temporary directory. That is the hazard the
+// package documentation warns about, demonstrated by walking into it — Restrict
+// belongs on a thread that is about to be replaced by execve and nowhere else.
+func TestAllowNetworkLeavesTCPAlone(t *testing.T) {
+	requireSandbox(t)
+	if ABI() < 4 {
+		t.Skip("no network rules on this kernel")
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestSandboxDialHelper")
+	cmd.Env = append(os.Environ(),
+		"QUILZO_SANDBOX_HELPER=1",
+		"QUILZO_SANDBOX_ALLOW="+t.TempDir(),
+		"QUILZO_SANDBOX_DIAL="+ln.Addr().String(),
+		"QUILZO_SANDBOX_ALLOW_NET=1",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "dialled") {
+		t.Fatalf("AllowNetwork did not leave TCP usable: %v\n%s", err, out)
+	}
+}
+
+// The network mask is clamped like the filesystem one.
+func TestTheNetworkMaskIsClampedToTheKernelABI(t *testing.T) {
+	if handledNetFor(3) != 0 {
+		t.Error("ABI 3 was asked for network rights it cannot know about, " +
+			"which would fail the whole ruleset and lose the filesystem " +
+			"restriction with it")
+	}
+	if handledNetFor(4)&accessNetConnectTCP == 0 {
+		t.Error("ABI 4 does not restrict outbound TCP")
 	}
 }

@@ -561,8 +561,26 @@ var rules = []Rule{
 			// Nothing registered is not a finding. A store with no extensions
 			// has no exposure, and reporting one would teach people that this
 			// rule is noise.
-			if !s.Ext.Checked || s.Ext.Registered == 0 || s.Ext.Sandboxed {
+			if !s.Ext.Checked || s.Ext.Registered == 0 {
 				return nil
+			}
+			// Sandboxed but still able to reach the network is a smaller
+			// finding than not sandboxed at all, and worth saying rather than
+			// rounding to "confined". An extension that cannot read the token
+			// store can still send whatever it was given.
+			if s.Ext.Sandboxed {
+				if !s.Ext.NetworkOpen {
+					return nil
+				}
+				return []Finding{{
+					Resource: fmt.Sprintf("%d extension(s)", s.Ext.Registered),
+					Detail: "extensions are confined to a filesystem but not " +
+						"to a network: this kernel cannot restrict outbound " +
+						"connections (Landlock ABI 4 or later)",
+					Fix: "run on Linux 6.7 or later, where outbound TCP is " +
+						"denied as well; or do not register extensions you " +
+						"would not let call out",
+				}}
 			}
 			why := s.Ext.Why
 			if why == "" {

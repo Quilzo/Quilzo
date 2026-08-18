@@ -22,6 +22,17 @@ const (
 const (
 	createRulesetVersion = 1 << 0
 	ruleTypePathBeneath  = 1
+	ruleTypeNetPort      = 2 // ABI 4
+)
+
+// Network access rights, added in ABI 4.
+//
+// TCP only. UDP is not restrictable until ABI 10, which matters and is said
+// out loud in Status: a process denied every TCP connection can still send
+// UDP, so on a kernel below 10 this bounds the obvious channels and not DNS.
+const (
+	accessNetBindTCP    = 1 << 0
+	accessNetConnectTCP = 1 << 1
 )
 
 // Filesystem access rights, by the ABI that introduced them.
@@ -60,6 +71,13 @@ type rulesetAttr struct {
 	HandledAccessFS  uint64
 	HandledAccessNet uint64 // ABI 4
 	Scoped           uint64 // ABI 6
+}
+
+// netPortAttr mirrors struct landlock_net_port_attr. Two u64s, so Go's layout
+// matches without the packing question path_beneath raises.
+type netPortAttr struct {
+	AllowedAccess uint64
+	Port          uint64
 }
 
 // pathBeneathAttr mirrors struct landlock_path_beneath_attr, which the kernel
@@ -120,6 +138,18 @@ func handledFor(abi int) (mask uint64, attrSize uintptr) {
 	return mask, attrSize
 }
 
+// handledNetFor is the network mask a given ABI understands.
+//
+// Zero below 4, where the kernel has no network rules at all and asking for
+// them would fail the whole ruleset — the filesystem restriction would be lost
+// along with the network one it was reaching for.
+func handledNetFor(abi int) uint64 {
+	if abi < 4 {
+		return 0
+	}
+	return accessNetBindTCP | accessNetConnectTCP
+}
+
 // Supported reports whether this kernel can sandbox at all.
 func Supported() bool { return ABI() > 0 }
 
@@ -146,7 +176,14 @@ func Restrict(r Rules) (Status, error) {
 	}
 
 	mask, attrSize := handledFor(abi)
-	attr := rulesetAttr{HandledAccessFS: mask}
+	netMask := handledNetFor(abi)
+	if r.AllowNetwork {
+		// Handling nothing is how Landlock expresses "do not restrict this".
+		// Declaring the rights and then adding no rule denies everything, so
+		// the two must not be confused.
+		netMask = 0
+	}
+	attr := rulesetAttr{HandledAccessFS: mask, HandledAccessNet: netMask}
 	fd, _, errno := syscall.Syscall(sysCreateRuleset,
 		uintptr(unsafe.Pointer(&attr)), attrSize, 0)
 	if errno != 0 {
@@ -185,10 +222,19 @@ func Restrict(r Rules) (Status, error) {
 		}
 	}
 
+	// No net rules are added on purpose. Declaring the rights and granting
+	// none denies every TCP bind and connect, which is what an extension
+	// should have: it is handed its input on stdin and answers on stdout, so a
+	// socket is either a fetch nobody asked for or an exfiltration channel.
 	if _, _, errno := syscall.Syscall(sysRestrictSelf, fd, 0, 0); errno != 0 {
 		return st, fmt.Errorf("cannot enforce the ruleset: %w", errno)
 	}
 	st.Enforced = true
+	st.NetworkDenied = netMask != 0
+	if st.NetworkDenied && abi < 10 {
+		st.NetworkWhy = "TCP only; this kernel cannot restrict UDP (Landlock " +
+			"ABI 10 or later), so datagram traffic including DNS is unbounded"
+	}
 	return st, nil
 }
 

@@ -183,6 +183,11 @@ type ExtFacts struct {
 	// reasons applies — a kernel without Landlock and a build that cannot use
 	// it need different answers from an operator.
 	Why string `json:"why,omitempty"`
+	// NetworkOpen says the sandbox does not bound what an extension can send.
+	// True on a kernel below Landlock ABI 4, and reported separately from
+	// Sandboxed because a filesystem-only sandbox is a real improvement and
+	// not the whole control.
+	NetworkOpen bool `json:"network_open"`
 	// Checked distinguishes "no extensions" from "nobody looked". An absent
 	// answer reported as a clean one is the failure this scanner exists to
 	// avoid.

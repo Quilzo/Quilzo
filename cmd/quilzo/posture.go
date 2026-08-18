@@ -55,6 +55,9 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 		s.Ext = posture.ExtFacts{Registered: len(reg.Extensions), Checked: true}
 		if sandbox.Supported() {
 			s.Ext.Sandboxed = true
+			// Below ABI 4 the kernel has no network rules, so the sandbox
+			// bounds what an extension can read and not what it can send.
+			s.Ext.NetworkOpen = sandbox.ABI() < 4
 		} else {
 			s.Ext.Why = "this kernel has no Landlock (Linux 5.13 or later)"
 		}

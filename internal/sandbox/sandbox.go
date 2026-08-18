@@ -56,6 +56,14 @@ type Rules struct {
 	Read []string
 	// ReadWrite are paths it may read and write.
 	ReadWrite []string
+	// AllowNetwork leaves TCP alone.
+	//
+	// Off by default, so a sandboxed process reaches nothing. An extension is
+	// handed its input on stdin and answers on stdout; a socket it opens is
+	// either a fetch nobody asked for or a way out with the data. Turning this
+	// on is a decision somebody makes for an extension that genuinely needs
+	// one.
+	AllowNetwork bool
 }
 
 // Status describes what was actually enforced.
@@ -67,4 +75,9 @@ type Status struct {
 	// Why explains a sandbox that did not happen, for a caller that has to
 	// decide whether to proceed without one.
 	Why string
+	// NetworkDenied says TCP was restricted as well as the filesystem.
+	NetworkDenied bool
+	// NetworkWhy names what the network restriction does not cover, so a
+	// caller is not left believing it covers more than it does.
+	NetworkWhy string
 }
