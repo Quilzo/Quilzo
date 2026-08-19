@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -180,5 +181,33 @@ func TestACatalogueWithoutTermsClaimsNone(t *testing.T) {
 	_, out := getJSON(t, st, "/catalogue.json")
 	if _, present := out["terms"]; present {
 		t.Error("terms were published for a site that declared none")
+	}
+}
+
+// A page points at the catalogue, so an agent finds it without being told.
+//
+// Shopping agents arrive at a page rather than at a well-known path, so the
+// page is where the pointer has to be. A feed nobody can discover is a feed
+// nobody reads.
+func TestAPagePointsAtTheCatalogue(t *testing.T) {
+	st := catalogueSite(t, "shop")
+	got := st.injectHead("<html><head></head><body></body></html>", "index", "")
+	if !strings.Contains(got, `href="/catalogue.json"`) {
+		t.Errorf("no page points at the catalogue:\n%s", got)
+	}
+	if !strings.Contains(got, `rel="alternate"`) {
+		t.Error("the pointer is not marked as an alternate representation")
+	}
+}
+
+// A site with no catalogue points at nothing.
+//
+// A link to a route that 404s teaches whatever followed it that this site's
+// metadata is unreliable, which is worse than having none.
+func TestASiteWithoutACatalogueLinksToNothing(t *testing.T) {
+	st := catalogueSite(t, "")
+	got := st.injectHead("<html><head></head><body></body></html>", "index", "")
+	if strings.Contains(got, "catalogue.json") {
+		t.Error("a site with no catalogue advertised one")
 	}
 }
