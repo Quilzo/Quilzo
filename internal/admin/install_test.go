@@ -51,12 +51,87 @@ func TestTheManifestCarriesWhatMakesItInstallable(t *testing.T) {
 	if name, _ := doc["name"].(string); name == "" {
 		t.Error("no name, so the launcher entry has nothing to say")
 	}
-	// No icons, on purpose. Asserted so that adding one is a decision: an
-	// icons array naming a file this server does not serve is worse than none,
-	// because the platform installs a broken image instead of generating one.
-	if _, present := doc["icons"]; present {
-		t.Error("the manifest declares icons; this origin serves no image " +
-			"assets, so every entry would be a request that 404s")
+	// An icon, and it has to be one this origin actually answers for.
+	//
+	// This asserted the opposite until there was a logo: no icons array at
+	// all, on the argument that a generated fallback beats a request that
+	// 404s. The argument was about not having a mark rather than about icons,
+	// and the risk it named is the one checked below — every declared source
+	// is fetched, here, rather than discovered broken on somebody's desktop.
+	icons, _ := doc["icons"].([]any)
+	if len(icons) == 0 {
+		t.Fatal("the manifest declares no icon, so an installed window gets " +
+			"a generated one and the mark is not on it")
+	}
+	srv, token := setup(t)
+	for _, entry := range icons {
+		e, _ := entry.(map[string]any)
+		src, _ := e["src"].(string)
+		if src == "" {
+			t.Errorf("an icon entry names no source: %v", e)
+			continue
+		}
+		w := get(t, srv, src, token)
+		if w.Code != 200 {
+			t.Errorf("the manifest points at %s and this server answers %d. "+
+				"A declared icon that 404s installs a broken image where a "+
+				"generated one would have done", src, w.Code)
+			continue
+		}
+		if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "image/") {
+			t.Errorf("%s is served as %q, which is not an image", src, ct)
+		}
+	}
+}
+
+// The mark is defined once, and every surface draws that one.
+//
+// Four places want it — the header, the sign-in page, the favicon and the
+// installed icon — and four copies of a path string is four things to keep in
+// step. The one that falls behind is always the one nobody looks at, which
+// here is the sign-in page, seen only by people who are not signed in.
+func TestEverySurfaceDrawsTheSameMark(t *testing.T) {
+	if len(MarkPath) < 40 {
+		t.Fatalf("MarkPath is %d characters; that is not a logo and every "+
+			"check below would pass against nothing", len(MarkPath))
+	}
+	srv, token := setup(t)
+
+	for _, page := range []struct{ path, token, what string }{
+		{"/", token, "the header on a signed-in screen"},
+		{"/signin", "", "the sign-in page, which nobody signed in ever sees"},
+	} {
+		body := get(t, srv, page.path, page.token).Body.String()
+		if !strings.Contains(body, MarkPath) {
+			t.Errorf("%s does not draw the mark from MarkPath, so it is a "+
+				"copy that will fall behind", page.what)
+		}
+	}
+
+	// And the file a browser fetches carries the same path.
+	w := get(t, srv, "/icon.svg", token)
+	if !strings.Contains(w.Body.String(), MarkPath) {
+		t.Error("/icon.svg draws something other than MarkPath")
+	}
+	// The nib is a hole rather than a white shape, which is what lets one mark
+	// work on the light theme, the dark theme and an operator's own accent.
+	// Without evenodd the subpaths fill solid and the nib disappears.
+	if !strings.Contains(w.Body.String(), "evenodd") {
+		t.Error("the mark is not drawn with fill-rule=evenodd, so the nib is " +
+			"filled in rather than knocked out and the shape is a blob")
+	}
+}
+
+// The icon carries the operator's colour, not a hard-coded one.
+func TestTheIconIsPaintedInTheBrandColour(t *testing.T) {
+	if !strings.Contains(MarkSVG("#7a2618"), "#7a2618") {
+		t.Error("MarkSVG ignores the colour it is given")
+	}
+	// And it never emits currentColor, which has nothing to inherit from in a
+	// file fetched as an icon and renders as black.
+	if strings.Contains(MarkSVG(""), "currentColor") {
+		t.Error("the standalone icon uses currentColor; fetched as a favicon " +
+			"there is no inherited colour and it paints black")
 	}
 }
 

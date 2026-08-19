@@ -163,6 +163,8 @@ agents and integrations
   quilzo agent list | show NAME | check     what is declared, and whether it still validates
   quilzo agents                            what models have been doing, and
                                             which are not accepting refusals
+  quilzo brand init                        claim rules: what needs substantiating
+  quilzo brand list | check                what this shop may not say unbacked
   quilzo peer add NAME https://host        replicate from another quilzo store
   quilzo peer pull NAME                    fetch its objects; lands in quarantine
   quilzo peer list | adopt NAME | remove   what is paired, and making it the draft
@@ -316,6 +318,8 @@ func main() {
 		err = cmdAgent(root, cmdArgs)
 	case "peer":
 		err = cmdPeer(root, cmdArgs)
+	case "brand":
+		err = cmdBrand(root, cmdArgs)
 	// The literal rather than sandboxCmd, because the test that keeps the
 	// privilege table honest reads this switch from the source and cannot
 	// resolve a constant.
@@ -747,6 +751,45 @@ func cmdPublish(root string, args []string) error {
 			}
 			fmt.Printf("  %soverriding %d blocking failure(s): %s%s\n",
 				yellow, n, *reason, reset)
+		}
+	}
+
+	// The claims gate, with the other content gates and before the one about
+	// people. A claim nobody can substantiate should be caught before two
+	// colleagues are asked to approve it, for the same reason an accessibility
+	// failure is.
+	//
+	// It reads its rules from a file that may not exist, which is the ordinary
+	// state and not a failure. A file that exists and does not parse IS a
+	// failure, because treating a broken rules file as "no rules" would make
+	// corrupting it the way to publish anything.
+	if rules, berr := loadBrand(root); berr != nil {
+		record(root, caller.auditRecord("publish", "/", audit.Denied,
+			map[string]string{"reason": "claim rules unreadable"}))
+		return errBlocked{berr}
+	} else if len(rules.Terms) > 0 {
+		candidate := target
+		if candidate == "" {
+			candidate = s.GetRef(site.RefDraft)
+		}
+		findings, _, ferr := brandFindings(s, rules, candidate)
+		if ferr != nil {
+			record(root, caller.auditRecord("publish", "/", audit.Denied,
+				map[string]string{"reason": "claim check could not run"}))
+			return errBlocked{fmt.Errorf(
+				"the claim check could not run, so publishing would claim a "+
+					"check that did not happen: %w", ferr)}
+		}
+		if len(findings) > 0 {
+			printBrand(findings)
+			record(root, caller.auditRecord("publish", "/", audit.Denied,
+				map[string]string{
+					"reason": "claims", "count": fmt.Sprintf("%d", len(findings))}))
+			return errBlocked{fmt.Errorf(
+				"%d claim(s) this business would have to stand behind and "+
+					"nothing here substantiates.\n"+
+					"  Add the field each one names, or say something else",
+				len(findings))}
 		}
 	}
 
