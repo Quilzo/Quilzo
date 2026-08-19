@@ -224,6 +224,25 @@
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"]  { color-scheme: dark; }
 
+/* The operator's accent, when one is configured.
+ *
+ * A single custom property set on the root element, and every role that should
+ * follow it reads through this. Applied with a fallback rather than by
+ * overwriting --primary, so a deployment that sets nothing is byte-identical to
+ * one that never heard of branding — and the AAA contrast the palette was built
+ * for is the default rather than something a brand can silently drop below.
+ *
+ * The colour reaching this variable is validated in brand.go against a hex
+ * pattern before it is written into the style attribute. Nothing else may land
+ * here, which is why this is one property and not a stylesheet. */
+.brand .mark, .brand span { color: var(--brand, inherit); }
+.mark-initial {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: var(--shape-s);
+  background: var(--brand, var(--primary)); color: var(--on-primary);
+  font: var(--label-md); font-weight: 800; flex: none;
+}
+
 /* -- base ------------------------------------------------------------------ */
 
 * { box-sizing: border-box; }
