@@ -259,7 +259,7 @@ func exportJSON(s Site) ([]File, error) {
 		}
 		// Beside content/ rather than inside it. A directory called content
 		// should hold content: this sat next to pages.json, so the obvious
-		// `scrivet import content/*.json` failed on a file this tool wrote
+		// `quilzo import content/*.json` failed on a file this tool wrote
 		// itself, which reads as the importer being broken.
 		out = append(out, File{Path: "last-changed.json", Body: append(b, '\n')})
 	}
