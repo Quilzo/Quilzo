@@ -140,6 +140,22 @@ type Runner struct {
 	// step is not charged, so without this the loop is unbounded on exactly
 	// the input a hijacked model produces.
 	MaxTurns int
+	// Record is called with the receipt for every run, however it ended.
+	//
+	// A hook rather than something the caller does afterwards, because a
+	// caller that has to remember is a caller that forgets — and the runs
+	// worth recording most are the ones that ended badly, which are exactly
+	// the paths where an afterwards-step gets skipped by an early return.
+	//
+	// Called for a cancelled run, a model that could not be reached and a
+	// budget that ran out, not only for a clean finish. An outcome record that
+	// only exists when things went well is a record of nothing: the buyer
+	// disputing a charge and the operator investigating a runaway are both
+	// asking about the runs that are missing.
+	//
+	// Nil records nothing, which is right for a test and wrong for anything
+	// somebody is billed for.
+	Record func(Receipt)
 }
 
 // ErrNoDecide is returned when a runner has no way to decide anything.
@@ -153,6 +169,12 @@ var ErrNoDecide = errors.New("this runner has no Decide function")
 func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error) {
 	t := Trace{Agent: s.Manifest().Name, Goal: goal}
 	if r.Decide == nil {
+		// Recorded too. A runner wired without a way to decide anything is a
+		// misconfiguration that produces no work and no error anybody sees
+		// unless the caller checks — which is exactly the kind of silence an
+		// outcome record exists to break.
+		t.Stopped = ErrNoDecide.Error()
+		r.record(t, s)
 		return t, ErrNoDecide
 	}
 	maxTurns := r.MaxTurns
@@ -168,6 +190,7 @@ func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error)
 		if err := ctx.Err(); err != nil {
 			t.Stopped = "cancelled"
 			t.Spent = spendOf(s)
+			r.record(t, s)
 			return t, err
 		}
 
@@ -175,6 +198,7 @@ func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error)
 		if err != nil {
 			t.Stopped = "the model could not be asked: " + err.Error()
 			t.Spent = spendOf(s)
+			r.record(t, s)
 			return t, err
 		}
 
@@ -254,7 +278,16 @@ func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error)
 	}
 	t.Tainted = s.Tainted()
 	t.Spent = spendOf(s)
+	r.record(t, s)
 	return t, nil
+}
+
+// record hands the receipt to the host, if it asked for one.
+func (r Runner) record(t Trace, s *Session) {
+	if r.Record == nil {
+		return
+	}
+	r.Record(t.Receipt(s))
 }
 
 // Publishable reports whether what a run produced may go live without a person.

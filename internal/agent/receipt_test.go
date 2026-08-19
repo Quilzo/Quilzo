@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -150,5 +151,86 @@ func TestTheDetailCarriesWhatAnAuditorNeeds(t *testing.T) {
 	}
 	if d["refused"] != "1" || d["attempted"] != "publish" {
 		t.Errorf("the payload does not describe the refusal: %v", d)
+	}
+}
+
+// Every run produces a receipt, however it ended.
+//
+// The runs worth recording most are the ones that ended badly — a buyer
+// disputing a charge and an operator investigating a runaway are both asking
+// about the runs that are missing. An outcome record that only exists on the
+// happy path is a record of nothing.
+func TestEveryRunIsRecordedHoweverItEnds(t *testing.T) {
+	var got []Receipt
+	keep := func(r Receipt) { got = append(got, r) }
+
+	// A clean finish.
+	s := NewSession(readOnly(t), nil)
+	r := Runner{
+		Decide:  script(Action{Op: "read_page"}, Action{Say: "done"}),
+		Perform: echoPerform, Record: keep,
+	}
+	if _, err := r.Run(context.Background(), s, "g"); err != nil {
+		t.Fatal(err)
+	}
+
+	// A model that cannot be reached.
+	s2 := NewSession(readOnly(t), nil)
+	broken := Runner{
+		Decide: func(context.Context, string, []Observation) (Action, error) {
+			return Action{}, errors.New("the model is down")
+		},
+		Perform: echoPerform, Record: keep,
+	}
+	if _, err := broken.Run(context.Background(), s2, "g"); err == nil {
+		t.Fatal("a broken model returned no error")
+	}
+
+	// A cancelled run.
+	s3 := NewSession(readOnly(t), nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cancelled := Runner{
+		Decide: script(Action{Op: "read_page"}), Perform: echoPerform, Record: keep,
+	}
+	if _, err := cancelled.Run(ctx, s3, "g"); err == nil {
+		t.Fatal("a cancelled run returned no error")
+	}
+
+	if len(got) != 3 {
+		t.Fatalf("recorded %d receipts, want 3 — a run that ended badly is "+
+			"the one somebody will come asking about", len(got))
+	}
+	// And only the clean one is billable.
+	billable := 0
+	for _, rec := range got {
+		if ok, _ := rec.Billable(); ok {
+			billable++
+		}
+	}
+	if billable != 1 {
+		t.Errorf("%d receipts are billable, want 1", billable)
+	}
+}
+
+// A runner that cannot start is recorded as well.
+//
+// It produces no work and no error anybody sees unless the caller checks, which
+// is the kind of silence an outcome record exists to break.
+func TestARunnerThatCannotStartIsStillRecorded(t *testing.T) {
+	var got []Receipt
+	s := NewSession(readOnly(t), nil)
+	r := Runner{Record: func(rec Receipt) { got = append(got, rec) }}
+
+	if _, err := r.Run(context.Background(), s, "g"); err == nil {
+		t.Fatal("a runner with no Decide returned no error")
+	}
+	if len(got) != 1 {
+		t.Fatalf("recorded %d receipts, want 1", len(got))
+	}
+	if ok, why := got[0].Billable(); ok {
+		t.Error("a runner that never started produced a billable outcome")
+	} else if why == "" {
+		t.Error("the receipt does not say why there is nothing to bill")
 	}
 }
