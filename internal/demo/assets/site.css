@@ -1,212 +1,142 @@
-/* Gram — the demonstration site.
-   One stylesheet, no fonts fetched, nothing external: the generated CSP for
-   this site names no third-party host, and that is only true if the design
-   does not quietly want one. */
-
+/* Marginalia — the demonstration shop's stylesheet.
+ *
+ * One file, no build step, no framework. It is here to make the demonstration
+ * legible rather than to be admired: somebody reading it should be able to see
+ * what every rule is for.
+ *
+ * Both colour schemes are defined in one place with light-dark(), so a page has
+ * one set of tokens rather than a light set and a dark override that drifts. */
 :root {
-  --ink:        #1b1a1f;
-  --ink-soft:   #5c5a66;
-  --ground:     #fbfaf8;
-  --panel:      #ffffff;
-  --line:       #e6e3dd;
-  --accent:     #b8452f;
-  --accent-ink: #ffffff;
-  --shadow:     0 1px 2px rgba(27,26,31,.06), 0 8px 24px rgba(27,26,31,.05);
-  --radius:     14px;
-  --measure:    64ch;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ink:      #f2f0ec;
-    --ink-soft: #a8a4b0;
-    --ground:   #131217;
-    --panel:    #1c1b21;
-    --line:     #2e2c35;
-    --accent:   #ff8a6b;
-    --accent-ink: #241009;
-    --shadow:   0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
-  }
+  color-scheme: light dark;
+  --ink:        light-dark(#1a1c1e, #e2e2e5);
+  --muted:      light-dark(#5a5f65, #a8adb4);
+  --ground:     light-dark(#fbf9f6, #131416);
+  --raised:     light-dark(#ffffff, #1d1f22);
+  --line:       light-dark(#e3ded6, #33363a);
+  --accent:     light-dark(#00515f, #7ad3e3);
+  --on-accent:  light-dark(#ffffff, #00363d);
+  --good:       light-dark(#1c6b3f, #7fd6a2);
+  --warn:       light-dark(#8a5a00, #f0c060);
+  --gone:       light-dark(#8a2f2f, #f0a0a0);
+  --radius: 18px;
 }
 
 * { box-sizing: border-box; }
-
 body {
-  margin: 0;
-  background: var(--ground);
-  color: var(--ink);
-  font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-        "Helvetica Neue", Arial, sans-serif;
-  -webkit-text-size-adjust: 100%;
+  margin: 0; background: var(--ground); color: var(--ink);
+  font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-
-.wrap { width: min(100% - 2rem, 1080px); margin-inline: auto; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
 
 .skip {
-  position: absolute; left: -9999px;
-  background: var(--accent); color: var(--accent-ink);
-  padding: .6rem 1rem; border-radius: 0 0 var(--radius) 0; z-index: 10;
+  position: absolute; left: -9999px; top: 0; background: var(--accent);
+  color: var(--on-accent); padding: .6rem 1rem; z-index: 10;
 }
-.skip:focus { left: 0; top: 0; }
+.skip:focus { left: 0; }
 
-/* --- header ------------------------------------------------------------- */
-
-.topbar {
-  position: sticky; top: 0; z-index: 5;
-  background: color-mix(in srgb, var(--ground) 88%, transparent);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--line);
-}
+.topbar { border-bottom: 1px solid var(--line); background: var(--raised); }
 .bar {
-  display: flex; align-items: center; gap: 1.5rem;
-  min-height: 60px; flex-wrap: wrap;
+  display: flex; gap: 1.5rem; align-items: center; justify-content: space-between;
+  min-height: 68px; flex-wrap: wrap;
 }
 .wordmark {
-  font-weight: 700; font-size: 1.25rem; letter-spacing: -.02em;
+  font-weight: 650; font-size: 1.15rem; letter-spacing: -.01em;
   color: var(--ink); text-decoration: none;
 }
-.mainnav {
-  display: flex; gap: .25rem; list-style: none; margin: 0; padding: 0;
-  flex-wrap: wrap;
-}
-.mainnav a {
-  display: block; padding: .4rem .7rem; border-radius: 999px;
-  color: var(--ink-soft); text-decoration: none; font-size: .95rem;
-}
-.mainnav a:hover { color: var(--ink); background: var(--panel); }
+.mainnav { display: flex; gap: 1.1rem; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
+.mainnav a { color: var(--muted); text-decoration: none; padding: .3rem 0; }
+.mainnav a:hover { color: var(--ink); }
 .mainnav a[aria-current="page"] {
-  color: var(--accent-ink); background: var(--accent); font-weight: 600;
+  color: var(--ink); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent);
 }
 
-/* --- headings ----------------------------------------------------------- */
+h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); letter-spacing: -.02em; margin: 2rem 0 .5rem; }
+h2.section { font-size: 1.1rem; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); margin: 2.5rem 0 1rem; }
+.intro { font-size: 1.1rem; color: var(--muted); max-width: 62ch; margin: 0 0 2rem; }
 
-main { padding-block: 2.5rem 4rem; }
-h1 {
-  font-size: clamp(1.8rem, 1.2rem + 2.4vw, 2.6rem);
-  line-height: 1.15; letter-spacing: -.02em; margin: 0 0 .4rem;
-  text-wrap: balance;
-}
-.intro {
-  color: var(--ink-soft); font-size: 1.1rem; max-width: var(--measure);
-  margin: 0 0 2rem;
-}
-
-/* --- the feed ----------------------------------------------------------- */
-
+/* The product grid. Auto-fill rather than a fixed column count, so the same
+ * rule serves a phone and a wide screen without a breakpoint to get wrong. */
 .grid {
-  list-style: none; margin: 0; padding: 0;
-  display: grid; gap: 1.5rem;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  display: grid; gap: 1.4rem; list-style: none; margin: 0 0 3rem; padding: 0;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
 }
 .card {
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow);
+  background: var(--raised); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden;
+  display: flex; flex-direction: column;
 }
-.shot { display: block; }
-.card img { display: block; width: 100%; height: auto; }
-.cap { padding: .9rem 1rem 1.1rem; }
-.by { margin: 0 0 .35rem; font-size: .9rem; }
-.handle { font-weight: 650; }
-.handle::before { content: "@"; opacity: .5; }
-.where { color: var(--ink-soft); }
-.where::before { content: " · "; color: var(--line); }
-.text { margin: 0 0 .6rem; }
-.meta {
-  margin: 0; font-size: .82rem; color: var(--ink-soft);
-  display: flex; gap: .75rem; flex-wrap: wrap;
-  font-variant-numeric: tabular-nums;
-}
-.likes { font-weight: 600; color: var(--ink); }
-.topic::before { content: "#"; opacity: .5; }
-
-/* --- most liked --------------------------------------------------------- */
-
-.chart { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
-.rank {
-  display: grid; grid-template-columns: 120px 1fr; gap: 1rem;
-  align-items: center;
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: .75rem; box-shadow: var(--shadow);
-}
-.rank img { border-radius: 10px; width: 120px; height: 120px; object-fit: cover; }
-
-/* --- topic chips -------------------------------------------------------- */
-
-.chips { display: flex; gap: .5rem; flex-wrap: wrap; margin: 0 0 1.5rem; }
-.chips a {
-  padding: .35rem .8rem; border-radius: 999px;
-  border: 1px solid var(--line); background: var(--panel);
-  color: var(--ink); text-decoration: none; font-size: .9rem;
-}
-.chips a::before { content: "#"; opacity: .5; }
-.chips a:hover { border-color: var(--accent); color: var(--accent); }
-
-/* --- a single image, and profiles --------------------------------------- */
-
-.single { margin: 0 0 2rem; max-width: 480px; }
-.single img {
-  width: 100%; height: auto; border-radius: var(--radius);
-  border: 1px solid var(--line);
-}
-.single figcaption { color: var(--ink-soft); padding-top: .6rem; }
-
-.profile {
-  display: grid; grid-template-columns: 160px 1fr; gap: 1.5rem;
-  align-items: start; margin-bottom: 2rem;
-}
-.avatar { border-radius: 50%; width: 160px; height: 160px; }
-.display { font-size: 1.4rem; font-weight: 700; margin: 0; }
-.profile .handle { color: var(--ink-soft); margin: 0 0 .8rem; }
-.bio { max-width: var(--measure); }
-
-/* --- the message form --------------------------------------------------- */
-
-.compose {
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 1.5rem;
-  max-width: 34rem; box-shadow: var(--shadow);
-}
-.field { display: grid; gap: .3rem; margin: 0 0 1rem; }
-.field label { font-weight: 600; font-size: .9rem; }
-.compose input, .compose select, .compose textarea {
-  font: inherit; color: inherit; background: var(--ground);
-  border: 1px solid var(--line); border-radius: 8px; padding: .55rem .7rem;
-  width: 100%;
-}
-.compose textarea { resize: vertical; }
-.compose button {
-  font: inherit; font-weight: 600; cursor: pointer;
-  background: var(--accent); color: var(--accent-ink);
-  border: 0; border-radius: 999px; padding: .6rem 1.4rem;
-}
-.privacy { font-size: .85rem; color: var(--ink-soft); margin: 1rem 0 0; }
-
-/* The honeypot. Hidden from sight and from assistive technology, because a
-   screen reader user filling it in would be silently rejected — which is the
-   accessibility bug every honeypot ships with unless it says aria-hidden. */
+.shot { width: 100%; height: auto; display: block; aspect-ratio: 1; object-fit: cover; }
+.cap { padding: .9rem 1rem 1.1rem; display: flex; flex-direction: column; gap: .35rem; }
+.name { font-weight: 620; margin: 0; }
+.sum { margin: 0; color: var(--muted); font-size: .92rem; }
+.price { margin: .3rem 0 0; font-variant-numeric: tabular-nums; font-weight: 600;
+  display: flex; align-items: baseline; gap: .1rem; }
+/* The price a person reads is a stored field, not a computed one: the template
+ * language has no arithmetic, on purpose. The number in pence is stored beside
+ * it and is what the catalogue feed serves, because that is the one a machine
+ * can compare. */
+.price .amount { margin-right: .4rem; }
 .hp { position: absolute; left: -9999px; }
+.meta { margin: .2rem 0 0; font-size: .8rem; color: var(--muted);
+  display: flex; gap: .6rem; flex-wrap: wrap; }
+.lead { margin: .1rem 0 0; font-size: .8rem; color: var(--warn); }
 
-/* --- prose and footer --------------------------------------------------- */
-
-.prose { max-width: var(--measure); }
-.prose h2 { margin-top: 2rem; letter-spacing: -.01em; }
-
-.foot {
-  border-top: 1px solid var(--line); margin-top: 4rem; padding-block: 2rem;
-  color: var(--ink-soft); font-size: .9rem;
+/* Availability is a closed set in the data, so it can be a closed set here.
+ * A colour per state rather than per guess. */
+.avail {
+  font-size: .72rem; font-weight: 600; letter-spacing: .02em;
+  padding: .18rem .55rem; border-radius: 999px; white-space: nowrap;
+  border: 1px solid currentColor;
 }
-.foot p { margin: 0 0 .3rem; }
+.avail-in_stock { color: var(--good); }
+.avail-low_stock { color: var(--warn); }
+.avail-made_to_order { color: var(--accent); }
+.avail-sold_out { color: var(--gone); }
+
+.filters { display: flex; gap: .7rem; margin: 0 0 1.6rem; flex-wrap: wrap; }
+.filters a {
+  border: 1px solid var(--line); border-radius: 999px; padding: .4rem 1rem;
+  text-decoration: none; color: var(--ink); background: var(--raised);
+}
+.filters a:hover { border-color: var(--accent); color: var(--accent); }
+
+.stockists { list-style: none; margin: 0 0 3rem; padding: 0;
+  display: grid; gap: 1.2rem; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.stockist { background: var(--raised); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1.2rem; }
+.shop { font-weight: 620; margin: 0 0 .2rem; }
+.where { margin: 0 0 .6rem; color: var(--muted); }
+.addr { margin: 0 0 .6rem; white-space: pre-line; font-size: .9rem; color: var(--muted); }
+
+.enquiry { max-width: 34rem; margin: 0 0 1.5rem; }
+.field { display: flex; flex-direction: column; gap: .35rem; margin: 0 0 1.1rem; }
+.field label { font-weight: 560; }
+.req { font-weight: 400; font-size: .78rem; color: var(--muted); }
+.field input, .field textarea, .field select {
+  font: inherit; padding: .6rem .7rem; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--raised); color: var(--ink);
+}
+.field input:focus, .field textarea:focus, .field select:focus {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+button {
+  font: inherit; font-weight: 600; padding: .65rem 1.4rem; border: 0;
+  border-radius: 999px; background: var(--accent); color: var(--on-accent);
+  cursor: pointer;
+}
+.privacy { max-width: 52ch; font-size: .88rem; color: var(--muted);
+  border-left: 3px solid var(--line); padding-left: 1rem; }
+
+.prose { max-width: 68ch; margin: 0 0 3rem; }
+.prose h2 { margin: 2rem 0 .6rem; font-size: 1.25rem; }
+.prose p { margin: 0 0 1rem; }
+.updated { color: var(--muted); font-size: .88rem; }
+
+.foot { border-top: 1px solid var(--line); margin-top: 3rem; padding: 2rem 0 3rem;
+  background: var(--raised); }
+.footnav { display: flex; gap: 1.2rem; list-style: none; margin: 0 0 .8rem; padding: 0; }
+.footnav a { color: var(--muted); }
+.colophon { color: var(--muted); font-size: .88rem; margin: 0; }
 
 a { color: var(--accent); }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-img { max-width: 100%; }
-
-@media (max-width: 560px) {
-  .profile { grid-template-columns: 1fr; }
-  .rank { grid-template-columns: 84px 1fr; }
-  .rank img { width: 84px; height: 84px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  * { animation: none !important; transition: none !important; }
-}

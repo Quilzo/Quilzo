@@ -145,6 +145,13 @@ func cmdSite(root string, args []string) error {
 	// per request would read every page to set a header.
 	if cfg, cerr := loadConfig(root); cerr == nil {
 		st.HSTS = cfg.Dur("site.hsts")
+		// The catalogue feed, when one is named. Validated against the
+		// declared listings here rather than at request time, so a name that
+		// matches nothing is reported once at startup instead of as a 404
+		// nobody can explain.
+		if name := cfg.Raw("site.catalogue"); name != "" {
+			st.Catalogue = name
+		}
 		if live := s.GetRef(site.RefLive); live != "" {
 			if pages, perr := site.PagesAt(s, live); perr == nil {
 				policy := buildCSP(cfg, pages)

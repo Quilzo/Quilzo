@@ -259,6 +259,19 @@ var settings = []Setting{
 			"with the site; the flag still overrides it for one run.",
 	},
 	{
+		Key: "site.catalogue", Kind: Text, Default: "",
+		Summary: "which listing is served at /catalogue.json for shopping agents",
+		Why: "The endpoint that serves it has existed since the catalogue " +
+			"work landed and nothing set this, so it answered 404 on every " +
+			"install — a feature that was written, tested and unreachable. " +
+			"Named in configuration rather than chosen by the request, " +
+			"because a caller that could pick the listing would be able to " +
+			"select from every one declared, including the ones a page " +
+			"embeds behind a filter somebody assumed was private. Empty " +
+			"means no feed, which is the right default: a shop publishes " +
+			"one on purpose.",
+	},
+	{
 		Key: "site.hsts", Kind: Duration, Default: "0s",
 		Summary:  "Strict-Transport-Security max-age; 0 disables the header",
 		Controls: []string{"SC-8", "SC-23"},
