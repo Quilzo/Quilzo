@@ -163,6 +163,7 @@ agents and integrations
   quilzo agent list | show NAME | check     what is declared, and whether it still validates
   quilzo agents                            what models have been doing, and
                                             which are not accepting refusals
+  quilzo rights [REF]                      image licences: expired, lapsing, undeclared
   quilzo brand init                        claim rules: what needs substantiating
   quilzo brand list | check                what this shop may not say unbacked
   quilzo peer add NAME https://host        replicate from another quilzo store
@@ -320,6 +321,8 @@ func main() {
 		err = cmdPeer(root, cmdArgs)
 	case "brand":
 		err = cmdBrand(root, cmdArgs)
+	case "rights":
+		err = cmdRights(root, cmdArgs)
 	// The literal rather than sandboxCmd, because the test that keeps the
 	// privilege table honest reads this switch from the source and cannot
 	// resolve a constant.
@@ -751,6 +754,43 @@ func cmdPublish(root string, args []string) error {
 			}
 			fmt.Printf("  %soverriding %d blocking failure(s): %s%s\n",
 				yellow, n, *reason, reset)
+		}
+	}
+
+	// The rights gate, with the other content gates.
+	//
+	// Only an expiry that has passed blocks. Lapsing and undeclared are
+	// printed and let through, because a gate that refuses three different
+	// things is a gate people switch off — and the lapsing report is the half
+	// that is actually worth having, since an expired licence cannot be fixed
+	// retroactively and one expiring in six weeks can.
+	if lib, lerr := openMedia(root); lerr == nil {
+		candidate := target
+		if candidate == "" {
+			candidate = s.GetRef(site.RefDraft)
+		}
+		at := time.Now()
+		rep, rerr := checkRights(s, lib, candidate, at)
+		if rerr != nil {
+			record(root, caller.auditRecord("publish", "/", audit.Denied,
+				map[string]string{"reason": "rights check could not run"}))
+			return errBlocked{fmt.Errorf(
+				"the image rights check could not run, so publishing would "+
+					"claim a check that did not happen: %w", rerr)}
+		}
+		if n := len(rep.Expired) + len(rep.Lapsing) + len(rep.Undeclared); n > 0 {
+			printRights(rep, at)
+		}
+		if rep.Blocking() > 0 {
+			record(root, caller.auditRecord("publish", "/", audit.Denied,
+				map[string]string{
+					"reason":  "image rights",
+					"expired": fmt.Sprintf("%d", rep.Blocking()),
+				}))
+			return errBlocked{fmt.Errorf(
+				"%d image(s) would be published under permission that has "+
+					"ended.\n  Renew the licence and record the new date, or "+
+					"take the image off the page", rep.Blocking())}
 		}
 	}
 

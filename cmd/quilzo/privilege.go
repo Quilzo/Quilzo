@@ -92,7 +92,11 @@ var commandNeeds = map[string]need{
 	// needs more than the right to publish through it. An author who can
 	// remove the rule standing between their copy and the public has the
 	// gate as a setting rather than as a gate.
-	"brand":           {action: auth.ActGrant},
+	"brand": {action: auth.ActGrant},
+	// Reading which image licences are about to lapse is reading the library,
+	// not changing it. The gate that acts on the same answer lives inside
+	// publish, which has its own privilege.
+	"rights":          {action: auth.ActView},
 	"agent templates": {action: auth.ActView},
 	"agent list":      {action: auth.ActView},
 	"agent show":      {action: auth.ActView},

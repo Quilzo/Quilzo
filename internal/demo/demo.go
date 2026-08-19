@@ -70,6 +70,7 @@ import (
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/taxonomy"
@@ -88,8 +89,13 @@ type Asset struct {
 	// Alt is the description stored with it. Written here rather than left to
 	// the installer because an asset library full of undescribed images is the
 	// thing this product refuses to publish.
-	Alt   string
-	Bytes []byte
+	Alt string
+	// Rights is what permits publishing it. Declared for every asset here,
+	// because a demonstration that ships twelve undeclared images teaches that
+	// the field is optional — and one of them lapses, because the feature
+	// worth showing is the warning rather than the refusal.
+	Rights media.Rights
+	Bytes  []byte
 }
 
 // Site is everything an installer has to create.
