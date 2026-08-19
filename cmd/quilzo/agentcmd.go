@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/agentexec"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/agentmodel"
+	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/store"
@@ -298,11 +301,26 @@ func agentCheck(root string) error {
 // data structure; this is the first caller that produces one, and it produces
 // it on the path every later caller will use.
 //
-// The plan is fixed rather than proposed. A model that chooses the actions is
-// the next change and a larger one, because parsing model output into actions
-// is where malformed responses and injected instructions arrive — that deserves
-// its own review rather than riding along with the plumbing.
+// # Two ways to decide, and the default is the one that needs no model
+//
+// `agent check` walks the manifest: every capability tried once, in a fixed
+// order, to find out which of them this store actually answers. The plan is
+// the manifest, so nothing a model says can change it, and it needs no
+// endpoint and costs nothing.
+//
+// `agent run` asks a model to choose, through internal/agentmodel. That is the
+// larger and riskier mode, and it is opt-in for that reason: the action space
+// is still the manifest's and the session still refuses, but a model is now
+// choosing which word out of that vocabulary — which is where an injected page
+// gets its only opportunity.
 func agentCheckRun(root string, args []string) error {
+	fs := flag.NewFlagSet("agent run", flag.ContinueOnError)
+	withModel := fs.Bool("model", false,
+		"let a model choose the actions, instead of walking the manifest")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	args = fs.Args()
 	if len(args) == 0 {
 		return fmt.Errorf("usage: quilzo agent run NAME [\"what it should do\"]")
 	}
@@ -348,15 +366,37 @@ func agentCheckRun(root string, args []string) error {
 	plan = append(plan, agent.Action{Say: "checked"})
 
 	i := 0
+	// The scripted walk: the plan is the manifest, so nothing a model says can
+	// change it. This is the default, and the only mode that costs nothing.
+	decide := func(context.Context, string, []agent.Observation) (agent.Action, error) {
+		if i >= len(plan) {
+			return agent.Action{Say: "checked"}, nil
+		}
+		a := plan[i]
+		i++
+		return a, nil
+	}
+	if *withModel {
+		model, merr := assist.NewHTTPModel()
+		if merr != nil {
+			return fmt.Errorf(
+				"--model needs a model endpoint configured: %w\n"+
+					"  without one, `quilzo agent run %s` walks the manifest "+
+					"and needs nothing", merr, name)
+		}
+		fmt.Printf("  %sdeciding with %s; the manifest is still the only "+
+			"vocabulary%s\n", dim, model.Name(), reset)
+		decide = agentmodel.Decider{
+			Model:   model,
+			Session: sess,
+			// Reported by the provider, not measured here. Fed to the session
+			// so the budget counts what the run actually cost.
+			Tokens: sess.Tokens,
+		}.Decide()
+	}
+
 	runner := agent.Runner{
-		Decide: func(context.Context, string, []agent.Observation) (agent.Action, error) {
-			if i >= len(plan) {
-				return agent.Action{Say: "checked"}, nil
-			}
-			a := plan[i]
-			i++
-			return a, nil
-		},
+		Decide: decide,
 		// Reads and writes both, routed by the same classification the
 		// session gate uses. Wiring only the reader would have made every
 		// granted write report "not implemented", which reads as the agent
@@ -391,9 +431,19 @@ func agentCheckRun(root string, args []string) error {
 	rc := trace.Receipt(sess)
 
 	fmt.Printf("%s%s%s  %s\n", bold, name, reset, m.Kind)
-	fmt.Printf("  %severy capability tried once, with no arguments and no "+
-		"model — this reports what this store answers, not what the agent "+
-		"would achieve%s\n", dim, reset)
+	// What this run actually was, because the two modes answer different
+	// questions and a summary that describes the wrong one is worse than
+	// none. Left saying "no model" while a model was deciding, which is a
+	// line somebody would quote in a report.
+	if *withModel {
+		fmt.Printf("  %sa model chose each action from the manifest's "+
+			"capabilities — what it achieved, not what this store can "+
+			"answer%s\n", dim, reset)
+	} else {
+		fmt.Printf("  %severy capability tried once, with no arguments and no "+
+			"model — this reports what this store answers, not what the agent "+
+			"would achieve%s\n", dim, reset)
+	}
 	fmt.Printf("  did %d, refused %d, failed %d\n", rc.Did, rc.Refused, rc.Failed)
 	// Failures are shown, not only counted. A capability the manifest permits
 	// and this store cannot answer is the most useful thing this command
