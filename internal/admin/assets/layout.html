@@ -6,13 +6,14 @@
 <meta name="color-scheme" content="light dark">
 <title>{{.Title}} — {{.Brand}}</title>
 <link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="/manifest.webmanifest">
 </head>
 <body>
 <a class="skip" href="#main">Skip to main content</a>
 <header class="bar">
   <div class="bar-inner">
-    <a class="brand" href="/">{{if .BrandMark}}<span class="mark mark-initial" aria-hidden="true">{{.BrandMark}}</span>{{else}}<svg class="mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M12 2 3 7v10l9 5 9-5V7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 7 7.5 9.5v5L12 17l4.5-2.5v-5z" fill="currentColor" opacity=".9"/></svg>{{end}}<span>{{.Brand}}</span></a>
+    <a class="brand" href="/">{{if .BrandMark}}<span class="mark mark-initial" aria-hidden="true">{{.BrandMark}}</span>{{else}}<svg class="mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path fill-rule="evenodd" fill="currentColor" d="{{.MarkPath}}"/></svg>{{end}}<span>{{.Brand}}</span></a>
     {{with .Principal}}<p class="who">Signed in as
       <a href="/profile"><strong>{{.Name}}</strong></a> ({{.Role}})
       — <a href="/signout">Sign out</a></p>{{end}}

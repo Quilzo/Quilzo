@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 )
 
@@ -60,11 +61,25 @@ func (s *Server) installManifest(w http.ResponseWriter, r *http.Request) {
 		// this deployment's colour is.
 		"theme_color": s.themeColour(),
 		"description": "The administration interface for " + name + ".",
-		// Deliberately no icons array. An icon is a file this origin would
-		// serve, and the interface has no image assets of its own — the mark
-		// in the header is inline SVG for exactly that reason. Platforms fall
-		// back to a generated icon, which is honest, rather than to a broken
-		// image request.
+		// One icon, and it is the mark.
+		//
+		// This shipped with no icons array at all, on the argument that the
+		// interface had no image assets and a generated fallback was more
+		// honest than a request that 404s. That argument was about the absence
+		// of a logo, not about icons, and it stopped being true the moment
+		// there was one.
+		//
+		// "any maskable" rather than two entries: the mark is a filled shape
+		// with its subject well inside the safe area, so a platform that crops
+		// it to a circle takes a bite out of the rounded corners and nothing
+		// else. Claiming maskable for a logo that would lose its subject is
+		// how installed icons end up beheaded.
+		"icons": []map[string]any{{
+			"src":     "/icon.svg",
+			"sizes":   "any",
+			"type":    "image/svg+xml",
+			"purpose": "any maskable",
+		}},
 	}
 
 	body, err := json.MarshalIndent(doc, "", "  ")
@@ -78,6 +93,21 @@ func (s *Server) installManifest(w http.ResponseWriter, r *http.Request) {
 	// cannot see.
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(body)
+}
+
+// icon serves the mark as a standalone SVG.
+//
+// Authenticated, like the manifest and for the same reason: it carries the
+// operator's accent colour, and it is the file a browser tab shows. Cached
+// briefly rather than not at all — a favicon is requested on every navigation,
+// and the branding it encodes changes about as often as the branding does.
+func (s *Server) icon(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireAuth(w, r); !ok {
+		return
+	}
+	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	_, _ = io.WriteString(w, MarkSVG(s.themeColour()))
 }
 
 // themeColour is the installed window's colour.

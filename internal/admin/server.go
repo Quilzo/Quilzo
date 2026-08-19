@@ -482,6 +482,8 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	data["BrandStyle"] = s.Brand.Style()
 	data["DocURL"] = DocURL(docFor(navKey))
 	data["DocsBase"] = DocsBase
+	// The mark, from the one place it is defined.
+	data["MarkPath"] = MarkPath
 
 	// The navigation itself, filtered to what this person may use and sorted
 	// into the order they chose.
@@ -761,6 +763,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/signout", s.handleSignOut)
 	mux.HandleFunc("/agents", s.handleAgents)
 	mux.HandleFunc("/manifest.webmanifest", s.installManifest)
+	mux.HandleFunc("/icon.svg", s.icon)
 	mux.HandleFunc("/start", s.handleStart)
 	mux.HandleFunc("/start/done", s.handleStartDone)
 	mux.HandleFunc("/playground", s.playground)
