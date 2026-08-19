@@ -115,6 +115,16 @@ type Spend struct {
 	Steps   int
 	Tools   int
 	Elapsed time.Duration
+	// Tokens is what the host reported the model using, and Metered says
+	// whether anybody reported anything at all.
+	//
+	// The two are separate because zero is a real answer. A local model costs
+	// nothing and reports nothing, and a hosted run whose usage nobody wrote
+	// down also shows zero — those are opposite situations and a single
+	// integer cannot tell them apart. An invoice built on the second would be
+	// charging for work it has no record of.
+	Tokens  int
+	Metered bool
 }
 
 // Refused returns the steps that were refused.
@@ -317,7 +327,11 @@ func (t Trace) Publishable(s *Session) (bool, string) {
 
 func spendOf(s *Session) Spend {
 	steps, tools, elapsed := s.Spent()
-	return Spend{Steps: steps, Tools: tools, Elapsed: elapsed}
+	tokens := s.TokensUsed()
+	return Spend{
+		Steps: steps, Tools: tools, Elapsed: elapsed,
+		Tokens: tokens, Metered: tokens > 0,
+	}
 }
 
 // hostOf extracts the host an action wants to reach.

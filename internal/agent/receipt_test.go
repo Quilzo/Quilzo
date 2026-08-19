@@ -234,3 +234,71 @@ func TestARunnerThatCannotStartIsStillRecorded(t *testing.T) {
 		t.Error("the receipt does not say why there is nothing to bill")
 	}
 }
+
+// Nobody metered and zero tokens are different facts.
+//
+// A local model costs nothing and reports nothing; a hosted run whose usage
+// nobody wrote down also shows zero. Those are opposite situations, and an
+// invoice built on the second would charge for work it has no record of — so
+// the receipt omits the field rather than writing a zero that reads as a
+// measurement.
+func TestAnUnmeteredRunDoesNotReportZeroTokens(t *testing.T) {
+	tr, s := runFor(t, readOnly(t), Action{Op: "read_page"}, Action{Say: "done"})
+	r := tr.Receipt(s)
+
+	if r.Spend.Metered {
+		t.Error("a run nobody metered reported itself as metered")
+	}
+	if _, present := r.Detail()["tokens"]; present {
+		t.Error("the audit payload carries a token count nobody measured")
+	}
+}
+
+// A reported figure is carried through to the record.
+func TestReportedTokensReachTheReceipt(t *testing.T) {
+	s := NewSession(readOnly(t), nil)
+	r := Runner{
+		Decide: func(_ context.Context, _ string, seen []Observation) (Action, error) {
+			// What a host does: read the usage off the provider's response.
+			s.Tokens(1200)
+			if len(seen) == 0 {
+				return Action{Op: "read_page"}, nil
+			}
+			return Action{Say: "done"}, nil
+		},
+		Perform: echoPerform,
+	}
+	tr, err := r.Run(context.Background(), s, "g")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := tr.Receipt(s)
+
+	if !rec.Spend.Metered {
+		t.Fatal("a run with reported usage is not marked metered")
+	}
+	if rec.Spend.Tokens != 2400 {
+		t.Errorf("tokens are %d, want 2400 — the figures accumulate across "+
+			"calls rather than keeping the last one", rec.Spend.Tokens)
+	}
+	if rec.Detail()["tokens"] != "2400" {
+		t.Errorf("the audit payload says %q", rec.Detail()["tokens"])
+	}
+}
+
+// Nonsense from a provider does not end a run.
+//
+// A billing field that can stop work is a billing field that will, on the day a
+// provider ships a bad response.
+func TestABadTokenFigureIsIgnoredRatherThanFatal(t *testing.T) {
+	s := NewSession(readOnly(t), nil)
+	s.Tokens(-5)
+	s.Tokens(0)
+	if s.TokensUsed() != 0 {
+		t.Errorf("a negative report changed the total to %d", s.TokensUsed())
+	}
+	s.Tokens(10)
+	if s.TokensUsed() != 10 {
+		t.Errorf("a good report after a bad one gave %d", s.TokensUsed())
+	}
+}
