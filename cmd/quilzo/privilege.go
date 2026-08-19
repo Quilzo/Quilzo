@@ -87,7 +87,12 @@ var commandNeeds = map[string]need{
 	// one will accept content from, which is a trust decision and outlives
 	// the person who made it, whereas the draft it eventually writes is the
 	// visible consequence rather than the thing being authorised.
-	"peer":            {action: auth.ActGrant},
+	"peer": {action: auth.ActGrant},
+	// Editing what the business may claim is editing a publish gate, so it
+	// needs more than the right to publish through it. An author who can
+	// remove the rule standing between their copy and the public has the
+	// gate as a setting rather than as a gate.
+	"brand":           {action: auth.ActGrant},
 	"agent templates": {action: auth.ActView},
 	"agent list":      {action: auth.ActView},
 	"agent show":      {action: auth.ActView},

@@ -25,7 +25,7 @@
 <main id="main" class="signin">
 
   <section class="signin-panel">
-    <p class="brand"><svg class="mark" viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" focusable="false"><path d="M12 2 3 7v10l9 5 9-5V7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 7 7.5 9.5v5L12 17l4.5-2.5v-5z" fill="currentColor" opacity=".9"/></svg><span>Quilzo</span></p>
+    <p class="brand"><svg class="mark" viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" focusable="false"><path fill-rule="evenodd" fill="currentColor" d="{{.MarkPath}}"/></svg><span>Quilzo</span></p>
     <h1>Sign in</h1>
 
     {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}

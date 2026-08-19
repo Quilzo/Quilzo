@@ -168,6 +168,8 @@ var notADestination = map[string]string{
 	"/style.css": "a stylesheet",
 	"/manifest.webmanifest": "the install manifest, linked from every page's " +
 		"head and opened by the browser rather than by a person",
+	"/icon.svg": "the mark, fetched as a favicon and as the installed " +
+		"application's icon; an image, not a screen",
 	"/preview":      "a subtree",
 	"/media":        "in the table",
 	"/languages":    "in the table",

@@ -70,6 +70,10 @@ var coverage = map[string]surfaces{
 			"other capability boundary into a suggestion — this is the same " +
 			"reason auth and token are off this surface, and it is the more " +
 			"important instance of it"},
+	"brand": {GUI: "/publishing",
+		NoMCP: "the rules deciding what this business may claim. A model that " +
+			"can edit them can delete the one standing between its own copy " +
+			"and the public, which is the gate rather than a setting"},
 	"peer": {GUI: "/transfer",
 		NoMCP: "pairs this store with another and adopts what it sent. A " +
 			"model that can add a peer can name one it controls and then " +
