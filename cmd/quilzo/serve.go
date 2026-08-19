@@ -357,6 +357,19 @@ func cmdServe(root string, args []string) error {
 			return saveJSON(profilesPath(root), m)
 		},
 	}
+	// The interface's own branding. Validated again here rather than trusted
+	// from configuration: config validation refuses a bad value at the moment
+	// it is set, and this refuses one that reached the file another way.
+	brand := admin.Brand{
+		Name:   cfg.Raw("admin.brand.name"),
+		Colour: cfg.Raw("admin.brand.colour"),
+		Mark:   cfg.Raw("admin.brand.mark"),
+	}
+	if err := brand.Validate(); err != nil {
+		return fmt.Errorf("the configured branding is not usable: %w", err)
+	}
+	srv.Brand = brand
+
 	srv.ReloadTokens = tokenReloader(root, toks)
 
 	// The audit log, read-only. This process cannot write it where the writer
