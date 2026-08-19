@@ -187,6 +187,25 @@ func New() *Client {
 		UserAgent: "quilzo/1 (+content import)"}
 }
 
+// GetWithToken is Get with a bearer credential attached.
+//
+// Separate from Get rather than a field on Client, because a credential that
+// lives on the client is one that gets sent to whatever the next call happens
+// to be pointed at — and this client follows redirects. Passing it per call
+// keeps "which host receives this token" a decision at the call site.
+//
+// The redirect handling in Get revalidates every hop against the same address
+// rules, so a peer cannot redirect a credentialed fetch onto the metadata
+// endpoint. Go's own client drops the Authorization header across hosts.
+func (c *Client) GetWithToken(ctx context.Context, raw, token string) (*Result, error) {
+	return c.get(ctx, raw, func(req *http.Request) {
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		req.Header.Set("Accept", "application/json")
+	})
+}
+
 // ValidateURL checks a URL before anything is dialled.
 //
 // This is the cheap first pass, and it is deliberately *not* the security
@@ -223,6 +242,14 @@ func ValidateURL(raw string) (*url.URL, error) {
 
 // Get fetches a URL.
 func (c *Client) Get(ctx context.Context, raw string) (*Result, error) {
+	return c.get(ctx, raw, nil)
+}
+
+// get is Get with a hook that decorates the request, so GetWithToken adds a
+// header without a second copy of the address checks, the redirect
+// revalidation and the body ceiling. Two copies of those is one copy that
+// stops being revalidated.
+func (c *Client) get(ctx context.Context, raw string, decorate func(*http.Request)) (*Result, error) {
 	lim := c.Limits.withDefaults()
 	u, err := ValidateURL(raw)
 	if err != nil {
@@ -255,6 +282,9 @@ func (c *Client) Get(ctx context.Context, raw string) (*Result, error) {
 	}
 	req.Header.Set("User-Agent", c.UserAgent)
 	req.Header.Set("Accept", "*/*")
+	if decorate != nil {
+		decorate(req)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {

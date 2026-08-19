@@ -567,3 +567,77 @@ func BuildTree(s *Store, pages map[string]any) (string, error) {
 	}
 	return s.PutTree(entries)
 }
+
+// -- raw object access, for replication ---------------------------------------
+
+// Kinds is every object kind a store holds.
+//
+// Enumerated so a replica can refuse an unknown one rather than write it. A
+// peer offering an object of a kind this build has never heard of is either
+// running a newer version or making something up, and storing it either way
+// puts bytes in the store that nothing here can read or verify.
+func Kinds() []string { return []string{KindBlob, KindTree, KindCommit} }
+
+// GetRaw reads an object's kind and payload without interpreting either.
+//
+// For replication, which moves objects rather than content. The payload is the
+// plaintext — an encrypted store holds the sealed form on disk, but the object
+// id is the hash of the plaintext, so plaintext is what the id means and what a
+// peer has to be given for the id to check out on the other side.
+//
+// That is a real disclosure decision and it is the right one: replication is
+// between stores an operator has deliberately paired, and a peer that cannot
+// read what it replicates cannot serve it either. Encryption at rest protects
+// the disk, not the pairing.
+func (s *Store) GetRaw(oid string) (string, []byte, error) {
+	for _, kind := range Kinds() {
+		payload, err := s.read(oid, kind)
+		if err == nil {
+			return kind, payload, nil
+		}
+		// A kind mismatch means "try the next one". Anything else — missing,
+		// malformed, encrypted with no key, failing its own hash — is the real
+		// answer and is returned rather than retried under another kind.
+		if !strings.Contains(err.Error(), ", not a ") {
+			return "", nil, err
+		}
+	}
+	return "", nil, fmt.Errorf("no object %s", oid)
+}
+
+// PutRaw stores an object received from a peer, refusing anything that does not
+// hash to the id it was asked for.
+//
+// This is the whole trust model of replication in one function. A peer is not
+// trusted; it is checked. Nothing about the transport, the TLS certificate or
+// the token matters to whether the object is right — the name is the hash, so
+// the bytes either produce that name or they are not the object that was
+// requested, and there is no third possibility.
+//
+// A peer that substitutes content therefore cannot substitute it undetectably;
+// it can only fail to answer. Which is the property a merkle store gets for
+// free and that every replication protocol built on mutable identifiers has to
+// bolt on with signatures.
+func (s *Store) PutRaw(want, kind string, payload []byte) error {
+	known := false
+	for _, k := range Kinds() {
+		if k == kind {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return fmt.Errorf(
+			"a peer offered %s as a %q, which is not an object kind this "+
+				"build knows. Refused rather than stored: bytes nothing here "+
+				"can read or verify are worse in the store than absent",
+			want, kind)
+	}
+	if got := ObjectID(kind, payload); got != want {
+		return fmt.Errorf(
+			"a peer offered %s and sent bytes that hash to %s. The name is "+
+				"the hash, so those are not that object", want, got)
+	}
+	_, err := s.write(kind, payload)
+	return err
+}
