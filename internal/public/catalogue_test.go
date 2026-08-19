@@ -10,6 +10,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/store"
 )
 
@@ -209,5 +210,46 @@ func TestASiteWithoutACatalogueLinksToNothing(t *testing.T) {
 	got := st.injectHead("<html><head></head><body></body></html>", "index", "")
 	if strings.Contains(got, "catalogue.json") {
 		t.Error("a site with no catalogue advertised one")
+	}
+}
+
+// The installed app offers the site's own navigation as shortcuts.
+//
+// Derived rather than configured separately: the menu is already the answer to
+// "what are the important places on this site", and a second list would be one
+// more thing to keep in step with the first.
+func TestShortcutsComeFromTheMenu(t *testing.T) {
+	set := &menu.Set{}
+	if err := set.Add(menu.Menu{Name: "main", Label: "Main", Items: []menu.Item{
+		{ID: "a", Label: "Shop", Kind: menu.Page, Target: "shop"},
+		{ID: "b", Label: "Sale", Kind: menu.Page, Target: "sale", Parent: "a"},
+		{ID: "c", Label: "Elsewhere", Kind: menu.External, Target: "https://x.example"},
+		{ID: "d", Label: "Section", Kind: menu.Heading},
+		{ID: "e", Label: "About", Kind: menu.Page, Target: "about"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	st := &Site{Menus: func() (*menu.Set, error) { return set, nil }}
+
+	got := st.shortcuts()
+	if len(got) != 2 {
+		t.Fatalf("%d shortcuts, want 2 (the two top-level pages)", len(got))
+	}
+	if got[0]["url"] != "/shop" || got[1]["url"] != "/about" {
+		t.Errorf("shortcuts are %v", got)
+	}
+	for _, sc := range got {
+		u, _ := sc["url"].(string)
+		if strings.HasPrefix(u, "http") {
+			t.Error("an external target became a shortcut; pressing the app's " +
+				"own icon should not send somebody out of the app")
+		}
+	}
+}
+
+// A site with no menu advertises no shortcuts.
+func TestNoMenuMeansNoShortcuts(t *testing.T) {
+	if got := (&Site{}).shortcuts(); len(got) != 0 {
+		t.Errorf("%d shortcuts with no menu configured", len(got))
 	}
 }
