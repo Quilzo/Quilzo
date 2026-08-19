@@ -86,8 +86,13 @@ var commandNeeds = map[string]need{
 	"agent list":      {action: auth.ActView},
 	"agent show":      {action: auth.ActView},
 	"agent check":     {action: auth.ActView},
-	"provenance":      {action: auth.ActView},
-	"prov":            {action: auth.ActView},
+	// Running one acts under the agent's manifest, and the least it can do is
+	// read the store. Author rather than view: a run writes an audit record
+	// attributed to the caller, and an entry somebody could create without
+	// being able to change anything would be a way to write the log.
+	"agent run":  {action: auth.ActEditDraft},
+	"provenance": {action: auth.ActView},
+	"prov":       {action: auth.ActView},
 	// Strict parent, narrowing children — see the note on posture. Pointing
 	// every reader at a different audit log is an operator act, so the parent
 	// takes that answer and the seven reading subcommands step down from it.

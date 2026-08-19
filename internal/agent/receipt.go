@@ -51,6 +51,14 @@ type Receipt struct {
 	Stopped string
 	// Did counts the operations that were carried out.
 	Did int
+	// Failed counts the ones the manifest permitted and that did not work.
+	//
+	// Separate from Refused, which is the manifest saying no, and separate
+	// from Did, which is work. A run that was allowed to do ten things and
+	// managed none of them is not a run that did ten things, and it is also
+	// not one that was refused — an invoice and an incident report need to
+	// tell those apart.
+	Failed int
 	// Refused counts the ones that were not, and Attempted names the distinct
 	// operations behind those refusals — "it tried to publish" rather than
 	// "eleven refusals".
@@ -79,9 +87,25 @@ func (t Trace) Receipt(s *Session) Receipt {
 		if step.Allowed {
 			// The finishing step is not work; counting it would bill a caller
 			// for the agent saying it was done.
-			if !step.Action.Done() {
-				r.Did++
+			//
+			// Nor is a step that was permitted and then failed. Allowed means
+			// the manifest let it through, not that anything happened — the
+			// operation may have hit a store that refused it, a tool that was
+			// down, or an executor that does not implement it. Counting those
+			// as work bills for failures, which is the specific complaint
+			// behind unverifiable consumption invoices.
+			//
+			// Found by running an agent whose manifest had been widened to
+			// hold write_page against an executor that only reads: the write
+			// errored and the receipt reported five operations done.
+			if step.Action.Done() {
+				continue
 			}
+			if step.Err != "" {
+				r.Failed++
+				continue
+			}
+			r.Did++
 			continue
 		}
 		r.Refused++
@@ -113,6 +137,7 @@ func (r Receipt) Detail() map[string]string {
 		"complete":  strconv.FormatBool(r.Complete),
 		"did":       strconv.Itoa(r.Did),
 		"refused":   strconv.Itoa(r.Refused),
+		"failed":    strconv.Itoa(r.Failed),
 		"tainted":   strconv.FormatBool(r.Tainted),
 		"steps":     strconv.Itoa(r.Spend.Steps),
 		"toolcalls": strconv.Itoa(r.Spend.Tools),
