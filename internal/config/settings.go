@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -278,6 +279,38 @@ var settings = []Setting{
 	// admin.nav left` now fails as unknown rather than being quietly ignored,
 	// which is the honest failure of the two.
 
+	{
+		Key: "admin.brand.name", Kind: Text, Default: "",
+		Summary: "what this interface calls itself; empty is Quilzo",
+		Why: "An agency running this for a client, or a company running it for " +
+			"its own staff, is showing the interface to people who have no " +
+			"relationship with this project and no reason to wonder what " +
+			"Quilzo is. Changing the name changes nothing about what any " +
+			"control does — it is the label, not the behaviour.",
+	},
+	{
+		Key: "admin.brand.colour", Kind: Text, Default: "",
+		Summary: "the accent, as a hex colour like #0b6fa4; empty keeps the palette",
+		Why: "Three or six hex digits after a #, and nothing else. This value " +
+			"lands inside a style attribute on the interface's root element, " +
+			"so it is matched against a pattern rather than cleaned: a " +
+			"sanitiser is a promise about every future CSS grammar. rgb(), a " +
+			"named colour and var() are all refused for that reason and not " +
+			"because they would look wrong. The accent applies alongside the " +
+			"built-in palette rather than replacing it, so the AAA contrast " +
+			"the interface was built for is not something a brand can drop " +
+			"below by accident.",
+	},
+	{
+		Key: "admin.brand.mark", Kind: Text, Default: "",
+		Summary: "one character shown in place of the built-in logo",
+		Why: "One character rather than an image file. An uploaded logo is " +
+			"bytes this origin then serves, and the interface's policy allows " +
+			"images from 'self' — so it would be a way to place chosen bytes " +
+			"at a URL inside the origin that the interface itself trusts. A " +
+			"letter cannot be a payload.",
+	},
+
 	// -- media ----------------------------------------------------------------
 	{
 		Key: "media.max_width", Kind: Int, Default: "2400",
@@ -415,6 +448,16 @@ func Lookup(key string) (Setting, bool) {
 // All returns every setting.
 func All() []Setting { return append([]Setting(nil), settings...) }
 
+// reBrandColour mirrors the pattern internal/admin enforces on the same value.
+//
+// Duplicated deliberately: this package must not import the admin, and a shared
+// package holding one regular expression would be more machinery than the two
+// lines it saves. The point of checking here as well is that a bad colour is
+// refused when it is set rather than ignored when it is rendered — a setting
+// accepted and then silently doing nothing is worse than one refused, because
+// the operator believes the first.
+var reBrandColour = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
+
 // Validate checks a value against a setting's kind.
 func (s Setting) Validate(v string) error {
 	switch s.Kind {
@@ -439,6 +482,27 @@ func (s Setting) Validate(v string) error {
 			return fmt.Errorf("%q is not true or false", v)
 		}
 	case Text:
+		if s.Key == "admin.brand.colour" && v != "" {
+			// The same pattern the admin enforces, checked here as well so a
+			// bad value is refused when it is set rather than ignored when it
+			// is rendered. A setting that is accepted and then silently does
+			// nothing is worse than one that is refused: the operator believes
+			// the first.
+			if !reBrandColour.MatchString(v) {
+				return fmt.Errorf(
+					"%q is not a colour this accepts. Give three or six hex "+
+						"digits after a #, like #0b6fa4", v)
+			}
+		}
+		if s.Key == "admin.brand.mark" && len([]rune(v)) > 1 {
+			return fmt.Errorf(
+				"the mark is one character, or empty for the default; %q is %d",
+				v, len([]rune(v)))
+		}
+		if s.Key == "admin.brand.name" && len([]rune(v)) > 40 {
+			return fmt.Errorf("the brand name is %d characters and the limit is 40",
+				len([]rune(v)))
+		}
 		if s.Key == "site.csp.mode" {
 			switch v {
 			case "enforce", "report-only", "off":
