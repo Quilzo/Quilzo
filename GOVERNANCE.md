@@ -72,6 +72,38 @@ original author, not a company that hires them, not a foundation that adopts it.
 Changing the licence would require every contributor's agreement, which is
 exactly as hard as it should be for a promise made to users.
 
+## How this is paid for, and what will never be withheld
+
+Open source is distribution, not revenue. "Make it open and the enterprise deals
+will follow" is not a business model, and projects that leave the question open
+tend to answer it later in the way that costs their contributors most.
+
+So it is answered now, while there is one contributor and nothing has been
+promised to anybody.
+
+**Quilzo stays fully AGPL-3.0-or-later. There is no open-core tier and there
+will not be one.** Every security property — the audit log, the anchoring, the
+sandbox, the capability model, the gates — is in the version you can clone. A
+CMS that put its access controls behind a licence key would be arguing that its
+users deserve less protection than its customers, and that is not an argument
+this project is willing to make.
+
+Money, if it comes, comes from **hosting and support**: running Quilzo for
+people who would rather not, and helping people who run it themselves. Both are
+services on top of software that stays whole, so neither requires holding a
+feature back.
+
+Two models are ruled out, and it is worth saying which and why:
+
+- **Open core** would mean the paid tier subtracts from the free one, whatever
+  the marketing says. It also breaks the security argument above.
+- **Dual licensing** — selling a proprietary escape from the copyleft — is
+  already impossible here and deliberately so. It needs one party to hold the
+  copyright, and the DCO above ensures nobody does. That is a feature.
+
+If this ever changes, it changes in public, in this file, before it changes in
+the code.
+
 ## Moving to a foundation
 
 The intention is to place Quilzo under a neutral non-profit. That is not
