@@ -141,12 +141,32 @@ func osUser() string {
 // configuration: a store where nobody has been granted a role is a single-user
 // store with nothing to enforce, and the first `auth grant` turns enforcement
 // on. A flag would be one more thing to set wrongly.
-func policyInUse(root string) bool {
+//
+// The error is the important half, and it used to be discarded. A policy that
+// could not be read returned false, which meant "nothing has been granted",
+// which meant every command ran unauthenticated. Truncating policy.json — with
+// an editor, a crash between write and rename, a half-finished restore, or on
+// purpose — turned access control off across the whole store, and the only
+// symptom was that everything started working:
+//
+//	quilzo add index=home.json          refused, no token
+//	echo 'not json' > policy.json
+//	quilzo add index=home.json          "draft 995b0d7e386f  1 page(s)"
+//
+// So an unreadable policy is now treated as a policy in force that cannot be
+// evaluated, and the answer to every question is no. Absent still means
+// unconfigured — that is a store nobody has set up, and it is the case the
+// zero-configuration design is for — but present-and-broken is the state where
+// refusing is the only safe answer.
+func policyInUse(root string) (bool, error) {
 	p, err := loadPolicy(root)
 	if err != nil {
-		return false
+		return true, fmt.Errorf(
+			"this store has a policy that cannot be read, so no request can be "+
+				"authorised: %w\n  refusing rather than running unauthenticated; "+
+				"repair or remove %s", err, policyPath(root))
 	}
-	return len(p.Bindings) > 0
+	return len(p.Bindings) > 0, nil
 }
 
 // authorise checks a caller against the policy for privileged actions.
@@ -155,7 +175,11 @@ func policyInUse(root string) bool {
 // two things was missing — an identity or a permission — because they need
 // different fixes and "forbidden" tells nobody which.
 func authorise(root string, c *Caller, action auth.Action, resource string) error {
-	if !policyInUse(root) {
+	inUse, err := policyInUse(root)
+	if err != nil {
+		return err
+	}
+	if !inUse {
 		return nil // nothing has been granted; there is nothing to enforce
 	}
 	if !c.Verified {
@@ -179,50 +203,13 @@ func authorise(root string, c *Caller, action auth.Action, resource string) erro
 	// as is a publisher and only the policy was consulted. Issue-time checking
 	// stops somebody minting more authority than they hold; this is what makes
 	// a narrow token actually narrow, which is the entire reason to issue one.
-	need, known := auth.Needs(action)
-	if known && !c.Role.AtLeast(need) {
-		return fmt.Errorf(
-			"this token carries %s and %s needs %s. The token limits the session "+
-				"even though %s holds more in general — issue a wider token, or use "+
-				"one you already have",
-			c.Role, action, need, c.Name)
-	}
-	if c.Scope != "" && !coversPath(c.Scope, resource) {
-		return fmt.Errorf(
-			"this token is scoped to %s and does not reach %s", c.Scope, resource)
-	}
-	// And the rest of the token's own limits: read-only, and any restriction to
-	// particular types or locales. Checked here rather than only in the API,
-	// which is where it used to live and therefore where it used to work.
-	if !c.Limits.AllowsAction(action) {
-		return fmt.Errorf("%s", c.Limits.Why(action, "", ""))
-	}
-	return nil
-}
-
-// coversPath mirrors the policy's segment-aware containment, so "/blog" does
-// not cover "/blog-drafts" here either. Two different answers to the same
-// question would be worse than one wrong one.
-func coversPath(scope, target string) bool {
-	scope, target = normalisePath(scope), normalisePath(target)
-	if scope == "/" || scope == target {
-		return true
-	}
-	return strings.HasPrefix(target, scope+"/")
-}
-
-func normalisePath(p string) string {
-	p = strings.TrimSpace(p)
-	if p == "" {
-		return "/"
-	}
-	if !strings.HasPrefix(p, "/") {
-		p = "/" + p
-	}
-	for strings.HasSuffix(p, "/") && len(p) > 1 {
-		p = p[:len(p)-1]
-	}
-	return p
+	//
+	// The three checks that used to be written out here — role cap, path
+	// scope, read-only — now live in auth.CheckCredential, because the browser
+	// interface and the content API were each doing a different subset of the
+	// same three and one of the gaps was a privilege escalation. This surface
+	// had them all; being right is not the same as being the only one right.
+	return auth.CheckCredential(c.Role, c.Scope, c.Limits, action, resource)
 }
 
 // auditRecord builds a record carrying whatever was actually established.

@@ -199,9 +199,21 @@ func TestEveryWriteSurfaceUsesCompareAndSwap(t *testing.T) {
 // a control present in one interface and absent from another. So it is checked
 // the same way, on the source, because the next surface somebody adds will
 // resolve a token too.
+//
+// It now asserts the shared call rather than one dimension of it, and the
+// reason is that the earlier version passed while the hole was open. A token
+// carries three limits — a role cap, a subtree, and a scope of actions, types
+// and locales — and this test only ever looked for Scope.AllowsAction. The
+// admin called exactly that one and nothing else, so it was green while a
+// credential issued `--role reader` could POST /people/grant and make somebody
+// an administrator. A test that checks one of three and reports on all three
+// is worse than no test, because it is believed.
+//
+// auth.CheckCredential is the whole check. Requiring the call is what makes
+// "the next surface somebody adds" get all of it rather than the part they
+// remembered.
 func TestEverySurfaceChecksTheTokensOwnLimits(t *testing.T) {
-	// Each surface, the file that turns a token into an identity, and the call
-	// that must appear in it.
+	// Each surface, and the file that turns a token into a decision.
 	surfaces := []struct{ what, file string }{
 		{"the command line", "caller.go"},
 		{"the admin interface", "../../internal/admin/server.go"},
@@ -209,18 +221,21 @@ func TestEverySurfaceChecksTheTokensOwnLimits(t *testing.T) {
 	}
 	for _, s := range surfaces {
 		body := readFile(t, s.file)
-		if !strings.Contains(body, "AllowsAction") {
+		if !strings.Contains(body, "auth.CheckCredential") &&
+			!strings.Contains(body, "CheckCredential(") {
 			t.Errorf("%s (%s) resolves a token and never calls "+
-				"Scope.AllowsAction.\n  A token may carry less authority than "+
-				"the principal holding it — read-only, or limited to some "+
-				"types or locales — and that is the entire reason to issue a "+
-				"narrow one. A surface that checks only the role enforces none "+
-				"of it.", s.what, s.file)
+				"auth.CheckCredential.\n  A token may carry less authority "+
+				"than the principal holding it: a narrower role, a subtree, "+
+				"read-only, or a set of types and locales. Checking a subset "+
+				"is how the browser interface came to accept a reader token "+
+				"for an admin action — enforce all of it through the one "+
+				"function, or the next gap is the one you did not think of.",
+				s.what, s.file)
 		}
 	}
 
-	// And the limits must survive being carried: a surface that calls
-	// AllowsAction on a zero Scope is a surface that always allows.
+	// And the limits must survive being carried: a surface that checks a zero
+	// Scope is a surface that always allows.
 	for _, pair := range []struct{ file, field string }{
 		{"caller.go", "Limits"},
 		{"../../internal/admin/server.go", "Limits"},
@@ -230,6 +245,22 @@ func TestEverySurfaceChecksTheTokensOwnLimits(t *testing.T) {
 			!strings.Contains(body, pair.field+" auth.Scope") {
 			t.Errorf("%s never copies the token's Scope onto the identity it "+
 				"builds, so whatever it checks is a zero value", pair.file)
+		}
+	}
+
+	// The same for the subtree. This is the one the admin never carried at
+	// all: `token issue --on /blog` was stored, shown in the token list, and
+	// then dropped on the floor by the interface, so the flag described a
+	// restriction that existed only on the command line.
+	for _, pair := range []struct{ file, field string }{
+		{"caller.go", "Scope"},
+		{"../../internal/admin/server.go", "Scope"},
+	} {
+		body := readFile(t, pair.file)
+		if !strings.Contains(body, pair.field+": tok.Resource") {
+			t.Errorf("%s never copies the token's Resource onto the identity "+
+				"it builds, so a token scoped to a subtree reaches the whole "+
+				"store here", pair.file)
 		}
 	}
 }

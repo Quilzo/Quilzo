@@ -84,14 +84,68 @@ var destinations = []destination{
 	{"security", "Security", "/security", "Assurance", "security", auth.ActGrant},
 	{"logs", "Log", "/logs", "Assurance", "logging", auth.ActGrant},
 
+	{"agents", "Agents", "/agents", "Administration", "agents", auth.ActGrant},
 	{"people", "People", "/people", "Administration", "users", auth.ActGrant},
 	{"access", "Access", "/access", "Administration", "auth", auth.ActGrant},
 	{"integrations", "Integrations", "/integrations", "Administration", "integrations", auth.ActGrant},
 	{"settings", "Settings", "/settings", "Administration", "settings", auth.ActEditDraft},
 
+	{"start", "Get started", "/start", "Reference", "start", auth.ActView},
 	{"playground", "API", "/playground", "Reference", "api", auth.ActView},
-	{"docs", "Docs", "/docs", "Reference", "start", auth.ActView},
 	{"profile", "You", "/profile", "Reference", "profile", auth.ActView},
+}
+
+// DocsBase is where the manual lives.
+//
+// It used to be compiled in: about 1,800 lines of Go describing every screen,
+// served at /docs, with eight screenshots embedded in the binary. That made
+// the documentation a release artefact — a wording fix waited for a build, and
+// a screenshot went stale the moment a screen changed.
+//
+// It is now a site of its own, so it can be corrected the day somebody notices
+// rather than the next time somebody ships. The cost is that the link target
+// is no longer verifiable by compiling this program, which is what docSections
+// below exists to hold on to.
+const DocsBase = "https://quilzo.github.io/"
+
+// docSections is every anchor the published manual carries.
+//
+// The contract with the site, written down on this side of it. When the manual
+// was in this repository a test could read it and prove that the Help link on
+// every screen landed on a section that existed; the manual is now in another
+// repository and that proof is not available at compile time.
+//
+// So the list is declared, a test checks every screen against it, and the site
+// checks its own pages against the same list in its CI. Neither half proves the
+// other, but each one fails loudly on its own side, and the failure a reader
+// actually suffers — Help landing on nothing — needs both halves to be wrong.
+//
+// A link that lands on a heading somebody renamed is worse than no link: the
+// person following it concludes the feature was removed, which is the belief
+// the documentation exists to correct.
+var docSections = map[string]bool{
+	// One per screen, named by the destination table above.
+	"pages": true, "data": true, "types": true, "structure": true,
+	"listings": true, "forms": true, "media": true, "languages": true,
+	"ai": true, "publishing": true, "environments": true, "history": true,
+	"transfer": true, "ipfs": true, "provenance": true, "security": true,
+	"logging": true, "users": true, "auth": true, "integrations": true,
+	"settings": true, "api": true, "profile": true, "start": true,
+	"agents": true,
+
+	// Sections no screen owns, because they explain a concept or a surface
+	// rather than a destination. Named individually so that one quietly
+	// disappearing from the site is a change somebody made on purpose.
+	"setup": true, "concepts": true, "privacy": true,
+	"cli": true, "mcp": true, "templates": true,
+}
+
+// DocURL is the address of one section of the manual.
+func DocURL(anchor string) string {
+	if anchor == "" {
+		return DocsBase
+	}
+	return DocsBase + "#" + anchor
 }
 
 // docFor returns the documentation anchor for a screen key.

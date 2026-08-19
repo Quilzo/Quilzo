@@ -1,0 +1,91 @@
+{{template "head" .}}
+<h1>Get started</h1>
+<p>Content here is immutable and addressed by the hash of its own bytes.
+Publishing moves a pointer, so rolling back cannot half-complete, and the
+template language cannot execute anything — there is no query to inject into and
+nothing to escape from.</p>
+
+<h2>Four things, in order</h2>
+<p>Read from this store as the page loads, so a step is ticked because it is
+done rather than because you clicked past it.
+<strong>{{.Done}} of {{.Total}}</strong> complete.</p>
+
+<ol class="steps-list">
+{{range .Steps}}
+  <li class="step{{if .Done}} step-done{{end}}">
+    <div class="step-head">
+      <h3>{{.Title}}</h3>
+      {{if .Done}}<span class="tag tag-ok">{{.DoneNote}}</span>
+      {{else}}<span class="tag">not yet</span>{{end}}
+    </div>
+    <p>{{.Body}}</p>
+    <p><a href="{{.Where}}">{{.What}}</a></p>
+  </li>
+{{end}}
+</ol>
+
+<h2>Three ways in, and they agree</h2>
+<p>Everything here is reachable from the browser, from the command line, and
+from the agent interface. A test walks the source and fails when a capability
+exists in one and not the others, because that gap is this project's most
+frequent bug rather than a hypothetical.</p>
+
+<div class="table-wrap">
+<table>
+  <caption>The same store, three surfaces</caption>
+  <thead><tr>
+    <th scope="col">Surface</th><th scope="col">For</th><th scope="col">Start with</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <th scope="row">This interface</th>
+      <td>Writing and reviewing, and everything administrative</td>
+      <td>The menu on the left</td>
+    </tr>
+    <tr>
+      <th scope="row">The command line</th>
+      <td>Scripting, pipelines and anything repeatable</td>
+      <td><code>quilzo help</code></td>
+    </tr>
+    <tr>
+      <th scope="row">The agent interface</th>
+      <td>Models that read and author content, and nothing else</td>
+      <td><code>quilzo mcp --list</code></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>An agent can read and author. It deliberately cannot change who may do what,
+what code runs, or what the keys are — a prompt injection in a page an agent is
+reading is a plausible route to whatever that agent can call.</p>
+
+<h2>What will refuse you, and why</h2>
+<p>These stop a publish rather than warning about it. Each one can be overridden
+deliberately, and the override is recorded in the commit — so the question
+afterwards is not whether somebody skipped a check but who decided to, and
+what reason they gave.</p>
+
+<dl class="gates">
+{{range .Gates}}
+  <dt>{{.Name}}</dt>
+  <dd>{{.What}}</dd>
+{{end}}
+</dl>
+
+<h2>When you want more detail</h2>
+<p>Every screen has a Help link in its footer, in the same place, pointing at
+the section of the manual about that screen rather than at the top of it.</p>
+<p><a href="{{.DocsBase}}" rel="noopener noreferrer">The full manual</a></p>
+
+{{if not .Dismissed}}
+<form method="post" action="/start/done" class="inline">
+  <button type="submit">Got it — go to my pages</button>
+</form>
+<p class="help">This screen stops opening on sign-in. It stays in the menu, and
+the checklist keeps reading the store, so it is worth coming back to.</p>
+{{else}}
+<p class="help">You have marked this done, so it no longer opens on sign-in.</p>
+{{end}}
+
+{{template "foot" .}}

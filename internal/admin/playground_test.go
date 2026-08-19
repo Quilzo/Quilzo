@@ -169,6 +169,21 @@ func fetchPlayground(t *testing.T) (string, http.Header) {
 	return w.Body.String(), w.Header()
 }
 
+// fetchPlayground with an appearance already chosen.
+func fetchPlaygroundWithTheme(t *testing.T, theme string) string {
+	t.Helper()
+	s, tok := setup(t)
+	r := httptest.NewRequest("GET", "http://h/playground", nil)
+	r.Header.Set("Authorization", "Bearer "+tok)
+	r.AddCookie(&http.Cookie{Name: ThemeCookie, Value: theme})
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("playground gave %d: %s", w.Code, w.Body.String())
+	}
+	return w.Body.String()
+}
+
 func scriptSrc(csp string) string {
 	for _, part := range strings.Split(csp, ";") {
 		part = strings.TrimSpace(part)

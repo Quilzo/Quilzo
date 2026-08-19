@@ -199,110 +199,90 @@ func TestFilteringNarrowsWithoutHidingTheTotal(t *testing.T) {
 	}
 }
 
-// -- where the navigation sits ------------------------------------------------
+// -- the navigation -----------------------------------------------------------
 
-// Both positions render the same markup in the same order. A layout that
-// reorders the DOM to move a menu is a layout that is correct for one of its
-// two settings: the reading order a screen reader follows and the order the
-// keyboard moves through would change with a display preference.
-func TestBothNavPositionsRenderTheSameDocumentOrder(t *testing.T) {
+// It is rendered once.
+//
+// This is the property the two-position layout could not have. Supporting a
+// top bar and a side column meant emitting the whole navigation twice and
+// letting CSS display one of them, so every response carried a duplicate set
+// of destinations whose absence from the accessibility tree depended entirely
+// on a display rule being right. Get the breakpoint wrong — or load the page
+// with the stylesheet missing, which is what a text browser and a stripped
+// email client do — and every section is announced twice.
+//
+// Counted on the landmark rather than on a link, because the duplicate was a
+// whole <nav>, and counting links would also catch a legitimate second link to
+// the same place elsewhere on the page.
+func TestTheNavigationIsRenderedOnce(t *testing.T) {
 	s, tok := logServer(t, realLog(t, 2), true)
+	body, _ := getLogs(t, s, tok, "")
 
-	order := func(body string) []int {
-		var out []int
-		for _, marker := range []string{"<header", "<nav", "<main"} {
-			out = append(out, strings.Index(body, marker))
-		}
-		return out
+	if n := strings.Count(body, `aria-label="Sections"`); n != 1 {
+		t.Errorf("the navigation landmark appears %d times, want 1. Two "+
+			"copies is what the top/side arrangement needed and it is what "+
+			"a screen reader reads twice.", n)
 	}
-
-	s.NavPosition = "top"
-	top, _ := getLogs(t, s, tok, "")
-	s.NavPosition = "left"
-	left, _ := getLogs(t, s, tok, "")
-
-	if !strings.Contains(top, "nav-top") {
-		t.Error("the top setting did not reach the page")
-	}
-	if !strings.Contains(left, "nav-left") {
-		t.Error("the left setting did not reach the page")
-	}
-	a, b := order(top), order(left)
-	for i := range a {
-		if (a[i] < 0) != (b[i] < 0) {
-			t.Fatalf("the two positions render different elements: %v vs %v", a, b)
-		}
-	}
-	// Landmarks in the same relative order in both.
-	for i := 1; i < len(a); i++ {
-		if (a[i] > a[i-1]) != (b[i] > b[i-1]) {
-			t.Error("the document order differs between nav positions, so a " +
-				"screen reader would follow a different path depending on a " +
-				"display preference")
-		}
+	// And the destinations with it. "Publishing" is a label from the table.
+	if n := strings.Count(body, `>Publishing<`); n > 1 {
+		t.Errorf("a destination label appears %d times; the navigation is "+
+			"duplicated", n)
 	}
 }
 
-// A person's choice beats the store's default, because where a menu sits is a
-// preference about a screen rather than a property of the content.
-func TestAPersonalChoiceOverridesTheConfiguredDefault(t *testing.T) {
-	s, tok := logServer(t, realLog(t, 1), true)
-	s.NavPosition = "top"
+// Landmarks in the reading order somebody navigates by: banner, then the
+// navigation, then the content.
+func TestTheLandmarkOrderIsBannerNavMain(t *testing.T) {
+	s, tok := logServer(t, realLog(t, 2), true)
+	body, _ := getLogs(t, s, tok, "")
 
-	r := httptest.NewRequest("GET", "http://h/logs", nil)
+	header := strings.Index(body, "<header")
+	nav := strings.Index(body, "<nav")
+	main := strings.Index(body, `<main`)
+	if header < 0 || nav < 0 || main < 0 {
+		t.Fatalf("a landmark is missing: header=%d nav=%d main=%d",
+			header, nav, main)
+	}
+	if !(header < nav && nav < main) {
+		t.Errorf("landmarks are in the order header=%d nav=%d main=%d; a "+
+			"keyboard user reaches the content after the menu, not before it",
+			header, nav, main)
+	}
+}
+
+// The position toggle is gone, along with the preference it set.
+//
+// Asserted rather than assumed, because a removed feature that leaves its
+// endpoint behind is worse than one that never existed: /nav still set a
+// year-long cookie, and a class on <body> that no rule selects on is invisible
+// until somebody wonders why their setting stopped working.
+func TestTheNavPositionToggleIsGone(t *testing.T) {
+	s, tok := logServer(t, realLog(t, 1), true)
+
+	r := httptest.NewRequest("POST", "http://h/nav", strings.NewReader("to=left"))
 	r.Header.Set("Authorization", "Bearer "+tok)
-	r.AddCookie(&http.Cookie{Name: "quilzo_nav", Value: "left"})
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set("Sec-Fetch-Site", "same-origin")
 	w := httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, r)
-	if !strings.Contains(w.Body.String(), "nav-left") {
-		t.Error("a person's cookie did not override the configured default")
+	if w.Code != http.StatusNotFound {
+		t.Errorf("POST /nav gave %d, want 404 — the endpoint should be gone, "+
+			"not merely unreferenced", w.Code)
 	}
-}
-
-// The toggle is a state change on this origin, so it is POST-only,
-// authenticated, and cannot be used to send somebody elsewhere.
-func TestTheNavToggleIsGuarded(t *testing.T) {
-	s, tok := logServer(t, realLog(t, 1), true)
-
-	// GET does nothing.
-	w := httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, httptest.NewRequest("GET", "http://h/nav", nil))
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Errorf("GET /nav gave %d", w.Code)
-	}
-
-	// Unauthenticated POST does not set a cookie.
-	w = httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, httptest.NewRequest("POST", "http://h/nav",
-		strings.NewReader("to=left")))
 	for _, c := range w.Result().Cookies() {
 		if c.Name == "quilzo_nav" {
-			t.Error("an unauthenticated request set the preference")
+			t.Error("the removed toggle still set its cookie")
 		}
 	}
 
-	// A junk value is refused rather than stored.
-	r := httptest.NewRequest("POST", "http://h/nav",
-		strings.NewReader("to=javascript:alert(1)"))
+	// And an old cookie cannot bring the old layout back.
+	r = httptest.NewRequest("GET", "http://h/logs", nil)
 	r.Header.Set("Authorization", "Bearer "+tok)
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r.Header.Set("Sec-Fetch-Site", "same-origin")
+	r.AddCookie(&http.Cookie{Name: "quilzo_nav", Value: "top"})
 	w = httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, r)
-	if w.Code == http.StatusSeeOther {
-		t.Error("an arbitrary value was accepted")
-	}
-
-	// And the Referer cannot send somebody off-site: an open redirect through
-	// a preference toggle would be an embarrassing way to acquire one.
-	r = httptest.NewRequest("POST", "http://h/nav", strings.NewReader("to=left"))
-	r.Header.Set("Authorization", "Bearer "+tok)
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r.Header.Set("Sec-Fetch-Site", "same-origin")
-	r.Header.Set("Referer", "https://evil.example/somewhere")
-	w = httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, r)
-	if loc := w.Header().Get("Location"); strings.Contains(loc, "evil.example") {
-		t.Errorf("the toggle redirected to %q", loc)
+	if body := w.Body.String(); strings.Contains(body, "nav-top") ||
+		strings.Contains(body, "nav-left") {
+		t.Error("a stale preference cookie still reaches the markup")
 	}
 }

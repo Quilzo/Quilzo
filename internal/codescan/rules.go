@@ -112,7 +112,7 @@ var rules = []Rule{
 	},
 	{
 		ID: "secret.quilzo-token", Severity: Critical,
-		Pattern:  regexp.MustCompile(`\bqlz_[a-z0-9]{40,}\b`),
+		Pattern:  regexp.MustCompile(`\bqz_[a-z0-9]{40,}\b`),
 		Controls: []string{"IA-5"},
 		Detail: "a quilzo token. Tokens are shown once and stored as a hash " +
 			"precisely so they do not end up in files",

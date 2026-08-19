@@ -64,16 +64,22 @@ var coverage = map[string]surfaces{
 	"verify":     {GUI: "/security/integrity", MCP: []string{"verify_store"}},
 	"compliance": {GUI: "/security/inventory", MCP: []string{"inventory"}},
 	"agents":     {GUI: "/security/agents", MCP: []string{"agent_activity"}},
-	"export":     {GUI: "/transfer", MCP: []string{"export_site"}},
-	"ipfs":       {GUI: "/decentralised", MCP: []string{"content_id"}},
-	"form":       {GUI: "/forms", NoMCP: "submissions are what members of the public typed; an agent that can read the postbag is a data breach with a tool call"},
-	"forms":      {GUI: "/forms", NoMCP: "as form"},
-	"listing":    {GUI: "/listings", MCP: []string{"run_listing"}},
-	"listings":   {GUI: "/listings", MCP: []string{"run_listing"}},
-	"terms":      {GUI: "/structure", MCP: []string{"list_terms"}},
-	"taxonomy":   {GUI: "/structure", MCP: []string{"list_terms"}},
-	"menu":       {GUI: "/structure", MCP: []string{"list_menus"}},
-	"menus":      {GUI: "/structure", MCP: []string{"list_menus"}},
+	"agent": {GUI: "/agents",
+		NoMCP: "declares what a model may do. An agent that can write an " +
+			"agent manifest can write itself a wider one, which turns every " +
+			"other capability boundary into a suggestion — this is the same " +
+			"reason auth and token are off this surface, and it is the more " +
+			"important instance of it"},
+	"export":   {GUI: "/transfer", MCP: []string{"export_site"}},
+	"ipfs":     {GUI: "/decentralised", MCP: []string{"content_id"}},
+	"form":     {GUI: "/forms", NoMCP: "submissions are what members of the public typed; an agent that can read the postbag is a data breach with a tool call"},
+	"forms":    {GUI: "/forms", NoMCP: "as form"},
+	"listing":  {GUI: "/listings", MCP: []string{"run_listing"}},
+	"listings": {GUI: "/listings", MCP: []string{"run_listing"}},
+	"terms":    {GUI: "/structure", MCP: []string{"list_terms"}},
+	"taxonomy": {GUI: "/structure", MCP: []string{"list_terms"}},
+	"menu":     {GUI: "/structure", MCP: []string{"list_menus"}},
+	"menus":    {GUI: "/structure", MCP: []string{"list_menus"}},
 
 	// -- in the interface, and off the agent surface on purpose ---------------
 	"rollback": {GUI: "/rollback",
@@ -125,6 +131,10 @@ var coverage = map[string]surfaces{
 	"render": {Why: "renders to a file for a pipeline; the admin previews " +
 		"instead, at /preview/",
 		NoMCP: "writes a file for a pipeline"},
+	"__sandbox": {Why: "is not a command anybody types: it is the shim this " +
+		"program re-executes itself as to confine an extension",
+		NoMCP: "is a shim, and confining an extension is not an operation an " +
+			"agent performs"},
 	"config-show": {Why: "not a command", NoMCP: "not a command"},
 	"help": {Why: "prints usage",
 		NoMCP: "prints usage; the operation list is how an agent discovers this"},

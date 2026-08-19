@@ -233,7 +233,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="quilzo"`)
 			writeError(w, http.StatusUnauthorized, Error{
 				Error: "not authenticated",
-				Fix:   "send a token: Authorization: Bearer qlz_...",
+				Fix:   "send a token: Authorization: Bearer qz_...",
 			})
 			return
 		}
@@ -392,24 +392,19 @@ func (s *Server) may(r *http.Request, act auth.Action, resource string) error {
 	if tok == nil {
 		return fmt.Errorf("not authenticated")
 	}
-	// The token's own role caps what this session may do, whatever the policy
-	// grants the principal in general. Checking only the policy would make a
-	// read-only token a full one the moment its owner was promoted.
-	needed, ok := auth.Needs(act)
-	if !ok {
-		return fmt.Errorf("unknown action")
-	}
-	if !tok.Role.AtLeast(needed) {
-		return fmt.Errorf("this token carries the %s role and %s needs %s",
-			tok.Role, act, needed)
-	}
-	// The token's scope, checked before the policy. A scope only ever narrows
-	// — it is intersected with what the policy allows, never unioned — so
-	// checking it first is free and gives a better message: the caller learns
-	// which of five dimensions stopped them rather than a bare refusal that
-	// could be any of them.
-	if !tok.Scope.AllowsAction(act) {
-		return fmt.Errorf("%s", tok.Scope.Why(act, "", ""))
+	// The credential's own limits, checked before the policy. They only ever
+	// narrow — a scope is intersected with what the policy allows, never
+	// unioned — so checking first is free and gives a better message: the
+	// caller learns which dimension stopped them rather than a bare refusal
+	// that could be any of them.
+	//
+	// Through the shared check rather than inline, which is what added the
+	// missing one: this consulted the token's role and its scope and not its
+	// resource path, so a token issued `--on /blog` reached every page in the
+	// store through this API while the command line refused it.
+	if err := auth.CheckCredential(tok.Role, tok.Resource, tok.Scope, act,
+		resource); err != nil {
+		return err
 	}
 	if s.Policy != nil {
 		if d := s.Policy.Evaluate(tok.Principal, act, resource); !d.Allowed {

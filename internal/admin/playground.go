@@ -74,7 +74,17 @@ func (s *Server) playground(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 
-	fmt.Fprint(w, playgroundHTML(n, p.Name, s.playgroundRoutes()))
+	// The theme travels with the request, because this page builds its own
+	// document instead of using the layout.
+	//
+	// That is the whole bug it had: every other screen renders through
+	// layout.html, which puts data-theme on <html> from this cookie, and this
+	// one wrote its own <html> and never read it. So the playground followed
+	// the operating system while the rest of the admin followed the person —
+	// press Dark in the header, walk into the API console, and it is still
+	// light. A page that opts out of the layout has to opt back into
+	// everything the layout was doing.
+	fmt.Fprint(w, playgroundHTML(n, p.Name, themeOf(r), s.playgroundRoutes()))
 }
 
 // Route is one thing the playground can call.
@@ -117,7 +127,7 @@ func (s *Server) playgroundRoutes() []Route {
 	}
 }
 
-func playgroundHTML(nonce, who string, routes []Route) string {
+func playgroundHTML(nonce, who, theme string, routes []Route) string {
 	var opts strings.Builder
 	sorted := append([]Route(nil), routes...)
 	sort.SliceStable(sorted, func(i, j int) bool {
@@ -133,8 +143,16 @@ func playgroundHTML(nonce, who string, routes []Route) string {
 			html.EscapeString(rt.Summary)))
 	}
 
+	// Written the same way layout.html writes it: no attribute at all when the
+	// person has not chosen, so the stylesheet's own `color-scheme: light dark`
+	// follows the system.
+	themeAttr := ""
+	if theme != "" {
+		themeAttr = ` data-theme="` + html.EscapeString(theme) + `"`
+	}
+
 	return `<!doctype html>
-<html lang="en"><head>
+<html lang="en"` + themeAttr + `><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
@@ -143,8 +161,11 @@ func playgroundHTML(nonce, who string, routes []Route) string {
 <style>
   /* Native controls follow the theme. Without this the select's dropdown is
      drawn with the OS light palette and inherits a light text colour, which
-     is white on white. */
-  :root { color-scheme: light dark; }
+     is white on white.
+     Only the unchosen case is declared here; style.css turns data-theme into
+     an explicit color-scheme, and repeating the two-value form after it would
+     be a rule of equal weight taking the choice back. */
+  :root:not([data-theme]) { color-scheme: light dark; }
   .pg { max-width: 60rem; margin: 0 auto; padding: 1.5rem; }
   .pg-row { display: flex; gap: .5rem; flex-wrap: wrap; margin: .75rem 0; }
   /* An explicit display beats the user-agent rule that makes [hidden] work,

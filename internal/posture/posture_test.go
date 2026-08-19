@@ -654,3 +654,81 @@ func TestAnUnsharedFileIsStillJudgedStrictly(t *testing.T) {
 		t.Error("group-readable token hashes were accepted")
 	}
 }
+
+// Unsandboxed extensions are reported, and only when there are any.
+//
+// The rule guards a real hole: an extension is third-party code running with
+// the uid of this process, so without a kernel sandbox it can read the token
+// store. It has to stay quiet in the two cases where there is nothing to say,
+// or it becomes the finding people learn to scroll past.
+func TestUnconfinedExtensionsAreReported(t *testing.T) {
+	rule := ruleByID(t, "ext.unconfined")
+
+	// Registered and unconfined: a finding.
+	got := rule.Check(State{Ext: ExtFacts{
+		Registered: 2, Checked: true, Why: "this kernel has no Landlock"}})
+	if len(got) != 1 {
+		t.Fatalf("%d findings for unconfined extensions, want 1", len(got))
+	}
+	if !strings.Contains(got[0].Detail, "Landlock") {
+		t.Errorf("the finding does not say why there is no sandbox: %s", got[0].Detail)
+	}
+	if got[0].Fix == "" {
+		t.Error("the finding offers nothing to do about it")
+	}
+
+	// Confined: nothing to report.
+	if n := rule.Check(State{Ext: ExtFacts{
+		Registered: 2, Checked: true, Sandboxed: true}}); len(n) != 0 {
+		t.Errorf("%d findings when extensions are sandboxed", len(n))
+	}
+
+	// None registered: no exposure, so no finding. A rule that fires on a
+	// store with no extensions teaches people it is noise.
+	if n := rule.Check(State{Ext: ExtFacts{
+		Registered: 0, Checked: true}}); len(n) != 0 {
+		t.Errorf("%d findings for a store with no extensions", len(n))
+	}
+
+	// Never looked: silent here, and reported as unchecked elsewhere. An
+	// unreadable registry must not read as a clean bill of health, but it is
+	// not this rule's job to say so.
+	if n := rule.Check(State{Ext: ExtFacts{Registered: 3}}); len(n) != 0 {
+		t.Errorf("%d findings from facts nobody gathered", len(n))
+	}
+}
+
+func ruleByID(t *testing.T, id string) Rule {
+	t.Helper()
+	for _, r := range Rules() {
+		if r.ID == id {
+			return r
+		}
+	}
+	t.Fatalf("no rule %q", id)
+	return Rule{}
+}
+
+// A filesystem-only sandbox is reported as what it is.
+//
+// Rounding "confined to a filesystem" up to "confined" would tell an operator
+// their extensions cannot call out when they can. It is a smaller finding than
+// no sandbox at all, and it is still a finding.
+func TestAFilesystemOnlySandboxIsStillReported(t *testing.T) {
+	rule := ruleByID(t, "ext.unconfined")
+
+	got := rule.Check(State{Ext: ExtFacts{
+		Registered: 1, Checked: true, Sandboxed: true, NetworkOpen: true}})
+	if len(got) != 1 {
+		t.Fatalf("%d findings for a filesystem-only sandbox, want 1", len(got))
+	}
+	if !strings.Contains(got[0].Detail, "network") {
+		t.Errorf("the finding does not name what is unbounded: %s", got[0].Detail)
+	}
+
+	// Fully confined: silent.
+	if n := rule.Check(State{Ext: ExtFacts{
+		Registered: 1, Checked: true, Sandboxed: true}}); len(n) != 0 {
+		t.Errorf("%d findings when extensions are fully confined", len(n))
+	}
+}

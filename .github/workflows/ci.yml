@@ -7,6 +7,14 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Runnable by hand.
+  #
+  # Added because this workflow would not start on a pull request — the repo
+  # allows Actions and the file is valid, so the block is above this
+  # repository. Without a manual trigger there was no way to get the suite to
+  # run at all on a branch, which meant a security fix sat unverified by CI
+  # while looking perfectly normal on the pull request.
+  workflow_dispatch:
 
 jobs:
   test:

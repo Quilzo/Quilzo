@@ -432,7 +432,7 @@ func roleList() string {
 // credential without knowing what it belongs to. It costs six characters and it
 // is the difference between a token found by a scanner and one found by whoever
 // picked it up.
-const TokenPrefix = "qlz_"
+const TokenPrefix = "qz_"
 
 // tokenBytes is 256 bits. Tokens are generated, not chosen, so the whole
 // dictionary-attack problem that motivates slow password hashing does not exist

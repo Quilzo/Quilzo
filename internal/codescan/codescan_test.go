@@ -46,7 +46,7 @@ func TestItFindsCredentials(t *testing.T) {
 		body string
 	}{
 		{"secret.private-key", "-----BEGIN RSA PRIVATE KEY-----"},
-		{"secret.quilzo-token", "token: qlz_6zukocv7ecidrejjyojgsdn7ekl3w2v3qph3ef6ylsm6usaqbtdq"},
+		{"secret.quilzo-token", "token: qz_6zukocv7ecidrejjyojgsdn7ekl3w2v3qph3ef6ylsm6usaqbtdq"},
 		{"secret.cloud-key", "aws: AKIAIOSFODNN7EXAMPLE"},
 		{"secret.cloud-key", "gh: ghp_16CharsAndThenSomeMoreCharacters1234"},
 		{"secret.connection-string", "postgres://admin:hunter2ButLonger@db.internal/app"},
@@ -133,9 +133,9 @@ func TestACredentialIsNeverEchoedBack(t *testing.T) {
 		}
 	}
 	// The same for tokens matched as a whole rather than as an assignment.
-	f = scan(Config, "qlz_6zukocv7ecidrejjyojgsdn7ekl3w2v3qph3ef6ylsm6usaqbtdq")
+	f = scan(Config, "qz_6zukocv7ecidrejjyojgsdn7ekl3w2v3qph3ef6ylsm6usaqbtdq")
 	for _, x := range f {
-		if strings.Contains(x.Excerpt, "qlz_6zuk") {
+		if strings.Contains(x.Excerpt, "qz_6zuk") {
 			t.Errorf("a token was echoed: %s", x.Excerpt)
 		}
 	}

@@ -26,25 +26,57 @@ import (
 // test pass by checking less than it claims.
 var tokenRE = regexp.MustCompile(`(--[a-z0-9-]+)\s*:\s*([^;{}]+);`)
 
+// One half of a light-dark() pair. Deliberately narrow — a var() reference or
+// a literal — rather than "anything up to the comma", because a value like
+// var(--a) contains the closing paren that a lazy pattern would stop at, and a
+// half-parsed colour resolves to nothing and fails as "cannot resolve", which
+// reads as a missing token rather than a broken test.
+var lightDarkRE = regexp.MustCompile(
+	`^light-dark\(\s*(var\(--[a-z0-9-]+\)|#[0-9a-fA-F]{3,8})\s*,\s*` +
+		`(var\(--[a-z0-9-]+\)|#[0-9a-fA-F]{3,8})\s*\)$`)
+
 // tokens reads every custom property in the stylesheet and resolves var()
 // chains down to a literal colour.
+//
+// Both schemes come from one set of declarations now: the roles are written as
+// light-dark(light, dark) and the scheme is selected by `color-scheme`. So the
+// scope picks a branch rather than concatenating an override block.
+//
+// The previous version split the file on "@media (prefers-color-scheme: dark)"
+// and built the dark map from what followed. That marker no longer exists, and
+// the failure it would have caused is the one worth naming: Cut returns the
+// whole file and an empty tail, so the dark map would have been the light map,
+// every dark assertion would have re-checked light, and the suite would have
+// gone green while testing half of what it claims.
 func tokens(t *testing.T, scope string) map[string]string {
 	t.Helper()
 	raw := string(mustAsset(t, "style.css"))
 
-	// Light values come from the :root block, dark from the media query. Split
-	// on the media query so a dark override does not leak into the light map.
-	light, dark, _ := strings.Cut(raw, "@media (prefers-color-scheme: dark)")
-	src := light
-	if scope == "dark" {
-		// Dark inherits everything not overridden, so start from light and let
-		// the media block replace what it names.
-		src = light + dark
+	out := map[string]string{}
+	for _, m := range tokenRE.FindAllStringSubmatch(raw, -1) {
+		out[m[1]] = strings.TrimSpace(m[2])
 	}
 
-	out := map[string]string{}
-	for _, m := range tokenRE.FindAllStringSubmatch(src, -1) {
-		out[m[1]] = strings.TrimSpace(m[2])
+	pairs := 0
+	for k, v := range out {
+		m := lightDarkRE.FindStringSubmatch(v)
+		if m == nil {
+			continue
+		}
+		pairs++
+		if scope == "dark" {
+			out[k] = strings.TrimSpace(m[2])
+		} else {
+			out[k] = strings.TrimSpace(m[1])
+		}
+	}
+	// A scheme is defined by these pairs. Finding none means the stylesheet
+	// stopped expressing two schemes, or this pattern stopped matching them —
+	// and either way every assertion below would be comparing light with
+	// light. Failing here says so, instead of passing quietly.
+	if pairs < 20 {
+		t.Fatalf("found %d light-dark() roles in the stylesheet; the parse is "+
+			"wrong and a test that sees one scheme cannot check two", pairs)
 	}
 
 	// Resolve var(--x) references, bounded so a cycle cannot hang the test.
@@ -301,6 +333,80 @@ func TestThePlaygroundDeclaresAColourSchemeToo(t *testing.T) {
 	// Options styled explicitly, because the popup is the part that breaks.
 	if !strings.Contains(body, ".pg option") {
 		t.Error("the option elements are not given an explicit surface")
+	}
+}
+
+// An explicit choice has to be able to beat the system, in both directions.
+//
+// This is the bug the light-dark() rewrite fixed, and it is worth a test that
+// names it. The dark palette used to live only inside
+// `@media (prefers-color-scheme: dark)`, so the only thing that could apply it
+// was the operating system. Pressing "Dark" on a light machine set
+// data-theme="dark" on <html> and no rule in the stylesheet matched that
+// attribute — the button moved a cookie, the header icon changed, and not one
+// colour did. The reverse worked, because the media block excluded
+// [data-theme="light"], which is what made it look like the toggle worked.
+//
+// Asserted as "there is a rule for each choice" rather than by re-deriving the
+// cascade, because what went wrong was that one of the two had no rule at all.
+func TestEitherThemeChoiceHasARuleThatCanApplyIt(t *testing.T) {
+	css := string(mustAsset(t, "style.css"))
+	stripped := regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(css, "")
+	for _, choice := range []string{"light", "dark"} {
+		sel := `[data-theme="` + choice + `"]`
+		if !strings.Contains(stripped, sel) {
+			t.Errorf("no rule in the stylesheet matches %s, so choosing %q "+
+				"cannot change anything. A toggle that sets an attribute "+
+				"nothing selects on is a toggle that does nothing.",
+				sel, choice)
+		}
+	}
+}
+
+// The two schemes have to actually differ.
+//
+// Guards the parser as much as the stylesheet: every assertion above compares
+// a light value with a dark one, and if the scopes ever collapse to the same
+// map they all still pass while checking one scheme twice.
+func TestTheTwoSchemesAreNotTheSame(t *testing.T) {
+	light, dark := tokens(t, "light"), tokens(t, "dark")
+	for _, role := range []string{"--surface", "--on-surface", "--primary"} {
+		if light[role] == dark[role] {
+			t.Errorf("%s is %q in both schemes; the two are not distinct and "+
+				"every contrast assertion is checking light twice",
+				role, light[role])
+		}
+	}
+}
+
+// The playground builds its own document, so it has to carry the choice itself.
+//
+// It did not, which is the half of the theme bug somebody actually reported:
+// the rest of the admin followed the person and the API console followed the
+// machine, so walking from one to the other changed the colours back.
+func TestThePlaygroundCarriesTheChosenTheme(t *testing.T) {
+	for _, tc := range []struct {
+		cookie string
+		want   string
+	}{
+		{"dark", ` data-theme="dark"`},
+		{"light", ` data-theme="light"`},
+	} {
+		body := fetchPlaygroundWithTheme(t, tc.cookie)
+		if !strings.Contains(body, tc.want) {
+			t.Errorf("with the theme set to %q the playground did not emit %q; "+
+				"it renders its own <html> and has to put the choice on it the "+
+				"way the layout does", tc.cookie, tc.want)
+		}
+	}
+
+	// No cookie means no attribute, so the stylesheet follows the system.
+	// Emitting data-theme="" or a default of "light" here would take away the
+	// "follow my machine" state that the three-way toggle exists to keep.
+	body, _ := fetchPlayground(t)
+	if strings.Contains(body, "data-theme=") {
+		t.Error("the playground emitted a data-theme with no choice stored; " +
+			"unset has to mean follow the system, not light")
 	}
 }
 

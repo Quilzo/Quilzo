@@ -1,6 +1,11 @@
 # Build output
 bin/
-quilzo
+# Anchored to the root, because the binary and the command's source directory
+# now share a name. An unanchored `quilzo` matches any path segment, so it
+# swallowed cmd/quilzo/ — git silently refused to add 48 source files, and a
+# commit that deleted cmd/scrivet/ without adding its replacement looked
+# perfectly normal in `git status`.
+/quilzo
 *.exe
 
 # A store, which is data and not source. `quilzo init` makes one in the
