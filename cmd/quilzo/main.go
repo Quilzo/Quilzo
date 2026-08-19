@@ -163,6 +163,9 @@ agents and integrations
   quilzo agent list | show NAME | check     what is declared, and whether it still validates
   quilzo agents                            what models have been doing, and
                                             which are not accepting refusals
+  quilzo peer add NAME https://host        replicate from another quilzo store
+  quilzo peer pull NAME                    fetch its objects; lands in quarantine
+  quilzo peer list | adopt NAME | remove   what is paired, and making it the draft
   quilzo webhook add https://...           tell another system when you publish
   quilzo webhook list | test               signed, timestamped, replay-proof
 
@@ -311,6 +314,8 @@ func main() {
 		err = cmdAgents(root, cmdArgs)
 	case "agent":
 		err = cmdAgent(root, cmdArgs)
+	case "peer":
+		err = cmdPeer(root, cmdArgs)
 	// The literal rather than sandboxCmd, because the test that keeps the
 	// privilege table honest reads this switch from the source and cannot
 	// resolve a constant.

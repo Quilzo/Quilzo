@@ -81,7 +81,13 @@ var commandNeeds = map[string]need{
 	// Declaring what a model may do is deciding a blast radius, which is an
 	// administrative act rather than an editorial one. Reading the list and
 	// the templates is not, so those step down from it.
-	"agent":           {action: auth.ActGrant},
+	"agent": {action: auth.ActGrant},
+	// Pairing with a peer, and adopting what it sent into the draft. ActGrant
+	// rather than ActEditDraft: adding a peer decides which other store this
+	// one will accept content from, which is a trust decision and outlives
+	// the person who made it, whereas the draft it eventually writes is the
+	// visible consequence rather than the thing being authorised.
+	"peer":            {action: auth.ActGrant},
 	"agent templates": {action: auth.ActView},
 	"agent list":      {action: auth.ActView},
 	"agent show":      {action: auth.ActView},

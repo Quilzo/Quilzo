@@ -70,6 +70,10 @@ var coverage = map[string]surfaces{
 			"other capability boundary into a suggestion — this is the same " +
 			"reason auth and token are off this surface, and it is the more " +
 			"important instance of it"},
+	"peer": {GUI: "/transfer",
+		NoMCP: "pairs this store with another and adopts what it sent. A " +
+			"model that can add a peer can name one it controls and then " +
+			"adopt it, which is a write endpoint assembled out of two reads"},
 	"export":   {GUI: "/transfer", MCP: []string{"export_site"}},
 	"ipfs":     {GUI: "/decentralised", MCP: []string{"content_id"}},
 	"form":     {GUI: "/forms", NoMCP: "submissions are what members of the public typed; an agent that can read the postbag is a data breach with a tool call"},
