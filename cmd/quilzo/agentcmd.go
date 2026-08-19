@@ -12,6 +12,8 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Declaring agents from the command line.
@@ -355,7 +357,23 @@ func agentCheckRun(root string, args []string) error {
 			i++
 			return a, nil
 		},
-		Perform: agentexec.Reader{Store: s}.Perform(sess),
+		// Reads and writes both, routed by the same classification the
+		// session gate uses. Wiring only the reader would have made every
+		// granted write report "not implemented", which reads as the agent
+		// behaving correctly rather than as a surface nobody connected.
+		Perform: agentexec.Dispatch(
+			agentexec.Reader{Store: s},
+			agentexec.Writer{
+				Store: s,
+				// Attributed to the agent. A commit signed with whoever
+				// happened to start the run is a history that lies about who
+				// wrote it, and the review queue reads the author.
+				Author:  "agent/" + m.Name,
+				Gate:    pageGate(root),
+				Propose: proposeCommit(root, s),
+			},
+			sess,
+		),
 		Record: func(rc agent.Receipt) {
 			// The outcome, into the log that can prove it was not edited.
 			// Written whatever happened: a run that was refused everything is
@@ -402,4 +420,72 @@ func agentCheckRun(root string, args []string) error {
 	}
 	fmt.Printf("  %srecorded as agent.run %s%s\n", dim, rc.Fingerprint()[:12], reset)
 	return runErr
+}
+
+// pageGate is the type gate, as an agent executor takes it.
+//
+// Loaded per call rather than captured once: a run can outlive an operator
+// binding a type, and a gate that decided at startup would let the rest of the
+// run write content against a binding that no longer holds.
+//
+// Fails closed on an unreadable type store. The alternative — treating a
+// broken types.json as "no types configured" — makes corrupting one file the
+// way to switch validation off for every page, which is the shape of the
+// fail-open bug this project has already been bitten by once.
+func pageGate(root string) func(string, map[string]any) error {
+	return func(page string, body map[string]any) error {
+		st, err := schema.Load(root)
+		if err != nil {
+			return fmt.Errorf(
+				"the type store could not be read, so this write cannot be "+
+					"checked against the type bound to %s: %w", page, err)
+		}
+		problems := st.Check(page, body)
+		if len(problems) == 0 {
+			return nil
+		}
+		msgs := make([]string, len(problems))
+		for i, p := range problems {
+			msgs[i] = p.String()
+		}
+		return fmt.Errorf("%s does not satisfy the type bound to it: %s",
+			page, strings.Join(msgs, "; "))
+	}
+}
+
+// proposeCommit puts an agent's change into the review queue people already
+// use, rather than giving agents a queue of their own.
+//
+// One queue is the point. A separate "AI approvals" screen is how a reviewer
+// ends up with two inboxes and treats one of them as less real; and the rules
+// that matter here — an author may not approve their own change, and a
+// machine-written one needs a human — are already written against this queue.
+func proposeCommit(root string, s *store.Store) func(string, string) error {
+	return func(commit, message string) error {
+		prop, file, err := currentProposal(root, s)
+		if err != nil {
+			return err
+		}
+		if prop.Content != commit {
+			// The draft moved between the write and the publish. Refused
+			// rather than proposing whatever is current: an approval names a
+			// content hash, and proposing a commit the agent did not produce
+			// would put somebody else's bytes behind the agent's name.
+			return fmt.Errorf(
+				"the draft is now %s and this agent proposed %s; something "+
+					"else wrote in between", shortCommit(prop.Content),
+				shortCommit(commit))
+		}
+		if message != "" && prop.Message == "" {
+			prop.Message = message
+		}
+		return saveJSON(proposalsPath(root), file)
+	}
+}
+
+func shortCommit(s string) string {
+	if len(s) > 12 {
+		return s[:12]
+	}
+	return s
 }
