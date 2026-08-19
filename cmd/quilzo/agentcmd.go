@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/agentexec"
 	"os"
 	"path/filepath"
 	"sort"
@@ -72,6 +74,8 @@ func cmdAgent(root string, args []string) error {
 		return agentNew(root, args[1:])
 	case "check":
 		return agentCheck(root)
+	case "run":
+		return agentCheckRun(root, args[1:])
 	default:
 		return agentUsage()
 	}
@@ -85,6 +89,7 @@ func agentUsage() error {
   list                   what is declared here
   show NAME              one manifest in full
   check                  re-validate every manifest against this build
+  run NAME ["goal"]      exercise one against its manifest, and record it
 
 kinds: %s`, strings.Join(agent.KindNames(), ", "))
 }
@@ -275,4 +280,126 @@ func agentCheck(root string) error {
 	}
 	fmt.Printf("  %s%d agent(s) valid%s\n", dim, len(names), reset)
 	return nil
+}
+
+// agentCheckRun exercises an agent against its own manifest, without a model.
+//
+// # Why a run with no model is worth having
+//
+// Everything that decides what an agent may do is in the manifest and the
+// session: the capability list, the autonomy, the budgets, the retrieval scope.
+// None of that involves a model, so all of it can be exercised without one —
+// and the answer to "is this agent configured the way I meant" is available
+// before anybody spends a token on finding out.
+//
+// It is also the wiring. A receipt that nothing writes to the audit log is a
+// data structure; this is the first caller that produces one, and it produces
+// it on the path every later caller will use.
+//
+// The plan is fixed rather than proposed. A model that chooses the actions is
+// the next change and a larger one, because parsing model output into actions
+// is where malformed responses and injected instructions arrive — that deserves
+// its own review rather than riding along with the plumbing.
+func agentCheckRun(root string, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: quilzo agent run NAME [\"what it should do\"]")
+	}
+	name := args[0]
+	goal := "check that this agent's manifest is enforceable"
+	if len(args) > 1 {
+		goal = args[1]
+	}
+
+	set, err := loadAgents(root)
+	if err != nil {
+		return err
+	}
+	m, ok := set.Agents[name]
+	if !ok {
+		return fmt.Errorf("no agent called %q; `quilzo agent list`", name)
+	}
+	// Re-validated against this build before it runs. A manifest that was
+	// written when an operation existed and no longer does describes a
+	// permission nothing grants, and running it would report a clean result
+	// for an agent that cannot work.
+	if err := m.Validate(knownCapabilities(root)); err != nil {
+		return err
+	}
+
+	s, err := open(root)
+	if err != nil {
+		return err
+	}
+	sess := agent.NewSession(m, nil)
+	caller := resolveCaller(root, "")
+
+	// Every capability the manifest holds, tried once, in a fixed order.
+	//
+	// The point is to find out which of them this store actually answers, so
+	// the plan is the manifest rather than anything chosen at run time — and
+	// a capability that is refused here is refused for a reason the operator
+	// can read rather than one a model stumbled into.
+	plan := make([]agent.Action, 0, len(m.Capabilities)+1)
+	for _, c := range m.Capabilities {
+		plan = append(plan, agent.Action{Op: c})
+	}
+	plan = append(plan, agent.Action{Say: "checked"})
+
+	i := 0
+	runner := agent.Runner{
+		Decide: func(context.Context, string, []agent.Observation) (agent.Action, error) {
+			if i >= len(plan) {
+				return agent.Action{Say: "checked"}, nil
+			}
+			a := plan[i]
+			i++
+			return a, nil
+		},
+		Perform: agentexec.Reader{Store: s}.Perform(sess),
+		Record: func(rc agent.Receipt) {
+			// The outcome, into the log that can prove it was not edited.
+			// Written whatever happened: a run that was refused everything is
+			// exactly the record somebody comes asking about.
+			outcome := audit.Success
+			if ok, _ := rc.Billable(); !ok {
+				outcome = audit.Denied
+			}
+			record(root, caller.auditRecord("agent.run", "/", outcome,
+				rc.Detail()))
+		},
+	}
+
+	trace, runErr := runner.Run(context.Background(), sess, goal)
+	rc := trace.Receipt(sess)
+
+	fmt.Printf("%s%s%s  %s\n", bold, name, reset, m.Kind)
+	fmt.Printf("  %severy capability tried once, with no arguments and no "+
+		"model — this reports what this store answers, not what the agent "+
+		"would achieve%s\n", dim, reset)
+	fmt.Printf("  did %d, refused %d, failed %d\n", rc.Did, rc.Refused, rc.Failed)
+	// Failures are shown, not only counted. A capability the manifest permits
+	// and this store cannot answer is the most useful thing this command
+	// finds, and a bare count sends the operator looking through a log for it.
+	for _, step := range trace.Steps {
+		if step.Allowed && step.Err != "" {
+			what := step.Action.Op
+			if what == "" {
+				what = step.Action.Tool
+			}
+			fmt.Printf("  %s%-22s%s %s\n", dim, what, reset, step.Err)
+		}
+	}
+	for _, step := range trace.Refused() {
+		what := step.Action.Op
+		if what == "" {
+			what = step.Action.Tool
+		}
+		fmt.Printf("  %s%-22s%s %s\n", dim, what, reset, step.Why)
+	}
+	if rc.Tainted {
+		fmt.Printf("  %sread stored content, so anything it produced needs a "+
+			"person%s\n", dim, reset)
+	}
+	fmt.Printf("  %srecorded as agent.run %s%s\n", dim, rc.Fingerprint()[:12], reset)
+	return runErr
 }
