@@ -25,7 +25,7 @@ func TestEditingAPageDoesNotWipeTheRecords(t *testing.T) {
 	}
 	tree, rec, err := collection.Put(s, c.Tree, "devices",
 		collection.Record{Fields: map[string]any{"hostname": "laptop-14"}},
-		time.Now())
+		time.Now(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

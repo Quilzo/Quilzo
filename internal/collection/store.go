@@ -22,13 +22,39 @@ import (
 // diff showing the loss — the tree simply no longer contains them. That is the
 // worst failure this design can have, and Preserve below is what prevents it.
 
+// Check validates a record before it is stored. Nil means unvalidated.
+//
+// A parameter rather than a package-level hook, because every caller has to
+// decide — and a test walks the source to make sure each one passes a real
+// check rather than nil. That is the same arrangement the page write path
+// uses: gateWrite is called explicitly and a test refuses a surface that
+// forgets, which is what caught the content API storing pages nobody had
+// validated.
+type Check func(collection string, fields map[string]any) error
+
 // Put stores a record and returns the new tree.
 //
 // The tree, not a commit: whether this becomes a draft, a promotion or
 // something else is the caller's decision, and a function that made it here
 // would make the same decision for every caller.
+//
+// The type gate runs here rather than in each of the four surfaces that write
+// records. It was in none of them: types bound to pages only, so a record
+// could be anything while the equivalent page was refused. One chokepoint is
+// what makes the answer the same from the command line, the browser, the
+// content API and the agent interface — the property this project has twice
+// shipped without.
 func Put(s *store.Store, baseTree, collection string, r Record,
-	now time.Time) (tree string, out Record, err error) {
+	now time.Time, check Check) (tree string, out Record, err error) {
+
+	// Before anything is written. The store is append-only, so a record that
+	// does not satisfy its type is addressable forever once it lands, and
+	// "fix it in the next write" leaves the broken one in the history.
+	if check != nil {
+		if err := check(collection, r.Fields); err != nil {
+			return "", Record{}, err
+		}
+	}
 
 	if err := ValidName(collection); err != nil {
 		return "", Record{}, err

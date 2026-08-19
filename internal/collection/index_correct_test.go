@@ -68,7 +68,7 @@ func TestAnEditIsVisibleThroughAReusedIndex(t *testing.T) {
 
 	next, updated, err := Put(s, tree, "controls", Record{
 		ID: target.ID, Fields: map[string]any{"status": "changed", "owner": "nobody"},
-	}, time.Now())
+	}, time.Now(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestAnInsertIsVisibleThroughAReusedIndex(t *testing.T) {
 	warm, _ := Build(s, tree, "controls", nil)
 
 	next, added, err := Put(s, tree, "controls",
-		Record{Fields: map[string]any{"status": "brand-new"}}, time.Now())
+		Record{Fields: map[string]any{"status": "brand-new"}}, time.Now(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestTheCacheDoesNotConfuseTwoTrees(t *testing.T) {
 		t.Fatal(err)
 	}
 	second, _, err := Put(s, first, "controls",
-		Record{Fields: map[string]any{"status": "extra"}}, time.Now())
+		Record{Fields: map[string]any{"status": "extra"}}, time.Now(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestTheCacheIsBounded(t *testing.T) {
 	c := NewCache()
 	for i := 0; i < MaxCached+3; i++ {
 		next, _, err := Put(s, tree, "controls",
-			Record{Fields: map[string]any{"n": i}}, time.Now())
+			Record{Fields: map[string]any{"n": i}}, time.Now(), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
