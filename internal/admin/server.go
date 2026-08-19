@@ -507,7 +507,13 @@ func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("Content-Security-Policy",
+			// manifest-src is the one directive this needed to become
+			// installable. It permits a JSON file from this origin and
+			// nothing else — no script, no fetch, no capability the
+			// interface did not already have. An installed admin is the
+			// same server-rendered HTML in a window with different chrome.
 			"default-src 'none'; style-src 'self'; img-src 'self' data:; "+
+				"manifest-src 'self'; "+
 				"form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
@@ -754,6 +760,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/auth/callback", s.handleOIDCCallback)
 	mux.HandleFunc("/signout", s.handleSignOut)
 	mux.HandleFunc("/agents", s.handleAgents)
+	mux.HandleFunc("/manifest.webmanifest", s.installManifest)
 	mux.HandleFunc("/start", s.handleStart)
 	mux.HandleFunc("/start/done", s.handleStartDone)
 	mux.HandleFunc("/playground", s.playground)

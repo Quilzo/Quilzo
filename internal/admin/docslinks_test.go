@@ -159,13 +159,15 @@ func TestEveryDestinationIsServedAndEveryScreenIsADestination(t *testing.T) {
 
 // notADestination is every top-level route that is not a place to navigate to.
 var notADestination = map[string]string{
-	"/save":         "a form target",
-	"/publish":      "a form target",
-	"/rollback":     "a form target",
-	"/theme":        "a preference toggle",
-	"/signin":       "reached when not signed in",
-	"/signout":      "a form target",
-	"/style.css":    "a stylesheet",
+	"/save":      "a form target",
+	"/publish":   "a form target",
+	"/rollback":  "a form target",
+	"/theme":     "a preference toggle",
+	"/signin":    "reached when not signed in",
+	"/signout":   "a form target",
+	"/style.css": "a stylesheet",
+	"/manifest.webmanifest": "the install manifest, linked from every page's " +
+		"head and opened by the browser rather than by a person",
 	"/preview":      "a subtree",
 	"/media":        "in the table",
 	"/languages":    "in the table",
