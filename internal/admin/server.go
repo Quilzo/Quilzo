@@ -111,7 +111,10 @@ type Server struct {
 	// prints it — which is exactly the template that failed the accessibility
 	// gate when it wrapped the name in a link.
 	SiteName string
-	Types    *Types
+	// Brand is what an operator may change about this interface's appearance:
+	// its name, its accent and its mark. The zero value is Quilzo's own.
+	Brand Brand
+	Types *Types
 	// Agents are the declared agent manifests: what a model in this store is
 	// permitted to do. Nil means the screen says so rather than showing none,
 	// because an empty list and no access look identical and mean opposite
@@ -474,6 +477,9 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	// "/docs#{{.Doc}}" against an external site would have to know the host —
 	// which is how a relative link to a page that no longer exists survives a
 	// move and 404s quietly on every screen.
+	data["Brand"] = s.Brand.Label()
+	data["BrandMark"] = s.Brand.Initial()
+	data["BrandStyle"] = s.Brand.Style()
 	data["DocURL"] = DocURL(docFor(navKey))
 	data["DocsBase"] = DocsBase
 
