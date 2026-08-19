@@ -139,7 +139,8 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 				return err
 			}
 			next, rec, err := collection.Put(s, tree, name,
-				collection.Record{ID: id, Fields: fields}, time.Now())
+				collection.Record{ID: id, Fields: fields}, time.Now(),
+				recordGate(root))
 			if err != nil {
 				return err
 			}

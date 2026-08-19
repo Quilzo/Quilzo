@@ -10,6 +10,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/schema"
 )
 
 // Records in the admin.
@@ -24,6 +25,18 @@ import (
 type Data struct {
 	Tree   func() (string, error)
 	Commit func(tree, message, author string) error
+}
+
+// typeLoader adapts the admin's Types wiring to what the record gate wants.
+//
+// Nil when this server was started without access to the types, which the gate
+// treats as a refusal rather than as "no types" — a server that cannot read the
+// constraint must not store content it has not checked against it.
+func (s *Server) typeLoader() func() (*schema.Store, error) {
+	if s.Types == nil || s.Types.Load == nil {
+		return nil
+	}
+	return s.Types.Load
 }
 
 func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
@@ -175,7 +188,8 @@ func (s *Server) handleRecordSave(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		next, _, err := collection.Put(s.Store, tree, coll,
-			collection.Record{ID: id, Fields: fields}, time.Now())
+			collection.Record{ID: id, Fields: fields}, time.Now(),
+			schema.RecordGate(s.typeLoader()))
 		if err != nil {
 			return err
 		}

@@ -4,10 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
@@ -31,9 +33,113 @@ type Store struct {
 	// default would validate content nobody chose to validate and reject writes
 	// for reasons the author never set up.
 	Bound map[string]string `json:"bound"`
+	// Collections maps a collection to the type its records must satisfy.
+	//
+	// Separate from Bound, and deliberately so. A page is one document with a
+	// name; a collection is many documents sharing a shape, and binding the
+	// shape to the collection rather than to each record is what makes the
+	// constraint hold for records nobody has written yet.
+	//
+	// Its absence was a real gap: types bound to pages only, so `records add`
+	// stored anything at all while the equivalent page write was refused. That
+	// stopped being academic when the catalogue began publishing records to
+	// shopping agents — a product with no price is not a product, and nothing
+	// said so.
+	Collections map[string]string `json:"collections,omitempty"`
 	// Records is the append-only history of successful validations: which
 	// content hash passed which type hash, and when.
 	Records []Binding `json:"records"`
+}
+
+// RecordGate builds the check a record write passes through.
+//
+// Returns a plain function so the storage package needs no import of this one:
+// the dependency would run the wrong way, since types are a constraint on
+// content and this is what content is stored by.
+//
+// Written once so the four surfaces that write records cannot express the same
+// rule four different ways — which is exactly how the page gate came to be
+// enforced on the command line and not in the content API.
+//
+// A loader that is nil or fails refuses the write. A type store that cannot be
+// read is not a store with no types, and treating it as one would make an
+// unreadable file the way to switch validation off.
+func RecordGate(load func() (*Store, error)) func(string, map[string]any) error {
+	return func(collection string, fields map[string]any) error {
+		if load == nil {
+			return fmt.Errorf(
+				"this server cannot read the content types, so it will not " +
+					"store a record it has not validated")
+		}
+		st, err := load()
+		if err != nil {
+			return fmt.Errorf("the content types could not be read: %w", err)
+		}
+		if st == nil {
+			return fmt.Errorf(
+				"this server has no content types loaded, so it will not " +
+					"store a record it has not validated")
+		}
+		problems := st.CheckRecord(collection, fields)
+		if len(problems) == 0 {
+			return nil
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "this record does not satisfy the type bound to %s",
+			collection)
+		for _, pr := range problems {
+			fmt.Fprintf(&b, "\n  %s", pr)
+		}
+		return errors.New(b.String())
+	}
+}
+
+// BindCollection requires every record in a collection to satisfy a type.
+func (s *Store) BindCollection(collection, typeName string) error {
+	if _, ok := s.Registry.Get(typeName); !ok {
+		return fmt.Errorf("there is no type %q; run quilzo type list", typeName)
+	}
+	if s.Collections == nil {
+		s.Collections = map[string]string{}
+	}
+	s.Collections[collection] = typeName
+	return nil
+}
+
+// UnbindCollection removes the requirement.
+func (s *Store) UnbindCollection(collection string) {
+	delete(s.Collections, collection)
+}
+
+// CollectionType names the type a collection's records must satisfy, if any.
+func (s *Store) CollectionType(collection string) (string, bool) {
+	t, ok := s.Collections[collection]
+	return t, ok
+}
+
+// CheckRecord validates one record's fields against its collection's type.
+//
+// Nil when the collection is unbound, which is every collection until somebody
+// binds one — the same rule pages follow. There is no implicit default type,
+// because a default would reject writes for reasons the author never set up.
+//
+// A binding pointing at a deleted type fails closed, for the same reason the
+// page path does: treating it as unbound would make deleting a type a way to
+// switch validation off for everything using it.
+func (s *Store) CheckRecord(collection string, fields map[string]any) []Problem {
+	typeName, bound := s.Collections[collection]
+	if !bound {
+		return nil
+	}
+	t, ok := s.Registry.Get(typeName)
+	if !ok {
+		return []Problem{{Field: collection, Reason: fmt.Sprintf(
+			"is bound to type %q, which no longer exists", typeName)}}
+	}
+	if fields == nil {
+		fields = map[string]any{}
+	}
+	return Validate(t, fields)
 }
 
 // Hash is the address of a type: the SHA-256 of its canonical JSON.

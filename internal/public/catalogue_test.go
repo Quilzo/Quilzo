@@ -29,7 +29,7 @@ func catalogueSite(t *testing.T, catalogue string) *Site {
 		{ID: "fedcba9876543210fedcba9876543210", Fields: map[string]any{
 			"title": "Toaster", "price": "25.00", "cost": "8.00"}},
 	} {
-		tree, _, err = collection.Put(s, tree, "products", r, now)
+		tree, _, err = collection.Put(s, tree, "products", r, now, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

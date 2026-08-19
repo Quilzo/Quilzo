@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
@@ -29,12 +30,14 @@ func cmdTypes(root string, args []string) error {
 		return typesShow(root, rest)
 	case "bind":
 		return typesBind(root, rest)
+	case "bind-collection":
+		return typesBindCollection(root, rest)
 	case "example":
 		return cmdTypeExample(args[1:])
 	case "check":
 		return typesCheck(root)
 	default:
-		return fmt.Errorf("unknown type command %q; try list, add, show, bind or check",
+		return fmt.Errorf("unknown type command %q; try list, add, show, bind, bind-collection or check",
 			args[0])
 	}
 }
@@ -183,6 +186,44 @@ func num(v *float64) string {
 	return fmt.Sprintf("%g", *v)
 }
 
+// typesBindCollection requires every record in a collection to satisfy a type.
+//
+// A separate command from `bind` rather than a flag on it, because the two
+// constrain different things and a flag would invite the question of what
+// happens when both are given. A page names its own type; a collection names
+// one for every record in it, including the ones nobody has written yet.
+func typesBindCollection(root string, args []string) error {
+	pos, flags := leadingArgs(args, 2)
+	fs := flag.NewFlagSet("bind-collection", flag.ContinueOnError)
+	if err := fs.Parse(flags); err != nil {
+		return err
+	}
+	if len(pos) != 2 {
+		return fmt.Errorf("usage: quilzo type bind-collection <collection> <type>")
+	}
+	coll, typeName := pos[0], pos[1]
+
+	st, err := schema.Load(root)
+	if err != nil {
+		return err
+	}
+	if err := st.BindCollection(coll, typeName); err != nil {
+		return err
+	}
+	if err := st.Save(); err != nil {
+		return err
+	}
+	w.Human("every record in %s must now satisfy %s\n", coll, typeName)
+
+	// What is already there is not re-validated, and saying so matters. The
+	// store is append-only: records written before the binding stay exactly as
+	// they were, and a binding that silently implied otherwise would be a
+	// claim about history it cannot make.
+	w.Human("  %srecords written before now are unchanged; this applies to "+
+		"the next write%s\n", dim, reset)
+	return nil
+}
+
 func typesBind(root string, args []string) error {
 	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("bind", flag.ContinueOnError)
@@ -298,6 +339,19 @@ func draftPages(root string) (map[string]any, error) {
 		return map[string]any{}, nil
 	}
 	return site.PagesAt(s, ref)
+}
+
+// recordGate is gateWrite's counterpart for records.
+//
+// Pages go through gateWrite; records go through collection.Put, which takes
+// this. Two functions rather than one because the two are validated against
+// different bindings — a page names its type, a collection names one for every
+// record in it — and a single function taking either would have to be told
+// which, by a caller who might be wrong.
+func recordGate(root string) collection.Check {
+	return schema.RecordGate(func() (*schema.Store, error) {
+		return schema.Load(root)
+	})
 }
 
 // gateWrite is the check every write path in this binary goes through.

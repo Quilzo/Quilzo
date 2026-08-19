@@ -84,7 +84,7 @@ func BenchmarkRebuildAfterOneEdit(b *testing.B) {
 				b.StopTimer()
 				next, _, err := Put(s, tree, "controls",
 					Record{Fields: map[string]any{"status": "met",
-						"title": fmt.Sprintf("edit %d", i)}}, time.Now())
+						"title": fmt.Sprintf("edit %d", i)}}, time.Now(), nil)
 				if err != nil {
 					b.Fatal(err)
 				}

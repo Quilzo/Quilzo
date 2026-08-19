@@ -2,8 +2,10 @@ package store
 
 import (
 	"fmt"
+	"io/fs"
+	"path/filepath"
+	"strings"
 	"testing"
-	"time"
 )
 
 func seed(t *testing.T, s *Store, n int) string {
@@ -32,9 +34,21 @@ func seed(t *testing.T, s *Store, n int) string {
 // a single flat tree listing all of them. Five writes a second is not an
 // application, and that number is why this exists.
 //
-// Measured as a ratio rather than against a clock, because a threshold in
-// milliseconds is a test that fails on a slow machine and passes on a fast one
-// while measuring nothing about the code.
+// Measured in objects written rather than in time.
+//
+// It used to be a ratio of two durations, on the reasoning that a threshold in
+// milliseconds fails on a slow machine and passes on a fast one. The reasoning
+// was right and the instrument was still wrong: a ratio of two wall-clock
+// numbers is noisier than either, because a shared runner can perturb one
+// measurement and not the other. It failed in CI at 5.5x against a limit of 4x
+// while passing locally, which is a test reporting on the scheduler.
+//
+// The property is algorithmic, so it is counted algorithmically. Editing one
+// record rewrites the objects on its path — the blob, and one tree per path
+// segment — and that number is fixed by the depth of the path, not by how many
+// records sit beside it. Forty times the records must write the same handful of
+// objects. That is deterministic, fails for exactly one reason, and says what
+// it means.
 func TestOneEditDoesNotCostMoreAsTheStoreGrows(t *testing.T) {
 	if testing.Short() {
 		t.Skip("seeding twenty thousand records takes a minute")
@@ -45,32 +59,63 @@ func TestOneEditDoesNotCostMoreAsTheStoreGrows(t *testing.T) {
 	big := newStore(t)
 	bigBase := seed(t, big, 20000)
 
-	edit := func(s *Store, base string) time.Duration {
-		start := time.Now()
+	// edit changes one record and reports how many new objects that wrote.
+	//
+	// New ones only: an identical object is already stored under its own hash
+	// and writing it again is a no-op, which is the deduplication that makes
+	// this cheap in the first place.
+	edit := func(s *Store, base string, title string) int {
+		before := countObjects(t, s)
 		if _, err := s.PutNested(base, []Change{{
 			Path:  "data/things/00/00/rec0",
-			Value: map[string]any{"title": "edited"},
+			Value: map[string]any{"title": title},
 		}}); err != nil {
 			t.Fatal(err)
 		}
-		return time.Since(start)
+		return countObjects(t, s) - before
 	}
 
-	// Warmed, so the first-write cost of creating directories is not the
-	// measurement.
-	edit(small, smallBase)
-	edit(big, bigBase)
+	// A distinct value per edit, so the second is not deduplicated against the
+	// first and measured as free.
+	a := edit(small, smallBase, "edited-small")
+	b := edit(big, bigBase, "edited-big")
+	t.Logf("objects written — 500 records: %d · 20000 records: %d", a, b)
 
-	a, b := edit(small, smallBase), edit(big, bigBase)
-	t.Logf("500 records: %s · 20000 records: %s", a.Round(time.Millisecond),
-		b.Round(time.Millisecond))
-
-	// Forty times the records must not be anything like forty times the cost.
-	if b > a*4 {
-		t.Errorf("editing one record costs %s in a store of 500 and %s in a "+
-			"store of 20000; the write is still proportional to the store",
-			a, b)
+	if a == 0 || b == 0 {
+		t.Fatalf("an edit wrote no objects (%d and %d); the measurement is "+
+			"wrong and a test that measures nothing passes", a, b)
 	}
+	// Forty times the records must write the same handful of objects. Equal is
+	// the honest expectation; the slack is for a tree that happens to split
+	// differently at the two sizes, not for anything proportional.
+	if b > a+2 {
+		t.Errorf("editing one record writes %d object(s) in a store of 500 "+
+			"and %d in a store of 20000; the write is still proportional to "+
+			"the store", a, b)
+	}
+}
+
+// countObjects counts what is stored, without re-hashing it.
+//
+// Verify would also count and would re-hash twenty thousand records to do it,
+// which is a minute of work to answer a question about arithmetic.
+func countObjects(t *testing.T, s *Store) int {
+	t.Helper()
+	n := 0
+	err := filepath.WalkDir(filepath.Join(s.Root(), "objects"),
+		func(_ string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !d.IsDir() && !strings.HasPrefix(d.Name(), ".") {
+				n++
+			}
+			return nil
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }
 
 // -- correctness -------------------------------------------------------------
