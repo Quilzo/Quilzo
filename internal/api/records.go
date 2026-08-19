@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/schema"
 )
 
 // Records over HTTP.
@@ -309,7 +310,8 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 		}
 
 		next, rec, err := collection.Put(s.Store, tree, name,
-			collection.Record{ID: id, Fields: fields}, time.Now())
+			collection.Record{ID: id, Fields: fields}, time.Now(),
+			schema.RecordGate(s.Types))
 		if err != nil {
 			return err
 		}
