@@ -21,7 +21,7 @@ import (
 // and its template renders.
 
 func TestTheDemonstrationSatisfiesItsOwnTypes(t *testing.T) {
-	d := Gram()
+	d := Marginalia()
 	types := &schema.Store{
 		Registry: schema.NewRegistry(), Bound: map[string]string{}}
 	for _, ty := range d.Types {
@@ -49,7 +49,7 @@ func TestTheDemonstrationSatisfiesItsOwnTypes(t *testing.T) {
 
 // Every image reference names an image that ships.
 func TestEveryImageReferenceResolves(t *testing.T) {
-	d := Gram()
+	d := Marginalia()
 	if err := d.Resolve(fakeAddresses(d)); err != nil {
 		t.Fatalf("the demonstration refers to images it does not carry: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestEveryImageReferenceResolves(t *testing.T) {
 // Every image is described, which is the rule the tool refuses to publish
 // without.
 func TestEveryImageHasAlternativeText(t *testing.T) {
-	d := Gram()
+	d := Marginalia()
 	if len(d.Media) == 0 {
 		t.Fatal("no images at all; this test is checking nothing")
 	}
@@ -88,7 +88,7 @@ func TestEveryImageHasAlternativeText(t *testing.T) {
 // enforces — so a demo failing it could not be published by the tool that
 // ships it.
 func TestTheMenuPointsOnlyAtPagesThatExist(t *testing.T) {
-	d := Gram()
+	d := Marginalia()
 	if d.Menus == nil {
 		t.Fatal("the demonstration has no navigation")
 	}
@@ -106,7 +106,7 @@ func TestTheMenuPointsOnlyAtPagesThatExist(t *testing.T) {
 // Every listing a page names is a listing that exists, and every listing
 // compiles.
 func TestEveryListingAPageNamesExists(t *testing.T) {
-	d := Gram()
+	d := Marginalia()
 	set := &listing.Set{}
 	for _, l := range d.Listings {
 		if err := set.Add(l); err != nil {
@@ -130,7 +130,7 @@ func TestEveryListingAPageNamesExists(t *testing.T) {
 
 // The template renders every page without a template error.
 func TestTheTemplateRendersEveryPage(t *testing.T) {
-	d := Gram()
+	d := Marginalia()
 	if err := d.Resolve(fakeAddresses(d)); err != nil {
 		t.Fatal(err)
 	}
@@ -153,34 +153,132 @@ func TestTheTemplateRendersEveryPage(t *testing.T) {
 	}
 }
 
-// The publish windows say what the demonstration claims they say: two stories
-// visible and one not yet started, because that is the feature being shown.
-func TestOneStoryIsEmbargoedAndTheOthersAreNot(t *testing.T) {
-	d := Gram()
-	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
-	states := map[string]int{}
-	for name, body := range d.Pages {
-		if !strings.HasPrefix(name, "stories/") {
-			continue
+// The sale is embargoed, and the About page's claim about it is true.
+//
+// The feature is that a page can be committed, live and not yet visible. The
+// demonstration says so in prose, so the prose and the data have to agree —
+// the failure this catches is somebody moving the date and leaving the
+// sentence, which turns the demonstration into a lie about the product.
+func TestTheSaleIsEmbargoedUntilItsWindowOpens(t *testing.T) {
+	d := Marginalia()
+	// Before the window opens.
+	before := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
+	// Inside it.
+	during := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	// After it closes.
+	after := time.Date(2026, 12, 20, 12, 0, 0, 0, time.UTC)
+
+	sale, ok := d.Pages["sale"].(map[string]any)
+	if !ok {
+		t.Fatal("there is no sale page, so nothing here demonstrates a window")
+	}
+	w, err := site.WindowOf(sale)
+	if err != nil {
+		t.Fatalf("the sale has an unreadable window: %v", err)
+	}
+	if w.Starts.IsZero() || w.Expires.IsZero() {
+		t.Fatal("the sale carries no window, so every assertion below would " +
+			"pass against a page that is simply always public")
+	}
+
+	for _, c := range []struct {
+		when time.Time
+		want bool
+		why  string
+	}{
+		{before, false, "before it starts, a sale price is a price somebody pays early"},
+		{during, true, "inside its window it has to be served"},
+		{after, false, "after it closes it has to stop, with nothing scheduled to do that"},
+	} {
+		if got := w.Public(c.when); got != c.want {
+			t.Errorf("at %s the sale is public=%v, want %v — %s",
+				c.when.Format("2 Jan"), got, c.want, c.why)
 		}
-		w, err := site.WindowOf(body)
-		if err != nil {
-			t.Fatalf("%s has an unreadable window: %v", name, err)
-		}
-		states[w.State(now)]++
 	}
-	if states["embargoed"] != 1 {
-		t.Errorf("want exactly one embargoed story, got %d — the About page "+
-			"tells the reader to expect one", states["embargoed"])
-	}
-	if states["expiring"] < 2 {
-		t.Errorf("want at least two stories with an expiry that has not passed, "+
-			"got %d", states["expiring"])
-	}
-	// And nothing already expired, which would refuse to publish.
-	if stale := site.AlreadyExpired(d.Pages, now); len(stale) > 0 {
+
+	// And nothing ships already expired, which the tool refuses to publish.
+	if stale := site.AlreadyExpired(d.Pages, before); len(stale) > 0 {
 		t.Errorf("the demonstration ships content that is already expired, so "+
 			"the tool would refuse to publish its own demo: %v", stale)
+	}
+}
+
+// Every product's written-out price agrees with the number beside it.
+//
+// Two fields carry one fact, because the template language has no arithmetic.
+// That is a deliberate cost, and the risk it buys is exactly this: the two
+// drift, and the shop shows a price nobody is charging.
+func TestTheWrittenPriceAgreesWithTheStoredOne(t *testing.T) {
+	d := Marginalia()
+	products := d.Records["products"]
+	if len(products) < 5 {
+		t.Fatalf("%d product(s); this test would pass by checking almost "+
+			"nothing", len(products))
+	}
+	for _, r := range products {
+		pence, ok := r.Fields["price"].(int)
+		if !ok {
+			t.Errorf("%v has a price that is not a number, so nothing can "+
+				"compare it", r.Fields["name"])
+			continue
+		}
+		want := pounds(pence)
+		if got, _ := r.Fields["price_display"].(string); got != want {
+			t.Errorf("%v is stored at %d pence and shown as %q, want %q",
+				r.Fields["name"], pence, got, want)
+		}
+	}
+}
+
+// The availability labels say what the tokens mean.
+//
+// Written out here rather than compared against availabilityLabel, which is
+// the function that produced them: checking a value against the function that
+// made it is a tautology that passes however wrong the function is. A sabotage
+// relabelling low_stock as "In stock" went through the earlier version of this
+// test untouched, which is how it was found.
+func TestEveryAvailabilityTokenIsLabelledHonestly(t *testing.T) {
+	want := map[string]string{
+		"in_stock":      "In stock",
+		"low_stock":     "Low stock",
+		"made_to_order": "Made to order",
+		"sold_out":      "Sold out",
+	}
+	d := Marginalia()
+	seen := map[string]bool{}
+	for _, r := range d.Records["products"] {
+		avail, _ := r.Fields["availability"].(string)
+		label, _ := r.Fields["availability_label"].(string)
+		expect, known := want[avail]
+		if !known {
+			t.Errorf("%v is %q, which is not one of the four states",
+				r.Fields["name"], avail)
+			continue
+		}
+		if label != expect {
+			t.Errorf("%v is %q and labelled %q, want %q",
+				r.Fields["name"], avail, label, expect)
+		}
+		seen[avail] = true
+	}
+	// And the demonstration shows all four, or it is not demonstrating a
+	// closed set — three of four states is a list.
+	for token := range want {
+		if !seen[token] {
+			t.Errorf("no product is %q, so the demonstration never shows that "+
+				"state", token)
+		}
+	}
+}
+
+// pounds is the function under test above, so it is worth one direct case.
+func TestPoundsWritesPenceTheWayAPersonReadsThem(t *testing.T) {
+	for pence, want := range map[int]string{
+		2400: "£24.00", 850: "£8.50", 700: "£7.00", 1205: "£12.05", 5: "£0.05",
+	} {
+		if got := pounds(pence); got != want {
+			t.Errorf("pounds(%d) = %q, want %q", pence, got, want)
+		}
 	}
 }
 

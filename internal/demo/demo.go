@@ -6,33 +6,58 @@
 // content, enough to show what a template looks like. They cannot show what
 // this tool is for, because what it is for only appears when several features
 // are working at once — a query over structured records, a page that embeds it,
-// a navigation that refuses to point at nothing, content with a date after
-// which it stops being served, and a form that the internet-facing process can
-// write to and cannot read back.
+// a navigation that refuses to point at nothing, content with a window outside
+// which it is not served, a gate that refuses a claim nobody can back up, and a
+// form the internet-facing process can write to and cannot read back.
 //
-// So this installs an application. Gram is a photo-sharing site: a feed, an
-// explore page with a real filter, profiles, stories that take themselves down,
-// and a message box. Every part of it was built through the admin interface
-// before it was written down here, which is the only way to be sure it can be.
+// So this installs an application. Marginalia is a shop that sells paper:
+// twelve products, three stockists, a catalogue a machine can read, two
+// policies, a wholesale enquiry form and a sale that has not started yet.
+//
+// # Why a shop, and why it replaced a photo-sharing site
+//
+// The previous demonstration was a photo feed. It was honest and it exercised
+// the wrong half: a feed, a filter and a profile show querying and typing, and
+// none of them raise a question a paying customer actually arrives with. A
+// shop raises all of them at once — a price that has to be a number, an
+// availability that has to be a closed set, copy that has to be substantiated
+// before it publishes, and a catalogue something other than a browser has to
+// be able to read.
+//
+// A stationer's specifically, because it is small enough to hold in the head
+// and still has every hard case: products made to order and products sold out,
+// a sale with a start and an end, claims a regulator would ask about, wholesale
+// enquiries that are personal data, and stockists who are not products at all.
 //
 // # What it is honest about
 //
-// There is no comment thread, no follower graph and no messaging between
-// visitors, because none of those are content management. A demonstration that
-// implied otherwise would be selling something this is not. What it shows is
-// the part a CMS is actually responsible for: structured content, a query over
-// it, a gate before publication, and a record of who changed what.
+// There is no cart, no checkout, no payment and no stock reservation. The 2026
+// shopping agents discover products and hand the purchase back to the merchant,
+// so what a shop needs from a CMS is a catalogue saying what is for sale and
+// where a person completes the purchase — not a transaction. The moment this
+// took an order it would need credentials it does not have.
+//
+// Every part of it was built through the admin interface before it was written
+// down here, which is the only way to be sure it can be. Four bugs were found
+// on the way the first time; installing the shop found three more, including a
+// gate the installer had been bypassing since it was written.
 //
 // # Images
 //
-// Twelve generated gradients, about 450K. Not photographs of anything: a demo
-// that ships stock imagery is a demo with a licence question attached, and
-// these are drawn by the code that made them.
+// Twelve generated plates, drawn by scripts/gendemoassets. Not photographs of
+// anything and not trying to be: a demo shipping stock imagery ships a licence
+// question with it, and convincing fake product photography would be a
+// demonstration that lies about what it is — with alt text that has to lie
+// along with it.
+//
+// The generator is committed. It was not, for the previous demonstration,
+// which meant the claim that the images were generated was unverifiable and
+// they could not be reproduced.
 //
 // They are referenced by name rather than by identifier. A media file is
 // addressed by the hash of its bytes, which is not known until it is stored, so
-// the content below says "@harbour-dawn" and the installer substitutes the real
-// address once the library has it.
+// the content below says "@notebook-linen" and the installer substitutes the
+// real address once the library has it.
 package demo
 
 import (
@@ -41,6 +66,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/brand"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/listing"
@@ -68,18 +94,30 @@ type Asset struct {
 
 // Site is everything an installer has to create.
 type Site struct {
-	Name          string
-	Summary       string
-	Types         []schema.Type
-	Bind          map[string]string
-	Vocabularies  *taxonomy.Set
-	Menus         *menu.Set
-	Listings      []listing.Listing
-	Forms         []form.Form
-	Records       map[string][]collection.Record
-	Pages         map[string]any
-	Media         []Asset
-	Template, CSS string
+	Name    string
+	Summary string
+	Types   []schema.Type
+	Bind    map[string]string
+	// BindCollection is the type each collection's records must satisfy.
+	BindCollection map[string]string
+	Vocabularies   *taxonomy.Set
+	Menus          *menu.Set
+	Listings       []listing.Listing
+	Forms          []form.Form
+	Records        map[string][]collection.Record
+	Pages          map[string]any
+	Media          []Asset
+	Template, CSS  string
+
+	// Catalogue names the listing served as the machine-readable feed, if
+	// any. Named rather than derived: a feed that serves whichever listing a
+	// request selects would expose the ones a page embeds behind a filter
+	// somebody assumed was private.
+	Catalogue string
+
+	// ClaimRules is what this site refuses to say without substantiation.
+	// Empty for a demonstration that has no claims to make.
+	ClaimRules brand.Rules
 }
 
 // Template and CSS, read from the embedded copies.

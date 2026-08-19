@@ -26,108 +26,137 @@
   <h1>{{ page.title }}</h1>
   {% if page.intro %}<p class="intro">{{ page.intro }}</p>{% end %}
 
-  {% if page.screen %}{% end %}
-
-  {% if listings.feed %}
+  {% if listings.new_in %}
   <ul class="grid" role="list">
-    {% for row in listings.feed.rows %}
+    {% for row in listings.new_in.rows %}
     <li class="card">
-      <a class="shot" href="/explore?topic={{ row.topic }}">
-        <img src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy">
-      </a>
+      <img class="shot" src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy">
       <div class="cap">
-        <p class="by"><span class="handle">{{ row.author }}</span> <span class="where">{{ row.place }}</span></p>
-        <p class="text">{{ row.caption }}</p>
-        <p class="meta"><span class="likes">{{ row.likes }} likes</span> <span class="when">{{ row.posted }}</span> <span class="topic">{{ row.topic }}</span></p>
+        <p class="name">{{ row.name }}</p>
+        <p class="sum">{{ row.summary }}</p>
+        <p class="price"><span class="amount">{{ row.price_display }}</span>
+          <span class="avail avail-{{ row.availability }}">{{ row.availability_label }}</span></p>
+        <p class="meta"><span class="range">{{ row.range }}</span> <span class="material">{{ row.material }}</span></p>
+        {% if row.lead_time %}<p class="lead">{{ row.lead_time }}</p>{% end %}
       </div>
     </li>
     {% end %}
   </ul>
   {% end %}
 
-  {% if listings.popular %}
-  <ol class="chart" role="list">
-    {% for row in listings.popular.rows %}
-    <li class="rank">
-      <img src="/media/{{ row.image }}" alt="{{ row.alt }}" width="120" height="120" loading="lazy">
-      <div>
-        <p class="text">{{ row.caption | truncate:90 }}</p>
-        <p class="meta"><span class="likes">{{ row.likes }} likes</span> <span class="handle">{{ row.author }}</span></p>
+  {% if listings.by_range %}
+  <nav class="filters" aria-label="Ranges">
+    <a href="/ranges?range=desk">Desk</a>
+    <a href="/ranges?range=correspondence">Correspondence</a>
+    <a href="/ranges?range=archive">Archive</a>
+  </nav>
+  {% end %}
+  {% if listings.by_range %}
+  <ul class="grid" role="list">
+    {% for row in listings.by_range.rows %}
+    <li class="card">
+      <img class="shot" src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy">
+      <div class="cap">
+        <p class="name">{{ row.name }}</p>
+        <p class="sum">{{ row.summary }}</p>
+        <p class="price"><span class="amount">{{ row.price_display }}</span>
+          <span class="avail avail-{{ row.availability }}">{{ row.availability_label }}</span></p>
+        <p class="meta"><span class="range">{{ row.range }}</span> <span class="material">{{ row.material }}</span></p>
+        {% if row.lead_time %}<p class="lead">{{ row.lead_time }}</p>{% end %}
       </div>
     </li>
     {% end %}
-  </ol>
+  </ul>
   {% end %}
-
-  {% if listings.by_topic %}
-  <p class="chips">
-    <a href="/explore?topic=travel">travel</a>
-    <a href="/explore?topic=food">food</a>
-    <a href="/explore?topic=design">design</a>
-    <a href="/explore?topic=music">music</a>
-    <a href="/explore?topic=photography">photography</a>
-  </p>
+  {% if listings.catalogue %}
   <ul class="grid" role="list">
-    {% for row in listings.by_topic.rows %}
+    {% for row in listings.catalogue.rows %}
     <li class="card">
-      <div class="shot"><img src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy"></div>
+      <img class="shot" src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy">
       <div class="cap">
-        <p class="by"><span class="handle">{{ row.author }}</span> <span class="where">{{ row.place }}</span></p>
-        <p class="text">{{ row.caption }}</p>
-        <p class="meta"><span class="likes">{{ row.likes }} likes</span> <span class="when">{{ row.posted }}</span></p>
+        <p class="name">{{ row.name }}</p>
+        <p class="sum">{{ row.summary }}</p>
+        <p class="price"><span class="amount">{{ row.price_display }}</span>
+          <span class="avail avail-{{ row.availability }}">{{ row.availability_label }}</span></p>
+        <p class="meta"><span class="range">{{ row.range }}</span> <span class="material">{{ row.material }}</span></p>
+        {% if row.lead_time %}<p class="lead">{{ row.lead_time }}</p>{% end %}
+      </div>
+    </li>
+    {% end %}
+  </ul>
+  {% end %}
+  {% if listings.in_stock %}
+  <ul class="grid" role="list">
+    {% for row in listings.in_stock.rows %}
+    <li class="card">
+      <img class="shot" src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy">
+      <div class="cap">
+        <p class="name">{{ row.name }}</p>
+        <p class="sum">{{ row.summary }}</p>
+        <p class="price"><span class="amount">{{ row.price_display }}</span>
+          <span class="avail avail-{{ row.availability }}">{{ row.availability_label }}</span></p>
+        <p class="meta"><span class="range">{{ row.range }}</span> <span class="material">{{ row.material }}</span></p>
+        {% if row.lead_time %}<p class="lead">{{ row.lead_time }}</p>{% end %}
       </div>
     </li>
     {% end %}
   </ul>
   {% end %}
 
-  {% if page.image %}
-  <figure class="single">
-    <img src="/media/{{ page.image }}" alt="{{ page.alt }}" width="480" height="480">
-    {% if page.caption %}<figcaption>{{ page.caption }}</figcaption>{% end %}
-  </figure>
-  {% end %}
-
-  {% if page.handle %}
-  <div class="profile">
-    {% if page.avatar %}<img class="avatar" src="/media/{{ page.avatar }}" alt="{{ page.avatar_alt }}" width="160" height="160">{% end %}
-    <div>
-      <p class="display">{{ page.display }}</p>
-      <p class="handle">@{{ page.handle }}</p>
-      {% if page.bio %}<p class="bio">{{ page.bio }}</p>{% end %}
-      {% if page.link %}<p><a href="{{ page.link }}">{{ page.link }}</a></p>{% end %}
-      {% if page.joined %}<p class="meta">Here since {{ page.joined }}</p>{% end %}
-    </div>
-  </div>
+  {% if listings.stockists %}
+  <ul class="stockists" role="list">
+    {% for row in listings.stockists.rows %}
+    <li class="stockist">
+      <p class="shop">{{ row.shop }}</p>
+      <p class="where">{{ row.city }}, {{ row.country }}</p>
+      <p class="addr">{{ row.address }}</p>
+      {% if row.url %}<p><a href="{{ row.url }}" rel="noopener">Their site</a></p>{% end %}
+      {% if row.since %}<p class="meta">Stocked since {{ row.since }}</p>{% end %}
+    </li>
+    {% end %}
+  </ul>
   {% end %}
 
   {% if page.form %}
-  <form class="compose" method="post" action="/form/{{ page.form }}">
-    <p class="field"><label for="f-name">Your name</label>
-      <input id="f-name" name="name" type="text" autocomplete="name" required></p>
+  <form class="enquiry" method="post" action="/form/{{ page.form }}">
+    <p class="field"><label for="f-shop">Shop name</label>
+      <input id="f-shop" name="shop" type="text" required></p>
+    <p class="field"><label for="f-contact">Your name</label>
+      <input id="f-contact" name="contact" type="text" autocomplete="name" required></p>
     <p class="field"><label for="f-email">Email</label>
       <input id="f-email" name="email" type="email" autocomplete="email" required></p>
-    <p class="field"><label for="f-subject">About</label>
-      <select id="f-subject" name="subject">
-        <option>a photo</option><option>a collaboration</option><option>something else</option>
+    <p class="field"><label for="f-city">Where you are</label>
+      <input id="f-city" name="city" type="text" required></p>
+    <p class="field"><label for="f-ranges">Which ranges interest you</label>
+      <select id="f-ranges" name="ranges">
+        <option>desk</option><option>correspondence</option>
+        <option>archive</option><option>all of them</option>
       </select></p>
-    <p class="field"><label for="f-body">Message</label>
-      <textarea id="f-body" name="body" rows="5" required></textarea></p>
+    <p class="field"><label for="f-detail">Anything else</label>
+      <textarea id="f-detail" name="detail" rows="5"></textarea></p>
     <p class="hp" aria-hidden="true"><label for="f-url">Leave this empty</label>
       <input id="f-url" name="website_url" type="text" tabindex="-1" autocomplete="off"></p>
     <input type="hidden" name="form_started" value="{{ page.stamp }}">
     <p><button type="submit">Send</button></p>
-    <p class="privacy">{{ page.privacy }}</p>
   </form>
+  {% if page.privacy %}<p class="privacy">{{ page.privacy }}</p>{% end %}
   {% end %}
 
   {% if page.body %}<div class="prose">{% raw page.body %}</div>{% end %}
+  {% if page.updated %}<p class="updated">Last updated {{ page.updated }}.</p>{% end %}
 </main>
 
 <footer class="foot">
   <div class="wrap">
-    <p>{{ site.name }} — a demonstration site, built entirely through the Quilzo interface.</p>
-    <p class="meta">Every photograph here is generated. The people are invented.</p>
+    <ul class="footnav" role="list">
+    {% for item in menus.foot %}
+      <li><a href="{{ item.href }}">{{ item.label }}</a></li>
+    {% end %}
+    </ul>
+    <p class="colophon">{{ site.name }} — a Quilzo demonstration. Prices are in
+      pence. The catalogue is also served as JSON at
+      <a href="/catalogue.json">/catalogue.json</a>, which is what a shopping
+      agent reads.</p>
   </div>
 </footer>
 </body>
