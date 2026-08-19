@@ -59,6 +59,21 @@ func sandboxWrap() func([]string) []string {
 		for _, p := range reads {
 			out = append(out, "--allow", p)
 		}
+		// The extension's own binary, which is not optional and was missed.
+		//
+		// Landlock denies execute outside the granted hierarchies, and that
+		// includes the program being started — so an extension anywhere but
+		// /usr or /bin could not run at all. Which, in the distroless image
+		// this ships as, is every extension: that image has no /bin, no /usr
+		// and no libc, so the loop above grants nothing and this rule is the
+		// only reason exec succeeds.
+		//
+		// The file itself rather than its directory. A rule on the directory
+		// would grant every sibling, and an extension's neighbours are
+		// whatever the operator happened to put beside it.
+		if len(argv) > 0 {
+			out = append(out, "--allow", argv[0])
+		}
 		out = append(out, "--allow-write", os.TempDir())
 		return append(append(out, "--"), argv...)
 	}

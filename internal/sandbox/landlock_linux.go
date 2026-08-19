@@ -58,6 +58,14 @@ const (
 //
 // Split because the point of the sandbox is that an extension reads its inputs
 // and writes nothing, and a mask that lumps them together cannot express that.
+// fileOnlyAccess is what may be granted on something that is not a directory.
+//
+// Everything else in the filesystem set describes an operation on a directory's
+// contents — listing it, creating in it, removing from it — and asking for one
+// of those on a regular file is refused with EINVAL.
+const fileOnlyAccess = accessReadFile | accessWriteFile | accessExecute |
+	accessTruncate
+
 const (
 	readAccess  = accessReadFile | accessReadDir
 	writeAccess = accessWriteFile | accessRemoveDir | accessRemoveFile |
@@ -197,6 +205,20 @@ func Restrict(r Rules) (Status, error) {
 			return fmt.Errorf("cannot open %s for the sandbox: %w", path, err)
 		}
 		defer syscall.Close(pfd)
+
+		// Directory-only rights are invalid on a regular file, and the kernel
+		// says so with EINVAL rather than ignoring them. That matters because
+		// naming a single file is the useful case: an extension's own binary
+		// has to be executable without its neighbours becoming readable, and
+		// granting the directory would hand over every sibling the operator
+		// happened to put beside it.
+		var stat syscall.Stat_t
+		if err := syscall.Fstat(pfd, &stat); err != nil {
+			return fmt.Errorf("cannot stat %s for the sandbox: %w", path, err)
+		}
+		if stat.Mode&syscall.S_IFMT != syscall.S_IFDIR {
+			allowed &= fileOnlyAccess
+		}
 
 		rule := pathBeneathAttr{
 			AllowedAccess: allowed & mask, // clamp: unknown bits fail the call
