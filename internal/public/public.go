@@ -613,6 +613,21 @@ func (st *Site) injectHead(html, page, hash string) string {
 	var b strings.Builder
 	b.WriteString(`<link rel="manifest" href="/manifest.webmanifest">` + "\n")
 
+	// The catalogue, so an agent finds it without being told where to look.
+	//
+	// A feed nobody can discover is a feed nobody reads. Shopping agents arrive
+	// at a page, not at a well-known path, so the page is where the pointer has
+	// to be — the same reason the manifest link is here rather than only in a
+	// file a browser might request.
+	//
+	// Only when one is configured. A link to a route that 404s teaches whatever
+	// followed it that this site's metadata is unreliable, which is worse than
+	// having none.
+	if st.Catalogue != "" {
+		b.WriteString(`<link rel="alternate" type="application/json" ` +
+			`href="/catalogue.json" title="Product catalogue">` + "\n")
+	}
+
 	if st.LoadProvenance != nil {
 		if idx, err := st.LoadProvenance(); err == nil {
 			if rec, ok := idx.Get(page); ok && rec.ContentHash == hash {
