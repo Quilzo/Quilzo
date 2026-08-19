@@ -55,10 +55,10 @@ func cmdDemo(root string, args []string) error {
 			"this store already has content, and the demonstration would " +
 				"write over the content types, listings, menus and forms that " +
 				"share a name with its own.\n  Run it in an empty directory:\n" +
-				"    mkdir gram && cd gram && quilzo init && quilzo demo")
+				"    mkdir shop && cd shop && quilzo init && quilzo demo")
 	}
 
-	d := demo.Gram()
+	d := demo.Marginalia()
 
 	// Media first, because everything else refers to it and a file's address is
 	// the hash of its bytes — not known until it is stored.
@@ -98,6 +98,13 @@ func cmdDemo(root string, args []string) error {
 			return fmt.Errorf("binding %s: %w", page, berr)
 		}
 	}
+	// Collections are typed too, so a record missing a required field is
+	// refused at the same gate a page is rather than discovered in a listing.
+	for coll, name := range d.BindCollection {
+		if berr := types.BindCollection(coll, name); berr != nil {
+			return fmt.Errorf("binding collection %s: %w", coll, berr)
+		}
+	}
 	if serr := types.Save(); serr != nil {
 		return serr
 	}
@@ -116,12 +123,32 @@ func cmdDemo(root string, args []string) error {
 	// refused to run unless both refs are unset, so there is provably nothing
 	// to collide with — which is the one case where an empty base is a decision
 	// and not an omission.
-	if _, serr := site.SaveDraftFrom(s, d.Pages, "the Gram demonstration",
+	if _, serr := site.SaveDraftFrom(s, d.Pages, "the Marginalia demonstration",
 		"demo", ""); serr != nil {
 		return serr
 	}
 
-	// Records, written into the draft's tree.
+	// Records, written into the draft's tree — through the same gate every
+	// other record write goes through.
+	//
+	// This did not, and the installer was a fourth surface writing records
+	// with the rule expressed a fourth way, which is precisely what
+	// schema.RecordGate exists to stop. It was found by the demonstration
+	// installing twelve products that were missing two fields their own type
+	// marks Required: no error, no warning, and the site rendering blank
+	// prices. A demonstration that cannot pass the product's own gate is not
+	// a demonstration of the product.
+	gate := recordGate(root)
+	for name, recs := range d.Records {
+		for _, rec := range recs {
+			if gerr := gate(name, rec.Fields); gerr != nil {
+				return fmt.Errorf(
+					"the demonstration does not satisfy its own types, which "+
+						"is a bug in it and not in your store:\n  %s: %w",
+					name, gerr)
+			}
+		}
+	}
 	for name, recs := range d.Records {
 		c, cerr := s.GetCommit(s.GetRef(site.RefDraft))
 		if cerr != nil {
@@ -163,11 +190,32 @@ func cmdDemo(root string, args []string) error {
 		return werr
 	}
 
+	// The claim rules, if the demonstration has any.
+	//
+	// Written here rather than left for the operator, because the gate is only
+	// demonstrable when there is something for it to gate — and because the
+	// rules are the part somebody argues about, so seeing a real set is more
+	// useful than being told the feature exists.
+	if len(d.ClaimRules.Terms) > 0 {
+		if werr := saveJSON(brandPath(root), d.ClaimRules); werr != nil {
+			return werr
+		}
+	}
+
 	// The name, in configuration rather than a flag, so the accessibility gate
 	// and the exports render the same page the server does.
 	if cfg, cerr := loadConfig(root); cerr == nil {
-		if serr := cfg.Set("site.name", d.Name, "the demonstration site",
-			"demo"); serr == nil {
+		changed := cfg.Set("site.name", d.Name, "the demonstration site",
+			"demo") == nil
+		// The catalogue feed, when the demonstration publishes one. Set here
+		// rather than left to the reader, because a shop whose machine-readable
+		// catalogue 404s demonstrates the opposite of the point.
+		if d.Catalogue != "" {
+			changed = cfg.Set("site.catalogue", d.Catalogue,
+				"the demonstration's machine-readable catalogue", "demo") == nil ||
+				changed
+		}
+		if changed {
 			_ = saveConfig(root, cfg)
 		}
 	}
@@ -198,23 +246,47 @@ func cmdDemo(root string, args []string) error {
 	record(root, resolveCaller(root, "").auditRecord("demo.install", "/",
 		audit.Success, map[string]string{
 			"pages":     fmt.Sprint(len(d.Pages)),
-			"records":   fmt.Sprint(len(d.Records["posts"])),
+			"records":   fmt.Sprint(recordCount(d)),
 			"media":     fmt.Sprint(len(d.Media)),
 			"published": fmt.Sprint(*publish),
 		}))
 
-	w.Human("%sGram is installed.%s %s\n\n", bold, reset, d.Summary)
+	w.Human("%s%s is installed.%s %s\n\n", bold, d.Name, reset, d.Summary)
 	w.Human("  %d page(s), %d record(s), %d image(s), %d listing(s), %d form(s)\n",
-		len(d.Pages), len(d.Records["posts"]), len(d.Media), len(d.Listings),
+		len(d.Pages), recordCount(d), len(d.Media), len(d.Listings),
 		len(d.Forms))
 	w.Human("\n  %sto look at it%s\n", bold, reset)
 	w.Human("    quilzo site  --addr 127.0.0.1:8081   %sthe site%s\n", dim, reset)
 	w.Human("    quilzo serve --addr 127.0.0.1:8080   %sthe admin%s\n", dim, reset)
 	w.Human("\n  %sthings worth trying%s\n", bold, reset)
-	w.Human("    /explore?topic=travel   %sa listing with a parameter%s\n", dim, reset)
-	w.Human("    /stories/sol-rooftop    %s404s until September: its window "+
-		"has not opened%s\n", dim, reset)
-	w.Human("    /messages               %sthe one thing the public server "+
+	w.Human("    /catalogue.json          %severything for sale, as a "+
+		"shopping agent reads it%s\n", dim, reset)
+	w.Human("    /ranges?range=archive    %sa listing with a parameter%s\n",
+		dim, reset)
+	w.Human("    /available               %sfiltered on the data, not on "+
+		"somebody remembering%s\n", dim, reset)
+	w.Human("    /sale                    %s404s until 24 November: its "+
+		"window has not opened%s\n", dim, reset)
+	w.Human("    /wholesale               %sthe one thing the public server "+
 		"may write%s\n", dim, reset)
+	w.Human("\n  %sand the gate%s\n", bold, reset)
+	w.Human("    quilzo brand check       %severy claim, and what backs it "+
+		"up%s\n", dim, reset)
+	w.Human("    %stake guarantee_terms off the brass pen and publishing "+
+		"stops%s\n", dim, reset)
 	return nil
+}
+
+// recordCount is every record the demonstration installs, across collections.
+//
+// It read len(d.Records["posts"]) — the name of the one collection the
+// previous demonstration had. A shop has products, so the count reported was
+// zero while twelve records were being written, which is the shape of report
+// that makes somebody believe a step was skipped.
+func recordCount(d *demo.Site) int {
+	var n int
+	for _, recs := range d.Records {
+		n += len(recs)
+	}
+	return n
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -157,38 +158,74 @@ func printBrand(findings []brand.Finding) {
 // only pages would gate the part nobody sells anything with — which is the
 // failure mode where the feature exists, reports clean, and means nothing.
 //
-// # One walk, not two
+// # Two walks, and why the obvious simplification is wrong
 //
-// This read the pages and then walked the collections separately, which was
-// wrong in a way only a live test showed: GetTree returns flattened leaf
-// paths, so a record is already in PagesAt as a blob at
-// data/products/ke/tt/kettle. Two walks meant every product reported each
-// finding twice and the "n items checked" count was double what was checked.
+// This looks like it should be one walk. PagesAt already reads the commit's
+// tree, so surely the records are in there — and a test written against a
+// helper that inserted a record as a flat tree entry agreed, reporting each
+// product twice. The walk was collapsed into one on that evidence.
 //
-// So there is one walk, and the collection path is decoded to name the record
-// the way a person refers to it. A record that fails is reported as
-// "products/kettle" rather than as its shard path, because the author has to
-// find it.
+// The evidence was manufactured. A real record is written by collection.PutMany,
+// which builds nested subtrees, so a real commit's tree has ONE entry called
+// "data" and it is a tree. PagesAt skips trees by design — reading one as a
+// page fails with "object is a tree, not a blob" — so records never appear
+// there, and the collapsed version checked ten pages and zero of fifteen
+// products while reporting success.
+//
+// Running the actual demonstration is what caught it: "10 item(s) checked"
+// against a store holding twenty-five. The count is in the output for that
+// reason, and the test below now writes records the way the store does.
 func brandFindings(s *store.Store, r *brand.Rules, ref string) (
 	[]brand.Finding, int, error) {
 
-	entries, err := site.PagesAt(s, ref)
+	commit := s.GetRef(ref)
+	if commit == "" {
+		commit = ref
+	}
+	content := map[string]map[string]any{}
+
+	pages, err := site.PagesAt(s, ref)
 	if err != nil {
 		return nil, 0, err
 	}
-	content := make(map[string]map[string]any, len(entries))
-	for name, body := range entries {
-		m, ok := body.(map[string]any)
-		if !ok {
-			// A page that is not an object carries no fields to check. Not an
-			// error: a store may hold a blob that is a string or a number, and
-			// a claim is language in a field.
-			continue
+	for name, body := range pages {
+		if m, ok := body.(map[string]any); ok {
+			content[name] = m
 		}
-		if coll, id, isRecord := collection.IsCollectionPath(name); isRecord {
-			name = coll + "/" + id
+	}
+
+	// The records, at the same commit rather than from the live index, so the
+	// gate examines what is about to be published rather than what already is.
+	c, cerr := s.GetCommit(commit)
+	if cerr != nil {
+		return nil, 0, cerr
+	}
+	if c.Tree != "" {
+		cache := collection.NewCache()
+		names, nerr := cache.Names(s, c.Tree)
+		if nerr != nil {
+			// Reported rather than skipped. A store whose collections cannot
+			// be listed is one where every product would pass unexamined, and
+			// silence there is the failure this gate exists to prevent.
+			return nil, 0, fmt.Errorf(
+				"the collections could not be listed, so no product was "+
+					"checked: %w", nerr)
 		}
-		content[name] = m
+		sort.Strings(names)
+		for _, name := range names {
+			idx, ierr := cache.For(s, c.Tree, name)
+			if ierr != nil {
+				return nil, 0, fmt.Errorf(
+					"collection %s could not be read, so nothing in it was "+
+						"checked: %w", name, ierr)
+			}
+			recs, _ := idx.Query(collection.Query{})
+			for _, rec := range recs {
+				// Named the way a person refers to it. A finding against a
+				// shard path is one the author cannot go and fix.
+				content[name+"/"+rec.ID] = rec.Fields
+			}
+		}
 	}
 	return r.CheckAll(content), len(content), nil
 }

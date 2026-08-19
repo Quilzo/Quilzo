@@ -7,12 +7,23 @@ FROM golang:1.24-bookworm AS build
 WORKDIR /src
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/quilzo ./cmd/quilzo
+# An empty store directory, carried into the final image so it exists there
+# with the right owner. Docker seeds a named volume from whatever is at the
+# mount point in the image, ownership included — and if nothing is there it
+# creates the directory as root. This image runs as nonroot and has no shell,
+# so that combination is unrecoverable from inside the container: `docker run
+# -v store:/srv/store quilzo init` failed with "permission denied" and there
+# was nothing in the image able to chown it.
+RUN mkdir -p /out/store
 
 # Run.
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/quilzo /usr/local/bin/quilzo
-# nonroot is uid 65532. The store is a volume so content survives the
-# container, which is the whole point of a content store.
+COPY --from=build --chown=65532:65532 /out/store /srv/store
+# nonroot is uid 65532, which is why the store directory above is chowned to
+# that number rather than to a name — there is no /etc/passwd lookup at COPY
+# time. The store is a volume so content survives the container, which is the
+# whole point of a content store.
 USER nonroot:nonroot
 WORKDIR /srv
 VOLUME /srv/store
