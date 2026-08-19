@@ -21,7 +21,7 @@ func newStore(t *testing.T) *store.Store {
 
 func put(t *testing.T, s *store.Store, tree, coll string, fields map[string]any) (string, Record) {
 	t.Helper()
-	next, r, err := Put(s, tree, coll, Record{Fields: fields}, when)
+	next, r, err := Put(s, tree, coll, Record{Fields: fields}, when, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestAnIdIsMintedNotAccepted(t *testing.T) {
 	}
 	// A caller cannot smuggle one in through the fields.
 	_, r, err := Put(s, "", "devices", Record{
-		Fields: map[string]any{"id": "not-an-id"}}, when)
+		Fields: map[string]any{"id": "not-an-id"}}, when, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestCreatedDoesNotMoveOnUpdate(t *testing.T) {
 	later := when.Add(48 * time.Hour)
 
 	r.Fields["n"] = 2
-	tree, updated, err := Put(s, tree, "devices", r, later)
+	tree, updated, err := Put(s, tree, "devices", r, later, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestAnUnusableIdIsRefused(t *testing.T) {
 	for _, bad := range []string{"short", "../../etc/passwd",
 		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaZ", "aaaa/aaaa",
 		"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"} {
-		if _, _, err := Put(s, "", "devices", Record{ID: bad}, when); err == nil {
+		if _, _, err := Put(s, "", "devices", Record{ID: bad}, when, nil); err == nil {
 			t.Errorf("id %q was accepted", bad)
 		}
 	}

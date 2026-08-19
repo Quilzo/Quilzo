@@ -266,7 +266,8 @@ func recordsAdd(root string, args []string) error {
 		return err
 	}
 	next, rec, err := collection.Put(s, tree, coll,
-		collection.Record{ID: *id, Fields: fields}, time.Now())
+		collection.Record{ID: *id, Fields: fields}, time.Now(),
+		recordGate(root))
 	if err != nil {
 		return err
 	}

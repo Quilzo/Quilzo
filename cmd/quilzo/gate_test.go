@@ -264,3 +264,64 @@ func TestEverySurfaceChecksTheTokensOwnLimits(t *testing.T) {
 		}
 	}
 }
+
+// Every record write consults the type gate.
+//
+// The mirror of TestEveryWriteSurfaceConsultsTheTypeGate, and it exists because
+// records had no gate at all. Types bound to pages only, so `records add`
+// stored a product with no price while the equivalent page write was refused —
+// and that stopped being academic when /catalogue.json began publishing records
+// to shopping agents.
+//
+// collection.Put now takes the check, so a surface cannot forget it silently:
+// the compiler asks. What the compiler cannot ask is whether the answer was
+// real, and nil type-checks. So this reads the source and refuses a call that
+// passes nothing.
+func TestEveryRecordWriteConsultsTheTypeGate(t *testing.T) {
+	// Every file in the repository that writes a record, and there are four
+	// surfaces: the command line, the agent interface, the browser and the
+	// content API.
+	files := []string{
+		"records.go",
+		"mcpops.go",
+		"../../internal/admin/records.go",
+		"../../internal/api/records.go",
+	}
+
+	found := 0
+	for _, f := range files {
+		body := readFile(t, f)
+		idx := strings.Index(body, "collection.Put(")
+		if idx < 0 {
+			t.Errorf("%s no longer writes records; if a surface moved, this "+
+				"list has to move with it or the gate stops being checked "+
+				"where the writing actually happens", f)
+			continue
+		}
+		found++
+		// The call, up to its closing line. Crude on purpose: a parser here
+		// would be a second thing to get wrong, and the shape being looked for
+		// is one argument on one call.
+		call := body[idx:]
+		if end := strings.Index(call, "\n\t\tif err"); end > 0 && end < 400 {
+			call = call[:end]
+		} else if len(call) > 400 {
+			call = call[:400]
+		}
+		if strings.Contains(call, ", nil)") || strings.Contains(call, "nil)\n") {
+			t.Errorf("%s passes nil as the record type gate, so this surface "+
+				"stores whatever it is given. nil compiles; that is the whole "+
+				"reason this test reads the source rather than trusting the "+
+				"signature.", f)
+		}
+		if !strings.Contains(call, "RecordGate") && !strings.Contains(call, "recordGate") {
+			t.Errorf("%s writes a record without a gate built from the site's "+
+				"content types:\n%s", f, call)
+		}
+	}
+	if found < 4 {
+		t.Fatalf("found %d record-writing surfaces; there are four, and a "+
+			"parse that sees fewer passes by checking less than it claims",
+			found)
+	}
+}
