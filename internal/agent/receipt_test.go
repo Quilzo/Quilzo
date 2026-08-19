@@ -302,3 +302,54 @@ func TestABadTokenFigureIsIgnoredRatherThanFatal(t *testing.T) {
 		t.Errorf("a good report after a bad one gave %d", s.TokensUsed())
 	}
 }
+
+// A step the manifest allowed and that then failed is not work done.
+//
+// Allowed means the manifest let it through, not that anything happened. The
+// operation may have hit a store that refused it, a tool that was down, or an
+// executor that does not implement it — and counting those as work bills for
+// failures, which is the specific complaint behind unverifiable consumption
+// invoices.
+//
+// Found by running an agent whose manifest had been widened to hold write_page
+// against an executor that only reads: the write errored and the receipt
+// reported it as an operation carried out.
+func TestAnAllowedStepThatFailedIsNotWork(t *testing.T) {
+	m := Manifest{
+		Name: "halfworking", Kind: KindTask, Purpose: "try things",
+		Capabilities: []string{"read_page", "write_page"},
+		Autonomy:     AutonomyDraft,
+		Budget:       Budget{Steps: 10, Tools: 2, Duration: Duration(time.Hour)},
+	}
+	s := NewSession(m, nil)
+	r := Runner{
+		Decide: script(
+			Action{Op: "read_page"}, Action{Op: "write_page"}, Action{Say: "done"}),
+		Perform: func(_ context.Context, a Action) (string, error) {
+			if a.Op == "write_page" {
+				return "", errors.New("this executor only reads")
+			}
+			return "ok", nil
+		},
+	}
+	tr, err := r.Run(context.Background(), s, "g")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := tr.Receipt(s)
+
+	if rec.Did != 1 {
+		t.Errorf("did %d, want 1 — the failed write is not work carried out", rec.Did)
+	}
+	if rec.Failed != 1 {
+		t.Errorf("failed %d, want 1", rec.Failed)
+	}
+	if rec.Refused != 0 {
+		t.Errorf("refused %d, want 0 — the manifest permitted it, so this is "+
+			"a failure rather than a refusal and an incident report needs to "+
+			"tell them apart", rec.Refused)
+	}
+	if rec.Detail()["failed"] != "1" {
+		t.Errorf("the audit payload does not carry the failure: %v", rec.Detail())
+	}
+}
