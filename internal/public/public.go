@@ -107,6 +107,16 @@ type Site struct {
 	// fails to assemble rather than rendering without it — a listing-shaped
 	// hole is not noticed until somebody asks why the table is empty.
 	Listings *listing.Resolver
+	// Catalogue names the listing served at /catalogue.json for shopping
+	// agents. Empty means the route 404s, which is right for a site that sells
+	// nothing — and is deliberately not an empty document, because "no
+	// products" and "no catalogue" are different claims.
+	//
+	// Named here rather than chosen by the request: a caller that could pick
+	// the listing would have a parameter selecting from everything declared,
+	// including the ones a page embeds behind a filter somebody assumed was
+	// private.
+	Catalogue string
 	// Forms is the one write capability this server has: append a submission,
 	// to a store that is not the content store. Nil means /form/ 404s.
 	Forms *Forms
@@ -144,6 +154,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/license.xml", st.licence)
 	mux.HandleFunc("/.well-known/tdmrep.json", st.tdmRep)
 	mux.HandleFunc("/search.json", st.searchAPI)
+	mux.HandleFunc("/catalogue.json", st.catalogue)
 	mux.HandleFunc("/site.css", st.stylesheet)
 	mux.HandleFunc("/robots.txt", st.robots)
 	mux.HandleFunc("/llms.txt", st.llms)
