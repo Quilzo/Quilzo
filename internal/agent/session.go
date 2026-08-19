@@ -84,6 +84,7 @@ type Session struct {
 	now      Clock
 	steps    int
 	toolUses int
+	tokens   int
 
 	// refusals is every refusal this session made, for the audit record. Kept
 	// rather than only counted: "the agent was refused 12 times" is a number,
@@ -289,6 +290,31 @@ func (s *Session) Tainted() bool {
 	return s.tainted
 }
 
+// Tokens records what a model reported using.
+//
+// Reported, not measured: this package has never seen a model and cannot count
+// what one consumed. The host reads the figure off the provider's response and
+// hands it over, which means the number is exactly as trustworthy as that
+// provider — and a receipt built from it says "reported" rather than
+// pretending to have weighed anything.
+//
+// A local model reports nothing and costs nothing, so zero is the ordinary
+// answer for the deployment that runs its own. That is worth keeping
+// distinguishable from a hosted run whose usage nobody wrote down, which is
+// what Metered is for.
+//
+// Negative is ignored rather than refused. A provider returning nonsense should
+// not end a run that is otherwise going fine, and the alternative — refusing —
+// would make a billing field able to stop work.
+func (s *Session) Tokens(n int) {
+	if n <= 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tokens += n
+}
+
 // Refusals returns what this session refused, for the audit record.
 func (s *Session) Refusals() []Refusal {
 	s.mu.Lock()
@@ -302,6 +328,13 @@ func (s *Session) Spent() (steps, tools int, elapsed time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.steps, s.toolUses, s.now().Sub(s.started)
+}
+
+// TokensUsed is what the host reported for this run.
+func (s *Session) TokensUsed() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.tokens
 }
 
 // Manifest returns a copy of what this session is enforcing.
