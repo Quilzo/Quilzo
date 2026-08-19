@@ -22,7 +22,6 @@ const (
 const (
 	createRulesetVersion = 1 << 0
 	ruleTypePathBeneath  = 1
-	ruleTypeNetPort      = 2 // ABI 4
 )
 
 // Network access rights, added in ABI 4.
@@ -73,12 +72,11 @@ type rulesetAttr struct {
 	Scoped           uint64 // ABI 6
 }
 
-// netPortAttr mirrors struct landlock_net_port_attr. Two u64s, so Go's layout
-// matches without the packing question path_beneath raises.
-type netPortAttr struct {
-	AllowedAccess uint64
-	Port          uint64
-}
+// There is deliberately no per-port rule type or attribute struct here. The
+// network restriction works by declaring the rights and granting nothing, so
+// nothing in this package ever builds a port rule — and a type kept against
+// the day somebody might is weight for nothing. Whoever adds "allow this port"
+// adds them with the code that uses them.
 
 // pathBeneathAttr mirrors struct landlock_path_beneath_attr, which the kernel
 // declares __attribute__((packed)) — twelve bytes, not sixteen. Getting this
