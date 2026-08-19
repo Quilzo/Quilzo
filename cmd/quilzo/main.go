@@ -176,6 +176,10 @@ security posture
 
 interface
   quilzo serve [--addr HOST:PORT]          the admin, on loopback by default
+      --open                                 open it in a browser; the page
+                                             carries a web manifest, so the
+                                             browser can install it as a
+                                             desktop application
       /playground                            try the API against your own store
   quilzo site  [--addr HOST:PORT]          the published site, PWA-installable
       --api                                 content API at /api/v1, read-only
