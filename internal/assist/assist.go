@@ -45,7 +45,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -313,6 +315,41 @@ type HTTPModel struct {
 
 func (h *HTTPModel) Name() string { return h.Model }
 
+// isLocalEndpoint reports whether a model endpoint is on this machine or this
+// network, and says why when it is not.
+//
+// Resolved rather than pattern-matched on the hostname. "localhost" is a name
+// somebody can point anywhere, and a check that trusts the spelling is a check
+// that trusts DNS — so the address is looked up and judged, which is the same
+// reasoning internal/fetch applies in the other direction.
+//
+// Unresolvable is not local. An endpoint nobody can reach is a misconfiguration
+// either way, and guessing in the permissive direction would let a typo become
+// a keyless call to whatever the name eventually resolves to.
+func isLocalEndpoint(raw string) (bool, string) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return false, "it is not a URL this can read"
+	}
+	host := u.Hostname()
+	if host == "" {
+		return false, "it names no host"
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return false, "its address could not be resolved"
+	}
+	// Every address, not the first. A name that resolves to both a loopback
+	// address and a public one is not a local endpoint, and taking the first
+	// answer would make the decision depend on resolver ordering.
+	for _, ip := range ips {
+		if !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() {
+			return false, "it resolves to " + ip.String() + ", which is public"
+		}
+	}
+	return true, ""
+}
+
 // NewHTTPModel reads configuration from the environment.
 func NewHTTPModel() (*HTTPModel, error) {
 	base := os.Getenv("QUILZO_MODEL_URL")
@@ -323,10 +360,30 @@ func NewHTTPModel() (*HTTPModel, error) {
 	if key == "" {
 		key = os.Getenv("OLLAMA_API_KEY")
 	}
+	// A model on this machine needs no key, and demanding one refused the
+	// arrangement that costs nothing.
+	//
+	// The wire protocol here is OpenAI's /chat/completions, which is what
+	// Ollama, llama.cpp, LM Studio and vLLM all serve — so a local model was
+	// already supported by everything except this check. Requiring a key made
+	// the zero-cost path the one configuration that could not work.
+	//
+	// Keyless is allowed for a loopback or private endpoint and refused for a
+	// public one, which is the same boundary the rest of this program draws.
+	// The direction matters: a keyless call to a public endpoint is not a
+	// cheaper deployment, it is an operator who believes they are
+	// authenticated and is not, and it fails at the far end with a message
+	// about the far end rather than about the configuration.
 	if key == "" {
-		return nil, fmt.Errorf(
-			"no model key: set QUILZO_MODEL_KEY (or OLLAMA_API_KEY). " +
-				"QUILZO_MODEL_URL selects the endpoint, QUILZO_MODEL the model")
+		local, why := isLocalEndpoint(base)
+		if !local {
+			return nil, fmt.Errorf(
+				"no model key, and %s is not a model on this machine (%s).\n"+
+					"  Set QUILZO_MODEL_KEY for a hosted endpoint, or point "+
+					"QUILZO_MODEL_URL at a local one — Ollama, llama.cpp, LM "+
+					"Studio and vLLM all serve this protocol and need no key",
+				base, why)
+		}
 	}
 	model := os.Getenv("QUILZO_MODEL")
 	if model == "" {
@@ -363,7 +420,13 @@ func (h *HTTPModel) Complete(ctx context.Context, system, user string) (string, 
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+h.APIKey)
+	// Omitted rather than sent empty. "Bearer " with nothing after it is a
+	// credential that is present and blank, which some servers reject and
+	// others log as a failed authentication — neither of which is what a
+	// keyless local model meant to happen.
+	if h.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+h.APIKey)
+	}
 
 	resp, err := h.Client.Do(req)
 	if err != nil {
