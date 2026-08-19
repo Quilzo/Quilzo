@@ -117,6 +117,12 @@ func (r Receipt) Detail() map[string]string {
 		"steps":     strconv.Itoa(r.Spend.Steps),
 		"toolcalls": strconv.Itoa(r.Spend.Tools),
 	}
+	// Only when somebody measured. Writing "tokens: 0" into the record for a
+	// run nobody metered would put a number in the log that reads as a
+	// measurement and is an absence.
+	if r.Spend.Metered {
+		d["tokens"] = strconv.Itoa(r.Spend.Tokens)
+	}
 	if r.Stopped != "" {
 		d["stopped"] = r.Stopped
 	}
