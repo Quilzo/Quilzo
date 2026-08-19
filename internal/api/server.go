@@ -91,6 +91,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/collections", s.collections)
 	mux.HandleFunc("/api/v1/records/", s.records)
 	mux.HandleFunc("/api/v1/similar/", s.similar)
+	mux.HandleFunc("/api/v1/replica/ref/", s.replicaRef)
+	mux.HandleFunc("/api/v1/replica/object/", s.replicaObject)
 	mux.HandleFunc("/api/v1/search/vector", s.vectorSearch)
 	mux.HandleFunc("/api/v1/", s.notFound)
 	return s.middleware(mux)
