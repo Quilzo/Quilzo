@@ -255,7 +255,23 @@ type File struct {
 	Alt string `json:"alt,omitempty"`
 	// Source records where it came from when it was imported rather than
 	// uploaded, so provenance survives the round trip.
-	Source     string `json:"source,omitempty"`
+	Source string `json:"source,omitempty"`
+
+	// Rights is what permits publishing this, and until when. See rights.go:
+	// an image licence is a publish window pointed at a file, and the reason
+	// it is here rather than in a spreadsheet is that a licence which lapses
+	// is a publishing event nothing otherwise notices.
+	Rights Rights `json:"rights,omitempty"`
+
+	// Supersedes is the file this one replaced, if any.
+	//
+	// Versioning falls out of content addressing — the old bytes are still
+	// stored under their own hash and nothing can overwrite them — but that
+	// only preserves the file, not the fact that it was replaced. A page still
+	// pointing at last season's packaging shot is not a corrupted store, it is
+	// a store where nobody recorded that a newer one exists.
+	Supersedes string `json:"supersedes,omitempty"`
+
 	UploadedAt int64  `json:"uploaded_at"`
 	UploadedBy string `json:"uploaded_by,omitempty"`
 }

@@ -2,11 +2,13 @@ package demo
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/brand"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/taxonomy"
@@ -80,28 +82,70 @@ func Marginalia() *Site {
 	return s
 }
 
+// addMedia stores the plates, each with the rights that permit publishing it.
+//
+// Every one is declared, because a demonstration shipping twelve undeclared
+// images teaches that the field is decoration. Eleven are own-work in
+// perpetuity, which is the truth — this program drew them. The twelfth is
+// declared as a licence with a term that ends soon, so that `quilzo rights`
+// has something to report and the warning is visible without anything being
+// broken.
 func (s *Site) addMedia() {
-	for _, a := range []struct{ name, alt string }{
+	// Own work, no expiry. Drawn by scripts/gendemoassets, so the holder is
+	// the project and the term is forever.
+	ours := media.Rights{
+		Licence: "own-work",
+		Holder:  "Marginalia",
+		Note: "Drawn by scripts/gendemoassets and part of the source, under " +
+			"the same licence as the rest of it.",
+	}
+	// The one with a term. A stationer really would license a photograph for
+	// a season, and this is what that looks like the day before somebody has
+	// to renew it.
+	licensed := media.Rights{
+		Licence: "stock:standard",
+		Holder:  "Ingrid Halvorsen",
+		Until:   lapsesSoon().Unix(),
+		Note: "Commissioned for the autumn range. Web only, no print, and " +
+			"not for use after the term without renewing.",
+	}
+
+	for _, a := range []struct {
+		name, alt string
+		rights    media.Rights
+	}{
 		{"notebook-linen", "An illustration of a tall linen-bound notebook, " +
-			"warm brown, two ruled lines showing"},
-		{"notebook-pocket", "An illustration of a small teal pocket notebook"},
-		{"pen-brass", "An illustration of a slim brass pen lying on the diagonal"},
-		{"pen-copper", "An illustration of a slim copper pen lying on the diagonal"},
+			"warm brown, two ruled lines showing", ours},
+		{"notebook-pocket", "An illustration of a small teal pocket notebook", ours},
+		{"pen-brass", "An illustration of a slim brass pen lying on the diagonal",
+			licensed},
+		{"pen-copper", "An illustration of a slim copper pen lying on the diagonal",
+			ours},
 		{"cards-correspondence", "An illustration of a bordered green " +
-			"correspondence card with two ruled lines"},
-		{"cards-plain", "An illustration of a bordered blue plain card"},
+			"correspondence card with two ruled lines", ours},
+		{"cards-plain", "An illustration of a bordered blue plain card", ours},
 		{"box-archive", "An illustration of a green archive box with a lid " +
-			"and a label slot"},
-		{"box-desk", "An illustration of a violet desk box with a lid"},
+			"and a label slot", ours},
+		{"box-desk", "An illustration of a violet desk box with a lid", ours},
 		{"tape-gummed", "An illustration of a deep red roll of gummed tape, " +
-			"seen face on"},
-		{"ink-walnut", "An illustration of a squat walnut-brown ink bottle"},
-		{"ink-indigo", "An illustration of a squat indigo ink bottle"},
-		{"blotter-desk", "An illustration of a bordered olive desk blotter"},
+			"seen face on", ours},
+		{"ink-walnut", "An illustration of a squat walnut-brown ink bottle", ours},
+		{"ink-indigo", "An illustration of a squat indigo ink bottle", ours},
+		{"blotter-desk", "An illustration of a bordered olive desk blotter", ours},
 	} {
 		s.Media = append(s.Media, Asset{
-			Name: a.name, Alt: a.alt, Bytes: image(a.name)})
+			Name: a.name, Alt: a.alt, Rights: a.rights, Bytes: image(a.name)})
 	}
+}
+
+// lapsesSoon is a date inside the reporting window and outside the refusal.
+//
+// Computed from the install rather than written down, because a fixed date
+// stops demonstrating anything the moment it passes — and then the
+// demonstration ships an expired licence and refuses to publish itself, which
+// is a support ticket rather than a feature.
+func lapsesSoon() time.Time {
+	return time.Now().AddDate(0, 0, 38).Truncate(time.Hour)
 }
 
 // num is a pointer to a float, which is how schema expresses "this bound is

@@ -73,6 +73,10 @@ func cmdDemo(root string, args []string) error {
 			return fmt.Errorf("%s: %w", a.Name, aerr)
 		}
 		f.Alt = a.Alt
+		// The rights travel with the file. An installer that stored the bytes
+		// and dropped the licence would produce a library where every asset is
+		// undeclared, which is the state this feature exists to make visible.
+		f.Rights = a.Rights
 		if perr := lib.Put(f, a.Bytes); perr != nil {
 			return fmt.Errorf("storing %s: %w", a.Name, perr)
 		}
