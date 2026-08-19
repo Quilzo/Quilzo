@@ -362,3 +362,56 @@ func TestANearMissSuggestsTheRealCommand(t *testing.T) {
 		}
 	}
 }
+
+// A policy that cannot be read refuses everything.
+//
+// It used to permit everything. policyInUse discarded the load error and
+// returned false, which reads as "nobody has been granted anything", which
+// turns authorisation off — so truncating policy.json disabled access control
+// for the whole store and the only symptom was that everything started
+// working. An editor, a crash between write and rename, or a half-finished
+// restore is enough; it does not need an attacker.
+//
+// Absent is different and stays different: a store nobody has configured is the
+// case the zero-configuration design exists for. Present-and-unreadable is the
+// one where refusing is the only safe answer.
+func TestAnUnreadablePolicyRefusesEverything(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Absent: nothing to enforce, so nothing is refused.
+	if err := authoriseCommand(root, "add", nil); err != nil {
+		t.Fatalf("an unconfigured store refused a command: %v", err)
+	}
+
+	// Configured: refused without a credential.
+	policy := `{"bindings":[{"principal":"alice","role":"admin","resource":"/"}]}`
+	if err := os.WriteFile(policyPath(root), []byte(policy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := authoriseCommand(root, "add", nil); err == nil {
+		t.Fatal("a configured store allowed an unauthenticated write")
+	}
+
+	// Unreadable: refused, and the refusal says why rather than reporting the
+	// store as unconfigured.
+	if err := os.WriteFile(policyPath(root), []byte("not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := authoriseCommand(root, "add", nil)
+	if err == nil {
+		t.Fatal("a store whose policy cannot be read allowed an " +
+			"unauthenticated write; access control is off exactly when the " +
+			"file guarding it is damaged")
+	}
+	if !strings.Contains(err.Error(), "cannot be read") {
+		t.Errorf("the refusal does not say the policy is unreadable: %v", err)
+	}
+
+	// And a read is refused too, not only a write.
+	if err := authoriseCommand(root, "diff", nil); err == nil {
+		t.Error("a read was allowed against an unreadable policy")
+	}
+}

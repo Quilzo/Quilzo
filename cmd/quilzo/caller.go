@@ -141,12 +141,32 @@ func osUser() string {
 // configuration: a store where nobody has been granted a role is a single-user
 // store with nothing to enforce, and the first `auth grant` turns enforcement
 // on. A flag would be one more thing to set wrongly.
-func policyInUse(root string) bool {
+//
+// The error is the important half, and it used to be discarded. A policy that
+// could not be read returned false, which meant "nothing has been granted",
+// which meant every command ran unauthenticated. Truncating policy.json — with
+// an editor, a crash between write and rename, a half-finished restore, or on
+// purpose — turned access control off across the whole store, and the only
+// symptom was that everything started working:
+//
+//	quilzo add index=home.json          refused, no token
+//	echo 'not json' > policy.json
+//	quilzo add index=home.json          "draft 995b0d7e386f  1 page(s)"
+//
+// So an unreadable policy is now treated as a policy in force that cannot be
+// evaluated, and the answer to every question is no. Absent still means
+// unconfigured — that is a store nobody has set up, and it is the case the
+// zero-configuration design is for — but present-and-broken is the state where
+// refusing is the only safe answer.
+func policyInUse(root string) (bool, error) {
 	p, err := loadPolicy(root)
 	if err != nil {
-		return false
+		return true, fmt.Errorf(
+			"this store has a policy that cannot be read, so no request can be "+
+				"authorised: %w\n  refusing rather than running unauthenticated; "+
+				"repair or remove %s", err, policyPath(root))
 	}
-	return len(p.Bindings) > 0
+	return len(p.Bindings) > 0, nil
 }
 
 // authorise checks a caller against the policy for privileged actions.
@@ -155,7 +175,11 @@ func policyInUse(root string) bool {
 // two things was missing — an identity or a permission — because they need
 // different fixes and "forbidden" tells nobody which.
 func authorise(root string, c *Caller, action auth.Action, resource string) error {
-	if !policyInUse(root) {
+	inUse, err := policyInUse(root)
+	if err != nil {
+		return err
+	}
+	if !inUse {
 		return nil // nothing has been granted; there is nothing to enforce
 	}
 	if !c.Verified {
