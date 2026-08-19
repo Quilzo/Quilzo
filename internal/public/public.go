@@ -667,10 +667,67 @@ func (st *Site) manifest(w http.ResponseWriter, r *http.Request) {
 		// makes that true rather than a promise.
 		"icons": []map[string]any{},
 	}
+	// Shortcuts, from the site's own navigation.
+	//
+	// What a long-press on the installed icon offers. Derived rather than
+	// configured separately: the menu is already the answer to "what are the
+	// important places on this site", and a second list would be one more
+	// thing to keep in step with the first.
+	//
+	// Pages only. An external target in a shortcut sends somebody out of the
+	// installed app from its own icon, which is not what they pressed it for,
+	// and a heading is not a destination at all.
+	if sc := st.shortcuts(); len(sc) > 0 {
+		doc["shortcuts"] = sc
+	}
 	b, _ := json.MarshalIndent(doc, "", "  ")
 	w.Header().Set("Content-Type", "application/manifest+json")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	_, _ = w.Write(b)
+}
+
+// shortcuts builds the manifest's shortcut list from the primary menu.
+//
+// Four at most. The specification sets no limit and platforms quietly impose
+// their own — Android shows four — so a longer list is silently truncated by
+// somebody else's rule rather than by a decision here.
+func (st *Site) shortcuts() []map[string]any {
+	if st.Menus == nil {
+		return nil
+	}
+	set, err := st.Menus()
+	if err != nil || set == nil {
+		return nil
+	}
+	names := set.Names()
+	if len(names) == 0 {
+		return nil
+	}
+	m, ok := set.Get(names[0])
+	if !ok {
+		return nil
+	}
+
+	out := make([]map[string]any, 0, 4)
+	for _, it := range m.Items {
+		if len(out) == 4 {
+			break
+		}
+		// Top-level pages only. A nested item is a detail of a section rather
+		// than one of the four things somebody reaches for first.
+		if it.Kind != menu.Page || it.Parent != "" || it.Target == "" {
+			continue
+		}
+		label := strings.TrimSpace(it.Label)
+		if label == "" {
+			continue
+		}
+		out = append(out, map[string]any{
+			"name": label,
+			"url":  "/" + it.Target,
+		})
+	}
+	return out
 }
 
 // serviceWorker caches published pages so the site survives losing the network.
