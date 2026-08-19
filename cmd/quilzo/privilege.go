@@ -78,8 +78,16 @@ var commandNeeds = map[string]need{
 	"csp":        {action: auth.ActView},
 	"compliance": {action: auth.ActView},
 	"agents":     {action: auth.ActView},
-	"provenance": {action: auth.ActView},
-	"prov":       {action: auth.ActView},
+	// Declaring what a model may do is deciding a blast radius, which is an
+	// administrative act rather than an editorial one. Reading the list and
+	// the templates is not, so those step down from it.
+	"agent":           {action: auth.ActGrant},
+	"agent templates": {action: auth.ActView},
+	"agent list":      {action: auth.ActView},
+	"agent show":      {action: auth.ActView},
+	"agent check":     {action: auth.ActView},
+	"provenance":      {action: auth.ActView},
+	"prov":            {action: auth.ActView},
 	// Strict parent, narrowing children — see the note on posture. Pointing
 	// every reader at a different audit log is an operator act, so the parent
 	// takes that answer and the seven reading subcommands step down from it.
@@ -212,6 +220,10 @@ var commandNeeds = map[string]need{
 	"mcp":   {action: auth.ActEditDraft},
 
 	// -- deliberately unauthenticated, each with the reason.
+	"__sandbox": {why: "is the sandbox shim this program re-executes itself as: " +
+		"it restricts its own thread and execve's the extension, and never " +
+		"opens the store. Requiring authority here would mean resolving a " +
+		"token inside the process that is about to be confined"},
 	"init": {why: "creates the store; there is no policy to consult until one exists"},
 	"logd": {why: "runs as its own account and derives its authority from the " +
 		"socket peer's uid, not from a token in this store"},

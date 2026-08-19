@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/provenance"
+	"github.com/quilzo/quilzo/internal/sandbox"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -43,6 +44,24 @@ type suppressionFile struct {
 // NotChecked, and the report says plainly what it could not see.
 func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 	s := posture.State{Now: time.Now(), Server: srv}
+
+	// Extensions, and whether anything confines them.
+	//
+	// Checked is set whichever way the answer comes out, because the scanner
+	// reports "not looked at" separately from "nothing found" — and an
+	// unreadable registry reported as zero extensions is a clean bill of
+	// health for a store nobody inspected.
+	if reg, err := loadExts(root); err == nil {
+		s.Ext = posture.ExtFacts{Registered: len(reg.Extensions), Checked: true}
+		if sandbox.Supported() {
+			s.Ext.Sandboxed = true
+			// Below ABI 4 the kernel has no network rules, so the sandbox
+			// bounds what an extension can read and not what it can send.
+			s.Ext.NetworkOpen = sandbox.ABI() < 4
+		} else {
+			s.Ext.Why = "this kernel has no Landlock (Linux 5.13 or later)"
+		}
+	}
 
 	// Whether any log head has been published outside this machine. Supplied
 	// even when the answer is none, because an absent key means "not looked at"

@@ -14,9 +14,6 @@ quilzo site          # serve it on 127.0.0.1:8081
 quilzo serve         # the admin interface on 127.0.0.1:8080
 ```
 
-The command is `quilzo` — the project's working name. Everywhere you see it in a command or an import,
-that is deliberate.
-
 Go, no third-party dependencies, one static binary. Everything below is
 reachable from the command line, the browser and the agent interface, and a test
 fails when one of them falls behind the others.
@@ -58,8 +55,10 @@ So there are three goals, in order:
 
 ### What it is deliberately not
 
-Not a plugin marketplace — the extension point is a sandbox, not a way to run
-arbitrary code in the request path. Not a framework. Not a JavaScript
+Not a plugin marketplace — the extension point is an out-of-process hook with
+a timeout and no inherited environment, not a way to run arbitrary code in the
+request path. It is not a capability sandbox; SECURITY.md says exactly what it
+does and does not bound. Not a framework. Not a JavaScript
 application; the admin is server-rendered and its own CSP forbids script
 entirely. And not a general database with a CMS on top, because that is the
 thing whose absence makes the first goal possible.
@@ -195,8 +194,8 @@ Content-Security-Policy generated from what your content actually references, a
 software inventory, store integrity verification, and a posture report.
 
 **Interfaces.** A browser interface covering every capability, grouped into five
-sections and reorderable per person, with a light/dark toggle and a manual with
-screenshots. A command line covering the same ground. An agent interface over
+sections and reorderable per person, with a light/dark toggle and a Help link on
+every screen into the manual. A command line covering the same ground. An agent interface over
 MCP covering everything that reads or authors content — and deliberately not
 covering anything that changes who may do what, what code runs, or what the keys
 are.
@@ -287,7 +286,7 @@ credential somebody already knows.
 ```bash
 quilzo auth grant you admin                            # "you" is any name
 quilzo token issue laptop --principal you --role admin # shown once
-export QUILZO_TOKEN=qlz_…
+export QUILZO_TOKEN=qz_…
 ```
 
 A token can carry **less** authority than the person holding it and never more:
@@ -313,8 +312,20 @@ quilzo serve --addr 127.0.0.1:8080                                    # admin
 quilzo site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
 ```
 
-`quilzo help` lists all 92 commands. The admin carries a manual with
-screenshots at `/docs`, and every screen's Help link points at its own section.
+`quilzo help` lists all 92 commands.
+
+## Documentation
+
+**[quilzo.github.io](https://quilzo.github.io)** — setup, content modelling,
+publishing, the three interfaces, access control and security, with screenshots.
+
+Every screen in the admin carries a Help link in the same place, pointing at the
+section for the screen you are looking at rather than at the top of the manual.
+
+The manual used to be compiled into the binary and served at `/docs`. It is a
+site of its own now, in [its own repository](https://github.com/Quilzo/quilzo.github.io),
+so a wording fix or a corrected screenshot ships the day somebody notices rather
+than waiting for a release.
 
 ## Deployment
 

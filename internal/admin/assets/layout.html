@@ -7,7 +7,7 @@
 <title>{{.Title}} — Quilzo</title>
 <link rel="stylesheet" href="/style.css">
 </head>
-<body class="nav-{{.NavPosition}}">
+<body>
 <a class="skip" href="#main">Skip to main content</a>
 <header class="bar">
   <div class="bar-inner">
@@ -17,14 +17,19 @@
       — <a href="/signout">Sign out</a></p>{{end}}
     <div class="prefs">
       {{template "themetoggle" .}}
-      <form method="post" action="/nav" class="navtoggle">
-        <input type="hidden" name="to" value="{{if eq .NavPosition "left"}}top{{else}}left{{end}}">
-        <button type="submit">{{if eq .NavPosition "left"}}Top nav{{else}}Side nav{{end}}</button>
-      </form>
     </div>
   </div>
-  {{template "navlist" .}}
 </header>
+{{/*
+  One navigation, in one place in the document.
+
+  It used to be rendered twice — once inside the header and once here — with
+  CSS displaying whichever one the position setting named. That is two copies
+  of nineteen links in every response, and it only stayed correct because
+  display:none takes the hidden copy out of the accessibility tree; get the
+  breakpoint wrong and a screen reader reads every section twice. Rendering it
+  once removes the possibility rather than relying on a rule to hide it.
+*/}}
 <div class="sidenav">
   {{template "navlist" .}}
 </div>
@@ -84,6 +89,9 @@
   hard-coded, which could not answer the three questions now being asked of it:
   what order does this person want, what may this person actually use, and
   where is this screen documented.
+
+  Now there is one orientation, so the group headings are always drawn rather
+  than hidden at one breakpoint and shown at another.
 */}}
 {{define "navlist"}}
 <nav class="navgroups" aria-label="Sections">
@@ -102,10 +110,18 @@
 
 {{define "foot"}}
 </main>
+{{/*
+  The manual is a site of its own, so these leave this origin.
+
+  rel="noopener noreferrer" because target is not set and never should be here:
+  opening documentation in a new tab is a decision that belongs to whoever
+  clicks, and a Help link that steals a tab from somebody mid-edit is the
+  reason people stop pressing it.
+*/}}
 <footer class="shell">
-  <p><a href="/docs#{{.Doc}}">Help with this screen</a>
+  <p><a href="{{.DocURL}}" rel="noopener noreferrer">Help with this screen</a>
     — the same link, in the same place, on every page.
-    <a href="/docs">All documentation</a>.</p>
+    <a href="{{.DocsBase}}" rel="noopener noreferrer">All documentation</a>.</p>
 </footer>
 </body>
 </html>

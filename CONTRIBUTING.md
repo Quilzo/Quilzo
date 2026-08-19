@@ -4,12 +4,15 @@ This project is looking for maintainers, not just patches. If you want commit
 access, the path is written down in [GOVERNANCE.md](GOVERNANCE.md) and it is
 short.
 
-## The name, so it does not confuse you
+## The name, if you are reading older material
 
-The project is **Quilzo**. The command is **`quilzo`**, which was the
-working name and stayed as the binary — the same way Chromium ships `chrome`.
-Anywhere you see `quilzo` in a command, a path, or a Go import, that is
-deliberate and not a leftover.
+The project and the command are both **Quilzo**. Earlier releases shipped the
+binary as `scrivet`, an old working name, and that is gone: the command, the
+store directory, the environment variables, the token prefix and the agent
+tool names are all `quilzo` now. There is no compatibility path — a store
+created by the old binary is not found by this one, and tokens have to be
+reissued. Pre-1.0, one name is worth more than a migration shim nobody would
+delete later.
 
 ## Try it first, in about two minutes
 
@@ -42,10 +45,10 @@ Two commands. The order matters, and the token is shown once:
 ../quilzo token issue laptop --principal you --role admin
 ```
 
-That prints a secret starting `qlz_`. Put it in the environment:
+That prints a secret starting `qz_`. Put it in the environment:
 
 ```bash
-export QUILZO_TOKEN=qlz_…
+export QUILZO_TOKEN=qz_…
 ```
 
 Then start both processes:

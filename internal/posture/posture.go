@@ -173,6 +173,27 @@ type AgentFacts struct {
 	Enabled bool `json:"enabled"`
 }
 
+// ExtFacts describe the extension runner and what confines it.
+type ExtFacts struct {
+	// Registered is how many extensions this store runs.
+	Registered int `json:"registered"`
+	// Sandboxed says the host can confine them with the kernel.
+	Sandboxed bool `json:"sandboxed"`
+	// Why explains an absent sandbox, so the report can say which of the two
+	// reasons applies — a kernel without Landlock and a build that cannot use
+	// it need different answers from an operator.
+	Why string `json:"why,omitempty"`
+	// NetworkOpen says the sandbox does not bound what an extension can send.
+	// True on a kernel below Landlock ABI 4, and reported separately from
+	// Sandboxed because a filesystem-only sandbox is a real improvement and
+	// not the whole control.
+	NetworkOpen bool `json:"network_open"`
+	// Checked distinguishes "no extensions" from "nobody looked". An absent
+	// answer reported as a clean one is the failure this scanner exists to
+	// avoid.
+	Checked bool `json:"checked"`
+}
+
 // State is everything the scanner is allowed to see.
 //
 // Assembled by the caller. The scanner reads this and nothing else — there is
@@ -187,6 +208,7 @@ type State struct {
 	Server   ServerFacts       `json:"server"`
 	Content  ContentFacts      `json:"content"`
 	Agents   AgentFacts        `json:"agents"`
+	Ext      ExtFacts          `json:"ext"`
 	Now      time.Time         `json:"-"`
 	Extra    map[string]string `json:"extra,omitempty"`
 }

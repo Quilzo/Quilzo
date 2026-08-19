@@ -158,6 +158,9 @@ compliance evidence
   quilzo compliance controls               NIST 800-53 coverage, from the rules
 
 agents and integrations
+  quilzo agent templates                    the agent archetypes, and when to use each
+  quilzo agent new NAME --kind KIND         declare what an agent may do
+  quilzo agent list | show NAME | check     what is declared, and whether it still validates
   quilzo agents                            what models have been doing, and
                                             which are not accepting refusals
   quilzo webhook add https://...           tell another system when you publish
@@ -196,6 +199,13 @@ log transparency
   quilzo anchor submit | list | verify     one hash over a whole publication
 
   quilzo mcp [--list]                      the agent interface, over stdio
+  quilzo __sandbox --allow DIR -- CMD       run CMD confined to DIR. Not a
+                                            command you type: this program
+                                            re-executes itself as this to put
+                                            an extension in a Landlock sandbox,
+                                            and it is listed because anything
+                                            dispatched and undocumented ships
+                                            for nobody
   quilzo version                           what this binary is
 
 global
@@ -295,6 +305,13 @@ func main() {
 		err = cmdCompliance(root, cmdArgs)
 	case "agents":
 		err = cmdAgents(root, cmdArgs)
+	case "agent":
+		err = cmdAgent(root, cmdArgs)
+	// The literal rather than sandboxCmd, because the test that keeps the
+	// privilege table honest reads this switch from the source and cannot
+	// resolve a constant.
+	case "__sandbox":
+		err = cmdSandbox(cmdArgs)
 	case "webhook", "webhooks":
 		err = cmdWebhook(root, cmdArgs)
 	case "logd":

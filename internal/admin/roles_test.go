@@ -3,6 +3,7 @@ package admin
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sort"
 	"strings"
 	"testing"
@@ -26,10 +27,12 @@ func TestEachRoleReachesItsOwnWorkAndNoMore(t *testing.T) {
 	// publisher gets everything an author gets, so each row lists only what
 	// that rung adds.
 	adds := map[auth.Role][]string{
+		// "/docs" was here. The manual is published at DocsBase now, so there
+		// is no screen to reach and no role that could be refused it.
 		auth.RoleReader: {
 			"/", "/records", "/types", "/media", "/languages",
 			"/review", "/publishing", "/history", "/transfer",
-			"/provenance", "/playground", "/docs", "/profile",
+			"/provenance", "/playground", "/profile",
 		},
 		auth.RoleAuthor:    {"/assist", "/settings"},
 		auth.RolePublisher: {},
@@ -225,5 +228,88 @@ func TestAReadOnlyTokenCannotWriteThroughTheInterface(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "read-only") {
 		t.Error("the refusal does not say the token is read-only, so somebody " +
 			"will go asking for a wider role they already have")
+	}
+}
+
+// A narrow token stays narrow in the browser, too.
+//
+// This is a regression test for a privilege escalation that was live: the
+// interface resolved a token, kept its role for the "Signed in as … (role)"
+// label, and then made every authorisation decision by asking the policy about
+// the *principal*. So a credential deliberately issued `--role reader` to an
+// administrator was refused a publish on the command line and could, through
+// this interface, POST /people/grant and make anybody an administrator.
+//
+// The README offers `--role reader` as the way to make a read-only credential
+// out of an admin's authority, and the security policy lists "a token performs
+// an action outside its scope" as a vulnerability. Both were true of the
+// interface most people use.
+func TestANarrowTokenCannotEscalateThroughTheInterface(t *testing.T) {
+	srv, _ := setup(t)
+
+	// "editor" is an admin in the policy. This token is not.
+	reader, _, err := srv.Tokens.Issue("ci", "editor", auth.RoleReader, "/",
+		time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Reading is what a reader may do.
+	if w := get(t, srv, "/", reader); w.Code != http.StatusOK {
+		t.Fatalf("a reader token could not read the pages screen: %d", w.Code)
+	}
+
+	// Everything above reading is not, whatever the principal holds.
+	for _, path := range []string{"/people", "/access"} {
+		if w := get(t, srv, path, reader); w.Code != http.StatusForbidden {
+			t.Errorf("GET %s with a reader token gave %d, want 403 — the "+
+				"screen is an administration screen and the credential is "+
+				"not an administrator's", path, w.Code)
+		}
+	}
+
+	// And the write that made it an escalation rather than a disclosure.
+	form := url.Values{
+		"new_principal": {"mallory"},
+		"role":          {"admin"},
+		"resource":      {"/"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/people/grant",
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Authorization", "Bearer "+reader)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code == http.StatusSeeOther {
+		t.Error("a reader token was allowed to grant a role")
+	}
+	for _, b := range srv.Policy.Snapshot() {
+		if b.Principal == "mallory" {
+			t.Fatalf("a reader token granted %s the %s role — the policy was "+
+				"asked about the person and never about the credential",
+				b.Principal, b.Role)
+		}
+	}
+}
+
+// The subtree a token is issued for is honoured here as well.
+//
+// `token issue --on /blog` was stored on the token, printed in the token list,
+// and then dropped: the interface never copied Resource onto the identity it
+// built, so the flag restricted the command line and nothing else.
+func TestATokenScopedToASubtreeDoesNotReachTheWholeStore(t *testing.T) {
+	srv, _ := setup(t)
+
+	scoped, _, err := srv.Tokens.Issue("blog-bot", "editor", auth.RoleAdmin,
+		"/blog", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The administration screens are at the root, which /blog does not cover.
+	if w := get(t, srv, "/people", scoped); w.Code != http.StatusForbidden {
+		t.Errorf("a token scoped to /blog reached /people with %d, want 403",
+			w.Code)
 	}
 }

@@ -41,13 +41,48 @@ is false is a vulnerability even without a working exploit:
   a browser unescaped without passing through `{% raw %}`.
 - **Authorisation is enforced at the action, not the screen.** Any request that
   performs an action the caller's role does not permit, including through the
-  API or the agent interface.
+  API or the agent interface — and any state of the store in which the checks
+  stop happening at all. A damaged policy file must refuse, not permit.
 - **Tokens are scoped.** Any way a token performs an action outside its scope,
   or a principal's own grant.
 - **The store is append-only and verifiable.** Any way to alter stored content
   such that `quilzo verify` still passes.
-- **Nothing is executed from content.** Any way an extension, template, or
-  imported document causes execution outside the sandbox.
+- **Nothing is executed from content.** Any way a template or an imported
+  document causes code to run, or any way content decides what an extension is.
+
+### What the extension boundary actually is
+
+An extension is a subprocess. It gets an empty environment, a working directory
+in the temporary area, a timeout, a bounded output, and a process group killed
+as a unit. Those bound what it inherits and what it costs.
+
+On Linux 5.13 or later it is also confined with Landlock, applied to a locked
+thread that is then replaced by the extension itself — a Landlock domain is
+inherited across execve, so the program starts already restricted. It may read
+only the paths it is granted and its own binary, and from Linux 6.7 it may not
+open a TCP connection at all.
+
+What that does **not** cover, said plainly rather than implied away:
+
+- **UDP**, below Landlock ABI 10. A confined extension cannot open TCP and can
+  still send datagrams, including DNS.
+- **Anything not Linux**, and any kernel without Landlock. There the older
+  paragraph still applies: the extension runs with the uid that started it and
+  can read the token store, the policy and the key file. `quilzo posture scan`
+  reports this as `ext.unconfined` rather than leaving it to be discovered.
+
+Registering an extension is an admin-only action, and on an unconfined host it
+should be treated as equivalent to granting whoever wrote it everything this
+process can read.
+
+**In scope**: an extension escaping the sandbox, the timeout, the output bound
+or the process group; content choosing which extension runs or what it is given;
+an extension reaching the store through the application rather than through the
+filesystem.
+
+**Not in scope**: an extension reading files its uid can read *on a host with no
+Landlock*. That is the documented limit above, and the posture rule exists to
+make it visible.
 
 Also in scope: authentication bypass, privilege escalation between roles,
 IDOR on any resource, path traversal, SSRF from any fetcher, injection of any

@@ -113,7 +113,7 @@ func TestATraversalInAnAssetPathGetsNothing(t *testing.T) {
 		if w.Code == http.StatusOK {
 			t.Errorf("%q was served", id)
 		}
-		if strings.Contains(w.Body.String(), "qlz_") {
+		if strings.Contains(w.Body.String(), "qz_") {
 			t.Fatalf("%q returned something that looks like a credential", id)
 		}
 		if strings.Contains(reached, "..") {

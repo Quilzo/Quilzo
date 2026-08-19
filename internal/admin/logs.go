@@ -2,7 +2,6 @@ package admin
 
 import (
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -172,60 +171,16 @@ func sortStrings(s []string) {
 	}
 }
 
-// handleNav flips the navigation between the top bar and the side.
+// The navigation used to be movable between the top bar and the side, with a
+// POST handler, a cookie, a configuration key and a button in the header.
 //
-// A cookie rather than a stored setting. Where the menu sits is a preference
-// about a screen — its width, and how many sections that person keeps open —
-// not a property of the content store, and making everybody share one value
-// turns a preference into an argument. The configured value is the default for
-// anybody who has not chosen.
-func (s *Server) handleNav(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "POST only", http.StatusMethodNotAllowed)
-		return
-	}
-	// Authenticated, because it sets a cookie on this origin and there is no
-	// reason for an unauthenticated request to be doing that.
-	if _, ok := s.requireAuth(w, r); !ok {
-		return
-	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
-		return
-	}
-	to := r.FormValue("to")
-	if to != "top" && to != "left" {
-		http.Error(w, "nav must be top or left", http.StatusBadRequest)
-		return
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name: "quilzo_nav", Value: to, Path: "/",
-		MaxAge: 365 * 24 * 3600, HttpOnly: true,
-		SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
-	})
-	// Back where they were. Referer is only used to return to a path on this
-	// same server — an open redirect through a preference toggle would be an
-	// embarrassing way to acquire one.
-	back := "/"
-	if ref := r.Referer(); ref != "" {
-		if u, err := url.Parse(ref); err == nil && u.Host == r.Host &&
-			strings.HasPrefix(u.Path, "/") {
-			back = u.Path
-		}
-	}
-	http.Redirect(w, r, back, http.StatusSeeOther)
-}
-
-// navFor resolves the position for one request: the person's choice, else the
-// store's configured default, else top.
-func (s *Server) navFor(r *http.Request) string {
-	if c, err := r.Cookie("quilzo_nav"); err == nil {
-		if c.Value == "top" || c.Value == "left" {
-			return c.Value
-		}
-	}
-	if s.NavPosition == "left" {
-		return "left"
-	}
-	return "top"
-}
+// It is at the side, and only at the side. The two arrangements meant the
+// navigation was rendered twice into every response so that CSS could hide
+// one, which is a duplicate set of links in the document whose absence from
+// the accessibility tree depended on a display rule staying right. One
+// arrangement removes the second copy, the setting that chose between them,
+// and the button that set the setting — and the group headings, which the top
+// arrangement had to hide for want of room, are now always drawn.
+//
+// A person's own ordering of the destinations survives all of this: that is
+// NavOrderCookie in nav.go, which is a different preference and still theirs.

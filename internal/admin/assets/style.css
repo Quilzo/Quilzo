@@ -68,55 +68,69 @@
   --nvariant-30:#3d484e; --nvariant-50:#677a84; --nvariant-60:#83939c;
   --nvariant-70:#a0adb4; --nvariant-80:#bec8cd; --nvariant-90:#dde3e7;
 
-  /* -- semantic roles, light ------------------------------------------------
+  /* -- semantic roles -------------------------------------------------------
      "on-X" is what goes on top of X. "X-container" is a fill for foreground
      elements and never a text colour. Following the naming exactly is what
-     makes the dark scheme a swap of eight lines rather than a re-audit. */
-  --primary: var(--primary-30);
-  --on-primary: var(--primary-100);
-  --primary-container: var(--primary-90);
-  --on-primary-container: var(--primary-10);
+     makes the dark scheme a swap of eight lines rather than a re-audit.
 
-  --secondary: var(--secondary-30);
-  --on-secondary: #ffffff;
-  --secondary-container: var(--secondary-90);
-  --on-secondary-container: var(--secondary-10);
+     Both schemes are written here, once, as light-dark(light, dark), and the
+     scheme is chosen by `color-scheme` below.
 
-  --tertiary: var(--tertiary-30);
-  --on-tertiary: #ffffff;
-  --tertiary-container: var(--tertiary-90);
-  --on-tertiary-container: var(--tertiary-10);
+     The previous arrangement put the dark palette inside
+     `@media (prefers-color-scheme: dark)` and nothing else, which meant the
+     only rule that could ever apply it was the system preference. A person on
+     a light machine who pressed "Dark" got `data-theme="dark"` on <html> and
+     no rule in this file matched it, so the button did nothing — the toggle
+     worked in exactly one direction, on exactly one kind of machine, and the
+     API playground (which builds its own document) followed the system in
+     both. Writing the pair in one place is what makes the three states
+     reachable at all; it also removes the duplicate block a fix by
+     copy-and-paste would have left behind. */
+  --primary: light-dark(var(--primary-30), var(--primary-80));
+  --on-primary: light-dark(var(--primary-100), var(--primary-20));
+  --primary-container: light-dark(var(--primary-90), var(--primary-24));
+  --on-primary-container: light-dark(var(--primary-10), var(--primary-90));
 
-  --error: var(--error-30);
-  --on-error: #ffffff;
-  --error-container: var(--error-90);
-  --on-error-container: var(--error-10);
+  --secondary: light-dark(var(--secondary-30), var(--secondary-80));
+  --on-secondary: light-dark(#ffffff, var(--secondary-20));
+  --secondary-container: light-dark(var(--secondary-90), var(--secondary-30));
+  --on-secondary-container: light-dark(var(--secondary-10), var(--secondary-90));
 
-  --ok: var(--ok-30);
-  --ok-container: var(--ok-90);
-  --on-ok-container: var(--ok-10);
-  --warning: var(--warn-30);
-  --warning-container: var(--warn-90);
-  --on-warning-container: var(--warn-10);
+  --tertiary: light-dark(var(--tertiary-30), var(--tertiary-80));
+  --on-tertiary: light-dark(#ffffff, var(--tertiary-20));
+  --tertiary-container: light-dark(var(--tertiary-90), var(--tertiary-30));
+  --on-tertiary-container: light-dark(var(--tertiary-10), var(--tertiary-90));
 
-  --surface: var(--neutral-98);
-  --on-surface: var(--neutral-10);
-  --surface-variant: var(--nvariant-90);
-  --on-surface-variant: var(--nvariant-30);
+  --error: light-dark(var(--error-30), var(--error-80));
+  --on-error: light-dark(#ffffff, var(--error-20));
+  --error-container: light-dark(var(--error-90), var(--error-24));
+  --on-error-container: light-dark(var(--error-10), var(--error-90));
+
+  --ok: light-dark(var(--ok-30), var(--ok-80));
+  --ok-container: light-dark(var(--ok-90), var(--ok-10));
+  --on-ok-container: light-dark(var(--ok-10), var(--ok-80));
+  --warning: light-dark(var(--warn-30), var(--warn-80));
+  --warning-container: light-dark(var(--warn-90), var(--warn-10));
+  --on-warning-container: light-dark(var(--warn-10), var(--warn-80));
+
+  --surface: light-dark(var(--neutral-98), var(--neutral-6));
+  --on-surface: light-dark(var(--neutral-10), var(--neutral-90));
+  --surface-variant: light-dark(var(--nvariant-90), var(--nvariant-30));
+  --on-surface-variant: light-dark(var(--nvariant-30), var(--nvariant-80));
 
   /* Six container levels replace elevation-by-shadow. A card is distinguished
      from the page by tone, not by a drop shadow, which is what keeps the
      interface legible at high zoom and in forced-colours mode. */
-  --surface-container-lowest: var(--neutral-100);
-  --surface-container-low: var(--neutral-96);
-  --surface-container: var(--neutral-94);
-  --surface-container-high: var(--neutral-92);
-  --surface-container-highest: var(--neutral-90);
-  --inverse-surface: var(--neutral-22);
-  --inverse-on-surface: var(--neutral-95);
+  --surface-container-lowest: light-dark(var(--neutral-100), var(--neutral-4));
+  --surface-container-low: light-dark(var(--neutral-96), var(--neutral-10));
+  --surface-container: light-dark(var(--neutral-94), var(--neutral-12));
+  --surface-container-high: light-dark(var(--neutral-92), var(--neutral-17));
+  --surface-container-highest: light-dark(var(--neutral-90), var(--neutral-22));
+  --inverse-surface: light-dark(var(--neutral-22), var(--neutral-90));
+  --inverse-on-surface: light-dark(var(--neutral-95), var(--neutral-22));
 
-  --outline: var(--nvariant-50);
-  --outline-variant: var(--nvariant-80);
+  --outline: light-dark(var(--nvariant-50), var(--nvariant-60));
+  --outline-variant: light-dark(var(--nvariant-80), var(--nvariant-30));
   --scrim: rgb(0 0 0 / 0.32);
 
   /* -- shape scale ----------------------------------------------------------
@@ -190,56 +204,25 @@
   --state-focus: 10%;
   --state-press: 10%;
 
-  --focus-ring: var(--primary-40);
+  --focus-ring: light-dark(var(--primary-40), var(--primary-70));
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --primary: var(--primary-80);
-    --on-primary: var(--primary-20);
-    --primary-container: var(--primary-24);
-    --on-primary-container: var(--primary-90);
-
-    --secondary: var(--secondary-80);
-    --on-secondary: var(--secondary-20);
-    --secondary-container: var(--secondary-30);
-    --on-secondary-container: var(--secondary-90);
-
-    --tertiary: var(--tertiary-80);
-    --on-tertiary: var(--tertiary-20);
-    --tertiary-container: var(--tertiary-30);
-    --on-tertiary-container: var(--tertiary-90);
-
-    --error: var(--error-80);
-    --on-error: var(--error-20);
-    --error-container: var(--error-24);
-    --on-error-container: var(--error-90);
-
-    --ok: var(--ok-80);
-    --ok-container: var(--ok-10);
-    --on-ok-container: var(--ok-80);
-    --warning: var(--warn-80);
-    --warning-container: var(--warn-10);
-    --on-warning-container: var(--warn-80);
-
-    --surface: var(--neutral-6);
-    --on-surface: var(--neutral-90);
-    --surface-variant: var(--nvariant-30);
-    --on-surface-variant: var(--nvariant-80);
-
-    --surface-container-lowest: var(--neutral-4);
-    --surface-container-low: var(--neutral-10);
-    --surface-container: var(--neutral-12);
-    --surface-container-high: var(--neutral-17);
-    --surface-container-highest: var(--neutral-22);
-    --inverse-surface: var(--neutral-90);
-    --inverse-on-surface: var(--neutral-22);
-
-    --outline: var(--nvariant-60);
-    --outline-variant: var(--nvariant-30);
-    --focus-ring: var(--primary-70);
-  }
-}
+/* The three states of the appearance control, and the only place they are
+   decided.
+ *
+ * `color-scheme` is what light-dark() above reads, so setting it here switches
+ * every semantic role at once. It is also what the browser consults to paint
+ * the parts of a page nobody styles — the inside of a select's dropdown,
+ * checkboxes, scrollbars, spinner arrows — which is why the choice has to land
+ * on the root element rather than on a wrapper.
+ *
+ * No attribute means the person has not chosen, so `light dark` on :root above
+ * follows the system. The two rules here are the explicit choices, and they
+ * have to be able to override the system in both directions: somebody on a
+ * light machine asking for dark is exactly as valid as the reverse, and it was
+ * the case that did not work. */
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark; }
 
 /* -- base ------------------------------------------------------------------ */
 
@@ -702,18 +685,24 @@ tr.detail td { padding-top: 0; border-top: 0; }
   color: var(--on-surface-variant); }
 .kv b { font-weight: 600; color: var(--on-surface); }
 
-/* -- navigation position ---------------------------------------------------- */
+/* -- navigation layout ------------------------------------------------------ */
 /*
-   One layout, two positions, driven by a class on <body>. The markup is
-   identical either way — the header, the nav and the main region are in the
-   same order in the document — so the reading order a screen reader follows
-   and the order the keyboard moves through do not change when somebody moves
-   the bar. A layout that reorders the DOM to move a menu is a layout that is
-   correct for one of its two settings.
-*/
-/* The preference controls in the header: appearance, then position. */
+   One navigation, at the side.
+ *
+ * There were two positions, chosen by a class on <body>, and the markup
+ * carried the nav twice so that CSS could show one and hide the other. That
+ * cost a duplicate set of nineteen links in every response and made the
+ * accessibility tree correct only for as long as the display rules stayed
+ * correct. The side is the position that scales: nineteen destinations in five
+ * named groups do not fit a row of pills, which is why the top arrangement had
+ * to hide the group headings and separate the sections with hairlines instead.
+ *
+ * Below the breakpoint there is no column to put it in, so the same markup —
+ * unchanged, still rendered once — becomes grouped rows above the content.
+ * That is a different shape for the same list, not a second copy of it.
+ */
+/* The preference controls in the header. */
 .prefs { display: flex; align-items: center; gap: .4rem; }
-.navtoggle { margin: 0; }
 .themetoggle { margin: 0; }
 .themetoggle button {
   display: inline-flex; align-items: center; justify-content: center;
@@ -724,47 +713,48 @@ tr.detail td { padding-top: 0; border-top: 0; }
 }
 .themetoggle button:hover { background: var(--surface-container-highest); }
 .icon { width: 20px; height: 20px; display: block; }
-.navtoggle button { font-size: .75rem; padding: .3rem .6rem;
-  border-radius: var(--shape-s); border: 1px solid var(--outline-variant);
-  background: var(--surface-container-high); color: var(--on-surface); cursor: pointer; }
-.navtoggle button:hover { background: var(--surface-container-highest); }
 
 @media (min-width: 60rem) {
   /* The footer needs a named area too. Without one it lands in the first
      free cell, which is under the sidebar, and wraps to three lines in a
      column meant for menu items. */
-  body.nav-left { display: grid; grid-template-columns: 14rem 1fr;
+  body { display: grid; grid-template-columns: 14rem 1fr;
     grid-template-areas: "bar bar" "nav main" "nav foot";
     grid-template-rows: auto 1fr auto; min-height: 100vh; }
-  body.nav-left > footer { grid-area: foot; }
-  body.nav-left > .bar { grid-area: bar; }
-  body.nav-left > .bar > nav { display: none; }
-  /* The sidebar renders the same template, and exactly one of the two is
-     displayed at a time. display:none takes the hidden one out of the
-     accessibility tree as well as off the screen, so a screen reader hears
-     every section once rather than twice. */
-  body.nav-left > .sidenav { grid-area: nav; border-right: 1px solid var(--outline-variant);
+  body > footer { grid-area: foot; }
+  body > .bar { grid-area: bar; margin-bottom: 0; }
+  body > .sidenav { grid-area: nav; border-right: 1px solid var(--outline-variant);
     padding: 1rem .75rem; background: var(--surface-container-low); }
-  body.nav-left > main { grid-area: main; }
-  body.nav-left .sidenav .navgroups { flex-direction: column; gap: 1rem; }
-  /* There is room for the group name here, so it is drawn. */
-  body.nav-left .sidenav .navgroup > h2 { display: block; margin: 0 0 .25rem .75rem;
-    font: var(--label-md); font-weight: 700; letter-spacing: .06em;
-    text-transform: uppercase; color: var(--on-surface-variant); }
-  body.nav-left .sidenav .nav { flex-direction: column; gap: .15rem; align-items: stretch;
+  body > main { grid-area: main; }
+  .sidenav .navgroups { flex-direction: column; gap: 1rem; align-items: stretch; }
+  .sidenav .navgroup + .navgroup { border-left: 0; margin-left: 0; padding-left: 0; }
+  .sidenav .nav { flex-direction: column; gap: .15rem; align-items: stretch;
     margin-top: 0; }
-  body.nav-left .sidenav .nav a { display: block; padding: .5rem .75rem;
+  .sidenav .nav a { display: block; padding: .5rem .75rem;
     border-radius: var(--shape-s); min-height: 40px; line-height: 1.6; }
-  body.nav-left .sidenav .nav a[aria-current="page"] { background: var(--secondary-container); }
+  .sidenav .nav a[aria-current="page"] { background: var(--secondary-container); }
 }
-body.nav-top > .sidenav { display: none; }
+
+/* The group name is drawn in both shapes now.
+   It was hidden in the top arrangement because a row of pills had no room for
+   five headings, and the structure reached a screen reader only through the
+   wrapper's aria-label. With one arrangement the heading is always there, so
+   the visible grouping and the announced grouping are the same thing. */
+.navgroup > h2 { display: block; margin: 0 0 .25rem .75rem;
+  font: var(--label-md); font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--on-surface-variant); }
+
 @media (max-width: 59.99rem) {
-  /* Below the breakpoint there is no room for a sidebar, so both settings
-     render as the top bar. Saying so here rather than letting it happen by
-     accident: a person who chose the side nav on a laptop and opens the same
-     page on a phone should not think the setting was lost. */
-  body.nav-left > .sidenav { display: none; }
-  body.nav-left > .bar > nav { display: block; }
+  /* No column to put it in, so the same markup becomes grouped rows above the
+     content. Rendered once either way — the arrangement changes, the document
+     does not. */
+  .sidenav { border-bottom: 1px solid var(--outline-variant);
+    background: var(--surface-container-low); padding: .75rem 1.25rem;
+    margin-bottom: 1rem; }
+  .sidenav .navgroups { flex-direction: column; gap: .5rem; align-items: stretch; }
+  .sidenav .navgroup + .navgroup { border-left: 0; margin-left: 0; padding-left: 0;
+    border-top: 1px solid var(--outline-variant); padding-top: .5rem; }
+  .sidenav .nav { margin-top: 0; }
 }
 
 /* -- signing in --------------------------------------------------------------
@@ -929,3 +919,40 @@ td .ok, td .warn, td .bad, .hint .ok, .hint .warn, .hint .bad { font-weight: 600
 .findings { list-style: none; padding: 0; margin: 0.5rem 0; }
 .findings li { margin: 0 0 0.6rem; padding-left: 0.9rem;
                border-left: 3px solid var(--outline-variant); }
+
+/* -- getting started -------------------------------------------------------- */
+/*
+   A checklist of real state, not a tour. Each step is a card that says what it
+   is for and what this store already has, so a returning reader can see what
+   they did last time rather than being told again what the product does.
+
+   The done state is carried by the tag and the wording ("3 pages"), never by
+   the left edge alone — colour is the reinforcement here and not the message,
+   which is 1.4.1 and also what makes it survive a printout.
+*/
+.steps-list { list-style: none; counter-reset: step; padding: 0;
+  display: flex; flex-direction: column; gap: 1rem; margin: 1.25rem 0 2rem; }
+.step { counter-increment: step; position: relative;
+  background: var(--surface-container-low);
+  border: 1px solid var(--outline-variant);
+  border-left: 4px solid var(--outline-variant);
+  border-radius: var(--shape-md); padding: 1rem 1.15rem 1rem 3.2rem; }
+.step::before {
+  content: counter(step);
+  position: absolute; left: 1rem; top: 1rem;
+  width: 1.6rem; height: 1.6rem; border-radius: var(--shape-full);
+  display: grid; place-items: center;
+  background: var(--surface-container-highest); color: var(--on-surface-variant);
+  font: var(--label-md); font-weight: 700; font-variant-numeric: tabular-nums;
+}
+/* Numbered because these genuinely are a sequence: a type binds to a page that
+   exists, and publishing needs something to publish. */
+.step-done { border-left-color: var(--primary); }
+.step-done::before { background: var(--primary); color: var(--on-primary); }
+.step-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem; }
+.step-head h3 { margin: 0; font: var(--title-md); font-weight: 700; }
+.step p { margin: .4rem 0 0; }
+
+.gates { margin: 1.25rem 0 2rem; }
+.gates dt { font-weight: 700; margin-top: 1rem; }
+.gates dd { margin: .25rem 0 0; color: var(--on-surface-variant); max-width: 68ch; }

@@ -223,3 +223,63 @@ func (s Scope) Why(a Action, typeName, locale string) string {
 	}
 	return ""
 }
+
+// -- the limits a credential itself carries ----------------------------------
+
+// Covers reports whether a grant or a scope on `scope` reaches `target`.
+//
+// Exported because three surfaces ask this question and two of them had grown
+// their own copy. Segment-aware: "/blog" must not cover "/blog-drafts", and a
+// second implementation that got that wrong would be a hole in exactly one
+// interface.
+func Covers(scope, target string) bool { return covers(scope, target) }
+
+// CheckCredential applies the limits a credential carries, over and above what
+// the policy grants the principal holding it.
+//
+// A token narrows and never widens: its role caps the session, its resource
+// caps the subtree, and its scope caps the actions, types and locales. The
+// policy answers "may this person do this"; this answers "may they do it with
+// the credential in their hand". Both have to hold.
+//
+// It is one function because it was three, and the three did not agree. The
+// command line checked role, path and scope; the content API checked role and
+// scope but not path; the browser interface checked scope and nothing else —
+// so a token issued `--role reader` to an administrator was refused a publish
+// on the command line and could grant somebody admin through the browser. The
+// principal really was an administrator, and the credential really was meant
+// to be a read-only one; only the CLI was reading the second half.
+//
+// That is the failure this project keeps having: a control enforced where it
+// was written rather than everywhere it is used. So the check is here, in the
+// package that owns the model, and each surface calls it rather than
+// reimplementing the parts it remembers.
+//
+// Returns nil when the credential permits the action.
+func CheckCredential(role Role, resource string, scope Scope, action Action,
+	target string) error {
+
+	need, known := Needs(action)
+	if !known {
+		// Refused rather than allowed, for the same reason Evaluate refuses:
+		// a typo in a caller must not become a permission.
+		return fmt.Errorf(
+			"unknown action %q; refusing rather than guessing what it needs",
+			action)
+	}
+	if !role.AtLeast(need) {
+		return fmt.Errorf(
+			"this credential carries %s and %s needs %s. A token limits the "+
+				"session even when the principal holds more in general",
+			role, action, need)
+	}
+	if resource != "" && !covers(resource, target) {
+		return fmt.Errorf(
+			"this credential is scoped to %s and does not reach %s",
+			normalise(resource), normalise(target))
+	}
+	if !scope.AllowsAction(action) {
+		return fmt.Errorf("%s", scope.Why(action, "", ""))
+	}
+	return nil
+}

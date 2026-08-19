@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/admin"
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -109,6 +110,19 @@ func cmdServe(root string, args []string) error {
 	}
 	// Content types, re-read per call for the same reason CheckTypes is: a type
 	// added from the CLI while this is running must take effect immediately.
+	// The agent declarations, read-only. This process owns the file; the admin
+	// shows what is in it and does not write manifests, because declaring one
+	// is an administrative act better done where a diff is in front of you.
+	srv.Agents = &admin.Agents{
+		Load: func() (map[string]agent.Manifest, error) {
+			set, err := loadAgents(root)
+			if err != nil {
+				return nil, err
+			}
+			return set.Agents, nil
+		},
+	}
+
 	srv.Types = &admin.Types{
 		Load:  func() (*schema.Store, error) { return schema.Load(root) },
 		Save:  func(st *schema.Store) error { return st.Save() },
@@ -343,7 +357,6 @@ func cmdServe(root string, args []string) error {
 			return saveJSON(profilesPath(root), m)
 		},
 	}
-	srv.NavPosition = cfg.Raw("admin.nav")
 	srv.ReloadTokens = tokenReloader(root, toks)
 
 	// The audit log, read-only. This process cannot write it where the writer

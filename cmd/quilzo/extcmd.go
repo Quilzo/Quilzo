@@ -51,11 +51,18 @@ func saveExts(root string, f *extFile) error {
 }
 
 // extLimits reads the runner's bounds from configuration.
+//
+// Wrap is set here rather than in the ext package, because putting an
+// extension in a sandbox needs to know where this binary is — the confinement
+// works by re-executing it as a shim — and internal/ext must not. On a kernel
+// with no Landlock, sandboxWrap returns nil and the command runs directly:
+// nothing pretends to confine it, and internal/posture reports the gap.
 func extLimits(c *config.Config) ext.Limits {
 	return ext.Limits{
 		Timeout:    c.Dur("ext.timeout"),
 		MaxOutput:  c.Int("ext.max_output_bytes"),
 		RequirePin: c.Bool("ext.require_pinned"),
+		Wrap:       sandboxWrap(),
 	}
 }
 

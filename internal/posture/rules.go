@@ -546,6 +546,58 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "ext.unconfined",
+		Title:    "Extensions run with the filesystem access of this account",
+		Severity: High,
+		Controls: []string{"AC-6", "SC-39", "CM-7"},
+		OWASP:    "A08:2025 Software and Data Integrity Failures",
+		Why: "An extension is third-party code in a subprocess. It gets an " +
+			"empty environment and a timeout, and neither of those stops it " +
+			"reading a file. Without a kernel sandbox it runs as this account " +
+			"and can open the token store, the policy and the key file — so " +
+			"registering one is equivalent to granting whoever wrote it " +
+			"everything this process can read.",
+		Check: func(s State) []Finding {
+			// Nothing registered is not a finding. A store with no extensions
+			// has no exposure, and reporting one would teach people that this
+			// rule is noise.
+			if !s.Ext.Checked || s.Ext.Registered == 0 {
+				return nil
+			}
+			// Sandboxed but still able to reach the network is a smaller
+			// finding than not sandboxed at all, and worth saying rather than
+			// rounding to "confined". An extension that cannot read the token
+			// store can still send whatever it was given.
+			if s.Ext.Sandboxed {
+				if !s.Ext.NetworkOpen {
+					return nil
+				}
+				return []Finding{{
+					Resource: fmt.Sprintf("%d extension(s)", s.Ext.Registered),
+					Detail: "extensions are confined to a filesystem but not " +
+						"to a network: this kernel cannot restrict outbound " +
+						"connections (Landlock ABI 4 or later)",
+					Fix: "run on Linux 6.7 or later, where outbound TCP is " +
+						"denied as well; or do not register extensions you " +
+						"would not let call out",
+				}}
+			}
+			why := s.Ext.Why
+			if why == "" {
+				why = "this host cannot confine them"
+			}
+			return []Finding{{
+				Resource: fmt.Sprintf("%d extension(s)", s.Ext.Registered),
+				Detail: "extensions are not sandboxed: " + why +
+					". They run with the filesystem access of the account " +
+					"running this process, which includes the credential store",
+				Fix: "run on Linux 5.13 or later, where extensions are " +
+					"confined automatically; or run this process as an " +
+					"account that owns nothing but the store it serves",
+			}}
+		},
+	},
+	{
 		ID:       "expose.cleartext",
 		Title:    "An interface serves cleartext over a network",
 		Severity: Critical,
