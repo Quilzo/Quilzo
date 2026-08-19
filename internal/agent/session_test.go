@@ -332,3 +332,92 @@ func TestTheBudgetHoldsUnderConcurrency(t *testing.T) {
 		t.Errorf("%d operations were allowed against a budget of %d", allowed, limit)
 	}
 }
+
+// The write gate refuses the live ref, whoever asks and however.
+//
+// Written against the session directly rather than through an executor,
+// because an executor that only ever passes the draft ref makes this branch
+// unreachable — and an unreachable defence is one that quietly stops working
+// the day a second caller reaches it. That caller is the one this is for.
+func TestNoAgentWritesToWhatThePublicIsBeingServed(t *testing.T) {
+	m := Manifest{
+		Name: "editor", Kind: KindTask, Purpose: "write",
+		Capabilities: []string{"write_page"},
+		Autonomy:     AutonomyDraft,
+		Budget:       Budget{Steps: 10, Tools: 5, Duration: Duration(time.Minute)},
+	}
+	s := NewSession(m, nil)
+
+	if err := s.Mutate("draft", "", ""); err != nil {
+		t.Fatalf("a draft write was refused: %v", err)
+	}
+	for _, ref := range []string{"live", "LIVE", "Live"} {
+		err := s.Mutate(ref, "", "")
+		if err == nil {
+			t.Errorf("a write to %q was allowed. What the public is being "+
+				"served changes when a person says so, and no manifest field "+
+				"should be able to ask otherwise", ref)
+			continue
+		}
+		if !IsRefusal(err) {
+			t.Errorf("writing to %q failed rather than being refused, so "+
+				"nothing recorded it in the audit trail", ref)
+		}
+	}
+}
+
+// Writing does not taint, and reading does.
+//
+// Taint tracks untrusted content coming in. Marking the session on the way out
+// would make every writing agent permanently unpublishable for having done the
+// job it was declared for, which is the sort of correctness that gets a
+// security control switched off.
+func TestWritingDoesNotTaintAndReadingDoes(t *testing.T) {
+	m := Manifest{
+		Name: "editor", Kind: KindTask, Purpose: "write",
+		Capabilities: []string{"read_page", "write_page"},
+		Autonomy:     AutonomyDraft,
+		Budget:       Budget{Steps: 10, Tools: 5, Duration: Duration(time.Minute)},
+	}
+	s := NewSession(m, nil)
+
+	if err := s.Mutate("draft", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if s.Tainted() {
+		t.Error("writing tainted the run")
+	}
+	if err := s.Retrieve("draft", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Tainted() {
+		t.Error("reading stored content did not taint the run, so the rule " +
+			"that stops a hijacked agent publishing itself does not fire")
+	}
+}
+
+// Check decides and does not charge.
+//
+// The executors call it on every operation. If it spent a step, a run would
+// exhaust a budget at half its stated size — which looks like the agent giving
+// up early rather than like a billing bug.
+func TestCheckCostsNothing(t *testing.T) {
+	s := testSession(t, KindRetrieval)
+
+	for i := 0; i < 50; i++ {
+		if err := s.Check("read_page"); err != nil {
+			t.Fatalf("Check refused a declared capability on call %d: %v", i, err)
+		}
+	}
+	if steps, _, _ := s.Spent(); steps != 0 {
+		t.Errorf("50 checks spent %d steps; Check is asked once per operation "+
+			"by the executor and again by anything else that wants to know, "+
+			"so it has to be free", steps)
+	}
+	if err := s.Authorize("read_page"); err != nil {
+		t.Fatal(err)
+	}
+	if steps, _, _ := s.Spent(); steps != 1 {
+		t.Errorf("one Authorize spent %d steps, want 1", steps)
+	}
+}

@@ -74,6 +74,18 @@ const (
 // a message about the model rather than about the filesystem.
 var rePageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
+// ValidPageName reports whether a model-supplied name may be written.
+//
+// Exported so that the other place a model names a page — an agent performing
+// write_page — asks this question rather than its own copy of the pattern. Two
+// regexps for one rule drift, and the direction they drift in is that one of
+// them starts accepting a separator.
+//
+// Which is the property worth stating: no "/", so nothing an agent names can
+// reach outside the page namespace into the records under data/, and no
+// leading dot, so nothing it names is hidden from whoever reviews the diff.
+func ValidPageName(name string) bool { return rePageName.MatchString(name) }
+
 // Proposal is what the assistant returns, before anyone accepts it.
 type Proposal struct {
 	Pages     map[string]any    `json:"pages"`

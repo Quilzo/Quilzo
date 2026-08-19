@@ -147,10 +147,46 @@ func (s *Session) spend(op string) error {
 
 // Authorize is the chokepoint. Every operation an agent performs passes here
 // first, and nothing else in this package grants anything.
+//
+// Authorize is Check plus the budget: it decides, and it spends a step. Call it
+// once per operation, from the loop.
 func (s *Session) Authorize(op string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if err := s.check(op); err != nil {
+		return err
+	}
+	return s.spend(op)
+}
+
+// Check asks the same question as Authorize and spends nothing.
+//
+// # Why both exist
+//
+// The runner authorises, then hands the action to an executor. Until this
+// existed, the executor's own safety was a comment: it ran after Authorize had
+// said yes, and that held for exactly as long as every caller remembered. An
+// executor is an exported type any surface can construct, and "somebody
+// remembers to ask" is how the content-type gate came to be checked in the CLI
+// and not in the API, and how a token's limits came to be checked in three
+// places that each did a different subset. Both were found after they were
+// exploitable.
+//
+// So the executor re-asks, and because it re-asks it must not re-charge: a
+// second Authorize would spend two steps for one operation and exhaust a
+// budget at half its stated size, which is the kind of bug that looks like
+// the agent giving up early.
+//
+// Idempotent and free. Call it as often as it takes.
+func (s *Session) Check(op string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.check(op)
+}
+
+// check is the policy half of Authorize. Caller holds the lock.
+func (s *Session) check(op string) error {
 	if !s.capabilities[op] {
 		// Named in the refusal, because the useful debugging answer is which
 		// capability was missing rather than that one was.
@@ -167,8 +203,90 @@ func (s *Session) Authorize(op string) error {
 	if op == "publish" && s.manifest.Autonomy != AutonomyPublish {
 		return s.refuse(op, "this agent does not publish")
 	}
-	return s.spend(op)
+	if op == "publish" {
+		// The taint rule, enforced where it bites rather than only reported
+		// at the end.
+		//
+		// Publishable() answers the same question and was, until an executor
+		// existed, the only place it was asked — at the close of a run, about
+		// a run that had already happened. That is a report. What CaMeL
+		// actually requires is that untrusted input cannot reach the decision
+		// to act, which means the refusal has to happen before the action, at
+		// the gate every operation already passes through.
+		if ok, why := s.publishable(); !ok {
+			return s.refuse(op, why)
+		}
+	}
+	return nil
 }
+
+// Mutate authorises writing content, and is Retrieve's counterpart.
+//
+// # Why an agent's scope binds its writes and not only its reads
+//
+// A scope reads as "this agent works on articles". Enforcing that on reads
+// alone leaves the half that changes the site: an agent scoped to articles
+// that can write a page bound to the legal type has the scope on the wrong
+// operation. So the same three questions are asked again here.
+//
+// # The one place this is deliberately stricter than Retrieve
+//
+// Retrieve treats an empty type as in scope, because a page with no type bound
+// to it is not a page of some secret type, and refusing those would stop a
+// scoped agent reading an untyped store — which is most of them.
+//
+// Writing inverts that. An agent that declared it works on articles, writing a
+// page whose type nothing asserts, is not writing an article: it is writing
+// something unverifiable and calling it in scope. The permissive reading would
+// make "create a page nobody typed" the way around every type scope in every
+// manifest. So a declared type scope plus an untyped target is refused, and an
+// agent that declares no type scope is unrestricted exactly as before — which
+// keeps the untyped store working for the installations that have one.
+//
+// Writing does not taint. Taint tracks untrusted content coming in; a write is
+// content going out, and marking the session on the way out would make every
+// writing agent permanently unpublishable for having done its job.
+func (s *Session) Mutate(ref, typeName, locale string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Never the live ref, whatever the manifest says it reads. A write that
+	// lands on what the public is being served has skipped every review this
+	// program has, and no manifest field should be able to ask for that.
+	if strings.EqualFold(ref, RefLive) {
+		return s.refuse("write", fmt.Sprintf(
+			"%s was asked to write to %s directly. Agents write drafts; what "+
+				"is public changes when a person says so", s.manifest.Name, ref))
+	}
+	if types := s.manifest.Retrieval.Types; len(types) > 0 {
+		if strings.TrimSpace(typeName) == "" {
+			return s.refuse("write", fmt.Sprintf(
+				"this agent is scoped to the %s type(s) and that page has no "+
+					"type bound to it. An untyped page is readable within a "+
+					"scope and not writable within one, because nothing "+
+					"asserts it is the thing the scope names",
+				strings.Join(types, ", ")))
+		}
+		if !allowed(types, typeName) {
+			return s.refuse("write", fmt.Sprintf(
+				"this agent is scoped to the %s type(s) and that is a %s",
+				strings.Join(types, ", "), typeName))
+		}
+	}
+	if !allowedLocale(s.manifest.Retrieval.Locales, locale) {
+		return s.refuse("write", fmt.Sprintf(
+			"this agent is scoped to %s and that is %s",
+			strings.Join(s.manifest.Retrieval.Locales, ", "), locale))
+	}
+	return nil
+}
+
+// RefLive is the ref an agent may never write to.
+//
+// Named here rather than imported from internal/site, because this package
+// decides and does not reach the store — and a constant is the whole of what
+// it needs to know.
+const RefLive = "live"
 
 // Retrieve authorises reading content, and is separate from Authorize because
 // the scope questions only apply to reads.
@@ -258,7 +376,11 @@ func (s *Session) hostList() []string {
 func (s *Session) Publishable() (bool, string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.publishable()
+}
 
+// publishable is Publishable for a caller already holding the lock.
+func (s *Session) publishable() (bool, string) {
 	if s.manifest.Autonomy != AutonomyPublish {
 		return false, fmt.Sprintf(
 			"%s has %s autonomy, so what it produced is a draft",

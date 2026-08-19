@@ -5,8 +5,14 @@
 // That package decides what an agent may do and deliberately cannot reach the
 // store or the network. Keeping the decision away from the doing is what makes
 // the decision testable without either, and it means a mistake here cannot
-// widen a manifest — everything below runs after Session.Authorize has already
-// said yes, and calls Session.Retrieve before it reads anything.
+// widen a manifest.
+//
+// The executors do not merely run downstream of the gate, they re-ask it.
+// Every operation calls Session.Check — the free, idempotent half of Authorize
+// — before doing anything, and every read calls Session.Retrieve. That used to
+// be a precondition stated in this paragraph and enforced by whoever
+// remembered, which is the arrangement that put the content-type gate in the
+// CLI and not in the API.
 //
 // # The scope check is here rather than at the call site
 //
@@ -68,6 +74,12 @@ func (r Reader) Perform(s *agent.Session) func(context.Context, agent.Action) (s
 
 	return func(ctx context.Context, a agent.Action) (string, error) {
 		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		// The capability, re-asked. See Session.Check: this costs nothing and
+		// removes the precondition that the paragraph at the top of this file
+		// used to state and nothing enforced.
+		if err := s.Check(a.Op); err != nil {
 			return "", err
 		}
 		switch a.Op {

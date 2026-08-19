@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/agentexec"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/out"
@@ -170,7 +171,8 @@ func currentProposal(root string, s *store.Store) (*collab.Proposal, *proposalFi
 	}
 	kind := "human"
 	if strings.HasPrefix(commit.Message, "assist:") ||
-		strings.HasPrefix(commit.Message, "mcp:") {
+		strings.HasPrefix(commit.Message, "mcp:") ||
+		strings.HasPrefix(commit.Message, agentexec.AgentCommitPrefix) {
 		kind = "ai"
 	}
 	f.Proposals = append(f.Proposals, collab.Proposal{
