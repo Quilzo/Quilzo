@@ -168,6 +168,8 @@ var notAScreen = map[string]string{
 	"/auth/callback": "receives one, and is never opened directly",
 	"/signout":       "clears the cookie and redirects; there is nothing to render",
 	"/style.css":     "is a stylesheet",
+	"/manifest.webmanifest": "is the JSON that lets a browser install this " +
+		"interface as a desktop application; there is no page to render",
 	"/decentralised/bundle": "sends a tar.gz of the rendered site, not a page; " +
 		"it redirects with an explanation when there is nothing published",
 }

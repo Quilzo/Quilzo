@@ -43,6 +43,8 @@ import (
 
 func cmdServe(root string, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	openBrowser := fs.Bool("open", false,
+		"open the interface in a browser once the server is listening")
 	addr := fs.String("addr", "127.0.0.1:8080", "listen address")
 	tplDir := fs.String("templates", "templates", "where page.html lives")
 	// Declared so the posture scan can tell interception from exposure. An
@@ -566,6 +568,19 @@ func cmdServe(root string, args []string) error {
 		"--role admin%s\n", dim, reset)
 	if len(toks.Tokens) == 0 {
 		fmt.Printf("  %sno tokens exist yet, so nobody can sign in%s\n", yellow, reset)
+	}
+	if *openBrowser {
+		// After the address is printed and before the listener blocks. A
+		// browser that arrives a moment early retries; one that never opens
+		// costs nothing, because the address is on the line above.
+		//
+		// Not an error if it fails. Refusing to serve because a desktop could
+		// not be found would break exactly the deployments that matter most —
+		// a container, a machine over SSH, CI — none of which has one.
+		if !admin.Open("http://" + *addr) {
+			fmt.Printf("  %snothing here knows how to open a browser; the "+
+				"address is above%s\n", dim, reset)
+		}
 	}
 	return httpSrv.ListenAndServe()
 }
