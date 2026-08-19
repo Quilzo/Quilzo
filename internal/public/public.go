@@ -142,6 +142,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/offline", st.offline)
 	mux.HandleFunc("/sitemap.xml", st.sitemap)
 	mux.HandleFunc("/license.xml", st.licence)
+	mux.HandleFunc("/.well-known/tdmrep.json", st.tdmRep)
 	mux.HandleFunc("/search.json", st.searchAPI)
 	mux.HandleFunc("/site.css", st.stylesheet)
 	mux.HandleFunc("/robots.txt", st.robots)
@@ -498,6 +499,12 @@ func (st *Site) pages() (map[string]any, map[string]string, error) {
 }
 
 func (st *Site) page(w http.ResponseWriter, r *http.Request) {
+	// The mining reservation, before anything can return. A crawler that took
+	// the page has been told on the response that carried it, which is the
+	// point of putting it in a header rather than only in a file it might not
+	// fetch.
+	st.tdmHeaders(w)
+
 	// Redirects first. One that only fires when the target is missing stops
 	// working the moment somebody creates a page with the old name — which is
 	// the most likely thing to happen after a migration.
