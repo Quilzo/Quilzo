@@ -3,6 +3,23 @@ name: ci
 # The security properties are the product. If the sandbox tests stop running,
 # "templates cannot execute" is marketing.
 
+# Actions are pinned to commits, not tags.
+#
+# A tag is a mutable pointer in somebody else's repository. `actions/checkout@v4`
+# is whatever v4 points at when the workflow runs, and the party who can move it
+# is the action's owner or anybody who compromises them. This workflow signs
+# release binaries and pushes the container image, so a substituted action is a
+# supply-chain compromise of everything this project ships.
+#
+# That is the same argument the project makes about its own dependencies — the
+# go.mod with no require block, the extension digests, the media addressed by
+# hash. Leaving the CI supply chain on mutable tags while making that argument
+# was an inconsistency, and it was the largest one the security review found
+# after the toolchain.
+#
+# The version is kept in a trailing comment so a human can still read what this
+# is, and Dependabot updates both together.
+
 on:
   push:
     branches: [main]
@@ -29,8 +46,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.26"
       - name: Formatting and vet
