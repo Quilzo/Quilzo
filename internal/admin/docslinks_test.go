@@ -163,6 +163,7 @@ var notADestination = map[string]string{
 	"/publish":   "a form target",
 	"/rollback":  "a form target",
 	"/theme":     "a preference toggle",
+	"/sidebar":   "a preference toggle",
 	"/signin":    "reached when not signed in",
 	"/signout":   "a form target",
 	"/style.css": "a stylesheet",
