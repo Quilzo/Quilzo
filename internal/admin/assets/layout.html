@@ -9,7 +9,7 @@
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="/manifest.webmanifest">
 </head>
-<body>
+<body{{if .SidebarHidden}} class="nav-hidden"{{end}}>
 <a class="skip" href="#main">Skip to main content</a>
 <header class="bar">
   <div class="bar-inner">
@@ -18,6 +18,7 @@
       <a href="/profile"><strong>{{.Name}}</strong></a> ({{.Role}})
       — <a href="/signout">Sign out</a></p>{{end}}
     <div class="prefs">
+      {{template "navtoggle" .}}
       {{template "themetoggle" .}}
     </div>
   </div>
@@ -37,6 +38,44 @@
 </div>
 
 <main id="main" tabindex="-1" class="shell">
+{{end}}
+
+{{/*
+  Hide the navigation.
+
+  A form and a cookie rather than a checkbox and a CSS sibling rule. The
+  CSS-only version needs no script and no server, and it resets on every
+  navigation — so hiding the sidebar and then clicking a link brings it back.
+  A preference that does not survive the next page is a flicker, not a
+  preference.
+
+  The control is in the bar, never in the sidebar. Putting it inside the thing
+  it hides means the way back is clearing a cookie, and somebody finds that out
+  on their own screen, once.
+
+  Two lines that become one, and back. The icon says what the sidebar is doing
+  rather than what the button does, matching the theme toggle beside it.
+*/}}
+{{define "navtoggle"}}
+<form method="post" action="/sidebar" class="themetoggle navtoggle">
+  <input type="hidden" name="to" value="{{if .SidebarHidden}}shown{{else}}hidden{{end}}">
+  <button type="submit" title="{{if .SidebarHidden}}Show{{else}}Hide{{end}} the navigation">
+    <span class="visually-hidden">Navigation is currently
+      {{if .SidebarHidden}}hidden. Show it.{{else}}showing. Hide it.{{end}}</span>
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="3.1" y="4.1" width="17.8" height="15.8" rx="2.4" fill="none"
+            stroke="currentColor" stroke-width="1.8"/>
+      {{if .SidebarHidden}}
+      <path d="M9 4.1v15.8" fill="none" stroke="currentColor" stroke-width="1.8"
+            stroke-dasharray="2.6 2.4"/>
+      {{else}}
+      <path d="M9 4.1v15.8" fill="none" stroke="currentColor" stroke-width="1.8"/>
+      <path d="M5.1 8.4h2.2M5.1 12h2.2M5.1 15.6h2.2" fill="none"
+            stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      {{end}}
+    </svg>
+  </button>
+</form>
 {{end}}
 
 {{/*

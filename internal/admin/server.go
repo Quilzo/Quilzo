@@ -483,6 +483,11 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	data["ThemeNext"] = next
 	data["ThemeNextLabel"] = nextLabel
 
+	// Whether the navigation is showing, and therefore what the control does.
+	// Resolved here for the same reason the theme is: a screen added later
+	// cannot forget it.
+	data["SidebarHidden"] = sidebarHidden(r)
+
 	// The documentation link for the screen being rendered, so the footer link
 	// means "help with this" rather than "help".
 	//
@@ -743,6 +748,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/review/approve", s.handleApprove)
 	mux.HandleFunc("/access", s.handleAccess)
 	mux.HandleFunc("/theme", s.handleTheme)
+	mux.HandleFunc("/sidebar", s.handleSidebar)
 	mux.HandleFunc("/nav/order", s.handleNavOrder)
 	mux.HandleFunc("/profile", s.handleProfile)
 	mux.HandleFunc("/profile/session/end", s.handleSessionEnd)
