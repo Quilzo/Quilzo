@@ -272,6 +272,38 @@ var settings = []Setting{
 			"one on purpose.",
 	},
 	{
+		Key: "share.form", Kind: Text, Default: "",
+		Summary: "the form a share from the operating system lands in",
+		Why: "Registers this site in the phone's share sheet. When somebody " +
+			"shares a link or some text to it, the platform sends a plain " +
+			"multipart form POST — no client script anywhere in the path, " +
+			"which is what makes this the one deep OS integration that fits " +
+			"an interface serving no JavaScript. A share becomes a " +
+			"submission rather than content, because it arrives " +
+			"unauthenticated and a submission already has a retention " +
+			"period and a privacy notice. Empty means no share target is " +
+			"declared.",
+	},
+	{
+		Key: "share.title_field", Kind: Text, Default: "",
+		Summary: "which form field the shared title maps onto",
+		Why: "Named rather than assumed, so a form already used for " +
+			"enquiries does not have to be renamed to receive shares.",
+	},
+	{
+		Key: "share.text_field", Kind: Text, Default: "",
+		Summary: "which form field the shared text maps onto",
+		Why: "As above. A share carries at most a title, a text and a url, " +
+			"and a form with a required field none of those reach would " +
+			"refuse every share — which is checked at startup rather than " +
+			"discovered from somebody's phone weeks later.",
+	},
+	{
+		Key: "share.url_field", Kind: Text, Default: "",
+		Summary: "which form field the shared URL maps onto",
+		Why:     "As above.",
+	},
+	{
 		Key: "telemetry.otlp_endpoint", Kind: Text, Default: "",
 		Summary: "an OpenTelemetry collector to send agent traces to",
 		Why: "Observability for agent runs: which step took the time, where " +

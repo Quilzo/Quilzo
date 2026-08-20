@@ -159,6 +159,39 @@ func cmdSite(root string, args []string) error {
 		// describes can be edited without restarting the server — and a card
 		// that goes stale is a card that lies about what is enforced, which is
 		// the one thing it must never do.
+		// The share sheet, when an operator has pointed it at a form.
+		//
+		// Validated here rather than at the first share: a target whose form
+		// has an unreachable required field refuses every share, weeks later,
+		// from somebody's phone, with no error anybody sees.
+		if fname := cfg.Raw("share.form"); fname != "" {
+			sh := &public.ShareTarget{
+				Form:       fname,
+				TitleField: cfg.Raw("share.title_field"),
+				TextField:  cfg.Raw("share.text_field"),
+				URLField:   cfg.Raw("share.url_field"),
+			}
+			var required []string
+			if set, ferr := loadForms(root); ferr == nil {
+				if f, ok := set.Get(fname); ok {
+					for _, fl := range f.Fields {
+						if fl.Required {
+							required = append(required, fl.Name)
+						}
+					}
+				} else {
+					fmt.Printf("  %sshare target names %q, which is not a "+
+						"declared form%s\n", yellow, fname, reset)
+				}
+			}
+			if verr := sh.Validate(required); verr != nil {
+				fmt.Printf("  %sshare sheet off: %v%s\n", yellow, verr, reset)
+			} else {
+				st.Share = sh
+				fmt.Printf("  %sshare sheet: shares land in the %s form%s\n",
+					dim, fname, reset)
+			}
+		}
 		if cfg.Bool("site.agent_card") {
 			st.AgentCard = func() (a2a.Card, error) {
 				set, err := loadAgents(root)

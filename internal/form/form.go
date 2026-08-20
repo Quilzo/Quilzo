@@ -286,6 +286,38 @@ type Submission struct {
 // version, should not make a person's message vanish.
 func Accept(f *Form, values map[string]string, source string,
 	now time.Time) (Submission, error) {
+	return accept(f, values, source, now, true)
+}
+
+// AcceptShare takes a submission that arrived from the operating system's
+// share sheet rather than from a rendered form.
+//
+// # Why the human checks are skipped, and what replaces them
+//
+// The honeypot and the timing stamp both depend on the sender having loaded a
+// page this server rendered: one is a field only a script fills in, the other
+// is a number only that page carries. A share has neither, because it comes
+// from the platform's share dialog with three values and nothing else. There
+// is no stamp to forge and none to check.
+//
+// Skipping them is therefore not a weakening of the check — the check cannot
+// run — but it does leave /share as an unauthenticated write with no bot
+// defence of its own. That is replaced at the handler by the same rate limiter
+// the forms use, keyed on the source, and it is the honest trade: a share
+// endpoint is exactly as exposed as a public form and has one fewer defence,
+// so it gets a harder limit.
+//
+// Everything else is identical. Only declared fields are accepted, kinds are
+// still checked, required fields are still required, and the submission lands
+// in the same store with the same retention. There is no second write path
+// with its own bugs.
+func AcceptShare(f *Form, values map[string]string, source string,
+	now time.Time) (Submission, error) {
+	return accept(f, values, source, now, false)
+}
+
+func accept(f *Form, values map[string]string, source string,
+	now time.Time, human bool) (Submission, error) {
 
 	if f.Closed {
 		return Submission{}, fmt.Errorf(
@@ -294,7 +326,11 @@ func Accept(f *Form, values map[string]string, source string,
 
 	// The honeypot. A person never sees this field; anything filling in every
 	// field it finds does.
-	if strings.TrimSpace(values[Honeypot]) != "" {
+	//
+	// Both this and the timing check below need the sender to have loaded a
+	// page this server rendered. A share from the operating system did not,
+	// so AcceptShare skips them — see the note there for what replaces them.
+	if human && strings.TrimSpace(values[Honeypot]) != "" {
 		return Submission{}, fmt.Errorf("this submission was not accepted")
 	}
 
@@ -302,20 +338,23 @@ func Accept(f *Form, values map[string]string, source string,
 	// seconds; a script does it in twenty milliseconds. A missing or
 	// unparseable stamp is refused rather than waved through — otherwise
 	// removing the field is how the check is bypassed.
-	started, err := strconv.ParseInt(strings.TrimSpace(values[StampField]), 10, 64)
-	if err != nil {
-		return Submission{}, fmt.Errorf("this submission was not accepted")
-	}
-	elapsed := now.Unix() - started
-	if elapsed < MinFillSeconds {
-		return Submission{}, fmt.Errorf("this submission was not accepted")
-	}
-	// And a stamp from the far past is a replayed form, or a page that sat
-	// open for a week and is answering questions that may have changed.
-	if elapsed > int64((24 * time.Hour).Seconds()) {
-		return Submission{}, fmt.Errorf(
-			"this form was opened more than a day ago. Reload it and send " +
-				"again — the questions may have changed since")
+	if human {
+		started, err := strconv.ParseInt(
+			strings.TrimSpace(values[StampField]), 10, 64)
+		if err != nil {
+			return Submission{}, fmt.Errorf("this submission was not accepted")
+		}
+		elapsed := now.Unix() - started
+		if elapsed < MinFillSeconds {
+			return Submission{}, fmt.Errorf("this submission was not accepted")
+		}
+		// And a stamp from the far past is a replayed form, or a page that sat
+		// open for a week and is answering questions that may have changed.
+		if elapsed > int64((24 * time.Hour).Seconds()) {
+			return Submission{}, fmt.Errorf(
+				"this form was opened more than a day ago. Reload it and send " +
+					"again — the questions may have changed since")
+		}
 	}
 
 	out := Submission{
