@@ -453,3 +453,17 @@ func joinShort(items []string, max int) string {
 	return fmt.Sprintf("%s and %d more",
 		strings.Join(items[:max], ", "), len(items)-max)
 }
+
+// RuleIndex returns every rule keyed by its id.
+//
+// For callers that have a Finding and need the rule behind it — the control
+// mappings and the reasoning live on the rule, and a finding carries only the
+// id. Rules() returns a slice because the order is meaningful when listing
+// them; this returns a map because a lookup by id is the other question.
+func RuleIndex() map[string]Rule {
+	out := make(map[string]Rule, len(rules))
+	for _, r := range rules {
+		out[r.ID] = r
+	}
+	return out
+}
