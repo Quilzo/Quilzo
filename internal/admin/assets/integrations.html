@@ -7,6 +7,61 @@ write.</p>
 {{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
 
+{{/*
+  What this install may reach, and what it agreed to call there.
+
+  Read-only. Enabling an integration grants this process the right to send
+  somebody's data to a third party, and that belongs in a file somebody reviews
+  and deploys rather than behind a button next to a list. Showing it here is a
+  different job from granting it: an operator should be able to see what was
+  granted without reading JSON over somebody's shoulder.
+*/}}
+<h2>Outside systems</h2>
+{{if .DeclaredError}}<p class="notice bad">{{.DeclaredError}}</p>{{end}}
+{{if not .Declared}}
+<p>Nothing is declared, so this install reaches nothing outside.</p>
+<p class="hint">Declarations live in <code>integrations.json</code>.
+  <code>quilzo integrations list</code> shows the same thing on the command line.</p>
+{{else}}
+<p class="hint">{{.Reachable}} of {{len .Declared}} may actually be reached.
+  Everything is off until somebody turns it on, and a local process stays off
+  until this install allows processes at all
+  ({{if .AllowProcess}}it does{{else}}it does not{{end}}).</p>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Name</th><th scope="col">Kind</th><th scope="col">Reaches</th>
+    <th scope="col">May call</th><th scope="col">State</th>
+  </tr></thead>
+  <tbody>
+  {{range .Declared}}
+  <tr>
+    <th scope="row">{{.Name}}
+      <div class="hint">{{.Purpose}}</div></th>
+    <td>{{.Kind}}</td>
+    <td>{{if .Endpoint}}<code>{{.Endpoint}}</code>{{else}}<code>{{.Command}}</code>{{end}}
+      {{if .Writes}}<div class="hint warn">changes something on the far side</div>{{end}}</td>
+    {{/*
+      Named, never "everything it offers". This is the control that answers
+      tool poisoning: a server can add or redefine a tool after the day
+      somebody decided to trust it, and an install that calls whatever is
+      advertised has handed its capability list to a third party's release.
+    */}}
+    <td>{{range $i, $u := .Uses}}{{if $i}}, {{end}}<code>{{$u}}</code>{{end}}
+      {{if .Secret}}<div class="hint">authenticates as <code>{{.Secret}}</code>,
+        read from the environment — never from the store, where an object
+        cannot be deleted</div>{{end}}</td>
+    <td>{{if .Enabled}}<span class="ok">enabled</span>{{else}}<span class="warn">declared, off</span>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+<p class="hint"><code>quilzo integrations tools NAME</code> asks a server what
+  it offers and marks what this install agreed to. The difference between those
+  two lists is the thing worth looking at.</p>
+{{end}}
+
 <h2>Webhooks</h2>
 {{if not .Endpoints}}
 <p>Nothing is notified when content changes.</p>

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/ext"
@@ -43,6 +44,16 @@ type Integrations struct {
 	Provider func() (issuer, clientID, redirect, claim string, verified bool, ok bool)
 	// Events reads the audit log, for a SIEM export.
 	Events func() ([]audit.Event, error)
+	// Declared are the outside systems this install may reach — MCP servers,
+	// described endpoints, local processes.
+	//
+	// Read-only on this screen, deliberately. Enabling one is granting this
+	// process the right to send somebody's data to a third party, and it is a
+	// decision that should be made in a file somebody reviews and deploys
+	// rather than by a button next to a list. The screen exists so that what
+	// was granted is visible without reading JSON over somebody's shoulder,
+	// which is a different job from granting it.
+	Declared func() (agent.Integrations, error)
 }
 
 func (s *Server) handleIntegrations(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +107,19 @@ func (s *Server) handleIntegrations(w http.ResponseWriter, r *http.Request) {
 			data["ExtError"] = err.Error()
 		} else {
 			data["Extensions"] = exts
+		}
+	}
+	if s.Integrations.Declared != nil {
+		set, err := s.Integrations.Declared()
+		if err != nil {
+			// Reported rather than swallowed. A declarations file that does
+			// not parse means this install does not know what it may reach,
+			// and showing an empty list would say the opposite.
+			data["DeclaredError"] = err.Error()
+		} else {
+			data["Declared"] = set.Declared
+			data["AllowProcess"] = set.AllowProcess
+			data["Reachable"] = len(set.Enabled())
 		}
 	}
 	if s.Integrations.Provider != nil {

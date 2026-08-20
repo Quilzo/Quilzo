@@ -140,3 +140,23 @@ button {
 .colophon { color: var(--muted); font-size: .88rem; margin: 0; }
 
 a { color: var(--accent); }
+
+
+/* A product page: the picture and the facts, side by side. */
+.product { display: grid; gap: 2rem; margin: 0 0 3rem;
+  grid-template-columns: minmax(0, 420px) minmax(0, 1fr); align-items: start; }
+@media (max-width: 46rem) { .product { grid-template-columns: minmax(0, 1fr); } }
+.product .shot { border-radius: var(--radius); border: 1px solid var(--line); }
+.product h2 { margin: 0 0 .3rem; font-size: 1.6rem; letter-spacing: -.01em; }
+.product .price { font-size: 1.25rem; margin: .8rem 0; }
+.product .desc { max-width: 60ch; }
+.spec { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1.2rem;
+  margin: 1.4rem 0; font-size: .92rem; }
+.spec dt { color: var(--muted); }
+.spec dd { margin: 0; }
+.backed { font-size: .9rem; border-left: 3px solid var(--good); padding-left: 1rem;
+  color: var(--muted); }
+.back { margin-top: 2rem; }
+.card .name a { color: inherit; text-decoration: none; }
+.card .name a:hover { text-decoration: underline; }
+.shotlink { display: block; }
