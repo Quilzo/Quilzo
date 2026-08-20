@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/ipfs"
+	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
@@ -273,23 +274,12 @@ func (s *Server) bundle() (map[string][]byte, error) {
 	// used to come out with no navigation on any page.
 	src := s.sources(s.Store.GetRef(site.RefLive), pages)
 
-	out := map[string][]byte{}
-	for name, body := range pages {
-		ctx, cerr := src.For(name, body, nil)
-		if cerr != nil {
-			return nil, fmt.Errorf("%s: %w", name, cerr)
-		}
-		html, err := tmpl.Render(s.Template, ctx)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
-		}
-		// index becomes index.html at the root; everything else becomes a
-		// directory with an index.html in it, so a gateway serves clean paths.
-		path := name + "/index.html"
-		if name == "index" {
-			path = "index.html"
-		}
-		out[path] = []byte(html)
+	// One renderer, shared with `quilzo ipfs write`. Two copies of this loop
+	// existed and diverged the moment detail pages arrived: which of your
+	// product pages got written depended on which interface you exported from.
+	out, berr := render.Bundle(src, s.Template, pages, tmpl.Render)
+	if berr != nil {
+		return nil, berr
 	}
 	if s.Decentralised.Stylesheet != nil {
 		if css := s.Decentralised.Stylesheet(); css != "" {
