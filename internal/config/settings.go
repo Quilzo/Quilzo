@@ -272,6 +272,34 @@ var settings = []Setting{
 			"one on purpose.",
 	},
 	{
+		Key: "telemetry.otlp_endpoint", Kind: Text, Default: "",
+		Summary: "an OpenTelemetry collector to send agent traces to",
+		Why: "Observability for agent runs: which step took the time, where " +
+			"the refusals fell, how a delegated run nests inside the one that " +
+			"asked for it. The audit log records what happened; a trace " +
+			"records its shape, which is the question somebody has at three " +
+			"in the morning. Empty means no traces are sent and nothing is " +
+			"encoded. OTLP over HTTP with the JSON encoding, so there is no " +
+			"SDK in the binary.",
+	},
+	{
+		Key: "telemetry.allow_remote", Kind: Bool, Default: "false",
+		Summary: "permit a collector that is not on this machine or network",
+		Why: "Traces from an agent run carry the names of pages it read and " +
+			"the content types it was scoped to. Sending them to a hosted " +
+			"observability vendor is a disclosure, and it should be a " +
+			"sentence somebody typed rather than a consequence of pasting a " +
+			"URL. Loopback and private addresses need no flag.",
+	},
+	{
+		Key: "telemetry.timeout", Kind: Duration, Default: "5s",
+		Summary: "how long one trace export may take",
+		Why: "Telemetry must not outlive the thing it describes. There is no " +
+			"queue and no retry: an export that fails is reported and " +
+			"dropped, because a buffer that grows until the process dies has " +
+			"made the outage worse rather than more observable.",
+	},
+	{
 		Key: "site.agent_card", Kind: Bool, Default: "false",
 		Summary: "publish an A2A agent card at /.well-known/agent-card.json",
 		Why: "Discovery is for strangers, so the card cannot be behind " +

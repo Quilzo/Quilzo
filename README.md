@@ -345,7 +345,7 @@ gh attestation verify oci://ghcr.io/quilzo/quilzo:latest --repo quilzo/quilzo
 
 ### From source
 
-You need Go 1.26 or later. There are no dependencies to fetch.
+You need Go 1.27 or later. There are no dependencies to fetch.
 
 ```bash
 git clone https://github.com/quilzo/quilzo

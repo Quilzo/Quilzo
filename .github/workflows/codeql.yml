@@ -1,0 +1,78 @@
+# CodeQL, with a toolchain it can actually build with.
+#
+# This was GitHub's default setup until August 2026, and it stopped working the
+# day go.mod moved to Go 1.27: CodeQL's autobuilder ships its own Go — 1.26.5 at
+# the time — and runs it with GOTOOLCHAIN=local, so it cannot fetch the newer
+# release the module requires. The failure reads as "we were unable to
+# automatically build your code", which is true and says nothing about why.
+#
+# Advanced setup fixes it by taking the build away from the autobuilder: Go is
+# installed first at the version go.mod asks for, the database is built in
+# manual mode from a plain `go build`, and CodeQL analyses what that produced.
+# The cost is a file to maintain; the benefit is that the toolchain is a
+# decision made here rather than whatever the scanner happened to bundle.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly, so a new query release finds old code. A scanner that only runs
+    # on changed code never reports anything about the code nobody is touching,
+    # which is where findings accumulate.
+    - cron: "27 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            build-mode: manual
+          - language: actions
+            build-mode: none
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # Before CodeQL initialises, so the database is built with the toolchain
+      # this project actually uses rather than the one the scanner bundles.
+      - if: matrix.language == 'go'
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # security-extended over the default suite. The default is tuned for
+          # a low false-positive rate on any codebase; this one has a security
+          # argument as its product, so the extra queries are worth the noise.
+          queries: security-extended
+
+      - if: matrix.build-mode == 'manual'
+        shell: bash
+        run: |
+          # A plain build. Not `make`, because the autobuilder's attempt to run
+          # it is part of what failed: the Makefile's default work includes
+          # gofmt and vet, which are checks rather than a build, and a scanner
+          # should not be gated on formatting.
+          go build ./...
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4
+        with:
+          category: "/language:${{ matrix.language }}"
