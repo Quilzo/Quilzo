@@ -572,7 +572,12 @@ thead th {
   text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--on-surface-variant); background: var(--surface-container);
 }
-tbody tr:last-child td { border-bottom: 0; }
+/* Both kinds of cell. A row-header cell is a <th> inside <tbody>, so a rule
+   naming only td cleared three quarters of the last row's border and left a
+   stub under the first column — a short line ending in the middle of the
+   table, which reads as a rendering fault rather than as a rule that names
+   one element too few. */
+tbody tr:last-child td, tbody tr:last-child th { border-bottom: 0; }
 tbody tr:hover { background: color-mix(in srgb, var(--on-surface) 4%, transparent); }
 
 dl { margin: 1rem 0; }
@@ -758,10 +763,18 @@ tr.detail td { padding-top: 0; border-top: 0; }
    It was hidden in the top arrangement because a row of pills had no room for
    five headings, and the structure reached a screen reader only through the
    wrapper's aria-label. With one arrangement the heading is always there, so
-   the visible grouping and the announced grouping are the same thing. */
-.navgroup > h2 { display: block; margin: 0 0 .25rem .75rem;
-  font: var(--label-md); font-weight: 700; letter-spacing: .06em;
-  text-transform: uppercase; color: var(--on-surface-variant); }
+   the visible grouping and the announced grouping are the same thing.
+
+   Distinguishable from the destinations under it by four things at once,
+   because any one of them alone is a difference somebody has to look for:
+   smaller, heavier, tracked out, and sitting on a rule that runs the width of
+   the column. It reads as a label on a section rather than as a link that
+   happens to be in capitals — which is what it looked like when the only
+   differences were case and a slightly lighter grey. */
+.navgroup > h2 { display: block; margin: 0 0 .4rem 0; padding: 0 .75rem .3rem;
+  font: var(--label-sm); font-weight: 800; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--on-surface-variant);
+  border-bottom: 1px solid var(--outline-variant); }
 
 @media (max-width: 59.99rem) {
   /* No column to put it in, so the same markup becomes grouped rows above the
@@ -775,6 +788,29 @@ tr.detail td { padding-top: 0; border-top: 0; }
     border-top: 1px solid var(--outline-variant); padding-top: .5rem; }
   .sidenav .nav { margin-top: 0; }
 }
+
+/* -- hiding the navigation ---------------------------------------------------
+ *
+ * The column goes, and the content takes the width. Not `visibility: hidden`,
+ * which would leave a fourteen-rem gap where the navigation used to be and
+ * make the control look broken.
+ *
+ * display:none also takes the links out of the accessibility tree, which is
+ * what "hidden" has to mean — a navigation that is invisible but still
+ * announced is worse than one that is simply there. The way back is the
+ * control in the bar, which is always rendered and says which state it is in.
+ */
+body.nav-hidden > .sidenav { display: none; }
+
+@media (min-width: 60rem) {
+  body.nav-hidden { grid-template-columns: 1fr;
+    grid-template-areas: "bar" "main" "foot"; }
+}
+
+/* The control itself sits beside the theme toggle and borrows its shape, so
+   the two preferences in the bar look like one pair rather than two
+   unrelated buttons. */
+.navtoggle { margin: 0; }
 
 /* -- signing in --------------------------------------------------------------
  *
@@ -915,7 +951,28 @@ tr.weak th { border-left: 3px solid var(--error); padding-left: .6rem; }
 td .ok, td .warn, td .bad, .hint .ok, .hint .warn, .hint .bad { font-weight: 600; }
 
 /* A row of buttons under a form. */
-.actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1rem 0; }
+/* A row of controls under a block of content.
+ *
+ * Deliberately not applied to a table cell. `display: flex` on a <td> stops it
+ * being a table cell — the table wraps it in an anonymous cell, the element no
+ * longer stretches with its row, and the `margin` below (which a real cell
+ * would ignore) starts applying. The pages table had exactly that: every
+ * actions cell sat a rem out of line with the two beside it, so the row
+ * borders ran in a visible staircase down the table.
+ *
+ * The selector says which elements this is for rather than trusting nobody to
+ * reuse the name, because the name is the obvious one to reach for and the
+ * failure is silent — it looks like a table with slightly odd borders, not
+ * like a rule being misapplied. */
+div.actions, p.actions { display: flex; flex-wrap: wrap; gap: 0.6rem;
+  margin: 1rem 0; }
+
+/* In a cell the same idea, without leaving table layout: the cell stays a
+   cell, and the controls are laid out inside it. */
+td.actions, th.actions { white-space: nowrap; }
+td.actions > a, td.actions > form, th.actions > a, th.actions > form {
+  display: inline-block; vertical-align: middle; margin-right: 0.6rem; }
+td.actions > *:last-child, th.actions > *:last-child { margin-right: 0; }
 
 /* Status tags, on the access, log, people, provenance and pages screens.
  *
