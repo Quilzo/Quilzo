@@ -146,8 +146,12 @@ a permissive licence. The guarantee the AGPL makes to users is only as strong as
 the impossibility of quietly revoking it, and distributed copyright is what makes
 it impossible.
 
-This matters more than usual here, because the plan is to hand this project to a
-community. A project one person can relicense is a project one person still owns.
+The maintainer holds copyright in the code they wrote and is not seeking to hold
+yours. That is the arrangement, stated plainly because the alternative is
+usually left vague: there is no plan to consolidate copyright later, no CLA
+waiting behind the DCO, and no foundation transfer in progress. Distributed
+copyright is what makes the AGPL's promise to users hard to revoke, and it costs
+the maintainer the ability to relicense — which is the point, not an oversight.
 
 ### About the licence, honestly
 
