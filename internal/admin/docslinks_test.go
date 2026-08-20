@@ -170,6 +170,9 @@ var notADestination = map[string]string{
 		"head and opened by the browser rather than by a person",
 	"/icon.svg": "the mark, fetched as a favicon and as the installed " +
 		"application's icon; an image, not a screen",
+	"/site.css": "the site's own stylesheet, fetched by the framed preview " +
+		"so it looks like the page; not the interface's own, which is " +
+		"/style.css",
 	"/preview":      "a subtree",
 	"/media":        "in the table",
 	"/languages":    "in the table",
