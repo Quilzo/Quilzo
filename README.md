@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/Quilzo/quilzo.github.io/main/images/mark.svg" alt="" width="72" height="72">
+
 # Quilzo
 
 A content management system where stored content is immutable, publishing moves
@@ -9,10 +11,12 @@ a pointer, and the template language cannot execute anything.
 
 ```bash
 quilzo init          # a store in the current directory
-quilzo demo          # install a complete example application
+quilzo demo          # install Marginalia, a complete shop
 quilzo site          # serve it on 127.0.0.1:8081
-quilzo serve         # the admin interface on 127.0.0.1:8080
+quilzo serve --open  # the admin on 127.0.0.1:8080, opened in a browser
 ```
+
+Linux, macOS and Windows, amd64 and arm64.
 
 Go, no third-party dependencies, one static binary. Everything below is
 reachable from the command line, the browser and the agent interface, and a test
@@ -178,6 +182,41 @@ an approval names the content hash it agreed to, so editing the draft afterwards
 does not carry the approval forward. Every gate refuses rather than warns; the
 override is explicit and lands in the commit metadata.
 
+**Agents.** A manifest is the whole of what an agent may do: capabilities, a
+content scope, a budget and an autonomy level, enforced at one chokepoint every
+operation passes through. Reading stored content taints the run, so what an
+agent produced from input somebody else may have written needs a person before
+it goes live. A model may choose each action from the manifest's capabilities
+and cannot invent one. The design follows CaMeL (arXiv:2503.18813), which is
+where the research settled: enforce policy outside the model with a
+deterministic gate, because no amount of training makes a model refuse every
+malicious instruction.
+
+**Commerce, as far as a CMS should go.** Products are records; a listing is the
+one declaration behind the shop page, the product page and `/catalogue.json`,
+so what is public is decided once. schema.org Product and Offer are emitted from
+the same row the page rendered. No cart, no checkout, no payment — the 2026
+agentic protocols settled on discovery and hand-off, and the moment this process
+holds a card it needs a threat model it does not have.
+
+**Claims and rights.** A publish gate that refuses copy the business cannot
+stand behind — not a blocked-word list, which every team switches off, but a
+claim and its substantiation: "guaranteed" publishes beside the guarantee terms
+and is refused without them. And image licences treated as publish windows,
+because rights *end* — a lapsed stock licence leaves a site infringing with an
+audit trail proving it was deliberate, and nothing notices.
+
+**Reaching other systems.** MCP in both directions: a server exposing this
+store, and a client calling servers an operator declared. The client's tool
+allow-list is the point — 17.2% of remote MCP servers surveyed in July 2026 were
+dead, and the live risk is a server redefining a tool after the day somebody
+trusted it. Credentials are named in the declaration and read from the
+environment, never stored, because an object in this store cannot be deleted.
+
+**Replication.** One store pulls objects from another, verified against their
+own hashes, into quarantine — never onto the live site. A peer can offer you
+objects; it cannot decide that any of them is your site.
+
 **Forms.** Declared fields with kinds, a required privacy notice, a retention
 period with a ceiling, honeypot and timing checks, CSV export that neutralises
 spreadsheet formula injection, and erasure by search — because an append-only
@@ -208,22 +247,42 @@ reimplementation.
 
 ## The demonstration
 
-`quilzo demo` installs **Gram**: a photo-sharing site with a feed over
-structured records, an explore page with a working filter, profiles under a
-content type, stories carrying publish windows, and a message box.
+`quilzo demo` installs **Marginalia**: a shop selling paper. Twelve products as
+typed records, three stockists, a catalogue a machine can read, two policies, a
+wholesale enquiry form, and a sale that has not started yet.
 
 It exists because a starter template shows what a page looks like and cannot
 show what the tool is for — that only appears with several features working at
-once. It was built through the admin interface first and written down
-afterwards, in that order deliberately: six bugs were found on the way, and
-every value in it is one a screen accepted.
+once. It replaced a photo-sharing demo, which was honest and exercised the wrong
+half: a feed and a filter never raise a question a paying customer arrives with.
+A shop raises all of them — a price that has to be a number, an availability
+that has to be a closed set, copy that has to be substantiated before it
+publishes, and a catalogue something other than a browser has to read.
+
+It was built through the admin interface first and written down afterwards, in
+that order deliberately. Building it found five bugs, including a publish gate
+that was checking ten pages and none of fifteen products while reporting
+success.
+
+`quilzo demo --name "Your Shop"` renames the whole of it, so it can be a
+starting point rather than something to find and rename afterwards.
 
 Things worth trying once it is running:
 
 ```
-/explore?topic=travel     a listing with a parameter, filtered at request time
-/stories/sol-rooftop      404s until September; its window has not opened
-/messages                 the one thing the public server may write
+/catalogue.json           everything for sale, as a shopping agent reads it
+/product/brass-pen        one product, one URL, schema.org Product in the head
+/ranges?range=archive     a listing with a parameter, filtered at request time
+/available                filtered on the data, not on somebody remembering
+/sale                     404s until 24 November; its window has not opened
+/wholesale                the one thing the public server may write
+```
+
+And the gates, from a terminal:
+
+```bash
+quilzo brand check    # every claim, and what substantiates it
+quilzo rights         # image licences: expired, lapsing, undeclared
 ```
 
 ## No dependencies
