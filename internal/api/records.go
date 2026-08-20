@@ -327,6 +327,20 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 		return
 	}
 	if lockErr != nil {
+		// Content that fails its type is the caller's problem, not this
+		// server's. It came back as 500 until somebody looked: a record
+		// missing a required field paged an on-call engineer, spent an error
+		// budget on a typo, and told the client to retry something that could
+		// never succeed. 422 says the request was well-formed and the content
+		// was not, which is exactly the situation.
+		if schema.IsInvalid(lockErr) {
+			writeError(w, http.StatusUnprocessableEntity, Error{
+				Error:  "this content does not satisfy its type",
+				Detail: lockErr.Error(),
+				Fix:    "GET /api/v1/types to see what the type requires",
+			})
+			return
+		}
 		writeError(w, http.StatusInternalServerError, Error{
 			Error: "the write failed", Detail: lockErr.Error()})
 		return

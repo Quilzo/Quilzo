@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ page.title }} — {{ site.name }}</title>
+<title>{% if record %}{{ record.name }} — {% end %}{% if page.title %}{{ page.title }} — {% end %}{{ site.name }}</title>
 <link rel="stylesheet" href="/site.css">
 </head>
 <body>
@@ -23,7 +23,9 @@
 </header>
 
 <main id="main" class="wrap">
-  <h1>{{ page.title }}</h1>
+  {% if record %}<h1>{{ record.name }}</h1>{% end %}
+  {% if page.title %}<h1>{{ page.title }}</h1>{% end %}
+  {% if record.summary %}<p class="intro">{{ record.summary }}</p>{% end %}
   {% if page.intro %}<p class="intro">{{ page.intro }}</p>{% end %}
 
   {% if listings.new_in %}
@@ -146,8 +148,6 @@
   <article class="product">
     <img class="shot" src="/media/{{ record.image }}" alt="{{ record.alt }}" width="480" height="480">
     <div class="detail">
-      <h2>{{ record.name }}</h2>
-      <p class="sum">{{ record.summary }}</p>
       <p class="price"><span class="amount">{{ record.price_display }}</span>
         <span class="avail avail-{{ record.availability }}">{{ record.availability_label }}</span></p>
       {% if record.lead_time %}<p class="lead">{{ record.lead_time }}</p>{% end %}
@@ -182,10 +182,10 @@
       <li><a href="{{ item.href }}">{{ item.label }}</a></li>
     {% end %}
     </ul>
-    <p class="colophon">{{ site.name }} — a Quilzo demonstration. Prices are in
-      pence. The catalogue is also served as JSON at
-      <a href="/catalogue.json">/catalogue.json</a>, which is what a shopping
-      agent reads.</p>
+    <p class="colophon">{{ site.name }} — a Quilzo demonstration. The catalogue
+      is also served as JSON at <a href="/catalogue.json">/catalogue.json</a>,
+      where the price is a number in pence because that is the one a machine can
+      compare.</p>
   </div>
 </footer>
 </body>

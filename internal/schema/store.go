@@ -64,6 +64,40 @@ type Store struct {
 // A loader that is nil or fails refuses the write. A type store that cannot be
 // read is not a store with no types, and treating it as one would make an
 // unreadable file the way to switch validation off.
+// Invalid is content that does not satisfy its type.
+//
+// A distinct type because the alternative is what the API did: every failure
+// out of the write path became one generic error, so a record missing a
+// required field came back as HTTP 500. That is wrong in three ways at once —
+// it pages somebody, it spends an error budget on a typo, and it tells the
+// client to retry something that will never succeed however many times it is
+// sent.
+//
+// The distinction a caller actually needs is "the content is wrong" versus
+// "this store is broken", and only the writer knows which. So the writer says.
+type Invalid struct {
+	// Collection or page the content was destined for.
+	Where string
+	// Problems is what is wrong with it, in the author's terms.
+	Problems []Problem
+}
+
+func (e *Invalid) Error() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "this record does not satisfy the type bound to %s", e.Where)
+	for _, p := range e.Problems {
+		fmt.Fprintf(&b, "\n  %s", p)
+	}
+	return b.String()
+}
+
+// IsInvalid reports whether an error is content failing its type, as opposed
+// to anything else that can go wrong on a write.
+func IsInvalid(err error) bool {
+	var inv *Invalid
+	return errors.As(err, &inv)
+}
+
 func RecordGate(load func() (*Store, error)) func(string, map[string]any) error {
 	return func(collection string, fields map[string]any) error {
 		if load == nil {
@@ -84,13 +118,7 @@ func RecordGate(load func() (*Store, error)) func(string, map[string]any) error 
 		if len(problems) == 0 {
 			return nil
 		}
-		var b strings.Builder
-		fmt.Fprintf(&b, "this record does not satisfy the type bound to %s",
-			collection)
-		for _, pr := range problems {
-			fmt.Fprintf(&b, "\n  %s", pr)
-		}
-		return errors.New(b.String())
+		return &Invalid{Where: collection, Problems: problems}
 	}
 }
 
