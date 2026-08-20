@@ -63,6 +63,7 @@ package demo
 import (
 	"embed"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -180,4 +181,59 @@ func (s *Site) Resolve(addresses map[string]string) error {
 			strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+// Rename changes what this demonstration calls itself, everywhere it says so.
+//
+// # Why a walk rather than a field
+//
+// The name is not only configuration. It is the index page's title, the
+// wordmark in the header, and a sentence or two of prose that names the shop.
+// Setting Site.Name alone renamed the configuration and left every page saying
+// the old thing — so `demo --name "Paper & Post"` produced a site whose title
+// bar read "Marginalia — Paper & Post", which is worse than not offering the
+// flag at all.
+//
+// So this walks the content the same way Resolve does, for the same reason: a
+// demonstration that quietly stopped substituting when somebody added a field
+// would ship pages naming a shop that does not exist.
+//
+// Word-boundary matching, so a name that happens to be a substring of another
+// word does not rewrite the middle of it.
+func (s *Site) Rename(to string) {
+	from := s.Name
+	if from == "" || to == "" || from == to {
+		return
+	}
+	re := regexp.MustCompile(`\b` + regexp.QuoteMeta(from) + `\b`)
+	fix := func(v any) any {
+		str, ok := v.(string)
+		if !ok || !re.MatchString(str) {
+			return v
+		}
+		return re.ReplaceAllString(str, to)
+	}
+	for _, body := range s.Pages {
+		if m, ok := body.(map[string]any); ok {
+			for k, v := range m {
+				m[k] = fix(v)
+			}
+		}
+	}
+	for _, recs := range s.Records {
+		for i := range recs {
+			for k, v := range recs[i].Fields {
+				recs[i].Fields[k] = fix(v)
+			}
+		}
+	}
+	if s.Menus != nil {
+		for i := range s.Menus.Menus {
+			if s.Menus.Menus[i].Label == from {
+				s.Menus.Menus[i].Label = to
+			}
+		}
+	}
+	s.Summary, _ = fix(s.Summary).(string)
+	s.Name = to
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 // A ref moves by compare-and-swap, holding a lock that other processes see.
@@ -33,7 +32,7 @@ func (s *Store) lockFile() (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot open the ref lock: %w", err)
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := lockExclusive(f); err != nil {
 		f.Close()
 		return nil, fmt.Errorf("cannot lock refs: %w", err)
 	}
@@ -41,7 +40,7 @@ func (s *Store) lockFile() (*os.File, error) {
 }
 
 func (s *Store) unlock(f *os.File) {
-	syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	unlockFile(f)
 	f.Close()
 }
 

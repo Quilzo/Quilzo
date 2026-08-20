@@ -55,7 +55,6 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -300,14 +299,7 @@ func (r *Runner) Run(ctx context.Context, m Manifest, req Request) Result {
 	// survives the signal, the pipes are closed and this returns anyway. The
 	// first is the fix; the second is the guarantee, because an extension can
 	// always find a way to keep a descendant alive and the host must not care.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		// Negative pid: the whole group.
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	}
+	confineProcess(cmd)
 	cmd.WaitDelay = time.Second
 
 	// An empty environment.
