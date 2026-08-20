@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/menu"
@@ -157,8 +160,202 @@ func cmdMenus(root string, args []string) error {
 		return menusList(root)
 	case "check":
 		return menusCheck(root)
+	case "add", "set":
+		return menuItemSet(root, args[1:])
+	case "remove", "rm":
+		return menuItemRemove(root, args[1:])
 	default:
-		return fmt.Errorf("unknown menu command %q; try list or check", args[0])
+		return fmt.Errorf(
+			"unknown menu command %q; try list, check, add, set or remove",
+			args[0])
+	}
+}
+
+// The write half of the navigation, which lived only in the browser.
+//
+// A menu could be read from the command line and only built in a browser, so
+// scripting a site's navigation — a deployment, a migration, a test fixture —
+// meant somebody clicking. That is the shape of parity failure this project has
+// a test suite for, and it slipped through because the coverage table is keyed
+// on commands and `menu` was already one of them.
+//
+// Order is the flag the original report asked for and is the reason to have
+// bothered: without it a menu built here comes out in whatever sequence the
+// labels happen to sort into, and the only way to change that was the screen
+// this command exists to avoid needing.
+
+func menuItemSet(root string, args []string) error {
+	// The menu name comes off the front before the flags are parsed.
+	//
+	// Go's flag package stops at the first non-flag argument, so
+	// `menu add main --label X` parses zero flags and hands back four
+	// positionals — every flag left at its default, silently. This is the
+	// second command in this tree to be written with that bug; the first was
+	// `rights set`, and it was found the same way, by running it.
+	var name string
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		name, args = args[0], args[1:]
+	}
+
+	fs := flag.NewFlagSet("menu add", flag.ContinueOnError)
+	id := fs.String("id", "", "item id; generated when absent, and the way to edit an existing one")
+	label := fs.String("label", "", "what the entry says")
+	kind := fs.String("kind", string(menu.Page), "page, link or heading")
+	target := fs.String("target", "", "the page name, or the URL")
+	parent := fs.String("parent", "", "id of the item this nests under")
+	order := fs.Int("order", 0, "position among its siblings; lower first")
+	note := fs.String("note", "", "why this entry exists, for whoever finds it in two years")
+	token := fs.String("token", "", "authenticate as the holder of this token")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if name == "" || len(fs.Args()) > 0 {
+		return fmt.Errorf(
+			"quilzo menu add NAME --label \"Shop\" --target shop --order 10\n" +
+				"  one menu name, and the flags after it")
+	}
+	if strings.TrimSpace(*label) == "" {
+		return fmt.Errorf("an entry with no label is an entry nobody can read")
+	}
+
+	caller := resolveCaller(root, *token)
+	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
+		record(root, caller.auditRecord("menu.save", name, audit.Denied,
+			map[string]string{"reason": "authorisation"}))
+		return err
+	}
+
+	set, err := loadMenus(root)
+	if err != nil {
+		return err
+	}
+	m, found := set.Get(name)
+	if !found {
+		// Created rather than refused. A menu is a name and a list, and
+		// requiring a separate `menu create` before the first item is a step
+		// whose only purpose is to be forgotten.
+		if aerr := set.Add(menu.Menu{Name: name, Label: name}); aerr != nil {
+			return aerr
+		}
+		m, _ = set.Get(name)
+	}
+
+	it := menu.Item{
+		ID: strings.TrimSpace(*id), Label: strings.TrimSpace(*label),
+		Kind: menu.Kind(*kind), Target: strings.TrimSpace(*target),
+		Parent: strings.TrimSpace(*parent), Order: *order,
+		Note: strings.TrimSpace(*note),
+	}
+	if it.ID == "" {
+		it.ID = nextMenuID(m)
+	}
+	replaced := false
+	for i := range m.Items {
+		if m.Items[i].ID == it.ID {
+			m.Items[i], replaced = it, true
+			break
+		}
+	}
+	if !replaced {
+		m.Items = append(m.Items, it)
+	}
+
+	// Validated against the draft, exactly as the screen does. An entry
+	// pointing at nothing is refused where somebody writes it rather than
+	// found by a reader — and a menu that validates in one interface and not
+	// the other is the parity bug this command was added to close.
+	s, oerr := open(root)
+	if oerr != nil {
+		return oerr
+	}
+	draft, _ := site.PagesAt(s, site.RefDraft)
+	if verr := m.Validate(draft); verr != nil {
+		return verr
+	}
+	if werr := saveJSON(menuPath(root), set); werr != nil {
+		return werr
+	}
+	record(root, caller.auditRecord("menu.save", name, audit.Success,
+		map[string]string{"item": it.ID, "label": it.Label,
+			"order": fmt.Sprint(it.Order)}))
+	verb := "added"
+	if replaced {
+		verb = "updated"
+	}
+	fmt.Printf("%s %s in %s  %sorder %d%s\n", verb, it.ID, name, dim, it.Order, reset)
+	return nil
+}
+
+func menuItemRemove(root string, args []string) error {
+	// The two positionals come off the front, for the reason above.
+	var name, id string
+	for len(args) > 0 && !strings.HasPrefix(args[0], "-") && id == "" {
+		if name == "" {
+			name = args[0]
+		} else {
+			id = args[0]
+		}
+		args = args[1:]
+	}
+	fs := flag.NewFlagSet("menu remove", flag.ContinueOnError)
+	token := fs.String("token", "", "authenticate as the holder of this token")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if name == "" || id == "" || len(fs.Args()) > 0 {
+		return fmt.Errorf("quilzo menu remove NAME ITEM-ID")
+	}
+
+	caller := resolveCaller(root, *token)
+	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
+		record(root, caller.auditRecord("menu.save", name, audit.Denied,
+			map[string]string{"reason": "authorisation"}))
+		return err
+	}
+	set, err := loadMenus(root)
+	if err != nil {
+		return err
+	}
+	m, found := set.Get(name)
+	if !found {
+		return fmt.Errorf("no menu called %q", name)
+	}
+	kept := m.Items[:0]
+	var removed bool
+	for _, it := range m.Items {
+		// Children go with the parent. Leaving them behind produces entries
+		// nested under an id that no longer exists, which validates as a
+		// broken menu — so the alternative to this is refusing the removal,
+		// and refusing to delete a heading because it has children is worse.
+		if it.ID == id || it.Parent == id {
+			removed = removed || it.ID == id
+			continue
+		}
+		kept = append(kept, it)
+	}
+	if !removed {
+		return fmt.Errorf("no item %q in %s", id, name)
+	}
+	m.Items = kept
+	if werr := saveJSON(menuPath(root), set); werr != nil {
+		return werr
+	}
+	record(root, caller.auditRecord("menu.save", name, audit.Success,
+		map[string]string{"removed": id}))
+	fmt.Printf("removed %s from %s\n", id, name)
+	return nil
+}
+
+// nextMenuID mirrors the browser's numbering, so an id means the same thing
+// whichever interface created it.
+func nextMenuID(m *menu.Menu) string {
+	n := len(m.Items) + 1
+	for {
+		id := "i" + strconv.Itoa(n)
+		if _, taken := m.Item(id); !taken {
+			return id
+		}
+		n++
 	}
 }
 

@@ -90,6 +90,8 @@ jobs:
             bin/quilzo-linux-arm64
             bin/quilzo-darwin-amd64
             bin/quilzo-darwin-arm64
+            bin/quilzo-windows-amd64.exe
+            bin/quilzo-windows-arm64.exe
             bin/quilzo.cdx.json
             bin/quilzo.crypto.json
             bin/SHA256SUMS

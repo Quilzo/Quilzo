@@ -8,7 +8,8 @@ VERSION ?= dev
 # The platforms a release carries. linux/arm64 is not optional any more: a
 # large share of server capacity is Graviton and Ampere, and a CMS that ships
 # amd64 only is one those operators cross-compile themselves.
-PLATFORMS ?= linux/amd64 linux/arm64 darwin/arm64 darwin/amd64
+# Windows carries a .exe suffix or it is not a program anybody can run.
+PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
 .PHONY: all fmt test build build-all image sbom release clean
 
@@ -32,10 +33,11 @@ build-all:
 	@mkdir -p bin
 	@for p in $(PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; \
+		ext=""; [ "$$os" = "windows" ] && ext=".exe"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath \
 			-ldflags="-s -w -X main.version=$(VERSION)" \
-			-o bin/quilzo-$$os-$$arch ./cmd/quilzo || exit 1; \
-		echo "  $$os/$$arch  $$(du -h bin/quilzo-$$os-$$arch | cut -f1)"; \
+			-o bin/quilzo-$$os-$$arch$$ext ./cmd/quilzo || exit 1; \
+		echo "  $$os/$$arch  $$(du -h bin/quilzo-$$os-$$arch$$ext | cut -f1)"; \
 	done
 
 image:

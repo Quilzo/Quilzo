@@ -28,6 +28,20 @@ jobs:
         run: |
           test -z "$(gofmt -l .)" || { echo "gofmt would change files:"; gofmt -l .; exit 1; }
           go vet ./...
+      # Every platform the releases carry, cross-compiled.
+      #
+      # Windows was absent from releases for a year because the tree did not
+      # compile for it — syscall.Flock is POSIX — and nothing said so, because
+      # nothing built it. A platform that is unsupported by decision is fine;
+      # one that is unsupported by accident is a bug nobody can see.
+      - name: Every released platform still compiles
+        run: |
+          for pair in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            os="${pair%/*}"; arch="${pair#*/}"
+            echo "--- $os/$arch"
+            GOOS="$os" GOARCH="$arch" go vet ./... || exit 1
+            GOOS="$os" GOARCH="$arch" go build -o /dev/null ./cmd/quilzo || exit 1
+          done
       - name: Sandbox escapes, XSS contexts, termination, tamper detection
         run: go test -count=1 ./...
       - name: The image must build and stay static
