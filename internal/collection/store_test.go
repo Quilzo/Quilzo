@@ -308,3 +308,96 @@ func TestManyRecordsInOneWrite(t *testing.T) {
 		seen[r.ID] = true
 	}
 }
+
+// A record id is 32 hexadecimal characters, so tests use a real one. A short
+// id would be refused before any of this ran, and the test would pass on the
+// refusal rather than on the behaviour it names.
+const testID = "aa11aa11aa11aa11aa11aa11aa11aa11"
+
+// The layer this was missed at.
+//
+// A round-trip test that stopped at the importer's report passed while the
+// dates were being thrown away one layer further down: PutMany stamps `now`,
+// so every restored record was created at restore time. Twelve products came
+// back with identical fields and the wrong history, and the test that was
+// supposed to prove the round trip never looked at what reached the store.
+func TestRestoringKeepsTheDatesTheExportCarried(t *testing.T) {
+	s := newStore(t)
+	const created, updated = 1786000000, 1786000900
+
+	tree, written, err := RestoreMany(s, "", "products", []Record{
+		{ID: testID, Fields: map[string]any{"title": "Copper pen"},
+			Created: created, Updated: updated},
+	}, time.Unix(1900000000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(written) != 1 {
+		t.Fatalf("wrote %d records, want 1", len(written))
+	}
+
+	// Read it back out of the store rather than trusting what was returned.
+	// The returned value and the stored one are two different things, and it
+	// is the stored one anybody reads afterwards.
+	got, err := Get(s, tree, "products", testID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Created != created {
+		t.Errorf("created is %d, want the exported %d", got.Created, created)
+	}
+	if got.Updated != updated {
+		t.Errorf("updated is %d, want the exported %d", got.Updated, updated)
+	}
+}
+
+// An ordinary write must still stamp now. If a caller could choose its own
+// Updated, an edit could be made to look older than it is — which is the first
+// thing somebody covering their tracks would reach for.
+func TestAnOrdinaryWriteCannotChooseItsOwnTimestamps(t *testing.T) {
+	s := newStore(t)
+	now := time.Unix(1900000000, 0)
+
+	tree, _, err := PutMany(s, "", "products", []Record{
+		{ID: testID, Fields: map[string]any{"title": "Backdated"},
+			Created: 1, Updated: 1},
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Get(s, tree, "products", testID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Updated != now.Unix() {
+		t.Errorf("a caller backdated Updated to %d; the write should have "+
+			"stamped %d", got.Updated, now.Unix())
+	}
+	if got.Created != now.Unix() {
+		t.Errorf("a caller backdated Created to %d; the write should have "+
+			"stamped %d", got.Created, now.Unix())
+	}
+}
+
+// A restore with no dates in it must not invent 1970. "The export did not say"
+// is not the same as "this was created at the epoch", and a catalogue sorted
+// by a date nobody chose is worse than one sorted by the restore time.
+func TestARestoreWithNoDatesFallsBackToNow(t *testing.T) {
+	s := newStore(t)
+	now := time.Unix(1900000000, 0)
+
+	tree, _, err := RestoreMany(s, "", "products", []Record{
+		{ID: testID, Fields: map[string]any{"title": "No dates"}},
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Get(s, tree, "products", testID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Created != now.Unix() || got.Updated != now.Unix() {
+		t.Errorf("created/updated are %d/%d, want %d for both",
+			got.Created, got.Updated, now.Unix())
+	}
+}

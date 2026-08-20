@@ -9,12 +9,14 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/importer"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 func cmdImport(root string, args []string) error {
@@ -89,6 +91,15 @@ func cmdImport(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// A collections file is its own thing: it carries records, not pages, and
+	// it goes into the collection it names rather than through the page
+	// pipeline. Handled before the page path so a catalogue is never written
+	// as two pages called "collection" and "records".
+	if rep.Collection != "" {
+		return importRecords(root, s, rep, *author)
+	}
+
 	base := s.GetRef(site.RefDraft)
 	pages := map[string]any{}
 	if base != "" {
@@ -346,5 +357,83 @@ func mediaGet(root string, args []string) error {
 	w.Human("fetched and accepted %s%s%s\n", bold, f.Name, reset)
 	w.Human("  %sfrom %s%s\n", dim, res.FinalURL, reset)
 	w.Human("  %s%s · %d bytes · id %s%s\n", dim, f.Format, f.Size, f.ID[:32], reset)
+	return nil
+}
+
+// importRecords writes an imported collection back into the store.
+//
+// The records keep the ids the export gave them. Fresh ids would make every
+// record a different record from the one anything else links to, and the
+// broken relations are found by a reader rather than by this command.
+func importRecords(root string, s *store.Store, rep *importer.Report,
+	author string) error {
+
+	tree, err := draftTree(s)
+	if err != nil {
+		return err
+	}
+
+	// Refuse to overwrite, exactly as the page path does. An import that
+	// silently replaced a record somebody edited is the worst way to discover
+	// the ids collided.
+	var clashes []string
+	for _, r := range rep.Records {
+		if _, err := collection.Get(s, tree, rep.Collection, r.ID); err == nil {
+			clashes = append(clashes, r.ID)
+		}
+	}
+	if len(clashes) > 0 {
+		shown := clashes
+		if len(shown) > 5 {
+			shown = shown[:5]
+		}
+		return errBlocked{fmt.Errorf(
+			"%d record(s) already exist in %s and would be replaced: %s",
+			len(clashes), rep.Collection, strings.Join(shown, ", "))}
+	}
+
+	recs := make([]collection.Record, 0, len(rep.Records))
+	for _, r := range rep.Records {
+		recs = append(recs, collection.Record{
+			ID: r.ID, Fields: r.Fields, Created: r.Created, Updated: r.Updated,
+		})
+	}
+	// RestoreMany, not PutMany: the dates the export carried are real
+	// information and no destination can reconstruct them. A catalogue that
+	// arrives with every item created at import time sorts wrongly from its
+	// first day.
+	next, written, err := collection.RestoreMany(s, tree, rep.Collection, recs,
+		time.Now())
+	if err != nil {
+		return err
+	}
+	message := fmt.Sprintf("import %d record(s) into %s",
+		len(written), rep.Collection)
+	if err := commitTree(root, s, next, message, author); err != nil {
+		return err
+	}
+	cid := s.GetRef(site.RefDraft)
+
+	caller := resolveCaller(root, "")
+	record(root, audit.Record{
+		Action: "import", Resource: "/" + rep.Collection, Outcome: audit.Success,
+		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Detail: map[string]string{
+			"source": string(rep.Source), "collection": rep.Collection,
+			"records": fmt.Sprintf("%d", len(written)),
+			"skipped": fmt.Sprintf("%d", len(rep.Skipped)),
+			"commit":  short(cid), "author": author,
+		},
+	})
+
+	if w.JSON(map[string]any{
+		"collection": rep.Collection, "records": len(written),
+		"skipped": rep.Skipped, "commit": cid,
+	}) {
+		return nil
+	}
+	w.Human("\n%s%d record(s)%s into %s%s%s\n",
+		bold, len(written), reset, bold, rep.Collection, reset)
+	w.Human("\n  draft %s\n", short(cid))
 	return nil
 }
