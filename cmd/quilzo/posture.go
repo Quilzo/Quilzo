@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/logd"
+	"github.com/quilzo/quilzo/internal/oscal"
 	"os"
 	"path/filepath"
 	"sort"
@@ -280,6 +282,8 @@ func postureScan(root string, args []string) error {
 	adminAddr := fs.String("admin-addr", "", "how the admin is exposed, if running")
 	publicAddr := fs.String("public-addr", "", "how the site is exposed, if running")
 	proxy := fs.Bool("behind-proxy", false, "a reverse proxy terminates TLS")
+	asOSCAL := fs.Bool("oscal", false,
+		"emit OSCAL assessment results instead of a report")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
@@ -296,6 +300,34 @@ func postureScan(root string, args []string) error {
 		if f.Severity.AtLeast(floor) {
 			shown = append(shown, f)
 		}
+	}
+
+	// OSCAL, for a package an assessor's tooling ingests.
+	//
+	// FedRAMP 20x wants machine-checked evidence against a running system, and
+	// new packages must carry OSCAL from 30 September 2026. This scan already
+	// reads the deployment and already names the controls each rule bears on;
+	// what was missing was the format. So this is a different rendering of the
+	// same scan, not a second scan with different rules.
+	if *asOSCAL {
+		at, terr := time.Parse(time.RFC3339, rep.At)
+		if terr != nil {
+			at = time.Now()
+		}
+		doc, oerr := oscal.From(shown, posture.RuleIndex(), at, oscal.Options{
+			System:       siteName(root),
+			Organisation: organisationOf(root),
+			Version:      version,
+		})
+		if oerr != nil {
+			return oerr
+		}
+		body, merr := json.MarshalIndent(doc, "", "  ")
+		if merr != nil {
+			return merr
+		}
+		fmt.Println(string(body))
+		return exitFor(rep, posture.Severity(*failOn))
 	}
 
 	if w.Mode == out.JSON {
@@ -513,4 +545,20 @@ func wrap(s string, width int) string {
 		col += len(word)
 	}
 	return b.String()
+}
+
+// organisationOf is who runs this deployment, for an assessment document.
+//
+// Falls back to the site name rather than to a placeholder: an OSCAL party
+// called "Unknown Organization" is worse than one named after the site, because
+// an assessor reading the second knows what they are looking at.
+func organisationOf(root string) string {
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return siteName(root)
+	}
+	if org := strings.TrimSpace(cfg.Raw("site.provider")); org != "" {
+		return org
+	}
+	return siteName(root)
 }
