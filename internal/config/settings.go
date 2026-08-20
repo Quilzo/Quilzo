@@ -301,7 +301,12 @@ var settings = []Setting{
 	{
 		Key: "share.url_field", Kind: Text, Default: "",
 		Summary: "which form field the shared URL maps onto",
-		Why:     "As above.",
+		Why: "The link, when the share carries one — sharing a page from a " +
+			"browser sends its address here and its title separately. Leave " +
+			"this empty for a form with nowhere sensible to put a URL: an " +
+			"unmapped value is dropped rather than appended to another " +
+			"field, because a link silently concatenated onto a message is a " +
+			"submission somebody has to unpick by hand.",
 	},
 	{
 		Key: "telemetry.otlp_endpoint", Kind: Text, Default: "",
