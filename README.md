@@ -298,7 +298,8 @@ than the library it replaces because it does only what this needs.
 
 ## Testing
 
-1388 tests. Roughly one line of test for every two lines of program.
+1,147 test functions, 2,103 cases counting subtests. Roughly one line of
+test for every two lines of program.
 
 The ones that matter most are structural — they walk the source and fail on
 omissions rather than on wrong answers, because the recurring failure in this
@@ -322,6 +323,27 @@ importer, the redirect map, the API request parser, the anchor verifier and the
 OIDC discovery walk.
 
 ## Getting started
+
+### With Docker
+
+The image is built `FROM scratch`: the binary and nothing else — no shell, no
+package manager, no libc. 27.6 MB, amd64 and arm64.
+
+```bash
+docker run -v quilzo:/srv/store ghcr.io/quilzo/quilzo --root /srv/store init
+docker run -v quilzo:/srv/store ghcr.io/quilzo/quilzo --root /srv/store demo
+docker run -p 8081:8081 -v quilzo:/srv/store ghcr.io/quilzo/quilzo \
+  --root /srv/store site --addr 0.0.0.0:8081
+```
+
+Published on each tagged release, with a build-provenance attestation binding
+the image to the workflow run that produced it:
+
+```bash
+gh attestation verify oci://ghcr.io/quilzo/quilzo:latest --repo quilzo/quilzo
+```
+
+### From source
 
 You need Go 1.24 or later. There are no dependencies to fetch.
 
