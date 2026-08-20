@@ -16,7 +16,7 @@ delete later.
 
 ## Try it first, in about two minutes
 
-You need Go 1.26 or later and nothing else. There are no dependencies to fetch.
+You need Go 1.27 or later and nothing else. There are no dependencies to fetch.
 
 ```bash
 git clone https://github.com/quilzo/quilzo   # or your fork

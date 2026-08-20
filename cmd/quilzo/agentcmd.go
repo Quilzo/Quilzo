@@ -10,11 +10,13 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/agentmodel"
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/otlp"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -427,8 +429,29 @@ func agentCheckRun(root string, args []string) error {
 		},
 	}
 
+	started := time.Now()
 	trace, runErr := runner.Run(context.Background(), sess, goal)
 	rc := trace.Receipt(sess)
+
+	// Traces, when a collector is configured.
+	//
+	// After Run rather than inside the Record hook, because the hook fires
+	// before the trace exists — and Run returns the trace on every path it can
+	// take, including the ones that ended badly, which are the runs worth
+	// tracing most.
+	//
+	// Fail-soft and loud. A collector that is down must not fail a run that
+	// otherwise worked, and a trace that silently vanished is worse than one
+	// that says it could not be sent.
+	if exp := tracerFor(root); exp != nil {
+		spans, terr := otlp.FromTrace(trace, rc, m, started)
+		if terr == nil {
+			terr = exp.Export(context.Background(), spans)
+		}
+		if terr != nil {
+			fmt.Printf("  %straces not sent: %v%s\n", dim, terr, reset)
+		}
+	}
 
 	fmt.Printf("%s%s%s  %s\n", bold, name, reset, m.Kind)
 	// What this run actually was, because the two modes answer different
@@ -536,6 +559,46 @@ func proposeCommit(root string, s *store.Store) func(string, string) error {
 func shortCommit(s string) string {
 	if len(s) > 12 {
 		return s[:12]
+	}
+	return s
+}
+
+// tracerFor builds an OTLP exporter from configuration, or nil.
+//
+// Nil rather than an exporter that does nothing: a run with no collector
+// configured should not pay for encoding spans nobody receives, and the caller
+// checking for nil is clearer than an exporter with a silent no-op mode.
+func tracerFor(root string) *otlp.Exporter {
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return nil
+	}
+	endpoint := cfg.Raw("telemetry.otlp_endpoint")
+	if strings.TrimSpace(endpoint) == "" {
+		return nil
+	}
+	e := &otlp.Exporter{
+		Endpoint:    endpoint,
+		AllowRemote: cfg.Bool("telemetry.allow_remote"),
+		Service:     nonBlank(cfg.Raw("site.name"), "quilzo"),
+		Version:     version,
+		Timeout:     cfg.Dur("telemetry.timeout"),
+	}
+	// A credential for a collector that wants one, from the environment rather
+	// than from configuration — the store is content-addressed and an object
+	// in it cannot be deleted, so a token written there is permanent.
+	if h := os.Getenv("QUILZO_OTLP_HEADER"); h != "" {
+		if k, v, ok := strings.Cut(h, ":"); ok {
+			e.Headers = map[string]string{
+				strings.TrimSpace(k): strings.TrimSpace(v)}
+		}
+	}
+	return e
+}
+
+func nonBlank(s, fallback string) string {
+	if strings.TrimSpace(s) == "" {
+		return fallback
 	}
 	return s
 }

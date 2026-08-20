@@ -3,7 +3,7 @@
 # Static, CGO off. The point of a zero-dependency program is that the image can
 # be a scratch image with one file in it — nothing to patch, nothing with a CVE
 # feed, and an attacker who reaches code execution finds no shell to run.
-FROM golang:1.26-bookworm AS build
+FROM golang:1.27-bookworm AS build
 WORKDIR /src
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/quilzo ./cmd/quilzo
