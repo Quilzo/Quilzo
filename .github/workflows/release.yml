@@ -20,6 +20,8 @@ permissions:
   # Needed to publish an attestation binding the artefacts to this workflow run.
   id-token: write
   attestations: write
+  # Needed to push the container image to this repository's registry.
+  packages: write
 
 jobs:
   release:
@@ -103,3 +105,67 @@ jobs:
             `quilzo.cdx.json` is CycloneDX 1.6.
             `quilzo.crypto.json` is the cryptographic inventory, including
             post-quantum status.
+
+  # The image, published where somebody can actually pull it.
+  #
+  # A self-hosted CMS whose only installation route is "clone it and have a Go
+  # toolchain" has no distribution. The Dockerfile has existed since the start
+  # and nothing ever pushed what it built, so the image was real and
+  # unobtainable — which is the same as not having one.
+  #
+  # Multi-arch, because arm64 is where a lot of self-hosting actually happens
+  # and an amd64-only image is an image half the audience cannot run.
+  image:
+    runs-on: ubuntu-latest
+    needs: release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to the registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Names for this image
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          # The tag, the major.minor, and latest. Somebody pinning to a
+          # version gets one that cannot move under them; somebody who wants
+          # the current release gets latest.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ github.ref_name }}
+
+      # The same provenance the binaries get. An image somebody pulls should be
+      # traceable to the workflow run that built it, or the supply-chain
+      # argument this project makes stops at the tarball.
+      - name: Attest the image
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
