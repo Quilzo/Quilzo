@@ -49,7 +49,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: "1.26"
+          go-version: "1.27"
       - name: Formatting and vet
         run: |
           test -z "$(gofmt -l .)" || { echo "gofmt would change files:"; gofmt -l .; exit 1; }
@@ -83,6 +83,14 @@ jobs:
       # every release carried unpatched standard-library CVEs with no fix
       # available. Nothing was watching, because there were no dependencies to
       # watch and it looked like there was nothing to check.
+      #
+      # It is now the only supply-chain check. OSV-Scanner ran alongside it
+      # until August 2026 and was removed for failing at startup after a
+      # required action bump. Coverage was measured before deleting it rather
+      # than assumed: go.mod was rolled back to the end-of-life 1.24 and
+      # govulncheck alone reported 8 reachable standard-library
+      # vulnerabilities and exited non-zero. The coarser scanner found that
+      # problem first; it is not needed to keep finding it.
       - name: The one dependency has to be current
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
