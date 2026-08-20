@@ -10,6 +10,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/ipfs"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
@@ -214,21 +215,12 @@ func renderBundle(root, tplDir string) (map[string][]byte, error) {
 	// somebody keeps, and it used to come out with no navigation on any page.
 	src := sourcesFor(root, s, s.GetRef(site.RefLive), siteName(root), pages)
 
-	files := map[string][]byte{}
-	for name, body := range pages {
-		ctx, cerr := src.For(name, body, nil)
-		if cerr != nil {
-			return nil, fmt.Errorf("%s: %w", name, cerr)
-		}
-		html, rerr := tmpl.Render(string(raw), ctx)
-		if rerr != nil {
-			return nil, fmt.Errorf("%s: %w", name, rerr)
-		}
-		path := name + "/index.html"
-		if name == "index" {
-			path = "index.html"
-		}
-		files[path] = []byte(html)
+	// One renderer, shared with the admin screen that computes an identifier
+	// for the same bundle. See internal/render.Bundle for why this is not a
+	// loop here any more.
+	files, berr := render.Bundle(src, string(raw), pages, tmpl.Render)
+	if berr != nil {
+		return nil, berr
 	}
 	if css, cerr := os.ReadFile(filepath.Join(tplDir, "site.css")); cerr == nil {
 		files["site.css"] = css

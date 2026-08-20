@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
@@ -47,33 +48,12 @@ import (
 // ambiguous rather than by picking the first, because picking is a decision
 // made by whatever order the index happened to return and nobody reviewed it.
 
-// Detail is what a page declares to become a detail route.
-//
-// Both fields are required together. A page naming a listing and no key, or a
-// key and no listing, is a page that cannot answer — reported when it is
-// resolved rather than 404ing quietly, because a detail route that silently
-// does nothing looks exactly like a missing record.
-type Detail struct {
-	// Listing is the declared listing the record is read through.
-	Listing string
-	// Key is which field of the record appears in the URL.
-	Key string
-}
+// Detail and DetailOf now live in internal/render, because the exporter needs
+// the same answer and got a different one — see the note there. Aliased rather
+// than re-declared so this file still reads as the place the route is served.
+type Detail = render.Detail
 
-// detailOf reads the declaration off a page body.
-func detailOf(body any) (Detail, bool) {
-	m, ok := body.(map[string]any)
-	if !ok {
-		return Detail{}, false
-	}
-	name, _ := m["detail"].(string)
-	key, _ := m["detail_key"].(string)
-	name, key = strings.TrimSpace(name), strings.TrimSpace(key)
-	if name == "" && key == "" {
-		return Detail{}, false
-	}
-	return Detail{Listing: name, Key: key}, true
-}
+func detailOf(body any) (Detail, bool) { return render.DetailOf(body) }
 
 // findRecord returns the one record a detail URL names.
 //
@@ -83,7 +63,7 @@ func detailOf(body any) (Detail, bool) {
 func (st *Site) findRecord(d Detail, key string, args map[string]string) (
 	listing.Row, error) {
 
-	if d.Listing == "" || d.Key == "" {
+	if !d.Declared() {
 		return nil, fmt.Errorf(
 			"this page declares a detail route with %s missing, so it cannot "+
 				"answer for any record", missingHalf(d))
