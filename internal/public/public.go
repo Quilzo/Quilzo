@@ -127,6 +127,11 @@ type Site struct {
 	// Forms is the one write capability this server has: append a submission,
 	// to a store that is not the content store. Nil means /form/ 404s.
 	Forms *Forms
+	// Share is where the operating system's share sheet delivers, or nil.
+	//
+	// The one deep OS integration this product can offer without client
+	// script: a manifest declaration and a form POST. See share.go.
+	Share *ShareTarget
 	// Media serves the asset library at /media/. Nil means the route 404s,
 	// which is right for a deployment with no library — and was, until this
 	// field existed, the behaviour of every deployment including the ones with
@@ -168,6 +173,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/llms.txt", st.llms)
 	mux.HandleFunc("/media/", st.mediaFile)
 	mux.HandleFunc("/form/", st.submit)
+	mux.HandleFunc("/share", st.handleShare)
 	mux.HandleFunc("/", st.page)
 	return st.securityHeaders(mux)
 }
@@ -704,6 +710,10 @@ func (st *Site) manifest(w http.ResponseWriter, r *http.Request) {
 	// and a heading is not a destination at all.
 	if sc := st.shortcuts(); len(sc) > 0 {
 		doc["shortcuts"] = sc
+	}
+	// The share sheet, when the operator has pointed it at a form.
+	if sh := st.shareManifest(); sh != nil {
+		doc["share_target"] = sh
 	}
 	b, _ := json.MarshalIndent(doc, "", "  ")
 	w.Header().Set("Content-Type", "application/manifest+json")
