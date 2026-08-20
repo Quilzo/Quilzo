@@ -93,12 +93,28 @@ type Report struct {
 	Skipped []string `json:"skipped,omitempty"`
 	// Notes are things the operator has to decide about.
 	Notes []string `json:"notes,omitempty"`
+	// Collection names the collection these records belong to, empty when the
+	// import carried pages instead. A file is one or the other: a collections
+	// file is a shape this tool writes, and guessing which half of a mixed
+	// document was which would import a catalogue as pages.
+	Collection string `json:"collection,omitempty"`
+	// Records are the rows of that collection.
+	Records []Record `json:"records,omitempty"`
 	// Redirects map every URL the content had in the old system to its new
 	// path. This is the artefact that decides whether a migration keeps its
 	// search rankings, and the export already contains everything needed to
 	// build it — so leaving it to be typed by hand afterwards is leaving the
 	// most valuable output on the floor.
 	Redirects []seo.Redirect `json:"redirects,omitempty"`
+}
+
+// Record is one row of a collection, as an export carries it.
+type Record struct {
+	ID     string         `json:"id"`
+	Fields map[string]any `json:"fields"`
+	// Created and Updated in unix seconds, zero when the export did not say.
+	Created int64 `json:"created,omitempty"`
+	Updated int64 `json:"updated,omitempty"`
 }
 
 // Import reads an export and returns pages.
@@ -123,6 +139,59 @@ func Import(src Source, r io.Reader, now time.Time) (*Report, error) {
 		return importJSON(body, now)
 	}
 	return nil, fmt.Errorf("unknown source %q; try wordpress, markdown or json", src)
+}
+
+// jsonCollection reads the shape the JSON exporter writes for a collection.
+//
+// Returns false rather than an error for anything else, so the page shapes
+// below still get their turn. It only claims a document that has both keys and
+// an array of objects carrying ids — a document with a stray "collection"
+// field is not one of these.
+func jsonCollection(body []byte) (*Report, bool) {
+	var doc struct {
+		Collection string `json:"collection"`
+		Records    []struct {
+			ID      string         `json:"id"`
+			Fields  map[string]any `json:"fields"`
+			Created int64          `json:"created"`
+			Updated int64          `json:"updated"`
+		} `json:"records"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return nil, false
+	}
+	if doc.Collection == "" || doc.Records == nil {
+		return nil, false
+	}
+
+	rep := &Report{Source: JSON, Collection: doc.Collection}
+	for i, r := range doc.Records {
+		if len(rep.Records) >= MaxPages {
+			rep.Skipped = append(rep.Skipped, "stopped at the record limit")
+			break
+		}
+		if r.ID == "" {
+			// Refused rather than given a fresh id. A record whose identity
+			// was invented on import is no longer the record anything else
+			// links to, and the broken relation is found by a reader.
+			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
+				"record %d has no id, so nothing that links to it would still "+
+					"find it", i+1))
+			continue
+		}
+		if r.Fields == nil {
+			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
+				"record %q has no fields", r.ID))
+			continue
+		}
+		rep.Records = append(rep.Records, Record{
+			ID: r.ID, Fields: r.Fields, Created: r.Created, Updated: r.Updated,
+		})
+	}
+	sort.Slice(rep.Records, func(i, j int) bool {
+		return rep.Records[i].ID < rep.Records[j].ID
+	})
+	return rep, true
 }
 
 // Detect guesses the format from the bytes, so the common case needs no flag.
@@ -444,6 +513,14 @@ func importMarkdown(body []byte, now time.Time) (*Report, error) {
 
 func importJSON(body []byte, now time.Time) (*Report, error) {
 	rep := &Report{Source: JSON}
+
+	// A collections file first, because it is unambiguous: nothing else this
+	// importer reads has a top-level "collection" name beside a "records"
+	// array. Checked before the page shapes so a catalogue is never imported
+	// as a set of pages named "collection" and "records".
+	if rec, ok := jsonCollection(body); ok {
+		return rec, nil
+	}
 
 	var asArray []map[string]any
 	if err := json.Unmarshal(body, &asArray); err == nil {

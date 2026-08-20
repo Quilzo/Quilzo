@@ -40,11 +40,17 @@
 package export
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"mime"
+	"path"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/rocrate"
 )
 
 // Format is an export format.
@@ -57,10 +63,12 @@ const (
 	JSON Format = "json"
 	// WXR: WordPress's own format, so leaving for WordPress is a file copy.
 	WXR Format = "wxr"
+	// ROCrate: the markdown export plus a checksum manifest, for a deposit.
+	ROCrate Format = "ro-crate"
 )
 
 // Formats lists what can be produced.
-func Formats() []Format { return []Format{Markdown, JSON, WXR} }
+func Formats() []Format { return []Format{Markdown, JSON, WXR, ROCrate} }
 
 // File is one output file. Paths are relative and always use forward slashes.
 type File struct {
@@ -83,6 +91,40 @@ type Site struct {
 	// Redirects are carried so old URLs keep working after the move. An export
 	// without them hands somebody a site that loses its rankings on arrival.
 	Redirects []Redirect
+	// Licence is an SPDX URI. Only the crate format needs one, and it refuses
+	// to build without it rather than guessing on a depositor's behalf.
+	Licence string
+	// Publisher is who is depositing, for formats that record it.
+	Publisher string
+	// Collections are the records held in every collection, keyed by
+	// collection name.
+	//
+	// Pages were the only thing exported for a long time, and every format
+	// silently wrote none of these. On the demo shop that meant an export
+	// produced a catalogue page and no products — twelve records, none of
+	// them in the file somebody was handed. "There is no lock-in here, and
+	// this is how it is proved" was proved only for pages, because the
+	// round-trip test only ever built pages.
+	Collections map[string][]Record
+	// Commit is the published commit this export is of. Content addressing is
+	// what makes it worth recording: the same identifier always names the same
+	// bytes, so a reader can ask this store for exactly what was deposited.
+	Commit string
+}
+
+// Record is one row of a collection.
+//
+// Declared here rather than reusing the store's own type, matching Redirect
+// above: this package describes what an export contains, and coupling it to
+// the store's internals would make the file format follow refactors.
+type Record struct {
+	ID     string         `json:"id"`
+	Fields map[string]any `json:"fields"`
+	// Created and Updated in unix seconds, zero when unknown. Carried because
+	// a catalogue that arrives with every item created today sorts wrongly
+	// from its first day, and no destination can reconstruct them.
+	Created int64 `json:"created,omitempty"`
+	Updated int64 `json:"updated,omitempty"`
 }
 
 // Redirect is carried through an export unchanged.
@@ -95,7 +137,7 @@ type Redirect struct {
 
 // Export renders a site into files.
 func Export(f Format, s Site, now time.Time) ([]File, error) {
-	if len(s.Pages) == 0 {
+	if len(s.Pages) == 0 && len(s.Collections) == 0 {
 		return nil, fmt.Errorf("there is nothing published to export")
 	}
 	switch f {
@@ -105,8 +147,21 @@ func Export(f Format, s Site, now time.Time) ([]File, error) {
 		return exportJSON(s)
 	case WXR:
 		return exportWXR(s, now)
+	case ROCrate:
+		return exportROCrate(s, now)
 	}
-	return nil, fmt.Errorf("unknown format %q; try markdown, json or wxr", f)
+	return nil, fmt.Errorf(
+		"unknown format %q; try markdown, json, wxr or ro-crate", f)
+}
+
+// collections returns the collection names in a stable order.
+func collections(s Site) []string {
+	out := make([]string, 0, len(s.Collections))
+	for n := range s.Collections {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func names(s Site) []string {
@@ -158,6 +213,22 @@ func exportMarkdown(s Site) ([]File, error) {
 		if t, ok := s.Changed[name]; ok && !t.IsZero() {
 			front = append(front, "date: "+t.UTC().Format("2006-01-02"))
 		}
+		// The page's own name, so a re-import gets it back.
+		//
+		// Without this line the name is only in the filename, and a reader
+		// handed one file has to guess — this tool's own importer guessed from
+		// the title, so a round trip renamed every page whose title was not
+		// its name. For the front page that is not cosmetic: / serves whatever
+		// is called "index", and a site exported and re-imported lost its home
+		// page. The JSON exporter had this fixed; markdown did not, and the
+		// round-trip test only covered JSON.
+		//
+		// `slug` rather than a key of this tool's own invention because Hugo,
+		// Jekyll and Astro all already read it and mean the same thing by it.
+		if _, already := fields["slug"]; !already {
+			front = append(front, "slug: "+name)
+			sort.Strings(front)
+		}
 
 		var b strings.Builder
 		b.WriteString("---\n")
@@ -172,11 +243,82 @@ func exportMarkdown(s Site) ([]File, error) {
 		out = append(out, File{Path: "content/" + name + ".md", Body: []byte(b.String())})
 	}
 
+	// One directory per collection, one file per record. That is the shape
+	// Hugo, Astro and Eleventy all call a section, so a catalogue arrives
+	// somewhere else as a catalogue rather than as a blob somebody has to
+	// write a script for.
+	for _, coll := range collections(s) {
+		for _, r := range s.Collections[coll] {
+			f, err := recordFile(coll, r)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, f)
+		}
+	}
+
 	out = append(out, readme(Markdown, s))
 	if f, ok := redirectFile(s); ok {
 		out = append(out, f)
 	}
 	return out, nil
+}
+
+// recordFile writes one collection record as markdown with front matter.
+func recordFile(coll string, r Record) (File, error) {
+	fields := map[string]any{}
+	for k, v := range r.Fields {
+		fields[k] = v
+	}
+	var body string
+	if b, ok := fields["body"].(string); ok {
+		body = b
+		delete(fields, "body")
+	}
+
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var front []string
+	for _, k := range keys {
+		v, err := yamlScalar(fields[k])
+		if err != nil {
+			return File{}, fmt.Errorf("%s record %q field %q: %w",
+				coll, r.ID, k, err)
+		}
+		front = append(front, k+": "+v)
+	}
+	// The record's own identity, and the collection it belongs to. Without the
+	// id a re-import invents new ones, so every link between records breaks
+	// and nobody notices until a page renders an empty relation.
+	front = append(front, "id: "+quoteYAML(r.ID), "collection: "+quoteYAML(coll))
+	if r.Created > 0 {
+		front = append(front,
+			"created: "+quoteYAML(time.Unix(r.Created, 0).UTC().Format(time.RFC3339)))
+	}
+	if r.Updated > 0 {
+		front = append(front,
+			"updated: "+quoteYAML(time.Unix(r.Updated, 0).UTC().Format(time.RFC3339)))
+	}
+	sort.Strings(front)
+
+	var b strings.Builder
+	b.WriteString("---\n")
+	for _, line := range front {
+		b.WriteString(line + "\n")
+	}
+	b.WriteString("---\n\n")
+	b.WriteString(body)
+	if !strings.HasSuffix(body, "\n") {
+		b.WriteString("\n")
+	}
+	return File{
+		Path: "content/" + coll + "/" + r.ID + ".md",
+		Body: []byte(b.String()),
+	}, nil
 }
 
 // yamlScalar renders a value as a quoted YAML scalar.
@@ -264,6 +406,20 @@ func exportJSON(s Site) ([]File, error) {
 		out = append(out, File{Path: "last-changed.json", Body: append(b, '\n')})
 	}
 
+	// One file per collection, under content/, so `quilzo import
+	// content/products.json` is the obvious command and it works. A single
+	// combined file would make recovering one collection a scripting job.
+	for _, coll := range collections(s) {
+		b, err := json.MarshalIndent(
+			map[string]any{"collection": coll, "records": s.Collections[coll]},
+			"", "  ")
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, File{
+			Path: "content/" + coll + ".json", Body: append(b, '\n')})
+	}
+
 	out = append(out, readme(JSON, s))
 	if f, ok := redirectFile(s); ok {
 		out = append(out, f)
@@ -346,6 +502,18 @@ func exportWXR(s Site, now time.Time) ([]File, error) {
 		}
 		b.WriteString("  </item>\n")
 	}
+
+	// Collections become custom post types, which is what WordPress calls the
+	// same idea. The alternative was to drop them, and an export that arrives
+	// at WordPress as a shop with no products is not a migration.
+	id := len(s.Pages)
+	for _, coll := range collections(s) {
+		for _, r := range s.Collections[coll] {
+			id++
+			b.WriteString(wxrRecord(coll, r, id, now))
+		}
+	}
+
 	b.WriteString("</channel>\n</rss>\n")
 
 	out := []File{{Path: "content/wordpress-export.xml", Body: []byte(b.String())}}
@@ -447,5 +615,169 @@ func orUnnamed(s string) string {
 
 func str(v any) string {
 	s, _ := v.(string)
+	return s
+}
+
+// -- ro-crate ----------------------------------------------------------------
+
+// exportROCrate wraps the markdown export in a research object.
+//
+// The files are the markdown ones, unchanged: a crate is a directory with a
+// metadata file at its root, not a container format, so the content stays
+// readable with `cat` and re-importable by every tool that reads markdown. The
+// crate adds what a deposit needs and an ordinary export cannot carry — a
+// sha256 per file, a licence, a publisher, and the commit the bytes came from.
+//
+// Producing markdown rather than JSON is deliberate. A crate is read by people
+// as often as by machines, and the round-trip guarantee is the same either way
+// because both are formats this tool's own importer reads.
+func exportROCrate(s Site, now time.Time) ([]File, error) {
+	files, err := exportMarkdown(s)
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make([]rocrate.File, 0, len(files))
+	for _, f := range files {
+		sum := sha256.Sum256(f.Body)
+		e := rocrate.File{
+			Path:      f.Path,
+			SHA256:    hex.EncodeToString(sum[:]),
+			Size:      int64(len(f.Body)),
+			MediaType: mediaTypeOf(f.Path),
+		}
+		// A page's own title is a better name in a catalogue than its
+		// filename, and the store already knows it. Files that are not pages —
+		// the README the markdown export writes — keep their filename, which
+		// is what they are called.
+		name := strings.TrimSuffix(path.Base(f.Path), path.Ext(f.Path))
+		e.Name = path.Base(f.Path)
+		if fields, ok := s.Pages[name].(map[string]any); ok {
+			if t, ok := fields["title"].(string); ok && t != "" {
+				e.Name = t
+			}
+		}
+		if when, ok := s.Changed[name]; ok && !when.IsZero() {
+			e.DateModified = when.UTC().Format(time.RFC3339)
+		}
+		entries = append(entries, e)
+	}
+
+	crate, err := rocrate.Build(entries, now, rocrate.Options{
+		Name:        nonBlank(s.Name, "Published site"),
+		Description: crateDescription(s),
+		License:     s.Licence,
+		Publisher:   s.Publisher,
+		Commit:      s.Commit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	// Validate before writing rather than after. A crate that fails is a
+	// directory with a JSON file in it, and the person who finds out is
+	// whoever the deposit was for.
+	if err := crate.Validate(); err != nil {
+		return nil, fmt.Errorf("this crate would not be readable: %w", err)
+	}
+
+	body, err := json.MarshalIndent(crate, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(files, File{
+		Path: rocrate.MetadataFile, Body: append(body, '\n')}), nil
+}
+
+// wxrRecord writes one collection record as a WordPress custom-post-type item.
+func wxrRecord(coll string, r Record, id int, now time.Time) string {
+	fields := r.Fields
+	title := str(fields["title"])
+	if title == "" {
+		title = str(fields["name"])
+	}
+	if title == "" {
+		title = r.ID
+	}
+	when := now
+	if r.Updated > 0 {
+		when = time.Unix(r.Updated, 0)
+	}
+
+	var b strings.Builder
+	b.WriteString("  <item>\n")
+	b.WriteString("    <title>" + xmlEscape(title) + "</title>\n")
+	b.WriteString("    <content:encoded><![CDATA[" +
+		cdata(str(fields["body"])) + "]]></content:encoded>\n")
+	b.WriteString(fmt.Sprintf("    <wp:post_id>%d</wp:post_id>\n", id))
+	b.WriteString("    <wp:post_date>" +
+		when.UTC().Format("2006-01-02 15:04:05") + "</wp:post_date>\n")
+	b.WriteString("    <wp:post_name>" + xmlEscape(r.ID) + "</wp:post_name>\n")
+	b.WriteString("    <wp:status>publish</wp:status>\n")
+	b.WriteString("    <wp:post_type>" + xmlEscape(coll) + "</wp:post_type>\n")
+
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if k == "title" || k == "body" {
+			continue
+		}
+		v, err := yamlScalar(fields[k])
+		if err != nil {
+			continue
+		}
+		b.WriteString("    <wp:postmeta>\n")
+		b.WriteString("      <wp:meta_key>" + xmlEscape(k) + "</wp:meta_key>\n")
+		b.WriteString("      <wp:meta_value><![CDATA[" +
+			cdata(strings.Trim(v, `"`)) + "]]></wp:meta_value>\n")
+		b.WriteString("    </wp:postmeta>\n")
+	}
+	b.WriteString("  </item>\n")
+	return b.String()
+}
+
+func crateDescription(s Site) string {
+	n := len(s.Pages)
+	page := "pages"
+	if n == 1 {
+		page = "page"
+	}
+	records := 0
+	for _, rs := range s.Collections {
+		records += len(rs)
+	}
+	what := fmt.Sprintf("%d %s", n, page)
+	if records > 0 {
+		what += fmt.Sprintf(" and %d record(s) across %d collection(s)",
+			records, len(s.Collections))
+	}
+	d := fmt.Sprintf("%s published from %s, each listed with the sha256 of "+
+		"its bytes so a reader can check the file is the one described here",
+		what, nonBlank(s.Name, "a Quilzo site"))
+	if s.BaseURL != "" {
+		d += ". Served at " + s.BaseURL
+	}
+	return d + "."
+}
+
+func mediaTypeOf(p string) string {
+	if t := mime.TypeByExtension(path.Ext(p)); t != "" {
+		return t
+	}
+	switch path.Ext(p) {
+	case ".md":
+		// Registered as text/markdown by RFC 7763, but the Go table does not
+		// always carry it and a missing type is worse than a correct one.
+		return "text/markdown"
+	}
+	return ""
+}
+
+func nonBlank(s, fallback string) string {
+	if strings.TrimSpace(s) == "" {
+		return fallback
+	}
 	return s
 }
