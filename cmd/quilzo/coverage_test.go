@@ -70,6 +70,11 @@ var coverage = map[string]surfaces{
 			"other capability boundary into a suggestion — this is the same " +
 			"reason auth and token are off this surface, and it is the more " +
 			"important instance of it"},
+	"integrations": {GUI: "/integrations",
+		NoMCP: "a model reaching other people's systems through a list a " +
+			"model can edit is the loop this whole design exists to keep open"},
+	"integration": {GUI: "/integrations",
+		NoMCP: "the singular spelling of the same command"},
 	"rights": {GUI: "/media",
 		NoMCP: "what a model would do with it is edit the expiry that stops " +
 			"its own picture publishing, which is the gate rather than a field"},

@@ -465,6 +465,26 @@ func (c *Client) PostForm(ctx context.Context, raw string, form url.Values,
 func (c *Client) Post(ctx context.Context, raw string, body []byte,
 	contentType string) (*Result, error) {
 
+	h := map[string]string{}
+	if contentType != "" {
+		h["Content-Type"] = contentType
+	}
+	return c.PostWithHeaders(ctx, raw, body, h)
+}
+
+// PostWithHeaders is Post with headers, and reads the response.
+//
+// The MCP client needs both at once: a JSON-RPC call carries an Authorization
+// header and the answer is the point. PostSigned has the headers and discards
+// the body — it is for webhooks, where the receiver's reply is not wanted.
+//
+// Post now delegates here rather than the two keeping their own copy of the
+// address validation, the redirect refusal, the timeout and the body ceiling.
+// A defence with two implementations is a defence with one implementation that
+// stops being maintained.
+func (c *Client) PostWithHeaders(ctx context.Context, raw string, body []byte,
+	headers map[string]string) (*Result, error) {
+
 	lim := c.Limits.withDefaults()
 	u, err := ValidateURL(raw)
 	if err != nil {
@@ -486,8 +506,8 @@ func (c *Client) Post(ctx context.Context, raw string, body []byte,
 	if err != nil {
 		return nil, err
 	}
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	req.Header.Set("User-Agent", c.UserAgent)
 

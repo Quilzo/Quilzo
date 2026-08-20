@@ -163,6 +163,7 @@ agents and integrations
   quilzo agent list | show NAME | check     what is declared, and whether it still validates
   quilzo agents                            what models have been doing, and
                                             which are not accepting refusals
+  quilzo integrations list|tools|call      outside systems this install may reach
   quilzo rights [REF]                      image licences: expired, lapsing, undeclared
   quilzo brand init                        claim rules: what needs substantiating
   quilzo brand list | check                what this shop may not say unbacked
@@ -323,6 +324,8 @@ func main() {
 		err = cmdBrand(root, cmdArgs)
 	case "rights":
 		err = cmdRights(root, cmdArgs)
+	case "integrations", "integration":
+		err = cmdIntegrations(root, cmdArgs)
 	// The literal rather than sandboxCmd, because the test that keeps the
 	// privilege table honest reads this switch from the source and cannot
 	// resolve a constant.

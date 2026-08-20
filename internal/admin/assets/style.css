@@ -975,3 +975,34 @@ td .ok, td .warn, td .bad, .hint .ok, .hint .warn, .hint .bad { font-weight: 600
 .gates { margin: 1.25rem 0 2rem; }
 .gates dt { font-weight: 700; margin-top: 1rem; }
 .gates dd { margin: .25rem 0 0; color: var(--on-surface-variant); max-width: 68ch; }
+
+
+/* The editor and the page it edits, side by side.
+ *
+ * A grid rather than a float, so the two columns are equal and neither can
+ * push the other off-screen. minmax(0,1fr) rather than 1fr because a grid
+ * track's default minimum is its content, and a wide preview would otherwise
+ * stretch the column past the viewport and take the form with it.
+ *
+ * Stacked below 62rem. A form and a preview at 400px each are two things
+ * nobody can use, and on a phone the preview is the one to move out of the
+ * way — the person is there to type. */
+.editing {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-6, 1.5rem);
+  align-items: start;
+}
+@media (max-width: 62rem) {
+  .editing { grid-template-columns: minmax(0, 1fr); }
+  .editing .preview { order: -1; }
+}
+.editing .preview { position: sticky; top: var(--space-4, 1rem); }
+.editing .preview h2 { margin-top: 0; }
+.editing iframe {
+  width: 100%;
+  height: min(70vh, 720px);
+  border: 1px solid var(--outline-variant, #ccc);
+  border-radius: var(--radius-md, 12px);
+  background: var(--surface, #fff);
+}

@@ -88,6 +88,14 @@ func cmdServe(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// The site's stylesheet, so the framed preview is the page rather than the
+	// page's markup. Read from the same directory as the template and, like
+	// it, absent rather than fatal — a headless store that renders elsewhere
+	// has neither, and refusing to serve the admin over a missing stylesheet
+	// would be a poor trade.
+	if b, rerr := os.ReadFile(filepath.Join(*tplDir, "site.css")); rerr == nil {
+		srv.SiteCSS = string(b)
+	}
 	// Persistence and auditing for the changes the admin can now make.
 	// Without these an access change lives until the process restarts, and the
 	// administrator has already been told it worked.
