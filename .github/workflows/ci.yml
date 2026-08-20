@@ -16,6 +16,15 @@ on:
   # while looking perfectly normal on the pull request.
   workflow_dispatch:
 
+# Read-only by default, named rather than inherited.
+#
+# A workflow with no permissions block gets whatever the repository default is,
+# which is a setting somebody can widen without touching this file. CodeQL
+# flags it for that reason and it is right to: the least-privilege claim should
+# live beside the thing it constrains.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -23,7 +32,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.26"
       - name: Formatting and vet
         run: |
           test -z "$(gofmt -l .)" || { echo "gofmt would change files:"; gofmt -l .; exit 1; }
@@ -42,6 +51,24 @@ jobs:
             GOOS="$os" GOARCH="$arch" go vet ./... || exit 1
             GOOS="$os" GOARCH="$arch" go build -o /dev/null ./cmd/quilzo || exit 1
           done
+      # The standard library is the only dependency this program has, which
+      # makes the Go release it is built with the entire supply chain.
+      #
+      # govulncheck rather than a version comparison: it does reachability
+      # analysis, so it reports the vulnerabilities this code can actually
+      # arrive at rather than every CVE filed against the release. On 1.26.4
+      # that was 8 reachable out of 29 reported, with call traces; on the
+      # pinned 1.26.7 it is none. The difference is the difference between a
+      # finding somebody acts on and a list somebody stops reading.
+      #
+      # This is the check that would have caught the real problem: the project
+      # was pinned to Go 1.24, which reached end of life in February 2026, so
+      # every release carried unpatched standard-library CVEs with no fix
+      # available. Nothing was watching, because there were no dependencies to
+      # watch and it looked like there was nothing to check.
+      - name: The one dependency has to be current
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
       - name: Sandbox escapes, XSS contexts, termination, tamper detection
         run: go test -count=1 ./...
       - name: The image must build and stay static
