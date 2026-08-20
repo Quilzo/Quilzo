@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/a2a"
 	"github.com/quilzo/quilzo/internal/api"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/collection"
@@ -151,6 +152,37 @@ func cmdSite(root string, args []string) error {
 		// nobody can explain.
 		if name := cfg.Raw("site.catalogue"); name != "" {
 			st.Catalogue = name
+		}
+		// The A2A discovery document, when the operator publishes one.
+		//
+		// Built per request rather than once, because the manifests it
+		// describes can be edited without restarting the server — and a card
+		// that goes stale is a card that lies about what is enforced, which is
+		// the one thing it must never do.
+		if cfg.Bool("site.agent_card") {
+			st.AgentCard = func() (a2a.Card, error) {
+				set, err := loadAgents(root)
+				if err != nil {
+					return a2a.Card{}, err
+				}
+				card := a2a.From(set.Agents, knownCapabilities(root), a2a.Options{
+					SiteName:         cfg.Raw("site.name"),
+					BaseURL:          st.BaseURL,
+					Version:          version,
+					DocumentationURL: cfg.Raw("site.docs_url"),
+					Provider:         cfg.Raw("site.provider"),
+					ProviderURL:      cfg.Raw("site.provider_url"),
+				})
+				// Validated on the way out. A deployment that would publish an
+				// invalid card serves nothing instead: no card is a site that
+				// is not discoverable, which is true and harmless; an invalid
+				// one is a site that looks discoverable and breaks whatever
+				// tried to use it.
+				if verr := card.Validate(); verr != nil {
+					return a2a.Card{}, verr
+				}
+				return card, nil
+			}
 		}
 		if live := s.GetRef(site.RefLive); live != "" {
 			if pages, perr := site.PagesAt(s, live); perr == nil {

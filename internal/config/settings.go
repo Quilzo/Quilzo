@@ -272,6 +272,39 @@ var settings = []Setting{
 			"one on purpose.",
 	},
 	{
+		Key: "site.agent_card", Kind: Bool, Default: "false",
+		Summary: "publish an A2A agent card at /.well-known/agent-card.json",
+		Why: "Discovery is for strangers, so the card cannot be behind " +
+			"authentication — which means publishing one tells the internet " +
+			"which agents this store runs, what content they may read and " +
+			"what they may do. That is a deliberate statement, not a default. " +
+			"Off until an operator turns it on, the same rule the catalogue " +
+			"feed follows. What it carries beyond A2A itself is the " +
+			"governance the protocol cannot express: per-skill capabilities, " +
+			"scope, budget, delegation and where the record of what happened " +
+			"lives.",
+	},
+	{
+		Key: "site.provider", Kind: Text, Default: "",
+		Summary: "the organisation running this deployment, for the agent card",
+		Why: "A2A's provider field. Named separately from site.name because " +
+			"the site and the organisation behind it are frequently not the " +
+			"same, and a caller deciding whether to delegate work wants the " +
+			"second one.",
+	},
+	{
+		Key: "site.provider_url", Kind: Text, Default: "",
+		Summary: "the provider's own site, for the agent card",
+		Why: "Theirs, not this project's. A card that pointed at quilzo's " +
+			"homepage would be attributing somebody else's deployment to us.",
+	},
+	{
+		Key: "site.docs_url", Kind: Text, Default: "",
+		Summary: "documentation for this deployment's agents, for the agent card",
+		Why: "A2A's documentationUrl. Optional, and omitted from the card " +
+			"when unset rather than pointed at a page that does not exist.",
+	},
+	{
 		Key: "site.hsts", Kind: Duration, Default: "0s",
 		Summary:  "Strict-Transport-Security max-age; 0 disables the header",
 		Controls: []string{"SC-8", "SC-23"},
