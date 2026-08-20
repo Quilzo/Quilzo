@@ -52,7 +52,14 @@ jobs:
           go-version: "1.27"
       - name: Formatting and vet
         run: |
-          test -z "$(gofmt -l .)" || { echo "gofmt would change files:"; gofmt -l .; exit 1; }
+          # The toolchain's gofmt, not whatever is on PATH.
+          #
+          # Go 1.27 changed composite-literal indentation, so a local gofmt
+          # from an older release reports a tree as clean that CI then
+          # rejects — which is a failure that looks like CI being wrong and
+          # is the local install being stale. `go run cmd/gofmt` is always
+          # the gofmt belonging to the toolchain in go.mod.
+          test -z "$(go run cmd/gofmt -l .)" || { echo "gofmt would change files:"; go run cmd/gofmt -l .; exit 1; }
           go vet ./...
       # Every platform the releases carry, cross-compiled.
       #
