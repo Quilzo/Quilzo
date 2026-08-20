@@ -96,6 +96,32 @@ func Put(s *store.Store, baseTree, collection string, r Record,
 func PutMany(s *store.Store, baseTree, collection string, records []Record,
 	now time.Time) (string, []Record, error) {
 
+	return putMany(s, baseTree, collection, records, now, false)
+}
+
+// RestoreMany writes records keeping the timestamps they arrive with.
+//
+// Only for restoring an export. Every other write stamps `now`, and it has to
+// stay that way: a caller that could choose its own Updated could make an edit
+// look older than it is, which is the first thing somebody covering their
+// tracks would reach for. This is deliberately not reachable from the HTTP
+// API, MCP or an agent — it exists for `quilzo import`, a local command that
+// writes an audit record naming the operator.
+//
+// The reason it is needed at all: a catalogue restored from a backup with
+// every item created at restore time sorts wrongly from its first day, and no
+// destination can reconstruct the real dates. Losing them is a real loss; a
+// local operator choosing them is not a new capability, because that operator
+// could write the store file directly.
+func RestoreMany(s *store.Store, baseTree, collection string, records []Record,
+	now time.Time) (string, []Record, error) {
+
+	return putMany(s, baseTree, collection, records, now, true)
+}
+
+func putMany(s *store.Store, baseTree, collection string, records []Record,
+	now time.Time, preserve bool) (string, []Record, error) {
+
 	if err := ValidName(collection); err != nil {
 		return "", nil, err
 	}
@@ -115,8 +141,20 @@ func PutMany(s *store.Store, baseTree, collection string, records []Record,
 		if r.Fields == nil {
 			r.Fields = map[string]any{}
 		}
+		created, updated := r.Created, r.Updated
 		existing, _ := Get(s, baseTree, collection, r.ID)
 		Stamp(&r, now, existing)
+		// Restored timestamps win, but only when the export actually carried
+		// them. A zero here means "the export did not say", and inventing 1970
+		// would be worse than the stamp Stamp just wrote.
+		if preserve {
+			if created > 0 {
+				r.Created = created
+			}
+			if updated > 0 {
+				r.Updated = updated
+			}
+		}
 		changes = append(changes, store.Change{
 			Path: Path(collection, r.ID), Value: r})
 		out = append(out, r)
