@@ -568,6 +568,19 @@ func (s *Site) addScreens() {
 		"listings": "in_stock",
 		"screen":   "shop",
 	}
+	// The product page: one URL per thing for sale.
+	//
+	// It reads through the catalogue listing rather than the collection, so
+	// the fields on the page are exactly the fields in the machine-readable
+	// feed and the SKU is absent from both. A product the listing filters out
+	// has no page, which is what stops a URL being guessable into content
+	// nobody published.
+	s.Pages["product"] = map[string]any{
+		"title":      "A product",
+		"screen":     "product",
+		"detail":     "catalogue",
+		"detail_key": "slug",
+	}
 	s.Pages["stockists"] = map[string]any{
 		"title": "Stockists",
 		"intro": "Three shops carry this. A second collection, with a type " +

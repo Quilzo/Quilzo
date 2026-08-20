@@ -30,9 +30,9 @@
   <ul class="grid" role="list">
     {% for row in listings.new_in.rows %}
     <li class="card">
-      <img class="shot" src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy">
+      <a class="shotlink" href="/product/{{ row.slug }}"><img class="shot" src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy"></a>
       <div class="cap">
-        <p class="name">{{ row.name }}</p>
+        <p class="name"><a href="/product/{{ row.slug }}">{{ row.name }}</a></p>
         <p class="sum">{{ row.summary }}</p>
         <p class="price"><span class="amount">{{ row.price_display }}</span>
           <span class="avail avail-{{ row.availability }}">{{ row.availability_label }}</span></p>
@@ -55,9 +55,9 @@
   <ul class="grid" role="list">
     {% for row in listings.by_range.rows %}
     <li class="card">
-      <img class="shot" src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy">
+      <a class="shotlink" href="/product/{{ row.slug }}"><img class="shot" src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy"></a>
       <div class="cap">
-        <p class="name">{{ row.name }}</p>
+        <p class="name"><a href="/product/{{ row.slug }}">{{ row.name }}</a></p>
         <p class="sum">{{ row.summary }}</p>
         <p class="price"><span class="amount">{{ row.price_display }}</span>
           <span class="avail avail-{{ row.availability }}">{{ row.availability_label }}</span></p>
@@ -72,9 +72,9 @@
   <ul class="grid" role="list">
     {% for row in listings.catalogue.rows %}
     <li class="card">
-      <img class="shot" src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy">
+      <a class="shotlink" href="/product/{{ row.slug }}"><img class="shot" src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy"></a>
       <div class="cap">
-        <p class="name">{{ row.name }}</p>
+        <p class="name"><a href="/product/{{ row.slug }}">{{ row.name }}</a></p>
         <p class="sum">{{ row.summary }}</p>
         <p class="price"><span class="amount">{{ row.price_display }}</span>
           <span class="avail avail-{{ row.availability }}">{{ row.availability_label }}</span></p>
@@ -89,9 +89,9 @@
   <ul class="grid" role="list">
     {% for row in listings.in_stock.rows %}
     <li class="card">
-      <img class="shot" src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy">
+      <a class="shotlink" href="/product/{{ row.slug }}"><img class="shot" src="/media/{{ row.image }}" alt="{{ row.alt }}" width="480" height="480" loading="lazy"></a>
       <div class="cap">
-        <p class="name">{{ row.name }}</p>
+        <p class="name"><a href="/product/{{ row.slug }}">{{ row.name }}</a></p>
         <p class="sum">{{ row.summary }}</p>
         <p class="price"><span class="amount">{{ row.price_display }}</span>
           <span class="avail avail-{{ row.availability }}">{{ row.availability_label }}</span></p>
@@ -140,6 +140,35 @@
     <p><button type="submit">Send</button></p>
   </form>
   {% if page.privacy %}<p class="privacy">{{ page.privacy }}</p>{% end %}
+  {% end %}
+
+  {% if record %}
+  <article class="product">
+    <img class="shot" src="/media/{{ record.image }}" alt="{{ record.alt }}" width="480" height="480">
+    <div class="detail">
+      <h2>{{ record.name }}</h2>
+      <p class="sum">{{ record.summary }}</p>
+      <p class="price"><span class="amount">{{ record.price_display }}</span>
+        <span class="avail avail-{{ record.availability }}">{{ record.availability_label }}</span></p>
+      {% if record.lead_time %}<p class="lead">{{ record.lead_time }}</p>{% end %}
+      <p class="desc">{{ record.description }}</p>
+      <dl class="spec">
+        <dt>Range</dt><dd>{{ record.range }}</dd>
+        <dt>Material</dt><dd>{{ record.material }}</dd>
+        {% if record.dimensions %}<dt>Dimensions</dt><dd>{{ record.dimensions }}</dd>{% end %}
+        {% if record.launched %}<dt>First sold</dt><dd>{{ record.launched }}</dd>{% end %}
+      </dl>
+      {% if record.guarantee_terms %}
+      <p class="backed"><a href="{{ record.guarantee_terms }}" rel="noopener">The guarantee, in writing</a>
+        — the claim on this page publishes because this link exists.</p>
+      {% end %}
+      {% if record.materials_evidence %}
+      <p class="backed"><a href="{{ record.materials_evidence }}" rel="noopener">The materials certification</a>
+        — same rule.</p>
+      {% end %}
+      <p class="back"><a href="/shop">Everything else</a></p>
+    </div>
+  </article>
   {% end %}
 
   {% if page.body %}<div class="prose">{% raw page.body %}</div>{% end %}

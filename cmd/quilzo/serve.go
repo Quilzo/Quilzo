@@ -182,6 +182,13 @@ func cmdServe(root string, args []string) error {
 		},
 	}
 	srv.Integrations = &admin.Integrations{
+		Declared: func() (agent.Integrations, error) {
+			set, err := loadIntegrations(root)
+			if err != nil {
+				return agent.Integrations{}, err
+			}
+			return *set, nil
+		},
 		Webhooks: func() ([]webhook.Endpoint, []webhook.Delivery, error) {
 			f, err := loadHooks(root)
 			if err != nil {
