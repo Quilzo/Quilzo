@@ -765,6 +765,18 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 			})
 			return
 		}
+		// The same distinction the records path makes: content failing its
+		// type is the caller's problem and answers 422, not 500. Both write
+		// paths, because a status code that is right on one endpoint and
+		// wrong on the other is the shape of bug this project keeps finding.
+		if schema.IsInvalid(lockErr) {
+			writeError(w, http.StatusUnprocessableEntity, Error{
+				Error:  "this content does not satisfy its type",
+				Detail: lockErr.Error(),
+				Fix:    "GET /api/v1/types to see what the type requires",
+			})
+			return
+		}
 		writeError(w, http.StatusInternalServerError, Error{
 			Error: "the write failed", Detail: lockErr.Error()})
 		return

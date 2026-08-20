@@ -576,7 +576,13 @@ func (s *Site) addScreens() {
 	// has no page, which is what stops a URL being guessable into content
 	// nobody published.
 	s.Pages["product"] = map[string]any{
-		"title":      "A product",
+		// No title of its own, deliberately.
+		//
+		// This page stands for whichever product is being looked at, so the
+		// heading and the document title come from the record. The template
+		// language has no else, so a page either carries a title or it does
+		// not — and a detail page that carried one would print two headings,
+		// its own generic label above the product's name.
 		"screen":     "product",
 		"detail":     "catalogue",
 		"detail_key": "slug",

@@ -3,6 +3,7 @@ package admin
 import (
 	"net/http"
 	"net/url"
+	stdpath "path"
 	"strings"
 )
 
@@ -104,18 +105,67 @@ func (s *Server) handleTheme(w http.ResponseWriter, r *http.Request) {
 // Referer is only ever used to return to a path on this same server. An open
 // redirect through a preference toggle would be an embarrassing way to acquire
 // one, and a toggle is exactly the sort of endpoint nobody thinks to check.
+//
+// # The bug this had, which the host check did not catch
+//
+// It compared u.Host against r.Host and then returned u.Path, on the reasoning
+// that a path cannot name another origin. A path beginning "//" can: browsers
+// read //evil.example.com as protocol-relative and go there. So a Referer of
+//
+//	https://your-admin//evil.example.com/x
+//
+// passed the host check — the host really was your-admin — and produced
+// Location: //evil.example.com/x. Confirmed live before it was fixed, and
+// found by CodeQL rather than by review, which is the argument for running it.
+//
+// The fix is not another prefix test. It is to stop returning something the
+// browser has to interpret: the path is rebuilt from its cleaned form and
+// re-parsed, and anything that does not come back as a single rooted path with
+// no authority is refused. A check that enumerates dangerous shapes is a check
+// somebody adds a case to after the next report; this one enumerates the
+// acceptable shape instead.
 func backTo(r *http.Request) string {
 	ref := r.Referer()
 	if ref == "" {
 		return "/"
 	}
 	u, err := url.Parse(ref)
-	if err != nil || u.Host != r.Host || !strings.HasPrefix(u.Path, "/") {
+	if err != nil || u.Host != r.Host {
 		return "/"
 	}
-	back := u.Path
-	if u.RawQuery != "" {
-		back += "?" + u.RawQuery
+	return safeLocalPath(u.Path, u.RawQuery)
+}
+
+// safeLocalPath rebuilds a same-origin destination, or gives up and returns "/".
+//
+// Rooted, no authority component, and no backslash — some browsers normalise
+// \ to // before deciding what an authority is, so a path is only local if it
+// is local under the most permissive reading of it.
+func safeLocalPath(path, rawQuery string) string {
+	if path == "" {
+		return "/"
+	}
+	if strings.ContainsAny(path, "\\") {
+		return "/"
+	}
+	// Cleaned so ".." cannot walk and "//" collapses. Normalisation rather
+	// than the guard: the explicit // test below is what actually refuses a
+	// protocol-relative path, and a sabotage removing this Clean does not
+	// reopen the hole. Kept because handing a browser a path it has to
+	// normalise itself is how the next variant of this gets found.
+	clean := stdpath.Clean(path)
+	if !strings.HasPrefix(clean, "/") || strings.HasPrefix(clean, "//") {
+		return "/"
+	}
+	// Re-parsed as a whole, so anything that still reads as an origin is
+	// caught rather than assumed away.
+	back := clean
+	if rawQuery != "" {
+		back += "?" + rawQuery
+	}
+	v, err := url.Parse(back)
+	if err != nil || v.Scheme != "" || v.Host != "" || v.Opaque != "" {
+		return "/"
 	}
 	return back
 }
