@@ -535,6 +535,13 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	}
 	body, ok := pages[name]
 	if !ok {
+		// Before giving up: a two-segment path may be a record on a page that
+		// declares a detail route. Tried here rather than as its own mux
+		// pattern, because the base is a page name and the mux would have to
+		// know every one of them at registration time.
+		if st.detailRoute(w, r, pages, name) {
+			return
+		}
 		// The site's own 404, not Go's plain-text one. This is the route a
 		// visitor reaches from a stale link; the asset and JSON routes above
 		// keep the plain response, because a stylesheet request answered with
@@ -641,15 +648,25 @@ func (st *Site) injectHead(html, page, hash string) string {
 		}
 	}
 
-	head := strings.Index(strings.ToLower(html), "</head>")
-	if head < 0 {
-		// No head to inject into. Prepending is worse than nothing here — it
-		// would put meta tags outside the document — so the page is served as
-		// it is and the absence shows up in `provenance check` rather than
-		// being papered over.
+	return insertBeforeHead(html, b.String())
+}
+
+// insertBeforeHead puts markup at the end of the document head.
+//
+// One function, because the provenance marking and the product structured data
+// both need it and two copies would be two places to get the "no head" case
+// wrong. Prepending when there is no head is worse than nothing — it would put
+// meta tags outside the document — so the page is served as it is and the
+// absence shows up in `provenance check` rather than being papered over.
+func insertBeforeHead(html, markup string) string {
+	if markup == "" {
 		return html
 	}
-	return html[:head] + b.String() + html[head:]
+	head := strings.Index(strings.ToLower(html), "</head>")
+	if head < 0 {
+		return html
+	}
+	return html[:head] + markup + "\n" + html[head:]
 }
 
 // manifest describes the site to a browser being asked to install it.
