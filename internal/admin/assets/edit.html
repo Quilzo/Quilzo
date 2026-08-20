@@ -9,9 +9,8 @@
   nothing here can expire into a stale claim nobody can clear.</p>
 </div>
 {{end}}
-<p><a href="/preview/{{.Name}}">Preview this page</a> — opens the real page, rendered by your browser.</p>
-
 {{if .CanEdit}}
+<div class="editing">
 <form method="post" action="/save">
   <input type="hidden" name="__name" value="{{.Name}}">
   <input type="hidden" name="__base" value="{{.Base}}">
@@ -55,6 +54,30 @@
   <button type="submit">Save to draft</button>
   <p class="help">Saving writes a draft. Nothing is public until someone publishes.</p>
 </form>
+
+{{/*
+  The page itself, beside the form.
+
+  An iframe rather than a rendered panel, because ATAG A.3.7.1 asks that a
+  preview render in a real user agent — and a panel that approximates the page
+  is a second renderer that can disagree with the one readers get. This is the
+  same /preview/NAME a person could open in a tab; it is simply in view while
+  they type.
+
+  It does not update as you type, and nothing here pretends it does. Live
+  preview needs script, the policy on this response permits none, and a
+  refresh button that lies about being live would be worse than a label saying
+  when it last updated. It refreshes when you save, which is also when the
+  draft changes.
+*/}}
+<aside class="preview" aria-labelledby="preview-h">
+  <h2 id="preview-h">The page</h2>
+  <p class="help">The real page, drawn by your browser from the draft — not an
+    approximation of it. It changes when you save, not as you type.
+    <a href="/preview/{{.Name}}" target="_blank" rel="noopener">Open in a tab</a>.</p>
+  <iframe src="/preview/{{.Name}}" title="Preview of {{.Name}}" loading="lazy"></iframe>
+</aside>
+</div>
 {{else}}
 <p class="notice">You can view this page but not edit it.</p>
 <dl>

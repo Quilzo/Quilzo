@@ -203,3 +203,57 @@ func TestThePageLinksTheManifestAndThePolicyPermitsIt(t *testing.T) {
 		t.Errorf("manifest-src widened beyond this origin:\n  %s", csp)
 	}
 }
+
+// The editor shows the real page beside the form, and the policy permits it.
+//
+// Both halves, because either alone does nothing: an iframe the policy blocks
+// is an empty box, and a frame-src directive with nothing framing anything
+// permits a request never made.
+func TestTheEditorShowsThePageBesideTheForm(t *testing.T) {
+	srv, token := setup(t)
+	w := get(t, srv, "/page/index", token)
+	if w.Code != 200 {
+		t.Fatalf("GET the editor gave %d", w.Code)
+	}
+	body := w.Body.String()
+
+	if !strings.Contains(body, `src="/preview/index"`) {
+		t.Error("the editor does not show the page it is editing")
+	}
+	csp := w.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "frame-src 'self'") {
+		t.Errorf("the policy has no frame-src 'self', so the browser refuses "+
+			"the preview the page embeds:\n  %s", csp)
+	}
+	// And it stayed as narrow as it was argued to be. frame-src * would let
+	// this interface embed anything on the internet.
+	if strings.Contains(csp, "frame-src *") ||
+		strings.Contains(csp, "frame-src 'self' ") {
+		t.Errorf("frame-src widened beyond this origin:\n  %s", csp)
+	}
+	// Nobody may frame this interface, which is a different directive and
+	// must not have been relaxed by adding the one above.
+	if !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Errorf("frame-ancestors is no longer 'none', so this interface can "+
+			"be framed by another origin:\n  %s", csp)
+	}
+	// Still no script, which is the claim the whole policy makes.
+	if !strings.Contains(csp, "default-src 'none'") ||
+		strings.Contains(csp, "script-src") {
+		t.Errorf("the policy grew a script directive:\n  %s", csp)
+	}
+}
+
+// The preview does not claim to be live.
+//
+// It cannot be — live preview needs script and this response permits none —
+// and a label implying otherwise would have somebody typing into a form and
+// believing the panel beside it.
+func TestThePreviewSaysWhenItChanges(t *testing.T) {
+	srv, token := setup(t)
+	body := get(t, srv, "/page/index", token).Body.String()
+	if !strings.Contains(body, "not as you type") {
+		t.Error("nothing tells the editor when the preview refreshes, so it " +
+			"reads as live and is not")
+	}
+}

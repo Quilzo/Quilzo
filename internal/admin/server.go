@@ -55,6 +55,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"html/template"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -184,7 +185,20 @@ type Server struct {
 	// separated-writer work it deliberately must not.
 	OnAuthFailure func(source string, failures int)
 	Template      string // the site template, for preview and the a11y check
-	tpl           *template.Template
+	// SiteCSS is the site's own stylesheet, served at /site.css for the
+	// preview alone.
+	//
+	// The preview renders the real page, and the real page links /site.css —
+	// which the public server serves and this one did not, so every preview
+	// since the feature shipped has been the right markup with none of the
+	// design. That is precisely the "second renderer that can disagree" the
+	// preview exists to avoid, arrived at from the other direction: not an
+	// approximation of the page, but the page with its appearance missing.
+	//
+	// Empty means the preview is unstyled and says so, rather than 404ing a
+	// stylesheet and leaving somebody to work out why.
+	SiteCSS string
+	tpl     *template.Template
 
 	// Provenance is loaded and saved by the host, so the admin does not need to
 	// know where the store keeps it.
@@ -514,8 +528,14 @@ func securityHeaders(next http.Handler) http.Handler {
 			// nothing else — no script, no fetch, no capability the
 			// interface did not already have. An installed admin is the
 			// same server-rendered HTML in a window with different chrome.
+			// frame-src 'self' is what lets the editor show the real page
+			// beside the form. It permits a document from this origin and
+			// nothing else — the framed document is /preview/NAME, served
+			// by this same server under this same policy, so nothing
+			// inside it can execute either. Notably NOT frame-ancestors:
+			// this origin may frame itself, and nobody may frame it.
 			"default-src 'none'; style-src 'self'; img-src 'self' data:; "+
-				"manifest-src 'self'; "+
+				"manifest-src 'self'; frame-src 'self'; "+
 				"form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
@@ -757,6 +777,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/history", s.handleHistory)
 	mux.HandleFunc("/rollback", s.handleRollback)
 	mux.HandleFunc("/preview/", s.handlePreview)
+	// The site's stylesheet, for the framed preview and nothing else. Not the
+	// interface's own — that is /style.css, and the two must not be confused.
+	mux.HandleFunc("/site.css", s.siteCSS)
 	mux.HandleFunc("/signin", s.handleSignIn)
 	mux.HandleFunc("/signin/oidc", s.handleOIDCStart)
 	mux.HandleFunc("/auth/callback", s.handleOIDCCallback)
@@ -2053,6 +2076,29 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(out))
+}
+
+// siteCSS serves the site's stylesheet so a preview looks like the page.
+//
+// Authenticated like everything else here. A stylesheet is not secret, but it
+// is the operator's design and this origin is the administration interface;
+// there is no reason for it to answer anonymously when the public server
+// already serves the same bytes to readers.
+func (s *Server) siteCSS(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireAuth(w, r); !ok {
+		return
+	}
+	if s.SiteCSS == "" {
+		// 404 rather than empty, because an empty stylesheet is indisting-
+		// uishable from one that loaded and had no rules — and somebody
+		// debugging an unstyled preview would then be looking at the wrong
+		// thing.
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = io.WriteString(w, s.SiteCSS)
 }
 
 // firstOf flattens a query string to one value per name.

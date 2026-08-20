@@ -96,7 +96,13 @@ var commandNeeds = map[string]need{
 	// Reading which image licences are about to lapse is reading the library,
 	// not changing it. The gate that acts on the same answer lives inside
 	// publish, which has its own privilege.
-	"rights":          {action: auth.ActView},
+	"rights": {action: auth.ActView},
+	// Listing what this install may reach is reading configuration. Calling a
+	// tool is checked inside the command against ActPublish, because only that
+	// half leaves the machine — and a call into somebody else's system is the
+	// one action here that nothing can roll back.
+	"integrations":    {action: auth.ActView},
+	"integration":     {action: auth.ActView},
 	"agent templates": {action: auth.ActView},
 	"agent list":      {action: auth.ActView},
 	"agent show":      {action: auth.ActView},
