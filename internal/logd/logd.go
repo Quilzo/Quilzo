@@ -48,7 +48,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -273,23 +272,5 @@ func CheckOwnership(logPath string, cmsUID int) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("cannot inspect %s: %v", logPath, err)
 	}
-	st, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return false, "this platform does not report file ownership"
-	}
-
-	if int(st.Uid) == cmsUID {
-		return false, fmt.Sprintf(
-			"%s is owned by the same account that runs the CMS (uid %d), so "+
-				"that account can rewrite it directly and the socket is a "+
-				"formality it can bypass", logPath, cmsUID)
-	}
-	if info.Mode().Perm()&0o022 != 0 {
-		return false, fmt.Sprintf(
-			"%s is mode %04o, so accounts other than its owner can write to it",
-			logPath, info.Mode().Perm())
-	}
-	return true, fmt.Sprintf(
-		"%s is owned by uid %d and the CMS runs as uid %d, so the CMS cannot "+
-			"open it for writing", logPath, st.Uid, cmsUID)
+	return checkOwner(info, logPath, cmsUID)
 }

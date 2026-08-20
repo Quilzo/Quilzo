@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -38,6 +39,17 @@ import (
 
 func cmdDemo(root string, args []string) error {
 	fs := flag.NewFlagSet("demo", flag.ContinueOnError)
+	// The name, so the demonstration can be the starting point for a real site
+	// rather than something to find and rename afterwards.
+	//
+	// It must never be empty. The template prints site.name in the header link
+	// and the <title>, and the accessibility gate renders with the same context
+	// the server does — so a blank name is an empty link on every page and a
+	// blocking failure on all of them. That happened once; the flag defaults to
+	// the demonstration's own name and refuses a blank rather than defaulting
+	// silently, because a name somebody typed as spaces is a name they meant to
+	// type.
+	siteName := fs.String("name", "", "what to call the site (default: the demonstration's own name)")
 	tplDir := fs.String("templates", "templates",
 		"where to write page.html and site.css")
 	publish := fs.Bool("publish", true,
@@ -59,6 +71,17 @@ func cmdDemo(root string, args []string) error {
 	}
 
 	d := demo.Marginalia()
+	if given := strings.TrimSpace(*siteName); given != "" {
+		// Renamed rather than assigned. The name is the index page's title and
+		// the header wordmark as well as a configuration value, and setting
+		// the field alone left every page naming the old shop.
+		d.Rename(given)
+	} else if *siteName != "" {
+		return fmt.Errorf(
+			"--name was given as whitespace. The site's name is printed in the " +
+				"header link and the page title, so a blank one is an empty " +
+				"link on every page and fails the accessibility gate")
+	}
 
 	// Media first, because everything else refers to it and a file's address is
 	// the hash of its bytes — not known until it is stored.
