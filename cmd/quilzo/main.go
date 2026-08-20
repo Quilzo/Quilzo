@@ -25,6 +25,7 @@ import (
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -67,6 +68,7 @@ func usage() {
 content
   quilzo init                              create a content store
   quilzo add NAME=FILE.json [...]          stage pages into a draft
+  quilzo add ... --based-on ID --merge     keep both edits unless you collided
   quilzo diff                              what differs between live and draft
   quilzo log [--ref draft|live]            commit history
   quilzo render PAGE TEMPLATE [-o FILE]    render a page
@@ -497,9 +499,22 @@ func cmdAdd(root string, args []string) error {
 	remove := fs.String("remove", "", "comma-separated page names to drop")
 	basedOn := fs.String("based-on", "",
 		"the draft commit this edit was made against; refuses if it has moved")
+	merge := fs.Bool("merge", false,
+		"with --based-on: merge instead of refusing, unless you and they "+
+			"changed the same field")
 	if err := fs.Parse(reorder(args, map[string]bool{
 		"m": true, "author": true, "remove": true, "based-on": true})); err != nil {
 		return err
+	}
+	if *merge && *basedOn == "" {
+		// Refused rather than ignored. Without a base there is nothing to
+		// merge against, and a flag that quietly does nothing is worse than
+		// one that is not there — somebody would believe their write had been
+		// merged when it had simply overwritten.
+		return fmt.Errorf(
+			"--merge needs --based-on: without the commit you were editing " +
+				"there is nothing to merge against, and this would silently " +
+				"overwrite instead")
 	}
 
 	s, err := open(root)
@@ -571,15 +586,29 @@ func cmdAdd(root string, args []string) error {
 		who = caller.Name
 	}
 	changed := changedNames(fs.Args())
-	cid, err := site.SaveDraftFrom(s, pages, *msg, who, *basedOn)
+	var cid string
+	var merged collab.Merged
+	if *merge {
+		cid, merged, err = site.MergeDraftFrom(s, pages, *msg, who, *basedOn)
+	} else {
+		cid, err = site.SaveDraftFrom(s, pages, *msg, who, *basedOn)
+	}
 	if err != nil {
 		// A refused write is worth recording. Somebody tried to save over
 		// somebody else's edit, and the fact that the store stopped them is
 		// exactly the sort of thing a log exists to preserve.
+		reason := "conflict"
+		if *merge {
+			// Named apart in the log, because they are different events. A
+			// refused save means the ref moved; a refused merge means two
+			// people disagreed about a specific field, and only the second
+			// needs somebody to decide something.
+			reason = "merge-conflict"
+		}
 		record(root, caller.auditRecord("content.add", "/", audit.Denied,
 			map[string]string{
 				"pages":  strings.Join(changed, ","),
-				"reason": "conflict",
+				"reason": reason,
 			}))
 		return conflictError(err, changed)
 	}
@@ -600,6 +629,19 @@ func cmdAdd(root string, args []string) error {
 			"author": who,
 		}))
 	w.Human("draft %s  %d page(s)\n", short(cid), len(pages))
+	// What the merge took from each side, on success as well as on failure. A
+	// merge reported only when it fails is a merge nobody trusts: silence
+	// after one reads as "nothing happened", and something did.
+	if *merge && len(merged.TookTheirs) > 0 {
+		w.Human("\n  %smerged with %d change(s) made while you were working%s\n",
+			dim, len(merged.TookTheirs), reset)
+		for _, t := range merged.TookTheirs {
+			w.Human("    %skept theirs: %s%s\n", dim, t, reset)
+		}
+		for _, t := range merged.TookMine {
+			w.Human("    %skept yours:  %s%s\n", dim, t, reset)
+		}
+	}
 	return nil
 }
 
