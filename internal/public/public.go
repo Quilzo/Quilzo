@@ -38,6 +38,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/a2a"
 	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/menu"
@@ -117,6 +118,12 @@ type Site struct {
 	// including the ones a page embeds behind a filter somebody assumed was
 	// private.
 	Catalogue string
+
+	// AgentCard builds this deployment's A2A discovery document, or is nil
+	// when the operator has not turned one on. A function rather than a value
+	// because the manifests it describes can change without a restart, and a
+	// card that goes stale is a card that lies about what is enforced.
+	AgentCard func() (a2a.Card, error)
 	// Forms is the one write capability this server has: append a submission,
 	// to a store that is not the content store. Nil means /form/ 404s.
 	Forms *Forms
@@ -153,6 +160,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/sitemap.xml", st.sitemap)
 	mux.HandleFunc("/license.xml", st.licence)
 	mux.HandleFunc("/.well-known/tdmrep.json", st.tdmRep)
+	mux.HandleFunc("/.well-known/agent-card.json", st.agentCard)
 	mux.HandleFunc("/search.json", st.searchAPI)
 	mux.HandleFunc("/catalogue.json", st.catalogue)
 	mux.HandleFunc("/site.css", st.stylesheet)
