@@ -216,7 +216,24 @@ type Model interface {
 	Name() string
 }
 
-const systemPrompt = `You edit content for a website. You return JSON and nothing else.
+// systemPrompt describes the template language, from the language itself.
+//
+// It used to be a const, and it told the model "There are no filters, no
+// function calls, no arithmetic, no includes." Three of those four are true.
+// There are sixteen filters, and have been for a long time: the sentence was
+// written when there were none and nothing made it wrong when they arrived.
+//
+// A model told a language is smaller than it is writes templates that work and
+// are worse than they could be — no `| slug`, no `| date`, a value uppercased
+// by storing it twice. And nothing surfaces it, because the output renders.
+//
+// So the list is read from the filter table rather than restated here. One
+// place to change it, and it is the place the renderer already reads. This is
+// the same failure as the Go version living in three workflows: a fact written
+// down twice is a fact that will disagree with itself.
+func systemPrompt() string {
+	var b strings.Builder
+	b.WriteString(`You edit content for a website. You return JSON and nothing else.
 
 Return exactly this shape:
 {"pages": {"page-name": {...}}, "templates": {"name.html": "..."}, "notes": "what you changed"}
@@ -229,9 +246,27 @@ Rules:
     {{ path.to.value }}      a value
     {% if path %}...{% end %}
     {% for x in path %}...{% end %}
-  There are no filters, no function calls, no arithmetic, no includes.
+  There are no function calls, no arithmetic, no comparisons and no includes.
+  {% if %} tests whether a value is present, and has no else.
+- A value may be piped through filters, and only through these:
+`)
+	for _, f := range tmpl.Filters() {
+		spelled := f.Name
+		if f.Arg != "" {
+			spelled += ":" + f.Arg
+		}
+		// Padded from the spelling actually written, not from the parts. The
+		// first version padded by name+arg and forgot the colon, so every
+		// filter taking an argument sat one column out.
+		b.WriteString("    " + spelled +
+			strings.Repeat(" ", max(1, 22-len(spelled))) + f.Summary + "\n")
+	}
+	b.WriteString(`  Written {{ path | filter }} or {{ path | filter:"argument" }}.
+  An argument is a literal. It can never name another value.
 - Never use {% raw %}. Escaping is not yours to switch off.
-- Return only JSON. No prose, no markdown fences.`
+- Return only JSON. No prose, no markdown fences.`)
+	return b.String()
+}
 
 // Ask sends an instruction and returns a validated proposal.
 func Ask(ctx context.Context, m Model, instruction string, current map[string]any) (*Proposal, error) {
@@ -248,7 +283,7 @@ func Ask(ctx context.Context, m Model, instruction string, current map[string]an
 			"---BEGIN SITE---\n%s\n---END SITE---\n\nInstruction: %s",
 		pages, instruction)
 
-	raw, err := m.Complete(ctx, systemPrompt, user)
+	raw, err := m.Complete(ctx, systemPrompt(), user)
 	if err != nil {
 		return nil, err
 	}
