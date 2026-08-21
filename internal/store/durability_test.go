@@ -2,8 +2,8 @@ package store
 
 import (
 	"fmt"
+	"os"
 	"testing"
-	"time"
 )
 
 // What a durable commit costs, and where the cost actually is.
@@ -24,13 +24,42 @@ import (
 // once it is stated: put more records in each commit. PutNested already takes
 // a batch, so this is a matter of using it rather than of building anything.
 func TestTheFsyncFloorIsPerCommitNotPerRecord(t *testing.T) {
-	if testing.Short() {
-		t.Skip("measures disk behaviour")
-	}
-	rate := func(perCommit int) float64 {
+	// Counted, not timed.
+	//
+	// This used to write two thousand records two ways and assert that the
+	// batched run was at least twice as fast. The claim in the name is about
+	// how many fsyncs happen, and a throughput ratio is a poor instrument for
+	// it: on a loaded machine both runs slow down unevenly and the ratio
+	// wobbles. It failed at 1.9x in a full-suite run and passed three times in
+	// a row on its own, which is the worst kind of test — one that teaches
+	// people to re-run rather than to read.
+	//
+	// So it counts the flushes directly. That is deterministic, it is what the
+	// comment above always said the measurement was about, and it runs in
+	// milliseconds rather than a minute.
+	syncs := func(perCommit int) (allFlushes, fileFlushes int) {
 		s := newStore(t)
-		const total = 2000
-		start := time.Now()
+
+		// Files and directories counted apart.
+		//
+		// Both go through the seam, and a single total cannot tell them apart:
+		// a sabotage that routed the per-object flush around syncFile left the
+		// directory flushes counting and the total still looked healthy. The
+		// invariant worth asserting is that every object written was flushed
+		// through here, and that is a statement about regular files.
+		var nFiles, nDirs int
+		restore := syncFile
+		syncFile = func(f *os.File) error {
+			if st, err := f.Stat(); err == nil && st.IsDir() {
+				nDirs++
+			} else {
+				nFiles++
+			}
+			return restore(f)
+		}
+		defer func() { syncFile = restore }()
+
+		const total = 200
 		base := ""
 		for written := 0; written < total; written += perCommit {
 			var changes []Change
@@ -50,30 +79,55 @@ func TestTheFsyncFloorIsPerCommitNotPerRecord(t *testing.T) {
 			}
 			base = next
 		}
-		return total / time.Since(start).Seconds()
+		return nFiles + nDirs, nFiles
 	}
 
-	one, batched := rate(1), rate(500)
-	t.Logf("  one record per commit: %.0f records/sec", one)
-	t.Logf("  500 per commit:        %.0f records/sec  (%.0fx)",
-		batched, batched/one)
+	one, oneFiles := syncs(1)
+	batched, batchedFiles := syncs(200)
+	t.Logf("  one record per commit: %d fsync(s) (%d on files) for 200 records",
+		one, oneFiles)
+	t.Logf("  200 per commit:        %d fsync(s) (%d on files) for 200 records",
+		batched, batchedFiles)
 
-	// Three times, not the hundred a per-commit fsync floor would predict.
+	// Tied to the work, not merely non-zero.
 	//
-	// Measured rather than assumed, and the number says where the cost really
-	// is: batching amortises the *tree and ref* writes across the records in a
-	// commit, and does nothing about the one fsync each object still pays.
-	// Five hundred records in a commit is five hundred object flushes however
-	// they are grouped.
+	// A "> 0" check passed a sabotage that routed the per-object flush around
+	// the seam: the directory flushes still counted, so the number stayed
+	// large and the ratio still held. Two hundred records cannot be committed
+	// one at a time with fewer than two hundred object flushes, so anything
+	// below that means a sync path is no longer going through syncFile and
+	// this test is measuring a fraction of the truth.
+	const records = 200
+	if oneFiles < records {
+		t.Fatalf("counted %d file flushes for %d records committed one at a "+
+			"time. Every record is a distinct object and every object is "+
+			"flushed, so a path is bypassing syncFile and this test is "+
+			"measuring a fraction of the truth", oneFiles, records)
+	}
+	if batchedFiles < records {
+		t.Fatalf("counted %d file flushes in the batched run for %d records; "+
+			"batching changes when objects are flushed, never whether",
+			batchedFiles, records)
+	}
+
+	// The point: batching amortises the tree and ref writes across the records
+	// in a commit. It does nothing about the one flush each object still pays,
+	// so the gain is a factor of a few and not the hundred a naive reading of
+	// "fsync is slow" would predict.
 	//
-	// Dropping those is a real option — it is what git does by default, and
-	// this store can detect the damage because an object's name is the hash of
-	// its content, so `quilzo verify` finds a partial write rather than
-	// trusting it. That is a durability trade with a security argument
-	// attached and it deserves its own change, not a footnote in this one.
-	if batched < one*2 {
-		t.Errorf("batching gained only %.1fx; the tree and ref writes are "+
-			"supposed to amortise across the records in a commit", batched/one)
+	// Dropping the per-object flush is a real option — it is what git does by
+	// default, and this store can detect the damage because an object's name
+	// is the hash of its content, so `quilzo verify` finds a partial write
+	// rather than trusting it. That is a durability trade with a security
+	// argument attached and it deserves its own change.
+	if batched >= one {
+		t.Errorf("batching cost %d flushes against %d unbatched; the tree and "+
+			"ref writes are supposed to amortise across the records in a "+
+			"commit", batched, one)
+	}
+	if ratio := float64(one) / float64(batched); ratio < 2 {
+		t.Errorf("batching saved only %.1fx the flushes (%d -> %d)",
+			ratio, one, batched)
 	}
 }
 

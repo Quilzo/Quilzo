@@ -5,6 +5,19 @@ import (
 	"path/filepath"
 )
 
+// syncFile is the one place this package flushes to disk.
+//
+// A variable rather than a direct f.Sync() call, so a test can count the
+// flushes instead of timing them. That distinction matters here: the claim
+// this package makes is that the durability floor is per *commit* and not per
+// record, which is a statement about how many fsyncs happen. It was being
+// checked by measuring throughput and asserting a ratio, and a throughput
+// ratio on a loaded machine is a coin toss -- it failed in a full-suite run
+// and passed three times in a row on its own.
+//
+// Production behaviour is unchanged: this is f.Sync().
+var syncFile = func(f *os.File) error { return f.Sync() }
+
 // Group commit: one flush per commit rather than one per object.
 //
 // Every object write ended with fsync, and a nested write touches about six
@@ -74,7 +87,7 @@ func (s *Store) Flush() error {
 			// written by this commit.
 			continue
 		}
-		err = f.Sync()
+		err = syncFile(f)
 		f.Close()
 		if err != nil {
 			return err
@@ -86,7 +99,7 @@ func (s *Store) Flush() error {
 		if err != nil {
 			continue
 		}
-		err = d.Sync()
+		err = syncFile(d)
 		d.Close()
 		if err != nil {
 			return err
