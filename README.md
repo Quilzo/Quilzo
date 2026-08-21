@@ -213,6 +213,16 @@ dead, and the live risk is a server redefining a tool after the day somebody
 trusted it. Credentials are named in the declaration and read from the
 environment, never stored, because an object in this store cannot be deleted.
 
+**Crawl terms.** Machine-readable licensing for automated use: RSL at
+`/license.xml`, TDMRep at `/.well-known/tdmrep.json`, and a `robots.txt` that
+points at both. Search, training and AI summarisation are **separate grants** —
+from 15 September 2026 Cloudflare stops treating indexing and training as one
+permission, and a site publishing one undivided answer is answering a question
+that has become two. The vocabulary is closed, because a typo in an open one is
+a site that believes it refused training and did not. Nothing is published until
+an operator sets terms: a licence file asserting terms nobody chose is worse
+than none, since a crawler will honour it.
+
 **Replication.** One store pulls objects from another, verified against their
 own hashes, into quarantine — never onto the live site. A peer can offer you
 objects; it cannot decide that any of them is your site.

@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/api"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/media"
@@ -159,6 +160,19 @@ func cmdSite(root string, args []string) error {
 		// describes can be edited without restarting the server — and a card
 		// that goes stale is a card that lies about what is enforced, which is
 		// the one thing it must never do.
+		// The crawl terms, when an operator has published any.
+		//
+		// This was the last mile of a feature that was otherwise finished:
+		// RSL and TDMRep were implemented and tested, and nothing ever set
+		// st.Licence, so /license.xml and /.well-known/tdmrep.json returned
+		// 404 on every deployment there has ever been. Code reachable from
+		// its tests and from nowhere else.
+		if lic, lerr := licenceFrom(cfg); lerr != nil {
+			return lerr
+		} else if lic != nil {
+			st.Licence = lic
+		}
+
 		// The share sheet, when an operator has pointed it at a form.
 		//
 		// Validated here rather than at the first share: a target whose form
@@ -453,4 +467,84 @@ func cmdSite(root string, args []string) error {
 		fmt.Printf("  %snothing is published yet; run quilzo publish%s\n", yellow, reset)
 	}
 	return srv.ListenAndServe()
+}
+
+// licenceFrom builds the crawl terms from configuration, or nil for none.
+//
+// nil rather than an empty Licence when nothing is configured. An RSL document
+// with no grants in it is not "no terms" — it reads as terms that permit
+// nothing, and a crawler honouring it would stop indexing a site whose
+// operator never made that decision.
+func licenceFrom(cfg *config.Config) (*public.Licence, error) {
+	permits := splitTerms(cfg.Raw("licence.permits"))
+	prohibits := splitTerms(cfg.Raw("licence.prohibits"))
+	attribution := strings.TrimSpace(cfg.Raw("licence.attribution"))
+	contact := strings.TrimSpace(cfg.Raw("licence.contact"))
+	standard := strings.TrimSpace(cfg.Raw("licence.standard"))
+
+	if len(permits) == 0 && len(prohibits) == 0 {
+		// Attribution or a contact with nothing to attach them to is a
+		// half-configured licence, and publishing it would assert terms the
+		// operator did not finish choosing.
+		if attribution != "" || contact != "" || standard != "" {
+			return nil, fmt.Errorf(
+				"licence.attribution, licence.contact and licence.standard " +
+					"describe terms, and no terms are set. Add " +
+					"licence.permits or licence.prohibits, or unset these — " +
+					"publishing a licence nobody finished choosing is worse " +
+					"than publishing none")
+		}
+		return nil, nil
+	}
+
+	for _, t := range append(append([]string{}, permits...), prohibits...) {
+		if !validCrawlUse(t) {
+			return nil, fmt.Errorf(
+				"%q is not an automated use this can express; the vocabulary "+
+					"is search, train, ai-summarize and none", t)
+		}
+	}
+
+	// A use in both lists is a contradiction, and a reader resolving it either
+	// way is guessing at what the operator meant. Refused at startup, where
+	// somebody is watching, rather than served to a crawler that will act on
+	// whichever half it read first.
+	for _, p := range permits {
+		for _, q := range prohibits {
+			if p == q {
+				return nil, fmt.Errorf(
+					"licence.permits and licence.prohibits both name %q, so "+
+						"the terms contradict themselves. A crawler would "+
+						"act on whichever it read first", p)
+			}
+		}
+	}
+
+	return &public.Licence{
+		Permits: permits, Prohibits: prohibits,
+		Attribution: attribution, Contact: contact, Standard: standard,
+	}, nil
+}
+
+// validCrawlUse reports whether a term is one this can express.
+//
+// A closed list, because the value is published to third parties who act on
+// it: a typo in an open list becomes a grant nobody notices, and "trian" in
+// the prohibits list is a site that thinks it refused training and did not.
+func validCrawlUse(s string) bool {
+	switch s {
+	case "search", "train", "ai-summarize", "none":
+		return true
+	}
+	return false
+}
+
+func splitTerms(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
