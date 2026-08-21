@@ -1,4 +1,4 @@
-QUILZO -- APACHE INCUBATOR PROPOSAL (DRAFT)
+QUILZO -- APACHE INCUBATOR PROPOSAL
 ============================================================================
 
 
@@ -14,12 +14,11 @@ exception for, and this proposal does not ask it to.
 The project will relicense to Apache-2.0 on acceptance. That is offered
 without reservation and it is clean to do:
 
-  - Every commit in the repository was authored either by the proposer or
-    by Dependabot bumping a version string in a workflow file. There is one
+  - Every commit in the repository was authored either by the proposer or by
+    Dependabot bumping a version string in a workflow file. There is one
     human contributor and he is the sole copyright holder. That is a
-    property of the history rather than a count that goes stale:
-    `git log --format='%ae' | sort -u` returns two addresses, one of which
-    is a bot.
+    property of the history rather than a count that goes stale: git log
+    --format='%ae' | sort -u returns two addresses, one of which is a bot.
   - Contribution is under a DCO, not a CLA. No third party's copyright has
     been aggregated, so nobody else's permission is needed and no
     contributor-agreement archaeology is required.
@@ -298,13 +297,8 @@ will allow before it asks.
 What is honestly missing: this has never been run against AgentDojo. That
 benchmark is what would turn "designed to resist injection" into a measured
 number, and until it is run the claim is architectural. It is tracked as
-issue
-
-
-33 AND IT IS AN EXPLICIT INITIAL GOAL ABOVE. NO CMS HAS PUBLISHED SUCH A
-------------------------------------------------------------------------
-
-figure; doing so is a contribution to the field and not only to this
+issue #33 and it is an explicit initial goal above. No CMS has published
+such a figure; doing so is a contribution to the field and not only to this
 project.
 
 ----------------------------------------------------------------------------
@@ -397,8 +391,8 @@ for a first contribution, each naming the file and the trap to avoid.
 Core Developers
 ~~~~~~~~~~~~~~~
 
-One: the sole copyright holder and proposer. See Homogenous Developers
-under Known Risks.
+One: the sole copyright holder and proposer. See Homogenous Developers under
+Known Risks.
 
 
 Alignment
@@ -458,9 +452,10 @@ It is stated first rather than buried, because a proposal that hides it
 wastes a Champion's time. Three honest options, and the proposer's
 preference is the first:
 
-  1. Recruit two to three committers before submitting. The proposal is
+  1. Recruit two to three committers before any vote. The proposal is
      stronger and the Incubator's core objection disappears. This is the
-     intended path, and it means this document is not sent for some months.
+     proposer's preference, and it means the gap between this thread and a
+     vote is measured in months rather than weeks.
   2. Enter with one committer and treat community-building as the incubation
      goal. Podlings have done this; many have also retired.
   3. Withdraw and seek a different home -- the Commons Conservancy, or the
@@ -492,8 +487,8 @@ Reliance on salaried developers
 
 There are none. Quilzo is written in personal time, no employer funds or
 directs it, and there is no corporate sponsor to withdraw. That removes the
-"sponsor leaves, project dies" risk entirely and concentrates the
-bus-factor risk, which is item one.
+"sponsor leaves, project dies" risk entirely and concentrates the bus-factor
+risk, which is item one.
 
 
 Relationships with other Apache products
@@ -552,6 +547,41 @@ been aggregated, so there is no contributor to trace. No third-party code is
 vendored or bundled.
 
 
+AI assistance, disclosed
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Quilzo has been developed with substantial LLM assistance, and the git
+history says so: 71 of 174 commits carry a Co-Authored-By: trailer naming
+the model. Anyone reading the log will see it, and anyone dividing 100,000
+lines by eight days will ask, so it is stated here rather than left to be
+discovered.
+
+The relevant facts, against the ASF's generative tooling guidance
+<https://www.apache.org/legal/generative-tooling.html>:
+
+  - The tool's terms permit it. Output may be licensed under Apache-2.0.
+  - No third-party material is included. The zero-dependency rule is
+    enforced by CI, so there is no vendored code to have come from anywhere;
+    every line is either written for this project or from the Go standard
+    library.
+  - The work is represented as the proposer's own, reviewed and tested by
+    him before merge, which is the representation an ICLA asks for.
+  - The trailer is wrong for Apache and will be changed. The ASF asks for a
+    Generated-by: token in commit messages; this repository used Co-
+    Authored-By:, which discloses the same fact under a different name. New
+    commits will use the ASF's token from the point a Champion asks for it,
+    and the existing history is left as it stands rather than rewritten,
+    because rewriting a public history to change how disclosure is spelled
+    would be the wrong instinct entirely.
+
+Two things this does not excuse, and the proposer does not claim otherwise.
+It does not make the review burden somebody else's -- every line is his to
+defend. And it does not answer the community question: a project written
+quickly by one person with a model is still a project with one person on it,
+which is the first risk above and is not diminished by how fast the code
+arrived.
+
+
 EXTERNAL DEPENDENCIES
 ---------------------
 
@@ -592,7 +622,8 @@ INITIAL COMMITTERS
 
   - Rashik Adhikari (rsh1k) -- sole author and copyright holder
 
-Additional committers to be recruited before submission. See Known Risks.
+Additional committers to be recruited before a vote is called. See Known
+Risks.
 
 
 AFFILIATIONS
@@ -609,8 +640,11 @@ SPONSORS
 Champion
 ~~~~~~~~
 
-Not yet identified. This proposal should not be submitted until a Champion
-has read it and agreed to shepherd it.
+Not yet identified, and finding one is a large part of why this is being
+posted. If you have mentored a podling before -- particularly a Go project,
+or one where the argument is architectural rather than about scale -- the
+proposer would welcome a conversation, including one that concludes this is
+not ready.
 
 
 Nominated Mentors

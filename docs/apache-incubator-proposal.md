@@ -1,8 +1,9 @@
 # Quilzo — Apache Incubator Proposal
 
-*Draft for discussion on `general@incubator.apache.org`. Not yet submitted:
-this proposal has no Champion and no Mentors, and it should not be sent until
-it has both.*
+*Posted to `general@incubator.apache.org` for discussion. There is no Champion
+and there are no Mentors yet — finding them is part of what this thread is for.
+It is a draft in the sense that it expects to be reworked, not in the sense that
+it is unfinished.*
 
 ## Licensing, first, because it decides everything else
 
@@ -391,9 +392,10 @@ It is stated first rather than buried, because a proposal that hides it wastes
 a Champion's time. Three honest options, and the proposer's preference is the
 first:
 
-1. **Recruit two to three committers before submitting.** The proposal is
-   stronger and the Incubator's core objection disappears. This is the intended
-   path, and it means this document is not sent for some months.
+1. **Recruit two to three committers before any vote.** The proposal is
+   stronger and the Incubator's core objection disappears. This is the
+   proposer's preference, and it means the gap between this thread and a vote
+   is measured in months rather than weeks.
 2. Enter with one committer and treat community-building as *the* incubation
    goal. Podlings have done this; many have also retired.
 3. Withdraw and seek a different home — the Commons Conservancy, or the
@@ -467,6 +469,36 @@ Apache-2.0. No CLA has ever been used and no third-party copyright has been
 aggregated, so there is no contributor to trace. No third-party code is
 vendored or bundled.
 
+### AI assistance, disclosed
+
+Quilzo has been developed with substantial LLM assistance, and the git history
+says so: 71 of 174 commits carry a `Co-Authored-By:` trailer naming the model.
+Anyone reading the log will see it, and anyone dividing 100,000 lines by eight
+days will ask, so it is stated here rather than left to be discovered.
+
+The relevant facts, against the ASF's
+[generative tooling guidance](https://www.apache.org/legal/generative-tooling.html):
+
+- **The tool's terms permit it.** Output may be licensed under Apache-2.0.
+- **No third-party material is included.** The zero-dependency rule is enforced
+  by CI, so there is no vendored code to have come from anywhere; every line is
+  either written for this project or from the Go standard library.
+- **The work is represented as the proposer's own**, reviewed and tested by him
+  before merge, which is the representation an ICLA asks for.
+- **The trailer is wrong for Apache and will be changed.** The ASF asks for a
+  `Generated-by:` token in commit messages; this repository used
+  `Co-Authored-By:`, which discloses the same fact under a different name. New
+  commits will use the ASF's token from the point a Champion asks for it, and
+  the existing history is left as it stands rather than rewritten, because
+  rewriting a public history to change how disclosure is spelled would be the
+  wrong instinct entirely.
+
+Two things this does not excuse, and the proposer does not claim otherwise. It
+does not make the review burden somebody else's — every line is his to defend.
+And it does not answer the community question: a project written quickly by one
+person with a model is still a project with one person on it, which is the first
+risk above and is not diminished by how fast the code arrived.
+
 ## External Dependencies
 
 **None.** `go.mod` contains no `require` block, and CI fails the build if one
@@ -501,7 +533,8 @@ All of it is from the Go standard library; none is implemented in-project.
 
 - Rashik Adhikari (`rsh1k`) — sole author and copyright holder
 
-*Additional committers to be recruited before submission. See Known Risks.*
+*Additional committers to be recruited before a vote is called. See Known
+Risks.*
 
 ## Affiliations
 
@@ -513,8 +546,10 @@ All of it is from the Go standard library; none is implemented in-project.
 
 ### Champion
 
-**Not yet identified.** This proposal should not be submitted until a Champion
-has read it and agreed to shepherd it.
+**Not yet identified**, and finding one is a large part of why this is being
+posted. If you have mentored a podling before — particularly a Go project, or
+one where the argument is architectural rather than about scale — the proposer
+would welcome a conversation, including one that concludes this is not ready.
 
 ### Nominated Mentors
 
