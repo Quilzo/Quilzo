@@ -15,9 +15,11 @@ an exception for, and this proposal does not ask it to.
 **The project will relicense to Apache-2.0 on acceptance.** That is offered
 without reservation and it is clean to do:
 
-- There is **one human contributor** in 169 commits — the sole copyright
-  holder, who is making this proposal. (Four further commits are Dependabot
-  bumping a version string in a workflow file.)
+- **Every commit in the repository was authored either by the proposer or by
+  Dependabot bumping a version string in a workflow file.** There is one human
+  contributor and he is the sole copyright holder. That is a property of the
+  history rather than a count that goes stale: `git log --format='%ae' | sort -u`
+  returns two addresses, one of which is a bot.
 - Contribution is under a **DCO, not a CLA**. No third party's copyright has
   been aggregated, so nobody else's permission is needed and no
   contributor-agreement archaeology is required.
@@ -335,8 +337,8 @@ a first contribution, each naming the file and the trap to avoid.
 
 ### Core Developers
 
-One: the sole copyright holder and proposer, an employee of dotCMS. See
-*Homogenous Developers* under Known Risks.
+One: the sole copyright holder and proposer. See *Homogenous Developers*
+under Known Risks.
 
 ### Alignment
 
@@ -381,9 +383,9 @@ project already emits CycloneDX and OSCAL, formats other ASF projects consume.
 ### Homogenous developers, and reliance on a single developer
 
 **The principal risk, and the reason this proposal may not be accepted as it
-stands.** One contributor, in one place, employed by one company. The Incubator
-normally expects three or more initial committers, ideally across
-organisations, and this proposal cannot show that today.
+stands.** One contributor, in one place. The Incubator normally expects three
+or more initial committers, ideally across organisations, and this proposal
+cannot show that today.
 
 It is stated first rather than buried, because a proposal that hides it wastes
 a Champion's time. Three honest options, and the proposer's preference is the
@@ -415,9 +417,10 @@ written governance, and disclosure-first handling of its own defects.
 
 ### Reliance on salaried developers
 
-The proposer works on Quilzo in personal time; it is not a work project and no
-employer funds it. That reduces the "sponsor withdraws, project dies" risk and
-increases the bus factor risk, which is item one.
+There are none. Quilzo is written in personal time, no employer funds or
+directs it, and there is no corporate sponsor to withdraw. That removes the
+"sponsor leaves, project dies" risk entirely and concentrates the bus-factor
+risk, which is item one.
 
 ### Relationships with other Apache products
 
@@ -454,7 +457,7 @@ proposer would rather hear it than receive a probationary yes.
 
 ## Initial Source
 
-`https://github.com/Quilzo/Quilzo` — 169 commits from 14 August 2026. Single
+`https://github.com/Quilzo/Quilzo` — active since 14 August 2026. Single
 copyright holder; DCO sign-off throughout.
 
 ## Source and Intellectual Property Submission Plan
@@ -502,8 +505,9 @@ All of it is from the Go standard library; none is implemented in-project.
 
 ## Affiliations
 
-- Rashik Adhikari — dotCMS. Quilzo is personal work, not employer-funded, and
-  is not a dotCMS product.
+- Rashik Adhikari — no affiliation relevant to this project. Quilzo is
+  personal work: no employer funds it, no employer directs it, and no employer
+  has any claim on it.
 
 ## Sponsors
 
