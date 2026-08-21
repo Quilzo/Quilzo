@@ -337,8 +337,8 @@ a first contribution, each naming the file and the trap to avoid.
 
 ### Core Developers
 
-One: the sole copyright holder and proposer, an employee of dotCMS. See
-*Homogenous Developers* under Known Risks.
+One: the sole copyright holder and proposer. See *Homogenous Developers*
+under Known Risks.
 
 ### Alignment
 
@@ -383,9 +383,9 @@ project already emits CycloneDX and OSCAL, formats other ASF projects consume.
 ### Homogenous developers, and reliance on a single developer
 
 **The principal risk, and the reason this proposal may not be accepted as it
-stands.** One contributor, in one place, employed by one company. The Incubator
-normally expects three or more initial committers, ideally across
-organisations, and this proposal cannot show that today.
+stands.** One contributor, in one place. The Incubator normally expects three
+or more initial committers, ideally across organisations, and this proposal
+cannot show that today.
 
 It is stated first rather than buried, because a proposal that hides it wastes
 a Champion's time. Three honest options, and the proposer's preference is the
@@ -417,9 +417,10 @@ written governance, and disclosure-first handling of its own defects.
 
 ### Reliance on salaried developers
 
-The proposer works on Quilzo in personal time; it is not a work project and no
-employer funds it. That reduces the "sponsor withdraws, project dies" risk and
-increases the bus factor risk, which is item one.
+There are none. Quilzo is written in personal time, no employer funds or
+directs it, and there is no corporate sponsor to withdraw. That removes the
+"sponsor leaves, project dies" risk entirely and concentrates the bus-factor
+risk, which is item one.
 
 ### Relationships with other Apache products
 
@@ -504,8 +505,9 @@ All of it is from the Go standard library; none is implemented in-project.
 
 ## Affiliations
 
-- Rashik Adhikari — dotCMS. Quilzo is personal work, not employer-funded, and
-  is not a dotCMS product.
+- Rashik Adhikari — no affiliation relevant to this project. Quilzo is
+  personal work: no employer funds it, no employer directs it, and no employer
+  has any claim on it.
 
 ## Sponsors
 
