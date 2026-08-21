@@ -272,6 +272,57 @@ var settings = []Setting{
 			"one on purpose.",
 	},
 	{
+		Key: "licence.permits", Kind: Text, Default: "",
+		Summary: "automated uses this site allows, comma-separated",
+		Why: "Publishes machine-readable crawl terms as RSL at " +
+			"/license.xml and TDMRep at /.well-known/tdmrep.json, and points " +
+			"robots.txt at both. The vocabulary is search, train, " +
+			"ai-summarize and none, and they are separate grants on purpose: " +
+			"from 15 September 2026 Cloudflare stops treating search " +
+			"indexing and AI training as one permission by default, and a " +
+			"site publishing a single undivided answer is answering a " +
+			"question that has become two. Empty means no terms are " +
+			"published at all — which is the honest default, because a " +
+			"licence file asserting terms nobody chose is worse than none: " +
+			"a crawler will honour it and the operator never agreed to it.",
+	},
+	{
+		Key: "licence.prohibits", Kind: Text, Default: "",
+		Summary: "automated uses this site refuses, comma-separated",
+		Why: "The same vocabulary as licence.permits, for what is refused. " +
+			"Stating a refusal explicitly is the point: enforcement depends " +
+			"on crawlers choosing to honour it, exactly as robots.txt " +
+			"always has, but 'we never said they could' becomes a document " +
+			"with a date rather than an argument afterwards. A use named in " +
+			"both is refused rather than allowed, and the site refuses to " +
+			"start instead, because terms that contradict themselves are " +
+			"worse than terms nobody published.",
+	},
+	{
+		Key: "licence.attribution", Kind: Text, Default: "",
+		Summary: "the URL a crawler should credit",
+		Why: "Carried in the RSL document so attribution is a machine- " +
+			"readable term rather than a sentence in a footer somebody has " +
+			"to read and act on. Empty means none is asked for.",
+	},
+	{
+		Key: "licence.contact", Kind: Text, Default: "",
+		Summary: "where to ask about terms this licence refuses",
+		Why: "The part that makes a refusal a negotiation rather than a " +
+			"wall. A crawler told no with nowhere to ask has one option, " +
+			"which is to take it anyway or leave; one given an address has " +
+			"a second. Empty is allowed and means there is no route back.",
+	},
+	{
+		Key: "licence.standard", Kind: Text, Default: "",
+		Summary: "a well-known licence this content is under, if one applies",
+		Why: "Named in the RSL document as a legal term — for example a " +
+			"Creative Commons identifier. Separate from the machine-use " +
+			"grants above because they answer different questions: what a " +
+			"crawler may do with the content, and what licence the content " +
+			"itself carries. Empty means no standard licence is claimed.",
+	},
+	{
 		Key: "share.form", Kind: Text, Default: "",
 		Summary: "the form a share from the operating system lands in",
 		Why: "Registers this site in the phone's share sheet. When somebody " +
