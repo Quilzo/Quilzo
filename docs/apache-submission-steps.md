@@ -50,9 +50,9 @@ make it not:
 1. It has no dependencies at all. go.mod has no require block -- not
    vendored, not pinned, none -- and CI fails the build if one appears.
    For the ASF specifically that means the Category A/B/X review, the
-   LICENSE and NOTICE assembly, and the re-review on every dependency bump
-   are all empty and stay empty by policy. The single supply-chain input
-   is the Go toolchain.
+   LICENSE and NOTICE assembly, and the re-review on every dependency
+   bump are all empty and stay empty by policy. The single supply-chain
+   input is the Go toolchain.
 
 2. Governance is the product rather than a feature of it. Quilzo's value
    is that it can prove what it published, refuse what it should not
@@ -78,8 +78,21 @@ Category X and that this is not something the Incubator could make an
 exception for, so I am not asking it to: I will relicense to Apache-2.0,
 without reservation, and file an SGA whenever a Champion asks for one.
 The relicensing is clean -- one human contributor, a DCO rather than a
-CLA, and no third-party code to reclassify. The draft
-explains why AGPL was chosen and what dropping it costs.
+CLA, and no third-party code to reclassify. The draft explains why AGPL
+was chosen and what dropping it costs.
+
+One more thing I would rather say than have found. Quilzo has been
+developed with substantial LLM assistance, and the git history says so --
+71 of 174 commits carry a Co-Authored-By trailer naming the model. I have
+read the ASF's generative tooling guidance. No third-party material is
+included (the zero-dependency rule is enforced by CI, so there is nothing
+vendored to have come from anywhere), the work is mine to represent as my
+own, and I reviewed and tested every line before merging it. I used
+Co-Authored-By where the ASF asks for Generated-by, and I will switch to
+the ASF's token. The draft sets this out in the IP section.
+
+It does not change the risk that matters. A project written quickly by one
+person with a model is still a project with one person on it.
 
 I have tried to write the risks section as an honest assessment rather
 than a pitch, including the fact that Apache Lenya was an ASF CMS that
