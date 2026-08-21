@@ -1,8 +1,11 @@
 package main
 
 import (
+	"time"
+
 	"flag"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/audit"
 	"path/filepath"
 
 	"github.com/quilzo/quilzo/internal/out"
@@ -43,8 +46,11 @@ func cmdProvenance(root string, args []string) error {
 		return provSet(root, args[1:])
 	case "check", "status":
 		return provStatus(root, args[1:])
+	case "backfill":
+		return provBackfill(root, args[1:])
 	default:
-		return fmt.Errorf("unknown provenance command %q; try set or check", args[0])
+		return fmt.Errorf(
+			"unknown provenance command %q; try set, check or backfill", args[0])
 	}
 }
 
@@ -202,4 +208,211 @@ func provStatus(root string, args []string) error {
 		return fmt.Errorf("%d page(s) without provenance", len(gaps))
 	}
 	return nil
+}
+
+// provBackfill marks content published before anybody was recording provenance.
+//
+// Article 50 covers content generated before August 2026 from 2 December 2026.
+// The history is the only evidence left for that content, and it is thinner
+// than it looks: a commit message prefix, which is real evidence and is also
+// forgeable. So this proposes and explains rather than deciding quietly, and
+// it never records human authorship for want of evidence.
+func provBackfill(root string, args []string) error {
+	fs := flag.NewFlagSet("backfill", flag.ContinueOnError)
+	ref := fs.String("ref", site.RefDraft, "which ref to mark")
+	dryRun := fs.Bool("dry-run", false, "report what would happen, write nothing")
+	limit := fs.Int("history", 5000, "how many commits back to read for evidence")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	s, err := open(root)
+	if err != nil {
+		return err
+	}
+	current, err := pageHashes(s, *ref)
+	if err != nil {
+		return err
+	}
+	idx, err := loadProvenance(root)
+	if err != nil {
+		return err
+	}
+
+	history, read, err := appearances(s, *ref, *limit)
+	if err != nil {
+		return err
+	}
+
+	plan := provenance.BuildPlan(current, history, idx, time.Now().Unix())
+
+	if w.JSON(map[string]any{
+		"ref": *ref, "pages": plan.Total(), "commits_read": read,
+		"recorded": len(plan.Recorded), "inferred": len(plan.Inferred),
+		"undecidable": len(plan.Undecidable), "dry_run": *dryRun,
+		"plan": plan,
+	}) {
+		if *dryRun {
+			return nil
+		}
+		_, aerr := plan.Apply(idx)
+		if aerr != nil {
+			return aerr
+		}
+		return saveJSON(provPath(root), idx)
+	}
+
+	// The count of what was examined, first. A pass that read no commits finds
+	// nothing to infer and prints the same reassuring zero as one that read
+	// everything.
+	w.Human("%s%d page(s)%s at %s, against %s%d commit(s)%s of history\n",
+		bold, plan.Total(), reset, *ref, bold, read, reset)
+
+	if len(plan.Recorded) > 0 {
+		w.Human("\n  %s%d already recorded%s\n", dim, len(plan.Recorded), reset)
+	}
+
+	if len(plan.Inferred) > 0 {
+		w.Human("\n%s%d page(s) would be marked%s\n", bold, len(plan.Inferred), reset)
+		for _, p := range plan.Inferred {
+			w.Human("  %s%s%s  %s\n", bold, p.Page, reset, p.Record.SourceType)
+			w.Human("    %s%s%s\n", dim, wrapIndent(p.Evidence, 68, 4), reset)
+		}
+		w.Human("\n  %sinferred, not observed. Each record says so and names "+
+			"the commit it came\n  from, and none of them assesses the "+
+			"Article 50 assistive-editing\n  exemption -- a typo fix is "+
+			"exempt and this cannot tell one from the\n  other. Read them "+
+			"before relying on the marks.%s\n", yellow, reset)
+	}
+
+	if len(plan.Undecidable) > 0 {
+		w.Human("\n%s%d page(s) cannot be decided%s\n",
+			bold, len(plan.Undecidable), reset)
+		for _, p := range plan.Undecidable {
+			w.Human("  %s%s%s\n", bold, p.Page, reset)
+			w.Human("    %s%s%s\n", dim, wrapIndent(p.Why, 68, 4), reset)
+		}
+		w.Human("\n  %sthese are left with no record, which is what honestly "+
+			"describes them.\n  Use `quilzo provenance set` where you know "+
+			"the answer.%s\n", yellow, reset)
+	}
+
+	if *dryRun {
+		w.Human("\n  %snothing written (--dry-run)%s\n", dim, reset)
+		return nil
+	}
+	if len(plan.Inferred) == 0 {
+		w.Human("\n  %snothing to write%s\n", dim, reset)
+		return nil
+	}
+
+	n, err := plan.Apply(idx)
+	if err != nil {
+		return err
+	}
+	if err := saveJSON(provPath(root), idx); err != nil {
+		return err
+	}
+
+	caller := resolveCaller(root, "")
+	record(root, audit.Record{
+		Action: "provenance.backfill", Resource: "/" + *ref,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Verified: caller.Verified,
+		Detail: map[string]string{
+			"ref": *ref, "inferred": fmt.Sprintf("%d", n),
+			"undecidable":  fmt.Sprintf("%d", len(plan.Undecidable)),
+			"commits_read": fmt.Sprintf("%d", read),
+		},
+	})
+
+	w.Human("\n  %swrote %d inferred record(s)%s\n", green, n, reset)
+	w.Human("  %s`quilzo provenance check` now reports them as marked%s\n",
+		dim, reset)
+	return nil
+}
+
+// appearances walks the history and records where each page's content was
+// introduced, with the message of the commit that introduced it.
+//
+// # A commit's tree is the whole site
+//
+// This is the trap, and the first version of this function fell straight into
+// it. A commit names a tree, and that tree holds every page — not only the
+// ones the commit changed. So iterating the tree of every commit says that
+// every page "appears in" every commit, and one assistant-written commit
+// anywhere in the history marks the entire site as AI-generated.
+//
+// Run against the demonstration, that is exactly what happened: fourteen
+// pages marked trainedAlgorithmicMedia, all citing the same commit, including
+// a page written by hand seconds earlier. Which is the failure the whole
+// design is supposed to prevent — marking everything devalues the mark on the
+// pages that need it.
+//
+// So a page is attributed to the commit where its content hash differs from
+// the parent's, which is the commit that actually wrote those bytes. A commit
+// that merely carried them forward changed nothing and is evidence about
+// nothing.
+func appearances(s *store.Store, ref string, limit int) (
+	[]provenance.Appearance, int, error) {
+
+	head := s.GetRef(ref)
+	if head == "" {
+		head = ref
+	}
+	hist, err := s.History(head, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	trees := map[string]map[string]string{}
+	treeAt := func(commitID string) map[string]string {
+		if t, ok := trees[commitID]; ok {
+			return t
+		}
+		c, cerr := s.GetCommit(commitID)
+		if cerr != nil {
+			trees[commitID] = nil
+			return nil
+		}
+		t, terr := s.GetTree(c.Tree)
+		if terr != nil {
+			t = nil
+		}
+		trees[commitID] = t
+		return t
+	}
+
+	var out []provenance.Appearance
+	for _, h := range hist {
+		tree, terr := s.GetTree(h.Commit.Tree)
+		if terr != nil {
+			// One unreadable tree must not fail the whole walk. It shows up as
+			// one fewer commit of evidence in the count printed to the
+			// operator rather than as a silent gap.
+			continue
+		}
+
+		// The union of the parents' trees. A page whose hash matches any
+		// parent was not written here — on a merge, content coming from either
+		// side was written on that side.
+		inherited := map[string]bool{}
+		for _, p := range h.Commit.Parents {
+			for page, hash := range treeAt(p) {
+				inherited[page+"\x00"+hash] = true
+			}
+		}
+
+		for page, hash := range tree {
+			if inherited[page+"\x00"+hash] {
+				continue
+			}
+			out = append(out, provenance.Appearance{
+				Page: page, ContentHash: hash, Commit: h.ID,
+				Message: h.Commit.Message, Author: h.Commit.Author,
+				At: h.Commit.At,
+			})
+		}
+	}
+	return out, len(hist), nil
 }

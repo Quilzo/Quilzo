@@ -135,6 +135,7 @@ publishing
 
 the assistant
   quilzo assist "..." --author WHO         propose changes; marks what it writes
+  quilzo provenance backfill [--dry-run]   mark content published before records existed
   quilzo provenance check [--ref REF]      who or what wrote each page
   quilzo provenance set PAGE --source T    record provenance by hand
 
