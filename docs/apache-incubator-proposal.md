@@ -15,9 +15,11 @@ an exception for, and this proposal does not ask it to.
 **The project will relicense to Apache-2.0 on acceptance.** That is offered
 without reservation and it is clean to do:
 
-- There is **one human contributor** in 169 commits — the sole copyright
-  holder, who is making this proposal. (Four further commits are Dependabot
-  bumping a version string in a workflow file.)
+- **Every commit in the repository was authored either by the proposer or by
+  Dependabot bumping a version string in a workflow file.** There is one human
+  contributor and he is the sole copyright holder. That is a property of the
+  history rather than a count that goes stale: `git log --format='%ae' | sort -u`
+  returns two addresses, one of which is a bot.
 - Contribution is under a **DCO, not a CLA**. No third party's copyright has
   been aggregated, so nobody else's permission is needed and no
   contributor-agreement archaeology is required.
@@ -454,7 +456,7 @@ proposer would rather hear it than receive a probationary yes.
 
 ## Initial Source
 
-`https://github.com/Quilzo/Quilzo` — 169 commits from 14 August 2026. Single
+`https://github.com/Quilzo/Quilzo` — active since 14 August 2026. Single
 copyright holder; DCO sign-off throughout.
 
 ## Source and Intellectual Property Submission Plan
