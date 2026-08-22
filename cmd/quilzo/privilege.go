@@ -282,8 +282,15 @@ var commandNeeds = map[string]need{
 	"audit":   {why: "reads template files given as arguments and never opens the store"},
 	"version": {why: "prints a version"},
 	"help":    {why: "prints usage"},
-	"-h":      {why: "prints usage"},
-	"--help":  {why: "prints usage"},
+	// The option spellings as well as the subcommands. The GNU Coding
+	// Standards ask for --version and --help, and the reason is not ceremony:
+	// a packaging tool checking a program's version tries --version and
+	// nothing else, so a `version` subcommand alone is unreachable to
+	// everything that looks. These reach the same two branches.
+	"--version": {why: "prints a version"},
+	"-V":        {why: "prints a version"},
+	"-h":        {why: "prints usage"},
+	"--help":    {why: "prints usage"},
 
 	// -- read-only subcommands of otherwise privileged commands, so that
 	// somebody locked out can still find out why.

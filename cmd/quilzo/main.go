@@ -119,6 +119,11 @@ telegram
   quilzo telegram serve                    the Mini App: publish from a chat
   quilzo telegram link USER-ID             mint a one-time link without a bot
 
+this program
+  quilzo --version                         version, copyright and licence
+  quilzo -V                                the same, shorter
+  quilzo --help | help                     this list
+
 languages
   quilzo lang init en | add fr             a site in more than one language
   quilzo lang check                        which translations are stale or missing
@@ -440,8 +445,20 @@ func main() {
 		err = cmdConfig(root, cmdArgs)
 	case "verify":
 		err = cmdVerify(root)
-	case "version":
-		fmt.Println(version)
+	// --version and --help as well as the subcommands.
+	//
+	// The GNU Coding Standards ask for both as options, and the reason is not
+	// ceremony: a script or a packaging tool checking a program's version
+	// tries `--version` and nothing else. `quilzo version` printed the same
+	// string and was unreachable to everything that looks for it.
+	case "version", "--version", "-V":
+		fmt.Printf("quilzo %s\n", version)
+		fmt.Println("Copyright (C) 2026 rsh1k")
+		fmt.Println("License AGPLv3+: GNU AGPL version 3 or later " +
+			"<https://gnu.org/licenses/agpl.html>.")
+		fmt.Println("This is free software: you are free to change and " +
+			"redistribute it.")
+		fmt.Println("There is NO WARRANTY, to the extent permitted by law.")
 	case "help", "-h", "--help":
 		usage()
 	default:

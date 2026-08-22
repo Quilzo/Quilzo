@@ -1,0 +1,62 @@
+Installing Quilzo
+*****************
+
+This is a Go program with no dependencies: `go.mod` has no require block, so
+the standard library and the Go toolchain are the whole build.  There is no
+`./configure`, because there is nothing to configure at build time — no
+optional libraries to detect and no feature switches.  That is a departure
+from the GNU convention and it is a departure with a reason rather than an
+omission.
+
+
+Requirements
+============
+
+Go 1.27 or later.  Nothing else.
+
+
+Building and installing
+=======================
+
+     make
+     sudo make install
+
+`make install` honours the usual variables:
+
+     sudo make install prefix=/usr/local     # the default
+     make install prefix="$HOME/.local"      # no root needed
+     sudo make install DESTDIR=/tmp/stage    # for a package build
+
+To remove it:
+
+     sudo make uninstall
+
+
+Without make
+============
+
+     go build -o quilzo ./cmd/quilzo
+     install -m 0755 quilzo /usr/local/bin/
+
+
+Checking the build
+==================
+
+     make check
+
+That runs the whole test suite: sixty-six packages, including several that
+walk this program's own source and fail when a capability exists in one
+interface and not the others.
+
+
+A first site
+============
+
+     quilzo init
+     quilzo template use sections
+     quilzo add index=templates/sections.json -m "first page"
+     quilzo publish
+     quilzo site --addr 127.0.0.1:8081
+
+`quilzo help` lists every command.  `deploy/` has a reverse-proxy
+configuration and systemd units for running it properly.

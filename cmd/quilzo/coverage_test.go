@@ -172,9 +172,14 @@ var coverage = map[string]surfaces{
 	"config-show": {Why: "not a command", NoMCP: "not a command"},
 	"help": {Why: "prints usage",
 		NoMCP: "prints usage; the operation list is how an agent discovers this"},
-	"-h":           {Why: "prints usage", NoMCP: "as help"},
-	"--help":       {Why: "prints usage", NoMCP: "as help"},
-	"version":      {Why: "prints a version", NoMCP: "prints a version"},
+	"-h":      {Why: "prints usage", NoMCP: "as help"},
+	"--help":  {Why: "prints usage", NoMCP: "as help"},
+	"version": {Why: "prints a version", NoMCP: "prints a version"},
+	// The option spellings the GNU Coding Standards ask for, reaching the same
+	// branch as the subcommand. Listed so this test still accounts for every
+	// dispatched name, and shown in the help so they are findable.
+	"--version":    {Why: "prints a version", NoMCP: "prints a version"},
+	"-V":           {Why: "prints a version", NoMCP: "prints a version"},
 	"locales":      {Why: "an alias of lang", MCP: []string{"check_translations"}},
 	"environments": {Why: "an alias of env", MCP: []string{"pipeline_status"}},
 	"webhooks":     {Why: "an alias of webhook", NoMCP: "as webhook"},
