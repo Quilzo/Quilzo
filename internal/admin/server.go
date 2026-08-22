@@ -70,6 +70,7 @@ import (
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/provenance"
+	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -184,7 +185,13 @@ type Server struct {
 	// audit log itself: it does not know where it lives, and after the
 	// separated-writer work it deliberately must not.
 	OnAuthFailure func(source string, failures int)
-	Template      string // the site template, for preview and the a11y check
+	// Layouts is every template the site renders through, for the preview and
+	// the accessibility check. Resolution is internal/render's, so the page
+	// this shows and the page the gate judges are the page readers get.
+	Layouts render.Layouts
+	// DesignSet is how the design screen reads and writes the theme and the
+	// layouts. Nil means the screen says so rather than half working.
+	DesignSet *Design
 	// SiteCSS is the site's own stylesheet, served at /site.css for the
 	// preview alone.
 	//
@@ -278,7 +285,7 @@ func (s *Server) refresh() {
 // user templates are an injection surface. These templates are ours, shipped in
 // the binary, and never author-supplied — so the stdlib's contextual escaping is
 // exactly right and there is no surface to remove.
-func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, siteTemplate string) (*Server, error) {
+func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Layouts) (*Server, error) {
 	t, err := template.New("").Funcs(template.FuncMap{
 		"short": func(id string) string {
 			if len(id) > 12 {
@@ -317,7 +324,7 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, siteTemplate strin
 	if err != nil {
 		return nil, fmt.Errorf("admin templates: %w", err)
 	}
-	return &Server{Store: s, Policy: p, Tokens: ts, Template: siteTemplate,
+	return &Server{Store: s, Policy: p, Tokens: ts, Layouts: layouts,
 		Records: collection.NewCache(), tpl: t}, nil
 }
 
@@ -736,6 +743,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/decentralised", s.handleDecentralised)
 	mux.HandleFunc("/decentralised/bundle", s.handleBundleDownload)
 	mux.HandleFunc("/decentralised/verify", s.handleVerifyCID)
+	mux.HandleFunc("/design", s.handleDesign)
+	mux.HandleFunc("/sections", s.handleSections)
+	mux.HandleFunc("/sections/edit", s.handleSectionEdit)
+	mux.HandleFunc("/sections/fields", s.handleSectionFields)
+	mux.HandleFunc("/design/save", s.handleDesignSave)
+	mux.HandleFunc("/design/install", s.handleDesignInstall)
 	mux.HandleFunc("/transfer", s.handleTransfer)
 	mux.HandleFunc("/transfer/export", s.handleExport)
 	mux.HandleFunc("/transfer/import", s.handleImport)
@@ -1563,7 +1576,7 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 
 // checkAll renders every page and runs the accessibility checks.
 func (s *Server) checkAll(commitID string) []*a11y.Report {
-	if commitID == "" || s.Template == "" {
+	if commitID == "" || s.Layouts.Len() == 0 {
 		return nil
 	}
 	pages, err := site.PagesAt(s.Store, commitID)
@@ -1588,7 +1601,15 @@ func (s *Server) checkAll(commitID string) []*a11y.Report {
 		if cerr != nil {
 			continue
 		}
-		out, err := tmpl.Render(s.Template, ctx)
+		_, layout, lerr := s.Layouts.For(body)
+		if lerr != nil {
+			// A page naming a layout this site does not have cannot be judged,
+			// and passing it silently would be a gate that reports clean over
+			// a page it never rendered. Reported as its own blocking finding
+			// below rather than skipped.
+			continue
+		}
+		out, err := tmpl.Render(layout, ctx)
 		if err != nil {
 			continue
 		}
@@ -2075,7 +2096,12 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, cerr.Error(), http.StatusUnprocessableEntity)
 		return
 	}
-	out, err := tmpl.Render(s.Template, ctx)
+	_, layout, lerr := s.Layouts.For(body)
+	if lerr != nil {
+		http.Error(w, lerr.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	out, err := tmpl.Render(layout, ctx)
 	if err != nil {
 		http.Error(w, "template: "+err.Error(), http.StatusInternalServerError)
 		return

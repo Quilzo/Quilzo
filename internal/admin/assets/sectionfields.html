@@ -1,0 +1,114 @@
+{{template "head" .}}
+{{if .Unavailable}}
+<h1>Edit a section</h1>
+<p class="notice">{{.Unavailable}}</p>
+<p class="hint"><a href="/sections">Pick a page to arrange</a></p>
+{{else}}
+<h1>{{.Kind}} section on {{.Page}}</h1>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+<p class="hint">
+  Section {{.At}} on <a href="/sections?page={{.Page}}">{{.Page}}</a>. Every
+  value the section carries has its own field here — a number stays a number
+  when it is saved, which is what keeps a chart's bar a bar. Saving writes a
+  draft commit like any other edit.
+</p>
+
+<form method="post" action="/sections/fields">
+  <input type="hidden" name="page" value="{{.Page}}">
+  <input type="hidden" name="at" value="{{.At}}">
+  <input type="hidden" name="base" value="{{.Base}}">
+
+  {{if .Own}}
+  <h2>The section</h2>
+  {{range .Own}}
+  <p class="field">
+    <label for="f-{{.Path}}">{{.Label}}</label>
+    {{if .Long}}
+    <textarea id="f-{{.Path}}" name="v.{{.Path}}" rows="4" spellcheck="true">{{.Value}}</textarea>
+    {{else}}
+    <input id="f-{{.Path}}" name="v.{{.Path}}" value="{{.Value}}"
+      {{if .Number}}inputmode="numeric"{{end}} spellcheck="false">
+    {{end}}
+  </p>
+  {{end}}
+  {{end}}
+
+  {{range .Blocks}}
+  <h2>{{.Label}}</h2>
+  {{range .Fields}}
+  <p class="field">
+    <label for="f-{{.Path}}">{{.Label}}</label>
+    {{if .Long}}
+    <textarea id="f-{{.Path}}" name="v.{{.Path}}" rows="4" spellcheck="true">{{.Value}}</textarea>
+    {{else}}
+    <input id="f-{{.Path}}" name="v.{{.Path}}" value="{{.Value}}"
+      {{if .Number}}inputmode="numeric"{{end}} spellcheck="false">
+    {{end}}
+  </p>
+  {{end}}
+  {{end}}
+
+  <p><button type="submit">Save this section</button></p>
+</form>
+
+{{if .Blocks}}
+<h2>Entries</h2>
+<p class="hint">
+  Removing an entry is a separate action from saving, so a mis-click cannot take
+  one out while you were editing another.
+</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Entry</th><th scope="col"></th></tr></thead>
+  <tbody>
+  {{$page := .Page}}{{$at := .At}}{{$base := .Base}}
+  {{range .Blocks}}
+  <tr>
+    <th scope="row">{{.Label}}</th>
+    <td>
+      <form method="post" action="/sections/fields" class="inline">
+        <input type="hidden" name="page" value="{{$page}}">
+        <input type="hidden" name="at" value="{{$at}}">
+        <input type="hidden" name="base" value="{{$base}}">
+        <input type="hidden" name="do" value="removeitem">
+        <input type="hidden" name="list" value="{{.List}}">
+        <input type="hidden" name="index" value="{{.Index}}">
+        <button type="submit">Remove {{.Label}}</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+{{if .Lists}}
+<h2>Add an entry</h2>
+<p class="hint">
+  A new entry copies the shape of the last one and arrives empty, because a list
+  with the same card in it twice is a list somebody has to edit twice.
+</p>
+{{$page := .Page}}{{$at := .At}}{{$base := .Base}}
+{{range .Lists}}
+<form method="post" action="/sections/fields" class="inline">
+  <input type="hidden" name="page" value="{{$page}}">
+  <input type="hidden" name="at" value="{{$at}}">
+  <input type="hidden" name="base" value="{{$base}}">
+  <input type="hidden" name="do" value="additem">
+  <input type="hidden" name="list" value="{{.}}">
+  <button type="submit">Add to {{.}}</button>
+</form>
+{{end}}
+{{end}}
+
+<p class="hint">
+  <a href="/sections?page={{.Page}}">Back to the sections on {{.Page}}</a>
+  · <a href="/preview/{{.Page}}">Preview {{.Page}}</a>
+</p>
+
+{{end}}
+{{template "foot" .}}

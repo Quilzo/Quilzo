@@ -1,0 +1,152 @@
+{{template "head" .}}
+
+{{if not .Page}}
+<h1>Sections</h1>
+<p class="hint">
+  A page's shape is a list of sections, so reordering it is an edit rather than
+  a deploy — and it rolls back like any other edit. Pick a page.
+</p>
+{{if .Pages}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Page</th><th scope="col">Sections</th><th scope="col"></th></tr></thead>
+  <tbody>
+  {{range .Pages}}
+  <tr>
+    <th scope="row"><code>{{.Name}}</code></th>
+    <td>{{if .Count}}{{.Count}}{{else}}<span class="hint">none yet</span>{{end}}</td>
+    <td><a href="/sections?page={{.Name}}">Arrange {{.Name}}</a></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p class="notice">There are no pages in the draft yet.</p>
+{{end}}
+
+{{else}}
+
+<h1>Sections on {{.Page}}</h1>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+<p class="hint">
+  The order here is the order on the page. Each button below writes a draft
+  commit saying what it did, so an accidental move is undone by rolling the
+  draft back rather than by remembering what the order used to be.
+  {{if .Layout}}This page renders through the <code>{{.Layout}}</code> layout.
+  {{else}}This page renders through the default layout.{{end}}
+</p>
+
+{{if .Sections}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">#</th>
+    <th scope="col">Section</th>
+    <th scope="col">Holds</th>
+    <th scope="col"></th>
+    <th scope="col">Order</th>
+    <th scope="col"></th>
+  </tr></thead>
+  <tbody>
+  {{$page := .Page}}{{$base := .Base}}{{$count := .Count}}
+  {{range .Sections}}
+  <tr>
+    <th scope="row">{{.Index}}</th>
+    <td>
+      <code>{{.Kind}}</code>
+      {{if .Label}}<div class="hint">{{.Label}}</div>{{end}}
+      {{if .Unknown}}<div class="hint warn">No layout renders a section of this
+        kind, so it puts nothing on the page. It is either a kind that was
+        removed or a typo.</div>{{end}}
+    </td>
+    <td>{{if .Items}}{{.Items}} item(s){{else}}<span class="hint">—</span>{{end}}</td>
+    <td><a href="/sections/fields?page={{$page}}&amp;at={{.Index}}">Edit</a></td>
+    <td>
+      {{if not .First}}
+      <form method="post" action="/sections/edit" class="inline">
+        <input type="hidden" name="page" value="{{$page}}">
+        <input type="hidden" name="base" value="{{$base}}">
+        <input type="hidden" name="at" value="{{.Index}}">
+        <input type="hidden" name="do" value="up">
+        <button type="submit">Move up</button>
+      </form>
+      {{end}}
+      {{if not .Last}}
+      <form method="post" action="/sections/edit" class="inline">
+        <input type="hidden" name="page" value="{{$page}}">
+        <input type="hidden" name="base" value="{{$base}}">
+        <input type="hidden" name="at" value="{{.Index}}">
+        <input type="hidden" name="do" value="down">
+        <button type="submit">Move down</button>
+      </form>
+      {{end}}
+    </td>
+    <td>
+      <form method="post" action="/sections/edit" class="inline">
+        <input type="hidden" name="page" value="{{$page}}">
+        <input type="hidden" name="base" value="{{$base}}">
+        <input type="hidden" name="at" value="{{.Index}}">
+        <input type="hidden" name="do" value="remove">
+        <button type="submit">Remove</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+<p class="hint">
+  The content inside a section is edited on the page itself —
+  <a href="/edit?page={{.Page}}">edit {{.Page}}</a>. This screen is about which
+  sections a page has and what order they are in.
+</p>
+{{else}}
+<p class="notice">
+  This page has no sections yet. Adding one writes a small piece of real content
+  rather than an empty block, so you can see it immediately and then replace what
+  it says.
+</p>
+{{end}}
+
+<h2>Add a section</h2>
+{{range .Groups}}
+<h3>{{.Name}}</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Kind</th><th scope="col">What it is</th><th scope="col"></th></tr></thead>
+  <tbody>
+  {{$page := $.Page}}{{$base := $.Base}}{{$count := $.Count}}
+  {{range .Items}}
+  <tr>
+    <th scope="row"><code>{{.Name}}</code></th>
+    <td>{{.Summary}}</td>
+    <td>
+      <form method="post" action="/sections/edit" class="inline">
+        <input type="hidden" name="page" value="{{$page}}">
+        <input type="hidden" name="base" value="{{$base}}">
+        <input type="hidden" name="at" value="{{$count}}">
+        <input type="hidden" name="do" value="add">
+        <input type="hidden" name="kind" value="{{.Name}}">
+        <button type="submit">Add {{.Name}}</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<p class="hint">
+  A section is added at the end and moved from there. Every kind arrives with
+  content that renders and passes the accessibility gate, which is asserted by a
+  test rather than hoped for — a button that says "added" over a page that looks
+  identical is a button nobody presses twice.
+</p>
+
+{{end}}
+{{template "foot" .}}

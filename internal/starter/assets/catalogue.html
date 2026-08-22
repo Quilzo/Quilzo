@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="{{ page.lang | default:en }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{% if record.name %}{{ record.name }} — {% end %}{% if page.title %}{{ page.title }} — {% end %}{{ site.name }}</title>
+{% if page.description %}<meta name="description" content="{{ page.description }}">{% end %}
+<meta property="og:site_name" content="{{ site.name }}">
+<meta property="og:title" content="{{ page.title }}">
+<meta property="og:type" content="{{ page.og_type | default:website }}">
+{% if page.description %}<meta property="og:description" content="{{ page.description }}">{% end %}
+{% if page.share_image %}<meta property="og:image" content="{{ page.share_image }}">
+<meta property="og:image:alt" content="{{ page.share_image_alt }}">
+<meta name="twitter:card" content="summary_large_image">{% end %}
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="site-header">
+  <div class="wrap wrap-wide">
+    {% if site.name %}<a class="brand" href="/">{{ site.name }}</a>{% end %}
+    {% if menus.main %}
+    <nav class="nav" aria-label="Main">
+      <ul>{% for item in menus.main %}<li><a href="{{ item.href }}"{% if item.current %} aria-current="page"{% end %}>{{ item.label }}</a></li>{% end %}</ul>
+    </nav>
+    {% end %}
+    {% if page.basket_href %}<a class="btn btn-tonal" href="{{ page.basket_href }}">{{ page.basket_label }}</a>{% end %}
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+
+  {% if record.name %}
+  <!-- One record, reached through the listing that declares which fields are
+       public. The heading is the record's name, so the page a reader lands on
+       is named after the thing they asked for. -->
+  <div class="wrap wrap-wide section">
+    <div class="section-head">
+      {% if record.range %}<p class="eyebrow">{{ record.range }}</p>{% end %}
+      <h1>{{ record.name }}</h1>
+      {% if record.summary %}<p class="lead">{{ record.summary }}</p>{% end %}
+    </div>
+
+    <div class="detail-grid">
+      {% if record.image %}<img src="/media/{{ record.image }}" alt="{{ record.alt }}" width="960" height="960" class="ratio-square">{% end %}
+      <div class="stack">
+        <p class="price-line">
+          {% if record.price_display %}<span class="amount">{{ record.price_display }}</span>{% end %}
+          {% if record.availability_label %}<span class="state state-{{ record.state }}">{{ record.availability_label }}</span>{% end %}
+        </p>
+        {% if record.lead_time %}<p class="muted">{{ record.lead_time }}</p>{% end %}
+        {% if record.description %}<p>{{ record.description }}</p>{% end %}
+
+        {% if record.specs %}
+        <dl class="spec">{% for sp in record.specs %}<dt>{{ sp.name }}</dt><dd>{{ sp.value }}</dd>{% end %}</dl>
+        {% end %}
+
+        {% if record.evidence %}
+        <div class="notice">
+          {% for e in record.evidence %}<p><a href="{{ e.href }}" rel="noopener">{{ e.label }}</a></p>{% end %}
+        </div>
+        {% end %}
+
+        {% if record.cta_href %}<div class="actions"><a class="btn btn-lg" href="{{ record.cta_href }}">{{ record.cta_label }}</a></div>{% end %}
+      </div>
+    </div>
+  </div>
+  {% end %}
+
+  {% if page.title %}
+  <div class="wrap wrap-wide section">
+    <div class="section-head">
+      {% if page.eyebrow %}<p class="eyebrow">{{ page.eyebrow }}</p>{% end %}
+      <h1>{{ page.title }}</h1>
+      {% if page.intro %}<p class="lead">{{ page.intro }}</p>{% end %}
+    </div>
+
+    {% if page.filters %}
+    <nav class="chips" aria-label="Filters">
+      {% for f in page.filters %}<a class="chip" href="{{ f.href }}">{{ f.label }}</a>{% end %}
+    </nav>
+    {% end %}
+  </div>
+  {% end %}
+
+  {% if feeds %}
+  {% for feed in feeds %}
+  <section class="section reveal">
+    <div class="wrap wrap-wide">
+      {% if feed.title %}<div class="section-head"><h2>{{ feed.title }}</h2></div>{% end %}
+      {% if feed.empty %}<p class="muted">Nothing here yet.</p>{% end %}
+      <ul class="grid grid-3" role="list">
+        {% for row in feed.rows %}
+        <li class="card">
+          {% if row.image %}
+          <img src="/media/{{ row.image }}" alt="{{ row.alt }}" width="600" height="600" class="ratio-square" loading="lazy">
+          {% end %}
+          <h3>{% if row.href %}<a class="card-link" href="{{ row.href }}">{{ row.name }}{{ row.title }}</a>{% end %}{% if row.unlinked %}{{ row.name }}{{ row.title }}{% end %}</h3>
+          {% if row.summary %}<p>{{ row.summary }}</p>{% end %}
+          <p class="price-line">
+            {% if row.price_display %}<span class="amount">{{ row.price_display }}</span>{% end %}
+            {% if row.availability_label %}<span class="state state-{{ row.state }}">{{ row.availability_label }}</span>{% end %}
+          </p>
+          {% if row.range %}<p class="muted">{{ row.range }} {{ row.material }}</p>{% end %}
+        </li>
+        {% end %}
+      </ul>
+    </div>
+  </section>
+  {% end %}
+  {% end %}
+
+  {% if page.body_paragraphs %}
+  <section class="section">
+    <div class="wrap"><div class="prose narrow">{% for p in page.body_paragraphs %}<p>{{ p }}</p>{% end %}</div></div>
+  </section>
+  {% end %}
+
+  {% if page.form %}
+  <section class="section tone-raised">
+    <div class="wrap">
+      {% if page.form_title %}<div class="section-head"><h2>{{ page.form_title }}</h2></div>{% end %}
+      <form class="stacked" method="post" action="/form/{{ page.form }}">
+        {% for f in page.fields %}
+        <p class="field">
+          <label for="f-{{ f.name }}">{{ f.label }}</label>
+          {% if f.textarea %}<textarea id="f-{{ f.name }}" name="{{ f.name }}" rows="5"></textarea>{% end %}
+          {% if f.type %}<input id="f-{{ f.name }}" name="{{ f.name }}" type="{{ f.type }}"{% if f.required %} required{% end %}>{% end %}
+          {% if f.hint %}<span class="hint">{{ f.hint }}</span>{% end %}
+        </p>
+        {% end %}
+        <p class="hp"><label for="f-website-url">Leave this empty</label>
+          <input id="f-website-url" name="website_url" type="text" tabindex="-1" autocomplete="off"></p>
+        {% if page.stamp %}<input type="hidden" name="form_started" value="{{ page.stamp }}">{% end %}
+        <p><button class="btn" type="submit">{{ page.form_submit | default:Send }}</button></p>
+      </form>
+      {% if page.privacy %}<p class="muted">{{ page.privacy }}</p>{% end %}
+    </div>
+  </section>
+  {% end %}
+</main>
+
+<footer class="site-footer">
+  <div class="wrap wrap-wide">
+    {% if menus.foot %}<nav aria-label="Footer"><ul>{% for item in menus.foot %}<li><a href="{{ item.href }}">{{ item.label }}</a></li>{% end %}</ul></nav>{% end %}
+    {% if page.footer %}<p class="colophon">{{ page.footer }}</p>{% end %}
+  </div>
+</footer>
+</body>
+</html>

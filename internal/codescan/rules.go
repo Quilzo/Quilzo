@@ -1,6 +1,9 @@
 package codescan
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 // The rules, as data.
 //
@@ -164,6 +167,36 @@ var rules = []Rule{
 		Fix: "use https, or confirm the host genuinely has no TLS",
 	},
 
+	// -- CSS, which HTML escaping does not cover ------------------------------
+	//
+	// A value interpolated into a style attribute is escaped for HTML and that
+	// is the wrong escaping. `50; background-image: url(https://elsewhere/x)`
+	// contains nothing HTML-escaping touches and is a CSS injection — and the
+	// policy this program builds cannot see it, because it walks content for
+	// URLs and does not parse CSS.
+	//
+	// The fix is not a sanitiser. It is a filter that cannot return anything
+	// but a number: `round` refuses a non-numeric value outright, so the
+	// render fails instead of the property being set to something else. Every
+	// chart in the shipped layouts goes through it, and this rule is what makes
+	// that a property of anybody's layout rather than a habit of ours.
+	{
+		ID: "css.unfiltered-interpolation", Severity: High,
+		Kinds:    []Kind{Template},
+		Pattern:  regexp.MustCompile(`(?i)style\s*=\s*["'][^"']*\{\{[^}]*\}\}`),
+		Controls: []string{"SI-10"},
+		OWASP:    "A03:2025 Injection",
+		Confirm:  needsNumericFilter,
+		Detail: "a value is interpolated into a style attribute without a " +
+			"filter that guarantees a number. HTML escaping is not CSS " +
+			"escaping: a field holding `50; background-image: url(...)` " +
+			"becomes a declaration, and the generated policy cannot help " +
+			"because it reads content for URLs and does not parse CSS",
+		Fix: "put the value through a numeric filter — style=\"--pct:{{ x | " +
+			"round }}\" — which refuses anything that is not a number, or use " +
+			"a class from a closed-set field instead of a raw value",
+	},
+
 	// -- the template's own escaping ------------------------------------------
 	{
 		ID: "template.autoescape-off", Severity: Critical,
@@ -175,6 +208,22 @@ var rules = []Rule{
 			"different engine and will not do what its author expects here",
 		Fix: "use {% raw field %} if unescaped output is genuinely intended",
 	},
+}
+
+// needsNumericFilter reports whether a style interpolation is unguarded.
+//
+// A match is only a finding when the expression does not end in a filter that
+// can return nothing but a number. `round` and `count` both refuse or convert,
+// so a value that reaches the property through either is a numeral or the render
+// already failed — which is the outcome this rule wants and should not then
+// complain about.
+func needsNumericFilter(match string) bool {
+	for _, guard := range []string{"|round", "| round", "|count", "| count"} {
+		if strings.Contains(match, guard) {
+			return false
+		}
+	}
+	return true
 }
 
 // Rules returns every rule, for `quilzo scan --rules`.

@@ -67,5 +67,37 @@ release: test sbom build-all
 	@echo "release $(VERSION)"
 	@sed 's/^/  /' bin/SHA256SUMS
 
+# The archive a Telegram contest submission is made of: a dist folder holding
+# the build, a src folder holding the source, and contest.md describing it.
+#
+# Built with `git archive HEAD` rather than by copying the working tree. Two
+# reasons, and the second is the one that matters: the archive then holds what
+# is committed and nothing else — no stray store, no local templates directory,
+# no editor backup, and a submission that carries somebody's `.quilzo` carries
+# their audit log. And a contest submission has to reference a commit on a
+# public repository, so archiving that exact commit is what makes the ZIP and
+# the link the same thing.
+#
+# Uncommitted work is therefore absent by design. Commit first.
+submission: test
+	@rm -rf submission && mkdir -p submission/dist submission/src
+	@CGO_ENABLED=0 $(GO) build -trimpath \
+		-ldflags="-s -w -X main.version=$(VERSION)" \
+		-o submission/dist/quilzo ./cmd/quilzo
+	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -trimpath \
+		-ldflags="-s -w -X main.version=$(VERSION)" \
+		-o submission/dist/quilzo-linux-amd64 ./cmd/quilzo
+	@git archive --format=tar HEAD | tar -xf - -C submission/src
+	@cp contest.md submission/contest.md
+	@cd submission && zip -qr ../quilzo-submission-$(VERSION).zip . && cd ..
+	@rm -rf submission
+	@echo "quilzo-submission-$(VERSION).zip  $$(du -h quilzo-submission-$(VERSION).zip | cut -f1)"
+	@echo "  dist/       the build"
+	@echo "  src/        every committed file"
+	@echo "  contest.md  what it is and why it is built this way"
+	@echo
+	@echo "  a submission also needs a link to a commit on a public repository:"
+	@echo "    $$(git remote get-url origin 2>/dev/null | sed 's/\.git$$//')/commit/$$(git rev-parse HEAD)"
+
 clean:
-	rm -rf bin
+	rm -rf bin submission quilzo-submission-*.zip

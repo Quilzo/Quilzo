@@ -201,10 +201,9 @@ func renderBundle(root, tplDir string) (map[string][]byte, error) {
 			"nothing is published. This takes what is live, not what is in " +
 				"the draft")
 	}
-	raw, err := os.ReadFile(filepath.Join(tplDir, "page.html"))
+	design, err := loadDesign(tplDir)
 	if err != nil {
-		return nil, fmt.Errorf("no template at %s: %w",
-			filepath.Join(tplDir, "page.html"), err)
+		return nil, err
 	}
 	pages, err := site.PagesAt(s, site.RefLive)
 	if err != nil {
@@ -218,12 +217,15 @@ func renderBundle(root, tplDir string) (map[string][]byte, error) {
 	// One renderer, shared with the admin screen that computes an identifier
 	// for the same bundle. See internal/render.Bundle for why this is not a
 	// loop here any more.
-	files, berr := render.Bundle(src, string(raw), pages, tmpl.Render)
+	files, berr := render.Bundle(src, design.Layouts, pages, tmpl.Render)
 	if berr != nil {
 		return nil, berr
 	}
-	if css, cerr := os.ReadFile(filepath.Join(tplDir, "site.css")); cerr == nil {
-		files["site.css"] = css
+	// The stylesheet the site serves, generated or the operator's own. A bundle
+	// carrying the markup and not the design is a copy of half the site.
+	files["site.css"] = []byte(design.Stylesheet)
+	for _, face := range design.Fonts.Faces() {
+		files["fonts/"+face.File] = face.Bytes
 	}
 	// The asset library, under the same paths the public server uses, so a
 	// page's image reference resolves identically on IPFS.

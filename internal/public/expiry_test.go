@@ -1,6 +1,7 @@
 package public
 
 import (
+	"github.com/quilzo/quilzo/internal/render"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,7 +27,7 @@ func published(t *testing.T, pages map[string]any) *Site {
 	if _, err := site.Publish(s, ""); err != nil {
 		t.Fatal(err)
 	}
-	st := New(s, tpl)
+	st := New(s, render.OneLayout(tpl))
 	st.BaseURL = "https://example.org"
 	return st
 }

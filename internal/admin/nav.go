@@ -71,6 +71,8 @@ var destinations = []destination{
 	{"listings", "Listings", "/listings", "Content", "listings", auth.ActView},
 	{"forms", "Forms", "/forms", "Content", "forms", auth.ActEditDraft},
 	{"media", "Media", "/media", "Content", "media", auth.ActView},
+	{"design", "Design", "/design", "Content", "templates", auth.ActEditDraft},
+	{"sections", "Sections", "/sections", "Content", "templates", auth.ActEditDraft},
 	{"languages", "Languages", "/languages", "Content", "languages", auth.ActView},
 	{"assist", "Assistant", "/assist", "Content", "ai", auth.ActEditDraft},
 

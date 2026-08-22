@@ -190,7 +190,13 @@ func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
 	}
 	ctx["record"] = map[string]any(row)
 
-	out, err := tmpl.Render(st.Template, ctx)
+	_, layout, lerr := st.Layouts.For(body)
+	if lerr != nil {
+		http.Error(w, "this page could not be assembled",
+			http.StatusInternalServerError)
+		return
+	}
+	out, err := tmpl.Render(layout, ctx)
 	if err != nil {
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
@@ -199,7 +205,7 @@ func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
 	// manifest link, the catalogue pointer and the provenance marking. A
 	// legal marking present on the shop page and missing from the product
 	// page is a marking that is missing where the product actually is.
-	out = st.injectHead(out, name, "")
+	out = st.injectHead(out, name, "", body)
 	// The structured data, injected like the rest of the head so it cannot be
 	// missing from the one template nobody checked.
 	if ld := productLD(row, st.Name); ld != "" {

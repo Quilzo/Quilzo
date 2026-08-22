@@ -7,7 +7,6 @@ import (
 	"github.com/quilzo/quilzo/internal/vector"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -62,24 +61,25 @@ func cmdSite(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	tplPath := filepath.Join(*tplDir, "page.html")
-	raw, err := os.ReadFile(tplPath)
+	// One loader for the layouts, the theme, the fonts and the stylesheet, so
+	// this server, the preview, the publish gate and every export render the
+	// same page against the same design.
+	design, err := loadDesign(*tplDir)
 	if err != nil {
-		return fmt.Errorf("no template at %s: %w", tplPath, err)
+		return err
+	}
+	for _, note := range design.Notes {
+		w.Human("%s%s%s\n", dim, note, reset)
 	}
 
-	st := public.New(s, string(raw))
+	st := public.New(s, design.Layouts)
+	st.Fonts = design.Fonts
+	st.Stylesheet = design.Stylesheet
 	// The configured name, which the flag overrides for one run. Keeping it in
 	// configuration is what lets the accessibility gate, the preview and the
 	// exports render the same page this serves.
 	if n := siteName(root); n != "" {
 		st.Name = n
-	}
-	// The stylesheet beside the template, if there is one. A starter writes
-	// both into the same directory, so this is the file `template use` just
-	// produced — and it is read once here rather than resolved per request.
-	if css, err := os.ReadFile(filepath.Join(*tplDir, "site.css")); err == nil {
-		st.Stylesheet = string(css)
 	}
 	st.BaseURL = strings.TrimSpace(*baseURL)
 	// The one write capability this process gets: append a submission to a

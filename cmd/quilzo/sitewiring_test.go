@@ -31,8 +31,8 @@ var notWiredBySite = map[string]string{
 	// Set by public.New from its arguments rather than assigned afterwards.
 	// Ref is not here: site.go assigns it as well, from the environment being
 	// served, and an assignment beats an exemption.
-	"Template": "public.New takes it, because a site with no template cannot serve",
-	"Store":    "public.New takes it, because a site with no store has nothing to serve",
+	"Layouts": "public.New takes it, because a site with no layout cannot render a page",
+	"Store":   "public.New takes it, because a site with no store has nothing to serve",
 }
 
 func TestEverySiteFieldIsEitherWiredOrExplainedAway(t *testing.T) {

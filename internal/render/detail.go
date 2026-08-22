@@ -75,7 +75,7 @@ func DetailOf(body any) (Detail, bool) {
 // That is the failure this project has a test suite for, arriving in the one
 // place the suite does not look: not a capability missing from a surface, but
 // the same capability implemented twice and diverging. So there is one
-// function, and the two callers pass their template in.
+// function, and the two callers pass their layouts in.
 //
 // # Paths
 //
@@ -83,7 +83,7 @@ func DetailOf(body any) (Detail, bool) {
 // with an index.html in it, so a gateway serves clean paths without rewrite
 // rules. A page standing for records becomes one directory per record, under
 // the key the page declared.
-func Bundle(src Sources, template string, pages map[string]any,
+func Bundle(src Sources, layouts Layouts, pages map[string]any,
 	render func(string, map[string]any) (string, error)) (
 	map[string][]byte, error) {
 
@@ -95,7 +95,7 @@ func Bundle(src Sources, template string, pages map[string]any,
 					"%s declares a detail route with half of it missing, so "+
 						"no record can be written for it", name)
 			}
-			files, err := detailFiles(src, template, name, body, d, render)
+			files, err := detailFiles(src, layouts, name, body, d, render)
 			if err != nil {
 				return nil, err
 			}
@@ -108,7 +108,14 @@ func Bundle(src Sources, template string, pages map[string]any,
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
-		html, err := render(template, ctx)
+		// The same layout the server would pick. An export that rendered every
+		// page through the default would be a bundle that does not look like
+		// the site it is a copy of.
+		_, src2, lerr := layouts.For(body)
+		if lerr != nil {
+			return nil, fmt.Errorf("%s: %w", name, lerr)
+		}
+		html, err := render(src2, ctx)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
@@ -127,7 +134,7 @@ func Bundle(src Sources, template string, pages map[string]any,
 // the server would have served. The allow-list on that listing is the one
 // decision about which fields of a record are public, and a second path around
 // it would be a disclosure nobody reviewed.
-func detailFiles(src Sources, template, name string, body any, d Detail,
+func detailFiles(src Sources, layouts Layouts, name string, body any, d Detail,
 	render func(string, map[string]any) (string, error)) (
 	map[string][]byte, error) {
 
@@ -166,7 +173,11 @@ func detailFiles(src Sources, template, name string, body any, d Detail,
 			return nil, fmt.Errorf("%s/%s: %w", name, key, cerr)
 		}
 		ctx["record"] = map[string]any(row)
-		html, rerr := render(template, ctx)
+		_, layout, lerr := layouts.For(body)
+		if lerr != nil {
+			return nil, fmt.Errorf("%s/%s: %w", name, key, lerr)
+		}
+		html, rerr := render(layout, ctx)
 		if rerr != nil {
 			return nil, fmt.Errorf("%s/%s: %w", name, key, rerr)
 		}
