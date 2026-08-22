@@ -183,8 +183,12 @@ var kinds = []Kind{
 		Name: "gallery", Group: "media", Summary: "A grid of pictures with captions, optionally linked.",
 		Stub: map[string]any{
 			"title": "Pictures", "shape": "square",
+			// No image. A stub pointing at a placeholder path publishes a
+			// broken picture, which is worse than an empty section — found by
+			// driving the Telegram editor and publishing what it produced.
+			// The picker is how a file gets attached.
 			"items": []any{
-				map[string]any{"image": "/media/replace-me.png",
+				map[string]any{"image": "",
 					"alt":     "Describe what is in the picture, for somebody who cannot see it",
 					"caption": "A caption"},
 			},

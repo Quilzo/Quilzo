@@ -43,6 +43,7 @@ import (
 //	unlinked   true when the object has no usable href
 //	no_image   true when it has no image
 //	no_slug    true when it has no slug
+//	no_src     true when it has no media source
 //
 // For the hero, additionally:
 //
@@ -107,6 +108,7 @@ func derive(m map[string]any) {
 	setIfAbsent(m, "unlinked", !hasText(m, "href"))
 	setIfAbsent(m, "no_image", !hasText(m, "image"))
 	setIfAbsent(m, "no_slug", !hasText(m, "slug"))
+	setIfAbsent(m, "no_src", !hasText(m, "src"))
 }
 
 func setIfAbsent(m map[string]any, key string, value any) {

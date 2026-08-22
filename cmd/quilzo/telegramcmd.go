@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -11,6 +12,9 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/medialib"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/starter"
 	"github.com/quilzo/quilzo/internal/store"
@@ -127,14 +131,27 @@ func telegramServe(root string, args []string) error {
 		return err
 	}
 
+	// The library files sent to the bot go into, opened before anything is
+	// served so a build that cannot open it says so rather than accepting a
+	// photograph and dropping it.
+	lib, lerr := openMedia(root)
+	if lerr != nil {
+		return fmt.Errorf("the media library could not be opened: %w", lerr)
+	}
+	publisher := &chatPublisher{
+		root: root, store: s, tplDir: *tplDir, design: *design,
+	}
+	// Named library rather than media, which is the package.
+	library := &chatMedia{root: root, lib: lib, cfg: mustConfig(root)}
+
 	app := &telegram.App{
 		BotToken:   token,
 		Spender:    telegram.NewMemory(),
 		Stylesheet: d.Stylesheet,
 		SiteURL:    strings.TrimSpace(*siteURL),
-		Publisher: &chatPublisher{
-			root: root, store: s, tplDir: *tplDir, design: *design,
-		},
+		Publisher:  publisher,
+		Drafts:     publisher,
+		Media:      library,
 	}
 
 	// Recorded before the listener opens, not after it closes. This is the
@@ -150,6 +167,7 @@ func telegramServe(root string, args []string) error {
 		Bot:      &telegram.Bot{Token: token},
 		AppURL:   strings.TrimSpace(*appURL),
 		BotToken: token,
+		Media:    library,
 	}
 	handler := app.Handler()
 
@@ -401,4 +419,173 @@ func (c *chatPublisher) Save(handle string, body map[string]any,
 		return "/", nil
 	}
 	return "/" + handle, nil
+}
+
+// chatMedia is the library, wired for the bot.
+//
+// # Why an owner is carried and then mostly ignored
+//
+// The library is content-addressed and shared: the same photograph sent by two
+// people is one file, because its name is the hash of its bytes. So there is no
+// per-person directory to put anything in, and `Recent` filters by who uploaded
+// rather than by where it lives.
+//
+// That is a real design consequence worth stating rather than hiding. Two people
+// who send the same image share it, and either of them describing it describes
+// it for both. For a single-operator installation — which is what this is —
+// that is deduplication working. For a multi-tenant one it would be a leak of
+// the fact that somebody else has the same file, and this is not that yet.
+type chatMedia struct {
+	root string
+	lib  *medialib.Library
+	cfg  *config.Config
+}
+
+func (m *chatMedia) Save(owner, name string, body []byte,
+	alt string) (string, string, error) {
+
+	// Accepted the same way an upload is: the bytes decide the format, the
+	// pixel count is bounded, and a refusal explains itself. A file that
+	// arrived over the network is still a file.
+	file, err := media.Accept(name, body, time.Now())
+	if err != nil {
+		return "", "", err
+	}
+	file.Alt = strings.TrimSpace(alt)
+	file.Source = "telegram:" + owner
+
+	// The same optimisation an uploaded image gets, from the same settings.
+	// A photograph out of a phone is several megabytes and a page does not
+	// need it.
+	if file.Kind == media.Image {
+		opt, oerr := media.Optimise(file.Format, body, media.Options{
+			MaxWidth:    m.cfg.Int("media.max_width"),
+			MaxHeight:   m.cfg.Int("media.max_height"),
+			JPEGQuality: m.cfg.Int("media.jpeg_quality"),
+			WebP:        m.cfg.Bool("media.webp"),
+		})
+		if oerr == nil && len(opt.Body) > 0 && len(opt.Body) < len(body) {
+			// Re-accepted, because optimising produced different bytes and the
+			// id is the hash of the bytes. Trusting the first record would
+			// store one file under another file's name.
+			reaccepted, rerr := media.Accept(name, opt.Body, time.Now())
+			if rerr == nil {
+				reaccepted.Alt = file.Alt
+				reaccepted.Source = file.Source
+				file, body = reaccepted, opt.Body
+			}
+		}
+	}
+
+	if err := m.lib.Put(file, body); err != nil {
+		return "", "", err
+	}
+	record(m.root, audit.Record{
+		Action: "telegram.media", Resource: "/" + file.ID,
+		Outcome: audit.Success, Principal: owner, Kind: audit.KindHuman,
+	})
+	return file.ID, string(file.Kind), nil
+}
+
+func (m *chatMedia) Describe(id, alt string) error {
+	file, body, err := m.lib.Get(id)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(alt) == "" {
+		return fmt.Errorf("a description cannot be empty")
+	}
+	file.Alt = strings.TrimSpace(alt)
+	// Put again with the same bytes. The id is the hash of the content, so this
+	// rewrites the record beside it rather than storing a second copy.
+	return m.lib.Put(file, body)
+}
+
+func (m *chatMedia) Recent(owner string, limit int) []telegram.StoredFile {
+	all, err := m.lib.List()
+	if err != nil {
+		return nil
+	}
+	want := "telegram:" + owner
+	out := []telegram.StoredFile{}
+	for _, f := range all {
+		if f.Source != want {
+			continue
+		}
+		out = append(out, telegram.StoredFile{
+			ID: f.ID, Kind: string(f.Kind), Name: f.Name, Alt: f.Alt,
+			Width: f.Width, Height: f.Height,
+		})
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+// Draft returns the working copy and the commit it was read at.
+//
+// The base travels out and back because the draft ref is one ref for the whole
+// store: two people editing their own pages at the same time are two writers
+// with the same parent, and without it the second write silently discards the
+// first. Found by the source-walking test that refuses a write surface which
+// does not compare and swap.
+func (c *chatPublisher) Draft(handle string) (map[string]any, string, error) {
+	base := c.store.GetRef(site.RefDraft)
+	pages, err := site.PagesAt(c.store, site.RefDraft)
+	if err != nil {
+		if base != "" {
+			return nil, "", fmt.Errorf("the draft could not be read")
+		}
+		// No draft ref at all is the state a first page is written in.
+		return map[string]any{}, "", nil
+	}
+	body, found := pages[handle].(map[string]any)
+	if !found {
+		return map[string]any{}, base, nil
+	}
+	// A copy, because this is the decoded tree other requests are reading and
+	// the editor is about to write into what it gets back.
+	out := make(map[string]any, len(body))
+	for k, v := range body {
+		out[k] = v
+	}
+	return out, base, nil
+}
+
+// Keep writes the working copy, gated and compare-and-swapped.
+//
+// Not published. Somebody editing wants their unfinished sentence in a draft,
+// and somebody visiting the site wants the last thing that was finished — so
+// this moves the draft ref and nothing else.
+func (c *chatPublisher) Keep(handle string, body map[string]any,
+	author, message, base string) error {
+
+	pages, err := site.PagesAt(c.store, site.RefDraft)
+	if err != nil {
+		if c.store.GetRef(site.RefDraft) != "" {
+			return fmt.Errorf("the draft could not be read")
+		}
+		pages = map[string]any{}
+	}
+	pages[handle] = body
+
+	// The same gate as every other write surface. Sections are content, and
+	// content is typed.
+	types, err := gateWrite(c.root, pages)
+	if err != nil {
+		return err
+	}
+	if _, err := site.SaveDraftFrom(c.store, pages, message, author, base); err != nil {
+		var conflict *site.Conflict
+		if errors.As(err, &conflict) {
+			return fmt.Errorf(
+				"somebody else wrote to this store while you were editing, so " +
+					"this was not saved rather than quietly replacing what they " +
+					"did. Open the editor again — your page is as they left it, " +
+					"and you can redo your change on top")
+		}
+		return err
+	}
+	return types.Save()
 }
