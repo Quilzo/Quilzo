@@ -8,6 +8,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/public"
+	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/timestamp"
 )
 
@@ -52,7 +53,9 @@ func publishedRoot(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	fp := public.New(s, "").Fingerprint()
+	// No layouts: a fingerprint is over what is published, and nothing here
+	// renders anything.
+	fp := public.New(s, render.Layouts{}).Fingerprint()
 	if fp == "" {
 		return "", fmt.Errorf("nothing is published, so there is nothing to prove")
 	}

@@ -95,10 +95,29 @@ importing
   quilzo ipfs write -o site                render it for 'ipfs add -r'      
   quilzo ipfs verify CID                   check what a pinning service claimed
 
-templates
+templates and design
   quilzo demo                              a whole example application, in one go
   quilzo template list | show NAME         ready-made starting points
-  quilzo template use NAME [--dir DIR]     write it, its stylesheet and sample
+  quilzo template use NAME [--dir DIR]     write it, its theme and sample content
+  quilzo template layouts                  which layouts a page may name
+  quilzo template adopt FILE               convert a template from another system
+  quilzo theme show | tokens               what the design is set to, and the knobs
+  quilzo theme set TOKEN VALUE             change one, refused if unreadable
+  quilzo theme check | fonts | css         contrast, typefaces, generated CSS
+  quilzo theme apply STARTER               take a starter's palette, keep your layout
+  quilzo section kinds                     what a page can be built out of
+  quilzo section list [PAGE]               the sections on a page, in order
+  quilzo section add PAGE KIND             add one, with content that renders
+  quilzo section move PAGE N up|down       reorder without editing JSON
+  quilzo section remove PAGE N             take one out
+  quilzo section fields PAGE N             what is editable inside one
+  quilzo section set PAGE N path=value     change what a section says
+  quilzo section item add PAGE N LIST      add an entry to a list inside one
+
+telegram
+  quilzo telegram check                    confirm the bot token works
+  quilzo telegram serve                    the Mini App: publish from a chat
+  quilzo telegram link USER-ID             mint a one-time link without a bot
 
 languages
   quilzo lang init en | add fr             a site in more than one language
@@ -383,6 +402,12 @@ func main() {
 		err = cmdDemo(root, cmdArgs)
 	case "template", "templates":
 		err = cmdTemplate(root, cmdArgs)
+	case "theme":
+		err = cmdTheme(root, cmdArgs)
+	case "section", "sections":
+		err = cmdSection(root, cmdArgs)
+	case "telegram":
+		err = cmdTelegram(root, cmdArgs)
 	case "posture":
 		err = cmdPosture(root, cmdArgs)
 	case "type", "types":
@@ -687,12 +712,15 @@ func checkAccessibility(root string, s *store.Store, commitID, tplDir string) ([
 	if err != nil {
 		return nil, err
 	}
-	tplPath := filepath.Join(tplDir, "page.html")
-	raw, err := os.ReadFile(tplPath)
+	// The whole design, loaded exactly as the public server loads it. A gate
+	// that read one file while the server read a directory would be judging a
+	// different site — and the interesting failures are the quiet direction:
+	// a page rendered through the wrong layout looks fine to a checker.
+	design, err := loadDesign(tplDir)
 	if err != nil {
-		// No template means nothing renders, so there is nothing to judge. Say
+		// No layouts means nothing renders, so there is nothing to judge. Say
 		// so rather than reporting a clean result over an empty check.
-		return nil, fmt.Errorf("no template at %s to render against: %w", tplPath, err)
+		return nil, fmt.Errorf("nothing to render against: %w", err)
 	}
 	// Rendered the way the site serves them. Checking a page with its
 	// navigation and its listings missing is checking a different document,
@@ -701,18 +729,54 @@ func checkAccessibility(root string, s *store.Store, commitID, tplDir string) ([
 	// menu is never seen.
 	src := sourcesFor(root, s, commitID, siteName(root), pages)
 	rendered := map[string]string{}
+	var extra []*a11y.Report
+
+	// A page asking for a layout this site does not have is a blocking failure
+	// of its own. It used to be impossible to express, so it would have been
+	// either a silent fallback to the default — a page nobody designed — or a
+	// 500 for a reader. Named here, before anything is published.
+	for page, layout := range design.Layouts.Missing(pages) {
+		extra = append(extra, a11y.Blocker(page, "layout-not-found", "",
+			fmt.Sprintf("this page asks for the %q layout, which this site does "+
+				"not have. It would not render for a reader at all. Layouts "+
+				"available: %s", layout,
+				strings.Join(design.Layouts.Names(), ", "))))
+	}
+
+	// Colour contrast, which this program used to list under what it does not
+	// check on the grounds that it lives in a stylesheet the tool cannot see.
+	// The tool generates the stylesheet now, so the excuse expired: a ratio is
+	// arithmetic over two hex values, and a theme that puts text below 4.5:1
+	// against its own background is refused with both numbers named.
+	if !design.OwnStylesheet {
+		for _, f := range design.Theme.Check() {
+			if !f.Blocking {
+				continue
+			}
+			extra = append(extra, a11y.Blocker("theme", "theme-contrast",
+				f.Criterion, f.Detail))
+		}
+	}
+
 	for name, body := range pages {
 		ctx, cerr := src.For(name, body, nil)
 		if cerr != nil {
 			return nil, fmt.Errorf("assembling %s: %w", name, cerr)
 		}
-		out, err := tmpl.Render(string(raw), ctx)
+		_, layout, lerr := design.Layouts.For(body)
+		if lerr != nil {
+			// Already reported above as a blocking finding for this page.
+			// Rendering it through something else to have something to check
+			// would be checking a document nobody is served.
+			continue
+		}
+		out, err := tmpl.Render(layout, ctx)
 		if err != nil {
 			return nil, fmt.Errorf("rendering %s: %w", name, err)
 		}
 		rendered[name] = out
 	}
-	return a11y.CheckAll(rendered), nil
+	return append(a11y.CheckAll(rendered), extra...), nil
 }
 
 func cmdPublish(root string, args []string) error {

@@ -920,6 +920,13 @@ pre.code code { background: none; padding: 0; }
 .chips a.on { background: var(--secondary-container);
   color: var(--on-secondary-container); border-color: transparent; }
 .chips .count { font-size: .75rem; opacity: .7; }
+/* A chip that is not a link. The layouts on the design screen are names, not
+   destinations, and a chip somebody can click that goes nowhere is worse than
+   one that plainly does not. */
+.chips .chip { display: inline-flex; gap: .4rem; align-items: center;
+  padding: .35rem .75rem; border-radius: 999px;
+  border: 1px solid var(--outline-variant); color: var(--on-surface);
+  background: var(--surface-container-low); font-size: .875rem; }
 .row textarea { font: inherit; font-family: ui-monospace, monospace;
   padding: .5rem .6rem; border-radius: var(--shape-s);
   border: 1px solid var(--outline); background: var(--surface);

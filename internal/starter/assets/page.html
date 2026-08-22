@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="{{ page.lang | default:en }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{% if record.name %}{{ record.name }} — {% end %}{% if page.title %}{{ page.title }} — {% end %}{{ site.name }}</title>
+{% if page.description %}<meta name="description" content="{{ page.description }}">{% end %}
+<meta property="og:site_name" content="{{ site.name }}">
+<meta property="og:title" content="{{ page.title }}">
+<meta property="og:type" content="{{ page.og_type | default:website }}">
+{% if page.description %}<meta property="og:description" content="{{ page.description }}">{% end %}
+{% if page.share_image %}<meta property="og:image" content="{{ page.share_image }}">
+<meta property="og:image:alt" content="{{ page.share_image_alt }}">
+<meta name="twitter:card" content="summary_large_image">{% end %}
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="site-header {{ page.header_class }}">
+  <div class="wrap wrap-wide">
+    {% if site.name %}<a class="brand" href="/">{% if page.brand_mark %}<span class="brand-mark" aria-hidden="true">{{ page.brand_mark }}</span>{% end %}{{ site.name }}</a>{% end %}
+    {% if menus.main %}
+    <nav class="nav" aria-label="Main">
+      <ul>
+        {% for item in menus.main %}<li class="depth-{{ item.depth }}"><a href="{{ item.href }}"{% if item.current %} aria-current="page"{% end %}>{{ item.label }}</a></li>{% end %}
+      </ul>
+    </nav>
+    {% end %}
+    {% if page.header_cta_href %}<a class="btn" href="{{ page.header_cta_href }}">{{ page.header_cta_label }}</a>{% end %}
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+
+{% if page.breadcrumbs %}
+<div class="wrap wrap-wide">
+  <nav class="breadcrumbs" aria-label="Breadcrumb">
+    <ol>
+      {% for c in page.breadcrumbs %}<li>{% if c.href %}<a href="{{ c.href }}">{{ c.label }}</a>{% end %}{% if c.unlinked %}<span aria-current="page">{{ c.label }}</span>{% end %}</li>{% end %}
+    </ol>
+  </nav>
+</div>
+{% end %}
+
+{% if page.hero %}
+<div class="wrap wrap-wide">
+  <div class="hero hero-{{ page.hero.style }} {{ page.hero.surface }}">
+    {% if page.hero.eyebrow %}<p class="chip">{{ page.hero.eyebrow }}</p>{% end %}
+    {% if page.hero.image %}
+    <div class="hero-split">
+      <div class="stack">
+        <h1>{{ page.hero.title }}</h1>
+        {% if page.hero.lead %}<p class="lead">{{ page.hero.lead }}</p>{% end %}
+        <div class="actions">
+          {% if page.hero.cta_href %}<a class="btn btn-lg" href="{{ page.hero.cta_href }}">{{ page.hero.cta_label }}</a>{% end %}
+          {% if page.hero.secondary_href %}<a class="btn btn-outlined btn-lg" href="{{ page.hero.secondary_href }}">{{ page.hero.secondary_label }}</a>{% end %}
+        </div>
+      </div>
+      <div class="hero-media"><img src="{{ page.hero.image }}" alt="{{ page.hero.alt }}" width="960" height="720"></div>
+    </div>
+    {% end %}
+    {% if page.hero.no_image %}
+    <h1>{{ page.hero.title }}</h1>
+    {% if page.hero.lead %}<p class="lead">{{ page.hero.lead }}</p>{% end %}
+    <div class="actions">
+      {% if page.hero.cta_href %}<a class="btn btn-lg" href="{{ page.hero.cta_href }}">{{ page.hero.cta_label }}</a>{% end %}
+      {% if page.hero.secondary_href %}<a class="btn btn-outlined btn-lg" href="{{ page.hero.secondary_href }}">{{ page.hero.secondary_label }}</a>{% end %}
+    </div>
+    {% end %}
+  </div>
+</div>
+{% end %}
+
+{% if page.head_title %}
+<div class="wrap">
+  <div class="section-head">
+    {% if page.eyebrow %}<p class="eyebrow">{{ page.eyebrow }}</p>{% end %}
+    <h1>{{ page.head_title }}</h1>
+    {% if page.standfirst %}<p class="lead">{{ page.standfirst }}</p>{% end %}
+  </div>
+</div>
+{% end %}
+
+{% for s in page.sections %}
+
+{% if s.features %}
+<section class="section {{ s.features.tone }} reveal">
+  <div class="wrap wrap-wide">
+    {% if s.features.title %}
+    <div class="section-head {{ s.features.align }}">
+      <h2>{{ s.features.title }}</h2>
+      {% if s.features.intro %}<p class="lead">{{ s.features.intro }}</p>{% end %}
+    </div>
+    {% end %}
+    <div class="grid grid-{{ s.features.columns | default:3 }}">
+      {% for f in s.features.items %}
+      <div class="card {{ f.tone }}">
+        {% if f.chip %}<p class="chip">{{ f.chip }}</p>{% end %}
+        <h3>{% if f.href %}<a class="card-link" href="{{ f.href }}">{{ f.title }}</a>{% end %}{% if f.unlinked %}{{ f.title }}{% end %}</h3>
+        {% if f.body %}<p>{{ f.body }}</p>{% end %}
+      </div>
+      {% end %}
+    </div>
+  </div>
+</section>
+{% end %}
+
+{% if s.metrics %}
+<section class="section {{ s.metrics.tone }} reveal">
+  <div class="wrap wrap-wide">
+    {% if s.metrics.title %}<div class="section-head"><h2>{{ s.metrics.title }}</h2></div>{% end %}
+    <div class="metrics">
+      {% for m in s.metrics.items %}
+      <div class="metric">
+        <p class="label">{{ m.label }}</p>
+        <p class="value">{{ m.value }}</p>
+        <div class="foot">
+          {% if m.delta %}<span class="state state-{{ m.state }}">{{ m.delta }}</span>{% end %}
+          {% if m.note %}<span class="muted">{{ m.note }}</span>{% end %}
+        </div>
+        {% if m.pct %}<div class="bar bar-{{ m.state }}" role="presentation"><span style="--pct:{{ m.pct | round }}"></span></div>{% end %}
+      </div>
+      {% end %}
+    </div>
+  </div>
+</section>
+{% end %}
+
+{% if s.bars %}
+<section class="section {{ s.bars.tone }} reveal">
+  <div class="wrap">
+    {% if s.bars.title %}
+    <div class="section-head">
+      <h2>{{ s.bars.title }}</h2>
+      {% if s.bars.intro %}<p class="lead">{{ s.bars.intro }}</p>{% end %}
+    </div>
+    {% end %}
+    <div class="barchart">
+      {% for b in s.bars.items %}
+      <div class="row">
+        <span class="name">{{ b.name }}</span>
+        <div class="bar bar-{{ b.state }}" role="presentation"><span style="--pct:{{ b.pct | round }}"></span></div>
+        <span class="amount">{{ b.amount }}</span>
+      </div>
+      {% end %}
+    </div>
+    {% if s.bars.footnote %}<p class="muted">{{ s.bars.footnote }}</p>{% end %}
+  </div>
+</section>
+{% end %}
+
+{% if s.donuts %}
+<section class="section {{ s.donuts.tone }} reveal">
+  <div class="wrap">
+    {% if s.donuts.title %}<div class="section-head"><h2>{{ s.donuts.title }}</h2></div>{% end %}
+    <div class="donut-set">
+      {% for d in s.donuts.items %}
+      <figure class="donut-figure">
+        <div class="donut" style="--pct:{{ d.pct | round }}" role="presentation"></div>
+        <figcaption><strong>{{ d.value }}</strong> {{ d.label }}</figcaption>
+      </figure>
+      {% end %}
+    </div>
+  </div>
+</section>
+{% end %}
+
+{% if s.split %}
+<section class="section {{ s.split.tone }} reveal">
+  <div class="wrap wrap-wide">
+    <div class="split {{ s.split.flip }}">
+      {% if s.split.image %}<img src="{{ s.split.image }}" alt="{{ s.split.alt }}" width="960" height="720">{% end %}
+      <div class="split-text">
+        {% if s.split.eyebrow %}<p class="eyebrow">{{ s.split.eyebrow }}</p>{% end %}
+        {% if s.split.title %}<h2>{{ s.split.title }}</h2>{% end %}
+        {% for p in s.split.paragraphs %}<p>{{ p }}</p>{% end %}
+        {% if s.split.cta_href %}<div class="actions"><a class="btn" href="{{ s.split.cta_href }}">{{ s.split.cta_label }}</a></div>{% end %}
+      </div>
+    </div>
+  </div>
+</section>
+{% end %}
+
+{% if s.gallery %}
+<section class="section {{ s.gallery.tone }} reveal">
+  <div class="wrap wrap-wide">
+    {% if s.gallery.title %}<div class="section-head"><h2>{{ s.gallery.title }}</h2></div>{% end %}
+    <div class="gallery gallery-{{ s.gallery.shape }}">
+      {% for g in s.gallery.items %}
+      <figure>
+        {% if g.href %}<a href="{{ g.href }}"><img src="{{ g.image }}" alt="{{ g.alt }}" width="800" height="600" loading="lazy"><figcaption>{{ g.caption }}</figcaption></a>{% end %}
+        {% if g.unlinked %}<img src="{{ g.image }}" alt="{{ g.alt }}" width="800" height="600" loading="lazy">{% if g.caption %}<figcaption>{{ g.caption }}</figcaption>{% end %}{% end %}
+      </figure>
+      {% end %}
+    </div>
+  </div>
+</section>
+{% end %}
+
+{% if s.steps %}
+<section class="section {{ s.steps.tone }} reveal">
+  <div class="wrap">
+    {% if s.steps.title %}
+    <div class="section-head">
+      <h2>{{ s.steps.title }}</h2>
+      {% if s.steps.intro %}<p class="lead">{{ s.steps.intro }}</p>{% end %}
+    </div>
+    {% end %}
+    <ol class="steps">
+      {% for st in s.steps.items %}
+      <li><div class="step-body">
+        <h3>{{ st.title }}</h3>
+        {% if st.body %}<p>{{ st.body }}</p>{% end %}
+      </div></li>
+      {% end %}
+    </ol>
+  </div>
+</section>
+{% end %}
+
+{% if s.timeline %}
+<section class="section {{ s.timeline.tone }} reveal">
+  <div class="wrap">
+    {% if s.timeline.title %}<div class="section-head"><h2>{{ s.timeline.title }}</h2></div>{% end %}
+    <ol class="timeline">
+      {% for t in s.timeline.items %}
+      <li>
+        {% if t.date %}<time datetime="{{ t.date }}">{{ t.date | date }}</time>{% end %}
+        <h3>{{ t.title }}</h3>
+        {% if t.body %}<p>{{ t.body }}</p>{% end %}
+      </li>
+      {% end %}
+    </ol>
+  </div>
+</section>
+{% end %}
+
+{% if s.quote %}
+<section class="section {{ s.quote.tone }} reveal">
+  <div class="wrap">
+    <blockquote class="pull">
+      <p>{{ s.quote.text }}</p>
+      {% if s.quote.by %}<footer>{{ s.quote.by }}{% if s.quote.role %}, {{ s.quote.role }}{% end %}</footer>{% end %}
+    </blockquote>
+  </div>
+</section>
+{% end %}
+
+{% if s.logos %}
+<section class="section {{ s.logos.tone }}">
+  <div class="wrap wrap-wide">
+    {% if s.logos.title %}<div class="section-head center"><h2>{{ s.logos.title }}</h2></div>{% end %}
+    <ul class="logos">{% for l in s.logos.items %}<li>{{ l }}</li>{% end %}</ul>
+  </div>
+</section>
+{% end %}
+
+{% if s.pricing %}
+<section class="section {{ s.pricing.tone }} reveal">
+  <div class="wrap wrap-wide">
+    {% if s.pricing.title %}
+    <div class="section-head center">
+      <h2>{{ s.pricing.title }}</h2>
+      {% if s.pricing.intro %}<p class="lead">{{ s.pricing.intro }}</p>{% end %}
+    </div>
+    {% end %}
+    <div class="pricing">
+      {% for p in s.pricing.items %}
+      <div class="plan {{ p.featured }}">
+        <h3>{{ p.name }}</h3>
+        <p class="price"><span class="amount">{{ p.price }}</span>{% if p.period %}<span class="period">{{ p.period }}</span>{% end %}</p>
+        {% if p.body %}<p>{{ p.body }}</p>{% end %}
+        {% if p.features %}<ul>{% for f in p.features %}<li>{{ f }}</li>{% end %}</ul>{% end %}
+        {% if p.cta_href %}<a class="btn" href="{{ p.cta_href }}">{{ p.cta_label }}</a>{% end %}
+      </div>
+      {% end %}
+    </div>
+    {% if s.pricing.footnote %}<p class="muted center">{{ s.pricing.footnote }}</p>{% end %}
+  </div>
+</section>
+{% end %}
+
+{% if s.faq %}
+<section class="section {{ s.faq.tone }}">
+  <div class="wrap">
+    {% if s.faq.title %}<div class="section-head"><h2>{{ s.faq.title }}</h2></div>{% end %}
+    <div class="faq">
+      {% for q in s.faq.items %}
+      <details>
+        <summary>{{ q.q }}</summary>
+        <div class="answer">{% for p in q.paragraphs %}<p>{{ p }}</p>{% end %}{% if q.a %}<p>{{ q.a }}</p>{% end %}</div>
+      </details>
+      {% end %}
+    </div>
+  </div>
+</section>
+{% end %}
+
+{% if s.table %}
+<section class="section {{ s.table.tone }}">
+  <div class="wrap wrap-wide">
+    {% if s.table.title %}<div class="section-head"><h2>{{ s.table.title }}</h2></div>{% end %}
+    <div class="table-wrap">
+      <table>
+        {% if s.table.caption %}<caption>{{ s.table.caption }}</caption>{% end %}
+        <thead><tr>{% for c in s.table.columns %}<th scope="col">{{ c }}</th>{% end %}</tr></thead>
+        <tbody>
+          {% for r in s.table.rows %}<tr>{% for c in r.cells %}<td>{{ c }}</td>{% end %}</tr>{% end %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% end %}
+
+{% if s.people %}
+<section class="section {{ s.people.tone }} reveal">
+  <div class="wrap wrap-wide">
+    {% if s.people.title %}<div class="section-head"><h2>{{ s.people.title }}</h2></div>{% end %}
+    <ul class="people">
+      {% for p in s.people.items %}
+      <li>
+        {% if p.image %}<img src="{{ p.image }}" alt="{{ p.alt }}" width="480" height="480" loading="lazy">{% end %}
+        <p class="name">{% if p.href %}<a href="{{ p.href }}">{{ p.name }}</a>{% end %}{% if p.unlinked %}{{ p.name }}{% end %}</p>
+        {% if p.role %}<p class="role">{{ p.role }}</p>{% end %}
+      </li>
+      {% end %}
+    </ul>
+  </div>
+</section>
+{% end %}
+
+{% if s.prose %}
+<section class="section {{ s.prose.tone }}">
+  <div class="wrap">
+    {% if s.prose.title %}<div class="section-head"><h2>{{ s.prose.title }}</h2></div>{% end %}
+    <div class="prose narrow">{% for p in s.prose.paragraphs %}<p>{{ p }}</p>{% end %}</div>
+  </div>
+</section>
+{% end %}
+
+{% if s.notice %}
+<section class="section">
+  <div class="wrap">
+    <div class="notice notice-{{ s.notice.tone }}">
+      {% if s.notice.title %}<p><strong>{{ s.notice.title }}</strong></p>{% end %}
+      {% if s.notice.body %}<p>{{ s.notice.body }}</p>{% end %}
+    </div>
+  </div>
+</section>
+{% end %}
+
+{% if s.carousel %}
+<section class="section {{ s.carousel.tone }}">
+  <div class="wrap wrap-wide">
+    {% if s.carousel.title %}<div class="section-head"><h2>{{ s.carousel.title }}</h2></div>{% end %}
+    <ul class="carousel" role="list">
+      {% for c in s.carousel.items %}
+      <li class="card">
+        {% if c.image %}<img src="{{ c.image }}" alt="{{ c.alt }}" width="800" height="600" loading="lazy">{% end %}
+        <h3>{% if c.href %}<a class="card-link" href="{{ c.href }}">{{ c.title }}</a>{% end %}{% if c.unlinked %}{{ c.title }}{% end %}</h3>
+        {% if c.body %}<p>{{ c.body }}</p>{% end %}
+      </li>
+      {% end %}
+    </ul>
+    <p class="carousel-hint">{{ s.carousel.hint | default:Scroll for more. }}</p>
+  </div>
+</section>
+{% end %}
+
+{% if s.video %}
+<section class="section video {{ s.video.tone }}">
+  <div class="wrap">
+    {% if s.video.title %}<div class="section-head"><h2>{{ s.video.title }}</h2></div>{% end %}
+    <figure>
+      <video controls preload="metadata"{% if s.video.poster %} poster="{{ s.video.poster }}"{% end %}>
+        <source src="{{ s.video.src }}" type="video/mp4">
+      </video>
+      {% if s.video.caption %}<figcaption>{{ s.video.caption }}</figcaption>{% end %}
+      {% if s.video.transcript_href %}<p><a href="{{ s.video.transcript_href }}">{{ s.video.transcript_label }}</a></p>{% end %}
+    </figure>
+  </div>
+</section>
+{% end %}
+
+{% if s.cta %}
+<section class="section {{ s.cta.tone | default:tone-primary }} reveal">
+  <div class="wrap">
+    <div class="section-head center">
+      <h2>{{ s.cta.title }}</h2>
+      {% if s.cta.body %}<p class="lead">{{ s.cta.body }}</p>{% end %}
+      <div class="actions">
+        {% if s.cta.cta_href %}<a class="btn btn-lg" href="{{ s.cta.cta_href }}">{{ s.cta.cta_label }}</a>{% end %}
+        {% if s.cta.secondary_href %}<a class="btn btn-outlined btn-lg" href="{{ s.cta.secondary_href }}">{{ s.cta.secondary_label }}</a>{% end %}
+      </div>
+    </div>
+  </div>
+</section>
+{% end %}
+
+{% end %}
+
+{% if feeds %}
+{% for feed in feeds %}
+<section class="section reveal">
+  <div class="wrap wrap-wide">
+    {% if feed.title %}<div class="section-head"><h2>{{ feed.title }}</h2></div>{% end %}
+    <div class="grid grid-3">
+      {% for row in feed.rows %}
+      <div class="card">
+        {% if row.image %}<img src="/media/{{ row.image }}" alt="{{ row.alt }}" width="600" height="450" loading="lazy">{% end %}
+        <h3>{% if row.href %}<a class="card-link" href="{{ row.href }}">{{ row.name }}{{ row.title }}</a>{% end %}{% if row.unlinked %}{{ row.name }}{{ row.title }}{% end %}</h3>
+        {% if row.summary %}<p>{{ row.summary }}</p>{% end %}
+        <div class="foot price-line">
+          {% if row.price_display %}<span class="amount">{{ row.price_display }}</span>{% end %}
+          {% if row.availability_label %}<span class="state state-{{ row.state }}">{{ row.availability_label }}</span>{% end %}
+        </div>
+      </div>
+      {% end %}
+    </div>
+  </div>
+</section>
+{% end %}
+{% end %}
+
+{% if record.name %}
+<section class="section">
+  <div class="wrap wrap-wide">
+    <div class="detail-grid">
+      {% if record.image %}<img src="/media/{{ record.image }}" alt="{{ record.alt }}" width="960" height="960">{% end %}
+      <div class="stack">
+        {% if record.summary %}<p class="lead">{{ record.summary }}</p>{% end %}
+        <p class="price-line">
+          {% if record.price_display %}<span class="amount">{{ record.price_display }}</span>{% end %}
+          {% if record.availability_label %}<span class="state state-{{ record.state }}">{{ record.availability_label }}</span>{% end %}
+        </p>
+        {% if record.description %}<p>{{ record.description }}</p>{% end %}
+        {% if record.specs %}
+        <dl class="spec">{% for sp in record.specs %}<dt>{{ sp.name }}</dt><dd>{{ sp.value }}</dd>{% end %}</dl>
+        {% end %}
+      </div>
+    </div>
+  </div>
+</section>
+{% end %}
+
+{% if page.form %}
+<section class="section">
+  <div class="wrap">
+    {% if page.form_title %}<div class="section-head"><h2>{{ page.form_title }}</h2></div>{% end %}
+    <form class="stacked" method="post" action="/form/{{ page.form }}">
+      {% for f in page.fields %}
+      <p class="field">
+        <label for="f-{{ f.name }}">{{ f.label }}</label>
+        {% if f.textarea %}<textarea id="f-{{ f.name }}" name="{{ f.name }}" rows="5"></textarea>{% end %}
+        {% if f.type %}<input id="f-{{ f.name }}" name="{{ f.name }}" type="{{ f.type }}"{% if f.required %} required{% end %}>{% end %}
+        {% if f.hint %}<span class="hint">{{ f.hint }}</span>{% end %}
+      </p>
+      {% end %}
+      <p class="hp"><label for="f-website-url">Leave this empty</label>
+        <input id="f-website-url" name="website_url" type="text" tabindex="-1" autocomplete="off"></p>
+      {% if page.stamp %}<input type="hidden" name="form_started" value="{{ page.stamp }}">{% end %}
+      <p><button class="btn" type="submit">{{ page.form_submit | default:Send }}</button></p>
+    </form>
+    {% if page.privacy %}<p class="muted">{{ page.privacy }}</p>{% end %}
+  </div>
+</section>
+{% end %}
+
+{% if page.body_paragraphs %}
+<section class="section">
+  <div class="wrap"><div class="prose narrow">{% for p in page.body_paragraphs %}<p>{{ p }}</p>{% end %}</div></div>
+</section>
+{% end %}
+
+{% if page.updated %}
+<div class="wrap"><p class="muted">Last updated {{ page.updated | date }}.</p></div>
+{% end %}
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap wrap-wide">
+    {% if menus.foot %}
+    <nav aria-label="Footer">
+      <ul>{% for item in menus.foot %}<li><a href="{{ item.href }}">{{ item.label }}</a></li>{% end %}</ul>
+    </nav>
+    {% end %}
+    {% if page.footer %}<p class="colophon">{{ page.footer }}</p>{% end %}
+  </div>
+</footer>
+</body>
+</html>

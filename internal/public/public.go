@@ -49,12 +49,19 @@ import (
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/tmpl"
+	"github.com/quilzo/quilzo/internal/webfont"
 )
 
 // Site serves the live ref.
 type Site struct {
-	Store    *store.Store
-	Template string
+	Store *store.Store
+	// Layouts is every template this site can render a page through. A page
+	// names one in its own body; one that names none renders through the
+	// default. Resolution happens in internal/render, which is also where the
+	// accessibility gate, the preview and the export resolve it — five
+	// renderers that must agree cannot be trusted to agree unless they are one
+	// resolver.
+	Layouts render.Layouts
 	// Name and Description describe the site to a browser installing it.
 	Name        string
 	Description string
@@ -86,6 +93,11 @@ type Site struct {
 	// permitting everything — it is saying nothing, and saying nothing is the
 	// honest default until an operator decides.
 	Licence *Licence
+	// Fonts are the typefaces this site serves from its own origin, at
+	// /fonts/. Nil means the route 404s, which is the state of a site using the
+	// built-in stacks — and the only alternative to a self-hosted face, because
+	// there is deliberately no way to name a remote one.
+	Fonts *webfont.Set
 	// Stylesheet is served at /site.css, held in memory. Empty means the route
 	// 404s rather than falling back to something: a site whose stylesheet
 	// silently comes from somewhere else is a site whose appearance has an
@@ -152,8 +164,8 @@ type Site struct {
 }
 
 // New returns a Site with sensible defaults.
-func New(s *store.Store, template string) *Site {
-	return &Site{Store: s, Template: template, Index: "index", Name: "quilzo site"}
+func New(s *store.Store, layouts render.Layouts) *Site {
+	return &Site{Store: s, Layouts: layouts, Index: "index", Name: "quilzo site"}
 }
 
 // Handler routes the public surface.
@@ -169,6 +181,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/search.json", st.searchAPI)
 	mux.HandleFunc("/catalogue.json", st.catalogue)
 	mux.HandleFunc("/site.css", st.stylesheet)
+	mux.HandleFunc("/fonts/", st.font)
 	mux.HandleFunc("/robots.txt", st.robots)
 	mux.HandleFunc("/llms.txt", st.llms)
 	mux.HandleFunc("/media/", st.mediaFile)
@@ -614,13 +627,23 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html, err := tmpl.Render(st.Template, ctx)
+	_, layout, lerr := st.Layouts.For(body)
+	if lerr != nil {
+		// A page asking for a layout this site does not have is a broken page,
+		// not a page to render through something else. Rendering it through the
+		// default would serve a document nobody designed with no message
+		// anywhere saying so.
+		http.Error(w, "this page could not be assembled",
+			http.StatusInternalServerError)
+		return
+	}
+	html, err := tmpl.Render(layout, ctx)
 	if err != nil {
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
 
-	html = st.injectHead(html, name, tree[name])
+	html = st.injectHead(html, name, tree[name], body)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
 }
@@ -630,7 +653,7 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 // Inserted before </head> rather than asked of the template author, because a
 // legal marking that depends on every template remembering to include a partial
 // is a marking that will be missing from the one template nobody checked.
-func (st *Site) injectHead(html, page, hash string) string {
+func (st *Site) injectHead(html, page, hash string, body any) string {
 	var b strings.Builder
 	b.WriteString(`<link rel="manifest" href="/manifest.webmanifest">` + "\n")
 
@@ -648,6 +671,11 @@ func (st *Site) injectHead(html, page, hash string) string {
 		b.WriteString(`<link rel="alternate" type="application/json" ` +
 			`href="/catalogue.json" title="Product catalogue">` + "\n")
 	}
+
+	// What this page is, for a reader that is not a person. Built here rather
+	// than in the layout because JSON inside a script element needs JSON
+	// escaping, and the renderer escapes for HTML — see structured.go.
+	b.WriteString(pageStructuredData(page, body, st.Name, st.BaseURL))
 
 	if st.LoadProvenance != nil {
 		if idx, err := st.LoadProvenance(); err == nil {

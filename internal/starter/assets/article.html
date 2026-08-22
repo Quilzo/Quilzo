@@ -1,54 +1,106 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ page.lang | default:en }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{{ page.title }}</title>
+<title>{% if page.title %}{{ page.title }} — {% end %}{{ site.name }}</title>
 {% if page.description %}<meta name="description" content="{{ page.description }}">{% end %}
+<meta property="og:site_name" content="{{ site.name }}">
+<meta property="og:title" content="{{ page.title }}">
+<meta property="og:type" content="{{ page.og_type | default:website }}">
+{% if page.description %}<meta property="og:description" content="{{ page.description }}">{% end %}
+{% if page.share_image %}<meta property="og:image" content="{{ page.share_image }}">
+<meta property="og:image:alt" content="{{ page.share_image_alt }}">
+<meta name="twitter:card" content="summary_large_image">{% end %}
 {% if page.canonical %}<link rel="canonical" href="{{ page.canonical }}">{% end %}
 <link rel="stylesheet" href="/site.css">
 </head>
 <body>
 <a class="skip" href="#main">Skip to main content</a>
 
-<header class="site">
-  <div class="wrap">
+<header class="site-header">
+  <div class="wrap wrap-wide">
     {% if page.brand %}<a class="brand" href="/">{{ page.brand }}</a>{% end %}
-    {% if page.nav %}<nav class="site" aria-label="Main">
-      <ul>
-        {% for item in page.nav %}<li><a href="{{ item.href }}">{{ item.label }}</a></li>{% end %}
-      </ul>
-    </nav>{% end %}
+    {% if page.nav %}
+    <nav class="nav" aria-label="Main">
+      <ul>{% for item in page.nav %}<li><a href="{{ item.href }}">{{ item.label }}</a></li>{% end %}</ul>
+    </nav>
+    {% end %}
+    {% if menus.main %}
+    <nav class="nav" aria-label="Site">
+      <ul>{% for item in menus.main %}<li><a href="{{ item.href }}"{% if item.current %} aria-current="page"{% end %}>{{ item.label }}</a></li>{% end %}</ul>
+    </nav>
+    {% end %}
   </div>
 </header>
 
-<main id="main" tabindex="-1" class="wrap narrow">
-  <article>
-    <header>
-      {% if page.section %}<p class="chip">{{ page.section }}</p>{% end %}
+<main id="main" tabindex="-1">
+  <article class="wrap">
+    <div class="section-head">
+      {% if page.section %}<p class="eyebrow">{{ page.section }}</p>{% end %}
       <h1>{{ page.title }}</h1>
       {% if page.standfirst %}<p class="lead">{{ page.standfirst }}</p>{% end %}
-      <p class="meta">
-        {% if page.byline %}By {{ page.byline }}{% end %}
-        {% if page.published %}<time datetime="{{ page.published }}">{{ page.published }}</time>{% end %}
+      <p class="muted">
+        {% if page.byline %}<span>{{ page.byline }}</span>{% end %}
+        {% if page.published %}<time datetime="{{ page.published }}">{{ page.published | date }}</time>{% end %}
+        {% if page.reading_time %}<span>· {{ page.reading_time }}</span>{% end %}
       </p>
-    </header>
+    </div>
 
     {% if page.hero %}
-    <img src="{{ page.hero }}" alt="{{ page.hero_alt }}" width="1200" height="630">
+    <figure class="media-full">
+      <img src="{{ page.hero }}" alt="{{ page.hero_alt }}" width="1280" height="720" class="ratio-wide">
+      {% if page.hero_caption %}<figcaption class="muted">{{ page.hero_caption }}</figcaption>{% end %}
+    </figure>
     {% end %}
 
-    <p>{{ page.body }}</p>
+    {% if page.body %}<div class="prose narrow"><p>{{ page.body }}</p></div>{% end %}
+    {% if page.paragraphs %}<div class="prose narrow">{% for p in page.paragraphs %}<p>{{ p }}</p>{% end %}</div>{% end %}
+
+    {% if page.pull_quote %}
+    <blockquote class="pull">
+      <p>{{ page.pull_quote }}</p>
+      {% if page.pull_quote_by %}<footer>{{ page.pull_quote_by }}</footer>{% end %}
+    </blockquote>
+    {% end %}
 
     {% if page.tags %}
-    <p>{% for t in page.tags %}<span class="chip">{{ t }}</span>{% end %}</p>
+    <div class="section">
+      <h2 class="visually-hidden">Tags</h2>
+      <ul class="chips">{% for t in page.tags %}<li class="chip">{{ t }}</li>{% end %}</ul>
+    </div>
     {% end %}
+
+    {% if page.updated %}<p class="muted">Last updated {{ page.updated | date }}.</p>{% end %}
   </article>
+
+  {% if feeds %}
+  {% for feed in feeds %}
+  <section class="section">
+    <div class="wrap wrap-wide">
+      {% if feed.title %}<div class="section-head"><h2>{{ feed.title }}</h2></div>{% end %}
+      <div class="grid grid-3">
+        {% for row in feed.rows %}
+        <div class="card">
+          <h3>{% if row.href %}<a class="card-link" href="{{ row.href }}">{{ row.title }}{{ row.name }}</a>{% end %}{% if row.unlinked %}{{ row.title }}{{ row.name }}{% end %}</h3>
+          {% if row.standfirst %}<p>{{ row.standfirst }}</p>{% end %}
+          {% if row.summary %}<p>{{ row.summary }}</p>{% end %}
+          {% if row.published %}<p class="muted"><time datetime="{{ row.published }}">{{ row.published | date }}</time></p>{% end %}
+        </div>
+        {% end %}
+      </div>
+    </div>
+  </section>
+  {% end %}
+  {% end %}
 </main>
 
-<footer class="site">
-  <div class="wrap">{% if page.footer %}<p>{{ page.footer }}</p>{% end %}</div>
+<footer class="site-footer">
+  <div class="wrap wrap-wide">
+    {% if menus.foot %}<nav aria-label="Footer"><ul>{% for item in menus.foot %}<li><a href="{{ item.href }}">{{ item.label }}</a></li>{% end %}</ul></nav>{% end %}
+    {% if page.footer %}<p class="colophon">{{ page.footer }}</p>{% end %}
+  </div>
 </footer>
 </body>
 </html>

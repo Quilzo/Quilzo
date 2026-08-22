@@ -21,11 +21,19 @@
 //
 // # What is checked, and what cannot be
 //
-// Everything below is decidable from the rendered HTML. Alt text that is present
-// but useless ("image1.jpg"), a heading that is technically ordered but
-// meaningless, a colour contrast decided by a stylesheet this tool never sees —
-// those need a human, and claiming otherwise would be the accessibility
-// equivalent of a green dashboard over an unaudited system.
+// Everything below is decidable from the rendered HTML, with one addition that
+// is not: colour contrast, which is computed over the theme the stylesheet is
+// generated from and arrives here as a blocking finding. That used to be listed
+// under what cannot be checked, on the grounds that contrast lives in a
+// stylesheet this tool never sees. It generates the stylesheet now, so the
+// reason expired — and a disclosure that outlives its reason is worse than no
+// disclosure, because somebody is relying on it.
+//
+// What still needs a human: alt text that is present but useless
+// ("image1.jpg"), a heading that is technically ordered but meaningless, and the
+// contrast of a hand-written site.css, which is served exactly as an operator
+// wrote it. Claiming otherwise would be the accessibility equivalent of a green
+// dashboard over an unaudited system.
 //
 // So the report says what it checked and what it did not. A tool that implies
 // full coverage is worse than one that finds less and is honest, because the
@@ -98,10 +106,16 @@ var (
 		"tables have header cells (1.3.1)",
 		"no auto-playing media (1.4.2)",
 		"iframes are titled (4.1.2)",
+		// Not found by reading a page: the ratio lives in the stylesheet, and
+		// the stylesheet is generated from a theme this program can compute
+		// over. Listed here rather than under what is not covered, because it
+		// blocks a publish exactly like the checks above — see internal/theme.
+		"colour contrast in the theme, in both schemes (1.4.3, 1.4.11)",
 	}
 	notCovered = []string{
 		"whether alt text is actually useful rather than merely present",
-		"colour contrast, which lives in stylesheets this tool does not see",
+		"colour contrast in a hand-written site.css, which is served as the " +
+			"operator wrote it and is not a stylesheet this program generated",
 		"keyboard operability of scripted widgets",
 		"reading order and whether headings describe their sections",
 		"anything requiring judgement about meaning",
@@ -514,4 +528,28 @@ func firstImageAlt(fragment string) (string, bool) {
 		return strings.TrimSpace(rest[1 : 1+k]), true
 	}
 	return "", true
+}
+
+// Blocker builds a report holding one blocking failure that was not found by
+// reading a page.
+//
+// # Why this is here rather than in the caller
+//
+// Two failures a reader experiences as accessibility problems are not visible
+// in one rendered page. A theme whose body text sits at 3:1 against its own
+// background is unreadable on every page and appears in none of the checks
+// below, because contrast lives in the stylesheet. A page naming a layout the
+// site does not have renders as nothing at all, so there is no HTML to check.
+//
+// Both have to reach the same gate, or they are warnings — and the position of
+// this project is that a warning nobody reads is a feature nobody has. So they
+// arrive as reports, they are counted by BlockingCount, and they refuse a
+// publish exactly like a missing alt attribute.
+//
+// The rule name is required and is what an operator greps for; the criterion may
+// be empty for a failure that is not a WCAG criterion, such as a missing layout.
+func Blocker(page, rule, criterion, detail string) *Report {
+	r := &Report{Page: page}
+	r.add(rule, Blocking, criterion, detail, "")
+	return r
 }

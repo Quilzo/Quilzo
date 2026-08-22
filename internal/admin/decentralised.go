@@ -253,7 +253,7 @@ func (s *Server) bundle() (map[string][]byte, error) {
 				"what is in the draft — a draft made permanent is an " +
 				"unfinished page nobody can withdraw")
 	}
-	if s.Template == "" {
+	if s.Layouts.Len() == 0 {
 		return nil, fmt.Errorf(
 			"there is no page template, so the site cannot be rendered")
 	}
@@ -277,7 +277,7 @@ func (s *Server) bundle() (map[string][]byte, error) {
 	// One renderer, shared with `quilzo ipfs write`. Two copies of this loop
 	// existed and diverged the moment detail pages arrived: which of your
 	// product pages got written depended on which interface you exported from.
-	out, berr := render.Bundle(src, s.Template, pages, tmpl.Render)
+	out, berr := render.Bundle(src, s.Layouts, pages, tmpl.Render)
 	if berr != nil {
 		return nil, berr
 	}

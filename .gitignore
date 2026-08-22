@@ -23,3 +23,7 @@ export/
 # from the one this project ships under and nobody noticed for months.
 *.egg-info/
 __pycache__/
+
+# built by "make submission"
+submission/
+quilzo-submission-*.zip

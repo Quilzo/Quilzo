@@ -123,8 +123,26 @@ var coverage = map[string]surfaces{
 		NoMCP: "installs a whole application over an empty store, including " +
 			"content types and a template; an agent that could do this could " +
 			"replace a site with a demonstration of one"},
-	"template":  {GUI: "/transfer", NoMCP: "replaces a whole page with sample content, which is a destructive operation with a friendly name"},
-	"templates": {GUI: "/transfer", NoMCP: "as template"},
+	"template": {GUI: "/design",
+		NoMCP: "writes the markup every page renders through, and adopts " +
+			"markup from a file. Both are changes to what the public sees on " +
+			"every page at once, which is not a thing to reach by asking"},
+	"templates": {GUI: "/design", NoMCP: "as template"},
+	"section": {GUI: "/sections",
+		NoMCP: "adds, moves and removes the blocks a page is built from. An " +
+			"agent already writes pages through save_page, which is the same " +
+			"change stated as content rather than as a sequence of moves"},
+	"sections": {GUI: "/sections", NoMCP: "as section"},
+	"telegram": {Why: "starts a server, like `serve` and `site`; there is no " +
+		"button inside an interface that could start another interface",
+		NoMCP: "runs a public, writable surface that publishes on behalf of " +
+			"Telegram accounts. An agent that could start one could point it " +
+			"at a store and accept writes from a billion strangers"},
+	"theme": {GUI: "/design",
+		NoMCP: "changes the colours, type and spacing of every page. An agent " +
+			"that can set a palette can set an unreadable one, and the " +
+			"contrast gate is a floor rather than a substitute for somebody " +
+			"looking at it"},
 	"assist":    {GUI: "/assist", NoMCP: "asks a model to write a site, and this surface is already being driven by one"},
 	"anchor":    {GUI: "/security/integrity", NoMCP: "submits to an external calendar and costs real time; verify_store answers the question an agent has"},
 	"timestamp": {GUI: "/security/integrity", NoMCP: "as anchor"},

@@ -1,0 +1,177 @@
+{{template "head" .}}
+<h1>Design</h1>
+
+{{if .Unavailable}}<p class="notice">{{.Unavailable}}</p>{{else}}
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+<p class="hint">
+  The design is two halves. These tokens are yours — colours, type, spacing,
+  shape — and the component rules underneath them are not, because that is
+  where the focus ring, the target sizes and the reduced-motion handling live.
+  Files are in <code>{{.Dir}}</code>.
+</p>
+
+{{if .Own}}
+<div class="card bad">
+  <p><strong>{{.Dir}}/site.css exists, so it is served exactly as written.</strong></p>
+  <p>None of the values below are in effect, and the contrast check does not
+    cover what readers get. Delete that file to use the generated stylesheet, or
+    keep editing it by hand.</p>
+</div>
+{{end}}
+
+{{if .Blocking}}
+<div class="card bad">
+  <p><strong>{{len .Blocking}} contrast failure(s).</strong> The publish gate
+    refuses these, in the same way it refuses an image with no alternative
+    text.</p>
+  <ul>
+  {{range .Blocking}}
+    <li><code>{{.Token}}</code> ({{.Scheme}} scheme) — {{.Detail}}</li>
+  {{end}}
+  </ul>
+</div>
+{{end}}
+
+{{if .Problems}}
+<div class="card bad">
+  <p><strong>{{len .Problems}} value(s) could not be used.</strong></p>
+  <ul>{{range .Problems}}<li>{{.Detail}}</li>{{end}}</ul>
+</div>
+{{end}}
+
+<h2>Layouts</h2>
+<p class="hint">
+  A page renders through the layout it names in its own <code>layout</code>
+  field. A page that names none renders through <code>page</code>. A page naming
+  a layout that is not here does not publish — it would render as nothing for a
+  reader, so it is refused rather than quietly sent through the default.
+</p>
+{{if .Layouts}}
+<ul class="chips">{{range .Layouts}}<li class="chip"><code>{{.}}</code></li>{{end}}</ul>
+{{else}}
+<p class="notice">No layouts. Nothing can be rendered until there is a
+  <code>page.html</code>.</p>
+{{end}}
+
+{{if .CanInstall}}
+<h2>Install a design</h2>
+<p class="hint">
+  Writes the layout and its palette into <code>{{.Dir}}</code>. This replaces
+  what is there and changes every page the moment the site process restarts,
+  which is why it needs publishing authority rather than editing authority.
+</p>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Design</th><th scope="col">What it is for</th>
+    <th scope="col">How it looks</th><th scope="col"></th>
+  </tr></thead>
+  <tbody>
+  {{range .Starters}}
+  <tr>
+    <th scope="row"><code>{{.Name}}</code>
+      <div class="hint">layout {{.LayoutName}}</div></th>
+    <td>{{.Summary}}</td>
+    <td class="hint">{{.Look}}</td>
+    <td>
+      <form method="post" action="/design/install" class="inline">
+        <input type="hidden" name="starter" value="{{.Name}}">
+        <button type="submit">Install {{.Name}}</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<h2>Typefaces</h2>
+{{if .Fonts}}
+<p>Served from this origin: {{range .Fonts}}<code>{{.}}</code> {{end}}</p>
+{{else}}
+<p class="hint">
+  No typefaces of your own. Put a <code>.woff2</code> in
+  <code>{{.Dir}}/fonts/</code> and it is served from this origin at
+  <code>/fonts/NAME.woff2</code>, then set <code>font-display</code> to its
+  name. The filename carries the family, the weight and the style:
+  <code>Satoshi-600.woff2</code>, <code>Satoshi-400..700.woff2</code>,
+  <code>Satoshi-italic.woff2</code>.
+</p>
+<p class="hint">
+  There is deliberately no way to name a font on somebody else's server. A page
+  that fetches one has handed that server a request on every visit and the
+  ability to stall the render, and the policy cannot help because the page asked
+  for it.
+</p>
+{{end}}
+
+{{range .Groups}}
+<h2>{{.Name}}</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Token</th>
+    <th scope="col">Light</th>
+    <th scope="col">Dark</th>
+    <th scope="col"></th>
+  </tr></thead>
+  <tbody>
+  {{range .Items}}
+  <tr>
+    <th scope="row">
+      <code>{{.Token}}</code>
+      <div class="hint">{{.Summary}}</div>
+    </th>
+    <td>{{if .Overridden}}<strong>{{.Light}}</strong>{{else}}{{.Light}}{{end}}</td>
+    <td>{{if .IsColour}}{{.Dark}}{{else}}<span class="hint">both schemes</span>{{end}}</td>
+    <td>
+      <form method="post" action="/design/save" class="inline">
+        <input type="hidden" name="token" value="{{.Token}}">
+        {{if .Stacks}}
+        <label class="visually-hidden" for="v-{{.Token}}">Value for {{.Token}}</label>
+        <select id="v-{{.Token}}" name="light">
+          <option value="">unchanged</option>
+          {{range .Stacks}}<option value="{{.}}">{{.}}</option>{{end}}
+        </select>
+        {{else}}
+        <input name="light" value="{{.Light}}" size="10" spellcheck="false"
+          aria-label="Light value for {{.Token}}">
+        {{if .IsColour}}
+        <input name="dark" value="{{.Dark}}" size="10" spellcheck="false"
+          aria-label="Dark value for {{.Token}}">
+        {{end}}
+        {{end}}
+        <button type="submit">Set</button>
+      </form>
+      {{if .Overridden}}
+      <form method="post" action="/design/save" class="inline">
+        <input type="hidden" name="token" value="{{.Token}}">
+        <input type="hidden" name="reset" value="1">
+        <button type="submit">Reset</button>
+      </form>
+      {{end}}
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+{{if .Advisory}}
+<h2>Worth knowing</h2>
+<ul class="hint">{{range .Advisory}}<li>{{.Detail}}</li>{{end}}</ul>
+{{end}}
+
+<p class="hint">
+  A colour is three or six hex digits after a <code>#</code> and nothing else.
+  <code>rgb()</code>, a named colour and <code>var()</code> are refused because
+  this value lands inside a stylesheet this origin serves, and a sanitiser would
+  be a promise about every future version of CSS. Every change is in the audit
+  log.
+</p>
+{{end}}
+{{template "foot" .}}

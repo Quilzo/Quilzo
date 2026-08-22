@@ -1,66 +1,119 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ page.lang | default:en }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{{ page.title }}</title>
+<title>{% if page.title %}{{ page.title }} — {% end %}{{ site.name }}</title>
 {% if page.description %}<meta name="description" content="{{ page.description }}">{% end %}
+<meta property="og:site_name" content="{{ site.name }}">
+<meta property="og:title" content="{{ page.title }}">
+<meta property="og:type" content="{{ page.og_type | default:website }}">
+{% if page.description %}<meta property="og:description" content="{{ page.description }}">{% end %}
+{% if page.share_image %}<meta property="og:image" content="{{ page.share_image }}">
+<meta property="og:image:alt" content="{{ page.share_image_alt }}">
+<meta name="twitter:card" content="summary_large_image">{% end %}
 <link rel="stylesheet" href="/site.css">
 </head>
 <body>
 <a class="skip" href="#main">Skip to main content</a>
 
-<header class="site">
-  <div class="wrap">
+<header class="site-header">
+  <div class="wrap wrap-wide">
     {% if page.brand %}<a class="brand" href="/">{{ page.brand }}</a>{% end %}
-    {% if page.nav %}<nav class="site" aria-label="Main">
-      <ul>
-        {% for item in page.nav %}<li><a href="{{ item.href }}">{{ item.label }}</a></li>{% end %}
-      </ul>
-    </nav>{% end %}
+    {% if page.nav %}
+    <nav class="nav" aria-label="Main">
+      <ul>{% for item in page.nav %}<li><a href="{{ item.href }}">{{ item.label }}</a></li>{% end %}</ul>
+    </nav>
+    {% end %}
+    {% if menus.main %}
+    <nav class="nav" aria-label="Site">
+      <ul>{% for item in menus.main %}<li><a href="{{ item.href }}"{% if item.current %} aria-current="page"{% end %}>{{ item.label }}</a></li>{% end %}</ul>
+    </nav>
+    {% end %}
   </div>
 </header>
 
-<main id="main" tabindex="-1" class="wrap">
-  <div class="hero">
-    <h1>{{ page.title }}</h1>
-    {% if page.subtitle %}<p class="lead">{{ page.subtitle }}</p>{% end %}
-    {% if page.available %}<p><span class="chip">{{ page.available }}</span></p>{% end %}
+<main id="main" tabindex="-1">
+  <div class="wrap wrap-wide">
+    <div class="hero hero-plain">
+      {% if page.available %}<p class="chip">{{ page.available }}</p>{% end %}
+      <h1>{{ page.title }}</h1>
+      {% if page.subtitle %}<p class="lead">{{ page.subtitle }}</p>{% end %}
+    </div>
   </div>
 
   {% if page.work %}
-  <h2>{{ page.work_title }}</h2>
-  <div class="grid">
-    {% for w in page.work %}
-    <article class="card">
-      {% if w.image %}<img src="{{ w.image }}" alt="{{ w.image_alt }}" width="600" height="400">{% end %}
-      {% if w.title %}<h3><a href="{{ w.href }}">{{ w.title }}</a></h3>{% end %}
-      <p>{{ w.body }}</p>
-      {% if w.role %}<p><span class="chip">{{ w.role }}</span></p>{% end %}
-    </article>
-    {% end %}
-  </div>
+  <section class="section reveal">
+    <div class="wrap wrap-wide">
+      {% if page.work_title %}<div class="section-head"><h2>{{ page.work_title }}</h2></div>{% end %}
+      <div class="grid grid-2">
+        {% for w in page.work %}
+        <div class="card">
+          {% if w.image %}<img src="{{ w.image }}" alt="{{ w.alt }}" width="800" height="600" class="ratio-wide" loading="lazy">{% end %}
+          {% if w.role %}<p class="chip">{{ w.role }}</p>{% end %}
+          <h3>{% if w.href %}<a class="card-link" href="{{ w.href }}">{{ w.title }}</a>{% end %}{% if w.unlinked %}{{ w.title }}{% end %}</h3>
+          {% if w.body %}<p>{{ w.body }}</p>{% end %}
+          {% if w.year %}<p class="muted">{{ w.year }}</p>{% end %}
+        </div>
+        {% end %}
+      </div>
+    </div>
+  </section>
+  {% end %}
+
+  {% if page.gallery %}
+  <section class="section">
+    <div class="wrap wrap-wide">
+      {% if page.gallery_title %}<div class="section-head"><h2>{{ page.gallery_title }}</h2></div>{% end %}
+      <div class="gallery gallery-tall">
+        {% for g in page.gallery %}
+        <figure>
+          <img src="{{ g.image }}" alt="{{ g.alt }}" width="600" height="800" loading="lazy">
+          {% if g.caption %}<figcaption>{{ g.caption }}</figcaption>{% end %}
+        </figure>
+        {% end %}
+      </div>
+    </div>
+  </section>
   {% end %}
 
   {% if page.about %}
-  <div class="narrow">
-    <h2>{{ page.about_title }}</h2>
-    <p>{{ page.about }}</p>
-  </div>
+  <section class="section tone-raised">
+    <div class="wrap">
+      {% if page.about_title %}<div class="section-head"><h2>{{ page.about_title }}</h2></div>{% end %}
+      <div class="prose narrow"><p>{{ page.about }}</p></div>
+    </div>
+  </section>
   {% end %}
 
-  {% if page.contact_href %}
-  <div class="card card-accent">
-    <h2>{{ page.contact_title }}</h2>
-    <p>{{ page.contact_body }}</p>
-    <div class="actions"><a class="btn" href="{{ page.contact_href }}">{{ page.contact_label }}</a></div>
-  </div>
+  {% if page.clients %}
+  <section class="section">
+    <div class="wrap wrap-wide">
+      {% if page.clients_title %}<div class="section-head"><h2>{{ page.clients_title }}</h2></div>{% end %}
+      <ul class="logos">{% for c in page.clients %}<li>{{ c }}</li>{% end %}</ul>
+    </div>
+  </section>
+  {% end %}
+
+  {% if page.contact_title %}
+  <section class="section tone-primary">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>{{ page.contact_title }}</h2>
+        {% if page.contact_body %}<p class="lead">{{ page.contact_body }}</p>{% end %}
+        {% if page.contact_href %}<div class="actions"><a class="btn btn-lg" href="{{ page.contact_href }}">{{ page.contact_label }}</a></div>{% end %}
+      </div>
+    </div>
+  </section>
   {% end %}
 </main>
 
-<footer class="site">
-  <div class="wrap">{% if page.footer %}<p>{{ page.footer }}</p>{% end %}</div>
+<footer class="site-footer">
+  <div class="wrap wrap-wide">
+    {% if menus.foot %}<nav aria-label="Footer"><ul>{% for item in menus.foot %}<li><a href="{{ item.href }}">{{ item.label }}</a></li>{% end %}</ul></nav>{% end %}
+    {% if page.footer %}<p class="colophon">{{ page.footer }}</p>{% end %}
+  </div>
 </footer>
 </body>
 </html>

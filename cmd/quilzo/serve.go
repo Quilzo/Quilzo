@@ -72,19 +72,24 @@ func cmdServe(root string, args []string) error {
 		return err
 	}
 
-	siteTpl := ""
-	if b, err := os.ReadFile(filepath.Join(*tplDir, "page.html")); err == nil {
-		siteTpl = string(b)
-	} else {
-		fmt.Fprintf(os.Stderr, "  %sno %s; preview and the accessibility check "+
-			"are unavailable%s\n", dim, filepath.Join(*tplDir, "page.html"), reset)
+	// The whole design, loaded the way the public server loads it. A preview
+	// built from a different loader is a preview of a different site, which is
+	// the failure internal/render exists to prevent.
+	design, derr := loadDesign(*tplDir)
+	if derr != nil {
+		design = &Design{}
+		fmt.Fprintf(os.Stderr, "  %s%s; preview and the accessibility check "+
+			"are unavailable%s\n", dim, derr, reset)
+	}
+	for _, note := range design.Notes {
+		fmt.Fprintf(os.Stderr, "  %s%s%s\n", dim, note, reset)
 	}
 
 	cfg, err := loadConfig(root)
 	if err != nil {
 		return err
 	}
-	srv, err := admin.New(s, pol, toks, siteTpl)
+	srv, err := admin.New(s, pol, toks, design.Layouts)
 	if err != nil {
 		return err
 	}
@@ -93,9 +98,7 @@ func cmdServe(root string, args []string) error {
 	// it, absent rather than fatal — a headless store that renders elsewhere
 	// has neither, and refusing to serve the admin over a missing stylesheet
 	// would be a poor trade.
-	if b, rerr := os.ReadFile(filepath.Join(*tplDir, "site.css")); rerr == nil {
-		srv.SiteCSS = string(b)
-	}
+	srv.SiteCSS = design.Stylesheet
 	// Persistence and auditing for the changes the admin can now make.
 	// Without these an access change lives until the process restarts, and the
 	// administrator has already been told it worked.
@@ -308,15 +311,25 @@ func cmdServe(root string, args []string) error {
 			return saveJSON(menuPath(root), set)
 		},
 	}
-	srv.Decentralised = &admin.Decentralised{
-		Pages: func() (map[string]any, error) { return site.PagesAt(s, site.RefLive) },
-		Stylesheet: func() string {
-			b, err := os.ReadFile(filepath.Join(*tplDir, "site.css"))
-			if err != nil {
-				return ""
-			}
-			return string(b)
+	// The design screen. The browser could apply a starter's content and not its
+	// markup, which meant somebody who never opened a terminal got the fields of
+	// a design they were not being served.
+	srv.DesignSet = &admin.Design{
+		Dir:     *tplDir,
+		Tokens:  func() (map[string]string, error) { return loadThemeFile(*tplDir) },
+		Save:    func(values map[string]string) error { return writeThemeFile(*tplDir, values) },
+		Layouts: func() []string { return design.Layouts.Names() },
+		Fonts:   func() []string { return design.Fonts.Names() },
+		OwnStylesheet: func() bool {
+			return fileExists(filepath.Join(*tplDir, "site.css"))
 		},
+		InstallLayout: func(name string) ([]string, error) {
+			return installStarter(*tplDir, name)
+		},
+	}
+	srv.Decentralised = &admin.Decentralised{
+		Pages:      func() (map[string]any, error) { return site.PagesAt(s, site.RefLive) },
+		Stylesheet: func() string { return design.Stylesheet },
 		Media: func() (map[string][]byte, error) {
 			lib, err := openMedia(root)
 			if err != nil {

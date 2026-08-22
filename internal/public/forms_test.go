@@ -2,6 +2,7 @@ package public
 
 import (
 	"fmt"
+	"github.com/quilzo/quilzo/internal/render"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -38,7 +39,7 @@ func withForm(t *testing.T) (*Site, *form.Store) {
 			{Name: "email", Label: "Email", Kind: form.Email},
 		},
 	}}}
-	st := New(s, tpl)
+	st := New(s, render.OneLayout(tpl))
 	st.Forms = &Forms{
 		Set:   func() (*form.Set, error) { return set, nil },
 		Store: fs,

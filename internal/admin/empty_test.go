@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"github.com/quilzo/quilzo/internal/render"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -44,7 +45,7 @@ func emptyStore(t *testing.T) (*Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv, err := New(s, pol, ts, siteTemplate)
+	srv, err := New(s, pol, ts, render.OneLayout(siteTemplate))
 	if err != nil {
 		t.Fatal(err)
 	}

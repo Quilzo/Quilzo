@@ -64,8 +64,11 @@ type Sources struct {
 // nothing else can read.
 func (s Sources) For(name string, body any, args map[string]string) (map[string]any, error) {
 	ctx := map[string]any{
-		"page":  body,
-		"site":  map[string]any{"name": s.Name},
+		// Decorated, not raw. The derived companions — the negations a language
+		// with no else cannot express — are added here so that every renderer
+		// sees the same page. See derive.go for what they are and why.
+		"page":  decoratePage(body),
+		"site":  map[string]any{"name": s.Name, "page": name},
 		"menus": s.menus(name),
 	}
 	if s.Listings != nil {
@@ -75,6 +78,11 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 		}
 		if data != nil {
 			ctx[listing.Data] = data
+			// The same rows, arranged as a list, so a layout that does not know
+			// what this site called its listings can still render them.
+			if arranged := s.feeds(data); len(arranged) > 0 {
+				ctx[Feeds] = arranged
+			}
 		}
 	}
 	return ctx, nil

@@ -2,6 +2,7 @@ package public
 
 import (
 	"encoding/xml"
+	"github.com/quilzo/quilzo/internal/render"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -32,7 +33,7 @@ func setup(t *testing.T) (*Site, *store.Store) {
 	if _, err := site.Publish(s, ""); err != nil {
 		t.Fatal(err)
 	}
-	st := New(s, pageTemplate)
+	st := New(s, render.OneLayout(pageTemplate))
 	st.Name = "Example"
 	return st, s
 }
@@ -235,7 +236,7 @@ func TestNothingPublishedIsNotAnError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := New(s, pageTemplate)
+	st := New(s, render.OneLayout(pageTemplate))
 	if code := get(st, "/", nil).Code; code != http.StatusServiceUnavailable {
 		t.Errorf("an empty site should say so, got %d", code)
 	}

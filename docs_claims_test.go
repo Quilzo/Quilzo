@@ -83,3 +83,64 @@ func read(t *testing.T, name string) string {
 	}
 	return string(b)
 }
+
+// The licence the README claims is the licence in the file.
+//
+// Added when the project relicensed from AGPL-3.0-or-later to Apache-2.0 in
+// August 2026, because that change touched five files and the failure mode is
+// obvious in hindsight: one of them keeps saying the old thing, and the one
+// that keeps saying it is the one somebody quotes.
+//
+// A licence claim is the highest-consequence sentence in a repository. Somebody
+// decides whether they may use, embed or contribute to this on the strength of
+// it, and a stale one is not a documentation bug — it is a person acting on
+// terms that do not apply.
+func TestTheReadmeClaimsTheLicenceThisRepositoryCarries(t *testing.T) {
+	licence := read(t, "LICENSE")
+	readme := read(t, "README.md")
+	notice := read(t, "NOTICE")
+
+	apache := strings.Contains(licence, "Apache License") &&
+		strings.Contains(licence, "Version 2.0, January 2004")
+	affero := strings.Contains(licence, "GNU AFFERO GENERAL PUBLIC LICENSE")
+
+	switch {
+	case apache && affero:
+		t.Fatal("LICENSE contains both an Apache and an Affero header; the " +
+			"relicensing left the file half-written")
+	case !apache && !affero:
+		t.Fatal("LICENSE is neither Apache-2.0 nor AGPL; this test cannot " +
+			"check a claim about a licence it does not recognise")
+	}
+
+	want, wrong := "Apache-2.0", "AGPL-3.0-or-later"
+	if affero {
+		want, wrong = wrong, want
+	}
+	for _, file := range []struct{ name, body string }{
+		{"README.md", readme}, {"NOTICE", notice},
+	} {
+		if !strings.Contains(file.body, want) {
+			t.Errorf("LICENSE is %s and %s never says so", want, file.name)
+		}
+	}
+
+	// The badge is the version most people read, and it is the one most likely
+	// to be left behind because it is a URL rather than a sentence.
+	badge := regexp.MustCompile(`licence-([A-Za-z0-9.\-]+)-blue`).
+		FindStringSubmatch(readme)
+	if badge == nil {
+		t.Fatal("the README has no licence badge to check")
+	}
+	if got := strings.ReplaceAll(badge[1], "--", "-"); got != want {
+		t.Errorf("the README badge says %q and LICENSE is %s", got, want)
+	}
+
+	// A relicensing does not retract what was already granted, and saying so is
+	// the difference between a licence change and a claim to have revoked one.
+	if apache && !strings.Contains(notice, wrong) {
+		t.Errorf("NOTICE does not mention %s at all. The project was released "+
+			"under it, that grant is irrevocable, and a NOTICE that omits the "+
+			"previous licence reads as a claim that it never applied", wrong)
+	}
+}

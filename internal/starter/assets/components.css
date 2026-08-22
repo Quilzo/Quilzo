@@ -1,0 +1,693 @@
+/* The component half of a site's design.
+ *
+ * The tokens are generated from the site's theme and prepended to this file
+ * before it is served. This half is not editable, and the split is deliberate:
+ * this is where the accessibility work lives — the focus ring, the target
+ * sizes, the reduced-motion escape hatch, the forced-colours fallbacks. An
+ * operator who could replace it could remove all of that by accident, and
+ * "the theme did it" is not an answer anybody can give a reader.
+ *
+ * Every value below either comes from a token or is a structural constant.
+ * There is no colour literal in this file, which is what makes the contrast
+ * gate over the tokens a gate over the whole design rather than over a part.
+ *
+ * Nothing here imports another stylesheet, reaches another origin, or runs a
+ * script. A published page that fetches CSS or a font from somebody else's
+ * server has handed that server the ability to change what the page says — and
+ * the policy cannot help, because the page asked for it.
+ */
+
+/* -- base ------------------------------------------------------------------ */
+
+*, *::before, *::after { box-sizing: border-box; }
+html { color-scheme: light dark; -webkit-text-size-adjust: 100%; }
+:root[data-theme="dark"]  { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--line);
+  color: var(--on-surface);
+  background: var(--surface);
+  text-underline-offset: 0.2em;
+}
+
+img, video, svg, picture { max-width: 100%; height: auto; display: block; }
+hr { border: 0; border-top: var(--border) solid var(--outline-variant); margin: var(--space-6) 0; }
+
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+::selection { background: var(--secondary-container); color: var(--on-secondary-container); }
+
+a { color: var(--primary); text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
+
+/* -- layout --------------------------------------------------------------- */
+
+.wrap { width: 100%; max-width: var(--page-width); margin-inline: auto; padding-inline: var(--space-5); }
+.wrap-wide { max-width: calc(var(--page-width) * 1.25); }
+.narrow { max-width: var(--measure); }
+.stack > * + * { margin-top: var(--space-4); }
+.center { text-align: center; margin-inline: auto; }
+
+.skip {
+  position: absolute; left: 0; top: -4rem; z-index: 20;
+  background: var(--primary); color: var(--on-primary);
+  padding: var(--space-3) var(--space-5);
+  border-radius: 0 0 var(--radius-lg) 0;
+  text-decoration: none; font-weight: 700;
+  transition: top 150ms var(--ease);
+}
+.skip:focus { top: 0; }
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+/* -- typography ------------------------------------------------------------ */
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  text-wrap: balance;
+  margin: 0;
+}
+h1 { font-size: var(--text-3xl); line-height: 1.05; font-weight: 800; letter-spacing: var(--tracking-display); }
+h2 { font-size: var(--text-2xl); line-height: 1.15; font-weight: 700; letter-spacing: var(--tracking-display); }
+h3 { font-size: var(--text-xl);  line-height: 1.25; font-weight: 700; }
+h4 { font-size: var(--text-lg);  line-height: 1.3;  font-weight: 700; }
+h5, h6 { font-size: var(--text-base); font-weight: 700; }
+
+p { margin: 0; }
+.lead {
+  font-size: var(--text-lg);
+  line-height: 1.45;
+  color: var(--on-surface-variant);
+  max-width: 56ch;
+  text-wrap: pretty;
+}
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin: 0;
+}
+.muted { color: var(--on-surface-variant); }
+.figure-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+code, kbd, samp, pre { font-family: var(--font-mono); }
+code { font-size: 0.9em; }
+:not(pre) > code {
+  background: var(--surface-container);
+  padding: 0.15em 0.4em;
+  border-radius: var(--radius-sm);
+}
+pre {
+  background: var(--surface-container);
+  border: var(--border) solid var(--outline-variant);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Prose is the one place margins beat gap: the content is a flow of unknown
+   elements, and a flow is what margins are for. */
+.prose > * + * { margin-top: var(--space-4); }
+.prose h2 { margin-top: var(--space-7); }
+.prose h3 { margin-top: var(--space-6); }
+.prose p, .prose li { max-width: var(--measure); text-wrap: pretty; }
+.prose ul, .prose ol { padding-left: 1.3em; }
+.prose li + li { margin-top: var(--space-2); }
+.prose li::marker { color: var(--primary); }
+.prose img { border-radius: var(--radius-md); }
+.prose blockquote { margin: 0; }
+
+/* -- header and footer ----------------------------------------------------- */
+
+.site-header {
+  background: var(--surface-container);
+  border-bottom: var(--border) solid var(--outline-variant);
+  position: relative;
+  z-index: 10;
+}
+.site-header.is-sticky { position: sticky; top: 0; }
+.site-header .wrap {
+  display: flex; flex-wrap: wrap; gap: var(--space-4);
+  align-items: center; justify-content: space-between;
+  padding-block: var(--space-3);
+}
+.brand {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--on-surface);
+  text-decoration: none;
+  display: inline-flex; align-items: center; gap: var(--space-2);
+}
+.brand-mark {
+  width: 1.6em; height: 1.6em;
+  display: grid; place-items: center;
+  background: var(--primary); color: var(--on-primary);
+  border-radius: var(--radius-md);
+  font-size: 0.8em;
+}
+.nav ul {
+  list-style: none; display: flex; flex-wrap: wrap;
+  gap: var(--space-1); margin: 0; padding: 0;
+}
+.nav a {
+  display: inline-flex; align-items: center;
+  min-height: 44px; padding-inline: var(--space-4);
+  border-radius: var(--radius-pill);
+  font-weight: 600; font-size: var(--text-sm);
+  color: var(--on-surface-variant); text-decoration: none;
+  transition: background-color 150ms var(--ease);
+}
+.nav a:hover { background: color-mix(in srgb, var(--on-surface) 8%, transparent); }
+.nav a[aria-current="page"] {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+  font-weight: 700;
+}
+.nav .depth-1 a { padding-left: var(--space-6); }
+
+.site-footer {
+  margin-top: var(--space-8);
+  padding-block: var(--space-6) var(--space-7);
+  border-top: var(--border) solid var(--outline-variant);
+  background: var(--surface-container-low);
+  color: var(--on-surface-variant);
+  font-size: var(--text-sm);
+}
+.site-footer .wrap { display: flex; flex-direction: column; gap: var(--space-4); }
+.site-footer ul { list-style: none; display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: 0; padding: 0; }
+.site-footer .colophon { max-width: var(--measure); }
+
+/* -- buttons --------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--space-2);
+  min-height: 48px; padding-inline: var(--space-6);
+  border-radius: var(--radius-pill);
+  border: var(--border) solid transparent;
+  font-family: inherit; font-size: var(--text-sm); font-weight: 700;
+  text-decoration: none; cursor: pointer;
+  background: var(--primary); color: var(--on-primary);
+  transition: border-radius var(--dur) var(--spring), background-color 150ms var(--ease);
+}
+.btn:active { border-radius: var(--radius-md); }
+.btn-tonal { background: var(--secondary-container); color: var(--on-secondary-container); }
+.btn-outlined { background: transparent; color: currentColor; border-color: currentColor; }
+.btn-quiet { background: transparent; color: var(--primary); min-height: 44px; padding-inline: var(--space-3); }
+.btn-lg { min-height: 56px; font-size: var(--text-base); padding-inline: var(--space-7); }
+.actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+
+/* -- chips, badges, states ------------------------------------------------- */
+
+.chip {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  min-height: 32px; padding-inline: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--secondary-container); color: var(--on-secondary-container);
+  font-size: var(--text-sm); font-weight: 700;
+  letter-spacing: 0.03em; text-transform: uppercase;
+}
+.chip-accent { background: var(--tertiary-container); color: var(--on-tertiary-container); }
+.chips { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
+
+/* State is carried by a token pair, never by hue alone: the label says the
+   state as well, so a reader who cannot separate the colours still reads it. */
+.state { display: inline-flex; align-items: center; gap: 0.4em; font-weight: 700; font-size: var(--text-sm); }
+.state::before { content: ""; width: 0.6em; height: 0.6em; border-radius: 50%; background: currentColor; flex: none; }
+.state-positive { color: var(--positive); }
+.state-caution  { color: var(--caution); }
+.state-critical { color: var(--critical); }
+
+/* -- surfaces -------------------------------------------------------------- */
+
+.card {
+  background: var(--surface-container-low);
+  border: var(--border) solid var(--outline-variant);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  display: flex; flex-direction: column; gap: var(--space-3);
+  transition: border-radius var(--dur) var(--spring);
+}
+.card:hover { border-radius: var(--radius-xl); }
+.card-accent { background: var(--tertiary-container); color: var(--on-tertiary-container); border-color: transparent; }
+.card-quiet { background: transparent; border-color: var(--outline-variant); }
+.card-flat { background: var(--surface-container); border-color: transparent; }
+.card > h3, .card > h4 { margin: 0; }
+.card-link { color: inherit; text-decoration: none; }
+.card-link:hover h3 { text-decoration: underline; text-decoration-thickness: 2px; }
+
+.grid { display: grid; gap: var(--space-4); }
+.grid-2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
+.grid-3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
+.grid-4 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); }
+
+/* A bento arrangement: the first cell spans two where there is room. The
+   query itself is generated from --break-sm and appended after this file,
+   because a container query cannot read a custom property. Same for the split,
+   the hero, the detail grid and the sidebar below. */
+.grid-bento { grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
+
+/* -- sections -------------------------------------------------------------- */
+
+.section {
+  container-type: inline-size;
+  padding-block: var(--space-7);
+}
+.section + .section { padding-top: 0; }
+.section-head { display: flex; flex-direction: column; gap: var(--space-3); max-width: 60ch; margin-bottom: var(--space-5); }
+.section-head.center { align-items: center; text-align: center; }
+.tone-quiet { background: var(--surface); }
+.tone-raised { background: var(--surface-container-low); }
+.tone-contrast { background: var(--surface-container); }
+.tone-accent { background: var(--tertiary-container); color: var(--on-tertiary-container); }
+.tone-primary { background: var(--primary-container); color: var(--on-primary-container); }
+.tone-quiet, .tone-raised, .tone-contrast, .tone-accent, .tone-primary { padding-block: var(--space-7); }
+.tone-accent a, .tone-primary a { color: inherit; }
+
+/* -- hero ------------------------------------------------------------------ */
+
+.hero {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  border-radius: var(--radius-xl);
+  padding: clamp(var(--space-6), 5vw, var(--space-8)) clamp(var(--space-5), 4vw, var(--space-7));
+  margin-block: var(--space-6) var(--space-7);
+  display: flex; flex-direction: column; gap: var(--space-4);
+  align-items: flex-start;
+}
+.hero .lead { color: inherit; opacity: 0.88; }
+.hero .chip { background: color-mix(in srgb, currentColor 14%, transparent); color: inherit; }
+.hero.hero-center { align-items: center; text-align: center; }
+.hero.hero-center .lead { margin-inline: auto; }
+.hero.hero-plain { background: transparent; color: inherit; padding-inline: 0; border-radius: 0; }
+.hero.hero-bold { background: var(--primary); color: var(--on-primary); }
+.hero-split { display: grid; gap: var(--space-6); align-items: center; }
+.hero-media img { border-radius: var(--radius-lg); width: 100%; }
+
+/* A CSS-drawn surface, for a hero that wants an image and does not have one.
+   Two radial washes and a conic sheen over the token palette — no bytes, no
+   request, and it recolours with the theme instead of fighting it. */
+.surface-wash {
+  background:
+    radial-gradient(120% 90% at 12% 8%, color-mix(in srgb, var(--primary) 26%, transparent), transparent 60%),
+    radial-gradient(90% 70% at 92% 92%, color-mix(in srgb, var(--tertiary-container) 55%, transparent), transparent 62%),
+    var(--primary-container);
+}
+.surface-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--on-surface) 7%, transparent) var(--border), transparent var(--border)),
+    linear-gradient(to bottom, color-mix(in srgb, var(--on-surface) 7%, transparent) var(--border), transparent var(--border));
+  background-size: 2.5rem 2.5rem;
+}
+
+/* -- split (media beside text) --------------------------------------------- */
+
+.split { display: grid; gap: var(--space-6); align-items: center; }
+.split img { border-radius: var(--radius-lg); width: 100%; }
+.split-text { display: flex; flex-direction: column; gap: var(--space-3); }
+
+/* -- metrics and charts ---------------------------------------------------- */
+
+.metrics { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); }
+.metric {
+  background: var(--surface-container-low);
+  border: var(--border) solid var(--outline-variant);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  display: flex; flex-direction: column; gap: var(--space-2);
+}
+.metric .label {
+  font-family: var(--font-mono); font-size: var(--text-sm);
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+.metric .value {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl); font-weight: 800; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.metric .foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
+
+/* The bar. --pct is set inline from a value the template puts through the
+   `round` filter, which refuses anything that is not a number — so the only
+   thing that can reach this custom property is a numeral. */
+.bar {
+  --pct: 0;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--on-surface) 10%, transparent);
+  overflow: hidden;
+}
+.bar > span {
+  display: block; height: 100%;
+  width: calc(clamp(0, var(--pct), 100) * 1%);
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width var(--dur) var(--ease);
+}
+.bar-positive > span { background: var(--positive); }
+.bar-caution  > span { background: var(--caution); }
+.bar-critical > span { background: var(--critical); }
+
+.barchart { display: flex; flex-direction: column; gap: var(--space-3); }
+.barchart .row { display: grid; gap: var(--space-2) var(--space-4); grid-template-columns: minmax(6rem, 12ch) 1fr auto; align-items: center; }
+.barchart .row .name { font-size: var(--text-sm); }
+.barchart .row .amount { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--text-sm); }
+
+/* A donut, drawn with one conic-gradient. The hole is a radial mask rather than
+   an overlaid circle, so it works on any surface without knowing its colour. */
+.donut {
+  --pct: 0;
+  width: 8rem; aspect-ratio: 1; border-radius: 50%;
+  background: conic-gradient(var(--primary) calc(clamp(0, var(--pct), 100) * 1%), color-mix(in srgb, var(--on-surface) 10%, transparent) 0);
+  mask: radial-gradient(farthest-side, transparent calc(50% - 1.1rem), #000 calc(50% - 1.1rem));
+  display: grid; place-items: center;
+}
+.donut-set { display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: center; }
+.donut-figure { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); }
+.donut-figure figcaption { font-size: var(--text-sm); text-align: center; }
+
+/* -- tables ---------------------------------------------------------------- */
+
+.table-wrap {
+  overflow-x: auto;
+  border: var(--border) solid var(--outline-variant);
+  border-radius: var(--radius-lg);
+  background: var(--surface-container-lowest);
+}
+table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+caption { text-align: left; padding: var(--space-3) var(--space-4); color: var(--on-surface-variant); }
+th, td { text-align: left; padding: var(--space-3) var(--space-4); border-bottom: var(--border) solid var(--outline-variant); vertical-align: top; }
+thead th {
+  background: var(--surface-container);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm); font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--on-surface-variant);
+  white-space: nowrap;
+}
+tbody tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* -- steps, timeline ------------------------------------------------------- */
+
+/* Numbered because these are a sequence — the order carries the meaning. A
+   counter rather than typed-in numerals, so inserting a step does not renumber
+   the content. */
+.steps { list-style: none; margin: 0; padding: 0; counter-reset: step; display: flex; flex-direction: column; gap: var(--space-5); }
+.steps > li { counter-increment: step; display: grid; grid-template-columns: auto 1fr; gap: var(--space-4); align-items: start; }
+.steps > li::before {
+  content: counter(step);
+  width: 2.25rem; height: 2.25rem;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--primary); color: var(--on-primary);
+  font-family: var(--font-mono); font-weight: 700; font-size: var(--text-sm);
+}
+.steps .step-body { display: flex; flex-direction: column; gap: var(--space-2); }
+
+.timeline { list-style: none; margin: 0; padding: 0 0 0 var(--space-5); border-left: 2px solid var(--outline-variant); display: flex; flex-direction: column; gap: var(--space-5); }
+.timeline > li { position: relative; display: flex; flex-direction: column; gap: var(--space-2); }
+.timeline > li::before {
+  content: ""; position: absolute; left: calc(-1 * var(--space-5) - 5px);
+  top: 0.5em; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--primary);
+}
+.timeline time { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--on-surface-variant); }
+
+/* -- gallery, people ------------------------------------------------------- */
+
+.gallery { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
+.gallery figure { margin: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.gallery img { border-radius: var(--radius-lg); width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.gallery figcaption { font-size: var(--text-sm); color: var(--on-surface-variant); }
+.gallery-tall img { aspect-ratio: 3 / 4; }
+.gallery-square img { aspect-ratio: 1; }
+
+.people { display: grid; gap: var(--space-5); grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); list-style: none; margin: 0; padding: 0; }
+.people img { border-radius: var(--radius-lg); aspect-ratio: 1; object-fit: cover; width: 100%; }
+.people .name { font-weight: 700; }
+.people .role { font-size: var(--text-sm); color: var(--on-surface-variant); }
+
+/* -- quote, logos, notice -------------------------------------------------- */
+
+blockquote.pull {
+  margin: 0;
+  padding: var(--space-5) var(--space-6);
+  background: var(--surface-container);
+  border-radius: var(--radius-lg);
+  border-left: 6px solid var(--primary);
+  display: flex; flex-direction: column; gap: var(--space-3);
+}
+blockquote.pull p { font-family: var(--font-display); font-size: var(--text-lg); line-height: 1.4; text-wrap: pretty; }
+blockquote.pull footer { font-size: var(--text-sm); color: var(--on-surface-variant); }
+
+/* Wordmarks as type, not images. A logo strip of remote images is a row of
+   requests to other people's servers on every page view. */
+.logos { display: flex; flex-wrap: wrap; gap: var(--space-4) var(--space-6); align-items: center; list-style: none; margin: 0; padding: 0; }
+.logos li {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: var(--text-lg); letter-spacing: -0.02em;
+  color: var(--on-surface-variant);
+  opacity: 0.75;
+}
+
+.notice {
+  display: flex; flex-direction: column; gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  border-left: 4px solid var(--primary);
+  background: var(--surface-container);
+}
+.notice-positive { border-left-color: var(--positive); }
+.notice-caution  { border-left-color: var(--caution); }
+.notice-critical { border-left-color: var(--critical); }
+
+/* -- pricing --------------------------------------------------------------- */
+
+.pricing { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); align-items: start; }
+.plan {
+  background: var(--surface-container-low);
+  border: var(--border) solid var(--outline-variant);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  display: flex; flex-direction: column; gap: var(--space-4);
+}
+.plan.featured { background: var(--primary-container); color: var(--on-primary-container); border-color: transparent; }
+.plan .price { display: flex; align-items: baseline; gap: 0.3em; }
+.plan .price .amount { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 800; font-variant-numeric: tabular-nums; }
+.plan .price .period { font-size: var(--text-sm); color: var(--on-surface-variant); }
+.plan.featured .price .period { color: inherit; opacity: 0.8; }
+.plan ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--text-sm); }
+.plan li { display: grid; grid-template-columns: auto 1fr; gap: var(--space-2); }
+.plan li::before { content: "✓"; font-weight: 700; color: var(--primary); }
+.plan.featured li::before { color: inherit; }
+
+/* -- FAQ ------------------------------------------------------------------- */
+
+/* details/summary, because an accordion built from buttons and hidden panels
+   needs script to be operable and this one is operable by the browser. */
+.faq { display: flex; flex-direction: column; gap: var(--space-2); }
+.faq details {
+  background: var(--surface-container-low);
+  border: var(--border) solid var(--outline-variant);
+  border-radius: var(--radius-md);
+}
+.faq summary {
+  cursor: pointer;
+  padding: var(--space-4);
+  font-weight: 700;
+  display: flex; justify-content: space-between; gap: var(--space-4);
+  min-height: 48px; align-items: center;
+  border-radius: inherit;
+}
+.faq summary::after { content: "+"; font-family: var(--font-mono); color: var(--primary); }
+.faq details[open] summary::after { content: "−"; }
+.faq .answer { padding: 0 var(--space-4) var(--space-4); }
+.faq .answer p { max-width: var(--measure); }
+
+/* -- forms ----------------------------------------------------------------- */
+
+form.stacked { display: flex; flex-direction: column; gap: var(--space-4); max-width: 32rem; }
+.field { display: flex; flex-direction: column; gap: var(--space-2); }
+.field label { font-weight: 700; font-size: var(--text-sm); }
+.field .hint { font-size: var(--text-sm); color: var(--on-surface-variant); }
+input, select, textarea {
+  font: inherit; font-size: var(--text-base);
+  color: var(--on-surface); background: var(--surface-container-lowest);
+  border: var(--border) solid var(--outline);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  min-height: 48px; width: 100%;
+}
+textarea { min-height: 8rem; resize: vertical; }
+input:hover, select:hover, textarea:hover { border-color: var(--primary); }
+/* The honeypot: present for a bot reading the markup, gone for everybody else.
+   Not display:none — some bots skip those — and out of the tab order. */
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+/* -- media ----------------------------------------------------------------- */
+
+figure { margin: 0; }
+.media-full img, .media-full video { width: 100%; border-radius: var(--radius-lg); }
+.ratio-wide { aspect-ratio: 16 / 9; object-fit: cover; }
+.ratio-square { aspect-ratio: 1; object-fit: cover; }
+
+/* -- gradient surface ------------------------------------------------------ */
+
+.surface-gradient { background: var(--gradient); color: var(--on-primary-container); }
+.surface-gradient a { color: inherit; }
+
+/* -- carousel -------------------------------------------------------------- */
+
+/* Scroll-snap rather than script. A carousel built from buttons and transforms
+   needs JavaScript to move and traps a keyboard user when it fails; this one is
+   a scrolling list, so it is swipeable, keyboard-scrollable, readable by a
+   screen reader as the list it is, and works with the page's policy set to
+   script-src 'none'. It also cannot advance on its own, which is the part of a
+   carousel that 2.2.2 is about. */
+.carousel {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: min(78%, 22rem);
+  gap: var(--space-4);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: var(--space-5);
+  padding-block: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding-inline: 0;
+  overscroll-behavior-x: contain;
+  scrollbar-gutter: stable;
+}
+.carousel > * { scroll-snap-align: start; }
+.carousel img { border-radius: var(--radius-lg); width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.carousel-hint { font-size: var(--text-sm); color: var(--on-surface-variant); }
+
+/* -- video ----------------------------------------------------------------- */
+
+/* controls always, autoplay never. An autoplaying video is a 1.4.2 failure the
+   gate already refuses, and a video with no controls is one a keyboard user
+   cannot stop. */
+.video figure { margin: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.video video {
+  width: 100%; border-radius: var(--radius-lg);
+  background: var(--surface-container);
+}
+.video figcaption { font-size: var(--text-sm); color: var(--on-surface-variant); }
+
+/* -- breadcrumbs ----------------------------------------------------------- */
+
+.breadcrumbs { padding-block: var(--space-3); }
+.breadcrumbs ol {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+.breadcrumbs li + li::before {
+  content: "/"; margin-right: var(--space-2);
+  color: var(--on-surface-variant);
+}
+.breadcrumbs [aria-current="page"] { color: var(--on-surface-variant); }
+
+/* -- docs sidebar ---------------------------------------------------------- */
+
+.with-side { display: grid; gap: var(--space-6); align-items: start; }
+.side {
+  position: sticky; top: var(--space-4);
+  background: var(--surface-container-low);
+  border: var(--border) solid var(--outline-variant);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+.side nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.side nav a { display: block; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); text-decoration: none; color: var(--on-surface-variant); font-size: var(--text-sm); }
+.side nav a:hover { background: var(--surface-container); color: var(--on-surface); }
+.side h2 { font-size: var(--text-base); margin-bottom: var(--space-2); }
+
+/* -- product / detail ------------------------------------------------------ */
+
+.detail-grid { display: grid; gap: var(--space-6); align-items: start; }
+.spec { display: grid; grid-template-columns: auto 1fr; gap: var(--space-2) var(--space-4); margin: 0; font-size: var(--text-sm); }
+.spec dt { font-weight: 700; color: var(--on-surface-variant); }
+.spec dd { margin: 0; }
+.price-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3); }
+.price-line .amount { font-family: var(--font-display); font-size: var(--text-xl); font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* -- motion ---------------------------------------------------------------- */
+
+/* Scroll reveals, behind a support query so a browser without scroll-driven
+   animations shows the content rather than nothing. That ordering matters: the
+   element is visible by default and the animation only ever starts from
+   hidden where the timeline exists to finish it. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: reveal-in linear both;
+      animation-timeline: view();
+      animation-range: entry 10% cover 32%;
+    }
+    @keyframes reveal-in {
+      from { opacity: 0; transform: translateY(1.25rem); }
+      to   { opacity: 1; transform: none; }
+    }
+  }
+}
+
+/* Cross-document transitions: same-origin navigation crossfades with no script
+   at all. Browsers without it navigate normally. */
+@view-transition { navigation: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  @view-transition { navigation: none; }
+}
+
+/* -- forced colours -------------------------------------------------------- */
+
+@media (forced-colors: active) {
+  .card, .hero, .chip, .metric, .plan, .notice, .table-wrap, .side,
+  .faq details, blockquote.pull {
+    border: 1px solid CanvasText;
+  }
+  .btn { border: 1px solid ButtonText; }
+  .bar > span, .steps > li::before, .timeline > li::before { background: CanvasText; }
+  .donut { background: Canvas; border: 1px solid CanvasText; }
+  :focus-visible { outline: 3px solid Highlight; }
+}
+
+/* -- print ----------------------------------------------------------------- */
+
+@media print {
+  .site-header, .site-footer, .skip, .actions { display: none; }
+  body { background: #fff; color: #000; }
+  a::after { content: " (" attr(href) ")"; font-size: 0.85em; }
+}

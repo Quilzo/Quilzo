@@ -192,7 +192,7 @@ func TestACatalogueWithoutTermsClaimsNone(t *testing.T) {
 // nobody reads.
 func TestAPagePointsAtTheCatalogue(t *testing.T) {
 	st := catalogueSite(t, "shop")
-	got := st.injectHead("<html><head></head><body></body></html>", "index", "")
+	got := st.injectHead("<html><head></head><body></body></html>", "index", "", nil)
 	if !strings.Contains(got, `href="/catalogue.json"`) {
 		t.Errorf("no page points at the catalogue:\n%s", got)
 	}
@@ -207,7 +207,7 @@ func TestAPagePointsAtTheCatalogue(t *testing.T) {
 // metadata is unreliable, which is worse than having none.
 func TestASiteWithoutACatalogueLinksToNothing(t *testing.T) {
 	st := catalogueSite(t, "")
-	got := st.injectHead("<html><head></head><body></body></html>", "index", "")
+	got := st.injectHead("<html><head></head><body></body></html>", "index", "", nil)
 	if strings.Contains(got, "catalogue.json") {
 		t.Error("a site with no catalogue advertised one")
 	}

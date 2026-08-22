@@ -1,36 +1,47 @@
 Quilzo
-Copyright (C) 2026 rsh1k
+Copyright 2026 rsh1k
 
-This program is free software: you can redistribute it and/or modify it under
-the terms of the GNU Affero General Public License as published by the Free
-Software Foundation, either version 3 of the License, or (at your option) any
-later version.
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at
 
-This program is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE.  See the GNU Affero General Public License for more details.
+    http://www.apache.org/licenses/LICENSE-2.0
 
-You should have received a copy of the GNU Affero General Public License along
-with this program.  If not, see <https://www.gnu.org/licenses/>.
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
 
 ---
 
-Why the Affero variant, and not something more permissive.
+This project was AGPL-3.0-or-later until August 2026.
 
-Quilzo is a thing people run as a service for other people. An ordinary GPL
-obligation is triggered by *distributing* software, and nobody distributes a
-CMS they are hosting — so under GPL-3.0 a company could take this, run it for
-customers, modify it, and never publish a line. The Affero clause closes that:
-offering it over a network is the trigger, so anybody running a modified
-Quilzo for others has to offer their users the source.
+Recorded here rather than removed, because a licence change is the kind of fact
+somebody needs to be able to find afterwards.
 
-That is the whole reason to pick it. The author is not trying to stop anybody
-using this, charging for it, or building a business on it — all of that is
-permitted and intended. What it prevents is the one outcome that would make the
-project pointless: a closed fork, hosted at scale, with the improvements kept
-private and the author's name removed.
+Every release made under AGPL-3.0-or-later remains available under those terms.
+That grant cannot be revoked and this is not an attempt to revoke it: anyone
+holding a copy of a previous release keeps every right it gave them, in
+perpetuity, including the right to fork it and continue under those terms.
 
-Attribution is not a courtesy here, it is a licence term. Section 5 requires
-that modified versions carry prominent notices stating that they are modified
-and the date, and that the whole work stay under this licence, with these
-notices intact.
+The change was possible because the copyright was not distributed. Every commit
+to that point was authored either by the sole maintainer or by Dependabot
+bumping a version string in a workflow file, so no third party's permission was
+required. That is a property of the history and is checkable:
+
+    git log --format='%ae' | sort -u
+
+Why the change. AGPL was chosen to stop a closed fork being hosted at scale with
+its improvements kept private, and the reasoning was sound for the software this
+was when it was written — a CMS somebody runs. It became the wrong instrument
+when the valuable part turned out to be the properties rather than the product:
+a template language that cannot execute, a gate that refuses to publish an
+unmarked AI-generated page, an accessibility check that blocks rather than
+warns. Those are worth more the more places they exist, and reciprocity that a
+legal review declines at the first paragraph keeps them in exactly one place.
+
+Apache-2.0 rather than MIT or BSD for the explicit patent grant in section 3.
+
+Contributions are taken under the Developer Certificate of Origin. Copyright
+stays with each contributor; there is no contributor licence agreement and no
+copyright assignment.

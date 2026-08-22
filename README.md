@@ -6,7 +6,7 @@ A content management system where stored content is immutable, publishing moves
 a pointer, and the template language cannot execute anything.
 
 [![ci](https://github.com/quilzo/quilzo/actions/workflows/ci.yml/badge.svg)](https://github.com/quilzo/quilzo/actions/workflows/ci.yml)
-[![licence: AGPL-3.0-or-later](https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue)](LICENSE)
+[![licence: Apache-2.0](https://img.shields.io/badge/licence-Apache--2.0-blue)](LICENSE)
 [![dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen)](go.mod)
 
 ```bash
@@ -140,11 +140,140 @@ Loops iterate over data, never a condition. Depth, output size and total
 iterations are capped. Rendering terminates for every input; that is a property,
 not a hope.
 
-## The two processes
+## How four constructs are enough
+
+The obvious objection to a language this small is that no real design fits in
+it. Three things close the gap, and none of them adds a construct.
+
+**A page names its layout.** `templates/` holds as many layouts as you like and
+a page picks one — `"layout": "catalogue"` — resolved in exactly one place, so
+the public server, the accessibility gate, the preview and the static export
+cannot disagree about which template a page gets. A page naming a layout the
+site does not have is refused at publish rather than quietly rendered through
+the default, because a page nobody designed with no message anywhere is worse
+than a failure.
+
+**A page's shape is content.** The default layout renders an ordered list of
+typed sections — hero, features, metrics, bar chart, donut, split, gallery,
+carousel, video, steps, timeline, quote, logos, pricing, FAQ, table, people,
+prose, notice, call to action. Reordering the homepage is an edit, not a deploy,
+and it rolls back like any other edit.
+
+**A page's shape is editable everywhere.** Sections are content, so the terminal
+could always edit the JSON — and the browser could not touch them at all. Both
+can now, over one implementation of the moves:
+
+```bash
+quilzo section kinds                       # nineteen, grouped by what they do
+quilzo section add index pricing           # arrives with content that renders
+quilzo section move index 4 up             # refused at the ends, not clamped
+quilzo section fields index 0              # what is editable inside one
+quilzo section set index 0 title='…'       # only where a value already is
+```
+
+The browser has the same at `/sections`, with buttons rather than a canvas —
+the admin serves `script-src 'none'` and a test asserts it, so a drag-and-drop
+editor would mean an exception for the most attacker-interesting surface in the
+system. Each move writes a draft commit naming what it did, so an accidental
+reorder is undone by rolling the draft back.
+
+**The negations are computed.** The language has no `else`, deliberately: an
+`if` with one exit means a template's structure can be read off its source. The
+shape that costs is a heading that is a link when there is somewhere to go and
+text when there is not — so the renderer derives `unlinked`, `no_image` and
+`no_slug` for every object in a page, once, where every renderer sees the same
+thing. It is the same argument as the demo's prices: the language has no
+arithmetic, so the formatted price is computed before the render.
+
+What is still absent is absent on purpose. No partials, no includes, no
+inheritance — each of those resolves a name at render time, and this language
+resolves nothing at render time.
+
+## Design, and the check that used to be missing
+
+A site's stylesheet is generated from a closed list of named tokens: every
+colour in both schemes, three type stacks, the type scale, the line height, the
+measure, the corner radius, the spacing density, the border weight, a two-stop
+gradient. The component rules underneath — what a card is, where the focus ring
+goes, how a grid wraps, what happens under `prefers-reduced-motion` and
+`forced-colors` — are not editable, because that is where the accessibility work
+lives.
+
+That split buys something specific. This program used to list colour contrast
+under what it does **not** check, on the grounds that contrast lives in a
+stylesheet the tool cannot see. It generates the stylesheet now, so the excuse
+expired: every text pair is computed against its background in both schemes, and
+a theme that puts body text below 4.5:1 is refused at publish with both numbers
+named — the same treatment an image with no alternative text gets.
+
+```bash
+quilzo theme tokens                    # the whole closed list, and what each does
+quilzo theme set primary '#0b4f6c'     # refused if the result is unreadable
+quilzo theme check                     # every pair, both schemes
+quilzo theme apply article             # take a starter's palette, keep your layout
+```
+
+Typefaces are served from the site's own origin or not at all. Put a `.woff2` in
+`templates/fonts/` and it is validated, served at `/fonts/`, and available to the
+type tokens by name; there is deliberately no way to name a font on somebody
+else's host, because a page that fetches one has handed that host a request on
+every visit and the ability to stall the render — and the policy cannot help,
+because the page asked for it.
+
+## Bringing a template you already have
+
+Nobody's existing template works here, and being told to start again is the
+reason people do not move. So a template written for another system is converted
+once, in front of the renderer, with a report:
+
+```bash
+quilzo template adopt theme.liquid --dry-run
+```
+
+Liquid, Twig, Jinja, Django, Handlebars, Mustache, Go templates and Hugo layouts
+map onto the four constructs where they can. Script, event handlers, executable
+URL schemes and embedded documents are removed unconditionally — they are the
+vulnerability class this program is built without, arriving inside a file
+somebody downloaded. External stylesheets and fonts are removed too, because the
+policy would refuse them and the page would render with its design silently
+missing.
+
+Everything that could not be translated is named, with the shape it should
+become, and the layout is not written at all while any remain. An `{% else %}`
+dropped in silence renders the wrong branch of every conditional, and the person
+who ran the conversion has no reason to look.
+
+## Publishing from a Telegram chat
+
+`quilzo telegram serve` is a third process: a Mini App that turns a form in a
+chat into a published page, and refuses to publish one a reader could not use.
+
+```bash
+export QUILZO_TELEGRAM_TOKEN=…        # never a flag; a flag is shell history
+quilzo telegram check                 # confirms the token, names the bot
+quilzo telegram serve --site-url https://example.com
+```
+
+The surface serves `script-src 'none'`, which is not free on a Mini App.
+Telegram delivers launch parameters in the URL fragment, and a fragment is never
+sent to a server — so reading `initData` server-side normally means JavaScript
+on the page lifting it out and posting it back, on the one surface in this
+program where a stranger composes content. Instead the bot mints a signed,
+single-use, expiring credential in the query string, which the server does see.
+`initData` is implemented in full as well, at `POST /launch`, for anyone running
+this with Telegram's SDK.
+
+There is no HTML field. A field is text, it lands in a template that cannot
+execute, and the page goes out through the same gates as everything else — so
+the answer to "what if somebody pastes a script tag" is structural rather than a
+filter somebody has to keep ahead of.
+
+## The three processes
 
 ```
-quilzo serve   the admin      loopback, behind your own auth
-quilzo site    the website    the thing you point the internet at
+quilzo serve      the admin       loopback, behind your own auth
+quilzo site       the website     the thing you point the internet at
+quilzo telegram   the Mini App    authenticated, writable, framed by Telegram
 ```
 
 Separate binaries-in-one, separate ports, separate exposure. The public process
@@ -152,6 +281,12 @@ holds no credentials and has exactly one write capability: appending a form
 submission to a store that is not the content store. It cannot read a submission
 back, cannot reach a ref, and cannot cause a commit. Reading the postbag happens
 in the admin, behind authentication.
+
+The third is the newest and the most exposed: it is authenticated, it can
+publish, and it is framed by somebody else's client. That combination is why it
+is a separate process with a separate policy rather than a route on one of the
+others — mixing it in would mean widening that one's policy to cover this one's
+needs, which is how a policy stops describing anything.
 
 ## What is in it
 
@@ -629,8 +764,8 @@ not at the next restart.
 ```bash
 quilzo demo                              # a whole example application
 # or
-quilzo template use landing
-quilzo add index=index.json -m "first page"
+quilzo template use sections             # a layout, a theme and sample content
+quilzo add index=templates/sections.json -m "first page"
 quilzo publish
 ```
 
@@ -641,7 +776,7 @@ quilzo serve --addr 127.0.0.1:8080                                    # admin
 quilzo site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
 ```
 
-`quilzo help` lists all 92 commands.
+`quilzo help` lists every command.
 
 ## Documentation
 
@@ -733,8 +868,6 @@ deterministic. And rollback is a pointer move, not a rebuild.
 - You need per-visitor personalisation or a shopping cart. Products, catalogue
   and structured data yes; a cart holding a card, no — that needs a threat model
   this process does not have.
-- Your employer forbids AGPL. Some do, Google explicitly. Better said here than
-  discovered after you have written the patch.
 - You need commercial support today. One maintainer, no 1.0, no backports.
   That is the real state of it, and [GOVERNANCE.md](GOVERNANCE.md) says exactly
   what it takes to change it.
@@ -743,12 +876,35 @@ deterministic. And rollback is a pointer move, not a rebuild.
 
 ## Licence
 
-AGPL-3.0-or-later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-Affero specifically, because nobody distributes a CMS — they host it. A licence
-whose obligations trigger on distribution would never trigger at all for the
-software this is. Running a modified Quilzo as a service for other people means
-those people can have the source.
+**This changed, and the previous answer is worth stating rather than quietly
+replacing.** Quilzo was AGPL-3.0-or-later until August 2026. Affero was chosen
+for a specific reason: nobody distributes a CMS, they host it, so a licence
+whose obligations trigger on distribution would never trigger at all. Running a
+modified Quilzo as a service meant those users could have the source.
+
+Two things changed that reasoning.
+
+The first is that the reciprocity was aimed at the wrong risk. The thing worth
+protecting here is not the code — it is the properties: that a template cannot
+execute, that an unmarked AI-generated page does not publish, that an
+inaccessible one is refused. Those are worth more the more places they are, and
+a licence that a corporate legal review declines at the first paragraph is a
+licence that keeps them in one place.
+
+The second is that this became infrastructure other people need to embed. A
+publishing pipeline that marks machine-generated content and refuses what it
+cannot vouch for is only useful where machine-generated content is being
+published, and that is increasingly inside somebody else's product.
+
+Apache-2.0 rather than MIT for the explicit patent grant, which is the clause a
+legal review actually looks for.
+
+Everything released under AGPL stays under AGPL. That grant is irrevocable and
+this is not an attempt to retract it: anyone holding a copy of a previous
+release keeps every right it gave them, permanently, including the right to
+fork and continue under those terms.
 
 ## Contributing
 
@@ -760,6 +916,7 @@ substance and you can have commit access — the bar is written down in
 site, the one rule that will surprise you (no dependencies), and how review
 works here. Security reports go through [SECURITY.md](SECURITY.md), privately.
 
-One thing to know before you spend time: **some employers forbid contributing to
-AGPL projects**, Google's policy explicitly. That is a real cost of the licence
-and it is better said here than discovered later.
+Contributions are taken under a [DCO](https://developercertificate.org/) —
+`git commit -s` — and copyright stays with whoever wrote the code.
+[CONTRIBUTING.md](CONTRIBUTING.md) says what that does and does not commit you
+to, including what changed when the licence did.
