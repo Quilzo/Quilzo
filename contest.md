@@ -22,7 +22,8 @@ quilzo site --addr 127.0.0.1:8081
 ```
 
 Telegram only opens a Mini App over https, so put a tunnel or a reverse proxy in
-front of `:8082` and give @BotFather that address.
+front of `:8082` and give @BotFather that address. `deploy/` has a Caddyfile and
+two systemd units for a permanent one.
 
 The bot answers `/start` by long polling, which needs no inbound reachability of
 its own — useful during development, since the Mini App already has to be behind

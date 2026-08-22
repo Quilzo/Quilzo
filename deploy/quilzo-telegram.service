@@ -1,0 +1,64 @@
+# The Mini App, as a service that survives a reboot.
+#
+# A Telegram Apps Center listing points at one address, and an address that
+# stops answering when the machine restarts is a listing that gets pulled. So
+# this is a unit rather than a terminal somebody left open.
+#
+#   sudo cp deploy/quilzo-telegram.service /etc/systemd/system/
+#   sudo install -m 0600 -o quilzo -g quilzo /dev/null /etc/quilzo/telegram.env
+#   sudo editor /etc/quilzo/telegram.env      # QUILZO_TELEGRAM_TOKEN=...
+#   sudo systemctl enable --now quilzo-telegram
+
+[Unit]
+Description=Quilzo Telegram Mini App
+Documentation=https://github.com/Quilzo/Quilzo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=quilzo
+Group=quilzo
+WorkingDirectory=/srv/quilzo
+
+# The token comes from a file with an owner and a mode, never from the command
+# line. An argument is in `ps` output for every user on the machine and in
+# whatever a monitoring agent collects, and neither can be taken back.
+EnvironmentFile=/etc/quilzo/telegram.env
+
+ExecStart=/usr/local/bin/quilzo telegram serve \
+  --addr 127.0.0.1:8082 \
+  --app-url https://pages.example.com \
+  --site-url https://example.com
+
+Restart=on-failure
+RestartSec=5s
+
+# Hardening. This process is reachable from a billion accounts and can write to
+# the store, which makes it the one worth confining.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+# Outbound to api.telegram.org, and nothing else needs a socket family beyond
+# these three.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @obsolete
+
+# The store is the only thing it may write, and it is the thing it must write.
+ReadWritePaths=/srv/quilzo
+
+[Install]
+WantedBy=multi-user.target

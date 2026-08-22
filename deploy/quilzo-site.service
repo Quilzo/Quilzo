@@ -1,0 +1,50 @@
+# The published site: anonymous, read-only, the thing pointed at the internet.
+#
+# Separate from the Mini App unit because they have different exposures and
+# different failure consequences. This one holds no credentials at all, which is
+# why it needs no EnvironmentFile and why its store path is read-only.
+#
+#   sudo cp deploy/quilzo-site.service /etc/systemd/system/
+#   sudo systemctl enable --now quilzo-site
+
+[Unit]
+Description=Quilzo public site
+Documentation=https://github.com/Quilzo/Quilzo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=quilzo
+Group=quilzo
+WorkingDirectory=/srv/quilzo
+
+ExecStart=/usr/local/bin/quilzo site \
+  --addr 127.0.0.1:8081 \
+  --base-url https://example.com
+
+Restart=on-failure
+RestartSec=5s
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @obsolete
+
+# It appends form submissions to a store that is not the content store, and
+# that is its only write. The content store it serves is read-only to it.
+ReadWritePaths=/srv/quilzo/submissions

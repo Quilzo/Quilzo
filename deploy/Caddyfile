@@ -1,0 +1,47 @@
+# A stable https address for the Mini App, which Telegram requires.
+#
+# Caddy rather than nginx for one reason: it gets and renews the certificate
+# itself, with no cron job to forget and no certbot to break at renewal. A
+# Telegram Mini App whose certificate expires is a Mini App that stops opening,
+# and the listing does not come back on its own.
+#
+#   caddy run --config deploy/Caddyfile
+#
+# Replace both hostnames. They can be subdomains of one domain; they must not be
+# the same host, because the two services have different exposures and sharing an
+# origin would mean one policy covering both.
+
+# The Mini App: authenticated, writable, framed by Telegram.
+pages.example.com {
+	# The app sets its own Content-Security-Policy, including the
+	# frame-ancestors that let Telegram's web client frame it. Nothing here
+	# adds or overrides a security header — two places setting them is one
+	# place being wrong.
+	reverse_proxy 127.0.0.1:8082
+
+	# Requests carry a single-use credential in the query string, so the log
+	# would be a list of them. Off rather than filtered: a filter is a promise
+	# about every future parameter name.
+	log {
+		output discard
+	}
+
+	encode zstd gzip
+}
+
+# The published site: anonymous, read-only, the thing pointed at the internet.
+example.com {
+	reverse_proxy 127.0.0.1:8081
+	encode zstd gzip
+
+	# Published pages are immutable and addressed by hash, so the ETag the
+	# site sets is exact. Nothing here needs to add caching rules on top.
+}
+
+# The admin is deliberately absent.
+#
+# It is loopback and holds credentials. Putting it behind a public hostname is
+# the change that turns a compromise of this proxy into a compromise of the
+# store. Reach it over SSH with a port forward:
+#
+#   ssh -N -L 8080:127.0.0.1:8080 you@your-server
