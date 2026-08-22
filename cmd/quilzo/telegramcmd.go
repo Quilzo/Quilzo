@@ -91,6 +91,14 @@ func telegramServe(root string, args []string) error {
 	tokenFile := fs.String("token-file", "", "a file holding the bot token")
 	siteURL := fs.String("site-url", "",
 		"where published pages can be read, e.g. https://example.com")
+	appURL := fs.String("app-url", "",
+		"the public https address of this Mini App, as given to @BotFather")
+	webhook := fs.String("webhook", "",
+		"serve updates at this path instead of polling; needs --webhook-secret")
+	webhookSecret := fs.String("webhook-secret-env", "",
+		"environment variable holding the webhook secret")
+	noBot := fs.Bool("no-bot", false,
+		"serve the Mini App without answering messages")
 	design := fs.String("design", "sections",
 		"which shipped design a new page is published with")
 	if err := fs.Parse(args); err != nil {
@@ -136,6 +144,72 @@ func telegramServe(root string, args []string) error {
 	record(root, resolveCaller(root, "").auditRecord("telegram.serve", "/",
 		audit.Success, map[string]string{"addr": *addr, "design": *design}))
 
+	// The bot half. Without it the only way to reach the Mini App is a link
+	// minted in a terminal, which is not a way in for anybody this is for.
+	router := &telegram.Router{
+		Bot:      &telegram.Bot{Token: token},
+		AppURL:   strings.TrimSpace(*appURL),
+		BotToken: token,
+	}
+	handler := app.Handler()
+
+	switch {
+	case *noBot:
+		w.Human("  %s--no-bot: nothing answers /start, so links have to come "+
+			"from%s\n", dim, reset)
+		w.Human("  %s`quilzo telegram link`%s\n\n", dim, reset)
+	case *appURL == "":
+		return fmt.Errorf(
+			"--app-url is required: it is the address the bot puts in the " +
+				"button, and this program will not guess it from a request " +
+				"header — that is how a link ends up pointing at somebody " +
+				"else's host.\n" +
+				"  Pass --no-bot to serve the Mini App without answering messages")
+	case *webhook != "":
+		secret := strings.TrimSpace(os.Getenv(strings.TrimSpace(*webhookSecret)))
+		if *webhookSecret == "" || secret == "" {
+			return fmt.Errorf(
+				"a webhook needs a secret. Put one in an environment variable " +
+					"and name it with --webhook-secret-env.\n" +
+					"  Without it the endpoint acts on whatever is posted to " +
+					"it by anybody who finds the path")
+		}
+		path := "/" + strings.TrimPrefix(*webhook, "/")
+		mux := http.NewServeMux()
+		mux.Handle(path, router.WebhookHandler(secret))
+		mux.Handle("/", handler)
+		handler = mux
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		endpoint := strings.TrimSuffix(*appURL, "/") + path
+		err := router.Bot.SetWebhook(ctx, endpoint, secret)
+		cancel()
+		if err != nil {
+			return err
+		}
+		w.Human("  %swebhook registered at %s%s\n\n", dim, endpoint, reset)
+	default:
+		// Polling, which needs no inbound reachability for the bot itself.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		derr := router.Bot.DeleteWebhook(ctx)
+		cancel()
+		if derr != nil {
+			// Reported and not fatal: a token with no webhook set answers this
+			// happily, and a transient failure here should not stop the server.
+			w.Human("  %scould not clear an existing webhook: %v%s\n", dim, derr, reset)
+		}
+		go func() {
+			perr := router.Poll(context.Background(), func(e error) {
+				fmt.Fprintf(os.Stderr, "  %stelegram: %v%s\n", dim, e, reset)
+			})
+			if perr != nil {
+				fmt.Fprintf(os.Stderr, "  %stelegram polling stopped: %v%s\n",
+					dim, perr, reset)
+			}
+		}()
+		w.Human("  %sanswering /start by long polling%s\n\n", dim, reset)
+	}
+
 	w.Human("%sthe Telegram Mini App%s is on %shttp://%s%s\n",
 		bold, reset, bold, *addr, reset)
 	w.Human("  %sit publishes through the same gates as everything else: a page%s\n", dim, reset)
@@ -154,7 +228,7 @@ func telegramServe(root string, args []string) error {
 
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           app.Handler(),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	return srv.ListenAndServe()
