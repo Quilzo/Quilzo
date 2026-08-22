@@ -16,12 +16,19 @@ quilzo publish
 
 export QUILZO_TELEGRAM_TOKEN=<your bot token>
 quilzo telegram check                      # confirms the token, names the bot
-quilzo telegram serve --site-url https://your.site
-quilzo site --addr 127.0.0.1:8081          # where published pages are read
+# --app-url is what @BotFather was given; --site-url is where pages are read
+quilzo telegram serve --app-url https://your.tunnel --site-url https://your.site
+quilzo site --addr 127.0.0.1:8081
 ```
 
 Telegram only opens a Mini App over https, so put a tunnel or a reverse proxy in
 front of `:8082` and give @BotFather that address.
+
+The bot answers `/start` by long polling, which needs no inbound reachability of
+its own — useful during development, since the Mini App already has to be behind
+https. `--webhook /path --webhook-secret-env VAR` switches to a webhook instead;
+the secret is required, because an endpoint that acts on whatever is posted to
+it is not a webhook.
 
 To open the surface without registering a bot at all:
 
@@ -95,7 +102,7 @@ manager, no libc.
 
 | Path | What it is |
 | --- | --- |
-| `internal/telegram` | This submission: `initData` verification, signed single-use links, form grants, the Mini App surface, a minimal Bot API client |
+| `internal/telegram` | This submission: `initData` verification, signed single-use links, form grants, the Mini App surface, terms and privacy pages, the bot that answers `/start`, and a minimal Bot API client |
 | `internal/tmpl` | The template language that cannot execute |
 | `internal/provenance` | Article 50 marking, bound to the content hash |
 | `internal/a11y` | The checks that block a publish |
@@ -115,7 +122,9 @@ go test ./...
 - `internal/telegram` — every way a launch can be forged, stale or replayed,
   verified against an independently written signer rather than against itself.
   Includes the case where a bad signature must not burn somebody else's link,
-  which is a question of check ordering rather than of cryptography.
+  which is a question of check ordering rather than of cryptography; that the
+  polling offset advances *after* handling, so a crash redelivers rather than
+  loses; and that an unauthenticated webhook post sends nothing.
 - `internal/starter` — every shipped design passes the contrast gate in both
   colour schemes, every section kind is exercised by sample content, and the
   layouts pass the scanner this project ships.
@@ -134,5 +143,8 @@ go test ./...
 - Telegram's theme parameters are not read, because reading them needs the SDK
   and the SDK needs script. The page follows the reader's light or dark
   preference instead, which is close and costs nothing.
+- The bot answers in English only. Telegram sends the user's language code and
+  nothing here reads it, so a translation layer is the obvious next thing and is
+  deliberately not faked with a machine translation nobody checked.
 
 Apache-2.0.

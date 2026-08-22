@@ -251,8 +251,13 @@ chat into a published page, and refuses to publish one a reader could not use.
 ```bash
 export QUILZO_TELEGRAM_TOKEN=…        # never a flag; a flag is shell history
 quilzo telegram check                 # confirms the token, names the bot
-quilzo telegram serve --site-url https://example.com
+quilzo telegram serve --app-url https://your.tunnel --site-url https://example.com
 ```
+
+The bot answers `/start` with a button, by long polling — which needs no inbound
+reachability of its own, since the Mini App already has to be behind https for
+Telegram to open it at all. A webhook is available instead and requires a secret,
+because an endpoint that acts on whatever is posted to it is not a webhook.
 
 The surface serves `script-src 'none'`, which is not free on a Mini App.
 Telegram delivers launch parameters in the URL fragment, and a fragment is never

@@ -99,6 +99,9 @@ func (a *App) now() time.Time {
 func (a *App) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/app.css", a.stylesheet)
+	mux.HandleFunc("/terms", a.terms)
+	mux.HandleFunc("/privacy", a.privacy)
+	mux.HandleFunc("/health", a.health)
 	mux.HandleFunc("/launch", a.launch)
 	mux.HandleFunc("/publish", a.publish)
 	mux.HandleFunc("/", a.open)
@@ -336,6 +339,8 @@ func (a *App) form(w http.ResponseWriter, user User, notice, problem string) {
 		`a page with an unlabelled image, a skipped heading level or a colour ` +
 		`pair below the readable ratio is refused rather than published with a ` +
 		`warning. If yours is refused you will see exactly which check said so.</p>`)
+	b.WriteString(`<p class="muted"><a href="/terms">Terms of use</a> · ` +
+		`<a href="/privacy">What is stored</a></p>`)
 	b.WriteString(`</div></main>`)
 
 	a.page(w, http.StatusOK, "Publish a page", b.String())
@@ -434,4 +439,106 @@ func (a *App) LinkFor(user User, appURL string) (string, error) {
 	}
 	base.RawQuery = query
 	return base.String(), nil
+}
+
+// -- the pages a listing requires -------------------------------------------
+
+// The Telegram Apps Center asks for terms of use and a privacy policy before it
+// will list an app, and the request is a reasonable one: a surface that accepts
+// somebody's words and puts them on the public internet should say what it does
+// with them before they type.
+//
+// They are written out here rather than linked to a document somebody hosts
+// separately, so they cannot go missing from a deployment, and so they describe
+// this program rather than a template. Both are short because the honest version
+// is short: this stores a user id and what somebody typed, and it has nothing
+// else to disclose.
+
+func (a *App) terms(w http.ResponseWriter, r *http.Request) {
+	var b strings.Builder
+	b.WriteString(`<main id="main" class="wrap"><div class="section">`)
+	b.WriteString(`<div class="section-head"><p class="eyebrow">Terms of use</p>` +
+		`<h1>What you are agreeing to</h1>` +
+		`<p class="lead">Three things, and none of them are unusual.</p></div>`)
+	b.WriteString(`<ol class="steps">` +
+		`<li><div class="step-body"><h2>Publish what you have the right to publish</h2>` +
+		`<p>Your words, or words you are allowed to use. Not somebody else's ` +
+		`writing, not impersonation of a person or an organisation, and nothing ` +
+		`unlawful where it is read.</p></div></li>` +
+		`<li><div class="step-body"><h2>What you publish is public</h2>` +
+		`<p>That is what publishing a page means. It can be read by anyone with ` +
+		`the address, indexed by search engines, and archived by services that ` +
+		`do that. None of this is reversible once it has happened, whatever ` +
+		`happens to the page afterwards.</p></div></li>` +
+		`<li><div class="step-body"><h2>It can be taken down</h2>` +
+		`<p>By you, and by whoever runs this installation — including without ` +
+		`notice where something is unlawful or is being used to deceive people. ` +
+		`Taking a page down moves a pointer; earlier versions remain stored and ` +
+		`addressable, which is how a removal can be shown to have happened.</p>` +
+		`</div></li></ol>`)
+	b.WriteString(`<div class="notice"><p>There is no warranty. This is ` +
+		`software offered as it is, under the Apache-2.0 licence, and the people ` +
+		`running it are not liable for what it does. If that is not acceptable ` +
+		`for what you are publishing, publish it somewhere with a contract.</p>` +
+		`</div>`)
+	b.WriteString(`<p class="muted">Whoever operates this installation is the ` +
+		`party you are dealing with. Quilzo is the software they are running.</p>`)
+	b.WriteString(`</div></main>`)
+	a.page(w, http.StatusOK, "Terms of use", b.String())
+}
+
+func (a *App) privacy(w http.ResponseWriter, r *http.Request) {
+	var b strings.Builder
+	b.WriteString(`<main id="main" class="wrap"><div class="section">`)
+	b.WriteString(`<div class="section-head"><p class="eyebrow">Privacy</p>` +
+		`<h1>What is stored</h1>` +
+		`<p class="lead">Your Telegram user id, and whatever you typed into the ` +
+		`page. That is the whole list.</p></div>`)
+
+	b.WriteString(`<div class="section-head"><h2>Why the id and not the ` +
+		`username</h2></div><div class="prose narrow">` +
+		`<p>A username can be released and taken by somebody else. A store keyed ` +
+		`on one would hand a stranger your pages the day you renamed, so pages ` +
+		`are keyed on the numeric id, which does not move.</p></div>`)
+
+	b.WriteString(`<div class="section-head"><h2>What is not stored</h2></div>` +
+		`<ul class="chips"><li class="chip">no phone number</li>` +
+		`<li class="chip">no contacts</li><li class="chip">no message history</li>` +
+		`<li class="chip">no location</li><li class="chip">no cookies</li>` +
+		`<li class="chip">no analytics</li><li class="chip">no advertising</li></ul>` +
+		`<div class="prose narrow"><p>Nothing is shared with anyone. There is no ` +
+		`third party to share it with: a published page loads no script and ` +
+		`fetches nothing from another origin, so reading one does not tell ` +
+		`anybody but this server that you did.</p></div>`)
+
+	b.WriteString(`<div class="section-head"><h2>How long</h2></div>` +
+		`<div class="prose narrow">` +
+		`<p>Content here is immutable and addressed by the hash of its own bytes, ` +
+		`so publishing a change writes a new version rather than replacing one. ` +
+		`Taking a page down stops it being served; earlier versions stay stored ` +
+		`until whoever runs this installation removes them. That is the honest ` +
+		`answer, and it is a longer one than "deleted immediately" — which is ` +
+		`what a system with backups would be saying if it claimed otherwise.</p>` +
+		`<p>Ask whoever runs this installation to remove your pages and they ` +
+		`can. There is no automated route to it, because a system that could ` +
+		`delete on request without a person deciding is a system somebody else ` +
+		`can aim at your pages.</p></div>`)
+
+	b.WriteString(`<div class="notice"><p>Telegram's own handling of your ` +
+		`account is Telegram's, and is covered by their privacy policy rather ` +
+		`than by this one. This app sees only what Telegram signs and sends: an ` +
+		`id, a first name, and a username if you have one.</p></div>`)
+	b.WriteString(`</div></main>`)
+	a.page(w, http.StatusOK, "Privacy", b.String())
+}
+
+// health answers a monitor without answering a stranger's questions.
+//
+// Static, and deliberately says nothing about the store, the version, the
+// configuration or whether a token is present. A health endpoint is a public
+// URL, and every fact on it is a fact somebody probing has for free.
+func (a *App) health(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(`{"status":"ok"}` + "\n"))
 }
