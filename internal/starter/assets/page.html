@@ -190,8 +190,8 @@
     <div class="gallery gallery-{{ s.gallery.shape }}">
       {% for g in s.gallery.items %}
       <figure>
-        {% if g.href %}<a href="{{ g.href }}"><img src="{{ g.image }}" alt="{{ g.alt }}" width="800" height="600" loading="lazy"><figcaption>{{ g.caption }}</figcaption></a>{% end %}
-        {% if g.unlinked %}<img src="{{ g.image }}" alt="{{ g.alt }}" width="800" height="600" loading="lazy">{% if g.caption %}<figcaption>{{ g.caption }}</figcaption>{% end %}{% end %}
+        {% if g.href %}<a href="{{ g.href }}">{% if g.image %}<img src="{{ g.image }}" alt="{{ g.alt }}" width="800" height="600" loading="lazy">{% end %}<figcaption>{{ g.caption }}</figcaption></a>{% end %}
+        {% if g.unlinked %}{% if g.image %}<img src="{{ g.image }}" alt="{{ g.alt }}" width="800" height="600" loading="lazy">{% end %}{% if g.caption %}<figcaption>{{ g.caption }}</figcaption>{% end %}{% end %}
       </figure>
       {% end %}
     </div>
@@ -375,9 +375,12 @@
   <div class="wrap">
     {% if s.video.title %}<div class="section-head"><h2>{{ s.video.title }}</h2></div>{% end %}
     <figure>
+      {% if s.video.src %}
       <video controls preload="metadata"{% if s.video.poster %} poster="{{ s.video.poster }}"{% end %}>
         <source src="{{ s.video.src }}" type="video/mp4">
       </video>
+      {% end %}
+      {% if s.video.no_src %}<p class="muted">No video chosen yet. Send one to the bot and pick it here.</p>{% end %}
       {% if s.video.caption %}<figcaption>{{ s.video.caption }}</figcaption>{% end %}
       {% if s.video.transcript_href %}<p><a href="{{ s.video.transcript_href }}">{{ s.video.transcript_label }}</a></p>{% end %}
     </figure>

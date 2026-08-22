@@ -55,6 +55,94 @@ const pollTimeout = 50 * time.Second
 // and a bound means a very large message cannot become a very large string.
 const maxUpdateText = 4096
 
+// rawUpdate is Telegram's shape, decoded once.
+//
+// The message stays raw so the media reader can look inside it without this
+// struct having to mirror every attachment type Telegram supports — which is a
+// list that grows, and a struct that mirrors it is a struct that goes stale
+// quietly. It was also decoded twice, once per delivery path, which is two
+// places for the two paths to start disagreeing.
+type rawUpdate struct {
+	UpdateID int64           `json:"update_id"`
+	Message  json.RawMessage `json:"message"`
+}
+
+// rawMessage is the part every path needs.
+type rawMessage struct {
+	From *struct {
+		ID        int64  `json:"id"`
+		IsBot     bool   `json:"is_bot"`
+		Username  string `json:"username"`
+		FirstName string `json:"first_name"`
+	} `json:"from"`
+	Chat *struct {
+		ID int64 `json:"id"`
+	} `json:"chat"`
+	Text    string `json:"text"`
+	Caption string `json:"caption"`
+	// ReplyToMessage is how a description finds the file it describes: the
+	// bot put an id in its own message, and the reply carries that text back.
+	// State in the chat rather than in this process.
+	ReplyToMessage *struct {
+		Text string `json:"text"`
+		From *struct {
+			IsBot bool `json:"is_bot"`
+		} `json:"from"`
+	} `json:"reply_to_message"`
+}
+
+// updateFrom turns Telegram's shape into this program's, or into a bare
+// acknowledgement when there is nothing to act on.
+//
+// An update this program does not handle still has to come back with its id, or
+// the offset never advances past it and it is redelivered forever.
+func updateFrom(raw rawUpdate) Update {
+	if len(raw.Message) == 0 {
+		return Update{ID: raw.UpdateID}
+	}
+	var m rawMessage
+	if err := json.Unmarshal(raw.Message, &m); err != nil {
+		return Update{ID: raw.UpdateID}
+	}
+	if m.From == nil || m.Chat == nil || m.From.IsBot {
+		// Bots talking to bots is a loop nobody asked for.
+		return Update{ID: raw.UpdateID}
+	}
+
+	text := m.Text
+	if text == "" {
+		text = m.Caption
+	}
+	if len(text) > maxUpdateText {
+		text = text[:maxUpdateText]
+	}
+	text = strings.TrimSpace(text)
+
+	u := Update{
+		ID: raw.UpdateID,
+		From: User{
+			ID:        m.From.ID,
+			Username:  m.From.Username,
+			FirstName: m.From.FirstName,
+		},
+		Chat:      m.Chat.ID,
+		Text:      text,
+		IsCommand: strings.HasPrefix(text, "/"),
+	}
+	// Only a reply to the *bot* carries state this program put there. A reply
+	// to another person's message quoting an id would otherwise be a way to
+	// describe somebody else's file.
+	if m.ReplyToMessage != nil && m.ReplyToMessage.From != nil &&
+		m.ReplyToMessage.From.IsBot {
+		u.ReplyTo = m.ReplyToMessage.Text
+	}
+	if a, ok := attachmentOf(raw.Message); ok {
+		u.Attachment = a
+		u.HasAttachment = true
+	}
+	return u
+}
+
 // Update is one thing that happened, in the shape this program uses.
 //
 // A narrow struct rather than a mirror of Telegram's. Every field here is one
@@ -69,6 +157,12 @@ type Update struct {
 	// IsCommand is true when the text begins with a slash, which is how
 	// Telegram tells a user's words apart from an instruction.
 	IsCommand bool
+	// ReplyTo is the text of the bot's own message this replies to, when it
+	// replies to one. Empty otherwise, including for a reply to somebody else.
+	ReplyTo string
+	// Attachment is the file this message carried, if any.
+	Attachment    Attachment
+	HasAttachment bool
 }
 
 // Updates fetches what has happened since an offset.
@@ -86,21 +180,7 @@ func (b *Bot) Updates(ctx context.Context, offset int64) ([]Update, error) {
 		payload["offset"] = offset
 	}
 
-	var raw []struct {
-		UpdateID int64 `json:"update_id"`
-		Message  *struct {
-			From *struct {
-				ID        int64  `json:"id"`
-				IsBot     bool   `json:"is_bot"`
-				Username  string `json:"username"`
-				FirstName string `json:"first_name"`
-			} `json:"from"`
-			Chat *struct {
-				ID int64 `json:"id"`
-			} `json:"chat"`
-			Text string `json:"text"`
-		} `json:"message"`
-	}
+	var raw []rawUpdate
 	// A client whose own timeout outlasts the poll, or every long poll ends as
 	// a transport error a few seconds before Telegram would have answered.
 	poller := *b
@@ -111,32 +191,7 @@ func (b *Bot) Updates(ctx context.Context, offset int64) ([]Update, error) {
 
 	out := make([]Update, 0, len(raw))
 	for _, u := range raw {
-		if u.Message == nil || u.Message.From == nil || u.Message.Chat == nil {
-			// An update this program does not act on still has to advance the
-			// offset, or it is redelivered forever.
-			out = append(out, Update{ID: u.UpdateID})
-			continue
-		}
-		if u.Message.From.IsBot {
-			// Bots talking to bots is a loop nobody asked for.
-			out = append(out, Update{ID: u.UpdateID})
-			continue
-		}
-		text := u.Message.Text
-		if len(text) > maxUpdateText {
-			text = text[:maxUpdateText]
-		}
-		out = append(out, Update{
-			ID: u.UpdateID,
-			From: User{
-				ID:        u.Message.From.ID,
-				Username:  u.Message.From.Username,
-				FirstName: u.Message.From.FirstName,
-			},
-			Chat:      u.Message.Chat.ID,
-			Text:      strings.TrimSpace(text),
-			IsCommand: strings.HasPrefix(strings.TrimSpace(text), "/"),
-		})
+		out = append(out, updateFrom(u))
 	}
 	return out, nil
 }
@@ -186,6 +241,10 @@ type Router struct {
 	// BotToken keys the links this hands out. Held separately from Bot so a
 	// router can be built in a test without a working API client.
 	BotToken string
+	// Media is the library files sent to the bot go into. Nil means the bot
+	// says it stores nothing rather than accepting a photograph and dropping
+	// it, which is the failure somebody only notices when the page is empty.
+	Media MediaStore
 	// Now is the clock, injectable for tests.
 	Now func() time.Time
 }
@@ -210,11 +269,25 @@ func (r *Router) Handle(ctx context.Context, u Update) error {
 	// Telegram appends @thebot to commands in groups.
 	command, _, _ = strings.Cut(command, "@")
 
+	// A file, which is the shortest path there is from "I have this" to "it is
+	// on my site" — and the reason this runs before the command switch is that
+	// a photograph with a caption has both.
+	if u.HasAttachment {
+		return r.receive(ctx, u)
+	}
+	// A reply to one of the bot's own messages, carrying the description an
+	// image needs before it can be published.
+	if handled, err := r.describe(ctx, u); handled {
+		return err
+	}
+
 	switch command {
 	case "/start":
 		return r.sendStart(ctx, u)
 	case "/help":
 		return r.Bot.Say(ctx, u.Chat, helpText)
+	case "/media":
+		return r.mediaHelp(ctx, u)
 	case "/privacy":
 		return r.Bot.Say(ctx, u.Chat, r.privacyText())
 	case "/terms":
@@ -223,14 +296,16 @@ func (r *Router) Handle(ctx context.Context, u Update) error {
 		if u.IsCommand {
 			return r.Bot.Say(ctx, u.Chat,
 				"I do not know that one. /start opens the page editor, "+
-					"/help explains what this does.")
+					"/media lists your files, /help explains what this does.")
 		}
 		// Not a command. Rather than ignoring it, which reads as broken, this
 		// says what to do — the text of a message is not how a page gets
 		// written here, and saying so is cheaper than a person guessing.
 		return r.Bot.Say(ctx, u.Chat,
 			"Pages are written in the editor rather than in this chat, so "+
-				"nothing was saved. Send /start to open it.")
+				"nothing was saved. Send /start to open it — or send me a "+
+				"photograph, a video or a voice note and it goes straight "+
+				"into your library.")
 	}
 }
 
@@ -264,8 +339,13 @@ const startText = "This publishes a web page from a form. You write a title " +
 
 const helpText = "What this does: turns a form into a published web page.\n\n" +
 	"/start — open the editor\n" +
+	"/media — the files you have sent me\n" +
 	"/terms — what you are agreeing to\n" +
 	"/privacy — what is stored, which is very little\n\n" +
+	"Send me a photograph, a video, an audio file or a voice note and it goes " +
+	"into your library, ready to put on a page. A caption becomes the " +
+	"description; without one I will ask for it, because an image nobody has " +
+	"described does not publish.\n\n" +
 	"There is no HTML field, on purpose. What you type is text, and the " +
 	"template it lands in cannot execute anything — so a page here cannot " +
 	"carry a script, whoever wrote it."
@@ -356,21 +436,7 @@ func (r *Router) WebhookHandler(secret string) http.Handler {
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
-		var raw struct {
-			UpdateID int64 `json:"update_id"`
-			Message  *struct {
-				From *struct {
-					ID        int64  `json:"id"`
-					IsBot     bool   `json:"is_bot"`
-					Username  string `json:"username"`
-					FirstName string `json:"first_name"`
-				} `json:"from"`
-				Chat *struct {
-					ID int64 `json:"id"`
-				} `json:"chat"`
-				Text string `json:"text"`
-			} `json:"message"`
-		}
+		var raw rawUpdate
 		if err := json.Unmarshal(body, &raw); err != nil {
 			http.Error(w, "", http.StatusBadRequest)
 			return
@@ -380,24 +446,10 @@ func (r *Router) WebhookHandler(secret string) http.Handler {
 		// than a greeting that arrives a moment later.
 		w.WriteHeader(http.StatusOK)
 
-		if raw.Message == nil || raw.Message.From == nil ||
-			raw.Message.Chat == nil || raw.Message.From.IsBot {
+		u := updateFrom(raw)
+		if u.From.ID == 0 {
 			return
 		}
-		text := raw.Message.Text
-		if len(text) > maxUpdateText {
-			text = text[:maxUpdateText]
-		}
-		_ = r.Handle(req.Context(), Update{
-			ID: raw.UpdateID,
-			From: User{
-				ID:        raw.Message.From.ID,
-				Username:  raw.Message.From.Username,
-				FirstName: raw.Message.From.FirstName,
-			},
-			Chat:      raw.Message.Chat.ID,
-			Text:      strings.TrimSpace(text),
-			IsCommand: strings.HasPrefix(strings.TrimSpace(text), "/"),
-		})
+		_ = r.Handle(req.Context(), u)
 	})
 }

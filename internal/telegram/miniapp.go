@@ -108,6 +108,12 @@ type App struct {
 	// Publisher is the write path. Nil means the surface is read-only and says
 	// so, rather than offering a button that fails.
 	Publisher Publisher
+	// Drafts is the working copy the editor reads and writes. Nil means the
+	// editor says it is not wired up rather than losing what somebody typed.
+	Drafts Drafts
+	// Media is the library files sent to the bot land in, offered wherever a
+	// section wants a picture, a video or some sound.
+	Media MediaStore
 	// Stylesheet is served at /app.css so this looks like the sites it makes.
 	Stylesheet string
 	// SiteURL is where published pages can be read, used to show somebody
@@ -134,6 +140,12 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/health", a.health)
 	mux.HandleFunc("/launch", a.launch)
 	mux.HandleFunc("/publish", a.publish)
+	mux.HandleFunc("/save", a.save)
+	mux.HandleFunc("/arrange", a.arrange)
+	mux.HandleFunc("/add", a.add)
+	mux.HandleFunc("/section", a.editSection)
+	mux.HandleFunc("/media", a.library)
+	mux.HandleFunc("/look", a.look)
 	mux.HandleFunc("/", a.open)
 	return a.headers(mux)
 }
@@ -193,6 +205,17 @@ func (a *App) open(w http.ResponseWriter, r *http.Request) {
 				"link that gets forwarded.")
 		return
 	}
+	a.arrive(w, user)
+}
+
+// arrive shows the editor when this build has one, and the single form when it
+// does not — so a deployment without a working copy still publishes rather than
+// showing a screen that says it cannot.
+func (a *App) arrive(w http.ResponseWriter, user User) {
+	if a.Drafts != nil {
+		a.editor(w, user, "", "")
+		return
+	}
 	a.form(w, user, "", "", draft{})
 }
 
@@ -218,7 +241,7 @@ func (a *App) launch(w http.ResponseWriter, r *http.Request) {
 			err.Error(), "")
 		return
 	}
-	a.form(w, user, "", "", draft{})
+	a.arrive(w, user)
 }
 
 // publish writes the page.
@@ -240,6 +263,26 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 	if a.Publisher == nil {
 		a.refuse(w, http.StatusServiceUnavailable, "Publishing is not wired up",
 			"This build has no write path configured.", "")
+		return
+	}
+
+	// With a working copy, publishing is publishing what is in it. The single
+	// form remains for a build with no drafts wired up.
+	if a.Drafts != nil {
+		body, _ := a.draftOf(user)
+		if strings.TrimSpace(text(body, "title")) == "" {
+			a.editor(w, user, "", "A page needs a title. It is the first thing "+
+				"a screen reader announces, and this refuses to publish a page "+
+				"without one.")
+			return
+		}
+		where, perr := a.Publisher.Save(user.Handle(), body, user.Label(),
+			"publish "+user.Handle()+" from Telegram")
+		if perr != nil {
+			a.editor(w, user, "", perr.Error())
+			return
+		}
+		a.published(w, user, where)
 		return
 	}
 
@@ -456,6 +499,9 @@ func (a *App) page(w http.ResponseWriter, code int, title, body string) {
 // anything dangerous. A first name comes from Telegram and Telegram does not
 // promise it is not markup.
 func esc(s string) string { return html.EscapeString(s) }
+
+// urlEscape is for a value going into a query string rather than into markup.
+func urlEscape(s string) string { return url.QueryEscape(s) }
 
 // LinkFor builds the URL a bot should send, given where this app is served.
 //
