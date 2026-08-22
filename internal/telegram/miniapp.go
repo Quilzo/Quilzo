@@ -41,6 +41,36 @@ import (
 // and the answer to "what if they paste a script tag" should be structural
 // rather than a filter somebody has to maintain.
 
+// draft is what somebody typed, carried back to them when a gate refuses.
+//
+// # Why this exists
+//
+// It did not, and the omission was the worst thing about this surface. A gate
+// refusing is the *likeliest* outcome for somebody's first page — that is what
+// the gate is for — and the form was rendered fresh each time, so being refused
+// meant retyping everything. A checker that costs you your work is a checker
+// people learn to route around, which is the one outcome the gate exists to
+// prevent.
+//
+// So the values come back. Found by trying to photograph the refusal screen for
+// a submission and noticing there was nothing in it.
+type draft struct {
+	Title  string
+	Lead   string
+	Body   string
+	Design string
+}
+
+// draftFrom reads what was submitted, whether or not it was accepted.
+func draftFrom(r *http.Request) draft {
+	return draft{
+		Title:  strings.TrimSpace(r.FormValue("title")),
+		Lead:   strings.TrimSpace(r.FormValue("lead")),
+		Body:   r.FormValue("body"),
+		Design: strings.TrimSpace(r.FormValue("design")),
+	}
+}
+
 // Design is a look somebody can choose, in the terms they would choose it in.
 type Design struct {
 	Name string
@@ -163,7 +193,7 @@ func (a *App) open(w http.ResponseWriter, r *http.Request) {
 				"link that gets forwarded.")
 		return
 	}
-	a.form(w, user, "", "")
+	a.form(w, user, "", "", draft{})
 }
 
 // launch is the other arrival: initData posted by Telegram's SDK.
@@ -188,7 +218,7 @@ func (a *App) launch(w http.ResponseWriter, r *http.Request) {
 			err.Error(), "")
 		return
 	}
-	a.form(w, user, "", "")
+	a.form(w, user, "", "", draft{})
 }
 
 // publish writes the page.
@@ -213,13 +243,14 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	title := strings.TrimSpace(r.FormValue("title"))
-	if title == "" {
+	typed := draftFrom(r)
+	if typed.Title == "" {
 		a.form(w, user, "", "A page needs a title. It is the first thing a "+
 			"screen reader announces, and this refuses to publish a page "+
-			"without one.")
+			"without one.", typed)
 		return
 	}
+	title := typed.Title
 
 	body := map[string]any{
 		"title":  title,
@@ -243,10 +274,10 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 	where, err := a.Publisher.Save(user.Handle(), body, user.Label(),
 		"publish "+user.Handle()+" from Telegram")
 	if err != nil {
-		// The gate's own words, not a summary of them. Somebody whose page was
-		// refused for a missing alt attribute needs to read that, not "could
-		// not publish".
-		a.form(w, user, "", err.Error())
+		// The gate's own words, not a summary of them — and everything they
+		// typed, back in the form. Somebody refused for a missing alt
+		// attribute needs to read that and then fix it, not retype the page.
+		a.form(w, user, "", err.Error(), typed)
 		return
 	}
 	a.published(w, user, where)
@@ -270,7 +301,7 @@ func paragraphsOf(raw string) []any {
 
 // -- the pages, which are small enough to be written out ---------------------
 
-func (a *App) form(w http.ResponseWriter, user User, notice, problem string) {
+func (a *App) form(w http.ResponseWriter, user User, notice, problem string, d draft) {
 	grant, err := NewGrant(user, a.BotToken, a.now())
 	if err != nil {
 		a.refuse(w, http.StatusInternalServerError, "This form cannot be issued",
@@ -313,22 +344,32 @@ func (a *App) form(w http.ResponseWriter, user User, notice, problem string) {
 	fmt.Fprintf(&b, `<form class="stacked" method="post" action="/publish">`+
 		`<input type="hidden" name="grant" value="%s">`, esc(grant))
 
-	b.WriteString(`<p class="field"><label for="f-title">Title</label>` +
-		`<input id="f-title" name="title" type="text" required maxlength="120"></p>`)
-	b.WriteString(`<p class="field"><label for="f-lead">One line about it</label>` +
-		`<input id="f-lead" name="lead" type="text" maxlength="240">` +
-		`<span class="hint">Optional. Appears under the title.</span></p>`)
-	b.WriteString(`<p class="field"><label for="f-body">The page</label>` +
-		`<textarea id="f-body" name="body" rows="8"></textarea>` +
-		`<span class="hint">A blank line starts a new paragraph.</span></p>`)
+	fmt.Fprintf(&b, `<p class="field"><label for="f-title">Title</label>`+
+		`<input id="f-title" name="title" type="text" required maxlength="120" `+
+		`value="%s"></p>`, esc(d.Title))
+	fmt.Fprintf(&b, `<p class="field"><label for="f-lead">One line about it</label>`+
+		`<input id="f-lead" name="lead" type="text" maxlength="240" value="%s">`+
+		`<span class="hint">Optional. Appears under the title.</span></p>`,
+		esc(d.Lead))
+	fmt.Fprintf(&b, `<p class="field"><label for="f-body">The page</label>`+
+		`<textarea id="f-body" name="body" rows="8">%s</textarea>`+
+		`<span class="hint">A blank line starts a new paragraph.</span></p>`,
+		esc(d.Body))
 
 	if a.Publisher != nil {
 		if designs := a.Publisher.Designs(); len(designs) > 0 {
 			b.WriteString(`<p class="field"><label for="f-design">Design</label>` +
 				`<select id="f-design" name="design">`)
-			for _, d := range designs {
-				fmt.Fprintf(&b, `<option value="%s">%s — %s</option>`,
-					esc(d.Name), esc(d.Name), esc(d.Look))
+			// `look` rather than `d`, which is the draft this function was
+			// given — a loop variable that shadows it would have silently
+			// compared a design against itself.
+			for _, look := range designs {
+				selected := ""
+				if look.Name == d.Design {
+					selected = ` selected`
+				}
+				fmt.Fprintf(&b, `<option value="%s"%s>%s — %s</option>`,
+					esc(look.Name), selected, esc(look.Name), esc(look.Look))
 			}
 			b.WriteString(`</select></p>`)
 		}

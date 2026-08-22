@@ -211,3 +211,67 @@ func grantIn(t *testing.T, body string) string {
 	return strings.NewReplacer("&amp;", "&", "&#34;", `"`, "&lt;", "<", "&gt;", ">").
 		Replace(rest[:j])
 }
+
+// A refusal must hand back what the person typed.
+//
+// The gate refusing is the likeliest outcome for somebody's first page — that is
+// what it is for — and rendering a fresh form each time meant being refused cost
+// you the page you had written. A checker that costs you your work is a checker
+// people learn to route around, which is the one thing it exists to prevent.
+func TestARefusalKeepsWhatWasTyped(t *testing.T) {
+	now := time.Now()
+	pub := &fakePublisher{err: errTest("refused: an image has no alt attribute")}
+	a := testApp(t, pub, now)
+
+	query, _ := NewLink(User{ID: 3}, botToken, now)
+	grant := grantIn(t, get(t, a, "/?"+query).Body.String())
+
+	body := "First paragraph.\n\nSecond paragraph."
+	w := post(t, a, "/publish", url.Values{
+		"grant":  {grant},
+		"title":  {"Notes on making things slowly"},
+		"lead":   {"A page about paper and ink."},
+		"body":   {body},
+		"design": {"sections"},
+	})
+	out := w.Body.String()
+
+	// The reason, in the gate's own words.
+	if !strings.Contains(out, "an image has no alt attribute") {
+		t.Errorf("the refusal does not say which check said no:\n%s", out)
+	}
+	// And every field, back where it was.
+	for _, kept := range []string{
+		`value="Notes on making things slowly"`,
+		`value="A page about paper and ink."`,
+		"First paragraph.",
+		"Second paragraph.",
+	} {
+		if !strings.Contains(out, kept) {
+			t.Errorf("a refusal discarded %q; the person has to retype it", kept)
+		}
+	}
+	if !strings.Contains(out, `value="sections" selected`) {
+		t.Error("the chosen design was not kept selected")
+	}
+}
+
+// The empty-title refusal is the same rule and a different branch, so it gets
+// its own check rather than being assumed to share one.
+func TestTheEmptyTitleRefusalAlsoKeepsTheBody(t *testing.T) {
+	now := time.Now()
+	a := testApp(t, &fakePublisher{}, now)
+	query, _ := NewLink(User{ID: 4}, botToken, now)
+	grant := grantIn(t, get(t, a, "/?"+query).Body.String())
+
+	out := post(t, a, "/publish", url.Values{
+		"grant": {grant}, "title": {"  "}, "body": {"Words worth keeping."},
+	}).Body.String()
+
+	if !strings.Contains(out, "A page needs a title") {
+		t.Errorf("the empty title was not explained:\n%s", out)
+	}
+	if !strings.Contains(out, "Words worth keeping.") {
+		t.Error("a missing title discarded the body")
+	}
+}
