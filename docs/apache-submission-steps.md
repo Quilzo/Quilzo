@@ -1,15 +1,13 @@
 > **Status: on hold — 22 August 2026.**
 >
-> These steps are unsent. The licence blocker they were written to clear no
-> longer exists: Quilzo is Apache-2.0 as of August 2026. The remaining blocker
-> is the one the Incubator actually cares about — a community rather than a
-> single maintainer — so sending this today would be asking the ASF to adopt a
-> project of one.
+> These steps are unsent and still accurate: Quilzo is AGPL-3.0-or-later, which
+> is the licence the emails below describe.
 >
-> Kept because the two emails are drafted and correct, and because the day this
-> project has contributors is the day this becomes sendable without rewriting.
+> The remaining blocker is the one the Incubator actually cares about — a
+> community rather than a single maintainer — so sending this today would be
+> asking the ASF to adopt a project of one. The day this project has
+> contributors is the day it becomes sendable without rewriting.
 
----
 
 # Submitting Quilzo to the Apache Incubator
 

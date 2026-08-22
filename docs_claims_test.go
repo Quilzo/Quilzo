@@ -136,11 +136,39 @@ func TestTheReadmeClaimsTheLicenceThisRepositoryCarries(t *testing.T) {
 		t.Errorf("the README badge says %q and LICENSE is %s", got, want)
 	}
 
-	// A relicensing does not retract what was already granted, and saying so is
-	// the difference between a licence change and a claim to have revoked one.
-	if apache && !strings.Contains(notice, wrong) {
-		t.Errorf("NOTICE does not mention %s at all. The project was released "+
-			"under it, that grant is irrevocable, and a NOTICE that omits the "+
-			"previous licence reads as a claim that it never applied", wrong)
+	// A licence change does not retract what was already granted, and saying so
+	// is the difference between a licence change and a claim to have revoked
+	// one. This runs in whichever direction the project is currently facing.
+	if !strings.Contains(notice, wrong) {
+		t.Errorf("NOTICE does not mention %s at all. This project has been "+
+			"released under it, that grant is irrevocable, and a NOTICE that "+
+			"omits a licence it once carried reads as a claim that it never "+
+			"applied", wrong)
+	}
+}
+
+// The Apache-2.0 window on 22 August 2026 stays written down.
+//
+// For about eighty minutes this project was public under Apache-2.0, and then it
+// was not. That grant does not revert: anyone who took a copy in that window
+// holds permissive terms to those commits permanently.
+//
+// This test exists because that is precisely the sort of fact that gets tidied
+// away later — it is embarrassing, it is brief, and deleting the paragraph makes
+// the history look cleaner than it was. Someone auditing where this code may
+// have gone needs it to still be there.
+func TestTheApacheWindowStaysRecorded(t *testing.T) {
+	notice := read(t, "NOTICE")
+	for _, required := range []string{
+		"Apache-2.0", // the licence that applied
+		"656bc88",    // where it started
+		"67a85b8",    // where it stopped
+		"irrevocable",
+	} {
+		if !strings.Contains(notice, required) {
+			t.Errorf("NOTICE no longer records %q. The window was real and the "+
+				"grant it made cannot be withdrawn, so the record of it is the "+
+				"only honest thing left to keep", required)
+		}
 	}
 }

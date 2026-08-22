@@ -56,66 +56,67 @@ must not disappear with them.
   including moving it and appointing themselves. No permission required, and
   this paragraph is the permission.
 - If there are no maintainers left at all, anybody may fork and claim
-  continuity. Apache-2.0 lets you take the code and keep going; this paragraph
-  says you also have the project's blessing to carry the name forward, provided
-  you say honestly that it changed hands. Note the difference from what this
-  said under AGPL: a permissive licence guarantees you *may* continue, not that
-  whoever continues has to publish what they do next.
+  continuity. The AGPL guarantees the code stays available; this paragraph says
+  you also have the project's blessing to carry the name forward, provided you
+  say honestly that it changed hands.
 
-## The licence, and the time it was changed
+## The licence, and the time it was changed and changed back
 
-Quilzo is **Apache-2.0**. Contributions are taken under a
-[DCO](https://developercertificate.org/) rather than a CLA, and copyright stays
-with each contributor.
+Quilzo is **AGPL-3.0-or-later**, and contributions are taken under a
+[DCO](https://developercertificate.org/) rather than a CLA. Copyright stays with
+each contributor.
 
-Until August 2026 this section said something else. It said Quilzo was
-AGPL-3.0-or-later and that the licence *could not be quietly changed*, because
-copyright was distributed and no single party could relicense it. Then the
-licence was changed, by the single party who at that point held all of it.
+This section used to claim that made the licence unchangeable. On 22 August 2026
+it was changed to Apache-2.0 and changed back about eighty minutes later, which
+settles the question better than the claim did.
 
 The previous version of this file also said:
 
 > If this ever changes, it changes in public, in this file, before it changes
 > in the code.
 
-This paragraph is that commitment being kept, and it is the only part of the
-original arrangement that survived intact. The rest is worth setting out
-plainly:
+That part was kept, and it is the only part of the original arrangement that
+survived the episode intact. The rest is worth setting out plainly:
 
 - **The protection was real for contributors and empty for the project.** A DCO
   does stop anyone relicensing code you wrote. It cannot stop a sole author
-  relicensing code they wrote, and until August 2026 there was exactly one
-  human author. The sentence overclaimed.
-- **It is not empty any more.** From the second author onward, another licence
-  change needs every author's agreement. The guarantee begins now rather than
-  having existed before.
-- **Nothing was retracted.** Every release made under AGPL-3.0-or-later stays
-  available under those terms permanently.
+  relicensing code they wrote, and there was exactly one human author. The
+  sentence overclaimed.
+- **It is not empty from the second author onward.** A further licence change
+  then needs every author's agreement. The guarantee begins with the next
+  contributor rather than having existed before.
+- **Neither direction retracts anything.** Every release made under AGPL stays
+  available under AGPL. The commits published during the Apache-2.0 window stay
+  available under Apache-2.0, permanently, to anyone who took a copy. [NOTICE](NOTICE)
+  names the commits and the times.
 
-Why it changed is in [NOTICE](NOTICE), stated as a decision with a reason rather
-than as an inevitability.
+Why it changed and changed back is in [NOTICE](NOTICE), stated as a decision
+with a reason rather than as an inevitability. The short version: it was
+relicensed for a scenario the project turned out not to be pursuing, and a
+licence changed for a plan that changed should change back.
 
 ## What is still true about money
 
-**There is no open-core tier and there will not be one.** Every security
-property — the audit log, the anchoring, the sandbox, the capability model, the
-gates — is in the version you can clone. A CMS that put its access controls
-behind a licence key would be arguing that its users deserve less protection
-than its customers, and that is not an argument this project is willing to make.
-The licence changed; that has not.
+**Quilzo stays fully AGPL-3.0-or-later. There is no open-core tier and there
+will not be one.** Every security property — the audit log, the anchoring, the
+sandbox, the capability model, the gates — is in the version you can clone. A
+CMS that put its access controls behind a licence key would be arguing that its
+users deserve less protection than its customers, and that is not an argument
+this project is willing to make.
 
 Money, if it comes, comes from **hosting and support**: running Quilzo for
 people who would rather not, and helping people who run it themselves. Both are
 services on top of software that stays whole, so neither requires holding a
 feature back.
 
-One model that used to be ruled out no longer is, and pretending otherwise would
-be the same overclaim in a new place. **Dual licensing** was ruled out on the
-grounds that it needs one party to hold the copyright and the DCO ensured nobody
-did. Under Apache-2.0 there is no copyleft to sell an escape from, so the
-question is moot rather than resolved — nobody needs to buy a permissive licence
-that is already granted. **Open core** stays ruled out on its own merits, which
-were never about the licence.
+Two models are ruled out, and it is worth saying which and why:
+
+- **Open core** would mean the paid tier subtracts from the free one, whatever
+  the marketing says. It also breaks the security argument above.
+- **Dual licensing** — selling a proprietary escape from the copyleft — is
+  possible for as long as one party holds the copyright, which is today and not
+  for long. It is ruled out by choice rather than by arithmetic, and the
+  previous version of this file claimed the arithmetic did it. It did not.
 
 ## Moving to a foundation
 
@@ -123,15 +124,15 @@ The intention is to place Quilzo under a neutral non-profit. That is not
 possible yet, and the reasons are worth writing down so nobody has to rediscover
 them:
 
-- **The Apache Software Foundation** was permanently unavailable while Quilzo
-  was AGPL — GPLv3-family licences are Category X under ASF policy. The licence
-  change removes that bar. What it does not remove is the Incubator's actual
-  gate, which is a community rather than a codebase, and one maintainer is not
-  one. See [docs/apache-incubator-proposal.md](docs/apache-incubator-proposal.md),
-  which is kept for the record with a note on where it stands.
 - **Software Freedom Conservancy** requires "an existing, vibrant, diverse
-  community" and does not take projects under a year old. Apache-2.0 is fine
-  with them. The gate is community, not code.
+  community" and does not take projects under a year old. AGPL is fine with
+  them. This is the target, and the gate is community, not code.
+- **The Apache Software Foundation** is unavailable while Quilzo is AGPL —
+  GPLv3-family licences are Category X under ASF policy — so going there means
+  relicensing, which is a decision to make on its merits rather than as a side
+  effect. See [docs/apache-incubator-proposal.md](docs/apache-incubator-proposal.md),
+  which is written and unsent, and honest about the real gate being a community
+  rather than a licence.
 - **NLnet / NGI Zero** funds individuals rather than adopting projects and its
   subject matter is exactly this one. It is funding rather than governance, and
   is the realistic near-term step.

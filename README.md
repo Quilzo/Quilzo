@@ -6,7 +6,7 @@ A content management system where stored content is immutable, publishing moves
 a pointer, and the template language cannot execute anything.
 
 [![ci](https://github.com/quilzo/quilzo/actions/workflows/ci.yml/badge.svg)](https://github.com/quilzo/quilzo/actions/workflows/ci.yml)
-[![licence: Apache-2.0](https://img.shields.io/badge/licence-Apache--2.0-blue)](LICENSE)
+[![licence: AGPL-3.0-or-later](https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue)](LICENSE)
 [![dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen)](go.mod)
 
 ```bash
@@ -875,6 +875,8 @@ deterministic. And rollback is a pointer move, not a rebuild.
 - You need a plugin that already exists. There is no plugin runtime and there
   will not be one; extensions are out-of-process, sandboxed, and pinned by
   digest.
+- Your employer forbids AGPL. Some do, Google explicitly. Better said here than
+  discovered after you have written the patch.
 - You need per-visitor personalisation or a shopping cart. Products, catalogue
   and structured data yes; a cart holding a card, no — that needs a threat model
   this process does not have.
@@ -886,35 +888,25 @@ deterministic. And rollback is a pointer move, not a rebuild.
 
 ## Licence
 
-Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+AGPL-3.0-or-later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-**This changed, and the previous answer is worth stating rather than quietly
-replacing.** Quilzo was AGPL-3.0-or-later until August 2026. Affero was chosen
-for a specific reason: nobody distributes a CMS, they host it, so a licence
-whose obligations trigger on distribution would never trigger at all. Running a
-modified Quilzo as a service meant those users could have the source.
+Affero specifically, because nobody distributes a CMS — they host it. A licence
+whose obligations trigger on distribution would never trigger at all for the
+software this is. Running a modified Quilzo as a service for other people means
+those people can have the source.
 
-Two things changed that reasoning.
+**There was an Apache-2.0 window on 22 August 2026, of about eighty minutes.**
+It was pushed publicly and then reverted, because the relicensing was aimed at a
+third party embedding this in a closed product and that is not the route the
+project took. [NOTICE](NOTICE) has the commits and the times.
 
-The first is that the reciprocity was aimed at the wrong risk. The thing worth
-protecting here is not the code — it is the properties: that a template cannot
-execute, that an unmarked AI-generated page does not publish, that an
-inaccessible one is refused. Those are worth more the more places they are, and
-a licence that a corporate legal review declines at the first paragraph is a
-licence that keeps them in one place.
+That grant does not revert. Apache-2.0 is permissive, so anyone who took a copy
+in that window holds those terms for that code permanently. The window was short
+and the exposure is small; it is written down rather than rounded down.
 
-The second is that this became infrastructure other people need to embed. A
-publishing pipeline that marks machine-generated content and refuses what it
-cannot vouch for is only useful where machine-generated content is being
-published, and that is increasingly inside somebody else's product.
-
-Apache-2.0 rather than MIT for the explicit patent grant, which is the clause a
-legal review actually looks for.
-
-Everything released under AGPL stays under AGPL. That grant is irrevocable and
-this is not an attempt to retract it: anyone holding a copy of a previous
-release keeps every right it gave them, permanently, including the right to
-fork and continue under those terms.
+One thing to know before you spend time: **some employers forbid contributing to
+AGPL projects**, Google's policy explicitly. That is a real cost of the licence
+and it is better said here than discovered later.
 
 ## Contributing
 
@@ -928,5 +920,5 @@ works here. Security reports go through [SECURITY.md](SECURITY.md), privately.
 
 Contributions are taken under a [DCO](https://developercertificate.org/) —
 `git commit -s` — and copyright stays with whoever wrote the code.
-[CONTRIBUTING.md](CONTRIBUTING.md) says what that does and does not commit you
-to, including what changed when the licence did.
+[CONTRIBUTING.md](CONTRIBUTING.md) says what that does and does not guarantee,
+stated more carefully than it used to be.
