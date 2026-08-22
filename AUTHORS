@@ -1,0 +1,16 @@
+Quilzo is written and maintained by:
+
+  rsh1k  <128124382+rsh1k@users.noreply.github.com>
+
+Every commit to date is by the above, or by Dependabot bumping a version
+string in a workflow file. That is checkable rather than asserted:
+
+  git log --format='%ae' | sort -u
+
+Contributions are taken under the Developer Certificate of Origin, and
+copyright stays with whoever wrote the code. There is no contributor licence
+agreement and no copyright assignment. See CONTRIBUTING.md.
+
+Portions of this program were written with the assistance of a large language
+model, reviewed and committed by the maintainer, who is responsible for it.
+Recorded here because a file naming the authors of a program should say so.

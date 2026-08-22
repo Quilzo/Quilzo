@@ -786,7 +786,13 @@ quilzo serve --addr 127.0.0.1:8080                                    # admin
 quilzo site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
 ```
 
-`quilzo help` lists every command.
+`quilzo help` lists every command, and `quilzo --version` prints the version,
+copyright and licence.
+
+Building and installing follows the usual conventions — `make`, `make check`,
+`make install prefix=...`, `make dist` — described in [INSTALL](INSTALL). There
+is no `./configure`, because there is nothing to detect: no optional libraries,
+no feature switches, and `go.mod` has no require block.
 
 ## Documentation
 

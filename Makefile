@@ -11,7 +11,6 @@ VERSION ?= dev
 # Windows carries a .exe suffix or it is not a program anybody can run.
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
-.PHONY: all fmt test build build-all image sbom release clean
 
 all: fmt test
 
@@ -39,6 +38,44 @@ build-all:
 			-o bin/quilzo-$$os-$$arch$$ext ./cmd/quilzo || exit 1; \
 		echo "  $$os/$$arch  $$(du -h bin/quilzo-$$os-$$arch$$ext | cut -f1)"; \
 	done
+
+# The GNU Coding Standards ask for these targets by name, and the reason is
+# packaging: a distribution's build recipe runs `make && make check && make
+# install DESTDIR=...` and does not read this file first. Missing one means a
+# packager writes a bespoke recipe, and a bespoke recipe is one that breaks.
+#
+# prefix, DESTDIR and the exec/bin split are the standard variables. There is no
+# ./configure to set them, because there is nothing to detect: no optional
+# libraries, no feature switches, and go.mod has no require block.
+prefix ?= /usr/local
+exec_prefix ?= $(prefix)
+bindir ?= $(exec_prefix)/bin
+DESTDIR ?=
+INSTALL ?= install
+INSTALL_PROGRAM ?= $(INSTALL) -m 0755
+
+install: build
+	$(INSTALL) -d "$(DESTDIR)$(bindir)"
+	$(INSTALL_PROGRAM) bin/quilzo "$(DESTDIR)$(bindir)/quilzo"
+	@echo "installed $(DESTDIR)$(bindir)/quilzo"
+
+uninstall:
+	rm -f "$(DESTDIR)$(bindir)/quilzo"
+
+# check is the standard name for what this project already spelled `test`.
+# Both, because the muscle memory here is `make test` and a packager's is
+# `make check`, and one of them being wrong is a build that looks broken.
+check: test
+
+# A source archive, from the committed tree rather than the working one — so a
+# release tarball cannot carry somebody's local store or an editor backup.
+dist:
+	@git archive --format=tar.gz --prefix=quilzo-$(VERSION)/ \
+		-o quilzo-$(VERSION).tar.gz HEAD
+	@echo "quilzo-$(VERSION).tar.gz  $$(du -h quilzo-$(VERSION).tar.gz | cut -f1)"
+
+distclean: clean
+	rm -f quilzo-*.tar.gz
 
 image:
 	docker build --build-arg VERSION=$(VERSION) -t quilzo:$(VERSION) .
@@ -101,3 +138,6 @@ submission: test
 
 clean:
 	rm -rf bin submission quilzo-submission-*.zip
+
+.PHONY: all fmt test check build build-all image sbom release submission \
+	install uninstall dist clean distclean

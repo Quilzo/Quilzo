@@ -1,0 +1,66 @@
+Quilzo user-visible changes.
+
+Newest first. Only what somebody running this would notice; the commit log
+has the rest.
+
+
+Unreleased
+==========
+
+There is no tagged release yet. This section is what would be in the first
+one.
+
+** Design and templates
+
+*** A page chooses its layout.  templates/ is a directory of layouts and a
+    page names one in its own body.  A page naming a layout the site does not
+    have is refused at publish rather than rendered through the default,
+    because a page nobody designed with no message anywhere is worse than a
+    failure.
+
+*** A page's shape is content.  Nineteen kinds of section — hero, features,
+    metrics, bar and ring charts, split, gallery, carousel, video, steps,
+    timeline, quote, logos, pricing, questions, table, people, prose, notice,
+    call to action — ordered by the content rather than the markup, so
+    reordering a homepage is an edit that rolls back like any other.
+
+*** Themes are a checked token set.  Colours in both schemes, three type
+    stacks, the type scale, the measure, corner radius, spacing density,
+    breakpoints and a two-stop gradient.  Colour contrast is computed over
+    the generated stylesheet and a theme that puts body text below 4.5:1 is
+    refused at publish.  This closes a gap the program used to disclose: it
+    listed contrast under what it could not check, and it generates the
+    stylesheet now.
+
+*** Typefaces are served from the site's own origin.  Put a .woff2 in
+    templates/fonts/ and it is validated and served at /fonts/.  There is
+    deliberately no way to name a font on another host.
+
+*** quilzo template adopt converts a template written for another system —
+    Liquid, Twig, Jinja, Django, Handlebars, Mustache, Go templates, Hugo.
+    Script, event handlers, executable URL schemes and external stylesheets
+    are removed; anything that could not be translated is named with the
+    shape it should become, and the layout is not written while any remain.
+
+** Publishing from Telegram
+
+*** quilzo telegram serve is a third process: a Mini App that turns a form in
+    a Telegram chat into a published page.  It serves script-src 'none'.
+
+*** Files sent to the bot — photographs, video, audio, voice notes — go into
+    the media library, validated by decoding exactly as an upload is.  An
+    image with no description is asked about, because one that has none does
+    not publish.
+
+** Structured data
+
+*** WebPage, Article and BreadcrumbList for ordinary pages, built in Go
+    because JSON inside a script element needs JSON escaping and the template
+    renderer escapes for HTML.  Product data on detail routes already
+    existed.
+
+** Licence
+
+*** AGPL-3.0-or-later.  There was an Apache-2.0 window of about eighty
+    minutes on 22 August 2026; see NOTICE, which records it and the part of
+    it that cannot be reverted.
