@@ -259,6 +259,11 @@ reachability of its own, since the Mini App already has to be behind https for
 Telegram to open it at all. A webhook is available instead and requires a secret,
 because an endpoint that acts on whatever is posted to it is not a webhook.
 
+[deploy/](deploy/) has what a stable address needs: a Caddyfile that renews its
+own certificate, and two hardened systemd units. The admin is deliberately not
+in any of it — it is loopback and holds credentials, so it is reached over an SSH
+port forward rather than a hostname.
+
 The surface serves `script-src 'none'`, which is not free on a Mini App.
 Telegram delivers launch parameters in the URL fragment, and a fragment is never
 sent to a server — so reading `initData` server-side normally means JavaScript

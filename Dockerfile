@@ -27,6 +27,11 @@ COPY --from=build --chown=65532:65532 /out/store /srv/store
 USER nonroot:nonroot
 WORKDIR /srv
 VOLUME /srv/store
-EXPOSE 8080 8081
+# 8080 the admin, 8081 the public site, 8082 the Telegram Mini App.
+#
+# Three because they have three different exposures, which is the whole reason
+# they are three processes. Only one of these should ever be reachable from the
+# internet without something in front of it, and it is not the first.
+EXPOSE 8080 8081 8082
 ENTRYPOINT ["/usr/local/bin/quilzo"]
 CMD ["--root", "/srv/store", "serve", "--addr", "0.0.0.0:8080"]
