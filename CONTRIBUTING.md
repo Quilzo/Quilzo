@@ -138,12 +138,12 @@ git commit -s -m "your message"
 That certifies the [Developer Certificate of Origin](https://developercertificate.org/)
 — you wrote it or have the right to submit it under the project's licence.
 
-**There is still deliberately no contributor licence agreement.** Copyright
-stays with whoever wrote the code. The maintainer holds copyright in the code
-they wrote and is not seeking to hold yours: there is no CLA waiting behind the
-DCO and no copyright assignment.
+**There is deliberately no contributor licence agreement.** Copyright stays
+with whoever wrote the code. The maintainer holds copyright in the code they
+wrote and is not seeking to hold yours: there is no CLA waiting behind the DCO
+and no copyright assignment.
 
-### What this section used to say, and why it does not say it now
+### What this section used to say, and why it says less now
 
 Until August 2026 this section said something stronger, and it is quoted rather
 than deleted because somebody may have decided to contribute on the strength of
@@ -157,40 +157,40 @@ it:
 
 The second sentence was true. The third was true only of code somebody else had
 written, and at the time nobody else had written any — so the guarantee was real
-for future contributors and empty for the project as it actually stood. In
-August 2026 the maintainer relicensed to Apache-2.0, which they could do
-precisely because they were still the only human author.
+for future contributors and empty for the project as it actually stood. That was
+demonstrated rather than argued: on 22 August 2026 the maintainer relicensed the
+project to Apache-2.0, which they could do precisely because they were still the
+only human author, and reverted it about eighty minutes later. [NOTICE](NOTICE)
+records the window, including the part of it that does not revert.
 
-That is worth being blunt about: the promise was not broken by a loophole, it
-was made in a form that did not yet bind anyone. Saying "no single person can
-ever" while being the single person who could was overclaiming, and this
-paragraph exists so that the record shows it rather than the sentence quietly
-disappearing.
+So the promise was not broken by a loophole. It was made in a form that did not
+yet bind anyone, and saying "no single person can ever" while being the single
+person who could was overclaiming. This paragraph exists so the record shows
+that rather than the sentence quietly disappearing.
 
 What the DCO does guarantee, and what it does not:
 
 - **Does:** your copyright stays yours. Nobody can relicense code you wrote
   without asking you.
 - **Does not:** stop the project relicensing code you did not write. Once there
-  is more than one author, a further licence change needs every author's
-  agreement — which is the ordinary protection a DCO gives, stated accurately
-  this time.
+  is more than one author, a licence change needs every author's agreement —
+  which is the ordinary protection a DCO gives, stated accurately this time.
 
-Every release made under AGPL-3.0-or-later stays available under those terms
-permanently. Relicensing changes what happens next; it cannot retract what was
-already granted.
+Every release made under a licence stays available under it. A licence change
+decides what happens next; it cannot retract what was already granted, in
+either direction.
 
 ### About the licence, honestly
 
-Quilzo is **Apache-2.0**. Two consequences worth knowing before you spend time:
+Quilzo is **AGPL-3.0-or-later**. Two consequences worth knowing before you
+spend time:
 
-- Anyone may use, modify and embed this in a closed product without publishing
-  their changes. If that is the outcome you were contributing to prevent, this
-  is the licence that permits it, and it is better read here than discovered
-  later.
-- The employer objection that used to apply here is gone. Apache-2.0 is on
-  essentially every corporate allowlist, including the ones that specifically
-  exclude AGPL.
+- If you run a modified Quilzo as a service for other people, those people can
+  have your source. That is the point of choosing it.
+- **Some employers forbid contributing to AGPL projects.** Google's open source
+  policy is explicit about this and others follow it. Please check before
+  contributing on work time or from a work account. This is a real cost of the
+  licence and pretending otherwise wastes your time, not ours.
 
 ## Where to start
 

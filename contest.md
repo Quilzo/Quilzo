@@ -148,4 +148,4 @@ go test ./...
   nothing here reads it, so a translation layer is the obvious next thing and is
   deliberately not faked with a machine translation nobody checked.
 
-Apache-2.0.
+AGPL-3.0-or-later.

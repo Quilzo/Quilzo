@@ -1,23 +1,19 @@
-> **Status: superseded, kept for the record — 22 August 2026.**
+> **Status: written, unsent — 22 August 2026.**
 >
-> The licensing condition this proposal turns on has already been met. Quilzo
-> relicensed to Apache-2.0 in August 2026, independently of the ASF and without
-> waiting for acceptance, so the central offer below — *"the project will
-> relicense to Apache-2.0 on acceptance"* — describes something that has
-> happened rather than something on the table.
+> The licensing analysis below is current again. Quilzo is AGPL-3.0-or-later, so
+> the Category X reasoning holds and the offer this proposal makes — relicensing
+> to Apache-2.0 on acceptance — is once more a thing that would happen rather
+> than a thing that has.
 >
-> What has not changed is the Incubator's real gate, which the proposal is
-> candid about further down: the ASF adopts communities, and this project has
-> one maintainer. That was the binding constraint before the licence change and
-> it remains the binding constraint after it.
+> For about eighty minutes on 22 August 2026 that was not true: the project was
+> relicensed to Apache-2.0 and reverted, for reasons unrelated to the ASF. See
+> [NOTICE](../NOTICE). It is mentioned here only so that a reader comparing this
+> document against the repository's history is not confused by a window that
+> looks like this proposal having been acted on.
 >
-> The document is left here unedited below this line because a proposal written
-> for a public mailing list should be findable in the form it was written, and
-> because the licensing analysis in it — the Category X reasoning, the
-> single-author copyright check, the empty `go.mod` — is still accurate and
-> still useful.
+> The blocker that has not moved is the one the proposal is candid about further
+> down: the ASF adopts communities, and this project has one maintainer.
 
----
 
 # Quilzo — Apache Incubator Proposal
 

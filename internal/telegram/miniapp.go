@@ -518,7 +518,7 @@ func (a *App) terms(w http.ResponseWriter, r *http.Request) {
 		`addressable, which is how a removal can be shown to have happened.</p>` +
 		`</div></li></ol>`)
 	b.WriteString(`<div class="notice"><p>There is no warranty. This is ` +
-		`software offered as it is, under the Apache-2.0 licence, and the people ` +
+		`software offered as it is, under the AGPL-3.0-or-later licence, and the people ` +
 		`running it are not liable for what it does. If that is not acceptable ` +
 		`for what you are publishing, publish it somewhere with a contract.</p>` +
 		`</div>`)
