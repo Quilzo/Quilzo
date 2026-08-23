@@ -191,10 +191,36 @@ func (a *App) stylesheet(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(a.Stylesheet))
 }
 
-// open is the arrival: a signed link in the query string, verified and spent.
+// open is the way in, and there are two of them.
+//
+// # Why this accepts a grant as well as a link
+//
+// The link from the bot is single-use and is spent by arriving. Every screen in
+// the editor then links back here carrying a grant, because that is the
+// credential a multi-screen editor can pass along — and for a while this
+// handler only understood the link, so every "Back to your page" reported that
+// the link could not be used.
+//
+// Found by driving the editor with a browser. The form tests never followed a
+// link back, and every other screen already accepted a grant, so this was the
+// one door that had not been tried from the inside.
+//
+// The grant is tried first and only when one was supplied: a request carrying a
+// real arrival link must still spend it, or forwarding the message would work
+// twice.
 func (a *App) open(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
+		return
+	}
+	if supplied := r.URL.Query().Get("g"); supplied != "" {
+		user, err := VerifyGrant(supplied, a.BotToken, a.now())
+		if err != nil {
+			a.refuse(w, http.StatusForbidden, "This session has ended",
+				err.Error(), "Open the bot and tap the button again.")
+			return
+		}
+		a.arrive(w, user)
 		return
 	}
 	user, err := VerifyLink(r.URL.Query(), a.BotToken, a.Spender, a.now())

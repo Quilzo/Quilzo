@@ -162,11 +162,15 @@ func (a *App) editor(w http.ResponseWriter, user User, notice, problem string) {
 	a.sectionList(&b, grant, base, body)
 
 	// What to do with it.
+	// linked() rather than esc(): a grant contains & and =, so a value that is
+	// only HTML-escaped arrives at the server truncated at the first & and
+	// every link between screens fails as an expired session. Found by driving
+	// the editor with a browser rather than with curl.
 	fmt.Fprintf(&b, `<div class="actions" style="margin-top:var(--space-6)">`+
 		`<a class="btn btn-outlined" href="/add?g=%s">Add a section</a>`+
 		`<a class="btn btn-outlined" href="/media?g=%s">Your files</a>`+
 		`<a class="btn btn-outlined" href="/look?g=%s">How it looks</a>`+
-		`</div>`, esc(grant), esc(grant), esc(grant))
+		`</div>`, linked(grant), linked(grant), linked(grant))
 
 	fmt.Fprintf(&b, `<form method="post" action="/publish" `+
 		`style="margin-top:var(--space-6)">`+
@@ -228,7 +232,7 @@ func (a *App) sectionList(b *strings.Builder, grant, base string, body map[strin
 		}
 		b.WriteString(`</td><td>`)
 		fmt.Fprintf(b, `<a class="btn btn-quiet" href="/section?g=%s&amp;at=%d">Edit</a>`,
-			esc(grant), i)
+			linked(grant), i)
 		b.WriteString(move(grant, base, i, "remove", "Remove"))
 		b.WriteString(`</td></tr>`)
 	}
@@ -282,6 +286,17 @@ func mapOf(m map[string]any, key string) map[string]any {
 }
 
 // -- the handlers ------------------------------------------------------------
+
+// linked prepares a grant for a query string inside an href.
+//
+// Two escapings, in this order, and both are needed. A grant is a signed query
+// string of its own, so it contains & and = — URL-escaping makes it one
+// parameter value instead of several, and HTML-escaping makes it safe in an
+// attribute. Only the second was applied at first, and the result was that
+// every link between editor screens arrived with the grant cut off at its first
+// & and reported an expired session. Not caught by the tests, which posted
+// forms; caught immediately by a browser following a link.
+func linked(grant string) string { return esc(urlEscape(grant)) }
 
 // firstNonEmpty returns the first argument with something in it.
 //
@@ -446,7 +461,7 @@ func (a *App) add(w http.ResponseWriter, r *http.Request) {
 			esc(k.Name), esc(k.Summary), esc(grant), esc(k.Name), esc(k.Name))
 	}
 	fmt.Fprintf(&b, `<p class="muted" style="margin-top:var(--space-6)">`+
-		`<a href="/?g=%s">Back to your page</a></p>`, esc(grant))
+		`<a href="/?g=%s">Back to your page</a></p>`, linked(grant))
 	b.WriteString(`</div></main>`)
 	a.page(w, http.StatusOK, "Add a section", b.String())
 }
@@ -478,22 +493,25 @@ func (a *App) editSection(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		var next map[string]any
 		var err error
-		switch r.FormValue("do") {
-		case "additem":
-			next, err = section.AddItem(body, at, r.FormValue("list"))
-		case "removeitem":
+		switch {
+		case r.FormValue("additem") != "":
+			// Save what is on the screen, then add the entry.
+			//
+			// The add button used to sit in a form of its own, so pressing it
+			// posted the button and nothing else: every field edited since the
+			// last save was discarded, silently, by a button whose entire
+			// purpose is to continue editing. Found while recording a
+			// walkthrough — a picture was chosen, "add another" was pressed,
+			// and the picture was gone.
+			next, err = section.Apply(body, at, submittedValues(r))
+			if err == nil {
+				next, err = section.AddItem(next, at, r.FormValue("additem"))
+			}
+		case r.FormValue("do") == "removeitem":
 			i, _ := strconv.Atoi(r.FormValue("index"))
 			next, err = section.RemoveItem(body, at, r.FormValue("list"), i)
 		default:
-			values := map[string]string{}
-			for key, submitted := range r.Form {
-				path, isValue := strings.CutPrefix(key, "v.")
-				if !isValue || len(submitted) == 0 {
-					continue
-				}
-				values[path] = submitted[0]
-			}
-			next, err = section.Apply(body, at, values)
+			next, err = section.Apply(body, at, submittedValues(r))
 		}
 		if err != nil {
 			a.editor(w, user, "", err.Error())
@@ -540,30 +558,81 @@ func (a *App) editSection(w http.ResponseWriter, r *http.Request) {
 		}
 		b.WriteString(a.fieldInput(f, files))
 	}
-	b.WriteString(`<p><button class="btn" type="submit">Save this section</button></p></form>`)
+	b.WriteString(`<p><button class="btn" type="submit">Save this section</button></p>`)
 
-	// Adding and removing entries are separate actions, so a mis-click cannot
-	// take one out while you were editing another.
-	if lists := section.Lists(body, at); len(lists) > 0 {
-		b.WriteString(`<div class="section-head" style="margin-top:var(--space-6)">` +
-			`<h2>Entries</h2></div><div class="actions">`)
+	// Adding an entry saves first, so it is a button inside the same form: its
+	// name carries which list to grow. Removing one is a form of its own, so a
+	// mis-click cannot take an entry out while you were editing another.
+	lists := section.Lists(body, at)
+	if len(lists) > 0 {
+		b.WriteString(`<div class="actions">`)
 		for _, list := range lists {
-			fmt.Fprintf(&b, `<form method="post" action="/section" class="inline">`+
-				`<input type="hidden" name="grant" value="%s">`+
-				`<input type="hidden" name="base" value="%s">`+
-				`<input type="hidden" name="at" value="%d">`+
-				`<input type="hidden" name="do" value="additem">`+
-				`<input type="hidden" name="list" value="%s">`+
-				`<button class="btn btn-outlined" type="submit">Add to %s</button>`+
-				`</form>`, esc(grant), esc(base), at, esc(list), esc(list))
+			fmt.Fprintf(&b, `<button class="btn btn-outlined" type="submit" `+
+				`name="additem" value="%s">%s</button>`,
+				esc(list), esc(oneMore(list)))
 		}
 		b.WriteString(`</div>`)
 	}
+	b.WriteString(`</form>`)
+
+	for _, list := range lists {
+		n := section.Length(body, at, list)
+		if n < 2 {
+			// Nothing offered at one entry. A section whose only entry can be
+			// taken away is a section that can be left showing a heading over
+			// an empty grid, and the way to remove the whole thing is on the
+			// screen before this one.
+			continue
+		}
+		fmt.Fprintf(&b, `<form method="post" action="/section" class="inline" `+
+			`style="margin-top:var(--space-4)">`+
+			`<input type="hidden" name="grant" value="%s">`+
+			`<input type="hidden" name="base" value="%s">`+
+			`<input type="hidden" name="at" value="%d">`+
+			`<input type="hidden" name="do" value="removeitem">`+
+			`<input type="hidden" name="list" value="%s">`+
+			`<input type="hidden" name="index" value="%d">`+
+			`<button class="btn btn-text" type="submit">Remove the last %s`+
+			`</button></form>`, esc(grant), esc(base), at, esc(list), n-1,
+			esc(singular(list)))
+	}
 
 	fmt.Fprintf(&b, `<p class="muted" style="margin-top:var(--space-6)">`+
-		`<a href="/?g=%s">Back to your page</a></p>`, esc(grant))
+		`<a href="/?g=%s">Back to your page</a></p>`, linked(grant))
 	b.WriteString(`</div></main>`)
 	a.page(w, http.StatusOK, kind, b.String())
+}
+
+// submittedValues picks the field values out of a posted form.
+//
+// Only the v. prefixed keys: everything else on the form is plumbing (the
+// grant, the base commit, which section) and none of it is content.
+func submittedValues(r *http.Request) map[string]string {
+	values := map[string]string{}
+	for key, submitted := range r.Form {
+		path, isValue := strings.CutPrefix(key, "v.")
+		if !isValue || len(submitted) == 0 {
+			continue
+		}
+		values[path] = submitted[0]
+	}
+	return values
+}
+
+// oneMore labels the button that adds an entry to a list.
+//
+// The list's name is a field name — "items", "rows", "columns" — and a button
+// reading "Add to items" describes the data rather than the act. Naming one of
+// them is closer to what the person is about to do.
+func oneMore(list string) string { return "Add another " + singular(list) }
+
+// singular names one of what a list holds, for a label.
+func singular(list string) string {
+	if len(list) > 2 && strings.HasSuffix(list, "s") &&
+		!strings.HasSuffix(list, "ss") {
+		return strings.TrimSuffix(list, "s")
+	}
+	return list
 }
 
 // fieldInput draws one value, choosing the control from what the value is.
@@ -690,7 +759,7 @@ func (a *App) library(w http.ResponseWriter, r *http.Request) {
 		b.WriteString(`</div>`)
 	}
 	fmt.Fprintf(&b, `<p class="muted" style="margin-top:var(--space-6)">`+
-		`<a href="/?g=%s">Back to your page</a></p>`, esc(grant))
+		`<a href="/?g=%s">Back to your page</a></p>`, linked(grant))
 	b.WriteString(`</div></main>`)
 	a.page(w, http.StatusOK, "Your files", b.String())
 }
@@ -745,7 +814,7 @@ func (a *App) look(w http.ResponseWriter, r *http.Request) {
 		`get instead is a palette where every combination already passes.</p>` +
 		`</div>`)
 	fmt.Fprintf(&b, `<p class="muted"><a href="/?g=%s">Back to your page</a></p>`,
-		esc(grant))
+		linked(grant))
 	b.WriteString(`</div></main>`)
 	a.page(w, http.StatusOK, "How it looks", b.String())
 }
