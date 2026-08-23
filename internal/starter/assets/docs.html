@@ -28,7 +28,7 @@
     {% end %}
     {% if menus.main %}
     <nav class="nav" aria-label="Site">
-      <ul>{% for item in menus.main %}<li class="depth-{{ item.depth }}"><a href="{{ item.href }}"{% if item.current %} aria-current="page"{% end %}>{{ item.label }}</a></li>{% end %}</ul>
+      <ul>{% for item in menus.main %}<li class="depth-{{ item.depth }}">{% if item.href %}<a href="{{ item.href }}"{% if item.current %} aria-current="page"{% end %}>{{ item.label }}</a>{% end %}{% if item.unlinked %}<span class="nav-group">{{ item.label }}</span>{% end %}</li>{% end %}</ul>
     </nav>
     {% end %}
   </div>
@@ -122,7 +122,7 @@
 
 <footer class="site-footer">
   <div class="wrap wrap-wide">
-    {% if menus.foot %}<nav aria-label="Footer"><ul>{% for item in menus.foot %}<li><a href="{{ item.href }}">{{ item.label }}</a></li>{% end %}</ul></nav>{% end %}
+    {% if menus.foot %}<nav aria-label="Footer"><ul>{% for item in menus.foot %}<li class="depth-{{ item.depth }}">{% if item.href %}<a href="{{ item.href }}">{{ item.label }}</a>{% end %}{% if item.unlinked %}<span class="nav-group">{{ item.label }}</span>{% end %}</li>{% end %}</ul></nav>{% end %}
     {% if page.footer %}<p class="colophon">{{ page.footer }}</p>{% end %}
   </div>
 </footer>

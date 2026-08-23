@@ -194,3 +194,40 @@ func TestBoundsAreEnforced(t *testing.T) {
 		t.Error("accepted a menu longer than anybody navigates")
 	}
 }
+
+// Nothing published means nothing resolves.
+//
+// Render's nil map means "do not check this side", which is right for the admin
+// and wrong here: the gate is asked whether readers can follow these links, and
+// when the live side cannot be read the answer is no. This used to pass — the
+// pipeline check reported every entry fine on a site where every link was a
+// 404, which is the exact case it exists for.
+func TestAMenuIsBrokenWhenNothingIsPublished(t *testing.T) {
+	set := &Set{Menus: []Menu{{
+		Name: "main",
+		Items: []Item{
+			{ID: "shop", Label: "Shop", Kind: Page, Target: "shop"},
+			{ID: "about", Label: "About", Kind: Page, Target: "about"},
+			{ID: "away", Label: "Elsewhere", Kind: External,
+				Target: "https://example.com"},
+			{ID: "group", Label: "More", Kind: Heading},
+		},
+	}}}
+
+	broken := set.Broken(nil)
+	if len(broken) != 2 {
+		t.Fatalf("wanted both page entries reported with nothing published, "+
+			"got %d: %v", len(broken), broken)
+	}
+	for _, p := range broken {
+		if p.Target != "shop" && p.Target != "about" {
+			t.Errorf("reported %q, which is not a page entry", p.Target)
+		}
+	}
+
+	// And once those pages are live, they stop being reported.
+	live := map[string]any{"shop": map[string]any{}, "about": map[string]any{}}
+	if rest := set.Broken(live); len(rest) != 0 {
+		t.Errorf("published pages still reported as broken: %v", rest)
+	}
+}

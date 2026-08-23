@@ -126,14 +126,16 @@
         {% for f in page.fields %}
         <p class="field">
           <label for="f-{{ f.name }}">{{ f.label }}</label>
-          {% if f.textarea %}<textarea id="f-{{ f.name }}" name="{{ f.name }}" rows="5"></textarea>{% end %}
+          {% if f.textarea %}<textarea id="f-{{ f.name }}" name="{{ f.name }}" rows="5"{% if f.required %} required{% end %}></textarea>{% end %}
+          {% if f.choices %}<select id="f-{{ f.name }}" name="{{ f.name }}"{% if f.required %} required{% end %}>{% for c in f.choices %}<option>{{ c }}</option>{% end %}</select>{% end %}
+          {% if f.checkbox %}<input id="f-{{ f.name }}" name="{{ f.name }}" type="checkbox" value="true"{% if f.required %} required{% end %}>{% end %}
           {% if f.type %}<input id="f-{{ f.name }}" name="{{ f.name }}" type="{{ f.type }}"{% if f.required %} required{% end %}>{% end %}
           {% if f.hint %}<span class="hint">{{ f.hint }}</span>{% end %}
         </p>
         {% end %}
         <p class="hp"><label for="f-website-url">Leave this empty</label>
           <input id="f-website-url" name="website_url" type="text" tabindex="-1" autocomplete="off"></p>
-        {% if page.stamp %}<input type="hidden" name="form_started" value="{{ page.stamp }}">{% end %}
+        <input type="hidden" name="form_started" value="{{ stamp }}">
         <p><button class="btn" type="submit">{{ page.form_submit | default:Send }}</button></p>
       </form>
       {% if page.privacy %}<p class="muted">{{ page.privacy }}</p>{% end %}
@@ -144,7 +146,7 @@
 
 <footer class="site-footer">
   <div class="wrap wrap-wide">
-    {% if menus.foot %}<nav aria-label="Footer"><ul>{% for item in menus.foot %}<li><a href="{{ item.href }}">{{ item.label }}</a></li>{% end %}</ul></nav>{% end %}
+    {% if menus.foot %}<nav aria-label="Footer"><ul>{% for item in menus.foot %}<li class="depth-{{ item.depth }}">{% if item.href %}<a href="{{ item.href }}">{{ item.label }}</a>{% end %}{% if item.unlinked %}<span class="nav-group">{{ item.label }}</span>{% end %}</li>{% end %}</ul></nav>{% end %}
     {% if page.footer %}<p class="colophon">{{ page.footer }}</p>{% end %}
   </div>
 </footer>

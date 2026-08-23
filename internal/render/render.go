@@ -29,6 +29,8 @@ package render
 import (
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/menu"
+	"strconv"
+	"time"
 )
 
 // Sources is everything a template can be shown.
@@ -55,6 +57,8 @@ type Sources struct {
 	// Listings resolves the queries a page embeds. Nil means a page naming one
 	// gets an error rather than a silent gap.
 	Listings *listing.Resolver
+	// Now is the clock the stamp comes from. Nil means time.Now.
+	Now func() time.Time
 }
 
 // For builds the context for one page.
@@ -70,6 +74,24 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 		"page":  decoratePage(body),
 		"site":  map[string]any{"name": s.Name, "page": name},
 		"menus": s.menus(name),
+		// When this page was rendered, for a form's timing check.
+		//
+		// internal/form refuses a submission with no timestamp and one older
+		// than a day, both deliberately. The shipped layouts took the value
+		// from the page — from content, published once — so a form either
+		// carried no stamp and refused everything, or carried one that expired
+		// twenty-four hours later and refused everything after that. The whole
+		// forms feature was unusable from a published page in both directions.
+		//
+		// It belongs here because it is a fact about this render, not about the
+		// content. Pages are rendered per request, so it is fresh every time.
+		//
+		// A string, because the template language renders what decoded JSON
+		// holds — text, numbers as float64, booleans — and an int64 came out
+		// as nothing at all: value="" in the markup and every submission
+		// refused, which is the same failure by a different route. The form
+		// parses this field as text anyway.
+		"stamp": strconv.FormatInt(s.now().Unix(), 10),
 	}
 	if s.Listings != nil {
 		data, err := s.Listings.For(body, args)
@@ -86,6 +108,13 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 		}
 	}
 	return ctx, nil
+}
+
+func (s Sources) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
 }
 
 // menuItem is one navigation entry, in the shape the template language walks:
@@ -115,11 +144,19 @@ func (s Sources) menus(current string) map[string]any {
 			if s.Pages != nil && !r.Live {
 				continue
 			}
+			href := Href(r)
 			items = append(items, menuItem{
-				"label":    r.Label,
-				"href":     Href(r),
-				"depth":    r.Depth,
-				"current":  r.Kind == menu.Page && r.Target == current,
+				"label":   r.Label,
+				"href":    href,
+				"depth":   r.Depth,
+				"current": r.Kind == menu.Page && r.Target == current,
+				// A heading is a label for the entries under it, so it has
+				// nothing to point at. The companion is here because the
+				// template language has no else and every layout has to
+				// choose between an anchor and plain text — the same reason
+				// gallery items and breadcrumbs carry one.
+				"heading":  r.Kind == menu.Heading,
+				"unlinked": href == "",
 				"external": r.Kind == menu.External,
 			})
 		}
@@ -134,6 +171,13 @@ func (s Sources) menus(current string) map[string]any {
 // when it was saved, and repeating the rule here would give it two copies to
 // drift apart.
 func Href(r menu.Rendered) string {
+	if r.Kind == menu.Heading {
+		// Nothing. A heading has no target, and this used to fall through to
+		// "/" + "" — so every group title in a nested menu rendered as a link
+		// to the home page. Seen in a footer where "By dyestuff" and "Reading"
+		// were both underlined and both went home.
+		return ""
+	}
 	if r.Kind == menu.External {
 		return r.Target
 	}

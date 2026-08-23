@@ -229,14 +229,25 @@ func (s Sources) feeds(data map[string]any) []any {
 	return out
 }
 
-// title is the heading a feed renders under: what the listing called itself,
-// falling back to its name. A listing with no title is not given a blank
-// heading — the caller checks feed.title before emitting one.
+// title is the heading a feed renders under.
+//
+// A listing's human name is its label — that is the field the declaration has
+// and the field the resolver puts in the map. This looked for "title", found
+// nothing, and fell back to the listing's machine name, so a generic layout
+// printed "new_in" as a heading on a published page. Found by reading one.
+//
+// "title" is still accepted, because a page may set one on the resolved data
+// and the more specific answer should win. When there is neither, the answer is
+// empty rather than the machine name: every layout guards with
+// {% if feed.title %}, so no heading is the better failure than a heading that
+// reads like a variable.
 func title(resolved map[string]any, name string) string {
-	if t, ok := resolved["title"].(string); ok && strings.TrimSpace(t) != "" {
-		return t
+	for _, key := range []string{"title", "label"} {
+		if t, ok := resolved[key].(string); ok && strings.TrimSpace(t) != "" {
+			return t
+		}
 	}
-	return name
+	return ""
 }
 
 type detailRoute struct {

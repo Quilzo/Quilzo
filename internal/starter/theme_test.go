@@ -288,3 +288,104 @@ func TestNoSampleReferencesAFileTheStoreWillNotHave(t *testing.T) {
 		}
 	}
 }
+
+// The arrangement queries have to have something to measure.
+//
+// The breakpoint rules are @container queries — deliberately, so a split inside
+// a narrow column stacks because its column is narrow rather than because the
+// window is. A container query with no containment context in the document
+// matches nothing at all, and .wrap had none: a hero with an image rendered its
+// picture underneath its own heading at any width, which is the shape the
+// container query exists to fix.
+//
+// Found in a screenshot at 1440 pixels. The rule and the thing it measures live
+// in different files — one generated, one shipped — which is why nothing caught
+// it.
+func TestTheArrangementQueriesHaveAContainerToMeasure(t *testing.T) {
+	css := CSS()
+	if !strings.Contains(css, "@container") {
+		t.Skip("no container queries in this build")
+	}
+	if !strings.Contains(css, "container-type: inline-size") {
+		t.Fatal("the stylesheet has @container queries and nothing declares " +
+			"container-type, so not one of those rules can ever apply")
+	}
+
+	// Specifically on the content column, because that is what every layout
+	// puts a hero, a split and a detail grid inside.
+	wrap := regexp.MustCompile(`(?s)\n\.wrap \{(.*?)\}`).FindStringSubmatch(css)
+	if wrap == nil {
+		t.Fatal("no .wrap rule; every layout puts its content in one")
+	}
+	if !strings.Contains(wrap[1], "container-type") {
+		t.Error("the .wrap rule declares no container-type, so anything " +
+			"arranged by a container query and not inside a .section is stuck " +
+			"in its narrow arrangement forever")
+	}
+
+	// And every class those queries arrange must appear inside a wrap in the
+	// layouts that use it, or the query still measures the wrong element.
+	layouts, err := Layouts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	arranged := []string{"hero-split", "split", "detail-grid", "with-side",
+		"grid-bento"}
+	for name, src := range layouts {
+		for _, class := range arranged {
+			at := strings.Index(src, `class="`+class)
+			if at < 0 {
+				continue
+			}
+			before := src[:at]
+			if !strings.Contains(before, `class="wrap`) &&
+				!strings.Contains(before, `class="section`) &&
+				!strings.Contains(before, `"section"`) {
+				t.Errorf("%s.html uses %s with no wrap or section above it, so "+
+					"the container query that arranges it has nothing to "+
+					"measure", name, class)
+			}
+		}
+	}
+}
+
+// A shipped layout can render every kind of field a form declares.
+//
+// The form block handled a text input and a textarea. internal/form has six
+// kinds, two of which — choice and agree — are the ones a lawful form needs: a
+// consent box is an agree field, and Form.Notice is mandatory precisely because
+// consent is. A page declaring either rendered nothing for it, and the server
+// then refused the submission with "this submission was not accepted", which is
+// deliberately uninformative because it is what a spam script is told.
+//
+// Found by declaring a wholesale form with a choice and a consent box, and
+// getting a page with one hidden honeypot on it.
+func TestAFormLayoutCanRenderEveryKindOfField(t *testing.T) {
+	layouts, err := Layouts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, src := range layouts {
+		if !strings.Contains(src, "page.fields") {
+			continue
+		}
+		for control, why := range map[string]string{
+			"<textarea":       "a para field",
+			"<select":         "a choice field, which is refused when it arrives empty",
+			`type="checkbox"`: "an agree field, which is how consent is given",
+		} {
+			if !strings.Contains(src, control) {
+				t.Errorf("%s.html renders a form and has no %s, so %s cannot "+
+					"be filled in on a page using it", name, control, why)
+			}
+		}
+		// The two undeclared fields every form needs.
+		if !strings.Contains(src, "website_url") {
+			t.Errorf("%s.html has no honeypot; every submission is refused", name)
+		}
+		if !strings.Contains(src, "form_started") {
+			t.Errorf("%s.html carries no timing stamp; every submission is "+
+				"refused", name)
+		}
+	}
+}

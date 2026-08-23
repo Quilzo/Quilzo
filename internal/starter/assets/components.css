@@ -49,7 +49,21 @@ a:hover { text-decoration-thickness: 2px; }
 
 /* -- layout --------------------------------------------------------------- */
 
-.wrap { width: 100%; max-width: var(--page-width); margin-inline: auto; padding-inline: var(--space-5); }
+/* The content column, and the container every arrangement rule measures.
+   container-type is the reason those rules apply at all: the generated
+   breakpoint block is written as @container queries, and a container query
+   with no containment context anywhere in the document matches nothing. It
+   matched nothing — a split never went side by side, a hero with an image
+   never sat beside its text, and the documentation page's contents list never
+   reached the margin. Found by taking a screenshot at 1440px and seeing a
+   hero image below its own heading.
+   The wrap rather than the body, so a split inside a narrow column stacks
+   because its column is narrow, which is what the queries were written for. */
+.wrap {
+  width: 100%; max-width: var(--page-width); margin-inline: auto;
+  padding-inline: var(--space-5);
+  container-type: inline-size;
+}
 .wrap-wide { max-width: calc(var(--page-width) * 1.25); }
 .narrow { max-width: var(--measure); }
 .stack > * + * { margin-top: var(--space-4); }
@@ -241,7 +255,16 @@ pre {
   letter-spacing: 0.03em; text-transform: uppercase;
 }
 .chip-accent { background: var(--tertiary-container); color: var(--on-tertiary-container); }
+/* A chip hugs its text wherever it lands. inline-flex is not enough inside a
+   flex column — a card, a plan, a hero — where the default stretch makes it a
+   full-width bar with a word at one end. Seen on a feature card, where the
+   label read as a heading rule rather than a tag. */
+.card > .chip, .plan > .chip, .hero > .chip, .stack > .chip { align-self: start; }
 .chips { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
+/* A group title inside a menu: a label for the entries under it, so it is not
+   a link and does not look like one. */
+.nav-group { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  font-size: var(--text-sm); color: var(--on-surface-variant); }
 
 /* State is carried by a token pair, never by hue alone: the label says the
    state as well, so a reader who cannot separate the colours still reads it. */
