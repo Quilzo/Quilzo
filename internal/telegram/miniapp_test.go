@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -274,4 +275,228 @@ func TestTheEmptyTitleRefusalAlsoKeepsTheBody(t *testing.T) {
 	if !strings.Contains(out, "Words worth keeping.") {
 		t.Error("a missing title discarded the body")
 	}
+}
+
+// Every link between editor screens has to carry a usable grant.
+//
+// A grant is itself a signed query string, so it contains & and =. HTML-escaping
+// it into an href is not enough: the browser sends it and the server reads only
+// the part before the first &, so every link reports an expired session.
+//
+// The form tests never saw this, because a hidden field needs no URL escaping.
+// It appeared the first time a browser followed a link, which is the argument
+// for driving a surface the way somebody uses it.
+func TestALinkBetweenScreensCarriesAUsableGrant(t *testing.T) {
+	now := time.Now()
+	a := testApp(t, &fakePublisher{}, now)
+	a.Drafts = &fakeDrafts{}
+
+	query, _ := NewLink(User{ID: 279058397, Username: "durov"}, botToken, now)
+	home := get(t, a, "/?"+query)
+	if home.Code != http.StatusOK {
+		t.Fatalf("arrival gave %d", home.Code)
+	}
+
+	// Every href carrying a grant, followed the way a browser would.
+	for _, href := range hrefsWithGrant(t, home.Body.String()) {
+		page := get(t, a, href)
+		if page.Code != http.StatusOK {
+			t.Errorf("following %s gave %d — the grant did not survive the link",
+				href, page.Code)
+			continue
+		}
+		if strings.Contains(page.Body.String(), "This session has ended") {
+			t.Errorf("following %s reported an expired session; the grant was "+
+				"cut off at its first &", href)
+		}
+	}
+}
+
+// hrefsWithGrant pulls out every link that carries a g= parameter, unescaping
+// the HTML the way a browser does before requesting it.
+func hrefsWithGrant(t *testing.T, body string) []string {
+	t.Helper()
+	var out []string
+	for _, m := range regexp.MustCompile(`href="(/[^"]*\bg=[^"]*)"`).
+		FindAllStringSubmatch(body, -1) {
+		out = append(out, strings.ReplaceAll(m[1], "&amp;", "&"))
+	}
+	if len(out) == 0 {
+		t.Fatal("no links carrying a grant; this test would pass by checking nothing")
+	}
+	return out
+}
+
+// fakeDrafts is a working copy in memory.
+type fakeDrafts struct {
+	body map[string]any
+	base string
+}
+
+func (f *fakeDrafts) Draft(string) (map[string]any, string, error) {
+	if f.body == nil {
+		return map[string]any{}, f.base, nil
+	}
+	return f.body, f.base, nil
+}
+
+func (f *fakeDrafts) Keep(_ string, body map[string]any, _, _, _ string) error {
+	f.body = body
+	return nil
+}
+
+// The way back in has to work, and a grant is not a link.
+//
+// Every editor screen links to "/" carrying a grant, because that is the
+// credential a multi-screen editor passes along. For a while "/" understood
+// only the single-use arrival link, so every one of those links reported that
+// the link could not be used — and the form tests never noticed, because they
+// posted rather than following a link back.
+func TestTheWayBackAcceptsAGrantAndStillSpendsALink(t *testing.T) {
+	now := time.Now()
+	a := testApp(t, &fakePublisher{}, now)
+	a.Drafts = &fakeDrafts{}
+
+	grant, err := NewGrant(User{ID: 7}, botToken, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back := get(t, a, "/?g="+url.QueryEscape(grant))
+	if back.Code != http.StatusOK {
+		t.Fatalf("returning with a grant gave %d:\n%s", back.Code, back.Body.String())
+	}
+	if !strings.Contains(back.Body.String(), "Your page") {
+		t.Error("returning with a grant did not reach the editor")
+	}
+	// And again, because a grant is deliberately reusable inside its window.
+	if again := get(t, a, "/?g="+url.QueryEscape(grant)); again.Code != http.StatusOK {
+		t.Errorf("a grant stopped working on second use (%d)", again.Code)
+	}
+
+	// A real arrival link must still be single-use, or a forwarded message is
+	// a way in twice.
+	query, _ := NewLink(User{ID: 8}, botToken, now)
+	if first := get(t, a, "/?"+query); first.Code != http.StatusOK {
+		t.Fatalf("arrival gave %d", first.Code)
+	}
+	if second := get(t, a, "/?"+query); second.Code == http.StatusOK {
+		t.Error("an arrival link worked twice; accepting grants must not have " +
+			"turned off spending")
+	}
+}
+
+// Adding an entry keeps what was typed above it.
+//
+// The add button used to be a form of its own containing nothing but the
+// button, so pressing it posted the button and discarded every field on the
+// screen. In a recording of the editor a picture was chosen from the library,
+// "add another" was pressed to make room for a second, and the first one was
+// gone — with no message, because as far as the server was concerned nothing
+// had been submitted.
+//
+// The fix is that adding saves first. This test posts the way the browser does:
+// the field values, and the add button's own name and value.
+func TestAddingAnEntryKeepsTheOnesAlreadyFilledIn(t *testing.T) {
+	now := time.Now()
+	drafts := &fakeDrafts{body: map[string]any{
+		"title": "Marginalia",
+		"sections": []any{
+			map[string]any{"gallery": map[string]any{
+				"title": "From the bench",
+				"items": []any{map[string]any{
+					"image": "", "alt": "", "caption": "A caption"}},
+			}},
+		},
+	}}
+	a := testApp(t, &fakePublisher{}, now)
+	a.Drafts = drafts
+
+	grant, err := NewGrant(User{ID: 11}, botToken, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := post(t, a, "/section", url.Values{
+		"grant":             {grant},
+		"at":                {"0"},
+		"v.items.0.image":   {"/media/abc123"},
+		"v.items.0.alt":     {"A type case"},
+		"v.items.0.caption": {"The upper case"},
+		"additem":           {"items"},
+	})
+	if res.Code != http.StatusSeeOther {
+		t.Fatalf("adding an entry gave %d:\n%s", res.Code, res.Body.String())
+	}
+
+	items := galleryItems(t, drafts.body)
+	if len(items) != 2 {
+		t.Fatalf("wanted two entries after adding one, got %d", len(items))
+	}
+	first, _ := items[0].(map[string]any)
+	if got := first["image"]; got != "/media/abc123" {
+		t.Errorf("the picture chosen before adding an entry was lost: image = %q",
+			got)
+	}
+	if got := first["alt"]; got != "A type case" {
+		t.Errorf("the description was lost: alt = %q", got)
+	}
+}
+
+// Removing an entry is offered once there is more than one to remove.
+func TestRemovingAnEntryIsOfferedAndWorks(t *testing.T) {
+	now := time.Now()
+	drafts := &fakeDrafts{body: map[string]any{
+		"title": "Marginalia",
+		"sections": []any{
+			map[string]any{"gallery": map[string]any{
+				"title": "From the bench",
+				"items": []any{
+					map[string]any{"image": "/media/a", "alt": "one",
+						"caption": "one"},
+					map[string]any{"image": "/media/b", "alt": "two",
+						"caption": "two"},
+				},
+			}},
+		},
+	}}
+	a := testApp(t, &fakePublisher{}, now)
+	a.Drafts = drafts
+
+	grant, err := NewGrant(User{ID: 12}, botToken, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen := get(t, a, "/section?g="+url.QueryEscape(grant)+"&at=0")
+	if !strings.Contains(screen.Body.String(), "Remove the last item") {
+		t.Error("no way to remove an entry; the only exit from an entry added " +
+			"by mistake was deleting the whole section")
+	}
+
+	res := post(t, a, "/section", url.Values{
+		"grant": {grant}, "at": {"0"}, "do": {"removeitem"},
+		"list": {"items"}, "index": {"1"},
+	})
+	if res.Code != http.StatusSeeOther {
+		t.Fatalf("removing an entry gave %d:\n%s", res.Code, res.Body.String())
+	}
+	if items := galleryItems(t, drafts.body); len(items) != 1 {
+		t.Errorf("wanted one entry left, got %d", len(items))
+	}
+}
+
+func galleryItems(t *testing.T, body map[string]any) []any {
+	t.Helper()
+	sections, ok := body["sections"].([]any)
+	if !ok || len(sections) == 0 {
+		t.Fatalf("the draft lost its sections: %v", body)
+	}
+	first, ok := sections[0].(map[string]any)
+	if !ok {
+		t.Fatalf("the first section is not a section: %v", sections[0])
+	}
+	inner, ok := first["gallery"].(map[string]any)
+	if !ok {
+		t.Fatalf("the first section is no longer a gallery: %v", first)
+	}
+	items, _ := inner["items"].([]any)
+	return items
 }

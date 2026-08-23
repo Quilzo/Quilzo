@@ -103,6 +103,9 @@ func telegramServe(root string, args []string) error {
 		"environment variable holding the webhook secret")
 	noBot := fs.Bool("no-bot", false,
 		"serve the Mini App without answering messages")
+	sharedMedia := fs.Bool("shared-media", false,
+		"show the whole media library in the editor, not only what each "+
+			"person sent; for a single-operator installation")
 	design := fs.String("design", "sections",
 		"which shipped design a new page is published with")
 	if err := fs.Parse(args); err != nil {
@@ -142,7 +145,9 @@ func telegramServe(root string, args []string) error {
 		root: root, store: s, tplDir: *tplDir, design: *design,
 	}
 	// Named library rather than media, which is the package.
-	library := &chatMedia{root: root, lib: lib, cfg: mustConfig(root)}
+	library := &chatMedia{
+		root: root, lib: lib, cfg: mustConfig(root), shared: *sharedMedia,
+	}
 
 	app := &telegram.App{
 		BotToken:   token,
@@ -238,6 +243,12 @@ func telegramServe(root string, args []string) error {
 	w.Human("  %sTelegram will only open this over https — put a tunnel or a%s\n", dim, reset)
 	w.Human("  %sreverse proxy in front of it, then set the Mini App URL with%s\n", dim, reset)
 	w.Human("  %s@BotFather%s\n\n", dim, reset)
+	if *sharedMedia {
+		w.Human("  %severy editor sees the whole media library (--shared-media)%s\n",
+			dim, reset)
+		w.Human("  %sright for one operator, wrong for an installation strangers "+
+			"can reach%s\n\n", dim, reset)
+	}
 	if *siteURL == "" {
 		w.Human("  %sno --site-url, so a published page is shown as a path rather%s\n", dim, reset)
 		w.Human("  %sthan a full address. Guessing it from a request header is how%s\n", dim, reset)
@@ -439,6 +450,19 @@ type chatMedia struct {
 	root string
 	lib  *medialib.Library
 	cfg  *config.Config
+	// shared makes the whole library visible in the Mini App rather than only
+	// the files this person sent the bot.
+	//
+	// Off by default, and the default is the safe one: on an installation
+	// several people can reach, showing everybody the whole library shows each
+	// of them what the others have uploaded. On by choice for a
+	// single-operator installation — which is what deploy/ describes — where
+	// filtering means the operator's own uploads are invisible in their own
+	// editor, which is surprising in the other direction.
+	//
+	// A flag rather than a guess, because this program cannot tell which
+	// installation it is and the two answers are both wrong for the other one.
+	shared bool
 }
 
 func (m *chatMedia) Save(owner, name string, body []byte,
@@ -509,7 +533,7 @@ func (m *chatMedia) Recent(owner string, limit int) []telegram.StoredFile {
 	want := "telegram:" + owner
 	out := []telegram.StoredFile{}
 	for _, f := range all {
-		if f.Source != want {
+		if !m.shared && f.Source != want {
 			continue
 		}
 		out = append(out, telegram.StoredFile{

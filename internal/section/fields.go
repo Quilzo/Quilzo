@@ -455,6 +455,22 @@ func Lists(body any, at int) []string {
 	return out
 }
 
+// Length counts the entries in one of a section's lists.
+//
+// Zero for a list that is not there, which is the same answer as an empty one:
+// the caller is deciding whether to offer a control, and both mean no.
+func Length(body any, at int, list string) int {
+	inner, err := innerOf(body, at)
+	if err != nil {
+		return 0
+	}
+	entries, ok := inner[list].([]any)
+	if !ok {
+		return 0
+	}
+	return len(entries)
+}
+
 // KindAt names the kind of one section.
 func KindAt(body any, at int) (string, bool) {
 	_, list := copyOf(body)
