@@ -197,12 +197,60 @@ func cmdMedia(root string, args []string) error {
 		return mediaAdd(root, args[1:])
 	case "get":
 		return mediaGet(root, args[1:])
+	case "list":
+		return mediaList(root)
 	case "formats":
 		return mediaFormats()
 	default:
-		return fmt.Errorf("unknown media command %q; try add, get or formats",
-			args[0])
+		return fmt.Errorf(
+			"unknown media command %q; try add, get, list or formats", args[0])
 	}
+}
+
+// mediaList prints what the library holds.
+//
+// There was no way to ask. Files went in and the id came back once, on the
+// terminal that put them there; a week later the only route to the path a page
+// needs was reading the store by hand. The assistant interface could already
+// list them, which made the gap plainer rather than smaller.
+//
+// The path comes first on each line, because that is the part being copied.
+func mediaList(root string) error {
+	lib, err := openMedia(root)
+	if err != nil {
+		return fmt.Errorf("the media library could not be opened: %w", err)
+	}
+	files, err := lib.List()
+	if err != nil {
+		return err
+	}
+	if w.JSON(files) {
+		return nil
+	}
+	if len(files) == 0 {
+		w.Human("nothing has been uploaded\n")
+		w.Human("  %squilzo media add photo.png --alt \"...\"%s\n", dim, reset)
+		return nil
+	}
+	for _, f := range files {
+		w.Human("/media/%s%s%s\n", bold, f.ID, reset)
+		w.Human("  %s%s · %s · %d bytes", dim, f.Name, f.Format, f.Size)
+		if f.Width > 0 {
+			w.Human(" · %dx%d", f.Width, f.Height)
+		}
+		w.Human("%s\n", reset)
+		if f.Alt != "" {
+			w.Human("  %s%s%s\n", dim, f.Alt, reset)
+		}
+		if f.Kind == media.Image && f.Alt == "" {
+			// Not a refusal: it is already stored. But a picture with no
+			// description fails the accessibility gate at publish, and finding
+			// that out here is cheaper than finding it out then.
+			w.Human("  %sno description; a page using this will not publish%s\n",
+				dim, reset)
+		}
+	}
+	return nil
 }
 
 func mediaFormats() error {
@@ -301,6 +349,25 @@ func mediaAdd(root string, args []string) error {
 	}
 	f.Alt = strings.TrimSpace(*alt)
 
+	// Stored, which it was not.
+	//
+	// This command validated the bytes, wrote an audit record saying the upload
+	// had succeeded, printed "accepted", and then dropped the file. Nothing was
+	// ever in the library, so nothing was ever served — and the audit log said
+	// otherwise, which is worse than the missing feature.
+	//
+	// internal/medialib exists precisely for this and its own package comment
+	// says so: "stores accepted uploads, which nothing did". It was written and
+	// the command was never wired to it. Found by adding three images for a
+	// demonstration and finding an empty picker.
+	lib, err := openMedia(root)
+	if err != nil {
+		return fmt.Errorf("the media library could not be opened: %w", err)
+	}
+	if err := lib.Put(f, body); err != nil {
+		return fmt.Errorf("%s was accepted and could not be stored: %w", f.Name, err)
+	}
+
 	if w.JSON(f) {
 		return nil
 	}
@@ -308,13 +375,20 @@ func mediaAdd(root string, args []string) error {
 	record(root, resolveCaller(root, "").auditRecord("media.add", "/",
 		audit.Success, map[string]string{"file": f.Name, "id": short(f.ID),
 			"format": string(f.Format)}))
-	w.Human("accepted %s%s%s\n", bold, f.Name, reset)
+	w.Human("stored %s%s%s\n", bold, f.Name, reset)
 	w.Human("  %s%s · %s · %d bytes", dim, f.Format, f.Kind, f.Size)
 	if f.Width > 0 {
 		w.Human(" · %dx%d", f.Width, f.Height)
 	}
 	w.Human("%s\n", reset)
-	w.Human("  %sid %s%s\n", dim, f.ID[:32], reset)
+	// The whole id, and the path a page actually asks for.
+	//
+	// This printed f.ID[:32] — half of it. The id is the only thing anybody
+	// wants from this command, and a truncated one put into a page 404s, so
+	// what it printed was a value that looked usable and was not. Found by
+	// building a demo page from the output and getting four grey boxes.
+	w.Human("  %sid %s%s\n", dim, f.ID, reset)
+	w.Human("  %sin a page: /media/%s%s\n", dim, f.ID, reset)
 	if !f.Inline() {
 		w.Human("  %sserved as a download, not rendered in the page's origin%s\n",
 			dim, reset)
@@ -348,15 +422,26 @@ func mediaGet(root string, args []string) error {
 	f.Alt = strings.TrimSpace(*alt)
 	f.Source = res.FinalURL
 
+	// The same hole as `media add` had: fetched, validated, announced, dropped.
+	lib, err := openMedia(root)
+	if err != nil {
+		return fmt.Errorf("the media library could not be opened: %w", err)
+	}
+	if err := lib.Put(f, res.Body); err != nil {
+		return fmt.Errorf("%s was fetched and could not be stored: %w", pos[0], err)
+	}
+
 	if w.JSON(f) {
 		return nil
 	}
 	record(root, resolveCaller(root, "").auditRecord("media.get", "/",
 		audit.Success, map[string]string{"file": f.Name, "id": short(f.ID),
 			"format": string(f.Format), "source": f.Source}))
-	w.Human("fetched and accepted %s%s%s\n", bold, f.Name, reset)
+	w.Human("fetched and stored %s%s%s\n", bold, f.Name, reset)
 	w.Human("  %sfrom %s%s\n", dim, res.FinalURL, reset)
-	w.Human("  %s%s · %d bytes · id %s%s\n", dim, f.Format, f.Size, f.ID[:32], reset)
+	w.Human("  %s%s · %d bytes%s\n", dim, f.Format, f.Size, reset)
+	w.Human("  %sid %s%s\n", dim, f.ID, reset)
+	w.Human("  %sin a page: /media/%s%s\n", dim, f.ID, reset)
 	return nil
 }
 

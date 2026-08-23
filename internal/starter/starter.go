@@ -256,7 +256,11 @@ var templates = map[string]Template{
 				}},
 				map[string]any{"split": map[string]any{
 					"eyebrow": "How it works", "title": "An image beside prose",
-					"image": "/media/placeholder.png",
+					// No path. A sample referring to a file the store does not
+					// have publishes a broken picture the first time anybody
+					// uses the starter, and the layout omits the element when
+					// there is nothing to put in it.
+					"image": "",
 					"alt":   "A diagram of a commit pointing at a tree of pages",
 					"paragraphs": []any{
 						"A split section takes an image, a heading and any number of paragraphs.",
@@ -267,15 +271,17 @@ var templates = map[string]Template{
 				map[string]any{"gallery": map[string]any{
 					"title": "A gallery", "shape": "square",
 					"items": []any{
-						map[string]any{"image": "/media/placeholder.png",
-							"alt": "A notebook lying open on a desk", "caption": "Linen notebook"},
-						map[string]any{"image": "/media/placeholder.png",
-							"alt": "A brass pen beside a sheet of paper", "caption": "Brass pen"},
+						map[string]any{"image": "",
+							"alt":     "A notebook lying open on a desk",
+							"caption": "Add a picture: quilzo media add photo.png --alt \"…\""},
+						map[string]any{"image": "",
+							"alt":     "A brass pen beside a sheet of paper",
+							"caption": "Or send one to the Telegram bot"},
 					},
 				}},
 				map[string]any{"video": map[string]any{
 					"title":            "A video, served from this origin",
-					"src":              "/media/placeholder.mp4",
+					"src":              "",
 					"caption":          "Controls always, autoplay never — a video that starts on its own is what 1.4.2 is about.",
 					"transcript_label": "Read the transcript instead",
 					"transcript_href":  "/transcript",

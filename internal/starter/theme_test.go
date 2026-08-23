@@ -1,6 +1,7 @@
 package starter
 
 import (
+	"encoding/json"
 	"regexp"
 	"sort"
 	"strings"
@@ -260,4 +261,30 @@ func decorated(body map[string]any) map[string]any {
 	}
 	out, _ := ctx["page"].(map[string]any)
 	return out
+}
+
+// No shipped sample may reference a media file.
+//
+// The sections sample pointed at /media/placeholder.png in three places and
+// /media/placeholder.mp4 in one. Nothing puts those in a store, so `template
+// use sections` followed by `publish` produced a page with three broken
+// pictures — and the accessibility gate passed it, correctly, because a broken
+// image with alt text is a described image that happens to 404.
+//
+// Found by recording a walkthrough and watching the gallery load as three grey
+// boxes. A sample is the first page most people publish, so it has to be a page
+// that works with nothing else set up.
+func TestNoSampleReferencesAFileTheStoreWillNotHave(t *testing.T) {
+	for _, st := range All() {
+		encoded, err := json.Marshal(st.Sample)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ref := range regexp.MustCompile(`/media/[^"]+`).
+			FindAllString(string(encoded), -1) {
+			t.Errorf("the %s sample points at %s, which no store has. A "+
+				"sample is the first page somebody publishes; it has to work "+
+				"with nothing else set up.", st.Name, ref)
+		}
+	}
 }
