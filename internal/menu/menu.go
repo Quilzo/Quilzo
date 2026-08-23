@@ -352,7 +352,21 @@ func (m *Menu) Render(draft, live map[string]any) []Rendered {
 // pointing at a page that exists in the draft and is not being published is
 // reported here, because the link works for the person who made it and is a
 // 404 for everybody else.
+//
+// # Why nil means nothing rather than everything
+//
+// Render treats a nil map as "do not check this side", which is what the admin
+// wants when it is only interested in the other one. Here nil means the live
+// side could not be read — nothing published yet, or a rollback that took the
+// site back past its first publish — and the honest reading of that is that no
+// page resolves. It used to inherit Render's answer, so `quilzo menu check` on
+// a site with nothing published printed "every navigation entry resolves for a
+// reader": a green light in a pipeline for a navigation where every link 404s,
+// and the one situation where the check was certain to be needed.
 func (s *Set) Broken(live map[string]any) []Problem {
+	if live == nil {
+		live = map[string]any{}
+	}
 	var out []Problem
 	for _, m := range s.Menus {
 		for _, r := range m.Render(nil, live) {
