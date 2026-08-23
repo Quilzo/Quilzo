@@ -82,6 +82,8 @@ func ipfsWrite(root string, args []string) error {
 	fs := flag.NewFlagSet("write", flag.ContinueOnError)
 	tplDir := fs.String("templates", "templates", "where page.html lives")
 	dir := fs.String("o", "site", "write the rendered site here")
+	basePath := fs.String("base-path", "",
+		"serve the bundle from this subdirectory, e.g. /demo2")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -89,6 +91,13 @@ func ipfsWrite(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Under a subdirectory, if that is where it will live.
+	//
+	// Every link a page carries is rooted, so a bundle copied into /demo2 has
+	// working pages and a broken site: the navigation, the pictures and the
+	// stylesheet all resolve one level too high. There was no option for it,
+	// and the alternative was a hand-written sed over the output.
+	files = render.Rebase(files, *basePath)
 	node, err := ipfs.Tree(files)
 	if err != nil {
 		return err
@@ -231,13 +240,21 @@ func renderBundle(root, tplDir string) (map[string][]byte, error) {
 	// page's image reference resolves identically on IPFS.
 	if lib, lerr := openMedia(root); lerr == nil {
 		if all, aerr := lib.List(); aerr == nil {
+			exts := map[string]string{}
 			for _, f := range all {
 				_, body, gerr := lib.Get(f.ID)
 				if gerr != nil {
 					continue
 				}
 				files["media/"+f.ID] = body
+				exts[f.ID] = f.Extension()
 			}
+			// Named by format, because a static host reads the type from the
+			// name. Under a bare hash every asset is served as
+			// application/octet-stream, and a host that sends nosniff — GitHub
+			// Pages does — refuses to render the picture and refuses to play
+			// the film. The server has the format table and does not need this.
+			files = render.Named(files, exts)
 		}
 	}
 	return files, nil

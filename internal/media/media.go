@@ -306,6 +306,22 @@ func (f File) Inline() bool {
 	return ok && fm.Inline
 }
 
+// Extension is the filename suffix for this file's format, including the dot.
+//
+// Exported because a static copy of a site needs it. A host that serves files
+// from disk reads the type from the name, so an asset stored under a bare hash
+// is served as application/octet-stream — and GitHub Pages, like most static
+// hosts, sends X-Content-Type-Options: nosniff, which turns that into a picture
+// the browser refuses to render and a video it refuses to play. The bundle
+// names its assets; the server does not need to, because it has the format
+// table.
+func (f File) Extension() string {
+	if fm, ok := formats[f.Format]; ok {
+		return fm.Ext
+	}
+	return ""
+}
+
 // DownloadName is a safe filename for Content-Disposition.
 //
 // Rebuilt from the id and the format's own extension rather than sanitised from
