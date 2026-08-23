@@ -93,7 +93,8 @@ importing
   quilzo terms list | check                the controlled vocabularies
   quilzo menu list | check                 navigation, and whether it resolves
   quilzo ipfs id                           what the permanent web will call this site
-  quilzo ipfs write -o site                render it for 'ipfs add -r'      
+  quilzo ipfs write -o site                render it for 'ipfs add -r'
+  quilzo ipfs write --base-path /d2       ...to live in a subdirectory
   quilzo ipfs verify CID                   check what a pinning service claimed
 
 templates and design
