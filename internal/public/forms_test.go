@@ -183,3 +183,60 @@ func TestTheResultIsNotCached(t *testing.T) {
 			"next person is a confusing outcome", cc)
 	}
 }
+
+// A form on a published page can actually be submitted.
+//
+// internal/form refuses a submission whose timing stamp is missing, and one
+// whose stamp is more than a day old. The shipped layouts read that value from
+// the page — from content, published once — so a form either carried no stamp
+// and refused every submission, or carried a stamp that went stale a day later
+// and refused every submission after that. Both failures answer "this
+// submission was not accepted", which is deliberately uninformative because it
+// is what a spam script is told.
+//
+// The stamp is a fact about the render, so it comes from the render context.
+// This asserts the rendered page carries a fresh one, which is the only part a
+// layout cannot get wrong on its own.
+func TestARenderedFormCarriesAFreshTimingStamp(t *testing.T) {
+	now := time.Now()
+	src := render.Sources{Name: "Aster & Alum", Now: func() time.Time { return now }}
+	ctx, err := src.For("wholesale", map[string]any{
+		"title": "Wholesale",
+		"form":  "wholesale",
+		"fields": []any{map[string]any{
+			"name": "shop", "label": "Shop", "type": "text"}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamp, ok := ctx["stamp"]
+	if !ok {
+		t.Fatal("the render context carries no stamp, so a layout has nothing " +
+			"to put in the field internal/form requires")
+	}
+	// A string, deliberately: the template language renders decoded-JSON kinds,
+	// and an int64 rendered as nothing — value="" in the markup, every
+	// submission refused. Found by reading the served page.
+	got, ok := stamp.(string)
+	if !ok {
+		t.Fatalf("the stamp is %T, which the template language renders as "+
+			"nothing; the field arrives empty and the submission is refused",
+			stamp)
+	}
+	if got != fmt.Sprint(now.Unix()) {
+		t.Errorf("the stamp is %s, not this render's time %d", got, now.Unix())
+	}
+
+	// And a submission carrying it is accepted, which is the whole point.
+	f := &form.Form{
+		Name: "wholesale", Notice: "Kept for two years.",
+		Fields: []form.Field{{Name: "shop", Label: "Shop", Kind: form.Line,
+			Required: true}},
+	}
+	if _, err := form.Accept(f, map[string]string{
+		"shop":          "Tolgus Cloth",
+		form.StampField: fmt.Sprint(got),
+	}, "127.0.0.1", now.Add(30*time.Second)); err != nil {
+		t.Errorf("a submission carrying the rendered stamp was refused: %v", err)
+	}
+}

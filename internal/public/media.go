@@ -1,9 +1,11 @@
 package public
 
 import (
+	"bytes"
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/media"
 )
@@ -83,12 +85,26 @@ func (st *Site) mediaFile(w http.ResponseWriter, r *http.Request) {
 	// something derived from it, and different content is a different URL.
 	// That is what makes this cacheable forever with nothing to purge — the
 	// same property the pages have, for the same reason.
-	etag := `"` + f.ID + `"`
-	if match := r.Header.Get("If-None-Match"); match == etag {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-	h.Set("ETag", etag)
+	h.Set("ETag", `"`+f.ID+`"`)
 	h.Set("Cache-Control", "public, max-age=31536000, immutable")
-	_, _ = w.Write(body)
+
+	// Served through ServeContent, for the ranges.
+	//
+	// This used to write the whole body for every request and advertise no
+	// Accept-Ranges. Images did not care. Audio and video did: Safari asks for
+	// bytes 0-1 before it will play anything and treats a 200 carrying the
+	// whole file as a server that cannot be seeked, so it does not play at all
+	// — and this program ships a `video` section kind whose entire job is to
+	// put a file from this origin in a page. Seeking was broken everywhere
+	// else for the same reason.
+	//
+	// ServeContent also answers If-None-Match and If-Range against the ETag
+	// set above, and handles HEAD, which is why the hand-rolled 304 is gone.
+	modtime := time.Time{}
+	if f.UploadedAt > 0 {
+		modtime = time.Unix(f.UploadedAt, 0).UTC()
+	}
+	// The name is passed for nothing: ServeContent uses it only to guess a
+	// content type, and the type is already set from the format table above.
+	http.ServeContent(w, r, "", modtime, bytes.NewReader(body))
 }
