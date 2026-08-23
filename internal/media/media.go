@@ -136,28 +136,44 @@ var formats = map[string]Format{
 		Magic:  [][]byte{[]byte("%PDF-")},
 		Verify: verifyPDF,
 	},
+	// Audio and video are inline.
+	//
+	// They were attachments, which is the setting for a format this program
+	// cannot reason about — and it shipped a video section kind that puts one
+	// of these in a page. A browser ignores Content-Disposition on a media
+	// subresource, so the section worked by accident; a reader following a
+	// direct link got a download of a file called 3a2ca8bef9b8724d.mp4.
+	//
+	// The risk class is the image's, not the PDF's: these are handed to a media
+	// decoder, not to a scripting engine, and every one of them is decoded
+	// here before it is stored.
 	"mp4": {
 		MIME: "video/mp4", Kind: Video, Ext: ".mp4", MaxBytes: maxAV,
+		Inline: true,
 		Magic:  [][]byte{},
 		Verify: verifyISOBMFF,
 	},
 	"webm": {
 		MIME: "video/webm", Kind: Video, Ext: ".webm", MaxBytes: maxAV,
+		Inline: true,
 		Magic:  [][]byte{{0x1A, 0x45, 0xDF, 0xA3}}, // EBML
 		Verify: verifyEBML,
 	},
 	"mp3": {
 		MIME: "audio/mpeg", Kind: Audio, Ext: ".mp3", MaxBytes: maxAV,
+		Inline: true,
 		Magic:  [][]byte{[]byte("ID3"), {0xFF, 0xFB}, {0xFF, 0xF3}, {0xFF, 0xF2}},
 		Verify: verifyMP3,
 	},
 	"ogg": {
 		MIME: "audio/ogg", Kind: Audio, Ext: ".ogg", MaxBytes: maxAV,
+		Inline: true,
 		Magic:  [][]byte{[]byte("OggS")},
 		Verify: func(b []byte) error { return nil },
 	},
 	"wav": {
 		MIME: "audio/wav", Kind: Audio, Ext: ".wav", MaxBytes: maxAV,
+		Inline: true,
 		Magic:  [][]byte{[]byte("RIFF")},
 		Verify: verifyWAV,
 	},

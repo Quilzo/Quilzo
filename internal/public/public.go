@@ -98,6 +98,16 @@ type Site struct {
 	// built-in stacks — and the only alternative to a self-hosted face, because
 	// there is deliberately no way to name a remote one.
 	Fonts *webfont.Set
+	// Background and ThemeColour are what an installed app paints before the
+	// page arrives, and what the browser tints its chrome with.
+	//
+	// From this site's theme. They used to be two constants — white, and the
+	// shipped palette's teal — so every installed site opened on a white
+	// splash screen under a title bar the colour of a product it had been
+	// themed away from. Empty falls back to those constants, because a
+	// deployment that has not been given a theme still needs an answer.
+	Background  string
+	ThemeColour string
 	// Stylesheet is served at /site.css, held in memory. Empty means the route
 	// 404s rather than falling back to something: a site whose stylesheet
 	// silently comes from somewhere else is a site whose appearance has an
@@ -711,6 +721,14 @@ func insertBeforeHead(html, markup string) string {
 	return html[:head] + markup + "\n" + html[head:]
 }
 
+// firstColour is the configured colour, or the fallback when there is none.
+func firstColour(configured, fallback string) string {
+	if c := strings.TrimSpace(configured); c != "" {
+		return c
+	}
+	return fallback
+}
+
 // manifest describes the site to a browser being asked to install it.
 func (st *Site) manifest(w http.ResponseWriter, r *http.Request) {
 	doc := map[string]any{
@@ -720,8 +738,8 @@ func (st *Site) manifest(w http.ResponseWriter, r *http.Request) {
 		"start_url":        "/",
 		"scope":            "/",
 		"display":          "standalone",
-		"background_color": "#ffffff",
-		"theme_color":      "#0b5c6b",
+		"background_color": firstColour(st.Background, "#ffffff"),
+		"theme_color":      firstColour(st.ThemeColour, "#0b5c6b"),
 		// An installable app has to work offline, and this is the page that
 		// makes that true rather than a promise.
 		"icons": []map[string]any{},

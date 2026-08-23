@@ -337,25 +337,53 @@ func TestDownloadNamesAreBuiltNotCleaned(t *testing.T) {
 
 // -- serving decisions -------------------------------------------------------
 
-// Only formats this package fully understands may render in the site's origin.
-// Everything else is a download, so a format with a parser surface nobody here
-// has audited cannot become a page.
-func TestOnlyImagesRenderInline(t *testing.T) {
+// What may render in the site's origin, and what has to be a download.
+//
+// This used to say images and nothing else, on the grounds that a format with
+// an unaudited parser must not become a page. Two things were wrong with using
+// Content-Disposition to enforce that.
+//
+// It does not enforce it. A browser ignores Content-Disposition on a media
+// subresource: <video src> and <audio src> load and decode the file whatever
+// this header says. So the parser was reached either way and the header bought
+// nothing.
+//
+// And this program ships a video section kind whose entire job is to put a file
+// from this origin into a page. Marking those files as attachments meant the
+// documented feature worked by accident, and a reader following a direct link
+// to one got a download named after its hash.
+//
+// So the rule is by what handles the bytes. An image, an audio file or a video
+// goes to a media decoder, and every one of them is decoded here before it is
+// stored. A PDF goes to a viewer with a scripting engine attached, and text in
+// the site's own origin is a page nobody wrote; both stay downloads.
+func TestOnlyMediaRendersInline(t *testing.T) {
 	inline := map[string]bool{}
 	for name, fm := range formats {
-		if fm.Inline {
-			inline[name] = true
-			if fm.Kind != Image {
-				t.Errorf("%s is served inline but is a %s", name, fm.Kind)
-			}
+		if !fm.Inline {
+			continue
+		}
+		inline[name] = true
+		switch fm.Kind {
+		case Image, Audio, Video:
+			// Handed to a decoder, and decoded here before storage.
+		default:
+			t.Errorf("%s is served inline and is a %s; only media may render "+
+				"in this origin", name, fm.Kind)
 		}
 	}
-	if !inline["png"] || !inline["jpeg"] {
-		t.Error("images should be renderable")
+	for _, want := range []string{"png", "jpeg", "mp4", "webm", "mp3"} {
+		if !inline[want] {
+			t.Errorf("%s should render in a page: a section kind puts one "+
+				"there, and a download instead is a feature that does not work",
+				want)
+		}
 	}
-	if inline["pdf"] {
-		t.Error("a PDF renders in the page's origin with a scripting engine " +
-			"attached; it must be a download")
+	for _, no := range []string{"pdf", "txt", "md", "csv"} {
+		if inline[no] {
+			t.Errorf("%s must be a download: it is not handed to a media "+
+				"decoder, and in this origin it is a page nobody wrote", no)
+		}
 	}
 }
 

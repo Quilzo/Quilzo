@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -280,11 +281,16 @@ func (s *Server) handleMediaFile(w http.ResponseWriter, r *http.Request) {
 	// can be cached hard and never purged.
 	h.Set("ETag", `"`+f.ID+`"`)
 	h.Set("Cache-Control", "private, max-age=31536000, immutable")
-	if match := r.Header.Get("If-None-Match"); match == `"`+f.ID+`"` {
-		w.WriteHeader(http.StatusNotModified)
-		return
+	// Through ServeContent, so a preview of a film can be scrubbed and Safari
+	// will play it at all: it asks for a byte range before it starts and gives
+	// up on a server that answers 200 with the whole file. Conditional
+	// requests are answered against the ETag set above, which is what the
+	// hand-rolled 304 here used to do.
+	modtime := time.Time{}
+	if f.UploadedAt > 0 {
+		modtime = time.Unix(f.UploadedAt, 0).UTC()
 	}
-	_, _ = w.Write(body)
+	http.ServeContent(w, r, "", modtime, bytes.NewReader(body))
 }
 
 func (s *Server) mediaRedirect(w http.ResponseWriter, r *http.Request, msg, errMsg string) {
