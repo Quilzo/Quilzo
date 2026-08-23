@@ -1,7 +1,9 @@
 package main
 
 import (
+	"github.com/quilzo/quilzo/internal/seo"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -175,4 +177,48 @@ func mustRead(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// A redirect file that says "status" is refused, not quietly reinterpreted.
+//
+// Every other tool's redirect file spells the kind of move as a status code, so
+// that is what somebody writes here. An unknown field decoded to nothing and the
+// entry served a 307 — a temporary redirect — while its own file said 301. A
+// temporary redirect updates no bookmark and no search index, so the move the
+// file describes never actually happens, and the file looks correct.
+func TestARedirectFileWithAStatusFieldIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "redirects.json")
+	if err := os.WriteFile(path, []byte(
+		`{"redirects":[{"from":"/fabric","to":"/shop","status":301}]}`),
+		0o600); err != nil {
+		t.Fatal(err)
+	}
+	var file struct {
+		Redirects []seo.Redirect `json:"redirects"`
+	}
+	err := loadRedirectFile(path, &file)
+	if err == nil {
+		t.Fatal("a redirect written the way every other tool writes one was " +
+			"accepted and ignored, so the move it describes does not happen")
+	}
+	for _, want := range []string{"permanent", "308", "307"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not mention %q, so the next attempt is "+
+				"another guess: %v", want, err)
+		}
+	}
+
+	// And the shape it does read still loads.
+	if err := os.WriteFile(path, []byte(
+		`{"redirects":[{"from":"/fabric","to":"/shop","permanent":true,`+
+			`"note":"renamed in 2024"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := loadRedirectFile(path, &file); err != nil {
+		t.Fatalf("a valid redirect file was refused: %v", err)
+	}
+	if len(file.Redirects) != 1 || !file.Redirects[0].Permanent {
+		t.Errorf("the redirect did not load as permanent: %+v", file.Redirects)
+	}
 }

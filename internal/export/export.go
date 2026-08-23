@@ -321,6 +321,21 @@ func recordFile(coll string, r Record) (File, error) {
 	}, nil
 }
 
+// flowJSON writes a nested value as compact JSON on one line.
+//
+// JSON is a subset of YAML 1.2, so a flow mapping is read as a mapping by every
+// front-matter parser in use. It stays on one line because the alternative is a
+// hand-rolled block emitter, and indentation is exactly where a hand-rolled
+// emitter is wrong.
+func flowJSON(v any) (string, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("this value cannot be written as front matter: %w",
+			err)
+	}
+	return string(b), nil
+}
+
 // yamlScalar renders a value as a quoted YAML scalar.
 //
 // Always quoted, always double, with the two characters that matter escaped.
@@ -349,8 +364,23 @@ func yamlScalar(v any) (string, error) {
 			parts = append(parts, s)
 		}
 		return "[" + strings.Join(parts, ", ") + "]", nil
+	case map[string]any:
+		// A nested value, written as JSON — which is valid YAML flow style, so
+		// Hugo, Astro, Eleventy and Jekyll all read it back as the map it is.
+		//
+		// This used to refuse. A page built with the shipped layouts has a hero
+		// and a list of sections, both of them maps, so `export markdown`
+		// failed outright on the shape this product tells people to write — and
+		// the export section of the help says "there is no lock-in here, and
+		// this is how it is proved". It proved the opposite for every site with
+		// a hero on its front page.
+		//
+		// Marshalled by encoding/json rather than emitted by hand: the quoting
+		// and escaping rules are the part that goes wrong, and they are already
+		// written.
+		return flowJSON(t)
 	}
-	return "", fmt.Errorf("%T cannot be written as flat front matter", v)
+	return "", fmt.Errorf("%T cannot be written as front matter", v)
 }
 
 func quoteYAML(s string) string {

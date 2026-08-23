@@ -25,6 +25,17 @@ func loadProvenance(root string) (*provenance.Index, error) {
 //
 // The hash is what a provenance record binds to, so this is the join between
 // "what the site says" and "how it came to say it".
+// pageHashes is every page in a commit, and its object id.
+//
+// Pages only: a records collection is a tree sharing the same root, and
+// returning it made "data" a page to everything that reads this. `lang check`
+// reported a missing French translation for a page that does not exist and
+// could never be written, and `provenance check` listed it as content nobody
+// had recorded — both of them permanently, on any site holding records.
+//
+// Filtered by what the object is rather than by name, the same way
+// site.PagesAt does it: a list of reserved names has to be updated by whoever
+// adds the next branch, and they will not know to.
 func pageHashes(s *store.Store, ref string) (map[string]string, error) {
 	cid := s.GetRef(ref)
 	if cid == "" {
@@ -34,7 +45,18 @@ func pageHashes(s *store.Store, ref string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.GetTree(c.Tree)
+	tree, err := s.GetTree(c.Tree)
+	if err != nil {
+		return nil, err
+	}
+	pages := make(map[string]string, len(tree))
+	for name, oid := range tree {
+		if s.IsTree(oid) {
+			continue
+		}
+		pages[name] = oid
+	}
+	return pages, nil
 }
 
 func cmdProvenance(root string, args []string) error {

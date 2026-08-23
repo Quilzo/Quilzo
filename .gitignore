@@ -14,8 +14,14 @@ bin/
 .quilzo/
 
 # What a running site writes beside its store.
-templates/
-export/
+#
+# Anchored to the root. Unanchored, "export/" matches a directory of that name
+# at any depth — including internal/export, which is source: a new file there
+# was invisible to git, silently, and only the already-tracked ones showed up.
+# Same for templates, which is also the name of a directory a package could
+# reasonably want.
+/templates/
+/export/
 *.log
 
 # Python packaging left over from an earlier life. Named rather than covered by

@@ -415,3 +415,43 @@ func TestAnUnreadablePolicyRefusesEverything(t *testing.T) {
 		t.Error("a read was allowed against an unreadable policy")
 	}
 }
+
+// The first token an admin issues can administer.
+//
+// `token issue` defaulted to reader, and the route there is the fix line
+// `posture scan` prints: grant yourself admin, which turns identity enforcement
+// on, then issue a token because the next command now needs one. That token
+// could not issue another — issuing needs admin — so the store had exactly one
+// credential, it was read-only, and there was no way forward from inside the
+// tool. Reproduced by following that advice on a real store.
+//
+// Without --role a token now acts as the principal does; --role, --read-only
+// and --api all still narrow it.
+func TestATokenDefaultsToWhatItsPrincipalHolds(t *testing.T) {
+	pol := &auth.Policy{}
+	if err := pol.Grant(auth.Binding{
+		Principal: "rue", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := pol.Grant(auth.Binding{
+		Principal: "ida", Role: auth.RoleAuthor, Resource: "/workshops"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := strongestRole(pol, "rue", "/"); got != auth.RoleAdmin {
+		t.Errorf("an admin's token would carry %q, so the operator cannot "+
+			"issue another one", got)
+	}
+	if got := strongestRole(pol, "ida", "/workshops"); got != auth.RoleAuthor {
+		t.Errorf("ida holds author on /workshops; got %q", got)
+	}
+	// Scoped bindings do not leak upward.
+	if got := strongestRole(pol, "ida", "/"); got != auth.RoleNone {
+		t.Errorf("a binding on /workshops gave %q on /", got)
+	}
+	// Somebody with no binding gets nothing, so the reader default still
+	// applies to a principal the policy has never heard of.
+	if got := strongestRole(pol, "nobody", "/"); got != auth.RoleNone {
+		t.Errorf("an unknown principal got %q", got)
+	}
+}
