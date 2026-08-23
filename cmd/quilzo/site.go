@@ -75,6 +75,17 @@ func cmdSite(root string, args []string) error {
 	st := public.New(s, design.Layouts)
 	st.Fonts = design.Fonts
 	st.Stylesheet = design.Stylesheet
+	// The installed app's splash and chrome, from the same tokens the
+	// stylesheet is generated from — so a themed site does not open on a white
+	// screen under somebody else's accent colour.
+	if design.Theme != nil {
+		if v, ok := design.Theme.Value("surface", false); ok {
+			st.Background = v
+		}
+		if v, ok := design.Theme.Value("primary", false); ok {
+			st.ThemeColour = v
+		}
+	}
 	// The configured name, which the flag overrides for one run. Keeping it in
 	// configuration is what lets the accessibility gate, the preview and the
 	// exports render the same page this serves.
@@ -355,7 +366,12 @@ func cmdSite(root string, args []string) error {
 		var file struct {
 			Redirects []seo.Redirect `json:"redirects"`
 		}
-		if err := loadJSON(*redirectFile, &file); err != nil {
+		// Strictly, because a field this does not know is a redirect that does
+		// something other than what the file says. `"status": 301` is what
+		// every other tool's redirect file looks like, and it was accepted and
+		// ignored: the entry served a 307 while the file said permanent, so
+		// nothing updated a bookmark or a search index. Found by writing one.
+		if err := loadRedirectFile(*redirectFile, &file); err != nil {
 			return err
 		}
 		m, err := seo.NewMap(file.Redirects)

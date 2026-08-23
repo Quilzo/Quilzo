@@ -87,8 +87,19 @@ func TestContradictoryTermsAreRefused(t *testing.T) {
 // A closed vocabulary, because the value is published to third parties who act
 // on it. In an open list a typo becomes a grant nobody notices: "trian" in the
 // prohibits list is a site that believes it refused training and did not.
+//
+// The refusal moved earlier. It used to happen only here, when the public
+// server assembled the licence — so `config set licence.prohibits trian`
+// reported success and left a site whose server would not start. The setting
+// validates the vocabulary itself now, which is the boundary this asserts;
+// licenceFrom keeps its own check for the contradiction across the two keys,
+// which nothing looking at one setting can see.
 func TestATypoInTheVocabularyIsRefused(t *testing.T) {
-	_, err := licenceFrom(cfgWith(t, "licence.prohibits", "trian"))
+	s, ok := config.Lookup("licence.prohibits")
+	if !ok {
+		t.Fatal("licence.prohibits is not a setting")
+	}
+	err := s.Validate("trian")
 	if err == nil {
 		t.Fatal("accepted \"trian\" as an automated use, so a site could " +
 			"believe it refused training while permitting it")

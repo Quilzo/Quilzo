@@ -2,7 +2,9 @@ package main
 
 import (
 	"testing"
+	"time"
 
+	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -146,5 +148,57 @@ func TestEachContentIsAttributedToExactlyOneCommit(t *testing.T) {
 			t.Errorf("%s is attributed to %d commits; content is introduced "+
 				"once", key, n)
 		}
+	}
+}
+
+// A records collection is not a page.
+//
+// pageHashes returned the commit's tree as it stood, and a collection is a tree
+// under the same root — so "data" came back as a page. `lang check` then
+// reported a missing French translation for it and `provenance check` listed it
+// as content nobody had recorded, on every site holding a single record, with
+// no way to satisfy either. Found while translating two pages of a demo site
+// and counting what was left.
+func TestARecordsCollectionIsNotAPage(t *testing.T) {
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.SaveDraft(s, map[string]any{
+		"index": map[string]any{"title": "Home"},
+	}, "the first page", "dana"); err != nil {
+		t.Fatal(err)
+	}
+
+	// A record, written through the real API, which puts a tree beside the
+	// pages.
+	base := ""
+	if cid := s.GetRef(site.RefDraft); cid != "" {
+		c, cerr := s.GetCommit(cid)
+		if cerr != nil {
+			t.Fatal(cerr)
+		}
+		base = c.Tree
+	}
+	tree, _, err := collection.Put(s, base, "cloth", collection.Record{
+		Fields: map[string]any{"slug": "indigo-linen", "name": "Indigo linen"},
+	}, time.Unix(1787000000, 0), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := commitTree(t.TempDir(), s, tree, "add a record", "dana"); err != nil {
+		t.Fatal(err)
+	}
+
+	pages, err := pageHashes(s, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, listed := pages["data"]; listed {
+		t.Error("the records collection is listed as a page, so every check " +
+			"that walks pages reports a page nobody can write or translate")
+	}
+	if _, listed := pages["index"]; !listed {
+		t.Error("the real page is missing")
 	}
 }

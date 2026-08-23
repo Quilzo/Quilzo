@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -48,6 +49,40 @@ func loadJSON(path string, into any) error {
 		return err
 	}
 	return json.Unmarshal(b, into)
+}
+
+// loadRedirectFile reads the redirect map, refusing a field it does not know.
+//
+// Every other redirect file in the world says `"status": 301`, so that is what
+// people write here — and an unknown field decoded silently to nothing, leaving
+// an entry that served a temporary redirect while its file said permanent.
+// Nothing updates a bookmark or a search index on a 307, so the move never
+// finished and the file said it had.
+//
+// Strict for this file and not for the others on purpose: this one is written by
+// hand, by somebody who has written a different tool's version of it.
+func loadRedirectFile(path string, into any) error {
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(into); err != nil {
+		if strings.Contains(err.Error(), `unknown field "status"`) {
+			return fmt.Errorf(
+				"%s: a redirect says \"status\", which this does not read. "+
+					"Say \"permanent\": true for a move that is final and "+
+					"false for one that is not — 308 and 307, which preserve "+
+					"the request method where 301 and 302 let a browser turn "+
+					"a POST into a GET", path)
+		}
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	return nil
 }
 
 func saveJSON(path string, v any) error {
@@ -369,6 +404,26 @@ recovered from this machine.
 	}
 }
 
+// strongestRole is the highest role a principal holds on a path, ignoring
+// denials — which Evaluate applies at decision time and which do not change
+// what the credential should be able to attempt.
+func strongestRole(pol *auth.Policy, principal, resource string) auth.Role {
+	best := auth.RoleNone
+	for _, b := range pol.Snapshot() {
+		if b.Principal != principal || b.Deny {
+			continue
+		}
+		if b.Resource != "/" && b.Resource != resource &&
+			!strings.HasPrefix(resource, strings.TrimSuffix(b.Resource, "/")+"/") {
+			continue
+		}
+		if b.Role.AtLeast(best) {
+			best = b.Role
+		}
+	}
+	return best
+}
+
 func tokenIssue(root string, args []string) error {
 	fs := flag.NewFlagSet("issue", flag.ContinueOnError)
 	principal := fs.String("principal", "", "who the token acts as")
@@ -393,6 +448,34 @@ func tokenIssue(root string, args []string) error {
 	}
 	if strings.TrimSpace(*principal) == "" {
 		return fmt.Errorf("--principal is required: a token acts as somebody")
+	}
+
+	// Without --role, the token acts as the principal actually can.
+	//
+	// It defaulted to reader, and that default locked people out of their own
+	// stores. Granting the first binding turns identity enforcement on, so the
+	// next command needs a token; the obvious next command is this one; and the
+	// reader token it produced could not issue another, because issuing needs
+	// admin. One store, one credential, no way forward — and the route there is
+	// the fix line that `posture scan` prints.
+	//
+	// "who the token acts as" is the flag's own description, so acting as that
+	// principal is the answer that matches it. Narrowing is still explicit:
+	// --role reader, --read-only and --api all still do what they say.
+	explicitRole := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "role" {
+			explicitRole = true
+		}
+	})
+	fromPolicy := false
+	if !explicitRole {
+		if pol, perr := loadPolicy(root); perr == nil {
+			if held := strongestRole(pol, *principal, *on); held != auth.RoleNone {
+				*role = string(held)
+				fromPolicy = true
+			}
+		}
 	}
 
 	cfg, err := loadConfig(root)
@@ -460,6 +543,19 @@ func tokenIssue(root string, args []string) error {
 	fmt.Printf("%s%s%s\n", bold, secret, reset)
 	fmt.Printf("\n  %sid %s · %s on %s · expires %s%s\n", dim, tok.ID, tok.Role,
 		tok.Resource, time.Unix(tok.ExpiresAt, 0).UTC().Format("2006-01-02"), reset)
+	if fromPolicy {
+		fmt.Printf("  %sthe role is what %s holds in the policy; --role narrows "+
+			"it%s\n", dim, tok.Principal, reset)
+	}
+	// The bootstrap closes the moment a token exists, so a first token that
+	// cannot manage tokens is the last one anybody can issue from here. Said
+	// out loud, because the recovery is editing JSON by hand.
+	if len(ts.Tokens) == 1 && !tok.Role.AtLeast(auth.RoleAdmin) {
+		fmt.Printf("\n  %sthis is the only token, and %s cannot issue "+
+			"another%s\n", yellow, tok.Role, reset)
+		fmt.Printf("  %sissue one with --role admin first if you still need "+
+			"to administer this store%s\n", dim, reset)
+	}
 	if !tok.Scope.Empty() {
 		// Shown at issue time because this is the only moment anybody looks.
 		// A scope nobody can see is a scope nobody trusts, and an operator who

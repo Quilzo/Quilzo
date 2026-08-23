@@ -665,6 +665,32 @@ func (s Setting) Validate(v string) error {
 			return fmt.Errorf("the brand name is %d characters and the limit is 40",
 				len([]rune(v)))
 		}
+		if s.Key == "licence.permits" || s.Key == "licence.prohibits" {
+			// The crawl-use vocabulary, checked where the value is written.
+			//
+			// It was checked only when the public server started, so
+			// `config set licence.permits ai-training-with-attribution`
+			// reported success and the site then refused to boot with a
+			// message about a vocabulary — a store that publishes and a server
+			// that will not start, from a command that said it worked.
+			//
+			// The server keeps its own check: it also has to catch a use named
+			// in both lists at once, which nothing looking at one key can see.
+			for _, use := range strings.Split(v, ",") {
+				use = strings.TrimSpace(use)
+				if use == "" {
+					continue
+				}
+				switch use {
+				case "search", "train", "ai-summarize", "none":
+				default:
+					return fmt.Errorf(
+						"%q is not an automated use this can express; the "+
+							"vocabulary is search, train, ai-summarize and "+
+							"none", use)
+				}
+			}
+		}
 		if s.Key == "site.csp.mode" {
 			switch v {
 			case "enforce", "report-only", "off":
