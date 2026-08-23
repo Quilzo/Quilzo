@@ -218,8 +218,11 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		}
 		var b strings.Builder
 		for _, f := range files {
-			fmt.Fprintf(&b, "%s %s %s %dx%d %q\n", f.ID[:12], f.Name, f.Format,
-				f.Width, f.Height, f.Alt)
+			// The path, not a short id. Whatever reads this list is going to
+			// put the answer in a page, and a shortened id resolves to nothing
+			// — so the useful form is the one a page can carry.
+			fmt.Fprintf(&b, "/media/%s %s %s %dx%d %q\n", f.ID, f.Name,
+				f.Format, f.Width, f.Height, f.Alt)
 		}
 		return strings.TrimSpace(b.String()), nil
 	})

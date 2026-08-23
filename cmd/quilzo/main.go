@@ -84,8 +84,9 @@ leaving (there is no lock-in here, and this is how it is proved)
 
 importing
   quilzo import FILE [--from wordpress]    bring in another CMS's export
-  quilzo media add FILE --alt "..."        validate and accept an upload
+  quilzo media add FILE --alt "..."        check and store an upload
   quilzo media get https://... --alt "..." fetch one, checked at connect time
+  quilzo media list                        what is stored, and its path
   quilzo media formats                     what is accepted, and what is not
   quilzo form list | expire | erase VALUE  forms, retention and erasure
   quilzo listing list | run NAME           declared queries a page can show
