@@ -199,12 +199,94 @@ func cmdMedia(root string, args []string) error {
 		return mediaGet(root, args[1:])
 	case "list":
 		return mediaList(root)
+	case "remove":
+		return mediaRemove(root, args[1:])
 	case "formats":
 		return mediaFormats()
 	default:
-		return fmt.Errorf(
-			"unknown media command %q; try add, get, list or formats", args[0])
+		return fmt.Errorf("unknown media command %q; try add, get, list, "+
+			"remove or formats", args[0])
 	}
+}
+
+// mediaRemove takes a file out of the library.
+//
+// The admin has had this button since the library existed and the command line
+// had nothing: files could be added from three interfaces and removed from one,
+// so an operator working in a terminal had no way to undo an upload. The
+// library's own Remove is what the button calls; this calls the same function.
+//
+// A file the live site uses is refused unless somebody says otherwise. The
+// library's comment argues that a 404 is better than an image that silently
+// changed, and that is right about the storage layer — but a command that
+// quietly breaks a published page is not the same thing as a visible failure,
+// and the check is cheap because `quilzo rights` already walks the content for
+// image references.
+func mediaRemove(root string, args []string) error {
+	pos, flags := leadingArgs(args, 1)
+	fs := flag.NewFlagSet("remove", flag.ContinueOnError)
+	force := fs.Bool("force", false,
+		"remove it even though a published page uses it")
+	if err := fs.Parse(flags); err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return fmt.Errorf("usage: quilzo media remove <id> [--force]")
+	}
+	id := pos[0]
+
+	lib, err := openMedia(root)
+	if err != nil {
+		return fmt.Errorf("the media library could not be opened: %w", err)
+	}
+	f, err := lib.Stat(id)
+	if err != nil {
+		return err
+	}
+
+	if !*force {
+		if used, uerr := mediaInUse(root, id); uerr == nil && used {
+			return errBlocked{fmt.Errorf(
+				"%s is used by the live site. Removing it would leave a "+
+					"published page pointing at a 404.\n"+
+					"  Publish a page that does not use it, or pass --force",
+				short(id))}
+		}
+	}
+
+	if err := lib.Remove(id); err != nil {
+		return err
+	}
+	record(root, resolveCaller(root, "").auditRecord("media.remove", "/",
+		audit.Success, map[string]string{"id": short(id), "file": f.Name}))
+	if w.JSON(map[string]any{"removed": id, "name": f.Name}) {
+		return nil
+	}
+	w.Human("removed %s%s%s\n", bold, f.Name, reset)
+	w.Human("  %sanything still pointing at it now gets a 404, which is "+
+		"visible%s\n", dim, reset)
+	return nil
+}
+
+// mediaInUse reports whether the live content references an asset.
+//
+// Built on the same walk `quilzo rights` uses, so "in use" means here exactly
+// what it means there.
+func mediaInUse(root, id string) (bool, error) {
+	s, err := open(root)
+	if err != nil {
+		return false, err
+	}
+	lib, err := openMedia(root)
+	if err != nil {
+		return false, err
+	}
+	uses, err := assetUses(s, lib, site.RefLive)
+	if err != nil {
+		return false, err
+	}
+	_, used := uses[id]
+	return used, nil
 }
 
 // mediaList prints what the library holds.

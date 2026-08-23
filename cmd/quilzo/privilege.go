@@ -198,6 +198,7 @@ var commandNeeds = map[string]need{
 	"schedule list":    {action: auth.ActView},
 	"media formats":    {action: auth.ActView},
 	"media list":       {action: auth.ActView},
+	"media remove":     {action: auth.ActEditDraft},
 	"lang check":       {action: auth.ActView},
 	"locales check":    {action: auth.ActView},
 	"posture scan":     {action: auth.ActView},
