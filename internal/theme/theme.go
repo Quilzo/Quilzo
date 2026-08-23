@@ -256,9 +256,16 @@ func Lookup(name string) (Token, bool) {
 }
 
 var (
+	// Five decimal places, not three.
+	//
+	// Three refused 1.0625rem — seventeen pixels at a sixteen pixel root, and
+	// the value this program itself ships as text-base. A default the validator
+	// will not accept is a default nobody can type back, and rem arithmetic
+	// from pixel sizes lands on four places routinely: 0.9375, 1.0625, 1.6875.
+	// The bound is here to keep the string short, and five keeps it short.
 	reHex    = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
-	reLength = regexp.MustCompile(`^-?(?:0|[1-9][0-9]{0,3})(?:\.[0-9]{1,3})?(?:rem|em|px|ch|%)?$`)
-	reRatio  = regexp.MustCompile(`^(?:0|[1-9][0-9]{0,2})(?:\.[0-9]{1,3})?$`)
+	reLength = regexp.MustCompile(`^-?(?:0|[1-9][0-9]{0,3})(?:\.[0-9]{1,5})?(?:rem|em|px|ch|%)?$`)
+	reRatio  = regexp.MustCompile(`^(?:0|[1-9][0-9]{0,2})(?:\.[0-9]{1,5})?$`)
 	reFamily = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9 _-]{0,40}$`)
 )
 

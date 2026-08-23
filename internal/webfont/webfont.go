@@ -112,6 +112,18 @@ func Load(dir string) (*Set, error) {
 	sort.Strings(names)
 
 	for _, name := range names {
+		if paperwork(name) {
+			// A licence beside the font is the font's licence.
+			//
+			// The SIL Open Font Licence requires its text to travel with the
+			// files, so the obvious place to put it is the directory holding
+			// them — and this said "OFL.txt is not a .woff2 and was not
+			// served" three times, scolding an operator for complying with the
+			// terms of the thing they installed. Nothing is served from these
+			// files either way; the difference is whether doing it right
+			// produces a warning.
+			continue
+		}
 		if !strings.HasSuffix(strings.ToLower(name), ".woff2") {
 			set.Warnings = append(set.Warnings, fmt.Sprintf(
 				"%s is not a .woff2 and was not served. WOFF2 only: it is the "+
@@ -132,6 +144,27 @@ func Load(dir string) (*Set, error) {
 		set.faces = append(set.faces, face)
 	}
 	return set, nil
+}
+
+// paperwork reports whether a file is documentation rather than a face.
+//
+// Deliberately narrow: text and markdown, or one of the conventional licence
+// names. A .ttf or a .woff still earns its warning, because that is somebody
+// expecting a font to be served and it will not be.
+func paperwork(name string) bool {
+	lower := strings.ToLower(name)
+	if strings.HasSuffix(lower, ".txt") || strings.HasSuffix(lower, ".md") {
+		return true
+	}
+	stem := strings.TrimSuffix(lower, filepath.Ext(lower))
+	for _, prefix := range []string{"license", "licence", "ofl", "copying",
+		"readme", "authors", "notice", "changelog"} {
+		if stem == prefix || strings.HasPrefix(stem, prefix+"-") ||
+			strings.HasPrefix(stem, prefix+"_") {
+			return true
+		}
+	}
+	return false
 }
 
 // parse validates one file and reads its contract off the filename.

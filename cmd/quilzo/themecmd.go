@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -456,14 +457,27 @@ func reportAdvisories(findings []theme.Finding) {
 
 // splitThemeArgs separates positional arguments from flags, so
 // `theme set primary '#123456' --dir x` works in either order.
+// splitThemeArgs separates TOKEN VALUE pairs from the flags after them.
+//
+// A leading "-" is not enough to make an argument a flag. tracking-display is
+// a letter spacing and its documentation says negative tightens, so
+// `theme set tracking-display -0.02em` is the ordinary way to use it — and this
+// used to hand -0.02em to the flag package, which answered "flag provided but
+// not defined". The one token whose useful values are negative was the one
+// token that could not be set.
+//
+// A flag is a dash followed by a letter. A value is anything else, and no token
+// name starts with a dash.
 func splitThemeArgs(args []string) (pos, flags []string) {
 	for i, a := range args {
-		if strings.HasPrefix(a, "-") {
+		if reFlag.MatchString(a) {
 			return args[:i], args[i:]
 		}
 	}
 	return args, nil
 }
+
+var reFlag = regexp.MustCompile(`^--?[A-Za-z]`)
 
 func loadFontsFor(dir string) ([]theme.Family, error) {
 	set, err := loadFontSet(dir)
