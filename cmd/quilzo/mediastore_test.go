@@ -118,3 +118,48 @@ func TestNoMediaCommandPrintsATruncatedID(t *testing.T) {
 		}
 	}
 }
+
+// Every interface that can add a file can take one out.
+//
+// The admin has had a delete button since the library existed and the command
+// line had nothing, so a file could be uploaded from three places and removed
+// from one — an operator working in a terminal had no way to undo an upload.
+// This is the parity check, done on the source: the dispatch has to know the
+// verb, the help has to mention it, and the privilege table has to place it,
+// because a command missing from that table is refused as unknown.
+func TestTheCommandLineCanRemoveMediaToo(t *testing.T) {
+	source, err := os.ReadFile("importcmd.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), `case "remove":`) {
+		t.Error("media has no remove subcommand, and the admin has had the " +
+			"button all along")
+	}
+	if !strings.Contains(string(source), "func mediaRemove(") {
+		t.Error("no mediaRemove")
+	}
+	// It refuses a file the live site uses, because a command that quietly
+	// breaks a published page is not the visible failure the storage layer's
+	// comment argues for.
+	if !strings.Contains(string(source), "mediaInUse") {
+		t.Error("nothing checks whether the file is in use before removing it")
+	}
+
+	help, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(help), "media remove") {
+		t.Error("the help does not list media remove; a command nobody can " +
+			"find is a command nobody uses")
+	}
+	priv, err := os.ReadFile("privilege.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(priv), `"media remove"`) {
+		t.Error("media remove is not in the privilege table, so it is either " +
+			"refused as unknown or runs with the wrong authority")
+	}
+}
