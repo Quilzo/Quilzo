@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -145,16 +146,24 @@ func collectInputs(root, tplDir, ref string) ([]codescan.Input, error) {
 	if err != nil {
 		return inputs, nil
 	}
-	for name, v := range pages {
-		fields, ok := v.(map[string]any)
-		if !ok {
-			continue
-		}
-		for key, val := range fields {
-			str, ok := val.(string)
-			if !ok || str == "" {
-				continue
-			}
+	names := make([]string, 0, len(pages))
+	for name := range pages {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		// Every string on the page, at every depth, named by where it sits.
+		//
+		// This read the top level and stopped. A page built the way the
+		// shipped layouts want keeps its text in a hero object and a list of
+		// section objects, so a `<script>` tag or an AWS key written inside a
+		// prose section was not scanned at all — and the command reported "2
+		// fields scanned, nothing matched" while the same string at the top
+		// level was a critical finding. A scanner that inspects the shape
+		// nobody writes is a green light nobody earned.
+		//
+		// Demonstrated by putting the same key at two depths on one page.
+		for _, field := range contentStrings(pages[name]) {
 			// The field name is prepended as an assignment, because in
 			// structured content that is what it is. A field called api_key
 			// holding a high-entropy value is the same finding as
@@ -162,11 +171,63 @@ func collectInputs(root, tplDir, ref string) ([]codescan.Input, error) {
 			// misses every one of them — the rule looks for a name and a
 			// value, and the name was in the other column.
 			inputs = append(inputs, codescan.Input{
-				Name: name + "." + key, Kind: codescan.Content,
-				Body: key + " = " + str})
+				Name: name + "." + field.path, Kind: codescan.Content,
+				Body: field.key + " = " + field.text})
 		}
 	}
 	return inputs, nil
+}
+
+// contentField is one string on a page and where it was found.
+type contentField struct {
+	// path is the dotted route to it, for the finding: sections.2.prose is
+	// where somebody has to go to fix it.
+	path string
+	// key is the field's own name, which the credential rules match against.
+	key  string
+	text string
+}
+
+// contentStrings is every string on a page, at every depth.
+//
+// Bounded, because content is nested by authors and by importers and a scanner
+// that recursed without a limit would be a way to spend a pipeline's stack on a
+// page somebody wrote. Sorted, so two scans of one page report in one order.
+func contentStrings(v any) []contentField {
+	var out []contentField
+	walkContent(v, "", "", 0, &out)
+	return out
+}
+
+const maxScanDepth = 8
+
+func walkContent(v any, path, key string, depth int, out *[]contentField) {
+	if depth > maxScanDepth {
+		return
+	}
+	switch t := v.(type) {
+	case string:
+		if strings.TrimSpace(t) != "" {
+			*out = append(*out, contentField{path: path, key: key, text: t})
+		}
+	case []any:
+		for i, item := range t {
+			walkContent(item, fmt.Sprintf("%s.%d", path, i), key, depth+1, out)
+		}
+	case map[string]any:
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			next := k
+			if path != "" {
+				next = path + "." + k
+			}
+			walkContent(t[k], next, k, depth+1, out)
+		}
+	}
 }
 
 // -- the CSP generator --------------------------------------------------------

@@ -180,14 +180,27 @@ func (r *Rules) Check(where string, fields map[string]any) []Finding {
 			if !t.applies(name) {
 				continue
 			}
-			text, ok := asText(fields[name])
-			if !ok {
-				continue
-			}
-			if m := t.re.FindString(text); m != "" {
-				out = append(out, Finding{
-					Where: where, Field: name, Term: m,
-					Why: t.Why, Needs: t.Needs})
+			// Every string under this field, however deep.
+			//
+			// This read the field's own value and stopped, so a claim inside a
+			// section was invisible: "Guaranteed for life, and clinically
+			// proven to last" is caught at the top level of a page and was not
+			// caught in a prose section, which is where the shipped layouts
+			// put prose. The gate that refuses a publication for an
+			// unsubstantiated claim passed the page that made one.
+			//
+			// Demonstrated by writing the same sentence twice, at two depths,
+			// and watching one of them publish.
+			for _, text := range textsUnder(fields[name]) {
+				if m := t.re.FindString(text); m != "" {
+					out = append(out, Finding{
+						Where: where, Field: name, Term: m,
+						Why: t.Why, Needs: t.Needs})
+					// One finding per rule per field. A claim repeated in six
+					// paragraphs is one thing to fix, and six copies of the
+					// same line is a report people stop reading.
+					break
+				}
 			}
 		}
 	}
@@ -212,15 +225,83 @@ func (t *Term) applies(field string) bool {
 // Present-but-empty is absent. A rule satisfied by `"evidence_url": ""` is one
 // satisfied by adding a blank box, which is worse than no rule because it looks
 // like the claim was substantiated.
+//
+// Anywhere in the content, at any depth, for the same reason the claim itself is
+// looked for at any depth: an author writing a guarantee inside a section will
+// put its terms in that section, next to the sentence they belong to, and
+// refusing that would be a rule that can only be satisfied by moving the
+// evidence away from the thing it evidences.
 func has(fields map[string]any, name string) bool {
-	for k, v := range fields {
-		if !strings.EqualFold(k, name) {
-			continue
+	return hasUnder(fields, name, 0)
+}
+
+func hasUnder(v any, name string, depth int) bool {
+	if depth > maxClaimDepth {
+		return false
+	}
+	switch t := v.(type) {
+	case map[string]any:
+		for k, item := range t {
+			if strings.EqualFold(k, name) {
+				text, ok := asText(item)
+				if ok && strings.TrimSpace(text) != "" {
+					return true
+				}
+				continue
+			}
+			if hasUnder(item, name, depth+1) {
+				return true
+			}
 		}
-		text, ok := asText(v)
-		return ok && strings.TrimSpace(text) != ""
+	case []any:
+		for _, item := range t {
+			if hasUnder(item, name, depth+1) {
+				return true
+			}
+		}
 	}
 	return false
+}
+
+// maxClaimDepth bounds both walks. Content is nested by authors and by
+// importers, and a gate that recursed without a limit would be a way to spend
+// the publish check's stack on a page somebody wrote.
+const maxClaimDepth = 8
+
+// textsUnder is every piece of prose under a value, however deeply it sits.
+//
+// Sorted by the keys it walks, so a page reports the same finding in the same
+// order twice — a gate whose output reorders between runs is one nobody can
+// diff.
+func textsUnder(v any) []string {
+	var out []string
+	collectClaimText(v, 0, &out)
+	return out
+}
+
+func collectClaimText(v any, depth int, out *[]string) {
+	if depth > maxClaimDepth {
+		return
+	}
+	switch t := v.(type) {
+	case string:
+		if t != "" {
+			*out = append(*out, t)
+		}
+	case []any:
+		for _, item := range t {
+			collectClaimText(item, depth+1, out)
+		}
+	case map[string]any:
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			collectClaimText(t[k], depth+1, out)
+		}
+	}
 }
 
 // asText renders a field for matching.
