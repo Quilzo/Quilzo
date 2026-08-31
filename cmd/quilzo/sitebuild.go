@@ -160,6 +160,10 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 		if name := cfg.Raw("site.catalogue"); name != "" {
 			st.Catalogue = name
 		}
+		// The feed, when a listing is named for it.
+		if name := cfg.Raw("site.feed"); name != "" {
+			st.Feed = name
+		}
 		// The A2A discovery document, when the operator publishes one.
 		//
 		// Built per request rather than once, because the manifests it

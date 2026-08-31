@@ -1,10 +1,14 @@
 package public
 
 import (
+	"encoding/json"
+	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/listing"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/provenance"
@@ -94,6 +98,70 @@ func TestABundleRefusesRatherThanShippingAHole(t *testing.T) {
 	}
 }
 
+// feedSite is a store with a collection, a listing over it, a detail page for
+// the records, and a second listing serving as the feed.
+func feedSite(t *testing.T) *Site {
+	t.Helper()
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := ""
+	if _, err := site.SaveDraft(s, map[string]any{
+		"index": map[string]any{"title": "Aster & Alum"},
+		"cloth": map[string]any{"detail": "catalogue", "detail_key": "slug"},
+	}, "pages", "rue"); err != nil {
+		t.Fatal(err)
+	}
+	if cid := s.GetRef(site.RefDraft); cid != "" {
+		c, cerr := s.GetCommit(cid)
+		if cerr != nil {
+			t.Fatal(cerr)
+		}
+		base = c.Tree
+	}
+	tree, _, err := collection.Put(s, base, "cloth", collection.Record{
+		Fields: map[string]any{
+			"slug": "indigo-linen", "name": "Indigo linen",
+			"summary": "Eight dips.", "bath": "2026-07-14",
+		}}, time.Unix(1787000000, 0), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cid, err := s.PutCommit(store.Commit{Tree: tree, Message: "a record",
+		Author: "rue", At: 1787000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRef(site.RefDraft, cid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, cid); err != nil {
+		t.Fatal(err)
+	}
+
+	set := &listing.Set{Listings: []listing.Listing{
+		{Name: "catalogue", Collection: "cloth", Sort: "name", Rows: 20,
+			Fields: []string{"slug", "name", "summary", "bath"}},
+		{Name: "journal", Label: "From the dye house", Collection: "cloth",
+			Sort: "bath", Descending: true, Rows: 20,
+			Fields: []string{"slug", "name", "summary", "bath"}},
+	}}
+	c, cerr := s.GetCommit(s.GetRef(site.RefLive))
+	if cerr != nil {
+		t.Fatal(cerr)
+	}
+	st := New(s, render.OneLayout(
+		`<!doctype html><html lang="en"><head><title>{{ page.title }}</title>`+
+			`</head><body><h1>{{ page.title }}{{ record.name }}</h1></body></html>`))
+	st.Name = "Aster & Alum"
+	st.BaseURL = "https://example.com"
+	st.Feed = "journal"
+	st.Listings = &listing.Resolver{Store: s, Index: collection.NewCache(),
+		Tree: c.Tree, Set: set}
+	return st
+}
+
 func bundleSite(t *testing.T) *Site {
 	t.Helper()
 	s, err := store.Open(t.TempDir())
@@ -143,4 +211,82 @@ func bundleSite(t *testing.T) *Site {
 	}
 	st.LoadProvenance = func() (*provenance.Index, error) { return idx, nil }
 	return st
+}
+
+// The feed is a listing, and it says what the listing says.
+//
+// A CMS with an article starter and a journal in every example published no
+// feed of any kind — the demo's own copy claimed it had one. It is driven by a
+// listing rather than by a walk over the pages because which things belong in a
+// feed is a decision, and a listing already records that decision along with
+// which fields are public.
+func TestAFeedIsServedWhenAListingIsNamed(t *testing.T) {
+	st := bundleSite(t)
+	// No feed configured: nothing is served, rather than an empty document
+	// claiming the site publishes nothing.
+	for _, path := range []string{"/feed.xml", "/feed.json"} {
+		rec := httptest.NewRecorder()
+		st.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s answered %d with no feed configured; an empty feed is "+
+				"a claim that nothing is published", path, rec.Code)
+		}
+	}
+	// And the page does not advertise one that does not exist.
+	page := httptest.NewRecorder()
+	st.Handler().ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/", nil))
+	if strings.Contains(page.Body.String(), "atom+xml") {
+		t.Error("a page advertises a feed this site does not serve, which " +
+			"teaches whatever followed it that this site's metadata is wrong")
+	}
+}
+
+// A feed's entries can be opened, and its elements are the ones readers know.
+//
+// Both of these were wrong in the first version and neither was visible from
+// the code: encoding/xml wrote <Links> for an untagged field, which is not an
+// element any reader recognises, and every entry carried href="" because the
+// feed's listing had no detail page of its own — while every entry in it had a
+// page, reached through a different listing over the same collection.
+func TestAFeedNamesEntriesThatCanBeOpened(t *testing.T) {
+	st := feedSite(t)
+
+	rec := httptest.NewRecorder()
+	st.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/feed.xml", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the feed answered %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "<Links") {
+		t.Error("the feed writes <Links>, which is a Go field name rather than " +
+			"an Atom element")
+	}
+	if strings.Contains(body, `href=""`) {
+		t.Error("an entry points nowhere; a reader shows that as an item that " +
+			"cannot be opened")
+	}
+	if !strings.Contains(body, "/cloth/indigo-linen") {
+		t.Errorf("no entry links to the record's own page:\n%s", body)
+	}
+
+	// The JSON feed carries the same entries.
+	rec = httptest.NewRecorder()
+	st.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/feed.json", nil))
+	var doc struct {
+		Version string           `json:"version"`
+		Items   []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(doc.Version, "jsonfeed.org") {
+		t.Errorf("the JSON feed does not declare its version: %q", doc.Version)
+	}
+	if len(doc.Items) == 0 {
+		t.Fatal("the JSON feed has no items and the Atom feed has entries, so " +
+			"a reader and a program see different journals")
+	}
+	if doc.Items[0]["url"] == nil {
+		t.Error("a JSON feed item has no url")
+	}
 }

@@ -273,6 +273,18 @@ var settings = []Setting{
 			"value is published to crawlers.",
 	},
 	{
+		Key: "site.feed", Kind: Text, Default: "",
+		Summary: "the listing published as a feed at /feed.xml and /feed.json",
+		Why: "A CMS with an article starter and a journal in every example " +
+			"published no feed of any kind, which is the one thing a journal " +
+			"is expected to have. Naming a listing rather than switching a " +
+			"feature on, because which things belong in a feed is a decision: " +
+			"a listing already says what it selects, in what order, with what " +
+			"limit, and which fields are public — so a feed cannot show more " +
+			"than the pages do. Empty means no feed is served, which is " +
+			"honest; an empty feed document claims the site publishes nothing.",
+	},
+	{
 		Key: "site.catalogue", Kind: Text, Default: "",
 		Summary: "which listing is served at /catalogue.json for shopping agents",
 		Why: "The endpoint that serves it has existed since the catalogue " +
