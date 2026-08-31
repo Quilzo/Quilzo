@@ -34,6 +34,7 @@ package section
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // Field is the key a page's sections live under.
@@ -71,6 +72,11 @@ var kinds = []Kind{
 		Name: "split", Group: "telling", Summary: "An image beside prose. Set flip to put the image on the other side.",
 		Stub: map[string]any{
 			"eyebrow": "How it works", "title": "One idea, with a picture",
+			// Empty, so the field is there to fill in and the picker appears
+			// beside it. A stub with no image key at all is what this had, and
+			// the kind whose summary begins "An image beside prose" was one
+			// you could not put an image in.
+			"image": "", "alt": "",
 			"paragraphs": []any{
 				"A split section takes a heading and any number of paragraphs.",
 				"Leave the image out and it is prose at full width.",
@@ -199,18 +205,30 @@ var kinds = []Kind{
 		Stub: map[string]any{
 			"title": "A row of things",
 			"hint":  "Scroll sideways for more.",
+			// Each card can carry a picture, so each card has the field and
+			// the picker beside it. Empty rather than a path: a stub naming a
+			// file no store holds publishes a broken picture.
 			"items": []any{
-				map[string]any{"title": "First", "body": "One card."},
-				map[string]any{"title": "Second", "body": "Another."},
-				map[string]any{"title": "Third", "body": "And a third."},
+				map[string]any{"title": "First", "body": "One card.",
+					"image": "", "alt": ""},
+				map[string]any{"title": "Second", "body": "Another.",
+					"image": "", "alt": ""},
+				map[string]any{"title": "Third", "body": "And a third.",
+					"image": "", "alt": ""},
 			},
 		},
 	},
 	{
 		Name: "video", Group: "media", Summary: "One video from this origin. Controls always, autoplay never.",
 		Stub: map[string]any{
-			"title":   "Watch this",
-			"src":     "/media/replace-me.mp4",
+			"title": "Watch this",
+			// No path. This said /media/replace-me.mp4, which no store holds:
+			// adding a video section and publishing produced a player that
+			// could not play anything, and the layout omits the element
+			// entirely when there is nothing to put in it. The picker is how a
+			// file gets attached.
+			"src":     "",
+			"poster":  "",
 			"caption": "A caption. A transcript link belongs here too.",
 		},
 	},
@@ -218,8 +236,11 @@ var kinds = []Kind{
 		Name: "people", Group: "media", Summary: "Names, roles and portraits.",
 		Stub: map[string]any{
 			"title": "Who we are",
+			// A portrait field per person — the summary says portraits, and
+			// without the key there is nowhere to choose one.
 			"items": []any{
-				map[string]any{"name": "A Name", "role": "What they do"},
+				map[string]any{"name": "A Name", "role": "What they do",
+					"image": "", "alt": ""},
 			},
 		},
 	},
@@ -503,4 +524,157 @@ func cloneValue(v any) any {
 	default:
 		return v
 	}
+}
+
+// MaxSections bounds a page's arrangement.
+//
+// A hundred is far past any page anybody designs and short of the point where
+// rendering one is a cost worth thinking about. It exists so the number is a
+// number rather than whatever a JSON file happened to contain.
+const MaxSections = 100
+
+// Problem is one thing wrong with a page's arrangement.
+type Problem struct {
+	// At is the section's position, or -1 for something about the page.
+	At int
+	// Detail is what is wrong, written for the person who wrote the page.
+	Detail string
+}
+
+func (p Problem) String() string {
+	if p.At < 0 {
+		return p.Detail
+	}
+	return fmt.Sprintf("section %d: %s", p.At+1, p.Detail)
+}
+
+// Validate checks a page's arrangement against the catalogue.
+//
+// # Why a page's sections are checked and its fields are typed
+//
+// A section is not content of a kind somebody declared — it is one of a closed
+// list this build ships, and which list that is has nothing to do with what the
+// page is about. So a type cannot describe it and should not have to: a type
+// with a "sections" field would be a type that has to be updated whenever a
+// layout learns a new kind, in every site, and forgetting it would make an
+// ordinary page unclassifiable.
+//
+// The consequence, before this existed, was that no page built the way the
+// shipped layouts want could be typed at all — a hero is an object and sections
+// are a list of objects, and the type system is flat by design. `posture scan`
+// therefore reported every published page as untyped under a rule nothing could
+// satisfy, and `quilzo type bind` was unusable for the product's own shape.
+//
+// # What is strict and what is not
+//
+// The kind is strict. A key that is not in the catalogue renders as nothing at
+// all: a page with "gallry" on it is a page with a section missing and no
+// message anywhere, which is the exact failure this closes.
+//
+// The fields inside are not. A layout may read a value the stub does not
+// mention — a tone, a column count, whether an image is flipped — and refusing
+// those would refuse pages that render correctly today. They are reported as
+// advice, so a typo in a field name is visible without being fatal.
+func Validate(body any) (blocking []Problem, advisory []Problem) {
+	list, ok := sectionsOf(body)
+	if !ok {
+		// A page with no sections is not a page with a broken arrangement.
+		return nil, nil
+	}
+	if len(list) > MaxSections {
+		blocking = append(blocking, Problem{-1, fmt.Sprintf(
+			"%d sections, and the limit is %d. Past that a page is not a page "+
+				"and the render is unbounded", len(list), MaxSections)})
+	}
+	for i, entry := range list {
+		m, isMap := entry.(map[string]any)
+		if !isMap {
+			blocking = append(blocking, Problem{i, fmt.Sprintf(
+				"is %T, not an object naming one kind", entry)})
+			continue
+		}
+		if len(m) == 0 {
+			blocking = append(blocking, Problem{i, "is empty, so it names no kind"})
+			continue
+		}
+		name, inner := discriminator(m)
+		kind, known := Lookup(name)
+		if !known {
+			blocking = append(blocking, Problem{i, fmt.Sprintf(
+				"%q is not a section kind, so this renders as nothing at all. "+
+					"The kinds are: %s", name, strings.Join(Names(), ", "))})
+			continue
+		}
+		if inner == nil {
+			blocking = append(blocking, Problem{i, fmt.Sprintf(
+				"%s carries %T rather than the fields of a section",
+				name, m[name])})
+			continue
+		}
+		// More than one kind on one entry is ambiguous: the first in catalogue
+		// order renders and the rest are silently dropped.
+		if len(m) > 1 {
+			var also []string
+			for k := range m {
+				if k != name {
+					also = append(also, k)
+				}
+			}
+			sort.Strings(also)
+			blocking = append(blocking, Problem{i, fmt.Sprintf(
+				"names %s and also %s; one entry is one section, and only the "+
+					"first would render", name, strings.Join(also, ", "))})
+		}
+		advisory = append(advisory, unknownFields(i, kind, inner)...)
+	}
+	return blocking, advisory
+}
+
+// unknownFields reports fields the stub for this kind does not mention.
+//
+// Advisory only. The stub is what a new section starts as, not the set of
+// everything a layout reads, so a field absent from it may be perfectly good —
+// and a page that renders correctly must not be refused because this list is
+// shorter than the template's imagination.
+func unknownFields(at int, kind Kind, inner map[string]any) []Problem {
+	stub, ok := kind.Stub[kind.Name].(map[string]any)
+	if !ok {
+		// The stub is the section's inner object directly for some kinds.
+		stub, ok = kind.Stub, true
+	}
+	if !ok || len(stub) == 0 {
+		return nil
+	}
+	var out []Problem
+	var unknown []string
+	for k := range inner {
+		if _, inStub := stub[k]; inStub {
+			continue
+		}
+		if allowedAnywhere[k] {
+			continue
+		}
+		unknown = append(unknown, k)
+	}
+	sort.Strings(unknown)
+	for _, k := range unknown {
+		out = append(out, Problem{at, fmt.Sprintf(
+			"%s has no %q in its shipped shape. That may be a field your "+
+				"layout reads, or it may be a typo nothing will render",
+			kind.Name, k)})
+	}
+	return out
+}
+
+// allowedAnywhere are the presentation fields every kind accepts.
+//
+// Read by the shipped layouts on any section, so they are not typos and would
+// otherwise be reported on every page that uses one.
+var allowedAnywhere = map[string]bool{
+	"tone": true, "align": true, "columns": true, "shape": true,
+	"flip": true, "href": true, "featured": true, "chip": true,
+	"chip_tone": true, "hint": true, "note": true, "footnote": true,
+	"eyebrow": true, "intro": true, "title": true, "cta_label": true,
+	"cta_href": true, "transcript_href": true, "transcript_label": true,
+	"poster": true, "caption": true, "alt": true, "state": true,
 }

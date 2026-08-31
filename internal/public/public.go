@@ -32,6 +32,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/media"
 	"io"
 	"net/http"
@@ -1026,9 +1027,51 @@ func (st *Site) srcSet(id string) string {
 	return f.SrcSet("/media")
 }
 
+// formData resolves a declared form for a template.
+//
+// Read from the same set the submit handler validates against, so what a page
+// shows and what the server accepts cannot disagree — which is the failure that
+// made a page's own copy of the field list a bad idea.
+func (st *Site) formData(name string) map[string]any {
+	if st.Forms == nil || st.Forms.Set == nil {
+		return nil
+	}
+	set, err := st.Forms.Set()
+	if err != nil {
+		return nil
+	}
+	f, ok := set.Get(name)
+	if !ok {
+		return nil
+	}
+	fields := make([]render.FormField, 0, len(f.Fields))
+	for _, fl := range f.Fields {
+		out := render.FormField{
+			Name: fl.Name, Label: fl.Label, Help: fl.Help,
+			Required: fl.Required,
+		}
+		switch fl.Kind {
+		case form.Para:
+			out.Textarea = true
+		case form.Agree:
+			out.Checkbox = true
+		case form.Choice:
+			out.Choices = fl.Choices
+		case form.Email:
+			out.Type = "email"
+		case form.Number:
+			out.Type = "number"
+		default:
+			out.Type = "text"
+		}
+		fields = append(fields, out)
+	}
+	return render.FormOf(f.Name, f.Label, f.Intro, f.Notice, "", fields)
+}
+
 func (st *Site) sources() render.Sources {
 	src := render.Sources{Name: st.Name, Listings: st.Listings,
-		SrcSet: st.srcSet}
+		SrcSet: st.srcSet, Form: st.formData}
 	if st.Menus != nil {
 		if set, err := st.Menus(); err == nil {
 			src.Menus = set
