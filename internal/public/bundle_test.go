@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/search"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -162,6 +163,47 @@ func feedSite(t *testing.T) *Site {
 	return st
 }
 
+// searchSite has a page to search and a page named search to show results on.
+func searchSite(t *testing.T) *Site {
+	t.Helper()
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages := map[string]any{
+		"index": map[string]any{"title": "Aster & Alum",
+			"lead": "Cloth dyed with plants."},
+		"guide": map[string]any{"title": "How to keep an indigo vat",
+			"standfirst": "Indigo does not dissolve in water, so a vat is a " +
+				"reduction you keep alive."},
+		"search": map[string]any{"title": "Search"},
+	}
+	if _, err := site.SaveDraft(s, pages, "pages", "rue"); err != nil {
+		t.Fatal(err)
+	}
+	cid := s.GetRef(site.RefDraft)
+	if _, err := site.Publish(s, cid); err != nil {
+		t.Fatal(err)
+	}
+
+	layout := `<!doctype html><html lang="en"><head><title>{{ page.title }}` +
+		`</title></head><body>` +
+		`{% if search %}<form method="get" action="/search" role="search">` +
+		`<input name="q" value="{{ search.query }}"></form>` +
+		`{% if search.empty %}<p>Nothing matched.</p>{% end %}` +
+		`{% for r in search.results %}<h3><a href="{{ r.href }}">{{ r.title }}` +
+		`</a></h3><p>{{ r.snippet }}</p>{% end %}{% end %}` +
+		`<h1>{{ page.title }}</h1></body></html>`
+	st := New(s, render.OneLayout(layout))
+	st.Name = "Aster & Alum"
+	livePages, _, perr := st.pages()
+	if perr != nil {
+		t.Fatal(perr)
+	}
+	st.Search = search.Build(s.GetRef(site.RefLive), livePages)
+	return st
+}
+
 func bundleSite(t *testing.T) *Site {
 	t.Helper()
 	s, err := store.Open(t.TempDir())
@@ -288,5 +330,93 @@ func TestAFeedNamesEntriesThatCanBeOpened(t *testing.T) {
 	}
 	if doc.Items[0]["url"] == nil {
 		t.Error("a JSON feed item has no url")
+	}
+}
+
+// Search is reachable without a script, because scripts are forbidden here.
+//
+// internal/search built a full-text index of every published page and the only
+// way to reach it was /search.json — which needs a fetch, which needs a script,
+// which this site's own Content-Security-Policy blocks. A feature reachable only
+// by weakening the thing that makes the product what it is is a feature nobody
+// has.
+//
+// The comment on the JSON route argued a rendered page was impossible because
+// "the template language deliberately cannot loop over something the server
+// computed at request time". It does, everywhere: a listing with a parameter is
+// resolved from the query string on every request, and results are the same
+// shape as its rows.
+func TestSearchIsRenderedRatherThanFetched(t *testing.T) {
+	st := searchSite(t)
+
+	// The form, with no query yet.
+	blank := httptest.NewRecorder()
+	st.Handler().ServeHTTP(blank, httptest.NewRequest(http.MethodGet, "/search", nil))
+	if blank.Code != http.StatusOK {
+		t.Fatalf("the search page answered %d", blank.Code)
+	}
+	body := blank.Body.String()
+	if !strings.Contains(body, `action="/search"`) || !strings.Contains(body, `name="q"`) {
+		t.Errorf("the search page has no form to search with:\n%s", body)
+	}
+
+	// And a query, answered in the response rather than by a later fetch.
+	found := httptest.NewRecorder()
+	st.Handler().ServeHTTP(found,
+		httptest.NewRequest(http.MethodGet, "/search?q=indigo", nil))
+	if found.Code != http.StatusOK {
+		t.Fatalf("a search answered %d", found.Code)
+	}
+	page := found.Body.String()
+	if !strings.Contains(page, "/guide") {
+		t.Errorf("the matching page is not in the response:\n%s", page)
+	}
+	// With a line of the page it matched in. A result with no quotation is a
+	// list of titles, and the snippet has to come from the same traversal the
+	// index used or it quotes text the match did not come from.
+	if !strings.Contains(page, "does not dissolve") {
+		t.Errorf("no snippet from the matched field:\n%s", page)
+	}
+	// Nothing executable: the results arrived with the document.
+	for _, forbidden := range []string{"<script>", `type="text/javascript"`,
+		"fetch(", "search.json"} {
+		if strings.Contains(page, forbidden) {
+			t.Errorf("the rendered results page carries %q, so it depends on "+
+				"something this site's policy forbids", forbidden)
+		}
+	}
+	// A results page must not be cached by anything between here and a reader.
+	if cc := found.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+		t.Errorf("Cache-Control is %q; a cached results page is one reader's "+
+			"search shown to another", cc)
+	}
+
+	// Nothing matching says so, which is a different state from not having
+	// searched — the language has no else, so both are booleans.
+	none := httptest.NewRecorder()
+	st.Handler().ServeHTTP(none,
+		httptest.NewRequest(http.MethodGet, "/search?q=zzzznothing", nil))
+	if !strings.Contains(none.Body.String(), "Nothing matched") {
+		t.Error("a search with no results does not say so")
+	}
+
+	// An over-long query is refused before it is tokenised.
+	long := httptest.NewRecorder()
+	st.Handler().ServeHTTP(long, httptest.NewRequest(http.MethodGet,
+		"/search?q="+strings.Repeat("a", 500), nil))
+	if long.Code != http.StatusBadRequest {
+		t.Errorf("a 500 character query answered %d", long.Code)
+	}
+}
+
+// A site with no search page has no search route, rather than a page nobody
+// designed.
+func TestSearchWithoutAPageIsNotFound(t *testing.T) {
+	st := bundleSite(t) // has an index page and no search page
+	rec := httptest.NewRecorder()
+	st.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/search?q=x", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("a site with no search page answered %d; a bare list of "+
+			"links is a page nobody published", rec.Code)
 	}
 }

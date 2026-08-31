@@ -439,3 +439,42 @@ func trimTag(tag string) string {
 	}
 	return tag
 }
+
+// A shipped layout can show search results.
+//
+// The index has always been built and the only route to it was JSON, fetched by
+// a script this site's policy forbids. Rendering it needs a layout that knows
+// what to draw, so at least one shipped layout has to carry the block — and it
+// has to be a plain GET form, because a search box that needs script is the
+// unreachable feature again in a different place.
+func TestALayoutCanRenderSearch(t *testing.T) {
+	layouts, err := Layouts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := ""
+	for name, src := range layouts {
+		if strings.Contains(src, "search.results") {
+			found = src
+			if !strings.Contains(src, `action="/search"`) {
+				t.Errorf("%s.html renders results and has no form pointing at "+
+					"/search, so a reader can read one search and not make "+
+					"another", name)
+			}
+			if !strings.Contains(src, `method="get"`) {
+				t.Errorf("%s.html searches with something other than a GET; a "+
+					"query belongs in the URL, where it can be linked and "+
+					"gone back to", name)
+			}
+			if !strings.Contains(src, "search.empty") {
+				t.Errorf("%s.html cannot say that nothing matched, which is a "+
+					"different state from not having searched", name)
+			}
+		}
+	}
+	if found == "" {
+		t.Error("no shipped layout renders search results, so the index this " +
+			"program builds on every start is reachable only as JSON — and " +
+			"fetching JSON needs a script the site's own CSP blocks")
+	}
+}

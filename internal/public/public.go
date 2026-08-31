@@ -206,6 +206,10 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/.well-known/tdmrep.json", st.tdmRep)
 	mux.HandleFunc("/.well-known/agent-card.json", st.agentCard)
 	mux.HandleFunc("/search.json", st.searchAPI)
+	// And the same index, rendered. See searchpage.go: the JSON route was the
+	// only way in, and reaching it needs a script this site's own policy
+	// forbids.
+	mux.HandleFunc("/search", st.searchPage)
 	mux.HandleFunc("/catalogue.json", st.catalogue)
 	// Both feed formats through one handler, which picks by suffix: the rows
 	// and their order come from the same listing, so a reader and a program
@@ -428,14 +432,22 @@ func escapeXMLText(s string) string {
 	).Replace(s)
 }
 
-// searchAPI answers a query.
+// searchAPI answers a query, for a program.
 //
-// JSON rather than a rendered page, because the template language deliberately
-// cannot loop over something the server computed at request time — and adding
-// that capability to serve a search page would be reintroducing the execution
-// this project removed on purpose. A site that wants a rendered results page
-// fetches this, which is the one place a published site legitimately needs a
-// script.
+// This used to be the only way in, on the argument that a rendered results page
+// would need the template language to "loop over something the server computed
+// at request time" and that a site wanting one should fetch this — "the one
+// place a published site legitimately needs a script".
+//
+// Both halves were wrong. The language loops over request-time data everywhere:
+// a listing with a parameter is resolved from the query string on every request
+// and rendered as feeds. And the script was forbidden by this site's own
+// Content-Security-Policy, with no setting to open it, so the sanctioned route
+// to the feature was one the product blocks.
+//
+// So /search renders, and this stays for what it is actually good for: a
+// program asking a question and getting an answer it does not have to parse out
+// of markup.
 func (st *Site) searchAPI(w http.ResponseWriter, r *http.Request) {
 	if st.Search == nil {
 		http.NotFound(w, r)
