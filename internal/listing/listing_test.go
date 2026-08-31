@@ -1,6 +1,7 @@
 package listing
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -83,17 +84,32 @@ func TestAFieldTheListingDidNotNameIsNotReturned(t *testing.T) {
 	}
 }
 
-// A declared field with no value is present and empty, not absent.
-func TestADeclaredFieldIsAlwaysPresent(t *testing.T) {
+// A declared field the record does not carry is absent from the row.
+//
+// This asserted the opposite — present and nil — so that a template could tell
+// "no value" from "the listing did not include the field". It cannot: tmpl's
+// truthy() answers false for a nil and a lookup of a missing key alike, so the
+// distinction was never visible to a template and the nil was visible
+// everywhere else. In /catalogue.json it became "guarantee_terms": null, which
+// is a statement about the product rather than about the listing, and it
+// disagreed with the structured data on the page, which omits what it does not
+// know.
+//
+// Present-and-empty is untouched, and that is the distinction that does matter:
+// the claim gate refuses to let a blank box substantiate a claim.
+func TestADeclaredFieldWithNoValueIsAbsent(t *testing.T) {
 	l := &Listing{Name: "x", Collection: "controls",
 		Fields: []string{"title", "nonexistent"}}
 	got, err := Resolve(l, index(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, present := got.Rows[0]["nonexistent"]; !present {
-		t.Error("a declared field with no value was omitted, so a template " +
-			"cannot tell 'no value' from 'the listing did not include it'")
+	if v, present := got.Rows[0]["nonexistent"]; present {
+		t.Errorf("a field no record carries is in the row as %#v, which "+
+			"serialises as a null in the catalogue feed", v)
+	}
+	if _, present := got.Rows[0]["title"]; !present {
+		t.Error("a field the record does carry went missing")
 	}
 }
 
@@ -269,5 +285,65 @@ func TestOnReadsListingsFromAPage(t *testing.T) {
 	}
 	if got := On(map[string]any{"title": "x"}); got != nil {
 		t.Errorf("a page with no listings returned %v", got)
+	}
+}
+
+// A field the record does not carry is left out, not set to null.
+//
+// The catalogue feed is read by software somebody else pointed at it, and
+// "guarantee_terms": null is a statement that the field exists and is empty
+// rather than the field not being part of this product. It also disagreed with
+// the structured data on the page, which omits what it does not know.
+//
+// Present-and-empty is a different thing and is untouched: "" is a value
+// somebody left blank, and the claim gate refuses to let a blank box
+// substantiate a claim, which depends on that distinction surviving.
+func TestARowOmitsAnUnsetFieldRatherThanNullingIt(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, _, err := collection.PutMany(st, "", "products",
+		[]collection.Record{{Fields: map[string]any{
+			"slug": "desk-blotter", "name": "Desk blotter",
+			// Present and blank, deliberately.
+			"materials_evidence": "",
+		}}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, err := collection.Build(st, tree, "products", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := &Listing{
+		Name: "catalogue", Collection: "products", Rows: 10, Sort: "name",
+		Fields: []string{"slug", "name", "guarantee_terms",
+			"materials_evidence"},
+	}
+	res, err := Resolve(l, idx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Rows) != 1 {
+		t.Fatalf("wanted one row, got %d", len(res.Rows))
+	}
+	row := res.Rows[0]
+	if v, present := row["guarantee_terms"]; present {
+		t.Errorf("an unset field is in the row as %#v; serialised, that is a "+
+			"claim that the product has the field and it is empty", v)
+	}
+	if v, present := row["materials_evidence"]; !present || v != "" {
+		t.Errorf("a present-but-blank field came out as %#v, present=%v; the "+
+			"claim gate depends on telling blank from absent", v, present)
+	}
+
+	// And nothing in a serialised row is null.
+	encoded, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "null") {
+		t.Errorf("a serialised row carries a null:\n%s", encoded)
 	}
 }

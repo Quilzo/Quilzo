@@ -424,6 +424,23 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 		"add.remove": {GUI: "/page/delete",
 			MCP:   []string{"write_page"},
 			NoMCP: ""},
+		"rights set.clear": {
+			// No screen, because there is no rights screen at all: the media
+			// screen lists files, their descriptions and their sizes, and an
+			// image licence is edited from the command line only. Recording
+			// that here rather than pointing at a path that does not exist —
+			// the gap is real, and it is the whole rights feature rather than
+			// this flag.
+			GUI: "",
+			Why: "the admin has no screen for image rights at all, so there " +
+				"is nothing for a removal to hang off; `quilzo rights` and " +
+				"`rights set` are the interface",
+			MCP: nil,
+			NoMCP: "a licence is a legal record about what may be published, " +
+				"and an agent that could clear one could publish an image " +
+				"nobody has permission for — the same line drawn for access " +
+				"and keys",
+		},
 	}
 
 	verbs := regexp.MustCompile(
