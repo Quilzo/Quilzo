@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -257,6 +258,19 @@ var settings = []Setting{
 			"prints the name in a link produced an empty link and failed the " +
 			"gate on every page. The name belongs to the site, so it is kept " +
 			"with the site; the flag still overrides it for one run.",
+	},
+	{
+		Key: "site.base_url", Kind: Text, Default: "",
+		Summary: "where this site is served from, e.g. https://example.com",
+		Why: "The same story as site.name, one setting later. It was a flag " +
+			"on `quilzo site` and nowhere else, so every other thing that " +
+			"renders this site had no idea where it lives: a static copy went " +
+			"out with no sitemap at all and a robots.txt that advertised " +
+			"none, because both need an absolute address and the address was " +
+			"in a process that had already exited. An absolute URL has to be " +
+			"where the site actually is, so it belongs with the site; the " +
+			"flag still overrides it for one run. http and https only — this " +
+			"value is published to crawlers.",
 	},
 	{
 		Key: "site.catalogue", Kind: Text, Default: "",
@@ -689,6 +703,24 @@ func (s Setting) Validate(v string) error {
 							"vocabulary is search, train, ai-summarize and "+
 							"none", use)
 				}
+			}
+		}
+		if s.Key == "site.base_url" && v != "" {
+			// http or https, absolute, with a host. This is published in a
+			// sitemap and in robots.txt, so a value nobody can fetch is a
+			// site telling crawlers to look somewhere that does not exist.
+			u, err := url.Parse(v)
+			if err != nil || u.Host == "" ||
+				(u.Scheme != "http" && u.Scheme != "https") {
+				return fmt.Errorf(
+					"%q is not a base URL. Give a scheme and a host, like "+
+						"https://example.com — it goes into the sitemap and "+
+						"into robots.txt", v)
+			}
+			if strings.HasSuffix(v, "/") {
+				return fmt.Errorf(
+					"%q ends in a slash, and every path is appended to it, "+
+						"which would produce https://example.com//about", v)
 			}
 		}
 		if s.Key == "site.csp.mode" {

@@ -12,7 +12,6 @@ import (
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
-	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 // Computing what the permanent web will call your site.
@@ -214,30 +213,34 @@ func renderBundle(root, tplDir string) (map[string][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	pages, err := site.PagesAt(s, site.RefLive)
-	if err != nil {
-		return nil, err
+
+	// The same site the server serves, built by the same function, and asked
+	// for its own pages.
+	//
+	// This used to call render.Bundle directly, which renders pages and nothing
+	// else — so every static copy went out without the sitemap, robots.txt, the
+	// crawl licence, the manifest, the service worker, the structured data on
+	// each page or the provenance marking. Six routes and a legal disclosure,
+	// missing from the copy people archive, because the bundle was a second
+	// idea of what a site is. See internal/public/bundle.go.
+	//
+	// No base URL passed: siteFor reads site.base_url, because an absolute URL
+	// in a sitemap has to be where the site actually lives and a bundle is
+	// written long before anybody types a flag.
+	st, serr := siteFor(root, design, siteOpts{})
+	if serr != nil {
+		return nil, serr
 	}
-
-	// The same context the site serves. A bundle pinned to IPFS is the copy
-	// somebody keeps, and it used to come out with no navigation on any page.
-	src := sourcesFor(root, s, s.GetRef(site.RefLive), siteName(root), pages)
-
-	// One renderer, shared with the admin screen that computes an identifier
-	// for the same bundle. See internal/render.Bundle for why this is not a
-	// loop here any more.
-	files, berr := render.Bundle(src, design.Layouts, pages, tmpl.Render)
+	files, berr := st.Bundle()
 	if berr != nil {
 		return nil, berr
 	}
-	// The stylesheet the site serves, generated or the operator's own. A bundle
-	// carrying the markup and not the design is a copy of half the site.
-	files["site.css"] = []byte(design.Stylesheet)
+
 	for _, face := range design.Fonts.Faces() {
 		files["fonts/"+face.File] = face.Bytes
 	}
 	// The asset library, under the same paths the public server uses, so a
-	// page's image reference resolves identically on IPFS.
+	// page's image reference resolves identically in a copy.
 	if lib, lerr := openMedia(root); lerr == nil {
 		if all, aerr := lib.List(); aerr == nil {
 			exts := map[string]string{}
