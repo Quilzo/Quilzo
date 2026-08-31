@@ -198,15 +198,104 @@ func cmdMedia(root string, args []string) error {
 	case "get":
 		return mediaGet(root, args[1:])
 	case "list":
-		return mediaList(root)
+		return mediaList(root, args[1:])
 	case "remove":
 		return mediaRemove(root, args[1:])
+	case "renditions":
+		return mediaRenditions(root, args[1:])
 	case "formats":
 		return mediaFormats()
 	default:
 		return fmt.Errorf("unknown media command %q; try add, get, list, "+
-			"remove or formats", args[0])
+			"remove, renditions or formats", args[0])
 	}
+}
+
+// mediaRenditions makes the narrower copies for pictures that have none.
+//
+// New uploads get them at the point they are stored. This is for everything
+// uploaded before that existed: without it a library keeps serving one file per
+// picture to every reader forever, and the only way to fix it would be
+// re-uploading every image — which changes every id and every page that names
+// one.
+//
+// Idempotent. A picture that already has its copies is skipped, so this can be
+// run after every upload batch or from a cron job without making a second set.
+func mediaRenditions(root string, args []string) error {
+	fs := flag.NewFlagSet("renditions", flag.ContinueOnError)
+	dry := fs.Bool("dry-run", false, "say what would be made, and make nothing")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	lib, err := openMedia(root)
+	if err != nil {
+		return fmt.Errorf("the media library could not be opened: %w", err)
+	}
+	all, err := lib.List()
+	if err != nil {
+		return err
+	}
+
+	made, skipped, saved := 0, 0, int64(0)
+	for _, f := range all {
+		if f.Kind != media.Image || len(f.Renditions) > 0 || f.Width == 0 {
+			skipped++
+			continue
+		}
+		// A rendition is itself in the library, and re-rendering one is how a
+		// library grows a chain of ever smaller pictures.
+		if strings.Contains(f.Name, "-480w.") ||
+			strings.Contains(f.Name, "-960w.") ||
+			strings.Contains(f.Name, "-1440w.") {
+			skipped++
+			continue
+		}
+		if *dry {
+			w.Human("would make copies of %s%s%s %s(%dx%d)%s\n",
+				bold, f.Name, reset, dim, f.Width, f.Height, reset)
+			made++
+			continue
+		}
+		_, body, gerr := lib.Get(f.ID)
+		if gerr != nil {
+			return gerr
+		}
+		// Through Put, which is where renditions are made — so this command
+		// cannot make a different set from the one an upload makes.
+		if perr := lib.Put(f, body); perr != nil {
+			return perr
+		}
+		after, serr := lib.Stat(f.ID)
+		if serr != nil {
+			return serr
+		}
+		if len(after.Renditions) == 0 {
+			skipped++
+			continue
+		}
+		made++
+		for _, r := range after.Renditions {
+			saved += f.Size - r.Size
+			w.Human("  %s%s at %dw · %d kB%s\n", dim, short(r.ID), r.Width,
+				r.Size/1000, reset)
+		}
+		w.Human("%s%s%s\n", bold, f.Name, reset)
+	}
+	for _, note := range lib.Warnings {
+		w.Human("  %s%s%s\n", dim, note, reset)
+	}
+	if w.JSON(map[string]any{"made": made, "skipped": skipped}) {
+		return nil
+	}
+	w.Human("\n%s%d picture(s) given narrower copies, %d skipped%s\n",
+		bold, made, skipped, reset)
+	if made > 0 && !*dry {
+		w.Human("  %sa reader on a phone now fetches the width their screen "+
+			"can use%s\n", dim, reset)
+		w.Human("  %spages do not change: the layouts ask for these by "+
+			"themselves%s\n", dim, reset)
+	}
+	return nil
 }
 
 // mediaRemove takes a file out of the library.
@@ -257,12 +346,26 @@ func mediaRemove(root string, args []string) error {
 	if err := lib.Remove(id); err != nil {
 		return err
 	}
+	// The narrower copies go with it. They exist only for this picture, and a
+	// library holding renditions of a file that is gone is holding bytes
+	// nothing can reach.
+	gone := 0
+	for _, r := range f.Renditions {
+		if rerr := lib.Remove(r.ID); rerr == nil {
+			gone++
+		}
+	}
 	record(root, resolveCaller(root, "").auditRecord("media.remove", "/",
-		audit.Success, map[string]string{"id": short(id), "file": f.Name}))
+		audit.Success, map[string]string{"id": short(id), "file": f.Name,
+			"renditions": fmt.Sprint(gone)}))
 	if w.JSON(map[string]any{"removed": id, "name": f.Name}) {
 		return nil
 	}
 	w.Human("removed %s%s%s\n", bold, f.Name, reset)
+	if gone > 0 {
+		w.Human("  %sand %d narrower copy(ies) that existed only for it%s\n",
+			dim, gone, reset)
+	}
 	w.Human("  %sanything still pointing at it now gets a 404, which is "+
 		"visible%s\n", dim, reset)
 	return nil
@@ -285,8 +388,17 @@ func mediaInUse(root, id string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	_, used := uses[id]
-	return used, nil
+	if _, used := uses[id]; used {
+		return true, nil
+	}
+	// A narrower copy is used when its parent is: no page names it, the
+	// browser chooses it from a srcset, and removing it would leave a
+	// candidate the browser may pick and fail to fetch.
+	if f, serr := lib.Stat(id); serr == nil && f.RenditionOf != "" {
+		_, used := uses[f.RenditionOf]
+		return used, nil
+	}
+	return false, nil
 }
 
 // mediaList prints what the library holds.
@@ -297,7 +409,13 @@ func mediaInUse(root, id string) (bool, error) {
 // list them, which made the gap plainer rather than smaller.
 //
 // The path comes first on each line, because that is the part being copied.
-func mediaList(root string) error {
+func mediaList(root string, args []string) error {
+	fs := flag.NewFlagSet("list", flag.ContinueOnError)
+	all := fs.Bool("all", false,
+		"include the narrower copies made for phones")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 	lib, err := openMedia(root)
 	if err != nil {
 		return fmt.Errorf("the media library could not be opened: %w", err)
@@ -305,6 +423,19 @@ func mediaList(root string) error {
 	files, err := lib.List()
 	if err != nil {
 		return err
+	}
+	// Renditions are hidden. They are files, and they are not answers to
+	// "which picture goes on this page" — a library of eighteen pictures
+	// listed fifty entries once every picture had its narrower copies, and the
+	// listing exists to be read.
+	if !*all {
+		kept := files[:0]
+		for _, f := range files {
+			if f.RenditionOf == "" {
+				kept = append(kept, f)
+			}
+		}
+		files = kept
 	}
 	if w.JSON(files) {
 		return nil
@@ -323,6 +454,9 @@ func mediaList(root string) error {
 		w.Human("%s\n", reset)
 		if f.Alt != "" {
 			w.Human("  %s%s%s\n", dim, f.Alt, reset)
+		}
+		if n := len(f.Renditions); n > 0 {
+			w.Human("  %s%d narrower copy(ies) for phones%s\n", dim, n, reset)
 		}
 		if f.Kind == media.Image && f.Alt == "" {
 			// Not a refusal: it is already stored. But a picture with no

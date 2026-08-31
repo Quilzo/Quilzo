@@ -78,9 +78,21 @@ var (
 	reJSON = regexp.MustCompile(`("(?:start_url|scope|url|src|image|@id)"\s*:\s*")/(?:([^/"])|("))`)
 	// A service worker naming a page to keep offline.
 	reCacheAdd = regexp.MustCompile(`(caches\.[A-Za-z]+\([^)]*)("|')/(?:([^/"'])|("|'))`)
+	// srcset carries a list of candidates, so it needs its own pass: the
+	// attribute forms above rewrite one URL each and would leave every
+	// candidate but the first alone — which, in a subdirectory, is a browser
+	// choosing a picture that 404s. Found by checking that every candidate in
+	// a rendered bundle names a file the bundle holds.
+	reSrcSet    = regexp.MustCompile(`\b(imagesrcset|srcset)=("|')([^"']*)("|')`)
+	reCandidate = regexp.MustCompile(`(^|,\s*)/(?:([^/,\s])|($))`)
 )
 
 func rebaseText(s, at string) string {
+	s = reSrcSet.ReplaceAllStringFunc(s, func(match string) string {
+		parts := reSrcSet.FindStringSubmatch(match)
+		value := reCandidate.ReplaceAllString(parts[3], `${1}`+at+`/$2$3`)
+		return parts[1] + "=" + parts[2] + value + parts[4]
+	})
 	s = reAttr.ReplaceAllString(s, `$1=$2`+at+`/$3$4`)
 	s = reCSSURL.ReplaceAllString(s, `url($1$2`+at+`/$3$4`)
 	s = reJSON.ReplaceAllString(s, `$1`+at+`/$2$3`)

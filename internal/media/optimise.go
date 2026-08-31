@@ -404,3 +404,91 @@ func min(a, b int) int {
 }
 
 var _ = strings.TrimSpace
+
+// RenditionWidths are the narrower copies made for a picture.
+//
+// Three, not seven. Each one is bytes on a disk and in every static copy, and
+// the difference between a 480 and a 560 wide file is not a difference a reader
+// can see — while the difference between 480 and 1200 is four fifths of the
+// transfer on a phone. The list is ascending, and a width at or above the
+// original's is skipped rather than upscaled.
+var RenditionWidths = []int{480, 960, 1440}
+
+// Renditions makes the narrower copies of an image.
+//
+// Returns nothing for a format this cannot re-encode and for an image already
+// narrower than the smallest width — both of which are ordinary, and neither of
+// which is an error: a site whose pictures are all small simply has no
+// renditions and serves the originals, which is the behaviour it had before
+// this existed.
+//
+// A photograph resized to 480 wide is usually smaller as a JPEG than as a PNG,
+// so a PNG source may come back as JPEG renditions. The parent keeps its own
+// format: replacing it would change its address, and its address is in
+// published pages.
+func Renditions(format string, body []byte, opt Options) ([]Optimised, error) {
+	opt = opt.withDefaults()
+	switch format {
+	case "png", "jpeg", "gif":
+	default:
+		return nil, nil
+	}
+	img, _, err := image.Decode(bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("cannot decode the image to resize it: %w", err)
+	}
+	full := img.Bounds().Dx()
+
+	var out []Optimised
+	for _, width := range RenditionWidths {
+		if width >= full {
+			continue
+		}
+		resized, w, h, did := fit(img, width, 0)
+		if !did {
+			continue
+		}
+		target := format
+		if format == "png" && !hasAlpha(resized) {
+			// A photograph, not a diagram. JPEG is dramatically smaller and
+			// the difference is invisible at this size; an image with
+			// transparency stays PNG, because JPEG has none and the
+			// alternative is a black rectangle where the transparency was.
+			target = "jpeg"
+		}
+		encoded, encFormat, eerr := encode(resized, target, opt)
+		if eerr != nil {
+			return nil, eerr
+		}
+		if len(encoded) >= len(body) {
+			// Narrower and no smaller. Nothing to gain and a file to keep, so
+			// it is not made — which happens with small PNGs of flat colour.
+			continue
+		}
+		out = append(out, Optimised{
+			Body: encoded, Format: encFormat, Width: w, Height: h,
+			Was: len(body), Now: len(encoded),
+		})
+	}
+	return out, nil
+}
+
+// hasAlpha reports whether any pixel is not fully opaque.
+//
+// Sampled rather than exhaustive for large images: a grid of points across the
+// picture, because transparency in a real image is a region rather than one
+// stray pixel, and reading twelve million alpha values to decide an encoding is
+// a cost every upload would pay.
+func hasAlpha(img image.Image) bool {
+	b := img.Bounds()
+	stepX := b.Dx()/64 + 1
+	stepY := b.Dy()/64 + 1
+	for y := b.Min.Y; y < b.Max.Y; y += stepY {
+		for x := b.Min.X; x < b.Max.X; x += stepX {
+			if _, _, _, a := img.At(x, y).RGBA(); a < 0xffff {
+				return true
+			}
+		}
+	}
+	return false
+}

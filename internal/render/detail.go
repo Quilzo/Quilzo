@@ -205,7 +205,7 @@ func detailFiles(src Sources, layouts Layouts, name string, body any, d Detail,
 		if cerr != nil {
 			return nil, fmt.Errorf("%s/%s: %w", name, key, cerr)
 		}
-		ctx["record"] = map[string]any(row)
+		src.WithRecord(ctx, map[string]any(row))
 		_, layout, lerr := layouts.For(body)
 		if lerr != nil {
 			return nil, fmt.Errorf("%s/%s: %w", name, key, lerr)

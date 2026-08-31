@@ -132,6 +132,12 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 		st.Media = func(id string) (media.File, []byte, error) {
 			return lib.Get(id)
 		}
+		// And the record on its own, for the pages that ask which narrower
+		// copies a picture has: reading the bytes to answer that would read
+		// every image on the page, on every request.
+		st.MediaStat = func(id string) (media.File, error) {
+			return lib.Stat(id)
+		}
 	}
 
 	// Navigation. Re-read per request rather than captured, because a menu

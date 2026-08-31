@@ -1,6 +1,7 @@
 package render
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -17,6 +18,8 @@ func TestABundleCanBeMovedUnderAPrefix(t *testing.T) {
 		"index.html": []byte(`<link rel="stylesheet" href="/site.css">` +
 			`<a href="/shop">Shop</a><a href="/">Home</a>` +
 			`<img src="/media/abc" alt="x">` +
+			`<img src="/media/big" srcset="/media/small 480w, /media/big 1200w" ` +
+			`sizes="50vw" alt="y">` +
 			`<form action="/form/wholesale"></form>` +
 			`<meta property="og:image" content="/media/abc">` +
 			`<video poster="/media/poster"></video>` +
@@ -39,6 +42,7 @@ func TestABundleCanBeMovedUnderAPrefix(t *testing.T) {
 		`src="/demo2/media/abc"`,
 		`action="/demo2/form/wholesale"`,
 		`content="/demo2/media/abc"`,
+		`srcset="/demo2/media/small 480w, /demo2/media/big 1200w"`,
 		`poster="/demo2/media/poster"`,
 	} {
 		if !strings.Contains(html, want) {
@@ -143,5 +147,105 @@ func TestABundlesAssetsCarryTheirFormat(t *testing.T) {
 		`src="/demo2/media/`+id+`.png"`) {
 		t.Errorf("naming and rebasing do not compose:\n%s",
 			string(moved["index.html"]))
+	}
+}
+
+// A picture's narrower copies reach the template as a srcset.
+//
+// The language cannot call a function, so a layout cannot ask the library which
+// renditions exist — and a layout that guessed would emit a candidate the
+// browser may choose and then fail to fetch. So it is derived, like every other
+// companion, and it is derived for any field holding an asset path rather than
+// for a list of field names somebody has to keep up to date.
+func TestAnAssetFieldGetsItsSrcSet(t *testing.T) {
+	id := "f73de9907689ddb5d33abd37d1465927ad02dae1a6151e23559a714b33f3fc0d"
+	other := "3a2ca8bef9b8724da4994fafaf370fc784c87c32c9d704cf5dd8aad652b95803"
+	src := Sources{
+		SrcSet: func(asked string) string {
+			if asked == id {
+				return "/media/small 480w, /media/" + id + " 1200w"
+			}
+			return ""
+		},
+	}
+	ctx, err := src.For("index", map[string]any{
+		"title": "Aster & Alum",
+		"hero":  map[string]any{"image": "/media/" + id, "alt": "cloth"},
+		"sections": []any{
+			map[string]any{"gallery": map[string]any{"items": []any{
+				// One with renditions, one without, and a field that is not an
+				// asset at all.
+				map[string]any{"image": "/media/" + id},
+				map[string]any{"image": "/media/" + other},
+				map[string]any{"image": "https://example.com/elsewhere.jpg"},
+			}}},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := ctx["page"].(map[string]any)
+	hero := page["hero"].(map[string]any)
+	if hero["image_srcset"] == nil {
+		t.Error("the hero picture has renditions and no srcset companion, so " +
+			"every reader gets the widest file")
+	}
+	items := page["sections"].([]any)[0].(map[string]any)["gallery"].(map[string]any)["items"].([]any)
+	if items[0].(map[string]any)["image_srcset"] == nil {
+		t.Error("a gallery item with renditions got no srcset")
+	}
+	if _, present := items[1].(map[string]any)["image_srcset"]; present {
+		t.Error("a picture with no renditions got a srcset, which would offer " +
+			"the browser a candidate that does not exist")
+	}
+	if _, present := items[2].(map[string]any)["image_srcset"]; present {
+		t.Error("somebody else's URL was treated as an asset in this library")
+	}
+
+	// And a record on a detail page, which is where the picture is largest and
+	// which used to get no companions at all.
+	rctx := map[string]any{}
+	src.WithRecord(rctx, map[string]any{"image": id, "name": "Indigo linen"})
+	rec := rctx["record"].(map[string]any)
+	if rec["image_srcset"] == nil {
+		t.Error("a record's picture got no srcset; a bare id is how a record " +
+			"names one, and the layout puts /media/ in front of it")
+	}
+}
+
+// Every candidate a page offers has to be a file the bundle holds.
+//
+// This is the check that found the srcset gap: the generic attribute pass
+// rewrote one URL per attribute, so in a subdirectory a picture's first
+// candidate moved and the rest did not — and a browser that picked one of the
+// rest got a 404 where a photograph should be. It is a property of the whole
+// bundle rather than of one rewrite, so it is asserted over the whole bundle.
+func TestEverySrcSetCandidateNamesAFileInTheBundle(t *testing.T) {
+	id := "f73de9907689ddb5d33abd37d1465927ad02dae1a6151e23559a714b33f3fc0d"
+	small := "3a2ca8bef9b8724da4994fafaf370fc784c87c32c9d704cf5dd8aad652b95803"
+	files := map[string][]byte{
+		"index.html": []byte(`<img src="/media/` + id + `" srcset="/media/` +
+			small + ` 480w, /media/` + id + ` 1200w" sizes="50vw" alt="x">`),
+		"media/" + id:    {0x89, 'P', 'N', 'G'},
+		"media/" + small: {0x89, 'P', 'N', 'G'},
+	}
+	out := Rebase(Named(files, map[string]string{id: ".jpg", small: ".jpg"}),
+		"/demo2")
+
+	html := string(out["index.html"])
+	for _, m := range regexp.MustCompile(`srcset="([^"]+)"`).
+		FindAllStringSubmatch(html, -1) {
+		for _, candidate := range strings.Split(m[1], ",") {
+			url := strings.Fields(strings.TrimSpace(candidate))[0]
+			path := strings.TrimPrefix(url, "/demo2/")
+			if path == url {
+				t.Errorf("the candidate %s was not moved under the prefix, so "+
+					"a browser choosing it gets a 404", url)
+				continue
+			}
+			if _, ok := out[path]; !ok {
+				t.Errorf("the candidate %s names no file in the bundle", url)
+			}
+		}
 	}
 }

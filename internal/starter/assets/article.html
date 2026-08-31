@@ -50,7 +50,7 @@
 
     {% if page.hero %}
     <figure class="media-full">
-      <img src="{{ page.hero }}" alt="{{ page.hero_alt }}" width="1280" height="720" class="ratio-wide">
+      <img src="{{ page.hero }}"{% if page.hero_srcset %} srcset="{{ page.hero_srcset }}" sizes="(min-width: 46rem) 46rem, 92vw"{% end %} alt="{{ page.hero_alt }}" width="1280" height="720" class="ratio-wide">
       {% if page.hero_caption %}<figcaption class="muted">{{ page.hero_caption }}</figcaption>{% end %}
     </figure>
     {% end %}

@@ -1,6 +1,7 @@
 package render
 
 import (
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -45,6 +46,17 @@ import (
 //	no_slug    true when it has no slug
 //	no_src     true when it has no media source
 //
+// And for every field naming an asset in this library — image, src, poster,
+// share_image, or any other value that is a /media/ path:
+//
+//	<field>_srcset   the narrower copies of that picture, as a srcset value
+//
+// That one is not a pure function of the content: it asks the library which
+// renditions exist. It is here anyway, for the same reason as the rest — a
+// template cannot call a function, and the alternative is every layout guessing
+// at "this id, 480 wide" and emitting a candidate the browser may choose and
+// then fail to fetch.
+//
 // For the hero, additionally:
 //
 //	title      the page's own title, when the hero did not set one
@@ -69,7 +81,7 @@ const maxDeriveDepth = 10
 // into it would leak one page's derived fields into another's and, worse, do it
 // only after the first request — the class of bug that cannot be reproduced on
 // a fresh process.
-func decorate(v any, depth int) any {
+func decorate(v any, depth int, srcset func(string) string) any {
 	if depth > maxDeriveDepth {
 		return v
 	}
@@ -77,14 +89,15 @@ func decorate(v any, depth int) any {
 	case map[string]any:
 		out := make(map[string]any, len(t)+3)
 		for k, vv := range t {
-			out[k] = decorate(vv, depth+1)
+			out[k] = decorate(vv, depth+1, srcset)
 		}
 		derive(out)
+		deriveSrcSets(out, srcset)
 		return out
 	case []any:
 		out := make([]any, len(t))
 		for i, item := range t {
-			out[i] = decorate(item, depth+1)
+			out[i] = decorate(item, depth+1, srcset)
 		}
 		// Position is a property of the list, so it is written after the items
 		// are copied rather than inside each one's own walk.
@@ -111,6 +124,37 @@ func derive(m map[string]any) {
 	setIfAbsent(m, "no_src", !hasText(m, "src"))
 }
 
+// reAssetPath matches a value that addresses this library: /media/ and an id.
+//
+// Anchored and exact, so a field holding somebody else's URL — or a path that
+// happens to contain the word media — is left alone. A bare id is matched too,
+// because a record carries one without the prefix and the catalogue layout puts
+// /media/ in front of it.
+var reAssetPath = regexp.MustCompile(`^(?:/media/)?([0-9a-f]{64})$`)
+
+// deriveSrcSets adds a srcset companion for every asset field on an object.
+func deriveSrcSets(m map[string]any, srcset func(string) string) {
+	if srcset == nil {
+		return
+	}
+	for key, v := range m {
+		if strings.HasSuffix(key, "_srcset") {
+			continue
+		}
+		text, ok := v.(string)
+		if !ok {
+			continue
+		}
+		match := reAssetPath.FindStringSubmatch(strings.TrimSpace(text))
+		if match == nil {
+			continue
+		}
+		if set := srcset(match[1]); set != "" {
+			setIfAbsent(m, key+"_srcset", set)
+		}
+	}
+}
+
 func setIfAbsent(m map[string]any, key string, value any) {
 	if _, exists := m[key]; exists {
 		return
@@ -123,13 +167,24 @@ func hasText(m map[string]any, key string) bool {
 	return ok && strings.TrimSpace(s) != ""
 }
 
+// WithRecord puts one record into a render context, decorated.
+//
+// Two places assigned ctx["record"] directly — the bundle and the detail route
+// — and both handed the layout the raw row, so a record was the one object in a
+// page that got none of the derived companions. Nothing needed them until a
+// picture wanted its narrower copies, and then it needed them on the page where
+// the picture is largest.
+func (s Sources) WithRecord(ctx map[string]any, row map[string]any) {
+	ctx["record"] = decorate(row, 0, s.SrcSet)
+}
+
 // decoratePage decorates a page body and fills in the hero's inherited title.
 //
 // The hero inherits the page title because writing the same string twice is how
 // the two drift apart: somebody renames the page, the hero still says the old
 // name, and nothing catches it because both fields are populated.
-func decoratePage(body any) any {
-	out := decorate(body, 0)
+func decoratePage(body any, srcset func(string) string) any {
+	out := decorate(body, 0, srcset)
 	m, ok := out.(map[string]any)
 	if !ok {
 		return out
@@ -208,6 +263,7 @@ func (s Sources) feeds(data map[string]any) []any {
 				}
 			}
 			derive(copied)
+			deriveSrcSets(copied, s.SrcSet)
 			decorated = append(decorated, copied)
 		}
 		for i, item := range decorated {

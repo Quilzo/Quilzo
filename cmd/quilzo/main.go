@@ -88,6 +88,7 @@ importing
   quilzo media get https://... --alt "..." fetch one, checked at connect time
   quilzo media list                        what is stored, and its path
   quilzo media remove ID                   take one out; refused if in use
+  quilzo media renditions                  narrower copies, for phones
   quilzo media formats                     what is accepted, and what is not
   quilzo form list | expire | erase VALUE  forms, retention and erasure
   quilzo listing list | run NAME           declared queries a page can show
