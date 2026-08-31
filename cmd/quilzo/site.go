@@ -11,16 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/quilzo/quilzo/internal/a2a"
 	"github.com/quilzo/quilzo/internal/api"
 	"github.com/quilzo/quilzo/internal/audit"
-	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/config"
-	"github.com/quilzo/quilzo/internal/form"
-	"github.com/quilzo/quilzo/internal/listing"
-	"github.com/quilzo/quilzo/internal/media"
-	"github.com/quilzo/quilzo/internal/menu"
-	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/search"
@@ -72,193 +65,20 @@ func cmdSite(root string, args []string) error {
 		w.Human("%s%s%s\n", dim, note, reset)
 	}
 
-	st := public.New(s, design.Layouts)
-	st.Fonts = design.Fonts
-	st.Stylesheet = design.Stylesheet
-	// The installed app's splash and chrome, from the same tokens the
-	// stylesheet is generated from — so a themed site does not open on a white
-	// screen under somebody else's accent colour.
-	if design.Theme != nil {
-		if v, ok := design.Theme.Value("surface", false); ok {
-			st.Background = v
-		}
-		if v, ok := design.Theme.Value("primary", false); ok {
-			st.ThemeColour = v
-		}
-	}
-	// The configured name, which the flag overrides for one run. Keeping it in
-	// configuration is what lets the accessibility gate, the preview and the
-	// exports render the same page this serves.
-	if n := siteName(root); n != "" {
-		st.Name = n
-	}
-	st.BaseURL = strings.TrimSpace(*baseURL)
-	// The one write capability this process gets: append a submission to a
-	// store that is not the content store. It cannot read one back — that is
-	// the admin's job, behind authentication, in a different process.
-	if fs, ferr := openSubmissions(root); ferr == nil {
-		st.Forms = &public.Forms{
-			Set:   func() (*form.Set, error) { return loadForms(root) },
-			Store: fs,
-			Limit: throttle.New(throttlePolicy(mustConfig(root))),
-			Audit: func(name, source string, accepted bool) {
-				outcome := audit.Success
-				if !accepted {
-					outcome = audit.Denied
-				}
-				// The form and the source, never the content. A log outliving
-				// the retention period must not be where the deleted data
-				// survives.
-				record(root, audit.Record{
-					Action: "form.submit", Resource: "/" + name,
-					Outcome: outcome, Principal: source,
-					Kind: audit.KindUnknown,
-				})
-			},
-		}
-	}
-	// The declared listings, and one index cache for the process. Without
-	// these a page that shows a query renders without it — which is what
-	// happened the first time, and is invisible because an absent section
-	// looks exactly like an empty one.
-	if set, lerr := loadListings(root); lerr == nil {
-		commit := s.GetRef(site.RefLive)
-		tree := ""
-		if commit != "" {
-			if c, cerr := s.GetCommit(commit); cerr == nil {
-				tree = c.Tree
-			}
-		}
-		st.Listings = &listing.Resolver{
-			Store: s, Index: collection.NewCache(), Tree: tree, Set: set,
-		}
-	}
-	// The asset library. Opened once and looked up per request: the files are
-	// immutable and named by their own hash, so there is nothing to reload and
-	// a cached handle cannot go stale.
-	//
-	// Without this an uploaded image could be stored, described and listed and
-	// never appear on a page, which is what every deployment did until now.
-	if lib, lerr := openMedia(root); lerr == nil {
-		st.Media = func(id string) (media.File, []byte, error) {
-			return lib.Get(id)
-		}
+	// One builder, shared with the static bundle. See sitebuild.go: the server
+	// and `ipfs write` used to assemble their own idea of what this site is,
+	// and the bundle's was missing the sitemap, the licence, the manifest, the
+	// structured data and the provenance marking.
+	st, serr := siteFor(root, design, siteOpts{
+		BaseURL: *baseURL,
+		Note: func(format string, a ...any) {
+			fmt.Fprintf(os.Stderr, format, a...)
+		},
+	})
+	if serr != nil {
+		return serr
 	}
 
-	// Navigation. Re-read per request rather than captured, because a menu
-	// edited while the site is running should take effect the way a published
-	// page does, and because the file is small.
-	//
-	// Without this a site could have menus defined, validated and gating its
-	// publishes, and serve every page without any navigation at all.
-	st.Menus = func() (*menu.Set, error) { return loadMenus(root) }
-
-	// The policy is generated once, at startup, from what is live — the same
-	// moment and the same content the search index is built from. Regenerating
-	// per request would read every page to set a header.
-	if cfg, cerr := loadConfig(root); cerr == nil {
-		st.HSTS = cfg.Dur("site.hsts")
-		// The catalogue feed, when one is named. Validated against the
-		// declared listings here rather than at request time, so a name that
-		// matches nothing is reported once at startup instead of as a 404
-		// nobody can explain.
-		if name := cfg.Raw("site.catalogue"); name != "" {
-			st.Catalogue = name
-		}
-		// The A2A discovery document, when the operator publishes one.
-		//
-		// Built per request rather than once, because the manifests it
-		// describes can be edited without restarting the server — and a card
-		// that goes stale is a card that lies about what is enforced, which is
-		// the one thing it must never do.
-		// The crawl terms, when an operator has published any.
-		//
-		// This was the last mile of a feature that was otherwise finished:
-		// RSL and TDMRep were implemented and tested, and nothing ever set
-		// st.Licence, so /license.xml and /.well-known/tdmrep.json returned
-		// 404 on every deployment there has ever been. Code reachable from
-		// its tests and from nowhere else.
-		if lic, lerr := licenceFrom(cfg); lerr != nil {
-			return lerr
-		} else if lic != nil {
-			st.Licence = lic
-		}
-
-		// The share sheet, when an operator has pointed it at a form.
-		//
-		// Validated here rather than at the first share: a target whose form
-		// has an unreachable required field refuses every share, weeks later,
-		// from somebody's phone, with no error anybody sees.
-		if fname := cfg.Raw("share.form"); fname != "" {
-			sh := &public.ShareTarget{
-				Form:       fname,
-				TitleField: cfg.Raw("share.title_field"),
-				TextField:  cfg.Raw("share.text_field"),
-				URLField:   cfg.Raw("share.url_field"),
-			}
-			var required []string
-			if set, ferr := loadForms(root); ferr == nil {
-				if f, ok := set.Get(fname); ok {
-					for _, fl := range f.Fields {
-						if fl.Required {
-							required = append(required, fl.Name)
-						}
-					}
-				} else {
-					fmt.Printf("  %sshare target names %q, which is not a "+
-						"declared form%s\n", yellow, fname, reset)
-				}
-			}
-			if verr := sh.Validate(required); verr != nil {
-				fmt.Printf("  %sshare sheet off: %v%s\n", yellow, verr, reset)
-			} else {
-				st.Share = sh
-				fmt.Printf("  %sshare sheet: shares land in the %s form%s\n",
-					dim, fname, reset)
-			}
-		}
-		if cfg.Bool("site.agent_card") {
-			st.AgentCard = func() (a2a.Card, error) {
-				set, err := loadAgents(root)
-				if err != nil {
-					return a2a.Card{}, err
-				}
-				card := a2a.From(set.Agents, knownCapabilities(root), a2a.Options{
-					SiteName:         cfg.Raw("site.name"),
-					BaseURL:          st.BaseURL,
-					Version:          version,
-					DocumentationURL: cfg.Raw("site.docs_url"),
-					Provider:         cfg.Raw("site.provider"),
-					ProviderURL:      cfg.Raw("site.provider_url"),
-				})
-				// Validated on the way out. A deployment that would publish an
-				// invalid card serves nothing instead: no card is a site that
-				// is not discoverable, which is true and harmless; an invalid
-				// one is a site that looks discoverable and breaks whatever
-				// tried to use it.
-				if verr := card.Validate(); verr != nil {
-					return a2a.Card{}, verr
-				}
-				return card, nil
-			}
-		}
-		if live := s.GetRef(site.RefLive); live != "" {
-			if pages, perr := site.PagesAt(s, live); perr == nil {
-				policy := buildCSP(cfg, pages)
-				value := policy.Build()
-				st.CSP = policy.Header
-				st.CSPValue = func() string { return value }
-				if n := len(policy.Sources.Img) + len(policy.Sources.Media) +
-					len(policy.Sources.Frame); n > 0 {
-					fmt.Fprintf(os.Stderr, "  %scsp: %s, %d external host(s) "+
-						"named%s\n", dim, policy.Mode, n, reset)
-				} else {
-					fmt.Fprintf(os.Stderr, "  %scsp: %s, nothing external%s\n",
-						dim, policy.Mode, reset)
-				}
-			}
-		}
-	}
 	// Set before anything reads it. It used to be assigned forty lines below
 	// the startup check that consults it, so --index was applied to the server
 	// and not to the warning: passing --index home still reported that / would
@@ -386,8 +206,9 @@ func cmdSite(root string, args []string) error {
 	if *name != "" {
 		st.Name = *name
 	}
-	st.Description = *desc
-	st.LoadProvenance = func() (*provenance.Index, error) { return loadProvenance(root) }
+	if d := strings.TrimSpace(*desc); d != "" {
+		st.Description = d
+	}
 
 	handler := st.Handler()
 

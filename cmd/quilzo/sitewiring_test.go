@@ -26,9 +26,15 @@ import (
 // nowhere.
 //
 // So this walks the fields of public.Site and requires each one to be either
-// assigned in site.go or listed below with a reason. A gap with a written
-// reason is a decision; a gap with nothing next to it is an oversight, and
-// this test cannot tell them apart unless somebody writes the reason down.
+// assigned where a site is built or listed below with a reason. A gap with a
+// written reason is a decision; a gap with nothing next to it is an oversight,
+// and this test cannot tell them apart unless somebody writes the reason down.
+//
+// "Where a site is built" is sitebuild.go and site.go together. It was site.go
+// alone until the static bundle needed the same site the server serves and the
+// wiring moved into a builder both call — at which point this test failed
+// listing fifteen unwired fields that were all still wired, one file over.
+// What matters is that something an operator runs assigns them.
 var notWiredBySite = map[string]string{
 	// Set by public.New from its arguments rather than assigned afterwards.
 	// Ref is not here: site.go assigns it as well, from the environment being
@@ -43,7 +49,7 @@ func TestEverySiteFieldIsEitherWiredOrExplainedAway(t *testing.T) {
 		t.Fatalf("found %d fields on public.Site; the parse is wrong and this "+
 			"test would pass by checking almost nothing", len(fields))
 	}
-	wiring := mustRead(t, "site.go")
+	wiring := mustRead(t, "sitebuild.go") + mustRead(t, "site.go")
 
 	// Only the assignment form counts. Mentioning a field in a comment, or
 	// reading it, is not wiring it — and the original bug read st.Licence in
@@ -72,7 +78,7 @@ func TestEverySiteFieldIsEitherWiredOrExplainedAway(t *testing.T) {
 			"assigns: %s\n"+
 			"  Each is a feature an operator cannot turn on, however well it "+
 			"is implemented and tested.\n"+
-			"  Wire it in site.go, or add it to notWiredBySite with the "+
+			"  Wire it in sitebuild.go, or add it to notWiredBySite with the "+
 			"reason it does not belong there.",
 			len(missing), strings.Join(missing, ", "))
 	}
@@ -80,14 +86,14 @@ func TestEverySiteFieldIsEitherWiredOrExplainedAway(t *testing.T) {
 	// earlier version logged len(assigned) and len(notWiredBySite), which
 	// summed to more than the number of fields and would have read as a pass
 	// covering more than it did.
-	t.Logf("%d field(s) on public.Site: %d wired by site.go, %d explained away",
-		len(fields), wired, explained)
+	t.Logf("%d field(s) on public.Site: %d wired where a site is built, "+
+		"%d explained away", len(fields), wired, explained)
 }
 
 // And the specific one, named, so somebody removing the wiring reads why
 // rather than a generic complaint about a field.
 func TestTheCrawlLicenceIsWiredIntoTheSiteProcess(t *testing.T) {
-	wiring := mustRead(t, "site.go")
+	wiring := mustRead(t, "sitebuild.go") + mustRead(t, "site.go")
 	if !strings.Contains(wiring, "st.Licence = ") {
 		t.Error("`quilzo site` does not assign st.Licence, so /license.xml " +
 			"and /.well-known/tdmrep.json return 404 no matter what the " +
@@ -111,9 +117,10 @@ func TestTheCrawlLicenceIsWiredIntoTheSiteProcess(t *testing.T) {
 	// function that opens a store and binds a port. A regex is a cruder tool
 	// than running the thing, and it is the one that fits where this lives.
 	call := regexp.MustCompile(
-		`(?s)licenceFrom\(cfg\);\s*lerr\s*!=\s*nil\s*\{\s*return\s+lerr`)
+		`(?s)licenceFrom\(cfg\);\s*lerr\s*!=\s*nil\s*\{\s*return\s+(nil,\s*)?lerr`)
 	if !call.MatchString(wiring) {
-		t.Error("site.go does not return the error from licenceFrom, so " +
+		t.Error("the site builder does not return the error from licenceFrom, " +
+			"so " +
 			"contradictory or misspelled crawl terms would be accepted at " +
 			"startup and published to crawlers that act on them")
 	}

@@ -134,40 +134,73 @@ func Bundle(src Sources, layouts Layouts, pages map[string]any,
 // the server would have served. The allow-list on that listing is the one
 // decision about which fields of a record are public, and a second path around
 // it would be a disclosure nobody reviewed.
-func detailFiles(src Sources, layouts Layouts, name string, body any, d Detail,
-	render func(string, map[string]any) (string, error)) (
-	map[string][]byte, error) {
+// DetailRows is every record a detail page stands for, and the key each one is
+// addressed by.
+//
+// Read through the listing the page names, so what a caller sees is what the
+// server would serve: the allow-list on that listing is the one decision about
+// which fields of a record are public, and a second path around it would be a
+// disclosure nobody reviewed.
+//
+// Exported because two callers need the same enumeration — the bundle renders a
+// file per record, and the static copy of a site has to know which addresses
+// exist before it can ask for them. Two enumerations would be two answers to
+// "which records have pages".
+func DetailRows(src Sources, name string, body any, d Detail) (
+	keys []string, rows []listing.Row, err error) {
 
 	if src.Listings == nil || src.Listings.Set == nil {
-		return nil, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"%s reads records through %q and this build has no listings",
 			name, d.Listing)
 	}
 	l, ok := src.Listings.Set.Get(d.Listing)
 	if !ok {
-		return nil, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"%s reads records through the listing %q, which is not declared",
 			name, d.Listing)
 	}
 	idx, err := src.Listings.Index.For(src.Listings.Store, src.Listings.Tree,
 		l.Collection)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
+		return nil, nil, fmt.Errorf("%s: %w", name, err)
 	}
 	res, err := listing.Resolve(l, idx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
+		return nil, nil, fmt.Errorf("%s: %w", name, err)
 	}
-
-	out := map[string][]byte{}
 	for _, row := range res.Rows {
 		key, _ := row[d.Key].(string)
 		if key == "" {
-			// A record with no key has no address, so it cannot have a file.
-			// Skipped rather than written under a blank path, which would
-			// collide every such record onto one page.
+			// A record with no key has no address, so it cannot have a page.
+			// Skipped rather than addressed by a blank path, which would
+			// collide every such record onto one URL.
 			continue
 		}
+		keys = append(keys, key)
+		rows = append(rows, row)
+	}
+	if len(keys) == 0 {
+		return nil, nil, fmt.Errorf(
+			"%s stands for records and the listing %q returned none, so a "+
+				"bundle would carry links to pages that do not exist",
+			name, d.Listing)
+	}
+	return keys, rows, nil
+}
+
+func detailFiles(src Sources, layouts Layouts, name string, body any, d Detail,
+	render func(string, map[string]any) (string, error)) (
+	map[string][]byte, error) {
+
+	keys, rows, err := DetailRows(src, name, body, d)
+	if err != nil {
+		return nil, err
+	}
+
+	out := map[string][]byte{}
+	for i, row := range rows {
+		key := keys[i]
 		ctx, cerr := src.For(name, body, nil)
 		if cerr != nil {
 			return nil, fmt.Errorf("%s/%s: %w", name, key, cerr)
@@ -182,12 +215,6 @@ func detailFiles(src Sources, layouts Layouts, name string, body any, d Detail,
 			return nil, fmt.Errorf("%s/%s: %w", name, key, rerr)
 		}
 		out[name+"/"+key+"/index.html"] = []byte(html)
-	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf(
-			"%s stands for records and the listing %q returned none, so a "+
-				"bundle would carry links to pages that do not exist",
-			name, d.Listing)
 	}
 	return out, nil
 }
