@@ -58,7 +58,7 @@
           {% if page.hero.secondary_href %}<a class="btn btn-outlined btn-lg" href="{{ page.hero.secondary_href }}">{{ page.hero.secondary_label }}</a>{% end %}
         </div>
       </div>
-      <div class="hero-media"><img src="{{ page.hero.image }}" alt="{{ page.hero.alt }}" width="960" height="720"></div>
+      <div class="hero-media"><img src="{{ page.hero.image }}"{% if page.hero.image_srcset %} srcset="{{ page.hero.image_srcset }}" sizes="(min-width: 50rem) 45vw, 92vw"{% end %} alt="{{ page.hero.alt }}" width="960" height="720"></div>
     </div>
     {% end %}
     {% if page.hero.no_image %}
@@ -171,7 +171,7 @@
 <section class="section {{ s.split.tone }} reveal">
   <div class="wrap wrap-wide">
     <div class="split {{ s.split.flip }}">
-      {% if s.split.image %}<img src="{{ s.split.image }}" alt="{{ s.split.alt }}" width="960" height="720">{% end %}
+      {% if s.split.image %}<img src="{{ s.split.image }}"{% if s.split.image_srcset %} srcset="{{ s.split.image_srcset }}" sizes="(min-width: 50rem) 48vw, 92vw"{% end %} alt="{{ s.split.alt }}" width="960" height="720">{% end %}
       <div class="split-text">
         {% if s.split.eyebrow %}<p class="eyebrow">{{ s.split.eyebrow }}</p>{% end %}
         {% if s.split.title %}<h2>{{ s.split.title }}</h2>{% end %}
@@ -190,8 +190,8 @@
     <div class="gallery gallery-{{ s.gallery.shape }}">
       {% for g in s.gallery.items %}
       <figure>
-        {% if g.href %}<a href="{{ g.href }}">{% if g.image %}<img src="{{ g.image }}" alt="{{ g.alt }}" width="800" height="600" loading="lazy">{% end %}<figcaption>{{ g.caption }}</figcaption></a>{% end %}
-        {% if g.unlinked %}{% if g.image %}<img src="{{ g.image }}" alt="{{ g.alt }}" width="800" height="600" loading="lazy">{% end %}{% if g.caption %}<figcaption>{{ g.caption }}</figcaption>{% end %}{% end %}
+        {% if g.href %}<a href="{{ g.href }}">{% if g.image %}<img src="{{ g.image }}"{% if g.image_srcset %} srcset="{{ g.image_srcset }}" sizes="(min-width: 64rem) 24vw, (min-width: 50rem) 46vw, 92vw"{% end %} alt="{{ g.alt }}" width="800" height="600" loading="lazy">{% end %}<figcaption>{{ g.caption }}</figcaption></a>{% end %}
+        {% if g.unlinked %}{% if g.image %}<img src="{{ g.image }}"{% if g.image_srcset %} srcset="{{ g.image_srcset }}" sizes="(min-width: 64rem) 24vw, (min-width: 50rem) 46vw, 92vw"{% end %} alt="{{ g.alt }}" width="800" height="600" loading="lazy">{% end %}{% if g.caption %}<figcaption>{{ g.caption }}</figcaption>{% end %}{% end %}
       </figure>
       {% end %}
     </div>
@@ -322,7 +322,7 @@
     <ul class="people">
       {% for p in s.people.items %}
       <li>
-        {% if p.image %}<img src="{{ p.image }}" alt="{{ p.alt }}" width="480" height="480" loading="lazy">{% end %}
+        {% if p.image %}<img src="{{ p.image }}"{% if p.image_srcset %} srcset="{{ p.image_srcset }}" sizes="(min-width: 50rem) 32vw, 90vw"{% end %} alt="{{ p.alt }}" width="480" height="480" loading="lazy">{% end %}
         <p class="name">{% if p.href %}<a href="{{ p.href }}">{{ p.name }}</a>{% end %}{% if p.unlinked %}{{ p.name }}{% end %}</p>
         {% if p.role %}<p class="role">{{ p.role }}</p>{% end %}
       </li>
@@ -359,7 +359,7 @@
     <ul class="carousel" role="list">
       {% for c in s.carousel.items %}
       <li class="card">
-        {% if c.image %}<img src="{{ c.image }}" alt="{{ c.alt }}" width="800" height="600" loading="lazy">{% end %}
+        {% if c.image %}<img src="{{ c.image }}"{% if c.image_srcset %} srcset="{{ c.image_srcset }}" sizes="(min-width: 64rem) 26vw, (min-width: 46rem) 42vw, 55vw"{% end %} alt="{{ c.alt }}" width="800" height="600" loading="lazy">{% end %}
         <h3>{% if c.href %}<a class="card-link" href="{{ c.href }}">{{ c.title }}</a>{% end %}{% if c.unlinked %}{{ c.title }}{% end %}</h3>
         {% if c.body %}<p>{{ c.body }}</p>{% end %}
       </li>
@@ -413,7 +413,7 @@
     <div class="grid grid-3">
       {% for row in feed.rows %}
       <div class="card">
-        {% if row.image %}<img src="/media/{{ row.image }}" alt="{{ row.alt }}" width="600" height="450" loading="lazy">{% end %}
+        {% if row.image %}<img src="/media/{{ row.image }}"{% if row.image_srcset %} srcset="{{ row.image_srcset }}" sizes="(min-width: 64rem) 17vw, (min-width: 46rem) 34vw, 65vw"{% end %} alt="{{ row.alt }}" width="600" height="450" loading="lazy">{% end %}
         <h3>{% if row.href %}<a class="card-link" href="{{ row.href }}">{{ row.name }}{{ row.title }}</a>{% end %}{% if row.unlinked %}{{ row.name }}{{ row.title }}{% end %}</h3>
         {% if row.summary %}<p>{{ row.summary }}</p>{% end %}
         <div class="foot price-line">
@@ -432,7 +432,7 @@
 <section class="section">
   <div class="wrap wrap-wide">
     <div class="detail-grid">
-      {% if record.image %}<img src="/media/{{ record.image }}" alt="{{ record.alt }}" width="960" height="960">{% end %}
+      {% if record.image %}<img src="/media/{{ record.image }}"{% if record.image_srcset %} srcset="{{ record.image_srcset }}" sizes="(min-width: 50rem) 48vw, 92vw"{% end %} alt="{{ record.alt }}" width="960" height="960">{% end %}
       <div class="stack">
         {% if record.summary %}<p class="lead">{{ record.summary }}</p>{% end %}
         <p class="price-line">

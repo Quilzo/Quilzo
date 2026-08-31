@@ -59,6 +59,15 @@ type Sources struct {
 	Listings *listing.Resolver
 	// Now is the clock the stamp comes from. Nil means time.Now.
 	Now func() time.Time
+	// SrcSet answers what narrower copies an asset has, as a srcset value, or
+	// "" when it has none.
+	//
+	// A function rather than the library itself, because this package must not
+	// know what a media library is: it is handed the one question a layout
+	// needs answered. Nil means no srcset companions, which is what every
+	// deployment had before renditions existed and is still correct for a site
+	// whose pictures are all small.
+	SrcSet func(id string) string
 }
 
 // For builds the context for one page.
@@ -71,7 +80,7 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 		// Decorated, not raw. The derived companions — the negations a language
 		// with no else cannot express — are added here so that every renderer
 		// sees the same page. See derive.go for what they are and why.
-		"page":  decoratePage(body),
+		"page":  decoratePage(body, s.SrcSet),
 		"site":  map[string]any{"name": s.Name, "page": name},
 		"menus": s.menus(name),
 		// When this page was rendered, for a form's timing check.

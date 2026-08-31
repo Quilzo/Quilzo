@@ -47,7 +47,18 @@ import (
 )
 
 // Library is a directory of accepted uploads.
-type Library struct{ dir string }
+type Library struct {
+	dir string
+	// Options are the encoding choices renditions are made with. The zero
+	// value is the pipeline's own defaults, which is what every caller wants
+	// unless it has a reason.
+	Options media.Options
+	// Warnings names what was stored with something missing — a picture whose
+	// narrower copies could not be made, for instance. A file is never lost to
+	// a failed optimisation, and silently losing the optimisation is how
+	// somebody spends an afternoon wondering why one image is heavy.
+	Warnings []string
+}
 
 // reID matches what media.Accept produces: a SHA-256 in lowercase hex.
 //
@@ -111,11 +122,103 @@ func (l *Library) Put(f media.File, body []byte) error {
 	if err := writeAtomic(p, body, 0o600); err != nil {
 		return err
 	}
+
+	// The narrower copies, made here because here is the one place every
+	// interface passes through.
+	//
+	// Three interfaces upload files — the command line, the admin and the chat
+	// bot — and each one optimises the original its own way. Generating
+	// renditions in each would have been three implementations of the same
+	// thing and, on past form, two of them would drift; the type gate for
+	// records is in collection.Put for exactly this reason. So it is here: an
+	// upload through any surface gets the same set, and a page written against
+	// any of them can offer a phone a picture its screen can use.
+	if rends, rerr := l.renditions(f, body); rerr == nil {
+		f.Renditions = rends
+	} else {
+		// Not fatal. A picture with no narrower copies is the picture this
+		// library stored before renditions existed, and refusing the upload
+		// because a resize failed would lose the file over an optimisation.
+		l.Warnings = append(l.Warnings, fmt.Sprintf(
+			"%s was stored without narrower copies: %v", f.Name, rerr))
+	}
+
 	meta, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err
 	}
 	return writeAtomic(p+".json", append(meta, '\n'), 0o600)
+}
+
+// renditions makes and stores the narrower copies of one image.
+//
+// Each is a file in its own right — decoded, hashed and recorded like any
+// upload — because that is the only kind of thing this library holds. They are
+// written directly rather than through Put: a rendition of a rendition is a
+// smaller picture nobody asked for, and the recursion has to stop somewhere
+// obvious.
+func (l *Library) renditions(parent media.File, body []byte) ([]media.Rendition, error) {
+	if parent.Kind != media.Image {
+		return nil, nil
+	}
+	made, err := media.Renditions(string(parent.Format), body, l.Options)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]media.Rendition, 0, len(made))
+	for _, m := range made {
+		// The parent's name without its extension, then the width, then the
+		// rendition's own extension — which may differ, because a resized PNG
+		// photograph is smaller as a JPEG.
+		stem := strings.TrimSuffix(parent.Name, filepath.Ext(parent.Name))
+		name := fmt.Sprintf("%s-%dw%s", stem, m.Width, extensionFor(m.Format))
+		f, aerr := media.Accept(name, m.Body, timeOf(parent))
+		if aerr != nil {
+			return nil, aerr
+		}
+		// Described as its parent is. A rendition is the same picture, so the
+		// same description is the true one — and an image with no description
+		// is refused at publish, which would make a rendition unusable.
+		f.Alt = parent.Alt
+		f.Rights = parent.Rights
+		f.Source = parent.Source
+		f.RenditionOf = parent.ID
+
+		q := l.path(f.ID)
+		if err := os.MkdirAll(filepath.Dir(q), 0o700); err != nil {
+			return nil, err
+		}
+		if err := writeAtomic(q, m.Body, 0o600); err != nil {
+			return nil, err
+		}
+		meta, merr := json.MarshalIndent(f, "", "  ")
+		if merr != nil {
+			return nil, merr
+		}
+		if err := writeAtomic(q+".json", append(meta, '\n'), 0o600); err != nil {
+			return nil, err
+		}
+		out = append(out, media.Rendition{
+			Width: m.Width, ID: f.ID, Size: int64(len(m.Body)),
+			Format: m.Format,
+		})
+	}
+	return out, nil
+}
+
+// extensionFor names a rendition so media.Accept picks the right decoder hint.
+func extensionFor(format string) string {
+	switch format {
+	case "jpeg":
+		return ".jpg"
+	case "png":
+		return ".png"
+	case "gif":
+		return ".gif"
+	case "webp":
+		return ".webp"
+	}
+	return ""
 }
 
 // Get returns a file and its bytes.

@@ -50,7 +50,7 @@
       <div class="grid grid-2">
         {% for w in page.work %}
         <div class="card">
-          {% if w.image %}<img src="{{ w.image }}" alt="{{ w.alt }}" width="800" height="600" class="ratio-wide" loading="lazy">{% end %}
+          {% if w.image %}<img src="{{ w.image }}"{% if w.image_srcset %} srcset="{{ w.image_srcset }}" sizes="(min-width: 50rem) 48vw, 92vw"{% end %} alt="{{ w.alt }}" width="800" height="600" class="ratio-wide" loading="lazy">{% end %}
           {% if w.role %}<p class="chip">{{ w.role }}</p>{% end %}
           <h3>{% if w.href %}<a class="card-link" href="{{ w.href }}">{{ w.title }}</a>{% end %}{% if w.unlinked %}{{ w.title }}{% end %}</h3>
           {% if w.body %}<p>{{ w.body }}</p>{% end %}
@@ -69,7 +69,7 @@
       <div class="gallery gallery-tall">
         {% for g in page.gallery %}
         <figure>
-          <img src="{{ g.image }}" alt="{{ g.alt }}" width="600" height="800" loading="lazy">
+          <img src="{{ g.image }}"{% if g.image_srcset %} srcset="{{ g.image_srcset }}" sizes="(min-width: 64rem) 24vw, (min-width: 50rem) 46vw, 92vw"{% end %} alt="{{ g.alt }}" width="600" height="800" loading="lazy">
           {% if g.caption %}<figcaption>{{ g.caption }}</figcaption>{% end %}
         </figure>
         {% end %}

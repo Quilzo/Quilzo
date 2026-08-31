@@ -279,6 +279,37 @@ type File struct {
 	// is a publishing event nothing otherwise notices.
 	Rights Rights `json:"rights,omitempty"`
 
+	// Renditions are narrower copies of the same picture, for a reader whose
+	// screen is narrower than the original.
+	//
+	// # Why a page needs them
+	//
+	// Without these a page has one file per picture and every reader gets it.
+	// A demo site measured at two megabytes of images on its front page, and a
+	// phone showing them four hundred points wide downloaded every one at
+	// twelve hundred pixels: four fifths of that transfer was pixels the device
+	// could not use. The resizer to fix it was already here — Optimise has
+	// fit() — and nothing called it more than once.
+	//
+	// # Why they are listed on the parent rather than found by name
+	//
+	// Each rendition is its own file at its own hash, because that is what this
+	// library stores. So the parent has to say which ones exist: a template
+	// that guessed at "this id, 480 wide" would emit a candidate the browser
+	// might choose and then fail to fetch, and a srcset with a dead candidate
+	// is worse than no srcset. The list is also the record of what does not
+	// exist — an image narrower than a rendition width has none, and must not
+	// be upscaled to invent one.
+	Renditions []Rendition `json:"renditions,omitempty"`
+
+	// RenditionOf names the picture this is a narrower copy of.
+	//
+	// Recorded because a rendition is a file like any other and, without this,
+	// indistinguishable from one somebody uploaded: `media list` showed fifty
+	// entries for eighteen pictures, and a listing whose job is "which picture
+	// do I put on this page" was mostly answers nobody should choose.
+	RenditionOf string `json:"rendition_of,omitempty"`
+
 	// Supersedes is the file this one replaced, if any.
 	//
 	// Versioning falls out of content addressing — the old bytes are still
@@ -321,6 +352,51 @@ func (f File) Extension() string {
 	}
 	return ""
 }
+
+// Rendition is one narrower copy of an image.
+type Rendition struct {
+	// Width in pixels, which is what a srcset candidate is measured in.
+	Width int `json:"width"`
+	// ID is the rendition's own address in the library: it is a file like any
+	// other, decoded and hashed on the way in.
+	ID string `json:"id"`
+	// Size is its length in bytes, so a listing can say what the saving is.
+	Size int64 `json:"size"`
+	// Format may differ from the parent's — a PNG photograph resized to 480
+	// wide is smaller as a JPEG — so a page can serve the better one.
+	Format string `json:"format"`
+}
+
+// SrcSet is the srcset value for this file: every rendition, then the original.
+//
+// Empty when there are no renditions, so a template can ask for one and emit
+// nothing rather than an attribute with a single candidate in it, which is a
+// slower way of saying what src already said.
+func (f File) SrcSet(base string) string {
+	if len(f.Renditions) == 0 || f.Width == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range f.Renditions {
+		if r.Width <= 0 || r.Width >= f.Width {
+			// A rendition at or above the original's width is an upscale, and
+			// a candidate a browser might prefer to the real thing.
+			continue
+		}
+		fmt.Fprintf(&b, "%s/%s %dw, ", base, r.ID, r.Width)
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	fmt.Fprintf(&b, "%s/%s %dw", base, f.ID, f.Width)
+	return b.String()
+}
+
+// No extension on any of these, deliberately. The server addresses an asset by
+// its bare hash and a static copy renames the files and rewrites every
+// reference — see render.Named — so a srcset written with extensions here would
+// be right in a bundle and wrong on the server, which is the drift the shared
+// bundle exists to prevent.
 
 // DownloadName is a safe filename for Content-Disposition.
 //

@@ -234,3 +234,71 @@ func TestTheBudgetSaysSomethingActionable(t *testing.T) {
 		t.Errorf("200KB is %q, want ok", lvl)
 	}
 }
+
+// A picture gets narrower copies, and a small one does not.
+//
+// Without these every reader gets the one file: a phone showing a picture four
+// hundred points wide downloads it at twelve hundred pixels, which was four
+// fifths of the transfer on a measured demo page. The resizer was already here
+// and nothing called it more than once.
+func TestRenditionsAreMadeOnlyWhereTheyHelp(t *testing.T) {
+	wide := drawImage(t, 1600, 1200)
+	rends, err := Renditions("jpeg", wide, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rends) == 0 {
+		t.Fatal("a 1600 wide picture got no narrower copies, so every reader " +
+			"downloads every pixel")
+	}
+	for _, r := range rends {
+		if r.Width >= 1600 {
+			t.Errorf("a rendition is %d wide, which is an upscale of a 1600 "+
+				"wide original", r.Width)
+		}
+		if len(r.Body) >= len(wide) {
+			t.Errorf("a %d wide rendition is %d bytes against the original's "+
+				"%d, so it costs storage and saves nothing",
+				r.Width, len(r.Body), len(wide))
+		}
+	}
+
+	// An image narrower than the smallest rendition width has none: there is
+	// nothing to make that is not an upscale.
+	small := drawImage(t, 320, 240)
+	rends, err = Renditions("jpeg", small, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rends) != 0 {
+		t.Errorf("a 320 wide picture got %d rendition(s), which can only be "+
+			"upscales", len(rends))
+	}
+
+	// A format this cannot re-encode is not an error — it is a file that keeps
+	// working exactly as it did.
+	if r, err := Renditions("webp", []byte("not really a webp"), Options{}); err != nil ||
+		len(r) != 0 {
+		t.Errorf("an unhandled format gave %d rendition(s), %v", len(r), err)
+	}
+}
+
+// drawImage is a photograph-ish source: a gradient, which compresses like a
+// picture rather than like a flat colour.
+func drawImage(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.Set(x, y, color.RGBA{
+				R: uint8(x % 251), G: uint8(y % 241), B: uint8((x + y) % 239),
+				A: 255,
+			})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpegenc.Encode(&buf, img, &jpegenc.Options{Quality: 90}); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}

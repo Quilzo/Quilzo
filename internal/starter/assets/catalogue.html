@@ -44,7 +44,7 @@
     </div>
 
     <div class="detail-grid">
-      {% if record.image %}<img src="/media/{{ record.image }}" alt="{{ record.alt }}" width="960" height="960" class="ratio-square">{% end %}
+      {% if record.image %}<img src="/media/{{ record.image }}"{% if record.image_srcset %} srcset="{{ record.image_srcset }}" sizes="(min-width: 50rem) 48vw, 92vw"{% end %} alt="{{ record.alt }}" width="960" height="960" class="ratio-square">{% end %}
       <div class="stack">
         <p class="price-line">
           {% if record.price_display %}<span class="amount">{{ record.price_display }}</span>{% end %}
@@ -95,7 +95,7 @@
         {% for row in feed.rows %}
         <li class="card">
           {% if row.image %}
-          <img src="/media/{{ row.image }}" alt="{{ row.alt }}" width="600" height="600" class="ratio-square" loading="lazy">
+          <img src="/media/{{ row.image }}"{% if row.image_srcset %} srcset="{{ row.image_srcset }}" sizes="(min-width: 64rem) 17vw, (min-width: 46rem) 34vw, 65vw"{% end %} alt="{{ row.alt }}" width="600" height="600" class="ratio-square" loading="lazy">
           {% end %}
           <h3>{% if row.href %}<a class="card-link" href="{{ row.href }}">{{ row.name }}{{ row.title }}</a>{% end %}{% if row.unlinked %}{{ row.name }}{{ row.title }}{% end %}</h3>
           {% if row.summary %}<p>{{ row.summary }}</p>{% end %}

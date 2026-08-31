@@ -32,6 +32,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/media"
 	"io"
 	"net/http"
 	"sort"
@@ -159,6 +160,13 @@ type Site struct {
 	// field existed, the behaviour of every deployment including the ones with
 	// one.
 	Media MediaLookup
+	// MediaStat reads what an asset is without reading its bytes.
+	//
+	// Separate from Media because a page asking which narrower copies a
+	// picture has would otherwise read the whole picture to find out — for
+	// every image on the page, on every request. Nil means no srcset, which is
+	// the answer a deployment with no library needs anyway.
+	MediaStat func(id string) (media.File, error)
 	// Menus are the site's navigation, as templates see it.
 	//
 	// This was the whole feature's missing half. Menus could be built, were
@@ -1000,8 +1008,27 @@ func (st *Site) ref() string {
 // and the published page set is what menu targets are checked against — an
 // entry naming a page whose expiry has passed disappears from the navigation at
 // the same moment the page stops answering, rather than at the next publish.
+// srcSet answers what narrower copies an asset has.
+//
+// Read from the library through the same lookup that serves the bytes, so a
+// candidate in a srcset is a file this site will actually hand over. A site
+// with no library, or a picture with no renditions, gets an empty string and
+// the layout emits no attribute — which is what every page did before
+// renditions existed.
+func (st *Site) srcSet(id string) string {
+	if st.MediaStat == nil {
+		return ""
+	}
+	f, err := st.MediaStat(id)
+	if err != nil {
+		return ""
+	}
+	return f.SrcSet("/media")
+}
+
 func (st *Site) sources() render.Sources {
-	src := render.Sources{Name: st.Name, Listings: st.Listings}
+	src := render.Sources{Name: st.Name, Listings: st.Listings,
+		SrcSet: st.srcSet}
 	if st.Menus != nil {
 		if set, err := st.Menus(); err == nil {
 			src.Menus = set

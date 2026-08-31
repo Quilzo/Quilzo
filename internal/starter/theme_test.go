@@ -389,3 +389,49 @@ func TestAFormLayoutCanRenderEveryKindOfField(t *testing.T) {
 		}
 	}
 }
+
+// Every picture in a shipped layout offers the browser a choice.
+//
+// Renditions are made at upload and listed on the parent, and none of that
+// reaches a reader unless the layout emits srcset — and srcset without sizes is
+// a browser guessing at 100vw, which is the wrong answer for every picture that
+// is not full width.
+//
+// sizes is the layout's own statement, because only the layout knows: a gallery
+// cell is a quarter of the column on a desktop and the whole of it on a phone,
+// and the browser chooses the file before any stylesheet has been applied.
+func TestEveryPictureInALayoutOffersASrcSet(t *testing.T) {
+	layouts, err := Layouts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	img := regexp.MustCompile(`<img[^>]*>`)
+	for name, src := range layouts {
+		for _, tag := range img.FindAllString(src, -1) {
+			if !strings.Contains(tag, "srcset") {
+				t.Errorf("%s.html has a picture with no srcset, so every "+
+					"reader downloads the widest file this library holds:"+
+					"\n\t%s", name, trimTag(tag))
+				continue
+			}
+			if !strings.Contains(tag, "sizes=") {
+				t.Errorf("%s.html has a srcset with no sizes, so the browser "+
+					"assumes the picture is the width of the window:\n\t%s",
+					name, trimTag(tag))
+			}
+			// The companion, not a hand-built path. A layout that assembled
+			// "this id, 480 wide" would offer a candidate that may not exist.
+			if !strings.Contains(tag, "_srcset }}") {
+				t.Errorf("%s.html builds a srcset by hand rather than using "+
+					"the derived companion:\n\t%s", name, trimTag(tag))
+			}
+		}
+	}
+}
+
+func trimTag(tag string) string {
+	if len(tag) > 160 {
+		return tag[:157] + "…"
+	}
+	return tag
+}

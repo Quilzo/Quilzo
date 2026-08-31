@@ -188,7 +188,7 @@ func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	ctx["record"] = map[string]any(row)
+	st.sources().WithRecord(ctx, map[string]any(row))
 
 	_, layout, lerr := st.Layouts.For(body)
 	if lerr != nil {
