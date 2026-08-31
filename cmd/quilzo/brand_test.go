@@ -225,3 +225,42 @@ func TestAGateThatCannotReadMustNotReportClean(t *testing.T) {
 		}
 	})
 }
+
+// A sentence can be checked before it is content.
+//
+// The gate read the store, so an author drafting a product description had to
+// save it, check, edit and check again — which is the loop the gate exists to
+// shorten. internal/brand's own argument is that a refusal an author cannot act
+// on is one they route around, and a check they can run on a line of copy is the
+// difference between a tool and an obstacle discovered at publish.
+func TestASentenceCanBeCheckedWithoutSavingIt(t *testing.T) {
+	source, err := os.ReadFile("brandcmd.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(source)
+	if !strings.Contains(src, `fs.String("text"`) {
+		t.Fatal("brand check cannot be given a sentence, so the only way to " +
+			"see whether copy trips a rule is to publish it")
+	}
+	// The store must not be touched: this has to work on a draft nobody has
+	// committed, and in a directory with no store at all.
+	textPath := src[strings.Index(src, `if strings.TrimSpace(*text) != ""`):]
+	textPath = textPath[:strings.Index(textPath, "\n\ts, err := open(root)")]
+	if strings.Contains(textPath, "open(root)") ||
+		strings.Contains(textPath, "brandFindings(") {
+		t.Error("checking a sentence reads the store, so it cannot be used " +
+			"before there is one")
+	}
+	if !strings.Contains(textPath, `r.Check(`) {
+		t.Error("the sentence is not run through the compiled rules")
+	}
+
+	// The positional ref still comes off before the flags are parsed. Go's flag
+	// package stops at the first non-flag argument, and this tree has written
+	// that bug twice.
+	if !strings.Contains(src, `!strings.HasPrefix(args[0], "-")`) {
+		t.Error("brand check parses flags after a positional ref, so " +
+			"`brand check live --text \"...\"` would silently ignore the flag")
+	}
+}

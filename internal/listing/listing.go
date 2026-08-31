@@ -407,13 +407,26 @@ func project(l *Listing, r collection.Record) Row {
 		return row
 	}
 	for _, f := range l.Fields {
+		// Absent stays absent. A field on the allowlist that this record does
+		// not carry is left out rather than set to nil.
+		//
+		// It used to be nil, so that a template's {% if row.x %} would mean
+		// "has a value" rather than "the listing happened to include the
+		// field" — but the template language reads a missing key and a nil the
+		// same way, so that distinction was never visible to a template and
+		// the nil was visible everywhere else. In /catalogue.json it became
+		// "guarantee_terms": null, which is a statement that the field exists
+		// and is empty: a consumer applying a schema accepts it, and a
+		// JSON-LD consumer treats an explicit null differently from an absent
+		// key. It also disagreed with the structured data on the page, which
+		// omits what it does not know, for the reason written there — machines
+		// do not apply charity to blank strings.
+		//
+		// A field that is present and empty is untouched: "" is a value
+		// somebody left blank, and the claim gate depends on telling that from
+		// a field nobody has.
 		if v, ok := r.Fields[f]; ok {
 			row[f] = v
-		} else {
-			// Present and empty rather than absent, so a template's
-			// {% if row.x %} means "has a value" rather than "the listing
-			// happened to include the field this time".
-			row[f] = nil
 		}
 	}
 	return row

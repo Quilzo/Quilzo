@@ -246,6 +246,8 @@ func rightsSet(root string, args []string) error {
 	holder := fs.String("holder", "", "who owns the underlying work")
 	until := fs.String("until", "", "when permission ends (YYYY-MM-DD; \"never\" clears it)")
 	note := fs.String("note", "", "restrictions that do not fit a field")
+	clear := fs.Bool("clear", false,
+		"remove the record entirely, leaving the asset undeclared")
 	token := fs.String("token", "", "authenticate as the holder of this token")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -274,6 +276,46 @@ func rightsSet(root string, args []string) error {
 		return err
 	}
 	r := f.Rights
+	// Removing the record, rather than editing it.
+	//
+	// Every flag applies only when non-empty, which is what makes a partial
+	// edit work: --until on its own must not wipe the holder. The cost was that
+	// nothing could say "this was recorded wrongly, take it off" — and an asset
+	// carrying a licence that does not exist is worse than one carrying none,
+	// because `quilzo rights` reports the undeclared ones so somebody goes and
+	// declares them, and reports a wrong one as fine.
+	//
+	// A flag rather than a magic word. --until already accepts "never", and
+	// extending that to --licence none, --holder none and --note none would
+	// mean three words to clear one record and a licence genuinely called
+	// "none" would be unrecordable. Clearing is one act, so it is one flag, and
+	// it clears everything: media.Rights.Validate refuses an expiry with no
+	// licence and no holder, so a partial clear would leave a store in a state
+	// its own validator rejects.
+	if *clear {
+		if *licence != "" || *holder != "" || *until != "" || *note != "" {
+			return fmt.Errorf(
+				"--clear removes the whole record, so it cannot be combined " +
+					"with a value to set. Clear it, then set what is true")
+		}
+		if f.Rights == (media.Rights{}) {
+			w.Human("%s: nothing recorded\n", shortID(f.ID))
+			return nil
+		}
+		was := f.Rights
+		f.Rights = media.Rights{}
+		if perr := lib.Put(f, body); perr != nil {
+			return perr
+		}
+		record(root, caller.auditRecord("rights.set", f.ID, audit.Success,
+			map[string]string{"cleared": "the whole record",
+				"was": was.Licence + " / " + was.Holder}))
+		w.Human("%s: undeclared\n", shortID(f.ID))
+		w.Human("  %sit was %s, %s%s\n", dim, was.Licence, was.Holder, reset)
+		w.Human("  %s`quilzo rights` lists it again as something to declare%s\n",
+			dim, reset)
+		return nil
+	}
 	if *licence != "" {
 		r.Licence = *licence
 	}

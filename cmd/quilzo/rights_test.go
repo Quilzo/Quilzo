@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -221,4 +222,40 @@ func testPNG(name string) []byte {
 		panic(err)
 	}
 	return buf.Bytes()
+}
+
+// A licence recorded wrongly can be taken off.
+//
+// Every flag on `rights set` applies only when non-empty, which is what makes a
+// partial edit work — --until on its own must not wipe the holder — and the
+// cost was that nothing could say "this was recorded wrongly". An asset
+// carrying a licence that does not exist is worse than one carrying none:
+// `quilzo rights` reports the undeclared ones so somebody declares them, and
+// reports the wrong one as cleared.
+//
+// It clears the whole record, because media.Rights.Validate refuses an expiry
+// with no licence and no holder — a partial clear would leave a store in a
+// state its own validator rejects.
+func TestClearingRightsLeavesNothingHalfRecorded(t *testing.T) {
+	source, err := os.ReadFile("rightscmd.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(source)
+	if !strings.Contains(src, `fs.Bool("clear"`) {
+		t.Fatal("rights set has no way to remove a record, so an asset " +
+			"declared wrongly stays declared wrongly")
+	}
+	if !strings.Contains(src, "f.Rights = media.Rights{}") {
+		t.Error("clearing does not empty the record")
+	}
+	// Combining it with a value to set is refused rather than half-applied.
+	if !strings.Contains(src, "--clear removes the whole record") {
+		t.Error("clearing does not refuse being combined with an edit, so " +
+			"`--clear --licence x` would do one of two things and not say which")
+	}
+	// And it is audited, because taking a licence off is a publishing decision.
+	if !strings.Contains(src, `"cleared"`) {
+		t.Error("clearing a licence is not recorded in the audit log")
+	}
 }

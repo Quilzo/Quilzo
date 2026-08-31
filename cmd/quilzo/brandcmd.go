@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -117,14 +118,23 @@ func brandInit(root string) error {
 }
 
 func brandCheck(root string, args []string) error {
-	s, err := open(root)
-	if err != nil {
+	// The positional ref comes off the front before the flags are parsed.
+	//
+	// Go's flag package stops at the first non-flag argument, so
+	// `brand check live --text "..."` would parse zero flags and hand back two
+	// positionals — silently, with --text empty. That bug is written twice in
+	// this tree already; see the note in rightscmd.go.
+	ref := site.RefDraft
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		ref, args = args[0], args[1:]
+	}
+	fs := flag.NewFlagSet("brand check", flag.ContinueOnError)
+	text := fs.String("text", "",
+		"check this sentence instead of the store, for copy not yet written")
+	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	ref := site.RefDraft
-	if len(args) > 0 {
-		ref = args[0]
-	}
+
 	r, err := loadBrand(root)
 	if err != nil {
 		return err
@@ -132,6 +142,42 @@ func brandCheck(root string, args []string) error {
 	if len(r.Terms) == 0 {
 		fmt.Printf("  %sno claim rules; nothing was checked%s\n", dim, reset)
 		return nil
+	}
+
+	// A sentence somebody is still writing.
+	//
+	// The gate reads content out of the store, so checking a line of copy meant
+	// saving it, running the check, editing, and running it again — which is the
+	// loop the gate exists to shorten. The whole argument in internal/brand is
+	// that a refusal an author cannot act on is one they route around.
+	//
+	// The store is not touched at all: no ref is resolved and nothing is read,
+	// so this works on a draft nobody has committed and in a directory with no
+	// store in it.
+	if strings.TrimSpace(*text) != "" {
+		findings := r.Check("this sentence", map[string]any{"text": *text})
+		if len(findings) == 0 {
+			fmt.Printf("%snothing in that sentence needs substantiating%s\n",
+				green, reset)
+			return nil
+		}
+		printBrand(findings)
+		// Substantiation cannot succeed here, and saying so is the difference
+		// between a useful answer and a discouraging one: a rule with Needs is
+		// satisfied by a field elsewhere in the same record, and a bare
+		// sentence has no record. The finding names the field, so the author
+		// knows what to put beside the copy rather than what to delete from it.
+		fmt.Printf("  %sa sentence on its own carries no evidence field, so "+
+			"anything needing one reports here%s\n", dim, reset)
+		fmt.Printf("  %swrite the copy with its evidence field and check the "+
+			"draft to see it clear%s\n", dim, reset)
+		return fmt.Errorf("%d claim(s) in that sentence need substantiation",
+			len(findings))
+	}
+
+	s, err := open(root)
+	if err != nil {
+		return err
 	}
 	findings, checked, err := brandFindings(s, r, ref)
 	if err != nil {
