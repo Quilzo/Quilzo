@@ -54,6 +54,28 @@
           {% if page.standfirst %}<p class="lead">{{ page.standfirst }}</p>{% end %}
         </div>
 
+        {% if search %}
+        <form class="search" method="get" action="/search" role="search">
+          <label for="q">Search this site</label>
+          <div class="search-row">
+            <input id="q" name="q" type="search" value="{{ search.query }}"
+                   autocomplete="off" spellcheck="false">
+            <button class="btn" type="submit">Search</button>
+          </div>
+        </form>
+        {% if search.empty %}<p class="muted">Nothing matched “{{ search.query }}”.</p>{% end %}
+        {% if search.count %}
+        <ul class="results" role="list">
+          {% for r in search.results %}
+          <li>
+            <h3><a href="{{ r.href }}">{{ r.title }}</a></h3>
+            {% if r.snippet %}<p>{{ r.snippet }}</p>{% end %}
+          </li>
+          {% end %}
+        </ul>
+        {% end %}
+        {% end %}
+
         {% if page.body %}<div class="prose narrow"><p>{{ page.body }}</p></div>{% end %}
         {% if page.paragraphs %}<div class="prose narrow">{% for p in page.paragraphs %}<p>{{ p }}</p>{% end %}</div>{% end %}
 

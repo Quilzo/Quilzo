@@ -83,6 +83,39 @@
 </div>
 {% end %}
 
+{% if search %}
+<section class="section">
+  <div class="wrap">
+    <form class="search" method="get" action="/search" role="search">
+      <label for="q">Search this site</label>
+      <div class="search-row">
+        <input id="q" name="q" type="search" value="{{ search.query }}"
+               autocomplete="off" spellcheck="false">
+        <button class="btn" type="submit">Search</button>
+      </div>
+    </form>
+
+    {% if search.empty %}
+    <p class="muted">Nothing matched “{{ search.query }}”. Every word has to
+      appear somewhere on a page, so fewer words find more.</p>
+    {% end %}
+
+    {% if search.count %}
+    <p class="muted">{{ search.count }} result(s) for “{{ search.query }}”.</p>
+    <ul class="results" role="list">
+      {% for r in search.results %}
+      <li>
+        <h3><a href="{{ r.href }}">{{ r.title }}</a></h3>
+        {% if r.snippet %}<p>{{ r.snippet }}</p>{% end %}
+        <p class="muted">matched in {{ r.fields }}</p>
+      </li>
+      {% end %}
+    </ul>
+    {% end %}
+  </div>
+</section>
+{% end %}
+
 {% for s in page.sections %}
 
 {% if s.features %}

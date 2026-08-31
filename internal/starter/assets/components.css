@@ -485,6 +485,23 @@ td.num, th.num { text-align: right; font-family: var(--font-mono); font-variant-
 .people .name { font-weight: 700; }
 .people .role { font-size: var(--text-sm); color: var(--on-surface-variant); }
 
+/* -- search ---------------------------------------------------------------- */
+
+.search { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-6); }
+.search label { font-weight: 700; font-size: var(--text-sm); }
+.search-row { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.search input {
+  flex: 1 1 16rem; min-height: 48px;
+  padding-inline: var(--space-4);
+  border: var(--border) solid var(--outline);
+  border-radius: var(--radius-md);
+  background: var(--surface-container-lowest); color: var(--on-surface);
+  font: inherit; font-size: var(--text-base);
+}
+.results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-5); }
+.results h3 { margin: 0 0 var(--space-1); }
+.results p { margin: 0; }
+
 /* -- quote, logos, notice -------------------------------------------------- */
 
 blockquote.pull {

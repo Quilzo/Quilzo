@@ -1,6 +1,7 @@
 package search
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -267,5 +268,64 @@ func TestAnEmptyQueryReturnsNothing(t *testing.T) {
 	var nilIdx *Index
 	if got := nilIdx.Search("anything", 10); got != nil {
 		t.Error("a nil index returned results")
+	}
+}
+
+// The words on a page are the words in the index.
+//
+// The indexer read a string and a list of strings and stopped, and a page built
+// the way the shipped layouts want has almost no text at that level: the words
+// are in a hero object and in a list of section objects. So a site's index
+// covered its titles and its footer, a search for a word printed twice on the
+// front page found nothing, and neither side was wrong about its own job.
+func TestNestedContentIsIndexed(t *testing.T) {
+	page := map[string]any{
+		"title": "Aster & Alum",
+		"hero": map[string]any{
+			"title": "Colour that comes out of a bucket",
+			"lead":  "We dye cloth with madder and weld.",
+			// An address, not prose: indexing it would put a hash in the term
+			// list and match nothing anybody types.
+			"image": "/media/" + strings.Repeat("a", 64),
+		},
+		"sections": []any{
+			map[string]any{"features": map[string]any{
+				"title": "Three things",
+				"items": []any{
+					map[string]any{"title": "Stationery",
+						"body": "Letterpress cards on cotton stock."},
+				},
+			}},
+			map[string]any{"prose": map[string]any{
+				"paragraphs": []any{"Indigo does not dissolve in water."},
+			}},
+		},
+	}
+	idx := Build("commit", map[string]any{"index": page})
+
+	for _, term := range []string{"madder", "weld", "letterpress", "cotton",
+		"indigo", "dissolve"} {
+		if len(idx.Search(term, 5)) == 0 {
+			t.Errorf("%q is on the page and not in the index", term)
+		}
+	}
+	// A path is not prose.
+	if len(idx.Search(strings.Repeat("a", 64), 5)) != 0 {
+		t.Error("a media path was indexed, which fills the term list with " +
+			"hashes nobody searches for")
+	}
+	// And a phrase spanning two nested fields still needs every word present
+	// somewhere on the page, which is the ranking rule this package documents.
+	if len(idx.Search("madder letterpress", 5)) == 0 {
+		t.Error("two words from different sections of one page did not match it")
+	}
+
+	// Deterministic: two builds of the same content produce the same index,
+	// which is what lets it be addressed like everything else here.
+	again := Build("commit", map[string]any{"index": page})
+	first, _ := json.Marshal(idx)
+	second, _ := json.Marshal(again)
+	if string(first) != string(second) {
+		t.Error("two builds of one page produced different indexes")
 	}
 }

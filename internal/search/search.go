@@ -153,21 +153,87 @@ func Build(commit string, pages map[string]any) *Index {
 	return idx
 }
 
-// fieldStrings pulls every string out of a field value, including list items.
+// Strings is every piece of prose in a value, however deeply it sits.
+//
+// Exported because the search page builds its snippets from it. A snippet has to
+// come from the same text the index saw, or a result matches on a word the
+// snippet does not contain — which reads as a bug in the ranking and is a bug in
+// having two traversals.
+func Strings(v any) []string { return fieldStrings(v) }
+
+// fieldStrings pulls every string out of a field value, however deeply it sits.
+//
+// # Why it goes down
+//
+// It used to read a string and a list of strings, and stop. A page built the way
+// this product recommends has almost no text at that level: the words are in a
+// hero object and in a list of section objects, each of which holds titles,
+// paragraphs and items. So the index covered a page's title, its description and
+// its footer, and none of what anybody wrote — a search for a word printed
+// twice on the front page found nothing, and there was no way to tell from
+// either side, because the indexer was correct about the fields it was given
+// and the page was correct about carrying them.
+//
+// Found by searching a real site for a word in its own copy.
+//
+// # Why it is bounded
+//
+// Content is nested by authors and by importers, and a walk with no limit is a
+// way to spend the indexer's stack on a page somebody wrote. The depth bound is
+// the same argument as internal/render's, and the term budget above already
+// bounds the total work per page.
 func fieldStrings(v any) []string {
+	var out []string
+	collectStrings(v, 0, &out)
+	return out
+}
+
+// maxIndexDepth is how far into a page's structure the indexer reads.
+//
+// Six is past every shape the shipped layouts produce — a page holds sections,
+// a section holds items, an item holds a list — with room for content somebody
+// imported from a system that nested things more enthusiastically.
+const maxIndexDepth = 6
+
+func collectStrings(v any, depth int, out *[]string) {
+	if depth > maxIndexDepth {
+		return
+	}
 	switch t := v.(type) {
 	case string:
-		return []string{t}
-	case []any:
-		var out []string
-		for _, item := range t {
-			if s, ok := item.(string); ok {
-				out = append(out, s)
-			}
+		if t != "" {
+			*out = append(*out, t)
 		}
-		return out
+	case []any:
+		for _, item := range t {
+			collectStrings(item, depth+1, out)
+		}
+	case map[string]any:
+		// Sorted, because the index is content-addressed: two builds of the
+		// same page have to produce the same postings in the same order, and
+		// map iteration does not.
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			// Not the keys that are addresses rather than prose. An id, a
+			// media path or a URL tokenises into noise that matches nothing
+			// anybody types and crowds out the terms that do.
+			if skipIndexing[k] {
+				continue
+			}
+			collectStrings(t[k], depth+1, out)
+		}
 	}
-	return nil
+}
+
+// skipIndexing are fields whose value is an address rather than prose.
+var skipIndexing = map[string]bool{
+	"image": true, "src": true, "poster": true, "href": true, "url": true,
+	"cta_href": true, "transcript_href": true, "share_image": true,
+	"detail_key": true, "slug": true, "layout": true, "pct": true,
 }
 
 // Tokenise splits text into searchable terms.
