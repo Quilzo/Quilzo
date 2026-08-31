@@ -626,8 +626,7 @@ var templates = map[string]Template{
 		Look: "Warm and product-forward. Square images, a soft ground, and " +
 			"availability carried by a labelled state rather than colour alone.",
 		Fields: []string{"title", "intro", "eyebrow", "description", "filters",
-			"footer", "form", "form_title", "fields", "privacy", "form_submit",
-			"body_paragraphs", "basket_label", "basket_href"},
+			"footer", "body_paragraphs", "basket_label", "basket_href"},
 		Tokens: map[string]string{
 			"radius": "14px", "density": "1", "scale": "1.28",
 			"font-display": "transitional", "font-body": "humanist",
@@ -659,18 +658,22 @@ var templates = map[string]Template{
 			},
 			"body_paragraphs": []any{
 				"This page reads its products through a declared listing, which is what decides which fields are public.",
+				"It also carries a form by name. Declare one called enquiry — `quilzo form list` shows what exists — and the questions, the notice and the send button come from that declaration rather than from this page.",
 				"A record's own page exists because another page declared itself the detail route for the same listing — so the links here point somewhere real or render as plain text.",
 			},
-			"form": "enquiry", "form_title": "Wholesale enquiry",
-			"form_submit": "Send enquiry",
-			"fields": []any{
-				map[string]any{"name": "shop", "label": "Shop name", "type": "text", "required": true},
-				map[string]any{"name": "contact", "label": "Your name", "type": "text", "required": true},
-				map[string]any{"name": "email", "label": "Email", "type": "email", "required": true},
-				map[string]any{"name": "detail", "label": "Anything else", "textarea": true,
-					"hint": "Which ranges, and roughly what volume."},
-			},
-			"privacy":      "We keep enquiries for two years and never pass them on.",
+			// The form's name and nothing else.
+			//
+			// The questions, their kinds, the notice and how long answers are
+			// kept all live in the declaration — `quilzo form list` — and this
+			// sample used to repeat the field list so the layout had something
+			// to iterate. Two lists of the same questions, kept in step by
+			// hand, which drift the first time somebody adds one: the page
+			// renders the old list, a sender submits it, and the server refuses
+			// for a required field they were never shown.
+			//
+			// Nothing renders until a form called enquiry exists, which is the
+			// honest state: a form nobody declared has no questions to ask.
+			"form":         "enquiry",
 			"basket_label": "Basket", "basket_href": "/basket",
 			"footer": "© Example. Built with Quilzo.",
 		},

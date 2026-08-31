@@ -59,6 +59,10 @@ type Sources struct {
 	Listings *listing.Resolver
 	// Now is the clock the stamp comes from. Nil means time.Now.
 	Now func() time.Time
+	// Form resolves a declared form into what a template renders. Nil means a
+	// page naming one gets no form data and its layout renders nothing, which
+	// is what every deployment did before the declaration was the only list.
+	Form func(name string) map[string]any
 	// SrcSet answers what narrower copies an asset has, as a srcset value, or
 	// "" when it has none.
 	//
@@ -101,6 +105,11 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 		// refused, which is the same failure by a different route. The form
 		// parses this field as text anyway.
 		"stamp": strconv.FormatInt(s.now().Unix(), 10),
+	}
+	// The form this page carries, from the declaration rather than from a copy
+	// of the questions in the page. See formdata.go.
+	if f := s.form(body); f != nil {
+		ctx["form"] = f
 	}
 	if s.Listings != nil {
 		data, err := s.Listings.For(body, args)

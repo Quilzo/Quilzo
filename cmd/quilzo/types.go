@@ -50,10 +50,28 @@ func typesList(root string) error {
 	names := st.Registry.Names()
 
 	if w.Mode == out.JSON {
-		w.JSON(map[string]any{"types": st.Registry.Types, "bound": st.Bound})
+		w.JSON(map[string]any{"types": st.Registry.Types, "bound": st.Bound,
+			"broken": st.Broken})
 		return nil
 	}
-	if len(names) == 0 {
+	// The ones that no longer compile, first, because they are the reason
+	// something else is not working. They are not in the registry, so nothing
+	// validates against them — which is the point of showing them here rather
+	// than refusing to show anything.
+	if len(st.Broken) > 0 {
+		bad := make([]string, 0, len(st.Broken))
+		for name := range st.Broken {
+			bad = append(bad, name)
+		}
+		sort.Strings(bad)
+		for _, name := range bad {
+			w.Human("%s%s%s  %sis not in use: %s%s\n", bold, name, reset,
+				yellow, st.Broken[name], reset)
+			w.Human("  %sedit it and `quilzo type add` it again; nothing is "+
+				"validated against it meanwhile%s\n", dim, reset)
+		}
+	}
+	if len(names) == 0 && len(st.Broken) == 0 {
 		w.Human("no content types\n")
 		w.Human("  %sa type is a flat list of fields: no regex, no references, "+
 			"no nesting%s\n", dim, reset)

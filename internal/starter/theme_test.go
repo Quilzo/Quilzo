@@ -360,13 +360,17 @@ func TestTheArrangementQueriesHaveAContainerToMeasure(t *testing.T) {
 //
 // Found by declaring a wholesale form with a choice and a consent box, and
 // getting a page with one hidden honeypot on it.
+//
+// The list itself now comes from the declaration rather than from a copy in the
+// page — see internal/render/formdata.go — so this checks the controls a layout
+// can draw, which is the part a declaration cannot fix.
 func TestAFormLayoutCanRenderEveryKindOfField(t *testing.T) {
 	layouts, err := Layouts()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for name, src := range layouts {
-		if !strings.Contains(src, "page.fields") {
+		if !strings.Contains(src, "form.fields") {
 			continue
 		}
 		for control, why := range map[string]string{

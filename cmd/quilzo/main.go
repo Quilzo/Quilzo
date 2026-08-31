@@ -27,6 +27,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/tmpl"
@@ -923,6 +924,54 @@ func cmdPublish(root string, args []string) error {
 				"%d image(s) would be published under permission that has "+
 					"ended.\n  Renew the licence and record the new date, or "+
 					"take the image off the page", rep.Blocking())}
+		}
+	}
+
+	// The arrangement gate, with the other content gates.
+	//
+	// A section whose kind this build does not know renders as nothing at all:
+	// a page carrying "gallry" is a page with a gallery missing, no message
+	// anywhere, and a publish that reported success. The kinds are a closed
+	// list, so this is a check the tool can make and the author cannot.
+	//
+	// Blocking for the kind, advisory for the fields inside it — a layout may
+	// read a value the shipped stub does not mention, and refusing those would
+	// refuse pages that render correctly today.
+	{
+		candidate := target
+		if candidate == "" {
+			candidate = s.GetRef(site.RefDraft)
+		}
+		pages, perr := site.PagesAt(s, candidate)
+		if perr != nil {
+			return errBlocked{fmt.Errorf(
+				"the arrangement check could not run, so publishing would "+
+					"claim a check that did not happen: %w", perr)}
+		}
+		names := make([]string, 0, len(pages))
+		for name := range pages {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		blocking := 0
+		for _, name := range names {
+			bad, advice := section.Validate(pages[name])
+			for _, p := range advice {
+				w.Human("  %s%s: %s%s\n", dim, name, p, reset)
+			}
+			for _, p := range bad {
+				blocking++
+				w.Human("  %s%s: %s%s\n", yellow, name, p, reset)
+			}
+		}
+		if blocking > 0 {
+			record(root, caller.auditRecord("publish", "/", audit.Denied,
+				map[string]string{"reason": "arrangement",
+					"sections": fmt.Sprintf("%d", blocking)}))
+			return errBlocked{fmt.Errorf(
+				"%d section(s) would render as nothing. A kind this build does "+
+					"not know is not a section; `quilzo section kinds` lists "+
+					"the ones there are", blocking)}
 		}
 	}
 

@@ -26,6 +26,12 @@ import (
 // operation — and all three call Gate. Adding a fourth without calling it is
 // caught by a test that walks the source.
 type Store struct {
+	// Broken names the stored types that no longer compile, and why.
+	//
+	// Not serialised: it is a fact about this load, derived from the file, and
+	// writing it back would make a repaired type look broken forever.
+	Broken map[string]string `json:"-"`
+
 	dir      string
 	Registry *Registry `json:"types"`
 	// Bound maps a page to the type it is expected to satisfy. A page with no
@@ -227,9 +233,24 @@ func Load(dir string) (*Store, error) {
 	// Compile, and the bounds Compile enforces are the reason validation is
 	// bounded. Trusting the file because it is ours is how a limit becomes
 	// advisory.
+	//
+	// Set aside rather than fatal. Refusing the whole load meant one bad type
+	// made every type command refuse, including the ones that would show you
+	// which type and why: the store became unreadable and therefore
+	// unrepairable through the tool. It happened here the day a field name
+	// became reserved — a type that compiled last week did not this week, and
+	// there was no way to look at it.
+	//
+	// A broken type is not in the registry, so nothing validates against it and
+	// no page is quietly let through: Store.Broken is what the commands report,
+	// and a page bound to one is refused by name.
 	for name, t := range s.Registry.Types {
 		if err := Compile(t); err != nil {
-			return nil, fmt.Errorf("stored type %q does not compile: %w", name, err)
+			if s.Broken == nil {
+				s.Broken = map[string]string{}
+			}
+			s.Broken[name] = err.Error()
+			delete(s.Registry.Types, name)
 		}
 	}
 	return s, nil
@@ -271,6 +292,15 @@ func (s *Store) Check(page string, body any) []Problem {
 		// A binding pointing at a deleted type is a configuration error, and it
 		// must fail closed. Treating it as "unbound" would make deleting a type
 		// a way to switch validation off for every page using it.
+		//
+		// A type that is stored and does not compile is the same situation with
+		// a different cause, and saying which one it is saves somebody looking
+		// for a type they can see in the file.
+		if why, broken := s.Broken[typeName]; broken {
+			return []Problem{{Field: page, Reason: fmt.Sprintf(
+				"is bound to type %q, which is stored and does not compile, so "+
+					"nothing is validated against it: %s", typeName, why)}}
+		}
 		return []Problem{{Field: page, Reason: fmt.Sprintf(
 			"is bound to type %q, which no longer exists", typeName)}}
 	}

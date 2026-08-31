@@ -158,6 +158,36 @@ var reserved = map[string]bool{
 	"terms": true,
 	// listing.Field — the declared queries a page shows.
 	"listings": true,
+	// How the page is arranged, rather than what it is about.
+	//
+	// A layout name, a hero and a list of sections are the same kind of
+	// cross-cutting as a listing: any content can be laid out, and which
+	// section kinds exist is a property of this build rather than of anybody's
+	// content model. A type declaring them would have to be updated whenever a
+	// layout learns a kind, in every site.
+	//
+	// This is also what made typing a page impossible. The shipped layouts want
+	// a hero object and a list of section objects; the type system is flat by
+	// design; so no page built the recommended way could satisfy any type, and
+	// `posture scan` reported every page as untyped under a rule nothing could
+	// pass. The arrangement is checked by section.Validate against the
+	// catalogue instead, which is a stricter check than a flat type could have
+	// made: it knows which kinds exist.
+	"layout":   true,
+	"hero":     true,
+	"sections": true,
+	// Navigation a page carries for itself: the trail above it and the filters
+	// across the top of a listing. Both are arrangement — the same class as
+	// menus, which the system already supplies — and both are lists of objects,
+	// which a flat type cannot describe and should not try to.
+	"breadcrumbs": true,
+	"filters":     true,
+	// form.Field — which declared form this page carries. Cross-cutting for
+	// the same reason a listing is: an enquiry form belongs on a product page,
+	// a contact page and a workshop page, none of which are the same type of
+	// content. The questions come from the declaration, so a page carries the
+	// name and nothing else.
+	"form": true,
 	// site.Starts and site.Expires — when a page is public. Cross-cutting for
 	// the same reason: an embargo applies to any kind of content, and a type
 	// that had to declare it would be a type somebody forgot to.

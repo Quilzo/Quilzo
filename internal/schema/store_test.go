@@ -209,19 +209,43 @@ func TestTypesSurviveARoundTrip(t *testing.T) {
 // The file is the one thing an attacker with disk access can reach, and a type
 // that got there by any route other than Add has never been through Compile.
 // Trusting it because it is ours is how the bounds become advisory.
-func TestATypeThatBypassedCompileIsRefusedOnLoad(t *testing.T) {
+//
+// The property is that such a type validates nothing and hides nothing. It used
+// to be enforced by failing the whole load, which also made a store with one bad
+// type unreadable and therefore unrepairable — so the type is set aside instead:
+// out of the registry, named in Broken, and fatal for any page bound to it.
+// What must not happen is a type that silently checks less than it claims, and
+// that is what this asserts.
+func TestATypeThatBypassedCompileIsNeverUsed(t *testing.T) {
 	dir := t.TempDir()
 
-	// A hand-written file with a field kind that does not exist. If Load
-	// accepted this, Validate would skip the field entirely and the type would
-	// silently check less than it claims.
+	// A hand-written file with a field kind that does not exist. If this type
+	// were used, Validate would skip the field entirely.
 	raw := `{"types":{"types":{"evil":{"name":"evil","fields":[
 		{"name":"payload","kind":"exec"}]}}},"bound":{"news":"evil"}}`
 	if err := os.WriteFile(filepath.Join(dir, "types.json"), []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(dir); err == nil {
-		t.Fatal("a type with an unknown field kind loaded without complaint")
+	st, err := Load(dir)
+	if err != nil {
+		t.Fatalf("the store could not be read at all, so nobody can repair "+
+			"it: %v", err)
+	}
+	if _, ok := st.Registry.Get("evil"); ok {
+		t.Fatal("a type that never passed Compile is in the registry, so " +
+			"content is validated against bounds nothing checked")
+	}
+	if st.Broken["evil"] == "" {
+		t.Error("nothing records why the type is not in use")
+	}
+	// And the page bound to it fails closed rather than passing unvalidated.
+	problems := st.Check("news", map[string]any{"payload": "anything at all"})
+	if len(problems) == 0 {
+		t.Fatal("a page bound to a type that does not compile passed, so " +
+			"writing a bad type is a way to switch validation off")
+	}
+	if len(st.Gate(map[string]any{"news": map[string]any{"payload": "x"}})) == 0 {
+		t.Error("the gate let it through")
 	}
 }
 
@@ -273,4 +297,57 @@ func TestJSONCannotIntroduceKeywordsTheDesignExcludes(t *testing.T) {
 			t.Errorf("%q survived into the stored type", gone)
 		}
 	}
+}
+
+// One type that no longer compiles must not make the store unreadable.
+//
+// Load refused everything when any stored type failed to compile, so a single
+// bad type took out every type command — including the ones that would say
+// which type and why. That is a store nobody can repair through the tool, and
+// it happens whenever a field name becomes reserved: a type that compiled last
+// week does not this week.
+//
+// A broken type is set aside instead. It is not in the registry, so nothing
+// validates against it, and a page bound to one is refused by name rather than
+// quietly let through.
+func TestABrokenTypeIsSetAsideRatherThanFatal(t *testing.T) {
+	dir := t.TempDir()
+	good := Type{Name: "note", Fields: []Field{
+		{Name: "title", Kind: Text, Required: true}}}
+	// Written straight to the file, the way a hand edit or a restored backup
+	// would: Add would refuse it.
+	raw := `{"types":{"types":{` +
+		`"note":{"name":"note","fields":[{"name":"title","kind":"text","required":true}]},` +
+		`"page":{"name":"page","fields":[{"name":"layout","kind":"text"}]}` +
+		`}},"bound":{"index":"page"}}`
+	if err := os.WriteFile(filepath.Join(dir, "types.json"), []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := Load(dir)
+	if err != nil {
+		t.Fatalf("one uncompilable type made the whole store unreadable: %v", err)
+	}
+	if _, ok := st.Registry.Get("note"); !ok {
+		t.Error("the good type was lost with the bad one")
+	}
+	if _, ok := st.Registry.Get("page"); ok {
+		t.Error("a type that does not compile is in the registry, so content " +
+			"is being validated against bounds nothing checked")
+	}
+	if st.Broken["page"] == "" {
+		t.Error("nothing says why the type is not in use, which is the whole " +
+			"reason for not refusing the load")
+	}
+
+	// And the page bound to it fails closed, naming the situation.
+	problems := st.Check("index", map[string]any{"title": "Home"})
+	if len(problems) == 0 {
+		t.Fatal("a page bound to a broken type passed, so a type that stops " +
+			"compiling is a way to switch validation off")
+	}
+	if !strings.Contains(problems[0].Reason, "does not compile") {
+		t.Errorf("the failure does not say why: %s", problems[0].Reason)
+	}
+	_ = good
 }
