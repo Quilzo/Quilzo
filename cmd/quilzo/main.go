@@ -224,7 +224,7 @@ interface
   quilzo site  [--addr HOST:PORT]          the published site, PWA-installable
       --api                                 content API at /api/v1, read-only
       --api-writable                        allow PUT; every write needs If-Match
-      --base-url https://example.com        needed for /sitemap.xml
+      --base-url https://example.com        needed for /sitemap.xml and /feed.xml
       --redirects redirects.json            keep old URLs working after a move
   quilzo audit [DIR]                       templates that disable escaping
   quilzo scan [--fail-on SEV]              XSS, injection and leaked secrets

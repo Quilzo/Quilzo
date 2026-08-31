@@ -132,6 +132,14 @@ type Site struct {
 	// fails to assemble rather than rendering without it — a listing-shaped
 	// hole is not noticed until somebody asks why the table is empty.
 	Listings *listing.Resolver
+	// Feed names the listing served at /feed.xml and /feed.json.
+	//
+	// Empty means no feed is served: an empty document tells a reader this site
+	// publishes nothing, which is a worse claim than having no feed at all.
+	// Which things belong in a feed is a decision, and a listing is where this
+	// site already writes decisions like that down — including which fields are
+	// public, so a feed cannot show more than a page does.
+	Feed string
 	// Catalogue names the listing served at /catalogue.json for shopping
 	// agents. Empty means the route 404s, which is right for a site that sells
 	// nothing — and is deliberately not an empty document, because "no
@@ -199,6 +207,11 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/.well-known/agent-card.json", st.agentCard)
 	mux.HandleFunc("/search.json", st.searchAPI)
 	mux.HandleFunc("/catalogue.json", st.catalogue)
+	// Both feed formats through one handler, which picks by suffix: the rows
+	// and their order come from the same listing, so a reader and a program
+	// cannot see different journals.
+	mux.HandleFunc(atomPath, st.feed)
+	mux.HandleFunc(jsonPath, st.feed)
 	mux.HandleFunc("/site.css", st.stylesheet)
 	mux.HandleFunc("/fonts/", st.font)
 	mux.HandleFunc("/robots.txt", st.robots)
@@ -689,6 +702,15 @@ func (st *Site) injectHead(html, page, hash string, body any) string {
 	if st.Catalogue != "" {
 		b.WriteString(`<link rel="alternate" type="application/json" ` +
 			`href="/catalogue.json" title="Product catalogue">` + "\n")
+	}
+	// The feed, for the same reason and in the same place. A reader's software
+	// looks for this link in the head; a feed at an address nobody advertises
+	// is a feed nobody subscribes to.
+	if st.Feed != "" {
+		b.WriteString(`<link rel="alternate" type="application/atom+xml" ` +
+			`href="` + atomPath + `" title="` + escape(st.Name) + `">` + "\n")
+		b.WriteString(`<link rel="alternate" type="application/feed+json" ` +
+			`href="` + jsonPath + `" title="` + escape(st.Name) + `">` + "\n")
 	}
 
 	// What this page is, for a reader that is not a person. Built here rather

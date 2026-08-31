@@ -156,6 +156,8 @@ func (st *Site) Routes() ([]route, error) {
 		{path: "/offline", file: "offline/index.html"},
 		{path: "/llms.txt", file: "llms.txt"},
 		{path: "/catalogue.json", file: "catalogue.json"},
+		{path: atomPath, file: strings.TrimPrefix(atomPath, "/")},
+		{path: jsonPath, file: strings.TrimPrefix(jsonPath, "/")},
 		{path: "/.well-known/agent-card.json", file: ".well-known/agent-card.json"},
 	} {
 		out = append(out, r)
