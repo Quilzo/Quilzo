@@ -5,14 +5,25 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
 // script writes a shell extension and returns a manifest for it.
+//
+// Every test that needs an extension to actually run goes through here, and
+// what it writes is a POSIX shell script. On Windows there is no /bin/sh, so
+// those tests cannot mean anything — they used to fail, all of them, which is a
+// suite nobody can read. They skip instead, and the containment that is
+// specific to that platform has its own tests in proc_windows_test.go.
 func script(t *testing.T, body string, m Manifest) Manifest {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("this extension is a shell script and Windows has no /bin/sh; " +
+			"see proc_windows_test.go for what is checked there")
+	}
 	path := filepath.Join(t.TempDir(), "ext.sh")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
 		t.Fatal(err)
@@ -283,5 +294,32 @@ func TestAnExtensionCannotHoldTheHostWithAGrandchild(t *testing.T) {
 	if elapsed > 5*time.Second {
 		t.Errorf("the host waited %s for a 200ms timeout; a surviving "+
 			"grandchild is holding the output pipe open", elapsed)
+	}
+}
+
+// An absolute path is whatever the platform means by one.
+//
+// The rule was a leading slash, which refused every Windows path: C:\Tools\
+// lint.exe does not start with one, so on that platform every manifest was
+// rejected at validation and the extension feature did not work at all. Found
+// while testing the Windows containment — the job object passed and no ordinary
+// extension could run to be contained.
+func TestAnAbsolutePathIsPlatformShaped(t *testing.T) {
+	abs := "/usr/local/bin/lint"
+	rel := "lint"
+	if runtime.GOOS == "windows" {
+		abs = `C:\Tools\lint.exe`
+		rel = `Tools\lint.exe`
+	}
+
+	ok := Manifest{Name: "lint", Command: []string{abs}, Hooks: []Hook{OnValidate}}
+	if err := ok.Validate(); err != nil {
+		t.Errorf("an absolute path for this platform was refused: %v", err)
+	}
+
+	bad := Manifest{Name: "lint", Command: []string{rel}, Hooks: []Hook{OnValidate}}
+	if err := bad.Validate(); err == nil {
+		t.Error("a relative command was accepted; it resolves against " +
+			"whatever directory the operator was in")
 	}
 }

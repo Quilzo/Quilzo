@@ -53,6 +53,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -148,7 +149,14 @@ func (m Manifest) Validate() error {
 	// A relative command would resolve against the working directory, which is
 	// wherever the operator happened to be. That is how "./quilzo publish" in
 	// a checkout runs a binary from the checkout.
-	if !strings.HasPrefix(m.Command[0], "/") {
+	//
+	// filepath.IsAbs rather than a leading slash. The slash test refused every
+	// Windows path — C:\Tools\lint.exe does not start with one — so on that
+	// platform every manifest was rejected at validation and the extension
+	// feature did not work at all. A job object containing a process that can
+	// never start is not much of a fix, which is how this was found: the
+	// containment tests passed and the ordinary ones could not run.
+	if !filepath.IsAbs(m.Command[0]) {
 		return fmt.Errorf(
 			"%s must give an absolute path to its command, not %q: a relative "+
 				"one resolves against whatever directory the operator was in",
@@ -299,7 +307,7 @@ func (r *Runner) Run(ctx context.Context, m Manifest, req Request) Result {
 	// survives the signal, the pipes are closed and this returns anyway. The
 	// first is the fix; the second is the guarantee, because an extension can
 	// always find a way to keep a descendant alive and the host must not care.
-	confineProcess(cmd)
+	contained := confineProcess(cmd)
 	cmd.WaitDelay = time.Second
 
 	// An empty environment.
@@ -321,7 +329,11 @@ func (r *Runner) Run(ctx context.Context, m Manifest, req Request) Result {
 	cmd.Stdout = &limitedWriter{w: &stdout, n: lim.MaxOutput}
 	cmd.Stderr = &limitedWriter{w: &stderr, n: 4096}
 
-	runErr := cmd.Run()
+	// Through the containment rather than cmd.Run, because Windows has work to
+	// do between Start and Wait: a process is created suspended, assigned to a
+	// job object, and only then allowed to run, so that anything it spawns is
+	// inside the job too. On POSIX this is Run.
+	runErr := contained.run(cmd)
 	res.Took = time.Since(started)
 
 	if ctx.Err() == context.DeadlineExceeded {
