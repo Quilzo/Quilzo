@@ -194,6 +194,8 @@ agents and integrations
   quilzo agent templates                    the agent archetypes, and when to use each
   quilzo agent new NAME --kind KIND         declare what an agent may do
   quilzo agent list | show NAME | check     what is declared, and whether it still validates
+  quilzo agent probe < question.json       ask the gate: would this agent be
+                                            allowed to do this? JSON in, JSON out
   quilzo agents                            what models have been doing, and
                                             which are not accepting refusals
   quilzo integrations list|tools|call      outside systems this install may reach
