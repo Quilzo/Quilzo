@@ -59,7 +59,9 @@ func cmdWebhook(root string, args []string) error {
 func hookAdd(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
-	types := fs.String("types", "", "comma-separated event types; empty means all")
+	types := fs.String("types", "",
+		"comma-separated event types; empty means all. "+
+			strings.Join(webhook.EventTypes, ", "))
 	note := fs.String("note", "", "what this endpoint is")
 	if err := fs.Parse(flags); err != nil {
 		return err
@@ -77,9 +79,17 @@ func hookAdd(root string, args []string) error {
 	}
 	e := webhook.Endpoint{URL: pos[0], Secret: secret, Note: *note}
 	for _, t := range strings.Split(*types, ",") {
-		if t = strings.TrimSpace(t); t != "" {
-			e.Types = append(e.Types, t)
+		if t = strings.TrimSpace(t); t == "" {
+			continue
 		}
+		if !webhook.KnownType(t) {
+			return fmt.Errorf(
+				"%q is not an event this sends. The types are %s — an "+
+					"endpoint subscribed to something that never happens is "+
+					"configured, reported as configured, and silent",
+				t, strings.Join(webhook.EventTypes, ", "))
+		}
+		e.Types = append(e.Types, t)
 	}
 
 	f := &hookFile{}
@@ -239,7 +249,13 @@ func hookTest(root string, args []string) error {
 // receiver being down is not a reason to stop publishing, and making it one
 // hands anybody who can take a webhook endpoint offline the ability to stop the
 // site being updated.
-func notify(root, eventType, commit string, pages []string) {
+// notify delivers one event to every endpoint that asked for its type.
+//
+// form is the form a submission arrived through, and is empty for everything
+// else. It carries the name and never the message: a submission has a retention
+// period and a copy posted elsewhere has whatever period that system has, which
+// is usually none.
+func notify(root, eventType, commit string, pages []string, form ...string) {
 	f := &hookFile{}
 	if err := loadJSON(hooksPath(root), f); err != nil || len(f.Endpoints) == 0 {
 		return
@@ -251,6 +267,9 @@ func notify(root, eventType, commit string, pages []string) {
 	ev := webhook.Event{
 		ID: id, Type: eventType, Commit: commit, Pages: pages,
 		At: time.Now().UTC().Format(time.RFC3339),
+	}
+	if len(form) > 0 {
+		ev.Form = form[0]
 	}
 
 	s := sender{fetch.New()}

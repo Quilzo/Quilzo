@@ -60,6 +60,28 @@ type Forms struct {
 	// content of a submission is personal data and does not belong in a log
 	// that outlives the retention period.
 	Audit func(formName, source string, accepted bool)
+	// Notify tells another system that a submission arrived.
+	//
+	// # Why this exists
+	//
+	// A form held what people sent and told nobody. Publishing has fired
+	// webhooks since webhooks existed; a booking, an enquiry or a complaint
+	// sat in a store until somebody thought to open the admin, which for a
+	// studio taking bookings is the difference between a feature and a
+	// pending customer. The pieces were all here — endpoints, signing,
+	// timestamps, retries — and no event ever named a form.
+	//
+	// # Why it carries the name and not the message
+	//
+	// The same rule the audit hook above follows. A submission has a retention
+	// period; a copy of it posted to another system has whatever period that
+	// system has, which is usually none. So this says that something arrived
+	// and which form it came through, and the operator reads it where it is
+	// kept.
+	//
+	// Nil means nothing is configured, which is the ordinary case and is not
+	// an error.
+	Notify func(formName string)
 }
 
 // submit receives one form.
@@ -136,6 +158,13 @@ func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
 	}
 	if st.Forms.Audit != nil {
 		st.Forms.Audit(name, source, true)
+	}
+	// After it is stored and before the reply is written, because the person
+	// who filled the form in is owed an answer whatever the receiver does. The
+	// host's implementation is what bounds the wait; this end knows only that
+	// something arrived.
+	if st.Forms.Notify != nil {
+		st.Forms.Notify(name)
 	}
 	st.formResult(w, r, f, "")
 }
