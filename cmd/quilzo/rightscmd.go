@@ -25,11 +25,13 @@ import (
 
 // LapseWindow is how far ahead a licence is reported before it ends.
 //
-// Sixty days, chosen so that a renewal involving somebody else's legal
-// department has time to happen. Too short and the report arrives as an
-// emergency; too long and every asset is permanently "lapsing" and the report
-// means nothing.
-const LapseWindow = 60 * 24 * time.Hour
+// An alias, not a value. It lived here, and the admin — which now records
+// rights too — could not reach it: two surfaces reporting on the same licence
+// would have disagreed about what "lapsing" means, which is the kind of
+// difference nobody notices until two screens say different things about one
+// file. The number and the reason for it are in internal/media, beside the
+// method that uses it.
+const LapseWindow = media.LapseWindow
 
 // reAssetID matches a stored file's address.
 //

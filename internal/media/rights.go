@@ -82,6 +82,17 @@ func (r Rights) Expired(now time.Time) bool {
 	return r.Until != 0 && !now.Before(time.Unix(r.Until, 0).UTC())
 }
 
+// LapseWindow is how far ahead a licence is reported before it ends.
+//
+// Sixty days, chosen so that a renewal involving somebody else's legal
+// department has time to happen. Too short and the report arrives as an
+// emergency; too long and every asset is permanently "lapsing" and the report
+// means nothing.
+//
+// Here rather than in one of the surfaces that reports it, because every
+// surface has to mean the same thing by the word.
+const LapseWindow = 60 * 24 * time.Hour
+
 // Lapsing reports whether permission ends within the window.
 //
 // The useful half. An expired licence cannot be fixed after the fact; one
