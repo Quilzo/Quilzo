@@ -79,6 +79,8 @@ func cmdAgent(root string, args []string) error {
 		return agentShow(root, args[1:])
 	case "new":
 		return agentNew(root, args[1:])
+	case "probe":
+		return agentProbe(args[1:])
 	case "check":
 		return agentCheck(root)
 	case "run":

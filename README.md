@@ -458,10 +458,36 @@ is where the research settled: enforce policy outside the model with a
 deterministic gate, because no amount of training makes a model refuse every
 malicious instruction.
 
-**What is honestly missing:** this has not been run against AgentDojo. That is
-the benchmark that would turn "designed to resist injection" into "measured
-against it", and until it has, the claim is architectural rather than empirical.
-It is open as issue #33.
+**Measured, not asserted.** Against AgentDojo v1.2.1, assuming the attack has
+already won completely — the model hijacked, emitting the attacker's calls
+verbatim — and asking the gate:
+
+```
+  attacks refused        26/26 (100%)
+  tasks unattended       71/97 (73%)
+  tasks needing a person 26/97 (27%)
+  tasks refused outright  0/97 (0%)
+```
+
+Every attack refused there cannot succeed for *any* model, which makes the
+security figure a lower bound rather than an estimate. The 27% are the publish
+rule and not a refusal of the work: an agent that can publish must have human
+approval, so the act happens once somebody agrees. Nothing in the suite is work
+the policy prevents entirely.
+
+What that number is not: CaMeL's 77-versus-84 is a model completing tasks end to
+end, and benign utility needs a model, which this does not have. Nine injection
+tasks are excluded because AgentDojo scores them by environment state rather than
+as a call sequence, and one of them asks only that the agent *say* something — a
+policy on what an agent may do does not address an attack on what it says, and
+that is a limit of this defence.
+
+Reproduce it in a few seconds with no key:
+`python3 scripts/agentdojo/score.py --quilzo ./quilzo`. The translation from
+AgentDojo's tools to this program's operations is checked in as
+`scripts/agentdojo/corpus.json`, so the mapping is arguable rather than implied —
+[scripts/agentdojo/README.md](scripts/agentdojo/README.md) has the method and its
+weaknesses.
 
 ### The part people mean by "agentic OS"
 
