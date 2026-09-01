@@ -291,3 +291,71 @@ func TestTheSignatureMatchesAnIndependentImplementation(t *testing.T) {
 			"verifying.", got, want)
 	}
 }
+
+// A submitted event names the form and carries nothing that was typed.
+//
+// A webhook body leaving this system goes to one that has never heard of the
+// retention period the submission was collected under. So the event says that
+// something arrived and where it came through, and the operator reads the
+// message where it is kept — the same rule the audit record for the same event
+// follows.
+func TestASubmittedEventCarriesNoSubmittedValues(t *testing.T) {
+	var sent []byte
+	s := senderFunc(func(url string, body []byte, h map[string]string) (int, error) {
+		sent = append([]byte(nil), body...)
+		return 200, nil
+	})
+	ev := Event{ID: "d1", Type: "submitted", Form: "wholesale",
+		At: "2026-08-31T09:00:00Z", Site: "https://example.com"}
+	deliveries := Send(s, Endpoint{URL: "https://receiver.example/hook",
+		Secret: "shh"}, ev, time.Unix(1787000000, 0))
+	if len(deliveries) == 0 || !deliveries[len(deliveries)-1].Succeeded {
+		t.Fatalf("the event was not delivered: %+v", deliveries)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(sent, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["form"] != "wholesale" {
+		t.Errorf("the event does not name the form: %v", got)
+	}
+	// Every key is one of the event's own. A field carrying an answer would be
+	// somebody's email address in a system nobody agreed to.
+	for key := range got {
+		switch key {
+		case "id", "type", "commit", "pages", "form", "at", "site":
+		default:
+			t.Errorf("the event carries %q, which is not part of an event", key)
+		}
+	}
+}
+
+// The event types are a closed list, because --types stored whatever it was
+// given: an endpoint asking for "publish" instead of "published" was configured,
+// reported as configured, and never fired.
+func TestTheEventVocabularyIsClosed(t *testing.T) {
+	for _, known := range EventTypes {
+		if !KnownType(known) {
+			t.Errorf("%q is listed and not known", known)
+		}
+	}
+	for _, wrong := range []string{"publish", "submit", "", "PUBLISHED"} {
+		if KnownType(wrong) {
+			t.Errorf("%q was accepted as an event type", wrong)
+		}
+	}
+	// Every type this program actually sends has to be in the list, or the
+	// list is a way to subscribe to nothing.
+	for _, sent := range []string{"published", "submitted"} {
+		if !KnownType(sent) {
+			t.Errorf("%q is sent and is not in EventTypes", sent)
+		}
+	}
+}
+
+type senderFunc func(string, []byte, map[string]string) (int, error)
+
+func (f senderFunc) Post(url string, body []byte, h map[string]string) (int, error) {
+	return f(url, body, h)
+}

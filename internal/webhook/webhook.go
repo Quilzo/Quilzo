@@ -71,8 +71,34 @@ type Event struct {
 	Commit string `json:"commit"`
 	// Pages are the names that changed, not their contents.
 	Pages []string `json:"pages,omitempty"`
-	At    string   `json:"at"`
-	Site  string   `json:"site,omitempty"`
+	// Form is which form was submitted, for a "submitted" event.
+	//
+	// The name and nothing else. A submission is what a member of the public
+	// typed, it has a retention period, and a webhook body is a copy of it
+	// leaving this system for one that has never heard of that period — so
+	// this says that something arrived and where to read it, exactly as the
+	// audit record for the same event does.
+	Form string `json:"form,omitempty"`
+	At   string `json:"at"`
+	Site string `json:"site,omitempty"`
+}
+
+// EventTypes is everything this program sends.
+//
+// A closed list, because --types took any string and stored it: an endpoint
+// asking for "publish" instead of "published" was configured, reported as
+// configured, and never fired — a silent subscription to an event that does not
+// exist. The same shape as an unchecked crawl-licence term, and the same fix.
+var EventTypes = []string{"published", "rolled-back", "scheduled", "submitted"}
+
+// KnownType reports whether this program ever sends an event of this type.
+func KnownType(t string) bool {
+	for _, known := range EventTypes {
+		if known == t {
+			return true
+		}
+	}
+	return false
 }
 
 // Endpoint is somewhere to send them.

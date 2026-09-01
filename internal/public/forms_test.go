@@ -240,3 +240,62 @@ func TestARenderedFormCarriesAFreshTimingStamp(t *testing.T) {
 		t.Errorf("a submission carrying the rendered stamp was refused: %v", err)
 	}
 }
+
+// A submission tells whoever asked to be told, and tells them nothing private.
+//
+// Publishing has fired webhooks since webhooks existed and a form told nobody:
+// a booking, an enquiry or a complaint sat in a store until somebody thought to
+// open the admin. The endpoints, the signing, the timestamps and the retries
+// were all already here, and no event ever named a form.
+//
+// What goes out is the form's name. A submission has a retention period; a copy
+// posted to another system has whatever period that system has, which is
+// usually none — the same rule the audit hook beside it follows.
+func TestASubmissionNotifiesWithoutCarryingWhatWasTyped(t *testing.T) {
+	f := &form.Form{
+		Name: "wholesale", Notice: "Kept for two years.",
+		Fields: []form.Field{
+			{Name: "shop", Label: "Shop", Kind: form.Line, Required: true},
+			{Name: "email", Label: "Email", Kind: form.Email},
+		},
+	}
+	fs, err := form.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var told []string
+	st := &Site{Forms: &Forms{
+		Set:    func() (*form.Set, error) { return &form.Set{Forms: []form.Form{*f}}, nil },
+		Store:  fs,
+		Notify: func(name string) { told = append(told, name) },
+	}}
+
+	body := url.Values{
+		"shop":          {"Tolgus Cloth"},
+		"email":         {"jo@example.com"},
+		form.StampField: {fmt.Sprint(time.Now().Add(-time.Minute).Unix())},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/form/wholesale",
+		strings.NewReader(body.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	st.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the submission answered %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(told) != 1 || told[0] != "wholesale" {
+		t.Fatalf("the notifier was told %v; it should be told the form's name "+
+			"exactly once", told)
+	}
+
+	// A refused submission tells nobody: an endpoint woken by every spam
+	// attempt is one somebody turns off.
+	refused := httptest.NewRequest(http.MethodPost, "/form/wholesale",
+		strings.NewReader(url.Values{"shop": {""}}.Encode()))
+	refused.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	st.Handler().ServeHTTP(httptest.NewRecorder(), refused)
+	if len(told) != 1 {
+		t.Errorf("a refused submission notified as well: %v", told)
+	}
+}

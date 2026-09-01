@@ -204,7 +204,8 @@ agents and integrations
   quilzo peer add NAME https://host        replicate from another quilzo store
   quilzo peer pull NAME                    fetch its objects; lands in quarantine
   quilzo peer list | adopt NAME | remove   what is paired, and making it the draft
-  quilzo webhook add https://...           tell another system when you publish
+  quilzo webhook add https://...           tell another system when you
+                                            publish, or when a form arrives
   quilzo webhook list | test               signed, timestamped, replay-proof
 
 security posture

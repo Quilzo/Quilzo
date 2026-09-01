@@ -90,6 +90,18 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 			Set:   func() (*form.Set, error) { return loadForms(root) },
 			Store: fs,
 			Limit: throttle.New(throttlePolicy(mustConfig(root))),
+			// Told to whoever asked to be told. See webhookcmd.go: the
+			// endpoints, the signing and the retries were all here and no
+			// event ever named a form, so a booking sat in a store until
+			// somebody opened the admin.
+			//
+			// In its own goroutine: a receiver that is slow must not be a form
+			// that is slow, and the person who filled it in is owed their
+			// answer whatever the receiver does. Delivery is bounded by the
+			// sender's own timeout and retry count.
+			Notify: func(name string) {
+				go notify(root, "submitted", "", nil, name)
+			},
 			Audit: func(name, source string, accepted bool) {
 				outcome := audit.Success
 				if !accepted {
