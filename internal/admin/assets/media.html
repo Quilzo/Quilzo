@@ -5,7 +5,11 @@
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
 
 <p class="lead">
-  {{len .Files}} file(s), {{.Total}} bytes. Every accepted format is decoded
+  {{if .Undeclared}}<p class="notice">{{.Undeclared}} image(s) have no rights
+recorded. Publishing reports them, and an expired one stops a publication —
+so this is the screen that answers that gate.</p>{{end}}
+
+{{len .Files}} file(s), {{.Total}} bytes. Every accepted format is decoded
   rather than sniffed — magic bytes are bypassable with a polyglot, so a file
   has to actually parse before it is stored.
 </p>
@@ -42,6 +46,7 @@
   <thead><tr>
     <th scope="col">File</th><th scope="col">Format</th>
     <th scope="col">Size</th><th scope="col">Description</th>
+    <th scope="col">Rights</th>
     <th scope="col">Uploaded</th>{{if .CanWrite}}<th scope="col"></th>{{end}}
   </tr></thead>
   <tbody>
@@ -54,6 +59,40 @@
     <td>{{.Format}}<div class="hint">{{.Kind}}{{if not .Inline}} · download only{{end}}</div></td>
     <td>{{.Size}}{{if .Width}}<div class="hint">{{.Width}}×{{.Height}}</div>{{end}}</td>
     <td>{{if .Alt}}{{.Alt}}{{else}}<span class="hint">decorative</span>{{end}}</td>
+    <td>
+      {{$r := index $.Rights .ID}}
+      {{if $r.State}}
+        <span class="state state-{{$r.State}}">{{$r.State}}</span>
+        {{if $r.Ends}}<div class="hint">until {{$r.Ends}}</div>{{end}}
+        {{if .Rights.Licence}}<div class="hint">{{.Rights.Licence}}{{if .Rights.Holder}} · {{.Rights.Holder}}{{end}}</div>{{end}}
+        {{if $.CanWrite}}
+        <details>
+          <summary class="hint">Record</summary>
+          <form method="post" action="/media/rights">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <p><label for="lic-{{.ID}}">What permits publishing this</label>
+              <input id="lic-{{.ID}}" name="licence" value="{{.Rights.Licence}}"
+                     placeholder="own-work, commissioned, CC-BY-4.0">
+              <span class="hint">A short name. The terms go in the note.</span></p>
+            <p><label for="hold-{{.ID}}">Who owns the underlying work</label>
+              <input id="hold-{{.ID}}" name="holder" value="{{.Rights.Holder}}"></p>
+            <p><label for="until-{{.ID}}">Permission ends</label>
+              <input id="until-{{.ID}}" name="until" type="date" value="{{$r.Until}}">
+              <span class="hint">Empty means it does not end.</span></p>
+            <p><label for="note-{{.ID}}">Anything that does not fit a field</label>
+              <input id="note-{{.ID}}" name="note" value="{{.Rights.Note}}"
+                     placeholder="territory, medium, the campaign it is tied to"></p>
+            <p>
+              <button type="submit">Record</button>
+              <button type="submit" name="clear" value="1" class="danger">Clear</button>
+            </p>
+          </form>
+        </details>
+        {{end}}
+      {{else}}
+        <span class="hint">not an image</span>
+      {{end}}
+    </td>
     <td class="hint">{{ago .UploadedAt}}{{if .UploadedBy}}<br>{{.UploadedBy}}{{end}}</td>
     {{if $.CanWrite}}
     <td>

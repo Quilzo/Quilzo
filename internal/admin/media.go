@@ -67,8 +67,19 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var total int64
+	now := time.Now().UTC()
+	rights := make(map[string]rightsRow, len(files))
+	undeclared := 0
 	for _, f := range files {
 		total += f.Size
+		if f.Kind != media.Image {
+			continue
+		}
+		row := rightsOf(f, now)
+		rights[f.ID] = row
+		if row.State == "undeclared" {
+			undeclared++
+		}
 	}
 
 	webp, haveWebP := media.HaveWebP()
@@ -76,6 +87,7 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "media.html", map[string]any{
 		"Nav": "media", "Title": "Media", "Principal": p,
 		"Files": files, "Total": total, "Accepted": media.Accepted(),
+		"Rights": rights, "Undeclared": undeclared,
 		"WebP": webp, "HaveWebP": haveWebP,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"CanWrite": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
