@@ -28,6 +28,13 @@ bin/
 # a pattern, because the file that got committed declared a different licence
 # from the one this project ships under and nobody noticed for months.
 *.egg-info/
+
+# Wheels, which have no business here. scripts/agentdojo needs AgentDojo
+# installed to regenerate its corpus, and a `pip download` run in this directory
+# once put thirty-eight megabytes of third-party packages into a commit on a
+# project whose argument is that it has none. Install into a virtual environment
+# instead — scripts/agentdojo/README.md says how.
+*.whl
 __pycache__/
 
 # built by "make submission"
