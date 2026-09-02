@@ -927,14 +927,9 @@ whose obligations trigger on distribution would never trigger at all for the
 software this is. Running a modified Quilzo as a service for other people means
 those people can have the source.
 
-**There was an Apache-2.0 window on 22 August 2026, of about eighty minutes.**
-It was pushed publicly and then reverted, because the relicensing was aimed at a
-third party embedding this in a closed product and that is not the route the
-project took. [NOTICE](NOTICE) has the commits and the times.
-
-That grant does not revert. Apache-2.0 is permissive, so anyone who took a copy
-in that window holds those terms for that code permanently. The window was short
-and the exposure is small; it is written down rather than rounded down.
+There was a brief Apache-2.0 window on 22 August 2026, reverted the same
+morning. That grant does not retract for anyone who took a copy during it —
+[NOTICE](NOTICE) has the commits, the times, and what it means.
 
 One thing to know before you spend time: **some employers forbid contributing to
 AGPL projects**, Google's policy explicitly. That is a real cost of the licence

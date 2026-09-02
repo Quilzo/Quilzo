@@ -151,9 +151,10 @@ INITIAL GOALS
   3. Cut a first Apache release. There is no 1.0 today; the release path is
      already automated, reproducible, and produces an attested container
      image.
-  4. Publish a measured prompt-injection benchmark result (see AI, below),
-     so the project's central safety claim is evidence rather than
-     architecture.
+  4. Publish a measured prompt-injection benchmark result. Done since
+     drafting -- see AI, below. The remaining work is independent
+     verification: the harness is the project's own, and a number a project
+     scores itself is worth less than one somebody else reproduces.
 ----------------------------------------------------------------------------
 
 
@@ -294,12 +295,34 @@ answers for what an agent did. Quilzo's agent card fills all six, published
 as an A2A governance extension, so another system can read what this one
 will allow before it asks.
 
-What is honestly missing: this has never been run against AgentDojo. That
-benchmark is what would turn "designed to resist injection" into a measured
-number, and until it is run the claim is architectural. It is tracked as
-issue #33 and it is an explicit initial goal above. No CMS has published
-such a figure; doing so is a contribution to the field and not only to this
-project.
+Measured since this proposal was drafted. An earlier version of this
+document said the design had never been run against AgentDojo and that the
+claim was therefore architectural rather than measured. It has been run, and
+the correction belongs here rather than in a quiet edit:
+
+    AgentDojo v1.2.1, against the gate directly
+      attacks refused        26/26 (100%)
+      tasks unattended       71/97 (73%)
+      tasks needing a person 26/97 (27%)
+      tasks refused outright  0/97 (0%)
+
+The assumption is stated because it is what makes the number mean anything:
+the model is taken to be already fully hijacked, emitting the attacker's
+calls verbatim, and the question asked of the gate is whether it lets them
+through. Every attack refused under that assumption cannot succeed for any
+model, which makes it a lower bound rather than an estimate.
+
+What it is not: CaMeL's 77-versus-84 measures a model completing tasks end
+to end, and benign utility needs a model, which this harness does not have.
+Nine of AgentDojo's injection tasks are excluded because the benchmark
+scores them by environment state rather than as a call sequence, and one of
+those asks only that the agent say something -- a policy over what an agent
+may do does not address an attack on what it says, which is a limit of the
+defence and not of the harness.
+
+It reproduces in a few seconds with no API key, and the mapping from
+AgentDojo's tools to this program's operations is checked into the
+repository so it can be argued with rather than taken on trust.
 
 ----------------------------------------------------------------------------
 

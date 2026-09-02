@@ -60,8 +60,18 @@ that code, permanently, including the right to use it in a closed product
 without publishing their changes. Reverting the licence changes what happens
 next; it cannot reach back.
 
-The window was short and the exposure is therefore small, but "small" is not
-"none" and this file is not the place to round it down.
+How much exposure that is, rather than a word for it. The repository has no
+forks, stars or watchers, and none of those is how anybody clones a repository
+anyway. What is measurable is clone traffic: 697 clones from 189 unique sources
+in the fourteen days to 21 August, averaging around 46 unique sources a day over
+the last four of them. Eighty-five minutes is about 6% of a day, and it was a
+weekday morning in Europe rather than a quiet hour, so the expected number of
+unique parties who took a copy under Apache-2.0 is a small handful.
+
+That is an estimate from traffic and not a list of names, because GitHub does
+not publish who cloned. It is written down at that precision because "probably
+nobody" and "about two or three people" are different statements, and only one
+of them is honest about a permissive grant that cannot be withdrawn.
 
 ---
 
