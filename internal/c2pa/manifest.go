@@ -259,10 +259,19 @@ func (c Claim) build(file []byte, skip []exclusion, chain [][]byte,
 // actions is the c2pa.actions.v2 assertion.
 func (c Claim) actions() Value {
 	action := Map{
-		"action":            Text(actionFor(c.DigitalSourceType)),
-		"when":              Text(c.When.UTC().Format(time.RFC3339)),
-		"softwareAgent":     Map{"name": Text(c.SoftwareAgent)},
-		"digitalSourceType": Text(iptcURI(c.DigitalSourceType)),
+		"action":        Text(actionFor(c.DigitalSourceType)),
+		"when":          Text(c.When.UTC().Format(time.RFC3339)),
+		"softwareAgent": Map{"name": Text(c.SoftwareAgent)},
+	}
+	// Omitted when nothing was declared, rather than defaulted.
+	//
+	// A default would have to be digitalCapture -- the term for a photograph
+	// -- and this program does not know that. Asserting it because a field was
+	// blank would put a claim about a camera on a drawing, signed. A manifest
+	// with no source type still binds the bytes, which is the half that can be
+	// checked.
+	if c.DigitalSourceType != "" {
+		action["digitalSourceType"] = Text(iptcURI(c.DigitalSourceType))
 	}
 	if c.Author != "" {
 		action["author"] = Map{"name": Text(c.Author)}
@@ -290,6 +299,10 @@ func actionFor(sourceType string) string {
 		return "c2pa.created"
 	case "compositeWithTrainedAlgorithmicMedia":
 		return "c2pa.edited"
+	case "":
+		// Nothing was declared about where it came from, so the only true
+		// statement is that this site published it.
+		return "c2pa.published"
 	default:
 		return "c2pa.placed"
 	}
@@ -299,9 +312,6 @@ func actionFor(sourceType string) string {
 // The bare term is what this program stores; the URI is what the standard
 // puts in the assertion.
 func iptcURI(sourceType string) string {
-	if sourceType == "" {
-		return "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture"
-	}
 	return "http://cv.iptc.org/newscodes/digitalsourcetype/" + sourceType
 }
 

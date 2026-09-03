@@ -146,13 +146,24 @@ func Inventory() []Algorithm {
 			Name: "X.509 / PKIX key parsing", Package: "crypto/x509",
 			Purpose: "reading a remote server's published public key out of " +
 				"its ActivityPub actor document",
-			Where: "httpsig, public", Use: Verified, Quantum: Safe,
-			Note: "Parsing, not cryptography: it decodes a key somebody else " +
-				"published so a signature can be checked against it. RSA keys " +
-				"under 2048 bits are refused, because below that a signature " +
-				"proves less than it appears to. Quantum computing does not " +
+			Where: "httpsig, public, c2pa", Use: Generated, Quantum: Safe,
+			Note: "Mostly parsing: it decodes a key somebody else published " +
+				"so a signature can be checked against it. RSA keys under " +
+				"2048 bits are refused, because below that a signature proves " +
+				"less than it appears to. It also issues one certificate -- " +
+				"the self-signed identity a C2PA manifest is signed with -- " +
+				"which is why this says generated. Quantum computing does not " +
 				"weaken a parser; what it weakens is the RSA and Ed25519 " +
 				"entries above.",
+		},
+		{
+			Name: "X.509 subject names", Package: "crypto/x509/pkix",
+			Purpose: "naming the signer in a C2PA provenance certificate",
+			Where:   "c2pa signing identity", Use: Generated, Quantum: Safe,
+			Note: "Not cryptography at all: it is the structure holding a " +
+				"common name. Listed because the inventory is answered from " +
+				"imports, and an import nobody wrote down is the reason an " +
+				"inventory drifts from the program.",
 		},
 		{
 			Name: "crypto/rand", Package: "crypto/rand",

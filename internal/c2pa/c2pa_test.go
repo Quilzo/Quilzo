@@ -361,3 +361,33 @@ func TestThePNGChunkHoldsOneBox(t *testing.T) {
 			lbox, len(data))
 	}
 }
+
+// A file nobody declared a source for still gets a manifest, and the manifest
+// does not invent one.
+//
+// The tempting default is digitalCapture, the term for a photograph. Signing
+// that because a field was blank would put a claim about a camera on a
+// drawing, with this site's name on it.
+func TestAnUndeclaredSourceIsNotGuessedAt(t *testing.T) {
+	chain, priv, pub := signer(t)
+	c := claim()
+	c.DigitalSourceType, c.Model, c.Instruction = "", "", ""
+
+	out, err := Embed(samplePNG(t), c, chain, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Verify(out, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DigitalSourceType != "" {
+		t.Errorf("an undeclared source became %q", got.DigitalSourceType)
+	}
+	if got.GeneratedByModel() {
+		t.Error("an undeclared source reports as model-generated")
+	}
+	if got.Title != "meadow.png" {
+		t.Error("the manifest lost the rest of the claim")
+	}
+}
