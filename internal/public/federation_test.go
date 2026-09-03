@@ -237,9 +237,13 @@ func TestASignedFollowIsAcceptedAndRecorded(t *testing.T) {
 
 	r := httptest.NewRequest("POST", "/@/inbox", stringReader(followBody))
 	r.Host = "marginalia.example"
+	// The body digest is part of what is signed. Without it the signature
+	// covers the envelope and not the letter — see bodyproof_test.go.
+	httpsig.SetContentDigest(r, []byte(followBody))
 	if err := httpsig.Sign(r, "https://r.example/users/dana#main-key",
 		httpsig.RSAPKCS1SHA256, signer,
-		[]string{"@method", "@authority", "@path"}, now); err != nil {
+		[]string{"@method", "@authority", "@path", "content-digest"},
+		now); err != nil {
 		t.Fatal(err)
 	}
 
@@ -268,9 +272,11 @@ func TestAServerReturningAnotherActorIsRefused(t *testing.T) {
 
 	r := httptest.NewRequest("POST", "/@/inbox", stringReader(followBody))
 	r.Host = "marginalia.example"
+	httpsig.SetContentDigest(r, []byte(followBody))
 	if err := httpsig.Sign(r, "https://r.example/users/dana#main-key",
 		httpsig.RSAPKCS1SHA256, signer,
-		[]string{"@method", "@authority", "@path"}, now); err != nil {
+		[]string{"@method", "@authority", "@path", "content-digest"},
+		now); err != nil {
 		t.Fatal(err)
 	}
 
@@ -298,9 +304,11 @@ func TestAKeyOwnedBySomebodyElseIsRefused(t *testing.T) {
 
 	r := httptest.NewRequest("POST", "/@/inbox", stringReader(followBody))
 	r.Host = "marginalia.example"
+	httpsig.SetContentDigest(r, []byte(followBody))
 	if err := httpsig.Sign(r, "https://r.example/users/dana#main-key",
 		httpsig.RSAPKCS1SHA256, signer,
-		[]string{"@method", "@authority", "@path"}, now); err != nil {
+		[]string{"@method", "@authority", "@path", "content-digest"},
+		now); err != nil {
 		t.Fatal(err)
 	}
 
