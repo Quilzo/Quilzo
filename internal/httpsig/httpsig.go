@@ -422,3 +422,91 @@ func ParsePEM(id, pemText string) (PublicKey, error) {
 	return PublicKey{}, fmt.Errorf(
 		"this key is a %T, and only RSA and Ed25519 are supported", parsed)
 }
+
+// ContentDigest is the header name RFC 9421 uses to cover a request body.
+const ContentDigest = "Content-Digest"
+
+// LegacyDigest is what the pre-RFC draft used, and what older fediverse
+// servers still send.
+const LegacyDigest = "Digest"
+
+// SetContentDigest computes and sets the body digest on an outbound request.
+//
+// Signing a POST without covering the body is signing the envelope and not the
+// letter: the signature says who sent *a* request to this path, and the body
+// can then be replaced with anything. The digest is what puts the body inside
+// what was signed, so it must be set before Sign and named in the components.
+func SetContentDigest(r *http.Request, body []byte) {
+	sum := sha256.Sum256(body)
+	encoded := base64.StdEncoding.EncodeToString(sum[:])
+	// The structured-fields form the RFC specifies.
+	r.Header.Set(ContentDigest, "sha-256=:"+encoded+":")
+	// And the older spelling, because a receiver may check either and sending
+	// both costs one short header.
+	r.Header.Set(LegacyDigest, "SHA-256="+encoded)
+}
+
+// CheckContentDigest verifies a request's digest header against its body.
+//
+// Both spellings are accepted, because the fediverse is mid-migration and a
+// server sending only the older one is not doing anything wrong.
+//
+// A request with no digest at all is an error rather than a pass. This is
+// called where the body must be covered, and "there was nothing to check" is
+// how a body-swap gets through a check that looks like it happened.
+func CheckContentDigest(r *http.Request, body []byte) error {
+	sum := sha256.Sum256(body)
+	want := base64.StdEncoding.EncodeToString(sum[:])
+
+	if raw := strings.TrimSpace(r.Header.Get(ContentDigest)); raw != "" {
+		// sha-256=:base64:  — possibly among several algorithms.
+		for _, part := range strings.Split(raw, ",") {
+			name, value, ok := strings.Cut(strings.TrimSpace(part), "=")
+			if !ok || !strings.EqualFold(strings.TrimSpace(name), "sha-256") {
+				continue
+			}
+			got := strings.Trim(strings.TrimSpace(value), ":")
+			if got == want {
+				return nil
+			}
+			return fmt.Errorf(
+				"the Content-Digest does not match the body that arrived")
+		}
+		return fmt.Errorf(
+			"the Content-Digest names no sha-256 value this server can check")
+	}
+
+	if raw := strings.TrimSpace(r.Header.Get(LegacyDigest)); raw != "" {
+		for _, part := range strings.Split(raw, ",") {
+			name, value, ok := strings.Cut(strings.TrimSpace(part), "=")
+			if !ok || !strings.EqualFold(strings.TrimSpace(name), "sha-256") {
+				continue
+			}
+			// The legacy header is not structured-fields, so the value is bare
+			// base64 which itself contains "=" padding — Cut on the first "="
+			// only, and the rest is the value.
+			if strings.TrimSpace(value) == want {
+				return nil
+			}
+			return fmt.Errorf("the Digest does not match the body that arrived")
+		}
+		return fmt.Errorf(
+			"the Digest names no SHA-256 value this server can check")
+	}
+
+	return fmt.Errorf(
+		"this request carries no body digest, so the signature covers the " +
+			"envelope and not the letter: a signature made for one body " +
+			"would be accepted on another")
+}
+
+// CoversBody reports whether a verified signature included a body digest.
+//
+// The two halves are separate and both are required. A digest that matches but
+// was not signed is a digest an attacker computed for their own body; a
+// signature that covers a digest header which is absent proves nothing about
+// bytes nobody hashed.
+func (s Signed) CoversBody() bool {
+	return s.Covers(strings.ToLower(ContentDigest)) ||
+		s.Covers(strings.ToLower(LegacyDigest))
+}

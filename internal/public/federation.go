@@ -47,8 +47,62 @@ type Federation struct {
 	// Deliver queues an outbound activity. Nil means nothing is delivered,
 	// which makes the site followable and silent.
 	Deliver func(inbox string, activity map[string]any)
+	// Queue holds deliveries that have not gone out yet. Nil means the site is
+	// followable and silent, which is a coherent state and not the intended
+	// one.
+	Queue *activitypub.Queue
 	// Now is a clock seam for tests.
 	Now func() time.Time
+}
+
+// Announce queues a published page for delivery to every follower.
+//
+// Called after a publish rather than during it: delivery talks to servers this
+// one does not control, and a publish that waited on the slowest of them would
+// fail when any of them is down — which is the wrong failure, because the page
+// is published either way.
+//
+// Returns how many inboxes were queued, so a caller can say "sent to eleven
+// servers" rather than nothing.
+func (st *Site) Announce(names []string) (int, error) {
+	if st.Federation == nil || st.Federation.Queue == nil {
+		return 0, nil
+	}
+	inboxes := st.Federation.Followers.Inboxes()
+	if len(inboxes) == 0 {
+		return 0, nil
+	}
+
+	notes, err := st.notes()
+	if err != nil {
+		return 0, err
+	}
+	wanted := map[string]bool{}
+	for _, n := range names {
+		wanted[n] = true
+	}
+
+	queued := 0
+	for _, n := range notes {
+		if len(wanted) > 0 && !wanted[pageOf(n.ID, st.BaseURL, st.Index)] {
+			continue
+		}
+		if err := st.Federation.Queue.Enqueue(inboxes, n.Create()); err != nil {
+			return queued, err
+		}
+		queued += len(inboxes)
+	}
+	return queued, nil
+}
+
+// pageOf recovers a page name from a federated id.
+func pageOf(id, baseURL, index string) string {
+	name := strings.TrimPrefix(id, strings.TrimSuffix(baseURL, "/"))
+	name = strings.TrimPrefix(name, "/")
+	if name == "" {
+		return index
+	}
+	return name
 }
 
 // notes renders the published pages as federated objects.
@@ -180,7 +234,9 @@ func (st *Site) fetchActor(actorURL string) (remoteActor, error) {
 // The key comes from the actor the activity claims to be from, and the key it
 // names must belong to that actor. Without the ownership check, a server could
 // sign with its own key while claiming to be somebody on another host.
-func (st *Site) verifyInbox(r *http.Request, a activitypub.Activity) error {
+func (st *Site) verifyInbox(r *http.Request, a activitypub.Activity,
+	body []byte) error {
+
 	doc, err := st.fetchActor(a.Actor)
 	if err != nil {
 		return err
@@ -207,6 +263,30 @@ func (st *Site) verifyInbox(r *http.Request, a activitypub.Activity) error {
 		return fmt.Errorf(
 			"this activity is not signed. An inbox is a public endpoint, so " +
 				"an unsigned POST is an anonymous instruction")
+	}
+
+	// The body has to be inside what was signed.
+	//
+	// Without this the signature covers the envelope and not the letter: it
+	// says a known actor sent *a* POST to this path, and the body can then be
+	// replaced with anything. Capturing one legitimate Follow would let
+	// somebody send any activity as that actor — an Undo removing another
+	// follower, a Delete — because the bytes were never part of the proof.
+	//
+	// That was true here until it was tested for, and the test that found it
+	// replayed a Follow's signature onto an Undo and got a 202.
+	//
+	// Two separate conditions, and both are needed. A digest that matches but
+	// was not signed is one the attacker computed for their own body. A signed
+	// digest header that is absent proves nothing about bytes nobody hashed.
+	if !signed.CoversBody() {
+		return fmt.Errorf(
+			"this signature does not cover a body digest, so it proves who " +
+				"sent a request to this address and nothing about what was in " +
+				"it. Sign Content-Digest along with the request line")
+	}
+	if err := httpsig.CheckContentDigest(r, body); err != nil {
+		return err
 	}
 	return nil
 }
@@ -344,7 +424,7 @@ func (st *Site) inbox(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := st.verifyInbox(r, activity); err != nil {
+	if err := st.verifyInbox(r, activity, body); err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}

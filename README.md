@@ -358,9 +358,12 @@ dead, and the live risk is a server redefining a tool after the day somebody
 trusted it. Credentials are named in the declaration and read from the
 environment, never stored, because an object in this store cannot be deleted.
 
-**Federation.** The site is followable from the fediverse: WebFinger, an actor
-at `/@`, an outbox, and an inbox that verifies every activity against the
-sending server's own key. `quilzo fediverse init` makes the signing key.
+**Federation.** The site is followable from the fediverse — WebFinger, an actor
+at `/@`, an outbox — and a published page is delivered to every follower, signed,
+with bounded retries. The inbox verifies each activity against the sending
+server's own key **and requires the body to be inside what was signed**: without
+that, capturing one legitimate activity from an actor lets anybody send any
+activity as them. `quilzo fediverse init` makes the signing key.
 
 The part no other server can offer: every federated post carries **the store's
 own object id for the content and the commit it was published at**. An
