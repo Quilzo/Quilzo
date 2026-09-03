@@ -14,6 +14,7 @@ import (
 	"github.com/quilzo/quilzo/internal/api"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/crawl"
 	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/search"
@@ -384,4 +385,48 @@ func splitTerms(raw string) []string {
 		}
 	}
 	return out
+}
+
+// crawlGate builds the enforcement side of the published licence.
+//
+// nil when nothing is configured, which is where every deployment starts: the
+// terms publish and nothing enforces them, exactly as robots.txt has always
+// worked.
+func crawlGate(cfg *config.Config) (*public.CrawlGate, error) {
+	price := strings.TrimSpace(cfg.Raw("crawl.price"))
+	raw := strings.TrimSpace(cfg.Raw("crawl.keys"))
+	if price == "" && raw == "" {
+		return nil, nil
+	}
+
+	var keys []crawl.Key
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		parts := strings.SplitN(entry, ":", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf(
+				"crawl.keys entry %q is not name:keyid:publickey", entry)
+		}
+		key, err := crawl.ParseKey(strings.TrimSpace(parts[0]),
+			strings.TrimSpace(parts[1]), strings.TrimSpace(parts[2]))
+		if err != nil {
+			return nil, fmt.Errorf("crawl.keys: %w", err)
+		}
+		keys = append(keys, key)
+	}
+
+	// A price with nobody to charge is a price nothing can collect: without a
+	// key no crawler can be identified, so every request is served. Refused at
+	// startup where somebody is watching, rather than looking configured and
+	// doing nothing.
+	if price != "" && len(keys) == 0 {
+		return nil, fmt.Errorf(
+			"crawl.price is set and crawl.keys is empty, so no crawler can be " +
+				"identified and every request would be served anyway. Add the " +
+				"keys of the crawlers you mean to charge, or unset the price")
+	}
+	return &public.CrawlGate{Keys: keys, Price: price}, nil
 }

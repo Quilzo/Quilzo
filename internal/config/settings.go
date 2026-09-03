@@ -325,6 +325,37 @@ var settings = []Setting{
 			"worse than terms nobody published.",
 	},
 	{
+		Key: "crawl.price", Kind: Text, Default: "",
+		Summary: "what a refused automated use costs, as \"USD 0.005\"",
+		Why: "Turns the published terms from a declaration into a refusal " +
+			"with a price. A crawler that identifies itself with a Web Bot " +
+			"Auth signature and asks for a use licence.prohibits names is " +
+			"answered 402 Payment Required with this in a crawler-price " +
+			"header, which is what AI crawlers already read. Empty refuses " +
+			"the use outright with 403 instead, which is a different answer " +
+			"and is sent as one: 402 advertises a price, and advertising one " +
+			"that does not exist is worse than refusing. Nothing here takes a " +
+			"payment — the price and the contact are published and the " +
+			"settlement happens elsewhere, because a process holding a card " +
+			"needs a threat model this one does not have.",
+	},
+	{
+		Key: "crawl.keys", Kind: Text, Default: "",
+		Summary: "crawlers this site can identify: name:keyid:publickey, " +
+			"comma-separated",
+		Why: "Identity is proved, never inferred. A User-Agent is a string " +
+			"anybody can type, so refusing traffic on one is unreliable " +
+			"against a crawler that wants the content and harmful to a reader " +
+			"whose browser happens to match. These are Ed25519 public keys, " +
+			"and a request is only identified when its RFC 9421 signature " +
+			"verifies against one of them. Keys are configured rather than " +
+			"fetched from a URL in the request being verified, because a " +
+			"verifier that resolves keys by following a link fetches whatever " +
+			"an attacker names, on the one path that runs before anybody is " +
+			"authenticated. Empty means no crawler can be identified, so " +
+			"every request is served and the terms stay a declaration.",
+	},
+	{
 		Key: "licence.attribution", Kind: Text, Default: "",
 		Summary: "the URL a crawler should credit",
 		Why: "Carried in the RSL document so attribution is a machine- " +
