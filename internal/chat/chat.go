@@ -29,6 +29,25 @@
 // both, because the derived key differs. That is not a hypothetical: an
 // operator who reuses a secret across two integrations is doing the obvious
 // wrong thing, and the design should survive it.
+//
+// # What that separation does not buy, said plainly
+//
+// The signing secret is the platform's own — the bot token for Telegram, the
+// signing secret for Slack. Both are values the platform itself knows, so the
+// platform can mint a credential for any of its own users.
+//
+// That is not a hole so much as the shape of the trust already being extended.
+// The whole integration rests on believing the platform when it says who is
+// asking; a messenger willing to lie about that does not need to forge a link,
+// because it can simply assert a different user id in the request. Minting a
+// link adds no capability it did not already have.
+//
+// The consequence worth knowing is a smaller one: because the key is the
+// platform secret, anybody who obtains that secret can mint links as well as
+// forge inbound requests. Deriving from a separate, Quilzo-owned key would
+// contain the second half of that — and would add a secret to manage for a
+// containment gain that only applies in the window between a leak and a
+// rotation. It is written down here rather than decided quietly either way.
 package chat
 
 import (
@@ -56,16 +75,53 @@ type Platform string
 const (
 	Telegram Platform = "telegram"
 	Slack    Platform = "slack"
+	Discord  Platform = "discord"
 )
 
-// Valid reports whether a platform name can be part of a signing context.
+// Valid reports whether a platform name can be part of a signing context and
+// of a handle.
+//
+// Three rules, and the third is the one that is not obvious.
 //
 // Empty is refused rather than defaulted. A credential signed under an empty
 // platform is a credential every platform would accept, which is exactly the
 // cross-replay this design exists to prevent.
+//
+// The context separator is refused, because the signing context is built by
+// concatenation and a name containing "/" could make two platforms derive one
+// key.
+//
+// # And a name may not end in a digit
+//
+// Handle() is the platform followed by the decimal id, with nothing between
+// them, and that is ambiguous the moment a name ends in a digit:
+//
+//	platform "tele"  id 4212  ->  tele4212
+//	platform "tele4" id  212  ->  tele4212
+//
+// Two accounts, one handle, one set of pages — so one person would be editing
+// another's. Not reachable with the names declared above, which is exactly why
+// it is worth refusing now: it appears when somebody adds a platform, and the
+// symptom is content quietly belonging to the wrong person rather than an
+// error anybody sees.
+//
+// A separator between the two would also fix it, and is not used because a
+// handle is a content path and keeping it alphanumeric avoids a second
+// question about what a path may contain. With no trailing digit the split is
+// unambiguous: the id is the trailing run of digits and the platform is the
+// rest.
 func (p Platform) Valid() bool {
-	return strings.TrimSpace(string(p)) != "" &&
-		!strings.ContainsAny(string(p), " \t\n:/")
+	name := string(p)
+	if strings.TrimSpace(name) == "" {
+		return false
+	}
+	if strings.ContainsAny(name, " \t\n:/") {
+		return false
+	}
+	if last := name[len(name)-1]; last >= '0' && last <= '9' {
+		return false
+	}
+	return true
 }
 
 // Account is who is asking, on whichever platform they came from.
@@ -91,6 +147,9 @@ type Account struct {
 // Prefixed by platform, so two people with the same numeric id on different
 // messengers are two accounts. Without the prefix they would be one, and the
 // second one to arrive would inherit the first one's pages.
+//
+// The prefix is unambiguous because a platform name may not end in a digit —
+// see Platform.Valid, which is where that rule and its reason live.
 func (a Account) Handle() string {
 	return string(a.Platform) + strconv.FormatInt(a.ID, 10)
 }

@@ -120,6 +120,19 @@ func Inventory() []Algorithm {
 			Note: "Same position as RSA: verified, never generated.",
 		},
 		{
+			Name: "Ed25519", Package: "crypto/ed25519",
+			Purpose: "verifying interaction signatures from Discord",
+			Where:   "discord", Use: Verified, Quantum: Broken,
+			Note: "Verified, never generated: Discord signs and this holds " +
+				"only the public key. That asymmetry is the reason to prefer " +
+				"it to a shared secret — a public key cannot sign anything, " +
+				"so losing it costs nothing, whereas a leaked HMAC secret " +
+				"lets somebody forge in both directions. Shor breaks the " +
+				"underlying curve, at which point the platform issuing the " +
+				"signatures has the same problem and will be the one to " +
+				"migrate.",
+		},
+		{
 			Name: "crypto/rand", Package: "crypto/rand",
 			Purpose: "keys, nonces, tokens, state and nonce values, data keys",
 			Where:   "auth, vault, oidc, anchor, webhook",
