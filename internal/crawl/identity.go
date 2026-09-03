@@ -93,6 +93,19 @@ func Verify(r *http.Request, keys []Key, now time.Time) (*Identity, error) {
 	if signed == nil {
 		return nil, nil
 	}
+	// The signature has to bind the request it arrived on.
+	//
+	// Without this a crawler's signature over, say, one header authenticates
+	// that crawler for any request at all: capture one from a proxy and replay
+	// it against a different path for as long as the age window allows, and
+	// the terms are enforced against the wrong identity. An identity that does
+	// not name what it is an identity for is a header again.
+	if !signed.CoversRequest() {
+		return nil, fmt.Errorf(
+			"this signature does not cover the request line, so it identifies " +
+				"a key rather than this request. Sign @method with @authority " +
+				"and @path, or @target-uri")
+	}
 
 	name := signed.KeyID
 	for _, k := range keys {

@@ -396,6 +396,25 @@ func (st *Site) verifyInbox(r *http.Request, a activitypub.Activity,
 				"sent a request to this address and nothing about what was in " +
 				"it. Sign Content-Digest along with the request line")
 	}
+	// And the destination, for the mirror-image reason.
+	//
+	// A signature over the body alone says this actor produced these bytes and
+	// nothing about where they were going, so whoever receives one legitimate
+	// delivery can forward it verbatim to any other inbox and it verifies
+	// there as an instruction from the original sender. A malicious server
+	// handed a Follow can replay it — or an Undo, or a Delete — across the
+	// fediverse as somebody else.
+	//
+	// This inbox accepted exactly that until it was tested for: a Follow
+	// signed over content-digest alone answered 202. What the deliverer here
+	// has always signed is what is now required of everyone, which is also
+	// what Mastodon signs.
+	if !signed.CoversRequest() {
+		return fmt.Errorf(
+			"this signature does not cover the request line, so it does not " +
+				"say which server it was for and these bytes verify at any " +
+				"inbox. Sign @method with @authority and @path, or @target-uri")
+	}
 	if err := httpsig.CheckContentDigest(r, body); err != nil {
 		return err
 	}

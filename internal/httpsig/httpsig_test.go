@@ -395,3 +395,48 @@ func TestAnUnreadableKeyIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// A signature that covers nothing is refused by the parser.
+//
+// An empty component list parses cleanly and produces a base of the parameters
+// alone, so the signature authenticates possession of a key against any request
+// at all. Every caller would have to remember to check; one that forgot would
+// report "valid" for a proof about nothing, which is the forgery this package's
+// own documentation says it must never perform on itself.
+func TestASignatureOverNothingIsRefused(t *testing.T) {
+	priv, pub := edPair(t, 7)
+	r := req()
+	if err := httpsig.Sign(r, pub.ID, httpsig.Ed25519, priv, cover, at()); err != nil {
+		t.Fatal(err)
+	}
+	// The same signature bytes, re-labelled as covering nothing.
+	r.Header.Set("Signature-Input",
+		`sig1=();created=1787000000;keyid="`+pub.ID+`"`)
+
+	if _, err := httpsig.Verify(r, []httpsig.PublicKey{pub}, 0, at()); err == nil {
+		t.Fatal("a signature covering no components verified")
+	}
+}
+
+// And the request line is a question a caller can ask, because the two
+// verifiers in this tree both have to ask it.
+func TestCoversRequestNeedsTheDestination(t *testing.T) {
+	cases := map[string]struct {
+		covered []string
+		want    bool
+	}{
+		"method, authority and path": {
+			[]string{"@method", "@authority", "@path"}, true},
+		"method and target-uri": {[]string{"@method", "@target-uri"}, true},
+		"the body alone":        {[]string{"content-digest"}, false},
+		"no method":             {[]string{"@authority", "@path"}, false},
+		"authority without path": {
+			[]string{"@method", "@authority"}, false},
+	}
+	for what, c := range cases {
+		s := httpsig.Signed{Covered: c.covered}
+		if got := s.CoversRequest(); got != c.want {
+			t.Errorf("%s: CoversRequest() = %v, want %v", what, got, c.want)
+		}
+	}
+}

@@ -341,6 +341,16 @@ func parseInput(header string) (label string, params map[string]string, err erro
 	if open < 0 || shut < open {
 		return "", nil, fmt.Errorf("Signature-Input names no covered components")
 	}
+	// An empty list parses and covers nothing: the base is the parameters
+	// alone, so the signature authenticates the sender's key against any
+	// request at all. Refused here rather than left to each caller to
+	// remember, because a verifier that returns "valid" for a proof about
+	// nothing is the forgery this package's own documentation warns about.
+	if strings.TrimSpace(rest[open+1:shut]) == "" {
+		return "", nil, fmt.Errorf(
+			"this signature covers no components, so it proves possession of " +
+				"a key and nothing about this request")
+	}
 	params = map[string]string{"components": rest[open+1 : shut]}
 	for _, p := range strings.Split(rest[shut+1:], ";") {
 		k, v, ok := strings.Cut(strings.TrimSpace(p), "=")
@@ -502,6 +512,33 @@ func CheckContentDigest(r *http.Request, body []byte) error {
 
 // CoversBody reports whether a verified signature included a body digest.
 //
+// CoversRequest reports whether the signature binds the request it arrived on.
+//
+// # Why a caller has to ask
+//
+// A signature that covers only a body digest says "this actor produced these
+// bytes" and nothing about where they were being sent. So the same bytes and
+// the same signature can be replayed to any other server that accepts the same
+// kind of message, and it verifies there too: the receiver of a legitimate
+// delivery can forward it verbatim to somebody else's inbox and it arrives as
+// an instruction from the original sender.
+//
+// Binding the method, the authority and the path makes the signature specific
+// to one destination. @target-uri is accepted in place of authority and path
+// because it contains both, which is what Mastodon signs.
+//
+// Found by signing a Follow over content-digest alone and posting it to an
+// inbox that required the digest and nothing else. It answered 202.
+func (s Signed) CoversRequest() bool {
+	if !s.Covers("@method") {
+		return false
+	}
+	if s.Covers("@target-uri") {
+		return true
+	}
+	return s.Covers("@authority") && s.Covers("@path")
+}
+
 // The two halves are separate and both are required. A digest that matches but
 // was not signed is a digest an attacker computed for their own body; a
 // signature that covers a digest header which is absent proves nothing about

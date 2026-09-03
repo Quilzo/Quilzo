@@ -3,6 +3,7 @@ package public
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -166,6 +167,70 @@ func TestTheLegacyDigestHeaderIsAlsoAccepted(t *testing.T) {
 	st.inbox(rec, r)
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("a request using the older Digest header was refused with "+
+			"%d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A signature has to say which server it was for.
+//
+// The mirror image of the body-binding bug above, and it shipped alongside it.
+// A signature covering only the body digest says this actor produced these
+// bytes and nothing about where they were going — so whoever receives one
+// legitimate delivery can forward it verbatim to any other inbox, where it
+// verifies as an instruction from the original sender. A malicious server
+// handed a Follow could replay it, or an Undo, or a Delete, across the
+// fediverse as somebody else.
+//
+// This inbox accepted exactly that: a Follow signed over content-digest alone
+// answered 202. The deliverer in this package has always signed @method,
+// @authority and @path — the requirement is now the same in both directions,
+// and it is what Mastodon signs.
+func TestASignatureThatNamesNoDestinationIsRefused(t *testing.T) {
+	signer, doc := remoteFixture(t)
+	st := wiredSite(func(string) ([]byte, error) { return doc(nil), nil })
+	now := time.Unix(1787000000, 0)
+
+	r := httptest.NewRequest("POST", "/@/inbox", stringReader(followBody))
+	r.Host = "marginalia.example"
+	httpsig.SetContentDigest(r, []byte(followBody))
+	if err := httpsig.Sign(r, "https://r.example/users/dana#main-key",
+		httpsig.RSAPKCS1SHA256, signer,
+		[]string{"content-digest"}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	st.inbox(rec, r)
+	if rec.Code == http.StatusAccepted {
+		t.Fatal("an activity whose signature binds no destination was " +
+			"accepted, so those exact bytes replay at every other inbox as " +
+			"this actor")
+	}
+	if !strings.Contains(rec.Body.String(), "request line") {
+		t.Errorf("the refusal does not say what is missing: %s", rec.Body.String())
+	}
+}
+
+// And @target-uri is accepted instead of authority and path, because it
+// contains both and is what some implementations sign.
+func TestATargetURISignatureIsAccepted(t *testing.T) {
+	signer, doc := remoteFixture(t)
+	st := wiredSite(func(string) ([]byte, error) { return doc(nil), nil })
+	now := time.Unix(1787000000, 0)
+
+	r := httptest.NewRequest("POST", "/@/inbox", stringReader(followBody))
+	r.Host = "marginalia.example"
+	httpsig.SetContentDigest(r, []byte(followBody))
+	if err := httpsig.Sign(r, "https://r.example/users/dana#main-key",
+		httpsig.RSAPKCS1SHA256, signer,
+		[]string{"@method", "@target-uri", "content-digest"}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	st.inbox(rec, r)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("a signature over @method and @target-uri was refused with "+
 			"%d: %s", rec.Code, rec.Body.String())
 	}
 }
