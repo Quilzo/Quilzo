@@ -625,3 +625,43 @@ func (c *Client) PostSigned(ctx context.Context, raw string, body []byte,
 	return &Result{URL: raw, FinalURL: u.String(), Status: resp.StatusCode,
 		ContentType: resp.Header.Get("Content-Type")}, nil
 }
+
+// DoChecked sends an already-built request through the same address-checked,
+// no-redirect transport every other outbound call uses, and reports the status.
+//
+// # Why a request-accepting primitive exists at all
+//
+// The signed-POST helpers here build the request themselves, which is right
+// for a webhook whose body and headers are all this package knows. Federation
+// delivery is different: the request is signed by the caller, because the
+// signature must cover a Content-Digest the caller computed, and re-building
+// the request here would either drop that signature or re-sign a body this
+// package would have to be handed anyway. So the caller signs, and this runs
+// the finished request — through the same dialer, so the one connect-time
+// address check is not bypassed by the one caller that builds its own request.
+//
+// Redirects are refused for the same reason PostSigned refuses them: a
+// redirect would replay a signed body at an address the signature never named.
+func (c *Client) DoChecked(req *http.Request) (int, error) {
+	lim := c.Limits.withDefaults()
+	if _, err := ValidateURL(req.URL.String()); err != nil {
+		return 0, err
+	}
+	client, err := c.httpClient(lim)
+	if err != nil {
+		return 0, err
+	}
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	if req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", c.UserAgent)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, unwrapDialError(err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	return resp.StatusCode, nil
+}

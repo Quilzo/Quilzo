@@ -386,6 +386,7 @@ func federationFrom(root string, cfg *config.Config, baseURL string) (
 	followers := activitypub.NewFollowers()
 	queue := activitypub.NewQueue()
 	path := fediverseFollowersPath(root)
+	announcedPath := fediverseAnnouncedPath(root)
 	if err := loadJSON(path, followers); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("cannot read the follower list: %w", err)
 	}
@@ -400,6 +401,24 @@ func federationFrom(root string, cfg *config.Config, baseURL string) (
 		},
 		Followers: followers,
 		Save:      func() error { return saveJSON(path, followers) },
+
+		// The announcement marker: the last commit whose changed pages were
+		// delivered. Persisted so a restart resumes from where it left off
+		// rather than treating every page as newly published — which, on a
+		// site with followers, would repost the whole catalogue on every
+		// deploy.
+		Announced: func() string {
+			var m struct {
+				Commit string `json:"commit"`
+			}
+			_ = loadJSON(announcedPath, &m)
+			return m.Commit
+		},
+		RecordAnnounced: func(commit string) error {
+			return saveJSON(announcedPath, struct {
+				Commit string `json:"commit"`
+			}{commit})
+		},
 
 		// The queue, and the sender that empties it.
 		//
@@ -430,6 +449,19 @@ func federationFrom(root string, cfg *config.Config, baseURL string) (
 		// built its own HTTP client would be a second place for that check to
 		// be forgotten, and the first place anybody would forget it.
 		Fetch: fediverseFetcher(base+"/@#main-key", signer),
+
+		// The sender that empties the queue: it signs each delivery over a
+		// body digest and POSTs it through the same address-checked client as
+		// every other outbound request. Built here, where the signing key
+		// already is, rather than in the serve path where it would have to be
+		// re-derived.
+		Sender: &public.Signer{
+			KeyID: base + "/@#main-key",
+			Key:   signer,
+			Post: func(req *http.Request) (int, error) {
+				return fetch.New().DoChecked(req)
+			},
+		},
 	}, nil
 }
 
@@ -439,6 +471,10 @@ func fediverseKeyPath(root string) string {
 
 func fediverseFollowersPath(root string) string {
 	return filepath.Join(root, "followers.json")
+}
+
+func fediverseAnnouncedPath(root string) string {
+	return filepath.Join(root, "announced.json")
 }
 
 // publicPEMFrom derives the published half of the signing key.

@@ -182,6 +182,33 @@ func TestTheCrawlLicenceIsWiredIntoTheSiteProcess(t *testing.T) {
 	}
 }
 
+// The delivery loop has to be started, not just built.
+//
+// This is the same failure this file exists for, one level out. The queue and
+// the sender were both fields on Federation, both set, both covered by the
+// field-walk above — and a queue nothing calls Run on is a queue that fills
+// and never empties, and an Announce nothing calls on a publish is a page that
+// reaches nobody. A field being assigned proves it exists; it does not prove
+// the loop that reads it ever runs. Only starting it does, and the serve
+// function blocks on ListenAndServe, so this is checked in the source the same
+// way the licence call is.
+func TestTheFederationLoopIsStartedByTheSiteProcess(t *testing.T) {
+	wiring := mustRead(t, "site.go")
+	if !strings.Contains(wiring, "st.Federate(") {
+		t.Error("`quilzo site` never calls st.Federate, so a followed site " +
+			"confirms nothing and a published page reaches no follower: the " +
+			"queue fills and nothing drains it, and no publish is ever " +
+			"announced")
+	}
+	// And it must not block the server. A Federate that was called inline
+	// rather than in a goroutine would never return to ListenAndServe, and the
+	// site would build its first delivery batch and then serve nobody.
+	if !regexp.MustCompile(`go\s+st\.Federate\(`).MatchString(wiring) {
+		t.Error("st.Federate is called inline, not in a goroutine; it runs " +
+			"until its context ends and the server would never start")
+	}
+}
+
 // A reason for a field that no longer exists is a stale reason, and it makes
 // the exemption list look more considered than it is.
 func TestEveryExemptionNamesARealField(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/activitypub"
 	"github.com/quilzo/quilzo/internal/httpsig"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // The routes that make a published site followable.
@@ -51,12 +52,40 @@ type Federation struct {
 	// followable and silent, which is a coherent state and not the intended
 	// one.
 	Queue *activitypub.Queue
+	// Sender drains the queue: it signs and POSTs one activity to one inbox.
+	// Nil means queued activities are held and never sent — the same silent,
+	// coherent, unintended state the queue itself has when nothing runs it.
+	Sender activitypub.Sender
 	// Now is a clock seam for tests.
 	Now func() time.Time
+
+	// Announced records the last commit whose changes were delivered, and
+	// reads it back. Nil keeps the marker in memory, so a restart announces
+	// nothing rather than everything — the safe direction, and not the useful
+	// one.
+	Announced       func() string
+	RecordAnnounced func(commit string) error
 
 	// guard bounds what an unverified caller can make this server do. Not a
 	// setting: the bounds exist whenever the inbox does.
 	guard inboxGuard
+	// announced is the in-memory marker, used when nothing persists one.
+	announced string
+}
+
+func (f *Federation) lastAnnounced() string {
+	if f.Announced != nil {
+		return f.Announced()
+	}
+	return f.announced
+}
+
+func (f *Federation) rememberAnnounced(commit string) error {
+	f.announced = commit
+	if f.RecordAnnounced != nil {
+		return f.RecordAnnounced(commit)
+	}
+	return nil
 }
 
 // Announce queues a published page for delivery to every follower.
@@ -92,6 +121,67 @@ func (st *Site) Announce(names []string) (int, error) {
 			continue
 		}
 		if err := st.Federation.Queue.Enqueue(inboxes, n.Create()); err != nil {
+			return queued, err
+		}
+		queued += len(inboxes)
+	}
+	return queued, nil
+}
+
+// announceChanges queues the right activity for each changed page.
+//
+// # Why the kind matters, and is not cosmetic
+//
+// A Create for an id a receiving server already holds is deduplicated: it is
+// dropped or shown as a repeat, and either way the edit is invisible to the
+// people who followed. So an edited page must go out as an Update, and a new
+// one as a Create. Announcing every change as a Create — which is what reusing
+// Announce would do — makes the common case, an edit, a no-op on the receiver
+// while looking like a working delivery here. That is the failure this whole
+// path exists to avoid, one layer in.
+//
+// A removed page has no note in the current tree, so there is nothing to build
+// an activity from. A Delete/Tombstone is a real thing to send and a separate
+// piece of work with its own failure modes (a Delete for an id a server never
+// saw, replay, addressing); it is deliberately not improvised here. The page
+// stops being served immediately regardless; what is deferred is telling
+// remote timelines to drop their copy.
+func (st *Site) announceChanges(changes []site.Change) (int, error) {
+	if st.Federation == nil || st.Federation.Queue == nil {
+		return 0, nil
+	}
+	inboxes := st.Federation.Followers.Inboxes()
+	if len(inboxes) == 0 {
+		return 0, nil
+	}
+
+	notes, err := st.notes()
+	if err != nil {
+		return 0, err
+	}
+	byName := make(map[string]activitypub.Note, len(notes))
+	for _, n := range notes {
+		byName[pageOf(n.ID, st.BaseURL, st.Index)] = n
+	}
+
+	queued := 0
+	for _, ch := range changes {
+		note, ok := byName[ch.Path]
+		if !ok {
+			// Removed, or a non-page tree entry (a redirect table, a schema).
+			// Nothing to announce either way.
+			continue
+		}
+		var activity map[string]any
+		switch ch.Kind {
+		case "added":
+			activity = note.Create()
+		case "modified":
+			activity = note.Update()
+		default:
+			continue
+		}
+		if err := st.Federation.Queue.Enqueue(inboxes, activity); err != nil {
 			return queued, err
 		}
 		queued += len(inboxes)
