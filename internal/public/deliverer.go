@@ -52,8 +52,14 @@ func (s *Signer) Send(inbox string, activity map[string]any) error {
 		now = s.Now()
 	}
 	httpsig.SetContentDigest(req, body)
+	// @target-uri as well as authority and path, because Mastodon's RFC 9421
+	// verifier requires that component literally and will not take the two
+	// halves in its place. Signing the superset satisfies a verifier that
+	// wants either, and every component here is one any RFC 9421 receiver
+	// rebuilds from the request it just read.
 	if err := httpsig.Sign(req, s.KeyID, httpsig.RSAPKCS1SHA256, s.Key,
-		[]string{"@method", "@authority", "@path", "content-digest"},
+		[]string{"@method", "@authority", "@path", "@target-uri",
+			"content-digest"},
 		now); err != nil {
 		return fmt.Errorf("cannot sign the delivery: %w", err)
 	}

@@ -52,20 +52,31 @@ func TestADeliveryIsSignedTheWayThisSitesOwnInboxDemands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Rebuild the request as it arrives at the far end.
-	arriving := httptest.NewRequest("POST", "https://r.example/inbox",
-		stringReader(string(body)))
+	// Rebuild the request as it arrives at the far end: origin-form, which is
+	// what a handler is actually given. An absolute URL here would let
+	// @target-uri resolve from r.URL alone and the test would pass whether or
+	// not a real receiver could rebuild it.
+	arriving := httptest.NewRequest("POST", "/inbox", stringReader(string(body)))
 	arriving.Host = "r.example"
 	for k, v := range captured.Header {
 		arriving.Header[k] = v
 	}
 
-	signed, err := httpsig.Verify(arriving, []httpsig.PublicKey{remote}, 0, now)
+	signed, err := httpsig.VerifyAt(arriving, "https://r.example",
+		[]httpsig.PublicKey{remote}, 0, now)
 	if err != nil {
 		t.Fatalf("what this site sends does not verify: %v", err)
 	}
 	if signed == nil {
 		t.Fatal("the delivery carried no signature")
+	}
+	// What Mastodon requires of a delivery: the method and the absolute URI.
+	// Without both it refuses, and a refusal here is a follower who never
+	// hears from this site again.
+	if !signed.Covers("@method") || !signed.Covers("@target-uri") {
+		t.Errorf("the delivery covers %v; Mastodon requires @method and "+
+			"@target-uri and refuses a delivery without them",
+			signed.Covered)
 	}
 	if !signed.CoversBody() {
 		t.Fatal("the delivery's signature does not cover the body, which is " +

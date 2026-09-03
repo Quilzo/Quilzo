@@ -366,7 +366,12 @@ func (st *Site) verifyInbox(r *http.Request, a activitypub.Activity,
 		return fmt.Errorf("the key at %s is unreadable: %w", a.Actor, err)
 	}
 
-	signed, err := httpsig.Verify(r, []httpsig.PublicKey{key}, 0, st.now())
+	// Verified against this site's configured origin, not the connection. A
+	// sender covering @target-uri -- which is what Mastodon requires of an
+	// RFC 9421 delivery -- signed the absolute URI it posted to, and a handler
+	// behind a TLS-terminating proxy cannot rebuild that from r.TLS and r.Host.
+	signed, err := httpsig.VerifyAt(r, st.BaseURL, []httpsig.PublicKey{key}, 0,
+		st.now())
 	if err != nil {
 		return err
 	}
