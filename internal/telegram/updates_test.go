@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"encoding/json"
+	"github.com/quilzo/quilzo/internal/chat"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -116,7 +117,7 @@ func TestStartAnswersInEnglishWithAWorkingLink(t *testing.T) {
 	// And the link it minted actually works, which is the part that would
 	// otherwise be assumed.
 	query := link[strings.Index(link, "?")+1:]
-	app := &App{BotToken: botToken, Spender: NewMemory(),
+	app := &App{BotToken: botToken, Spender: chat.NewMemory(),
 		Now: func() time.Time { return time.Unix(1700000000, 0) }}
 	w := httptest.NewRecorder()
 	app.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/?"+query, nil))
@@ -307,7 +308,7 @@ func TestSettingAWebhookRefusesPlainHTTPAndAnEmptySecret(t *testing.T) {
 
 // The pages a listing requires have to exist and say something.
 func TestTermsAndPrivacyAreServed(t *testing.T) {
-	a := &App{BotToken: botToken, Spender: NewMemory()}
+	a := &App{BotToken: botToken, Spender: chat.NewMemory()}
 	for _, path := range []string{"/terms", "/privacy"} {
 		w := httptest.NewRecorder()
 		a.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
