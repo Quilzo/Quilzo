@@ -164,6 +164,8 @@ publishing
 
 the assistant
   quilzo assist "..." --author WHO         propose changes; marks what it writes
+  quilzo fediverse init                    a signing key, so the site can federate
+  quilzo fediverse status | followers      whether it federates, and who follows
   quilzo provenance backfill [--dry-run]   mark content published before records existed
   quilzo provenance check [--ref REF]      who or what wrote each page
   quilzo provenance set PAGE --source T    record provenance by hand
@@ -347,6 +349,8 @@ func main() {
 		err = cmdAuditLog(root, cmdArgs)
 	case "assist":
 		err = cmdAssist(root, cmdArgs)
+	case "fediverse":
+		err = cmdFediverse(root, cmdArgs)
 	case "provenance", "prov":
 		err = cmdProvenance(root, cmdArgs)
 	case "compliance":

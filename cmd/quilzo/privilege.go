@@ -111,7 +111,12 @@ var commandNeeds = map[string]need{
 	// read the store. Author rather than view: a run writes an audit record
 	// attributed to the caller, and an entry somebody could create without
 	// being able to change anything would be a way to write the log.
-	"agent run":  {action: auth.ActEditDraft},
+	"agent run": {action: auth.ActEditDraft},
+	// Writing the signing key and reading the follower list are both
+	// administrative: the key is the credential that speaks for the whole site
+	// to everybody following it, and the follower list names people who read
+	// this site, which is not public information.
+	"fediverse":  {action: auth.ActGrant},
 	"provenance": {action: auth.ActView},
 	"prov":       {action: auth.ActView},
 	// Strict parent, narrowing children — see the note on posture. Pointing

@@ -96,6 +96,11 @@ type Site struct {
 	// permitting everything — it is saying nothing, and saying nothing is the
 	// honest default until an operator decides.
 	Licence *Licence
+	// Federation publishes this site to the fediverse. Nil means it does not
+	// federate, which is where every deployment starts: an actor id is
+	// something remote servers store and keep fetching, so publishing one is
+	// a commitment an operator makes deliberately.
+	Federation *Federation
 	// Crawl enforces those terms against crawlers that identify themselves.
 	//
 	// Nil means terms are published and not enforced, which is where every
@@ -212,6 +217,11 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/license.xml", st.licence)
 	mux.HandleFunc("/.well-known/tdmrep.json", st.tdmRep)
 	mux.HandleFunc("/.well-known/agent-card.json", st.agentCard)
+	mux.HandleFunc("/.well-known/webfinger", st.webfinger)
+	mux.HandleFunc("/@", st.actor)
+	mux.HandleFunc("/@/inbox", st.inbox)
+	mux.HandleFunc("/@/outbox", st.outbox)
+	mux.HandleFunc("/@/followers", st.followers)
 	mux.HandleFunc("/search.json", st.searchAPI)
 	// And the same index, rendered. See searchpage.go: the JSON route was the
 	// only way in, and reaching it needs a script this site's own policy

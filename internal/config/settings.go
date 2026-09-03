@@ -325,6 +325,28 @@ var settings = []Setting{
 			"worse than terms nobody published.",
 	},
 	{
+		Key: "fediverse.handle", Kind: Text, Default: "",
+		Summary: "the local part of this site's fediverse address",
+		Why: "Setting it publishes an actor at /@ and makes the site " +
+			"followable from Mastodon and everything else speaking " +
+			"ActivityPub: somebody searches @handle@yourdomain and gets your " +
+			"posts in their timeline. Lower-case letters, digits and " +
+			"underscores only, because it becomes the local part of an " +
+			"address people type. Empty means the site does not federate, " +
+			"which is where every deployment starts — an actor id is stored " +
+			"permanently by remote servers and cannot be withdrawn once they " +
+			"have it, so publishing one is a commitment rather than a " +
+			"setting. A signing key is required as well; `quilzo fediverse " +
+			"init` makes one.",
+	},
+	{
+		Key: "fediverse.summary", Kind: Text, Default: "",
+		Summary: "the profile description remote servers show",
+		Why: "Shown beside the site's name wherever somebody is deciding " +
+			"whether to follow, which is the only place this text appears. " +
+			"Empty is fine and shows nothing rather than a placeholder.",
+	},
+	{
 		Key: "crawl.price", Kind: Text, Default: "",
 		Summary: "what a refused automated use costs, as \"USD 0.005\"",
 		Why: "Turns the published terms from a declaration into a refusal " +
