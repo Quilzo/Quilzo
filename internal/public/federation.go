@@ -53,6 +53,10 @@ type Federation struct {
 	Queue *activitypub.Queue
 	// Now is a clock seam for tests.
 	Now func() time.Time
+
+	// guard bounds what an unverified caller can make this server do. Not a
+	// setting: the bounds exist whenever the inbox does.
+	guard inboxGuard
 }
 
 // Announce queues a published page for delivery to every follower.
@@ -210,9 +214,26 @@ func (st *Site) remoteInbox(actorURL string) (string, error) {
 }
 
 func (st *Site) fetchActor(actorURL string) (remoteActor, error) {
-	body, err := st.Federation.Fetch(actorURL)
-	if err != nil {
-		return remoteActor{}, fmt.Errorf("cannot fetch %s: %w", actorURL, err)
+	now := st.now()
+
+	body, cached := st.Federation.guard.cached(actorURL, now)
+	if !cached {
+		// One slot per outbound request. A per-source rate limit cannot see a
+		// burst spread across many sources; this can, and past the ceiling an
+		// inbox request is refused rather than adding another connection.
+		if !st.Federation.guard.acquire() {
+			return remoteActor{}, fmt.Errorf(
+				"too many verifications are already in flight; try again")
+		}
+		var err error
+		body, err = st.Federation.Fetch(actorURL)
+		st.Federation.guard.release()
+		if err != nil {
+			return remoteActor{}, fmt.Errorf("cannot fetch %s: %w", actorURL, err)
+		}
+		// Cached after the fetch and before parsing, so a server delivering
+		// several posts is fetched once rather than once per activity.
+		st.Federation.guard.remember(actorURL, body, now)
 	}
 	var doc remoteActor
 	if err := json.Unmarshal(body, &doc); err != nil {
@@ -380,6 +401,21 @@ func (st *Site) inbox(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Bounded before anything else, because everything else costs something.
+	//
+	// Verifying means fetching the sender's key from their server, so an
+	// unbounded inbox lets anybody make this server issue requests to a host
+	// they name. Measured at two hundred POSTs producing two hundred outbound
+	// requests before this existed — reflection, with this server's address on
+	// the traffic arriving at somebody else.
+	if !st.Federation.guard.allow(sourceOf(r), st.now()) {
+		tooMany(w, 60, "too many activities from this address. Verifying one "+
+			"means fetching the sender's key from their server, so this "+
+			"endpoint is rate limited to keep it from becoming a way to send "+
+			"traffic to a third party")
 		return
 	}
 
