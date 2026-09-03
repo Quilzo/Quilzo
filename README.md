@@ -368,6 +368,16 @@ a site that believes it refused training and did not. Nothing is published until
 an operator sets terms: a licence file asserting terms nobody chose is worse
 than none, since a crawler will honour it.
 
+**Enforcing those terms.** A crawler that identifies itself with a Web Bot Auth
+signature — RFC 9421, Ed25519, keys the operator configured rather than fetched
+from the request being verified — and asks for a use the licence refuses is
+answered `402 Payment Required` with a price, a link to the terms and somewhere
+to ask. One that offers enough is served. **An unsigned request is a person and
+is always served**: a User-Agent is a string anybody can type, and a CMS that
+turns readers away on a guess has broken the thing it is for. The honest limit
+is that only a crawler which identifies itself can be charged — which is the
+large, well-funded ones, and is more than a declaration reached.
+
 **Replication.** One store pulls objects from another, verified against their
 own hashes, into quarantine — never onto the live site. A peer can offer you
 objects; it cannot decide that any of them is your site.

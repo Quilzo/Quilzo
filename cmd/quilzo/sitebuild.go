@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/a2a"
@@ -193,6 +194,23 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 			return nil, lerr
 		} else if lic != nil {
 			st.Licence = lic
+		}
+
+		// The crawl gate, when an operator has configured one.
+		//
+		// Only alongside terms: enforcing a licence nobody published would
+		// refuse crawlers under rules they cannot read.
+		if gate, gerr := crawlGate(cfg); gerr != nil {
+			return nil, gerr
+		} else if gate != nil {
+			if st.Licence == nil {
+				return nil, fmt.Errorf(
+					"crawl.price or crawl.keys is set and no licence is " +
+						"published, so crawlers would be refused under terms " +
+						"they cannot read. Set licence.permits and " +
+						"licence.prohibits, or unset the crawl settings")
+			}
+			st.Crawl = gate
 		}
 
 		// The share sheet, when an operator has pointed it at a form.

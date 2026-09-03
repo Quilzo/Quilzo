@@ -41,6 +41,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/a2a"
+	"github.com/quilzo/quilzo/internal/crawl"
 	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/menu"
@@ -95,6 +96,12 @@ type Site struct {
 	// permitting everything — it is saying nothing, and saying nothing is the
 	// honest default until an operator decides.
 	Licence *Licence
+	// Crawl enforces those terms against crawlers that identify themselves.
+	//
+	// Nil means terms are published and not enforced, which is where every
+	// deployment starts and is the same position robots.txt has always been
+	// in. Setting it turns the declaration into a refusal with a price.
+	Crawl *CrawlGate
 	// Fonts are the typefaces this site serves from its own origin, at
 	// /fonts/. Nil means the route 404s, which is the state of a site using the
 	// built-in stacks — and the only alternative to a self-hosted face, because
@@ -224,7 +231,88 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/form/", st.submit)
 	mux.HandleFunc("/share", st.handleShare)
 	mux.HandleFunc("/", st.page)
-	return st.securityHeaders(mux)
+	return st.securityHeaders(st.crawlGate(mux))
+}
+
+// CrawlGate enforces the published licence against identified crawlers.
+type CrawlGate struct {
+	// Keys are the crawlers this site has been told about. A signature naming
+	// a key not in here is not an identity.
+	Keys []crawl.Key
+	// Price is what a refused use costs — "USD 0.005". Empty refuses outright
+	// rather than offering a fee.
+	Price string
+	// Now is a clock seam for tests.
+	Now func() time.Time
+}
+
+// crawlGate refuses identified crawlers the licence does not permit.
+//
+// Wrapped around everything rather than added to the page handler, because a
+// crawler taking the catalogue, the feed and the sitemap is taking the content
+// just as surely as one taking a page — and a gate on one route is a gate
+// somebody walks around.
+//
+// Ordinary requests pay one map lookup: the headers are absent, Verify returns
+// immediately, and nothing else runs.
+func (st *Site) crawlGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if st.Crawl == nil || st.Licence == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		now := time.Now()
+		if st.Crawl.Now != nil {
+			now = st.Crawl.Now()
+		}
+
+		id, err := crawl.Verify(r, st.Crawl.Keys, now)
+		if err != nil {
+			// A signature that does not verify is refused rather than treated
+			// as an unsigned request. Falling back to "serve it anyway" would
+			// make a broken signature the cheapest way past the gate.
+			http.Error(w, "this request is signed and the signature does not "+
+				"verify: "+err.Error(), http.StatusUnauthorized)
+			return
+		}
+
+		terms := crawl.Terms{
+			Permits: st.Licence.Permits, Prohibits: st.Licence.Prohibits,
+			Price: st.Crawl.Price, Contact: st.Licence.Contact,
+			LicenceURL: st.licenceURL(),
+		}
+		d := crawl.Decide(id, terms)
+		if d.Serve {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// An offer that covers the price is served. A site that refused a
+		// crawler willing to pay would be publishing a price it does not mean.
+		if d.Status == http.StatusPaymentRequired {
+			if ok, _ := crawl.Affordable(st.Crawl.Price, r.Header); ok {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		for k, v := range d.Headers {
+			w.Header().Set(k, v)
+		}
+		http.Error(w, d.Reason, d.Status)
+	})
+}
+
+// licenceURL is where the terms live, absolute when the site knows its own
+// name and relative otherwise.
+//
+// Never guessed from the request. Host is attacker-controlled, and a licence
+// link built from it points wherever the caller says.
+func (st *Site) licenceURL() string {
+	if st.BaseURL == "" {
+		return "/license.xml"
+	}
+	return strings.TrimSuffix(st.BaseURL, "/") + "/license.xml"
 }
 
 // stylesheet serves the site's CSS.
