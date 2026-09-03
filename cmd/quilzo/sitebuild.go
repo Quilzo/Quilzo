@@ -384,6 +384,7 @@ func federationFrom(root string, cfg *config.Config, baseURL string) (
 
 	base := strings.TrimSuffix(baseURL, "/")
 	followers := activitypub.NewFollowers()
+	queue := activitypub.NewQueue()
 	path := fediverseFollowersPath(root)
 	if err := loadJSON(path, followers); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("cannot read the follower list: %w", err)
@@ -399,6 +400,25 @@ func federationFrom(root string, cfg *config.Config, baseURL string) (
 		},
 		Followers: followers,
 		Save:      func() error { return saveJSON(path, followers) },
+
+		// The queue, and the sender that empties it.
+		//
+		// Without these the site is followable and silent: a Follow is
+		// recorded and never confirmed, so the remote server shows it pending
+		// for ever, and a published page reaches nobody. Both were built and
+		// neither was wired, which is the failure this project has a
+		// source-walking test for — and the test only walked public.Site's own
+		// fields, so a nested struct's were invisible to it.
+		Queue: queue,
+		Deliver: func(inbox string, activity map[string]any) {
+			if err := queue.Enqueue([]string{inbox}, activity); err != nil {
+				// Logged rather than returned: this runs while a remote server
+				// waits on a Follow, and refusing the follow because the queue
+				// is full would be the wrong answer to a full queue.
+				fmt.Fprintf(os.Stderr,
+					"could not queue a reply to %s: %v\n", inbox, err)
+			}
+		},
 
 		// Fetching a remote actor is the one request this protocol cannot
 		// avoid making to a URL a stranger named: the signature on an inbound

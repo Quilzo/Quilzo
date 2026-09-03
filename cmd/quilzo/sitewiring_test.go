@@ -90,6 +90,62 @@ func TestEverySiteFieldIsEitherWiredOrExplainedAway(t *testing.T) {
 		"%d explained away", len(fields), wired, explained)
 }
 
+// The blind spot the first version had.
+//
+// It walked public.Site's own fields and stopped there. Federation is a struct
+// hanging off one of them, and two of its fields — the delivery queue and the
+// sender that empties it — were built, tested, and never assigned. The site
+// was followable and silent: a Follow recorded and never confirmed, so the
+// remote server showed it pending for ever, and a published page reached
+// nobody.
+//
+// Every field of that struct is as much a feature as a field of Site, and a
+// test that could not see one layer down gave the wrong answer confidently.
+func TestEveryFederationFieldIsEitherWiredOrExplainedAway(t *testing.T) {
+	fields := exportedFieldsOf(t, "../../internal/public/federation.go",
+		"Federation")
+	if len(fields) < 4 {
+		t.Fatalf("found %d fields on public.Federation; the parse is wrong "+
+			"and this test would pass by checking almost nothing", len(fields))
+	}
+	wiring := mustRead(t, "sitebuild.go")
+
+	// Set in a composite literal rather than by assignment, so the pattern
+	// differs from the one used for Site.
+	//
+	// And "set to nil" does not count. A first version matched the field name
+	// followed by a colon, which `Queue: nil` satisfies — the same broken site
+	// as never mentioning it, wearing the shape of having been considered.
+	var missing []string
+	for _, f := range fields {
+		if regexp.MustCompile(`\b` + f + `:\s*nil\b`).MatchString(wiring) {
+			missing = append(missing, f+" (set to nil)")
+			continue
+		}
+		if regexp.MustCompile(`\b` + f + `:\s`).MatchString(wiring) {
+			continue
+		}
+		if notWiredByFederation[f] != "" {
+			continue
+		}
+		missing = append(missing, f)
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Errorf("public.Federation has %d field(s) nothing sets: %s\n"+
+			"  A federating site missing one of these is followable and "+
+			"broken in a way nothing\n  reports. Wire it, or add it to "+
+			"notWiredByFederation with the reason.",
+			len(missing), strings.Join(missing, ", "))
+	}
+	t.Logf("%d field(s) on public.Federation checked", len(fields))
+}
+
+// notWiredByFederation explains a field a real site does not set.
+var notWiredByFederation = map[string]string{
+	"Now": "a clock seam for tests; production uses time.Now",
+}
+
 // And the specific one, named, so somebody removing the wiring reads why
 // rather than a generic complaint about a field.
 func TestTheCrawlLicenceIsWiredIntoTheSiteProcess(t *testing.T) {
