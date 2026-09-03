@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/httpsig"
 )
 
 // Proving which crawler is asking, rather than believing a header.
@@ -35,6 +37,14 @@ import (
 // That is more work for them and it is the honest amount: trusting a crawler
 // is a decision, and a decision made by whoever configured it is auditable in
 // a way that one made by following a link is not.
+//
+// # The signature itself lives elsewhere
+//
+// RFC 9421 is not a crawler thing. The fediverse needs the same verification
+// for a different reason — Mastodon has verified RFC 9421 signatures since 4.5
+// — so the parsing, the signature base and the cryptography are in
+// internal/httpsig and this package holds what is specific to crawling: which
+// crawlers are known, and what they say they want the content for.
 
 // MaxSignatureAge bounds how old a signed request may be.
 //
@@ -69,90 +79,29 @@ type Identity struct {
 // which is the ordinary case: a person's browser signs nothing, and that is
 // not a failure to report.
 func Verify(r *http.Request, keys []Key, now time.Time) (*Identity, error) {
-	input := r.Header.Get("Signature-Input")
-	sig := r.Header.Get("Signature")
-	if input == "" && sig == "" {
+	pub := make([]httpsig.PublicKey, 0, len(keys))
+	for _, k := range keys {
+		pub = append(pub, httpsig.PublicKey{
+			ID: k.ID, Alg: httpsig.Ed25519, Ed: k.Public,
+		})
+	}
+
+	signed, err := httpsig.Verify(r, pub, MaxSignatureAge, now)
+	if err != nil {
+		return nil, err
+	}
+	if signed == nil {
 		return nil, nil
 	}
-	if input == "" || sig == "" {
-		return nil, fmt.Errorf(
-			"this request carries one half of a signature. Signature-Input " +
-				"and Signature are both required, and half of a proof is not " +
-				"a weaker proof, it is none")
-	}
-	if len(keys) == 0 {
-		return nil, fmt.Errorf(
-			"a request is signed and no crawler keys are configured, so it " +
-				"cannot be checked. Refusing to guess: an unverifiable " +
-				"signature is not an identity")
-	}
 
-	label, params, err := parseInput(input)
-	if err != nil {
-		return nil, err
-	}
-	raw, err := parseSignature(sig, label)
-	if err != nil {
-		return nil, err
-	}
-
-	// Age before cryptography, on a cheap comparison, so a replayed capture
-	// does not cost a verification each time.
-	created, err := strconv.ParseInt(params["created"], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"this signature has no usable created time, so its age cannot be " +
-				"checked and it has to be refused")
-	}
-	signed := time.Unix(created, 0)
-	if age := now.Sub(signed); age > MaxSignatureAge {
-		return nil, fmt.Errorf(
-			"this signature was made %s ago and the limit is %s",
-			age.Round(time.Second), MaxSignatureAge)
-	}
-	if signed.Sub(now) > time.Minute {
-		return nil, fmt.Errorf("this signature is dated in the future")
-	}
-	if exp := params["expires"]; exp != "" {
-		if seconds, perr := strconv.ParseInt(exp, 10, 64); perr == nil &&
-			now.After(time.Unix(seconds, 0)) {
-			return nil, fmt.Errorf("this signature has expired")
-		}
-	}
-
-	keyID := params["keyid"]
-	if keyID == "" {
-		return nil, fmt.Errorf(
-			"this signature names no key, so there is nothing to check it with")
-	}
-	var key *Key
-	for i := range keys {
-		if keys[i].ID == keyID {
-			key = &keys[i]
+	name := signed.KeyID
+	for _, k := range keys {
+		if k.ID == signed.KeyID {
+			name = k.Name
 			break
 		}
 	}
-	if key == nil {
-		return nil, fmt.Errorf(
-			"this request is signed by key %q, which is not a crawler this "+
-				"site has been told about", keyID)
-	}
-
-	base, err := signatureBase(r, params["components"], input, label)
-	if err != nil {
-		return nil, err
-	}
-	if !ed25519.Verify(key.Public, []byte(base), raw) {
-		return nil, fmt.Errorf(
-			"the signature does not verify against the key it names. Either " +
-				"the request was altered, or it was not signed by that crawler")
-	}
-
-	return &Identity{
-		Name:   key.Name,
-		Use:    declaredUse(r),
-		Signed: signed,
-	}, nil
+	return &Identity{Name: name, Use: declaredUse(r), Signed: signed.Created}, nil
 }
 
 // declaredUse reads what the crawler says it wants the content for.
@@ -173,110 +122,6 @@ func declaredUse(r *http.Request) Use {
 		}
 	}
 	return Unstated
-}
-
-// parseInput reads the Signature-Input header.
-//
-// Deliberately small. A full structured-fields parser is a lot of code for a
-// header shaped, in every implementation that exists, like:
-//
-//	sig1=("@method" "@authority" "@path");created=123;keyid="k1";alg="ed25519"
-//
-// What it must not do is accept something it half-understood: every field it
-// needs is required below, so an unparsed one is a refusal rather than a
-// default.
-func parseInput(header string) (label string, params map[string]string, err error) {
-	label, rest, found := strings.Cut(strings.TrimSpace(header), "=")
-	if !found || strings.TrimSpace(label) == "" {
-		return "", nil, fmt.Errorf("Signature-Input is not label=value")
-	}
-	label = strings.TrimSpace(label)
-
-	open := strings.Index(rest, "(")
-	close := strings.Index(rest, ")")
-	if open < 0 || close < open {
-		return "", nil, fmt.Errorf(
-			"Signature-Input names no covered components")
-	}
-	params = map[string]string{"components": rest[open+1 : close]}
-
-	for _, p := range strings.Split(rest[close+1:], ";") {
-		k, v, ok := strings.Cut(strings.TrimSpace(p), "=")
-		if !ok {
-			continue
-		}
-		params[strings.ToLower(strings.TrimSpace(k))] =
-			strings.Trim(strings.TrimSpace(v), `"`)
-	}
-	return label, params, nil
-}
-
-// parseSignature pulls the bytes for this label out of the Signature header.
-func parseSignature(header, label string) ([]byte, error) {
-	for _, part := range strings.Split(header, ",") {
-		name, value, ok := strings.Cut(strings.TrimSpace(part), "=")
-		if !ok || strings.TrimSpace(name) != label {
-			continue
-		}
-		value = strings.TrimSpace(value)
-		// Byte sequences are wrapped in colons in structured fields.
-		value = strings.TrimSuffix(strings.TrimPrefix(value, ":"), ":")
-		raw, err := base64.StdEncoding.DecodeString(value)
-		if err != nil {
-			return nil, fmt.Errorf("the signature is not base64: %w", err)
-		}
-		if len(raw) != ed25519.SignatureSize {
-			return nil, fmt.Errorf(
-				"the signature is %d bytes and an Ed25519 one is %d",
-				len(raw), ed25519.SignatureSize)
-		}
-		return raw, nil
-	}
-	return nil, fmt.Errorf("the Signature header has no entry labelled %q", label)
-}
-
-// signatureBase rebuilds what the crawler signed, from the request received.
-//
-// This is the whole of the check: if the request was altered in any covered
-// component, the base differs and the signature does not verify. Components
-// this program does not understand are refused rather than skipped — skipping
-// one would mean verifying a signature over less than the crawler signed, and
-// reporting that as a valid proof.
-func signatureBase(r *http.Request, components, input, label string) (string, error) {
-	var b strings.Builder
-	for _, raw := range strings.Fields(components) {
-		name := strings.Trim(raw, `"`)
-		var value string
-		switch strings.ToLower(name) {
-		case "@method":
-			value = r.Method
-		case "@authority":
-			value = r.Host
-		case "@path":
-			value = r.URL.EscapedPath()
-		case "@query":
-			value = "?" + r.URL.RawQuery
-		case "@target-uri":
-			value = r.URL.String()
-		default:
-			if strings.HasPrefix(name, "@") {
-				return "", fmt.Errorf(
-					"this signature covers %q, which this program does not "+
-						"know how to rebuild. Refusing rather than skipping "+
-						"it: a signature checked over fewer components than "+
-						"were signed is not the signature that was made", name)
-			}
-			value = r.Header.Get(name)
-		}
-		fmt.Fprintf(&b, "\"%s\": %s\n", strings.ToLower(name), value)
-	}
-
-	// The trailing @signature-params line, which is the parameters exactly as
-	// they arrived. Rebuilding them from the parsed map would let a difference
-	// between what was parsed and what was sent pass unnoticed.
-	_, rest, _ := strings.Cut(strings.TrimSpace(input), "=")
-	fmt.Fprintf(&b, "\"@signature-params\": %s", strings.TrimSpace(rest))
-	return b.String(), nil
 }
 
 // ParseKey decodes a configured crawler key.

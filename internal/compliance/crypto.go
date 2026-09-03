@@ -121,8 +121,9 @@ func Inventory() []Algorithm {
 		},
 		{
 			Name: "Ed25519", Package: "crypto/ed25519",
-			Purpose: "verifying interaction signatures from Discord",
-			Where:   "discord", Use: Verified, Quantum: Broken,
+			Purpose: "verifying interaction signatures from Discord, and " +
+				"HTTP message signatures under RFC 9421",
+			Where: "discord, httpsig, crawl", Use: Verified, Quantum: Broken,
 			Note: "Verified, never generated: Discord signs and this holds " +
 				"only the public key. That asymmetry is the reason to prefer " +
 				"it to a shared secret — a public key cannot sign anything, " +
