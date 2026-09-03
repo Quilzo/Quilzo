@@ -89,22 +89,50 @@ func TestEveryAlgorithmIsFullyDescribed(t *testing.T) {
 	}
 }
 
-// The honest claim, and the one an enterprise questionnaire is asking for.
-func TestNothingQuantumBrokenIsGeneratedHere(t *testing.T) {
+// The summary has to say where this program actually stands.
+//
+// # Why this no longer asserts a particular posture
+//
+// It used to require that nothing quantum-broken was generated here, and that
+// the summary contained the words "generates no material". Both were true when
+// they were written, and both were read out of the same field the document
+// prints — so the test asserted that the inventory said what the inventory used
+// to say.
+//
+// When federation landed, `quilzo fediverse` began generating a 2048-bit RSA
+// key and every delivery began carrying an RSA signature. The fact changed; the
+// inventory entry did not; this test went on passing, because it was pinned to
+// the old answer rather than checking the answer against the program. For as
+// long as nobody looked, a compliance document said there was no migration for
+// this project to own, to a reader answering a questionnaire under a regime with
+// a fifteen-million euro ceiling.
+//
+// So the property is consistency, not a posture: whatever the program generates,
+// the summary names it and says whose migration it is. What keeps the inventory
+// itself honest is the source walk further down —
+// TestAnAlgorithmThisProgramSignsWithIsNotListedAsOnlyVerified — which reads the
+// calls rather than the claim.
+func TestThePostureNamesWhatIsActuallyGenerated(t *testing.T) {
+	summary := Posture()
 	for _, a := range Inventory() {
-		if a.Quantum == Broken && a.Use == Generated {
-			t.Errorf("%s is generated here and quantum-broken, so the stated "+
-				"posture is wrong and there is a migration this project owns",
-				a.Name)
+		if a.Quantum != Broken {
+			continue
+		}
+		if !strings.Contains(summary, a.Name) {
+			t.Errorf("%s is quantum-broken and the summary does not mention "+
+				"it at all:\n%s", a.Name, summary)
+			continue
+		}
+		if a.Use == Generated && !strings.Contains(summary,
+			"migration this project owns") {
+			t.Errorf("%s is generated here and quantum-broken, and the summary "+
+				"does not say the migration is this project's:\n%s",
+				a.Name, summary)
 		}
 	}
-	summary := Posture()
-	if !strings.Contains(summary, "generates no material") {
-		t.Errorf("the summary does not make the claim plainly: %s", summary)
-	}
-	if !strings.Contains(summary, "identity provider") {
-		t.Error("the summary does not mention the verified algorithms, which " +
-			"is where the real migration is")
+	if !strings.Contains(summary, "harvest-now") {
+		t.Error("the summary does not address harvest-now, decrypt-later, " +
+			"which is the question every questionnaire asks")
 	}
 }
 
@@ -208,5 +236,94 @@ func TestAModifiedBuildSaysSo(t *testing.T) {
 	}
 	if s.Metadata.Component.Version == "" {
 		t.Error("the product has no version at all")
+	}
+}
+
+// An algorithm this program signs with cannot be listed as one it only checks.
+//
+// The test above walks the source for crypto imports and matches them against
+// the inventory's package list. That is the wrong half. When federation landed,
+// `quilzo fediverse` began generating a 2048-bit RSA key and every delivery to a
+// follower's inbox began carrying an RSA signature — and crypto/rsa was already
+// declared for verifying ID tokens, so the import check stayed green while the
+// entry went on saying "this program never generates an RSA signature".
+//
+// The posture summary is derived from that field, so it said the program
+// generates no material with an algorithm a quantum computer defeats, and that
+// there is no migration for this project to own. A compliance document is read
+// by somebody answering a questionnaire under a regime with a fifteen-million
+// euro ceiling, and it was wrong for as long as nobody looked.
+//
+// So this checks the claim rather than the import: if the source signs with an
+// algorithm, its entry says Generated.
+func TestAnAlgorithmThisProgramSignsWithIsNotListedAsOnlyVerified(t *testing.T) {
+	// The calls that produce a signature or a key, and the inventory entry each
+	// one implicates. Named rather than pattern-matched, because "anything with
+	// Sign in it" would also catch a verifier called SignatureOf.
+	signing := map[string]string{
+		"rsa.SignPKCS1v15":       "crypto/rsa",
+		"rsa.SignPSS":            "crypto/rsa",
+		"rsa.GenerateKey":        "crypto/rsa",
+		"ecdsa.SignASN1":         "crypto/ecdsa",
+		"ecdsa.Sign":             "crypto/ecdsa",
+		"ed25519.Sign":           "crypto/ed25519",
+		"ed25519.GenerateKey":    "crypto/ed25519",
+		"ed25519.NewKeyFromSeed": "crypto/ed25519",
+	}
+
+	// Where each package's use is declared.
+	use := map[string]Use{}
+	name := map[string]string{}
+	for _, a := range Inventory() {
+		for _, p := range strings.Split(a.Package, ",") {
+			pkg := strings.TrimSpace(p)
+			use[pkg] = a.Use
+			name[pkg] = a.Name
+		}
+	}
+
+	found := map[string]string{} // package -> the call that proves it
+	for _, root := range []string{"..", filepath.Join("..", "..", "cmd")} {
+		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") ||
+				strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			// internal/compliance itself is the document, and internal/demo is
+			// a fixture generator rather than the product's own cryptography.
+			if strings.Contains(path, "/compliance/") {
+				return nil
+			}
+			body, rerr := os.ReadFile(path)
+			if rerr != nil {
+				return nil
+			}
+			for call, pkg := range signing {
+				if strings.Contains(string(body), call+"(") {
+					found[pkg] = call + " in " + filepath.ToSlash(path)
+				}
+			}
+			return nil
+		})
+	}
+
+	for pkg, where := range found {
+		switch use[pkg] {
+		case Generated:
+			// Correct: the document says this program produces material here.
+		case "":
+			t.Errorf("%s is used to sign or generate keys (%s) and is in no "+
+				"inventory entry", pkg, where)
+		default:
+			t.Errorf("%s is listed as %q and the source signs with it: %s.\n"+
+				"  The posture summary is derived from that field, so it "+
+				"currently tells a reader this program produces nothing with "+
+				"%s — which is what the document is for.",
+				pkg, use[pkg], where, name[pkg])
+		}
+	}
+	if len(found) == 0 {
+		t.Error("no signing call was found anywhere, which means this test " +
+			"scanned nothing and would pass whatever the inventory said")
 	}
 }

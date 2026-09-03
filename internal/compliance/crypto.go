@@ -106,12 +106,17 @@ func Inventory() []Algorithm {
 		},
 		{
 			Name: "RSA PKCS#1 v1.5 and PSS", Package: "crypto/rsa",
-			Purpose: "verifying ID token signatures from an identity provider",
-			Where:   "oidc", Use: Verified, Quantum: Broken,
-			Note: "Shor's algorithm defeats RSA. This program never generates " +
-				"an RSA signature; it verifies ones an identity provider made, " +
-				"so the migration is the provider's to lead and this follows " +
-				"whatever they advertise in their discovery document.",
+			Purpose: "signing federated deliveries under RFC 9421, and " +
+				"verifying ID token signatures from an identity provider",
+			Where: "public, httpsig, oidc", Use: Generated, Quantum: Broken,
+			Note: "Shor's algorithm defeats RSA. This entry said the program " +
+				"never generated an RSA signature, and that stopped being " +
+				"true when federation landed: `quilzo fediverse` generates a " +
+				"2048-bit key and every delivery to a follower's inbox is " +
+				"signed with it. RSA rather than Ed25519 because that is what " +
+				"the installed fediverse verifies. The migration is this " +
+				"project's, and it is bounded by what other servers accept: " +
+				"a key nobody can verify is a delivery nobody receives.",
 		},
 		{
 			Name: "ECDSA over P-256/384/521", Package: "crypto/ecdsa, crypto/elliptic",
@@ -123,15 +128,19 @@ func Inventory() []Algorithm {
 			Name: "Ed25519", Package: "crypto/ed25519",
 			Purpose: "verifying interaction signatures from Discord, and " +
 				"HTTP message signatures under RFC 9421",
-			Where: "discord, httpsig, crawl", Use: Verified, Quantum: Broken,
-			Note: "Verified, never generated: Discord signs and this holds " +
-				"only the public key. That asymmetry is the reason to prefer " +
-				"it to a shared secret — a public key cannot sign anything, " +
-				"so losing it costs nothing, whereas a leaked HMAC secret " +
-				"lets somebody forge in both directions. Shor breaks the " +
-				"underlying curve, at which point the platform issuing the " +
-				"signatures has the same problem and will be the one to " +
-				"migrate.",
+			Where: "discord, httpsig, crawl", Use: Generated, Quantum: Broken,
+			Note: "Signed and verified. internal/httpsig signs Ed25519 for " +
+				"any caller that asks — that is what Web Bot Auth uses — and " +
+				"no shipped call site passes it yet: the fediverse deliveries " +
+				"sign RSA because that is what the installed base verifies. " +
+				"Listed as generated anyway, because a signing implementation " +
+				"is part of this program's cryptographic surface and a " +
+				"document about that surface should overstate it rather than " +
+				"understate it. Verification is the older half: Discord signs " +
+				"and this holds only the public key, which is the reason to " +
+				"prefer a key pair to a shared secret — a public key cannot " +
+				"sign anything, so losing it costs nothing, whereas a leaked " +
+				"HMAC secret lets somebody forge in both directions.",
 		},
 		{
 			Name: "X.509 / PKIX key parsing", Package: "crypto/x509",
@@ -206,10 +215,20 @@ func Posture() string {
 	}
 
 	b.WriteString("What that means practically: there is no harvest-now, " +
-		"decrypt-later exposure\nhere, because nothing long-lived is protected " +
-		"by an algorithm Shor's\nalgorithm breaks. The migration work is at " +
-		"the identity provider and the\ntimestamp authority, not in this " +
-		"program.\n")
+		"decrypt-later exposure,\nbecause nothing confidential is protected by " +
+		"an algorithm Shor's algorithm\nbreaks — encryption at rest is " +
+		"AES-256 and the store rests on hashes.\n\n")
+	if len(brokenGenerated) > 0 {
+		b.WriteString("The exposure that does exist is forgery rather than " +
+			"disclosure. A signature\nmade today with a broken algorithm can " +
+			"be forged once that algorithm falls,\nso a captured delivery " +
+			"could be reissued as this site. Rotating the key ends\nthat for " +
+			"future deliveries and does not undo it for past ones, which is " +
+			"why\nthe migration is worth starting before it is urgent. " +
+			"crypto/mldsa and\ncrypto/mlkem are in the standard library this " +
+			"program is built with, so the\npost-quantum move needs no " +
+			"dependency — it needs the other end to accept it.\n")
+	}
 	return b.String()
 }
 
