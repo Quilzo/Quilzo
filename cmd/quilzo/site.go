@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/throttle"
@@ -294,6 +295,22 @@ func cmdSite(root string, args []string) error {
 		Addr:              *addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	// Federation runs alongside serving: one loop notices a publish and queues
+	// the pages that changed, the other empties the queue. Both were built and
+	// neither was reachable — a followed site that confirmed nothing and posted
+	// nothing — until this started them. It runs only when an operator has set
+	// up an actor and a sender exists to send with; otherwise it returns at
+	// once and the site serves exactly as before.
+	if st.Federation != nil && st.Federation.Sender != nil {
+		fedCtx, stopFed := context.WithCancel(context.Background())
+		defer stopFed()
+		go st.Federate(fedCtx, st.Federation.Sender, func(err error) {
+			fmt.Fprintf(os.Stderr, "  %sfederation: %v%s\n", dim, err, reset)
+		})
+		fmt.Printf("  %sfederating as @%s; publishes are announced to followers%s\n",
+			dim, st.Federation.Actor.Handle, reset)
 	}
 
 	fmt.Printf("site on http://%s\n", *addr)
