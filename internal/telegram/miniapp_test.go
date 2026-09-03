@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"github.com/quilzo/quilzo/internal/chat"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -31,7 +32,7 @@ func (f *fakePublisher) Save(handle string, body map[string]any, _, _ string) (s
 func testApp(t *testing.T, pub Publisher, now time.Time) *App {
 	t.Helper()
 	return &App{
-		BotToken: botToken, Spender: NewMemory(), Publisher: pub,
+		BotToken: botToken, Spender: chat.NewMemory(), Publisher: pub,
 		Now: func() time.Time { return now },
 	}
 }

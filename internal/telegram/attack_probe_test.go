@@ -1,8 +1,8 @@
 package telegram
 
 import (
-	"encoding/hex"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/chat"
 	"net/url"
 	"strings"
 	"testing"
@@ -216,7 +216,7 @@ func TestProbeAGrantCannotBeUsedAsAnArrivalLink(t *testing.T) {
 		t.Fatal("a grant carries a nonce; this test assumes it does not")
 	}
 
-	spender := NewMemory()
+	spender := chat.NewMemory()
 	if u, err := VerifyLink(values, probeToken, spender, nowish()); err == nil {
 		t.Fatalf("a form grant verified as an arrival link: %+v", u)
 	}
@@ -242,46 +242,17 @@ func TestProbeThePurposeFieldIsSigned(t *testing.T) {
 	}
 }
 
-// The two schemes derive their keys from different contexts.
-//
-// Asserted directly rather than inferred from a cross-verification failing.
-// The first version of this test signed an initData blob and checked it was
-// refused as a link and as a grant, which passes whatever the contexts are:
-// the blob has no nonce and no purpose field, so it is turned away by the
-// required-field checks long before a signature is compared. Making both
-// schemes share a context left that test green, which is a test passing for a
-// reason it does not name.
-func TestProbeInitDataAndLinksDoNotShareASigningContext(t *testing.T) {
-	same := url.Values{}
-	same.Set("u", "42")
-	same.Set("e", "1787000000")
-
-	// sign()'s exact construction, with the key context swapped for Telegram's
-	// and nothing else changed. Comparing against a whole initData signature
-	// would not work: that scheme joins its check string with newlines rather
-	// than url-encoding it, so the two differ whatever key they use, and a
-	// shared context would go unnoticed. Isolating the context is the only way
-	// to test the context.
-	asIfShared := hex.EncodeToString(mac(
-		mac([]byte("WebAppData"), []byte(probeToken)),
-		[]byte(same.Encode())))
-
-	if got := sign(same, probeToken); got == asIfShared {
-		t.Fatal("links are keyed on Telegram's own \"WebAppData\" context. " +
-			"Two schemes under one derived key is a bad habit even where " +
-			"nothing exploits it today, because it stops being defence in " +
-			"depth the moment either check string changes shape")
-	}
-
-	// And the separation that actually turns cross-submission away, which is
-	// the required-field check rather than the key. Both matter; only one of
-	// them was being tested.
+// The context separation between initData and the link scheme now lives in
+// internal/chat, which owns the link scheme and tests each half of it in
+// isolation. What remains worth asserting here is the part that is still this
+// package's: an initData blob is not a link and is not a grant.
+func TestProbeInitDataIsNotALinkOrAGrant(t *testing.T) {
 	blob := probeSign(t, validFields())
 	values, err := url.ParseQuery(blob)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := VerifyLink(values, probeToken, NewMemory(), nowish()); err == nil {
+	if _, err := VerifyLink(values, probeToken, chat.NewMemory(), nowish()); err == nil {
 		t.Error("an initData blob verified as a link")
 	}
 	if _, err := VerifyGrant(blob, probeToken, nowish()); err == nil {

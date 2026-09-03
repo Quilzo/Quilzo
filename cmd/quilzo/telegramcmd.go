@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/chat"
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
@@ -151,7 +152,7 @@ func telegramServe(root string, args []string) error {
 
 	app := &telegram.App{
 		BotToken:   token,
-		Spender:    telegram.NewMemory(),
+		Spender:    chat.NewMemory(),
 		Stylesheet: d.Stylesheet,
 		SiteURL:    strings.TrimSpace(*siteURL),
 		Publisher:  publisher,

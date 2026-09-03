@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/chat"
 	"net/url"
 	"sort"
 	"strings"
@@ -145,7 +146,7 @@ func TestASignatureFieldDoesNotBreakVerification(t *testing.T) {
 
 func TestAMintedLinkWorksOnceAndOnlyOnce(t *testing.T) {
 	now := time.Now()
-	spender := NewMemory()
+	spender := chat.NewMemory()
 	spender.Now = func() time.Time { return now }
 
 	raw, err := NewLink(User{ID: 42, Username: "someone"}, botToken, now)
@@ -186,34 +187,34 @@ func TestATamperedOrExpiredLinkIsRefused(t *testing.T) {
 	t.Run("the user id swapped", func(t *testing.T) {
 		values := mint()
 		values.Set("u", "8")
-		if _, err := VerifyLink(values, botToken, NewMemory(), now); err == nil {
+		if _, err := VerifyLink(values, botToken, chat.NewMemory(), now); err == nil {
 			t.Error("accepted a link with a different user id")
 		}
 	})
 	t.Run("the expiry pushed out", func(t *testing.T) {
 		values := mint()
 		values.Set("e", fmt.Sprint(now.Add(100*time.Hour).Unix()))
-		if _, err := VerifyLink(values, botToken, NewMemory(), now); err == nil {
+		if _, err := VerifyLink(values, botToken, chat.NewMemory(), now); err == nil {
 			t.Error("accepted a link with an extended expiry")
 		}
 	})
 	t.Run("past its expiry", func(t *testing.T) {
 		values := mint()
 		later := now.Add(LinkLifetime + time.Second)
-		if _, err := VerifyLink(values, botToken, NewMemory(), later); err == nil {
+		if _, err := VerifyLink(values, botToken, chat.NewMemory(), later); err == nil {
 			t.Error("accepted an expired link")
 		}
 	})
 	t.Run("signed by a different bot", func(t *testing.T) {
 		values := mint()
-		if _, err := VerifyLink(values, "999:other", NewMemory(), now); err == nil {
+		if _, err := VerifyLink(values, "999:other", chat.NewMemory(), now); err == nil {
 			t.Error("accepted a link signed by another bot")
 		}
 	})
 	t.Run("a different version", func(t *testing.T) {
 		values := mint()
 		values.Set("v", "q0")
-		if _, err := VerifyLink(values, botToken, NewMemory(), now); err == nil {
+		if _, err := VerifyLink(values, botToken, chat.NewMemory(), now); err == nil {
 			t.Error("accepted a link claiming another version")
 		}
 	})
@@ -230,7 +231,7 @@ func TestATamperedOrExpiredLinkIsRefused(t *testing.T) {
 // link by requesting it with the signature edited.
 func TestABadSignatureCannotBurnSomebodyElsesLink(t *testing.T) {
 	now := time.Now()
-	spender := NewMemory()
+	spender := chat.NewMemory()
 	spender.Now = func() time.Time { return now }
 
 	raw, _ := NewLink(User{ID: 5}, botToken, now)
@@ -266,44 +267,5 @@ func TestEveryLinkGetsItsOwnNonce(t *testing.T) {
 			t.Fatalf("nonce %q was reused after %d links", nonce, i)
 		}
 		seen[nonce] = true
-	}
-}
-
-// The spender forgets a nonce once its link would have expired anyway, or the
-// map grows forever. And it refuses rather than evicting at the ceiling —
-// evicting would let a flood of forged links push a real spent nonce out and
-// make it replayable.
-func TestTheSpenderForgetsExpiredNoncesAndRefusesRatherThanEvicting(t *testing.T) {
-	now := time.Now()
-	m := NewMemory()
-	m.Now = func() time.Time { return now }
-
-	if !m.Spend("a", now.Add(time.Minute)) {
-		t.Fatal("a fresh nonce was refused")
-	}
-	if m.Spend("a", now.Add(time.Minute)) {
-		t.Fatal("a spent nonce was accepted again")
-	}
-
-	now = now.Add(2 * time.Minute)
-	if !m.Spend("b", now.Add(time.Minute)) {
-		t.Fatal("a fresh nonce was refused after the sweep")
-	}
-	if m.Len() != 1 {
-		t.Errorf("the expired nonce was not swept; %d remembered", m.Len())
-	}
-
-	tight := &Memory{spent: map[string]time.Time{}, MaxEntries: 2,
-		Now: func() time.Time { return now }}
-	if !tight.Spend("one", now.Add(time.Hour)) || !tight.Spend("two", now.Add(time.Hour)) {
-		t.Fatal("the first two nonces were refused")
-	}
-	if tight.Spend("three", now.Add(time.Hour)) {
-		t.Error("a nonce was accepted past the ceiling; the map is unbounded")
-	}
-	// "one" must still be remembered: refusing at the ceiling rather than
-	// evicting is what stops a flood making a real token replayable.
-	if tight.Spend("one", now.Add(time.Hour)) {
-		t.Error("a previously spent nonce became replayable at the ceiling")
 	}
 }
