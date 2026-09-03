@@ -163,10 +163,12 @@ type Note struct {
 	URL string
 	// Published is when it went live.
 	Published time.Time
-	// ContentHash is the store's own hash of the bytes this was made from.
+	// ContentHash is the store's own object id for this content.
 	//
 	// The field that makes a federated copy checkable. Everything else in this
-	// struct is a claim by the origin; this one is falsifiable.
+	// struct is a claim by the origin; this one is falsifiable — the content
+	// is filed under this name, so a reader can ask for it and check what
+	// comes back hashes to the same thing.
 	ContentHash string
 	// PublishedRef is the commit the page was published at, so a reader can
 	// ask the origin for exactly that version rather than for "the current
@@ -304,11 +306,12 @@ func Collection(id string, items []any) map[string]any {
 	}
 }
 
-// Digest computes the content hash a note carries.
+// Digest computes a content hash the same way the store does.
 //
-// Over the rendered bytes rather than the source, because the rendered bytes
-// are what a reader receives. A digest over something nobody can fetch is a
-// digest nobody can check.
+// Present for callers with bytes and no store — a preview, a test. Where a
+// stored object exists its own id is used instead, because that is the name
+// the content is filed under and a hash computed here would only prove that
+// this code hashed something.
 func Digest(rendered []byte) string {
 	sum := sha256.Sum256(rendered)
 	return hex.EncodeToString(sum[:])

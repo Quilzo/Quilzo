@@ -206,6 +206,52 @@ func (c *Client) GetWithToken(ctx context.Context, raw, token string) (*Result, 
 	})
 }
 
+// GetAccepting fetches a URL asking for a particular content type.
+//
+// Present because a protocol can serve two different documents at one address
+// and choose between them on Accept — which is exactly what ActivityPub does:
+// the same URL is a web page for a person and an actor document for a server,
+// and a fetch that does not ask gets the page. That failure is quiet and
+// confusing, because the request succeeds and the body is simply the wrong
+// thing.
+//
+// The same address rules apply as every other fetch; only the header differs.
+func (c *Client) GetAccepting(ctx context.Context, raw, accept string) (*Result, error) {
+	return c.get(ctx, raw, func(req *http.Request) {
+		if accept != "" {
+			req.Header.Set("Accept", accept)
+		}
+	})
+}
+
+// GetSigned fetches a URL with a caller-supplied signature.
+//
+// For protocols where reading a public document requires proving who is
+// asking. ActivityPub's authorized fetch is the case: a large part of the
+// fediverse answers an unsigned request for an actor with 401, so the request
+// made to verify somebody else's signature has to carry one of its own.
+//
+// The signing function runs after the request is built and before it is sent,
+// so it signs exactly what will go on the wire. The same address rules apply
+// as every other fetch.
+func (c *Client) GetSigned(ctx context.Context, raw, accept string,
+	sign func(*http.Request) error) (*Result, error) {
+
+	var signErr error
+	res, err := c.get(ctx, raw, func(req *http.Request) {
+		if accept != "" {
+			req.Header.Set("Accept", accept)
+		}
+		if sign != nil {
+			signErr = sign(req)
+		}
+	})
+	if signErr != nil {
+		return nil, fmt.Errorf("cannot sign the request: %w", signErr)
+	}
+	return res, err
+}
+
 // ValidateURL checks a URL before anything is dialled.
 //
 // This is the cheap first pass, and it is deliberately *not* the security

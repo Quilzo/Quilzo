@@ -5,6 +5,8 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -311,5 +313,85 @@ func TestSigningNothingIsRefused(t *testing.T) {
 	priv, pub := edPair(t, 37)
 	if err := httpsig.Sign(req(), pub.ID, httpsig.Ed25519, priv, nil, at()); err == nil {
 		t.Fatal("a signature covering no components was produced")
+	}
+}
+
+// A key too small to mean anything is refused rather than used.
+//
+// A signature verified against a 1024-bit RSA key proves less than it appears
+// to, and the appearance is the problem: everything downstream treats "the
+// signature verified" as settled. Refusing at the parse is where a remote
+// server publishing a weak key is a configuration error rather than a
+// silently weaker guarantee.
+func TestAWeakRSAKeyIsRefused(t *testing.T) {
+	weak, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(&weak.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	weakPEM := string(pem.EncodeToMemory(&pem.Block{
+		Type: "PUBLIC KEY", Bytes: der,
+	}))
+
+	if _, err := httpsig.ParsePEM("k", weakPEM); err == nil {
+		t.Fatal("a 1024-bit RSA key was accepted; every signature checked " +
+			"against it would read as settled")
+	}
+
+	// And a key of a usable size still parses, or the check is a wall.
+	strong, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err = x509.MarshalPKIXPublicKey(&strong.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	strongPEM := string(pem.EncodeToMemory(&pem.Block{
+		Type: "PUBLIC KEY", Bytes: der,
+	}))
+	key, err := httpsig.ParsePEM("k", strongPEM)
+	if err != nil {
+		t.Fatalf("a 2048-bit key was refused: %v", err)
+	}
+	if key.Alg != httpsig.RSAPKCS1SHA256 {
+		t.Errorf("an RSA key parsed as %q", key.Alg)
+	}
+}
+
+// The algorithm is read out of the key material here, which is the one place
+// that is right: a PEM block is the key, not a claim about it, and an RSA key
+// cannot be verified as Ed25519 whatever anybody says.
+func TestParsePEMReadsTheAlgorithmFromTheKeyItself(t *testing.T) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := httpsig.ParsePEM("k", string(pem.EncodeToMemory(
+		&pem.Block{Type: "PUBLIC KEY", Bytes: der})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key.Alg != httpsig.Ed25519 {
+		t.Errorf("an Ed25519 key parsed as %q", key.Alg)
+	}
+}
+
+func TestAnUnreadableKeyIsRefused(t *testing.T) {
+	for name, text := range map[string]string{
+		"not pem":   "hello",
+		"empty":     "",
+		"junk body": "-----BEGIN PUBLIC KEY-----\nZm9v\n-----END PUBLIC KEY-----\n",
+	} {
+		if _, err := httpsig.ParsePEM("k", text); err == nil {
+			t.Errorf("%s was accepted as a key", name)
+		}
 	}
 }

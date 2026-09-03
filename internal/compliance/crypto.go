@@ -134,6 +134,18 @@ func Inventory() []Algorithm {
 				"migrate.",
 		},
 		{
+			Name: "X.509 / PKIX key parsing", Package: "crypto/x509",
+			Purpose: "reading a remote server's published public key out of " +
+				"its ActivityPub actor document",
+			Where: "httpsig, public", Use: Verified, Quantum: Safe,
+			Note: "Parsing, not cryptography: it decodes a key somebody else " +
+				"published so a signature can be checked against it. RSA keys " +
+				"under 2048 bits are refused, because below that a signature " +
+				"proves less than it appears to. Quantum computing does not " +
+				"weaken a parser; what it weakens is the RSA and Ed25519 " +
+				"entries above.",
+		},
+		{
 			Name: "crypto/rand", Package: "crypto/rand",
 			Purpose: "keys, nonces, tokens, state and nonce values, data keys",
 			Where:   "auth, vault, oidc, anchor, webhook",

@@ -47,9 +47,18 @@ type surfaces struct {
 
 var coverage = map[string]surfaces{
 	// -- content, on all three surfaces ---------------------------------------
-	"add":        {GUI: "/page/", MCP: []string{"write_page", "read_page", "list_pages"}},
-	"diff":       {GUI: "/", MCP: []string{"diff"}},
-	"publish":    {GUI: "/publish", MCP: []string{"publish"}},
+	"add":     {GUI: "/page/", MCP: []string{"write_page", "read_page", "list_pages"}},
+	"diff":    {GUI: "/", MCP: []string{"diff"}},
+	"publish": {GUI: "/publish", MCP: []string{"publish"}},
+	"fediverse": {
+		Why: "the whole command is three actions an operator takes once at " +
+			"setup — make a key, name a handle, look at a count — and the " +
+			"count is on the publishing screen already. A screen for it would " +
+			"be a screen nobody opens twice.",
+		NoMCP: "it writes the signing key that speaks for the site to every " +
+			"follower, and reads a list of people who read this site. " +
+			"Neither belongs on the interface a model can reach.",
+	},
 	"provenance": {GUI: "/provenance", MCP: []string{"check_provenance"}},
 	"a11y":       {GUI: "/page/", MCP: []string{"check_accessibility"}},
 	"records":    {GUI: "/records", MCP: []string{"list_records", "list_collections"}},

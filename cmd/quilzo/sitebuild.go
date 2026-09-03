@@ -1,8 +1,20 @@
 package main
 
 import (
+	"context"
+	"crypto"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/activitypub"
+	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/httpsig"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/a2a"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -196,6 +208,17 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 			st.Licence = lic
 		}
 
+		// Federation, when an operator has published an actor.
+		//
+		// A commitment rather than a setting: remote servers store the actor
+		// id and keep fetching it, so turning this on is a decision and
+		// turning it off later strands whoever followed.
+		if fed, ferr := federationFrom(root, cfg, st.BaseURL); ferr != nil {
+			return nil, ferr
+		} else if fed != nil {
+			st.Federation = fed
+		}
+
 		// The crawl gate, when an operator has configured one.
 		//
 		// Only alongside terms: enforcing a licence nobody published would
@@ -309,4 +332,163 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 		st.Locales = locales
 	}
 	return st, nil
+}
+
+// federationFrom builds the fediverse actor, or nil when the site does not
+// federate.
+//
+// # Why so much is refused here
+//
+// An actor id is permanent in a way little else is: remote servers store it,
+// and every follower's copy points at it. A misconfiguration discovered later
+// cannot be corrected by editing a setting, because the servers that already
+// have it will not re-read it. So the checks are at startup and they refuse
+// rather than warn.
+func federationFrom(root string, cfg *config.Config, baseURL string) (
+	*public.Federation, error) {
+
+	handle := strings.TrimSpace(cfg.Raw("fediverse.handle"))
+	if handle == "" {
+		return nil, nil
+	}
+	if strings.TrimSpace(baseURL) == "" {
+		return nil, fmt.Errorf(
+			"fediverse.handle is set and no --base-url is given. Every " +
+				"federated id is absolute and is stored permanently by remote " +
+				"servers, so one built from a guessed hostname is a mistake " +
+				"that cannot be withdrawn")
+	}
+	for _, r := range handle {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_') {
+			return nil, fmt.Errorf(
+				"fediverse.handle is %q; it may hold lower-case letters, "+
+					"digits and underscores only, because it becomes the "+
+					"local part of an address people type", handle)
+		}
+	}
+
+	pemBytes, err := os.ReadFile(fediverseKeyPath(root))
+	if err != nil {
+		return nil, fmt.Errorf(
+			"fediverse.handle is set and there is no signing key at %s. "+
+				"Create one with `quilzo fediverse init` — remote servers "+
+				"verify everything this site sends against it, and a site "+
+				"that federates without one is a site nothing will accept",
+			fediverseKeyPath(root))
+	}
+
+	pub, signer, err := keysFrom(pemBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	base := strings.TrimSuffix(baseURL, "/")
+	followers := activitypub.NewFollowers()
+	path := fediverseFollowersPath(root)
+	if err := loadJSON(path, followers); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("cannot read the follower list: %w", err)
+	}
+
+	return &public.Federation{
+		Actor: activitypub.Actor{
+			ID: base + "/@", Handle: handle,
+			Name:         siteName(root),
+			Summary:      strings.TrimSpace(cfg.Raw("fediverse.summary")),
+			PublicKeyPEM: pub,
+			Published:    time.Now(),
+		},
+		Followers: followers,
+		Save:      func() error { return saveJSON(path, followers) },
+
+		// Fetching a remote actor is the one request this protocol cannot
+		// avoid making to a URL a stranger named: the signature on an inbound
+		// activity can only be checked against the key of whoever sent it, and
+		// that key lives on their server.
+		//
+		// So it goes through the same client every other outbound request
+		// uses, with its connect-time address check. A federation package that
+		// built its own HTTP client would be a second place for that check to
+		// be forgotten, and the first place anybody would forget it.
+		Fetch: fediverseFetcher(base+"/@#main-key", signer),
+	}, nil
+}
+
+func fediverseKeyPath(root string) string {
+	return filepath.Join(root, "fediverse-key.pem")
+}
+
+func fediverseFollowersPath(root string) string {
+	return filepath.Join(root, "followers.json")
+}
+
+// publicPEMFrom derives the published half of the signing key.
+//
+// Derived rather than stored separately, so the two cannot disagree. A public
+// key file that drifted from the private one would produce a site whose
+// signatures nothing accepts, with no error anywhere to explain why.
+func keysFrom(privatePEM []byte) (string, crypto.Signer, error) {
+	block, _ := pem.Decode(privatePEM)
+	if block == nil {
+		return "", nil, fmt.Errorf("the signing key is not a PEM block")
+	}
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		k, rerr := x509.ParsePKCS1PrivateKey(block.Bytes)
+		if rerr != nil {
+			return "", nil, fmt.Errorf("the signing key cannot be parsed: %w", err)
+		}
+		key = k
+	}
+	signer, ok := key.(crypto.Signer)
+	if !ok {
+		return "", nil, fmt.Errorf("the signing key is a %T and cannot sign", key)
+	}
+	der, err := x509.MarshalPKIXPublicKey(signer.Public())
+	if err != nil {
+		return "", nil, fmt.Errorf("cannot render the public key: %w", err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{
+		Type: "PUBLIC KEY", Bytes: der,
+	})), signer, nil
+}
+
+// fediverseFetcher retrieves a remote actor document.
+//
+// # Two things a naive fetch gets wrong
+//
+// The same URL serves a web page to a person and an actor document to a
+// server, chosen on Accept. A fetch that does not ask gets HTML, which fails
+// later as "not an actor" while succeeding at the HTTP level — quiet enough
+// to lose an afternoon to.
+//
+// And a large part of the fediverse runs authorized fetch, where an unsigned
+// GET for an actor is answered 401. mastodon.social does. So the request this
+// server makes to verify somebody else's signature is itself signed, which is
+// circular-sounding and is how the protocol works: their server verifies ours
+// against the key in our actor document, which they can fetch unsigned because
+// this server does not require authorized fetch of its own.
+//
+// # The limit, stated
+//
+// The signature is RFC 9421, which Mastodon has verified since 4.5. A server
+// old enough to accept only draft-cavage-http-signatures will answer 401 and a
+// follow from it will not complete. Supporting the draft as well is a second
+// wire format for a shrinking set of servers, and it is a decision worth
+// making on evidence rather than in advance.
+func fediverseFetcher(keyID string, signer crypto.Signer) func(string) ([]byte, error) {
+	return func(raw string) ([]byte, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		res, err := fetch.New().GetSigned(ctx, raw,
+			"application/activity+json, application/ld+json",
+			func(r *http.Request) error {
+				return httpsig.Sign(r, keyID, httpsig.RSAPKCS1SHA256, signer,
+					[]string{"@method", "@authority", "@path"}, time.Now())
+			})
+		if err != nil {
+			return nil, err
+		}
+		return res.Body, nil
+	}
 }

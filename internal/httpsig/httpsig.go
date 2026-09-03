@@ -40,7 +40,9 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -370,4 +372,53 @@ func parseSignature(header, label string) ([]byte, error) {
 		return raw, nil
 	}
 	return nil, fmt.Errorf("the Signature header has no entry labelled %q", label)
+}
+
+// ParsePEM reads a PEM-encoded public key.
+//
+// # Why the algorithm is inferred here and nowhere else
+//
+// Everywhere else in this package the algorithm comes from the configured key
+// and never from the message, because letting a sender choose how their
+// signature is checked is the confusion bug every signature format has had.
+//
+// A PEM block is different: it is the key material itself, not a claim about
+// it. What the bytes decode to *is* what the key is, and there is nothing for
+// a sender to choose — an RSA key cannot be verified as Ed25519 whatever
+// anybody says. So inferring the algorithm from the parsed key is reading the
+// key, not trusting the message.
+//
+// This exists for ActivityPub, where a remote server publishes its key in its
+// actor document and PEM is what the protocol carries.
+func ParsePEM(id, pemText string) (PublicKey, error) {
+	block, _ := pem.Decode([]byte(strings.TrimSpace(pemText)))
+	if block == nil {
+		return PublicKey{}, fmt.Errorf("this is not a PEM block")
+	}
+
+	parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		// PKCS#1, which older implementations publish for RSA.
+		if rsaKey, rerr := x509.ParsePKCS1PublicKey(block.Bytes); rerr == nil {
+			return PublicKey{ID: id, Alg: RSAPKCS1SHA256, RSA: rsaKey}, nil
+		}
+		return PublicKey{}, fmt.Errorf("this key cannot be parsed: %w", err)
+	}
+
+	switch key := parsed.(type) {
+	case *rsa.PublicKey:
+		// Below this, factoring is within reach of somebody who wants the
+		// content badly enough, and accepting one would be accepting a
+		// signature that proves less than it appears to.
+		if key.N.BitLen() < 2048 {
+			return PublicKey{}, fmt.Errorf(
+				"this RSA key is %d bits and the minimum is 2048",
+				key.N.BitLen())
+		}
+		return PublicKey{ID: id, Alg: RSAPKCS1SHA256, RSA: key}, nil
+	case ed25519.PublicKey:
+		return PublicKey{ID: id, Alg: Ed25519, Ed: key}, nil
+	}
+	return PublicKey{}, fmt.Errorf(
+		"this key is a %T, and only RSA and Ed25519 are supported", parsed)
 }
