@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/egress"
 	"io"
 	"net"
 	"net/http"
@@ -145,7 +146,7 @@ func (e *Exporter) Export(ctx context.Context, spans []Span) error {
 	}
 
 	if e.client == nil {
-		e.client = &http.Client{}
+		e.client = egress.Client("telemetry", 0)
 	}
 	resp, err := e.client.Do(req)
 	if err != nil {

@@ -45,6 +45,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/egress"
 	"net"
 	"net/http"
 	"net/url"
@@ -440,7 +441,7 @@ func NewHTTPModel() (*HTTPModel, error) {
 		BaseURL: strings.TrimSuffix(base, "/"),
 		APIKey:  key,
 		Model:   model,
-		Client:  &http.Client{Timeout: RequestTimeout},
+		Client:  egress.Client("assistant", RequestTimeout),
 	}, nil
 }
 

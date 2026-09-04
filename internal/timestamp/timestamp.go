@@ -52,6 +52,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/egress"
 	"io"
 	"math/big"
 	"net/http"
@@ -163,7 +164,7 @@ func Request(client *http.Client, tsaURL, root string) (Stamp, error) {
 		tsaURL = DefaultTSA
 	}
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = egress.Client("timestamp", 30*time.Second)
 	}
 
 	sum := sha256.Sum256([]byte(root))

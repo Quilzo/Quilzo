@@ -426,7 +426,16 @@ func auditHead(root string, args []string) error {
 	}
 	w.Human("%s%d entries%s\n", bold, head.Size, reset)
 	w.Human("  root %s\n", head.Root)
-	w.Human("  signed by %s with Ed25519 and ML-DSA-65\n", signed.KeyID)
+	if signer.PostQuantum() {
+		w.Human("  signed by %s with Ed25519 and ML-DSA-65\n", signed.KeyID)
+	} else {
+		// Said here rather than only in a report, because this is the moment
+		// somebody is looking at a head and deciding what it is worth.
+		w.Human("  signed by %s with Ed25519 alone\n", signed.KeyID)
+		w.Human("\n  %s%s%s\n", yellow, signer.Why(), reset)
+		w.Human("  %sa verifier has to be told it accepts a head with one "+
+			"signature%s\n", dim, reset)
+	}
 	w.Human("\n  %sthis commits to every entry. Get it out of this machine —\n"+
 		"  export it to a SIEM, hand it to an auditor, or anchor it:%s\n",
 		dim, reset)

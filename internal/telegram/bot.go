@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/egress"
 	"io"
 	"net/http"
 	"strings"
@@ -56,7 +57,7 @@ func (b *Bot) client() *http.Client {
 	if b.HTTP != nil {
 		return b.HTTP
 	}
-	return &http.Client{Timeout: 15 * time.Second}
+	return egress.Client("chat", 15*time.Second)
 }
 
 func (b *Bot) base() string {

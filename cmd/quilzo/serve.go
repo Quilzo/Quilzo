@@ -8,6 +8,7 @@ import (
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/logd"
 	"github.com/quilzo/quilzo/internal/throttle"
+	"github.com/quilzo/quilzo/internal/webauthn"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -114,6 +115,18 @@ func cmdServe(root string, args []string) error {
 	}
 	pk.Save = func(p *admin.Passkeys) error {
 		return saveJSON(passkeysPath(root), p)
+	}
+	// Which authenticators may enrol. Empty constrains nothing, which is the
+	// default and what most deployments want.
+	if cfg, cerr := loadConfig(root); cerr == nil {
+		pk.Enrol.RequireIdentified = cfg.Bool("passkey.require_hardware")
+		for _, raw := range splitList(cfg.Raw("passkey.authenticators")) {
+			id, perr := webauthn.ParseAAGUID(raw)
+			if perr != nil {
+				return fmt.Errorf("passkey.authenticators: %w", perr)
+			}
+			pk.Enrol.Allowed = append(pk.Enrol.Allowed, id)
+		}
 	}
 	srv.Passkeys = pk
 
