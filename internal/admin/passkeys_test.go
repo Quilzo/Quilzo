@@ -393,3 +393,60 @@ func scriptTags(page string) []string {
 		rest = rest[end+1:]
 	}
 }
+
+// An address is not a domain, and a browser will not take one.
+//
+// This is the case the secure-context rule lets through: http://127.0.0.1 is
+// a secure context, so everything looked fine, the screen offered the button,
+// and Chrome answered "This is an invalid domain" from inside
+// navigator.credentials — where the server never sees it and the page appears
+// to do nothing.
+//
+// Found by driving a real browser at these routes (scripts/passkey/
+// browsercheck.mjs). Reading the specification did not produce it: it says a
+// relying party id is a valid domain string, and does not say what a browser
+// does when handed an address instead.
+func TestAnAddressIsRefusedAsARelyingParty(t *testing.T) {
+	srv, token := fullyWired(t)
+
+	for _, host := range []string{"127.0.0.1:8801", "[::1]:8801"} {
+		req := httptest.NewRequest(http.MethodPost,
+			"http://"+host+"/passkeys/challenge", nil)
+		req.Host = host
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s answered %d; the button would be offered and would "+
+				"then fail inside the browser", host, w.Code)
+			continue
+		}
+		// The message has to name the way out, or somebody reads "needs a
+		// domain name" and has no idea what to do on their own machine.
+		if !strings.Contains(w.Body.String(), "localhost") {
+			t.Errorf("%s is refused without suggesting localhost: %s",
+				host, w.Body.String())
+		}
+	}
+}
+
+// The policy on these pages must keep everything the shell needs, not only
+// what the script needs.
+//
+// It replaced the admin's policy wholesale and dropped manifest-src, so the
+// web manifest was blocked on exactly these two screens: the admin stayed
+// installable everywhere else and quietly stopped being installable here.
+func TestThePasskeyPolicyKeepsWhatTheShellNeeds(t *testing.T) {
+	srv, token := fullyWired(t)
+
+	for _, path := range []string{"/passkeys", "/signin/passkey"} {
+		csp := get(t, srv, path, token).Header().Get("Content-Security-Policy")
+		for _, need := range []string{"manifest-src 'self'", "style-src 'self'"} {
+			if !strings.Contains(csp, need) {
+				t.Errorf("%s omits %q, so part of the shell is blocked on "+
+					"this screen and nowhere else: %s", path, need, csp)
+			}
+		}
+	}
+}

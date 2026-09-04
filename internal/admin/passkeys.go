@@ -162,7 +162,36 @@ func partyFor(r *http.Request) (webauthn.Party, error) {
 				"context — localhost is the one exception, and this is not it",
 			host)
 	}
+	// A relying party is a domain, and an address is not one.
+	//
+	// This is separate from the secure-context rule and catches what that rule
+	// lets through: http://127.0.0.1 *is* a secure context, so the check above
+	// is satisfied and everything looks fine — and then the browser answers
+	// "This is an invalid domain" from inside navigator.credentials, where the
+	// server never sees it and the page shows a button that does nothing.
+	//
+	// Found by driving a real browser at these routes. No amount of reading
+	// the specification produced it, because the specification says a relying
+	// party id is a valid domain string and does not say what a browser does
+	// when you hand it an address instead.
+	if net.ParseIP(name) != nil {
+		return webauthn.Party{}, fmt.Errorf(
+			"passkeys need a domain name and this admin is served at %s. A "+
+				"browser refuses an address as a relying party, so the button "+
+				"would fail silently — use http://localhost:%s instead, or a "+
+				"hostname",
+			host, portOf(host))
+	}
 	return webauthn.Party{ID: name, Origin: scheme + "://" + host}, nil
+}
+
+// portOf is the port from a host:port, for a message that suggests an
+// alternative somebody can paste.
+func portOf(host string) string {
+	if _, port, err := net.SplitHostPort(host); err == nil {
+		return port
+	}
+	return "8080"
 }
 
 func isLoopback(name string) bool {
@@ -216,9 +245,15 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 
 // passkeyPolicy sets the one policy in this program that permits a script.
 func (s *Server) passkeyPolicy(w http.ResponseWriter, n string) {
+	// manifest-src, because the shell links the web manifest on every screen
+	// and this policy replaces the one that permitted it. Leaving it out
+	// blocked the manifest on exactly these two pages -- the admin stayed
+	// installable everywhere else and stopped being installable here, with a
+	// console error nobody would see. Found by a browser, not by a test.
 	w.Header().Set("Content-Security-Policy",
 		"default-src 'none'; style-src 'self'; img-src 'self' data:; "+
 			"script-src 'nonce-"+n+"'; connect-src 'self'; "+
+			"manifest-src 'self'; "+
 			"form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 }
 
