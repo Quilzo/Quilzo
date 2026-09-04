@@ -50,6 +50,7 @@ package admin
 
 import (
 	"embed"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -227,6 +228,10 @@ type Server struct {
 	// SaveTokens persists a session minted after an OIDC sign-in, so it
 	// survives a restart and so revoking it is possible from the CLI.
 	SaveTokens func(*auth.TokenStore) error
+	// Passkeys is the registered credential set, or nil on a deployment that
+	// does not offer them. See passkeys.go for why this is the one screen in
+	// the program that serves a script.
+	Passkeys *Passkeys
 	// SavePolicy persists an access change made from the admin.
 	SavePolicy func(*auth.Policy) error
 	// Audit records an action. The admin does not open the audit log itself:
@@ -303,6 +308,12 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 				return "—"
 			}
 			return time.Unix(unix, 0).UTC().Format("15:04 on 2 Jan 2006") + " UTC"
+		},
+		// A credential id as a form value. base64url because that is what
+		// WebAuthn uses everywhere else, and mixing encodings for one
+		// identifier is how a lookup silently stops matching.
+		"b64": func(b []byte) string {
+			return base64.RawURLEncoding.EncodeToString(b)
 		},
 		"ago": func(unix int64) string {
 			if unix == 0 {
@@ -804,6 +815,15 @@ func (s *Server) Handler() http.Handler {
 	// interface's own — that is /style.css, and the two must not be confused.
 	mux.HandleFunc("/site.css", s.siteCSS)
 	mux.HandleFunc("/signin", s.handleSignIn)
+	// Passkeys. The two GET routes here are the only pages in this program
+	// whose policy permits a script, and they permit exactly one, by nonce.
+	mux.HandleFunc("/passkeys", s.handlePasskeys)
+	mux.HandleFunc("/passkeys/challenge", s.handlePasskeyChallenge)
+	mux.HandleFunc("/passkeys/register", s.handlePasskeyRegister)
+	mux.HandleFunc("/passkeys/remove", s.handlePasskeyRemove)
+	mux.HandleFunc("/signin/passkey", s.handlePasskeySignIn)
+	mux.HandleFunc("/signin/passkey/challenge", s.handlePasskeySignInChallenge)
+	mux.HandleFunc("/signin/passkey/verify", s.handlePasskeyVerify)
 	mux.HandleFunc("/signin/oidc", s.handleOIDCStart)
 	mux.HandleFunc("/auth/callback", s.handleOIDCCallback)
 	mux.HandleFunc("/signout", s.handleSignOut)

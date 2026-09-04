@@ -1,0 +1,166 @@
+{{/*
+  Managing your own passkeys.
+
+  The second and last page whose policy permits a script, by nonce. See
+  passkeysignin.html for the reasoning; it is the same script doing the other
+  half of the ceremony.
+
+  "Your own" is load-bearing: this screen lists and removes only the keys
+  belonging to the person reading it. A screen that let anybody signed in
+  remove anybody else's key would be a way to strip a colleague's second
+  factor from inside the building.
+*/}}
+{{template "head" .}}
+<h1>Passkeys</h1>
+
+<p>A passkey signs you in with your device instead of a token. It never leaves
+  that device, and your browser will not offer it to any site but this one —
+  so a convincing copy of this admin at another address cannot ask for it.</p>
+
+{{if .Unavailable}}
+  <p class="notice bad" role="alert">{{.Unavailable}}</p>
+{{end}}
+
+<h2>Yours</h2>
+{{if .Keys}}
+<table>
+  <thead><tr><th scope="col">Name</th><th scope="col">Added</th><th scope="col">Last used</th><th scope="col"></th></tr></thead>
+  <tbody>
+  {{range .Keys}}
+    <tr>
+      <td>{{.Label}}</td>
+      <td>{{when .CreatedAt}}</td>
+      <td>{{ago .LastUsed}}</td>
+      <td>
+        <form method="post" action="/passkeys/remove">
+          <input type="hidden" name="id" value="{{b64 .ID}}">
+          <button type="submit" class="danger">Remove</button>
+        </form>
+      </td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="help">You have none yet. The token you signed in with still works,
+  and will keep working — a passkey is an additional way in, not a
+  replacement.</p>
+{{end}}
+
+{{if not .Unavailable}}
+<h2>Add one</h2>
+<p class="field">
+  <label for="label">What to call it</label>
+  <input id="label" type="text" placeholder="this laptop" autocomplete="off">
+</p>
+<p class="actions"><button id="add" class="btn" type="button">Add a passkey</button></p>
+<p id="msg" class="help" role="status" aria-live="polite"></p>
+
+<script nonce="{{.Nonce}}">
+(function () {
+  "use strict";
+  var button = document.getElementById("add");
+  var label = document.getElementById("label");
+  var message = document.getElementById("msg");
+
+  function toBytes(s) {
+    s = s.replace(/-/g, "+").replace(/_/g, "/");
+    while (s.length % 4) { s += "="; }
+    var raw = atob(s), out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) { out[i] = raw.charCodeAt(i); }
+    return out;
+  }
+  function toText(buffer) {
+    var bytes = new Uint8Array(buffer), s = "";
+    for (var i = 0; i < bytes.length; i++) { s += String.fromCharCode(bytes[i]); }
+    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function post(url, body) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(body || {})
+    }).then(function (response) {
+      return response.json().then(function (data) {
+        if (!response.ok) { throw new Error(data.error || "that did not work"); }
+        return data;
+      });
+    });
+  }
+  function say(text) { message.textContent = text; }
+
+  button.addEventListener("click", function () {
+    if (!window.PublicKeyCredential) {
+      say("This browser does not support passkeys.");
+      return;
+    }
+    button.disabled = true;
+    say("Waiting for your device…");
+
+    var challenge = null;
+    post("/passkeys/challenge").then(function (start) {
+      challenge = start.challenge;
+      // Keys already registered are excluded, so a second attempt on the same
+      // device says "already registered" rather than quietly making a
+      // duplicate nobody can tell apart in the list.
+      var exclude = (start.exclude || []).map(function (id) {
+        return { type: "public-key", id: toBytes(id) };
+      });
+      return navigator.credentials.create({
+        publicKey: {
+          challenge: toBytes(start.challenge),
+          rp: { id: start.rp.id, name: start.rp.name || "Quilzo" },
+          user: {
+            id: toBytes(start.user.id),
+            name: start.user.name,
+            displayName: start.user.displayName
+          },
+          // ES256, EdDSA and RS256, in the order this server prefers them.
+          pubKeyCredParams: [
+            { type: "public-key", alg: -7 },
+            { type: "public-key", alg: -8 },
+            { type: "public-key", alg: -257 }
+          ],
+          authenticatorSelection: {
+            // Discoverable, so signing in needs no username: the credential
+            // itself says who it belongs to.
+            residentKey: "preferred",
+            userVerification: "preferred"
+          },
+          excludeCredentials: exclude,
+          timeout: 120000,
+          attestation: "none"
+        }
+      });
+    }).then(function (credential) {
+      if (!credential) { throw new Error("no passkey was created"); }
+      var made = credential.response;
+      // getPublicKey and getAuthenticatorData hand over SPKI and the raw
+      // authenticator data, so the server parses no CBOR at all. A browser
+      // too old for them cannot register here, and says so.
+      if (!made.getPublicKey || !made.getPublicKey()) {
+        throw new Error("this browser cannot report the key in a form this " +
+          "server reads. Use a current browser, or sign in with a token.");
+      }
+      return post("/passkeys/register", {
+        id: credential.id,
+        challenge: challenge,
+        label: label.value,
+        clientDataJSON: toText(made.clientDataJSON),
+        authenticatorData: toText(made.getAuthenticatorData()),
+        publicKey: toText(made.getPublicKey()),
+        algorithm: made.getPublicKeyAlgorithm()
+      });
+    }).then(function () {
+      say("Added.");
+      window.location.reload();
+    }).catch(function (err) {
+      button.disabled = false;
+      say(err && err.message ? err.message : "that did not work");
+    });
+  });
+})();
+</script>
+{{end}}
+{{template "foot" .}}

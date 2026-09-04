@@ -1,0 +1,134 @@
+{{/*
+  Signing in with a passkey.
+
+  One of two pages in this program whose Content-Security-Policy permits a
+  script, and it permits exactly one: the inline block below, matched by a
+  nonce that is fresh for this response. Everything else on this page, and
+  every other page in the admin, still executes nothing.
+
+  The script is as small as it is because every decision worth making is made
+  on the server. It asks for a challenge, hands it to the browser, and posts
+  back whatever the authenticator produced. It checks nothing itself — a check
+  in here is a check an attacker can skip by not running it.
+*/}}
+<!doctype html>
+<html lang="en"{{if .Theme}} data-theme="{{.Theme}}"{{end}}>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Sign in with a passkey — Quilzo</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body class="signin-page">
+<main id="main" class="signin">
+  <section class="signin-panel">
+    <p class="brand"><svg class="mark" viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" focusable="false"><path fill-rule="evenodd" fill="currentColor" d="{{.MarkPath}}"/></svg><span>Quilzo</span></p>
+    <h1>Sign in with a passkey</h1>
+
+    {{if .Unavailable}}
+      <p class="notice bad" role="alert">{{.Unavailable}}</p>
+      <p class="help">Sign in with a token instead, or serve this admin over
+        HTTPS. A browser will not offer an authenticator to a page it does not
+        consider secure, and it gives no visible reason when it declines.</p>
+    {{else}}
+      <p>Your device will ask you to confirm. Nothing is typed, and nothing
+        that appears on this screen can be reused anywhere else.</p>
+      <p class="actions">
+        <button id="go" class="btn" type="button">Use a passkey</button>
+      </p>
+      <p id="msg" class="help" role="status" aria-live="polite"></p>
+    {{end}}
+
+    <p class="rule"><span>or</span></p>
+    <p class="help"><a href="/signin">Sign in with a token</a>.</p>
+
+    <h2>Why this is safer than the token</h2>
+    <p class="help">A token is a string, so anybody who sees it is signed in —
+      a screen share, a shell history, a pasted support ticket. A passkey never
+      leaves your device, and your browser will not offer it to any site but
+      this one. That last part is what makes it unphishable: a convincing copy
+      of this page at another address cannot ask your device for it.</p>
+  </section>
+</main>
+
+{{if not .Unavailable}}
+<script nonce="{{.Nonce}}">
+(function () {
+  "use strict";
+  var button = document.getElementById("go");
+  var message = document.getElementById("msg");
+
+  // Base64url in both directions, because WebAuthn speaks ArrayBuffer and JSON
+  // does not. Written out rather than pulled from a library: a dependency here
+  // would need a host in the policy, which is what the nonce just avoided.
+  function toBytes(s) {
+    s = s.replace(/-/g, "+").replace(/_/g, "/");
+    while (s.length % 4) { s += "="; }
+    var raw = atob(s), out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) { out[i] = raw.charCodeAt(i); }
+    return out;
+  }
+  function toText(buffer) {
+    var bytes = new Uint8Array(buffer), s = "";
+    for (var i = 0; i < bytes.length; i++) { s += String.fromCharCode(bytes[i]); }
+    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function post(url, body) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(body || {})
+    }).then(function (response) {
+      return response.json().then(function (data) {
+        if (!response.ok) { throw new Error(data.error || "that did not work"); }
+        return data;
+      });
+    });
+  }
+
+  function say(text) { message.textContent = text; }
+
+  button.addEventListener("click", function () {
+    if (!window.PublicKeyCredential) {
+      say("This browser does not support passkeys. Sign in with a token.");
+      return;
+    }
+    button.disabled = true;
+    say("Waiting for your device…");
+
+    var challenge = null;
+    post("/signin/passkey/challenge").then(function (start) {
+      challenge = start.challenge;
+      return navigator.credentials.get({
+        publicKey: {
+          challenge: toBytes(start.challenge),
+          rpId: start.rpId,
+          userVerification: "preferred",
+          timeout: 120000
+        }
+      });
+    }).then(function (credential) {
+      if (!credential) { throw new Error("no passkey was offered"); }
+      return post("/signin/passkey/verify", {
+        id: credential.id,
+        challenge: challenge,
+        clientDataJSON: toText(credential.response.clientDataJSON),
+        authenticatorData: toText(credential.response.authenticatorData),
+        signature: toText(credential.response.signature)
+      });
+    }).then(function (done) {
+      say("Signed in.");
+      window.location.href = done.next || "/";
+    }).catch(function (err) {
+      button.disabled = false;
+      say(err && err.message ? err.message : "that did not work");
+    });
+  });
+})();
+</script>
+{{end}}
+</body>
+</html>
