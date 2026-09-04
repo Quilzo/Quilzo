@@ -251,8 +251,29 @@ func mediaRenditions(root string, args []string) error {
 			continue
 		}
 		if *dry {
-			w.Human("would make copies of %s%s%s %s(%dx%d)%s\n",
-				bold, f.Name, reset, dim, f.Width, f.Height, reset)
+			// The work is done and thrown away, rather than assumed.
+			//
+			// This used to print "would make copies of" for any picture wide
+			// enough, and the real run then made none — because a narrower
+			// copy is kept only when it is actually smaller, and for a flat
+			// graphic a 480-wide JPEG can be larger than the PNG it came
+			// from. A dry run exists to say what would happen, so saying
+			// something else is the only bug it can have.
+			_, body, gerr := lib.Get(f.ID)
+			if gerr != nil {
+				return gerr
+			}
+			would, rerr := media.Renditions(f.Format, body, lib.Options)
+			if rerr != nil || len(would) == 0 {
+				skipped++
+				continue
+			}
+			w.Human("would make %d cop(ies) of %s%s%s %s(%dx%d)%s\n",
+				len(would), bold, f.Name, reset, dim, f.Width, f.Height, reset)
+			for _, m := range would {
+				w.Human("  %sat %dw · %d kB%s\n", dim, m.Width,
+					len(m.Body)/1000, reset)
+			}
 			made++
 			continue
 		}
