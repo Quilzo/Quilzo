@@ -55,6 +55,18 @@ type Claim struct {
 	Instruction string
 	// When the claim was made.
 	When time.Time
+
+	// DerivedFrom is the SHA-256 of the asset this one was made from, when it
+	// is a derivative — a narrower copy, a re-encode. Empty for an original.
+	//
+	// This is the claim binding: it names a specific file rather than a
+	// relationship in the abstract, so anybody holding the original can check
+	// that this really came from it. A derivative that says only "resized"
+	// says nothing anybody can verify.
+	DerivedFrom []byte
+	// ParentTitle is what the source was called, for a reader rather than a
+	// verifier.
+	ParentTitle string
 }
 
 // label is the manifest's identifier inside the store. C2PA wants it unique
@@ -160,8 +172,9 @@ func hashExcluding(file []byte, skip []exclusion) ([]byte, error) {
 // assertionLabels are the labels this writes, in the order the claim lists
 // them. C2PA requires the claim's list to match the store.
 const (
-	labelHash    = "c2pa.hash.data"
-	labelActions = "c2pa.actions.v2"
+	labelHash       = "c2pa.hash.data"
+	labelActions    = "c2pa.actions.v2"
+	labelIngredient = "c2pa.ingredient.v3"
 )
 
 // build assembles a signed manifest store for a file.
@@ -189,6 +202,21 @@ func (c Claim) build(file []byte, skip []exclusion, chain [][]byte,
 		return nil, err
 	}
 
+	// The ingredient, when this file was made from another one.
+	assertionList := Array{
+		assertionRef(labelHash, hashBytes),
+		assertionRef(labelActions, actions),
+	}
+	var ingredient []byte
+	if len(c.DerivedFrom) > 0 {
+		ingredient, err = Encode(c.ingredient())
+		if err != nil {
+			return nil, err
+		}
+		assertionList = append(assertionList,
+			assertionRef(labelIngredient, ingredient))
+	}
+
 	// A claim refers to each assertion by a JUMBF URI and the hash of the
 	// assertion's own encoded bytes. Referring by URI alone would let the
 	// assertion be swapped for another under the same label.
@@ -198,10 +226,7 @@ func (c Claim) build(file []byte, skip []exclusion, chain [][]byte,
 		"format":               Text(c.Format),
 		"title":                Text(c.Title),
 		"alg":                  Text("sha256"),
-		"assertions": Array{
-			assertionRef(labelHash, hashBytes),
-			assertionRef(labelActions, actions),
-		},
+		"assertions":           assertionList,
 	})
 	if err != nil {
 		return nil, err
@@ -220,8 +245,15 @@ func (c Claim) build(file []byte, skip []exclusion, chain [][]byte,
 	if err != nil {
 		return nil, err
 	}
-	store, err := superbox(uuidAssertionStore, "c2pa.assertions",
-		hashBox, actionsBox)
+	boxes := [][]byte{hashBox, actionsBox}
+	if ingredient != nil {
+		ingredientBox, ierr := cborBox(labelIngredient, ingredient)
+		if ierr != nil {
+			return nil, ierr
+		}
+		boxes = append(boxes, ingredientBox)
+	}
+	store, err := superbox(uuidAssertionStore, "c2pa.assertions", boxes...)
 	if err != nil {
 		return nil, err
 	}
@@ -258,8 +290,15 @@ func (c Claim) build(file []byte, skip []exclusion, chain [][]byte,
 
 // actions is the c2pa.actions.v2 assertion.
 func (c Claim) actions() Value {
+	kind := actionFor(c.DigitalSourceType)
+	if len(c.DerivedFrom) > 0 {
+		// A derivative says what was done to it, not that this site created
+		// it. The origin of the content is still asserted below: resizing a
+		// picture a model made does not make it a photograph.
+		kind = "c2pa.resized"
+	}
 	action := Map{
-		"action":        Text(actionFor(c.DigitalSourceType)),
+		"action":        Text(kind),
 		"when":          Text(c.When.UTC().Format(time.RFC3339)),
 		"softwareAgent": Map{"name": Text(c.SoftwareAgent)},
 	}
@@ -287,6 +326,25 @@ func (c Claim) actions() Value {
 		action["parameters"] = params
 	}
 	return Map{"actions": Array{action}}
+}
+
+// ingredient is the c2pa.ingredient.v3 assertion: what this file was made from.
+//
+// The parent is named by the hash of its bytes, which is also how this
+// program's asset library addresses it. So the binding is checkable by
+// anybody holding the original and is not merely a label — "derived from
+// something" is a claim no verifier can test.
+func (c Claim) ingredient() Value {
+	title := c.ParentTitle
+	if title == "" {
+		title = "the original"
+	}
+	return Map{
+		"dc:title":     Text(title),
+		"relationship": Text("parentOf"),
+		"alg":          Text("sha256"),
+		"hash":         Bytes(c.DerivedFrom),
+	}
 }
 
 // actionFor maps a source type to a C2PA action.

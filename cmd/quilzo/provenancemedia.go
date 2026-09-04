@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"strings"
 	"sync"
 	"time"
@@ -77,7 +78,10 @@ func (s *signedMedia) get(id string) (media.File, []byte, error) {
 	}
 	s.mu.Unlock()
 
-	signed, serr := c2pa.Embed(body, s.claimFor(f), s.chain, s.key)
+	claim := s.claimFor(f)
+	s.bindToParent(f, &claim)
+
+	signed, serr := c2pa.Embed(body, claim, s.chain, s.key)
 	if serr != nil {
 		// Includes the case that matters most: a file that already carries a
 		// manifest. Passing it through untouched is the right answer -- a
@@ -131,6 +135,35 @@ func (s *signedMedia) claimFor(f media.File) c2pa.Claim {
 		Instruction:       f.Origin.Instruction,
 		When:              when,
 	}
+}
+
+// bindToParent fills in what a derivative was made from.
+//
+// The hash is over the parent as a reader receives it -- manifest and all --
+// not over the copy this library keeps. Those are different bytes, and binding
+// to the stored one produces a reference that resolves against nothing anybody
+// can download: the check fails for everybody outside this machine, which is
+// every reader the binding exists for. It named the right file and could not
+// be used to find it, which is the "label rather than a chain" outcome the
+// ingredient assertion is meant to avoid.
+//
+// Signing the parent to describe the child is affordable because the result is
+// deterministic and cached, and because the recursion is one level deep: a
+// rendition is never made from a rendition.
+func (s *signedMedia) bindToParent(f media.File, c *c2pa.Claim) {
+	if f.RenditionOf == "" {
+		return
+	}
+	parent, body, err := s.get(f.RenditionOf)
+	if err != nil {
+		// A rendition whose parent cannot be read still gets a manifest of its
+		// own. It says less than it might, and that is better than refusing to
+		// serve a picture over a provenance link.
+		return
+	}
+	sum := sha256.Sum256(body)
+	c.DerivedFrom = sum[:]
+	c.ParentTitle = parent.Name
 }
 
 // mediaLookup is the accessor every surface reads images through.

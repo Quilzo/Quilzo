@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/binary"
@@ -389,5 +390,91 @@ func TestAnUndeclaredSourceIsNotGuessedAt(t *testing.T) {
 	}
 	if got.Title != "meadow.png" {
 		t.Error("the manifest lost the rest of the claim")
+	}
+}
+
+// A derivative names the file it came from, by the hash of that file's bytes.
+//
+// "Derived from something" is a claim no verifier can test. Naming the source
+// by content hash is one anybody holding the original can check, which is the
+// difference between a provenance chain and a label.
+func TestADerivativeNamesWhatItCameFrom(t *testing.T) {
+	chain, priv, pub := signer(t)
+	original := samplePNG(t)
+	parent := sha256.Sum256(original)
+
+	c := claim()
+	c.Title = "meadow-480w.png"
+	c.DerivedFrom = parent[:]
+	c.ParentTitle = "meadow.png"
+
+	out, err := Embed(original, c, chain, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Verify(out, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got.DerivedFrom, parent[:]) {
+		t.Errorf("the manifest names parent %x, want %x",
+			got.DerivedFrom, parent[:])
+	}
+	if got.ParentTitle != "meadow.png" {
+		t.Errorf("the parent is called %q", got.ParentTitle)
+	}
+	// The content's origin survives the resize. A narrower copy of a picture a
+	// model made is still a picture a model made.
+	if !got.GeneratedByModel() {
+		t.Error("a resize of model-generated content stopped declaring it")
+	}
+}
+
+// The ingredient is signed like everything else: changing what a file claims
+// to be derived from must break the manifest.
+//
+// Otherwise the binding is decoration — an attacker could point a genuine
+// manifest at a different original and the chain would still appear intact.
+func TestChangingTheParentBreaksTheManifest(t *testing.T) {
+	chain, priv, pub := signer(t)
+	original := samplePNG(t)
+	parent := sha256.Sum256(original)
+
+	c := claim()
+	c.DerivedFrom = parent[:]
+	c.ParentTitle = "meadow.png"
+	out, err := Embed(original, c, chain, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Flip a byte of the parent hash where it sits in the file.
+	at := bytes.Index(out, parent[:])
+	if at < 0 {
+		t.Fatal("the parent hash is not in the file to change")
+	}
+	out[at] ^= 0xff
+
+	if _, err := Verify(out, pub); err == nil {
+		t.Fatal("the file was repointed at a different original and the " +
+			"manifest still verified, so the binding proves nothing")
+	}
+}
+
+// An original carries no ingredient, and says so by absence rather than by a
+// self-reference.
+func TestAnOriginalHasNoIngredient(t *testing.T) {
+	chain, priv, pub := signer(t)
+
+	out, err := Embed(samplePNG(t), claim(), chain, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Verify(out, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.DerivedFrom) != 0 {
+		t.Errorf("an original claims to be derived from %x", got.DerivedFrom)
 	}
 }

@@ -36,6 +36,13 @@ type Statement struct {
 	Model             string
 	Instruction       string
 	When              string
+
+	// DerivedFrom is the hash of the asset this one was made from, when the
+	// manifest carries an ingredient. A caller holding the original can check
+	// it; a caller who is not can at least say what this claims to be a copy
+	// of.
+	DerivedFrom []byte
+	ParentTitle string
 }
 
 // GeneratedByModel reports whether the file was made or altered by a trained
@@ -123,7 +130,8 @@ func Verify(file []byte, key ed25519.PublicKey) (Statement, error) {
 		return Statement{}, err
 	}
 
-	return statementFrom(claim, byLabel[labelActions], listed)
+	return statementFrom(claim, byLabel[labelActions],
+		byLabel[labelIngredient], listed)
 }
 
 // manifestStore picks the store out of the boxes at the top of the manifest.
@@ -385,7 +393,8 @@ func labelFromURI(uri string) string {
 
 // statementFrom reads the human-facing values out of a claim that has already
 // been verified.
-func statementFrom(claim Map, actions []byte, listed []string) (Statement, error) {
+func statementFrom(claim Map, actions, ingredient []byte,
+	listed []string) (Statement, error) {
 	s := Statement{}
 	if v, ok := claim["title"].(Text); ok {
 		s.Title = string(v)
@@ -428,6 +437,26 @@ func statementFrom(claim Map, actions []byte, listed []string) (Statement, error
 		}
 		if v, ok := p["com.quilzo.instruction"].(Text); ok {
 			s.Instruction = string(v)
+		}
+	}
+
+	// The ingredient, if this file says it was made from another. Read after
+	// the assertion hashes were checked, so what it names was signed.
+	if ingredient != nil {
+		m, ierr := decodeMap(ingredient)
+		if ierr != nil {
+			return s, fmt.Errorf("the ingredient assertion does not parse: %w",
+				ierr)
+		}
+		if alg, ok := m["alg"].(Text); ok && alg != "sha256" {
+			return s, fmt.Errorf(
+				"the ingredient names algorithm %q and this checks sha256", alg)
+		}
+		if h, ok := m["hash"].(Bytes); ok {
+			s.DerivedFrom = append([]byte(nil), h...)
+		}
+		if v, ok := m["dc:title"].(Text); ok {
+			s.ParentTitle = string(v)
 		}
 	}
 	return s, nil
