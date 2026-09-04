@@ -143,6 +143,20 @@ func Inventory() []Algorithm {
 				"HMAC secret lets somebody forge in both directions.",
 		},
 		{
+			Name: "ML-DSA-65 (FIPS 204)", Package: "crypto/mldsa",
+			Purpose: "the second signature on an audit head, so a published " +
+				"commitment stays unforgeable after a quantum computer exists",
+			Where: "audit", Use: Generated, Quantum: Safe,
+			Note: "Alongside Ed25519, not instead of it: a head verifies only " +
+				"if both signatures do, so a break in either one forges " +
+				"nothing. This is the case where the threat is real rather " +
+				"than notional — an audit head is evidence, and evidence is " +
+				"looked at years later, so a signature only has to be " +
+				"forgeable by the time somebody checks it. Both ends of this " +
+				"one are this program, which is why it could be done here and " +
+				"not yet for federation.",
+		},
+		{
 			Name: "X.509 / PKIX key parsing", Package: "crypto/x509",
 			Purpose: "reading a remote server's published public key out of " +
 				"its ActivityPub actor document",
@@ -224,10 +238,16 @@ func Posture() string {
 			"be forged once that algorithm falls,\nso a captured delivery " +
 			"could be reissued as this site. Rotating the key ends\nthat for " +
 			"future deliveries and does not undo it for past ones, which is " +
-			"why\nthe migration is worth starting before it is urgent. " +
-			"crypto/mldsa and\ncrypto/mlkem are in the standard library this " +
-			"program is built with, so the\npost-quantum move needs no " +
-			"dependency — it needs the other end to accept it.\n")
+			"why\nthe migration is worth starting before it is urgent.\n\n")
+		b.WriteString("It has started where this program controls both ends. " +
+			"An audit head is\nsigned twice, with Ed25519 and with ML-DSA-65, " +
+			"and verifies only if both\nsignatures do — so the published " +
+			"commitment survives a break in either\nalgorithm. crypto/mldsa " +
+			"is in the standard library this program is built\nwith, so that " +
+			"cost no dependency. What is left is the traffic with somebody " +
+			"else\non the other end — federation, HTTP signatures — where " +
+			"the move needs them\nto accept it, and is not this project's " +
+			"alone to make.\n")
 	}
 	return b.String()
 }
