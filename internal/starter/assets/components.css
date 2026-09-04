@@ -742,3 +742,38 @@ figure { margin: 0; }
   body { background: #fff; color: #000; }
   a::after { content: " (" attr(href) ")"; font-size: 0.85em; }
 }
+
+/* Page transitions, on a site that runs no script.
+
+   The View Transitions API is usually reached by calling
+   document.startViewTransition. This site sends script-src 'none', so that
+   call never happens — but the cross-document form needs no call at all: two
+   same-origin pages that both carry this at-rule transition between
+   themselves, and the trigger is the navigation itself.
+
+   Which makes it the rare case where the constraint costs nothing. Paired
+   with the speculation rules this site already sends, a link followed on a
+   static page behaves like one in an application, and neither half is a
+   script.
+
+   Chromium and Safari 18.2 do this today; a browser that does not simply
+   navigates, which is what it did before. */
+@view-transition {
+  navigation: auto;
+}
+
+/* The header and footer stay put while the content changes, rather than
+   cross-fading with it. Naming them is what makes the transition read as one
+   page changing instead of two pages dissolving. */
+.site-header { view-transition-name: site-header; }
+.site-footer { view-transition-name: site-footer; }
+
+/* Somebody who has asked for less motion is asking about this.
+   A transition is animation, and the setting is not advisory. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

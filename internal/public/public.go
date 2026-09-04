@@ -100,6 +100,10 @@ type Site struct {
 	// permitting everything — it is saying nothing, and saying nothing is the
 	// honest default until an operator decides.
 	Licence *Licence
+	// Security is where somebody reports a vulnerability in this site, served
+	// at the address RFC 9116 fixes so nobody has to guess. Nil publishes
+	// nothing rather than an empty file — see securitytxt.go.
+	Security *SecurityContact
 	// Federation publishes this site to the fediverse. Nil means it does not
 	// federate, which is where every deployment starts: an actor id is
 	// something remote servers store and keep fetching, so publishing one is
@@ -219,6 +223,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/offline", st.offline)
 	mux.HandleFunc("/sitemap.xml", st.sitemap)
 	mux.HandleFunc("/license.xml", st.licence)
+	mux.HandleFunc(SecurityTxtPath, st.securityTxt)
 	mux.HandleFunc("/.well-known/tdmrep.json", st.tdmRep)
 	mux.HandleFunc("/.well-known/agent-card.json", st.agentCard)
 	mux.HandleFunc("/.well-known/webfinger", st.webfinger)
@@ -1058,6 +1063,14 @@ func (st *Site) robots(w http.ResponseWriter, r *http.Request) {
 		} else {
 			fmt.Fprintf(w, "License: /license.xml\n")
 		}
+		// And the same terms as Content-Signal directives, for the crawlers
+		// that read robots.txt and have never heard of RSL. See
+		// contentsignals.go: derived from the licence, never configured
+		// separately, because a second place to write a policy is a second
+		// place for it to disagree.
+		contentSignals(w, &crawl.Terms{
+			Permits: st.Licence.Permits, Prohibits: st.Licence.Prohibits,
+		})
 	}
 }
 
