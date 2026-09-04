@@ -178,6 +178,29 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	// per request would read every page to set a header.
 	if cfg, cerr := loadConfig(root); cerr == nil {
 		st.HSTS = cfg.Dur("site.hsts")
+		// Where somebody reports a problem with this site. Published only when
+		// an operator has said, because a security.txt with nothing in it
+		// answers the scanner that went looking and tells the person nothing.
+		if contact := strings.TrimSpace(cfg.Raw("security.contact")); contact != "" {
+			expires := time.Now().Add(365 * 24 * time.Hour)
+			if raw := strings.TrimSpace(cfg.Raw("security.expires")); raw != "" {
+				when, perr := time.Parse("2006-01-02", raw)
+				if perr != nil {
+					return nil, fmt.Errorf(
+						"security.expires is %q; it wants a date like "+
+							"2027-01-31", raw)
+				}
+				expires = when
+			}
+			st.Security = &public.SecurityContact{
+				Contact: splitList(contact),
+				Expires: expires,
+				Policy:  strings.TrimSpace(cfg.Raw("security.policy")),
+				Acknowledgments: strings.TrimSpace(
+					cfg.Raw("security.acknowledgments")),
+				Encryption: strings.TrimSpace(cfg.Raw("security.encryption")),
+			}
+		}
 		// The catalogue feed, when one is named. Validated against the
 		// declared listings here rather than at request time, so a name that
 		// matches nothing is reported once at startup instead of as a 404

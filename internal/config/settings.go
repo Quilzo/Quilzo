@@ -298,6 +298,47 @@ var settings = []Setting{
 			"one on purpose.",
 	},
 	{
+		Key: "security.contact", Kind: Text, Default: "",
+		Summary: "where to report a vulnerability in this site",
+		Why: "Publishes RFC 9116 at /.well-known/security.txt, which is the " +
+			"first place a researcher and every automated scanner looks. A " +
+			"finder with a working exploit and no way to report it gives up, " +
+			"posts it, or sells it, and two of those are worse for the site " +
+			"than being told.\n\nA mailto:, https: or tel: URI; several may " +
+			"be given, comma-separated. Empty publishes no file rather than " +
+			"an empty one — a security.txt with nothing in it answers the " +
+			"scanner that went looking and tells the person nothing.",
+	},
+	{
+		Key: "security.expires", Kind: Text, Default: "",
+		Summary: "when the security contact stops being trustworthy, YYYY-MM-DD",
+		Why: "RFC 9116 requires it, and the requirement is the point: a " +
+			"contact nobody has confirmed in three years is an address that " +
+			"may reach nobody, and a finder deserves to know which they are " +
+			"looking at. A year from now if unset.",
+	},
+	{
+		Key: "security.policy", Kind: Text, Default: "",
+		Summary: "URL of this site's vulnerability disclosure policy",
+		Why: "What a finder can expect: how long you take, what you ask of " +
+			"them, whether there is a reward. Optional, and worth writing — " +
+			"a policy is what turns a report into a process rather than a " +
+			"surprise.",
+	},
+	{
+		Key: "security.acknowledgments", Kind: Text, Default: "",
+		Summary: "URL of a page thanking people who have reported problems",
+		Why: "Optional, and the cheapest thing a site does for the people " +
+			"who tell it about its own faults.",
+	},
+	{
+		Key: "security.encryption", Kind: Text, Default: "",
+		Summary: "URL of a public key for encrypted reports",
+		Why: "Optional. A report may itself be the exploit, and a finder who " +
+			"has to send that in cleartext is being asked to take a risk on " +
+			"the site's behalf.",
+	},
+	{
 		Key: "licence.permits", Kind: Text, Default: "",
 		Summary: "automated uses this site allows, comma-separated",
 		Why: "Publishes machine-readable crawl terms as RSL at " +
