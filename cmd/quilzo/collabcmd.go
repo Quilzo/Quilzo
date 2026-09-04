@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/quilzo/quilzo/internal/agentexec"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/out"
@@ -169,12 +168,9 @@ func currentProposal(root string, s *store.Store) (*collab.Proposal, *proposalFi
 	if err != nil {
 		return nil, nil, err
 	}
-	kind := "human"
-	if strings.HasPrefix(commit.Message, "assist:") ||
-		strings.HasPrefix(commit.Message, "mcp:") ||
-		strings.HasPrefix(commit.Message, agentexec.AgentCommitPrefix) {
-		kind = "ai"
-	}
+	// One rule, shared with the admin. This list used to live only here, and
+	// the admin decided authorship a different way — see collab/authorship.go.
+	kind := collab.AuthorKindFor(commit.Message, "human")
 	f.Proposals = append(f.Proposals, collab.Proposal{
 		Content: draft, Author: commit.Author, AuthorKind: kind,
 		CreatedAt: commit.At, Message: commit.Message,

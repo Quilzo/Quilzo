@@ -15,6 +15,17 @@
       approvals name content that is no longer proposed.</span>{{end}}
   </p>
   {{if .Message}}<p class="hint">{{.Message}}</p>{{end}}
+  {{if .MachineWrote}}
+  <p class="notice warn" role="note">
+    <strong>A model wrote this change.</strong>
+    {{if .Wrote}}It recorded: <em>{{.Wrote}}</em>.{{end}}
+    At least one approval has to come from a person, whatever the count says —
+    two service accounts agreeing with each other is not review. Read the
+    changes below before you approve: this is the reading the rule exists to
+    require, and an approval given without it is the rule satisfied and not
+    kept.
+  </p>
+  {{end}}
   {{if .Approvals}}
   <ul>{{range .Approvals}}<li>{{.By}}{{if .Note}} — {{.Note}}{{end}}</li>{{end}}</ul>
   {{end}}

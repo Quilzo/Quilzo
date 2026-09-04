@@ -79,8 +79,17 @@ type Event struct {
 	// this says that something arrived and where to read it, exactly as the
 	// audit record for the same event does.
 	Form string `json:"form,omitempty"`
-	At   string `json:"at"`
-	Site string `json:"site,omitempty"`
+	// By is who proposed a change, for a "proposed" event.
+	By string `json:"by,omitempty"`
+	// Machine says a model wrote the content being proposed.
+	//
+	// The one field that changes what the reader has to do: an AI-authored
+	// change needs a person to have read it, and somebody deciding whether to
+	// open the review screen should not have to open the review screen to
+	// find that out.
+	Machine bool   `json:"machine,omitempty"`
+	At      string `json:"at"`
+	Site    string `json:"site,omitempty"`
 }
 
 // EventTypes is everything this program sends.
@@ -89,7 +98,19 @@ type Event struct {
 // asking for "publish" instead of "published" was configured, reported as
 // configured, and never fired — a silent subscription to an event that does not
 // exist. The same shape as an unchecked crawl-licence term, and the same fix.
-var EventTypes = []string{"published", "rolled-back", "scheduled", "submitted"}
+var EventTypes = []string{"published", "rolled-back", "scheduled", "submitted",
+	// A change is waiting for somebody to agree to it.
+	//
+	// Dual authorisation only works if the people it waits on find out they
+	// are being waited on. Without this the approval screen is a page
+	// somebody has to think to open, which means a proposal sits until its
+	// author asks in person -- and the reliable way to stop being asked in
+	// person is to turn the requirement off.
+	//
+	// It carries who proposed and whether a machine wrote it. That second
+	// part is the one that decides whether a person has to read it, so it is
+	// the part worth putting in front of them rather than behind a click.
+	"proposed"}
 
 // KnownType reports whether this program ever sends an event of this type.
 func KnownType(t string) bool {

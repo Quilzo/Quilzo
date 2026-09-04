@@ -296,6 +296,9 @@ func cmdServe(root string, args []string) error {
 		KindOf: func(principal string) string {
 			return principalKind(root, principal)
 		},
+		Notify: func(prop *collab.Proposal) {
+			notifyProposed(root, prop)
+		},
 	}
 	srv.Listings = &admin.Listings{
 		Load: func() (*listing.Set, error) { return loadListings(root) },
