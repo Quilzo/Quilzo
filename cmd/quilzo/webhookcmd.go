@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/collab"
 	"os"
 	"path/filepath"
 	"strings"
@@ -255,6 +256,50 @@ func hookTest(root string, args []string) error {
 // else. It carries the name and never the message: a submission has a retention
 // period and a copy posted elsewhere has whatever period that system has, which
 // is usually none.
+// notifyProposed tells subscribers a change is waiting for agreement.
+//
+// Separate from notify because the fields differ: this one carries who
+// proposed and whether a machine wrote it, and neither has a place in a
+// publication event. Merging them would mean a function whose parameters are
+// mostly empty at every call site, which is how a signature stops describing
+// anything.
+func notifyProposed(root string, prop *collab.Proposal) {
+	if prop == nil {
+		return
+	}
+	f := &hookFile{}
+	if err := loadJSON(hooksPath(root), f); err != nil {
+		return
+	}
+	id, err := webhook.NewID()
+	if err != nil {
+		return
+	}
+	ev := webhook.Event{
+		ID: id, Type: "proposed", Commit: prop.Content,
+		By: prop.Author, Machine: prop.AuthorKind == "ai",
+		At: time.Now().UTC().Format(time.RFC3339), Site: siteName(root),
+	}
+
+	s := sender{fetch.New()}
+	changed := false
+	for _, e := range f.Endpoints {
+		if !e.Wants("proposed") {
+			continue
+		}
+		deliveries := webhook.Send(s, e, ev, time.Now())
+		f.Deliveries = append(f.Deliveries, deliveries[len(deliveries)-1])
+		changed = true
+	}
+	if !changed {
+		return
+	}
+	if n := len(f.Deliveries); n > 100 {
+		f.Deliveries = f.Deliveries[n-100:]
+	}
+	_ = saveJSON(hooksPath(root), f)
+}
+
 func notify(root, eventType, commit string, pages []string, form ...string) {
 	f := &hookFile{}
 	if err := loadJSON(hooksPath(root), f); err != nil || len(f.Endpoints) == 0 {

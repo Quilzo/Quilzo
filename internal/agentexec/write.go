@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/collab"
 	"sort"
 	"strings"
 
@@ -61,7 +62,7 @@ const MaxWrite = 64 << 10
 // A constant rather than a literal in two files: the writer that sets it and
 // the classifier that reads it have to agree, and a string that has to match
 // across a package boundary is one somebody eventually edits on one side.
-const AgentCommitPrefix = "agent: "
+const AgentCommitPrefix = collab.AgentPrefix
 
 // Writer performs the write operations an agent holds.
 //
