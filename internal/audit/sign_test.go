@@ -35,10 +35,37 @@ func TestASignedHeadVerifies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	v := s.Verifier()
+	if !s.PostQuantum() {
+		// A build against a FIPS module without ML-DSA. The head carries
+		// Ed25519 alone and says so, and a verifier has to be told it accepts
+		// one — which is the whole point of recording the algorithms rather
+		// than letting an absent field speak for itself.
+		if sh.Ed25519 == "" || sh.MLDSA != "" {
+			t.Fatalf("a FIPS-signed head is the wrong shape: ed=%v ml=%v",
+				sh.Ed25519 != "", sh.MLDSA != "")
+		}
+		if len(sh.Algorithms) != 1 || sh.Algorithms[0] != "ed25519" {
+			t.Fatalf("the head does not say what signed it: %v", sh.Algorithms)
+		}
+		if err := v.Verify(sh); err == nil {
+			t.Fatal("a single-signature head verified without the verifier " +
+				"being told it accepts one")
+		}
+		v.AcceptSingle = true
+		if err := v.Verify(sh); err != nil {
+			t.Fatalf("a FIPS-signed head does not verify: %v", err)
+		}
+		return
+	}
+
 	if sh.Ed25519 == "" || sh.MLDSA == "" {
 		t.Fatal("a signed head is missing a signature")
 	}
-	if err := s.Verifier().Verify(sh); err != nil {
+	if len(sh.Algorithms) != 2 {
+		t.Errorf("the head says %v signed it", sh.Algorithms)
+	}
+	if err := v.Verify(sh); err != nil {
 		t.Fatalf("a head this program signed does not verify: %v", err)
 	}
 }
@@ -183,6 +210,13 @@ func TestTheKeyIDCoversBothKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !a.PostQuantum() {
+		// There is no ML-DSA key in this build, so it is not part of the
+		// identity and two signers differing only in an unused seed are the
+		// same signer. Skipped rather than asserted the other way round: the
+		// property is about a key that exists.
+		t.Skip("this build has no ML-DSA; the identity is the Ed25519 key")
+	}
 	if a.Verifier().KeyID() == b.Verifier().KeyID() {
 		t.Fatal("two pairs sharing only their Ed25519 key have the same id, " +
 			"so the ML-DSA key can be substituted without changing the name")
@@ -235,6 +269,13 @@ func TestAPublishedKeyVerifies(t *testing.T) {
 	outside, err := audit.NewHeadVerifier(ed, ml)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// A build whose module has no ML-DSA signs and checks Ed25519 alone, and
+	// has to say it will take such a head. Asserted rather than skipped: this
+	// is the configuration a deployment that cares most about audit heads
+	// would choose, and it should be the tested one.
+	if !s.PostQuantum() {
+		outside.AcceptSingle = true
 	}
 	if err := outside.Verify(sh); err != nil {
 		t.Fatalf("a head does not verify against this site's published keys: %v", err)

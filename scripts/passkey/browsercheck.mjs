@@ -140,6 +140,21 @@ async function main() {
   const registerMessage = await evaluate(
     `document.getElementById('msg') ? document.getElementById('msg').textContent : ''`);
   const credentials = await send("WebAuthn.getCredentials", { authenticatorId });
+
+  // The device having a credential is not the server having accepted it.
+  //
+  // Chrome completes the ceremony and writes the key to the authenticator
+  // before the server sees anything, so a registration the server refuses --
+  // an authenticator not on the deployment's list, say -- still leaves a
+  // credential on the device. Asking only the device reported success for a
+  // registration that had been rejected, which is a check that would pass
+  // whatever the policy did.
+  const serverAccepted = !/did not|not one this deployment|does not say what it is|already/i
+    .test(registerMessage || "") && !/error/i.test(registerMessage || "");
+  if (!serverAccepted) {
+    fail(`the server refused the registration: ${JSON.stringify(registerMessage)}`);
+    return;
+  }
   if (credentials.credentials.length === 0) {
     fail(`no credential was created (page said: ${JSON.stringify(registerMessage)})`);
     const blocked = events.filter((e) =>

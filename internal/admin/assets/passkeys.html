@@ -130,7 +130,7 @@
           },
           excludeCredentials: exclude,
           timeout: 120000,
-          attestation: "none"
+          attestation: start.attestation || "none"
         }
       });
     }).then(function (credential) {

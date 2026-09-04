@@ -298,6 +298,47 @@ var settings = []Setting{
 			"one on purpose.",
 	},
 	{
+		Key: "passkey.require_hardware", Kind: Bool, Default: "false",
+		Summary: "enrol only authenticators that say what they are",
+		Why: "A passkey synced through a platform account is a key that " +
+			"exists in more than one place by design, and a verifier cannot " +
+			"tell it from a hardware key by the signature — both produce a " +
+			"valid assertion. The only thing that distinguishes them is what " +
+			"the authenticator says about itself at registration.\n\nNIST " +
+			"SP 800-63B AAL3 requires a hardware authenticator with a " +
+			"non-exportable key, so a deployment at that level turns this " +
+			"on. Everybody else should leave it off: turning it on without a " +
+			"list of issued keys locks people out.",
+	},
+	{
+		Key: "passkey.authenticators", Kind: Text, Default: "",
+		Summary: "AAGUIDs this deployment enrols, comma-separated",
+		Why: "The makes and models allowed to register, as the hyphenated " +
+			"identifiers vendors publish. Empty means any that identifies " +
+			"itself.\n\nWorth knowing what this proves: an AAGUID is " +
+			"self-reported and this program does not verify the attestation " +
+			"chain, because that needs FIDO metadata refreshed on a schedule " +
+			"and an isolated network cannot refresh anything. Against " +
+			"somebody plugging in a consumer key when policy says otherwise, " +
+			"it works. Against hardware built to impersonate an approved " +
+			"model, it does not — pair it with procurement, so that only " +
+			"issued keys are ever enrolled.",
+	},
+	{
+		Key: "network.mode", Kind: Text, Default: "open",
+		Summary: "whether this deployment may reach the network: open or offline",
+		Why: "offline refuses every connection that would leave this host, " +
+			"before a packet is sent, and names the feature that wanted it. " +
+			"That is what an isolated deployment needs and could not have: " +
+			"the program's network use was spread across six places with no " +
+			"list of them, so 'what would this connect to' was answered by " +
+			"reading all of it.\n\nLoopback is still permitted, because a " +
+			"connection that does not leave the host is not egress and a " +
+			"local model or identity provider is normal here. `quilzo " +
+			"network` prints every purpose, whether it is permitted, and " +
+			"what stops working without it.",
+	},
+	{
 		Key: "security.contact", Kind: Text, Default: "",
 		Summary: "where to report a vulnerability in this site",
 		Why: "Publishes RFC 9116 at /.well-known/security.txt, which is the " +

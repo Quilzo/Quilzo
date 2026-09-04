@@ -71,6 +71,11 @@ var coverage = map[string]surfaces{
 	"lang":       {GUI: "/languages", MCP: []string{"check_translations"}},
 	"scan":       {GUI: "/security/scan", MCP: []string{"scan_content"}},
 	"verify":     {GUI: "/security/integrity", MCP: []string{"verify_store"}},
+	"network": {GUI: "/security",
+		NoMCP: "what this deployment may connect to is the boundary an " +
+			"isolated network is built on, and a model that could read it " +
+			"could tell you which purpose is still permitted — a shape of " +
+			"reconnaissance this surface should not answer"},
 	"compliance": {GUI: "/security/inventory", MCP: []string{"inventory"}},
 	"agents":     {GUI: "/security/agents", MCP: []string{"agent_activity"}},
 	"agent": {GUI: "/agents",
