@@ -70,13 +70,23 @@ func TestADeliveryIsSignedTheWayThisSitesOwnInboxDemands(t *testing.T) {
 	if signed == nil {
 		t.Fatal("the delivery carried no signature")
 	}
-	// What Mastodon requires of a delivery: the method and the absolute URI.
-	// Without both it refuses, and a refusal here is a follower who never
-	// hears from this site again.
-	if !signed.Covers("@method") || !signed.Covers("@target-uri") {
-		t.Errorf("the delivery covers %v; Mastodon requires @method and "+
-			"@target-uri and refuses a delivery without them",
-			signed.Covered)
+	// A delivery has to bind the request it is: the verb, the destination and
+	// the body. Asserted in the RFC 9421 vocabulary even though the signature
+	// on the wire is draft-cavage, because the covered names are translated
+	// as they are parsed — (request-target) is @method and @path, host is
+	// @authority — and that translation is what keeps one coverage policy
+	// rather than a second, weaker one reachable by choosing an older format.
+	//
+	// This used to demand @target-uri, for a Mastodon RFC 9421 verifier.
+	// Deliveries no longer speak that format: it is the one almost nothing on
+	// the other end can read.
+	if !signed.CoversRequest() {
+		t.Errorf("the delivery covers %v, which does not bind the request it "+
+			"was sent as", signed.Covered)
+	}
+	if !signed.CoversDestination() {
+		t.Errorf("the delivery covers %v and names no destination, so the "+
+			"same bytes can be replayed at another server", signed.Covered)
 	}
 	if !signed.CoversBody() {
 		t.Fatal("the delivery's signature does not cover the body, which is " +
