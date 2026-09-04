@@ -203,11 +203,13 @@ func cmdMedia(root string, args []string) error {
 		return mediaRemove(root, args[1:])
 	case "renditions":
 		return mediaRenditions(root, args[1:])
+	case "origin":
+		return mediaOrigin(root, args[1:])
 	case "formats":
 		return mediaFormats()
 	default:
 		return fmt.Errorf("unknown media command %q; try add, get, list, "+
-			"remove, renditions or formats", args[0])
+			"remove, renditions, origin or formats", args[0])
 	}
 }
 

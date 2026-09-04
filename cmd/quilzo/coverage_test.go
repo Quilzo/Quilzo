@@ -433,6 +433,18 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 		"add.remove": {GUI: "/page/delete",
 			MCP:   []string{"write_page"},
 			NoMCP: ""},
+		"origin.clear": {
+			// The provenance screen is where a page's disclosure is set, and a
+			// picture's belongs beside it. Clearing is not deletion of a
+			// record so much as a correction: a declaration made in error is
+			// worse than none, because it is signed into every copy of the
+			// picture and read by other people's software as fact.
+			GUI: "/provenance",
+			MCP: nil,
+			NoMCP: "a disclosure is the marking a regulator asks for, and an " +
+				"agent that could clear one could quietly unmark " +
+				"model-generated media — the same line drawn for licences",
+		},
 		"rights set.clear": {
 			// The media screen records rights now, and clearing is the button
 			// beside recording. It used to say "there is no rights screen at
