@@ -89,6 +89,10 @@ var destinations = []destination{
 	{"agents", "Agents", "/agents", "Administration", "agents", auth.ActGrant},
 	{"people", "People", "/people", "Administration", "users", auth.ActGrant},
 	{"access", "Access", "/access", "Administration", "auth", auth.ActGrant},
+	// View, not grant: everybody manages their own passkeys, and a screen that
+	// only administrators could open would be a second factor only
+	// administrators could have.
+	{"passkeys", "Passkeys", "/passkeys", "Administration", "auth", auth.ActView},
 	{"integrations", "Integrations", "/integrations", "Administration", "integrations", auth.ActGrant},
 	{"settings", "Settings", "/settings", "Administration", "settings", auth.ActEditDraft},
 

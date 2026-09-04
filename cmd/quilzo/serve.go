@@ -105,6 +105,18 @@ func cmdServe(root string, args []string) error {
 	srv.SavePolicy = func(p *auth.Policy) error {
 		return saveJSON(policyPath(root), p)
 	}
+	// Passkeys, kept beside the tokens they mint a session as. Loaded here
+	// rather than lazily so that a store which cannot be read is a startup
+	// failure rather than a sign-in that silently offers nobody a key.
+	pk := &admin.Passkeys{}
+	if err := loadJSON(passkeysPath(root), pk); err != nil {
+		return err
+	}
+	pk.Save = func(p *admin.Passkeys) error {
+		return saveJSON(passkeysPath(root), p)
+	}
+	srv.Passkeys = pk
+
 	srv.SaveTokens = func(t *auth.TokenStore) error {
 		return saveJSON(tokensPath(root), t)
 	}

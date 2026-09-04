@@ -40,6 +40,13 @@ func leadingArgs(args []string, n int) (pos []string, rest []string) {
 func policyPath(root string) string { return filepath.Join(root, "policy.json") }
 func tokensPath(root string) string { return filepath.Join(root, "tokens.json") }
 
+// passkeysPath holds registered credentials. Public keys and labels only —
+// there is no secret in this file, which is the property that makes passkeys
+// worth having: a copy of it lets nobody sign in as anybody.
+func passkeysPath(root string) string {
+	return filepath.Join(root, "passkeys.json")
+}
+
 func loadJSON(path string, into any) error {
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
