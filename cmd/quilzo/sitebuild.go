@@ -186,6 +186,18 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	// per request would read every page to set a header.
 	if cfg, cerr := loadConfig(root); cerr == nil {
 		st.HSTS = cfg.Dur("site.hsts")
+		// How eagerly a browser may fetch the next page. Refused rather than
+		// ignored when it is not one of the three: a typo here is a
+		// performance feature that silently does nothing, which is
+		// indistinguishable from it not working.
+		if spec := strings.TrimSpace(cfg.Raw("site.speculation")); spec != "" {
+			if !public.Speculation(spec).Valid() {
+				return nil, fmt.Errorf(
+					"site.speculation is %q; it is off, prefetch or prerender",
+					spec)
+			}
+			st.Speculate = public.Speculation(spec)
+		}
 		// The catalogue feed, when one is named. Validated against the
 		// declared listings here rather than at request time, so a name that
 		// matches nothing is reported once at startup instead of as a 404
