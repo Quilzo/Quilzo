@@ -44,6 +44,7 @@ import (
 	"github.com/quilzo/quilzo/internal/crawl"
 	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/marking"
 	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/render"
@@ -100,6 +101,10 @@ type Site struct {
 	// permitting everything — it is saying nothing, and saying nothing is the
 	// honest default until an operator decides.
 	Licence *Licence
+	// Marking is the deployment's classification scheme, or nil. When set,
+	// every HTML response carries the banner at both ends and a page marked
+	// above it is refused at publish — see internal/marking.
+	Marking *marking.Policy
 	// Security is where somebody reports a vulnerability in this site, served
 	// at the address RFC 9116 fixes so nobody has to guess. Nil publishes
 	// nothing rather than an empty file — see securitytxt.go.
@@ -253,7 +258,10 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/form/", st.submit)
 	mux.HandleFunc("/share", st.handleShare)
 	mux.HandleFunc("/", st.page)
-	return st.securityHeaders(st.crawlGate(mux))
+	// The banner is innermost, so it wraps the handler's own output and
+	// nothing else: the headers and the crawl gate go outside it, where a
+	// refusal is not a page and has nothing to mark.
+	return st.securityHeaders(st.crawlGate(st.marked(mux)))
 }
 
 // CrawlGate enforces the published licence against identified crawlers.

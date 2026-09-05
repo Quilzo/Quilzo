@@ -79,6 +79,8 @@ var commandNeeds = map[string]need{
 	// Reading what this deployment may connect to is a view. Changing it is
 	// `config set`, which is already privileged.
 	"network":    {action: auth.ActView},
+	"marking":    {action: auth.ActView},
+	"transfer":   {action: auth.ActView},
 	"compliance": {action: auth.ActView},
 	"agents":     {action: auth.ActView},
 	// Declaring what a model may do is deciding a blast radius, which is an

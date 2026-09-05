@@ -71,6 +71,15 @@ var coverage = map[string]surfaces{
 	"lang":       {GUI: "/languages", MCP: []string{"check_translations"}},
 	"scan":       {GUI: "/security/scan", MCP: []string{"scan_content"}},
 	"verify":     {GUI: "/security/integrity", MCP: []string{"verify_store"}},
+	"transfer": {GUI: "/transfer",
+		NoMCP: "a transfer manifest names the people accountable for moving " +
+			"content between networks, and an agent that could write one " +
+			"could name somebody who never approved anything"},
+	"marking": {GUI: "/security",
+		NoMCP: "a classification scheme is the boundary a marked deployment " +
+			"is built on, and a model that could read it could tell you " +
+			"which level a page sits under — the same reason network is off " +
+			"this surface"},
 	"network": {GUI: "/security",
 		NoMCP: "what this deployment may connect to is the boundary an " +
 			"isolated network is built on, and a model that could read it " +

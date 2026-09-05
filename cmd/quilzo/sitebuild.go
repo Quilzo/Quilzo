@@ -186,6 +186,14 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	// per request would read every page to set a header.
 	if cfg, cerr := loadConfig(root); cerr == nil {
 		st.HSTS = cfg.Dur("site.hsts")
+		// The deployment's classification scheme, when it has one. Refused
+		// rather than ignored if it does not parse: a banner that silently
+		// failed to apply is the exact outcome marking exists to prevent.
+		if mp, merr := markingFrom(cfg); merr != nil {
+			return nil, merr
+		} else if mp != nil {
+			st.Marking = mp
+		}
 		// Where somebody reports a problem with this site. Published only when
 		// an operator has said, because a security.txt with nothing in it
 		// answers the scanner that went looking and tells the person nothing.
