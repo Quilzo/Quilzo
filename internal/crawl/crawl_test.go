@@ -356,3 +356,63 @@ func TestAnUnreadableOfferIsNotTreatedAsGenerous(t *testing.T) {
 		}
 	}
 }
+
+// The shape Cloudflare's crawlers actually send: ("@authority" "signature-agent"),
+// no @method and no @path.
+//
+// Web Bot Auth requires an agent to cover at least one of @authority or
+// @target-uri and nothing further, so this is not a lax signer to be tolerated
+// -- it is the compliant one, and the majority of signed crawl traffic. A
+// stricter gate here would have been a silent regression: every paying crawler
+// refused, every refusal looking like a bad signature. The other tests in this
+// file all sign @method as well, which is why none of them would have caught it.
+func TestTheSignatureShapeRealCrawlersSendIsAccepted(t *testing.T) {
+	priv, key := botKey(t)
+
+	r := httptest.NewRequest("GET", "http://example.test/pricing", nil)
+	r.Header.Set("Crawler-Purpose", "search")
+	r.Header.Set("Signature-Agent", "https://crawler.example/keys")
+
+	params := fmt.Sprintf(`("@authority" "signature-agent");created=%d;keyid="%s";alg="ed25519"`,
+		at().Unix(), key.ID)
+	base := fmt.Sprintf("\"@authority\": %s\n\"signature-agent\": %s\n"+
+		"\"@signature-params\": %s", r.Host, r.Header.Get("Signature-Agent"), params)
+	sig := ed25519.Sign(priv, []byte(base))
+	r.Header.Set("Signature-Input", "sig1="+params)
+	r.Header.Set("Signature", "sig1=:"+base64.StdEncoding.EncodeToString(sig)+":")
+
+	id, err := crawl.Verify(r, []crawl.Key{key}, at())
+	if err != nil {
+		t.Fatalf("a compliant Web Bot Auth signature was refused: %v", err)
+	}
+	if id == nil {
+		t.Fatal("a compliant Web Bot Auth signature produced no identity")
+	}
+	if id.Name != "ExampleBot" {
+		t.Errorf("identified as %q, want ExampleBot", id.Name)
+	}
+}
+
+// And the binding that is still required: a signature naming no destination.
+//
+// This is what the destination check is for. Covering only a request header
+// authenticates the key, not a request to this server, so the same bytes can
+// be replayed against any site inside the age window.
+func TestASignatureNamingNoDestinationIsRefused(t *testing.T) {
+	priv, key := botKey(t)
+
+	r := httptest.NewRequest("GET", "http://example.test/pricing", nil)
+	r.Header.Set("Crawler-Purpose", "search")
+
+	params := fmt.Sprintf(`("crawler-purpose");created=%d;keyid="%s";alg="ed25519"`,
+		at().Unix(), key.ID)
+	base := fmt.Sprintf("\"crawler-purpose\": search\n\"@signature-params\": %s", params)
+	sig := ed25519.Sign(priv, []byte(base))
+	r.Header.Set("Signature-Input", "sig1="+params)
+	r.Header.Set("Signature", "sig1=:"+base64.StdEncoding.EncodeToString(sig)+":")
+
+	if _, err := crawl.Verify(r, []crawl.Key{key}, at()); err == nil {
+		t.Fatal("a signature covering no destination was accepted, so it " +
+			"can be replayed against any server")
+	}
+}
