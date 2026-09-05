@@ -205,6 +205,9 @@ func fullyWired(t *testing.T) (*Server, string) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// Passkeys, so the two screens that offer them render rather than
+	// answering "this build cannot keep any".
+	srv.Passkeys = &Passkeys{Save: func(*Passkeys) error { return nil }}
 	srv.Types = &Types{
 		Load:  func() (*schema.Store, error) { return types, nil },
 		Save:  func(*schema.Store) error { return nil },
