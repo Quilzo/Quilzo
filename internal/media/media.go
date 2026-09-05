@@ -129,6 +129,15 @@ var formats = map[string]Format{
 		Magic:  [][]byte{[]byte("RIFF")},
 		Verify: verifyWebP,
 	},
+	"avif": {
+		MIME: "image/avif", Kind: Image, Ext: ".avif", MaxBytes: maxImage,
+		Inline: true,
+		// No magic prefix. The ftyp box sits at offset 4, behind its own
+		// length, so a prefix match cannot see it — the same reason the video
+		// containers below carry none and let their verifier decide.
+		Magic:  [][]byte{},
+		Verify: verifyAVIF,
+	},
 	"pdf": {
 		MIME: "application/pdf", Kind: Document, Ext: ".pdf", MaxBytes: maxDocument,
 		// Not inline. A PDF renders in the site's own origin with a scripting
@@ -480,6 +489,15 @@ func Accept(name string, body []byte, now time.Time) (File, error) {
 	if fm.Kind == Image {
 		if cfg, _, err := image.DecodeConfig(bytes.NewReader(body)); err == nil {
 			f.Width, f.Height = cfg.Width, cfg.Height
+		} else if key == "avif" {
+			// Go decodes no AVIF, so the dimensions come out of the
+			// container's own ispe box. Without them the templates emit no
+			// intrinsic size and the page reflows as the picture arrives —
+			// which would make the format that exists to be fast the one that
+			// makes reading worse.
+			if w, h, ok := avifSize(body); ok {
+				f.Width, f.Height = w, h
+			}
 		}
 	}
 	return f, nil

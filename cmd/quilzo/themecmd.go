@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -48,9 +49,11 @@ func cmdTheme(root string, args []string) error {
 		return themeCSS(args[1:])
 	case "apply":
 		return themeApply(root, args[1:])
+	case "generate":
+		return themeGenerate(root, args[1:])
 	default:
 		return fmt.Errorf("unknown theme command %q; try show, tokens, set, "+
-			"unset, check, fonts, css or apply", args[0])
+			"unset, check, fonts, css, apply or generate", args[0])
 	}
 }
 
@@ -499,4 +502,100 @@ func trim(s string, n int) string {
 		return s
 	}
 	return s[:n-1] + "…"
+}
+
+// themeGenerate builds a whole palette from one colour.
+//
+// The thing it replaces is somebody with a brand colour, thirty tokens, and
+// seventeen contrast requirements, doing constrained optimisation in a colour
+// picker until the publish gate stops refusing them. That process ends in one
+// of two places: a theme nobody likes, or the gate switched off. Neither is
+// what the gate is for.
+//
+// The generated values are ordinary overrides and every one can be changed
+// afterwards. This produces a defensible starting point, not a finished
+// design.
+func themeGenerate(root string, args []string) error {
+	pos, flags := splitThemeArgs(args)
+	fs, dir := dirFlag("generate", flags)
+	replace := fs.Bool("replace", false,
+		"discard the current colours rather than refusing")
+	if err := fs.Parse(flags); err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return fmt.Errorf("usage: quilzo theme generate <colour> [--replace]")
+	}
+
+	generated, err := theme.Generate(pos[0])
+	if err != nil {
+		return err
+	}
+
+	existing, err := loadThemeFile(*dir)
+	if err != nil {
+		return err
+	}
+	// Somebody's own colours are not overwritten by accident. A generator that
+	// silently replaced a hand-tuned palette would be a command nobody could
+	// run twice.
+	var clash []string
+	for k := range generated {
+		if _, set := existing[k]; set {
+			clash = append(clash, k)
+		}
+	}
+	if len(clash) > 0 && !*replace {
+		sort.Strings(clash)
+		return fmt.Errorf(
+			"this theme already sets %d colour(s), starting with %s.\n"+
+				"  Generating would discard them. Say so if that is what you "+
+				"mean:\n    quilzo theme generate %s --replace",
+			len(clash), clash[0], pos[0])
+	}
+
+	next := map[string]string{}
+	for k, v := range existing {
+		next[k] = v
+	}
+	for k, v := range generated {
+		next[k] = v
+	}
+
+	fonts, ferr := loadFontsFor(*dir)
+	if ferr != nil {
+		return ferr
+	}
+	th, problems := theme.New(next, fonts)
+	for _, p := range problems {
+		if p.Blocking {
+			return fmt.Errorf("%s", p.Detail)
+		}
+	}
+	// Checked, not assumed. The generator chooses values with the same
+	// function this check uses, so a failure here means the two have drifted
+	// -- and that is worth finding at generation time rather than at publish.
+	findings := th.Check()
+	for _, f := range findings {
+		if f.Blocking {
+			return fmt.Errorf(
+				"the generated palette fails its own contrast check: %s — %s\n"+
+					"  This is a bug in the generator, not in the colour you "+
+					"chose", f.Token, f.Detail)
+		}
+	}
+
+	if err := writeThemeFile(*dir, next); err != nil {
+		return err
+	}
+
+	if w.JSON(map[string]any{"seed": pos[0], "tokens": len(generated)}) {
+		return nil
+	}
+	w.Human("%s%d colour(s) generated from %s%s\n",
+		bold, len(generated), pos[0], reset)
+	w.Human("  %slight and dark, and every contrast pair checked%s\n", dim, reset)
+	w.Human("\n  %ssee it:      quilzo theme show%s\n", dim, reset)
+	w.Human("  %schange one:  quilzo theme set primary '#3b6ea5'%s\n", dim, reset)
+	return nil
 }

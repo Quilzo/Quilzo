@@ -77,6 +77,10 @@ type Site struct {
 	// serves content.
 	CSP      func() (string, bool)
 	CSPValue func() string
+	// Speculate is how eagerly a browser may fetch the next page: off,
+	// prefetch or prerender. Empty means prefetch. See speculation.go for why
+	// this is a header rather than the script element the API usually uses.
+	Speculate Speculation
 	// HSTS is Strict-Transport-Security's max-age. Zero sends no header.
 	HSTS time.Duration
 
@@ -236,6 +240,9 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/site.css", st.stylesheet)
 	mux.HandleFunc("/fonts/", st.font)
 	mux.HandleFunc("/robots.txt", st.robots)
+	// The speculation rules, as a document rather than an element: this site
+	// sends script-src 'none', so the usual script tag would never run.
+	mux.HandleFunc(SpeculationPath, st.speculationRules)
 	mux.HandleFunc("/llms.txt", st.llms)
 	mux.HandleFunc("/media/", st.mediaFile)
 	mux.HandleFunc("/form/", st.submit)
@@ -608,6 +615,7 @@ func (st *Site) securityHeaders(next http.Handler) http.Handler {
 
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		st.setSpeculationHeader(w)
 
 		// Vary, whenever this site has more than one language.
 		//
