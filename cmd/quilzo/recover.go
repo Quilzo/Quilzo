@@ -88,6 +88,7 @@ func cmdRecover(root string, args []string) error {
 		return fmt.Errorf(
 			"%d admin token(s) are still usable, so this is not needed.\n"+
 				"  Ask whoever holds one to issue you another:\n"+
+				"    quilzo auth grant you admin\n"+
 				"    quilzo token issue you --principal you --role admin\n"+
 				"  This command exists only for a store nobody can administer "+
 				"at all", usable)
