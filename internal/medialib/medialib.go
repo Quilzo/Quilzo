@@ -182,6 +182,12 @@ func (l *Library) renditions(parent media.File, body []byte) ([]media.Rendition,
 		f.Alt = parent.Alt
 		f.Rights = parent.Rights
 		f.Source = parent.Source
+		// The same argument applies to where it came from, and this was the
+		// one field it was not applied to. A narrower copy of a picture a
+		// model made is still a picture a model made — and the narrow copy is
+		// the file a phone actually downloads, so leaving it undeclared lost
+		// the disclosure on the version most people receive.
+		f.Origin = parent.Origin
 		f.RenditionOf = parent.ID
 
 		q := l.path(f.ID)

@@ -80,6 +80,11 @@ type PublicKey struct {
 	RSA *rsa.PublicKey
 }
 
+// errNoKeys is the same refusal for both signature formats.
+var errNoKeys = fmt.Errorf(
+	"a request is signed and no keys are configured, so it cannot be " +
+		"checked. An unverifiable signature is not an identity")
+
 // Signed describes a verified signature.
 type Signed struct {
 	// KeyID is the key that verified it.
@@ -117,6 +122,18 @@ func Verify(r *http.Request, keys []PublicKey, maxAge time.Duration,
 	if input == "" && sig == "" {
 		return nil, nil
 	}
+	// Which format this is, decided the way the ecosystem decides it:
+	// Signature-Input present means RFC 9421, absent means draft-cavage.
+	//
+	// Almost every fediverse server sends the draft. Refusing it as "half a
+	// signature" -- which this did -- made a federation inbox that could not
+	// receive, and said so in terms the sender could do nothing with.
+	if input == "" && looksLikeCavage(sig) {
+		if len(keys) == 0 {
+			return nil, errNoKeys
+		}
+		return verifyCavage(r, "", keys, maxAge, now)
+	}
 	if input == "" || sig == "" {
 		return nil, fmt.Errorf(
 			"this request carries one half of a signature. Signature-Input " +
@@ -124,9 +141,7 @@ func Verify(r *http.Request, keys []PublicKey, maxAge time.Duration,
 				"a weaker proof, it is none")
 	}
 	if len(keys) == 0 {
-		return nil, fmt.Errorf(
-			"a request is signed and no keys are configured, so it cannot be " +
-				"checked. An unverifiable signature is not an identity")
+		return nil, errNoKeys
 	}
 
 	label, params, err := parseInput(input)
@@ -244,28 +259,59 @@ func Sign(r *http.Request, keyID string, alg Algorithm, key crypto.Signer,
 		return err
 	}
 
-	var sig []byte
+	sig, err := signWith(alg, key, []byte(base))
+	if err != nil {
+		return err
+	}
+
+	r.Header.Set("Signature-Input", input)
+	r.Header.Set("Signature", "sig1=:"+encodeSignature(sig)+":")
+	return nil
+}
+
+// signWith produces a signature over bytes with the named algorithm.
+//
+// One implementation, shared by the RFC 9421 path and the draft-cavage one.
+// Two would be two places for the algorithms to drift apart, and the wire
+// formats differ only in how the bytes are framed, never in how they are made.
+func signWith(alg Algorithm, key crypto.Signer, base []byte) ([]byte, error) {
 	switch alg {
 	case Ed25519:
 		priv, ok := key.(ed25519.PrivateKey)
 		if !ok {
-			return fmt.Errorf("ed25519 was named and the key is %T", key)
+			return nil, fmt.Errorf("ed25519 was named and the key is %T", key)
 		}
-		sig = ed25519.Sign(priv, []byte(base))
+		return ed25519.Sign(priv, base), nil
 	case RSAPKCS1SHA256:
-		sum := sha256.Sum256([]byte(base))
-		sig, err = key.Sign(rand.Reader, sum[:], crypto.SHA256)
+		sum := sha256.Sum256(base)
+		sig, err := key.Sign(rand.Reader, sum[:], crypto.SHA256)
 		if err != nil {
-			return fmt.Errorf("cannot sign: %w", err)
+			return nil, fmt.Errorf("cannot sign: %w", err)
 		}
-	default:
-		return fmt.Errorf("algorithm %q is not supported", alg)
+		return sig, nil
 	}
+	return nil, fmt.Errorf("algorithm %q is not supported", alg)
+}
 
-	r.Header.Set("Signature-Input", input)
-	r.Header.Set("Signature",
-		"sig1=:"+base64.StdEncoding.EncodeToString(sig)+":")
-	return nil
+func encodeSignature(sig []byte) string {
+	return base64.StdEncoding.EncodeToString(sig)
+}
+
+// decodeSignature reads base64, tolerating the unpadded form some senders use.
+func decodeSignature(s string) ([]byte, error) {
+	if b, err := base64.StdEncoding.DecodeString(s); err == nil {
+		return b, nil
+	}
+	b, err := base64.RawStdEncoding.DecodeString(s)
+	if err != nil {
+		return nil, fmt.Errorf("the signature is not base64: %w", err)
+	}
+	return b, nil
+}
+
+// parseUnix reads a created or expires parameter.
+func parseUnix(s string) (int64, error) {
+	return strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 }
 
 func quoteAll(in []string) []string {
