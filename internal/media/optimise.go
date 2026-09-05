@@ -2,6 +2,7 @@ package media
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"image"
 	"image/color"
@@ -111,6 +112,12 @@ type Optimised struct {
 	// Reported separately because it is a privacy outcome rather than a size
 	// one, and the two get conflated.
 	StrippedMetadata bool
+
+	// KeptForProvenance says the file was left exactly as uploaded because it
+	// carries a signed provenance manifest. Reported so that "this was not
+	// optimised" is a decision somebody can see rather than a silent
+	// exception that looks like the optimiser failing.
+	KeptForProvenance bool
 }
 
 // Saved reports the reduction as a percentage, floored at zero.
@@ -171,6 +178,28 @@ func Optimise(format string, body []byte, opt Options) (Optimised, error) {
 	}
 	b := img.Bounds()
 	out.Width, out.Height = b.Dx(), b.Dy()
+
+	// A file carrying a provenance manifest is returned exactly as it arrived.
+	//
+	// Not because the manifest is metadata worth keeping -- everything else
+	// here is stripped deliberately, and rightly, since EXIF is where the
+	// photographer's home address lives. It is because a C2PA manifest is
+	// bound to the bytes it was signed over. Re-encoding changes the pixels,
+	// and then there are only bad options: keep the manifest and it fails to
+	// verify, which reads as tampering rather than as a resize; drop it and a
+	// record somebody else made -- a camera, a generator -- is destroyed by an
+	// optimisation nobody asked about.
+	//
+	// So the picture is stored as it came. The cost is bytes on a file that
+	// already carries a signed claim, which is a small price for not being the
+	// program that quietly broke everybody's provenance.
+	if hasProvenance(format, body) {
+		out.KeptForProvenance = true
+		out.Did = append(out.Did,
+			"kept exactly as uploaded: it carries a provenance manifest, and "+
+				"re-encoding would break the signature over its pixels")
+		return out, nil
+	}
 
 	// Metadata is detected before it is dropped, so the fact can be reported.
 	// A re-encode drops it either way; saying so is what makes it a feature
@@ -307,6 +336,52 @@ func fit(src image.Image, maxW, maxH int) (image.Image, int, int, bool) {
 		}
 	}
 	return dst, tw, th, true
+}
+
+// hasProvenance reports whether a file carries a C2PA manifest.
+//
+// Structural, like hasMetadata: the question is only whether one is present,
+// and the containers put it somewhere specific. A walk rather than a substring
+// search, because "caBX" appearing inside compressed image data is a
+// coincidence that would silently disable optimisation for an ordinary photo.
+func hasProvenance(format string, body []byte) bool {
+	switch format {
+	case "png":
+		// A caBX chunk, found by walking the chunk list.
+		at := 8
+		for at+8 <= len(body) {
+			length := int(binary.BigEndian.Uint32(body[at : at+4]))
+			if string(body[at+4:at+8]) == "caBX" {
+				return true
+			}
+			next := at + 12 + length
+			if next <= at || next > len(body) {
+				return false
+			}
+			at = next
+		}
+	case "jpeg":
+		// An APP11 segment whose payload begins with the JUMBF marker "JP".
+		for i := 2; i+4 <= len(body); {
+			if body[i] != 0xFF {
+				return false
+			}
+			marker := body[i+1]
+			if marker == 0xDA { // the scan; nothing after this is metadata
+				return false
+			}
+			size := int(body[i+2])<<8 | int(body[i+3])
+			if size < 2 || i+2+size > len(body) {
+				return false
+			}
+			if marker == 0xEB && i+6 <= len(body) &&
+				body[i+4] == 0x4A && body[i+5] == 0x50 {
+				return true
+			}
+			i += 2 + size
+		}
+	}
+	return false
 }
 
 // hasMetadata reports whether a file carries anything that is not pixels.
