@@ -262,13 +262,13 @@ func fullyWired(t *testing.T) (*Server, string) {
 	srv.Integrations = &Integrations{
 		Webhooks: func() ([]webhook.Endpoint, []webhook.Delivery, error) {
 			return []webhook.Endpoint{{
-					URL: "https://example.org/hook", Secret: "0123456789abcdef",
-					Types: []string{"publish"}, Note: "the deploy trigger",
-				}}, []webhook.Delivery{{
-					ID: "d1", URL: "https://example.org/hook", Type: "publish",
-					Attempt: 1, Status: 200, At: "2026-08-16T09:00:00Z",
-					Succeeded: true,
-				}}, nil
+				URL: "https://example.org/hook", Secret: "0123456789abcdef",
+				Types: []string{"publish"}, Note: "the deploy trigger",
+			}}, []webhook.Delivery{{
+				ID: "d1", URL: "https://example.org/hook", Type: "publish",
+				Attempt: 1, Status: 200, At: "2026-08-16T09:00:00Z",
+				Succeeded: true,
+			}}, nil
 		},
 		SaveWebhooks: func([]webhook.Endpoint) error { return nil },
 		Extensions: func() ([]ext.Manifest, error) {
