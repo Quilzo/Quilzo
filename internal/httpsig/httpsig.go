@@ -117,6 +117,14 @@ func (s Signed) Covers(component string) bool {
 func Verify(r *http.Request, keys []PublicKey, maxAge time.Duration,
 	now time.Time) (*Signed, error) {
 
+	return VerifyAt(r, "", keys, maxAge, now)
+}
+
+// VerifyAt is Verify for a server that knows its own public origin, which is
+// what rebuilding @target-uri on an inbound request needs. See BaseAt.
+func VerifyAt(r *http.Request, origin string, keys []PublicKey,
+	maxAge time.Duration, now time.Time) (*Signed, error) {
+
 	input := r.Header.Get("Signature-Input")
 	sig := r.Header.Get("Signature")
 	if input == "" && sig == "" {
@@ -195,7 +203,7 @@ func Verify(r *http.Request, keys []PublicKey, maxAge time.Duration,
 		return nil, fmt.Errorf("key %q is not one this server knows", keyID)
 	}
 
-	base, covered, err := Base(r, params["components"], input)
+	base, covered, err := BaseAt(r, origin, params["components"], input)
 	if err != nil {
 		return nil, err
 	}
@@ -314,6 +322,28 @@ func parseUnix(s string) (int64, error) {
 	return strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 }
 
+// targetURI rebuilds the absolute request URI.
+//
+// An outbound request carries an absolute URL already and is used as-is: that
+// is a client signing what it is about to send. Otherwise this is an inbound
+// request and the URL holds only a path, so the origin supplies the rest.
+// Without a configured origin it falls back to the connection, which is right
+// for a directly-served site and wrong behind a proxy -- and wrong here means
+// a refused signature, never an accepted one.
+func targetURI(r *http.Request, origin string) string {
+	if r.URL.IsAbs() {
+		return r.URL.String()
+	}
+	if origin != "" {
+		return strings.TrimSuffix(origin, "/") + r.URL.RequestURI()
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host + r.URL.RequestURI()
+}
+
 func quoteAll(in []string) []string {
 	out := make([]string, len(in))
 	for i, s := range in {
@@ -327,6 +357,23 @@ func quoteAll(in []string) []string {
 // This is the whole of the check: if any covered component differs from what
 // was signed, the base differs and the signature does not verify.
 func Base(r *http.Request, components, input string) (string, []string, error) {
+	return BaseAt(r, "", components, input)
+}
+
+// BaseAt is Base for a server that knows its own public origin.
+//
+// Only @target-uri needs it, and only inbound. Go fills r.URL from the
+// request-target, which for an ordinary request is origin-form: a handler sees
+// "/inbox", not "https://us.example/inbox". Rebuilding the target URI from
+// that produces "/inbox" and a base that matches nothing the sender signed, so
+// every signature covering @target-uri fails -- which is precisely the shape
+// Mastodon's RFC 9421 implementation requires and sends.
+//
+// The origin comes from configuration rather than from the request. r.TLS is
+// nil behind a TLS-terminating proxy, so deriving the scheme from it says
+// "http" on a site served over https; X-Forwarded-Proto is written by whoever
+// is talking to us. A site's public origin is a fact it already knows.
+func BaseAt(r *http.Request, origin, components, input string) (string, []string, error) {
 	var b strings.Builder
 	var covered []string
 
@@ -343,7 +390,7 @@ func Base(r *http.Request, components, input string) (string, []string, error) {
 		case "@query":
 			value = "?" + r.URL.RawQuery
 		case "@target-uri":
-			value = r.URL.String()
+			value = targetURI(r, origin)
 		default:
 			if strings.HasPrefix(name, "@") {
 				return "", nil, fmt.Errorf(
@@ -575,6 +622,28 @@ func CheckContentDigest(r *http.Request, body []byte) error {
 //
 // Found by signing a Follow over content-digest alone and posting it to an
 // inbox that required the digest and nothing else. It answered 202.
+// CoversDestination reports whether the signature binds the request to where
+// it was sent, which is the weakest binding worth accepting.
+//
+// This is the Web Bot Auth requirement rather than the fediverse one: an agent
+// MUST cover at least one of @authority or @target-uri, and Cloudflare's own
+// crawlers sign ("@authority" "signature-agent") and nothing else. Requiring
+// @method there would reject every real signer, so the two gates are separate
+// and each says which ecosystem it is for.
+//
+// What this still stops is the replay that matters: a signature captured in
+// flight cannot be aimed at another host. What it does not stop is a replay at
+// a different path on the same host inside the age window, which is the
+// trade-off the spec itself makes -- its answer is expires and nonce, not the
+// request line.
+func (s Signed) CoversDestination() bool {
+	return s.Covers("@authority") || s.Covers("@target-uri")
+}
+
+// CoversRequest reports whether the signature binds both the method and the
+// destination. Stricter than CoversDestination, and matched to what Mastodon's
+// RFC 9421 implementation requires of an inbox delivery: @method and
+// @target-uri, so the signature matches the request actually made.
 func (s Signed) CoversRequest() bool {
 	if !s.Covers("@method") {
 		return false

@@ -63,6 +63,14 @@ func (s *Signer) Send(inbox string, activity map[string]any) error {
 	// one, and picking the standard means picking the one almost nobody can
 	// check.
 	//
+	// This replaced an RFC 9421 signature that covered @target-uri, added so
+	// that Mastodon's 9421 verifier would accept it. That was the right fix
+	// for the wrong half of the problem: it made deliveries acceptable to the
+	// one implementation that had moved, while leaving them unreadable to
+	// every implementation that had not. The 9421 work it came from still
+	// applies to what arrives here, where this program is the receiver and
+	// takes whichever format the sender chose.
+	//
 	// The covered headers are what the ecosystem expects: the request line,
 	// the host, the date and the digest. Date because it is the draft's only
 	// replay bound, and digest because without it a captured signature can be
