@@ -175,6 +175,9 @@ access
   quilzo oidc configure --issuer ... --client-id ...   sign in with an IdP
   quilzo oidc check                        talk to the provider, report what it offers
   quilzo network                           what this may connect to, and whether
+  quilzo marking                           the classification scheme, if any
+  quilzo transfer record DIR --approved-by WHO   paperwork for carrying an export
+  quilzo transfer verify DIR               check what arrived is what left
   quilzo auth grant WHO ROLE [--on PATH]   reader | author | publisher | admin
   quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
   quilzo auth list | roles
@@ -379,6 +382,10 @@ func main() {
 		err = cmdProvenance(root, cmdArgs)
 	case "network":
 		err = cmdNetwork(root, cmdArgs)
+	case "marking":
+		err = cmdMarking(root, cmdArgs)
+	case "transfer":
+		err = cmdTransfer(root, cmdArgs)
 	case "compliance":
 		err = cmdCompliance(root, cmdArgs)
 	case "agents":
@@ -863,6 +870,20 @@ func cmdPublish(root string, args []string) error {
 	if len(args) > 0 {
 		target = args[0]
 	}
+	// Spillage, before anything else and with no flag to skip it.
+	//
+	// A page marked above what the deployment is accredited for must not
+	// reach it. Unlike the accessibility gate there is no --no-marking-check:
+	// the accessibility gate has a legitimate reason to be turned off, which
+	// is a store that renders elsewhere, and this one does not. A deployment
+	// that does not mark is unaffected, because the check is a no-op when no
+	// scheme is configured.
+	if err := checkMarking(root, s, target); err != nil {
+		record(root, caller.auditRecord("publish", "/", audit.Denied,
+			map[string]string{"reason": "classification", "detail": err.Error()}))
+		return errBlocked{err}
+	}
+
 	// The gate runs before the pointer moves. ATAG Part B asks that the tool
 	// help authors produce accessible content, and a report printed after
 	// publishing helps nobody — the inaccessible page is already being served.

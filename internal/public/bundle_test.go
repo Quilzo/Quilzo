@@ -420,3 +420,61 @@ func TestSearchWithoutAPageIsNotFound(t *testing.T) {
 			"links is a page nobody published", rec.Code)
 	}
 }
+
+// Every static file this server offers has to be in the bundle.
+//
+// The bundle's route list is written by hand, and two files were already
+// missing from it: /.well-known/security.txt and the speculation rules, both
+// added to the server and both forgotten here. Nothing failed — a static copy
+// simply did not carry them, which is the quietest kind of gap, because the
+// export succeeds and the missing file is only noticed by whoever went looking
+// for it.
+//
+// So this walks the mux instead of trusting the list. A route that serves a
+// fixed document and is not bundled fails here, whoever adds it next.
+func TestEveryStaticFileTheServerOffersIsBundled(t *testing.T) {
+	st := bundleSite(t)
+	st.Licence = &Licence{Permits: []string{"search"}}
+	st.Security = &SecurityContact{
+		Contact: []string{"mailto:x@example.test"},
+		Expires: time.Unix(1900000000, 0),
+	}
+
+	// The fixed documents. Not every route: a page depends on content, and
+	// /media/ depends on an id, and those are bundled by crawling rather than
+	// by name.
+	static := []string{
+		"/robots.txt",
+		"/sitemap.xml",
+		"/license.xml",
+		"/llms.txt",
+		"/manifest.webmanifest",
+		"/sw.js",
+		"/.well-known/tdmrep.json",
+		SecurityTxtPath,
+		SpeculationPath,
+	}
+
+	routes, err := st.Routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundled := map[string]bool{}
+	for _, r := range routes {
+		bundled[r.path] = true
+	}
+
+	for _, path := range static {
+		rec := httptest.NewRecorder()
+		st.Handler().ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if rec.Code != http.StatusOK {
+			// Not served by this configuration, so not expected in its
+			// bundle either.
+			continue
+		}
+		if !bundled[path] {
+			t.Errorf("%s is served and is not in the bundle, so a static "+
+				"copy of this site silently does not carry it", path)
+		}
+	}
+}

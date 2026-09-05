@@ -78,6 +78,9 @@ type File struct {
 
 // Site is what gets exported.
 type Site struct {
+	// Banner is the deployment's classification marking, or empty. When set,
+	// every exported file carries it — see marked.
+	Banner string
 	// Pages maps a page name to its fields.
 	Pages map[string]any
 	// Name and BaseURL describe the site, for formats that carry them.
@@ -140,18 +143,82 @@ func Export(f Format, s Site, now time.Time) ([]File, error) {
 	if len(s.Pages) == 0 && len(s.Collections) == 0 {
 		return nil, fmt.Errorf("there is nothing published to export")
 	}
+	var (
+		files []File
+		err   error
+	)
 	switch f {
 	case Markdown:
-		return exportMarkdown(s)
+		files, err = exportMarkdown(s)
 	case JSON:
-		return exportJSON(s)
+		files, err = exportJSON(s)
 	case WXR:
-		return exportWXR(s, now)
+		files, err = exportWXR(s, now)
 	case ROCrate:
-		return exportROCrate(s, now)
+		files, err = exportROCrate(s, now)
+	default:
+		return nil, fmt.Errorf(
+			"unknown format %q; try markdown, json, wxr or ro-crate", f)
 	}
-	return nil, fmt.Errorf(
-		"unknown format %q; try markdown, json, wxr or ro-crate", f)
+	if err != nil {
+		return nil, err
+	}
+	return marked(files, s.Banner), nil
+}
+
+// marked puts the deployment's banner on every exported file.
+//
+// An export leaves the machine. It is the copy that ends up on removable
+// media, in somebody's home directory, attached to a mail — and a file with no
+// marking on it does not look like a file whose marking was lost, it looks
+// like a file that never had one. The transfer manifest records the banner for
+// the set; this puts it on each file, because files get separated from the set
+// they travelled in and that is exactly when the marking is needed.
+//
+// Comment syntax by format, so the marking is visible to a reader and inert to
+// a parser. A format this does not know how to comment gets no banner rather
+// than a corrupted file: an export that will not parse is a worse outcome than
+// one whose marking is only in the manifest, and the manifest still has it.
+func marked(files []File, banner string) []File {
+	if strings.TrimSpace(banner) == "" {
+		return files
+	}
+	out := make([]File, 0, len(files)+1)
+	for _, f := range files {
+		out = append(out, File{Path: f.Path, Body: markFile(f, banner)})
+	}
+	// One file at the root for the whole export, always.
+	//
+	// It covers the formats that cannot carry a comment — JSON is the lossless
+	// one this program re-imports, and a banner inside it would change what
+	// comes back — and it is where somebody looks who has been handed a
+	// directory and does not know what it is.
+	out = append(out, File{
+		Path: "CLASSIFICATION",
+		Body: []byte(banner + "\n\nThis marking applies to everything in " +
+			"this directory, including files\nthat carry no marking of " +
+			"their own because their format has nowhere to\nput one.\n"),
+	})
+	return out
+}
+
+func markFile(f File, banner string) []byte {
+	switch {
+	case strings.HasSuffix(f.Path, ".md"):
+		// Markdown renders an HTML comment as nothing, so the banner would be
+		// invisible in a rendered view — which is the view somebody reads. A
+		// plain line is visible in both.
+		return []byte(banner + "\n\n" + string(f.Body) + "\n\n" + banner + "\n")
+	case strings.HasSuffix(f.Path, ".xml"), strings.HasSuffix(f.Path, ".html"):
+		return []byte("<!-- " + banner + " -->\n" + string(f.Body) +
+			"\n<!-- " + banner + " -->\n")
+	case strings.HasSuffix(f.Path, ".json"), strings.HasSuffix(f.Path, ".jsonld"):
+		// JSON has no comments, and a banner injected into the document
+		// would change what re-imports. The CLASSIFICATION file at the root
+		// covers it.
+		return f.Body
+	}
+	return f.Body
 }
 
 // collections returns the collection names in a stable order.

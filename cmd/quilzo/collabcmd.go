@@ -349,6 +349,8 @@ func reviewRequire(root string, args []string) error {
 			"who can publish")
 	humanForAI := fs.Bool("human-for-ai", true,
 		"an AI-authored change always needs a human approver")
+	people := fs.Int("humans", 0,
+		"how many of the approvals must come from people, not machines")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
@@ -360,7 +362,15 @@ func reviewRequire(root string, args []string) error {
 		return fmt.Errorf("the number of approvals must be zero or more")
 	}
 
-	pol := collab.Policy{Required: n, RequireHumanForAI: *humanForAI}
+	if *people > n {
+		return fmt.Errorf(
+			"--humans is %d and only %d approval(s) are required, so the "+
+				"rule could never be satisfied. Raise the count as well",
+			*people, n)
+	}
+	pol := collab.Policy{
+		Required: n, RequiredHumans: *people, RequireHumanForAI: *humanForAI,
+	}
 	for _, a := range strings.Split(*approvers, ",") {
 		if a = strings.TrimSpace(a); a != "" {
 			pol.Approvers = append(pol.Approvers, a)
@@ -394,6 +404,10 @@ func reviewRequire(root string, args []string) error {
 		w.Human("  %sfrom: %s%s\n", dim, strings.Join(pol.Approvers, ", "), reset)
 	}
 	if *humanForAI {
+		if pol.RequiredHumans > 0 {
+			w.Human("  %sat least %d of them from people, not machines%s\n",
+				dim, pol.RequiredHumans, reset)
+		}
 		w.Human("  %sand a human on anything a model wrote%s\n", dim, reset)
 	}
 	w.Human("  %san author can never approve their own change%s\n", dim, reset)

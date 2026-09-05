@@ -298,6 +298,51 @@ var settings = []Setting{
 			"one on purpose.",
 	},
 	{
+		Key: "marking.levels", Kind: Text, Default: "",
+		Summary: "classification levels this deployment uses, lowest first",
+		Why: "Empty means this deployment does not mark, which is the " +
+			"default and is most of them.\n\nThe levels are the " +
+			"deployment's own, lowest first, because the program never needs " +
+			"to know what the words mean — only which of two is higher, and " +
+			"you said. An installation on OFFICIAL and OFFICIAL-SENSITIVE " +
+			"works exactly as one on SECRET does.\n\nNo vocabulary ships " +
+			"with this program. Shipping one would be shipping a copy of " +
+			"somebody's controlled register that goes stale, and a marking " +
+			"accepted because the copy is out of date is worse than one " +
+			"refused.",
+	},
+	{
+		Key: "marking.banner", Kind: Text, Default: "",
+		Summary: "the marking this deployment carries as a whole",
+		Why: "Rendered at the top and bottom of every page — both, because a " +
+			"banner at the top of a long page is one a reader scrolled past " +
+			"before reaching the part that matters.\n\nIt is also the " +
+			"ceiling. A page marked above it is refused at publish, which is " +
+			"the control that matters: everything else here is placement, " +
+			"and this is spillage. Without it the page renders, the banner " +
+			"says the site's level, and the content underneath is higher " +
+			"than the banner claims.",
+	},
+	{
+		Key: "marking.controls", Kind: Text, Default: "",
+		Summary: "control markings this deployment uses, comma-separated",
+		Why: "From the deployment's own register. A banner containing a " +
+			"marking this program does not recognise is refused rather than " +
+			"rendered: a banner is read by people who act on it.",
+	},
+	{
+		Key: "approval.required_humans", Kind: Text, Default: "0",
+		Summary: "how many approvals must come from people, not machines",
+		Why: "Two-person integrity, as an environment that uses the phrase " +
+			"means it. approval.required counts distinct approvers and does " +
+			"not ask what they are, so a policy of two is satisfied by two " +
+			"service accounts — a nightly import approved by the importer " +
+			"and the deploy account meets 'two approvals' and has been seen " +
+			"by nobody.\n\nZero leaves the behaviour unchanged. Set to " +
+			"two, nothing publishes without two people, and the machines can " +
+			"hold as many credentials as they like.",
+	},
+	{
 		Key: "passkey.require_hardware", Kind: Bool, Default: "false",
 		Summary: "enrol only authenticators that say what they are",
 		Why: "A passkey synced through a platform account is a key that " +
