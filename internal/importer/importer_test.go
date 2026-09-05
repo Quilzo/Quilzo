@@ -331,9 +331,9 @@ func TestNestedObjectsAreReportedNotFlattened(t *testing.T) {
 func TestDetectionRecognisesEachFormat(t *testing.T) {
 	cases := map[string]Source{
 		`<?xml version="1.0"?><rss><channel><wp:author/></channel></rss>`: WordPress,
-		"---\ntitle: x\n---\nbody":                                        Markdown,
-		`[{"title":"x"}]`:                                                 JSON,
-		`{"home":{}}`:                                                     JSON,
+		"---\ntitle: x\n---\nbody": Markdown,
+		`[{"title":"x"}]`:          JSON,
+		`{"home":{}}`:              JSON,
 	}
 	for body, want := range cases {
 		got, ok := Detect([]byte(body))
