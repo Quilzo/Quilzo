@@ -137,3 +137,41 @@ func TestAMarkingCannotCarryMarkup(t *testing.T) {
 		t.Error("the banner was not escaped")
 	}
 }
+
+// A handler that writes HTML and sets no Content-Type is still marked.
+//
+// Go sniffs the first bytes and fills the header in, so the page is served as
+// HTML either way. A wrapper that read the header before that happened would
+// see nothing, pass the page through unmarked, and the browser would render it
+// as a page regardless — the failure this control exists to prevent, arrived
+// at from the direction nobody watches: not a template omitting the banner,
+// but a handler omitting a header.
+func TestAPageWithNoContentTypeIsStillMarked(t *testing.T) {
+	st := &Site{Marking: scheme()}
+	h := st.marked(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// No Content-Type set at all.
+		_, _ = w.Write([]byte(page))
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+
+	if n := strings.Count(rec.Body.String(), "SECRET//NOFORN"); n != 2 {
+		t.Fatalf("a page with no declared type carries the banner %d time(s); "+
+			"it is served as HTML either way:\n%s", n, rec.Body.String())
+	}
+}
+
+// And something that is not HTML still passes through untouched when nobody
+// declared a type either.
+func TestUndeclaredNonHTMLIsStillNotTouched(t *testing.T) {
+	st := &Site{Marking: scheme()}
+	h := st.marked(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("plain text, no markup at all"))
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/x.txt", nil))
+
+	if rec.Body.String() != "plain text, no markup at all" {
+		t.Errorf("plain text was rewritten: %q", rec.Body.String())
+	}
+}

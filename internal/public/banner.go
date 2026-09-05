@@ -42,7 +42,6 @@ type bannerWriter struct {
 	banner string
 	buf    bytes.Buffer
 	code   int
-	html   bool
 	// wroteHeader records that the handler set a status, so it is preserved
 	// rather than replaced with 200 when the body is flushed.
 	wroteHeader bool
@@ -53,26 +52,45 @@ func (b *bannerWriter) WriteHeader(code int) {
 		return
 	}
 	b.code, b.wroteHeader = code, true
-	b.html = strings.HasPrefix(
-		b.ResponseWriter.Header().Get("Content-Type"), "text/html")
-	if !b.html {
-		b.ResponseWriter.WriteHeader(code)
-	}
 }
 
+// Write buffers everything, whatever the content type appears to be.
+//
+// Deciding here would be deciding too early. A handler that writes HTML and
+// sets no Content-Type is served as HTML anyway -- Go sniffs the first bytes
+// and fills the header in -- so a wrapper that read the header at this point
+// would see nothing, pass the page through unmarked, and the browser would
+// still render it as a page. That is the exact failure this control exists to
+// prevent, arrived at from the one direction nobody watches: not a template
+// omitting the banner, but a handler omitting a header.
+//
+// So the type is decided at flush, from the header if the handler set one and
+// from the bytes if it did not, which is the same question Go asks.
 func (b *bannerWriter) Write(p []byte) (int, error) {
 	if !b.wroteHeader {
 		b.WriteHeader(http.StatusOK)
 	}
-	if !b.html {
-		return b.ResponseWriter.Write(p)
-	}
 	return b.buf.Write(p)
+}
+
+// isHTML reports whether this response will be rendered as a page.
+func (b *bannerWriter) isHTML() bool {
+	declared := b.ResponseWriter.Header().Get("Content-Type")
+	if declared == "" {
+		// What Go itself will put there.
+		declared = http.DetectContentType(b.buf.Bytes())
+	}
+	return strings.HasPrefix(declared, "text/html")
 }
 
 // flush writes the marked body, or refuses.
 func (b *bannerWriter) flush() {
-	if !b.html {
+	if !b.isHTML() {
+		// Passed through exactly as the handler wrote it. Nothing is added,
+		// removed or re-encoded: a stylesheet has nowhere to put a banner and
+		// this wrapper is not the place to change what a response says.
+		b.ResponseWriter.WriteHeader(b.code)
+		_, _ = b.ResponseWriter.Write(b.buf.Bytes())
 		return
 	}
 	marked, err := insertBanner(b.buf.Bytes(), b.banner)
