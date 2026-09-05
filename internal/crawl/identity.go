@@ -93,18 +93,24 @@ func Verify(r *http.Request, keys []Key, now time.Time) (*Identity, error) {
 	if signed == nil {
 		return nil, nil
 	}
-	// The signature has to bind the request it arrived on.
+	// The signature has to name the server it was sent to.
 	//
 	// Without this a crawler's signature over, say, one header authenticates
-	// that crawler for any request at all: capture one from a proxy and replay
-	// it against a different path for as long as the age window allows, and
-	// the terms are enforced against the wrong identity. An identity that does
-	// not name what it is an identity for is a header again.
-	if !signed.CoversRequest() {
+	// that crawler anywhere: capture one from a proxy and replay it against
+	// another site for as long as the age window allows, and the terms are
+	// enforced against the wrong identity. An identity that does not name what
+	// it is an identity for is a header again.
+	//
+	// Destination only, deliberately. Web Bot Auth requires an agent to cover
+	// at least one of @authority or @target-uri and no more, and real crawlers
+	// sign ("@authority" "signature-agent"); demanding @method here would
+	// refuse every one of them while adding nothing -- it is the destination,
+	// not the verb, that stops a captured signature being pointed elsewhere.
+	if !signed.CoversDestination() {
 		return nil, fmt.Errorf(
-			"this signature does not cover the request line, so it identifies " +
-				"a key rather than this request. Sign @method with @authority " +
-				"and @path, or @target-uri")
+			"this signature names no destination, so it identifies a key " +
+				"rather than a request to this server. Sign @authority or " +
+				"@target-uri, as Web Bot Auth requires")
 	}
 
 	name := signed.KeyID

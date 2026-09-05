@@ -547,6 +547,23 @@ func tokenIssue(root string, args []string) error {
 		fmt.Printf("  %sthe role is what %s holds in the policy; --role narrows "+
 			"it%s\n", dim, tok.Principal, reset)
 	}
+	// A token names a role; a binding is what grants one. Somebody who has
+	// only the token can sign in and then be refused by every screen.
+	//
+	// Worth saying here because the line above prints "admin on /", which
+	// reads like a grant and is not one -- it is the ceiling this token may
+	// act up to, and the floor is whatever the principal actually holds. The
+	// two were separated deliberately: `token issue --role admin` creating its
+	// own authority is the privilege escalation this program closed. So the
+	// answer is to name the missing step rather than to take it.
+	pol, perr := loadPolicy(root)
+	if perr == nil && strongestRole(pol, tok.Principal, tok.Resource) == auth.RoleNone {
+		fmt.Printf("\n  %s%s holds no role yet, so this token can sign in "+
+			"and do nothing%s\n", yellow, tok.Principal, reset)
+		fmt.Printf("  %sgrant one:%s\n", dim, reset)
+		fmt.Printf("    quilzo auth grant %s %s\n", tok.Principal, tok.Role)
+	}
+
 	// The bootstrap closes the moment a token exists, so a first token that
 	// cannot manage tokens is the last one anybody can issue from here. Said
 	// out loud, because the recovery is editing JSON by hand.

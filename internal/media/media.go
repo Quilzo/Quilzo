@@ -129,6 +129,15 @@ var formats = map[string]Format{
 		Magic:  [][]byte{[]byte("RIFF")},
 		Verify: verifyWebP,
 	},
+	"avif": {
+		MIME: "image/avif", Kind: Image, Ext: ".avif", MaxBytes: maxImage,
+		Inline: true,
+		// No magic prefix. The ftyp box sits at offset 4, behind its own
+		// length, so a prefix match cannot see it — the same reason the video
+		// containers below carry none and let their verifier decide.
+		Magic:  [][]byte{},
+		Verify: verifyAVIF,
+	},
 	"pdf": {
 		MIME: "application/pdf", Kind: Document, Ext: ".pdf", MaxBytes: maxDocument,
 		// Not inline. A PDF renders in the site's own origin with a scripting
@@ -273,6 +282,12 @@ type File struct {
 	// uploaded, so provenance survives the round trip.
 	Source string `json:"source,omitempty"`
 
+	// Origin is what a C2PA manifest will say about this file when it is
+	// served. Empty means nothing was declared, and nothing is what gets
+	// asserted — see internal/c2pa on why a blank field must not become a
+	// claim that this is a photograph.
+	Origin Origin `json:"origin,omitempty"`
+
 	// Rights is what permits publishing this, and until when. See rights.go:
 	// an image licence is a publish window pointed at a file, and the reason
 	// it is here rather than in a spreadsheet is that a licence which lapses
@@ -354,6 +369,30 @@ func (f File) Extension() string {
 }
 
 // Rendition is one narrower copy of an image.
+// Origin is a declaration about where a file came from.
+//
+// The vocabulary is the IPTC one, and deliberately the same strings
+// internal/provenance uses for pages: a site whose text discloses that a model
+// wrote it and whose images say nothing is a site making two different claims,
+// and the way to stop that is to have one set of terms.
+type Origin struct {
+	// SourceType is an IPTC digital source type — trainedAlgorithmicMedia for
+	// something a model made, and so on. Empty asserts nothing.
+	SourceType string `json:"digital_source_type,omitempty"`
+	// Model and Instruction, when a model was involved. The instruction is
+	// kept for the same reason internal/provenance keeps it: a model name
+	// alone does not answer why the picture shows what it shows.
+	Model       string `json:"model,omitempty"`
+	Instruction string `json:"instruction,omitempty"`
+	// Author is the person accountable, which is never the tool.
+	Author string `json:"author,omitempty"`
+}
+
+// Declared reports whether anything was said about this file's origin.
+func (o Origin) Declared() bool {
+	return o.SourceType != "" || o.Model != "" || o.Author != ""
+}
+
 type Rendition struct {
 	// Width in pixels, which is what a srcset candidate is measured in.
 	Width int `json:"width"`
@@ -450,6 +489,15 @@ func Accept(name string, body []byte, now time.Time) (File, error) {
 	if fm.Kind == Image {
 		if cfg, _, err := image.DecodeConfig(bytes.NewReader(body)); err == nil {
 			f.Width, f.Height = cfg.Width, cfg.Height
+		} else if key == "avif" {
+			// Go decodes no AVIF, so the dimensions come out of the
+			// container's own ispe box. Without them the templates emit no
+			// intrinsic size and the page reflows as the picture arrives —
+			// which would make the format that exists to be fast the one that
+			// makes reading worse.
+			if w, h, ok := avifSize(body); ok {
+				f.Width, f.Height = w, h
+			}
 		}
 	}
 	return f, nil

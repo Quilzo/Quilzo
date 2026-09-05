@@ -52,20 +52,41 @@ func TestADeliveryIsSignedTheWayThisSitesOwnInboxDemands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Rebuild the request as it arrives at the far end.
-	arriving := httptest.NewRequest("POST", "https://r.example/inbox",
-		stringReader(string(body)))
+	// Rebuild the request as it arrives at the far end: origin-form, which is
+	// what a handler is actually given. An absolute URL here would let
+	// @target-uri resolve from r.URL alone and the test would pass whether or
+	// not a real receiver could rebuild it.
+	arriving := httptest.NewRequest("POST", "/inbox", stringReader(string(body)))
 	arriving.Host = "r.example"
 	for k, v := range captured.Header {
 		arriving.Header[k] = v
 	}
 
-	signed, err := httpsig.Verify(arriving, []httpsig.PublicKey{remote}, 0, now)
+	signed, err := httpsig.VerifyAt(arriving, "https://r.example",
+		[]httpsig.PublicKey{remote}, 0, now)
 	if err != nil {
 		t.Fatalf("what this site sends does not verify: %v", err)
 	}
 	if signed == nil {
 		t.Fatal("the delivery carried no signature")
+	}
+	// A delivery has to bind the request it is: the verb, the destination and
+	// the body. Asserted in the RFC 9421 vocabulary even though the signature
+	// on the wire is draft-cavage, because the covered names are translated
+	// as they are parsed — (request-target) is @method and @path, host is
+	// @authority — and that translation is what keeps one coverage policy
+	// rather than a second, weaker one reachable by choosing an older format.
+	//
+	// This used to demand @target-uri, for a Mastodon RFC 9421 verifier.
+	// Deliveries no longer speak that format: it is the one almost nothing on
+	// the other end can read.
+	if !signed.CoversRequest() {
+		t.Errorf("the delivery covers %v, which does not bind the request it "+
+			"was sent as", signed.Covered)
+	}
+	if !signed.CoversDestination() {
+		t.Errorf("the delivery covers %v and names no destination, so the "+
+			"same bytes can be replayed at another server", signed.Covered)
 	}
 	if !signed.CoversBody() {
 		t.Fatal("the delivery's signature does not cover the body, which is " +
