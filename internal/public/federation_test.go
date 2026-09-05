@@ -327,3 +327,50 @@ func mustPEM(t *testing.T, signer crypto.Signer) string {
 	}
 	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
 }
+
+// A delivery shaped the way Mastodon's RFC 9421 implementation makes them:
+// @method and @target-uri, plus the content digest.
+//
+// Mastodon requires both of those derived components and signs the absolute
+// URI it posted to. Go hands a handler only the path, so rebuilding the target
+// URI from r.URL yields "/@/inbox" and the base matches nothing that was
+// signed -- every such delivery refused, and refused as a bad signature, which
+// looks like the sender's fault. The site's configured origin is what closes
+// the gap; the header transplant below is what makes this a two-sided test
+// rather than the verifier agreeing with itself.
+func TestADeliverySigningTheAbsoluteTargetURIIsAccepted(t *testing.T) {
+	signer, doc := remoteFixture(t)
+	st := wiredSite(func(string) ([]byte, error) { return doc(nil), nil })
+	st.BaseURL = "https://marginalia.example"
+	now := time.Unix(1787000000, 0)
+
+	// The sender's side: a client request, so its URL is absolute.
+	sending := httptest.NewRequest("POST", "https://marginalia.example/@/inbox",
+		stringReader(followBody))
+	sending.URL.Scheme, sending.URL.Host = "https", "marginalia.example"
+	httpsig.SetContentDigest(sending, []byte(followBody))
+	if err := httpsig.Sign(sending, "https://r.example/users/dana#main-key",
+		httpsig.RSAPKCS1SHA256, signer,
+		[]string{"@method", "@target-uri", "content-digest"}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	// The receiver's side: the same bytes as a server sees them, origin-form.
+	arriving := httptest.NewRequest("POST", "/@/inbox", stringReader(followBody))
+	arriving.Host = "marginalia.example"
+	for _, h := range []string{"Signature-Input", "Signature", "Content-Digest"} {
+		arriving.Header.Set(h, sending.Header.Get(h))
+	}
+
+	rec := httptest.NewRecorder()
+	st.inbox(rec, arriving)
+	if rec.Code >= 400 {
+		t.Fatalf("a Mastodon-shaped delivery was refused (status %d): %s\n"+
+			"  Every RFC 9421 sender covers @target-uri, so this is the "+
+			"fediverse\n  refused at the door.", rec.Code, rec.Body)
+	}
+	if st.Federation.Followers.Len() != 1 {
+		t.Errorf("the follow was accepted but not recorded: %d followers",
+			st.Federation.Followers.Len())
+	}
+}
