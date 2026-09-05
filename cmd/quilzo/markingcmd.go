@@ -149,7 +149,29 @@ func checkMarking(root string, s *store.Store, target string) error {
 			continue
 		}
 		declared, _ := fields["classification"].(string)
-		if err := p.CheckPage(declared); err != nil {
+
+		// A field may carry its own marking, named for the field it marks:
+		// body_classification marks body. Checked upward only — a portion
+		// below the page's banner is ordinary, and one above it is content
+		// the banner does not cover.
+		var portions []marking.Portion
+		fieldNames := make([]string, 0, len(fields))
+		for k := range fields {
+			fieldNames = append(fieldNames, k)
+		}
+		sort.Strings(fieldNames)
+		for _, k := range fieldNames {
+			base, found := strings.CutSuffix(k, "_classification")
+			if !found || base == "" {
+				continue
+			}
+			if m, ok := fields[k].(string); ok && strings.TrimSpace(m) != "" {
+				portions = append(portions,
+					marking.Portion{Field: base, Marking: m})
+			}
+		}
+
+		if err := p.CheckPortions(declared, portions); err != nil {
 			refused = append(refused, fmt.Sprintf("  %s — %s", name, err))
 		}
 	}

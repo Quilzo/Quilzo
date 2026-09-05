@@ -224,3 +224,79 @@ func (p Policy) BannerHTML() (top, bottom string) {
 	// make it an injection.
 	return p.Banner, p.Banner
 }
+
+// -- portions -----------------------------------------------------------------
+
+// A page carries one marking and its parts may carry their own, and the rule
+// between them is the one people get wrong.
+//
+// A banner is the highest marking of anything on the page: that is what it
+// means, and it is why a portion above the banner is not a stricter portion
+// but a wrong banner. The direction matters because the mistake is silent in
+// only one of them. A portion marked lower than the banner is ordinary and
+// common — most of a SECRET document is not secret. A portion marked higher is
+// content the banner does not cover, on a page a reader has already been told
+// how to treat.
+//
+// So this checks upward only, and says which portion.
+
+// Portion is one marked part of a page.
+type Portion struct {
+	// Field is where it came from, so a refusal can name it.
+	Field string
+	// Marking is the portion's own banner-form marking, e.g. "TOP SECRET//NOFORN".
+	Marking string
+}
+
+// CheckPortions verifies that nothing inside a page exceeds the page's own
+// marking, and that the page's marking is not itself above the deployment's.
+//
+// pageBanner may be empty, meaning the page sits at the deployment's level.
+func (p Policy) CheckPortions(pageBanner string, portions []Portion) error {
+	if !p.Enabled() {
+		return nil
+	}
+	if err := p.CheckPage(pageBanner); err != nil {
+		return err
+	}
+
+	effective := pageBanner
+	if strings.TrimSpace(effective) == "" {
+		effective = p.Banner
+	}
+	page, err := p.Parse(effective)
+	if err != nil {
+		return err
+	}
+	pageRank, _ := p.Rank(page.Level)
+
+	for _, portion := range portions {
+		if strings.TrimSpace(portion.Marking) == "" {
+			continue
+		}
+		part, perr := p.Parse(portion.Marking)
+		if perr != nil {
+			return fmt.Errorf("%s: %w", portion.Field, perr)
+		}
+		partRank, _ := p.Rank(part.Level)
+		if partRank > pageRank {
+			return fmt.Errorf(
+				"%s is marked %s and the page is marked %s. A banner is the "+
+					"highest marking of anything on the page, so this is not "+
+					"a stricter portion — it is content the banner does not "+
+					"cover, on a page a reader has already been told how to "+
+					"treat. Raise the page's marking, or move the portion",
+				portion.Field, part, page)
+		}
+		for _, c := range part.Controls {
+			if !hasControl(page.Controls, c) {
+				return fmt.Errorf(
+					"%s carries %s and the page's marking (%s) does not. A "+
+						"reader following the banner would not know this "+
+						"part is under that limit",
+					portion.Field, c, page)
+			}
+		}
+	}
+	return nil
+}

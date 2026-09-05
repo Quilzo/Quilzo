@@ -155,3 +155,70 @@ func TestTheLevelOrderIsTheDeploymentsOwn(t *testing.T) {
 		t.Error("a higher level passed")
 	}
 }
+
+// A portion above the page's banner is content the banner does not cover.
+//
+// The direction matters, and only one of them is silent. A portion marked
+// lower is ordinary — most of a SECRET document is not secret. A portion
+// marked higher is on a page a reader has already been told how to treat.
+func TestAPortionAboveThePageIsRefused(t *testing.T) {
+	p := scheme() // deployment: SECRET//NOFORN
+
+	err := p.CheckPortions("CONFIDENTIAL", []marking.Portion{
+		{Field: "body", Marking: "SECRET"},
+	})
+	if err == nil {
+		t.Fatal("a SECRET portion passed on a CONFIDENTIAL page")
+	}
+	if !strings.Contains(err.Error(), "body") {
+		t.Errorf("the refusal does not name the portion: %v", err)
+	}
+	if !strings.Contains(err.Error(), "highest marking") {
+		t.Errorf("the refusal does not explain what a banner means: %v", err)
+	}
+}
+
+// A portion below the page's banner is ordinary and must not be refused.
+func TestAPortionBelowThePageIsFine(t *testing.T) {
+	p := scheme()
+	err := p.CheckPortions("SECRET", []marking.Portion{
+		{Field: "standfirst", Marking: "UNCLASSIFIED"},
+		{Field: "body", Marking: "CONFIDENTIAL"},
+		{Field: "notes", Marking: ""},
+	})
+	if err != nil {
+		t.Errorf("ordinary portions were refused: %v", err)
+	}
+}
+
+// A control on a portion that the page's own marking does not carry is
+// refused: a reader following the banner would not know that part is under it.
+func TestAPortionControlThePageLacksIsRefused(t *testing.T) {
+	p := scheme()
+	err := p.CheckPortions("SECRET", []marking.Portion{
+		{Field: "body", Marking: "SECRET//NOFORN"},
+	})
+	if err == nil {
+		t.Fatal("a portion under a limit the page does not carry passed")
+	}
+	if !strings.Contains(err.Error(), "NOFORN") {
+		t.Errorf("the refusal does not name the control: %v", err)
+	}
+}
+
+// An unmarked page takes the deployment's banner, and its portions are
+// measured against that.
+func TestPortionsOnAnUnmarkedPageUseTheDeploymentsBanner(t *testing.T) {
+	p := scheme() // SECRET//NOFORN
+
+	if err := p.CheckPortions("", []marking.Portion{
+		{Field: "body", Marking: "CONFIDENTIAL"},
+	}); err != nil {
+		t.Errorf("a lower portion on an unmarked page was refused: %v", err)
+	}
+	if err := p.CheckPortions("", []marking.Portion{
+		{Field: "body", Marking: "TOP SECRET"},
+	}); err == nil {
+		t.Error("a portion above the deployment's banner passed")
+	}
+}
