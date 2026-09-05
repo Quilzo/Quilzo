@@ -674,16 +674,58 @@ than for one that has to be described.
 - **EU AI Act Article 50** requires machine-readable marking of AI-generated
   content. Publishing an unmarked AI-generated page is refused, not warned about.
 
+- **The Cyber Resilience Act.** Reporting an actively exploited vulnerability
+  starts on 11 September 2026 and SBOMs are due in December 2027. You cannot
+  report on a component you never inventoried, and here there are none to
+  inventory — `quilzo compliance sbom` is a short document. A site publishes
+  `/.well-known/security.txt` so a finder has somewhere to send it.
+
 For an air-gapped or classified deployment the shape is unusually simple: one
 static binary with no dependency graph to review, a distroless container with no
-shell, no package manager and no interpreter, no telemetry, and no outbound request an
-operator did not configure. The whole state is one directory — back that up and
-you have backed up the content, the history, the access policy and the
-credentials.
+shell, no package manager and no interpreter, and one directory of state — back
+that up and you have backed up the content, the history, the access policy and
+the credentials.
+
+The parts that matter to an isolated network are enforced rather than asserted:
+
+- **`network.mode offline`** refuses every connection that would leave the host,
+  before a packet is sent, and the refusal names the feature that wanted it and
+  what stops working. `quilzo network` prints every purpose and its state, which
+  is the evidence NIST SP 800-53 CM-7 and SC-7 ask for. A test walks the source
+  and fails if a new outbound path appears, because a boundary a feature can
+  step over is one that lasts until somebody adds a feature.
+- **FIPS 140-3.** The whole test suite passes under `GOFIPS140=v1.0.0`, the
+  CMVP-validated Go Cryptographic Module. Having no dependencies means the
+  entire cryptographic surface *is* that module — there is no third-party crypto
+  to argue about.
+- **Hardware-bound authenticators.** Passkey enrolment can be restricted to
+  authenticators that identify themselves, which is what NIST SP 800-63B AAL3
+  requires and what a synced platform passkey is not. Off by default.
+- **Two-person integrity.** `quilzo review require 2 --humans 2` means two
+  people. The count on its own does not: two service accounts satisfy it, and a
+  change nobody has read is not reviewed however many credentials agreed to it.
+- **Classification marking.** The banner is written into every response rather
+  than into templates, because a template can omit it and a page without a
+  banner does not look broken — it looks unclassified. A page marked above the
+  deployment's banner is refused at publish, with no flag to skip it. No
+  vocabulary ships: the levels are read from your own register, lowest first.
+- **Cross-domain transfer.** `quilzo transfer record` writes what was moved,
+  when, who approved it, who carried it and why, with a digest of every file.
+  Verifying on arrival checks both directions — the one that matters is a file
+  that is present and *not* on the manifest.
 
 **What this is not:** an authorisation. No ATO, no third-party assessment, no
-audit. These are the artefacts an assessment needs, produced automatically and
-continuously. Somebody still has to do the assessment.
+audit, and no accreditation for classified use. These are the artefacts an
+assessment needs, produced automatically and continuously, and the mechanical
+controls enforced rather than documented. Somebody still has to do the
+assessment.
+
+Two limits worth stating rather than leaving to be discovered. An AAGUID is
+self-reported and the attestation chain is not verified — that needs FIDO
+metadata refreshed on a schedule an isolated network cannot refresh, so pair it
+with procurement or it is decoration. And offline mode governs this process:
+loopback is permitted, a proxy listening there could forward off-host, and the
+host's own controls are the boundary.
 
 ---
 
@@ -726,6 +768,34 @@ And the gates, from a terminal:
 quilzo brand check    # every claim, and what substantiates it
 quilzo rights         # image licences: expired, lapsing, undeclared
 ```
+
+### A second one, published
+
+**[Aster & Alum](https://quilzo.github.io/demo2/)** is a natural dyer's site,
+built with the same tool and serving the other half of the argument. Marginalia
+is a shop and exercises the things a shop needs — a price that has to be a
+number, a sale that has not opened yet, a catalogue an agent can read.
+Aster & Alum is a business that writes: a journal, a guide with substantiated
+claims, an impact page whose numbers come from records rather than from
+enthusiasm.
+
+It is worth having both because the failure modes differ. A shop is where typed
+records and closed vocabularies earn their keep. A site that publishes prose is
+where the brand gate does — every claim on it is one somebody has to be able to
+stand behind, and `quilzo brand check` is what asks.
+
+```
+/demo2/catalogue.json     the range, machine-readable
+/demo2/journal/           dated writing, with a feed
+/demo2/feed.xml           and the feed itself
+/demo2/guide/             long-form: how to keep an indigo vat
+/demo2/impact/            figures that come from records, not from enthusiasm
+/demo2/search/            reader-facing search over nested content
+```
+
+It is a static export served from GitHub Pages, with no origin behind it and
+nothing executing on the other end — which is most of the point. The search
+works because it was built at publish time, not because a script is running.
 
 ## No dependencies
 

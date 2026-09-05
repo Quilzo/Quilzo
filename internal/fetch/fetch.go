@@ -46,6 +46,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/egress"
 	"io"
 	"net"
 	"net/http"
@@ -172,6 +173,12 @@ func CheckIP(ip net.IP) string {
 
 // Client fetches URLs.
 type Client struct {
+	// Purpose says which declared network purpose this client's connections
+	// serve, so an offline deployment's refusal can name the feature that
+	// wanted the connection rather than an address. Empty means import, which
+	// is what an unattributed fetch is.
+	Purpose string
+
 	Limits Limits
 	// Resolver is swappable so the tests can return a hostile answer without
 	// needing a hostile DNS server.
@@ -403,12 +410,32 @@ func (c *Client) httpClient(lim Limits) (*http.Client, error) {
 	return &http.Client{Transport: transport}, nil
 }
 
-// dialContext wires the resolver override in, when there is one.
+// dialContext wires the resolver override in, when there is one, and puts the
+// deployment's network mode in front of both.
+//
+// Two checks that answer different questions and both have to pass. This
+// client's own rules say where a fetch may point -- no metadata endpoint, no
+// internal range, every DNS answer checked rather than the first. The mode
+// says whether this deployment reaches the network at all. An isolated
+// deployment needs the second, and the second is not a special case of the
+// first: a perfectly ordinary public address is exactly what it refuses.
 func (c *Client) dialContext(d *net.Dialer) func(context.Context, string, string) (net.Conn, error) {
+	purpose := c.Purpose
+	if purpose == "" {
+		purpose = "import"
+	}
 	if c.Resolver == nil {
-		return d.DialContext
+		return func(ctx context.Context, network, address string) (net.Conn, error) {
+			if err := egress.Allowed(purpose, address); err != nil {
+				return nil, err
+			}
+			return d.DialContext(ctx, network, address)
+		}
 	}
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		if err := egress.Allowed(purpose, address); err != nil {
+			return nil, err
+		}
 		host, port, err := net.SplitHostPort(address)
 		if err != nil {
 			return nil, err

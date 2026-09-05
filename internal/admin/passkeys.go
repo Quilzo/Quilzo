@@ -50,6 +50,9 @@ import (
 type Passkeys struct {
 	Credentials []StoredCredential `json:"credentials"`
 
+	// Enrol is which authenticators may register. Zero constrains nothing.
+	Enrol webauthn.Enrolment `json:"-"`
+
 	// Save persists a change. Nil means passkeys are read-only, which is the
 	// right behaviour for a deployment that mounts its state read-only rather
 	// than a reason to fail a request.
@@ -258,6 +261,18 @@ func (s *Server) passkeyPolicy(w http.ResponseWriter, n string) {
 }
 
 // handlePasskeyChallenge starts a registration ceremony.
+// enrolment is the deployment's policy on which authenticators may register.
+//
+// Nil is the default and constrains nothing, which is what most deployments
+// want. A deployment at AAL3 sets it, and then a synced platform passkey --
+// a key that exists in more than one place by design -- stops being enrolable.
+func (s *Server) enrolment() webauthn.Enrolment {
+	if s.Passkeys == nil {
+		return webauthn.Enrolment{}
+	}
+	return s.Passkeys.Enrol
+}
+
 func (s *Server) handlePasskeyChallenge(w http.ResponseWriter, r *http.Request) {
 	who, ok := s.requireAuth(w, r)
 	if !ok {
@@ -285,7 +300,11 @@ func (s *Server) handlePasskeyChallenge(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, map[string]any{
 		"challenge": v,
-		"rp":        map[string]string{"id": party.ID, "name": s.SiteName},
+		// What to ask the browser for. "none" unless a policy needs the
+		// model, because the prompt about sharing information with the site
+		// is one people learn to dismiss when it is shown for no reason.
+		"attestation": s.enrolment().AttestationPreference(),
+		"rp":          map[string]string{"id": party.ID, "name": s.SiteName},
 		// The user handle is the principal, which is what this program calls
 		// people everywhere else. It is not a secret and it is not an email.
 		"user": map[string]string{
@@ -343,6 +362,7 @@ func (s *Server) handlePasskeyRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	party.Enrol = s.enrolment()
 	cred, err := party.Register(c.value, body.Registration)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err)

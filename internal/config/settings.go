@@ -298,6 +298,92 @@ var settings = []Setting{
 			"one on purpose.",
 	},
 	{
+		Key: "marking.levels", Kind: Text, Default: "",
+		Summary: "classification levels this deployment uses, lowest first",
+		Why: "Empty means this deployment does not mark, which is the " +
+			"default and is most of them.\n\nThe levels are the " +
+			"deployment's own, lowest first, because the program never needs " +
+			"to know what the words mean — only which of two is higher, and " +
+			"you said. An installation on OFFICIAL and OFFICIAL-SENSITIVE " +
+			"works exactly as one on SECRET does.\n\nNo vocabulary ships " +
+			"with this program. Shipping one would be shipping a copy of " +
+			"somebody's controlled register that goes stale, and a marking " +
+			"accepted because the copy is out of date is worse than one " +
+			"refused.",
+	},
+	{
+		Key: "marking.banner", Kind: Text, Default: "",
+		Summary: "the marking this deployment carries as a whole",
+		Why: "Rendered at the top and bottom of every page — both, because a " +
+			"banner at the top of a long page is one a reader scrolled past " +
+			"before reaching the part that matters.\n\nIt is also the " +
+			"ceiling. A page marked above it is refused at publish, which is " +
+			"the control that matters: everything else here is placement, " +
+			"and this is spillage. Without it the page renders, the banner " +
+			"says the site's level, and the content underneath is higher " +
+			"than the banner claims.",
+	},
+	{
+		Key: "marking.controls", Kind: Text, Default: "",
+		Summary: "control markings this deployment uses, comma-separated",
+		Why: "From the deployment's own register. A banner containing a " +
+			"marking this program does not recognise is refused rather than " +
+			"rendered: a banner is read by people who act on it.",
+	},
+	{
+		Key: "approval.required_humans", Kind: Text, Default: "0",
+		Summary: "how many approvals must come from people, not machines",
+		Why: "Two-person integrity, as an environment that uses the phrase " +
+			"means it. approval.required counts distinct approvers and does " +
+			"not ask what they are, so a policy of two is satisfied by two " +
+			"service accounts — a nightly import approved by the importer " +
+			"and the deploy account meets 'two approvals' and has been seen " +
+			"by nobody.\n\nZero leaves the behaviour unchanged. Set to " +
+			"two, nothing publishes without two people, and the machines can " +
+			"hold as many credentials as they like.",
+	},
+	{
+		Key: "passkey.require_hardware", Kind: Bool, Default: "false",
+		Summary: "enrol only authenticators that say what they are",
+		Why: "A passkey synced through a platform account is a key that " +
+			"exists in more than one place by design, and a verifier cannot " +
+			"tell it from a hardware key by the signature — both produce a " +
+			"valid assertion. The only thing that distinguishes them is what " +
+			"the authenticator says about itself at registration.\n\nNIST " +
+			"SP 800-63B AAL3 requires a hardware authenticator with a " +
+			"non-exportable key, so a deployment at that level turns this " +
+			"on. Everybody else should leave it off: turning it on without a " +
+			"list of issued keys locks people out.",
+	},
+	{
+		Key: "passkey.authenticators", Kind: Text, Default: "",
+		Summary: "AAGUIDs this deployment enrols, comma-separated",
+		Why: "The makes and models allowed to register, as the hyphenated " +
+			"identifiers vendors publish. Empty means any that identifies " +
+			"itself.\n\nWorth knowing what this proves: an AAGUID is " +
+			"self-reported and this program does not verify the attestation " +
+			"chain, because that needs FIDO metadata refreshed on a schedule " +
+			"and an isolated network cannot refresh anything. Against " +
+			"somebody plugging in a consumer key when policy says otherwise, " +
+			"it works. Against hardware built to impersonate an approved " +
+			"model, it does not — pair it with procurement, so that only " +
+			"issued keys are ever enrolled.",
+	},
+	{
+		Key: "network.mode", Kind: Text, Default: "open",
+		Summary: "whether this deployment may reach the network: open or offline",
+		Why: "offline refuses every connection that would leave this host, " +
+			"before a packet is sent, and names the feature that wanted it. " +
+			"That is what an isolated deployment needs and could not have: " +
+			"the program's network use was spread across six places with no " +
+			"list of them, so 'what would this connect to' was answered by " +
+			"reading all of it.\n\nLoopback is still permitted, because a " +
+			"connection that does not leave the host is not egress and a " +
+			"local model or identity provider is normal here. `quilzo " +
+			"network` prints every purpose, whether it is permitted, and " +
+			"what stops working without it.",
+	},
+	{
 		Key: "security.contact", Kind: Text, Default: "",
 		Summary: "where to report a vulnerability in this site",
 		Why: "Publishes RFC 9116 at /.well-known/security.txt, which is the " +

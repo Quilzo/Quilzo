@@ -63,19 +63,24 @@ var commandNeeds = map[string]need{
 	// to say about the content is a governance act, not a shell one-liner.
 	// Retention and erasure change what is stored about members of the
 	// public, so they need the permission to write rather than to read.
-	"form":       {action: auth.ActEditDraft},
-	"forms":      {action: auth.ActEditDraft},
-	"listing":    {action: auth.ActView},
-	"listings":   {action: auth.ActView},
-	"terms":      {action: auth.ActView},
-	"taxonomy":   {action: auth.ActView},
-	"menu":       {action: auth.ActView},
-	"menus":      {action: auth.ActView},
-	"siem":       {action: auth.ActView},
-	"a11y":       {action: auth.ActView},
-	"verify":     {action: auth.ActView},
-	"scan":       {action: auth.ActView},
-	"csp":        {action: auth.ActView},
+	"form":     {action: auth.ActEditDraft},
+	"forms":    {action: auth.ActEditDraft},
+	"listing":  {action: auth.ActView},
+	"listings": {action: auth.ActView},
+	"terms":    {action: auth.ActView},
+	"taxonomy": {action: auth.ActView},
+	"menu":     {action: auth.ActView},
+	"menus":    {action: auth.ActView},
+	"siem":     {action: auth.ActView},
+	"a11y":     {action: auth.ActView},
+	"verify":   {action: auth.ActView},
+	"scan":     {action: auth.ActView},
+	"csp":      {action: auth.ActView},
+	// Reading what this deployment may connect to is a view. Changing it is
+	// `config set`, which is already privileged.
+	"network":    {action: auth.ActView},
+	"marking":    {action: auth.ActView},
+	"transfer":   {action: auth.ActView},
 	"compliance": {action: auth.ActView},
 	"agents":     {action: auth.ActView},
 	// Declaring what a model may do is deciding a blast radius, which is an

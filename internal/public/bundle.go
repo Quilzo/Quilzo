@@ -151,6 +151,14 @@ func (st *Site) Routes() ([]route, error) {
 		{path: "/robots.txt", file: "robots.txt"},
 		{path: "/license.xml", file: "license.xml"},
 		{path: "/.well-known/tdmrep.json", file: ".well-known/tdmrep.json"},
+		{path: SecurityTxtPath, file: strings.TrimPrefix(SecurityTxtPath, "/")},
+		// The speculation rules, which a static host cannot switch on by
+		// itself: the API is reached through a Speculation-Rules header and a
+		// bucket does not send one. Included anyway, because a host that can
+		// add a header — Netlify, Cloudflare Pages, a reverse proxy — then
+		// has something to point at, and a file nobody references costs a
+		// kilobyte. See speculation.go.
+		{path: SpeculationPath, file: strings.TrimPrefix(SpeculationPath, "/")},
 		{path: "/manifest.webmanifest", file: "manifest.webmanifest"},
 		{path: "/sw.js", file: "sw.js"},
 		{path: "/offline", file: "offline/index.html"},

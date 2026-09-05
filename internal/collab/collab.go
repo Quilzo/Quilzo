@@ -255,12 +255,36 @@ type Policy struct {
 	// reaching the public with a service account's approval — two machines
 	// agreeing with each other, which is not what anyone means by review.
 	RequireHumanForAI bool `json:"require_human_for_ai"`
+	// RequiredHumans is how many of the approvals must come from people,
+	// whatever wrote the change.
+	//
+	// Two-person integrity, as an environment that uses the phrase means it.
+	// Required counts distinct approvers and does not ask what they are, so a
+	// policy of two is satisfied by two service accounts — which is the same
+	// hole RequireHumanForAI closes for model-authored work, left open for
+	// everything else. A nightly import approved by the importer and the
+	// deploy account meets "two approvals" and has been seen by nobody.
+	//
+	// Zero leaves the behaviour unchanged. Set to two, no publication happens
+	// without two people, and the machines can hold as many credentials as
+	// they like.
+	RequiredHumans int `json:"required_humans,omitempty"`
 }
 
 // NewPolicy returns the default: two people, and a human on anything a model
 // wrote.
 func NewPolicy() Policy {
 	return Policy{Required: 2, RequireHumanForAI: true}
+}
+
+// TwoPersonIntegrity is the policy an environment that uses the phrase means:
+// two approvals, both from people, on everything.
+//
+// Offered as a named constructor rather than left to be assembled, because
+// the assembly is where it goes wrong — Required: 2 alone reads like
+// two-person integrity and is satisfied by two machines.
+func TwoPersonIntegrity() Policy {
+	return Policy{Required: 2, RequiredHumans: 2, RequireHumanForAI: true}
 }
 
 // Decision is the answer to "may this be published".
@@ -345,6 +369,23 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 			Reason: "this change was written by a model, so it needs approval " +
 				"from a person. Two machines agreeing with each other is not " +
 				"review.",
+		}
+	}
+
+	// Two-person integrity, checked before the count.
+	//
+	// Before the count because the message matters: "one of two approvals"
+	// when two approvals exist and both are machines is a refusal nobody can
+	// act on, and the action needed is a person, not another approval.
+	if p.RequiredHumans > 0 && humans < p.RequiredHumans {
+		return Decision{
+			Have: len(valid), Need: p.Required,
+			Reason: fmt.Sprintf(
+				"this needs %d approval(s) from people and has %d. There "+
+					"are %d approval(s) in total; the rest are service or "+
+					"model accounts, and a change nobody has read is not "+
+					"reviewed however many credentials agreed to it.",
+				p.RequiredHumans, humans, len(valid)),
 		}
 	}
 

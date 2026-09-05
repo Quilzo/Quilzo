@@ -121,8 +121,21 @@ func cmdExport(root string, args []string) error {
 		}
 	}
 
+	// The deployment's marking, on every exported file. An export is the copy
+	// that ends up on removable media or in somebody's home directory, and a
+	// file with no marking does not look like one whose marking was lost.
+	banner := ""
+	if cfg, cerr := loadConfig(root); cerr == nil {
+		if p, perr := markingFrom(cfg); perr != nil {
+			return errBlocked{perr}
+		} else if p != nil {
+			banner = p.Banner
+		}
+	}
+
 	files, err := export.Export(format, export.Site{
-		Pages: pages, Name: *name, BaseURL: *baseURL,
+		Banner: banner,
+		Pages:  pages, Name: *name, BaseURL: *baseURL,
 		Changed: changed, Redirects: redirects, Collections: colls,
 		Licence: *licence, Publisher: *publisher, Commit: head,
 	}, time.Now())

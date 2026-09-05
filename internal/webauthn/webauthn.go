@@ -92,6 +92,15 @@ type Credential struct {
 	Label     string `json:"label"`
 	CreatedAt int64  `json:"created_at"`
 	LastUsed  int64  `json:"last_used,omitempty"`
+
+	// AAGUID is the authenticator's make and model as it reported itself at
+	// enrolment, and Identified says whether it reported one at all.
+	//
+	// Recorded even when no policy required it, because the useful question
+	// later is "which of these are hardware keys" and it cannot be answered
+	// retrospectively: the authenticator only says at registration.
+	AAGUID     string `json:"aaguid,omitempty"`
+	Identified bool   `json:"identified,omitempty"`
 }
 
 // Registration is what a browser sends after creating a credential.
@@ -123,6 +132,12 @@ type Party struct {
 	// included. Checked as a string rather than derived from ID, because
 	// "close enough" here is the phishing defence.
 	Origin string
+	// Enrol constrains which authenticators may register.
+	//
+	// Empty by default, which is the behaviour described above: any
+	// authenticator, no attestation, the phone included. A deployment at AAL3
+	// fills it in — see attestation.go for what that does and does not prove.
+	Enrol Enrolment
 	// RequireUserVerification demands a PIN, fingerprint or face rather than
 	// mere presence. Off by default: presence alone still proves possession
 	// and origin, and demanding verification from an authenticator that cannot
@@ -176,9 +191,22 @@ func (p Party) Register(challenge string, reg Registration) (Credential, error) 
 	if len(raw["credential id"]) == 0 {
 		return Credential{}, fmt.Errorf("the credential has no id")
 	}
+
+	// Which authenticator this is, when the deployment cares.
+	//
+	// Read from the registration only: an assertion's authenticator data
+	// stops after the counter, so the model is recorded at enrolment and
+	// never re-checked. That is the right shape — a credential cannot move to
+	// a different authenticator.
+	id, identified := AAGUIDOf(raw["authenticator data"])
+	if err := p.Enrol.Check(id, identified); err != nil {
+		return Credential{}, err
+	}
+
 	return Credential{
 		ID: raw["credential id"], PublicKey: raw["public key"],
 		Algorithm: reg.Algorithm, SignCount: count,
+		AAGUID: id.String(), Identified: identified,
 	}, nil
 }
 
