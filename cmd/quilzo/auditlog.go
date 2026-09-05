@@ -233,6 +233,8 @@ func cmdAuditLog(root string, args []string) error {
 		return auditExport(root)
 	case "head":
 		return auditHead(root, args[1:])
+	case "verify-head":
+		return auditVerifyHead(root, args[1:])
 	case "prove":
 		return auditProve(root, args[1:])
 	case "consistency":
@@ -241,7 +243,7 @@ func cmdAuditLog(root string, args []string) error {
 		return auditAnchor(root)
 	default:
 		return fmt.Errorf("unknown auditlog command %q; try show, verify, "+
-			"export, head, prove, consistency or anchor", args[0])
+			"export, head, verify-head, prove, consistency or anchor", args[0])
 	}
 }
 
@@ -393,6 +395,21 @@ func auditHead(root string, args []string) error {
 		return err
 	}
 
+	// Signed, with both algorithms, before it goes anywhere.
+	//
+	// An unsigned head is three fields anybody with a text editor can produce,
+	// so exporting one to a SIEM or handing it to an auditor proved only that
+	// somebody had typed a plausible root. See internal/audit/sign.go for why
+	// there are two signatures rather than one.
+	signer, err := headSigner(root)
+	if err != nil {
+		return err
+	}
+	signed, err := signer.Sign(head)
+	if err != nil {
+		return err
+	}
+
 	if *save {
 		f := &headFile{}
 		if err := loadJSON(headsPath(root), f); err != nil {
@@ -404,15 +421,18 @@ func auditHead(root string, args []string) error {
 		}
 	}
 
-	if w.JSON(head) {
+	if w.JSON(signed) {
 		return nil
 	}
 	w.Human("%s%d entries%s\n", bold, head.Size, reset)
 	w.Human("  root %s\n", head.Root)
+	w.Human("  signed by %s with Ed25519 and ML-DSA-65\n", signed.KeyID)
 	w.Human("\n  %sthis commits to every entry. Get it out of this machine —\n"+
 		"  export it to a SIEM, hand it to an auditor, or anchor it:%s\n",
 		dim, reset)
 	w.Human("    %squilzo auditlog anchor%s\n", dim, reset)
+	w.Human("\n  %sthe public keys to check it are at %s%s\n",
+		dim, headKeysPath(root), reset)
 	w.Human("\n  %sa head kept only here protects nothing: whoever can rewrite\n"+
 		"  the log can rewrite the head beside it%s\n", yellow, reset)
 	return nil

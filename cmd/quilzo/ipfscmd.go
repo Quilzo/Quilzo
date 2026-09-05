@@ -243,9 +243,17 @@ func renderBundle(root, tplDir string) (map[string][]byte, error) {
 	// page's image reference resolves identically in a copy.
 	if lib, lerr := openMedia(root); lerr == nil {
 		if all, aerr := lib.List(); aerr == nil {
+			// Read through the same accessor the server uses, so an exported
+			// copy carries the same manifests a reader would have got from the
+			// live site. Reading the library directly here is what made those
+			// two differ.
+			get, _ := mediaLookup(root)
+			if get == nil {
+				get = lib.Get
+			}
 			exts := map[string]string{}
 			for _, f := range all {
-				_, body, gerr := lib.Get(f.ID)
+				_, body, gerr := get(f.ID)
 				if gerr != nil {
 					continue
 				}
