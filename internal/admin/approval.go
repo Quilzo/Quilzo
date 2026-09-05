@@ -51,6 +51,12 @@ type Approvals struct {
 	// KindOf says whether a principal is a person, a service or a model, which
 	// is what the human-approver rule turns on.
 	KindOf func(principal string) string
+	// Notify tells the outside world a change is waiting for agreement.
+	//
+	// Nil on a build with no webhooks, which is not an error: the review
+	// screen still works and somebody has to think to open it. That is the
+	// state this exists to improve on, not one it refuses to run in.
+	Notify func(*collab.Proposal)
 }
 
 // approvalState is what the review screen shows.
@@ -79,6 +85,17 @@ type approvalState struct {
 	Proposed bool
 	// Matches is whether the proposal is for the draft as it stands.
 	Matches bool
+
+	// MachineWrote says a model produced the content, and Wrote is the commit
+	// message it left.
+	//
+	// Shown, not merely counted. The rule that an AI-authored change needs a
+	// human approval is worth nothing if the human it requires cannot tell
+	// which change that is: the reviewer sees a diff, and a diff does not say
+	// whether a person or a model wrote it. Naming it is what makes the
+	// approval a reading rather than a signature.
+	MachineWrote bool
+	Wrote        string
 }
 
 // approvalFor builds the state for the review screen.
@@ -104,6 +121,13 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 	}
 	st.Proposed = true
 	st.Author, st.AuthorKind, st.Message = prop.Author, prop.AuthorKind, prop.Message
+	// What the machine actually did, read from the commit rather than from the
+	// proposal's note: the note is what somebody typed when offering it, and
+	// the commit is what was done.
+	if c, cerr := s.Store.GetCommit(prop.Content); cerr == nil {
+		st.Wrote = c.Message
+		st.MachineWrote = collab.MachineWrote(c.Message)
+	}
 	st.Matches = prop.Content == draft
 	st.Stale = prop.Stale()
 
@@ -163,10 +187,23 @@ func (s *Server) handlePropose(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	kind := "human"
+	// Who wrote it, not who is offering it.
+	//
+	// This read the proposer's kind alone, so a person opening this screen on
+	// a draft a model had just written proposed it as "human" — and
+	// RequireHumanForAI, the rule that exists to stop two service accounts
+	// approving a model's work, never fired. The command line already got this
+	// right by reading the commit; the two now share one function so they
+	// cannot disagree again.
+	proposerKind := "human"
 	if s.Approvals.KindOf != nil {
-		kind = s.Approvals.KindOf(p.Name)
+		proposerKind = s.Approvals.KindOf(p.Name)
 	}
+	authored := ""
+	if c, cerr := s.Store.GetCommit(draft); cerr == nil {
+		authored = c.Message
+	}
+	kind := collab.AuthorKindFor(authored, proposerKind)
 	message := strings.TrimSpace(r.FormValue("message"))
 
 	if prop == nil {
@@ -190,6 +227,20 @@ func (s *Server) handlePropose(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditPub(p, "approval.propose", "/", map[string]string{
 		"commit": shortHash(draft), "author_kind": kind})
+
+	// Tell whoever has to agree that they are being waited on.
+	//
+	// After the save succeeded, and never able to prevent it: a receiver being
+	// unreachable is not a reason to refuse a proposal, and making it one
+	// hands anybody who can take an endpoint offline the ability to stop the
+	// site being reviewed.
+	//
+	// Without this the review screen is a page somebody has to think to open.
+	// A proposal then sits until its author asks in person, and the reliable
+	// way to stop being asked in person is to turn the requirement off.
+	if s.Approvals.Notify != nil {
+		s.Approvals.Notify(prop)
+	}
 	s.approvalRedirect(w, r, "proposed for review", "")
 }
 
