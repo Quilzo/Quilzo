@@ -154,9 +154,17 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	// Without this an uploaded image could be stored, described and listed and
 	// never appear on a page, which is what every deployment did until now.
 	if lib, lerr := openMedia(root); lerr == nil {
-		st.Media = func(id string) (media.File, []byte, error) {
-			return lib.Get(id)
+		// Images go out carrying a signed manifest: what this site says about
+		// where the picture came from, bound to the picture's own bytes.
+		//
+		// Attached on the way out rather than in the library, because the
+		// library files everything under the hash of its own bytes and a
+		// manifest changes them.
+		get, _ := mediaLookup(root)
+		if get == nil {
+			get = lib.Get
 		}
+		st.Media = get
 		// And the record on its own, for the pages that ask which narrower
 		// copies a picture has: reading the bytes to answer that would read
 		// every image on the page, on every request.
