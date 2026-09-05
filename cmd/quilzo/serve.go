@@ -592,8 +592,18 @@ func cmdServe(root string, args []string) error {
 	}
 
 	fmt.Printf("admin on http://%s\n", *addr)
-	fmt.Printf("  %ssign in with a token: quilzo token issue you --principal you "+
-		"--role admin%s\n", dim, reset)
+	// Both commands. A token names the role it may act up to; a binding is
+	// what grants one. Naming only the token -- which this line did -- sends
+	// somebody to a sign-in that works and then refuses them on every screen,
+	// which reads as a broken admin rather than a missing step.
+	//
+	// Grant first, because then the token is issued to a principal who already
+	// holds a role and there is no second step to forget. It works because
+	// issuing is permitted while no token exists and the principal is already
+	// in the policy, which is the bootstrap in privilege.go.
+	fmt.Printf("  %ssign in: quilzo auth grant you admin%s\n", dim, reset)
+	fmt.Printf("  %s         quilzo token issue you --principal you --role admin%s\n",
+		dim, reset)
 	if len(toks.Tokens) == 0 {
 		fmt.Printf("  %sno tokens exist yet, so nobody can sign in%s\n", yellow, reset)
 	}

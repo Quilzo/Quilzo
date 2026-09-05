@@ -52,7 +52,11 @@
                aria-describedby="tok-help" required
                placeholder="qz_…">
         <p id="tok-help" class="help">Create one with
-          <code>quilzo token issue you --principal you --role admin</code>.</p>
+          <code>quilzo auth grant you admin</code>, then
+          <code>quilzo token issue you --principal you --role admin</code>.
+          Both: the grant is what gives you a role, the token is how you prove
+          you are you, and a token on its own signs in and is then refused by
+          every screen.</p>
       </div>
       <button type="submit">Sign in</button>
     </form>
