@@ -64,7 +64,7 @@ func cmdScan(root string, args []string) error {
 		w.Human("\n  %s%-8s%s %s\n", colour, f.Severity, reset, where)
 		w.Human("      %s\n", f.Detail)
 		if f.Excerpt != "" {
-			w.Human("      %s%s%s\n", dim, f.Excerpt, reset)
+			w.Human("      %s%s%s\n", dim, forTerminal(f.Excerpt), reset)
 		}
 		w.Human("      %sfix: %s%s\n", dim, f.Fix, reset)
 		tags := f.Rule

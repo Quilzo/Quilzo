@@ -228,7 +228,20 @@ func extensionFor(format string) string {
 }
 
 // Get returns a file and its bytes.
+//
+// The id is checked here as well as in Stat, which is not redundant in the way
+// it looks. Reading a path built from an id is safe because the id has been
+// matched against ^[0-9a-f]{64}$ — and before this the only thing performing
+// that match was Stat, called at the top for its metadata. Somebody
+// reordering these two lines, or skipping Stat to avoid reading the record
+// twice, would remove a path-traversal guard while appearing to make the
+// function faster.
+//
+// A guard that is load-bearing should be next to the thing it guards.
 func (l *Library) Get(id string) (media.File, []byte, error) {
+	if err := ValidID(id); err != nil {
+		return media.File{}, nil, err
+	}
 	f, err := l.Stat(id)
 	if err != nil {
 		return media.File{}, nil, err
