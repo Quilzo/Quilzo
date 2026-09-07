@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+
 // Package demo is a complete application, shipped so somebody can see one.
 //
 // # Why a whole site rather than a starter template

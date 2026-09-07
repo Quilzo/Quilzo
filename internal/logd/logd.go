@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+
 // Package logd is a log writer that runs as somebody else.
 //
 // # What this changes, precisely

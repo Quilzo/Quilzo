@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+
 // Package siem exports the audit log to other people's security tooling.
 //
 // # The privacy decision, made once and enforced

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+
 // Package provenance records how each page came to exist, in the form the law
 // now asks for.
 //

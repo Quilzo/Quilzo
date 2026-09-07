@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+
 // Package ext runs extensions: third-party code that observes or transforms
 // content, without being linked into this program.
 //

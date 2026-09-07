@@ -7,6 +7,7 @@ a pointer, and the template language cannot execute anything.
 
 [![ci](https://github.com/quilzo/quilzo/actions/workflows/ci.yml/badge.svg)](https://github.com/quilzo/quilzo/actions/workflows/ci.yml)
 [![licence: AGPL-3.0-or-later](https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue)](LICENSE)
+[![or commercial](https://img.shields.io/badge/or-commercial-blue)](LICENSING.md)
 [![dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen)](go.mod)
 
 ```bash
@@ -1014,12 +1015,36 @@ deterministic. And rollback is a pointer move, not a rebuild.
 
 ## Licence
 
-AGPL-3.0-or-later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Two licences, and you choose. `AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial`
+— alternatives, not conditions to satisfy together. See [LICENSE](LICENSE),
+[LICENSING.md](LICENSING.md) and [NOTICE](NOTICE).
 
-Affero specifically, because nobody distributes a CMS — they host it. A licence
-whose obligations trigger on distribution would never trigger at all for the
-software this is. Running a modified Quilzo as a service for other people means
-those people can have the source.
+**AGPL-3.0-or-later unless you have signed the other one.** That is the default,
+it is not a trial, and it needs no permission, key or conversation. Affero
+specifically, because nobody distributes a CMS — they host it. A licence whose
+obligations trigger on distribution would never trigger at all for the software
+this is. Running a modified Quilzo as a service for other people means those
+people can have the source.
+
+The commercial licence exists for one situation: you cannot comply with the
+AGPL, or you are not permitted to. That is mostly organisations whose policy
+prohibits AGPL code outright — [Google publishes
+theirs](https://opensource.google/documentation/reference/using/agpl-policy)
+and others copy it — and vendors embedding this in a product they will not
+release under the AGPL. Hosting, modifying, charging for it and building a
+business on it are all already permitted by the AGPL and need nothing further.
+
+**There is one Quilzo.** No feature is withheld for paying licensees, there is
+no separate enterprise build, and nothing in this repository branches on which
+licence the operator holds. The commercial licence changes your terms, not the
+program. [LICENSING.md](LICENSING.md) states that as a commitment and
+[docs_claims_test.go](docs_claims_test.go) checks the parts of it a test can
+reach.
+
+This was an addition rather than a relicensing: no permission anybody held was
+withdrawn by it. Contributions now need [a contributor licence
+agreement](CLA.md), which the DCO alone did not provide, and that page is candid
+about what it costs a contributor.
 
 There was a brief Apache-2.0 window on 22 August 2026, reverted the same
 morning. That grant does not retract for anyone who took a copy during it —

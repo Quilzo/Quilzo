@@ -15,6 +15,28 @@ with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ---
 
+This program is also available under a commercial licence, at the licensee's
+option rather than in addition.
+
+  SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+
+The AGPL text above is what you hold unless you have signed the other one, and
+almost every copy is that one. Nobody acquires the commercial licence by
+downloading anything; it is a negotiated agreement with a named party. See
+LICENSING.md, and LICENSES/LicenseRef-Quilzo-Commercial.txt for what it grants.
+
+It grants no more software. There is no feature held back for it, no separate
+build, and no code path in this repository that branches on which licence the
+operator holds.
+
+This was an addition and not a relicensing. It withdrew no permission anybody
+already held — which has to be said in the same terms as the Apache-2.0 window
+recorded below, because a change that cannot reach back is either a principle or
+a convenience, and it is only a principle if it holds when the change is one the
+author wanted.
+
+---
+
 Why the Affero variant, and not something more permissive.
 
 Quilzo is a thing people run as a service for other people. An ordinary GPL
@@ -75,6 +97,15 @@ of them is honest about a permissive grant that cannot be withdrawn.
 
 ---
 
-Contributions are taken under the Developer Certificate of Origin. Copyright
-stays with each contributor; there is no contributor licence agreement and no
-copyright assignment.
+Contributions are taken under the Developer Certificate of Origin and, since the
+commercial licence was added, a contributor licence agreement. Copyright stays
+with each contributor and there is no copyright assignment. See CLA.md, which
+states what the agreement costs a contributor rather than only what it permits
+the project.
+
+Until then this paragraph said there was no contributor licence agreement, and
+that was true when it said it. A DCO grants the right to submit under the
+project's licence and nothing further, so it cannot support offering somebody
+else's contribution under commercial terms. The sentence is replaced rather than
+deleted because a project that quietly drops a promise it stopped keeping is
+harder to trust than one that says which promise it stopped keeping.

@@ -1,4 +1,24 @@
-> **Status: on hold — 22 August 2026.**
+> **Status: superseded — September 2026.**
+>
+> Quilzo is dual-licensed as of September 2026 —
+> `AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial`, see
+> [LICENSING.md](../LICENSING.md) — so two sentences in the draft emails below
+> are now false and are left in place rather than corrected, because a template
+> with a stale claim silently fixed is more dangerous than one marked as stale:
+>
+> - *"I will relicense to Apache-2.0"* is no longer an offer the project can
+>   make. Apache-2.0 permits the closed use the commercial licence exists to
+>   charge for, so honouring it would leave that licence with nothing to sell.
+> - *"a DCO rather than a CLA"* stopped being true when the CLA was added. See
+>   [CLA.md](../CLA.md).
+>
+> **Do not send these emails as written.** The rest — the sequence, who to
+> approach, what the Incubator asks for — is still the best account of the
+> process this repository has, which is why the file is kept.
+>
+> ---
+>
+> **Previous status: on hold — 22 August 2026.**
 >
 > These steps are unsent and still accurate: Quilzo is AGPL-3.0-or-later, which
 > is the licence the emails below describe.

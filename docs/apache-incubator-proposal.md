@@ -13,6 +13,25 @@
 >
 > The blocker that has not moved is the one the proposal is candid about further
 > down: the ASF adopts communities, and this project has one maintainer.
+>
+> **Superseded, September 2026.** Quilzo is now dual-licensed —
+> `AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial`, see
+> [LICENSING.md](../LICENSING.md). That does not change the Category X analysis
+> below, which was always correct, but it removes the offer this document is
+> built on. Relicensing to Apache-2.0 would let anyone build a closed product
+> from the code, which is the single permission the commercial licence exists to
+> charge for; there would be nothing left to sell and so no reason for the
+> commercial licence to exist. The offer of "we will relicense on acceptance" is
+> therefore no longer one the project can make in good faith, and a proposal
+> whose licensing section is an offer it cannot honour should not be sent.
+>
+> It is kept rather than deleted. The IP-clearance argument below — one human
+> author, DCO not CLA, no dependencies at all — is a genuinely unusual position
+> for a project of this size and it stayed true up to the point the CLA was
+> added. Anybody assessing what it would take to move this project anywhere,
+> including a foundation that is not the ASF, wants that analysis. And a document
+> that quietly disappears when the plan changes is the kind of record this
+> repository has decided not to keep.
 
 
 # Quilzo — Apache Incubator Proposal

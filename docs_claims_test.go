@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+
 package main
 
 import (
@@ -244,6 +247,166 @@ func TestBothCopiesOfTheProposalAgreeOnTheBenchmark(t *testing.T) {
 		if strings.Contains(f.body, stale) {
 			t.Errorf("%s still says the benchmark was never run, and the "+
 				"README publishes a measured figure", f.name)
+		}
+	}
+}
+
+// The SPDX expression is the licence claim most likely to be read by a machine,
+// and the one most likely to disagree with itself.
+//
+// A single-licensed project can afford to state its licence once, in LICENSE,
+// and let every file inherit it. A dual-licensed one cannot: a file with no
+// header sits in a repository that says two things, and "which of the two"
+// is not a question the file answers. That matters most in the case nobody
+// plans for, where somebody vendors one file into another codebase and the
+// only licence information that travels with it is the header it did or did
+// not have.
+//
+// So the expression is checked for presence and for being *the same
+// expression*. Two files claiming `AGPL-3.0-or-later OR LicenseRef-Commercial`
+// and `AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial` would both look
+// right in review and refer to different documents, one of which does not
+// exist.
+func TestEverySourceFileCarriesTheDualLicenceHeader(t *testing.T) {
+	const want = "AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial"
+
+	out, err := exec.Command("git", "ls-files",
+		"*.go", "*.py", "*.mjs").Output()
+	if err != nil {
+		t.Skipf("git ls-files: %v", err)
+	}
+	files := strings.Fields(string(out))
+	if len(files) < 100 {
+		t.Fatalf("only %d source files found; this test is checking the "+
+			"wrong tree", len(files))
+	}
+
+	id := regexp.MustCompile(`SPDX-License-Identifier:\s*(.+)`)
+	for _, name := range files {
+		body := read(t, name)
+		m := id.FindStringSubmatch(body)
+		if m == nil {
+			t.Errorf("%s has no SPDX-License-Identifier. In a repository "+
+				"offering two licences, a file that names neither is a file "+
+				"whose terms have to be guessed", name)
+			continue
+		}
+		if got := strings.TrimSpace(m[1]); got != want {
+			t.Errorf("%s claims %q, every other file claims %q", name, got, want)
+		}
+	}
+}
+
+// Both halves of the expression resolve to a document.
+//
+// `LicenseRef-` is SPDX's escape hatch for a licence that is not on its list,
+// and the whole point of using it rather than inventing a bare name is that a
+// scanner can follow it to a file. An identifier that resolves to nothing is
+// worse than no identifier: it reports as handled.
+func TestBothLicencesInTheExpressionExist(t *testing.T) {
+	for name, mustSay := range map[string]string{
+		"LICENSES/AGPL-3.0-or-later.txt":            "GNU AFFERO GENERAL PUBLIC LICENSE",
+		"LICENSES/LicenseRef-Quilzo-Commercial.txt": "commercial licence",
+		"LICENSING.md": "AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial",
+		"CLA.md":       "Harmony",
+	} {
+		if body := read(t, name); !strings.Contains(body, mustSay) {
+			t.Errorf("%s does not contain %q", name, mustSay)
+		}
+	}
+
+	// The AGPL half must be the same text as LICENSE, not a paraphrase of it
+	// or a copy that drifted. This is the only licence in the pair whose
+	// wording is not the project's to choose.
+	if read(t, "LICENSES/AGPL-3.0-or-later.txt") != read(t, "LICENSE") {
+		t.Error("LICENSES/AGPL-3.0-or-later.txt differs from LICENSE. The " +
+			"AGPL text is not ours to edit, and two copies of it in one " +
+			"repository must be one copy")
+	}
+
+	// A reader who finds only LICENSE has been told half the arrangement.
+	if !strings.Contains(read(t, "README.md"), "LICENSING.md") {
+		t.Error("the README never points at LICENSING.md, so the second " +
+			"licence is discoverable only by reading source headers")
+	}
+}
+
+// Dual licensing is one exception away from open core, and the exception
+// always looks reasonable at the time.
+//
+// LICENSING.md and GOVERNANCE.md both promise there is one program: no feature
+// held back, no separate build, no code path that branches on which licence the
+// operator holds. That promise is prose, and prose does not fail a build.
+//
+// This checks the part a test can reach — that nothing in the tree reads a
+// licence tier and decides what to do about it. It cannot prove the commitment
+// is kept, because a determined open-core tier would not use any of these
+// names. What it does catch is the realistic failure: somebody adds a licence
+// check for a reason that seemed fine, and nobody reviewing it remembers this
+// file exists. That is how open core actually arrives — as drift, not as a
+// decision.
+func TestNothingBranchesOnWhichLicenceTheOperatorHolds(t *testing.T) {
+	out, err := exec.Command("git", "ls-files", "*.go").Output()
+	if err != nil {
+		t.Skipf("git ls-files: %v", err)
+	}
+
+	// Identifiers that would only exist to gate behaviour on a licence tier.
+	// Deliberately narrow: each is a name somebody would reach for while
+	// building the thing this project promised not to build.
+	tiering := regexp.MustCompile(`(?i)\b(` +
+		`licen[cs]eKey|licen[cs]e_key|` +
+		`isEnterprise|enterpriseOnly|isPro\b|proOnly|` +
+		`isLicen[cs]ed|hasLicen[cs]e|licen[cs]eTier|` +
+		`checkLicen[cs]e|requireLicen[cs]e|` +
+		`commercialOnly|paidOnly|premiumOnly)`)
+
+	for _, name := range strings.Fields(string(out)) {
+		if name == "docs_claims_test.go" {
+			continue // the pattern above is in it
+		}
+		body := read(t, name)
+		for _, m := range tiering.FindAllString(body, -1) {
+			t.Errorf("%s contains %q. LICENSING.md and GOVERNANCE.md both "+
+				"promise one program with no code path branching on the "+
+				"operator's licence. If this is that path, the promise is "+
+				"broken; if it is not, it needs a different name", name, m)
+		}
+	}
+}
+
+// The decision this reversed stays quoted.
+//
+// GOVERNANCE.md ruled dual licensing out, deliberately and with a reason, and
+// then the project did it anyway. CONTRIBUTING.md promised there was no CLA
+// waiting behind the DCO, and then one arrived. Both are reversals of positions
+// somebody could have acted on.
+//
+// This is the same test as TestTheApacheWindowStaysRecorded and exists for the
+// same reason: a retraction is exactly the sort of paragraph that gets tidied
+// away later, because it is unflattering and the file reads more cleanly
+// without it. A reader deciding whether to trust a commitment in one of these
+// files needs to be able to see which commitments have already been withdrawn.
+func TestTheReversedDecisionsStayRecorded(t *testing.T) {
+	for _, want := range []struct{ file, phrase, why string }{
+		{"GOVERNANCE.md", "ruled out by choice rather than by arithmetic",
+			"the paragraph that ruled dual licensing out"},
+		{"GOVERNANCE.md", "no open-core tier",
+			"the commitment that was kept, which is what makes the other " +
+				"reversal defensible rather than drift"},
+		{"CONTRIBUTING.md", "no CLA waiting behind the DCO",
+			"the promise the CLA withdrew"},
+		{"CONTRIBUTING.md", "No longer true",
+			"the bullet that said nobody could relicense your code without " +
+				"asking, corrected rather than deleted"},
+		{"NOTICE", "there was no contributor licence agreement",
+			"the same withdrawal, in the file a packager reads"},
+	} {
+		if !strings.Contains(read(t, want.file), want.phrase) {
+			t.Errorf("%s no longer contains %q — %s. A project that "+
+				"documents a reversal and then removes the documentation has "+
+				"done the reversal twice",
+				want.file, want.phrase, want.why)
 		}
 	}
 }

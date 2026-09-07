@@ -1,0 +1,55 @@
+Quilzo Commercial Licence
+=========================
+
+This file is a pointer, not a licence. It exists so that the SPDX identifier
+`LicenseRef-Quilzo-Commercial`, which appears in every source file in this
+repository, resolves to something a reader and a licence scanner can find.
+
+The commercial licence is a negotiated agreement between the copyright holder
+and one named licensee. It is not a public licence and there is no version of
+it to accept by downloading, using, or continuing past a notice. Nobody holds
+it by accident. If you have not signed one, you do not have one, and the terms
+that apply to you are the AGPL-3.0-or-later text in this directory.
+
+That is deliberate. A public "commercial licence" file would have to be a
+take-it-or-leave-it EULA, and the clauses that matter in one of those --
+warranty, indemnity, liability caps, termination, what happens when something
+goes wrong -- are precisely the clauses that have to be negotiated to mean
+anything. Publishing a template here would create the appearance of terms
+without the substance of them.
+
+
+What it grants
+
+  The same software, without the AGPL's conditions. In particular, without
+  the section 13 obligation to offer source to users interacting with a
+  modified version over a network.
+
+  It does not grant more software. There is no feature held back for it, no
+  separate enterprise build, and no code path that checks which licence you
+  hold. See LICENSING.md, which states that as a commitment rather than a
+  description of the present moment.
+
+
+Who needs one
+
+  Anyone who cannot comply with AGPL-3.0-or-later, or is not permitted to.
+  In practice that is: organisations whose policy prohibits AGPL code
+  outright, and vendors embedding this in a product they do not intend to
+  release under the AGPL.
+
+  Everybody else already has a licence, at no cost, with no registration and
+  no conversation: the AGPL one.
+
+
+How to obtain one
+
+  https://github.com/Quilzo/Quilzo -- open an issue, or use the contact in
+  SECURITY.md. Expect a conversation and a signed document, not a checkout.
+
+
+One disclosure that a licensee's counsel will want, made here rather than
+found later: this project was public under Apache-2.0 for approximately eighty
+minutes on 22 August 2026. That grant is irrevocable for anyone who took a
+copy in that window, and it covers the commits between 656bc88 and 67a85b8.
+NOTICE records the times, the reasoning, and an estimate of the exposure.
