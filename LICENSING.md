@@ -48,12 +48,36 @@ can be held against the repository later:
 > branches on which licence the operator holds. The commercial licence changes
 > the terms you hold the software under. It does not change the software.
 
-That is a choice and not an inevitability — the usual thing to do here is open
-core, where the free edition is deliberately the worse one. Open core makes the
-project's own documentation adversarial, because every page has to be read
-twice: once for what the software does, and once for whether the reader is
-allowed to have it. A CMS whose argument is that you can verify what was
-published cannot afford a second, unverifiable version of itself.
+That is a choice and not an inevitability, and it is worth being specific about
+what the usual choice is, because "AGPL plus a commercial licence" in the wild
+almost always means a third thing as well.
+
+- **Grafana** moved its core from Apache-2.0 to AGPLv3 in April 2021. Grafana
+  Enterprise is the commercial edition, and the features it adds over the open
+  source one [include](https://grafana.com/licensing/) enhanced LDAP, SAML,
+  access control, reporting and usage insights.
+- **Bitwarden**'s server is AGPL-3.0, and
+  [new modules aimed at larger organisations](https://github.com/bitwarden/server/blob/main/LICENSE_FAQ.md)
+  are released under the Bitwarden Licence — source-available, non-production
+  only, paid subscription for production use.
+
+Both are respectable companies and neither is doing anything underhanded; this
+is simply what the model looks like in practice. But note what is on Grafana's
+list: **SAML and access control.** That is the exact failure mode
+[GOVERNANCE.md](GOVERNANCE.md) names — a system arguing that its users deserve
+less protection than its customers — and it is not a hypothetical risk invented
+to make a promise sound brave. It is the industry default, found in the first two
+comparable projects anybody looks at.
+
+Open core also makes a project's own documentation adversarial, because every
+page has to be read twice: once for what the software does, and once for whether
+the reader is allowed to have it. A CMS whose entire argument is that you can
+verify what was published cannot afford a second, unverifiable version of
+itself.
+
+So the commitment above is made against a named alternative rather than against
+nothing. Quilzo does the first two parts of the standard pattern and not the
+third.
 
 The commercial licence is also not a public licence. It is a negotiated,
 signed agreement with one named party. Nobody acquires it by downloading
@@ -69,10 +93,31 @@ back. Elastic left Apache-2.0 for SSPL and ELv2 in 2021 and
 [added AGPL back](https://www.elastic.co/blog/elasticsearch-is-open-source-again)
 on 29 August 2024 — as a third option, in their words "simply adding another
 option, and not removing anything". Redis left BSD-3 for SSPL and RSALv2 in
-March 2024 and
-[returned to AGPLv3](https://redis.io/blog/agplv3/) in May 2025, by which point
-the Valkey fork had taken ground it has not given back. Both trips ended at
-AGPL. Quilzo is already there.
+March 2024 and [returned to AGPLv3](https://redis.io/blog/agplv3/) in May 2025.
+
+Both trips ended at AGPL, so a project already there has no reason to leave for
+BUSL, FSL or the Elastic Licence, all of which mean giving up open source
+status. That is the case for the base licence and it is a strong one.
+
+**The rest of the Redis story is the case for the other licence, and it does not
+flatter AGPL.** Returning to AGPLv3 did not win Redis its position back. By 2026
+Valkey — the fork the licence change caused — is what AWS ElastiCache and Google
+Memorystore provision for new clusters by default, and Valkey 9.1 is the default
+cache package on major Linux distributions. AGPL was the right licence and it
+was not a recovery strategy, because the buyers who left were the ones whose
+legal departments will not accept AGPL at all.
+
+Both halves of that are true at once, and this page would be dishonest with
+either one on its own:
+
+- AGPL is the correct base for software that is hosted rather than distributed,
+  and every alternative on offer costs more than it returns.
+- AGPL alone leaves a population unserved that no amount of good engineering
+  reaches, because their objection is not to the software.
+
+The commercial licence is the second sentence's answer. It is not there because
+the AGPL is insufficient as a licence; it is there because a blanket
+prohibition is not an argument anybody can win by writing better code.
 
 So this is an addition and not a relicensing. **No permission anyone holds today
 is withdrawn by it.** Every copy already taken stays under the terms it was taken

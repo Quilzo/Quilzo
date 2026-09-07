@@ -162,6 +162,17 @@ licence the operator holds — stated as a commitment in
 a decision; it arrives as a series of individually reasonable exceptions. A
 commitment that is only in prose is the kind that goes.
 
+That the exceptions are individually reasonable is not speculation. Grafana went
+Apache-2.0 to AGPLv3 in 2021 and its commercial edition
+[adds](https://grafana.com/licensing/) enhanced LDAP, SAML, access control,
+reporting and usage insights over the open source one. Bitwarden's server is
+AGPL-3.0 with newer enterprise modules under a source-available licence needing
+a paid subscription in production. Both are AGPL-plus-commercial, like this, and
+both put access control on the paid side — which is the argument three
+paragraphs up, made by the two most comparable projects anybody would check.
+The failure mode is the industry default, so a promise not to do it needs to
+cost something to break.
+
 **The cost, which is not paid by the maintainer.** Contributions now need a
 [contributor licence agreement](CLA.md), where before a DCO was enough. That
 makes the project harder to contribute to — some employers forbid signing CLAs,
