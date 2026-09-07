@@ -76,7 +76,13 @@ no interpreter, no libc.  It runs as nonroot.  amd64 and arm64.
 
 The image has the same provenance the binaries do:
 
-     gh attestation verify oci://ghcr.io/quilzo/quilzo:v0.1.0 --repo Quilzo/Quilzo
+     gh attestation verify oci://ghcr.io/quilzo/quilzo:latest --repo Quilzo/Quilzo
+
+Image tags drop the `v`.  The git tag `v0.1.0` publishes `0.1.0`, `0.1` and
+`latest`, so `ghcr.io/quilzo/quilzo:v0.1.0` is not a thing that exists and
+asking for it gets a 404 indistinguishable from the image being private.  That
+is a note rather than a footnote because this file asked for the wrong one
+first.
 
 
 From source
