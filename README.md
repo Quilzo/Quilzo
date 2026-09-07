@@ -837,6 +837,33 @@ OIDC discovery walk.
 
 ## Getting started
 
+### With a release binary
+
+One static file, nothing to install alongside it. linux, macOS and Windows, on
+amd64 and arm64.
+
+```bash
+curl -LO https://github.com/Quilzo/Quilzo/releases/latest/download/quilzo-linux-amd64
+curl -LO https://github.com/Quilzo/Quilzo/releases/latest/download/SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS
+sudo install -m 0755 quilzo-linux-amd64 /usr/local/bin/quilzo
+```
+
+The checksum proves the file matches the list. It does not prove the list came
+from here, and if you fetched both from the same place you have checked that a
+page agrees with itself. The attestation is the one that answers the other
+question:
+
+```bash
+gh attestation verify quilzo-linux-amd64 --repo Quilzo/Quilzo
+```
+
+That succeeds only if this repository's release workflow built the file, from a
+tag, and it says which tag. Each release also carries `quilzo.cdx.json`, a
+CycloneDX 1.6 bill of materials generated **by the binary** rather than read
+from the source tree — so it describes the file you downloaded rather than what
+HEAD would build today. It lists one component: the Go toolchain.
+
 ### With Docker
 
 The image is `gcr.io/distroless/static-debian12:nonroot`: the binary, CA

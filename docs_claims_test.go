@@ -410,3 +410,45 @@ func TestTheReversedDecisionsStayRecorded(t *testing.T) {
 		}
 	}
 }
+
+// INSTALL counts the test suite, so the count is derived rather than recalled.
+//
+// It said "sixty-six packages" from whenever that was true until September
+// 2026, by which point the answer was seventy-nine. Nobody lied and nobody
+// noticed: a number in prose has no relationship to the thing it counts, and
+// the failure is silent in the direction that makes the project look smaller
+// than it is.
+//
+// The interesting property is not that the number is right today. It is that
+// being wrong is now a test failure that names the correct value, so the fix
+// is mechanical and nobody has to decide whether it is worth chasing.
+func TestInstallCountsTheTestSuiteCorrectly(t *testing.T) {
+	out, err := exec.Command("go", "list", "-f",
+		"{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}", "./...").Output()
+	if err != nil {
+		t.Skipf("go list: %v", err)
+	}
+	want := len(strings.Fields(string(out)))
+	if want < 50 {
+		t.Fatalf("only %d packages have tests; this is counting the wrong "+
+			"tree", want)
+	}
+
+	// Spelled out, because that is how INSTALL is written and a document that
+	// switches to digits for one number reads like it was patched.
+	tens := map[int]string{2: "twenty", 3: "thirty", 4: "forty", 5: "fifty",
+		6: "sixty", 7: "seventy", 8: "eighty", 9: "ninety"}
+	units := map[int]string{1: "one", 2: "two", 3: "three", 4: "four",
+		5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine"}
+	spelled := tens[want/10]
+	if u := want % 10; u != 0 {
+		spelled += "-" + units[u]
+	}
+
+	install := read(t, "INSTALL")
+	if !strings.Contains(install, spelled+" packages") {
+		t.Errorf("INSTALL does not say %q. %d packages have tests, and the "+
+			"suite it describes is the one `make check` runs",
+			spelled+" packages", want)
+	}
+}
