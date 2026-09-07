@@ -119,7 +119,7 @@ func Build(commit string, pages map[string]any) *Index {
 		for _, field := range keys {
 			for _, text := range fieldStrings(fields[field]) {
 				counts := map[string]*Posting{}
-				for pos, term := range Tokenise(text) {
+				for pos, term := range indexTerms(text) {
 					if budget <= 0 {
 						break
 					}
@@ -292,7 +292,7 @@ type Result struct {
 // two-word query returns most of the site and buries the page somebody wanted,
 // which is how a search box gets a reputation for being useless.
 func (idx *Index) Search(query string, limit int) []Result {
-	terms := Tokenise(query)
+	terms := indexTerms(query)
 	if len(terms) == 0 || idx == nil {
 		return nil
 	}
