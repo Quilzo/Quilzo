@@ -429,3 +429,37 @@ func hostOf(ref string) string {
 	}
 	return ""
 }
+
+// ExecutableMarkup reports the places a template carries markup that can run.
+//
+// The patterns already existed, used one way: Adopt strips them, because
+// somebody ran `quilzo template adopt` on a specific file and wants a converted
+// file back. A caller who did not ask for a conversion needs the question
+// answered instead of the file quietly changed, and answering it from a second
+// copy of the same patterns is how the two ends of this drift apart.
+//
+// So this reads them rather than restating them. A construct that becomes
+// strippable but not detectable, or the reverse, fails a test that compares the
+// two.
+func ExecutableMarkup(src string) []string {
+	var found []string
+
+	// Order matters, and it is the order stripScript uses: a complete element
+	// matches both patterns, so it is taken out of the working copy before the
+	// looser one runs. Otherwise one <script>...</script> reports twice and the
+	// second report names a thing the caller does not have.
+	rest := reScript.ReplaceAllStringFunc(src, func(m string) string {
+		found = append(found, "a <script> element: "+excerpt(m))
+		return ""
+	})
+	for _, m := range reScriptOpen.FindAllString(rest, -1) {
+		found = append(found, "a script reference: "+excerpt(m))
+	}
+	for _, m := range reHandler.FindAllString(src, -1) {
+		found = append(found, "an inline event handler:"+excerpt(m))
+	}
+	for _, m := range reJSURL.FindAllString(src, -1) {
+		found = append(found, "an executable URL scheme: "+excerpt(m))
+	}
+	return found
+}
