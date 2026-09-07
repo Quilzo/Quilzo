@@ -1,7 +1,11 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/a11y"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 	"os"
 	"sort"
 	"strings"
@@ -22,11 +26,13 @@ func cmdCompliance(root string, args []string) error {
 		return complianceCrypto()
 	case "controls":
 		return complianceControls()
+	case "accessibility", "acr":
+		return complianceACR(root, args[1:])
 	case "summary":
 		return complianceSummary(root)
 	default:
 		return fmt.Errorf("unknown compliance command %q; try sbom, crypto, "+
-			"controls or summary", args[0])
+			"controls, accessibility or summary", args[0])
 	}
 }
 
@@ -191,5 +197,66 @@ func complianceSummary(root string) error {
 		"report and a\n  control mapping is not an assessment — this is the "+
 		"evidence somebody\n  needs before any of that is worth starting, "+
 		"produced accurately rather\n  than approximately.%s\n", dim, reset)
+	return nil
+}
+
+// complianceACR prints an accessibility conformance report.
+//
+// The artefact a government or a large institution asks for before it will
+// buy, and almost always a document somebody wrote by hand months after the
+// software changed. This one is generated from a scan of the content actually
+// in this store, and reports only what was evaluated — see internal/a11y/acr.go
+// for why it does not enumerate WCAG.
+func complianceACR(root string, args []string) error {
+	fs := flag.NewFlagSet("accessibility", flag.ContinueOnError)
+	tplDir := fs.String("templates", "templates", "where the layouts live")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	s, err := store.Open(root)
+	if err != nil {
+		return err
+	}
+	live := s.GetRef(site.RefLive)
+	if live == "" {
+		return fmt.Errorf(
+			"nothing is published, so there is no content to report on. A " +
+				"conformance report over an empty site would be a clean " +
+				"report about nothing")
+	}
+	reports, err := checkAccessibility(root, s, live, *tplDir)
+	if err != nil {
+		return fmt.Errorf(
+			"the accessibility check could not run, so this would be a "+
+				"report of a check that did not happen: %w", err)
+	}
+
+	acr := a11y.BuildACR(reports)
+	if w.JSON(acr) {
+		return nil
+	}
+
+	w.Human("%sAccessibility conformance%s  %d page(s) scanned\n",
+		bold, reset, acr.Pages)
+	w.Human("\n  %-9s %-19s %s\n", "CRITERION", "RESULT", "CHECKED BY")
+	for _, c := range acr.Evaluated {
+		checks := strings.Join(c.Checks, "; ")
+		if checks == "" {
+			checks = "—"
+		}
+		w.Human("  %-9s %-19s %s\n", c.Number, c.Result, truncate(checks, 44))
+		if c.Remarks != "" {
+			w.Human("            %s%s%s\n", dim, c.Remarks, reset)
+		}
+	}
+
+	w.Human("\n  %sNot evaluated — these need a person:%s\n", bold, reset)
+	for _, n := range acr.NotEvaluated {
+		w.Human("    %s%s%s\n", dim, n, reset)
+	}
+	w.Human("\n  %s%s%s\n", yellow, acr.Caveat, reset)
+	w.Human("\n  %sas JSON, for a procurement pack:%s\n", dim, reset)
+	w.Human("    quilzo --json compliance accessibility\n")
 	return nil
 }
