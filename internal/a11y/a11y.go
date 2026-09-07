@@ -92,6 +92,14 @@ func (r *Report) Blocks() bool {
 	return false
 }
 
+// Covered and NotCovered expose what the checks claim, so a conformance report
+// can be built from what this program actually does rather than from a list
+// somebody maintained beside it. See acr.go.
+func Covered() []string { return append([]string(nil), covered...) }
+
+// NotCovered is what needs a person.
+func NotCovered() []string { return append([]string(nil), notCovered...) }
+
 // What the checks below cover, stated so a clean report cannot be mistaken for
 // a guarantee of accessibility.
 var (
