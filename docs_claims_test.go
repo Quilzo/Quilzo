@@ -452,3 +452,43 @@ func TestInstallCountsTheTestSuiteCorrectly(t *testing.T) {
 			spelled+" packages", want)
 	}
 }
+
+// No document asks for an image tag that begins with "v".
+//
+// The git tag is v0.1.0 and the image tags are 0.1.0, 0.1 and latest, because
+// docker/metadata-action's semver patterns strip the prefix. So
+// ghcr.io/quilzo/quilzo:v0.1.0 does not exist, and both INSTALL and the
+// release workflow asked for it — the workflow in the very step written to
+// prove the image is reachable, where a 404 for a tag that was never pushed
+// is indistinguishable from a 404 for a private package.
+//
+// That is the expensive shape of this mistake. The check would have failed
+// every release, for a reason that looked exactly like the reason it existed,
+// until somebody decided the check was broken and removed it.
+//
+// Static, and deliberately narrow: it does not ask whether a tag exists, which
+// would put the network in the test suite. It asks whether anything wrote the
+// one form that cannot exist.
+func TestNoDocumentAsksForAnImageTagWithAVeePrefix(t *testing.T) {
+	files := []string{"README.md", "INSTALL", "NEWS",
+		".github/workflows/release.yml", "docs/codeql-dismissals.md"}
+
+	// ghcr.io/owner/name:vN..., in a command rather than in prose about it.
+	bad := regexp.MustCompile(`ghcr\.io/[A-Za-z0-9._/-]+:v\d`)
+	for _, name := range files {
+		for _, line := range strings.Split(read(t, name), "\n") {
+			m := bad.FindString(line)
+			if m == "" {
+				continue
+			}
+			// INSTALL names the wrong form once, to say it is wrong.
+			if strings.Contains(line, "is not a thing that exists") {
+				continue
+			}
+			t.Errorf("%s asks for %q. Image tags drop the v: the git tag "+
+				"v0.1.0 publishes 0.1.0, 0.1 and latest, so this reference "+
+				"404s and the 404 looks like the image being private",
+				name, m)
+		}
+	}
+}

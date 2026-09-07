@@ -206,19 +206,34 @@ jobs:
       # this job's own token would prove only that the job can reach what the
       # job just pushed.
       #
+      # The tag comes from the metadata step rather than from github.ref_name,
+      # and that distinction is the whole of this check working. `type=semver`
+      # strips the leading v, so the git tag v0.1.0 produces image tags 0.1.0,
+      # 0.1 and latest, and there is no v0.1.0 to fetch. The first version of
+      # this step asked for github.ref_name and would have failed every release
+      # with a 404 that looked exactly like the private-package failure it was
+      # written to catch — a check that cries wolf is a check somebody deletes.
+      # Reading steps.meta.outputs.version asks the tagging step what it named
+      # the thing, which cannot drift from what was actually pushed.
+      #
       # Visibility cannot be set from here. There is no REST endpoint for it
       # and the workflow's token could not use one if there were, so this fails
       # loudly with the fix rather than pretending to apply it.
       - name: The image must be pullable by somebody who is not us
         run: |
           repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          tag='${{ steps.meta.outputs.version }}'
+          if [ -z "$tag" ]; then
+            echo "::error::the metadata step produced no version; nothing to check"
+            exit 1
+          fi
           token=$(curl -fsS "https://ghcr.io/token?scope=repository:${repo}:pull&service=ghcr.io" \
             | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || true)
           if [ -n "$token" ] && curl -fsS -o /dev/null \
               -H "Authorization: Bearer $token" \
               -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
-              "https://ghcr.io/v2/${repo}/manifests/${{ github.ref_name }}"; then
-            echo "anonymous pull of ghcr.io/${repo}:${{ github.ref_name }} works"
+              "https://ghcr.io/v2/${repo}/manifests/${tag}"; then
+            echo "anonymous pull of ghcr.io/${repo}:${tag} works"
             exit 0
           fi
           echo "::error::ghcr.io/${repo} is not anonymously pullable. The image"
