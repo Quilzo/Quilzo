@@ -30,6 +30,14 @@
 // trust the model" and becomes "what is the worst a template can do", which has
 // a fixed answer.
 //
+// That claim was true of the language and not quite true of a template. A
+// template is also literal markup, and literal markup can carry a <script>
+// element that the language never sees — so for a while the answer to "what is
+// the worst a template can do" was "whatever the CSP would have allowed", which
+// is a different sentence. Validate refuses executable markup now, using the
+// same patterns `quilzo template adopt` strips, so the paragraph above describes
+// a check rather than an intention.
+//
 // **The commit records that a machine wrote it.** The instruction, the model and
 // the fact of machine authorship go into the commit metadata. Six months later,
 // "why does this page say that" has an answer, and an auditor can tell
@@ -48,7 +56,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/quilzo/quilzo/internal/egress"
 	"net"
 	"net/http"
 	"net/url"
@@ -59,6 +66,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/egress"
+	"github.com/quilzo/quilzo/internal/foreign"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
@@ -175,6 +184,26 @@ func Validate(p *Proposal) error {
 				Detail: fmt.Sprintf("%s uses {%% raw %%} on %s. Extending trust to "+
 					"content is a human decision; add it by hand if you mean it",
 					name, strings.Join(sites, ", "))}
+		}
+		// Markup that can execute is the same decision, and this used to be the
+		// gap between the two ways foreign template text gets into the store.
+		// `quilzo template adopt` strips script, inline handlers and executable
+		// URL schemes and says what it took out; a proposal arriving here was
+		// checked for {% raw %} and nothing else, so a model could put a
+		// <script> element in a layout that renders on every public page.
+		//
+		// Only the CSP stopped it, and that is defence in depth working rather
+		// than the control being present. A person adding script to a template
+		// by hand has decided something; a model doing it is a proposal to
+		// reject. Refused rather than stripped, for the reason the rest of this
+		// function refuses: a proposal silently edited into something safe is a
+		// proposal the reviewer approved without seeing.
+		if sites := foreign.ExecutableMarkup(src); len(sites) > 0 {
+			return &Rejection{
+				Reason: "the model proposed a template that can execute",
+				Detail: fmt.Sprintf("%s contains %s. This site is served with "+
+					"script-src 'none' and has no scripts; add it by hand if "+
+					"you mean it", name, strings.Join(sites, "; "))}
 		}
 		total += len(src)
 	}
