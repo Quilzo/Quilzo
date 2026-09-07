@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+
 // Package site is the workflow: draft, review, publish, roll back.
 //
 // The workflow is the point rather than a wrapper over the store. Conventional

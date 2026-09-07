@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+
 // Package otlp emits agent runs as OpenTelemetry traces.
 //
 // # Why this exists, and why it is not a dependency

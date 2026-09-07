@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+
 // Package assist turns an instruction into a draft nobody is serving yet.
 //
 // This is the piece the rest of the architecture exists for, and the reason it

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+
 // Package throttle slows down repeated authentication failures.
 //
 // NIST SP 800-63B-4 says a verifier SHALL rate-limit failed authentication

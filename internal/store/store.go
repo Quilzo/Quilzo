@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+
 // Package store holds content that cannot be edited, only added to.
 //
 // Every CMS breach worth reading about has the same shape. WordPress's wp2shell

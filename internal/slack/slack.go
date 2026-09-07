@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+
 // Package slack accepts a request from Slack and proves it came from Slack.
 //
 // # What this is, and what it deliberately is not

@@ -61,6 +61,30 @@ one.
 
 ** Licence
 
+*** Two licences, and you choose:
+    AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial.  The AGPL one is what
+    you hold unless you have signed the other, it is not a trial, and it needs
+    no permission or key.  Nothing anybody already held was withdrawn -- this
+    was an addition.  See LICENSING.md.
+
+*** The commercial licence exists for operators who cannot use the AGPL, or
+    are not permitted to: organisations under a blanket prohibition on AGPL
+    code, and vendors embedding this in a product they will not release under
+    it.  Hosting Quilzo, modifying it and charging for it are all already
+    permitted by the AGPL and need nothing further.
+
+*** There is one Quilzo.  No feature is held back for paying licensees, there
+    is no separate build, and nothing in the source branches on which licence
+    the operator holds.  `quilzo --version` says so, and a test fails if any
+    file starts checking.
+
+*** Contributions now need a contributor licence agreement as well as the
+    DCO sign-off, because a DCO does not grant the right to offer somebody
+    else's contribution under commercial terms.  Copyright still stays with
+    the contributor; there is no assignment.  This makes the project harder
+    to contribute to and CLA.md says so plainly.  GOVERNANCE.md had ruled
+    dual licensing out and quotes the paragraph it reversed.
+
 *** AGPL-3.0-or-later.  There was an Apache-2.0 window of about eighty
     minutes on 22 August 2026; see NOTICE, which records it and the part of
     it that cannot be reverted.
