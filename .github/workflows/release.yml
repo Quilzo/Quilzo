@@ -243,3 +243,70 @@ jobs:
           echo "::error::-> Change visibility -> Public, and link it to this"
           echo "::error::repository so later versions inherit."
           exit 1
+
+      # Run the quickstart the README tells people to run.
+      #
+      # Everything else about this image was verified without starting it:
+      # the manifest listed two platforms, the config named the right
+      # entrypoint and user, the attestation checked out, and an anonymous pull
+      # worked. All of that was true of v0.1.0, whose documented three-command
+      # quickstart could not reach a served page.
+      #
+      # It failed three ways at once and every one of them was invisible to a
+      # manifest. `demo` writes templates beside the working directory, so a
+      # deployment keeping only /srv/store lost them and `site` exited with "no
+      # template directory at templates". Mounting the parent instead hit the
+      # VOLUME declaration, which handed /srv/store to an anonymous volume that
+      # --rm deleted, so `demo` reported success into a store that was gone by
+      # the time `site` looked. Mounting an empty named volume at
+      # /srv/templates got a root-owned directory and "permission denied", from
+      # an image with no shell to chown it with.
+      #
+      # None of that is exotic and all of it is ordinary Docker behaviour. What
+      # made it ship was that nobody ran the commands. So they run here, from
+      # the published image, as an anonymous user, and the check is the one a
+      # reader performs: is there a page at the end of it.
+      - name: The documented quickstart must reach a served page
+        run: |
+          repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          img="ghcr.io/${repo}:${{ steps.meta.outputs.version }}"
+          # A config with no credentials, so this pulls the way a stranger does
+          # rather than reusing the login this job just used to push.
+          cfg=$(mktemp -d); echo '{}' > "$cfg/config.json"
+          export DOCKER_CONFIG="$cfg"
+
+          vols="-v qs:/srv -v qs-store:/srv/store"
+          docker run --rm $vols "$img" --root /srv/store init
+          docker run --rm $vols "$img" --root /srv/store demo
+          docker run -d --name qs -p 8081:8081 $vols "$img" \
+            --root /srv/store site --addr 0.0.0.0:8081
+
+          for _ in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ || true)
+            [ "$code" = "200" ] && break
+            sleep 2
+          done
+
+          if [ "$code" != "200" ]; then
+            echo "::error::the documented quickstart does not serve a page (HTTP ${code:-none})."
+            echo "::error::README and INSTALL tell people to run exactly these commands."
+            docker logs qs 2>&1 | tail -20
+            exit 1
+          fi
+          echo "quickstart serves HTTP 200"
+
+          # The demo advertises these. /sale is meant to 404 until its window
+          # opens, so it is checked for being reachable-and-refusing rather
+          # than for 200, which is the difference between a rule working and a
+          # route being broken.
+          for p in /catalogue.json /available /wholesale; do
+            c=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8081$p")
+            echo "  $p -> $c"
+            [ "$c" = "200" ] || { echo "::error::$p returned $c"; exit 1; }
+          done
+
+          # The property the whole design rests on, read off the wire rather
+          # than off a source file.
+          curl -sI http://127.0.0.1:8081/ | grep -qi "script-src 'none'" \
+            || { echo "::error::the served CSP does not carry script-src 'none'"; exit 1; }
+          echo "served CSP carries script-src 'none'"
