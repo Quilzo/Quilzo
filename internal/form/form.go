@@ -20,9 +20,23 @@
 // preference.
 //
 // So submissions live in a plain directory of files: mutable, individually
-// deletable, with a retention period that removes them without anybody asking.
-// It is the least sophisticated storage in this program and that is the
-// feature.
+// deletable, and with a retention ceiling each form declares for itself. It is
+// the least sophisticated storage in this program and that is the feature.
+//
+// That ceiling is enforced when somebody enforces it. This said "a retention
+// period that removes them without anybody asking", and nothing in this
+// program removes anything on its own: Expire is correct and safe to re-run,
+// and it runs from `quilzo form expire` or the button on the forms screen. If
+// nobody runs either, submissions past their declared ceiling are kept
+// indefinitely.
+//
+// Said plainly because the gap between a declared retention period and an
+// enforced one is the whole of the obligation, and a sentence claiming the
+// second while the code does the first is worse than no sentence. An external
+// timer is the intended arrangement -- the comment on the command has always
+// said "meant for a timer" -- and a cron entry or a systemd timer calling
+// `quilzo form expire` is what makes the ceiling real. Deployments that need
+// this should treat it as a step rather than as a property they already have.
 //
 // # What is refused, and why not a CAPTCHA
 //

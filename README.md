@@ -403,6 +403,13 @@ spreadsheet formula injection, and erasure by search — because an append-only
 merkle store cannot erase, which is why submissions deliberately do not live in
 it.
 
+The retention ceiling is enforced when something enforces it. `quilzo form
+expire` removes what is past it, and nothing in this program calls that on its
+own — so a deployment that relies on retention needs a cron entry or a systemd
+timer, and without one submissions are kept indefinitely. A declared retention
+period and an enforced one are different things, and only the second is worth
+anything to the person whose data it is.
+
 **Working together.** Compare-and-swap on every write, so nobody silently
 overwrites anybody; a three-way merge for the writes that only collided on the
 ref; advisory locks that expire on their own and have no break-lock button; and
