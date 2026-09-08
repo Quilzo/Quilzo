@@ -97,6 +97,17 @@ dependency count is anything but zero.
     renderer escapes for HTML.  Product data on detail routes already
     existed.
 
+** Access
+
+*** --own-only is withdrawn, and refuses rather than being ignored.  It was
+    offered on the command line and as a checkbox in the admin, both said the
+    restriction had taken effect, and nothing enforced it: the function that
+    resolves an own-only binding had no caller, and every check dropped the
+    field.  Anybody granted `author --own-only` could edit every page in the
+    store.  Nothing loses access now, because nothing was restricted.  Use
+    `--on /path`, which is enforced.  A binding written before this is shown
+    as never enforced rather than silently as a restriction.
+
 ** Licence
 
 *** Two licences, and you choose:
