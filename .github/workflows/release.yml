@@ -266,6 +266,32 @@ jobs:
       # made it ship was that nobody ran the commands. So they run here, from
       # the published image, as an anonymous user, and the check is the one a
       # reader performs: is there a page at the end of it.
+      # The binary in the image must know which release it is.
+      #
+      # This job passed `--build-arg VERSION=` for two releases while the
+      # Dockerfile declared no such ARG, and a build argument nothing declares
+      # is discarded without a word. So the image label said 0.2.0 and
+      # `quilzo --version` inside it said "dev", and nothing compared them.
+      #
+      # Checked against steps.meta.outputs.version rather than against
+      # github.ref_name, for the same reason the pull check is: that is what
+      # the tagging step decided, and the semver patterns strip the leading v.
+      - name: The image must know its own version
+        run: |
+          repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          tag='${{ steps.meta.outputs.version }}'
+          got=$(docker run --rm "ghcr.io/${repo}:${tag}" --version | head -1)
+          echo "the image reports: $got"
+          case "$got" in
+            *"$tag"*) echo "matches ${tag}" ;;
+            *)
+              echo "::error::the image reports \"$got\" and this release is ${tag}."
+              echo "::error::A build argument the Dockerfile does not declare"
+              echo "::error::is discarded silently, so check for ARG VERSION."
+              exit 1
+              ;;
+          esac
+
       - name: The documented quickstart must reach a served page
         run: |
           repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
