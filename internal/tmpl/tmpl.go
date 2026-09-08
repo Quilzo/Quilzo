@@ -62,6 +62,7 @@ const (
 	ctxText = iota
 	ctxAttr
 	ctxURL
+	ctxBare // an unquoted attribute value, or where a name would go
 )
 
 var (
@@ -219,24 +220,161 @@ func lookup(data map[string]any, path string) (any, error) {
 	return current, nil
 }
 
-// detectContext decides which HTML context the next value lands in.
+// htmlContext follows the markup as it is produced, so a value is escaped for
+// the place it actually lands in.
 //
-// Deliberately simple: look back at what has already been produced. Inside an
-// unclosed tag whose nearest attribute carries a URL, this is a URL context;
-// inside a tag at all, an attribute; otherwise text. Not a full HTML parser and
-// it does not need to be, because the fallback is the stricter escaping.
-func detectContext(tail string) int {
-	open := strings.LastIndexByte(tail, '<')
-	closed := strings.LastIndexByte(tail, '>')
-	if open <= closed {
-		return ctxText
-	}
-	seg := tail[open:]
-	if reURLAttr.MatchString(seg) {
-		return ctxURL
-	}
-	return ctxAttr
+// It replaces a 256-byte lookback, and that window was a vulnerability rather
+// than an approximation. Pad the output past it with one attacker-controlled
+// field and the next one is judged to be in text — where quotes are not
+// escaped, because in text they are not special — while it is really inside an
+// attribute. A value then closed the attribute and opened an event handler:
+//
+//	<img src="/media/{{ image }}" alt="{{ alt }}">
+//	                                    ^ alt="" onerror="..." with a long image
+//
+// The old comment said the fallback was "the stricter escaping". It was the
+// weaker one: ctxText leaves quotes alone and ctxAttr does not. The window is
+// removed rather than widened, because a longer guess is still a guess.
+//
+// Every byte of output is examined once, so this costs one pass rather than a
+// rescan per value. It reads the output and not the template, which is what
+// makes {% raw %} — the one thing that can still introduce markup — land in
+// the right place too.
+type htmlContext struct {
+	scanned   int    // how much of the output has been consumed
+	inTag     bool   // between < and its >
+	tagStart  int    // where that < was
+	quote     byte   // the attribute quote we are inside, or 0
+	inComment bool   // between <!-- and -->
+	rawElem   string // "script" or "style" when inside one
 }
+
+// advance consumes whatever has been appended since the last call.
+func (c *htmlContext) advance(s string) {
+	for i := c.scanned; i < len(s); i++ {
+		ch := s[i]
+		switch {
+		case c.inComment:
+			// Nothing inside a comment is markup, and in particular an
+			// apostrophe in one is an apostrophe. Without this case the
+			// tracker read "the record's name" in a shipped template as an
+			// opening attribute quote and never found its close, so every
+			// value after it in the document was escaped as though it sat in
+			// an attribute. Caught by rendering every shipped template before
+			// and after and diffing, which is the only reason it is not in
+			// this commit.
+			if ch == '>' && i >= 2 && s[i-1] == '-' && s[i-2] == '-' {
+				c.inComment = false
+			}
+		case c.rawElem != "":
+			// Only the matching end tag leaves a raw text element. A < inside
+			// <script> is data, not markup, which is why this is separate.
+			if ch == '<' && i+1 < len(s) && s[i+1] == '/' &&
+				foldPrefix(s[i+2:], c.rawElem) {
+				c.rawElem, c.inTag, c.tagStart, c.quote = "", true, i, 0
+			}
+		case c.inTag:
+			if c.quote != 0 {
+				if ch == c.quote {
+					c.quote = 0
+				}
+				continue
+			}
+			switch ch {
+			case '"', '\'':
+				c.quote = ch
+			case '>':
+				// A quoted > is attribute data. Tracking quotes is why this
+				// finds the end of the tag where scanning back for the last >
+				// found a character inside a title or an alt.
+				c.inTag = false
+				if n := openTagName(s, c.tagStart); n == "script" || n == "style" {
+					c.rawElem = n
+				}
+				c.tagStart = -1
+			}
+		case ch == '<':
+			if strings.HasPrefix(s[i:], "<!--") {
+				c.inComment = true
+				continue
+			}
+			c.inTag, c.tagStart, c.quote = true, i, 0
+		}
+	}
+	c.scanned = len(s)
+}
+
+// context reports where the next value would land, or refuses.
+func (c *htmlContext) context(s string) (int, error) {
+	c.advance(s)
+	if c.rawElem != "" {
+		// Escaping cannot make a value safe here. Inside <script> and <style>
+		// the HTML entities that escaping produces are not decoded, so &#34;
+		// arrives at the parser as six characters rather than as a quote: the
+		// escaping is inert and the quote still ends the string. Refusing is
+		// the only correct answer, and this program does not need the case —
+		// no template it ships interpolates into either element.
+		return 0, errf("a value cannot go inside <%s>: escaping does nothing "+
+			"there, because HTML entities are not decoded in it", c.rawElem)
+	}
+	if !c.inTag {
+		return ctxText, nil
+	}
+	if reURLAttr.MatchString(s[c.tagStart:]) {
+		return ctxURL, nil
+	}
+	if c.quote == 0 {
+		// Inside the tag but not inside a quoted value: either an unquoted
+		// attribute value or where an attribute name would go. Escaping the
+		// quotes is not enough here, because nothing needs a quote to end an
+		// unquoted value — a space does. class={{ x }} with "a onmouseover=b"
+		// is two attributes, and the second is an event handler.
+		return ctxBare, nil
+	}
+	return ctxAttr, nil
+}
+
+// escapeBare escapes for a place where whitespace ends the value.
+//
+// Everything HTML escaping covers, plus the characters that terminate an
+// unquoted attribute or start the next one. HTML5 names space, tab, newline,
+// form feed and carriage return as terminators, and = and ` as parse errors
+// that browsers have historically been generous about.
+func escapeBare(v string) string {
+	var b strings.Builder
+	for _, r := range v {
+		switch r {
+		case ' ', '\t', '\n', '\f', '\r', '=', '`', '"', '\'', '<', '>', '&':
+			fmt.Fprintf(&b, "&#%d;", r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// foldPrefix reports whether s begins with name, ignoring case.
+func foldPrefix(s, name string) bool {
+	if len(s) < len(name) {
+		return false
+	}
+	return strings.EqualFold(s[:len(name)], name)
+}
+
+// openTagName reads the element name at an opening tag, or "" for a close tag.
+func openTagName(s string, at int) string {
+	if at < 0 || at+1 >= len(s) || s[at+1] == '/' || s[at+1] == '!' {
+		return ""
+	}
+	i := at + 1
+	for i < len(s) && (isAlpha(s[i]) || isDigit(s[i])) {
+		i++
+	}
+	return strings.ToLower(s[at+1 : i])
+}
+
+func isAlpha(c byte) bool { return c|0x20 >= 'a' && c|0x20 <= 'z' }
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 
 // escapeURL escapes for a URL attribute and refuses a scheme that can execute.
 //
@@ -302,6 +440,7 @@ func truthy(v any) bool {
 type budget struct {
 	output     int
 	iterations int
+	html       htmlContext
 }
 
 func (b *budget) spendOutput(n int) error {
@@ -345,12 +484,18 @@ func walk(nodes []node, data map[string]any, out *strings.Builder, b *budget, de
 				return err
 			}
 			text := stringify(v)
+			ctx, err := b.html.context(out.String())
+			if err != nil {
+				return err
+			}
 			var esc string
-			switch detectContext(tailOf(out, 256)) {
+			switch ctx {
 			case ctxURL:
 				esc = escapeURL(text)
 			case ctxAttr:
 				esc = html.EscapeString(text)
+			case ctxBare:
+				esc = escapeBare(text)
 			default:
 				// Quotes left alone in text context; they are not special there.
 				esc = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(text)
@@ -412,15 +557,6 @@ func walk(nodes []node, data map[string]any, out *strings.Builder, b *budget, de
 		}
 	}
 	return nil
-}
-
-// tailOf returns up to n trailing bytes of what has been rendered.
-func tailOf(b *strings.Builder, n int) string {
-	s := b.String()
-	if len(s) <= n {
-		return s
-	}
-	return s[len(s)-n:]
 }
 
 // Render renders a template against decoded JSON data. Terminates for all input.
