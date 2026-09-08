@@ -103,3 +103,74 @@ three.
 That is a reason to resolve these alerts honestly. It is not a reason to call
 them false, and it is recorded here in that order so nobody later reads the
 convenience as the motive.
+
+---
+
+## `go/cookie-secure-not-set` — alerts #42–#50
+
+**Dismissed** September 2026 as *won't fix*.
+
+Nine alerts, one per place this program sets a cookie:
+`internal/admin/oidcauth.go`, `nav.go` (two), `passkeys.go`, `sidebar.go`,
+`start.go`, `server.go` (two), `theme.go`.
+
+### What the rule wants
+
+*"Cookie 'Secure' attribute is not set to true."* It wants the literal `true`.
+Every one of these sets it conditionally:
+
+```go
+Secure: r.TLS != nil || s.behindTLSProxy(),
+```
+
+So the rule is correct on its own terms — the attribute is not set to `true`,
+it is set to an expression that is sometimes false — and it is unsatisfiable
+here without changing behaviour for the worse.
+
+### Why it is not being fixed
+
+**A Secure cookie over plain HTTP is dropped by the browser.** The admin binds
+to loopback by default, deliberately; the comment on the sign-in cookie has
+said the consequence for as long as the cookie has existed:
+
+> or the cookie is refused on a loopback deployment and nobody can sign in at
+> all — which is how a security attribute gets removed permanently by whoever
+> is trying to get their work done.
+
+Setting `Secure: true` unconditionally would make `quilzo serve` unable to sign
+anybody in on its default configuration. The realistic outcome of that is not a
+more secure deployment; it is an operator deleting the attribute.
+
+**The condition is the control, not the absence of one.** `Secure` is set
+whenever the connection is TLS, and whenever the deployment declares that TLS
+is terminated in front of it (`admin.behind_tls_proxy`). What is left
+uncovered is plain HTTP with no such declaration, which is loopback — where
+there is no network path for the cookie to leak over.
+
+**The rest of the hardening does not depend on this.** These cookies are
+`HttpOnly` and `SameSite=Strict`, the site serves `script-src 'none'`, and the
+session cookie is refused from a query parameter so it never reaches a log or
+a referrer.
+
+### An attempt that did not work, recorded because it did not
+
+These first appeared when the eight call sites moved from
+`Secure: r.TLS != nil` to `Secure: s.secureCookie(r)`, so the initial reading
+was that the analysis had lost track of a method call. #108 put the comparison
+back at each call site for that reason. **It did not close the alerts** — the
+analysis had never been following the comparison; it wants a constant.
+
+That change is kept, because a security decision written where it is made is
+easier to review than one behind a call, but it should not be described as
+having fixed anything.
+
+### What would make this dismissal wrong
+
+- **The admin defaulting to a non-loopback address.** The whole argument rests
+  on the uncovered case being loopback. If `serve` ever binds more widely by
+  default, `Secure` needs to be unconditional and sign-in needs another way to
+  work.
+- **`admin.behind_tls_proxy` being removed**, or defaulting to something other
+  than off, which would change what the uncovered case is.
+- **`SameSite=Strict` or `HttpOnly` going away** from any of these nine. They
+  are what makes a medium finding a medium finding rather than a high one.
