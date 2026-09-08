@@ -200,5 +200,67 @@ func fetchSelf(h http.Handler, path string) ([]byte, int, error) {
 		return nil, res.StatusCode, fmt.Errorf(
 			"%s redirects, and a static copy cannot follow it", path)
 	}
+	body = carryCSP(body, res.Header.Get("Content-Security-Policy"),
+		res.Header.Get("Content-Type"))
 	return bytes.Clone(body), res.StatusCode, nil
+}
+
+// carryCSP writes the response's policy into the document as a meta element.
+//
+// The served site sends Content-Security-Policy as a header and a static copy
+// has no way to send a header at all: the files go to IPFS, or to a bucket, or
+// to whatever the person who ran `quilzo export` is using, and none of those
+// reads Go. So the policy was computed correctly for every one of these
+// responses and then dropped on the floor, and every static copy this program
+// has ever produced was served with no policy.
+//
+// That matters most in exactly the case the policy is load-bearing for. The
+// template engine escapes for context now, but `{% raw %}` still exists and is
+// still the documented opt-out — and `script-src 'none'` is what stands behind
+// it. On a static copy nothing did.
+//
+// A meta element is not as good as a header and is not meant to be. It is
+// what a file can carry, browsers honour it for everything that matters here,
+// and the alternative on the table was nothing.
+func carryCSP(body []byte, policy, ctype string) []byte {
+	if policy == "" || !strings.Contains(ctype, "text/html") {
+		return body
+	}
+	// frame-ancestors, report-uri and sandbox are ignored when they arrive in
+	// a meta element — the standard says so — and a browser prints a console
+	// warning for each. Dropping them keeps the policy honest about what it is
+	// actually enforcing rather than shipping directives that do nothing.
+	var keep []string
+	for _, d := range strings.Split(policy, ";") {
+		switch name, _, _ := strings.Cut(strings.TrimSpace(d), " "); name {
+		case "", "frame-ancestors", "report-uri", "report-to", "sandbox":
+		default:
+			keep = append(keep, strings.TrimSpace(d))
+		}
+	}
+	if len(keep) == 0 {
+		return body
+	}
+	// Only & and " need escaping inside a double-quoted attribute, and a
+	// policy contains neither in practice. Escaping the apostrophes as well
+	// would be equally correct and would render 'none' as &#39;none&#39; in
+	// the one header an auditor is most likely to read by eye.
+	attr := strings.NewReplacer("&", "&amp;", `"`, "&quot;").
+		Replace(strings.Join(keep, "; "))
+	meta := []byte(`<meta http-equiv="Content-Security-Policy" content="` +
+		attr + `">`)
+
+	// Immediately after <head>, so it is in force before anything the document
+	// goes on to declare. A document with no head is left alone rather than
+	// guessed at.
+	i := bytes.Index(body, []byte("<head>"))
+	if i < 0 {
+		return body
+	}
+	i += len("<head>")
+	out := make([]byte, 0, len(body)+len(meta)+1)
+	out = append(out, body[:i]...)
+	out = append(out, '\n')
+	out = append(out, meta...)
+	return append(out, body[i:]...)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/quilzo/quilzo/internal/search"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -63,7 +64,7 @@ func TestTheBundleIsWhatTheServerServes(t *testing.T) {
 				"static copy of this site is missing it", path, file)
 			continue
 		}
-		if string(got) != rec.Body.String() {
+		if withoutCSPMeta(string(got)) != rec.Body.String() {
 			t.Errorf("%s differs between the server and the bundle, so the "+
 				"copy is not the site", file)
 		}
@@ -84,10 +85,29 @@ func TestTheBundleIsWhatTheServerServes(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
-	if home != rec.Body.String() {
+	if withoutCSPMeta(home) != rec.Body.String() {
 		t.Error("the bundled home page is not the page the server serves")
 	}
+	// The one difference that is allowed, and it is allowed in one direction:
+	// the copy carries the Content-Security-Policy the server sends as a
+	// header, because a file cannot send a header and a static copy with no
+	// policy was the gap this closes. Everything else still has to match --
+	// the comparison above strips exactly this element and nothing else, so
+	// any other drift between the site and its copy still fails here.
+	if !strings.Contains(home, `<meta http-equiv="Content-Security-Policy"`) {
+		t.Error("the bundled page carries no policy, so a static copy of this " +
+			"site would be served without one")
+	}
 }
+
+// withoutCSPMeta removes the policy element the bundle adds, so the rest of
+// the document can be compared against what the server serves.
+func withoutCSPMeta(s string) string {
+	return reCSPMeta.ReplaceAllString(s, "")
+}
+
+var reCSPMeta = regexp.MustCompile(
+	"\n<meta http-equiv=\"Content-Security-Policy\" content=\"[^\"]*\">")
 
 // A page that cannot be served must not be silently absent from a copy.
 func TestABundleRefusesRatherThanShippingAHole(t *testing.T) {
