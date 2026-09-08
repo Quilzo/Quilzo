@@ -893,27 +893,26 @@ certificates and a passwd entry. No shell, no package manager, no interpreter,
 no libc. It runs as nonroot. amd64 and arm64.
 
 ```bash
-docker run --rm -v quilzo:/srv -v quilzo-store:/srv/store \
-  ghcr.io/quilzo/quilzo --root /srv/store init
-docker run --rm -v quilzo:/srv -v quilzo-store:/srv/store \
-  ghcr.io/quilzo/quilzo --root /srv/store demo
-docker run -p 8081:8081 -v quilzo:/srv -v quilzo-store:/srv/store \
+docker run --rm -v quilzo:/srv ghcr.io/quilzo/quilzo --root /srv/store init
+docker run --rm -v quilzo:/srv ghcr.io/quilzo/quilzo --root /srv/store demo
+docker run -p 8081:8081 -v quilzo:/srv \
   ghcr.io/quilzo/quilzo --root /srv/store site --addr 0.0.0.0:8081
 ```
 
 Then <http://127.0.0.1:8081>. `demo` publishes, so there is nothing else to run.
 
-**Two volumes, and both are needed.** `quilzo demo` writes templates beside the
-working directory rather than into the store, so a deployment that keeps only
-`/srv/store` loses them and `site` then exits with `no template directory at
-templates`. Each is mounted at a path the image already has, because Docker
-seeds a named volume from the image content at that mount point — ownership
-included — and a volume mounted where the image has nothing is created owned by
-root, which a container running as nonroot cannot write.
+**One volume, mounted at `/srv` rather than at the store.** `quilzo demo` writes
+templates beside the working directory rather than into the store, so a
+deployment that keeps only `/srv/store` loses them and `site` exits with `no
+template directory at templates`. Both live under `/srv`, so that is what is
+kept.
 
-That is the v0.1.0 image. The Dockerfile now ships `/srv/templates` and has
-dropped its `VOLUME` line, so a single `-v quilzo:/srv` is enough once a release
-carries that change.
+This needs v0.2.0 or later. The v0.1.0 image declared `VOLUME /srv/store`,
+which Docker satisfies with a throwaway volume when you mount the parent — so
+the store silently vanished between commands — and it shipped no
+`/srv/templates` for a volume to be seeded from, so mounting one there was
+created owned by root and unwritable by a container running as nonroot. On
+v0.1.0 the working incantation is `-v quilzo:/srv -v quilzo-store:/srv/store`.
 
 Published on each tagged release, with a build-provenance attestation binding
 the image to the workflow run that produced it:
