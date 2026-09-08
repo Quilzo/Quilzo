@@ -285,41 +285,68 @@ func (s *Store) PutBlob(v any) (string, error) {
 	return s.write(KindBlob, payload)
 }
 
+// CheckTreeEntries validates the names and ids in a tree.
+//
+// Factored out of PutTree so PutRaw enforces the same rules. PutRaw checks
+// that the bytes hash to the id it was asked for and nothing else, and for a
+// tree that is not enough: a peer chooses both the bytes and the name, so
+// `ObjectID(kind, payload) == want` is satisfied by any tree it likes,
+// including one whose keys are `../../../../tmp/pwned`. GetTree is a bare
+// unmarshal, and everything downstream -- the exporter above all -- treats
+// those keys as page names and joins them onto a path.
+//
+// So the invariant every consumer already assumes is enforced at the boundary
+// where objects enter the store, rather than at each of the places that later
+// trusts it.
+func CheckTreeEntries(entries map[string]string) error {
+	for name, oid := range entries {
+		if err := checkTreeEntry(name, oid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkTreeEntry validates one name and the id it points at.
+//
+// A key may be a path of segments, each of which must still be a usable
+// segment.
+//
+// Nesting is what makes a write proportional to the edit rather than to the
+// store: a record at data/users/ab/cd/id is addressable without every page
+// beside it being re-hashed to reach it. Every segment is validated
+// individually, so allowing the separator has not allowed a traversal —
+// "a/../b" fails on the ".." segment exactly as "a/.." did when it was one
+// name.
+func checkTreeEntry(name, oid string) error {
+	segs := strings.Split(name, "/")
+	// Bounded, not unbounded. The old rule allowed at most one slash, which
+	// was a real limit and not an accident; nesting needs five levels
+	// (data/<collection>/<aa>/<bb>/<id>) and nothing needs more. Relaxing a
+	// bound to what the design requires is different from removing it, and an
+	// unbounded path is a tree an attacker chooses the depth of.
+	if len(segs) > MaxPathSegments {
+		return fmt.Errorf("%q has %d segments and the limit is %d",
+			name, len(segs), MaxPathSegments)
+	}
+	for _, seg := range segs {
+		if !reSegment.MatchString(seg) {
+			return fmt.Errorf(
+				"%q is not a usable path: %q is not a segment of letters, "+
+					"digits, dot, dash and underscore, starting with a "+
+					"letter or digit", name, seg)
+		}
+	}
+	if !reID.MatchString(oid) {
+		return fmt.Errorf("%q points at %q, which is not an object id", name, oid)
+	}
+	return nil
+}
+
 // PutTree stores a named mapping from path segment to object id.
 func (s *Store) PutTree(entries map[string]string) (string, error) {
-	for name, oid := range entries {
-		// A key may be a path of segments, each of which must still be a
-		// usable segment.
-		//
-		// Nesting is what makes a write proportional to the edit rather than
-		// to the store: a record at data/users/ab/cd/id is addressable without
-		// every page beside it being re-hashed to reach it. Every segment is
-		// validated individually, so allowing the separator has not allowed a
-		// traversal — "a/../b" fails on the ".." segment exactly as "a/.." did
-		// when it was one name.
-		segs := strings.Split(name, "/")
-		// Bounded, not unbounded. The old rule allowed at most one slash,
-		// which was a real limit and not an accident; nesting needs five
-		// levels (data/<collection>/<aa>/<bb>/<id>) and nothing needs more.
-		// Relaxing a bound to what the design requires is different from
-		// removing it, and an unbounded path is a tree an attacker chooses
-		// the depth of.
-		if len(segs) > MaxPathSegments {
-			return "", fmt.Errorf(
-				"%q has %d segments and the limit is %d", name, len(segs),
-				MaxPathSegments)
-		}
-		for _, seg := range segs {
-			if !reSegment.MatchString(seg) {
-				return "", fmt.Errorf(
-					"%q is not a usable path: %q is not a segment of letters, "+
-						"digits, dot, dash and underscore, starting with a "+
-						"letter or digit", name, seg)
-			}
-		}
-		if !reID.MatchString(oid) {
-			return "", fmt.Errorf("%q points at %q, which is not an object id", name, oid)
-		}
+	if err := CheckTreeEntries(entries); err != nil {
+		return "", err
 	}
 	payload, err := canonical(entries)
 	if err != nil {
@@ -640,6 +667,35 @@ func (s *Store) PutRaw(want, kind string, payload []byte) error {
 		return fmt.Errorf(
 			"a peer offered %s and sent bytes that hash to %s. The name is "+
 				"the hash, so those are not that object", want, got)
+	}
+	// The hash check is not enough for a tree, and it is worth being precise
+	// about why.
+	//
+	// It proves the bytes are the object that was asked for. It cannot prove
+	// the object is well formed, because a peer chooses both the bytes and the
+	// name it offers them under -- so ObjectID(kind, payload) == want is
+	// satisfied by any tree the peer likes, including one whose keys are
+	// "../../../../tmp/pwned". PutTree validates every segment; this path
+	// parsed nothing.
+	//
+	// Downstream, GetTree is a bare unmarshal and every consumer treats those
+	// keys as page names. `quilzo export` joins one onto an output directory
+	// and writes it, which turned a poisoned tree from a peer into an
+	// arbitrary file write with attacker-chosen contents. The exporter is
+	// fixed separately; the invariant belongs here, at the boundary where
+	// objects enter, rather than at each place that later assumes it.
+	if kind == KindTree {
+		var entries map[string]string
+		if err := json.Unmarshal(payload, &entries); err != nil {
+			return fmt.Errorf(
+				"a peer offered %s as a tree and it does not parse: %w",
+				want, err)
+		}
+		if err := CheckTreeEntries(entries); err != nil {
+			return fmt.Errorf(
+				"a peer offered %s as a tree and it names something that is "+
+					"not a path in this store: %w", want, err)
+		}
 	}
 	_, err := s.write(kind, payload)
 	return err

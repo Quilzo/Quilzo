@@ -156,7 +156,10 @@ func cmdExport(root string, args []string) error {
 	}
 
 	for _, f := range files {
-		path := filepath.Join(*dir, filepath.FromSlash(f.Path))
+		path, err := containedPath(*dir, f.Path)
+		if err != nil {
+			return err
+		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return err
 		}
@@ -362,4 +365,32 @@ func cmdSiemVerify(root string, args []string) error {
 			"  is not included here.%s\n", dim, short(env.AnchorPrev), reset)
 	}
 	return nil
+}
+
+// containedPath joins a name onto a directory and refuses to leave it.
+//
+// `quilzo ipfs write` has done this since it was written, and its comment
+// predicted this exact defect: "Page names are validated on write, so this
+// cannot currently escape — and 'cannot currently' is exactly the phrase that
+// stops being true after somebody relaxes a rule somewhere else."
+//
+// It stopped being true. Store.PutRaw, the path a peer's objects arrive on,
+// checked that bytes hash to the id asked for and parsed nothing — so a peer
+// could offer a tree whose keys were "../../../../tmp/pwned", GetTree would
+// unmarshal it without re-validating, and the exporter joined those keys onto
+// the output directory and wrote them. Arbitrary location, attacker-chosen
+// contents, parent directories created on the way.
+//
+// Both halves are fixed: the store validates a tree it is handed, and this
+// checks the write regardless. Two independent checks rather than one, because
+// the reason this happened is that a downstream consumer trusted an invariant
+// it could have verified in three lines.
+func containedPath(dir, name string) (string, error) {
+	full := filepath.Join(dir, filepath.FromSlash(name))
+	rel, err := filepath.Rel(dir, full)
+	if err != nil || filepath.IsAbs(rel) ||
+		rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%q would be written outside %s", name, dir)
+	}
+	return full, nil
 }
