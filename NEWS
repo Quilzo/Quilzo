@@ -4,6 +4,111 @@ Newest first. Only what somebody running this would notice; the commit log
 has the rest.
 
 
+v0.2.0 — 8 September 2026
+=========================
+
+A security release. Everything here was found by testing the program rather
+than by reading it, and each item was reproduced before it was fixed.
+
+** Fixed, and each was reachable
+
+*** A value could break out of the attribute it was rendered into.  The
+    engine decided which HTML context a value landed in by scanning back 256
+    bytes for a `<`; pad the output past that with one ordinary field and an
+    attribute looked like text, where quotes are not escaped.  The value then
+    closed the attribute and opened an event handler.  Both fields are
+    ordinary content, so no template author had to make a mistake, and the
+    shipped demo theme has that exact shape.  `quilzo scan` did not catch it.
+
+    Context is tracked as the output is produced now, one pass, no window.
+    Two more ways out closed with it: a quoted `>` in an earlier attribute
+    made the engine think the tag had ended, so an `href` was never
+    scheme-checked and `javascript:` survived; and an unquoted attribute value
+    could start a second attribute, because a space ends one and escaping
+    quotes does not help.  A value inside <script> or <style> is refused
+    rather than escaped, because entities are not decoded there and the
+    escaping is inert.
+
+    All 49 shipped templates render byte-for-byte as before.
+
+*** Static copies carried no Content-Security-Policy at all.  Every `ipfs
+    write`, every archived deposit, every site pinned to IPFS.  The policy was
+    computed for each response and then dropped, because a file cannot send a
+    header.  It is written into the document now.  This is what the template
+    fix above was relying on: on the served site `script-src 'none'` stopped
+    the attribute breakout, and on the copy somebody archives nothing did.
+
+*** A captured ActivityPub inbox request could be replayed forever.  The
+    draft-cavage signature format carries `created=` as a parameter that only
+    enters the signing base when the signature says it covers it -- and it was
+    read either way.  Append `,created=<now>` to a captured request and the
+    base is unchanged, the signature still verifies, and the age check reads
+    the attacker's number.  A three-month-old Follow, Undo or Delete replays
+    as the actor whose request was captured.  Only a timestamp the signature
+    covers is read now, and `expires` is enforced, which it never was.
+
+*** --own-only was never enforced.  It was offered on the command line and as
+    a checkbox, both confirmed the restriction had taken effect, and the
+    function that resolves such a binding had no caller: anybody granted
+    `author --own-only` could edit every page in the store.  The flag is
+    withdrawn and refuses rather than being ignored.  Nothing loses access,
+    because nothing was restricted.  Use `--on /path`, which is enforced.
+
+*** Twenty of twenty-three agent operations checked no authority.  An author
+    could read any page in the unpublished draft, dump the whole site, and
+    pull the posture, inventory, integrity and agent-activity reports that the
+    admin restricts to an administrator -- on the stated grounds that a list
+    of where the defences are thin is a target list.  Every operation declares
+    a role now and is checked centrally, and a server with no authorisation
+    hook refuses rather than serves.
+
+*** A peer could write a file anywhere on disk.  Objects arriving from a peer
+    were checked to hash to the id offered and parsed no further, so a tree
+    whose entry names were `../../../../tmp/pwned` was stored, read back
+    without re-validation, and joined onto the output directory by `quilzo
+    export`.  The store validates a tree it is handed, and the exporter checks
+    the join regardless.
+
+*** AI Act Article 50 was enforced on one surface of three.  README said
+    publishing unmarked content is refused, not warned about.  The command
+    line never checked, so `quilzo publish && deploy` shipped unmarked content
+    and exited zero; the agent interface skipped its check whenever the check
+    errored rather than when it passed.  Both refuse now.  A person can
+    override with `--force-unmarked --reason`, an agent cannot, and the
+    override is recorded with the gates it waived.
+
+*** Publishing from the browser left no audit record.  Not the publish, not
+    the override, not the reason -- while the screen labelled the reason box
+    "Recorded."  The command line had recorded all three all along, so the log
+    held every publish made from a script and none made from the browser.
+
+*** An author could rewrite content types through the browser and was refused
+    from a script.  Binding or unbinding a type turns off the gate that checks
+    content, so an author who can do it has escaped the rules that constrain
+    authors.  The browser needs publish for it now, as the command line always
+    has.
+
+*** The session cookie was not marked Secure behind a TLS-terminating proxy,
+    which is the ordinary deployment.  Its value is the API token.  Set
+    `admin.behind_tls_proxy` when something in front of this speaks HTTPS.
+
+** Usability
+
+*** --token works on every command.  It was read globally and removed nowhere,
+    so seven of eighty-one commands accepted it and the rest exited 1 with
+    "flag provided but not defined".  Among the rest was `add`, the commonest
+    write -- and every refusal in the program ends by advising `--token`.
+
+** Honesty
+
+*** Retention is enforced when something enforces it.  The form package said
+    submissions are removed "without anybody asking" and nothing removes
+    anything on its own.  `quilzo form expire` does it; a cron entry or systemd
+    timer is the intended arrangement, and without one submissions past their
+    declared ceiling are kept.  A declared retention period and an enforced one
+    are different things.
+
+
 v0.1.0 — 7 September 2026
 =========================
 
