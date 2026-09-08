@@ -132,8 +132,28 @@ func (r *Refusal) Error() string { return r.Reason }
 
 // Server routes MCP traffic.
 type Server struct {
-	Name       string
-	Version    string
+	Name    string
+	Version string
+
+	// Authorise is consulted before every operation, and nothing runs without
+	// it.
+	//
+	// NeedsRole used to be read in exactly one place -- describe -- so it
+	// printed a role requirement to the agent and enforced nothing. Of the
+	// twenty-three operations, three checked authority in their own handler
+	// and twenty did not: read_page returned any page in the unpublished
+	// draft, export_site returned the whole site, and inventory and
+	// scan_content returned the posture report that the admin deliberately
+	// restricts to an administrator on the grounds that a list of where the
+	// defences are thin is a target list.
+	//
+	// Per-handler checks are how that happened: twenty places to remember,
+	// and a new operation defaults to open. So the gate is here, once, where
+	// the operation is already being looked up -- and a nil hook refuses
+	// rather than allows, because the failure mode being fixed is a surface
+	// that was open by omission.
+	Authorise func(Operation) error
+
 	operations map[string]Operation
 	handlers   map[string]Handler
 }
@@ -336,6 +356,17 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	if !op.Writes && kind == "write" {
 		return nil, &Error{Code: CodeInvalidParams,
 			Message: fmt.Sprintf("%q does not change anything; use quilzo_read", opName)}
+	}
+
+	if s.Authorise == nil {
+		return nil, &Error{Code: CodeInternal, Message: fmt.Sprintf(
+			"%q cannot run: no authorisation hook is wired into this server, "+
+				"and an unauthorised surface is refused rather than served",
+			opName)}
+	}
+	if err := s.Authorise(op); err != nil {
+		return nil, &Error{Code: CodeRefused, Message: err.Error(),
+			Data: map[string]any{"refused": true, "retryable": false}}
 	}
 
 	args, _ := p.Arguments["arguments"].(map[string]any)
