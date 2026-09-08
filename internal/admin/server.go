@@ -879,14 +879,23 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Secure only over TLS, or the cookie is refused on a loopback deployment
-	// and nobody can sign in at all — which is how a security attribute gets
-	// removed permanently by whoever is trying to get their work done.
+	// Secure over TLS, or where the deployment says something in front of it
+	// is terminating TLS. Not unconditionally: a Secure cookie is refused on a
+	// loopback deployment and nobody can sign in at all — which is how a
+	// security attribute gets removed permanently by whoever is trying to get
+	// their work done.
+	//
+	// This was `r.TLS != nil`, which answers the question for the deployment
+	// that terminates TLS here and gets it wrong for the one that puts a proxy
+	// in front — where the browser speaks HTTPS, this process sees plain HTTP,
+	// and the cookie holding the API token went out without Secure. See
+	// secureCookie, and admin.behind_tls_proxy, which is how a deployment says
+	// which it is.
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: raw, Path: "/",
 		HttpOnly: true,                    // unreadable by script; there is none, but the header outlives that
 		SameSite: http.SameSiteStrictMode, // the primary CSRF defence
-		Secure:   r.TLS != nil,
+		Secure:   s.secureCookie(r),
 		MaxAge:   8 * 3600,
 	})
 	// Somebody signing in for the first time lands on the getting started
@@ -908,7 +917,7 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: "", Path: "/", MaxAge: -1,
-		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
+		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r),
 	})
 	http.Redirect(w, r, "/signin", http.StatusSeeOther)
 }

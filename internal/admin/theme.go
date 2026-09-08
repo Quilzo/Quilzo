@@ -89,12 +89,12 @@ func (s *Server) handleTheme(w http.ResponseWriter, r *http.Request) {
 
 	switch to := r.FormValue("to"); to {
 	case "system":
-		clearCookie(w, r, ThemeCookie)
+		s.clearCookie(w, r, ThemeCookie)
 	case "dark", "light":
 		http.SetCookie(w, &http.Cookie{
 			Name: ThemeCookie, Value: to, Path: "/",
 			MaxAge: 365 * 24 * 3600, HttpOnly: true,
-			SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
+			SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r),
 		})
 	default:
 		http.Error(w, "theme must be system, dark or light", http.StatusBadRequest)

@@ -226,7 +226,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		// identity provider is a cross-site navigation, and Strict would drop
 		// the cookie so the person lands signed out. Lax still blocks the
 		// cross-site POSTs that CSRF needs.
-		Secure: r.TLS != nil,
+		Secure: s.secureCookie(r),
 		MaxAge: int(s.OIDC.ttl().Seconds()),
 	})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
