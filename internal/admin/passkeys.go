@@ -541,7 +541,7 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: secret, Path: "/",
 		HttpOnly: true, SameSite: http.SameSiteStrictMode,
-		Secure: r.TLS != nil, MaxAge: int(DefaultSessionTTL.Seconds()),
+		Secure: s.secureCookie(r), MaxAge: int(DefaultSessionTTL.Seconds()),
 	})
 	writeJSON(w, map[string]any{"ok": true, "next": "/"})
 }

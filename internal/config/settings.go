@@ -263,6 +263,26 @@ var settings = []Setting{
 			"with the site; the flag still overrides it for one run.",
 	},
 	{
+		Key: "admin.behind_tls_proxy", Kind: Bool, Default: "false",
+		Summary: "the admin is served over HTTPS by something in front of it",
+		Why: "Whether the session cookie is marked Secure. It was decided by " +
+			"r.TLS != nil, which is correct when this process terminates TLS " +
+			"itself and false in the deployment almost everybody actually " +
+			"has: a reverse proxy speaking HTTPS to the browser and plain " +
+			"HTTP to this. The cookie carries the API token, and without " +
+			"Secure a browser will send it over a plain-HTTP request to the " +
+			"same host -- so one mixed-content link or one downgraded " +
+			"request leaks a working credential.\n\n" +
+			"An operator setting rather than a header, because the header " +
+			"that would answer this is X-Forwarded-Proto and anybody can " +
+			"write it. internal/httpsig already refuses to trust it and says " +
+			"why. Trusting it here to decide whether a credential may travel " +
+			"in clear would be the same mistake with a worse consequence, so " +
+			"the deployment says once, deliberately, what it is.\n\n" +
+			"Leave it off when the admin is on loopback, which is the " +
+			"default: a Secure cookie over plain HTTP is dropped by the " +
+			"browser, and sign-in would stop working.",
+	}, {
 		Key: "site.base_url", Kind: Text, Default: "",
 		Summary: "where this site is served from, e.g. https://example.com",
 		Why: "The same story as site.name, one setting later. It was a flag " +

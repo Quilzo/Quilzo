@@ -61,10 +61,10 @@ func (s *Server) handleSidebar(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{
 			Name: SidebarCookie, Value: "hidden", Path: "/",
 			MaxAge: 365 * 24 * 3600, HttpOnly: true,
-			SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
+			SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r),
 		})
 	case "shown":
-		clearCookie(w, r, SidebarCookie)
+		s.clearCookie(w, r, SidebarCookie)
 	default:
 		// Named values rather than a toggle that flips whatever it finds. A
 		// request that says what it wants is idempotent: pressing the browser's

@@ -155,3 +155,37 @@ func asAcceptance(err error, target **config.ErrNeedsAcceptance) bool {
 	}
 	return ok
 }
+
+// secureCookie reports whether a cookie this response sets may be marked
+// Secure.
+//
+// It was `r.TLS != nil` at every one of the eight places this program sets a
+// cookie. That is correct when this process terminates TLS itself, and false
+// in the deployment almost everybody actually has: a reverse proxy speaking
+// HTTPS to the browser and plain HTTP to this. The session cookie carries the
+// API token, so without Secure a browser will send a working credential over
+// a plain-HTTP request to the same host — one mixed-content link, or one
+// downgraded request, and it is in clear.
+//
+// Read from configuration rather than from a header. The header that would
+// answer this is X-Forwarded-Proto and anybody can write it; internal/httpsig
+// already refuses to trust it and says why. Trusting it here to decide whether
+// a credential may travel in clear would be the same mistake with a worse
+// consequence, so the deployment states once what it is.
+//
+// Off by default, because the admin is on loopback by default and a Secure
+// cookie over plain HTTP is dropped by the browser — which would stop sign-in
+// working rather than make anything safer.
+func (s *Server) secureCookie(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if s.Settings == nil || s.Settings.Load == nil {
+		return false
+	}
+	cfg, err := s.Settings.Load()
+	if err != nil || cfg == nil {
+		return false
+	}
+	return cfg.Bool("admin.behind_tls_proxy")
+}

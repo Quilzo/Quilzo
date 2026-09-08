@@ -304,7 +304,7 @@ func (s *Server) handleNavOrder(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case r.FormValue("reset") != "":
-		clearCookie(w, r, NavOrderCookie)
+		s.clearCookie(w, r, NavOrderCookie)
 		http.Redirect(w, r, "/profile#arrangement", http.StatusSeeOther)
 		return
 	case r.FormValue("key") != "":
@@ -314,7 +314,7 @@ func (s *Server) handleNavOrder(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: NavOrderCookie, Value: url.QueryEscape(strings.Join(keys, ",")),
 		Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode,
-		Secure: r.TLS != nil, MaxAge: 365 * 24 * 3600,
+		Secure: s.secureCookie(r), MaxAge: 365 * 24 * 3600,
 	})
 	http.Redirect(w, r, "/profile#arrangement", http.StatusSeeOther)
 }
@@ -384,9 +384,17 @@ func visibleTo(s *Server, p principal) []destination {
 	return out
 }
 
-func clearCookie(w http.ResponseWriter, r *http.Request, name string) {
+// clearCookie expires one of the preference cookies.
+//
+// A method rather than a free function only so it can ask the server whether
+// Secure applies. A deletion is matched by name, path and domain rather than
+// by attributes, so this is about the set of attributes staying identical
+// across the two places a cookie is written and unwritten, not about the
+// deletion itself needing protecting.
+func (s *Server) clearCookie(w http.ResponseWriter, r *http.Request, name string) {
 	http.SetCookie(w, &http.Cookie{
 		Name: name, Value: "", Path: "/", MaxAge: -1,
-		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
+		HttpOnly: true, SameSite: http.SameSiteStrictMode,
+		Secure: s.secureCookie(r),
 	})
 }
