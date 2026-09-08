@@ -83,3 +83,44 @@ func TestNothingIsInventedWhenThereIsNoPolicy(t *testing.T) {
 		t.Errorf("a document with no policy was changed:\n%s", body)
 	}
 }
+
+// A document without a <head> still gets the policy.
+//
+// The first version of carryCSP returned the body untouched when it found no
+// <head>, which meant a template written without one exported with no policy
+// and nothing said so. Every template this program ships has a head, which is
+// exactly why that hole would have stayed open — it took a hand-written
+// template to find it, and `quilzo template adopt` accepts fragments.
+//
+// A meta element that arrives before any body content lands in the head the
+// parser opens for it, so placing it there is not a guess.
+func TestADocumentWithNoHeadStillGetsThePolicy(t *testing.T) {
+	cases := map[string]string{
+		"doctype and html": `<!doctype html><html><body>b</body></html>`,
+		"html only":        `<html><body>b</body></html>`,
+		"bare fragment":    `<p>b</p>`,
+		"uppercase":        `<!DOCTYPE HTML><HTML><BODY>b</BODY></HTML>`,
+	}
+	for name, doc := range cases {
+		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Security-Policy", "script-src 'none'")
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte(doc))
+		})
+		body, _, err := fetchSelf(h, "/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := string(body)
+		if !strings.Contains(got, "http-equiv") {
+			t.Errorf("%s: no policy:\n  %s", name, got)
+			continue
+		}
+		// Before any body content, or the parser will not put it in the head.
+		if i, j := strings.Index(strings.ToLower(got), "<body"),
+			strings.Index(got, "http-equiv"); i >= 0 && j > i {
+			t.Errorf("%s: the policy landed after <body>, where it is "+
+				"ignored:\n  %s", name, got)
+		}
+	}
+}

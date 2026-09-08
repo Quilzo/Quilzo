@@ -251,16 +251,46 @@ func carryCSP(body []byte, policy, ctype string) []byte {
 		attr + `">`)
 
 	// Immediately after <head>, so it is in force before anything the document
-	// goes on to declare. A document with no head is left alone rather than
-	// guessed at.
+	// goes on to declare.
+	//
+	// A document with no <head> gets it before any content instead, rather
+	// than not at all. The parser opens an implicit head for a meta that
+	// arrives before body content, so it still applies -- and the first
+	// version of this returned the body untouched in that case, which meant a
+	// template written without a head element exported with no policy and
+	// nothing said so. Every template this program ships has one, which is
+	// exactly why that hole would have stayed open: it takes a hand-written
+	// template to find, and `template adopt` accepts fragments.
 	i := bytes.Index(body, []byte("<head>"))
-	if i < 0 {
-		return body
+	switch {
+	case i >= 0:
+		i += len("<head>")
+	default:
+		i = afterOpeningHTML(body)
 	}
-	i += len("<head>")
 	out := make([]byte, 0, len(body)+len(meta)+1)
 	out = append(out, body[:i]...)
 	out = append(out, '\n')
 	out = append(out, meta...)
 	return append(out, body[i:]...)
+}
+
+// afterOpeningHTML finds the offset just past <html ...>, or past the doctype,
+// or the start of the document.
+//
+// In each case the position is before any body content, which is what makes a
+// meta element land in the head the parser opens for it.
+func afterOpeningHTML(body []byte) int {
+	lower := bytes.ToLower(body)
+	if i := bytes.Index(lower, []byte("<html")); i >= 0 {
+		if j := bytes.IndexByte(body[i:], '>'); j >= 0 {
+			return i + j + 1
+		}
+	}
+	if i := bytes.Index(lower, []byte("<!doctype")); i >= 0 {
+		if j := bytes.IndexByte(body[i:], '>'); j >= 0 {
+			return i + j + 1
+		}
+	}
+	return 0
 }
