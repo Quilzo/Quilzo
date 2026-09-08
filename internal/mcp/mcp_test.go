@@ -12,6 +12,7 @@ import (
 
 func testServer() *Server {
 	s := NewServer("quilzo", "test")
+	s.Authorise = allowAll
 	s.Register(Operation{
 		Name: "list_pages", Summary: "list the pages in the draft",
 		Keywords: []string{"pages", "list", "content"},
@@ -167,6 +168,7 @@ func TestARefusalIsDistinguishableFromAFailure(t *testing.T) {
 
 func TestAnInternalFailureIsNotDressedAsARefusal(t *testing.T) {
 	s := NewServer("t", "1")
+	s.Authorise = allowAll
 	s.Register(Operation{Name: "broken", Summary: "fails", Writes: true},
 		func(map[string]any) (any, error) { return nil, fmt.Errorf("disk on fire") })
 
@@ -221,3 +223,11 @@ func TestUnknownMethodIsNotFound(t *testing.T) {
 		t.Error("an unimplemented method should say so rather than fail oddly")
 	}
 }
+
+// allowAll is the hook for tests about something other than authority.
+//
+// It has to be written out rather than left nil, because a nil hook refuses
+// every operation — which is the point of it, and which is how the suite
+// found out: the refusal-semantics test above started failing the moment the
+// gate went in, reporting a refusal it had not asked for.
+func allowAll(Operation) error { return nil }

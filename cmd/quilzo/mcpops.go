@@ -52,7 +52,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	// -- records ------------------------------------------------------------
 
 	srv.Register(mcp.Operation{
-		Name:     "list_collections",
+		Name: "list_collections", NeedsRole: "reader",
 		Summary:  "the record collections in this store and how many each holds",
 		Keywords: []string{"records", "collections", "data", "rows", "list"},
 	}, func(map[string]any) (any, error) {
@@ -76,7 +76,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	})
 
 	srv.Register(mcp.Operation{
-		Name:    "list_records",
+		Name: "list_records", NeedsRole: "reader",
 		Summary: "read records from a collection, filtered",
 		Detail: "This is a scan with a filter, not an index. It is fine for the " +
 			"collections one node holds and it is not a query planner, so do " +
@@ -166,7 +166,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	// -- what content has to look like --------------------------------------
 
 	srv.Register(mcp.Operation{
-		Name:    "list_types",
+		Name: "list_types", NeedsRole: "reader",
 		Summary: "the content types, their fields, and which pages must satisfy them",
 		Detail: "Read this before writing a page. A write that does not satisfy " +
 			"a bound type is refused, and the refusal is easier to avoid than " +
@@ -204,7 +204,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	})
 
 	srv.Register(mcp.Operation{
-		Name:     "list_media",
+		Name: "list_media", NeedsRole: "reader",
 		Summary:  "the images and files this site can use, with their descriptions",
 		Keywords: []string{"media", "images", "files", "assets", "uploads"},
 	}, func(map[string]any) (any, error) {
@@ -233,7 +233,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	// -- the state of things ------------------------------------------------
 
 	srv.Register(mcp.Operation{
-		Name:    "pipeline_status",
+		Name: "pipeline_status", NeedsRole: "reader",
 		Summary: "each environment, what it is serving, and what is waiting to go out",
 		Keywords: []string{"environments", "staging", "production", "promote",
 			"pipeline", "deploy", "schedule"},
@@ -269,7 +269,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	})
 
 	srv.Register(mcp.Operation{
-		Name:     "check_translations",
+		Name: "check_translations", NeedsRole: "reader",
 		Summary:  "which pages are missing a translation or were translated from content that has since changed",
 		Keywords: []string{"languages", "locales", "translation", "stale", "i18n"},
 	}, func(map[string]any) (any, error) {
@@ -309,7 +309,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	// -- assurance, read-only -----------------------------------------------
 
 	srv.Register(mcp.Operation{
-		Name:    "scan_content",
+		Name: "scan_content", NeedsRole: "admin",
 		Summary: "run the static security scan over the templates and the draft",
 		Detail: "Patterns rather than proofs. Nothing matching is not the same " +
 			"as being safe, and a scanner only finds what somebody thought to " +
@@ -337,7 +337,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	})
 
 	srv.Register(mcp.Operation{
-		Name:     "verify_store",
+		Name: "verify_store", NeedsRole: "admin",
 		Summary:  "re-hash every object and report whether each is still what its name says",
 		Keywords: []string{"verify", "integrity", "corruption", "check", "hash"},
 	}, func(map[string]any) (any, error) {
@@ -349,7 +349,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	})
 
 	srv.Register(mcp.Operation{
-		Name:    "inventory",
+		Name: "inventory", NeedsRole: "admin",
 		Summary: "the bill of materials and the cryptographic algorithms in use",
 		Keywords: []string{"sbom", "compliance", "dependencies", "crypto",
 			"licences", "quantum"},
@@ -370,7 +370,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	})
 
 	srv.Register(mcp.Operation{
-		Name:    "agent_activity",
+		Name: "agent_activity", NeedsRole: "admin",
 		Summary: "what agents have been doing in this store, including this one",
 		Detail: "Included deliberately. An agent that can see its own record is " +
 			"an agent that can notice it is looping, and hiding it would not " +
@@ -394,7 +394,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	})
 
 	srv.Register(mcp.Operation{
-		Name:    "run_listing",
+		Name: "run_listing", NeedsRole: "reader",
 		Summary: "run a declared listing and return its rows",
 		Detail: "A listing is a query somebody already declared and named. " +
 			"You cannot write one here and cannot widen one: the conditions, " +
@@ -458,7 +458,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	})
 
 	srv.Register(mcp.Operation{
-		Name:    "list_terms",
+		Name: "list_terms", NeedsRole: "reader",
 		Summary: "the controlled vocabularies and what each term means",
 		Detail: "Read this before classifying anything. Vocabularies are " +
 			"closed by default, so a term that is not here will be refused — " +
@@ -497,7 +497,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	})
 
 	srv.Register(mcp.Operation{
-		Name:    "list_menus",
+		Name: "list_menus", NeedsRole: "reader",
 		Summary: "the navigation, and whether every entry resolves for a reader",
 		Detail: "An entry pointing at a page that is not published works for " +
 			"an editor and 404s for everybody else. Publishing refuses while " +
@@ -532,7 +532,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	})
 
 	srv.Register(mcp.Operation{
-		Name:    "content_id",
+		Name: "content_id", NeedsRole: "reader",
 		Summary: "the IPFS identifier the published site would have",
 		Detail: "Computed from the bytes, locally, with nothing asked of any " +
 			"service. Use it to check what a pinning service claims: a " +
@@ -558,7 +558,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	})
 
 	srv.Register(mcp.Operation{
-		Name:    "export_site",
+		Name: "export_site", NeedsRole: "reader",
 		Summary: "the whole site in a portable format",
 		Args: map[string]string{
 			"format": "markdown, json or wxr; markdown by default",

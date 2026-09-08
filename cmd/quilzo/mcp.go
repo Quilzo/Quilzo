@@ -90,10 +90,28 @@ func cmdMCP(root string, args []string) error {
 func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.Server {
 	srv := mcp.NewServer("quilzo", version)
 
+	// Every operation is authorised here, from the role it declares.
+	//
+	// The three handlers that checked authority themselves keep their checks;
+	// they are the write paths and a second look at a write costs nothing.
+	// What this adds is the twenty that had none, and the guarantee that the
+	// twenty-fourth does not need anybody to remember.
+	srv.Authorise = func(op mcp.Operation) error {
+		action, err := actionForRole(op.NeedsRole)
+		if err != nil {
+			// An operation with no role declared is refused rather than
+			// allowed. The alternative is the behaviour being fixed: a new
+			// operation is open until somebody notices.
+			return fmt.Errorf("%q declares no role, so it cannot be "+
+				"authorised: %v", op.Name, err)
+		}
+		return authorise(root, caller, action, "/")
+	}
+
 	// -- reading ------------------------------------------------------------
 
 	srv.Register(mcp.Operation{
-		Name: "list_pages", Summary: "list pages in the draft and whether they differ from live",
+		Name: "list_pages", NeedsRole: "reader", Summary: "list pages in the draft and whether they differ from live",
 		Keywords: []string{"pages", "list", "content", "what"},
 	}, func(map[string]any) (any, error) {
 		pages, err := site.PagesAt(s, site.RefDraft)
@@ -109,7 +127,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 	})
 
 	srv.Register(mcp.Operation{
-		Name: "read_page", Summary: "read one page's fields",
+		Name: "read_page", NeedsRole: "reader", Summary: "read one page's fields",
 		Args:     map[string]string{"page": "the page name"},
 		Keywords: []string{"read", "get", "page", "content", "fields"},
 	}, func(a map[string]any) (any, error) {
@@ -127,7 +145,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 	})
 
 	srv.Register(mcp.Operation{
-		Name: "diff", Summary: "what differs between the draft and what is live",
+		Name: "diff", NeedsRole: "reader", Summary: "what differs between the draft and what is live",
 		Keywords: []string{"diff", "changes", "pending", "review"},
 	}, func(map[string]any) (any, error) {
 		changes, err := site.Diff(s, s.GetRef(site.RefLive), s.GetRef(site.RefDraft))
@@ -286,7 +304,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 	// -- checking -----------------------------------------------------------
 
 	srv.Register(mcp.Operation{
-		Name: "check_accessibility", Summary: "run the accessibility checks on the draft",
+		Name: "check_accessibility", NeedsRole: "reader", Summary: "run the accessibility checks on the draft",
 		Keywords: []string{"check", "accessibility", "a11y", "wcag", "blocking"},
 	}, func(map[string]any) (any, error) {
 		reports, err := checkAccessibility(root, s, s.GetRef(site.RefDraft), tplDir)
@@ -305,7 +323,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 	})
 
 	srv.Register(mcp.Operation{
-		Name: "check_provenance", Summary: "which pages lack an AI-content mark",
+		Name: "check_provenance", NeedsRole: "reader", Summary: "which pages lack an AI-content mark",
 		Keywords: []string{"check", "provenance", "ai", "marked", "article 50"},
 	}, func(map[string]any) (any, error) {
 		unmarked, err := unmarkedAt(root, s, s.GetRef(site.RefDraft))
@@ -350,4 +368,28 @@ func unmarkedAt(root string, s *store.Store, commitID string) ([]string, error) 
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// actionForRole maps the role an operation declares to the action checked.
+//
+// Roles rather than actions on the Operation because that is what an agent is
+// shown, and a surface that tells a caller "needs author" and then checks
+// something else is the mismatch this whole change is about.
+func actionForRole(role string) (auth.Action, error) {
+	switch role {
+	case "reader":
+		return auth.ActView, nil
+	case "author":
+		return auth.ActEditDraft, nil
+	case "publisher":
+		return auth.ActPublish, nil
+	case "admin":
+		// The posture, inventory, integrity and agent-activity reports. The
+		// admin restricts these screens to an administrator on the grounds
+		// that a detailed list of where this system's defences are thin is a
+		// target list, and this surface handed the same list to anybody who
+		// could start the process.
+		return auth.ActGrant, nil
+	}
+	return "", fmt.Errorf("%q is not a role this program has", role)
 }
