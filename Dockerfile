@@ -6,7 +6,22 @@
 FROM golang:1.27-bookworm AS build
 WORKDIR /src
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/quilzo ./cmd/quilzo
+# The version the binary reports, passed in by the release workflow.
+#
+# This was missing while the workflow passed `--build-arg VERSION=v0.2.0`, and
+# a build argument nothing declares is discarded without a word. So every image
+# ever published carried a binary that answered "dev" to `--version`, while the
+# OCI label beside it said the real number: the artefact and its label
+# disagreed, and only the label was checked.
+#
+# It matters more here than it would elsewhere. This program's own argument for
+# generating its bill of materials from the binary rather than from the source
+# tree is that the binary knows what it is -- so `quilzo compliance sbom` run
+# inside the image produced a document naming version "dev", which is the exact
+# failure that reasoning exists to prevent.
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags "-s -w -X main.version=$VERSION" -o /out/quilzo ./cmd/quilzo
 # Empty store and templates directories, carried into the final image so they
 # exist there with the right owner. Docker seeds a named volume from whatever
 # is at the mount point in the image, ownership included — and if nothing is

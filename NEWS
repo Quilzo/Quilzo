@@ -4,6 +4,27 @@ Newest first. Only what somebody running this would notice; the commit log
 has the rest.
 
 
+v0.2.1 — 8 September 2026
+=========================
+
+*** The binary in the container image knows which release it is.  The release
+    workflow passed `--build-arg VERSION=` and the Dockerfile declared no such
+    ARG, so it was discarded without a word: every published image carried a
+    binary answering "dev" to `--version` while the label beside it said the
+    real number.
+
+    It matters more here than it would elsewhere.  This program's argument for
+    generating its bill of materials from the binary rather than from the
+    source tree is that the binary knows what it is -- so `quilzo compliance
+    sbom` run inside the image produced a document naming version "dev", which
+    is the failure that reasoning exists to prevent.
+
+    Found by running `--version` against the published v0.2.0 image rather than
+    by reading the workflow.  The release now checks that the image agrees with
+    the tag, because a build argument the other side ignores is exactly the
+    kind of mismatch nothing was comparing.
+
+
 v0.2.0 — 8 September 2026
 =========================
 
