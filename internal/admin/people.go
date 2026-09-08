@@ -131,7 +131,11 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 				label += " on " + b.Resource
 			}
 			if b.OwnOnly {
-				label += ", own only"
+				// A binding written before the flag was withdrawn. It is shown
+				// because it is in the policy file, and shown as inert because
+				// it always was — reading "own only" as a restriction is the
+				// mistake this whole change is about.
+				label += " (own-only: never enforced, ignored)"
 			}
 			if !seen[label] {
 				seen[label] = true
@@ -195,8 +199,11 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 	}
 	b := auth.Binding{
 		Principal: who, Role: role, Resource: on,
-		Deny:      r.FormValue("deny") == "on",
-		OwnOnly:   r.FormValue("own_only") == "on",
+		Deny: r.FormValue("deny") == "on",
+		// own_only is not read from the form any more. The checkbox said
+		// "only content they created", stored a binding that said so, and
+		// nothing enforced it — see the error `quilzo auth grant --own-only`
+		// now returns. A form field that cannot be honoured is not read.
 		GrantedBy: p.Name,
 		Note:      strings.TrimSpace(r.FormValue("note")),
 	}
@@ -210,7 +217,6 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit("access.grant", "/"+who, map[string]string{
 		"role": string(role), "resource": on, "by": p.Name,
-		"own_only": fmt.Sprintf("%t", b.OwnOnly),
 	})
 	s.peopleBack(w, r, fmt.Sprintf("%s is now %s on %s", who, role, on))
 }

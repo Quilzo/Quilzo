@@ -187,11 +187,41 @@ func authGrant(root string, args []string) error {
 	deny := fs.Bool("deny", false, "deny instead of grant; a deny always wins")
 	note := fs.String("note", "", "why this access exists")
 	by := fs.String("by", "cli", "who granted it")
+	// Withdrawn rather than quietly dropped, so a script that passes it stops
+	// with a reason instead of silently granting something wider than it asked
+	// for — which is what it had been doing all along.
 	ownOnly := fs.Bool("own-only", false,
-		"restrict to content this principal created — the contributor shape")
+		"withdrawn: it was never enforced (see the error it returns)")
 	rest, flags := leadingArgs(args, 2)
 	if err := fs.Parse(flags); err != nil {
 		return err
+	}
+	if *ownOnly {
+		// Offered on both surfaces, confirmed in writing by both, enforced by
+		// neither: EvaluateOwned — the function that resolves an own-only
+		// binding — had no production caller at all. Every enforcement path
+		// called plain Evaluate and dropped the field. A principal granted
+		// `author --own-only` could edit every page in the store while the
+		// operator had been told they could not.
+		//
+		// Refusing rather than accepting-and-ignoring, because a grant that
+		// looks narrower than it is was the whole of the problem.
+		return fmt.Errorf(
+			"--own-only is withdrawn: it was never enforced\n" +
+				"  The binding was stored and confirmed and every check " +
+				"ignored it, so the grant was\n" +
+				"  always as wide as the role itself. Nothing that holds one " +
+				"loses access now.\n" +
+				"  To narrow a grant, use --on /path, which is enforced.\n" +
+				"  Bringing it back needs a creator recorded per page. The " +
+				"store knows who wrote\n" +
+				"  each commit but not who first created a page, and deriving " +
+				"that means walking\n" +
+				"  the whole history on every write — which fails closed when " +
+				"the walk comes up\n" +
+				"  empty, locking people out of their own older pages. That is " +
+				"a feature to build,\n" +
+				"  not a flag to restore")
 	}
 	if len(rest) != 2 {
 		return fmt.Errorf("usage: quilzo auth grant <principal> <role> [--on /path] [--deny]")
@@ -203,7 +233,7 @@ func authGrant(root string, args []string) error {
 	}
 	b := auth.Binding{
 		Principal: rest[0], Role: auth.Role(rest[1]), Resource: *on,
-		Deny: *deny, GrantedBy: *by, Note: *note, OwnOnly: *ownOnly,
+		Deny: *deny, GrantedBy: *by, Note: *note,
 	}
 	if err := p.Grant(b); err != nil {
 		return err
@@ -233,11 +263,6 @@ func authGrant(root string, args []string) error {
 	})
 
 	fmt.Printf("%s %s to %s on %s\n", verb, rest[1], rest[0], *on)
-	if *ownOnly {
-		fmt.Printf("  %sonly on content %s created — reads are unrestricted, "+
-			"because a team\n  where people cannot see each other's drafts "+
-			"is not a team%s\n", dim, rest[0], reset)
-	}
 	// Show the consequence immediately. A grant whose effect you have to work
 	// out later is one nobody checks.
 	fmt.Printf("  %s%s can now: ", dim, rest[0])
