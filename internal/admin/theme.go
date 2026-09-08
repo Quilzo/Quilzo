@@ -94,7 +94,7 @@ func (s *Server) handleTheme(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{
 			Name: ThemeCookie, Value: to, Path: "/",
 			MaxAge: 365 * 24 * 3600, HttpOnly: true,
-			SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r),
+			SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil || s.behindTLSProxy(),
 		})
 	default:
 		http.Error(w, "theme must be system, dark or light", http.StatusBadRequest)

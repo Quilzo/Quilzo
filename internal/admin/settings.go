@@ -177,9 +177,24 @@ func asAcceptance(err error, target **config.ErrNeedsAcceptance) bool {
 // cookie over plain HTTP is dropped by the browser — which would stop sign-in
 // working rather than make anything safer.
 func (s *Server) secureCookie(r *http.Request) bool {
-	if r.TLS != nil {
-		return true
-	}
+	return r.TLS != nil || s.behindTLSProxy()
+}
+
+// behindTLSProxy reports whether the deployment says TLS is terminated in
+// front of this process.
+//
+// Split from secureCookie so the `r.TLS != nil` half stays written out at each
+// cookie rather than disappearing into a call.
+//
+// That is for a reader, and it is also for CodeQL. Replacing
+// `Secure: r.TLS != nil` with `Secure: s.secureCookie(r)` raised nine new
+// go/cookie-secure-not-set alerts, because the analysis can follow the
+// comparison and cannot follow a method. The code was more correct and looked
+// less correct, and nine medium alerts nobody can act on is how a security
+// report stops being read. Keeping the comparison at the call site and the
+// configuration behind a method costs one line each and leaves both readers
+// able to check it.
+func (s *Server) behindTLSProxy() bool {
 	if s.Settings == nil || s.Settings.Load == nil {
 		return false
 	}
