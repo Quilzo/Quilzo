@@ -218,8 +218,8 @@ func verifyCavage(r *http.Request, origin string, keys []PublicKey,
 	//
 	// The draft has no created parameter in ordinary use, so the Date header
 	// is what bounds a replay -- and it only bounds anything because it is one
-	// of the signed headers. A signature that does not cover the date is
-	// refused below, along with everything else that fails a coverage rule.
+	// of the signed headers. Which is why cavageWhen is given the covered list
+	// and refuses to read a timestamp that is not in it.
 	when, err := cavageWhen(r, c)
 	if err != nil {
 		return nil, err
@@ -233,6 +233,21 @@ func verifyCavage(r *http.Request, origin string, keys []PublicKey,
 	}
 	if when.Sub(now) > time.Minute {
 		return nil, fmt.Errorf("this signature is dated in the future")
+	}
+	// expires was parsed and then never compared to anything. A sender that
+	// says when its signature stops being good is entitled to be believed,
+	// and the RFC 9421 path here has always honoured the equivalent.
+	if c.expires != "" && cavageCovers(c, "(expires)") {
+		secs, err := parseUnix(c.expires)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"this signature covers (expires) and %q is not a unix time",
+				c.expires)
+		}
+		if exp := time.Unix(secs, 0); now.After(exp) {
+			return nil, fmt.Errorf("this signature expired %s ago",
+				now.Sub(exp).Round(time.Second))
+		}
 	}
 
 	var key PublicKey
@@ -262,12 +277,41 @@ func verifyCavage(r *http.Request, origin string, keys []PublicKey,
 }
 
 // cavageWhen is the moment a signature claims to have been made.
+//
+// Only a timestamp the signature actually covers is read, and that is the
+// whole of this function's job.
+//
+// The draft puts created= and expires= in the Signature header as parameters,
+// and they enter the signing base only when (created) or (expires) appears in
+// headers=. So a parameter that is not listed there is unsigned data sitting
+// inside the signature header, and it used to be read anyway. Appending
+// `,created=<now>` to a captured request left headers= untouched, so the base
+// was byte-identical and the signature still verified -- while the age check
+// read the attacker's number. A six-year-old replay passed. The five-minute
+// window bounded nothing on that path.
+//
+// The Date header had the same shape: it was read whether or not `date` was in
+// headers=, so a sender that signed only (request-target), host and digest --
+// which some fediverse servers do -- could have its Date rewritten by anyone
+// holding a copy of the request.
+//
+// Refusing is the only answer available. There is no timestamp to fall back
+// on: an unsigned one is the attacker's.
 func cavageWhen(r *http.Request, c cavageSignature) (time.Time, error) {
-	if c.created != "" {
+	if c.created != "" && cavageCovers(c, "(created)") {
 		secs, err := parseUnix(c.created)
-		if err == nil {
-			return time.Unix(secs, 0), nil
+		if err != nil {
+			return time.Time{}, fmt.Errorf(
+				"this signature covers (created) and %q is not a unix time",
+				c.created)
 		}
+		return time.Unix(secs, 0), nil
+	}
+	if !cavageCovers(c, "date") {
+		return time.Time{}, fmt.Errorf(
+			"this signature covers neither (created) nor date, so nothing " +
+				"about its age is signed and a captured request would " +
+				"authenticate forever")
 	}
 	raw := strings.TrimSpace(r.Header.Get("Date"))
 	if raw == "" {
@@ -280,6 +324,16 @@ func cavageWhen(r *http.Request, c cavageSignature) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("the Date header %q is not a date", raw)
 	}
 	return when, nil
+}
+
+// cavageCovers reports whether a component is in the signature's headers list.
+func cavageCovers(c cavageSignature, name string) bool {
+	for _, h := range c.headers {
+		if strings.EqualFold(h, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // SignCavage adds a draft-cavage signature to an outbound request.
