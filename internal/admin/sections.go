@@ -56,7 +56,7 @@ func (s *Server) handleSections(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.URL.Query().Get("page"))
 	if name == "" {
 		s.render(w, r, "sections.html", map[string]any{
-			"Title": "Sections", "Principal": p, "Nav": "design",
+			"Title": "Sections", "Principal": p, "Nav": "sections",
 			"Pages": s.pagesWithSections(),
 		})
 		return
@@ -115,7 +115,7 @@ func (s *Server) handleSections(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, r, "sections.html", map[string]any{
-		"Title": "Sections", "Principal": p, "Nav": "design",
+		"Title": "Sections", "Principal": p, "Nav": "sections",
 		"Page":     name,
 		"Sections": rows,
 		"Count":    len(placed),

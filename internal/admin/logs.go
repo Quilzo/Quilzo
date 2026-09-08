@@ -73,6 +73,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.LoadAudit == nil {
 		s.render(w, r, "logs.html", map[string]any{
+			"Nav":   "logs",
 			"Title": "Audit log", "Principal": p,
 			"Unavailable": "this server was started without access to the " +
 				"audit log",
@@ -83,6 +84,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	events, err := s.LoadAudit()
 	if err != nil {
 		s.render(w, r, "logs.html", map[string]any{
+			"Nav":   "logs",
 			"Title": "Audit log", "Principal": p,
 			"Unavailable": err.Error(),
 		})
@@ -157,6 +159,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	sortStrings(names)
 
 	s.render(w, r, "logs.html", map[string]any{
+		"Nav":   "logs",
 		"Title": "Audit log", "Principal": p,
 		"Rows": page, "Total": total, "Entries": len(events),
 		"Offset": offset, "Next": end, "HasNext": end < total,

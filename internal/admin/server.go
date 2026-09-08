@@ -1382,7 +1382,12 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Posture == nil {
+		// Nav even here. Somebody who clicked Security and landed on "not
+		// wired up" is still on Security, and the footer's Help link is
+		// derived from this key too — without it they get the introduction
+		// instead of the section about the screen they are looking at.
 		s.render(w, r, "message.html", map[string]any{
+			"Nav":   "security",
 			"Title": "Security", "Principal": p,
 			"Heading": "The posture scanner is not wired up",
 			"Body": "This build serves the admin without a posture scanner, so " +
