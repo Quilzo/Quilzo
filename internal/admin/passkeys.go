@@ -217,7 +217,7 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Passkeys == nil {
-		s.passkeysUnavailable(w, r)
+		s.passkeysUnavailable(w, r, who)
 		return
 	}
 
@@ -243,7 +243,18 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 		unavailable = perr.Error()
 	}
 
+	// Principal, or this screen renders with no navigation at all.
+	//
+	// render works out the menu from the caller's permissions, and reads the
+	// caller out of this map. Without it the policy is asked about an empty
+	// principal, every entry is denied, and the page comes back with no menu
+	// and no "signed in as" — 3,475 bytes where the media screen is 10,053.
+	//
+	// It presented as "the highlight does not work on Passkeys like it does
+	// everywhere else", which is how somebody notices a missing menu on a
+	// screen they reached from the menu.
 	s.render(w, r, "passkeys.html", map[string]any{
+		"Nav": "passkeys", "Principal": who,
 		"Title": "Passkeys", "Nonce": n, "Keys": mine,
 		"Unavailable": unavailable, "Who": who.Name,
 	})
@@ -395,7 +406,8 @@ func (s *Server) handlePasskeyRegister(w http.ResponseWriter, r *http.Request) {
 // handlePasskeySignIn serves the sign-in page's script.
 func (s *Server) handlePasskeySignIn(w http.ResponseWriter, r *http.Request) {
 	if s.Passkeys == nil {
-		s.passkeysUnavailable(w, r)
+		// Nobody is signed in on this page, so there is no menu to render.
+		s.passkeysUnavailable(w, r, principal{})
 		return
 	}
 	n, err := nonce()
@@ -598,11 +610,25 @@ var errNoPasskeyStore = fmt.Errorf(
 		"registered or used. Sign in with a token")
 
 // passkeysUnavailable answers a page request on a build with no storage.
-func (s *Server) passkeysUnavailable(w http.ResponseWriter, r *http.Request) {
+// passkeysUnavailable explains that this build keeps no passkeys.
+//
+// Takes the caller rather than resolving one, because its two callers are in
+// different states: the management screen has already authenticated somebody
+// and a screen saying a feature is unavailable is still a screen they need to
+// navigate away from, while the sign-in page has nobody yet and correctly
+// renders no menu. A zero principal is the second case.
+func (s *Server) passkeysUnavailable(w http.ResponseWriter, r *http.Request,
+	who principal) {
+
 	w.WriteHeader(http.StatusServiceUnavailable)
-	s.render(w, r, "passkeys.html", map[string]any{
+	data := map[string]any{
+		"Nav":   "passkeys",
 		"Title": "Passkeys", "Unavailable": errNoPasskeyStore.Error(),
-	})
+	}
+	if who.Name != "" {
+		data["Principal"] = who
+	}
+	s.render(w, r, "passkeys.html", data)
 }
 
 // errSignIn is the single answer to every sign-in failure. Which one it was is
