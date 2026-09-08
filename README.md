@@ -673,7 +673,22 @@ than for one that has to be described.
   append-only store cannot erase, so the data that must be erasable is kept
   where erasing it is possible, and erasure works by search rather than by id.
 - **EU AI Act Article 50** requires machine-readable marking of AI-generated
-  content. Publishing an unmarked AI-generated page is refused, not warned about.
+  content. Publishing a page that declares no provenance is refused, not warned
+  about — on all three surfaces, which is newer than the sentence was. It had
+  never been checked on the command line at all, so `quilzo publish && deploy`
+  shipped unmarked content with status zero, and on the agent interface the
+  check was skipped whenever it errored rather than when it passed.
+
+  A person can override it with `--force-unmarked --reason "..."`, or the same
+  reason box in the admin, and the override is recorded with the gates it
+  waived. An agent cannot: over the machine interface the refusal is final,
+  because the caller there is the thing the marking is about. That asymmetry is
+  the point rather than an inconsistency.
+
+  What is refused is an *unmarked* page, which is not the same as an
+  AI-generated one — `quilzo provenance check` calls it "a gap, not a claim
+  that a person wrote it". Marking a page as `humanEdits` satisfies the gate,
+  and is meant to.
 
 - **The Cyber Resilience Act.** Reporting an actively exploited vulnerability
   starts on 11 September 2026 and SBOMs are due in December 2027. You cannot

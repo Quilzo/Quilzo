@@ -237,14 +237,35 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		}
 		draft := s.GetRef(site.RefDraft)
 
-		if reports, err := checkAccessibility(root, s, draft, tplDir); err == nil {
-			if n := a11y.BlockingCount(reports); n > 0 {
-				return nil, &mcp.Refusal{Reason: fmt.Sprintf(
-					"%d blocking accessibility failure(s); this content is unusable "+
-						"for someone. Fix them, or ask a person to override", n)}
-			}
+		// Both gates refuse when they cannot run, rather than when they run
+		// and fail.
+		//
+		// They were written as `err == nil && ...`, so a missing template
+		// directory or an unreadable provenance index skipped the check and
+		// published. On the one surface where the caller is a model, which is
+		// the surface where "there is no override here; that is a human
+		// decision" is printed two lines above. The CLI has refused on a gate
+		// error since the day somebody noticed the same shape there, and the
+		// comment it carries says why at length: a gate that cannot run must
+		// not exit like a gate that passed.
+		reports, err := checkAccessibility(root, s, draft, tplDir)
+		if err != nil {
+			return nil, &mcp.Refusal{Reason: fmt.Sprintf(
+				"the accessibility check could not run, so publishing would "+
+					"claim a check that did not happen: %v", err)}
 		}
-		if unmarked, err := unmarkedAt(root, s, draft); err == nil && len(unmarked) > 0 {
+		if n := a11y.BlockingCount(reports); n > 0 {
+			return nil, &mcp.Refusal{Reason: fmt.Sprintf(
+				"%d blocking accessibility failure(s); this content is unusable "+
+					"for someone. Fix them, or ask a person to override", n)}
+		}
+		unmarked, err := unmarkedAt(root, s, draft)
+		if err != nil {
+			return nil, &mcp.Refusal{Reason: fmt.Sprintf(
+				"the provenance check could not run, so publishing would "+
+					"claim a check that did not happen: %v", err)}
+		}
+		if len(unmarked) > 0 {
 			return nil, &mcp.Refusal{Reason: fmt.Sprintf(
 				"%d page(s) have no provenance: %s. Article 50 requires AI-generated "+
 					"content to be marked", len(unmarked), strings.Join(unmarked, ", "))}

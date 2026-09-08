@@ -1669,6 +1669,19 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// the one an editor uses, which is exactly the person likely to be
 	// publishing what an assistant wrote.
 	unmarked := s.unmarkedPages(draft)
+	// What the one reason field waives, collected as each gate is reached.
+	//
+	// review.html shows a single free-text box, and typing anything in it
+	// clears four independent gates at once: unmarked AI content, blocking
+	// accessibility failures, pages that expired before publication, and menu
+	// links that resolve to nothing. Somebody overriding a broken link also
+	// waives the Article 50 marking gate, in the same click, without being
+	// told. Splitting them is a change to the screen; recording which ones
+	// were actually in force is not, and it is the part an auditor needs.
+	var waived []string
+	if len(unmarked) > 0 {
+		waived = append(waived, "unmarked-ai")
+	}
 	if len(unmarked) > 0 && reason == "" {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		s.render(w, r, "review.html", map[string]any{
@@ -1708,8 +1721,11 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// a month. Publishing it writes content that is invisible from the instant
 	// it goes live, which looks exactly like a broken publish and is very hard
 	// to diagnose from outside.
-	if stale := site.AlreadyExpired(site.PagesOf(s.Store, draft),
-		time.Now()); len(stale) > 0 && reason == "" {
+	stale := site.AlreadyExpired(site.PagesOf(s.Store, draft), time.Now())
+	if len(stale) > 0 {
+		waived = append(waived, "expired-pages")
+	}
+	if len(stale) > 0 && reason == "" {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		s.render(w, r, "review.html", map[string]any{
 			"Nav": "review", "Title": "Review", "Principal": p,
@@ -1766,7 +1782,11 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// the dangling-link bug that actually ships. Drupal has an open issue and
 	// five contributed modules for this; here it is the same kind of refusal
 	// as an inaccessible page, with the same override.
-	if broken := s.brokenLinks(site.PagesOf(s.Store, draft)); len(broken) > 0 && reason == "" {
+	broken := s.brokenLinks(site.PagesOf(s.Store, draft))
+	if len(broken) > 0 {
+		waived = append(waived, "broken-links")
+	}
+	if len(broken) > 0 && reason == "" {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		s.render(w, r, "review.html", map[string]any{
 			"Nav": "review", "Title": "Review", "Principal": p,
@@ -1783,6 +1803,9 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// The same gate as the CLI, for the same reason. An override that is
 	// available in the interface but not on the command line, or the reverse, is
 	// a control with a hole in whichever one people actually use.
+	if blocking > 0 {
+		waived = append(waived, "accessibility")
+	}
 	if blocking > 0 && reason == "" {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		s.render(w, r, "review.html", map[string]any{
@@ -1817,9 +1840,32 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 
 	pub, err := site.Publish(s.Store, "")
 	if err != nil {
+		s.audit("publish", "/", map[string]string{
+			"outcome": "failed", "detail": err.Error()})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Publishing is recorded here, which it was not.
+	//
+	// This handler wrote nothing to the audit log at all: not the publish, not
+	// the override, not the reason. The CLI has always recorded all three. So
+	// the audit log held every publish made from a script and none made from
+	// the browser — which is the interface an ordinary editor uses, and the
+	// only one most people ever touch.
+	//
+	// The override field mattered most. review.html labels the reason box
+	// "Recorded." and it was not: the text went into the confirmation page and
+	// nowhere else, and site.Publish is not even given it. One free-text field
+	// waives four separate gates — unmarked AI content, blocking accessibility
+	// failures, expired pages and broken menu links — so what it waived is
+	// recorded next to it rather than left to be inferred from what happened
+	// to be failing at the time.
+	s.audit("publish", "/", map[string]string{
+		"commit":  shortHash(pub.Published),
+		"changes": fmt.Sprintf("%d", len(pub.Changes)),
+		"waived":  strings.Join(waived, ","),
+		"reason":  reason,
+	})
 	s.render(w, r, "message.html", map[string]any{
 		"Title": "Published", "Principal": p,
 		"Heading": "Published",

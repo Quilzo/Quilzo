@@ -862,6 +862,8 @@ func cmdPublish(root string, args []string) error {
 	reason := fs.String("reason", "", "why the override is justified (required with --force-inaccessible)")
 	tplDir := fs.String("templates", "templates", "where page.html lives")
 	skip := fs.Bool("no-a11y-check", false, "skip the check entirely")
+	forceUnmarked := fs.Bool("force-unmarked", false,
+		"publish pages that declare no provenance (needs --reason)")
 	token := fs.String("token", "", "authenticate as the holder of this token")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -895,6 +897,74 @@ func cmdPublish(root string, args []string) error {
 		record(root, caller.auditRecord("publish", "/", audit.Denied,
 			map[string]string{"reason": "classification", "detail": err.Error()}))
 		return errBlocked{err}
+	}
+
+	// AI Act Article 50, on the surface a pipeline actually uses.
+	//
+	// README says "publishing an unmarked AI-generated page is refused, not
+	// warned about", flatly and without naming a surface. It was true of the
+	// admin and of the agent interface and had never been true here — the one
+	// interface a deployment script drives. `quilzo publish && deploy` shipped
+	// unmarked generated content with status zero, which is the shape of every
+	// other failure this program was built to refuse.
+	//
+	// Overridable, and that is a correction rather than a weakening.
+	//
+	// The first version of this gate had no override, on the reasoning that a
+	// store with nothing AI-written is unaffected. That reasoning was wrong
+	// and one live publish showed it: unmarkedAt returns pages with no
+	// provenance record at all, which on a fresh store is every page a person
+	// has just written by hand. It refused the first publish of a
+	// hand-authored site, which is not what Article 50 asks of anybody.
+	//
+	// So it blocks and can be overridden, exactly as the admin screen does,
+	// and the override is recorded. Being stricter here than the interface
+	// most people use would not have made the claim truer; it would have made
+	// the command line the one nobody could use.
+	//
+	// The way to satisfy it rather than override it is `quilzo provenance set`
+	// for new content, or `quilzo provenance backfill` for a store that
+	// predates the records.
+	candidateFor := target
+	if candidateFor == "" {
+		candidateFor = s.GetRef(site.RefDraft)
+	}
+	unmarked, uerr := unmarkedAt(root, s, candidateFor)
+	if uerr != nil {
+		// A gate that cannot run must not exit like a gate that passed. The
+		// accessibility gate below says this at length; the reasoning is the
+		// same one and it is not weaker for being a legal obligation rather
+		// than an ethical one.
+		record(root, caller.auditRecord("publish", "/", audit.Denied,
+			map[string]string{
+				"reason": "provenance check could not run",
+				"detail": uerr.Error(),
+			}))
+		return errBlocked{fmt.Errorf(
+			"the provenance check could not run, so publishing would claim a "+
+				"check that did not happen: %v", uerr)}
+	}
+	if len(unmarked) > 0 && !*forceUnmarked {
+		record(root, caller.auditRecord("publish", "/", audit.Denied,
+			map[string]string{
+				"reason": "unmarked content",
+				"pages":  fmt.Sprintf("%d", len(unmarked)),
+			}))
+		return errBlocked{fmt.Errorf(
+			"%d page(s) have no provenance and cannot be published: %s\n"+
+				"  say who or what wrote each:\n"+
+				"    quilzo provenance set PAGE --source humanEdits --author WHO\n"+
+				"    (or trainedAlgorithmicMedia, compositeWithTrainedAlgorithmicMedia,\n"+
+				"     algorithmicMedia — the IPTC digitalSourceType names)\n"+
+				"  for a store that predates the records: quilzo provenance backfill\n"+
+				"  or publish anyway: --force-unmarked --reason \"...\"",
+			len(unmarked), strings.Join(unmarked, ", "))}
+	}
+	if len(unmarked) > 0 && *forceUnmarked && strings.TrimSpace(*reason) == "" {
+		return errBlocked{fmt.Errorf(
+			"--force-unmarked needs --reason: the override is recorded, and " +
+				"an override with no reason records only that somebody wanted " +
+				"one")}
 	}
 
 	// The gate runs before the pointer moves. ATAG Part B asks that the tool
