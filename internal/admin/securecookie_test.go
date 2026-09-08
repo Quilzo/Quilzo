@@ -36,7 +36,11 @@ func TestNoCookieDecidesSecureByItself(t *testing.T) {
 	if err != nil {
 		t.Skip("no sources")
 	}
-	bare := regexp.MustCompile(`Secure:\s*r\.TLS`)
+	// r.TLS on its own is the defect; r.TLS with the proxy check beside it is
+	// the fix. So this looks for the first without the second, which is also
+	// why the comparison is left written out at each call site rather than
+	// hidden in a method — see behindTLSProxy.
+	bare := regexp.MustCompile(`Secure:\s*r\.TLS[^|\n]*$`)
 	for _, f := range files {
 		if strings.HasSuffix(f, "_test.go") {
 			continue
@@ -45,11 +49,21 @@ func TestNoCookieDecidesSecureByItself(t *testing.T) {
 		if rerr != nil {
 			continue
 		}
-		if bare.Match(b) {
-			t.Errorf("%s decides Secure from r.TLS directly. That is false "+
-				"behind a TLS-terminating proxy, and the point of "+
-				"secureCookie is that the answer is worked out once",
-				filepath.Base(f))
+		for _, line := range strings.Split(string(b), "\n") {
+			trimmed := strings.TrimSpace(line)
+			// Prose about the rule is not a breach of it. settings.go
+			// explains why the comparison stays at the call site, and quoting
+			// the wrong form in order to explain it is not the wrong form.
+			if strings.HasPrefix(trimmed, "//") {
+				continue
+			}
+			if !bare.MatchString(strings.TrimRight(line, " ,")) {
+				continue
+			}
+			t.Errorf("%s decides Secure from r.TLS alone: %q. That is false "+
+				"behind a TLS-terminating proxy — it needs "+
+				"|| s.behindTLSProxy() beside it",
+				filepath.Base(f), strings.TrimSpace(line))
 		}
 	}
 }

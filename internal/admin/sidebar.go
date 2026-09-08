@@ -61,7 +61,7 @@ func (s *Server) handleSidebar(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{
 			Name: SidebarCookie, Value: "hidden", Path: "/",
 			MaxAge: 365 * 24 * 3600, HttpOnly: true,
-			SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r),
+			SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil || s.behindTLSProxy(),
 		})
 	case "shown":
 		s.clearCookie(w, r, SidebarCookie)

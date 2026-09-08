@@ -895,7 +895,7 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		Name: "quilzo_token", Value: raw, Path: "/",
 		HttpOnly: true,                    // unreadable by script; there is none, but the header outlives that
 		SameSite: http.SameSiteStrictMode, // the primary CSRF defence
-		Secure:   s.secureCookie(r),
+		Secure:   r.TLS != nil || s.behindTLSProxy(),
 		MaxAge:   8 * 3600,
 	})
 	// Somebody signing in for the first time lands on the getting started
@@ -917,7 +917,7 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: "", Path: "/", MaxAge: -1,
-		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r),
+		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil || s.behindTLSProxy(),
 	})
 	http.Redirect(w, r, "/signin", http.StatusSeeOther)
 }

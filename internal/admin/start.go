@@ -205,7 +205,7 @@ func (s *Server) handleStartDone(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: StartDismissedCookie, Value: "1", Path: "/",
 		MaxAge: 365 * 24 * 3600, HttpOnly: true,
-		SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r),
+		SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil || s.behindTLSProxy(),
 	})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

@@ -314,7 +314,7 @@ func (s *Server) handleNavOrder(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: NavOrderCookie, Value: url.QueryEscape(strings.Join(keys, ",")),
 		Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode,
-		Secure: s.secureCookie(r), MaxAge: 365 * 24 * 3600,
+		Secure: r.TLS != nil || s.behindTLSProxy(), MaxAge: 365 * 24 * 3600,
 	})
 	http.Redirect(w, r, "/profile#arrangement", http.StatusSeeOther)
 }
@@ -395,6 +395,6 @@ func (s *Server) clearCookie(w http.ResponseWriter, r *http.Request, name string
 	http.SetCookie(w, &http.Cookie{
 		Name: name, Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, SameSite: http.SameSiteStrictMode,
-		Secure: s.secureCookie(r),
+		Secure: r.TLS != nil || s.behindTLSProxy(),
 	})
 }
