@@ -428,9 +428,23 @@ func (s *Server) typeWriter(w http.ResponseWriter, r *http.Request) (principal, 
 	if !ok {
 		return principal{}, false
 	}
-	// Editing a type changes what every author may store from now on, so it is
-	// gated on editing the draft rather than on viewing it.
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	// Editing a type changes what every author may store from now on, so it
+	// needs publish rather than edit-draft.
+	//
+	// This gate said edit-draft, and the command line has always said publish
+	// for the same capability. Both comments made the same observation --
+	// "changes what every author may store" -- and stopped at different
+	// conclusions: this one compared editing a type to viewing one and went no
+	// further, while privilege.go went the whole way and wrote "Publisher, not
+	// author."
+	//
+	// Publisher is right, and the reason is that the two are not the same kind
+	// of act. An author who can rewrite the rules that constrain authors has
+	// escaped them: bind a page to a type, or unbind it, and the type gate
+	// stops applying to the content that gate exists to check. Doing that
+	// through a browser was one rung cheaper than doing it from a script, and
+	// the browser is the interface most people have.
+	if !s.can(w, r, p, auth.ActPublish, "/") {
 		return principal{}, false
 	}
 	if s.Types == nil {
