@@ -515,13 +515,9 @@ func lookupNeed(cmd string, args []string) (need, bool) {
 // tokenFromArgs finds --token before the subcommand's own flag parsing runs,
 // because the authorisation decision happens before that.
 func tokenFromArgs(args []string) string {
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--token" && i+1 < len(args) {
-			return args[i+1]
-		}
-		if v, ok := strings.CutPrefix(args[i], "--token="); ok {
-			return v
-		}
-	}
-	return ""
+	// The global pass in main has already taken it out of the arguments, so
+	// there is nothing left here to scan for. Kept as a function because the
+	// alternative is the authorisation path reading a package variable
+	// directly, and this way the one call site says what it is asking for.
+	return flagToken
 }

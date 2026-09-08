@@ -139,7 +139,6 @@ func integrationsTools(root string, args []string) error {
 
 func integrationsCall(root string, args []string) error {
 	fs := flag.NewFlagSet("integrations call", flag.ContinueOnError)
-	token := fs.String("token", "", "authenticate as the holder of this token")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -150,7 +149,7 @@ func integrationsCall(root string, args []string) error {
 	}
 	name, tool := rest[0], rest[1]
 
-	caller := resolveCaller(root, *token)
+	caller := resolveCaller(root, flagToken)
 	// Reaching another system is not reading this one. An integration that
 	// writes is a change somewhere nobody here can roll back, so the right to
 	// call one is the right to publish rather than the right to view.

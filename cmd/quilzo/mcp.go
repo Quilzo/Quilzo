@@ -31,7 +31,6 @@ import (
 func cmdMCP(root string, args []string) error {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	tplDir := fs.String("templates", "templates", "where page.html lives")
-	token := fs.String("token", "", "authenticate as the holder of this token")
 	list := fs.Bool("list", false, "print the operations and exit")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -41,7 +40,7 @@ func cmdMCP(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	caller := resolveCaller(root, *token)
+	caller := resolveCaller(root, flagToken)
 	srv := buildMCP(root, s, caller, *tplDir)
 
 	if *list {
