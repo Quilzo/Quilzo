@@ -253,7 +253,6 @@ func rightsSet(root string, args []string) error {
 	note := fs.String("note", "", "restrictions that do not fit a field")
 	clear := fs.Bool("clear", false,
 		"remove the record entirely, leaving the asset undeclared")
-	token := fs.String("token", "", "authenticate as the holder of this token")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -265,7 +264,7 @@ func rightsSet(root string, args []string) error {
 			"quilzo rights set ID --licence NAME --holder WHO " +
 				"--until YYYY-MM-DD\n  one id, and the flags after it")
 	}
-	caller := resolveCaller(root, *token)
+	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
 		record(root, caller.auditRecord("rights.set", id, audit.Denied,
 			map[string]string{"reason": "authorisation"}))

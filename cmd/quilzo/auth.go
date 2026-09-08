@@ -629,12 +629,11 @@ func tokenExchange(root string, args []string) error {
 	role := fs.String("role", "", "narrow to this role (default: the parent's)")
 	on := fs.String("on", "", "narrow to this path (default: the parent's)")
 	ttl := fs.Duration("ttl", auth.DefaultSessionTTL, "how long the session lasts")
-	tok := fs.String("token", "", "the long-lived token (default: the usual sources)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	parent, from := findToken(*tok)
+	parent, from := findToken(flagToken)
 	if parent == "" {
 		return fmt.Errorf(
 			"no token to exchange; pass --token, or put one in %s", tokenFile())

@@ -208,7 +208,6 @@ func menuItemSet(root string, args []string) error {
 	parent := fs.String("parent", "", "id of the item this nests under")
 	order := fs.Int("order", 0, "position among its siblings; lower first")
 	note := fs.String("note", "", "why this entry exists, for whoever finds it in two years")
-	token := fs.String("token", "", "authenticate as the holder of this token")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -221,7 +220,7 @@ func menuItemSet(root string, args []string) error {
 		return fmt.Errorf("an entry with no label is an entry nobody can read")
 	}
 
-	caller := resolveCaller(root, *token)
+	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
 		record(root, caller.auditRecord("menu.save", name, audit.Denied,
 			map[string]string{"reason": "authorisation"}))
@@ -301,7 +300,6 @@ func menuItemRemove(root string, args []string) error {
 		args = args[1:]
 	}
 	fs := flag.NewFlagSet("menu remove", flag.ContinueOnError)
-	token := fs.String("token", "", "authenticate as the holder of this token")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -309,7 +307,7 @@ func menuItemRemove(root string, args []string) error {
 		return fmt.Errorf("quilzo menu remove NAME ITEM-ID")
 	}
 
-	caller := resolveCaller(root, *token)
+	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
 		record(root, caller.auditRecord("menu.save", name, audit.Denied,
 			map[string]string{"reason": "authorisation"}))

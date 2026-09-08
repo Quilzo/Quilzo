@@ -46,6 +46,13 @@ const defaultRoot = ".quilzo"
 var (
 	bold, dim, green, yellow, red, reset string
 	w                                    *out.Writer
+
+	// flagToken holds a --token given anywhere on the command line.
+	//
+	// Set by the global pass in main, which also removes it, so every
+	// subcommand accepts it and none has to declare it. Read through
+	// tokenFromArgs so the one authorisation call site did not have to change.
+	flagToken string
 )
 
 func overrideNote(forced bool, reason string) string {
@@ -304,8 +311,23 @@ func main() {
 	green, yellow, red, reset = w.Green(), w.Yellow(), w.Red(), w.Reset()
 
 	root := defaultRoot
-	// A tiny hand-rolled global flag pass, so `--root` works before the
-	// subcommand as well as after it.
+	// A tiny hand-rolled global flag pass, so `--root` and `--token` work
+	// before the subcommand as well as after it.
+	//
+	// --token is here because it was read globally and removed nowhere. The
+	// authorisation check picked it out of the raw arguments, then handed the
+	// same arguments to the subcommand's own flag set — which rejected an
+	// undeclared flag. Seven of eighty-one flag sets declared it, so `publish
+	// --token X` worked and `add --token X` exited 1 with "flag provided but
+	// not defined: -token".
+	//
+	// The command that mattered most was the one printing the advice. Every
+	// refusal in this program ends "Present one with --token,
+	// ~/.quilzo/token, or QUILZO_TOKEN", and for `quilzo add` on a store with
+	// access control the first of those three could not be done at all.
+	//
+	// Stripping it here makes the sentence true everywhere, and the seven
+	// local declarations are gone rather than left to shadow it.
 	var rest []string
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--root" && i+1 < len(args) {
@@ -315,6 +337,15 @@ func main() {
 		}
 		if v, ok := strings.CutPrefix(args[i], "--root="); ok {
 			root = v
+			continue
+		}
+		if args[i] == "--token" && i+1 < len(args) {
+			flagToken = args[i+1]
+			i++
+			continue
+		}
+		if v, ok := strings.CutPrefix(args[i], "--token="); ok {
+			flagToken = v
 			continue
 		}
 		rest = append(rest, args[i])
@@ -864,13 +895,12 @@ func cmdPublish(root string, args []string) error {
 	skip := fs.Bool("no-a11y-check", false, "skip the check entirely")
 	forceUnmarked := fs.Bool("force-unmarked", false,
 		"publish pages that declare no provenance (needs --reason)")
-	token := fs.String("token", "", "authenticate as the holder of this token")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	args = fs.Args()
 
-	caller := resolveCaller(root, *token)
+	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
 		record(root, caller.auditRecord("publish", "/", audit.Denied,
 			map[string]string{"reason": "authorisation"}))
