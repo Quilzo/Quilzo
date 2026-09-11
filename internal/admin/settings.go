@@ -66,9 +66,22 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Grouped and counted, so each group can be a disclosure that says what
+	// is inside it before you open it.
+	//
+	// Nineteen groups, eighty-nine editable rows, every one expanded, and
+	// each row its own form with its own button. Nobody reads eighty-nine
+	// rows. The two counts are what makes closing them safe: a summary saying
+	// "12 settings, 2 changed" tells you whether to look, and a group holding
+	// something weaker than its default opens itself rather than waiting to
+	// be found.
 	type group struct {
-		Name  string
-		Items []config.Effective
+		Name        string
+		Label       string
+		Items       []config.Effective
+		Changed     int
+		HasWeaker   bool
+		Interesting bool
 	}
 	var groups []group
 	byName := map[string]int{}
@@ -76,17 +89,38 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		g, _, _ := strings.Cut(e.Setting.Key, ".")
 		i, seen := byName[g]
 		if !seen {
-			groups = append(groups, group{Name: g})
+			groups = append(groups, group{Name: g, Label: settingGroupLabel(g)})
 			i = len(groups) - 1
 			byName[g] = i
 		}
 		groups[i].Items = append(groups[i].Items, e)
+		if e.Overriden {
+			groups[i].Changed++
+		}
+		if e.Weaker {
+			groups[i].HasWeaker = true
+		}
+	}
+	msg := r.URL.Query().Get("m")
+	for i := range groups {
+		// Open when something in here is weaker than its default, or when the
+		// message that brought you back names a key in this group — landing
+		// on a confirmation whose subject is inside a closed section is worse
+		// than no confirmation.
+		named := false
+		for _, e := range groups[i].Items {
+			if msg != "" && strings.Contains(msg, e.Setting.Key) {
+				named = true
+				break
+			}
+		}
+		groups[i].Interesting = groups[i].HasWeaker || named
 	}
 
 	s.render(w, r, "settings.html", map[string]any{
 		"Title": "Settings", "Principal": p, "Nav": "settings",
 		"Groups": groups, "Weakened": cfg.Weakened(),
-		"Message":  r.URL.Query().Get("m"),
+		"Message":  msg,
 		"CanWrite": s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed,
 		"Days":     int(config.MaxAcceptance.Hours() / 24),
 	})
@@ -203,4 +237,60 @@ func (s *Server) behindTLSProxy() bool {
 		return false
 	}
 	return cfg.Bool("admin.behind_tls_proxy")
+}
+
+// settingGroupLabel names a settings group in words.
+//
+// The groups are the first segment of each key, so the headings on this screen
+// were `auth`, `token`, `api`, `publish`, `review`, `site`, `admin`, `marking`,
+// `approval`, `passkey`, `network`, `security`, `licence`, `fediverse`,
+// `crawl`, `share`, `telemetry`, `media`, `ext` — nineteen identifiers, three
+// of which (auth, passkey, security) a person cannot pre-sort mentally without
+// opening all three.
+//
+// A key is still shown on every row, so nothing is hidden by naming the
+// section after what it is for. An unknown group falls back to its own key
+// rather than to a guess, which is the honest answer for a group added later.
+func settingGroupLabel(key string) string {
+	switch key {
+	case "auth":
+		return "Signing in"
+	case "passkey":
+		return "Passkeys"
+	case "token":
+		return "API tokens"
+	case "api":
+		return "Content API"
+	case "publish":
+		return "Publishing"
+	case "review":
+		return "Review and approval"
+	case "approval":
+		return "Approval policy"
+	case "site":
+		return "The published site"
+	case "admin":
+		return "This interface"
+	case "marking":
+		return "Classification marking"
+	case "network":
+		return "Outbound network"
+	case "security":
+		return "Security posture"
+	case "licence":
+		return "Content licensing"
+	case "fediverse":
+		return "Federation"
+	case "crawl":
+		return "Crawlers and AI"
+	case "share":
+		return "Share target"
+	case "telemetry":
+		return "Telemetry"
+	case "media":
+		return "Media"
+	case "ext":
+		return "Extensions"
+	}
+	return key
 }

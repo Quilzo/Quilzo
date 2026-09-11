@@ -747,8 +747,18 @@ tr.detail td { padding-top: 0; border-top: 0; }
     grid-template-rows: auto 1fr auto; min-height: 100vh; }
   body > footer { grid-area: foot; }
   body > .bar { grid-area: bar; margin-bottom: 0; }
+  /* Sticky and scrolling on its own, so the page is never taller than the
+     menu.
+     The column is a grid row, so without this the shortest possible page was
+     the height of twenty-eight links -- about 1,425 pixels -- whatever was in
+     it. align-self: start stops the row stretching the box; max-height plus
+     overflow-y let it scroll independently once the disclosures are open;
+     overscroll-behavior keeps that scroll from carrying on into the page when
+     it reaches the end. */
   body > .sidenav { grid-area: nav; border-right: 1px solid var(--outline-variant);
-    padding: 1rem .75rem; background: var(--surface-container-low); }
+    padding: 1rem .75rem; background: var(--surface-container-low);
+    position: sticky; top: 0; align-self: start;
+    max-height: 100vh; overflow-y: auto; overscroll-behavior: contain; }
   body > main { grid-area: main; }
   .sidenav .navgroups { flex-direction: column; gap: 1rem; align-items: stretch; }
   .sidenav .navgroup + .navgroup { border-left: 0; margin-left: 0; padding-left: 0; }
@@ -771,10 +781,39 @@ tr.detail td { padding-top: 0; border-top: 0; }
    the column. It reads as a label on a section rather than as a link that
    happens to be in capitals — which is what it looked like when the only
    differences were case and a slightly lighter grey. */
-.navgroup > h2 { display: block; margin: 0 0 .4rem 0; padding: 0 .75rem .3rem;
+.navgroup > summary > h2 { display: block; margin: 0; padding: 0;
   font: var(--label-sm); font-weight: 800; letter-spacing: .1em;
-  text-transform: uppercase; color: var(--on-surface-variant);
-  border-bottom: 1px solid var(--outline-variant); }
+  text-transform: uppercase; color: var(--on-surface-variant); }
+
+/* The summary is the row you press, so it gets the padding and the rule that
+   used to be on the heading, and a hit area rather than a line of text.
+   40px to match the destinations under it and to clear WCAG 2.2 Target Size
+   (2.5.8), which asks for 24 by 24 and is the reason the links are that tall
+   already. */
+.navgroup > summary { display: flex; align-items: center; gap: .4rem;
+  min-height: 40px; padding: 0 .75rem .3rem; margin: 0 0 .4rem 0;
+  border-bottom: 1px solid var(--outline-variant);
+  cursor: pointer; list-style: none; }
+.navgroup > summary::-webkit-details-marker { display: none; }
+.navgroup > summary:hover > h2 { color: var(--on-surface); }
+.navgroup > summary:focus-visible { outline: 2px solid var(--primary);
+  outline-offset: 2px; border-radius: var(--shape-s); }
+
+/* A marker drawn rather than borrowed, so it points the same way in every
+   browser and follows the text colour in a forced-colours theme. */
+.navgroup > summary::after { content: ""; margin-left: auto; width: .5rem;
+  height: .5rem; border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor; transform: rotate(45deg);
+  transform-origin: center; opacity: .7; }
+.navgroup[open] > summary::after { transform: rotate(-135deg); }
+
+/* The group holding the current screen is named twice over: it is the open one,
+   and it carries the accent the current link carries. Without this the only
+   difference between "open because I am here" and "open because I pressed it"
+   is which one has a highlighted link in it. */
+.navgroup:has([aria-current="page"]) > summary {
+  border-bottom-color: var(--primary); }
+.navgroup:has([aria-current="page"]) > summary > h2 { color: var(--on-surface); }
 
 @media (max-width: 59.99rem) {
   /* No column to put it in, so the same markup becomes grouped rows above the
@@ -1070,3 +1109,36 @@ td.actions > *:last-child, th.actions > *:last-child { margin-right: 0; }
   border-radius: var(--radius-md, 12px);
   background: var(--surface, #fff);
 }
+
+/* -- settings and design, as disclosures -------------------------------------
+ *
+ * Nineteen groups of settings and eight of design tokens were all expanded:
+ * forty-six and thirty-five kilobytes of table and form, on two screens.
+ * Closed by default, with the counts on the summary so you can tell whether to
+ * open one without opening it.
+ *
+ * The summary is a row rather than a line of text, 40px tall to match the
+ * navigation and to clear WCAG 2.2 Target Size, and the marker is drawn here
+ * so it points the same way in every browser and follows the text colour under
+ * forced colours.
+ */
+.settinggroup { margin: 0 0 .75rem; border: 1px solid var(--outline-variant);
+  border-radius: var(--shape-m); background: var(--surface-container-lowest); }
+.settinggroup > summary { display: flex; align-items: center; gap: .6rem;
+  flex-wrap: wrap; min-height: 40px; padding: .5rem .75rem; cursor: pointer;
+  list-style: none; border-radius: var(--shape-m); }
+.settinggroup > summary::-webkit-details-marker { display: none; }
+.settinggroup > summary > h2 { margin: 0; font: var(--title-sm); }
+.settinggroup > summary:hover { background: var(--surface-container); }
+.settinggroup > summary:focus-visible { outline: 2px solid var(--primary);
+  outline-offset: 2px; }
+.settinggroup > summary::after { content: ""; margin-left: auto; width: .5rem;
+  height: .5rem; border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor; transform: rotate(45deg);
+  opacity: .7; }
+.settinggroup[open] > summary::after { transform: rotate(-135deg); }
+.settinggroup[open] > summary { border-bottom: 1px solid var(--outline-variant);
+  border-radius: var(--shape-m) var(--shape-m) 0 0; }
+/* A group that opened itself because something in it is weaker than its
+   default says so on its edge, not only in the pill. */
+.settinggroup:has(.pill.warn) { border-color: var(--warn, var(--outline)); }

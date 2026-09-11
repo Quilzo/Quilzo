@@ -176,6 +176,15 @@ func docFor(navKey string) string {
 type navGroup struct {
 	Name  string
 	Items []navItem
+	// HasCurrent is true when this group holds the screen being rendered, so
+	// the template can open it and leave the rest closed.
+	//
+	// Server-side rather than a CSS trick or a stored preference. The group
+	// you want open is the one you are in, and that is known here — which
+	// means it is right on the first paint, with no flash and nothing to
+	// remember. A stored open/closed state would be a preference that goes
+	// stale the moment you navigate somewhere else.
+	HasCurrent bool
 }
 
 // navItem is a rendered entry.
@@ -200,15 +209,22 @@ func (s *Server) navigation(r *http.Request, p principal, current string) []navG
 	ordered := applyOrder(allowed, storedOrder(r))
 
 	byGroup := map[string][]navItem{}
+	hasCurrent := map[string]bool{}
 	for _, d := range ordered {
+		here := d.Key == current
+		if here {
+			hasCurrent[d.Group] = true
+		}
 		byGroup[d.Group] = append(byGroup[d.Group], navItem{
-			destination: d, Current: d.Key == current,
+			destination: d, Current: here,
 		})
 	}
 	out := make([]navGroup, 0, len(groups))
 	for _, name := range groups {
 		if items := byGroup[name]; len(items) > 0 {
-			out = append(out, navGroup{Name: name, Items: items})
+			out = append(out, navGroup{
+				Name: name, Items: items, HasCurrent: hasCurrent[name],
+			})
 		}
 	}
 	return out
