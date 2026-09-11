@@ -397,6 +397,12 @@ func stringify(v any) string {
 	switch t := v.(type) {
 	case nil:
 		return ""
+	case Markup:
+		// Reachable when a Markup lands somewhere that is not text, where it
+		// is about to be escaped like any other string. Returning the markup
+		// is right: what gets escaped is the tags it contains, which is what
+		// makes the mistake visible rather than dangerous.
+		return string(t)
 	case string:
 		return t
 	case bool:
@@ -487,6 +493,25 @@ func walk(nodes []node, data map[string]any, out *strings.Builder, b *budget, de
 			ctx, err := b.html.context(out.String())
 			if err != nil {
 				return err
+			}
+			// Markup is written out as it is, and only where markup belongs.
+			//
+			// Nothing outside this package can make one: Prose is the only
+			// function that returns the type, and it builds its output from a
+			// fixed set of tags after escaping everything it was given. So
+			// this is not trusting a value, it is knowing what made it.
+			//
+			// Text context only. A paragraph inside an attribute is not a
+			// thing anybody meant, and treating it as markup there would turn
+			// a template mistake into an escaping bypass — so it falls through
+			// and is escaped for the place it actually landed in, like any
+			// other string.
+			if m, isMarkup := v.(Markup); isMarkup && ctx == ctxText {
+				if err := b.spendOutput(len(m)); err != nil {
+					return err
+				}
+				out.WriteString(string(m))
+				continue
 			}
 			var esc string
 			switch ctx {

@@ -171,7 +171,7 @@
   </article>
   {% end %}
 
-  {% if page.body %}<div class="prose">{% raw page.body %}</div>{% end %}
+  {% if page.body %}<div class="prose">{{ page.body | prose }}</div>{% end %}
   {% if page.updated %}<p class="updated">Last updated {{ page.updated }}.</p>{% end %}
 </main>
 
