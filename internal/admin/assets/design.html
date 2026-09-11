@@ -108,8 +108,20 @@
 </p>
 {{end}}
 
+{{/*
+  One disclosure per token group, open when something in it has been changed.
+
+  Eight groups, a hundred and seven inputs and forty-seven forms were all
+  expanded at once. The summary says how many tokens are in the group and how
+  many are off the theme's default, which is the question you would have
+  scrolled to answer.
+*/}}
 {{range .Groups}}
-<h2>{{.Name}}</h2>
+<details class="settinggroup"{{if .Changed}} open{{end}}>
+<summary>
+  <h2>{{.Label}}</h2>
+  <span class="hint">{{len .Items}} token{{if ne (len .Items) 1}}s{{end}}{{if .Changed}}, {{.Changed}} changed{{end}}</span>
+</summary>
 <div class="table-wrap">
 <table>
   <thead><tr>
@@ -159,6 +171,7 @@
   </tbody>
 </table>
 </div>
+</details>
 {{end}}
 
 {{if .Advisory}}

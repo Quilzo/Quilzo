@@ -107,9 +107,17 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 		IsColour   bool
 		Stacks     []string
 	}
+	// Counted so each group can be a disclosure that says what is inside it.
+	//
+	// Eight token groups, a hundred and seven inputs, forty-seven forms, all
+	// expanded — thirty-five kilobytes of controls on one screen. A group
+	// opens itself when something in it has been changed from the theme's
+	// default, because that is the part somebody came back to look at.
 	type group struct {
-		Name  string
-		Items []item
+		Name    string
+		Label   string
+		Items   []item
+		Changed int
 	}
 	var groups []group
 	index := map[string]int{}
@@ -127,11 +135,15 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 		}
 		i, seen := index[tok.Group]
 		if !seen {
-			groups = append(groups, group{Name: tok.Group})
+			groups = append(groups, group{
+				Name: tok.Group, Label: designGroupLabel(tok.Group)})
 			i = len(groups) - 1
 			index[tok.Group] = i
 		}
 		groups[i].Items = append(groups[i].Items, it)
+		if it.Overridden {
+			groups[i].Changed++
+		}
 	}
 
 	var blocking, advisory []theme.Finding
@@ -325,4 +337,35 @@ func baseToken(name string) string {
 		return base
 	}
 	return name
+}
+
+// designGroupLabel names a token group in words.
+//
+// The headings on this screen were the group keys themselves — `surfaces`,
+// `accents`, `gradient`, `breakpoints`, `lines`, `semantics`, `type`, `shape`.
+// Three of those say what they hold and the rest need opening to find out,
+// which is the opposite of what a summary is for.
+//
+// An unknown group keeps its own key rather than being guessed at, so a group
+// added later reads as itself instead of as something else.
+func designGroupLabel(key string) string {
+	switch key {
+	case "surfaces":
+		return "Backgrounds and text"
+	case "accents":
+		return "Accent colours"
+	case "semantics":
+		return "Success, warning and error"
+	case "gradient":
+		return "Gradient"
+	case "lines":
+		return "Borders and rules"
+	case "type":
+		return "Typography"
+	case "shape":
+		return "Corners and spacing"
+	case "breakpoints":
+		return "Breakpoints"
+	}
+	return key
 }

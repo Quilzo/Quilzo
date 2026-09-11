@@ -134,17 +134,41 @@
   Now there is one orientation, so the group headings are always drawn rather
   than hidden at one breakpoint and shown at another.
 */}}
+{{/*
+  Each group is a disclosure, and the one you are in is the one that is open.
+
+  Twenty-eight destinations in five groups came to about 1,425 pixels of
+  column. The layout is a grid row, so the page could not be shorter than the
+  navigation: /review has a third of a kilobyte of content -- "nothing to
+  review" and one button -- and still produced a page taller than the screen.
+  Seven screens had less in them than the menu beside them.
+
+  A <details> per group is the whole of the fix, and it needs no script. The
+  server already knows which group holds the current screen, so the right one
+  is open on the first paint rather than after something runs. Somebody on
+  Design sees eleven links and four headings instead of thirty-three rows.
+
+  Open state is derived, not remembered. A stored preference would be wrong the
+  moment you navigated somewhere else, and "the group I am in is open" is what
+  a person wants every time rather than most of the time.
+
+  The heading stays inside the summary rather than being replaced by it. A
+  summary is announced as a disclosure control, and the h2 keeps the group a
+  labelled section in the outline -- so the visible grouping and the announced
+  grouping are still the same thing, which is what the note below the old
+  markup was about.
+*/}}
 {{define "navlist"}}
 <nav class="navgroups" aria-label="Sections">
   {{range .NavGroups}}
-  <div class="navgroup" role="group" aria-label="{{.Name}}">
-    <h2>{{.Name}}</h2>
+  <details class="navgroup"{{if .HasCurrent}} open{{end}}>
+    <summary><h2>{{.Name}}</h2></summary>
     <ul class="nav">
       {{range .Items}}
       <li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>
       {{end}}
     </ul>
-  </div>
+  </details>
   {{end}}
 </nav>
 {{end}}

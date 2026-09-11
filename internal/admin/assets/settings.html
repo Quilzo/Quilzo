@@ -18,8 +18,28 @@
 </div>
 {{end}}
 
+{{/*
+  One disclosure per group, closed unless it holds something worth looking at.
+
+  Nineteen groups and eighty-nine editable rows were all expanded, so this
+  screen was forty-six kilobytes of table nobody reads. The summary carries
+  what you would have scrolled to find out: how many settings are in the group
+  and how many are not on their default. A group is open when something in it
+  is weaker than its default, or when the confirmation that brought you back
+  names a key inside it — landing on a message whose subject is in a closed
+  section is worse than no message.
+
+  The Weakened card above still lists every weakened setting, so closing these
+  hides nothing that needs attention; it stops the other eighty from competing
+  with it.
+*/}}
 {{range .Groups}}
-<h2>{{.Name}}</h2>
+<details class="settinggroup"{{if .Interesting}} open{{end}}>
+<summary>
+  <h2>{{.Label}}</h2>
+  <span class="hint">{{len .Items}} setting{{if ne (len .Items) 1}}s{{end}}{{if .Changed}}, {{.Changed}} changed{{end}}</span>
+  {{if .HasWeaker}}<span class="pill warn">weaker than default</span>{{end}}
+</summary>
 <div class="table-wrap">
 <table>
   <thead><tr>
@@ -60,6 +80,7 @@
   </tbody>
 </table>
 </div>
+</details>
 {{end}}
 
 <p class="hint">
