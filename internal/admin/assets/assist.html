@@ -18,7 +18,7 @@
 <p class="lead">Describe what you want. Nothing is written until you accept it.</p>
 
 <form method="post" action="/assist">
-  <p><label for="a-instruction">What should this site have?</label>
+  <p><label for="a-instruction">What should this site have? {{template "req"}}</label>
     <textarea id="a-instruction" name="instruction" rows="4" required
       >{{.Instruction}}</textarea></p>
   <button type="submit">Ask {{.Model}}</button>

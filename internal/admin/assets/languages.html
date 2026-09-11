@@ -10,7 +10,7 @@ monolingual site is in and works perfectly well. Declaring one is what makes a
 second one possible.</p>
 {{if .CanWrite}}
 <form method="post" action="/languages/add" class="inline">
-  <label for="l-init">Default language</label>
+  <label for="l-init">Default language {{template "req"}}</label>
   <input id="l-init" name="locale" required spellcheck="false" placeholder="en">
   <button type="submit">Set</button>
 </form>
@@ -42,7 +42,7 @@ their names; every other language lives under its own prefix.</p>
 
 {{if .CanWrite}}
 <form method="post" action="/languages/add" class="inline">
-  <label for="l-add">Add a language</label>
+  <label for="l-add">Add a language {{template "req"}}</label>
   <input id="l-add" name="locale" required spellcheck="false" placeholder="fr">
   <button type="submit">Add</button>
 </form>
@@ -98,9 +98,9 @@ their names; every other language lives under its own prefix.</p>
 {{if .CanWrite}}
 <h3>Record a translation</h3>
 <form method="post" action="/languages/translated" class="inline">
-  <label for="t-page">Page</label>
+  <label for="t-page">Page {{template "req"}}</label>
   <input id="t-page" name="page" required spellcheck="false">
-  <label for="t-locale">Language</label>
+  <label for="t-locale">Language {{template "req"}}</label>
   <input id="t-locale" name="locale" required spellcheck="false">
   <button type="submit">Record</button>
 </form>

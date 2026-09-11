@@ -46,7 +46,7 @@
 
     <form method="post" action="/signin">
       <div class="field">
-        <label for="tok">API token</label>
+        <label for="tok">API token {{template "req"}}</label>
         <input id="tok" name="token" type="password"
                autocomplete="current-password" autofocus
                aria-describedby="tok-help" required

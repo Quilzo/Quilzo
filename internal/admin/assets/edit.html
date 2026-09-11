@@ -22,7 +22,7 @@
              {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>
       <label for="f-{{.Key}}">{{.Label}}</label>
     {{else}}
-      <label for="f-{{.Key}}">{{.Label}}{{if .Required}} <span class="req" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{{end}}</label>
+      <label for="f-{{.Key}}">{{.Label}}{{if .Required}} {{template "req"}}{{end}}</label>
       {{if .Choices}}
         <select id="f-{{.Key}}" name="{{.Key}}"{{if .Required}} required{{end}}
                 {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>

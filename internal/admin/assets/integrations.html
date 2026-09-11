@@ -100,7 +100,7 @@ write.</p>
 {{end}}
 
 <form method="post" action="/integrations/webhook" class="inline">
-  <label for="w-url">Endpoint</label>
+  <label for="w-url">Endpoint {{template "req"}}</label>
   <input id="w-url" name="url" required spellcheck="false" size="36"
          placeholder="https://example.org/hooks/quilzo">
   <label for="w-types">Events</label>
@@ -181,11 +181,11 @@ write.</p>
 
 <form method="post" action="/integrations/extension">
   <div class="grid2">
-    <p><label for="x-name">Name</label>
+    <p><label for="x-name">Name {{template "req"}}</label>
       <input id="x-name" name="name" required spellcheck="false"></p>
-    <p><label for="x-version">Version</label>
+    <p><label for="x-version">Version {{template "req"}}</label>
       <input id="x-version" name="version" required spellcheck="false"></p>
-    <p><label for="x-cmd">Command</label>
+    <p><label for="x-cmd">Command {{template "req"}}</label>
       <input id="x-cmd" name="command" required spellcheck="false"
              placeholder="/usr/local/bin/house-style --json">
       <span class="hint">Hashed when it is registered, so the binary that runs
