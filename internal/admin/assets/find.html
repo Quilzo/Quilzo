@@ -1,0 +1,55 @@
+{{/*
+  Find anything, from anywhere.
+
+  A GET form and a results page, because the policy on every response here is
+  `script-src 'none'` — so there is no type-ahead and there will not be one.
+  The query travels in the address, which makes a search a link somebody can
+  keep, send or go back to.
+
+  Results are grouped by kind and never sorted into one list: a page's score is
+  tf-idf over prose and a screen's is how well a short title matched, and
+  ranking the two against each other means inventing an exchange rate between
+  them. See internal/find.
+*/}}
+{{template "head" .}}
+<h1>Find</h1>
+
+<form method="get" action="/find" class="findform" role="search">
+  <label for="q">{{template "req"}}What are you looking for</label>
+  <input type="search" id="q" name="q" value="{{.Query}}" required
+         autofocus placeholder="a page, a screen, a setting, a picture">
+  <button type="submit">Find</button>
+</form>
+<p class="help">Words, not a query. There is no syntax here — a colon or a
+  quotation mark is a character in a word — because the thing that eventually
+  gets an injection is a query language, and this is not one. To ask a question
+  <em>about</em> content, declare a <a href="/listings">listing</a>.</p>
+
+{{if .Query}}
+{{if .Hits}}
+<p class="hint">{{.Count}} result{{if ne .Count 1}}s{{end}} for
+  <strong>{{.Query}}</strong>.</p>
+
+{{range .Hits}}
+<h2>{{.Heading}}</h2>
+<ul class="findresults">
+  {{range .Hits}}
+  <li>
+    {{if .Path}}<a href="{{.Path}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}
+    {{if .Why}}<span class="hint">{{.Why}}</span>{{end}}
+  </li>
+  {{end}}
+</ul>
+{{end}}
+
+{{else}}
+<p class="notice warn">Nothing matched <strong>{{.Query}}</strong>.</p>
+<p class="help">This searches the pages in your draft, the screens of this
+  interface, your content types and the descriptions on your media. It does not
+  search what people have sent through your forms — those are gated separately,
+  and a search that reached them would be a way past that gate with a text box
+  in front of it.</p>
+{{end}}
+{{end}}
+
+{{template "foot" .}}

@@ -897,6 +897,57 @@ tr.detail td { padding-top: 0; border-top: 0; }
   .sidenav .nav { margin-top: 0; }
 }
 
+/* -- finding things ----------------------------------------------------------
+ *
+ * The box in the bar, and the screen behind it.
+ *
+ * The bar's height is declared (--bar-h) and the sidebar's arithmetic depends
+ * on it, so this has to fit inside that height rather than set its own: 32px
+ * against the 40px preference buttons, centred by the bar's own align-items.
+ *
+ * It shrinks before the wordmark does and disappears before it squashes.
+ * `min-width: 0` because a flex item will not shrink below its content width
+ * without it, which is the rule that makes an input in a flex row overflow
+ * instead of narrowing.
+ */
+.findbar { display: flex; align-items: center; gap: .25rem; margin: 0;
+  flex: 0 1 18rem; min-width: 0; }
+.findbar input {
+  min-width: 0; width: 100%; height: 32px; padding: 0 .65rem;
+  border-radius: var(--shape-full); border: 1px solid var(--outline-variant);
+  background: var(--surface-container-high); color: var(--on-surface);
+  font: var(--body-md);
+}
+.findbar input::placeholder { color: var(--on-surface-variant); }
+.findbar button {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: none; width: 32px; height: 32px; padding: 0;
+  border-radius: var(--shape-full); border: 1px solid var(--outline-variant);
+  background: var(--surface-container-high); color: var(--on-surface);
+  cursor: pointer;
+}
+.findbar button:hover {
+  background: color-mix(in srgb, var(--on-surface) var(--state-hover), var(--surface-container-high));
+}
+/* Below the wide layout the bar has less room than it has content, and a
+   search box squeezed to nothing is worse than one reached from its own
+   screen — which the navigation still lists. */
+@media (max-width: 60rem) { .findbar { display: none; } }
+
+.findform { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-end;
+  margin: 0 0 .5rem; }
+.findform label { flex: 100%; }
+.findform input { flex: 1 1 22rem; min-width: 0; }
+.findform button { flex: none; }
+
+/* One result per row, and the reason it matched beside it rather than under
+   it: a list where every entry is two lines is a list you cannot scan. */
+.findresults { list-style: none; margin: 0 0 1.5rem; padding: 0; }
+.findresults li { margin: 0; padding: .5rem .75rem; border-radius: var(--shape-s);
+  display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: baseline; }
+.findresults li:nth-child(odd) { background: var(--surface-container-low); }
+.findresults li a { font-weight: 600; }
+
 /* -- hiding the navigation ---------------------------------------------------
  *
  * The column goes, and the content takes the width. Not `visibility: hidden`,

@@ -169,6 +169,9 @@ var commandNeeds = map[string]need{
 	// Runs a server that publishes on behalf of Telegram accounts. That is the
 	// publish authority, delegated — so the operator starting it needs to hold
 	// it, whatever the person in the chat holds.
+	// Reading. The settings half asks for grant separately inside the command,
+	// because a key's summary describes a control and the rest is content.
+	"find":     {action: auth.ActView},
 	"telegram": {action: auth.ActPublish},
 	// The same as telegram, and for the same reason: each starts a surface
 	// that publishes on behalf of somebody else's account.

@@ -788,6 +788,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/review/approve", s.handleApprove)
 	mux.HandleFunc("/access", s.handleAccess)
 	mux.HandleFunc("/theme", s.handleTheme)
+	mux.HandleFunc("/find", s.handleFind)
 	mux.HandleFunc("/sidebar", s.handleSidebar)
 	mux.HandleFunc("/nav/order", s.handleNavOrder)
 	mux.HandleFunc("/profile", s.handleProfile)
