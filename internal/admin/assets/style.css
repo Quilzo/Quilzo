@@ -738,6 +738,31 @@ tr.detail td { padding-top: 0; border-top: 0; }
 .themetoggle button:hover { background: var(--surface-container-highest); }
 .icon { width: 20px; height: 20px; display: block; }
 
+/* The navigation toggle carries its name; the theme toggle does not.
+ *
+ * A sun that becomes a moon is a convention everybody reads. A rectangle with
+ * a bar down one side is not, and it was the only thing marking the control
+ * that hides the menu — so the control was there, worked, and could not be
+ * found. The label is what makes it a button somebody sees rather than a
+ * shape they have to hover.
+ *
+ * aria-hidden on the span, because the button already has a fuller sentence
+ * for a screen reader. Announcing both would read the control twice and the
+ * shorter one is the less useful of the two.
+ */
+.navtoggle button { width: auto; gap: .4rem; padding: 0 .8rem;
+  border-radius: var(--shape-full); }
+.togglelabel { font: var(--label-md); white-space: nowrap; }
+
+/* Below the point where the menu becomes a block above the content, the label
+   goes and the button is round again. That is where the header has least room
+   and where the icon has most support: the menu is directly under it, so what
+   the button acts on is on screen beside it. */
+@media (max-width: 32rem) {
+  .navtoggle button { width: 40px; padding: 0; }
+  .togglelabel { display: none; }
+}
+
 @media (min-width: 60rem) {
   /* The footer needs a named area too. Without one it lands in the first
      free cell, which is under the sidebar, and wraps to three lines in a
@@ -1142,3 +1167,17 @@ td.actions > *:last-child, th.actions > *:last-child { margin-right: 0; }
 /* A group that opened itself because something in it is weaker than its
    default says so on its edge, not only in the pill. */
 .settinggroup:has(.pill.warn) { border-color: var(--warn, var(--outline)); }
+
+/* A list of screens with a line each saying what they answer.
+ *
+ * Used on /security, where five routes existed and nothing linked to any of
+ * them. Not a table, because there are two columns of which one is prose, and
+ * not a row of chips, because the explanation is the point — a bare list of
+ * five nouns would have been the same problem in a different shape.
+ */
+.subnav { list-style: none; margin: .5rem 0 1rem; padding: 0;
+  display: grid; gap: .15rem; }
+.subnav li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem;
+  padding: .5rem .75rem; border-radius: var(--shape-s); min-height: 40px; }
+.subnav li:hover { background: var(--surface-container); }
+.subnav a { font-weight: 600; }

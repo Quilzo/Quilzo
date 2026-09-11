@@ -54,6 +54,34 @@
 </div>
 {{end}}
 
+{{/*
+  The other screens under /security, which nothing linked to.
+
+  Five routes existed and answered — /security/scan, /security/policy,
+  /security/inventory, /security/integrity and /security/agents — and the only
+  way to any of them was to type the address. /security/integrity is also where
+  the Verify button redirects, so pressing it landed you on a screen you had no
+  way to find and no way back to.
+
+  A screen nobody can reach is worse than a screen that does not exist: it is
+  work that was done, is being maintained, and is answering nobody.
+*/}}
+<h2>The rest of the picture</h2>
+<p>This screen is the posture scan. These answer the other questions, and each
+  is a separate check rather than a section of this one:</p>
+<ul class="subnav">
+  <li><a href="/security/scan">Code scan</a>
+    <span class="hint">templates and content, for injection and leaked secrets</span></li>
+  <li><a href="/security/policy">Content policy</a>
+    <span class="hint">the Content-Security-Policy this content implies</span></li>
+  <li><a href="/security/inventory">Inventory</a>
+    <span class="hint">the bill of materials and every algorithm in use</span></li>
+  <li><a href="/security/integrity">Integrity</a>
+    <span class="hint">every object re-hashed, and the anchors that witness it</span></li>
+  <li><a href="/security/agents">Agent activity</a>
+    <span class="hint">what agents have done, as opposed to what they may do</span></li>
+</ul>
+
 <h2>Coverage</h2>
 <p>Every rule maps to a NIST SP 800-53 control, which is what makes a finding evidence for an assessor rather than an opinion. These are the controls this scan touched:</p>
 <p class="controls">{{range .Controls}}<span class="ctl">{{.}}</span> {{end}}</p>
