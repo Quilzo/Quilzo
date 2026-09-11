@@ -75,7 +75,7 @@
 <h3>Add a vocabulary, or a term to one</h3>
 <form method="post" action="/structure/vocabulary">
   <div class="grid2">
-    <p><label for="v-name">Vocabulary</label>
+    <p><label for="v-name">Vocabulary {{template "req"}}</label>
       <input id="v-name" name="vocabulary" required spellcheck="false"
              placeholder="topics"></p>
     <p><label for="v-label">Label</label>
@@ -158,7 +158,7 @@
 <h3>Add a menu, or an entry to one</h3>
 <form method="post" action="/structure/menu">
   <div class="grid2">
-    <p><label for="m-name">Menu</label>
+    <p><label for="m-name">Menu {{template "req"}}</label>
       <input id="m-name" name="menu" required spellcheck="false"
              placeholder="main"></p>
     <p><label for="m-label">Label</label>

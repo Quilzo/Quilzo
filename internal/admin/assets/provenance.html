@@ -34,13 +34,13 @@ machine-readable mark on AI-generated content since 2&nbsp;August&nbsp;2026, and
 <h2>Record provenance</h2>
 <form method="post" action="/provenance/set">
   <div class="field">
-    <label for="page">Page</label>
+    <label for="page">Page {{template "req"}}</label>
     <select id="page" name="page" required>
       {{range .Rows}}<option value="{{.Page}}">{{.Page}}</option>{{end}}
     </select>
   </div>
   <div class="field">
-    <label for="source">How it was written</label>
+    <label for="source">How it was written {{template "req"}}</label>
     <select id="source" name="source" required aria-describedby="source-help">
       <option value="humanEdits">A person wrote it</option>
       <option value="trainedAlgorithmicMedia">An AI model generated it</option>

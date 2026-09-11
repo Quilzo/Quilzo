@@ -136,7 +136,7 @@ human-written.</p>
 <form method="post" action="/publish">
   {{if or (gt .Blocking 0) .Unmarked}}
   <div class="field">
-    <label for="reason">Reason for publishing anyway</label>
+    <label for="reason">Reason for publishing anyway {{template "req"}}</label>
     <input id="reason" name="reason" type="text" required aria-describedby="reason-help">
     <p id="reason-help" class="help">Recorded. An override with no stated justification is
       indistinguishable from not checking.</p>

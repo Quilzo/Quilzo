@@ -75,6 +75,23 @@
   point the note under `.sidenav[hidden]` makes: a control inside the thing it
   hides cannot bring it back.
 */}}
+{{/*
+  The mark on a required field, in one place.
+
+  It existed in edit.html and nowhere else, while fourteen other templates
+  carried a bare `required` attribute with nothing saying so. The browser
+  refuses the submit and points at the field; what it does not do is tell
+  somebody, before they start, which of eleven inputs they have to fill in.
+  WCAG 3.3.2 asks for the label, and a validation message that appears only
+  after a failed submit is not one.
+
+  Two parts, deliberately. The asterisk is aria-hidden because a screen reader
+  saying "star" is noise, and the word is visually-hidden because a sighted
+  person already has the star -- so each reader gets the one that works and
+  neither gets both.
+*/}}
+{{define "req"}}<span class="req" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{{end}}
+
 {{define "navtoggle"}}
 <form method="post" action="/sidebar" class="themetoggle navtoggle">
   <input type="hidden" name="to" value="{{if .SidebarHidden}}shown{{else}}hidden{{end}}">

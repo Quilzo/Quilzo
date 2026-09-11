@@ -59,9 +59,9 @@ what production serves is the bytes that were checked — not a copy of them.</p
 {{if .CanPromote}}
 <h3>Promote across the sequence</h3>
 <form method="post" action="/publishing/promote" class="inline">
-  <label for="p-from">From</label>
+  <label for="p-from">From {{template "req"}}</label>
   <input id="p-from" name="from" required spellcheck="false">
-  <label for="p-to">To</label>
+  <label for="p-to">To {{template "req"}}</label>
   <input id="p-to" name="to" required spellcheck="false">
   <label for="p-skip">Skip what is between</label>
   <input id="p-skip" type="checkbox" name="skip" value="1">
@@ -74,7 +74,7 @@ what production serves is the bytes that were checked — not a copy of them.</p
 
 <h3>Add an environment</h3>
 <form method="post" action="/publishing/environment" class="inline">
-  <label for="e-name">Name</label>
+  <label for="e-name">Name {{template "req"}}</label>
   <input id="e-name" name="name" required spellcheck="false" placeholder="staging">
   <label for="e-before">Before</label>
   <input id="e-before" name="before" spellcheck="false" placeholder="production">
@@ -124,7 +124,7 @@ what production serves is the bytes that were checked — not a copy of them.</p
 
 {{if .CanPromote}}
 <form method="post" action="/publishing/schedule" class="inline">
-  <label for="s-when">Publish the current draft at</label>
+  <label for="s-when">Publish the current draft at {{template "req"}}</label>
   <input id="s-when" name="when" required spellcheck="false"
          placeholder="48h or 2026-09-01T09:00:00Z">
   <label for="s-note">Note</label>

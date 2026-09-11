@@ -142,7 +142,7 @@ not that the number is fresh.</p>
 <h2>Declare a form, or add a field</h2>
 <form method="post" action="/forms/save">
   <div class="grid2">
-    <p><label for="f-name">Form</label>
+    <p><label for="f-name">Form {{template "req"}}</label>
       <input id="f-name" name="form" required spellcheck="false"
              placeholder="contact"></p>
     <p><label for="f-label">Label</label>
@@ -178,9 +178,9 @@ not that the number is fresh.</p>
 {{if .CanErase}}
 <h2>Erase everything a form gathered</h2>
 <form method="post" action="/forms/purge" class="inline">
-  <label for="p-form">Form</label>
+  <label for="p-form">Form {{template "req"}}</label>
   <input id="p-form" name="form" required spellcheck="false">
-  <label for="p-conf">Type its name again</label>
+  <label for="p-conf">Type its name again {{template "req"}}</label>
   <input id="p-conf" name="confirm" required spellcheck="false">
   <button type="submit" class="danger">Erase all</button>
 </form>

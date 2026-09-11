@@ -88,13 +88,13 @@ of schema validators, and content does not need them.</p>
 </p>
 <form method="post" action="/types/save">
   <div class="grid2">
-    <p><label for="t-type">Type</label>
+    <p><label for="t-type">Type {{template "req"}}</label>
       <input id="t-type" name="type" required spellcheck="false"
              placeholder="article"></p>
     <p><label for="t-desc">Description</label>
       <input id="t-desc" name="description"
              placeholder="used only when the type is created"></p>
-    <p><label for="t-field">Field</label>
+    <p><label for="t-field">Field {{template "req"}}</label>
       <input id="t-field" name="field" required spellcheck="false"
              placeholder="title"></p>
     <p><label for="t-kind">Kind</label>
@@ -128,7 +128,7 @@ of schema validators, and content does not need them.</p>
 
 <h2>What must satisfy what</h2>
 <form method="post" action="/types/bind" class="inline">
-  <label for="b-page">Page</label>
+  <label for="b-page">Page {{template "req"}}</label>
   <input id="b-page" name="page" required spellcheck="false" list="pagelist">
   <datalist id="pagelist">
     {{range .Unbound}}<option value="{{.}}"></option>{{end}}
@@ -141,14 +141,14 @@ of schema validators, and content does not need them.</p>
 </form>
 <form method="post" action="/types/bind" class="inline">
   <input type="hidden" name="unbind" value="1">
-  <label for="u-page">Stop requiring a type of</label>
+  <label for="u-page">Stop requiring a type of {{template "req"}}</label>
   <input id="u-page" name="page" required spellcheck="false">
   <button type="submit">Unbind</button>
 </form>
 
 <h2>Delete a type</h2>
 <form method="post" action="/types/delete" class="inline">
-  <label for="d-type">Type</label>
+  <label for="d-type">Type {{template "req"}}</label>
   <input id="d-type" name="type" required spellcheck="false">
   <button type="submit" class="danger">Delete</button>
 </form>
