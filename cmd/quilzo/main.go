@@ -134,10 +134,12 @@ templates and design
   quilzo section set PAGE N path=value     change what a section says
   quilzo section item add PAGE N LIST      add an entry to a list inside one
 
-telegram
+messengers
   quilzo telegram check                    confirm the bot token works
   quilzo telegram serve                    the Mini App: publish from a chat
   quilzo telegram link USER-ID             mint a one-time link without a bot
+  quilzo slack check | serve               a slash command, into the same editor
+  quilzo discord check | serve             an interaction, into the same editor
 
 this program
   quilzo --version                         version, copyright and licence
@@ -516,6 +518,10 @@ func main() {
 		err = cmdSection(root, cmdArgs)
 	case "telegram":
 		err = cmdTelegram(root, cmdArgs)
+	case "slack":
+		err = cmdSlack(root, cmdArgs)
+	case "discord":
+		err = cmdDiscord(root, cmdArgs)
 	case "posture":
 		err = cmdPosture(root, cmdArgs)
 	case "type", "types":

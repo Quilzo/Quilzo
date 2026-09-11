@@ -53,6 +53,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/chat"
 )
 
 // MaxInitDataAge is how old a launch may be and still be accepted.
@@ -76,6 +78,9 @@ type User struct {
 	FirstName string `json:"first_name,omitempty"`
 	// AuthDate is when Telegram signed this launch.
 	AuthDate time.Time `json:"auth_date"`
+	// Platform is which messenger this person arrived from. Empty means
+	// Telegram — see Handle for why the zero value has to mean that.
+	Platform chat.Platform `json:"platform,omitempty"`
 }
 
 // Handle is the name this user's pages live under.
@@ -83,7 +88,24 @@ type User struct {
 // The numeric id rather than the username, because a username can be released
 // and taken by somebody else — so a store keyed on it would hand a stranger the
 // previous owner's pages the day they renamed. The id never moves.
-func (u User) Handle() string { return "tg" + strconv.FormatInt(u.ID, 10) }
+//
+// # Why the platform is part of it
+//
+// This used to be "tg" + id, with the prefix written in. That was correct while
+// Telegram was the only messenger that reached this editor, and it stops being
+// correct the moment another one does: a Slack id and a Telegram id can be the
+// same number, and two people would then share one handle — which is a content
+// path, so the symptom is one of them editing the other's page rather than an
+// error anybody sees.
+//
+// The prefix now comes from internal/chat, which holds the rule that no two
+// platforms may share one. Telegram still resolves to "tg", so no existing
+// page moves.
+//
+// An empty Platform means Telegram, because every User built before this field
+// existed came from there and a zero value that silently changes somebody's
+// handle would move their pages.
+func (u User) Handle() string { return u.account().Handle() }
 
 // Label is how to address this person on a screen, preferring what they chose.
 func (u User) Label() string {
