@@ -403,12 +403,19 @@ spreadsheet formula injection, and erasure by search — because an append-only
 merkle store cannot erase, which is why submissions deliberately do not live in
 it.
 
-The retention ceiling is enforced when something enforces it. `quilzo form
-expire` removes what is past it, and nothing in this program calls that on its
-own — so a deployment that relies on retention needs a cron entry or a systemd
-timer, and without one submissions are kept indefinitely. A declared retention
+The retention ceiling is enforced by the program. Both long-running servers
+sweep on a timer of their own, and `quilzo form expire` still forces it. This
+used to say that nothing called it on its own and that a deployment needed a
+cron entry — which was true, and meant that an operator who had not read the
+paragraph had a site that promised to forget and did not. A declared retention
 period and an enforced one are different things, and only the second is worth
 anything to the person whose data it is.
+
+An install that runs neither server has nothing sweeping, so `quilzo posture
+scan` counts submissions that have outlived their period. Scheduled publishing
+is the other half and keeps its external timer on purpose — a scheduler that is
+also a long-lived process is a second thing that can be down — so the scan
+reports an entry that was due and did not fire rather than firing it.
 
 **Working together.** Compare-and-swap on every write, so nobody silently
 overwrites anybody; a three-way merge for the writes that only collided on the

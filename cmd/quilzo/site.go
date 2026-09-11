@@ -24,6 +24,7 @@ import (
 	"github.com/quilzo/quilzo/internal/search"
 	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/upkeep"
 )
 
 // cmdSite serves the published site.
@@ -314,6 +315,23 @@ func cmdSite(root string, args []string) error {
 		})
 		fmt.Printf("  %sfederating as @%s; publishes are announced to followers%s\n",
 			dim, st.Federation.Actor.Handle, reset)
+	}
+
+	// Retention, in the process that takes the submissions in. See
+	// internal/upkeep: this is the one directory the public server writes to,
+	// and a form that declares how long it keeps an answer had nothing
+	// enforcing that until this ran.
+	if job, ok := retentionJob(root); ok {
+		upkeepCtx, stopUpkeep := context.WithCancel(context.Background())
+		defer stopUpkeep()
+		go upkeep.Run(upkeepCtx, upkeep.Every, func(j upkeep.Job, n int, err error) {
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "  %s%s: %v%s\n", dim, j.Name, err, reset)
+				return
+			}
+			fmt.Printf("  %sretention: removed %s past the period their form "+
+				"declares%s\n", dim, count(n, "submission"), reset)
+		}, job)
 	}
 
 	fmt.Printf("site on http://%s\n", *addr)

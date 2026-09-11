@@ -23,20 +23,26 @@
 // deletable, and with a retention ceiling each form declares for itself. It is
 // the least sophisticated storage in this program and that is the feature.
 //
-// That ceiling is enforced when somebody enforces it. This said "a retention
-// period that removes them without anybody asking", and nothing in this
-// program removes anything on its own: Expire is correct and safe to re-run,
-// and it runs from `quilzo form expire` or the button on the forms screen. If
-// nobody runs either, submissions past their declared ceiling are kept
-// indefinitely.
+// That ceiling is now enforced by the program.
 //
-// Said plainly because the gap between a declared retention period and an
-// enforced one is the whole of the obligation, and a sentence claiming the
-// second while the code does the first is worse than no sentence. An external
-// timer is the intended arrangement -- the comment on the command has always
-// said "meant for a timer" -- and a cron entry or a systemd timer calling
-// `quilzo form expire` is what makes the ceiling real. Deployments that need
-// this should treat it as a step rather than as a property they already have.
+// It was not. This comment used to end "If nobody runs either, submissions past
+// their declared ceiling are kept indefinitely", and said that an external
+// timer was the intended arrangement. The disclosure was honest and the gap was
+// real: there is no installer here, so nobody was ever handed the cron entry,
+// and an operator who had not read this paragraph had a site that promised to
+// forget and did not. The gap between a declared retention period and an
+// enforced one is the whole of the obligation.
+//
+// Both long-running servers now sweep -- see internal/upkeep, which also says
+// why this daemonises while scheduled publishing deliberately does not. Either
+// server alone is enough; Expire is idempotent and tolerates a submission
+// another sweep has already taken. `quilzo form expire` and the button on the
+// forms screen still work and are still the way to force it.
+//
+// An install that runs neither server still has nothing sweeping, so the
+// posture rule content.retention-unenforced counts submissions that have
+// outlived their period -- an observation of the disk rather than a record of
+// whether a timer fired, which is the check that cannot go stale.
 //
 // # What is refused, and why not a CAPTCHA
 //
@@ -69,6 +75,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -540,6 +547,13 @@ func (st *Store) List(form string) ([]Submission, error) {
 //
 // The operation the content store cannot offer, and the reason this data is
 // not in it.
+// errNoSubmission is returned when there is nothing there to remove.
+//
+// A value rather than a new error each time, so Expire can tell "already gone"
+// from "the disk is broken" — which is the difference between carrying on with
+// the sweep and stopping it.
+var errNoSubmission = errors.New("there is no such submission")
+
 func (st *Store) Delete(form, id string) error {
 	p, err := st.path(form, id)
 	if err != nil {
@@ -547,7 +561,7 @@ func (st *Store) Delete(form, id string) error {
 	}
 	if err := os.Remove(p); err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("there is no such submission")
+			return errNoSubmission
 		}
 		return err
 	}
@@ -569,12 +583,22 @@ func (st *Store) Expire(forms *Set, now time.Time) (int, error) {
 		}
 		cutoff := now.Add(-f.Retention()).Unix()
 		for _, s := range subs {
-			if s.At < cutoff {
-				if err := st.Delete(f.Name, s.ID); err != nil {
-					return n, err
-				}
-				n++
+			if s.At >= cutoff {
+				continue
 			}
+			// A submission that is already gone is this function's own work,
+			// done by somebody else. Two servers sweep now, and a person can
+			// delete one from the forms screen while a sweep is walking the
+			// directory — reporting that as a failure would abandon the rest
+			// of the sweep over a file that reached the state it was headed
+			// for anyway.
+			if err := st.Delete(f.Name, s.ID); err != nil {
+				if errors.Is(err, errNoSubmission) {
+					continue
+				}
+				return n, err
+			}
+			n++
 		}
 	}
 	return n, nil

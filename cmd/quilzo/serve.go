@@ -42,6 +42,7 @@ import (
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/taxonomy"
+	"github.com/quilzo/quilzo/internal/upkeep"
 	"github.com/quilzo/quilzo/internal/webhook"
 )
 
@@ -302,6 +303,23 @@ func cmdServe(root string, args []string) error {
 		},
 		Evidence: func() ([]admin.Evidence, error) { return evidenceRows(root) },
 	}
+	// Retention. A form declares how long its submissions are kept and, until
+	// this, nothing removed them: the ceiling was a sentence in a policy and
+	// not a thing the program did. See internal/upkeep for why this sweeps
+	// here while scheduled publishing keeps its external timer.
+	if job, ok := retentionJob(root); ok {
+		upkeepCtx, stopUpkeep := context.WithCancel(context.Background())
+		defer stopUpkeep()
+		go upkeep.Run(upkeepCtx, upkeep.Every, func(j upkeep.Job, n int, err error) {
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "  %s%s: %v%s\n", dim, j.Name, err, reset)
+				return
+			}
+			fmt.Printf("  %sretention: removed %s past the period their form "+
+				"declares%s\n", dim, count(n, "submission"), reset)
+		}, job)
+	}
+
 	// Dual authorisation. The same files and the same engine the command line
 	// uses — a second implementation of an approval rule would be a second
 	// answer to "may this be published".
@@ -652,4 +670,31 @@ func cmdServe(root string, args []string) error {
 		}
 	}
 	return httpSrv.ListenAndServe()
+}
+
+// retentionJob sweeps submissions past the retention their form declares.
+//
+// Wired into both long-running servers. Either one alone is enough — Expire is
+// idempotent and tolerates a submission another sweep has already taken — and
+// running it in both is what makes the ceiling hold for an install that runs
+// only the public site, or only the admin, which are both ordinary
+// arrangements.
+//
+// It returns nothing to do rather than an error when this store has no forms,
+// so a site without any is not a site printing a warning every quarter hour.
+func retentionJob(root string) (upkeep.Job, bool) {
+	st, err := openSubmissions(root)
+	if err != nil {
+		return upkeep.Job{}, false
+	}
+	return upkeep.Job{
+		Name: "retention",
+		Do: func(now time.Time) (int, error) {
+			set, lerr := loadForms(root)
+			if lerr != nil || set == nil || len(set.Forms) == 0 {
+				return 0, nil
+			}
+			return st.Expire(set, now)
+		},
+	}, true
 }
