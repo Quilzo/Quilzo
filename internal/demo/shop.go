@@ -530,9 +530,9 @@ func (s *Site) addSale() {
 		"title":  "Winter sale",
 		"intro":  "Fifteen per cent off the archive range.",
 		"screen": "sale",
-		"body": "<p>Fifteen per cent comes off everything in the archive " +
+		"body": "Fifteen per cent comes off everything in the archive " +
 			"range, which is the boxes and the tape. It is not a clearance: " +
-			"nothing here is being discontinued.</p>",
+			"nothing here is being discontinued.",
 		// Reserved fields, so any page may carry them whatever its type.
 		// RFC 3339 with a zone: a date with no timezone means something
 		// different to the person who typed it and the server that reads it,
@@ -608,19 +608,19 @@ func (s *Site) addScreens() {
 	}
 	s.Pages["returns"] = map[string]any{
 		"title": "Returns",
-		"body": "<p>Thirty days, unused, and we pay the postage back. Ink is " +
+		"body": "Thirty days, unused, and we pay the postage back. Ink is " +
 			"the exception: once a bottle is opened we cannot resell it, so " +
-			"we cannot take it back.</p><p>Made-to-order items can be " +
-			"cancelled until they are cut. After that they are yours.</p>",
+			"we cannot take it back.\n\nMade-to-order items can be " +
+			"cancelled until they are cut. After that they are yours.",
 		"updated": "2026-06-01",
 	}
 	s.Pages["delivery"] = map[string]any{
 		"title": "Delivery",
-		"body": "<p>UK orders go second class unless you ask otherwise. " +
+		"body": "UK orders go second class unless you ask otherwise. " +
 			"Europe and the rest of the world go tracked, and the tracking " +
-			"number is in the dispatch email.</p><p>We do not ship ink by " +
+			"number is in the dispatch email.\n\nWe do not ship ink by " +
 			"air, so bottles going outside Europe travel by surface and take " +
-			"about six weeks.</p>",
+			"about six weeks.",
 		"updated": "2026-06-01",
 	}
 	s.Pages["about"] = map[string]any{
@@ -631,44 +631,23 @@ func (s *Site) addScreens() {
 	}
 }
 
-const aboutBody = `<h2>What this is</h2>
-<p>Marginalia is a demonstration shop. Twelve products, three stockists, a
-catalogue a machine can read, two policies, a wholesale enquiry form and a sale
-that has not started yet. Everything here was built through the Quilzo admin
-interface — no configuration files were edited, and no code was written for it
-beyond one HTML template and one stylesheet.</p>
+const aboutBody = `## What this is
 
-<h2>How it is put together</h2>
-<p>The products are <strong>records</strong> in a collection, which is what
-makes the shop page sortable, the range page filterable, and the catalogue feed
-possible — all three are the same query mechanism, not three systems kept in
-step. The price is a <strong>number</strong>, because a price stored as text
-cannot be compared by anything. Availability is a <strong>closed choice</strong>,
-so &ldquo;sold out&rdquo;, &ldquo;Sold Out&rdquo; and &ldquo;out of stock&rdquo;
-cannot become three states that mean one thing.</p>
-<p>The stockists are <strong>pages with a content type</strong>, so one missing
-a city is refused before it is stored. The sale is a page carrying a
-<strong>publish window</strong>: it is not on this site yet, and no scheduled
-job is responsible for that — the window is checked when the page is asked for,
-so it cannot be late, and it cannot be early either.</p>
-<p>The claims are gated. The brass pen promises a five-year warranty and
-publishes, because the product carries a link to the terms; take that link away
-and publishing stops, naming the sentence and the field that would make it
-sayable. The correspondence cards make a recycled-content claim and publish,
-because the certification is linked. That check runs over the records and not
-only the pages, because in a shop the copy that matters is a record.</p>
-<p>This page is subject to the same rules, which is why it describes those
-sentences rather than quoting them: the first draft quoted both, and the gate
-refused to publish the page explaining the gate. That is the control working on
-its author, and it seemed worth leaving in.</p>
+Marginalia is a demonstration shop. Twelve products, three stockists, a catalogue a machine can read, two policies, a wholesale enquiry form and a sale that has not started yet. Everything here was built through the Quilzo admin interface — no configuration files were edited, and no code was written for it beyond one HTML template and one stylesheet.
 
-<h2>What is deliberately missing</h2>
-<p>There is no cart, no checkout, no payment and no stock reservation. Shopping
-agents in 2026 discover products and hand the purchase back to the merchant, so
-what a shop needs from a CMS is a catalogue that says what is for sale and where
-to complete the purchase. The moment this took an order it would need
-credentials it does not have, and implying otherwise would make this
-demonstration dishonest.</p>`
+## How it is put together
+
+The products are **records** in a collection, which is what makes the shop page sortable, the range page filterable, and the catalogue feed possible — all three are the same query mechanism, not three systems kept in step. The price is a **number**, because a price stored as text cannot be compared by anything. Availability is a **closed choice**, so “sold out”, “Sold Out” and “out of stock” cannot become three states that mean one thing.
+
+The stockists are **pages with a content type**, so one missing a city is refused before it is stored. The sale is a page carrying a **publish window**: it is not on this site yet, and no scheduled job is responsible for that — the window is checked when the page is asked for, so it cannot be late, and it cannot be early either.
+
+The claims are gated. The brass pen promises a five-year warranty and publishes, because the product carries a link to the terms; take that link away and publishing stops, naming the sentence and the field that would make it sayable. The correspondence cards make a recycled-content claim and publish, because the certification is linked. That check runs over the records and not only the pages, because in a shop the copy that matters is a record.
+
+This page is subject to the same rules, which is why it describes those sentences rather than quoting them: the first draft quoted both, and the gate refused to publish the page explaining the gate. That is the control working on its author, and it seemed worth leaving in.
+
+## What is deliberately missing
+
+There is no cart, no checkout, no payment and no stock reservation. Shopping agents in 2026 discover products and hand the purchase back to the merchant, so what a shop needs from a CMS is a catalogue that says what is for sale and where to complete the purchase. The moment this took an order it would need credentials it does not have, and implying otherwise would make this demonstration dishonest.`
 
 func (s *Site) addListings() {
 	// The allowlist. Cost, care and the substantiation links are on it; the

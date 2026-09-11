@@ -58,6 +58,20 @@ type Filter struct {
 
 var filters = map[string]Filter{
 	// -- text ------------------------------------------------------------------
+	"prose": {Summary: "paragraphs, lists, links and emphasis from plain text",
+		Apply: func(v any, _ string) (any, error) {
+			// The one filter that produces markup rather than text.
+			//
+			// Everything else here returns a string and is escaped for
+			// wherever it lands. This returns a Markup, which the renderer
+			// writes out as it is — and can do safely because Prose escapes
+			// its input before it looks at it, so the only tags in the result
+			// are the ones Prose writes as literals.
+			//
+			// It is not `| safe` and cannot be used as one: handing it a
+			// string of HTML returns that HTML escaped, in a paragraph.
+			return Prose(stringify(v)), nil
+		}},
 	"upper": {Summary: "uppercase", Apply: func(v any, _ string) (any, error) {
 		return strings.ToUpper(stringify(v)), nil
 	}},
