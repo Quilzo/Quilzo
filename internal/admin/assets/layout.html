@@ -56,6 +56,25 @@
   Two lines that become one, and back. The icon says what the sidebar is doing
   rather than what the button does, matching the theme toggle beside it.
 */}}
+{{/*
+  The control that hides the navigation, with its name written on it.
+
+  It was an icon and a tooltip. Everything a screen reader needs was already
+  here — the visually-hidden sentence below says which state it is in and what
+  pressing it does — and a sighted person had nothing but a rectangle-with-a-bar
+  next to a sun. The owner of this program went looking for a way to hide the
+  menu, did not find one, and asked for the feature to be built. It already
+  worked.
+
+  So the label is visible now. An icon on its own is only recognisable when
+  it is conventional, and a sidebar toggle is not: there is no shape everybody
+  reads as "hide the menu" the way a sun reads as "light". The theme toggle
+  next to it keeps its icon for exactly that reason.
+
+  It stays in the header rather than moving into the sidebar, which is the
+  point the note under `.sidenav[hidden]` makes: a control inside the thing it
+  hides cannot bring it back.
+*/}}
 {{define "navtoggle"}}
 <form method="post" action="/sidebar" class="themetoggle navtoggle">
   <input type="hidden" name="to" value="{{if .SidebarHidden}}shown{{else}}hidden{{end}}">
@@ -74,6 +93,7 @@
             stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
       {{end}}
     </svg>
+    <span class="togglelabel" aria-hidden="true">{{if .SidebarHidden}}Show{{else}}Hide{{end}} menu</span>
   </button>
 </form>
 {{end}}

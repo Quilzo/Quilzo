@@ -1,0 +1,104 @@
+{{/*
+  What agents have actually been doing, as opposed to what they are allowed to.
+
+  This screen had no template. The handler computed the reports, counted the
+  flagged ones, passed both plus the threshold and the window, and rendered
+  agents.html — which is the declarations screen and references none of them.
+  So the work was done and thrown away, and the page showed the declarations
+  copy verbatim, including its "Agent activity shows what they have actually
+  been doing" link, pointing at the page you were already on.
+
+  The two screens stay separate because they answer different questions, which
+  is what that sentence was always trying to say. /agents is what an agent is
+  permitted to do. This is what it did.
+
+  Nothing here is a decision. A strike is a pattern worth a person's attention
+  and the threshold is where the counting starts being worth showing, not a
+  line that means an agent is misbehaving — so the wording says "worth looking
+  at" and every strike carries the audit sequence number that evidences it.
+*/}}
+{{template "head" .}}
+<h1>Agent activity</h1>
+
+{{if .Unavailable}}
+<p class="notice warn">{{.Unavailable}}</p>
+{{else}}
+
+<p class="help">What agents have done in the last {{.Window}}, read from the
+  audit log. <a href="/agents">Agents</a> shows what each one is declared to be
+  allowed to do. An agent is listed here once it has {{.Threshold}} or more
+  strikes — a strike being a pattern worth a person's attention, not a finding
+  and not a decision.</p>
+
+{{if .Flagged}}
+<h2>Worth looking at</h2>
+<p class="help">{{len .Flagged}} agent{{if ne (len .Flagged) 1}}s have{{else}} has{{end}}
+  crossed the threshold. Crossing it means somebody should read the strikes,
+  not that anything was refused — every action below already happened or was
+  already denied at the time, by the gate rather than by this screen.</p>
+{{range .Flagged}}
+<article class="finding">
+  <h3>{{.Principal}}{{if .Model}} <span class="hint">{{.Model}}</span>{{end}}</h3>
+  <p>{{.Summary}}</p>
+  <p class="hint">{{len .Strikes}} strike{{if ne (len .Strikes) 1}}s{{end}}
+    in {{.Actions}} action{{if ne .Actions 1}}s{{end}}.
+    {{range $kind, $n := .Counts}}<span class="pill">{{$kind}} × {{$n}}</span> {{end}}</p>
+  <details>
+    <summary class="hint">The strikes, and where each one is in the log</summary>
+    <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th scope="col">Entry</th><th scope="col">When</th>
+        <th scope="col">Pattern</th><th scope="col">Action</th>
+        <th scope="col">Resource</th><th scope="col">Why</th>
+      </tr></thead>
+      <tbody>
+      {{range .Strikes}}
+      <tr>
+        <th scope="row"><a href="/logs?seq={{.Seq}}">{{.Seq}}</a></th>
+        <td>{{.At}}</td>
+        <td>{{.Kind}}</td>
+        <td><code>{{.Action}}</code></td>
+        <td>{{.Resource}}</td>
+        <td class="hint">{{.Why}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+  </details>
+</article>
+{{end}}
+{{end}}
+
+{{if .Reports}}
+<h2>Every agent in the window</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Agent</th><th scope="col">Model</th>
+    <th scope="col">Actions</th><th scope="col">Strikes</th>
+    <th scope="col">Summary</th>
+  </tr></thead>
+  <tbody>
+  {{range .Reports}}
+  <tr{{if .Flagged}} class="weak"{{end}}>
+    <th scope="row">{{.Principal}}</th>
+    <td class="hint">{{if .Model}}{{.Model}}{{else}}—{{end}}</td>
+    <td>{{.Actions}}</td>
+    <td>{{len .Strikes}}</td>
+    <td class="hint">{{.Summary}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p class="notice ok">No agent has acted in the last {{.Window}}. That is a
+  statement about this window and not about the store: an agent that ran before
+  it is in the audit log, which keeps everything, and
+  <a href="/logs">the log</a> is where to look for it.</p>
+{{end}}
+
+{{end}}
+{{template "foot" .}}
