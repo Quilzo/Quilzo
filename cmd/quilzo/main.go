@@ -102,10 +102,12 @@ importing
   quilzo media remove ID                   take one out; refused if in use
   quilzo media renditions                  narrower copies, for phones
   quilzo media formats                     what is accepted, and what is not
+  quilzo media origin ID --source-type T   declare how a picture was made
   quilzo form list | expire | erase VALUE  forms, retention and erasure
   quilzo listing list | run NAME           declared queries a page can show
   quilzo terms list | check                the controlled vocabularies
   quilzo menu list | check                 navigation, and whether it resolves
+  quilzo menu add NAME | remove NAME       edit it; a broken target is refused
   quilzo ipfs id                           what the permanent web will call this site
   quilzo ipfs write -o site                render it for 'ipfs add -r'
   quilzo ipfs write --base-path /d2       ...to live in a subdirectory
@@ -118,6 +120,8 @@ templates and design
   quilzo template layouts                  which layouts a page may name
   quilzo template adopt FILE               convert a template from another system
   quilzo theme show | tokens               what the design is set to, and the knobs
+  quilzo theme unset TOKEN                 put one back to the default
+  quilzo theme generate COLOUR             a whole palette from one colour
   quilzo theme set TOKEN VALUE             change one, refused if unreadable
   quilzo theme check | fonts | css         contrast, typefaces, generated CSS
   quilzo theme apply STARTER               take a starter's palette, keep your layout
@@ -142,19 +146,23 @@ this program
 
 languages
   quilzo lang init en | add fr             a site in more than one language
+  quilzo lang status                       which locales exist, and which is source
   quilzo lang check                        which translations are stale or missing
   quilzo lang translated PAGE LOCALE       record what it was translated from
 
 content types
-  quilzo ext list | add | pin | test        run your own code, sandboxed
+  quilzo ext list | add | remove | pin | test   run your own code, sandboxed
   quilzo records collections               what data this application holds
   quilzo records list NAME [--where k=v]   query records
   quilzo records add NAME field=value      write one
   quilzo records import NAME rows.json     write many, in one commit
+  quilzo records get NAME ID               read one
+  quilzo records delete NAME ID            take one out
   quilzo type example > FILE.json          a definition you can edit
   quilzo type add FILE.json                define a type: flat fields, no regex
   quilzo type list | show NAME             what exists, and its address
   quilzo type bind PAGE TYPE               the page must satisfy the type
+  quilzo type bind-collection NAME TYPE    every record in a collection must satisfy it
   quilzo type check                        validate every bound page
 
 working together
@@ -162,14 +170,17 @@ working together
   quilzo lock list | release PAGE          who is working on what
   quilzo review status                     who has agreed to the current draft
   quilzo review approve [--note "..."]     agree to it; authors cannot
+  quilzo review require N                  how many approvals a publish needs
 
 publishing
   quilzo env list                          what is where, and what is waiting
   quilzo env add staging --before production
   quilzo env promote staging production    a pointer move; the same bytes
   quilzo env diff staging production       what would change
+  quilzo env remove NAME                   take one out of the pipeline
   quilzo publish [COMMIT]                  move live to the draft
   quilzo schedule add 48h | list | run     publish later; gates run at publish
+  quilzo schedule cancel ID                call one off before it fires
   quilzo rollback [--steps N]              move live back along its history
   quilzo a11y [--ref REF]                  accessibility check, blocking publish
 
@@ -183,6 +194,7 @@ the assistant
 
 access
   quilzo oidc configure --issuer ... --client-id ...   sign in with an IdP
+  quilzo oidc status                       whether an IdP is configured, and which
   quilzo oidc check                        talk to the provider, report what it offers
   quilzo network                           what this may connect to, and whether
   quilzo marking                           the classification scheme, if any
@@ -190,8 +202,11 @@ access
   quilzo transfer verify DIR               check what arrived is what left
   quilzo auth grant WHO ROLE [--on PATH]   reader | author | publisher | admin
   quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
+  quilzo auth revoke WHO [--on PATH]       take a grant back
+  quilzo auth recover                      break-glass when every admin token is lost
   quilzo auth list | roles
   quilzo token issue NAME --principal WHO  an API credential, shown once
+  quilzo token exchange                    trade a stored token for a short session
   quilzo token list | revoke ID | stale
 
 encryption at rest
@@ -206,11 +221,13 @@ compliance evidence
   quilzo compliance crypto                 every algorithm, and its post-quantum
                                             status, checked against the source
   quilzo compliance controls               NIST 800-53 coverage, from the rules
+  quilzo compliance acr                    an accessibility conformance report
 
 agents and integrations
   quilzo agent templates                    the agent archetypes, and when to use each
   quilzo agent new NAME --kind KIND         declare what an agent may do
   quilzo agent list | show NAME | check     what is declared, and whether it still validates
+  quilzo agent run NAME                    a model chooses, inside the manifest
   quilzo agent probe < question.json       ask the gate: would this agent be
                                             allowed to do this? JSON in, JSON out
   quilzo agents                            what models have been doing, and
@@ -225,12 +242,13 @@ agents and integrations
   quilzo peer list | adopt NAME | remove   what is paired, and making it the draft
   quilzo webhook add https://...           tell another system when you
                                             publish, or when a form arrives
-  quilzo webhook list | test               signed, timestamped, replay-proof
+  quilzo webhook list | remove ID | test   signed, timestamped, replay-proof
 
 security posture
   quilzo config show | list                everything settable, and its default
   quilzo config explain KEY                what it is for, and what it costs
   quilzo config set KEY VALUE              --accept-risk "why" if it weakens
+  quilzo config unset KEY                  put one back to the default
   quilzo posture scan [--min SEV]          continuous misconfiguration check
   quilzo posture rules | explain RULE      what is checked, and why it matters
   quilzo posture suppress ID --reason ...  accept a risk, for at most 90 days
@@ -255,13 +273,18 @@ interface
 log transparency
   quilzo logd                              the log writer, run as its own account
   quilzo logd status                       whether the separation is in force
+  quilzo auditlog dir                      where the log is, and whether it is separate
+  quilzo auditlog verify                   recompute the chain over every entry
+  quilzo auditlog show SEQ                 one entry, in full
+  quilzo auditlog export -o FILE           the whole log, as it is stored
   quilzo auditlog head --save              a commitment to every entry so far
+  quilzo auditlog verify-head FILE         check a saved commitment against the log
   quilzo auditlog prove SEQ                one entry is in the log, in ~20 hashes
   quilzo auditlog consistency              nothing before a published head moved
   quilzo auditlog anchor                   put the head in Bitcoin, so rewriting
                                             history contradicts a block
-  quilzo timestamp stamp | list | verify   RFC 3161 proof of when you published
-  quilzo anchor submit | list | verify     one hash over a whole publication
+  quilzo timestamp stamp | list | export   RFC 3161 proof of when you published
+  quilzo anchor submit | status | upgrade  one hash over a whole publication
 
   quilzo mcp [--list]                      the agent interface, over stdio
   quilzo __sandbox --allow DIR -- CMD       run CMD confined to DIR. Not a
