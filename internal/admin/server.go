@@ -509,6 +509,19 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	// cannot forget it.
 	data["SidebarHidden"] = sidebarHidden(r)
 
+	// Where the preference toggles come back to.
+	//
+	// Every response here sets Referrer-Policy: no-referrer, so the browser
+	// tells the toggle nothing about where it was pressed. The screen has to
+	// say so itself, and it says so from here for the same reason as the two
+	// above: a screen added later cannot forget it.
+	//
+	// Passed through safeLocalPath on the way out as well as on the way back
+	// in. It is this server's own URL and so it is already local, but a value
+	// written into a form is a value somebody can read, edit and post — and
+	// the check on return is the one that matters either way.
+	data["Here"] = safeLocalPath(r.URL.Path, r.URL.RawQuery)
+
 	// The documentation link for the screen being rendered, so the footer link
 	// means "help with this" rather than "help".
 	//

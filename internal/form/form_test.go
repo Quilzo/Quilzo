@@ -283,3 +283,73 @@ func TestAClosedFormAcceptsNothing(t *testing.T) {
 		t.Error("a closed form accepted a submission")
 	}
 }
+
+// A sweep carries on past a submission somebody else already removed.
+//
+// Two servers sweep now, and a person can delete one from the forms screen
+// while a sweep is walking the directory. Expire used to return the first
+// os.Remove error, so the loser of that race abandoned the rest of its sweep —
+// over a file that had reached the state it was headed for anyway. With enough
+// forms, retention would then hold for the first one and silently not for the
+// others.
+func TestExpireCarriesOnPastASubmissionAlreadyRemoved(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := Open(dir) // the same directory, as a second process sees it
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f := contact()
+	f.RetentionDays = 30
+	set := &Set{Forms: []Form{*f}}
+	now := time.Now()
+	stale := now.Add(-60 * 24 * time.Hour).Unix()
+
+	ids := []string{strings.Repeat("a", 32), strings.Repeat("b", 32),
+		strings.Repeat("c", 32)}
+	for _, id := range ids {
+		if err := st.Put(Submission{ID: id, Form: "contact", At: stale,
+			Values: map[string]string{"name": "Older"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The other sweep gets to one of them first.
+	if err := other.Delete("contact", ids[0]); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := st.Expire(set, now)
+	if err != nil {
+		t.Fatalf("Expire stopped on a submission that was already gone: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("removed %d; the two that were still there should have gone", n)
+	}
+	if left, _ := st.List("contact"); len(left) != 0 {
+		t.Errorf("%d submissions outlived their period because the sweep "+
+			"stopped early: %v", len(left), left)
+	}
+}
+
+// Deleting something that is not there is still an error for a person.
+//
+// Expire treats it as work already done; a person who names a submission that
+// does not exist has made a mistake and should be told so.
+func TestDeletingSomethingThatIsNotThereStillSaysSo(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = st.Delete("contact", strings.Repeat("a", 32))
+	if err == nil {
+		t.Fatal("deleting a submission that does not exist succeeded")
+	}
+	if !strings.Contains(err.Error(), "no such submission") {
+		t.Errorf("the error does not say what was wrong: %v", err)
+	}
+}

@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/chat"
 )
 
 // The Mini App: publishing a page from inside a Telegram chat.
@@ -125,6 +127,24 @@ type App struct {
 	SiteURL string
 	// Now is the clock, injectable for tests.
 	Now func() time.Time
+	// Platform is which messenger this instance serves. Empty means Telegram.
+	//
+	// The editor was always the generic half of this package — 845 lines with
+	// two mentions of Telegram in them — and internal/slack and
+	// internal/discord were written to reach it and then never did. This field
+	// is what they mount it with: the platform travels into every signature
+	// check, so a credential minted for one messenger does not verify at
+	// another, and into the handle, so two people with the same numeric id on
+	// different platforms do not share a page.
+	Platform chat.Platform
+}
+
+// platform is the messenger this instance serves, defaulting to Telegram.
+func (a *App) platform() chat.Platform {
+	if a.Platform == "" {
+		return chat.Telegram
+	}
+	return a.Platform
 }
 
 func (a *App) now() time.Time {
@@ -217,7 +237,7 @@ func (a *App) open(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if supplied := r.URL.Query().Get("g"); supplied != "" {
-		user, err := VerifyGrant(supplied, a.BotToken, a.now())
+		user, err := VerifyGrantFrom(a.platform(), supplied, a.BotToken, a.now())
 		if err != nil {
 			a.refuse(w, http.StatusForbidden, "This session has ended",
 				err.Error(), "Open the bot and tap the button again.")
@@ -226,7 +246,8 @@ func (a *App) open(w http.ResponseWriter, r *http.Request) {
 		a.arrive(w, user)
 		return
 	}
-	user, err := VerifyLink(r.URL.Query(), a.BotToken, a.Spender, a.now())
+	user, err := VerifyLinkFrom(a.platform(), r.URL.Query(), a.BotToken,
+		a.Spender, a.now())
 	if err != nil {
 		a.refuse(w, http.StatusForbidden, "This link cannot be used", err.Error(),
 			"Open the bot and tap the button again. A link works once and "+
@@ -283,7 +304,8 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 		a.refuse(w, http.StatusBadRequest, "That form could not be read", err.Error(), "")
 		return
 	}
-	user, err := VerifyGrant(r.FormValue("grant"), a.BotToken, a.now())
+	user, err := VerifyGrantFrom(a.platform(), r.FormValue("grant"),
+		a.BotToken, a.now())
 	if err != nil {
 		a.refuse(w, http.StatusForbidden, "This form cannot be accepted",
 			err.Error(), "Open the bot and tap the button again.")
@@ -538,6 +560,12 @@ func urlEscape(s string) string { return url.QueryEscape(s) }
 // string means, and a bot that assembled it would be a second place that has to
 // agree about the parameter names.
 func (a *App) LinkFor(user User, appURL string) (string, error) {
+	// The app decides the platform, not the caller. A link minted under one
+	// platform and verified under another simply fails, and the caller that
+	// forgot to set the field would see "this link cannot be used" with
+	// nothing pointing at the reason. Making the app authoritative removes the
+	// mistake rather than reporting it.
+	user.Platform = a.platform()
 	query, err := NewLink(user, a.BotToken, a.now())
 	if err != nil {
 		return "", err

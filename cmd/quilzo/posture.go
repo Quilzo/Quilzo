@@ -155,7 +155,58 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 	}
 	s.Content = observeContent(root, tplDir, st)
 	s.Agents = observeAgents(root, st, tplDir)
+	s.Upkeep = observeUpkeep(root, st)
 	return s
+}
+
+// observeUpkeep counts the work that was supposed to have happened by now.
+//
+// Both counts are read off the disk rather than from a record of whether a
+// timer ran. A rule that asks "did cron fire" needs somewhere to write down
+// that it did, and then calls a healthy store broken the first time that
+// record is lost. Asking "is there a submission older than its form allows"
+// needs no bookkeeping and answers the question somebody actually has.
+func observeUpkeep(root string, st *store.Store) posture.UpkeepFacts {
+	var u posture.UpkeepFacts
+	now := time.Now()
+
+	// Submissions past the ceiling their own form declares.
+	if subs, err := openSubmissions(root); err == nil {
+		if set, ferr := loadForms(root); ferr == nil && set != nil {
+			u.Checked = true
+			for _, f := range set.Forms {
+				list, lerr := subs.List(f.Name)
+				if lerr != nil {
+					continue
+				}
+				cutoff := now.Add(-f.Retention()).Unix()
+				for _, sub := range list {
+					if sub.At < cutoff {
+						u.ExpiredSubmissions++
+					}
+				}
+			}
+		}
+	}
+
+	// Publishes whose moment has passed. An entry whose commit is no longer
+	// the draft is skipped: scheduleRun refuses that one on purpose, so
+	// counting it here would report a permanent finding for something working
+	// as designed.
+	if sch, err := loadSchedule(root); err == nil && sch != nil {
+		u.Checked = true
+		draft := st.GetRef(site.RefDraft)
+		for _, e := range sch.Due(now) {
+			if draft != "" && e.Commit != draft {
+				continue
+			}
+			u.OverdueEntries++
+			if waited := now.Sub(time.Unix(e.At, 0)); waited > u.OldestOverdue {
+				u.OldestOverdue = waited
+			}
+		}
+	}
+	return u
 }
 
 func observeContent(root, tplDir string, st *store.Store) posture.ContentFacts {

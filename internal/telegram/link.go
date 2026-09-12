@@ -82,7 +82,7 @@ type Spender = chat.Spender
 // secret for both.
 func (u User) account() chat.Account {
 	return chat.Account{
-		Platform:  chat.Telegram,
+		Platform:  u.platform(),
 		ID:        u.ID,
 		Username:  u.Username,
 		FirstName: u.FirstName,
@@ -90,9 +90,22 @@ func (u User) account() chat.Account {
 	}
 }
 
+// platform is where this person came from, defaulting to Telegram.
+//
+// The default is not a convenience. Every User this package built before the
+// field existed carried no platform, and a zero value that resolved to
+// anything else would change their handle — which is the path their pages live
+// at.
+func (u User) platform() chat.Platform {
+	if u.Platform == "" {
+		return chat.Telegram
+	}
+	return u.Platform
+}
+
 func fromAccount(a chat.Account) User {
 	return User{ID: a.ID, Username: a.Username, FirstName: a.FirstName,
-		AuthDate: a.At}
+		AuthDate: a.At, Platform: a.Platform}
 }
 
 // NewLink returns the query string a bot should append to the Mini App URL.
@@ -109,7 +122,19 @@ func NewLink(user User, botToken string, now time.Time) (string, error) {
 func VerifyLink(query url.Values, botToken string, spender Spender,
 	now time.Time) (User, error) {
 
-	a, err := chat.VerifyLink(query, botToken, chat.Telegram, spender, now)
+	return VerifyLinkFrom(chat.Telegram, query, botToken, spender, now)
+}
+
+// VerifyLinkFrom is VerifyLink for a messenger that is not Telegram.
+//
+// The platform is part of the signing context, so a link minted for Slack does
+// not verify as a Telegram one even when an operator has configured the same
+// secret for both. That is the whole reason internal/chat takes a platform
+// rather than inferring one.
+func VerifyLinkFrom(p chat.Platform, query url.Values, secret string,
+	spender Spender, now time.Time) (User, error) {
+
+	a, err := chat.VerifyLink(query, secret, p, spender, now)
 	if err != nil {
 		return User{}, err
 	}
@@ -123,7 +148,14 @@ func NewGrant(user User, botToken string, now time.Time) (string, error) {
 
 // VerifyGrant checks a form submission's grant.
 func VerifyGrant(encoded, botToken string, now time.Time) (User, error) {
-	a, err := chat.VerifyGrant(encoded, botToken, chat.Telegram, now)
+	return VerifyGrantFrom(chat.Telegram, encoded, botToken, now)
+}
+
+// VerifyGrantFrom is VerifyGrant for a messenger that is not Telegram.
+func VerifyGrantFrom(p chat.Platform, encoded, secret string,
+	now time.Time) (User, error) {
+
+	a, err := chat.VerifyGrant(encoded, secret, p, now)
 	if err != nil {
 		return User{}, err
 	}

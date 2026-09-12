@@ -95,6 +95,7 @@
 {{define "navtoggle"}}
 <form method="post" action="/sidebar" class="themetoggle navtoggle">
   <input type="hidden" name="to" value="{{if .SidebarHidden}}shown{{else}}hidden{{end}}">
+  <input type="hidden" name="back" value="{{.Here}}">
   <button type="submit" title="{{if .SidebarHidden}}Show{{else}}Hide{{end}} the navigation">
     <span class="visually-hidden">Navigation is currently
       {{if .SidebarHidden}}hidden. Show it.{{else}}showing. Hide it.{{end}}</span>
@@ -130,6 +131,7 @@
 {{define "themetoggle"}}
 <form method="post" action="/theme" class="themetoggle">
   <input type="hidden" name="to" value="{{.ThemeNext}}">
+  <input type="hidden" name="back" value="{{.Here}}">
   <button type="submit" title="Currently {{.ThemeNow}}. Switch to {{.ThemeNextLabel}}.">
     <span class="visually-hidden">Appearance: currently {{.ThemeNow}}.
       Switch to {{.ThemeNextLabel}}.</span>

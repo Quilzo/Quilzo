@@ -120,7 +120,7 @@ type discordUser struct {
 //
 // publicKey is the application's Ed25519 public key, as Discord shows it: hex.
 func Verify(r *http.Request, publicKey string, now time.Time) (Request, error) {
-	key, err := parseKey(publicKey)
+	key, err := ParseKey(publicKey)
 	if err != nil {
 		return Request{}, err
 	}
@@ -198,8 +198,12 @@ func Verify(r *http.Request, publicKey string, now time.Time) (Request, error) {
 	return out, nil
 }
 
-// parseKey turns Discord's hex public key into one Ed25519 can use.
-func parseKey(publicKey string) (ed25519.PublicKey, error) {
+// ParseKey turns Discord's hex public key into one Ed25519 can use.
+//
+// Exported so a `discord check` can tell an operator now that they pasted the
+// application id instead of the public key, rather than letting every
+// interaction fail with a signature error that looks like Discord's fault.
+func ParseKey(publicKey string) (ed25519.PublicKey, error) {
 	if strings.TrimSpace(publicKey) == "" {
 		return nil, fmt.Errorf(
 			"no Discord public key is configured, so no interaction can be " +

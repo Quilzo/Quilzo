@@ -154,7 +154,45 @@ type Account struct {
 // The prefix is unambiguous because a platform name may not end in a digit —
 // see Platform.Valid, which is where that rule and its reason live.
 func (a Account) Handle() string {
-	return string(a.Platform) + strconv.FormatInt(a.ID, 10)
+	return a.Platform.Prefix() + strconv.FormatInt(a.ID, 10)
+}
+
+// Prefix is the short form of a platform's name, used to build a handle.
+//
+// # Why a prefix and not the name
+//
+// The handle is a content path, so it is what a published page lives under and
+// it cannot change without moving somebody's pages. Telegram's editor has been
+// writing "tg" + id since before this package existed, and the two disagreed:
+// this method used to return the full name, so the same person had one handle
+// here and another in the editor that actually stored their work.
+//
+// Aligning on the editor's spelling rather than on this one is the choice that
+// moves nobody's content.
+//
+// # Why they must not collide
+//
+// A prefix is followed immediately by a decimal id, so two platforms sharing a
+// prefix — or one whose prefix ends in a digit — produce one handle for two
+// people, and the symptom is somebody editing a stranger's page rather than an
+// error anybody sees. Platform.Valid refuses a name ending in a digit for
+// exactly this reason and says so at length; the same argument applies to the
+// prefix, and TestNoTwoPlatformsShareAHandlePrefix is what holds it.
+//
+// An unrecognised platform gets its own name, which cannot collide with the
+// three below because none of them is a prefix of a full name here. It also
+// cannot be reached: Account.Valid refuses a platform that is not declared.
+func (p Platform) Prefix() string {
+	switch p {
+	case Telegram:
+		return "tg"
+	case Slack:
+		return "sl"
+	case Discord:
+		return "dc"
+	default:
+		return string(p)
+	}
 }
 
 // Label is how to address this person on a screen, preferring what they chose.

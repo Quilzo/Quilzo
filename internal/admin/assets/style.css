@@ -304,6 +304,14 @@ code { font-family: var(--mono); font-size: 0.9em; }
 
 /* -- top app bar and navigation -------------------------------------------- */
 
+/* The bar's height is a number the sidebar has to know, so it is declared
+   rather than left to whatever the content adds up to. See the sidebar rules
+   further down: its top and its height are both derived from this, and a bar
+   that is silently taller than it says puts the end of the menu below the
+   fold again. `height` rather than `min-height` for that reason -- min-height
+   is a value that can be exceeded, which is exactly what must not happen. */
+:root { --bar-h: 3.5rem; }
+
 .bar {
   background: var(--surface-container);
   border-bottom: 1px solid var(--outline-variant);
@@ -771,7 +779,22 @@ tr.detail td { padding-top: 0; border-top: 0; }
     grid-template-areas: "bar bar" "nav main" "nav foot";
     grid-template-rows: auto 1fr auto; min-height: 100vh; }
   body > footer { grid-area: foot; }
-  body > .bar { grid-area: bar; margin-bottom: 0; }
+  /* The bar is sticky so that the sidebar under it has a fixed place to
+     start from. That is the reason; the effect anybody will notice is that
+     the two preference controls stay reachable, which is what the control
+     that hides the navigation was always supposed to be.
+     Below the skip link, which is z-index 10 and has to clear everything. */
+  body > .bar { grid-area: bar; margin-bottom: 0;
+    position: sticky; top: 0; z-index: 5; height: var(--bar-h); }
+  /* No wrapping, because a bar that wraps is taller than --bar-h says and the
+     sidebar's arithmetic below is then wrong by one line. A long site name or
+     a long user name shortens instead; centred rather than baseline-aligned
+     because a 40px button has no baseline worth aligning a fixed-height row
+     to. */
+  .bar-inner { height: 100%; flex-wrap: nowrap; align-items: center; }
+  .who { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+
   /* Sticky and scrolling on its own, so the page is never taller than the
      menu.
      The column is a grid row, so without this the shortest possible page was
@@ -779,11 +802,32 @@ tr.detail td { padding-top: 0; border-top: 0; }
      it. align-self: start stops the row stretching the box; max-height plus
      overflow-y let it scroll independently once the disclosures are open;
      overscroll-behavior keeps that scroll from carrying on into the page when
-     it reaches the end. */
+     it reaches the end.
+
+     # Why the offset, and the bug it fixes
+
+     This was `top: 0; max-height: 100vh`, and the last group in the menu --
+     Reference -- could not be scrolled to. The box began below the bar and
+     was a whole viewport tall, so it ended one bar-height *below* the fold.
+     Scrolling the menu to its internal end left that strip off-screen, and
+     overscroll-behavior: contain -- correctly -- stopped the gesture carrying
+     on into the page, so the obvious thing to do did nothing. The only way to
+     see the last group was to scroll the page instead of the menu, which
+     nobody would think to do because the menu was what was scrolling.
+
+     It only happened when the menu overflowed at all, which is why it came
+     and went: with the disclosures closed everything fits and there is no
+     strip to fall into.
+
+     Sticking below a bar of known height, and taking that height off, puts
+     the bottom of the box exactly on the bottom of the viewport at every
+     scroll position. There is no strip. */
   body > .sidenav { grid-area: nav; border-right: 1px solid var(--outline-variant);
     padding: 1rem .75rem; background: var(--surface-container-low);
-    position: sticky; top: 0; align-self: start;
-    max-height: 100vh; overflow-y: auto; overscroll-behavior: contain; }
+    position: sticky; top: var(--bar-h); align-self: start;
+    max-height: calc(100vh - var(--bar-h));
+    max-height: calc(100dvh - var(--bar-h));
+    overflow-y: auto; overscroll-behavior: contain; }
   body > main { grid-area: main; }
   .sidenav .navgroups { flex-direction: column; gap: 1rem; align-items: stretch; }
   .sidenav .navgroup + .navgroup { border-left: 0; margin-left: 0; padding-left: 0; }

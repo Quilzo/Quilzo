@@ -103,11 +103,32 @@ func (s *Server) handleTheme(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, backTo(r), http.StatusSeeOther)
 }
 
-// backTo returns the path the request came from, if it is one of ours.
+// backTo returns the screen the toggle was pressed on, if it is one of ours.
 //
-// Referer is only ever used to return to a path on this same server. An open
-// redirect through a preference toggle would be an embarrassing way to acquire
-// one, and a toggle is exactly the sort of endpoint nobody thinks to check.
+// # Why the form carries it rather than the Referer header
+//
+// It used to read Referer alone, and every admin response sets
+// `Referrer-Policy: no-referrer` — so the browser sent nothing, backTo took
+// its empty-string branch, and both toggles redirected to "/". Pressing "Hide
+// menu" on any screen hid the menu and moved you to Pages. The preference was
+// recorded correctly every time; you just could not see the effect on the
+// screen you pressed it from, which is the only screen anybody presses it
+// from.
+//
+// That is a header this program deliberately sends, for a reason that has not
+// changed: a Referer leaks which screen of somebody's admin they were on to
+// anything they navigate to. So the header stays and the destination comes
+// from the form, which is a field this server rendered rather than a header
+// the browser decided whether to send.
+//
+// Referer is still read when the field is absent, so a form somewhere that
+// has not been given the field keeps whatever behaviour it had.
+//
+// Neither source is trusted. Both go through safeLocalPath, because a hidden
+// field is as forgeable as a header — anybody can post to this endpoint with
+// whatever value they like. An open redirect through a preference toggle would
+// be an embarrassing way to acquire one, and a toggle is exactly the sort of
+// endpoint nobody thinks to check.
 //
 // # The bug this had, which the host check did not catch
 //
@@ -128,6 +149,15 @@ func (s *Server) handleTheme(w http.ResponseWriter, r *http.Request) {
 // somebody adds a case to after the next report; this one enumerates the
 // acceptable shape instead.
 func backTo(r *http.Request) string {
+	// The field first. ParseForm has already run in both callers, so this is
+	// reading what was parsed rather than consuming the body a second time.
+	if back := r.FormValue("back"); back != "" {
+		u, err := url.Parse(back)
+		if err != nil || u.Scheme != "" || u.Host != "" || u.Opaque != "" {
+			return "/"
+		}
+		return safeLocalPath(u.Path, u.RawQuery)
+	}
 	ref := r.Referer()
 	if ref == "" {
 		return "/"

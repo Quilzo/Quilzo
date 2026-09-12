@@ -167,6 +167,29 @@ type ContentFacts struct {
 	LastTimestamped int64    `json:"last_timestamped,omitempty"`
 }
 
+// UpkeepFacts are the things that were supposed to happen because time passed.
+//
+// Both are observations of what is on disk right now rather than records of
+// whether a timer ran. A rule that asks "did cron fire" needs somewhere to
+// write down that it did, and then reports a healthy store as broken whenever
+// that record is lost; a rule that asks "is there a submission older than its
+// form allows" is answering the question anybody actually has.
+type UpkeepFacts struct {
+	// ExpiredSubmissions are submissions kept past the period their form
+	// declares. Both servers sweep these now, so a non-zero count means
+	// neither is running, or the sweep is failing.
+	ExpiredSubmissions int `json:"expired_submissions"`
+	// OverdueEntries are scheduled publishes whose moment has passed and which
+	// have not fired. Publishing deliberately does not daemonise — see
+	// scheduleRun — so this is the only thing that notices.
+	OverdueEntries int `json:"overdue_entries"`
+	// OldestOverdue is how long the oldest of them has been waiting.
+	OldestOverdue time.Duration `json:"oldest_overdue,omitempty"`
+	// Checked distinguishes "nothing waiting" from "nobody looked", the same
+	// distinction ExtFacts.Checked draws and for the same reason.
+	Checked bool `json:"checked"`
+}
+
 // AgentFacts describe the machine-facing surface.
 type AgentFacts struct {
 	// WriteOpsWithoutRole are MCP operations that change state without
@@ -210,6 +233,7 @@ type State struct {
 	Weakened []WeakenedSetting `json:"weakened,omitempty"`
 	Server   ServerFacts       `json:"server"`
 	Content  ContentFacts      `json:"content"`
+	Upkeep   UpkeepFacts       `json:"upkeep"`
 	Agents   AgentFacts        `json:"agents"`
 	Ext      ExtFacts          `json:"ext"`
 	Now      time.Time         `json:"-"`

@@ -283,7 +283,7 @@ func auditVerify(root string) error {
 		return nil
 	}
 
-	w.Human("%d entr%s\n", n, plural(n))
+	w.Human("%d entr%s\n", n, entrySuffix(n))
 	if good {
 		w.Human("  %schain intact%s\n", green, reset)
 		w.Human("  %severy entry re-hashes and links to the one before it, so nothing\n"+
@@ -360,11 +360,28 @@ func auditExport(root string) error {
 	return audit.Export(events, os.Stdout)
 }
 
-func plural(n int) string {
+// entrySuffix completes "entr-y" or "entr-ies".
+//
+// It was called plural(n), which reads as a general helper and is not one: it
+// returns "y" and "ies" and nothing else. The next person to reach for it
+// printed "1 submissiony". Named for the word it completes, so the mistake is
+// not available.
+func entrySuffix(n int) string {
 	if n == 1 {
 		return "y"
 	}
 	return "ies"
+}
+
+// count renders "1 submission" and "4 submissions".
+//
+// The plain case, for words that take an s. A word that does not is a word
+// this should not be used for.
+func count(n int, noun string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, noun)
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // -- transparency ------------------------------------------------------------

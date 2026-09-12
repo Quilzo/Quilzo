@@ -327,7 +327,7 @@ func (a *App) grantOf(r *http.Request) (User, string, error) {
 	if raw == "" {
 		raw = r.URL.Query().Get("g")
 	}
-	user, err := VerifyGrant(raw, a.BotToken, a.now())
+	user, err := VerifyGrantFrom(a.platform(), raw, a.BotToken, a.now())
 	return user, raw, err
 }
 

@@ -494,6 +494,56 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "content.retention-unenforced",
+		Title:    "Submissions are kept past the period their form declares",
+		Severity: High,
+		Controls: []string{"SI-12", "AU-11"},
+		OWASP:    "A02:2025 Cryptographic Failures",
+		Why: "A declared retention period that nothing enforces is worse " +
+			"than none: the declaration is what a data protection authority " +
+			"reads, and what the person filling in the form was told. Both " +
+			"servers sweep these now, so anything left here means neither is " +
+			"running or the sweep is failing.",
+		Check: func(s State) []Finding {
+			if !s.Upkeep.Checked || s.Upkeep.ExpiredSubmissions == 0 {
+				return nil
+			}
+			n := s.Upkeep.ExpiredSubmissions
+			return []Finding{{
+				Detail: fmt.Sprintf("%d %s outlived the period its form "+
+					"declares", n, plural(n, "submission has", "submissions have")),
+				Fix: "quilzo form expire",
+			}}
+		},
+	},
+	{
+		ID:       "publish.schedule-overdue",
+		Title:    "A scheduled publish has not fired",
+		Severity: Medium,
+		Controls: []string{"CM-3"},
+		OWASP:    "",
+		Why: "Scheduled publishing deliberately does not daemonise — a " +
+			"scheduler that is also a long-lived process is a second thing " +
+			"that can be down — so it needs a timer calling `quilzo schedule " +
+			"run`. Without one the entry waits forever, and the failure is " +
+			"silent: somebody arranged for a page to go out and it did not.",
+		Check: func(s State) []Finding {
+			if !s.Upkeep.Checked || s.Upkeep.OverdueEntries == 0 {
+				return nil
+			}
+			n := s.Upkeep.OverdueEntries
+			detail := fmt.Sprintf("%d scheduled %s due and did not fire",
+				n, plural(n, "publish was", "publishes were"))
+			// How long it has been waiting is what says whether this is a
+			// timer that is late or a timer that does not exist.
+			if s.Upkeep.OldestOverdue > time.Hour {
+				detail += fmt.Sprintf("; the oldest has waited %s",
+					roughly(s.Upkeep.OldestOverdue))
+			}
+			return []Finding{{Detail: detail, Fix: "quilzo schedule run"}}
+		},
+	},
+	{
 		ID:       "content.accessibility-blocking",
 		Title:    "Live content fails the accessibility gate",
 		Severity: High,
@@ -957,4 +1007,20 @@ func atoiSafe(s string) int {
 		n = n*10 + int(r-'0')
 	}
 	return n
+}
+
+// roughly renders a duration the way somebody would say it.
+//
+// A finding that says "waited 172h13m4s" makes the reader do arithmetic to
+// learn the thing the finding exists to tell them, which is whether this is a
+// late timer or no timer at all.
+func roughly(d time.Duration) string {
+	switch {
+	case d >= 48*time.Hour:
+		return fmt.Sprintf("%d days", int(d.Hours())/24)
+	case d >= 2*time.Hour:
+		return fmt.Sprintf("%d hours", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%d minutes", int(d.Minutes()))
+	}
 }

@@ -170,6 +170,10 @@ var commandNeeds = map[string]need{
 	// publish authority, delegated — so the operator starting it needs to hold
 	// it, whatever the person in the chat holds.
 	"telegram": {action: auth.ActPublish},
+	// The same as telegram, and for the same reason: each starts a surface
+	// that publishes on behalf of somebody else's account.
+	"slack":   {action: auth.ActPublish},
+	"discord": {action: auth.ActPublish},
 
 	// -- content types gate every write, so changing one is a change to what
 	// every author may store. Publisher, not author.
