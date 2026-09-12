@@ -210,6 +210,8 @@ func TestTheReturnFieldCannotLeaveThisServer(t *testing.T) {
 		"http://evil.test",
 		"javascript:alert(1)",
 		"/../../etc/passwd",
+		"/logs/../../../etc/passwd",
+		"/./logs",
 	} {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest("POST", "/sidebar",

@@ -181,18 +181,34 @@ func safeLocalPath(path, rawQuery string) string {
 	if strings.ContainsAny(path, "\\") {
 		return "/"
 	}
-	// Cleaned so ".." cannot walk and "//" collapses. Normalisation rather
-	// than the guard: the explicit // test below is what actually refuses a
-	// protocol-relative path, and a sabotage removing this Clean does not
-	// reopen the hole. Kept because handing a browser a path it has to
-	// normalise itself is how the next variant of this gets found.
-	clean := stdpath.Clean(path)
-	if !strings.HasPrefix(clean, "/") || strings.HasPrefix(clean, "//") {
+	// Refused if it is not already canonical, rather than cleaned into
+	// something canonical.
+	//
+	// This used to normalise: "/../../etc/passwd" became "/etc/passwd" and a
+	// redirect was issued to it. That is local, so it was never the open
+	// redirect the rule is about — but it is still the wrong answer. A return
+	// path carrying ".." was not written by any screen here, so it was
+	// tampered with or mangled, and the honest response to "this is not a path
+	// I produced" is to go home rather than to guess at a repaired version of
+	// it and send somebody there.
+	//
+	// Nothing legitimate is lost: every path this server puts in a form is
+	// already clean, so Clean is the identity on all of them.
+	//
+	// It also means this function now either returns its input or returns a
+	// constant, which is a shape a reader — and a static analyser — can check
+	// by looking at it. Both CodeQL alerts on the note handlers were this flow,
+	// and both were correct that the value was unverified even though the
+	// outcome was safe.
+	if stdpath.Clean(path) != path {
+		return "/"
+	}
+	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
 		return "/"
 	}
 	// Re-parsed as a whole, so anything that still reads as an origin is
 	// caught rather than assumed away.
-	back := clean
+	back := path
 	if rawQuery != "" {
 		back += "?" + rawQuery
 	}
