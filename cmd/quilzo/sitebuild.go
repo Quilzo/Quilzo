@@ -25,6 +25,7 @@ import (
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/medialib"
 	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/public"
@@ -72,6 +73,22 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	st := public.New(s, design.Layouts)
 	st.Fonts = design.Fonts
 	st.Stylesheet = design.Stylesheet
+	// Where each picture is cropped from, appended to the stylesheet the site
+	// already serves.
+	//
+	// Here rather than in a template because a layout only has a path, and the
+	// media record is not in scope where the image is rendered — so every
+	// layout, including every one an operator wrote themselves, would have to
+	// change to look it up. A rule keyed on the image's own address needs no
+	// template to know anything. See internal/medialib/focus.go.
+	//
+	// Appended last so an operator's own stylesheet still wins on specificity
+	// ties, and empty for a site where nobody has placed a point.
+	if lib, lerr := openMedia(root); lerr == nil {
+		if files, ferr := lib.List(); ferr == nil {
+			st.Stylesheet += medialib.FocusCSS(files, "/media")
+		}
+	}
 	// The installed app's splash and chrome, from the same tokens the
 	// stylesheet is generated from — so a themed site does not open on a white
 	// screen under somebody else's accent colour.

@@ -105,6 +105,7 @@ importing
   quilzo media renditions                  narrower copies, for phones
   quilzo media formats                     what is accepted, and what is not
   quilzo media origin ID --source-type T   declare how a picture was made
+  quilzo media focus ID --at top-left      which part survives a crop
   quilzo form list | expire | erase VALUE  forms, retention and erasure
   quilzo listing list | run NAME           declared queries a page can show
   quilzo terms list | check                the controlled vocabularies

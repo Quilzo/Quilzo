@@ -208,6 +208,8 @@ func cmdMedia(root string, args []string) error {
 		return mediaRenditions(root, args[1:])
 	case "origin":
 		return mediaOrigin(root, args[1:])
+	case "focus":
+		return mediaFocus(root, args[1:])
 	case "formats":
 		return mediaFormats()
 	default:

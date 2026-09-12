@@ -921,6 +921,22 @@ tr.detail td { padding-top: 0; border-top: 0; }
 .confirmactions { display: flex; flex-wrap: wrap; align-items: center;
   gap: 1.5rem; margin: 1rem 0; }
 
+/* -- where a picture is cropped from -----------------------------------------
+ *
+ * Nine choices laid out as the picture is laid out, so "top left" is in the
+ * top left. A three-column grid in reading order needs no positioning to be
+ * correct: the markup order and the visual order are the same thing, which is
+ * also what keeps a keyboard moving through it in the order it looks.
+ *
+ * The fieldset is stripped of its own border because the grid is the grouping;
+ * the legend stays for a screen reader, visually hidden.
+ */
+.focusgrid { display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: .15rem .5rem; border: 0; margin: .4rem 0; padding: 0;
+  max-width: 22rem; }
+.focusgrid label { display: flex; align-items: center; gap: .3rem;
+  font: var(--label-md); white-space: nowrap; }
+
 /* -- turning the page --------------------------------------------------------
  *
  * Both directions and the position between them, so somebody can see where

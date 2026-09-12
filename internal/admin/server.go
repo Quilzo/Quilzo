@@ -823,6 +823,7 @@ func (s *Server) Handler() http.Handler {
 	// always refused an expired licence and this interface had no field to
 	// record one in.
 	mux.HandleFunc("/media/rights", s.handleMediaRights)
+	mux.HandleFunc("/media/focus", s.handleMediaFocus)
 	mux.HandleFunc("/media/file/", s.handleMediaFile)
 	mux.HandleFunc("/publishing", s.handlePublishing)
 	mux.HandleFunc("/publishing/promote", s.handlePromote)
