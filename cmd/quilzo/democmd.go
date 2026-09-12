@@ -158,6 +158,16 @@ func cmdDemo(root string, args []string) error {
 		return serr
 	}
 
+	// Where these pages came from, recorded now rather than left for the
+	// operator to assert about content they have never read.
+	//
+	// Without this the demonstration could be published once — by the line
+	// below — and never again: the publish gate refuses unmarked content, and
+	// `provenance backfill` is right to refuse to invent an author for it. See
+	// markgenerated.go for why the answer is algorithmicMedia.
+	markGeneratedQuietly(root, s, resolveCaller(root, "").Name,
+		"written by quilzo demo")
+
 	// Records, written into the draft's tree — through the same gate every
 	// other record write goes through.
 	//

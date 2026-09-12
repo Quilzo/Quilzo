@@ -151,6 +151,13 @@ func cmdImport(root string, args []string) error {
 		return err
 	}
 
+	// Where these pages came from. An import is content this program converted
+	// out of somebody else's export, which is a thing it knows and the
+	// operator would otherwise have to assert page by page before the first
+	// publish. See markgenerated.go.
+	markGeneratedQuietly(root, s, *author,
+		"imported from "+string(src)+" by quilzo import")
+
 	// The caller's real identity and its real verification state. The first
 	// version recorded this as a verified service principal, which the audit
 	// package refused outright — a service is only a service because a
