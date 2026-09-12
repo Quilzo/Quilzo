@@ -27,7 +27,15 @@ func demoStore(t *testing.T) string {
 	if err := cmdInit(root); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmdDemo(root, []string{"-publish=false"}); err != nil {
+	// -templates somewhere disposable. The flag defaults to "templates",
+	// relative to the working directory, which for a test is the package
+	// directory — so calling this without it writes page.html and site.css
+	// into the source tree. They were committed once, by me, because
+	// .gitignore anchors /templates/ at the repository root on purpose and
+	// `git add -A` swept up the copy one directory down.
+	if err := cmdDemo(root, []string{
+		"-publish=false", "-templates", t.TempDir() + "/tpl",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	return root
