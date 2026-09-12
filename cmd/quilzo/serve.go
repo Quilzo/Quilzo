@@ -548,6 +548,16 @@ func cmdServe(root string, args []string) error {
 		}
 		return st.Gate(pages)
 	}
+	// The publish-time half. Wired separately from CheckTypes so it runs at
+	// publish and not on every save — see the comment on the field.
+	srv.CheckReferences = func(pages map[string]any) []schema.Failure {
+		st, err := schema.Load(root)
+		if err != nil {
+			return []schema.Failure{{Page: "(all)", Type: "?", Problems: []schema.Problem{
+				{Field: "types.json", Reason: "cannot be read: " + err.Error()}}}}
+		}
+		return st.Unresolved(pages)
+	}
 	srv.TypeFor = func(page string) (schema.Type, bool) {
 		st, err := schema.Load(root)
 		if err != nil {

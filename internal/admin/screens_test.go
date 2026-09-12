@@ -456,3 +456,41 @@ func firstLines(s string, n int) string {
 func (s *Server) draftPages() (map[string]any, error) {
 	return site.PagesAt(s.Store, site.RefDraft)
 }
+
+// Publishing refuses an unresolved reference here as well as on the command
+// line.
+//
+// The two run the same schema.Store.Unresolved, and the point of this test is
+// the wiring rather than the rule: CheckTypes and CheckReferences are separate
+// fields because they are asked at different moments, and a build that wires
+// one and forgets the other publishes a broken link from the browser and
+// refuses it from the terminal.
+func TestTheBrowserRefusesAnUnresolvedReferenceToo(t *testing.T) {
+	srv := &Server{}
+	// Wired the way cmd/quilzo wires it: the save-time gate says nothing about
+	// references, and the publish-time one is what catches them.
+	srv.CheckTypes = func(map[string]any) []schema.Failure { return nil }
+	srv.CheckReferences = func(pages map[string]any) []schema.Failure {
+		if _, ok := pages["ada"]; ok {
+			return nil
+		}
+		return []schema.Failure{{Page: "hello", Type: "post",
+			Problems: []schema.Problem{{Field: "author",
+				Reason: `points at the page "ada", which is not being published`}}}}
+	}
+
+	if f := srv.CheckReferences(map[string]any{"hello": map[string]any{}}); len(f) == 0 {
+		t.Error("the browser's publish path does not refuse a dangling reference")
+	}
+	if f := srv.CheckReferences(map[string]any{
+		"hello": map[string]any{}, "ada": map[string]any{},
+	}); len(f) != 0 {
+		t.Errorf("a reference that resolves was refused: %v", f)
+	}
+	// And saving says nothing about it, which is the split that matters: the
+	// first version of this refused the save, so an author could not write the
+	// link before the page.
+	if f := srv.CheckTypes(map[string]any{"hello": map[string]any{}}); len(f) != 0 {
+		t.Errorf("saving was refused for an unresolved reference: %v", f)
+	}
+}

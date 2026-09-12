@@ -353,6 +353,84 @@ func (s *Store) Gate(pages map[string]any) []Failure {
 	return failures
 }
 
+// Unresolved reports reference fields naming a page that is not in this set.
+//
+// # Why this is not part of Gate
+//
+// Gate runs when somebody saves. Whether a reference resolves is a different
+// question asked at a different moment, and putting it in Gate answered it at
+// the wrong one: saving a page that links to one you have not written yet was
+// refused, which is ordinary work in progress and makes the field unusable for
+// the thing people write references for. Found by using it, after the first
+// version did exactly that.
+//
+// So this runs at publish, beside the accessibility, provenance and marking
+// gates — because publishing is the moment a reference stops being a note to
+// yourself and becomes a promise to a reader. It is the rule internal/menu
+// already applies to navigation, for the reason it gives: a link pointing at
+// nothing is "a 404 every reader finds before anybody here does".
+//
+// # Nothing is followed
+//
+// A name is looked up in the map this call was given and the answer is yes or
+// no. A reference cannot reach a second page's content, and a chain of them is
+// not a traversal — it is several independent lookups that each terminate.
+// That is the whole difference between this and the $ref internal/schema
+// refuses.
+func (s *Store) Unresolved(pages map[string]any) []Failure {
+	names := make([]string, 0, len(pages))
+	for name := range pages {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var failures []Failure
+	for _, name := range names {
+		if problems := s.danglingRefs(name, pages); len(problems) > 0 {
+			failures = append(failures, Failure{
+				Page: name, Type: s.Bound[name], Problems: problems})
+		}
+	}
+	return failures
+}
+
+// danglingRefs reports this page's references that name nothing in pages.
+func (s *Store) danglingRefs(page string, pages map[string]any) []Problem {
+	typeName, bound := s.Bound[page]
+	if !bound || s.Registry == nil {
+		return nil
+	}
+	t, ok := s.Registry.Get(typeName)
+	if !ok {
+		return nil
+	}
+	body, ok := pages[page].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	var problems []Problem
+	for _, f := range t.Fields {
+		if f.Kind != Reference {
+			continue
+		}
+		target, ok := body[f.Name].(string)
+		if !ok || target == "" {
+			// Absent is Required's business, and answering it here as well
+			// would report one missing field twice.
+			continue
+		}
+		if _, exists := pages[target]; exists {
+			continue
+		}
+		problems = append(problems, Problem{f.Name, fmt.Sprintf(
+			"points at the page %q, which is not being published. A reference "+
+				"to nothing is a broken link every reader finds before "+
+				"anybody here does", target)})
+	}
+	return problems
+}
+
 // Record notes that a page's content passed its type, keeping the two hashes so
 // the claim survives both being edited afterwards.
 func (s *Store) Record(page string, body any, now time.Time) {

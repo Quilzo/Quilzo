@@ -31,6 +31,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -1124,6 +1125,51 @@ func cmdPublish(root string, args []string) error {
 				"%d image(s) would be published under permission that has "+
 					"ended.\n  Renew the licence and record the new date, or "+
 					"take the image off the page", rep.Blocking())}
+		}
+	}
+
+	// References resolve, or nothing is published.
+	//
+	// A reference field names another page. Whether that page exists is a
+	// question about the set being published, so it is asked here and not when
+	// somebody saves — writing the link before the page is ordinary work in
+	// progress, and the first version of this refused it, which made the field
+	// unusable for the thing people use references for.
+	//
+	// The same rule internal/menu already applies to navigation, for the
+	// reason it gives: a link pointing at nothing is "a 404 every reader finds
+	// before anybody here does". This is that rule reached from a typed field.
+	{
+		candidate := target
+		if candidate == "" {
+			candidate = s.GetRef(site.RefDraft)
+		}
+		pages, perr := site.PagesAt(s, candidate)
+		if perr != nil {
+			return errBlocked{fmt.Errorf(
+				"the reference check could not run, so publishing would claim "+
+					"a check that did not happen: %w", perr)}
+		}
+		st, serr := schema.Load(root)
+		if serr != nil {
+			return errBlocked{fmt.Errorf(
+				"the reference check could not run: %w", serr)}
+		}
+		if failures := st.Unresolved(pages); len(failures) > 0 {
+			record(root, caller.auditRecord("publish", "/", audit.Denied,
+				map[string]string{
+					"reason": "unresolved references",
+					"pages":  fmt.Sprintf("%d", len(failures)),
+				}))
+			var b strings.Builder
+			fmt.Fprintf(&b, "%d page(s) reference a page that is not being "+
+				"published:", len(failures))
+			for _, f := range failures {
+				fmt.Fprintf(&b, "\n  %s", f)
+			}
+			b.WriteString("\n  publish the page it names, or change the " +
+				"reference")
+			return errBlocked{fmt.Errorf("%s", b.String())}
 		}
 	}
 
