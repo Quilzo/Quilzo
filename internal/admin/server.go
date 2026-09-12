@@ -799,6 +799,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/access", s.handleAccess)
 	mux.HandleFunc("/theme", s.handleTheme)
 	mux.HandleFunc("/find", s.handleFind)
+	mux.HandleFunc("/preview.css", s.previewCSS)
 	mux.HandleFunc("/sidebar", s.handleSidebar)
 	mux.HandleFunc("/nav/order", s.handleNavOrder)
 	mux.HandleFunc("/profile", s.handleProfile)
@@ -2274,8 +2275,43 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "template: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// The ways back into what you are looking at. See previewbar.go: the page
+	// itself is untouched and the panel is injected after rendering, so this
+	// cannot change what the renderer produced — a preview that differed from
+	// the page because of the preview's own furniture would be the second
+	// renderer this screen exists to avoid.
+	//
+	// ?plain=1 turns it off, for looking at the page exactly as a reader gets
+	// it. A toolbar with no way to take it off is a toolbar in every
+	// screenshot.
+	if r.URL.Query().Get("plain") != "1" {
+		var t schema.Type
+		typed := false
+		if s.TypeFor != nil {
+			t, typed = s.TypeFor(name)
+		}
+		out = injectBar(out, previewBar(name, body, t, typed))
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(out))
+}
+
+// previewCSS serves the editing panel's stylesheet.
+//
+// A route rather than an inline <style> because this response's policy is
+// `style-src 'self'`, which refuses an inline one silently — see previewbar.go.
+// Authenticated like every other thing here, for the reason siteCSS gives.
+func (s *Server) previewCSS(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireAuth(w, r); !ok {
+		return
+	}
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	// Immutable for the process: it is a constant in the binary, so a build
+	// changes it and nothing else does.
+	w.Header().Set("Cache-Control", "max-age=300")
+	_, _ = w.Write([]byte(PreviewBarCSS))
 }
 
 // siteCSS serves the site's stylesheet so a preview looks like the page.

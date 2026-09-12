@@ -220,7 +220,11 @@ func TestTheEditorShowsThePageBesideTheForm(t *testing.T) {
 	}
 	body := w.Body.String()
 
-	if !strings.Contains(body, `src="/preview/index"`) {
+	// ?plain=1: the editing panel is suppressed inside the editor's own frame,
+	// because beside a form that already lists every field it is the same
+	// links twice. Asserted with the parameter rather than without it, so
+	// dropping it here is a failure rather than a silent duplication.
+	if !strings.Contains(body, `src="/preview/index?plain=1"`) {
 		t.Error("the editor does not show the page it is editing")
 	}
 	csp := w.Header().Get("Content-Security-Policy")
