@@ -46,7 +46,7 @@ so this is the screen that answers that gate.</p>{{end}}
   <thead><tr>
     <th scope="col">File</th><th scope="col">Format</th>
     <th scope="col">Size</th><th scope="col">Description</th>
-    <th scope="col">Rights</th>
+    <th scope="col">Rights</th><th scope="col">Crop</th>
     <th scope="col">Uploaded</th>{{if .CanWrite}}<th scope="col"></th>{{end}}
   </tr></thead>
   <tbody>
@@ -59,6 +59,46 @@ so this is the screen that answers that gate.</p>{{end}}
     <td>{{.Format}}<div class="hint">{{.Kind}}{{if not .Inline}} · download only{{end}}</div></td>
     <td>{{.Size}}{{if .Width}}<div class="hint">{{.Width}}×{{.Height}}</div>{{end}}</td>
     <td>{{if .Alt}}{{.Alt}}{{else}}<span class="hint">decorative</span>{{end}}</td>
+    <td>
+      {{if .Width}}
+        {{if .Focus}}<span class="tag">{{.Focus.Position}}</span>
+        {{else}}<span class="hint">centre</span>{{end}}
+        {{if $.CanWrite}}
+        {{/*
+          Nine radio buttons laid out as the picture is. Clicking the
+          photograph where the face is would be a pointer coordinate, which is
+          script, and the policy here permits none — but this is not a
+          fallback for that: "the face is top left" is how somebody describes a
+          photograph anyway, and nine labelled choices reach a keyboard and a
+          screen reader without anybody having to think about it.
+
+          The form posts a name from a closed set, never two numbers. This
+          value ends up in a stylesheet, so the browser chooses from a list
+          the server wrote rather than sending an integer the server parses.
+        */}}
+        <details>
+          <summary class="hint">Crop from</summary>
+          <form method="post" action="/media/focus">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <input type="hidden" name="back" value="{{$.Here}}">
+            <fieldset class="focusgrid">
+              <legend class="sr">Which part of {{.Name}} must survive a crop</legend>
+              {{range index $.Spots .ID}}
+              <label><input type="radio" name="at" value="{{.Value}}"
+                     {{if .On}}checked{{end}}> {{.Label}}</label>
+              {{end}}
+            </fieldset>
+            <p>
+              <button type="submit">Crop from here</button>
+              <button type="submit" name="clear" value="1">Back to the centre</button>
+            </p>
+            <p class="hint">Every layout that already crops this picture uses
+              it. Nothing else changes, and nothing is re-encoded.</p>
+          </form>
+        </details>
+        {{end}}
+      {{else}}<span class="hint">—</span>{{end}}
+    </td>
     <td>
       {{$r := index $.Rights .ID}}
       {{if $r.State}}

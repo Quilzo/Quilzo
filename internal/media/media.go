@@ -260,6 +260,41 @@ var refused = map[string]string{
 }
 
 // File is an accepted upload, after validation.
+// Focus is a point in a picture, in percent from the top left.
+//
+// Percent rather than pixels, because the number has to survive every
+// rendition: a point at 30% is at 30% of a thumbnail as well as of the
+// original, and a pixel offset is only true of the size it was measured at.
+type Focus struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+// Position renders a focus as a CSS object-position value.
+//
+// Clamped here rather than trusted. This string goes into a stylesheet, and a
+// record that reached the disk some other way — a hand edit, an older build,
+// an import — must not be able to put anything else there. Two integers
+// between 0 and 100 followed by a percent sign is the only thing this can
+// produce.
+func (f *Focus) Position() string {
+	if f == nil {
+		return "50% 50%"
+	}
+	return fmt.Sprintf("%d%% %d%%", clampPercent(f.X), clampPercent(f.Y))
+}
+
+func clampPercent(n int) int {
+	switch {
+	case n < 0:
+		return 0
+	case n > 100:
+		return 100
+	default:
+		return n
+	}
+}
+
 type File struct {
 	// ID is the SHA-256 of the bytes: the server-generated name, and also the
 	// deduplication key. Uploading the same photograph twice stores it once.
@@ -284,6 +319,28 @@ type File struct {
 	// Source records where it came from when it was imported rather than
 	// uploaded, so provenance survives the round trip.
 	Source string `json:"source,omitempty"`
+
+	// Focus is the part of the picture that must survive a crop.
+	//
+	// # Why this exists
+	//
+	// Renditions are narrower copies: same picture, fewer pixels. The crop
+	// happens in the browser, where a layout says `object-fit: cover` — the
+	// galleries, the portraits and the two aspect-ratio helpers all do — and
+	// the default is dead centre. So a wide photograph in a square frame keeps
+	// its middle and loses its edges, and a face standing to one side is the
+	// thing that goes.
+	//
+	// Nothing here could say otherwise. This is the smallest thing that can:
+	// two numbers, and every layout that already crops starts cropping around
+	// them.
+	//
+	// # Why a pointer
+	//
+	// Because 0,0 is a real answer — the top-left corner — and a zero value
+	// that meant "centre" would make it unsayable. Nil is "nobody chose", which
+	// is what almost every file is and what the centre default is for.
+	Focus *Focus `json:"focus,omitempty"`
 
 	// Origin is what a C2PA manifest will say about this file when it is
 	// served. Empty means nothing was declared, and nothing is what gets

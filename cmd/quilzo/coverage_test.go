@@ -465,6 +465,17 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 		"add.remove": {GUI: "/page/delete",
 			MCP:   []string{"write_page"},
 			NoMCP: ""},
+		"focus.clear": {
+			// Back to the centre, which is where every picture starts. Not a
+			// deletion of anything that was asserted about the world: a focal
+			// point is a layout preference, and clearing it restores the
+			// default rather than removing a claim.
+			GUI: "/media",
+			MCP: nil,
+			NoMCP: "as media, whose whole surface is off the agent interface " +
+				"— and a focal point is a judgement about what matters in a " +
+				"photograph, which is the part a model has not made",
+		},
 		"origin.clear": {
 			// The provenance screen is where a page's disclosure is set, and a
 			// picture's belongs beside it. Clearing is not deletion of a

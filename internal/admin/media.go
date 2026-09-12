@@ -88,7 +88,10 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 	webp, haveWebP := media.HaveWebP()
 
 	s.render(w, r, "media.html", map[string]any{
-		"Nav": "media", "Title": "Media", "Principal": p,
+		// The nine places, per file, worked out here so the template does not
+		// have to compare a point to nine others.
+		"Spots": mediaSpots(files),
+		"Nav":   "media", "Title": "Media", "Principal": p,
 		"Files": files, "Total": total, "Accepted": media.Accepted(),
 		"Rights": rights, "Undeclared": undeclared,
 		"WebP": webp, "HaveWebP": haveWebP,
