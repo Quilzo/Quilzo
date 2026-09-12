@@ -897,6 +897,28 @@ tr.detail td { padding-top: 0; border-top: 0; }
   .sidenav .nav { margin-top: 0; }
 }
 
+/* -- notes -------------------------------------------------------------------
+ *
+ * A remark somebody left, and the box to leave one in.
+ *
+ * Quiet: these sit beside the fields they are about and must not compete with
+ * them. A left rule rather than a card, because a card says "separate object"
+ * and a note is a margin annotation on the thing next to it — the vocabulary
+ * the rest of this stylesheet uses for the difference.
+ */
+.notes { margin: 1.5rem 0; }
+.notelist { list-style: none; margin: 0 0 1rem; padding: 0;
+  display: flex; flex-direction: column; gap: .75rem; }
+.note { margin: 0; padding: .1rem 0 .1rem .9rem;
+  border-left: 3px solid var(--outline-variant); }
+/* A note somebody has dealt with is kept and set back, so the conversation
+   stays readable without the finished parts competing for attention. */
+.note.done { opacity: .65; border-left-color: var(--outline-variant); }
+.notewho { margin: 0 0 .15rem; display: flex; flex-wrap: wrap; gap: .4rem;
+  align-items: baseline; font: var(--label-md); }
+.notetext { margin: 0 0 .4rem; white-space: pre-wrap; }
+.notefield { margin: 0; }
+
 /* -- finding things ----------------------------------------------------------
  *
  * The box in the bar, and the screen behind it.

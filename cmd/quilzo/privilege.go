@@ -171,7 +171,11 @@ var commandNeeds = map[string]need{
 	// it, whatever the person in the chat holds.
 	// Reading. The settings half asks for grant separately inside the command,
 	// because a key's summary describes a control and the rest is content.
-	"find":     {action: auth.ActView},
+	"find": {action: auth.ActView},
+	// Editing a draft. A note is a remark about content, made by somebody who
+	// is working on it — so it takes the same authority the draft does.
+	"note":     {action: auth.ActEditDraft},
+	"notes":    {action: auth.ActEditDraft},
 	"telegram": {action: auth.ActPublish},
 	// The same as telegram, and for the same reason: each starts a surface
 	// that publishes on behalf of somebody else's account.

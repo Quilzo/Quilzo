@@ -151,6 +151,8 @@ type Server struct {
 	Approvals *Approvals
 	// Listings are the declared queries a page can embed.
 	Listings *Listings
+	// Notes are the remarks people leave on a draft.
+	Notes *Notes
 	// Structure is classification and navigation: the vocabularies terms come
 	// from, and the menus that point at pages.
 	Structure *Structure
@@ -799,6 +801,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/access", s.handleAccess)
 	mux.HandleFunc("/theme", s.handleTheme)
 	mux.HandleFunc("/find", s.handleFind)
+	mux.HandleFunc("/notes", s.handleNotes)
+	mux.HandleFunc("/notes/add", s.handleNoteAdd)
+	mux.HandleFunc("/notes/resolve", s.handleNoteResolve)
 	mux.HandleFunc("/preview.css", s.previewCSS)
 	mux.HandleFunc("/sidebar", s.handleSidebar)
 	mux.HandleFunc("/nav/order", s.handleNavOrder)
@@ -1156,9 +1161,16 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		fields = flatten(body)
 	}
 
+	// The remarks about this page, beside the fields they are about. NotesOn
+	// distinguishes "nobody has said anything" from "this build cannot tell
+	// you", which look identical and mean opposite things.
+	notes := s.noteRows(name, false)
+
 	s.render(w, r, "edit.html", map[string]any{
-		"Nav":   "pages",
-		"Title": "Edit " + name, "Principal": p, "Name": name,
+		"Nav":     "pages",
+		"NotesOn": s.Notes != nil && s.Notes.Store != nil,
+		"Notes":   notes,
+		"Title":   "Edit " + name, "Principal": p, "Name": name,
 		"Fields": fields, "Exists": exists, "Type": typeName,
 		"Base": base, "HeldBy": heldBy,
 		"CanEdit": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,

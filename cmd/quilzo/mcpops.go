@@ -104,6 +104,72 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		return strings.TrimSpace(b.String()), nil
 	})
 
+	// -- what people have said about a page ---------------------------------
+
+	// Reading, and deliberately not writing.
+	//
+	// An agent that is about to change a page should know that a reviewer
+	// asked for something else, and this is how it finds out — the same
+	// argument as every other read on this surface.
+	//
+	// Writing is absent for the reason the coverage table gives about the
+	// administrative commands. A note is one person's message to another and
+	// carries their name; an agent that could add one could put words in a
+	// colleague's conversation, and the whole value of a review thread is that
+	// you can tell who said what. `quilzo assist` already has a way to say
+	// what a model did: the provenance record, which is a claim about content
+	// rather than a remark attributed to a person.
+	srv.Register(mcp.Operation{
+		Name: "list_notes", NeedsRole: "reader",
+		Summary: "the remarks people have left on a page",
+		Detail: "A note marked stale was written against an older version of " +
+			"the page and may no longer apply.",
+		Args: map[string]string{
+			"page":     "optional: one page, or every page with notes",
+			"resolved": "optional: true to include the ones somebody dealt with",
+		},
+		Keywords: []string{"notes", "comments", "review", "feedback", "remarks"},
+	}, func(arg map[string]any) (any, error) {
+		st, err := openNotes(root)
+		if err != nil {
+			return nil, err
+		}
+		pages := []string{}
+		if p, ok := arg["page"].(string); ok && strings.TrimSpace(p) != "" {
+			pages = []string{p}
+		} else if pages, err = st.Pages(); err != nil {
+			return nil, err
+		}
+		withResolved, _ := arg["resolved"].(bool)
+
+		var b strings.Builder
+		for _, page := range pages {
+			notes, lerr := st.List(page)
+			if lerr != nil {
+				continue
+			}
+			now := pageHash(root, page)
+			for _, n := range notes {
+				if n.Resolved && !withResolved {
+					continue
+				}
+				state := "open"
+				if n.Resolved {
+					state = "resolved"
+				}
+				if n.Stale(now) {
+					state += ",stale"
+				}
+				fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\n",
+					page, n.Field, n.Author, state, oneLine(n.Text))
+			}
+		}
+		if b.Len() == 0 {
+			return "nobody has left a note", nil
+		}
+		return strings.TrimSpace(b.String()), nil
+	})
+
 	// -- records ------------------------------------------------------------
 
 	srv.Register(mcp.Operation{
@@ -640,3 +706,9 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		return strings.TrimSpace(b.String()), nil
 	})
 }
+
+// oneLine folds a note onto one line for a tab-separated listing.
+//
+// A note is prose and may carry newlines; a listing where one row spans three
+// lines is a listing nothing can parse and nobody can scan.
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }

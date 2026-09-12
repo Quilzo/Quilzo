@@ -210,6 +210,26 @@ func contentHash(content map[string]any) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// ContentHash is contentHash for a body of unknown shape.
+//
+// Exported because a second thing now needs to answer "what was this written
+// against": internal/note anchors a remark to the page it is about, the same
+// way a Binding anchors a validation to the content that passed. Two
+// implementations of "the hash of a page body" would be two answers, and the
+// failure would be a note that looks stale or fresh depending on which one
+// computed it.
+//
+// Returns "" for a body that is not an object, which is the same thing
+// contentHash does for one that will not marshal — and Note.Stale treats an
+// empty anchor as "cannot say" rather than as drift.
+func ContentHash(body any) string {
+	m, ok := body.(map[string]any)
+	if !ok {
+		return ""
+	}
+	return contentHash(m)
+}
+
 func storePath(dir string) string { return filepath.Join(dir, "types.json") }
 
 // Load reads the store, returning an empty one if the site has no types yet.
