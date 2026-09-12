@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/compliance"
 	"github.com/quilzo/quilzo/internal/export"
+	"github.com/quilzo/quilzo/internal/find"
 	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/ipfs"
 	"github.com/quilzo/quilzo/internal/listing"
@@ -49,6 +50,60 @@ import (
 // distinction this project keeps having to make explicit.
 
 func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Caller) {
+	// -- finding anything ---------------------------------------------------
+
+	// Why an agent gets this at all
+	//
+	// The four tools are deliberately short and one of them is already called
+	// quilzo_find — which finds the *operation* for a task. This finds the
+	// thing in the store, which is the question an agent asks next and
+	// previously had to answer by listing pages, listing media, listing types
+	// and reading all of it into a context window.
+	//
+	// Reader, because it reads. The settings are left out on this surface
+	// rather than gated: a key's summary describes a control, and the reason
+	// the administrative commands are off MCP — "a prompt injection in a page
+	// this agent is reading is a plausible way to reach it" — applies to
+	// reconnaissance over the controls just as much as to changing them.
+	srv.Register(mcp.Operation{
+		Name: "find", NeedsRole: "reader",
+		Summary: "find a page, screen, content type or file by words",
+		Detail: "Words, not a query: there is no syntax, and a colon or a " +
+			"quote is a character in a word. Configuration keys are not " +
+			"searched here even though the interface searches them.",
+		Args: map[string]string{
+			"query": "the words to look for",
+			"limit": "optional, default 20",
+		},
+		Keywords: []string{"find", "search", "where", "lookup", "locate"},
+	}, func(a map[string]any) (any, error) {
+		query, _ := a["query"].(string)
+		if strings.TrimSpace(query) == "" {
+			return nil, fmt.Errorf("find needs a query")
+		}
+		limit := 20
+		if n, ok := a["limit"].(float64); ok && n > 0 {
+			limit = int(n)
+		}
+		src, err := findSources(root, site.RefDraft, query)
+		if err != nil {
+			return nil, err
+		}
+		// Dropped rather than filtered at the edge, so nothing about what
+		// exists leaks through a count.
+		src.Settings = nil
+
+		hits := find.Search(query, src, limit)
+		if len(hits) == 0 {
+			return "nothing matched", nil
+		}
+		var b strings.Builder
+		for _, h := range hits {
+			fmt.Fprintf(&b, "%s\t%s\t%s\t%s\n", h.Kind, h.Title, h.Path, h.Why)
+		}
+		return strings.TrimSpace(b.String()), nil
+	})
+
 	// -- records ------------------------------------------------------------
 
 	srv.Register(mcp.Operation{

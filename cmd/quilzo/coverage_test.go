@@ -164,6 +164,7 @@ var coverage = map[string]surfaces{
 		NoMCP: "runs a public, writable surface that publishes on behalf of " +
 			"Telegram accounts. An agent that could start one could point it " +
 			"at a store and accept writes from a billion strangers"},
+	"find": {GUI: "/find", MCP: []string{"find"}},
 	"slack": {Why: "starts a server, like `telegram`; there is no button " +
 		"inside an interface that could start another interface",
 		NoMCP: "as telegram"},

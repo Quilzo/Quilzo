@@ -81,6 +81,7 @@ content
   quilzo init                              create a content store
   quilzo add NAME=FILE.json [...]          stage pages into a draft
   quilzo add ... --based-on ID --merge     keep both edits unless you collided
+  quilzo find WORDS                        a page, screen, setting, type or file
   quilzo diff                              what differs between live and draft
   quilzo log [--ref draft|live]            commit history
   quilzo render PAGE TEMPLATE [-o FILE]    render a page
@@ -419,6 +420,8 @@ func main() {
 		err = cmdInit(root)
 	case "add":
 		err = cmdAdd(root, cmdArgs)
+	case "find":
+		err = cmdFind(root, cmdArgs)
 	case "diff":
 		err = cmdDiff(root)
 	case "publish":

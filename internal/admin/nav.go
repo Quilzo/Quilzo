@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/find"
 )
 
 // The navigation, as data.
@@ -99,6 +100,11 @@ var destinations = []destination{
 	{"integrations", "Integrations", "/integrations", "Administration", "integrations", auth.ActGrant},
 	{"settings", "Settings", "/settings", "Administration", "settings", auth.ActEditDraft},
 
+	// Find is in Reference and not in Content, because it is about this
+	// interface rather than about what is in it — and because the box in the
+	// bar is how anybody will actually reach it. The row exists so the screen
+	// is reachable on a narrow window, where the bar has no room for the box.
+	{"find", "Find", "/find", "Reference", "start", auth.ActView},
 	{"start", "Get started", "/start", "Reference", "start", auth.ActView},
 	{"playground", "API", "/playground", "Reference", "api", auth.ActView},
 	{"profile", "You", "/profile", "Reference", "profile", auth.ActView},
@@ -413,4 +419,59 @@ func (s *Server) clearCookie(w http.ResponseWriter, r *http.Request, name string
 		HttpOnly: true, SameSite: http.SameSiteStrictMode,
 		Secure: r.TLS != nil || s.behindTLSProxy(),
 	})
+}
+
+// Screens is the navigation, in the shape the finder takes.
+//
+// # Why the synonyms live here
+//
+// A destination's Label is what it is called; Also is what somebody looking
+// for it would type. The two are different often enough to matter: nobody
+// hunting for the translation screen searches "languages" first, and nobody
+// looking for permissions searches "access".
+//
+// They sit beside the table rather than in the finder because they are a
+// property of the screen. A finder holding its own list of other words for
+// each screen is a second table that drifts from this one the first time
+// something is renamed — and the symptom is a screen that stops being findable
+// under the word everybody uses for it.
+func Screens() []find.Destination {
+	also := map[string][]string{
+		"pages":         {"content", "article", "post", "page"},
+		"records":       {"data", "row", "collection", "record"},
+		"types":         {"schema", "field", "validation", "type"},
+		"structure":     {"taxonomy", "term", "vocabulary", "menu", "navigation"},
+		"listings":      {"query", "view", "filter", "list"},
+		"forms":         {"submission", "contact", "enquiry", "retention"},
+		"media":         {"image", "picture", "photo", "file", "upload", "video"},
+		"design":        {"theme", "template", "layout", "colour", "color", "font", "css"},
+		"sections":      {"block", "component", "section"},
+		"languages":     {"translation", "locale", "i18n", "language"},
+		"assist":        {"ai", "assistant", "model", "llm"},
+		"review":        {"approval", "approve", "sign off"},
+		"publishing":    {"environment", "staging", "promote", "schedule", "deploy"},
+		"history":       {"commit", "log", "rollback", "revert", "version"},
+		"transfer":      {"export", "import", "backup", "migrate"},
+		"decentralised": {"ipfs", "permanent", "cid"},
+		"provenance":    {"ai", "source", "attribution", "c2pa", "credential"},
+		"security":      {"scan", "posture", "vulnerability", "hardening"},
+		"logs":          {"audit", "log", "event", "trail"},
+		"agents":        {"agent", "mcp", "tool", "automation"},
+		"people":        {"user", "account", "member", "staff", "invite"},
+		"access": {"permission", "role", "grant", "token", "authorisation",
+			"authorization"},
+		"passkeys":     {"passkey", "webauthn", "2fa", "security key", "login"},
+		"integrations": {"webhook", "slack", "telegram", "siem", "extension"},
+		"settings":     {"configuration", "config", "option", "preference"},
+		"start":        {"help", "documentation", "docs", "guide", "getting started"},
+		"playground":   {"api", "rest", "endpoint", "json"},
+		"profile":      {"me", "my account", "sign out", "session"},
+	}
+	out := make([]find.Destination, 0, len(destinations))
+	for _, d := range destinations {
+		out = append(out, find.Destination{
+			Title: d.Label, Path: d.Path, Group: d.Group, Also: also[d.Key],
+		})
+	}
+	return out
 }

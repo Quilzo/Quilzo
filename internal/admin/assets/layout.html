@@ -17,6 +17,31 @@
     {{with .Principal}}<p class="who">Signed in as
       <a href="/profile"><strong>{{.Name}}</strong></a> ({{.Role}})
       — <a href="/signout">Sign out</a></p>{{end}}
+    {{/*
+      The search box, in the bar rather than on a screen you have to find
+      first. A finder you have to navigate to does not help the person who
+      cannot navigate.
+
+      A GET form, so the query lands in the address and the browser's own
+      history is the recent-searches list. `role="search"` because a landmark
+      is how somebody using a screen reader jumps straight here, and the label
+      is visually hidden rather than absent — a search box with a placeholder
+      and no label is a field that announces nothing once you have typed in it.
+    */}}
+    <form method="get" action="/find" class="findbar" role="search">
+      <label class="visually-hidden" for="findq">Find a page, screen or setting</label>
+      <input type="search" id="findq" name="q" placeholder="Find…"
+             value="{{if eq .Nav "find"}}{{.Query}}{{end}}">
+      <button type="submit" title="Find">
+        <span class="visually-hidden">Find</span>
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="10.5" cy="10.5" r="6.4" fill="none" stroke="currentColor"
+                  stroke-width="1.8"/>
+          <path d="M15.2 15.2 20 20" fill="none" stroke="currentColor"
+                stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </form>
     <div class="prefs">
       {{template "navtoggle" .}}
       {{template "themetoggle" .}}
