@@ -19,6 +19,17 @@
 {{end}}
 
 {{if .Names}}
+{{/*
+  One form around the table, with two submit buttons. That is how a browser
+  expresses "pick an action for this selection" without script, and it is why
+  the endpoint reads the action from which button was pressed.
+
+  There is no "select all". What needs script is exactly that, and a control
+  that selected only the visible page would mean something different from what
+  it says — see internal/admin/bulk.go.
+*/}}
+<form method="post" action="/pages/bulk">
+<input type="hidden" name="back" value="{{.Here}}">
 <div class="table-wrap">
 <table>
   <caption>{{len .Names}} page(s) in the current draft</caption>
@@ -28,13 +39,19 @@
     while looking at the list of pages, and this release has been shortening
     the navigation rather than adding to it.
   */}}
-  <thead><tr><th scope="col">Page</th><th scope="col">State</th>
+  <thead><tr>
+    {{if .CanEdit}}<th scope="col"><span class="sr">Selected</span></th>{{end}}
+    <th scope="col">Page</th><th scope="col">State</th>
     {{if $.CheckedOn}}<th scope="col">Checked</th>{{end}}
     <th scope="col">Actions</th></tr></thead>
   <tbody>
-  {{range .Names}}
+  {{range .Shown}}
     <tr>
-      <th scope="row">{{.}}</th>
+      {{if $.CanEdit}}
+      <td><input type="checkbox" name="page" value="{{.}}"
+                 id="sel-{{.}}" aria-labelledby="name-{{.}}"></td>
+      {{end}}
+      <th scope="row" id="name-{{.}}">{{.}}</th>
       <td>{{if index $.Changed .}}<span class="tag tag-changed">changed</span>{{else}}<span class="tag">unchanged</span>{{end}}
         {{with index $.Windows .}}
           {{if eq . "expired"}}<span class="tag tag-bad">expired</span>
@@ -65,6 +82,16 @@
   </tbody>
 </table>
 </div>
+{{if .CanEdit}}
+<div class="bulkactions">
+  <button type="submit" name="checked" value="1">Mark selected as still right</button>
+  <button type="submit" name="remove" value="1" class="danger">Remove selected…</button>
+  <span class="hint">The ellipsis is not decoration: removing asks again and
+    lists what would go.</span>
+</div>
+{{end}}
+</form>
+{{template "paging" .}}
 {{else}}
 <p>No pages yet. Open <a href="/page/index">index</a> to write the first one,
 or stage one from a file with <code>quilzo add</code>.</p>

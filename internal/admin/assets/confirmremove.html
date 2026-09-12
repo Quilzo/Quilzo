@@ -1,0 +1,37 @@
+{{/*
+  Asking again, with the names.
+
+  Recording that pages are still right is additive and reversible; taking them
+  out of the draft is the one thing on that screen somebody can do to fifty
+  things at once and regret. So the names are listed — all of them, not a
+  count — and the button says how many.
+
+  Not a dialogue, because there is no script. A screen, which is better: it has
+  an address, a back button, and nothing that disappears if you look away.
+*/}}
+{{template "head" .}}
+<h1>Remove {{len .Names}} page{{if ne (len .Names) 1}}s{{end}}?</h1>
+
+<p class="notice warn" role="alert">These would come out of the draft. Publishing
+  afterwards takes them off the live site.</p>
+
+<ul class="confirmlist">
+  {{range .Names}}<li>{{.}}</li>{{end}}
+</ul>
+
+<form method="post" action="/pages/bulk">
+  {{range .Names}}<input type="hidden" name="page" value="{{.}}">{{end}}
+  <input type="hidden" name="back" value="{{.Back}}">
+  <div class="confirmactions">
+    <button type="submit" name="confirm-remove" value="1" class="danger">
+      Remove {{len .Names}} page{{if ne (len .Names) 1}}s{{end}}
+    </button>
+    <a href="{{.Back}}">Leave them alone</a>
+  </div>
+</form>
+
+<p class="hint">Nothing is erased. The store keeps every commit, so each of
+  these pages is still there and still addressable at the version it had —
+  which is why this is reversible, and not why it should be done without
+  looking.</p>
+{{template "foot" .}}

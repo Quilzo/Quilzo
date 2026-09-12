@@ -805,6 +805,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/theme", s.handleTheme)
 	mux.HandleFunc("/find", s.handleFind)
 	mux.HandleFunc("/checked/set", s.handleCheckedSet)
+	mux.HandleFunc("/pages/bulk", s.handleBulk)
 	mux.HandleFunc("/notes", s.handleNotes)
 	mux.HandleFunc("/notes/add", s.handleNoteAdd)
 	mux.HandleFunc("/notes/resolve", s.handleNoteResolve)
@@ -1105,7 +1106,19 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	// list of pages.
 	cells, due := s.checkedFor(names)
 
+	// Bounded. Every page was built into one response, which is slow at a few
+	// hundred and unusable at ten thousand — and the browser is not the place
+	// to find that out. The checked column is computed over the whole list
+	// first, because "how many need attention" is a fact about the site rather
+	// than about this page of it.
+	pg := paginate(r, len(names), PageSize)
+	from, to := pg.slice(len(names))
+	shown := names[from:to]
+
 	s.render(w, r, "pages.html", map[string]any{
+		"Paging":    pg,
+		"PagePath":  "/",
+		"Shown":     shown,
 		"CheckedOn": s.Checked != nil && s.Checked.Store != nil,
 		"Checked":   cells,
 		"DueCount":  due,
