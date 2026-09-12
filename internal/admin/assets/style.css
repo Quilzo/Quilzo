@@ -897,6 +897,10 @@ tr.detail td { padding-top: 0; border-top: 0; }
   .sidenav .nav { margin-top: 0; }
 }
 
+/* Confirming a page is still right. Sits with the notes and reads like them:
+   a statement about the page rather than a control that changes it. */
+.checked { margin: 1.5rem 0; }
+
 /* -- notes -------------------------------------------------------------------
  *
  * A remark somebody left, and the box to leave one in.

@@ -174,6 +174,9 @@ var commandNeeds = map[string]need{
 	"find": {action: auth.ActView},
 	// Editing a draft. A note is a remark about content, made by somebody who
 	// is working on it — so it takes the same authority the draft does.
+	// Saying a page is still right is a statement about the draft, made by
+	// somebody who works on it.
+	"checked":  {action: auth.ActEditDraft},
 	"note":     {action: auth.ActEditDraft},
 	"notes":    {action: auth.ActEditDraft},
 	"telegram": {action: auth.ActPublish},

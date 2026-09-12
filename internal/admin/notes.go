@@ -10,7 +10,6 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/note"
-	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 )
 
@@ -114,12 +113,16 @@ func (s *Server) noteRows(page string, withResolved bool) []noteRow {
 }
 
 // pageHash is what a note written now would be anchored to.
+//
+// The store's own id, through site.PageIDsAt — the same anchor the command
+// line and provenance use. Three records that all mean "what did this page
+// say" have to agree, or one of them looks stale when it is not.
 func (s *Server) pageHash(page string) string {
-	pages, err := site.PagesAt(s.Store, site.RefDraft)
+	ids, err := site.PageIDsAt(s.Store, site.RefDraft)
 	if err != nil {
 		return ""
 	}
-	return schema.ContentHash(pages[page])
+	return ids[page]
 }
 
 // handleNoteAdd records a remark.

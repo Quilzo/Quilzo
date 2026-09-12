@@ -246,6 +246,44 @@ func PagesAt(s *store.Store, refOrCommit string) (map[string]any, error) {
 	return out, nil
 }
 
+// PageIDsAt is every page at a ref or commit, and its object id.
+//
+// The store's own address for what a page says. Three things now need to
+// record "what did this page say when X happened" — provenance, a note, and a
+// check that the page is still right — and they have to agree, or a record
+// looks stale or fresh depending on which of them computed it.
+//
+// So: the object id, which is what "content is immutable and addressed by
+// hash" already means here, rather than a second hash of the same bytes.
+// cmd/quilzo had its own copy of this walk and internal/admin had no way to
+// reach it, which is how the second hash came to exist.
+//
+// Pages only, filtered by what the object is rather than by name, for the
+// reason PagesAt gives: a list of reserved names has to be updated by whoever
+// adds the next branch, and they will not know to.
+func PageIDsAt(s *store.Store, refOrCommit string) (map[string]string, error) {
+	cid := s.GetRef(refOrCommit)
+	if cid == "" {
+		cid = refOrCommit
+	}
+	c, err := s.GetCommit(cid)
+	if err != nil {
+		return nil, err
+	}
+	tree, err := s.GetTree(c.Tree)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(tree))
+	for name, oid := range tree {
+		if s.IsTree(oid) {
+			continue
+		}
+		out[name] = oid
+	}
+	return out, nil
+}
+
 // Publication records a ref move.
 type Publication struct {
 	Published string

@@ -13,6 +13,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/checked"
 	"github.com/quilzo/quilzo/internal/codescan"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/compliance"
@@ -100,6 +101,54 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		var b strings.Builder
 		for _, h := range hits {
 			fmt.Fprintf(&b, "%s\t%s\t%s\t%s\n", h.Kind, h.Title, h.Path, h.Why)
+		}
+		return strings.TrimSpace(b.String()), nil
+	})
+
+	// -- when a page was last confirmed to be right -------------------------
+
+	// Reading. An agent about to rewrite a page should know that nobody has
+	// confirmed it in three years, and that is the whole of what this says.
+	//
+	// Writing is absent for the same reason as a note: a check records that a
+	// named person read the page and found it correct, and a model has not
+	// read the page in that sense. An agent that could record one would be
+	// signing somebody's name to a judgement nobody made, and the record's
+	// only value is that a person stands behind it.
+	srv.Register(mcp.Operation{
+		Name: "list_checked", NeedsRole: "reader",
+		Summary: "when each page was last confirmed to be right, and what is due",
+		Detail: "never means nobody has confirmed it; changed means it was " +
+			"edited after it was confirmed; overdue means the interval has " +
+			"passed. None of these blocks anything.",
+		Args:     map[string]string{"due": "optional: true for only what needs attention"},
+		Keywords: []string{"checked", "review", "stale", "accuracy", "audit", "due"},
+	}, func(arg map[string]any) (any, error) {
+		st, err := openChecked(root)
+		if err != nil {
+			return nil, err
+		}
+		records, err := st.All()
+		if err != nil {
+			return nil, err
+		}
+		pages, hashes := draftPageIDs(root)
+		rows := checked.Survey(pages, hashes, records, reviewEvery(root), time.Now())
+		dueOnly, _ := arg["due"].(bool)
+
+		var b strings.Builder
+		for _, r := range rows {
+			if dueOnly && !checked.NeedsAttention(r.State) {
+				continue
+			}
+			when := "-"
+			if r.At != 0 {
+				when = time.Unix(r.At, 0).UTC().Format("2006-01-02")
+			}
+			fmt.Fprintf(&b, "%s\t%s\t%s\t%s\n", r.Page, r.State, when, r.By)
+		}
+		if b.Len() == 0 {
+			return "every page has been confirmed and none is due", nil
 		}
 		return strings.TrimSpace(b.String()), nil
 	})

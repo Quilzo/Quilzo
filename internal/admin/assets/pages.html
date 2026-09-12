@@ -11,11 +11,26 @@
 </p>
 {{end}}
 
+{{if and .CheckedOn .DueCount}}
+<p class="notice" role="status">
+  <strong>{{.DueCount}} page{{if ne .DueCount 1}}s{{end}}</strong> nobody has
+  confirmed recently. That blocks nothing — it is a question put to a person.
+</p>
+{{end}}
+
 {{if .Names}}
 <div class="table-wrap">
 <table>
   <caption>{{len .Names}} page(s) in the current draft</caption>
-  <thead><tr><th scope="col">Page</th><th scope="col">State</th><th scope="col">Actions</th></tr></thead>
+  {{/*
+    "Checked" is a column here rather than a screen of its own. The question
+    it answers — when did anybody last confirm this is still true — is asked
+    while looking at the list of pages, and this release has been shortening
+    the navigation rather than adding to it.
+  */}}
+  <thead><tr><th scope="col">Page</th><th scope="col">State</th>
+    {{if $.CheckedOn}}<th scope="col">Checked</th>{{end}}
+    <th scope="col">Actions</th></tr></thead>
   <tbody>
   {{range .Names}}
     <tr>
@@ -27,6 +42,14 @@
           {{else if eq . "expiring"}}<span class="tag">expires later</span>
           {{else if eq . "unreadable"}}<span class="tag tag-bad">bad date</span>{{end}}
         {{end}}</td>
+      {{if $.CheckedOn}}
+      <td>{{with index $.Checked .}}
+        {{if eq .State "fresh"}}<span class="tag">{{.When}}</span>
+        {{else if eq .State "never"}}<span class="tag tag-warn">never</span>
+        {{else if eq .State "changed"}}<span class="tag tag-warn">changed since</span>
+        {{else}}<span class="tag tag-warn">due</span>{{end}}
+      {{end}}</td>
+      {{end}}
       <td class="actions">
         <a href="/page/{{.}}">{{if $.CanEdit}}Edit{{else}}View{{end}} <span class="sr">{{.}}</span></a>
         <a href="/preview/{{.}}">Preview <span class="sr">{{.}}</span></a>

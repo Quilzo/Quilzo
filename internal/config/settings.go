@@ -110,6 +110,21 @@ var settings = []Setting{
 			"run stays under the alert and is never reported"),
 	},
 
+	// -- content -------------------------------------------------------------
+	{
+		Key: "content.review.every", Kind: Duration, Default: "8760h",
+		Summary:  "how long a page may go unchecked before it is listed as due",
+		Controls: []string{"CM-3"},
+		Why: "A year. The history says when a page was last edited, which is a " +
+			"different question: a page nobody has edited in three years is " +
+			"either perfectly accurate or badly out of date, and nothing in " +
+			"the history says which. This is the interval after which somebody " +
+			"is asked to look. A page can name its own; this is the answer for " +
+			"every page that does not.\n" +
+			"Listing a page as due changes nothing about it and blocks nothing. " +
+			"It is a question put to a person, not a gate.",
+	},
+
 	// -- tokens ---------------------------------------------------------------
 	{
 		Key: "token.ttl.default", Kind: Duration, Default: "720h",
