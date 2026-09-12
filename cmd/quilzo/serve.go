@@ -330,6 +330,12 @@ func cmdServe(root string, args []string) error {
 			Store: fs,
 		}
 	}
+	// The remarks people leave on a draft. Opened here rather than per request
+	// because it is a directory, and a build that cannot open it should say so
+	// once at startup rather than on whichever screen happens to ask first.
+	if ns, nerr := openNotes(root); nerr == nil {
+		srv.Notes = &admin.Notes{Store: ns}
+	}
 	srv.Approvals = &admin.Approvals{
 		Policy: func() (collab.Policy, error) { return loadApprovalPolicy(root) },
 		Current: func() (*collab.Proposal, error) {

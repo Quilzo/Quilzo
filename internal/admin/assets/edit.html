@@ -86,6 +86,66 @@
   when it last updated. It refreshes when you save, which is also when the
   draft changes.
 */}}
+{{/*
+  What anybody has said about this page, beside the fields they said it about.
+
+  Here as well as on /notes because there are two questions: "what is
+  outstanding anywhere" is asked at the start of the day, and "what did
+  somebody say about this" is asked while changing it. The second one is the
+  reason a note exists at all, and a screen you have to go and find does not
+  answer it.
+*/}}
+{{if .NotesOn}}
+<section class="notes" aria-labelledby="notes-h">
+  <h2 id="notes-h">Notes</h2>
+  {{if .Notes}}
+  <ul class="notelist">
+    {{range .Notes}}
+    <li class="note">
+      <p class="notewho"><strong>{{.Author}}</strong>
+        {{if .Field}}<span class="pill">{{.Field}}</span>{{end}}
+        <span class="hint">{{.When}}</span></p>
+      <p class="notetext">{{.Text}}</p>
+      {{if .Stale}}
+      <p class="notice warn">Written against an earlier version of this page.</p>
+      {{end}}
+      <form method="post" action="/notes/resolve" class="inline">
+        <input type="hidden" name="page" value="{{$.Name}}">
+        <input type="hidden" name="id" value="{{.ID}}">
+        <input type="hidden" name="back" value="{{$.Here}}">
+        <button type="submit">Mark dealt with</button>
+      </form>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="hint">Nothing outstanding on this page.</p>
+  {{end}}
+
+  <form method="post" action="/notes/add" class="notefield">
+    <input type="hidden" name="page" value="{{.Name}}">
+    <input type="hidden" name="back" value="{{.Here}}">
+    <div class="field">
+      <label for="n-text">{{template "req"}}Leave a note</label>
+      <textarea id="n-text" name="text" rows="3" required
+                aria-describedby="n-help"
+                placeholder="this heading is wrong"></textarea>
+      <p id="n-help" class="help">Recorded against the page as it stands now,
+        so it says so if the page changes underneath it. Not published — notes
+        live outside the content store.</p>
+    </div>
+    <div class="field">
+      <label for="n-field">Which field, if it is about one</label>
+      <input id="n-field" name="field" type="text" list="note-fields">
+      <datalist id="note-fields">
+        {{range .Fields}}<option value="{{.Key}}"></option>{{end}}
+      </datalist>
+    </div>
+    <button type="submit">Leave the note</button>
+  </form>
+</section>
+{{end}}
+
 <aside class="preview" aria-labelledby="preview-h">
   <h2 id="preview-h">The page</h2>
   <p class="help">The real page, drawn by your browser from the draft — not an

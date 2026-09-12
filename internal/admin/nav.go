@@ -80,6 +80,9 @@ var destinations = []destination{
 	{"languages", "Languages", "/languages", "Content", "languages", auth.ActView},
 	{"assist", "Assistant", "/assist", "Content", "ai", auth.ActEditDraft},
 
+	// With Review rather than with Content: a note is part of agreeing that
+	// something is ready, which is what this group is about.
+	{"notes", "Notes", "/notes", "Release", "publishing", auth.ActView},
 	{"review", "Review", "/review", "Release", "publishing", auth.ActView},
 	{"publishing", "Publishing", "/publishing", "Release", "environments", auth.ActView},
 	{"history", "History", "/history", "Release", "history", auth.ActView},
@@ -448,6 +451,7 @@ func Screens() []find.Destination {
 		"sections":      {"block", "component", "section"},
 		"languages":     {"translation", "locale", "i18n", "language"},
 		"assist":        {"ai", "assistant", "model", "llm"},
+		"notes":         {"note", "comment", "remark", "feedback", "review"},
 		"review":        {"approval", "approve", "sign off"},
 		"publishing":    {"environment", "staging", "promote", "schedule", "deploy"},
 		"history":       {"commit", "log", "rollback", "revert", "version"},

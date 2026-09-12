@@ -160,7 +160,7 @@ var notInHelp = map[string]bool{
 	// Aliases. The command is in the help under its primary spelling.
 	"prov": true, "locales": true, "integration": true, "webhooks": true,
 	"forms": true, "listings": true, "taxonomy": true, "menus": true,
-	"locks": true, "stamp": true, "help": true, "-h": true,
+	"locks": true, "stamp": true, "help": true, "-h": true, "notes": true,
 	"environments": true, "extensions": true, "record": true,
 	"sections": true, "templates": true, "types": true,
 }

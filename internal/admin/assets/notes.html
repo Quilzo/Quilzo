@@ -1,0 +1,64 @@
+{{/*
+  What people have said, everywhere.
+
+  The question somebody asks at the start of the day: what is outstanding. The
+  other question — what did anybody say about this page — is answered on the
+  editor, beside the fields the remarks are about.
+
+  A note marked stale was written against an older version of the page. It is
+  shown rather than hidden, because whether a remark about a paragraph still
+  applies after the paragraph was rewritten is the one thing the tool cannot
+  decide and the reader can.
+*/}}
+{{template "head" .}}
+<h1>Notes</h1>
+
+{{if .Unavailable}}
+<p class="notice warn">{{.Unavailable}}</p>
+{{else}}
+
+{{if .Pages}}
+<p class="hint">{{.Open}} outstanding.
+  {{if .All}}<a href="/notes">Hide the ones people have dealt with</a>.
+  {{else}}<a href="/notes?all=1">Show the ones people have dealt with</a>.{{end}}</p>
+
+{{range .Pages}}
+<h2><a href="/page/{{.Page}}">{{.Page}}</a></h2>
+<ul class="notelist">
+  {{$page := .Page}}
+  {{range .Notes}}
+  <li class="note{{if .Resolved}} done{{end}}">
+    <p class="notewho"><strong>{{.Author}}</strong>
+      {{if .Field}}<span class="pill">{{.Field}}</span>{{end}}
+      <span class="hint">{{.When}}</span></p>
+    <p class="notetext">{{.Text}}</p>
+    {{if .Stale}}
+    <p class="notice warn">The page has changed since this was written, so it
+      may be about words that are no longer there.</p>
+    {{end}}
+    {{if .Resolved}}
+      <p class="hint">Dealt with by {{.ResolvedBy}}.</p>
+    {{else}}
+      <form method="post" action="/notes/resolve" class="inline">
+        <input type="hidden" name="page" value="{{$page}}">
+        <input type="hidden" name="id" value="{{.ID}}">
+        <input type="hidden" name="back" value="{{$.Here}}">
+        <button type="submit">Mark dealt with</button>
+      </form>
+    {{end}}
+  </li>
+  {{end}}
+</ul>
+{{end}}
+
+{{else}}
+<p class="notice ok">Nobody has left a note.</p>
+<p class="help">A note is a remark about a page — "this heading is wrong", "the
+  date here is from last year". They are written on the page's own screen,
+  beside the fields they are about, and they are not published: they live
+  outside the content store, so one can be removed, which is the whole reason
+  they are kept separately.</p>
+{{end}}
+
+{{end}}
+{{template "foot" .}}

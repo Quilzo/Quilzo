@@ -172,6 +172,8 @@ content types
 working together
   quilzo lock PAGE [--note "..."]          advisory claim, expires in 30 min
   quilzo lock list | release PAGE          who is working on what
+  quilzo note add PAGE "..."               say what is wrong with a page
+  quilzo note list | resolve | remove      the remarks, and finishing with one
   quilzo review status                     who has agreed to the current draft
   quilzo review approve [--note "..."]     agree to it; authors cannot
   quilzo review require N                  how many approvals a publish needs
@@ -421,6 +423,8 @@ func main() {
 		err = cmdInit(root)
 	case "add":
 		err = cmdAdd(root, cmdArgs)
+	case "note", "notes":
+		err = cmdNote(root, cmdArgs)
 	case "find":
 		err = cmdFind(root, cmdArgs)
 	case "diff":
