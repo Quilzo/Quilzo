@@ -91,7 +91,13 @@
   <p class="help">The real page, drawn by your browser from the draft — not an
     approximation of it. It changes when you save, not as you type.
     <a href="/preview/{{.Name}}" target="_blank" rel="noopener">Open in a tab</a>.</p>
-  <iframe src="/preview/{{.Name}}" title="Preview of {{.Name}}" loading="lazy"></iframe>
+  {{/*
+    ?plain=1 here and nowhere else. The editing panel is what turns a preview
+    into a way back into the page, and beside a form that already lists every
+    field it is the same links twice. Opened in a tab, where there is no form,
+    the panel is the only way back and appears.
+  */}}
+  <iframe src="/preview/{{.Name}}?plain=1" title="Preview of {{.Name}}" loading="lazy"></iframe>
 </aside>
 </div>
 {{else}}

@@ -172,6 +172,7 @@ var notAScreen = map[string]string{
 	"/signout":       "clears the cookie and redirects; there is nothing to render",
 	"/style.css":     "is a stylesheet",
 	"/icon.svg":      "an image, not a screen",
+	"/preview.css":   "the editing panel's stylesheet, fetched by a preview opened in a tab. A stylesheet is not a screen, and the policy on these responses is style-src 'self', so it cannot be inline",
 	"/site.css": "the site's own stylesheet, fetched by the framed preview. " +
 		"404 when no template directory was given, which is the honest " +
 		"answer for a store that renders elsewhere",
