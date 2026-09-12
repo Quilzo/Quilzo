@@ -174,3 +174,76 @@ having fixed anything.
   than off, which would change what the uncovered case is.
 - **`SameSite=Strict` or `HttpOnly` going away** from any of these nine. They
   are what makes a medium finding a medium finding rather than a high one.
+
+---
+
+## `go/url-redirection-from-remote-source` — the note handlers
+
+**Not dismissed.** Recorded here because the alerts are open, the code is
+believed correct, and the belief needs to be checkable by somebody who did not
+write it.
+
+| alert | sink |
+|---|---|
+| — | `internal/admin/notes.go:157` — `http.Redirect(w, r, backTo(r), …)` |
+| — | `internal/admin/notes.go:177` — the same, on the resolve handler |
+
+### The flow
+
+`backTo` reads `r.FormValue("back")` — a hidden field every screen renders so
+that a form post returns to the screen it was made from. It has to be a form
+field rather than the `Referer` header, because every admin response sets
+`Referrer-Policy: no-referrer`; that is the bug fixed in "Hiding the menu
+leaves you on the screen you were reading", and the field is the fix.
+
+The value goes through `safeLocalPath` before it is used. The analyser does not
+follow that, so it sees a request value reaching a redirect.
+
+### Why these two and not the others
+
+`/sidebar` and `/theme` have had the identical call since the field existed.
+They are not flagged because they are not changed code, and CodeQL reports
+alerts in what a pull request touches. Fixing the flow would clear all four;
+dismissing these two would leave the other two unflagged and unexamined, which
+is the worse of the two shapes.
+
+### What was checked, by hand, against a running server
+
+Every hostile value stays on this origin:
+
+| `back=` | `Location` |
+|---|---|
+| `https://evil.test/x` | `/` |
+| `//evil.test/x` | `/` |
+| `http://evil.test` | `/` |
+| `javascript:alert(1)` | `/` |
+| `\\evil.test\x` | `/` |
+| `/%2F%2Fevil.test` | `/` |
+| `/../../etc/passwd` | `/` |
+
+`TestTheReturnFieldCannotLeaveThisServer` asserts the shape rather than a
+hostname: rooted, single slash, no scheme, no authority. Asserting on a
+hostname would pass for the wrong reason the day somebody picks a different
+example domain.
+
+### The thing the alert found, which is a reason to keep the rule on
+
+`safeLocalPath` used to normalise. `/../../etc/passwd` became `/etc/passwd` and
+a redirect was issued to it — local, so never the open redirect this rule is
+about, and still the wrong answer. No screen here produces a path with `..` in
+it, so one that arrives was tampered with or mangled, and repairing it and
+sending somebody to the repaired version is a guess. It now returns `/`.
+
+So the rule was right that the value was unverified even though the outcome was
+safe, which is the case worth writing down: an alert that is a false positive
+about its own claim can still be pointing at something.
+
+### What would make this wrong
+
+- `safeLocalPath` gaining a branch that returns anything other than its input
+  or a constant. That is the property a reader can check by looking at it, and
+  it is what the two tests above pin.
+- A caller using `r.FormValue("back")` directly rather than through `backTo`.
+- The `Referrer-Policy` header being relaxed, which would make the Referer
+  branch of `backTo` reachable again and put a second source into the same
+  sink.
