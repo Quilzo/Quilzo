@@ -345,6 +345,25 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 }
 
 // unmarkedAt lists pages with no usable provenance at a commit.
+//
+// # Pages, not everything in the tree
+//
+// This walked the commit tree directly, so a records collection — which is a
+// tree sharing the same root, and is called "data" — was handed to
+// provenance.Check as though it were a page. It can never be given a
+// provenance record, `provenance backfill` correctly writes nothing for it,
+// and the publish gate therefore refused every publish, permanently, on any
+// site holding records. A fresh `quilzo demo` could be published once, by the
+// demo command, and never again.
+//
+// site.PageIDsAt is the same walk with the same filter every other reader of
+// the tree uses: by what the object *is* rather than by name, because a list
+// of reserved names has to be updated by whoever adds the next branch and they
+// will not know to.
+//
+// The comment on pageHashes already described this exact bug and named two
+// places it had been fixed — `lang check` and `provenance check`. This was a
+// third caller, and the one where it mattered most.
 func unmarkedAt(root string, s *store.Store, commitID string) ([]string, error) {
 	if commitID == "" {
 		return nil, nil
@@ -353,11 +372,7 @@ func unmarkedAt(root string, s *store.Store, commitID string) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	c, err := s.GetCommit(commitID)
-	if err != nil {
-		return nil, err
-	}
-	tree, err := s.GetTree(c.Tree)
+	tree, err := site.PageIDsAt(s, commitID)
 	if err != nil {
 		return nil, err
 	}

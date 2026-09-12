@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/site"
 	"strings"
 	"testing"
 )
@@ -89,6 +90,8 @@ func runCmd(t *testing.T, root string, args ...string) error {
 		return cmdAdd(root, args[1:])
 	case "provenance":
 		return cmdProvenance(root, args[1:])
+	case "records":
+		return cmdRecords(root, args[1:])
 	}
 	t.Fatalf("no dispatch for %q in this helper", args[0])
 	return nil
@@ -113,4 +116,80 @@ func newStoreWithDraft(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return root
+}
+
+// A records collection is not a page, so it is not content anybody can mark.
+//
+// unmarkedAt walked the commit tree directly, and a collection is a tree
+// sharing that root — called "data". So it was handed to provenance.Check as
+// though it were a page, reported as unmarked, and could never stop being
+// reported: nothing can give a tree a provenance record, and
+// `quilzo provenance backfill` correctly writes nothing for one.
+//
+// The result was that any site holding records could never publish again once
+// this gate existed. A fresh `quilzo demo` — which ships two collections —
+// could be published once, by the demo command itself, and never after. Found
+// by running the demo rather than by any test, because every test here used a
+// store with pages and nothing else.
+//
+// The comment on pageHashes already described this exact bug and named two
+// places it had been fixed, `lang check` and `provenance check`. This was a
+// third caller and the one where it mattered most.
+func TestARecordsCollectionIsNotReportedAsUnmarkedContent(t *testing.T) {
+	root := newStoreWithDraft(t)
+
+	// A collection, which lands in the tree as "data" beside the pages.
+	if err := runCmd(t, root, "records", "add", "products",
+		"name=A brass pen", "price=48"); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unmarked, err := unmarkedAt(root, s, s.GetRef(site.RefDraft))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range unmarked {
+		if name == "data" {
+			t.Fatalf("the records collection is reported as content needing "+
+				"provenance: %v\nNothing can mark a tree, so this refuses "+
+				"every publish on any site holding records, permanently",
+				unmarked)
+		}
+	}
+	// The page is still reported, so this did not pass by reporting nothing.
+	found := false
+	for _, name := range unmarked {
+		if name == "index" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no page was reported as unmarked: %v; the filter is too "+
+			"wide and the gate now checks nothing", unmarked)
+	}
+}
+
+// And the whole way through: a store with records publishes once its pages are
+// marked.
+//
+// The unit above pins the cause; this pins the thing somebody actually hit.
+func TestAStoreHoldingRecordsCanPublishOnceItsPagesAreMarked(t *testing.T) {
+	root := newStoreWithDraft(t)
+	if err := runCmd(t, root, "records", "add", "products",
+		"name=A brass pen", "price=48"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(t, root, "provenance", "set", "index",
+		"--source", "humanEdits", "--author", "ada"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runPublish(t, root, "--no-a11y-check"); err != nil {
+		t.Fatalf("a store holding records refused to publish with every page "+
+			"marked: %v", err)
+	}
 }
