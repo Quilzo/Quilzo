@@ -89,11 +89,43 @@ const (
 	Slug     Kind = "slug"   // url-safe identifier
 	Choice   Kind = "choice" // one of a fixed list
 	List     Kind = "list"   // several short strings
+	// Reference names another page in this store. See referenceIsNotARef.
+	Reference Kind = "reference"
 )
+
+// # Why a reference is here, next to a comment saying there are none
+//
+// The paragraph above says "there is no regex, no reference of any kind, no
+// recursion, and no combinators", and it is a list of JSON Schema constructs.
+// The reference in it is $ref, and the two CVEs beside it say what $ref is: a
+// URL that gets dereferenced, with no scheme allow-list and redirects
+// followed, and a self-referencing one that spins a worker until it is killed.
+//
+// This is not that, and the difference is not a matter of degree:
+//
+//	$ref          a URL, fetched while validating, whose content becomes
+//	              part of the schema. SSRF and unbounded recursion.
+//	reference     a page name, compared against a map. Nothing is fetched,
+//	              nothing is parsed, and nothing is followed.
+//
+// A reference is a value in content, not a construct in a schema. Validating
+// one is a string check and a map lookup, both linear and both terminating,
+// and the schema language is exactly as expressive afterwards as before.
+//
+// The precedent is already in the tree: internal/menu refuses to publish an
+// entry pointing at a page that is not being published, because "a menu entry
+// pointing at nothing is a 404 every reader finds before anybody here does".
+// That is referential integrity at the gate, and this is the same mechanism
+// reached from a typed field rather than from the navigation.
+//
+// Said at this length because the wording above is close enough that the next
+// reader would otherwise conclude the fence was crossed quietly.
+func referenceIsNotARef() {}
 
 var kinds = map[Kind]bool{
 	Text: true, LongText: true, Number: true, Boolean: true, Date: true,
 	URL: true, Email: true, Slug: true, Choice: true, List: true,
+	Reference: true,
 }
 
 func (k Kind) Valid() bool { return kinds[k] }
@@ -138,7 +170,12 @@ type Type struct {
 var (
 	reName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 	reSlug = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
-	reDate = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	// A page name: slugs joined by /, with no leading or trailing separator
+	// and nothing that could walk out of the tree. Anchored, no alternation
+	// inside a repetition, and linear — the property every pattern here has to
+	// have, for the reason the package comment gives about ReDoS.
+	rePageName = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$`)
+	reDate     = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 )
 
 // reserved names the fields every page may carry, whatever its type.
@@ -415,6 +452,16 @@ func checkString(f Field, s string) []Problem {
 		if !reSlug.MatchString(s) {
 			return []Problem{{f.Name, "must be lowercase words joined by hyphens"}}
 		}
+	case Reference:
+		// The shape only. Whether the page exists is a question about the set
+		// being published, which this function cannot see and Gate can — and
+		// answering it here would mean refusing a draft for naming a page the
+		// author has not written yet.
+		if !rePageName.MatchString(s) {
+			return []Problem{{f.Name,
+				"must be the name of a page: lowercase words joined by " +
+					"hyphens, with / between parts"}}
+		}
 	case Date:
 		if !reDate.MatchString(s) || !plausibleDate(s) {
 			return []Problem{{f.Name, "must be a date as YYYY-MM-DD"}}
@@ -552,10 +599,17 @@ func (r *Registry) Names() []string {
 
 // Kinds lists every field kind, so the CLI and the editor can show them
 // without keeping their own copy that drifts.
+//
+// Written out rather than ranged over the map, because this is the order the
+// editor shows them in and a map has none — the common kinds first, and the
+// two that need a decision last. TestKindsListsEveryKind is what stops it
+// being the copy that drifts: adding a kind and not adding it here is exactly
+// the mistake this function exists to prevent, and it happened on the first
+// kind added after it was written.
 func Kinds() []string {
 	return []string{
 		string(Text), string(LongText), string(Number), string(Boolean),
 		string(Date), string(URL), string(Email), string(Slug),
-		string(Choice), string(List),
+		string(Choice), string(List), string(Reference),
 	}
 }

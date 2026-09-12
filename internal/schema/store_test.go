@@ -354,3 +354,108 @@ func TestABrokenTypeIsSetAsideRatherThanFatal(t *testing.T) {
 	}
 	_ = good
 }
+
+// Publishing refuses a reference that points at nothing.
+//
+// This is the half of a reference that only this architecture can offer. A
+// conventional CMS stores a foreign key and finds out it dangles when a reader
+// hits the page; here publishing is a gate over the whole set being published,
+// so the question "does this resolve" has an answer at exactly the moment it
+// becomes a promise to a reader.
+//
+// The same rule internal/menu already applies to navigation, reached from a
+// typed field instead.
+func TestPublishingRefusesAReferenceThatPointsAtNothing(t *testing.T) {
+	st := &Store{Registry: &Registry{}, Bound: map[string]string{}}
+	if err := st.Registry.Add(Type{Name: "post", Fields: []Field{
+		{Name: "title", Kind: Text},
+		{Name: "author", Kind: Reference},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	st.Bound["hello"] = "post"
+
+	// Pointing at a page that is not in the set: refused, by name.
+	failures := st.Unresolved(map[string]any{
+		"hello": map[string]any{"title": "Hello", "author": "ada"},
+	})
+	if len(failures) != 1 {
+		t.Fatalf("a dangling reference produced %d failures, want 1", len(failures))
+	}
+	if !strings.Contains(failures[0].String(), "ada") {
+		t.Errorf("the refusal does not name what is missing: %s", failures[0])
+	}
+
+	// Pointing at a page that is being published: allowed.
+	if f := st.Unresolved(map[string]any{
+		"hello": map[string]any{"title": "Hello", "author": "ada"},
+		"ada":   map[string]any{"title": "Ada"},
+	}); len(f) != 0 {
+		t.Errorf("a reference that resolves was refused: %v", f)
+	}
+}
+
+// A reference is not followed, so a chain of them is not a traversal.
+//
+// $ref recurses because validating one schema pulls in another and validates
+// that. Here each reference is one lookup in one map, so a cycle is three
+// lookups rather than a stack overflow — which is the property that makes this
+// safe to have at all.
+func TestAChainOfReferencesTerminates(t *testing.T) {
+	st := &Store{Registry: &Registry{}, Bound: map[string]string{}}
+	if err := st.Registry.Add(Type{Name: "node", Fields: []Field{
+		{Name: "next", Kind: Reference},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"a", "b", "c"} {
+		st.Bound[n] = "node"
+	}
+	// a → b → c → a, which is a cycle in the content and nothing in the check.
+	done := make(chan []Failure, 1)
+	go func() {
+		done <- st.Unresolved(map[string]any{
+			"a": map[string]any{"next": "b"},
+			"b": map[string]any{"next": "c"},
+			"c": map[string]any{"next": "a"},
+		})
+	}()
+	select {
+	case f := <-done:
+		if len(f) != 0 {
+			t.Errorf("a cycle of references was refused, and each one resolves: %v", f)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the gate did not finish on a cycle of references, so something " +
+			"is following them")
+	}
+}
+
+// A reference somebody has not written yet does not stop them saving.
+//
+// Check sees one page; the gate sees the set. That split is what lets a draft
+// name a page that does not exist yet, which is ordinary work in progress —
+// and refusing it at save time would make the field unusable for the thing
+// people write references for.
+func TestADraftMayNameAPageThatDoesNotExistYet(t *testing.T) {
+	st := &Store{Registry: &Registry{}, Bound: map[string]string{}}
+	if err := st.Registry.Add(Type{Name: "post", Fields: []Field{
+		{Name: "author", Kind: Reference},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	st.Bound["hello"] = "post"
+
+	if p := st.Check("hello", map[string]any{"author": "ada"}); len(p) != 0 {
+		t.Errorf("saving a draft that names an unwritten page was refused: %v", p)
+	}
+	// And through the gate that actually runs on a save, which is the one that
+	// got this wrong: the first version put the resolution in Gate, so `quilzo
+	// add` refused a page linking to one the author had not written yet.
+	if f := st.Gate(map[string]any{
+		"hello": map[string]any{"author": "ada"},
+	}); len(f) != 0 {
+		t.Errorf("saving was refused for a reference that does not resolve "+
+			"yet; that question belongs to publishing: %v", f)
+	}
+}

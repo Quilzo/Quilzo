@@ -221,6 +221,16 @@ type Server struct {
 	// configured, which is different from types that pass: a site with no types
 	// is unconstrained, and saying so plainly is better than a silent success.
 	CheckTypes func(map[string]any) []schema.Failure
+	// CheckReferences reports reference fields naming a page that is not in
+	// the set. Separate from CheckTypes because it is asked at a different
+	// moment: CheckTypes runs on every save, and a draft that links to a page
+	// nobody has written yet is ordinary work in progress. This runs only at
+	// publish, which is when a reference stops being a note to yourself and
+	// becomes a promise to a reader.
+	//
+	// Nil means the check does not run, which is the same shape as every other
+	// optional field here and is what a build without types wants.
+	CheckReferences func(map[string]any) []schema.Failure
 	// TypeFor names the type a page must satisfy, so the editor can render the
 	// declared fields rather than whatever keys the page happens to have.
 	TypeFor func(page string) (schema.Type, bool)
@@ -1138,7 +1148,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	)
 	if s.TypeFor != nil {
 		if t, ok := s.TypeFor(name); ok {
-			fields, typeName = typedFields(t, body), t.Name
+			fields, typeName = typedFields(t, body, s.pageNames()), t.Name
 		}
 	}
 	if fields == nil {
@@ -1181,6 +1191,35 @@ type field struct {
 	// ATAG 2.0 Part B: the tool helps the author produce accessible content
 	// instead of checking afterwards whether they did.
 	AltFor string
+	// Suggest is the list a reference field offers, rendered as a <datalist>.
+	//
+	// Not a <select>, deliberately. A reference may name a page that does not
+	// exist yet — the gate is where that is refused, not the editor — and a
+	// select cannot express a value outside its options. A datalist is the
+	// browser's own completion over a text input: it suggests without
+	// constraining, and it needs no script, which is the only kind of widget
+	// available here.
+	Suggest []string
+	// SuggestID ties the input to its list. Per field, because two inputs
+	// sharing one id is markup a browser resolves by picking the first.
+	SuggestID string
+}
+
+// pageNames is the draft's pages, for a reference field to suggest.
+//
+// Sorted, because the order a map yields is random and a list that reorders
+// between two visits to the same form looks like the store changed.
+func (s *Server) pageNames() []string {
+	pages, err := site.PagesAt(s.Store, site.RefDraft)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(pages))
+	for name := range pages {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // typedFields builds the editor from a content type.
@@ -1189,7 +1228,7 @@ type field struct {
 // whatever order the JSON happened to be written. The declaration is the
 // author's sequence of thought, and reordering it makes the form read as a list
 // of unrelated boxes.
-func typedFields(t schema.Type, body any) []field {
+func typedFields(t schema.Type, body any, pages []string) []field {
 	m, _ := body.(map[string]any)
 
 	out := make([]field, 0, len(t.Fields)+4)
@@ -1226,6 +1265,12 @@ func typedFields(t schema.Type, body any) []field {
 			e.Checkbox = true
 		case schema.Choice:
 			e.Choices = f.Choices
+		case schema.Reference:
+			e.Suggest = pages
+			e.SuggestID = "pages-" + f.Name
+			e.Help = strings.TrimSpace(e.Help +
+				" The name of another page. Publishing refuses a name that " +
+				"is not there.")
 		}
 
 		switch v := m[f.Name].(type) {
@@ -1781,6 +1826,28 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// accessibility finding can be a judgement call; content that violates the
 	// shape it was declared to have is not a judgement call, and the type is
 	// the thing whoever set it up asked to be true.
+	// References, with the type gate and for the same reason: publishing is the
+	// whole set, and whether a reference resolves is a question only the whole
+	// set can answer. The same rule the CLI applies, so the two interfaces
+	// cannot disagree about what publishes.
+	if s.CheckReferences != nil {
+		if failures := s.CheckReferences(site.PagesOf(s.Store, draft)); len(failures) > 0 {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			s.render(w, r, "review.html", map[string]any{
+				"Nav": "review", "Title": "Review", "Principal": p,
+				"Reports": reports, "Blocking": blocking, "CanPublish": true,
+				"TypeFailures": failures,
+				"Error": fmt.Sprintf(
+					"%d page%s in this draft reference a page that is not being "+
+						"published. Publish the page it names, or change the "+
+						"reference — a link pointing at nothing is a broken link "+
+						"every reader finds before anybody here does.",
+					len(failures), plural(len(failures))),
+			})
+			return
+		}
+	}
+
 	if s.CheckTypes != nil {
 		if failures := s.CheckTypes(site.PagesOf(s.Store, draft)); len(failures) > 0 {
 			names := make([]string, 0, len(failures))

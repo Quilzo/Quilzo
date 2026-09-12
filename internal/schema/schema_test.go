@@ -94,7 +94,8 @@ func TestATypeCannotReferenceAnythingRemote(t *testing.T) {
 func TestTypesCannotNestAndSoCannotRecurse(t *testing.T) {
 	for k := range kinds {
 		switch k {
-		case Text, LongText, Number, Boolean, Date, URL, Email, Slug, Choice, List:
+		case Text, LongText, Number, Boolean, Date, URL, Email, Slug, Choice,
+			List, Reference:
 		default:
 			t.Errorf("kind %q is outside the flat set and may permit nesting", k)
 		}
@@ -373,5 +374,105 @@ func TestBlankOptionalFieldIsAbsentNotMalformed(t *testing.T) {
 	if p := Validate(ty, map[string]any{
 		"handle": "nel", "link": "javascript:alert(1)"}); len(p) != 1 {
 		t.Fatalf("a bad URL should still fail; got %v", p)
+	}
+}
+
+// A reference holds a name and nothing follows it.
+//
+// This is the whole distinction between a reference and the $ref this package
+// refuses. $ref is a URL fetched while validating, whose content becomes part
+// of the schema — SSRF, and unbounded recursion when it points at itself. A
+// reference is a string compared against a map: nothing is fetched, nothing is
+// parsed, nothing is followed.
+//
+// So the shape is checked and only the shape, and the shape is one that cannot
+// be a URL, cannot walk out of the tree, and cannot name a host.
+func TestAReferenceIsANameAndNotSomethingToFetch(t *testing.T) {
+	ref := Type{Name: "post", Fields: []Field{
+		{Name: "title", Kind: Text},
+		{Name: "author", Kind: Reference},
+	}}
+	if err := Compile(ref); err != nil {
+		t.Fatalf("a type with a reference field did not compile: %v", err)
+	}
+
+	// Anything that could be dereferenced is refused by the shape.
+	for _, bad := range []string{
+		"http://evil.example/schema.json",
+		"https://169.254.169.254/latest/meta-data/",
+		"file:///etc/passwd",
+		"//evil.example/x",
+		"../../etc/passwd",
+		"/absolute",
+		"trailing/",
+		"has space",
+		"UPPER",
+		"a//b",
+		"#self",
+		"data:text/html,<script>alert(1)</script>",
+	} {
+		p := Validate(ref, map[string]any{"title": "x", "author": bad})
+		if !hasProblem(p, "author") {
+			t.Errorf("a reference accepted %q, which is not a page name", bad)
+		}
+	}
+
+	// And an ordinary page name is accepted, including a nested one.
+	for _, good := range []string{"ada", "ada-lovelace", "people/ada", "a1/b2/c3"} {
+		if p := Validate(ref, map[string]any{"title": "x", "author": good}); len(p) > 0 {
+			t.Errorf("a reference refused %q, which is a page name: %v", good, p)
+		}
+	}
+
+	// A reference to itself is a name like any other. There is no cycle to
+	// detect because there is no traversal: validating "post" does not read
+	// the page "post".
+	if p := Validate(ref, map[string]any{"title": "x", "author": "post"}); len(p) > 0 {
+		t.Errorf("a self-reference was treated as a cycle: %v", p)
+	}
+}
+
+// A reference is not a way to smuggle an object in.
+//
+// The same argument List carries: widening a field from a string to []any of
+// objects is how nesting creeps back into a flat model.
+func TestAReferenceHoldsTextAndNotAnObject(t *testing.T) {
+	ref := Type{Name: "post", Fields: []Field{{Name: "author", Kind: Reference}}}
+	for _, v := range []any{
+		map[string]any{"$ref": "http://evil.example/s.json"},
+		[]any{"ada", "grace"},
+		42.0,
+		true,
+	} {
+		if p := Validate(ref, map[string]any{"author": v}); !hasProblem(p, "author") {
+			t.Errorf("a reference accepted %T, and it holds text", v)
+		}
+	}
+}
+
+// Kinds() names every kind there is.
+//
+// Its own comment says it exists "so the CLI and the editor can show them
+// without keeping their own copy that drifts" — and it was itself a copy that
+// drifted, the first time a kind was added after it was written. A kind
+// missing here is a kind the editor cannot offer and the CLI cannot list, on a
+// validator that accepts it: so the type works if you write the JSON by hand
+// and does not exist if you use the interface.
+func TestKindsListsEveryKind(t *testing.T) {
+	listed := map[string]bool{}
+	for _, k := range Kinds() {
+		if listed[k] {
+			t.Errorf("Kinds() names %q twice", k)
+		}
+		listed[k] = true
+		if !Kind(k).Valid() {
+			t.Errorf("Kinds() names %q, which the validator does not accept", k)
+		}
+	}
+	for k := range kinds {
+		if !listed[string(k)] {
+			t.Errorf("%q is a valid kind and Kinds() does not name it, so the "+
+				"editor cannot offer it and the CLI cannot list it", k)
+		}
 	}
 }

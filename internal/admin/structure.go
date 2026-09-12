@@ -433,11 +433,4 @@ func (s *Server) brokenLinks(pages map[string]any) []string {
 	return out
 }
 
-func plural3(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
-}
-
 var _ = fmt.Sprintf

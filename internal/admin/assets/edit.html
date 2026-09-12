@@ -34,11 +34,27 @@
                   {{if .MaxLen}}maxlength="{{.MaxLen}}"{{end}}
                   {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>{{.Value}}</textarea>
       {{else}}
+        {{/*
+          A reference gets the browser's own completion over the pages in the
+          draft: `list` plus a <datalist>, which suggests without constraining.
+          Not a <select>, because a reference may name a page that does not
+          exist yet — the publish gate is where that is refused, not the
+          editor, so that an author can write the link before the page — and a
+          select cannot hold a value outside its options.
+
+          No script, which is the only kind of widget available here anyway.
+        */}}
         <input id="f-{{.Key}}" name="{{.Key}}" type="{{if .Input}}{{.Input}}{{else}}text{{end}}"
                value="{{.Value}}"{{if .Required}} required{{end}}
+               {{if .SuggestID}} list="{{.SuggestID}}"{{end}}
                {{if .MaxLen}}maxlength="{{.MaxLen}}"{{end}}
                {{if .Min}} min="{{.Min}}"{{end}}{{if .Max}} max="{{.Max}}"{{end}}
                {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>
+        {{if .SuggestID}}
+        <datalist id="{{.SuggestID}}">
+          {{range .Suggest}}<option value="{{.}}"></option>{{end}}
+        </datalist>
+        {{end}}
       {{end}}
     {{end}}
     {{if .Help}}<p id="h-{{.Key}}" class="help">{{.Help}}</p>{{end}}
