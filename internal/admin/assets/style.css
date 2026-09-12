@@ -304,18 +304,13 @@ code { font-family: var(--mono); font-size: 0.9em; }
 
 /* -- top app bar and navigation -------------------------------------------- */
 
-/* The bar's height is a number the sidebar has to know, so it is declared
-   rather than left to whatever the content adds up to. See the sidebar rules
-   further down: its top and its height are both derived from this, and a bar
-   that is silently taller than it says puts the end of the menu below the
-   fold again. `height` rather than `min-height` for that reason -- min-height
-   is a value that can be exceeded, which is exactly what must not happen. */
-:root { --bar-h: 3.5rem; }
-
 .bar {
   background: var(--surface-container);
   border-bottom: 1px solid var(--outline-variant);
-  padding: 0.75rem 1.25rem 0;
+  /* Even above and below. It was `0.75rem 1.25rem 0` — no padding under the
+     content — which was survivable while the bar was a row of text and became
+     a control sitting on the rule the moment one went in it. */
+  padding: 0.6rem 1.25rem;
   margin-bottom: 1rem;
 }
 .bar-inner {
@@ -772,63 +767,76 @@ tr.detail td { padding-top: 0; border-top: 0; }
 }
 
 @media (min-width: 60rem) {
+  /* The whole interface in one screen, with two things that scroll inside it.
+   *
+   * # What this replaces, and why
+   *
+   * The bar used to be a fixed 3.5rem, and the sidebar was
+   * `max-height: calc(100vh - var(--bar-h))` sticking below it. That is the
+   * magic-number layout, and it failed the way magic numbers do: a search box
+   * was added to the bar, the base rule floors every text input at 48px for
+   * target size, and 48px of control did not fit in 43px of bar. The input
+   * hung 2.5px past the border and crossed the rule under it. Nothing said so
+   * — the page rendered, and the only symptom was a line through a control.
+   *
+   * The constant could be raised. It would be wrong again the next time
+   * anything joins the bar, and the failure would look the same: silent, and
+   * visible only to whoever opens that screen.
+   *
+   * So there is no constant. `height: 100dvh` with rows `auto 1fr auto` makes
+   * the middle row exactly what is left after the bar and the footer, whatever
+   * those turn out to be. The browser does the arithmetic, it redoes it when
+   * the bar wraps or the type scales, and it cannot be wrong.
+   *
+   * min-height: 0 on the scrolling children, because a grid item's automatic
+   * minimum size is its content — without it a long menu makes its own row
+   * taller than 1fr and pushes the footer off instead of scrolling.
+   *
+   * # What this also removes
+   *
+   * Nothing is sticky any more. The bar is a row and stays where it is
+   * because the row does; the sidebar is a row and scrolls inside itself. The
+   * overhang this had before — a sticky box one viewport tall starting one
+   * bar-height down, so its end sat below the fold — cannot be expressed in
+   * this layout at all.
+   */
+  body { display: grid; grid-template-columns: 14rem 1fr;
+    grid-template-areas: "bar bar" "nav main" "nav foot";
+    grid-template-rows: auto 1fr auto; height: 100dvh; }
   /* The footer needs a named area too. Without one it lands in the first
      free cell, which is under the sidebar, and wraps to three lines in a
      column meant for menu items. */
-  body { display: grid; grid-template-columns: 14rem 1fr;
-    grid-template-areas: "bar bar" "nav main" "nav foot";
-    grid-template-rows: auto 1fr auto; min-height: 100vh; }
   body > footer { grid-area: foot; }
-  /* The bar is sticky so that the sidebar under it has a fixed place to
-     start from. That is the reason; the effect anybody will notice is that
-     the two preference controls stay reachable, which is what the control
-     that hides the navigation was always supposed to be.
-     Below the skip link, which is z-index 10 and has to clear everything. */
-  body > .bar { grid-area: bar; margin-bottom: 0;
-    position: sticky; top: 0; z-index: 5; height: var(--bar-h); }
-  /* No wrapping, because a bar that wraps is taller than --bar-h says and the
-     sidebar's arithmetic below is then wrong by one line. A long site name or
-     a long user name shortens instead; centred rather than baseline-aligned
-     because a 40px button has no baseline worth aligning a fixed-height row
-     to. */
-  .bar-inner { height: 100%; flex-wrap: nowrap; align-items: center; }
+  body > .bar { grid-area: bar; margin-bottom: 0; }
+  /* The bar may wrap again. Nothing depends on its height now, so a long site
+     name and a long user name are allowed to take a second line rather than
+     being squeezed onto one — which is what `nowrap` was for, and what it was
+     protecting has stopped existing. */
+  .bar-inner { align-items: center; }
   .who { min-width: 0; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap; }
 
-  /* Sticky and scrolling on its own, so the page is never taller than the
-     menu.
-     The column is a grid row, so without this the shortest possible page was
-     the height of twenty-eight links -- about 1,425 pixels -- whatever was in
-     it. align-self: start stops the row stretching the box; max-height plus
-     overflow-y let it scroll independently once the disclosures are open;
-     overscroll-behavior keeps that scroll from carrying on into the page when
-     it reaches the end.
-
-     # Why the offset, and the bug it fixes
-
-     This was `top: 0; max-height: 100vh`, and the last group in the menu --
-     Reference -- could not be scrolled to. The box began below the bar and
-     was a whole viewport tall, so it ended one bar-height *below* the fold.
-     Scrolling the menu to its internal end left that strip off-screen, and
-     overscroll-behavior: contain -- correctly -- stopped the gesture carrying
-     on into the page, so the obvious thing to do did nothing. The only way to
-     see the last group was to scroll the page instead of the menu, which
-     nobody would think to do because the menu was what was scrolling.
-
-     It only happened when the menu overflowed at all, which is why it came
-     and went: with the disclosures closed everything fits and there is no
-     strip to fall into.
-
-     Sticking below a bar of known height, and taking that height off, puts
-     the bottom of the box exactly on the bottom of the viewport at every
-     scroll position. There is no strip. */
+  /* The menu column: exactly the space between the bar and the footer, and it
+     scrolls inside that. overscroll-behavior keeps that scroll from carrying
+     on into the page when it reaches the end. */
   body > .sidenav { grid-area: nav; border-right: 1px solid var(--outline-variant);
     padding: 1rem .75rem; background: var(--surface-container-low);
-    position: sticky; top: var(--bar-h); align-self: start;
-    max-height: calc(100vh - var(--bar-h));
-    max-height: calc(100dvh - var(--bar-h));
-    overflow-y: auto; overscroll-behavior: contain; }
-  body > main { grid-area: main; }
+    position: relative;
+    min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  /* And the content scrolls in its own row rather than the document
+     scrolling. That is the half of this that a reader notices: the bar and
+     the menu stay put because they are rows, not because anything is pinned
+     over the top of the page. */
+  /* position: relative is not decoration. The visually-hidden text this
+     interface is full of — .sr and .visually-hidden — is absolutely
+     positioned, and an absolutely positioned box is clipped by its containing
+     block rather than by whatever happens to scroll. With no positioned
+     ancestor that block is the page itself, so twenty-one of them escaped this
+     row and gave the document 505px of scroll it had nothing to show: a second
+     scrollbar beside the real one, moving nothing.
+     Invisible before this, because the document scrolled anyway. */
+  body > main { grid-area: main; position: relative;
+    min-height: 0; overflow-y: auto; }
   .sidenav .navgroups { flex-direction: column; gap: 1rem; align-items: stretch; }
   .sidenav .navgroup + .navgroup { border-left: 0; margin-left: 0; padding-left: 0; }
   .sidenav .nav { flex-direction: column; gap: .15rem; align-items: stretch;
@@ -975,9 +983,30 @@ tr.detail td { padding-top: 0; border-top: 0; }
  *
  * The box in the bar, and the screen behind it.
  *
- * The bar's height is declared (--bar-h) and the sidebar's arithmetic depends
- * on it, so this has to fit inside that height rather than set its own: 32px
- * against the 40px preference buttons, centred by the bar's own align-items.
+ * # The bug this had, which the comment was also wrong about
+ *
+ * This said 32px and set `height: 32px`, and the input rendered at 48. The
+ * base rule floors every text input at `min-height: 48px` for target size, and
+ * min-height beats height — so the declaration did nothing at all. The input
+ * hung past the bottom of the bar and crossed the rule under it, which is what
+ * somebody saw.
+ *
+ * Written down because the comment was as wrong as the code: it asserted a
+ * measurement nobody had measured. The numbers here were checked in a browser
+ * rather than reasoned about, and the reasoning that produced 32px was correct
+ * arithmetic on a box the stylesheet never had.
+ *
+ * # Why 40 and not 48
+ *
+ * 48 is the house size for a control somebody types into, and this sits beside
+ * two 40px preference buttons in a row of text. Matching them is what makes it
+ * read as part of the bar rather than as a form dropped into one. 40 is well
+ * past the 24px WCAG 2.5.8 asks for, and the field is not the only way to
+ * reach search — /find is in the navigation, which is the "equivalent control
+ * elsewhere" that criterion names.
+ *
+ * min-height, not height, because that is the property the base rule sets and
+ * the only one that can lower its floor.
  *
  * It shrinks before the wordmark does and disappears before it squashes.
  * `min-width: 0` because a flex item will not shrink below its content width
@@ -987,7 +1016,7 @@ tr.detail td { padding-top: 0; border-top: 0; }
 .findbar { display: flex; align-items: center; gap: .25rem; margin: 0;
   flex: 0 1 18rem; min-width: 0; }
 .findbar input {
-  min-width: 0; width: 100%; height: 32px; padding: 0 .65rem;
+  min-width: 0; width: 100%; min-height: 40px; height: 40px; padding: 0 .65rem;
   border-radius: var(--shape-full); border: 1px solid var(--outline-variant);
   background: var(--surface-container-high); color: var(--on-surface);
   font: var(--body-md);
@@ -995,7 +1024,9 @@ tr.detail td { padding-top: 0; border-top: 0; }
 .findbar input::placeholder { color: var(--on-surface-variant); }
 .findbar button {
   display: inline-flex; align-items: center; justify-content: center;
-  flex: none; width: 32px; height: 32px; padding: 0;
+  /* The same 40 as the field beside it, and min-height for the same reason:
+     a button carries a 48px floor from the base rule too. */
+  flex: none; width: 40px; min-height: 40px; height: 40px; padding: 0;
   border-radius: var(--shape-full); border: 1px solid var(--outline-variant);
   background: var(--surface-container-high); color: var(--on-surface);
   cursor: pointer;
@@ -1350,3 +1381,20 @@ td.actions > *:last-child, th.actions > *:last-child { margin-right: 0; }
   padding: .5rem .75rem; border-radius: var(--shape-s); min-height: 40px; }
 .subnav li:hover { background: var(--surface-container); }
 .subnav a { font-weight: 600; }
+
+/* -- printing ----------------------------------------------------------------
+ *
+ * The wide layout is a screen-height grid with two scrolling rows, which is
+ * right for a screen and wrong for paper: a printed page would carry the first
+ * viewport of a log and nothing else, with no sign that anything was missing.
+ *
+ * So on paper it is a document again. The menu and the two preference controls
+ * go, because neither means anything printed, and what is left is the content
+ * at its full length.
+ */
+@media print {
+  body { display: block; height: auto; }
+  body > main { overflow: visible; min-height: 0; }
+  .sidenav, .prefs, .findbar, .skip { display: none; }
+  .bar { position: static; }
+}

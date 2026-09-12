@@ -4,87 +4,140 @@
 package admin
 
 import (
-	"regexp"
 	"strings"
 	"testing"
 )
 
-// The menu ends where the screen ends.
+// The menu column is whatever is left, not a number somebody wrote down.
 //
-// The last group in the navigation — Reference — could not be scrolled to.
-// The sidebar was `position: sticky; top: 0; max-height: 100vh`, and it starts
-// below the bar: a box one viewport tall, beginning one bar-height down, ends
-// one bar-height below the fold. Scrolling the menu to its internal end left
-// that strip off-screen, and `overscroll-behavior: contain` — doing exactly
-// what it was added for — stopped the gesture carrying on into the page. So
-// the obvious thing to do did nothing, and the only way to reach the last
-// group was to scroll the page rather than the menu.
+// # Two bugs, one cause
 //
-// It came and went, because it only happens when the menu overflows at all.
-// With the disclosure groups closed everything fits and there is no strip.
+// First the last group in the menu could not be scrolled to: the sidebar was a
+// sticky box one viewport tall starting one bar-height below the top, so it
+// ended one bar-height under the fold. The fix was arithmetic — declare the
+// bar's height, subtract it — and it worked.
 //
-// The fix is arithmetic: stick below a bar of declared height and take that
-// height off, so the bottom of the box lands on the bottom of the viewport at
-// every scroll position. This test is what keeps the two halves of that
-// arithmetic agreeing, because nothing else would notice them drifting — the
-// page renders either way, and the symptom is a group you have to already
-// know about to go looking for.
-func TestTheMenuColumnEndsAtTheBottomOfTheScreen(t *testing.T) {
+// Then a search box went into the bar. The base rule floors every text input
+// at 48px for target size, the declared bar was 56px with 13px of padding and
+// border, and 48 does not fit in 43. The input hung past the bar and crossed
+// the rule under it. Nothing failed; the page rendered, and the only symptom
+// was a line through a control.
+//
+// Both are the same bug: a length that has to agree with content, kept in a
+// place that does not know what the content is. The second one is the one that
+// matters, because it says the first fix was never going to hold — the
+// constant would have been wrong again the next time anything joined the bar,
+// and wrong the same silent way.
+//
+// So this no longer checks the arithmetic. It checks that there is none.
+func TestTheMenuColumnIsWhateverIsLeft(t *testing.T) {
 	css := readStyle(t)
 
-	if !regexp.MustCompile(`--bar-h:\s*[\d.]+r?em`).MatchString(css) {
-		t.Fatal("no --bar-h is declared; the sidebar's height is derived from " +
-			"it and a number written twice is a number that drifts")
+	if strings.Contains(css, "--bar-h") {
+		t.Error("the bar's height is declared as a constant again. Whatever " +
+			"reads it has to agree with what the bar actually contains, and " +
+			"nothing makes that true — it was wrong within one release of " +
+			"being introduced, and silently")
 	}
 
-	bar := ruleFor(t, css, `body > .bar {`)
-	// height, not min-height. A minimum is a value that may be exceeded, and a
-	// bar one line taller than it claims puts the end of the menu back below
-	// the fold — which is the whole bug, reappearing only for whoever has a
-	// long enough name to make the bar wrap.
-	if !strings.Contains(bar, "height: var(--bar-h)") ||
-		strings.Contains(bar, "min-height: var(--bar-h)") {
-		t.Errorf("the bar does not declare `height: var(--bar-h)`, so the "+
-			"number the sidebar subtracts is a guess:\n  %s", bar)
+	wide := mediaBlock(t, css, "@media (min-width: 60rem)")
+	body := ruleFor(t, wide, "body { display: grid;")
+	// A viewport-height grid, not a minimum. With min-height the middle row
+	// grows with its content and the sidebar stops being "the space between
+	// the bar and the footer".
+	if !strings.Contains(body, "height: 100dvh") || strings.Contains(body, "min-height: 100vh") {
+		t.Errorf("the wide layout is not a screen-height grid, so the row the "+
+			"menu sits in is not what is left over:\n  %s", body)
 	}
-	if !strings.Contains(bar, "position: sticky") {
-		t.Errorf("the bar is not sticky, so the sidebar under it has no fixed "+
-			"place to start from:\n  %s", bar)
-	}
-
-	side := ruleFor(t, css, `body > .sidenav {`)
-	if !strings.Contains(side, "top: var(--bar-h)") {
-		t.Errorf("the sidebar does not stick below the bar, so it sticks "+
-			"underneath it:\n  %s", side)
-	}
-	// Both are checked rather than either: sticking below the bar without
-	// taking its height off is the same overhang measured from a different
-	// place, and taking it off without sticking below it hides the top of the
-	// menu instead of the bottom. Neither half is a fix on its own.
-	if !strings.Contains(side, "calc(100vh - var(--bar-h))") {
-		t.Errorf("the sidebar is not a viewport less the bar, so its bottom "+
-			"hangs below the fold and the last group cannot be scrolled to:\n  %s",
-			side)
-	}
-	if strings.Contains(side, "max-height: 100vh;") {
-		t.Errorf("the sidebar is a whole viewport tall and starts below the "+
-			"bar, which is the overhang this fixed:\n  %s", side)
+	if !strings.Contains(body, "grid-template-rows: auto 1fr auto") {
+		t.Errorf("the rows are not auto/1fr/auto, so the bar and the footer do "+
+			"not take what they need and give the rest to the menu:\n  %s", body)
 	}
 
-	// A bar that wraps is taller than it says, and the arithmetic above is
-	// then wrong by a line — silently, and only for some people's names.
-	inner := ruleFor(t, css, `.bar-inner {`)
-	if !strings.Contains(inner, "flex-wrap: nowrap") {
-		t.Errorf("the bar may wrap in the wide layout, so its height is not "+
-			"--bar-h for everybody:\n  %s", inner)
+	side := ruleFor(t, wide, "body > .sidenav {")
+	main := ruleFor(t, wide, "body > main {")
+	for what, rule := range map[string]string{"the menu": side, "the content": main} {
+		// A grid item's automatic minimum size is its content, so without this
+		// a long menu makes its own row taller than 1fr and pushes the footer
+		// off the screen instead of scrolling.
+		if !strings.Contains(rule, "min-height: 0") {
+			t.Errorf("%s can grow its own row instead of scrolling inside "+
+				"it:\n  %s", what, rule)
+		}
+		if !strings.Contains(rule, "overflow-y: auto") {
+			t.Errorf("%s does not scroll, so the screen-height grid clips "+
+				"it:\n  %s", what, rule)
+		}
+	}
+
+	// And nothing is pinned over anything. The overhang was only expressible
+	// because the sidebar was sticky; as a grid row it cannot be.
+	if strings.Contains(side, "position: sticky") {
+		t.Errorf("the menu is sticky again, which is what let it hang past "+
+			"the bottom of the screen:\n  %s", side)
 	}
 }
 
-// ruleFor returns the body of the last rule opening with sel.
+// A control in the bar fits in the bar.
 //
-// The last one, because these selectors appear at the top level and again
-// inside the wide-layout media query, and it is the media query's copy that
-// governs the arrangement this is about.
+// The base rule floors every text input and every button at 48px, for target
+// size, and `min-height` beats `height` — so `.findbar input { height: 32px }`
+// did nothing at all and the input rendered at 48. The comment beside it
+// asserted 32, which is how a wrong measurement survived review: the code and
+// the note agreed with each other and not with the browser.
+//
+// Anything in the bar that means to be smaller than the house size has to say
+// min-height, because that is the property being lowered.
+func TestABarControlLowersTheFloorItIsGiven(t *testing.T) {
+	css := readStyle(t)
+
+	for _, sel := range []string{".findbar input {", ".findbar button {"} {
+		rule := ruleFor(t, css, sel)
+		if !strings.Contains(rule, "height:") {
+			continue // not sized here, so nothing to lower
+		}
+		if !strings.Contains(rule, "min-height:") {
+			t.Errorf("%s sets a height and not a min-height. The base rule "+
+				"floors it at 48px and min-height wins, so the declaration "+
+				"does nothing and the control renders at 48:\n  %s", sel, rule)
+		}
+	}
+}
+
+// mediaBlock returns the contents of a media query, brace-matched.
+//
+// Needed because the same selectors appear at the top level, inside the wide
+// layout, and now inside @media print — and "the last one" silently became the
+// print override. This test read that copy, reported that the content does not
+// scroll, and was right about the rule it had found and wrong about which rule
+// it meant.
+func mediaBlock(t *testing.T, css, query string) string {
+	t.Helper()
+	i := strings.Index(css, query)
+	if i < 0 {
+		t.Fatalf("no %s in the stylesheet", query)
+	}
+	open := strings.IndexByte(css[i:], '{')
+	if open < 0 {
+		t.Fatalf("%s is not followed by a block", query)
+	}
+	depth := 0
+	for j := i + open; j < len(css); j++ {
+		switch css[j] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return css[i+open+1 : j]
+			}
+		}
+	}
+	t.Fatalf("%s is not closed", query)
+	return ""
+}
+
+// ruleFor returns the body of the last rule opening with sel.
 func ruleFor(t *testing.T, css, sel string) string {
 	t.Helper()
 	i := strings.LastIndex(css, sel)
