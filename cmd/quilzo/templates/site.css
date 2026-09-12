@@ -1,0 +1,162 @@
+/* Marginalia — the demonstration shop's stylesheet.
+ *
+ * One file, no build step, no framework. It is here to make the demonstration
+ * legible rather than to be admired: somebody reading it should be able to see
+ * what every rule is for.
+ *
+ * Both colour schemes are defined in one place with light-dark(), so a page has
+ * one set of tokens rather than a light set and a dark override that drifts. */
+:root {
+  color-scheme: light dark;
+  --ink:        light-dark(#1a1c1e, #e2e2e5);
+  --muted:      light-dark(#5a5f65, #a8adb4);
+  --ground:     light-dark(#fbf9f6, #131416);
+  --raised:     light-dark(#ffffff, #1d1f22);
+  --line:       light-dark(#e3ded6, #33363a);
+  --accent:     light-dark(#00515f, #7ad3e3);
+  --on-accent:  light-dark(#ffffff, #00363d);
+  --good:       light-dark(#1c6b3f, #7fd6a2);
+  --warn:       light-dark(#8a5a00, #f0c060);
+  --gone:       light-dark(#8a2f2f, #f0a0a0);
+  --radius: 18px;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--ground); color: var(--ink);
+  font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+.skip {
+  position: absolute; left: -9999px; top: 0; background: var(--accent);
+  color: var(--on-accent); padding: .6rem 1rem; z-index: 10;
+}
+.skip:focus { left: 0; }
+
+.topbar { border-bottom: 1px solid var(--line); background: var(--raised); }
+.bar {
+  display: flex; gap: 1.5rem; align-items: center; justify-content: space-between;
+  min-height: 68px; flex-wrap: wrap;
+}
+.wordmark {
+  font-weight: 650; font-size: 1.15rem; letter-spacing: -.01em;
+  color: var(--ink); text-decoration: none;
+}
+.mainnav { display: flex; gap: 1.1rem; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
+.mainnav a { color: var(--muted); text-decoration: none; padding: .3rem 0; }
+.mainnav a:hover { color: var(--ink); }
+.mainnav a[aria-current="page"] {
+  color: var(--ink); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); letter-spacing: -.02em; margin: 2rem 0 .5rem; }
+h2.section { font-size: 1.1rem; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); margin: 2.5rem 0 1rem; }
+.intro { font-size: 1.1rem; color: var(--muted); max-width: 62ch; margin: 0 0 2rem; }
+
+/* The product grid. Auto-fill rather than a fixed column count, so the same
+ * rule serves a phone and a wide screen without a breakpoint to get wrong. */
+.grid {
+  display: grid; gap: 1.4rem; list-style: none; margin: 0 0 3rem; padding: 0;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+}
+.card {
+  background: var(--raised); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.shot { width: 100%; height: auto; display: block; aspect-ratio: 1; object-fit: cover; }
+.cap { padding: .9rem 1rem 1.1rem; display: flex; flex-direction: column; gap: .35rem; }
+.name { font-weight: 620; margin: 0; }
+.sum { margin: 0; color: var(--muted); font-size: .92rem; }
+.price { margin: .3rem 0 0; font-variant-numeric: tabular-nums; font-weight: 600;
+  display: flex; align-items: baseline; gap: .1rem; }
+/* The price a person reads is a stored field, not a computed one: the template
+ * language has no arithmetic, on purpose. The number in pence is stored beside
+ * it and is what the catalogue feed serves, because that is the one a machine
+ * can compare. */
+.price .amount { margin-right: .4rem; }
+.hp { position: absolute; left: -9999px; }
+.meta { margin: .2rem 0 0; font-size: .8rem; color: var(--muted);
+  display: flex; gap: .6rem; flex-wrap: wrap; }
+.lead { margin: .1rem 0 0; font-size: .8rem; color: var(--warn); }
+
+/* Availability is a closed set in the data, so it can be a closed set here.
+ * A colour per state rather than per guess. */
+.avail {
+  font-size: .72rem; font-weight: 600; letter-spacing: .02em;
+  padding: .18rem .55rem; border-radius: 999px; white-space: nowrap;
+  border: 1px solid currentColor;
+}
+.avail-in_stock { color: var(--good); }
+.avail-low_stock { color: var(--warn); }
+.avail-made_to_order { color: var(--accent); }
+.avail-sold_out { color: var(--gone); }
+
+.filters { display: flex; gap: .7rem; margin: 0 0 1.6rem; flex-wrap: wrap; }
+.filters a {
+  border: 1px solid var(--line); border-radius: 999px; padding: .4rem 1rem;
+  text-decoration: none; color: var(--ink); background: var(--raised);
+}
+.filters a:hover { border-color: var(--accent); color: var(--accent); }
+
+.stockists { list-style: none; margin: 0 0 3rem; padding: 0;
+  display: grid; gap: 1.2rem; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.stockist { background: var(--raised); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1.2rem; }
+.shop { font-weight: 620; margin: 0 0 .2rem; }
+.where { margin: 0 0 .6rem; color: var(--muted); }
+.addr { margin: 0 0 .6rem; white-space: pre-line; font-size: .9rem; color: var(--muted); }
+
+.enquiry { max-width: 34rem; margin: 0 0 1.5rem; }
+.field { display: flex; flex-direction: column; gap: .35rem; margin: 0 0 1.1rem; }
+.field label { font-weight: 560; }
+.req { font-weight: 400; font-size: .78rem; color: var(--muted); }
+.field input, .field textarea, .field select {
+  font: inherit; padding: .6rem .7rem; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--raised); color: var(--ink);
+}
+.field input:focus, .field textarea:focus, .field select:focus {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+button {
+  font: inherit; font-weight: 600; padding: .65rem 1.4rem; border: 0;
+  border-radius: 999px; background: var(--accent); color: var(--on-accent);
+  cursor: pointer;
+}
+.privacy { max-width: 52ch; font-size: .88rem; color: var(--muted);
+  border-left: 3px solid var(--line); padding-left: 1rem; }
+
+.prose { max-width: 68ch; margin: 0 0 3rem; }
+.prose h2 { margin: 2rem 0 .6rem; font-size: 1.25rem; }
+.prose p { margin: 0 0 1rem; }
+.updated { color: var(--muted); font-size: .88rem; }
+
+.foot { border-top: 1px solid var(--line); margin-top: 3rem; padding: 2rem 0 3rem;
+  background: var(--raised); }
+.footnav { display: flex; gap: 1.2rem; list-style: none; margin: 0 0 .8rem; padding: 0; }
+.footnav a { color: var(--muted); }
+.colophon { color: var(--muted); font-size: .88rem; margin: 0; }
+
+a { color: var(--accent); }
+
+
+/* A product page: the picture and the facts, side by side. */
+.product { display: grid; gap: 2rem; margin: 0 0 3rem;
+  grid-template-columns: minmax(0, 420px) minmax(0, 1fr); align-items: start; }
+@media (max-width: 46rem) { .product { grid-template-columns: minmax(0, 1fr); } }
+.product .shot { border-radius: var(--radius); border: 1px solid var(--line); }
+.product h2 { margin: 0 0 .3rem; font-size: 1.6rem; letter-spacing: -.01em; }
+.product .price { font-size: 1.25rem; margin: .8rem 0; }
+.product .desc { max-width: 60ch; }
+.spec { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1.2rem;
+  margin: 1.4rem 0; font-size: .92rem; }
+.spec dt { color: var(--muted); }
+.spec dd { margin: 0; }
+.backed { font-size: .9rem; border-left: 3px solid var(--good); padding-left: 1rem;
+  color: var(--muted); }
+.back { margin-top: 2rem; }
+.card .name a { color: inherit; text-decoration: none; }
+.card .name a:hover { text-decoration: underline; }
+.shotlink { display: block; }
