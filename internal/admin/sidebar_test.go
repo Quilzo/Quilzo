@@ -253,11 +253,46 @@ func TestEveryScreenTellsTheToggleWhereItIs(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			continue
 		}
-		want := `name="back" value="` + path + `"`
-		if n := strings.Count(rec.Body.String(), want); n != 2 {
-			t.Errorf("%s carries %d of %s; both toggles need it, so a %d "+
-				"means one of them still goes to the wrong screen",
-				path, n, want, n)
+		// Each toggle's own form, rather than a count of the whole page.
+		//
+		// This counted, and expected exactly two. The first other form to
+		// carry a return path — the bulk actions on the pages list — made it
+		// three and failed a test about the toggles for a reason that had
+		// nothing to do with them. Counting was never the property; "each of
+		// these two forms carries it" is.
+		body := rec.Body.String()
+		for _, action := range []string{"/sidebar", "/theme"} {
+			form := formWithAction(body, action)
+			if form == "" {
+				t.Errorf("%s has no form posting to %s", path, action)
+				continue
+			}
+			if !strings.Contains(form, `name="back" value="`+path+`"`) {
+				t.Errorf("the %s form on %s carries no return path, so "+
+					"pressing it moves somebody off the screen they were "+
+					"reading", action, path)
+			}
 		}
 	}
+}
+
+// formWithAction returns the form posting to action, or "".
+//
+// Crude on purpose: these are server-rendered forms with no nesting, so the
+// span from the opening tag to the next </form> is the form. A parser here
+// would be a second HTML implementation in a test suite.
+func formWithAction(body, action string) string {
+	at := strings.Index(body, `action="`+action+`"`)
+	if at < 0 {
+		return ""
+	}
+	start := strings.LastIndex(body[:at], "<form")
+	if start < 0 {
+		return ""
+	}
+	end := strings.Index(body[start:], "</form>")
+	if end < 0 {
+		return ""
+	}
+	return body[start : start+end]
 }

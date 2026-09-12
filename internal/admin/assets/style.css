@@ -901,6 +901,38 @@ tr.detail td { padding-top: 0; border-top: 0; }
    a statement about the page rather than a control that changes it. */
 .checked { margin: 1.5rem 0; }
 
+/* -- doing the same thing to several pages -----------------------------------
+ *
+ * The two actions sit under the table they act on, in the order of how much
+ * they can cost: the additive one first, the destructive one last and marked.
+ * Separated by a gap wide enough that reaching one is not nearly reaching the
+ * other, which is the failure mode of two adjacent buttons where one is
+ * irreversible-feeling.
+ */
+.bulkactions { display: flex; flex-wrap: wrap; align-items: center;
+  gap: .75rem 1.5rem; margin: .75rem 0 1rem; }
+.bulkactions .danger { margin-left: auto; }
+
+/* The confirmation. The names are the content of this screen, so they are set
+   as a list to read rather than as a paragraph to skim past. */
+.confirmlist { margin: 1rem 0 1.5rem; padding-left: 1.4rem;
+  font-variant-numeric: tabular-nums; }
+.confirmlist li { margin: .2rem 0; }
+.confirmactions { display: flex; flex-wrap: wrap; align-items: center;
+  gap: 1.5rem; margin: 1rem 0; }
+
+/* -- turning the page --------------------------------------------------------
+ *
+ * Both directions and the position between them, so somebody can see where
+ * they are without counting. The disabled end is drawn rather than removed:
+ * a control that disappears moves the one beside it, and "Next" landing where
+ * "Previous" was is how you click the wrong one.
+ */
+.paging { display: flex; align-items: center; justify-content: center;
+  gap: 1.25rem; margin: 1rem 0; font: var(--label-md); }
+.paging-at { color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+.paging-off { color: var(--on-surface-variant); opacity: .45; }
+
 /* -- notes -------------------------------------------------------------------
  *
  * A remark somebody left, and the box to leave one in.

@@ -117,6 +117,40 @@
 */}}
 {{define "req"}}<span class="req" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{{end}}
 
+{{/*
+  Turning the page.
+
+  One definition, used by every list, so the three that had their own
+  arrangement — or none at all — cannot drift into three vocabularies for the
+  same thing.
+
+  Both directions. The audit log grew a "Older entries" link and no way back
+  except the browser's own button, which is the shape this replaces. The
+  position is spelled out ("51 to 100 of 312") because "page 2" is only useful
+  to somebody who already knows how big a page is.
+
+  `rel="prev"`/`rel="next"` because a browser and a screen reader can both use
+  them, and they cost nothing. `aria-label` on the wrapper so it is announced
+  as the thing it is rather than as two stray links.
+
+  Takes a paging value and the path to link at: {{template "paging" (pair .Paging "/")}}
+  is not expressible in this template language, so the caller sets .PagePath
+  alongside .Paging instead.
+*/}}
+{{define "paging"}}
+{{if .Paging.Needed}}
+<nav class="paging" aria-label="Pages of this list">
+  {{if .Paging.HasPrev}}
+  <a rel="prev" href="{{.PagePath}}?from={{.Paging.Prev}}{{.Paging.Query}}">← Previous</a>
+  {{else}}<span class="paging-off">← Previous</span>{{end}}
+  <span class="paging-at">{{.Paging.From}} to {{.Paging.To}} of {{.Paging.Total}}</span>
+  {{if .Paging.HasNext}}
+  <a rel="next" href="{{.PagePath}}?from={{.Paging.Next}}{{.Paging.Query}}">Next →</a>
+  {{else}}<span class="paging-off">Next →</span>{{end}}
+</nav>
+{{end}}
+{{end}}
+
 {{define "navtoggle"}}
 <form method="post" action="/sidebar" class="themetoggle navtoggle">
   <input type="hidden" name="to" value="{{if .SidebarHidden}}shown{{else}}hidden{{end}}">
