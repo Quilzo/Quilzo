@@ -12,7 +12,6 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/note"
-	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 )
 
@@ -49,24 +48,23 @@ func openNotes(root string) (*note.Store, error) { return note.Open(notesDir(roo
 
 // pageHash is what a note is anchored to.
 //
-// The hash of the page as it stands in the draft. Empty when the page is not
-// in the draft, which is not an error: a note about a page somebody is about
-// to write is a reasonable thing to leave, and Stale is written to treat an
-// unknown anchor as "cannot say" rather than as drift.
+// The store's own id for the page as it stands in the draft — the same anchor
+// provenance and `checked` use, because three records that all mean "what did
+// this page say" have to agree or one of them looks stale when it is not.
+//
+// Empty when the page is not in the draft, which is not an error: a note about
+// a page somebody is about to write is a reasonable thing to leave, and Stale
+// treats an unknown anchor as "cannot say" rather than as drift.
 func pageHash(root, page string) string {
 	s, err := open(root)
 	if err != nil {
 		return ""
 	}
-	pages, err := site.PagesAt(s, site.RefDraft)
+	ids, err := pageHashes(s, site.RefDraft)
 	if err != nil {
 		return ""
 	}
-	body, ok := pages[page]
-	if !ok {
-		return ""
-	}
-	return schema.ContentHash(body)
+	return ids[page]
 }
 
 func noteAdd(root string, args []string) error {

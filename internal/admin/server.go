@@ -153,6 +153,9 @@ type Server struct {
 	Listings *Listings
 	// Notes are the remarks people leave on a draft.
 	Notes *Notes
+	// Checked is the record of which pages somebody has confirmed are still
+	// right, and when.
+	Checked *Checked
 	// Structure is classification and navigation: the vocabularies terms come
 	// from, and the menus that point at pages.
 	Structure *Structure
@@ -801,6 +804,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/access", s.handleAccess)
 	mux.HandleFunc("/theme", s.handleTheme)
 	mux.HandleFunc("/find", s.handleFind)
+	mux.HandleFunc("/checked/set", s.handleCheckedSet)
 	mux.HandleFunc("/notes", s.handleNotes)
 	mux.HandleFunc("/notes/add", s.handleNoteAdd)
 	mux.HandleFunc("/notes/resolve", s.handleNoteResolve)
@@ -1096,12 +1100,20 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 		windows[h.Page] = h.State
 	}
 
+	// When each page was last confirmed to be right. A column here rather
+	// than a screen of its own: the question is asked while looking at the
+	// list of pages.
+	cells, due := s.checkedFor(names)
+
 	s.render(w, r, "pages.html", map[string]any{
-		"Windows": windows,
-		"Nav":     "pages",
-		"Message": r.URL.Query().Get("m"),
-		"Error":   r.URL.Query().Get("e"),
-		"Title":   "Pages", "Principal": p, "Names": names,
+		"CheckedOn": s.Checked != nil && s.Checked.Store != nil,
+		"Checked":   cells,
+		"DueCount":  due,
+		"Windows":   windows,
+		"Nav":       "pages",
+		"Message":   r.URL.Query().Get("m"),
+		"Error":     r.URL.Query().Get("e"),
+		"Title":     "Pages", "Principal": p, "Names": names,
 		"Changed": changed, "Draft": draft, "Live": live,
 		"Unpublished": draft != "" && draft != live,
 		"CanEdit":     s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
@@ -1165,12 +1177,15 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	// distinguishes "nobody has said anything" from "this build cannot tell
 	// you", which look identical and mean opposite things.
 	notes := s.noteRows(name, false)
+	cells, _ := s.checkedFor([]string{name})
 
 	s.render(w, r, "edit.html", map[string]any{
-		"Nav":     "pages",
-		"NotesOn": s.Notes != nil && s.Notes.Store != nil,
-		"Notes":   notes,
-		"Title":   "Edit " + name, "Principal": p, "Name": name,
+		"Nav":        "pages",
+		"CheckedOn":  s.Checked != nil && s.Checked.Store != nil,
+		"CheckedNow": cells[name],
+		"NotesOn":    s.Notes != nil && s.Notes.Store != nil,
+		"Notes":      notes,
+		"Title":      "Edit " + name, "Principal": p, "Name": name,
 		"Fields": fields, "Exists": exists, "Type": typeName,
 		"Base": base, "HeldBy": heldBy,
 		"CanEdit": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,

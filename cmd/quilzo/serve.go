@@ -336,6 +336,15 @@ func cmdServe(root string, args []string) error {
 	if ns, nerr := openNotes(root); nerr == nil {
 		srv.Notes = &admin.Notes{Store: ns}
 	}
+	// When each page was last confirmed to be right. Every is read per call
+	// so changing content.review.every takes effect without a restart, the
+	// same as every other setting the interface reads.
+	if cs, cerr := openChecked(root); cerr == nil {
+		srv.Checked = &admin.Checked{
+			Store: cs,
+			Every: func() time.Duration { return reviewEvery(root) },
+		}
+	}
 	srv.Approvals = &admin.Approvals{
 		Policy: func() (collab.Policy, error) { return loadApprovalPolicy(root) },
 		Current: func() (*collab.Proposal, error) {

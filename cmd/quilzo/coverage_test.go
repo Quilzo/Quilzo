@@ -165,6 +165,10 @@ var coverage = map[string]surfaces{
 			"Telegram accounts. An agent that could start one could point it " +
 			"at a store and accept writes from a billion strangers"},
 	"find": {GUI: "/find", MCP: []string{"find"}},
+	"checked": {GUI: "/", MCP: []string{"list_checked"},
+		Why: "shown as a column on the pages list, where somebody is already " +
+			"looking, rather than as another entry in a navigation this " +
+			"release has been trying to shorten"},
 	"note": {GUI: "/notes", MCP: []string{"list_notes"},
 		Why: "the remarks people leave on a draft"},
 	"notes": {GUI: "/notes", MCP: []string{"list_notes"},

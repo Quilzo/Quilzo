@@ -146,7 +146,7 @@ Checking the build
 
      make check
 
-That runs the whole test suite: eighty-two packages, including several that
+That runs the whole test suite: eighty-three packages, including several that
 walk this program's own source and fail when a capability exists in one
 interface and not the others.
 

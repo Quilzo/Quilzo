@@ -95,6 +95,41 @@
   reason a note exists at all, and a screen you have to go and find does not
   answer it.
 */}}
+{{/*
+  Confirming the page is still right, from the page itself.
+
+  A button and not a form of its own, because the whole statement is "I read
+  this and it is correct" plus who and when — and asking for anything else
+  would make it a thing people skip.
+*/}}
+{{if .CheckedOn}}
+<section class="checked" aria-labelledby="checked-h">
+  <h2 id="checked-h">Last confirmed</h2>
+  {{with .CheckedNow}}
+    {{if eq .State "never"}}
+      <p class="hint">Nobody has confirmed this page is still right.</p>
+    {{else if eq .State "changed"}}
+      <p class="hint">{{.By}} confirmed this on {{.When}}, and it has been
+        edited since — so that confirmation is about words that are no longer
+        here.</p>
+    {{else if eq .State "fresh"}}
+      <p class="hint">{{.By}} confirmed this on {{.When}}.</p>
+    {{else}}
+      <p class="hint">{{.By}} confirmed this on {{.When}}, which is longer ago
+        than this site asks for.</p>
+    {{end}}
+  {{end}}
+  <form method="post" action="/checked/set" class="inline">
+    <input type="hidden" name="page" value="{{.Name}}">
+    <input type="hidden" name="back" value="{{.Here}}">
+    <button type="submit">I have read this and it is still right</button>
+  </form>
+  <p class="help">Recorded against the page as it stands, with your name and
+    the date. It blocks nothing and publishes nothing — it is how the next
+    person knows whether anybody has looked.</p>
+</section>
+{{end}}
+
 {{if .NotesOn}}
 <section class="notes" aria-labelledby="notes-h">
   <h2 id="notes-h">Notes</h2>
