@@ -255,7 +255,19 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
-.shell { max-width: 68rem; margin: 0 auto; padding: 0 1.25rem 4rem; }
+/* The content column: 68rem, and never wider than the space there is.
+ *
+ * It was a bare `max-width: 68rem`, which reads as a ceiling and behaved as a
+ * floor. On a screen with the menu beside it the column is 1041px and the cap
+ * is 1088, so a page holding a wide table came out 1088 — overflowing its own
+ * grid area by 47px, giving the page a sideways scrollbar, and then a vertical
+ * one too, because 100dvh is taller than what a horizontal scrollbar leaves.
+ * Five screens scrolled 15px in a direction nothing was meant to scroll.
+ *
+ * min() says the thing that was meant: this wide at most, and at most what
+ * there is. Wide tables then scroll inside .table-wrap, which is where a
+ * sideways scroll belongs and what that wrapper is for. */
+.shell { max-width: min(68rem, 100%); margin: 0 auto; padding: 0 1.25rem 4rem; }
 
 /* Expressive type: display weight for the page title, so the hierarchy is
    carried by size and weight rather than by a coloured heading. */
@@ -822,7 +834,8 @@ tr.detail td { padding-top: 0; border-top: 0; }
   body > .sidenav { grid-area: nav; border-right: 1px solid var(--outline-variant);
     padding: 1rem .75rem; background: var(--surface-container-low);
     position: relative;
-    min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+    min-height: 0; min-width: 0; overflow-y: auto;
+    overscroll-behavior: contain; }
   /* And the content scrolls in its own row rather than the document
      scrolling. That is the half of this that a reader notices: the bar and
      the menu stay put because they are rows, not because anything is pinned
@@ -836,7 +849,7 @@ tr.detail td { padding-top: 0; border-top: 0; }
      scrollbar beside the real one, moving nothing.
      Invisible before this, because the document scrolled anyway. */
   body > main { grid-area: main; position: relative;
-    min-height: 0; overflow-y: auto; }
+    min-height: 0; min-width: 0; overflow-y: auto; }
   .sidenav .navgroups { flex-direction: column; gap: 1rem; align-items: stretch; }
   .sidenav .navgroup + .navgroup { border-left: 0; margin-left: 0; padding-left: 0; }
   .sidenav .nav { flex-direction: column; gap: .15rem; align-items: stretch;
