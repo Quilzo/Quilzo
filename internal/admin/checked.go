@@ -94,11 +94,6 @@ func (s *Server) handleCheckedSet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Editing a draft: saying a page is still right is a statement about it,
-	// made by somebody who works on it.
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
-		return
-	}
 	if s.Checked == nil || s.Checked.Store == nil {
 		http.Error(w, "this build has nowhere to record a check",
 			http.StatusServiceUnavailable)
@@ -110,6 +105,12 @@ func (s *Server) handleCheckedSet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page := strings.TrimSpace(r.FormValue("page"))
+	// Editing a draft: saying a page is still right is a statement about that
+	// page, made by somebody who works on it — so it is that page the caller
+	// has to be allowed to work on, not the site.
+	if !s.canPage(w, r, p, auth.ActEditDraft, page) {
+		return
+	}
 	ids, err := site.PageIDsAt(s.Store, site.RefDraft)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

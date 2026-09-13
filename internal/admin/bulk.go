@@ -84,7 +84,11 @@ func (s *Server) handleBulk(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	// Whether they may edit anything. Each action below checks every page in
+	// the selection, and refuses the selection whole when one of them is out
+	// of reach — half a bulk action is worse than none, because nobody can
+	// tell which half.
+	if !s.canAnywhere(w, r, p, auth.ActEditDraft) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -127,14 +131,53 @@ func (s *Server) bulkChecked(w http.ResponseWriter, r *http.Request,
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Per-page permission, and the whole selection refused when one page is
+	// out of reach — the same rule bulkRemove states and for the same reason.
+	// Without it, certifying a page as reviewed was the one write in this
+	// interface a scoped author could aim anywhere, and the review-due column
+	// is what somebody reads to decide a page does not need looking at.
+	for _, name := range names {
+		if !s.mayUse(p, auth.ActEditDraft, pageResource(name)) {
+			s.pagesBack(w, r, "", fmt.Sprintf(
+				"you may not record a check on %s, so none of this selection "+
+					"was recorded", name))
+			return
+		}
+	}
+	// And that every page is in the draft, which is what the single-page
+	// handler refuses for: a check on a page that is not there produces a
+	// record nothing will ever clear.
+	for _, name := range names {
+		if _, exists := ids[name]; !exists {
+			s.pagesBack(w, r, "", fmt.Sprintf(
+				"there is no page called %s in the draft, so none of this "+
+					"selection was recorded", name))
+			return
+		}
+	}
+
 	now := time.Now()
 	done := 0
+	var failed []string
 	for _, name := range names {
 		if _, cerr := s.Checked.Store.Set(checked.Record{
 			Page: name, Content: ids[name], By: p.Name,
 		}, now); cerr == nil {
 			done++
+		} else {
+			failed = append(failed, name)
 		}
+	}
+	// A failure that was counted and never mentioned is how somebody comes
+	// away believing a review date was set. With every Set failing, done was
+	// zero and plural2 answered with the many-form, so the screen said "Those
+	// pages are recorded as still right" about nothing at all.
+	if len(failed) > 0 {
+		s.pagesBack(w, r, "", fmt.Sprintf(
+			"%d of %d could not be recorded: %s", len(failed), len(names),
+			strings.Join(failed, ", ")))
+		return
 	}
 	// One entry naming the set rather than one per page. Fifty rows in the log
 	// for one act by one person at one moment is a log that is harder to read

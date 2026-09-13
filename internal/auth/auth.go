@@ -318,6 +318,45 @@ func (p *Policy) Evaluate(principal string, action Action, resource string) Deci
 			principal, best, target, normalise(bestBinding.Resource))}
 }
 
+// Anywhere reports whether a principal may perform an action on anything at
+// all.
+//
+// This is the question a list screen has to ask, and asking the other one is
+// how a scoped grant became a way to lock somebody out of the interface. A
+// pages screen that asks "may you edit /" refuses an author granted author on
+// /blog, because covers("/blog", "/") is false — so somebody narrowed to part
+// of the site could not open the list of the pages they were narrowed to. The
+// browser did that on every page-shaped screen it has.
+//
+// The answer here is deliberately weak: it says there is somewhere, not which
+// somewhere. A screen uses it to decide whether to open at all, and then asks
+// the per-resource question for every row it is about to show. The strong
+// check stays where the name is known; this only stops the weak question being
+// asked in a strong form.
+//
+// Implemented by asking Evaluate about each of the principal's own bindings
+// rather than by re-deriving the rules. Deny then behaves here exactly as it
+// does everywhere else, including a deny that covers the very grant being
+// considered — which a second copy of the logic would have got wrong the first
+// time somebody changed one of them.
+func (p *Policy) Anywhere(principal string, action Action) bool {
+	p.mu.RLock()
+	scopes := make([]string, 0, len(p.Bindings))
+	for i := range p.Bindings {
+		if b := &p.Bindings[i]; b.Principal == principal && !b.Deny {
+			scopes = append(scopes, b.Resource)
+		}
+	}
+	p.mu.RUnlock()
+
+	for _, scope := range scopes {
+		if p.Evaluate(principal, action, scope).Allowed {
+			return true
+		}
+	}
+	return false
+}
+
 // EvaluateOwned is Evaluate for a caller that knows who created the resource.
 //
 // The creator is passed rather than looked up, because this package must not

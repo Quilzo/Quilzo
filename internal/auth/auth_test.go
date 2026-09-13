@@ -386,3 +386,69 @@ func TestRevokingAParentKillsItsSessions(t *testing.T) {
 		}
 	}
 }
+
+// Anywhere is the question a list screen has to ask.
+//
+// Asking the other one — "may you do this on /" — is how a scoped grant became
+// a way to lock somebody out: covers("/blog", "/") is false, so every
+// page-shaped screen in the browser refused an author granted author on /blog
+// the list of the pages they were granted.
+func TestAnywhereIsTrueForAScopedGrantAndFalseWithoutOne(t *testing.T) {
+	p := &Policy{}
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(p.Grant(Binding{Principal: "bea", Role: RoleAuthor, Resource: "/blog"}))
+	must(p.Grant(Binding{Principal: "cal", Role: RoleReader, Resource: "/blog"}))
+
+	if p.Evaluate("bea", ActEditDraft, "/").Allowed {
+		t.Fatal("the premise is wrong: a /blog author is allowed on /")
+	}
+	if !p.Anywhere("bea", ActEditDraft) {
+		t.Error("an author scoped to /blog may edit nothing anywhere, which " +
+			"shuts them out of every screen that lists pages")
+	}
+	if p.Anywhere("cal", ActEditDraft) {
+		t.Error("a reader may edit somewhere")
+	}
+	if p.Anywhere("nobody", ActView) {
+		t.Error("a principal with no binding may view somewhere")
+	}
+}
+
+// A deny is honoured here too, because this asks Evaluate rather than
+// re-deriving the rules.
+func TestAnywhereHonoursADenyThatCoversTheGrant(t *testing.T) {
+	p := &Policy{}
+	if err := p.Grant(Binding{
+		Principal: "bea", Role: RoleAuthor, Resource: "/blog"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Grant(Binding{Principal: "bea", Role: RoleAuthor,
+		Resource: "/blog", Deny: true}); err != nil {
+		t.Fatal(err)
+	}
+	if p.Anywhere("bea", ActEditDraft) {
+		t.Error("a deny covering the only grant still answers yes, so a " +
+			"screen opens for somebody the policy refuses everywhere")
+	}
+}
+
+// The grant that remains outside a narrower deny still counts.
+func TestAnywhereFindsTheGrantADenyDoesNotReach(t *testing.T) {
+	p := &Policy{}
+	for _, b := range []Binding{
+		{Principal: "bea", Role: RoleAuthor, Resource: "/"},
+		{Principal: "bea", Role: RoleAuthor, Resource: "/legal", Deny: true},
+	} {
+		if err := p.Grant(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !p.Anywhere("bea", ActEditDraft) {
+		t.Error("a deny on /legal removed the site-wide grant everywhere else")
+	}
+}

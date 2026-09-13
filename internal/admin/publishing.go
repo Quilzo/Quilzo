@@ -316,7 +316,10 @@ func (s *Server) handleScheduleCancel(w http.ResponseWriter, r *http.Request) {
 // — so refusing to release it would only mean the claim outlives the person who
 // made it, which is the state locks are supposed to prevent rather than cause.
 func (s *Server) handleLockRelease(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.publishWriter(w, r, auth.ActEditDraft)
+	// publishWriterScoped rather than publishWriter: promoting and scheduling
+	// act on the whole site and ask about "/", and this acts on one page and
+	// asks about it below, once the form has been read.
+	p, ok := s.publishWriterScoped(w, r, auth.ActEditDraft)
 	if !ok {
 		return
 	}
@@ -330,6 +333,13 @@ func (s *Server) handleLockRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page, holder := r.FormValue("page"), r.FormValue("holder")
+	// Releasing somebody else's claim is deliberate, per the comment above.
+	// Doing it to a page you are not allowed to edit is not: an advisory lock
+	// is a message to colleagues, and taking one off is an edit to that
+	// message.
+	if !s.canPage(w, r, p, auth.ActEditDraft, page) {
+		return
+	}
 	if !locks.Release(page, holder, time.Now()) {
 		s.pubRedirect(w, r, "", "nobody is holding "+page)
 		return
@@ -362,8 +372,22 @@ func parseWhen(s string, now time.Time) (time.Time, error) {
 		"%q is neither a time (2026-09-01T09:00:00Z) nor a duration (48h)", s)
 }
 
+// publishWriterScoped is publishWriter for a handler that acts on one page and
+// checks that page itself once it has the name.
+func (s *Server) publishWriterScoped(w http.ResponseWriter, r *http.Request,
+	act auth.Action) (principal, bool) {
+
+	return s.publishPreamble(w, r, act, true)
+}
+
 func (s *Server) publishWriter(w http.ResponseWriter, r *http.Request,
 	act auth.Action) (principal, bool) {
+
+	return s.publishPreamble(w, r, act, false)
+}
+
+func (s *Server) publishPreamble(w http.ResponseWriter, r *http.Request,
+	act auth.Action, scoped bool) (principal, bool) {
 
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
@@ -373,7 +397,11 @@ func (s *Server) publishWriter(w http.ResponseWriter, r *http.Request,
 	if !ok {
 		return principal{}, false
 	}
-	if !s.can(w, r, p, act, "/") {
+	if scoped {
+		if !s.canAnywhere(w, r, p, act) {
+			return principal{}, false
+		}
+	} else if !s.can(w, r, p, act, "/") {
 		return principal{}, false
 	}
 	if s.Publishing == nil {
