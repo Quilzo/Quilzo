@@ -8,7 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/quilzo/quilzo/internal/egress"
+	"github.com/quilzo/quilzo/internal/fetch"
 	"io"
 	"net/http"
 	"strings"
@@ -60,7 +60,26 @@ func (b *Bot) client() *http.Client {
 	if b.HTTP != nil {
 		return b.HTTP
 	}
-	return egress.Client("chat", 15*time.Second)
+	return fetch.Speaking("chat", b.reach(), 15*time.Second)
+}
+
+// reach is where this bot's connections may go.
+//
+// Telegram's own API is a public service, so the default is the rule that
+// refuses a private address — which matters here more than in most places,
+// because the bot token is a path segment of every call. A redirect or a
+// resolver answering 169.254.169.254 would deliver the credential along with
+// the request, and no header-stripping rule reaches into a URL.
+//
+// A BaseURL that somebody set is a host they named. The local Bot API server
+// is a supported way to run this, on loopback, and refusing it would be
+// refusing the operator's own configuration; the mode check and the ban on
+// redirects still apply.
+func (b *Bot) reach() fetch.Reach {
+	if b.BaseURL == "" {
+		return fetch.Public
+	}
+	return fetch.Anywhere
 }
 
 func (b *Bot) base() string {

@@ -8,7 +8,7 @@ import (
 	"crypto/hmac"
 	"encoding/json"
 	"fmt"
-	"github.com/quilzo/quilzo/internal/egress"
+	"github.com/quilzo/quilzo/internal/fetch"
 	"io"
 	"net/http"
 	"strings"
@@ -188,7 +188,7 @@ func (b *Bot) Updates(ctx context.Context, offset int64) ([]Update, error) {
 	// A client whose own timeout outlasts the poll, or every long poll ends as
 	// a transport error a few seconds before Telegram would have answered.
 	poller := *b
-	poller.HTTP = egress.Client("chat", pollTimeout+15*time.Second)
+	poller.HTTP = fetch.Speaking("chat", b.reach(), pollTimeout+15*time.Second)
 	if err := poller.call(ctx, "getUpdates", payload, &raw); err != nil {
 		return nil, err
 	}

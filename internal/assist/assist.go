@@ -66,7 +66,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/quilzo/quilzo/internal/egress"
+	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/foreign"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
@@ -422,9 +422,18 @@ func isLocalEndpoint(raw string) (bool, string) {
 	// Every address, not the first. A name that resolves to both a loopback
 	// address and a public one is not a local endpoint, and taking the first
 	// answer would make the decision depend on resolver ordering.
+	//
+	// This is the message rather than the boundary. The same rule runs again
+	// in Control, on the address actually being dialled, because a resolver
+	// that answers differently the second time is how a checked address stops
+	// being the connected one — see fetch.Speaking.
 	for _, ip := range ips {
-		if !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() {
-			return false, "it resolves to " + ip.String() + ", which is public"
+		if why := fetch.OnThisNetwork(ip); why != "" {
+			// The reason already names the address, so it is not prefixed
+			// with one: "it resolves to 169.254.169.254 is link-local" is
+			// what that produces, and a message nobody can read is a message
+			// people route around.
+			return false, why
 		}
 	}
 	return true, ""
@@ -469,11 +478,19 @@ func NewHTTPModel() (*HTTPModel, error) {
 	if model == "" {
 		model = "gpt-oss:20b"
 	}
+	// A keyed endpoint is a hosted model the operator named, so only the
+	// deployment's mode decides whether it may be reached. An unkeyed one was
+	// admitted above *because* it is on this machine or network, and that is
+	// the rule its connections are then held to.
+	reach := fetch.Anywhere
+	if key == "" {
+		reach = fetch.OnThisNetwork
+	}
 	return &HTTPModel{
 		BaseURL: strings.TrimSuffix(base, "/"),
 		APIKey:  key,
 		Model:   model,
-		Client:  egress.Client("assistant", RequestTimeout),
+		Client:  fetch.Speaking("assistant", reach, RequestTimeout),
 	}, nil
 }
 
