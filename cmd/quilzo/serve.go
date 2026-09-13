@@ -30,6 +30,7 @@ import (
 	"github.com/quilzo/quilzo/internal/ext"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/gate"
 	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/media"
@@ -648,6 +649,14 @@ func cmdServe(root string, args []string) error {
 			})
 		}
 		fmt.Fprintf(os.Stderr, "  %ssign-in via %s%s\n", dim, cfg.Issuer, reset)
+	}
+
+	// The same content gates `quilzo publish` runs, built here because this is
+	// the package that can reach the media library, the type registry, the
+	// claim rules and the menus. See internal/gate for what the browser used
+	// to publish that the command line refuses.
+	srv.ContentGates = func(ref string) (*gate.Report, []gate.Finding, error) {
+		return contentGates(root, s, ref).Run()
 	}
 
 	srv.Locks = func() (*collab.Locks, error) { return loadLocks(root) }

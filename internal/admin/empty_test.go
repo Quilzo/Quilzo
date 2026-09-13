@@ -52,6 +52,10 @@ func emptyStore(t *testing.T) (*Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// No content gates in a test that is not about them. cmd/quilzo wires
+	// the real set; a nil one is refused by handlePublish, because a build
+	// that cannot run the checks must not report that they passed.
+	srv.ContentGates = noGates
 	idx := provenance.NewIndex()
 	srv.LoadProvenance = func() (*provenance.Index, error) { return idx, nil }
 	srv.SaveProvenance = func(i *provenance.Index) error { idx = i; return nil }

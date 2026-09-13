@@ -73,6 +73,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/collection"
+	publishgate "github.com/quilzo/quilzo/internal/gate"
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/render"
@@ -260,6 +261,24 @@ type Server struct {
 	// OnSignIn records an authentication. Separate from the handler so the
 	// audit log stays the host's concern.
 	OnSignIn func(principal, tokenID string)
+
+	// ContentGates is every check about the content being published, run
+	// before the ones that can be waived.
+	//
+	// Imported under a name because this package already has a `gate` type,
+	// for the screen that says up front what will refuse a publish. Two things
+	// with one name and different jobs is how somebody reads the wrong one.
+	//
+	// Wired from cmd/quilzo rather than built here, because the checks need
+	// the media library, the type registry, the claim rules and the menus, and
+	// that package is the one that has them all. See internal/gate: this screen
+	// ran four fewer gates than `quilzo publish` and published a draft the
+	// command line refuses.
+	//
+	// Nil means unwired, which a build without them is. It is not a pass: the
+	// handler says the checks could not run, for the same reason the command
+	// line refuses when one errors.
+	ContentGates func(ref string) (*publishgate.Report, []publishgate.Finding, error)
 
 	// Locks are advisory claims on pages, so two people do not each spend an
 	// afternoon on the same one. They never prevent a write — compare-and-swap
@@ -1874,9 +1893,55 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	draft := s.Store.GetRef(site.RefDraft)
+
+	// Every check about the content, first and unwaivable.
+	//
+	// This screen used to run four fewer gates than `quilzo publish` —
+	// classification, image rights, arrangement and claims — and published a
+	// draft the command line refuses, with an unsubstantiated claim on it.
+	// internal/gate has the table and the demonstration.
+	//
+	// Before the reason box, and not clearable by it. The waiver on this
+	// screen is one text field that already clears more gates than the person
+	// typing in it is thinking about; adding four more to it would be worse
+	// than leaving them out.
+	if s.ContentGates == nil {
+		http.Error(w, "the content checks are not wired up in this build, so "+
+			"publishing would claim checks that did not happen",
+			http.StatusServiceUnavailable)
+		return
+	}
+	refused, advisory, gerr := s.ContentGates(draft)
+	if gerr != nil {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, r, "message.html", map[string]any{
+			"Title": "Not published", "Principal": p,
+			"Heading": "A check could not run", "Body": gerr.Error(),
+		})
+		return
+	}
+	if refused != nil {
+		details := make([]string, 0, len(refused.Findings))
+		for _, f := range refused.Findings {
+			details = append(details, f.String())
+		}
+		s.audit("publish.refused", "/", map[string]string{
+			"gate": refused.Check.Name,
+			"how":  strconv.Itoa(len(refused.Findings)),
+		})
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, r, "message.html", map[string]any{
+			"Title": "Not published", "Principal": p,
+			"Heading": refused.Check.Refusal(len(refused.Findings)),
+			"Details": details,
+		})
+		return
+	}
+
 	reports := s.checkAll(draft)
 	blocking := a11y.BlockingCount(reports)
 	reason := strings.TrimSpace(r.FormValue("reason"))
+	_ = advisory
 
 	// Provenance is gated here for the same reason accessibility is: a control
 	// present on the command line and absent from the interface is a control
@@ -2109,7 +2174,14 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		"Body": fmt.Sprintf("%d change%s are now live. The previous version is "+
 			"still stored, so rolling back moves a pointer.",
 			len(pub.Changes), plural(len(pub.Changes))),
+		// What was waived, and not the word "accessibility" whatever it was.
+		// The template said "Published with an accessibility override" for
+		// every one of the four gates this box clears, so somebody who typed a
+		// reason for an unmarked page was told they had overridden an
+		// accessibility failure — which is the wrong record of the wrong
+		// decision, on the screen where the decision is confirmed.
 		"Override": reason,
+		"Waived":   waived,
 	})
 }
 
@@ -2160,11 +2232,21 @@ func (s *Server) unmarkedPages(commitID string) []string {
 	if err != nil {
 		return nil
 	}
-	c, err := s.Store.GetCommit(commitID)
-	if err != nil {
-		return nil
-	}
-	tree, err := s.Store.GetTree(c.Tree)
+	// site.PageIDsAt and not the raw tree.
+	//
+	// The tree holds more than pages. A store with records in it carries a
+	// "data" entry, and walking the tree treated that entry as a page called
+	// "data" — so this screen told an editor "1 page(s) have no usable
+	// provenance: data", named something they cannot open, cannot mark, and
+	// did not write. The only way past it was to type a reason into the
+	// override box, which then recorded a waiver for a page that does not
+	// exist.
+	//
+	// The agent interface had the same bug and was fixed the same way.
+	// site.PageIDsAt is the single answer to "what did this page say", and
+	// asking it is what keeps three screens from each having their own idea of
+	// what a page is.
+	tree, err := site.PageIDsAt(s.Store, commitID)
 	if err != nil {
 		return nil
 	}
@@ -2172,6 +2254,7 @@ func (s *Server) unmarkedPages(commitID string) []string {
 	for _, st := range provenance.Unmarked(provenance.Check(idx, tree)) {
 		out = append(out, st.Page)
 	}
+	sort.Strings(out)
 	return out
 }
 
