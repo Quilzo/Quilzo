@@ -163,7 +163,12 @@ func (s *Server) handleAssistAccept(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	// Whether they may write anything. Which pages is asked below, once the
+	// proposal has been read — this handler writes whatever names the proposal
+	// carries, and the proposal comes out of the form, so the site-wide
+	// question was the one thing standing between a scoped author and every
+	// page in the store.
+	if !s.canAnywhere(w, r, p, auth.ActEditDraft) {
 		return
 	}
 	if s.Assist == nil || s.Assist.Save == nil || s.Assist.Pages == nil {
@@ -193,6 +198,15 @@ func (s *Server) handleAssistAccept(w http.ResponseWriter, r *http.Request) {
 	}
 	if pages == nil {
 		pages = map[string]any{}
+	}
+	// Every page the proposal names, before any of them is written. All or
+	// nothing on purpose: accepting the permitted half of a proposal and
+	// dropping the rest would leave a half-applied change nobody asked for,
+	// and the person would be told it worked.
+	for name := range prop.Pages {
+		if !s.canPage(w, r, p, auth.ActEditDraft, name) {
+			return
+		}
 	}
 	accepted := make([]string, 0, len(prop.Pages))
 	for name, body := range prop.Pages {

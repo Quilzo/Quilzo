@@ -48,7 +48,7 @@ func (s *Server) handleNotes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActView, "/") {
+	if !s.canAnywhere(w, r, p, auth.ActView) {
 		return
 	}
 	data := map[string]any{"Nav": "notes", "Title": "Notes", "Principal": p}
@@ -72,6 +72,12 @@ func (s *Server) handleNotes(w http.ResponseWriter, r *http.Request) {
 	var out []pageNotes
 	open := 0
 	for _, page := range pages {
+		// Only the pages this reader may open. A remark is written about
+		// content and quotes it, so a notes screen listing every page's notes
+		// is a way to read past a scope.
+		if !s.mayUse(p, auth.ActView, pageResource(page)) {
+			continue
+		}
 		rows := s.noteRows(page, all)
 		for _, n := range rows {
 			if !n.Resolved {
@@ -132,6 +138,9 @@ func (s *Server) handleNoteAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page := strings.TrimSpace(r.FormValue("page"))
+	if !s.canPage(w, r, p, auth.ActEditDraft, page) {
+		return
+	}
 	text := strings.TrimSpace(r.FormValue("text"))
 
 	n, err := s.Notes.Store.Add(note.Note{
@@ -166,8 +175,11 @@ func (s *Server) handleNoteResolve(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	err := s.Notes.Store.Resolve(r.FormValue("page"), r.FormValue("id"),
-		p.Name, time.Now())
+	page := strings.TrimSpace(r.FormValue("page"))
+	if !s.canPage(w, r, p, auth.ActEditDraft, page) {
+		return
+	}
+	err := s.Notes.Store.Resolve(page, r.FormValue("id"), p.Name, time.Now())
 	if err != nil {
 		s.render(w, r, "message.html", map[string]any{
 			"Title": "Not resolved", "Principal": p, "Heading": "Not resolved",
@@ -175,7 +187,7 @@ func (s *Server) handleNoteResolve(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	s.audit("note.resolve", "/"+r.FormValue("page"),
+	s.audit("note.resolve", pageResource(page),
 		map[string]string{"id": r.FormValue("id")})
 	http.Redirect(w, r, backTo(r), http.StatusSeeOther)
 }
@@ -193,9 +205,11 @@ func (s *Server) notesWriter(w http.ResponseWriter, r *http.Request) (principal,
 	if !ok {
 		return principal{}, false
 	}
-	// Editing a draft: a note is a remark about content, made by somebody
-	// working on it.
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	// Whether they may annotate anything at all. Which page is checked by each
+	// handler once it has read the name, because a note is about one page and
+	// resolving somebody else's note on a page you may not touch is the act
+	// this used to permit.
+	if !s.canAnywhere(w, r, p, auth.ActEditDraft) {
 		return principal{}, false
 	}
 	if s.Notes == nil || s.Notes.Store == nil {
