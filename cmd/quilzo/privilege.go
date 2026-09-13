@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	stdpath "path"
 	"sort"
 	"strings"
 
@@ -323,11 +324,283 @@ var commandNeeds = map[string]need{
 	"vault status": {action: auth.ActView},
 }
 
-// commandResource is the resource a command acts on. Coarse by design: this is
-// the outer gate, and the finer per-page checks stay where the page name is
-// known. A gate that is correct about the command and coarse about the path is
-// worth more than no gate.
-func commandResource(cmd string, args []string) string { return "/" }
+// Which page a command is about, so that a binding scoped to part of the site
+// means something on the command line.
+//
+// # What was wrong
+//
+// This used to be one line returning "/" for everything, and its comment
+// called that coarse by design: "the finer per-page checks stay where the page
+// name is known". There were no finer per-page checks. Every authorise() call
+// on this surface passes "/", so the coarse gate was the only gate, and being
+// coarse had two consequences that are not the same shape.
+//
+// A grant narrowed with --on /blog stopped working altogether. covers("/blog",
+// "/") is false, so an author scoped to part of the site could run no command
+// at all, and the flag the help text calls "enforced" was a way to lock
+// somebody out. That is the wrong answer, but it is the safe wrong answer.
+//
+// A deny narrowed the same way stopped working too, and that one is a hole. A
+// publisher denied on /legal still holds publisher on "/"; the deny does not
+// cover "/"; the target was always "/". So the deny never matched, and
+// `quilzo section set legal/notice 0 body=…` was permitted by the very policy
+// written to forbid it. The browser interface enforced it and the command line
+// did not, which is worse than not having the feature at all: somebody reads
+// the policy, sees the deny, and believes it.
+//
+// # Why a table, and why it is allowed to give up
+//
+// The page has to be identified before the command parses its own arguments,
+// which is the awkward part — at this point `args` is just words. Most
+// commands make that easy by taking their positional arguments first and
+// finding them with leadingArgs, which stops at the first flag. Those get a
+// row here naming which positional is the page, read with leadingArgs itself,
+// so the gate and the command cannot disagree about which word they are
+// looking at.
+//
+// Anything not in the table, and anything in it whose page argument is missing
+// or is not a name this can be sure of, falls back to "/". That is the strict
+// direction: "/" is covered only by a binding on the whole site, so a command
+// this cannot read is authorised as though it touched everything. A new
+// command therefore arrives over-guarded, which is a bug report, rather than
+// under-guarded, which is a breach.
+//
+// The corollary is the one thing that must not be got wrong: a row here is a
+// claim that the command touches *that page and nothing else*. A row for a
+// command that also writes somewhere else would narrow the check away from the
+// place it was needed.
+
+// wholeStore is the page-argument index meaning "this one names no page".
+//
+// Spelled out rather than left absent, because absence falls through to the
+// parent's row: without "lock list" saying so, `quilzo lock list` would read
+// the word "list" as the name of a page.
+const wholeStore = -1
+
+// pageArgs names, for each command that takes one, which of its positional
+// arguments is the page.
+//
+// Keyed like commandNeeds — "command" or "command subcommand", the more
+// specific winning — and the index counts the positional arguments after
+// whichever key matched.
+//
+// A bare command has a row only where its own dispatch treats an unrecognised
+// first word as a page name, which is true of `lock` and of nothing else here;
+// every subcommand it recognises is then listed too.
+var pageArgs = map[string]int{
+	// Saying a page is still right, and withdrawing that.
+	"checked set":   0,
+	"checked clear": 0,
+	"checked list":  wholeStore,
+	"checked due":   wholeStore,
+
+	// Remarks about a page. `note list` takes an optional page and surveys
+	// everything without one, which the missing-argument fallback handles.
+	"note add":      0,
+	"note list":     0,
+	"note resolve":  0,
+	"note remove":   0,
+	"note rm":       0,
+	"notes add":     0,
+	"notes list":    0,
+	"notes resolve": 0,
+	"notes remove":  0,
+	"notes rm":      0,
+
+	// lock's dispatch sends anything that is not list or release to
+	// lockClaim, so the bare row is right by construction and the two it
+	// recognises are named. A subcommand added to that switch needs a row.
+	"lock":          0,
+	"lock list":     wholeStore,
+	"lock release":  0,
+	"locks":         0,
+	"locks list":    wholeStore,
+	"locks release": 0,
+
+	// Sections are parts of one page. `section item` puts the verb first, so
+	// the page is the second positional after it.
+	"section add":     0,
+	"section remove":  0,
+	"section rm":      0,
+	"section move":    0,
+	"section mv":      0,
+	"section fields":  0,
+	"section set":     0,
+	"section list":    0,
+	"section item":    1,
+	"section kinds":   wholeStore,
+	"sections add":    0,
+	"sections remove": 0,
+	"sections rm":     0,
+	"sections move":   0,
+	"sections mv":     0,
+	"sections fields": 0,
+	"sections set":    0,
+	"sections list":   0,
+	"sections item":   1,
+	"sections kinds":  wholeStore,
+
+	// Binding a page to a content type, and saying where its bytes came from.
+	"type bind":      0,
+	"types bind":     0,
+	"provenance set": 0,
+	"prov set":       0,
+
+	// Recording that one page was translated from its source.
+	"lang translated":    0,
+	"locales translated": 0,
+}
+
+// pageResolvers is for the commands whose page arguments cannot be found by
+// position, because their flags may appear anywhere.
+//
+// One entry, and it should stay a short list: every one of these is a second
+// reading of arguments the command reads for itself, which is the shape of
+// thing that drifts. `add` earns it because it is the command people actually
+// write content with, and leaving it at "/" would mean the flag that scopes an
+// author to part of the site still did nothing for the one thing authors do.
+var pageResolvers = map[string]func(args []string) []string{
+	"add": addResources,
+}
+
+// addResources is the pages `add` writes: the name on the left of each
+// NAME=FILE argument, and the names --remove deletes.
+//
+// It reads the arguments with splitFlags and the same flag table cmdAdd
+// parses with, so the two cannot disagree about which words are positional.
+// Anything it cannot account for — a spec with no "=", a --remove it cannot
+// read — returns nothing, and nothing means the whole store.
+func addResources(args []string) []string {
+	flags, positional := splitFlags(args, addValued)
+	var pages []string
+	for _, spec := range positional {
+		name, _, ok := strings.Cut(spec, "=")
+		if !ok {
+			// cmdAdd refuses this too. Until it does, the honest answer about
+			// what is being written is "something I cannot name".
+			return nil
+		}
+		pages = append(pages, name)
+	}
+	for i := 0; i < len(flags); i++ {
+		list, present, readable := removeFlag(flags, i)
+		if !present {
+			continue
+		}
+		if !readable {
+			// The flag is there and its value is not, so which pages this
+			// deletes is unknown.
+			return nil
+		}
+		for _, name := range strings.Split(list, ",") {
+			if name = strings.TrimSpace(name); name != "" {
+				pages = append(pages, name)
+			}
+		}
+	}
+	return pages
+}
+
+// removeFlag reads --remove at flags[i], in either spelling and either form.
+//
+// Three answers rather than two, because "this is not --remove" and "this is
+// --remove and I cannot see its value" must not both be the empty string:
+// the first means carry on, the second means give up on the whole command.
+func removeFlag(flags []string, i int) (list string, present, readable bool) {
+	f := flags[i]
+	for _, prefix := range []string{"--remove=", "-remove="} {
+		if v, ok := strings.CutPrefix(f, prefix); ok {
+			return v, true, true
+		}
+	}
+	if f == "--remove" || f == "-remove" {
+		if i+1 < len(flags) {
+			return flags[i+1], true, true
+		}
+		return "", true, false
+	}
+	return "", false, false
+}
+
+// commandResources is every resource a command acts on. Permission is needed
+// on all of them.
+func commandResources(cmd string, args []string) []string {
+	if resolve, ok := pageResolvers[cmd]; ok {
+		return resourcesFor(resolve(args))
+	}
+	idx, rest, ok := pageArgOf(cmd, args)
+	if !ok {
+		return []string{"/"}
+	}
+	pos, _ := leadingArgs(rest, idx+1)
+	if len(pos) <= idx {
+		// The argument is not there. The command will say so in its own words;
+		// until then the strict answer is the whole store rather than a guess.
+		return []string{"/"}
+	}
+	return resourcesFor([]string{pos[idx]})
+}
+
+// pageArgOf finds the row for a command, resolved the way lookupNeed resolves
+// its own: the subcommand key first, the bare command second.
+func pageArgOf(cmd string, args []string) (idx int, rest []string, ok bool) {
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		if n, found := pageArgs[cmd+" "+args[0]]; found {
+			// A subcommand that names no page stops here rather than falling
+			// through to the parent's row, which would read its own name as a
+			// page.
+			return n, args[1:], n >= 0
+		}
+	}
+	if n, found := pageArgs[cmd]; found {
+		return n, args, n >= 0
+	}
+	return 0, nil, false
+}
+
+// resourcesFor turns page names into resource paths, in order and without
+// repeats, and gives up as a whole if any name is one it cannot vouch for.
+//
+// All or nothing on purpose. Dropping the name it could not read and checking
+// the rest would authorise a write against the pages it understood and let the
+// one it did not through unexamined.
+func resourcesFor(pages []string) []string {
+	if len(pages) == 0 {
+		return []string{"/"}
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range pages {
+		r := pageResource(p)
+		if r == "/" {
+			return []string{"/"}
+		}
+		if !seen[r] {
+			seen[r] = true
+			out = append(out, r)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// pageResource is the resource path for a page name, or "/" when the name is
+// not one this can be sure of.
+//
+// Refused rather than repaired, the same rule the admin's back-links follow: a
+// name that does not survive path.Clean is not a page this store holds, and
+// cleaning it quietly would authorise one path and act on another.
+func pageResource(page string) string {
+	page = strings.TrimSpace(page)
+	if page == "" || strings.HasPrefix(page, "-") {
+		return "/"
+	}
+	r := "/" + strings.TrimPrefix(page, "/")
+	if stdpath.Clean(r) != r {
+		return "/"
+	}
+	return r
+}
 
 // unknownCommand explains a name nothing recognises.
 //
@@ -455,15 +728,19 @@ func authoriseCommand(root, cmd string, args []string) error {
 	}
 
 	caller := resolveCaller(root, tokenFromArgs(args))
-	resource := commandResource(cmd, args)
-	if err := authorise(root, caller, n.action, resource); err != nil {
-		sub := cmd
-		if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-			sub = cmd + " " + args[0]
+	// Every resource, not the first one. A command that writes two pages needs
+	// the authority for both, and stopping at the first would let a deny on
+	// the second page be worked around by naming a permitted page alongside it.
+	for _, resource := range commandResources(cmd, args) {
+		if err := authorise(root, caller, n.action, resource); err != nil {
+			sub := cmd
+			if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+				sub = cmd + " " + args[0]
+			}
+			record(root, caller.auditRecord(sub, resource, audit.Denied,
+				map[string]string{"reason": "authorisation"}))
+			return err
 		}
-		record(root, caller.auditRecord(sub, resource, audit.Denied,
-			map[string]string{"reason": "authorisation"}))
-		return err
 	}
 	return nil
 }
