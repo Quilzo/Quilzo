@@ -63,6 +63,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	stdpath "path"
 	"sort"
 	"strconv"
 	"strings"
@@ -448,6 +449,95 @@ func (s *Server) can(w http.ResponseWriter, r *http.Request, p principal,
 		"Body":    d.Reason,
 	})
 	return false
+}
+
+// Asking the authorisation question about the page, and not about the site.
+//
+// # What was wrong
+//
+// The policy supports a binding scoped to part of the site — `--on /blog`,
+// which the README describes as enforced, and `--deny` on a path, which the
+// people screen renders as a rule. Eight handlers here read a page name out of
+// the request and then asked whether the caller could act on "/".
+//
+// That is wrong in both directions at once, and only one of them is visible.
+//
+// covers("/blog", "/") is false, so an author granted author on /blog was
+// refused everything: the pages list, their own page's notes, a review date on
+// a page inside their scope. The editor rendered and every control in it
+// answered 403. Somebody narrowed to part of the site could not use the
+// browser at all.
+//
+// And a deny scoped to a path never matched, because the target was always
+// "/". A principal holding admin on "/" and denied author on /about was
+// refused by the command line and permitted here:
+//
+//	quilzo note add about "…"                  denied author on /about
+//	POST /notes/add page=about text=…          200, and the note was written
+//
+// The browser is the surface where the deny is *displayed*, which makes this
+// the worse half: somebody reads the policy on the people screen, sees the
+// rule, and believes it.
+//
+// # The shape of the fix
+//
+// canPage for the handler that knows the name, canAnywhere for the screen that
+// is about to list things and does not know a name yet. A test walks this
+// package's source and fails when a handler reads a page name and authorises
+// "/", because this is a convention and the convention is what did not hold.
+
+// canPage is can() for a handler that knows which page it is about.
+func (s *Server) canPage(w http.ResponseWriter, r *http.Request, p principal,
+	act auth.Action, page string) bool {
+
+	return s.can(w, r, p, act, pageResource(page))
+}
+
+// canAnywhere is the gate for a screen that lists things it has not named yet.
+//
+// It asks whether the caller may do this anywhere at all, and the screen then
+// asks the per-page question for every row it is about to show. Weak on
+// purpose: it decides whether the screen opens, not what is on it.
+func (s *Server) canAnywhere(w http.ResponseWriter, r *http.Request,
+	p principal, act auth.Action) bool {
+
+	if s.Policy == nil {
+		return s.can(w, r, p, act, "/")
+	}
+	// The credential's own limits still apply. Its role cap and its read-only
+	// and type dimensions are site-wide by nature — a read-only token is
+	// read-only everywhere — so they are asked here in full. Only its path
+	// dimension is asked about itself rather than about "/", because a token
+	// scoped to /blog failing to cover "/" is the same wrong question this
+	// function exists to stop asking.
+	within := strings.TrimSpace(p.Scope)
+	if within == "" {
+		within = "/"
+	}
+	if s.Policy.Anywhere(p.Name, act) &&
+		auth.CheckCredential(p.Role, p.Scope, p.Limits, act, within) == nil {
+		return true
+	}
+	return s.can(w, r, p, act, "/")
+}
+
+// pageResource is the resource path for a page name.
+//
+// Refused rather than repaired, the same rule the command line's gate follows
+// and for the same reason: a name that does not survive path.Clean is not a
+// page this store holds, and cleaning it quietly would authorise one path and
+// act on another. "/" is the strict answer, since only a binding on the whole
+// site covers it.
+func pageResource(page string) string {
+	page = strings.TrimSpace(page)
+	if page == "" || strings.HasPrefix(page, "-") {
+		return "/"
+	}
+	res := "/" + strings.TrimPrefix(page, "/")
+	if stdpath.Clean(res) != res {
+		return "/"
+	}
+	return res
 }
 
 // renderTypeFailures explains a refused save.
@@ -1109,7 +1199,10 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActView, "/") {
+	// Whether they may read anything, not whether they may read everything.
+	// This screen asked the second question, so an author granted author on
+	// /blog was refused the front door of the interface.
+	if !s.canAnywhere(w, r, p, auth.ActView) {
 		return
 	}
 
@@ -1117,8 +1210,15 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	live := s.Store.GetRef(site.RefLive)
 	pages, _ := site.PagesAt(s.Store, site.RefDraft)
 
+	// And then the listing is what they may read, page by page. A list that
+	// names pages somebody cannot open is a worse answer than a refusal: it
+	// tells them the pages exist and what they are called, which is most of
+	// what a scope was drawn to withhold.
 	names := make([]string, 0, len(pages))
 	for n := range pages {
+		if !s.mayUse(p, auth.ActView, pageResource(n)) {
+			continue
+		}
 		names = append(names, n)
 	}
 	sort.Strings(names)
@@ -1690,7 +1790,7 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActView, "/") {
+	if !s.canAnywhere(w, r, p, auth.ActView) {
 		return
 	}
 

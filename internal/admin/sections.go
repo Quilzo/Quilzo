@@ -50,7 +50,12 @@ func (s *Server) handleSections(w http.ResponseWriter, r *http.Request) {
 	// a named page. A reader who could open the index would be able to reach a
 	// screen the navigation never offers them, which is the mismatch the roles
 	// test exists to catch.
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	//
+	// Anywhere rather than "/", because an author scoped to part of the site
+	// is an author: asking whether they may edit the whole store refused them
+	// the list of the pages they were scoped to. The named page is still
+	// checked by name, below.
+	if !s.canAnywhere(w, r, p, auth.ActEditDraft) {
 		return
 	}
 	name := strings.TrimSpace(r.URL.Query().Get("page"))
@@ -290,7 +295,7 @@ func (s *Server) handleSectionFields(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = strings.TrimSpace(r.URL.Query().Get("page"))
 	}
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	if !s.canAnywhere(w, r, p, auth.ActEditDraft) {
 		return
 	}
 	// Reached with no page, or on a store with nothing in it. Both are the
