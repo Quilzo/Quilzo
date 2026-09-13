@@ -151,3 +151,29 @@ func ruleFor(t *testing.T, css, sel string) string {
 	}
 	return strings.Join(strings.Fields(rest[:end]), " ")
 }
+
+// The content column is capped, and the cap is bounded by the space there is.
+//
+// `max-width: 68rem` reads as a ceiling and behaved as a floor: on a screen
+// with the menu beside it the column is narrower than 68rem, and a page
+// holding a wide table came out at the cap — overflowing its own grid area,
+// giving the page a sideways scrollbar, and then a vertical one too, because
+// 100dvh is taller than what a horizontal scrollbar leaves. Five screens
+// scrolled 15px in a direction nothing was meant to scroll.
+//
+// Every one of them had a table. None of them failed anything: the pages
+// rendered, and a sweep of all thirty-one screens in a browser is what found
+// it, after the layout they sit in had already been changed and checked on one
+// screen.
+func TestTheContentColumnIsNeverWiderThanTheSpaceThereIs(t *testing.T) {
+	shell := ruleFor(t, readStyle(t), ".shell {")
+
+	if !strings.Contains(shell, "max-width: min(") {
+		t.Errorf("the content column's cap is not bounded by what is "+
+			"available. A bare length is a floor on any screen narrower than "+
+			"it, and the page then scrolls sideways:\n  %s", shell)
+	}
+	if !strings.Contains(shell, "100%") {
+		t.Errorf("the cap does not mention the space there is:\n  %s", shell)
+	}
+}
