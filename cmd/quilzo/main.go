@@ -623,7 +623,24 @@ func open(root string) (*store.Store, error) { return openEncrypted(root) }
 // `valued` names the flags that consume the following argument; a boolean flag
 // must not swallow the token after it.
 func reorder(args []string, valued map[string]bool) []string {
-	var flags, positional []string
+	flags, positional := splitFlags(args, valued)
+	return append(flags, positional...)
+}
+
+// splitFlags separates the flags, and the values they consume, from the
+// positional arguments.
+//
+// Pulled out of reorder because the privilege gate needs the positional
+// arguments too: it has to know which page a command is about before the
+// command has parsed anything, so that a grant or a deny scoped to part of the
+// site is enforced here as well as in the browser.
+//
+// One function rather than two readings of the same arguments. A second copy
+// of "which flags take a value" would drift, and a drifted copy reads as a
+// page name the word the command reads as a flag value — which authorises one
+// resource and acts on another, and a check on the wrong resource is not a
+// check.
+func splitFlags(args []string, valued map[string]bool) (flags, positional []string) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {
@@ -645,7 +662,7 @@ func reorder(args []string, valued map[string]bool) []string {
 			i++
 		}
 	}
-	return append(flags, positional...)
+	return flags, positional
 }
 
 func cmdInit(root string) error {
@@ -664,6 +681,16 @@ func cmdInit(root string) error {
 	return nil
 }
 
+// addValued names the flags `add` takes that consume the argument after them.
+//
+// A package-level table rather than a literal at the call site, because the
+// privilege gate parses the same arguments to find out which pages are being
+// written. The two have to agree about where the flags stop or they disagree
+// about which word is a page.
+var addValued = map[string]bool{
+	"m": true, "author": true, "remove": true, "based-on": true,
+}
+
 func cmdAdd(root string, args []string) error {
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	msg := fs.String("m", "edit", "commit message")
@@ -677,8 +704,7 @@ func cmdAdd(root string, args []string) error {
 	merge := fs.Bool("merge", false,
 		"with --based-on: merge instead of refusing, unless you and they "+
 			"changed the same field")
-	if err := fs.Parse(reorder(args, map[string]bool{
-		"m": true, "author": true, "remove": true, "based-on": true})); err != nil {
+	if err := fs.Parse(reorder(args, addValued)); err != nil {
 		return err
 	}
 	if *merge && *basedOn == "" {
