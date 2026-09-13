@@ -1781,9 +1781,9 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if _, err := site.SaveDraftFrom(s.Store, pages, msg, p.Name,
-		r.FormValue("__base")); err != nil {
-
+	commit, err := site.SaveDraftFrom(s.Store, pages, msg, p.Name,
+		r.FormValue("__base"))
+	if err != nil {
 		var c *site.Conflict
 		if errors.As(err, &c) {
 			s.renderConflict(w, r, p, name, c)
@@ -1792,6 +1792,19 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// AU-3, and it was missing from the most common write in the product.
+	//
+	// Every other surface records a page write: `quilzo add` does, the agent
+	// interface does, the content API does through OnWrite, a Telegram message
+	// does. This interface recorded deleting a page, editing its sections and
+	// removing a selection of them — and not the ordinary save. So somebody
+	// editing the text of a live legal page left an entry saying it was
+	// published and nothing saying who changed what, while the same edit from
+	// a script was recorded in full.
+	s.audit("content.save", pageResource(name), map[string]string{
+		"by": p.Name, "commit": shortHash(commit), "message": msg,
+	})
 
 	// The claim is released on save. Holding it after the work is done is how
 	// a lock outlives its purpose.
@@ -2383,6 +2396,14 @@ func (s *Server) handleProvenanceSet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// `quilzo provenance set` records this and the interface did not, which is
+	// the wrong way round: this is the record that later satisfies the Article
+	// 50 gate, so it is the one whose authorship somebody asking questions
+	// most needs. Marking a page humanEdits to clear a publish gate left
+	// nothing saying who asserted it.
+	s.audit("provenance.set", pageResource(page), map[string]string{
+		"by": p.Name, "source": string(rec.SourceType), "model": rec.Model,
+	})
 	http.Redirect(w, r, "/provenance?saved="+page, http.StatusSeeOther)
 }
 
@@ -2445,6 +2466,12 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// `quilzo rollback` records this. Moving what the public sees, from the
+	// interface most people use, recorded nothing at all.
+	s.audit("rollback", "/", map[string]string{
+		"by": p.Name, "commit": shortHash(target),
+		"changes": strconv.Itoa(len(pub.Changes)),
+	})
 	s.render(w, r, "message.html", map[string]any{
 		"Title": "Rolled back", "Principal": p, "Heading": "Rolled back",
 		"Body": fmt.Sprintf("live is now %s. %d page%s changed. The version you "+

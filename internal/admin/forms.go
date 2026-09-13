@@ -122,6 +122,27 @@ func (s *Server) handleForms(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// formFieldFromRequest reads one field out of the panel.
+//
+// One function because there is one panel: whichever branch handleFormSave
+// takes, the person filled in the same boxes and meant the same thing by them.
+func formFieldFromRequest(r *http.Request) form.Field {
+	f := form.Field{
+		Name:      strings.TrimSpace(r.FormValue("field")),
+		Label:     strings.TrimSpace(r.FormValue("field_label")),
+		Kind:      form.Kind(r.FormValue("field_kind")),
+		Required:  r.FormValue("required") != "",
+		Sensitive: r.FormValue("sensitive") != "",
+		Help:      strings.TrimSpace(r.FormValue("field_help")),
+	}
+	for _, c := range strings.Split(r.FormValue("choices"), ",") {
+		if c = strings.TrimSpace(c); c != "" {
+			f.Choices = append(f.Choices, c)
+		}
+	}
+	return f
+}
+
 // handleFormSave declares a form, or adds a field to one.
 func (s *Server) handleFormSave(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.formWriter(w, r, auth.ActEditDraft)
@@ -142,11 +163,19 @@ func (s *Server) handleFormSave(w http.ResponseWriter, r *http.Request) {
 			Intro:         strings.TrimSpace(r.FormValue("intro")),
 			Notice:        strings.TrimSpace(r.FormValue("notice")),
 			RetentionDays: days,
-			Fields: []form.Field{{
-				Name:  strings.TrimSpace(r.FormValue("field")),
-				Label: strings.TrimSpace(r.FormValue("field_label")),
-				Kind:  form.Kind(r.FormValue("field_kind")),
-			}},
+			// The same field the branch below builds, and from the same
+			// function.
+			//
+			// It used to be built here by hand with three of the seven inputs
+			// the panel sends, so declaring a form and adding a field to one
+			// disagreed about what a field is — on a screen with one form
+			// posting to one route. Ticking "Sensitive" while creating a form
+			// stored Sensitive:false, which put personal data in the
+			// submissions listing the operator had just asked to keep it out
+			// of; choosing "choice" and typing the choices stored none of
+			// them, and Validate then refused the form for having no choices,
+			// naming the ones the operator had typed.
+			Fields: []form.Field{formFieldFromRequest(r)},
 		}
 		if err := set.Add(fresh); err != nil {
 			s.formRedirect(w, r, "", err.Error())
@@ -154,18 +183,7 @@ func (s *Server) handleFormSave(w http.ResponseWriter, r *http.Request) {
 		}
 		f, _ = set.Get(name)
 	} else if fname := strings.TrimSpace(r.FormValue("field")); fname != "" {
-		fl := form.Field{
-			Name: fname, Label: strings.TrimSpace(r.FormValue("field_label")),
-			Kind:      form.Kind(r.FormValue("field_kind")),
-			Required:  r.FormValue("required") != "",
-			Sensitive: r.FormValue("sensitive") != "",
-			Help:      strings.TrimSpace(r.FormValue("field_help")),
-		}
-		for _, c := range strings.Split(r.FormValue("choices"), ",") {
-			if c = strings.TrimSpace(c); c != "" {
-				fl.Choices = append(fl.Choices, c)
-			}
-		}
+		fl := formFieldFromRequest(r)
 		replaced := false
 		for i := range f.Fields {
 			if f.Fields[i].Name == fname {

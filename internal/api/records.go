@@ -398,6 +398,14 @@ func (s *Server) deleteRecord(w http.ResponseWriter, r *http.Request, name, id s
 			Error: "the delete failed", Detail: lockErr.Error()})
 		return
 	}
+	// The same hook the write path calls, "so the audit trail does not have a
+	// hole shaped like the API" — its own words. It had one anyway, shaped
+	// like this half of it: writing a record was recorded and deleting one was
+	// not, so a token-holding integration could empty a collection and the log
+	// would show only the writes that created it.
+	if s.OnWrite != nil {
+		s.OnWrite(who, name+"/"+id, "")
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
