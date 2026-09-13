@@ -41,7 +41,7 @@ func TestTheMenuColumnIsWhateverIsLeft(t *testing.T) {
 	}
 
 	wide := mediaBlock(t, css, "@media (min-width: 60rem)")
-	body := ruleFor(t, wide, "body { display: grid;")
+	body := ruleFor(t, wide, "body:has(> .sidenav) { display: grid;")
 	// A viewport-height grid, not a minimum. With min-height the middle row
 	// grows with its content and the sidebar stops being "the space between
 	// the bar and the footer".
@@ -54,8 +54,8 @@ func TestTheMenuColumnIsWhateverIsLeft(t *testing.T) {
 			"not take what they need and give the rest to the menu:\n  %s", body)
 	}
 
-	side := ruleFor(t, wide, "body > .sidenav {")
-	main := ruleFor(t, wide, "body > main {")
+	side := ruleFor(t, wide, "body:has(> .sidenav) > .sidenav {")
+	main := ruleFor(t, wide, "body:has(> .sidenav) > main {")
 	for what, rule := range map[string]string{"the menu": side, "the content": main} {
 		// A grid item's automatic minimum size is its content, so without this
 		// a long menu makes its own row taller than 1fr and pushes the footer
@@ -175,5 +175,47 @@ func TestTheContentColumnIsNeverWiderThanTheSpaceThereIs(t *testing.T) {
 	}
 	if !strings.Contains(shell, "100%") {
 		t.Errorf("the cap does not mention the space there is:\n  %s", shell)
+	}
+}
+
+// The shell is laid out only on pages that have one.
+//
+// Three screens have their own body and no navigation: signing in with a
+// token, signing in with a passkey, and the API explorer. They are the pages
+// somebody reaches before there is a menu to show, or that render themselves.
+//
+// The wide-layout rules said `body`, so they applied there too — a 14rem
+// column held open for a menu that was not there, and a `main` taller than a
+// row that could not grow, positioned 84px above the top of the window with
+// nothing scrolling. The first paragraph of the sign-in screen was off the
+// screen and unreachable. Somebody signing in could not read the start of
+// their own sign-in page.
+//
+// `:has(> .sidenav)` asks the question that was meant. Structural rather than
+// a list of page classes, so a fourth standalone screen is right without
+// anybody remembering this — which is the property worth asserting, because a
+// list is the part that goes stale.
+func TestTheShellIsOnlyLaidOutWhereThereIsOne(t *testing.T) {
+	wide := mediaBlock(t, readStyle(t), "@media (min-width: 60rem)")
+
+	// Every rule that arranges the shell has to ask first.
+	for _, sel := range []string{
+		"display: grid; grid-template-columns: 14rem 1fr",
+		"> .bar { grid-area: bar",
+		"> .sidenav { grid-area: nav",
+		"> main { grid-area: main",
+		"> footer { grid-area: foot",
+	} {
+		i := strings.Index(wide, sel)
+		if i < 0 {
+			t.Errorf("no rule for %q in the wide layout", sel)
+			continue
+		}
+		start := strings.LastIndexByte(wide[:i], '\n') + 1
+		line := strings.TrimSpace(wide[start : i+len(sel)])
+		if !strings.Contains(line, ":has(> .sidenav)") {
+			t.Errorf("this arranges the shell on every page, including the "+
+				"ones that have no menu to arrange:\n  %s", line)
+		}
 	}
 }

@@ -781,6 +781,28 @@ tr.detail td { padding-top: 0; border-top: 0; }
 @media (min-width: 60rem) {
   /* The whole interface in one screen, with two things that scroll inside it.
    *
+   * # Why every rule here asks whether there is a menu
+   *
+   * Two screens have their own body and no shell at all: signing in with a
+   * token, and signing in with a passkey. They are the only pages somebody can
+   * reach without already being signed in, so they carry no navigation to lay
+   * out.
+   *
+   * These rules said `body`, so they applied to those two as well. The result
+   * was a 14rem column held open for a menu that was not there, and a `main`
+   * taller than a row that could not grow — positioned 84px above the top of
+   * the window, with nothing scrolling, so the first paragraph of the page was
+   * off the screen and unreachable. Somebody signing in could not read the
+   * start of their own sign-in screen.
+   *
+   * `:has(> .sidenav)` is the question that was meant: lay this out as a shell
+   * when there is a shell. It is structural rather than a list of page
+   * classes, so a third standalone screen added later is right without anybody
+   * remembering this. And it still matches when the menu is hidden, because
+   * hiding it is `display: none` on an element that is still there — which is
+   * correct, since a hidden menu is a one-column shell and not a page without
+   * one.
+   *
    * # What this replaces, and why
    *
    * The bar used to be a fixed 3.5rem, and the sidebar was
@@ -812,14 +834,14 @@ tr.detail td { padding-top: 0; border-top: 0; }
    * bar-height down, so its end sat below the fold — cannot be expressed in
    * this layout at all.
    */
-  body { display: grid; grid-template-columns: 14rem 1fr;
+  body:has(> .sidenav) { display: grid; grid-template-columns: 14rem 1fr;
     grid-template-areas: "bar bar" "nav main" "nav foot";
     grid-template-rows: auto 1fr auto; height: 100dvh; }
   /* The footer needs a named area too. Without one it lands in the first
      free cell, which is under the sidebar, and wraps to three lines in a
      column meant for menu items. */
-  body > footer { grid-area: foot; }
-  body > .bar { grid-area: bar; margin-bottom: 0; }
+  body:has(> .sidenav) > footer { grid-area: foot; }
+  body:has(> .sidenav) > .bar { grid-area: bar; margin-bottom: 0; }
   /* The bar may wrap again. Nothing depends on its height now, so a long site
      name and a long user name are allowed to take a second line rather than
      being squeezed onto one — which is what `nowrap` was for, and what it was
@@ -831,7 +853,7 @@ tr.detail td { padding-top: 0; border-top: 0; }
   /* The menu column: exactly the space between the bar and the footer, and it
      scrolls inside that. overscroll-behavior keeps that scroll from carrying
      on into the page when it reaches the end. */
-  body > .sidenav { grid-area: nav; border-right: 1px solid var(--outline-variant);
+  body:has(> .sidenav) > .sidenav { grid-area: nav; border-right: 1px solid var(--outline-variant);
     padding: 1rem .75rem; background: var(--surface-container-low);
     position: relative;
     min-height: 0; min-width: 0; overflow-y: auto;
@@ -848,7 +870,7 @@ tr.detail td { padding-top: 0; border-top: 0; }
      row and gave the document 505px of scroll it had nothing to show: a second
      scrollbar beside the real one, moving nothing.
      Invisible before this, because the document scrolled anyway. */
-  body > main { grid-area: main; position: relative;
+  body:has(> .sidenav) > main { grid-area: main; position: relative;
     min-height: 0; min-width: 0; overflow-y: auto; }
   .sidenav .navgroups { flex-direction: column; gap: 1rem; align-items: stretch; }
   .sidenav .navgroup + .navgroup { border-left: 0; margin-left: 0; padding-left: 0; }
@@ -1080,7 +1102,7 @@ tr.detail td { padding-top: 0; border-top: 0; }
 body.nav-hidden > .sidenav { display: none; }
 
 @media (min-width: 60rem) {
-  body.nav-hidden { grid-template-columns: 1fr;
+  body.nav-hidden:has(> .sidenav) { grid-template-columns: 1fr;
     grid-template-areas: "bar" "main" "foot"; }
 }
 
