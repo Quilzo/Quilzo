@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -68,6 +69,35 @@ type Federation struct {
 	// one.
 	Announced       func() string
 	RecordAnnounced func(commit string) error
+
+	// ClientAddr is the address a request came from, as the deployment can
+	// actually tell it.
+	//
+	// Nil means RemoteAddr, which is right when this process is the thing
+	// being connected to and wrong behind a reverse proxy — where it is the
+	// proxy's address for every server on the fediverse, so one chatty
+	// instance fills the inbox's single bucket and the rest are refused.
+	//
+	// Supplied rather than decided here, because whether a forwarded header
+	// can be believed is a fact about the deployment and not about this
+	// package. Believing one with nothing in front lets every caller pick
+	// their own bucket, which is a rate limit switched off.
+	ClientAddr func(r *http.Request) string
+
+	// Blocked reports whether an actor or its host is refused.
+	//
+	// Nil means nothing is blocked, which is where this started and is not a
+	// position anybody chose: an abusive instance could follow, and the only
+	// remedy was stopping the server and editing followers.json by hand —
+	// after which it could simply follow again.
+	//
+	// A function rather than a list, because the list belongs to the operator
+	// and lives where the rest of their configuration does. This package's job
+	// is to ask.
+	Blocked func(actor string) bool
+	// OnBlocked is told when a blocked actor was turned away, so the operator
+	// can see whether a block is still earning its place. Nil is silent.
+	OnBlocked func(actor, activity string)
 
 	// guard bounds what an unverified caller can make this server do. Not a
 	// setting: the bounds exist whenever the inbox does.
@@ -528,7 +558,7 @@ func (st *Site) inbox(w http.ResponseWriter, r *http.Request) {
 	// they name. Measured at two hundred POSTs producing two hundred outbound
 	// requests before this existed — reflection, with this server's address on
 	// the traffic arriving at somebody else.
-	if !st.Federation.guard.allow(sourceOf(r), st.now()) {
+	if !st.Federation.guard.allow(st.clientAddr(r), signingHost(r), st.now()) {
 		tooMany(w, 60, "too many activities from this address. Verifying one "+
 			"means fetching the sender's key from their server, so this "+
 			"endpoint is rate limited to keep it from becoming a way to send "+
@@ -582,6 +612,24 @@ func (st *Site) inbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Blocked, and only now — after the signature, because refusing before it
+	// would mean refusing on a name anybody can write, and a block that can be
+	// triggered by an impostor is a way to have somebody else blocked.
+	//
+	// Every type, not only Follow. An instance that is refused should not be
+	// able to remove its own follow either, or to reach any branch added
+	// later: a blocklist that names the activities it applies to is one that
+	// stops applying the next time somebody adds one.
+	if st.Federation.Blocked != nil && st.Federation.Blocked(activity.Actor) {
+		// Accepted rather than refused, and nothing done. A 403 tells the
+		// sender they are blocked, which is an invitation to come back from
+		// somewhere else; silence is what a blocklist is for. The record of
+		// the refusal is on this side.
+		st.noteBlocked(activity.Actor, activity.Type)
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
 	switch activity.Type {
 	case "Follow":
 		st.handleFollow(w, activity)
@@ -606,6 +654,54 @@ func (st *Site) inbox(w http.ResponseWriter, r *http.Request) {
 //
 // The Follow's target was already checked before the signature, so that a
 // message for somebody else costs no outbound request.
+// noteBlocked records that a blocked actor was turned away.
+//
+// Silence towards the sender is the point of a blocklist; silence towards the
+// operator is not. Somebody deciding whether a block is still needed has
+// nothing to look at otherwise.
+func (st *Site) noteBlocked(actor, kind string) {
+	if st.Federation.OnBlocked == nil {
+		return
+	}
+	st.Federation.OnBlocked(actor, kind)
+}
+
+// clientAddr is the address to count a request against.
+func (st *Site) clientAddr(r *http.Request) string {
+	if st.Federation != nil && st.Federation.ClientAddr != nil {
+		if addr := st.Federation.ClientAddr(r); addr != "" {
+			return addr
+		}
+	}
+	return sourceOf(r)
+}
+
+// signingHost is the host of the key a request claims to be signed with.
+//
+// Unproved at the point it is read — proving it is the outbound fetch the rate
+// limit is there to bound — so it is used only to make a limit stricter and
+// never to grant anything. See inboxGuard.allow.
+func signingHost(r *http.Request) string {
+	sig := r.Header.Get("Signature")
+	if sig == "" {
+		return ""
+	}
+	i := strings.Index(sig, `keyId="`)
+	if i < 0 {
+		return ""
+	}
+	rest := sig[i+len(`keyId="`):]
+	j := strings.IndexByte(rest, '"')
+	if j < 0 {
+		return ""
+	}
+	u, err := url.Parse(rest[:j])
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
+}
+
 func (st *Site) handleFollow(w http.ResponseWriter, a activitypub.Activity) {
 	inbox, err := st.remoteInbox(a.Actor)
 	if err != nil {

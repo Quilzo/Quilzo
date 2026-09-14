@@ -96,8 +96,25 @@ func (g *inboxGuard) init() {
 	})
 }
 
-// allow reports whether this source may send another activity now.
-func (g *inboxGuard) allow(source string, now time.Time) bool {
+// allow reports whether this sender may send another activity now.
+//
+// Two buckets, and both have to allow.
+//
+// The address bounds what an unverified caller can make this server do, which
+// is why it exists: verifying costs an outbound fetch to a host the caller
+// names, and that is the reflection this endpoint would otherwise be.
+//
+// The sending host bounds one instance's share of the endpoint. It was not
+// there, and behind the TLS-terminating proxy this file assumes elsewhere the
+// address is the proxy's for every remote server on the fediverse — so one
+// chatty instance filled the single bucket and the rest were refused. A shared
+// limit is not a limit on anybody in particular.
+//
+// The host is taken from the Signature header, so it is not proved at this
+// point and cannot be: proving it is the fetch this is bounding. That is why
+// it only ever makes the answer stricter. Varying it buys a fresh host bucket
+// and nothing else, because the address bucket is still counting.
+func (g *inboxGuard) allow(source, host string, now time.Time) bool {
 	g.init()
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -110,9 +127,20 @@ func (g *inboxGuard) allow(source string, now time.Time) bool {
 		}
 	}
 
-	w, there := g.seen[source]
+	if !g.tick("addr "+source, now) {
+		return false
+	}
+	if host == "" {
+		return true
+	}
+	return g.tick("host "+host, now)
+}
+
+// tick counts one request against a key. The caller holds the lock.
+func (g *inboxGuard) tick(key string, now time.Time) bool {
+	w, there := g.seen[key]
 	if !there || now.After(w.until) {
-		g.seen[source] = &window{count: 1, until: now.Add(time.Minute)}
+		g.seen[key] = &window{count: 1, until: now.Add(time.Minute)}
 		return true
 	}
 	if w.count >= InboxRate {

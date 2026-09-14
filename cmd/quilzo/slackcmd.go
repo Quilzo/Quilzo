@@ -100,9 +100,17 @@ func cmdDiscord(root string, args []string) error {
 // argument is already in the shell history, and in the process list of every
 // other user on the machine.
 const (
-	slackSecretEnv   = "QUILZO_SLACK_SIGNING_SECRET"
-	discordKeyEnv    = "QUILZO_DISCORD_PUBLIC_KEY"
-	chatSecretEnvHow = "  Put it in %s. It is not a flag: a secret in an " +
+	slackSecretEnv = "QUILZO_SLACK_SIGNING_SECRET"
+	discordKeyEnv  = "QUILZO_DISCORD_PUBLIC_KEY"
+	// chatLinkSecretEnv keys the editor's own arrival links and grants, on
+	// every chat surface.
+	//
+	// Separate from the platform's secret on purpose, and one variable rather
+	// than one per platform: an operator running two surfaces configures one
+	// key, and the thing being keyed — a grant this program issues — is the
+	// same thing either way.
+	chatLinkSecretEnv = "QUILZO_CHAT_LINK_SECRET"
+	chatSecretEnvHow  = "  Put it in %s. It is not a flag: a secret in an " +
 		"argument is already in your shell history."
 )
 
@@ -113,8 +121,26 @@ func slackCheck() error {
 			slackSecretEnv)
 	}
 	w.Human("  %ssigning secret present (%d characters)%s\n", dim, len(secret), reset)
-	w.Human("  %sthis checks the secret is readable, not that Slack accepts "+
-		"it — that needs a request from Slack%s\n", dim, reset)
+	// The second key, said here rather than at the moment somebody tries to
+	// start the server. A check that only looks at half the configuration
+	// tells an operator they are ready when they are not.
+	link := strings.TrimSpace(os.Getenv(chatLinkSecretEnv))
+	switch {
+	case link == "":
+		w.Human("  %sno %s — the editor's links need a key of their own, "+
+			"and serving will refuse without one%s\n",
+			yellow, chatLinkSecretEnv, reset)
+	case link == secret:
+		w.Human("  %s%s is the same value as the signing secret. Anybody "+
+			"holding that can mint a grant and publish as any member of the "+
+			"workspace; use a different random string%s\n",
+			yellow, chatLinkSecretEnv, reset)
+	default:
+		w.Human("  %slink secret present and distinct (%d characters)%s\n",
+			dim, len(link), reset)
+	}
+	w.Human("  %sthis checks the secrets are readable, not that Slack accepts "+
+		"them — that needs a request from Slack%s\n", dim, reset)
 	return nil
 }
 
@@ -198,7 +224,34 @@ func slackServe(root string, args []string) error {
 				"somebody else's host")
 	}
 
-	app, err := chatApp(root, *tplDir, *design, *siteURL, secret,
+	// The editor's credentials are keyed on a secret of their own, not on
+	// Slack's signing secret.
+	//
+	// They were the same value. That secret is what mints and verifies the
+	// arrival links and grants this editor runs on — and it is also a value
+	// Slack holds, that is displayed in an app configuration page, that gets
+	// pasted into deployment tooling, and that an operator rotates for
+	// reasons that have nothing to do with us. Anybody who reads it can mint
+	// a valid grant for any workspace member and publish as them, without
+	// ever forging a request.
+	//
+	// Discord already refuses to do this, for a narrower reason — its public
+	// key cannot sign anything — and the argument holds here too: a key that
+	// verifies somebody else's requests is not a key for signing ours. Same
+	// variable, so an operator running both surfaces configures one secret.
+	editorSecret := strings.TrimSpace(os.Getenv(chatLinkSecretEnv))
+	if editorSecret == "" {
+		return fmt.Errorf(
+			"no link secret.\n"+
+				"  The signing secret verifies Slack's requests to this. The\n"+
+				"  editor's own links and grants need a separate key, or\n"+
+				"  anybody holding the signing secret can mint one and\n"+
+				"  publish as any member of the workspace.\n"+
+				"  Put one in %s — any long random string, the\n"+
+				"  same one on every process serving this.", chatLinkSecretEnv)
+	}
+
+	app, err := chatApp(root, *tplDir, *design, *siteURL, editorSecret,
 		chat.Slack, *sharedMedia)
 	if err != nil {
 		return err
@@ -306,14 +359,14 @@ func discordServe(root string, args []string) error {
 	// sign ours — so the editor is keyed separately. Required rather than
 	// generated, because a secret invented at startup logs everybody out on
 	// every restart and cannot be shared by two processes.
-	editorSecret := strings.TrimSpace(os.Getenv("QUILZO_DISCORD_LINK_SECRET"))
+	editorSecret := strings.TrimSpace(os.Getenv(chatLinkSecretEnv))
 	if editorSecret == "" {
 		return fmt.Errorf(
-			"no link secret.\n" +
-				"  Discord's public key verifies their requests and cannot sign " +
-				"ours, so the editor needs a secret of its own.\n" +
-				"  Put one in QUILZO_DISCORD_LINK_SECRET — any long random " +
-				"string, the same one on every process serving this")
+			"no link secret.\n"+
+				"  Discord's public key verifies their requests and cannot "+
+				"sign ours, so the editor needs a secret of its own.\n"+
+				"  Put one in %s — any long random string, the same one on "+
+				"every process serving this", chatLinkSecretEnv)
 	}
 
 	app, err := chatApp(root, *tplDir, *design, *siteURL, editorSecret,

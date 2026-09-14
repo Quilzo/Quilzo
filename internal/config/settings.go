@@ -278,6 +278,27 @@ var settings = []Setting{
 			"with the site; the flag still overrides it for one run.",
 	},
 	{
+		Key: "site.trusted_proxy", Kind: Bool, Default: "false",
+		Summary: "something in front of this forwards the client's address",
+		Why: "Whether the inbox's rate limit can tell one remote instance " +
+			"from another.\n\n" +
+			"The limit is keyed on the connecting address, which is right " +
+			"when this process is the thing being connected to. Behind a " +
+			"reverse proxy it is the proxy's address for every server on the " +
+			"fediverse, so one chatty instance fills the single bucket and " +
+			"every other one is refused. A shared limit is not a limit on " +
+			"anybody in particular.\n\n" +
+			"Off by default, and a setting rather than a guess, because the " +
+			"header that answers it is X-Forwarded-For and anybody can write " +
+			"one. Trusting it with nothing in front means every caller " +
+			"chooses their own bucket, which is a rate limit turned off. The " +
+			"deployment says once, deliberately, what it is -- the same " +
+			"argument admin.behind_tls_proxy makes below, for the same " +
+			"reason.\n\n" +
+			"Set this only when the proxy appends the real address and " +
+			"strips what the client sent.",
+	},
+	{
 		Key: "admin.behind_tls_proxy", Kind: Bool, Default: "false",
 		Summary: "the admin is served over HTTPS by something in front of it",
 		Why: "Whether the session cookie is marked Secure. It was decided by " +
