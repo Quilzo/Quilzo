@@ -422,6 +422,60 @@ func (c *chatPublisher) Save(handle string, body map[string]any,
 		return "", fmt.Errorf("%s", strings.Join(blocking, " · "))
 	}
 
+	// And every other check about the content — classification, image rights,
+	// references, arrangement, claims, expiry, navigation. This surface ran
+	// the type gate and accessibility and nothing else, on the one path where
+	// a message in a chat room goes straight to live with nobody looking at
+	// it first.
+	refused, _, gerr := contentGates(c.root, c.store, commit).Run()
+	if gerr != nil {
+		return "", gerr
+	}
+	if refused != nil {
+		return "", fmt.Errorf("%s", refused.Error())
+	}
+
+	// Dual authorization, where it is configured. A message in a chat room is
+	// still a publish, and an approval policy that a chat surface walks past
+	// is an approval policy with a door beside it.
+	if pol, perr := loadApprovalPolicy(c.root); perr != nil {
+		return "", fmt.Errorf("the approval policy could not be read, so "+
+			"publishing would claim a check that did not happen: %w", perr)
+	} else if pol.Required > 0 || pol.RequireHumanForAI {
+		prop, _, cerr := currentProposal(c.root, c.store)
+		if cerr != nil {
+			return "", fmt.Errorf("the approval check could not run: %w", cerr)
+		}
+		if d := pol.Evaluate(*prop, kindOfPrincipal(c.root), time.Now()); !d.Allowed {
+			return "", fmt.Errorf("%s", d.Reason)
+		}
+	}
+
+	// Provenance, refused rather than invented.
+	//
+	// Every other surface refuses content that declares nothing, and this one
+	// published it. The tempting fix is to write "a person wrote this" here,
+	// because a person did type it — and that is the exact substitution
+	// `quilzo provenance backfill` refuses, reached by a different route: what
+	// arrives in a chat window may have been typed or may have been pasted out
+	// of a model, and the program cannot tell. An absence of evidence is not
+	// written down as human authorship.
+	//
+	// So it refuses, and says how to answer it. That is the same answer the
+	// command line and the browser give.
+	unmarked, uerr := unmarkedAt(c.root, c.store, commit)
+	if uerr != nil {
+		return "", fmt.Errorf("the provenance check could not run, so "+
+			"publishing would claim a check that did not happen: %w", uerr)
+	}
+	if len(unmarked) > 0 {
+		return "", fmt.Errorf(
+			"%s declares no provenance, and Article 50 asks for a mark on "+
+				"AI-generated content. Record it first:\n  quilzo provenance "+
+				"set %s --source humanEdits --author \"%s\"",
+			strings.Join(unmarked, ", "), unmarked[0], author)
+	}
+
 	if _, err := site.Publish(c.store, commit); err != nil {
 		return "", err
 	}

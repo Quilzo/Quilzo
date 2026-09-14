@@ -12,6 +12,13 @@
 </div>
 <p><a href="/page/{{.Page}}">Go back and fix it</a></p>
 {{end}}
-{{if .Override}}<p class="notice bad">Published with an accessibility override: {{.Override}}</p>{{end}}
+{{if .Details}}
+<div class="notice bad">
+  <ul>{{range .Details}}<li>{{.}}</li>{{end}}</ul>
+</div>
+{{end}}
+{{if .Override}}<p class="notice bad">Published, waiving
+  {{range $i, $g := .Waived}}{{if $i}}, {{end}}{{$g}}{{else}}nothing{{end}}:
+  {{.Override}}</p>{{end}}
 <p><a href="/">Back to pages</a></p>
 {{template "foot" .}}
