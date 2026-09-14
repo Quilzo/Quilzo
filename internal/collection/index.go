@@ -80,6 +80,12 @@ func (i *Index) Query(q Query) (out []Record, total int) {
 	return q.Apply(i.Records)
 }
 
+// Matching is every record the query selects, unsorted and unwindowed, for a
+// caller saying something about the whole set rather than showing a page of it.
+func (i *Index) Matching(q Query) []Record {
+	return q.Matching(i.Records)
+}
+
 // Build reads a collection, reusing whatever a previous index already decoded.
 //
 // prev may be nil, and may be an index of a different tree — reuse is keyed on

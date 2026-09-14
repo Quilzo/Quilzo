@@ -266,6 +266,27 @@ func toFloat(v any) (float64, bool) {
 	return 0, false
 }
 
+// Matching is every record a query selects, in the order it was given them.
+//
+// Split out of Apply because Apply's answer is a window — sorted, offset and
+// limited — and a caller that wants to say something about the whole matched
+// set has no way to ask for it. Counting the rows on the screen and calling it
+// a total is the mistake that makes a listing say "3" under a page showing
+// three of forty.
+//
+// Unsorted, deliberately. A caller asking about the set does not need the
+// order, and sorting it would be paying for the expensive half of Apply to
+// answer a question that does not depend on it.
+func (q Query) Matching(in []Record) []Record {
+	var out []Record
+	for _, r := range in {
+		if q.Match(r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // Apply filters, sorts and pages a set of records.
 //
 // In memory, over records the caller has already loaded. That is honest about
@@ -273,11 +294,7 @@ func toFloat(v any) (float64, bool) {
 // single node holds and it is not a query planner, and saying so here stops
 // somebody expecting one.
 func (q Query) Apply(in []Record) (out []Record, total int) {
-	for _, r := range in {
-		if q.Match(r) {
-			out = append(out, r)
-		}
-	}
+	out = q.Matching(in)
 	total = len(out)
 
 	// A total order, with the identifier as the final tie-break.

@@ -40,6 +40,13 @@
 </p>
 {{end}}
 
+{{if $l.Numbers}}
+<p class="hint">Works out
+  {{range $name, $v := $l.Numbers}}<code>{{$name}}</code> = {{$v}} {{end}}
+  <span class="hint">over everything that matched, not over the rows
+  shown.</span></p>
+{{end}}
+
 {{if $l.Where}}
 <div class="table-wrap">
 <table>
