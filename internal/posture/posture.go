@@ -225,19 +225,28 @@ type ExtFacts struct {
 // Assembled by the caller. The scanner reads this and nothing else — there is
 // no path from a rule to the filesystem, the network or the clock.
 type State struct {
-	Policy   *auth.Policy      `json:"-"`
-	Tokens   *auth.TokenStore  `json:"-"`
-	Types    *schema.Store     `json:"-"`
-	Audit    []audit.Event     `json:"-"`
-	Files    []FileFact        `json:"files"`
-	Weakened []WeakenedSetting `json:"weakened,omitempty"`
-	Server   ServerFacts       `json:"server"`
-	Content  ContentFacts      `json:"content"`
-	Upkeep   UpkeepFacts       `json:"upkeep"`
-	Agents   AgentFacts        `json:"agents"`
-	Ext      ExtFacts          `json:"ext"`
-	Now      time.Time         `json:"-"`
-	Extra    map[string]string `json:"extra,omitempty"`
+	Policy *auth.Policy     `json:"-"`
+	Tokens *auth.TokenStore `json:"-"`
+	Types  *schema.Store    `json:"-"`
+	Audit  []audit.Event    `json:"-"`
+	// AuditRead says the log was read, which a nil Audit cannot.
+	//
+	// audit.Read answers (nil, nil) for a log that is not there and a nil
+	// slice for one that is empty, so "no entries" and "not looked at" were
+	// the same value — and the rule written to catch an empty log after a
+	// publish guarded on `s.Audit == nil` and could therefore never fire.
+	// A deployment whose log path is unwritable, which is exactly the
+	// deployment that rule exists for, scored clean on it.
+	AuditRead bool              `json:"-"`
+	Files     []FileFact        `json:"files"`
+	Weakened  []WeakenedSetting `json:"weakened,omitempty"`
+	Server    ServerFacts       `json:"server"`
+	Content   ContentFacts      `json:"content"`
+	Upkeep    UpkeepFacts       `json:"upkeep"`
+	Agents    AgentFacts        `json:"agents"`
+	Ext       ExtFacts          `json:"ext"`
+	Now       time.Time         `json:"-"`
+	Extra     map[string]string `json:"extra,omitempty"`
 }
 
 // Rule is one check.
@@ -401,7 +410,7 @@ func missing(s State) []string {
 	if s.Tokens == nil {
 		out = append(out, "API tokens: no rules about credentials were checked")
 	}
-	if s.Audit == nil {
+	if !s.AuditRead {
 		out = append(out, "audit log: the chain was not verified")
 	}
 	if s.Types == nil {

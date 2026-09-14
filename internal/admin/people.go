@@ -282,8 +282,16 @@ func (s *Server) handleSessionRevoke(w http.ResponseWriter, r *http.Request) {
 		s.peopleBack(w, r, err.Error())
 		return
 	}
+	// "credential" and not "token".
+	//
+	// Append refuses any Detail key containing token, secret, password, key,
+	// body or content — and refuses the whole record, not the key. So every
+	// revocation made through this screen was dropped: the credential stopped
+	// working and the log said nothing about it having been revoked, or by
+	// whom, which is exactly the entry an incident review goes looking for.
+	// The id of a credential is not a secret; the name of the field was.
 	s.audit("token.revoke", "/", map[string]string{
-		"token": id, "by": p.Name, "cascaded": fmt.Sprintf("%d", n),
+		"credential": id, "by": p.Name, "cascaded": fmt.Sprintf("%d", n),
 	})
 	msg := "that credential no longer works"
 	if n > 1 {

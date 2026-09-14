@@ -342,7 +342,7 @@ var rules = []Rule{
 			"not wired up. Every control that depends on being able to say what " +
 			"happened is inoperative, and nobody will find out until they need it.",
 		Check: func(s State) []Finding {
-			if s.Audit == nil || len(s.Audit) > 0 {
+			if !s.AuditRead || len(s.Audit) > 0 {
 				return nil
 			}
 			if s.Content.PublishedAt == 0 {

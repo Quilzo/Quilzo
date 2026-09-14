@@ -43,10 +43,11 @@ func clean(t *testing.T) State {
 	ts.Tokens[0].LastUsed = ago(time.Hour)
 
 	return State{
-		Policy: pol,
-		Tokens: ts,
-		Types:  &schema.Store{Registry: schema.NewRegistry(), Bound: map[string]string{}},
-		Audit:  chain(t, 20, true),
+		Policy:    pol,
+		Tokens:    ts,
+		Types:     &schema.Store{Registry: schema.NewRegistry(), Bound: map[string]string{}},
+		Audit:     chain(t, 20, true),
+		AuditRead: true,
 		Server: ServerFacts{
 			AdminAddr: "127.0.0.1:8080", PublicAddr: "127.0.0.1:8081",
 		},
@@ -733,5 +734,34 @@ func TestAFilesystemOnlySandboxIsStillReported(t *testing.T) {
 	if n := rule.Check(State{Ext: ExtFacts{
 		Registered: 1, Checked: true, Sandboxed: true}}); len(n) != 0 {
 		t.Errorf("%d findings when extensions are fully confined", len(n))
+	}
+}
+
+// The empty-log rule can fire.
+//
+// It could not. audit.Read answers (nil, nil) for a log that is not there and
+// a nil slice for one that is empty, so "no entries" and "not looked at" were
+// the same value — and the guard was `s.Audit == nil`, which returns early for
+// both. A deployment whose log path is unwritable, which is exactly the
+// deployment this rule exists for, scored clean on it.
+//
+// The rule is High and its Why says every control that depends on being able
+// to say what happened is inoperative. It had been inoperative itself.
+func TestAnEmptyLogAfterAPublishIsReported(t *testing.T) {
+	s := clean(t)
+	s.Audit, s.AuditRead = nil, true
+
+	if f := has(Scan(s, nil), "audit.empty"); f == nil {
+		t.Error("a published site with an empty audit log produced no " +
+			"finding. Nothing is logged and nothing says so, which is the " +
+			"state this rule is the only check for")
+	}
+
+	// And a log nobody could read is not reported as an empty one: that is a
+	// different problem with a different answer, and claiming the log is empty
+	// when it was never opened is the mistake in the other direction.
+	s.AuditRead = false
+	if f := has(Scan(s, nil), "audit.empty"); f != nil {
+		t.Error("a log that was not read is reported as an empty log")
 	}
 }
