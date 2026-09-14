@@ -323,6 +323,11 @@ func Groups() []string {
 type Placed struct {
 	Index int    `json:"index"`
 	Kind  string `json:"kind"`
+	// ID names this section so a screen can point at it after somebody else
+	// has inserted one above. Empty on a page that has not been arranged
+	// since ids existed; see internal/section/id.go for why they arrive
+	// lazily rather than by migration.
+	ID string `json:"id,omitempty"`
 	// Label is a line of the section's own content, so a list of six sections
 	// is readable rather than six rows saying "features". Empty when the
 	// section carries nothing that names it.
@@ -346,7 +351,7 @@ func On(body any) []Placed {
 			continue
 		}
 		name, inner := discriminator(m)
-		p := Placed{Index: i, Kind: name}
+		p := Placed{Index: i, Kind: name, ID: IDOf(m)}
 		if _, known := Lookup(name); !known {
 			p.Unknown = true
 		}
@@ -413,11 +418,23 @@ func Insert(body any, kind string, at int) (map[string]any, error) {
 		return nil, fmt.Errorf(
 			"there is no %q section. The kinds are: %v", kind, Names())
 	}
+	// The rest of the page gets names too, so an arrangement made after this
+	// can refer to any of them and not only to the new one.
+	body, _ = EnsureIDs(body)
 	page, list := copyOf(body)
 	if at < 0 || at > len(list) {
 		at = len(list)
 	}
-	entry := any(map[string]any{k.Name: cloneValue(k.Stub)})
+	taken := map[string]bool{}
+	for _, e := range list {
+		if id := IDOf(e); id != "" {
+			taken[id] = true
+		}
+	}
+	entry := any(map[string]any{
+		IDField: freshID(taken),
+		k.Name:  cloneValue(k.Stub),
+	})
 	next := make([]any, 0, len(list)+1)
 	next = append(next, list[:at]...)
 	next = append(next, entry)
@@ -428,6 +445,9 @@ func Insert(body any, kind string, at int) (map[string]any, error) {
 
 // Remove takes one section out.
 func Remove(body any, at int) (map[string]any, error) {
+	// Named on the way through, so a page that has never been arranged gains
+	// ids on the edit that first needs them rather than on a migration.
+	body, _ = EnsureIDs(body)
 	page, list := copyOf(body)
 	if at < 0 || at >= len(list) {
 		return nil, fmt.Errorf("there is no section %d; this page has %d",
@@ -454,6 +474,7 @@ func Remove(body any, at int) (map[string]any, error) {
 // nothing is worse than one that is not offered, and the screen does not offer
 // it.
 func Move(body any, at, by int) (map[string]any, error) {
+	body, _ = EnsureIDs(body)
 	page, list := copyOf(body)
 	if at < 0 || at >= len(list) {
 		return nil, fmt.Errorf("there is no section %d; this page has %d",
@@ -616,17 +637,25 @@ func Validate(body any) (blocking []Problem, advisory []Problem) {
 		}
 		// More than one kind on one entry is ambiguous: the first in catalogue
 		// order renders and the rest are silently dropped.
-		if len(m) > 1 {
+		//
+		// The id is not a kind and is not counted. It sits beside the kind
+		// rather than among its fields — see internal/section/id.go — and this
+		// rule exists to catch two *sections* written as one, which is a
+		// different thing from a section that knows its own name.
+		{
 			var also []string
 			for k := range m {
-				if k != name {
+				if k != name && k != IDField {
 					also = append(also, k)
 				}
 			}
-			sort.Strings(also)
-			blocking = append(blocking, Problem{i, fmt.Sprintf(
-				"names %s and also %s; one entry is one section, and only the "+
-					"first would render", name, strings.Join(also, ", "))})
+			if len(also) > 0 {
+				sort.Strings(also)
+				blocking = append(blocking, Problem{i, fmt.Sprintf(
+					"names %s and also %s; one entry is one section, and only "+
+						"the first would render", name,
+					strings.Join(also, ", "))})
+			}
 		}
 		advisory = append(advisory, unknownFields(i, kind, inner)...)
 	}
