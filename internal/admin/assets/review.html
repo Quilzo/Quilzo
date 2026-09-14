@@ -119,6 +119,10 @@
 <p>No template configured, so nothing was rendered to check.</p>
 {{end}}
 {{end}}
+{{if .AccessibilityUnavailable}}
+<p class="notice bad" role="alert">The accessibility check could not run, so
+  this screen is not saying the pages pass it: {{.AccessibilityUnavailable}}</p>
+{{end}}
 
 {{if .Unmarked}}
 <h2>Provenance</h2>

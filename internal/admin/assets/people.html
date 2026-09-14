@@ -76,7 +76,8 @@
       </th>
       <td>
         <code>{{.Resource}}</code>
-        {{if .OwnOnly}} <span class="tag">own content only</span>{{end}}
+        {{if .OwnOnly}} <span class="tag tag-warn">own-only: never enforced,
+          ignored</span>{{end}}
         {{if .Note}}<div class="hint">{{.Note}}</div>{{end}}
       </td>
       <td class="right">
