@@ -408,6 +408,10 @@ type principal struct {
 	// and nowhere else. A read-only token could save a page and publish it
 	// through this interface, which is the interface most people use.
 	Limits auth.Scope
+	// TokenID and Session identify the credential itself, so signing out can
+	// revoke the session it was issued for rather than only forgetting it.
+	TokenID string
+	Session bool
 }
 
 // authenticate resolves a request to a principal.
@@ -433,7 +437,7 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 	}
 	return principal{
 		Name: tok.Principal, Role: tok.Role, Scope: tok.Resource,
-		Limits: tok.Scope}, nil
+		Limits: tok.Scope, TokenID: tok.ID, Session: tok.IsSession()}, nil
 }
 
 // can checks a permission and writes the refusal itself if there is one.
@@ -1016,8 +1020,39 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
+	// The same limiter every other credential check goes through.
+	//
+	// This form did not. requireAuth throttles a token presented as a cookie,
+	// and the identical guess sent through the sign-in box was free: measured
+	// against the running server, forty wrong tokens through here returned
+	// forty 401s and never once a 429, while two through the cookie path were
+	// enough to start refusing.
+	//
+	// Worse than the missing limit is the missing count. Failures here never
+	// reached Throttle.Fail, so they did not contribute to the per-source
+	// counter that protects every other surface, and they never crossed the
+	// threshold that fires OnAuthFailure — so a sustained attempt against the
+	// one door built for people raised no alert at all.
+	sub := throttle.Subject{Source: sourceOf(r)}
+	if s.Throttle != nil {
+		if d := s.Throttle.Check(sub); !d.Allowed {
+			s.tooManyAttempts(w, r, d)
+			return
+		}
+	}
+
 	raw := strings.TrimSpace(r.FormValue("token"))
 	if _, err := s.Tokens.Authenticate(raw, time.Now()); err != nil {
+		if s.Throttle != nil {
+			d, alert := s.Throttle.Fail(sub)
+			if alert && s.OnAuthFailure != nil {
+				s.OnAuthFailure(sub.Source, d.Failures)
+			}
+			if !d.Allowed {
+				s.tooManyAttempts(w, r, d)
+				return
+			}
+		}
 		w.WriteHeader(http.StatusUnauthorized)
 		s.render(w, r, "signin.html", map[string]any{
 			"Title": "Sign in", "Error": err.Error(), "OIDC": s.OIDC != nil})
@@ -1060,6 +1095,27 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
+	// A session is revoked, not just forgotten.
+	//
+	// This cleared the cookie and left the credential alive. The OIDC and
+	// passkey paths mint a server-side session token that lasts eight hours,
+	// so somebody who signed in through an identity provider, pressed Sign
+	// out, and walked away had a working credential for the rest of the
+	// working day — in a proxy log, in a shared machine's memory, in whatever
+	// copied the Authorization header. Signing out is the one moment a person
+	// tells you they are finished with a credential, and it was the moment
+	// this did the least.
+	//
+	// Only a session. A long-lived token presented as a cookie is somebody's
+	// own credential, used deliberately, and revoking it because they closed
+	// a tab would destroy the thing they signed in with.
+	if p, err := s.authenticate(r); err == nil && p.TokenID != "" && p.Session {
+		if _, err := s.Tokens.Revoke(p.TokenID); err == nil {
+			if serr := s.save(); serr == nil {
+				s.audit("session.end", "/", map[string]string{"by": p.Name})
+			}
+		}
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil || s.behindTLSProxy(),

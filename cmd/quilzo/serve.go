@@ -514,6 +514,26 @@ func cmdServe(root string, args []string) error {
 	// are turned on deliberately.
 	apiSrv := &api.Server{
 		Store: s, Policy: pol, Tokens: toks,
+		// The admin's own limiter and token reloader, not a second set and
+		// not nothing.
+		//
+		// It was nothing. Every throttle call in internal/api is guarded by
+		// `if s.Throttle != nil`, so under `quilzo serve` the bearer endpoint
+		// had no failed-authentication limit at all — tokens could be spent
+		// against it at line rate, uncounted, undelayed, and with no alert,
+		// while the same guesses against the admin's own screens were refused
+		// after five. `quilzo site` wired all three; this one wired none, and
+		// the two are the same API.
+		//
+		// The *same* limiter rather than another one, because a failure is a
+		// failure: an attacker who finds one door throttled should not get a
+		// fresh allowance by knocking on the other.
+		//
+		// ReloadTokens for the same reason it is set on the admin above. With
+		// it nil, a token revoked in another process kept authenticating here
+		// until an admin request happened to reload the store.
+		Throttle:     srv.Throttle,
+		ReloadTokens: srv.ReloadTokens,
 		// The same cache the admin uses. One process, one decoded copy of a
 		// collection — two would be the same memory spent twice and two
 		// chances for one of them to be built wrong.
@@ -534,6 +554,19 @@ func cmdServe(root string, args []string) error {
 				return commitTreeNoLock(s, tree, message, author)
 			},
 		},
+	}
+	// And the API reports its failures the same way, rather than reaching the
+	// threshold in silence. Set after Handler() is built because the handler
+	// closes over the server value, not over this field.
+	apiSrv.OnAuthFailure = func(source string, failures int) {
+		record(root, audit.Record{
+			Action: "auth.failures", Resource: "/api",
+			Outcome: audit.Denied, Principal: source, Kind: audit.KindUnknown,
+			Detail: map[string]string{
+				"failures": fmt.Sprintf("%d", failures),
+				"surface":  "api",
+			},
+		})
 	}
 	srv.API = apiSrv.Handler()
 	srv.OnAuthFailure = func(source string, failures int) {
