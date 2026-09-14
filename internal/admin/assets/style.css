@@ -899,29 +899,27 @@ tr.detail td { padding-top: 0; border-top: 0; }
    * rather than to the bottom of the bar, so nothing here knows or asks how
    * tall the bar is — it is a row, and the row is whatever it needs to be.
    *
-   * # Why the menu column starts at the top and the bar does not span it
+   * # The menu has no scrollbar of its own
    *
-   * Because a box that starts below the top of the window and is sized
-   * against the whole of it hangs off the bottom by however far down it
-   * started. That is the original bug in this area, exactly: a sidebar one
-   * viewport tall beginning one bar-height down, ending one bar-height under
-   * the fold, with the last group in it unreachable.
+   * It had one for a while: a ceiling of `100dvh - 2rem` and `overflow-y:
+   * auto`, so a menu longer than the window scrolled inside itself. That is a
+   * second scrollbar on a page that has one already, a few pixels from it, and
+   * the two do different things — which is a control somebody has to work out
+   * rather than a page they can read.
    *
-   * With the bar spanning both columns the menu began below it, so on a short
-   * window its last 44px sat under the fold until somebody scrolled the page
-   * — one gesture and it was fine, and "fine once you scroll" is how the same
-   * bug was justified the first time.
+   * There is no ceiling now and nothing to scroll inside. The menu is as tall
+   * as it is, and the page's own scrollbar is the only one. `top` and `bottom`
+   * together are what make that work for a menu of any length: a menu shorter
+   * than the window sticks under the bar and stays there, and a menu longer
+   * than it scrolls up with the page until its end is on screen and then stays
+   * — so everything in it is reachable with the scroll everybody already has,
+   * and nothing is reachable only through a box somebody has to find.
    *
-   * Subtracting the bar's height would fix it and is the constant this whole
-   * area exists to keep out. So the column starts where the window starts
-   * instead, and then `top: 1rem` against `100dvh - 2rem` is exact whether the
-   * menu is stuck or not, and still knows nothing about the bar.
-   *
-   * The bar over the content column only is the visible cost, and it is the
-   * arrangement every other two-column application uses for the same reason.
+   * Neither offset is derived from anything else's height, which is the rule
+   * this whole area exists for.
    */
   body:has(> .sidenav) { display: grid; grid-template-columns: 14rem 1fr;
-    grid-template-areas: "nav bar" "nav main" "nav foot";
+    grid-template-areas: "bar bar" "nav main" "nav foot";
     grid-template-rows: auto 1fr auto; }
   /* The footer needs a named area too. Without one it lands in the first
      free cell, which is under the sidebar, and wraps to three lines in a
@@ -954,27 +952,15 @@ tr.detail td { padding-top: 0; border-top: 0; }
      stretches to fill its row, and an element with no room to move inside its
      own area cannot stick to anything. */
   body:has(> .sidenav) > .sidenav > .navgroups {
-    position: sticky; top: 1rem;
-    max-height: calc(100dvh - 2rem); overflow-y: auto;
-    overscroll-behavior: contain;
-    /* A column that scrolls is not a column that wraps.
+    position: sticky; top: 1rem; bottom: 1rem;
+    /* A column that scrolls with the page is not a column that wraps.
        .navgroups is flex-wrap: wrap in the base rule, for the arrangement
-       where the groups sit in a row. Give a *column* flex container a height
-       it cannot exceed and wrap does what it is for: it starts a second
-       column. So the moment this gained a max-height, half the menu moved
-       into a second column 14rem could not hold and the group names were cut
-       off at the edge of the sidebar — Assurance, Administration and
-       Reference sliced down the middle, with nothing overflowing anywhere a
-       scrollbar could appear. */
+       where the groups sit in a row across the top. Anything that constrains
+       a *column* flex container makes wrap do what it is for — start a second
+       column — and 14rem cannot hold two, so the group names were sliced down
+       the middle at the edge of the sidebar with nothing overflowing anywhere
+       a scrollbar could appear. */
     flex-wrap: nowrap; }
-  /* The groups keep their height instead of being squeezed into the ceiling
-     above. .navgroups is a flex column, and a flex item shrinks to fit by
-     default — so a menu longer than the window did not scroll, it compressed,
-     and the last group was still not reachable. That is the bug this whole
-     area exists for, arrived at from the other direction: measured, the
-     container's scrollHeight equalled its clientHeight with 1800px of content
-     inside it. */
-  body:has(> .sidenav) > .sidenav > .navgroups > * { flex-shrink: 0; }
   body:has(> .sidenav) > main { grid-area: main; min-width: 0; }
   .sidenav .navgroups { flex-direction: column; gap: 1rem; align-items: stretch; }
   .sidenav .navgroup + .navgroup { border-left: 0; margin-left: 0; padding-left: 0; }
