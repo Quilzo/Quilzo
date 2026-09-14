@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/site"
 )
 
@@ -174,5 +175,66 @@ func TestDeletingAReferencedPageSaysWhoNamesIt(t *testing.T) {
 	}
 	if _, there := pages["about"]; !there {
 		t.Error("the page was deleted anyway")
+	}
+}
+
+// Arranging a section that somebody else has removed is refused by name.
+//
+// It was `at=3`, and the handler acted on whatever was third when the form
+// arrived. Somebody with the Sections screen open decides to remove the fifth
+// section; a colleague adds a banner at the top; the first person presses
+// Remove and the fourth goes instead — the one they were keeping. Nothing
+// failed, and the page they meant to tidy is missing something else.
+func TestArrangingASectionThatHasGoneIsRefused(t *testing.T) {
+	srv, token := setup(t)
+
+	pages, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := section.Insert(pages["index"], "prose", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["index"] = body
+	if _, err := site.SaveDraft(srv.Store, pages, "a section", "test"); err != nil {
+		t.Fatal(err)
+	}
+	placed := section.On(body)
+	if len(placed) != 1 || placed[0].ID == "" {
+		t.Fatalf("the section has no id: %+v", placed)
+	}
+
+	// A section that is not there any more: refused by name, and nothing
+	// altered.
+	w := postForm(t, srv, "/sections/edit", token,
+		"page=index&do=remove&at=0&id=deadbeef")
+	said, err := url.QueryUnescape(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(said, "not there any more") {
+		t.Errorf("removing a section that has gone was not refused: %q", said)
+	}
+	after, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(section.On(after["index"])) != 1 {
+		t.Error("a section was removed although the one named had gone")
+	}
+
+	// And the one that is there is removed by its own name.
+	ok := postForm(t, srv, "/sections/edit", token,
+		"page=index&do=remove&at=0&id="+placed[0].ID)
+	if ok.Code >= 400 {
+		t.Fatalf("removing the named section answered %d", ok.Code)
+	}
+	final, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(section.On(final["index"])) != 0 {
+		t.Error("the named section was not removed")
 	}
 }

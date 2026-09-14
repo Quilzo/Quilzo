@@ -203,7 +203,36 @@ func (s *Server) handleSectionEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The section this is about, named rather than counted.
+	//
+	// It was `at=3`, and the handler acted on whatever was third at the moment
+	// the form arrived. Somebody with the Sections screen open decides to
+	// remove the fifth section; a colleague adds a banner at the top; the
+	// first person presses Remove and the fourth goes instead — the one they
+	// were keeping. Nothing failed, and the page they meant to tidy is now
+	// missing something else.
+	//
+	// The id resolves against the page as it is now. A section that has gone
+	// since the screen was drawn is refused by name, which is the only case
+	// that is actually wrong — the editor's whole-page compare-and-swap would
+	// refuse every arrangement whenever anybody touched anything, and this is
+	// a screen for small repeated edits.
+	//
+	// `at` is still accepted, for the add (which places a section rather than
+	// naming one) and for a page written before ids existed.
 	at, _ := strconv.Atoi(r.FormValue("at"))
+	if id := strings.TrimSpace(r.FormValue("id")); id != "" {
+		found, ok := section.IndexOf(body, id)
+		if !ok {
+			s.sectionsRedirect(w, r, name, "",
+				"that section is not there any more — somebody else has "+
+					"changed this page. Nothing was altered; the list below "+
+					"is how it stands now.")
+			return
+		}
+		at = found
+	}
+
 	var next map[string]any
 	var msg string
 

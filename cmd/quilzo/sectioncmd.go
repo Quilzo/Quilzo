@@ -184,14 +184,14 @@ func sectionAdd(root string, args []string) error {
 func sectionRemove(root string, args []string) error {
 	pos, _ := leadingArgs(args, 2)
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo section remove <page> <index>\n" +
-			"  quilzo section list <page>  shows the indices")
-	}
-	index, err := strconv.Atoi(pos[1])
-	if err != nil {
-		return fmt.Errorf("%q is not a section index", pos[1])
+		return fmt.Errorf("usage: quilzo section remove <page> <index-or-id>\n" +
+			"  quilzo section list <page>  shows both")
 	}
 	return editSections(root, pos[0], func(body any) (map[string]any, string, error) {
+		index, err := sectionAt(body, pos[1])
+		if err != nil {
+			return nil, "", err
+		}
 		kind := "a"
 		if placed := section.On(body); index >= 0 && index < len(placed) {
 			kind = placed[index].Kind
@@ -199,6 +199,28 @@ func sectionRemove(root string, args []string) error {
 		next, err := section.Remove(body, index)
 		return next, fmt.Sprintf("remove the %s section from %s", kind, pos[0]), err
 	})
+}
+
+// sectionAt reads a section's position from an index or from its id.
+//
+// Either, because both are true names for it and which one somebody has
+// depends on where they are looking: `section list` prints both, a script that
+// counted rows has the index, and anything that kept a reference has the id.
+//
+// The id is the one that is still right after somebody else has arranged the
+// page — see internal/section/id.go — so it is tried first and an index is
+// only read when what was given is not one.
+func sectionAt(body any, which string) (int, error) {
+	if at, ok := section.IndexOf(body, which); ok {
+		return at, nil
+	}
+	at, err := strconv.Atoi(which)
+	if err != nil {
+		return 0, fmt.Errorf(
+			"%q is neither a section index nor the id of a section on this "+
+				"page.\n  quilzo section list PAGE  shows both", which)
+	}
+	return at, nil
 }
 
 func sectionMove(root string, args []string) error {
