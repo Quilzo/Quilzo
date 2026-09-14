@@ -280,7 +280,12 @@ p  { margin: 0.75rem 0; max-width: 68ch; }
 a { color: var(--primary); text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
 a:hover { text-decoration-thickness: 2px; }
 
-code { font-family: var(--mono); font-size: 0.9em; }
+/* A hash has no spaces in it, so a line of running text carrying one is a
+   line the browser cannot break — and a 64-character hash is wider than a
+   phone. anywhere rather than break-word: break-word only breaks when the
+   word is alone on its line, which is not the case in a sentence like "the
+   bundle is addressed by <code>b1946ac…</code>". */
+code { font-family: var(--mono); font-size: 0.9em; overflow-wrap: anywhere; }
 
 /* One focus treatment everywhere. 2.4.13 asks for a 2px-minimum indicator at
    3:1 against both the component and the page, and an offset so it is not
@@ -485,12 +490,51 @@ textarea { resize: vertical; min-height: 8rem; line-height: 1.6; }
 
 /* A checkbox is the one control that reads better beside its label, and the
    one browsers draw too small. 24px is the WCAG 2.5.8 floor; the padded label
-   carries the rest of the target. */
-input[type=checkbox] {
+   carries the rest of the target.
+
+   And a radio, which is the same control with a different shape and was left
+   out of this rule. Chrome draws one at 13x13, so the nine places to crop a
+   picture from were nine 13px targets in a grid — measured in a real browser,
+   which is the only way that shows up. */
+input[type=checkbox], input[type=radio] {
   width: 24px; height: 24px; min-height: 0; margin: 0 0.6rem 0 0;
   vertical-align: -0.35rem; accent-color: var(--primary);
 }
 input[type=checkbox] + label { display: inline; font-weight: 600; }
+
+/* A link that is the control rather than a word in a sentence.
+   ---------------------------------------------------------------------------
+   Buttons, inputs, nav items and the bar all clear WCAG 2.5.8 above. Plain
+   text links did not: "Edit about" alone in a table cell is 16px tall, and so
+   is "Arrange about", and "Back to the posture dashboard." alone in its
+   paragraph. Sixteen pixels of link is a target somebody misses on a laptop
+   trackpad and misses every time on a touchscreen.
+
+   Padding rather than a taller box. Vertical padding on an inline element
+   enlarges the hit area and does not affect the line box, and the negative
+   margin is there for the case where it would — so nothing on any of these
+   screens moves. That matters more than usual here: this is the second pass
+   over these screens, and the first one moved things.
+
+   Links inside running text are left alone, which the criterion allows: a
+   target "in a sentence" is exempt, and spacing one out would make the
+   sentence's own line spacing uneven.
+
+   A summary is a control too — it opens the panel under it — and the ones
+   here are set in the hint face, so they start smaller than the links.
+
+   5px rather than 4: the smallest of these is set at 14px, and 14 + 5 + 5 is
+   the 24 the criterion asks for. */
+td > a, th > a, .bar a, p > a:only-child {
+  padding-block: 5px; margin-block: -5px;
+}
+summary { padding-block: 5px; margin-block: -5px; }
+.focusgrid label { min-height: 24px; }
+
+/* A file picker is a control and browsers draw it at whatever height the font
+   suggests — 21px here, which is under the floor the text inputs beside it
+   already clear. */
+input[type=file] { min-height: 32px; }
 
 .help { font: var(--body-md); color: var(--on-surface-variant);
         margin: 0.4rem 0 0; max-width: 60ch; }
@@ -531,10 +575,20 @@ form.inline input:not([type=checkbox]), form.inline select {
 form.inline textarea { width: 100%; }
 
 /* A fieldset of checkboxes. The default border is heavier than anything else
-   on these screens. */
+   on these screens.
+
+   min-inline-size: 0 is not decoration. Every browser gives a fieldset
+   min-inline-size: min-content in its own stylesheet, and min-content wins
+   over the max-width above and over anything inside it. So the .grid2 in the
+   listings form, which is repeat(auto-fit, minmax(18rem, 1fr)) and collapses
+   to one column everywhere else, stayed three columns wide on a phone: three
+   times 18rem is 864px, the fieldset would not go under it, and the whole
+   page scrolled sideways by 481px at 420px wide. Measured in a real browser,
+   which is the only way a rule nobody wrote shows up. */
 fieldset {
   border: 1px solid var(--outline-variant); border-radius: var(--shape-sm);
   padding: 0.75rem 1rem; margin: 0 0 1.25rem; max-width: 28rem;
+  min-inline-size: 0;
 }
 fieldset legend { font: var(--label-lg); font-weight: 700; padding: 0 0.4rem; }
 fieldset p { margin: 0.25rem 0; }
@@ -577,7 +631,22 @@ fieldset label { display: inline; font-weight: 600; }
 
 /* -- tables and lists ------------------------------------------------------ */
 
-.table-wrap { overflow-x: auto; border-radius: var(--shape-lg);
+/* A wide table scrolls inside this and not with the page.
+ *
+ * overflow-x alone did not achieve that, which took a real browser to see. The
+ * wrapper clips correctly — its clientWidth is 443 where the table's is 685 —
+ * and documentElement.scrollWidth was 633 all the same, so the page itself
+ * scrolled 148px sideways on a phone, into blank space: scrolled all the way
+ * right, the bar's right edge sat at 337 of a 500px viewport. The complaint it
+ * produces is "why does this page slide about", and every element you could
+ * point at was inside the thing that was supposed to be holding it.
+ *
+ * contain: paint is the fix and also the honest description: nothing in here
+ * paints outside here, which is what a scroll container already means. Neither
+ * overflow-x: clip on main nor on body helped — the width was propagating past
+ * both. */
+.table-wrap { overflow-x: auto; contain: paint;
+              border-radius: var(--shape-lg);
               border: 1px solid var(--outline-variant); margin: 1rem 0; }
 table { width: 100%; border-collapse: collapse; font: var(--body-md); }
 th, td { text-align: left; padding: 0.85rem 1rem;
