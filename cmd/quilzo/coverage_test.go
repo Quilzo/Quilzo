@@ -165,6 +165,13 @@ var coverage = map[string]surfaces{
 			"Telegram accounts. An agent that could start one could point it " +
 			"at a store and accept writes from a billion strangers"},
 	"find": {GUI: "/find", MCP: []string{"find"}},
+	"links": {GUI: "/page/",
+		Why: "shown on the page it is about — a list of what points at this " +
+			"page belongs beside the thing somebody is about to change, not " +
+			"on a screen they would have to think to open",
+		NoMCP: "a model asking what points at a page is asking to read the " +
+			"whole reference graph one question at a time; read_page and " +
+			"list_pages already give it the same answer in one call"},
 	"checked": {GUI: "/", MCP: []string{"list_checked"},
 		Why: "shown as a column on the pages list, where somebody is already " +
 			"looking, rather than as another entry in a navigation this " +

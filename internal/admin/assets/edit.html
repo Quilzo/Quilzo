@@ -142,6 +142,21 @@
 </section>
 {{end}}
 
+{{if .Incoming}}
+<section aria-labelledby="links-h">
+  <h2 id="links-h">Referenced by</h2>
+  <p class="hint">These pages name this one in a reference field. Renaming or
+    removing it breaks them, and publishing is refused until they are put
+    right.</p>
+  <ul class="notelist">
+    {{range .Incoming}}
+    <li><a href="/page/{{.From}}">{{.From}}</a>
+      <span class="hint">in its <code>{{.Field}}</code> field</span></li>
+    {{end}}
+  </ul>
+</section>
+{{end}}
+
 {{if .NotesOn}}
 <section class="notes" aria-labelledby="notes-h">
   <h2 id="notes-h">Notes</h2>

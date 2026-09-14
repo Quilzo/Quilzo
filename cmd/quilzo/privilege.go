@@ -173,6 +173,8 @@ var commandNeeds = map[string]need{
 	// Reading. The settings half asks for grant separately inside the command,
 	// because a key's summary describes a control and the rest is content.
 	"find": {action: auth.ActView},
+	// Reading which pages name which is reading the content and the types.
+	"links": {action: auth.ActView},
 	// Editing a draft. A note is a remark about content, made by somebody who
 	// is working on it — so it takes the same authority the draft does.
 	// Saying a page is still right is a statement about the draft, made by

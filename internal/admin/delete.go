@@ -178,6 +178,23 @@ func (s *Server) pointingAt(name string, pages map[string]any) []string {
 		}
 	}
 
+	// Content references, which are the other way a reader meets a 404.
+	//
+	// The menus were checked here from the start and the references were not,
+	// although the reason is the same sentence and schema.Unresolved has been
+	// refusing publishes over it all along. Deleting a page that two others
+	// name left the store publishable-until-you-try: the refusal arrived at
+	// the gate, naming pages somebody had changed for unrelated reasons, and
+	// the page that caused it was already gone.
+	if s.Types != nil && s.Types.Load != nil {
+		if st, err := s.Types.Load(); err == nil && st != nil {
+			for _, l := range st.LinksTo(pages, name) {
+				out = append(out, fmt.Sprintf(
+					"the %q field of %q", l.Field, l.From))
+			}
+		}
+	}
+
 	// A page whose own body names it as a listing source is not a thing this
 	// model has, so the remaining pointer is a type binding — harmless on its
 	// own, and worth clearing so a later page of the same name is not silently
