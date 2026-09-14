@@ -953,7 +953,27 @@ tr.detail td { padding-top: 0; border-top: 0; }
      own area cannot stick to anything. */
   body:has(> .sidenav) > .sidenav > .navgroups {
     position: sticky; top: 1rem; bottom: 1rem;
-    /* A column that scrolls with the page is not a column that wraps.
+    /* The wheel over the menu moves the menu.
+       Without a scroll box of its own there was nothing here for the wheel to
+       act on, so it fell through to the page — which does eventually bring the
+       end of the menu into view, and is not what anybody expects from a
+       sidebar. The box is capped at the window and scrolls inside itself.
+       Scroll chaining is deliberately left on. When the menu reaches its end
+       the page takes over, which is what moves the menu the last few pixels
+       into place the one time the cap is short of where it sits: at the very
+       top of a page the menu starts below the bar, so a box the height of the
+       window ends that far past the bottom of it. One notch of wheel past the
+       end of the menu and the page has scrolled, the menu has stuck, and the
+       two agree. overscroll-behavior: contain would stop exactly that and
+       leave the last strip unreachable. */
+    max-height: calc(100dvh - 2rem); overflow-y: auto;
+    /* Thin and quiet, not the platform's block. It is an indication that
+       there is more, which a reader needs; it is not a control anybody should
+       have to aim at, and the wheel and the keyboard both reach this without
+       it. */
+    scrollbar-width: thin;
+    scrollbar-color: var(--outline-variant) transparent;
+    /* A column that scrolls is not a column that wraps.
        .navgroups is flex-wrap: wrap in the base rule, for the arrangement
        where the groups sit in a row across the top. Anything that constrains
        a *column* flex container makes wrap do what it is for — start a second
@@ -961,6 +981,11 @@ tr.detail td { padding-top: 0; border-top: 0; }
        the middle at the edge of the sidebar with nothing overflowing anywhere
        a scrollbar could appear. */
     flex-wrap: nowrap; }
+  /* And the groups keep their height rather than being squeezed into that
+     cap. A flex item shrinks to fit by default, so a menu longer than the
+     window compressed instead of scrolling — measured, the container's
+     scrollHeight equalled its clientHeight with 1800px of content in it. */
+  body:has(> .sidenav) > .sidenav > .navgroups > * { flex-shrink: 0; }
   body:has(> .sidenav) > main { grid-area: main; min-width: 0; }
   .sidenav .navgroups { flex-direction: column; gap: 1rem; align-items: stretch; }
   .sidenav .navgroup + .navgroup { border-left: 0; margin-left: 0; padding-left: 0; }

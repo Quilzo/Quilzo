@@ -83,13 +83,44 @@ func TestTheLastGroupInTheMenuCanBeReached(t *testing.T) {
 				"to the bottom of the window:\n  %s", edge, menu)
 		}
 	}
-	// And no scroll box of its own: that is a second scrollbar a few pixels
-	// from the page's own, doing something different, which is a control
-	// somebody has to work out rather than a page they can read.
-	if strings.Contains(menu, "overflow-y: auto") ||
-		strings.Contains(menu, "max-height") {
-		t.Errorf("the menu scrolls inside itself again, which puts a second "+
-			"scrollbar beside the page's own:\n  %s", menu)
+	// The wheel over the menu moves the menu. Without a scroll box of its own
+	// there is nothing here for the wheel to act on and it falls through to the
+	// page, which is not what anybody expects from a sidebar.
+	for _, want := range []string{"max-height", "overflow-y: auto"} {
+		if !strings.Contains(menu, want) {
+			t.Errorf("the menu has lost %q, so the wheel over it scrolls the "+
+				"page instead:\n  %s", want, menu)
+		}
+	}
+	// Thin and quiet, not the platform's block. It indicates there is more,
+	// which a reader needs; it is not a control anybody should have to aim at.
+	if !strings.Contains(menu, "scrollbar-width: thin") {
+		t.Errorf("the menu draws the platform's full-width scrollbar a few "+
+			"pixels from the page's own:\n  %s", menu)
+	}
+	// And scroll chaining stays on. It is what moves the menu the last few
+	// pixels into place the one time the cap is short of where the box sits:
+	// at the top of a page the menu starts below the bar, so a box the height
+	// of the window ends that far past the bottom of it. One notch past the
+	// end of the menu and the page has scrolled, the menu has stuck, and the
+	// two agree. contain would stop exactly that and leave the last strip
+	// unreachable — measured: the last item's bottom sat 44px below the fold
+	// and nothing could move it.
+	if strings.Contains(menu, "overscroll-behavior: contain") {
+		t.Errorf("the menu contains its own overscroll, so when it reaches "+
+			"its end the page cannot take over — and the strip of it that "+
+			"sits below the fold at the top of a page is then unreachable:"+
+			"\n  %s", menu)
+	}
+	// The groups keep their height rather than being squeezed into that cap.
+	// A flex item shrinks to fit by default, so a menu longer than the window
+	// compressed instead of scrolling — measured, the container's scrollHeight
+	// equalled its clientHeight with 1800px of content in it.
+	if !strings.Contains(ruleBody(t, css,
+		"body:has(> .sidenav) > .sidenav > .navgroups > *"), "flex-shrink: 0") {
+		t.Error("the menu groups can shrink again, so a menu taller than the " +
+			"window compresses instead of scrolling and the last group is " +
+			"still not reachable")
 	}
 	// A column that scrolls with the page is not a column that wraps.
 	// .navgroups is flex-wrap: wrap in the base rule, for the arrangement
