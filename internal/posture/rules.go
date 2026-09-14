@@ -296,7 +296,7 @@ var rules = []Rule{
 			return []Finding{{
 				Detail: fmt.Sprintf("%d expired %s still listed",
 					n, plural(n, "token is", "tokens are")),
-				Fix: "quilzo token prune",
+				Fix: "quilzo token revoke ID  # `token list` names them",
 			}}
 		},
 	},
@@ -962,7 +962,7 @@ var rules = []Rule{
 			}
 			return []Finding{{
 				Detail: "the current live content has never been timestamped",
-				Fix:    "quilzo timestamp",
+				Fix:    "quilzo timestamp stamp",
 			}}
 		},
 	},

@@ -208,6 +208,7 @@ access
   quilzo transfer record DIR --approved-by WHO   paperwork for carrying an export
   quilzo transfer verify DIR               check what arrived is what left
   quilzo auth grant WHO ROLE [--on PATH]   reader | author | publisher | admin
+  quilzo auth deny WHO ROLE [--on PATH]    a deny wins wherever it sits
   quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
   quilzo auth revoke WHO [--on PATH]       take a grant back
   quilzo auth recover                      break-glass when every admin token is lost

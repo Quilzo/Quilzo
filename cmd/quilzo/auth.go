@@ -126,6 +126,22 @@ func cmdAuth(root string, args []string) error {
 	switch args[0] {
 	case "grant":
 		return authGrant(root, args[1:])
+	// The word everybody reaches for, including this program's own security
+	// report, which advised `quilzo auth deny WHO ROLE --on /path` and got
+	// "unknown auth command". Denying was `grant --deny`, which reads as its
+	// own opposite, and the browser's people screen has had a Deny checkbox
+	// the whole time — so the one surface that spelled it out was the one
+	// somebody acting on a finding was not looking at.
+	//
+	// The same function, with the flag already set. `grant --deny` still
+	// works: it is in scripts, and both spellings producing the same binding
+	// is the point.
+	case "deny":
+		// At the end, not the front. authGrant reads its positional arguments
+		// with leadingArgs, which stops at the first thing beginning with a
+		// dash — so a flag in front of the principal makes the principal
+		// invisible and the command answers with its own usage line.
+		return authGrant(root, append(append([]string{}, args[1:]...), "--deny"))
 	case "revoke":
 		return authRevoke(root, args[1:])
 	case "list":
@@ -145,7 +161,8 @@ func cmdAuth(root string, args []string) error {
 func authUsage() error {
 	fmt.Print(`quilzo auth — who can do what
 
-  grant <principal> <role> [--on /path] [--deny] [--note "..."]
+  grant <principal> <role> [--on /path] [--note "..."]
+  deny <principal> <role> [--on /path] [--note "..."]
   revoke <principal> <role> [--on /path]
   list
   explain <principal> <action> [--on /path]
@@ -224,7 +241,8 @@ func authGrant(root string, args []string) error {
 				"  not a flag to restore")
 	}
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: quilzo auth grant <principal> <role> [--on /path] [--deny]")
+		return fmt.Errorf("usage: quilzo auth grant <principal> <role> " +
+			"[--on /path]\n   or: quilzo auth deny <principal> <role> [--on /path]")
 	}
 
 	p, err := loadPolicy(root)
