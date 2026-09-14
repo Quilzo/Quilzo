@@ -1701,12 +1701,19 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 		changes, _ = site.Diff(s.Store, live, draft)
 	}
 
-	reports := s.checkAll(draft)
+	reports, a11yErr := s.checkAll(draft)
+	a11yUnavailable := ""
+	if a11yErr != nil {
+		// Said on the screen rather than left as an empty list, which is what
+		// "no blocking failures" would have been reporting.
+		a11yUnavailable = a11yErr.Error()
+	}
 	s.render(w, r, "review.html", map[string]any{
-		"Approval": s.approvalFor(p, draft),
-		"Message":  r.URL.Query().Get("m"),
-		"Nav":      "review",
-		"Title":    "Review", "Principal": p, "Changes": changes,
+		"AccessibilityUnavailable": a11yUnavailable,
+		"Approval":                 s.approvalFor(p, draft),
+		"Message":                  r.URL.Query().Get("m"),
+		"Nav":                      "review",
+		"Title":                    "Review", "Principal": p, "Changes": changes,
 		"Reports": reports, "Blocking": a11y.BlockingCount(reports),
 		"Saved":      r.URL.Query().Get("saved"),
 		"CanPublish": s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed,
@@ -1715,13 +1722,38 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 }
 
 // checkAll renders every page and runs the accessibility checks.
-func (s *Server) checkAll(commitID string) []*a11y.Report {
-	if commitID == "" || s.Layouts.Len() == 0 {
-		return nil
+//
+// The error is the difference between "nothing is wrong" and "nothing was
+// looked at", and this used to return only the first. Every failure on the way
+// to a rendered page — the draft unreadable, a page that would not assemble, a
+// template that would not render — came back as an empty slice, which reads to
+// every caller as a clean check, and the publish handler then reported zero
+// blocking failures over pages it had never rendered.
+//
+// The command line has refused on a gate error for as long as somebody has
+// been looking, and says why at length: a gate that cannot run must not exit
+// like a gate that passed.
+func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
+	if commitID == "" {
+		return nil, nil // no draft is nothing to check, not a failure
+	}
+	if s.Layouts.Len() == 0 {
+		// Not a failure. A server started without a template directory is a
+		// store that renders somewhere else, which the command line treats as
+		// the one legitimate reason to turn this gate off — it has
+		// --no-a11y-check for exactly this and nothing here would have an
+		// escape hatch. The review screen already says "no template
+		// configured, so nothing was rendered to check", which is the honest
+		// version of the same answer.
+		//
+		// The silent skips this function used to make were a different thing:
+		// those were layouts that exist, pages that should have rendered, and
+		// errors on the way.
+		return nil, nil
 	}
 	pages, err := site.PagesAt(s.Store, commitID)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	// Rendered the way the public server renders them, which is not what this
 	// did before: it passed the page and nothing else, so every check ran
@@ -1736,26 +1768,42 @@ func (s *Server) checkAll(commitID string) []*a11y.Report {
 	// neither.
 	src := s.sources(commitID, pages)
 	rendered := map[string]string{}
+
+	// A page asking for a layout this site does not have is a blocking failure
+	// of its own, named before anything is published. The comment here used to
+	// say it was "reported as its own blocking finding below rather than
+	// skipped" and the code skipped it, with nothing below — so a page with a
+	// typo in its layout name rendered to nothing for readers, contributed
+	// zero to the blocking count, and published cleanly from the browser while
+	// the command line refused it.
+	var extra []*a11y.Report
+	for page, layout := range s.Layouts.Missing(pages) {
+		extra = append(extra, a11y.Blocker(page, "layout-not-found", "",
+			fmt.Sprintf("this page asks for the %q layout, which this site "+
+				"does not have. It would not render for a reader at all. "+
+				"Layouts available: %s", layout,
+				strings.Join(s.Layouts.Names(), ", "))))
+	}
+
 	for name, body := range pages {
 		ctx, cerr := src.For(name, body, nil)
 		if cerr != nil {
-			continue
+			return nil, fmt.Errorf("assembling %s: %w", name, cerr)
 		}
 		_, layout, lerr := s.Layouts.For(body)
 		if lerr != nil {
-			// A page naming a layout this site does not have cannot be judged,
-			// and passing it silently would be a gate that reports clean over
-			// a page it never rendered. Reported as its own blocking finding
-			// below rather than skipped.
+			// Already reported above. Rendering it through something else to
+			// have something to check would be checking a document nobody is
+			// served.
 			continue
 		}
 		out, err := tmpl.Render(layout, ctx)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("rendering %s: %w", name, err)
 		}
 		rendered[name] = out
 	}
-	return a11y.CheckAll(rendered)
+	return append(a11y.CheckAll(rendered), extra...), nil
 }
 
 func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
@@ -1772,7 +1820,34 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	draft := s.Store.GetRef(site.RefDraft)
-	reports := s.checkAll(draft)
+	reports, checkErr := s.checkAll(draft)
+	if checkErr != nil {
+		// Refused rather than waived, for the reason the provenance branch
+		// below gives: the reason box is for a judgement about something
+		// somebody has read, and there is nothing here to read. Before this
+		// the helper swallowed the error and returned an empty slice, which
+		// reads to this handler as "nothing is wrong" — a page that could not
+		// be rendered published clean.
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, r, "message.html", map[string]any{
+			"Title": "Not published", "Principal": p,
+			"Heading": "The accessibility check could not run",
+			"Body": "Publishing would claim a check that did not happen: " +
+				checkErr.Error(),
+		})
+		return
+	}
+	// The unified content-gate runner is on main and not here.
+	//
+	// The upstream version of this hunk calls s.ContentGates, which #135
+	// added so the four publish surfaces stop running four different sets of
+	// checks. That refactor is not on this branch, so this screen still runs
+	// what checkAll runs — which is fewer gates than `quilzo publish` does,
+	// and is a known gap in this release rather than an oversight.
+	//
+	// What this commit fixes is separate and does apply: two helpers below
+	// returned an empty slice on every error, and an empty slice reads to the
+	// caller as "nothing is wrong".
 	blocking := a11y.BlockingCount(reports)
 	reason := strings.TrimSpace(r.FormValue("reason"))
 
@@ -1781,7 +1856,20 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// with a hole in whichever one people actually use — and the interface is
 	// the one an editor uses, which is exactly the person likely to be
 	// publishing what an assistant wrote.
-	unmarked := s.unmarkedPages(draft)
+	unmarked, provErr := s.unmarkedPages(draft)
+	if provErr != nil {
+		// Refused, not waived, and for the same reason the accessibility error
+		// above is: the reason box is for a judgement call about something
+		// somebody has read, and there is nothing here to read.
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, r, "message.html", map[string]any{
+			"Title": "Not published", "Principal": p,
+			"Heading": "The provenance check could not run",
+			"Body": "Publishing would claim a check that did not happen: " +
+				provErr.Error(),
+		})
+		return
+	}
 	// What the one reason field waives, collected as each gate is reached.
 	//
 	// review.html shows a single free-text box, and typing anything in it
@@ -2028,28 +2116,48 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 }
 
 // unmarkedPages lists pages with no usable provenance at a commit.
-func (s *Server) unmarkedPages(commitID string) []string {
-	if commitID == "" || s.LoadProvenance == nil {
-		return nil
+// unmarkedPages is the pages in a commit that declare no provenance.
+//
+// The error matters as much as the list. Every failure here — an unreadable
+// provenance index, a draft that will not read — came back as an empty slice,
+// which reads as "nothing is unmarked", and the publish handler then reported
+// a clean provenance check, recorded an affirmative audit entry, and put the
+// content up. Corrupting the index was the way to publish unmarked AI content
+// through the browser. The command line and the agent interface both refuse on
+// a gate error and both say why.
+func (s *Server) unmarkedPages(commitID string) ([]string, error) {
+	if commitID == "" {
+		return nil, nil
+	}
+	if s.LoadProvenance == nil {
+		// Unwired, which is a build without provenance rather than a store
+		// with none. Reported so the caller can say which.
+		return nil, errNoProvenance
 	}
 	idx, err := s.LoadProvenance()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	c, err := s.Store.GetCommit(commitID)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	tree, err := s.Store.GetTree(c.Tree)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var out []string
 	for _, st := range provenance.Unmarked(provenance.Check(idx, tree)) {
 		out = append(out, st.Page)
 	}
-	return out
+	sort.Strings(out)
+	return out, nil
 }
+
+// errNoProvenance is a build with nowhere to read provenance from.
+var errNoProvenance = errors.New(
+	"this build has no provenance index, so whether the content carries a " +
+		"machine-readable mark is unknown rather than satisfied")
 
 func (s *Server) handleProvenance(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.requireAuth(w, r)
