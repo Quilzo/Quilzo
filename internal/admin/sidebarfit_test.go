@@ -82,6 +82,19 @@ func TestTheLastGroupInTheMenuCanBeReached(t *testing.T) {
 		t.Errorf("the menu does not scroll inside itself, so anything past "+
 			"its ceiling is cut off rather than reachable:\n  %s", menu)
 	}
+	// A column that scrolls is not a column that wraps. .navgroups is
+	// flex-wrap: wrap in the base rule, for the arrangement where the groups
+	// sit in a row — and giving a *column* flex container a height it cannot
+	// exceed makes wrap do what it is for: start a second column. The moment
+	// this gained a ceiling, half the menu moved into a second column that
+	// 14rem could not hold, and Assurance, Administration and Reference were
+	// sliced down the middle at the edge of the sidebar. Nothing overflowed
+	// anywhere a scrollbar could appear, so it looked deliberate.
+	if !strings.Contains(menu, "flex-wrap: nowrap") {
+		t.Errorf("the menu can wrap again, so its ceiling turns it into two "+
+			"columns in a 14rem space and the group names are cut off:\n  %s",
+			menu)
+	}
 	// The groups keep their height rather than being squeezed into that
 	// ceiling. .navgroups is a flex column and a flex item shrinks to fit by
 	// default, so a menu longer than the window compressed instead of

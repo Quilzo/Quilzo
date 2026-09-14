@@ -935,7 +935,17 @@ tr.detail td { padding-top: 0; border-top: 0; }
   body:has(> .sidenav) > .sidenav > .navgroups {
     position: sticky; top: 1rem;
     max-height: calc(100dvh - 2rem); overflow-y: auto;
-    overscroll-behavior: contain; }
+    overscroll-behavior: contain;
+    /* A column that scrolls is not a column that wraps.
+       .navgroups is flex-wrap: wrap in the base rule, for the arrangement
+       where the groups sit in a row. Give a *column* flex container a height
+       it cannot exceed and wrap does what it is for: it starts a second
+       column. So the moment this gained a max-height, half the menu moved
+       into a second column 14rem could not hold and the group names were cut
+       off at the edge of the sidebar — Assurance, Administration and
+       Reference sliced down the middle, with nothing overflowing anywhere a
+       scrollbar could appear. */
+    flex-wrap: nowrap; }
   /* The groups keep their height instead of being squeezed into the ceiling
      above. .navgroups is a flex column, and a flex item shrinks to fit by
      default — so a menu longer than the window did not scroll, it compressed,
