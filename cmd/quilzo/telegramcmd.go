@@ -19,6 +19,7 @@ import (
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
+	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/starter"
 	"github.com/quilzo/quilzo/internal/store"
@@ -355,6 +356,43 @@ type chatPublisher struct {
 	design string
 }
 
+// declare records what the person said about who wrote their page.
+//
+// Only their own page, and only when there is nothing already recorded: a
+// second publish must not overwrite what somebody has since said about it,
+// and one chat user's answer is never a statement about anybody else's work.
+//
+// The author is the chat account, because Article 50 binds a person and not a
+// tool, and the note says where the claim came from — so an auditor reading
+// the record knows it is a self-declaration made in a chat window rather than
+// something the program worked out.
+func (c *chatPublisher) declare(handle string, wrote bool, author, commit string) error {
+	idx, err := loadProvenance(c.root)
+	if err != nil {
+		return err
+	}
+	if _, already := idx.Records[handle]; already {
+		return nil
+	}
+	// The commit this publish is about, not the draft: the page has just been
+	// written into a commit built on live, and the draft does not have it.
+	ids, err := site.PageIDsAt(c.store, commit)
+	if err != nil {
+		return err
+	}
+	kind := provenance.TrainedAlgorithmicMedia
+	if wrote {
+		kind = provenance.HumanEdits
+	}
+	if err := idx.Set(handle, provenance.Record{
+		ContentHash: ids[handle], SourceType: kind, Author: author,
+		Note: "declared by the author when publishing from a chat window",
+	}); err != nil {
+		return err
+	}
+	return saveJSON(provPath(c.root), idx)
+}
+
 func (c *chatPublisher) Designs() []telegram.Design {
 	out := []telegram.Design{}
 	for _, st := range starter.All() {
@@ -376,14 +414,28 @@ func (c *chatPublisher) Page(handle string) (map[string]any, bool, error) {
 }
 
 func (c *chatPublisher) Save(handle string, body map[string]any,
-	author, message string) (string, error) {
+	author, message string, wrote bool) (string, error) {
 
-	pages, err := site.PagesAt(c.store, site.RefDraft)
+	// Built on what is live, not on the draft.
+	//
+	// The draft ref is one ref for the whole store — this file says so a few
+	// hundred lines down, about a different problem — and this published it.
+	// So an operator with unpublished work sitting on the draft (an embargoed
+	// announcement, a half-finished price change) had all of it go live the
+	// moment any chat user tapped Publish on their own page, from a surface
+	// that cannot show them what else is in there and by somebody who has no
+	// idea it exists.
+	//
+	// Publishing one page means live plus that page. That is what the person
+	// pressing the button believes they are doing, and it leaves the draft
+	// exactly where it was.
+	base := c.store.GetRef(site.RefLive)
+	pages, err := site.PagesAt(c.store, site.RefLive)
 	if err != nil {
-		if c.store.GetRef(site.RefDraft) != "" {
-			// A draft ref that will not load is a corrupt store, and starting
-			// from empty here would commit a one-page draft over it.
-			return "", fmt.Errorf("the draft could not be read")
+		if base != "" {
+			// A live ref that will not load is a corrupt store, and starting
+			// from empty here would publish a one-page site over it.
+			return "", fmt.Errorf("the live site could not be read")
 		}
 		pages = map[string]any{}
 	}
@@ -394,8 +446,10 @@ func (c *chatPublisher) Save(handle string, body map[string]any,
 	if err != nil {
 		return "", err
 	}
-	commit, err := site.SaveDraftFrom(c.store, pages, message, author,
-		c.store.GetRef(site.RefDraft))
+	// The commit is made against live and published from there, so the draft
+	// ref is not touched at all: somebody else's work in progress is not part
+	// of this act and must not be moved by it.
+	commit, err := site.CommitOnto(c.store, pages, message, author, base)
 	if err != nil {
 		return "", err
 	}
@@ -422,12 +476,85 @@ func (c *chatPublisher) Save(handle string, body map[string]any,
 		return "", fmt.Errorf("%s", strings.Join(blocking, " · "))
 	}
 
+	// The rest of the content gates are on main and not here.
+	//
+	// The upstream fix also runs classification, image rights, references,
+	// arrangement, claims, expiry and navigation on this surface. Those are
+	// reachable through one call only because #135 gave the four publish
+	// surfaces a single gate runner, and that refactor is not on this branch.
+	//
+	// So this surface still runs fewer checks than the command line does, and
+	// that is a known gap in this release rather than an oversight. What is
+	// fixed here is the escalation: publishing your own page no longer
+	// publishes everybody's.
+
+	// Dual authorization, where it is configured. A message in a chat room is
+	// still a publish, and an approval policy that a chat surface walks past
+	// is an approval policy with a door beside it.
+	if pol, perr := loadApprovalPolicy(c.root); perr != nil {
+		return "", fmt.Errorf("the approval policy could not be read, so "+
+			"publishing would claim a check that did not happen: %w", perr)
+	} else if pol.Required > 0 || pol.RequireHumanForAI {
+		prop, _, cerr := currentProposal(c.root, c.store)
+		if cerr != nil {
+			return "", fmt.Errorf("the approval check could not run: %w", cerr)
+		}
+		if d := pol.Evaluate(*prop, kindOfPrincipal(c.root), time.Now()); !d.Allowed {
+			return "", fmt.Errorf("%s", d.Reason)
+		}
+	}
+
+	// Provenance, declared by the person rather than invented for them.
+	//
+	// Every other surface refuses content that declares nothing, and this one
+	// published it. Writing "a person wrote this" because a person typed it is
+	// the substitution `quilzo provenance backfill` refuses: what arrives in a
+	// chat window may have been typed or pasted out of a model, and the
+	// program cannot tell.
+	//
+	// But the person can, and on this surface the person at the gate is the
+	// author — which is true nowhere else. The browser puts the same question
+	// to an operator who did not write the words; here it goes to the one who
+	// did. So their answer is recorded, for their own page and no other.
+	if merr := c.declare(handle, wrote, author, commit); merr != nil {
+		return "", merr
+	}
+	unmarked, uerr := unmarkedAt(c.root, c.store, commit)
+	if uerr != nil {
+		return "", fmt.Errorf("the provenance check could not run, so "+
+			"publishing would claim a check that did not happen: %w", uerr)
+	}
+	if len(unmarked) > 0 {
+		return "", fmt.Errorf(
+			"%s declares no provenance, and Article 50 asks for a mark on "+
+				"AI-generated content. Record it first:\n  quilzo provenance "+
+				"set %s --source humanEdits --author \"%s\"",
+			strings.Join(unmarked, ", "), unmarked[0], author)
+	}
+
 	if _, err := site.Publish(c.store, commit); err != nil {
 		return "", err
 	}
 	record(c.root, audit.Record{
 		Action: "telegram.publish", Resource: "/" + handle,
-		Outcome: audit.Success, Principal: author, Kind: audit.KindHuman,
+		// The handle, not the label.
+		//
+		// Label is the name the person chose for themselves on the chat
+		// platform — "@" + username, or their first name. So somebody who
+		// registers the username "admin" publishes, and the log reads
+		// principal=@admin, kind=human, for an act taken by a stranger. The
+		// handle ("tg4212") is derived from the account id and cannot be
+		// picked, which is the property a principal needs and a display name
+		// does not have. The label stays as the commit author, where it is a
+		// name on a screen rather than an identity in a record.
+		//
+		// Verified, because the platform's signature proved this account
+		// before any of this ran: initData is HMAC'd with the bot token and
+		// checked constant-time, and the request would not be here otherwise.
+		// That is what the field asks for — set by whoever proved it.
+		Outcome: audit.Success, Principal: handle, Kind: audit.KindHuman,
+		Verified: true,
+		Detail:   map[string]string{"as": author},
 	})
 
 	if handle == "index" {

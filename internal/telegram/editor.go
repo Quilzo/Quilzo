@@ -178,6 +178,14 @@ func (a *App) editor(w http.ResponseWriter, user User, notice, problem string) {
 	fmt.Fprintf(&b, `<form method="post" action="/publish" `+
 		`style="margin-top:var(--space-6)">`+
 		`<input type="hidden" name="grant" value="%s">`+
+		`<fieldset class="field"><legend>Who wrote this?</legend>`+
+		`<p><label><input type="radio" name="wrote" value="me" required> `+
+		`I wrote it</label></p>`+
+		`<p><label><input type="radio" name="wrote" value="model"> `+
+		`A model wrote it, or helped</label></p>`+
+		`<span class="hint">The law asks for AI-generated content to carry a `+
+		`mark, and nobody but you knows the answer. It is recorded with the `+
+		`page.</span></fieldset>`+
 		`<p><button class="btn btn-lg" type="submit">Publish</button></p></form>`,
 		esc(grant))
 	b.WriteString(`<p class="muted">Nothing is public until you press that. ` +
@@ -331,6 +339,29 @@ func (a *App) grantOf(r *http.Request) (User, string, error) {
 	return user, raw, err
 }
 
+// requireWrite is requireGrant for a screen that changes something.
+//
+// A POST, because the grant travels in the address bar of every editor screen
+// — grantOf falls back to ?g= and has to, since a link cannot carry a hidden
+// field — and it is multi-use for fifteen minutes. Two handlers here wrote
+// without checking the method, so
+//
+//	GET /arrange?g=<grant>&do=remove&at=0
+//
+// removed a section, and that address is in browser history, in whatever the
+// person pasted a screenshot into, and in anything that follows links it is
+// given. Every other mutating handler in this file already gated on POST;
+// these two were the exception, and the exception is the whole vulnerability.
+func (a *App) requireWrite(w http.ResponseWriter, r *http.Request) (User, string, bool) {
+	if r.Method != http.MethodPost {
+		a.refuse(w, http.StatusMethodNotAllowed, "That has to be a form",
+			"This changes the page, so it is only done by pressing the "+
+				"button rather than by following a link.", "")
+		return User{}, "", false
+	}
+	return a.requireGrant(w, r)
+}
+
 // requireGrant is the guard every editor screen starts with.
 func (a *App) requireGrant(w http.ResponseWriter, r *http.Request) (User, string, bool) {
 	if err := r.ParseForm(); err != nil {
@@ -370,7 +401,7 @@ func (a *App) keep(w http.ResponseWriter, r *http.Request, user User,
 
 // save writes the top of the page.
 func (a *App) save(w http.ResponseWriter, r *http.Request) {
-	user, _, ok := a.requireGrant(w, r)
+	user, _, ok := a.requireWrite(w, r)
 	if !ok {
 		return
 	}
@@ -393,7 +424,7 @@ func (a *App) save(w http.ResponseWriter, r *http.Request) {
 
 // arrange moves or removes a section.
 func (a *App) arrange(w http.ResponseWriter, r *http.Request) {
-	user, _, ok := a.requireGrant(w, r)
+	user, _, ok := a.requireWrite(w, r)
 	if !ok {
 		return
 	}
@@ -721,6 +752,25 @@ func (a *App) libraryOf(user User) []StoredFile {
 	return a.Media.Recent(user.Handle(), 60)
 }
 
+// mediaURL is where a stored file can be looked at, or empty if nowhere.
+//
+// The library used to emit `/media/<id>` and the previews were a grid of
+// broken images on all three chat surfaces. The path is right — the public
+// site serves it, and it is what a page stores — but the Mini App is a
+// different server on a different origin, so a relative URL resolves against
+// this one, which serves no such thing.
+//
+// Empty rather than guessed when SiteURL is not set. The field already says
+// why: showing a path with no origin "is honest rather than guessed from a
+// request header", and a broken image is the least honest thing on the screen
+// — it looks like the file failed rather than like the install is incomplete.
+func (a *App) mediaURL(id string) string {
+	if a.SiteURL == "" {
+		return ""
+	}
+	return strings.TrimRight(a.SiteURL, "/") + "/media/" + id
+}
+
 // library lists what somebody has sent the bot.
 func (a *App) library(w http.ResponseWriter, r *http.Request) {
 	user, grant, ok := a.requireGrant(w, r)
@@ -746,8 +796,15 @@ func (a *App) library(w http.ResponseWriter, r *http.Request) {
 		for _, f := range files {
 			b.WriteString(`<figure>`)
 			if f.Kind == "image" {
-				fmt.Fprintf(&b, `<img src="/media/%s" alt="%s" loading="lazy">`,
-					esc(f.ID), esc(f.Alt))
+				if src := a.mediaURL(f.ID); src != "" {
+					fmt.Fprintf(&b,
+						`<img src="%s" alt="%s" loading="lazy">`,
+						esc(src), esc(f.Alt))
+				} else {
+					b.WriteString(`<div class="notice"><p>No preview: this ` +
+						`install has not been told where the site is read ` +
+						`from.</p></div>`)
+				}
 			}
 			fmt.Fprintf(&b, `<figcaption><code>%s</code> %s`,
 				esc(f.Short()), esc(f.Kind))
