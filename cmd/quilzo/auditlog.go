@@ -323,12 +323,35 @@ func auditShow(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Verified here, and not only by `auditlog verify`.
+	//
+	// This printed whatever was in the file. Somebody who edits an entry and
+	// then runs `quilzo auditlog show` sees the doctored record with nothing
+	// to suggest it is doctored, and `show` is what anybody reads — `verify`
+	// is what you run when you already suspect something, which is the one
+	// time you do not need telling.
+	//
+	// The whole chain, not the page. A break before the window would go
+	// unnoticed by a check that only looked at what is on screen, and the
+	// question "has this log been edited" is about the log.
+	intact, problems := audit.Verify(events)
+
 	if len(events) > *limit {
 		events = events[len(events)-*limit:]
 	}
 
-	if w.JSON(map[string]any{"entries": events}) {
+	if w.JSON(map[string]any{
+		"entries": events, "intact": intact, "problems": problems,
+	}) {
 		return nil
+	}
+	if !intact {
+		w.Human("%sthe chain is broken — these entries cannot be trusted%s\n",
+			yellow, reset)
+		for _, p := range problems {
+			w.Human("  %sentry %d: %s%s\n", dim, p.Seq, p.Reason, reset)
+		}
+		w.Human("  %squilzo auditlog verify — the whole story%s\n\n", dim, reset)
 	}
 	if len(events) == 0 {
 		w.Human("no audit entries\n")
