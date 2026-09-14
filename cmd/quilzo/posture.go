@@ -107,7 +107,7 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 		s.Types = types
 	}
 	if events, err := audit.Read(auditPath(root)); err == nil {
-		s.Audit = events
+		s.Audit, s.AuditRead = events, true
 	}
 
 	// File modes. Only files that hold something worth protecting: listing

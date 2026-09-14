@@ -897,7 +897,8 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	raw := strings.TrimSpace(r.FormValue("token"))
-	if _, err := s.Tokens.Authenticate(raw, time.Now()); err != nil {
+	tok, err := s.Tokens.Authenticate(raw, time.Now())
+	if err != nil {
 		if s.Throttle != nil {
 			d, alert := s.Throttle.Fail(sub)
 			if alert && s.OnAuthFailure != nil {
@@ -913,6 +914,22 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 			"Title": "Sign in", "Error": err.Error(), "OIDC": s.OIDC != nil})
 		return
 	}
+
+	// Somebody signed in, and the log says so.
+	//
+	// It did not. OnSignIn exists and is assigned only inside the OIDC block
+	// in cmd/quilzo, so on the ordinary deployment — a token, or a passkey,
+	// and no identity provider — the log held content changes with no record
+	// of anybody ever signing in at all. AU-2 asks for the session, not only
+	// for what was done inside it.
+	//
+	// The success, not every failure. A failure record is written by whoever
+	// is failing, and an unauthenticated caller who can make the log grow is
+	// a way to bury the entries that matter; the throttle's alert above is the
+	// bounded version of the same signal.
+	s.audit("session.start", "/", map[string]string{
+		"by": tok.Principal, "credential": tok.ID, "how": "token",
+	})
 
 	// Secure over TLS, or where the deployment says something in front of it
 	// is terminating TLS. Not unconditionally: a Secure cookie is refused on a

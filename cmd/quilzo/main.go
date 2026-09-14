@@ -1222,10 +1222,16 @@ func cmdPublish(root string, args []string) error {
 				if !d.Allowed {
 					record(root, caller.auditRecord("publish", "/", audit.Denied,
 						map[string]string{
+							// "proposal" and not "content": Append refuses
+							// any key containing "content" and refuses the
+							// whole record with it, so every publish blocked
+							// by dual authorisation went unrecorded — the one
+							// gate whose entire purpose is that somebody
+							// later can see it was tried.
 							"reason":     "dual-authorization",
 							"have":       fmt.Sprintf("%d", d.Have),
 							"need":       fmt.Sprintf("%d", d.Need),
-							"content":    prop.Content,
+							"proposal":   prop.Content,
 							"author":     prop.Author,
 							"authorkind": prop.AuthorKind,
 						}))
