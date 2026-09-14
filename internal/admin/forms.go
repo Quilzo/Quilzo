@@ -104,9 +104,10 @@ func (s *Server) handleForms(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A search, for an erasure request. The person asking gives an address.
-	var found []form.Submission
+	var found []foundRow
 	if needle := strings.TrimSpace(r.URL.Query().Get("q")); needle != "" {
-		found, _ = s.Forms.Store.Search(set, needle)
+		hits, _ := s.Forms.Store.Search(set, needle)
+		found = redactFound(set, hits)
 	}
 
 	s.render(w, r, "forms.html", map[string]any{
@@ -120,6 +121,75 @@ func (s *Server) handleForms(w http.ResponseWriter, r *http.Request) {
 		"Message":      r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"CanErase": s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed,
 	})
+}
+
+// formFieldFromRequest reads one field out of the panel.
+//
+// One function because there is one panel: whichever branch handleFormSave
+// takes, the person filled in the same boxes and meant the same thing by them.
+func formFieldFromRequest(r *http.Request) form.Field {
+	f := form.Field{
+		Name:      strings.TrimSpace(r.FormValue("field")),
+		Label:     strings.TrimSpace(r.FormValue("field_label")),
+		Kind:      form.Kind(r.FormValue("field_kind")),
+		Required:  r.FormValue("required") != "",
+		Sensitive: r.FormValue("sensitive") != "",
+		Help:      strings.TrimSpace(r.FormValue("field_help")),
+	}
+	for _, c := range strings.Split(r.FormValue("choices"), ",") {
+		if c = strings.TrimSpace(c); c != "" {
+			f.Choices = append(f.Choices, c)
+		}
+	}
+	return f
+}
+
+// foundRow is one search hit with its sensitive fields taken out.
+//
+// The listing above honours Sensitive and this table did not, which made the
+// search the way around the setting: an editor typing "@" into the erasure box
+// got every sensitive value of every matching submission across every form, on
+// one screen, with none of the authority erasing them needs. Search matches
+// any substring, so one character is enough.
+//
+// It is the same data the operator marked "held, not shown" three lines up.
+type foundRow struct {
+	form.Submission
+	// Shown is what may be displayed: the fields the form did not mark
+	// sensitive, in the same key=value shape the template used before.
+	Shown []string
+	// Withheld counts what is not shown, so the row does not silently look
+	// emptier than the submission is.
+	Withheld int
+}
+
+func redactFound(set *form.Set, hits []form.Submission) []foundRow {
+	out := make([]foundRow, 0, len(hits))
+	for _, sub := range hits {
+		row := foundRow{Submission: sub}
+		sensitive := map[string]bool{}
+		if f, ok := set.Get(sub.Form); ok {
+			for _, fl := range f.Fields {
+				if fl.Sensitive {
+					sensitive[fl.Name] = true
+				}
+			}
+		}
+		keys := make([]string, 0, len(sub.Values))
+		for k := range sub.Values {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if sensitive[k] {
+				row.Withheld++
+				continue
+			}
+			row.Shown = append(row.Shown, k+"="+sub.Values[k])
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 // handleFormSave declares a form, or adds a field to one.
@@ -288,6 +358,24 @@ func (s *Server) handleFormExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Sensitive fields are redacted unless somebody asks for them, which is
+	// what internal/form says they are: "not shown in listings and redacted in
+	// exports unless somebody asks for it explicitly". The listing honoured
+	// that and the export did not — so a CSV was the way to get every value
+	// the operator had marked held-not-shown, with no more authority than
+	// reading the screen that hides them.
+	//
+	// Asking is a tick, and it needs the authority that erasing everything
+	// needs rather than the one that reads the screen: taking personal data
+	// out of the system is the act purge is gated on, and a file on somebody's
+	// laptop is out of the system.
+	withSensitive := r.FormValue("sensitive") != ""
+	if withSensitive && !s.mayUse(p, auth.ActGrant, "/") {
+		s.formRedirect(w, r, "", "exporting the fields marked sensitive "+
+			"needs the authority to erase them too")
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition",
@@ -300,15 +388,29 @@ func (s *Server) handleFormExport(w http.ResponseWriter, r *http.Request) {
 		head = append(head, fl.Name)
 	}
 	_ = cw.Write(head)
+	held := 0
 	for _, sub := range subs {
 		row := []string{sub.ID, time.Unix(sub.At, 0).UTC().Format(time.RFC3339)}
 		for _, fl := range f.Fields {
+			if fl.Sensitive && !withSensitive {
+				row = append(row, "")
+				continue
+			}
 			row = append(row, csvSafe(sub.Values[fl.Name]))
 		}
 		_ = cw.Write(row)
 	}
-	s.auditPub(p, "form.export", "/"+name,
-		map[string]string{"rows": strconv.Itoa(len(subs))})
+	for _, fl := range f.Fields {
+		if fl.Sensitive {
+			held++
+		}
+	}
+	// Whether the sensitive fields went out is in the record, because that is
+	// the part somebody asking later needs to know.
+	s.auditPub(p, "form.export", "/"+name, map[string]string{
+		"rows":      strconv.Itoa(len(subs)),
+		"sensitive": strconv.FormatBool(withSensitive && held > 0),
+	})
 }
 
 // csvSafe defuses a value a spreadsheet would execute.

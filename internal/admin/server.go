@@ -2341,3 +2341,19 @@ func plural(n int) string {
 	}
 	return "s"
 }
+
+// mayUse answers the authorisation question without writing a response.
+//
+// The same question can() asks and the same way, for the callers that need the
+// answer rather than the redirect. On main it arrived with internal/find and
+// lives in find.go; that package is not on this branch, and three lines of
+// predicate is not a feature to backport.
+//
+// No policy means no access control is configured, which is the single-operator
+// case and permits everything — matching navigation().
+func (s *Server) mayUse(p principal, act auth.Action, resource string) bool {
+	if s.Policy == nil {
+		return true
+	}
+	return s.Policy.Evaluate(p.Name, act, resource).Allowed
+}

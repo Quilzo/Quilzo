@@ -37,6 +37,10 @@
       <form method="post" action="/forms/export" class="inline">
         <input type="hidden" name="form" value="{{.Name}}">
         <button type="submit">Export</button>
+        {{if $.CanErase}}
+        <label for="sx-{{.Name}}">Include held fields</label>
+        <input id="sx-{{.Name}}" type="checkbox" name="sensitive" value="1">
+        {{end}}
       </form>
     </td>
   </tr>
@@ -124,7 +128,8 @@ not that the number is fresh.</p>
   <tr>
     <th scope="row">{{.Form}}</th>
     <td class="hint">{{ago .At}}</td>
-    <td class="hint">{{range $k, $v := .Values}}{{$k}}={{$v}} {{end}}</td>
+    <td class="hint">{{range .Shown}}{{.}} {{end}}{{if .Withheld}}
+      <span class="hint">({{.Withheld}} held, not shown)</span>{{end}}</td>
     <td>
       <form method="post" action="/forms/submission/delete" class="inline">
         <input type="hidden" name="form" value="{{.Form}}">
