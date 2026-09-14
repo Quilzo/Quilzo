@@ -848,7 +848,7 @@ tr.detail td { padding-top: 0; border-top: 0; }
 }
 
 @media (min-width: 60rem) {
-  /* The whole interface in one screen, with two things that scroll inside it.
+  /* Two columns, one scrollbar, and the menu stays where you can see it.
    *
    * # Why every rule here asks whether there is a menu
    *
@@ -872,40 +872,36 @@ tr.detail td { padding-top: 0; border-top: 0; }
    * correct, since a hidden menu is a one-column shell and not a page without
    * one.
    *
-   * # What this replaces, and why
+   * # The page scrolls, and only the menu is pinned
    *
-   * The bar used to be a fixed 3.5rem, and the sidebar was
-   * `max-height: calc(100vh - var(--bar-h))` sticking below it. That is the
-   * magic-number layout, and it failed the way magic numbers do: a search box
-   * was added to the bar, the base rule floors every text input at 48px for
-   * target size, and 48px of control did not fit in 43px of bar. The input
-   * hung 2.5px past the border and crossed the rule under it. Nothing said so
-   * — the page rendered, and the only symptom was a line through a control.
+   * This was a viewport-tall grid for a while — `height: 100dvh`, rows
+   * `auto 1fr auto`, and the content scrolling inside its own row. It solved
+   * the problem it was written for and brought its own: the window became a
+   * frame, so a long page had a short scrollbar in the middle of the screen
+   * with the footer parked underneath it, and the browser's own scroll — the
+   * one the scroll wheel, the space bar, Home and End, and find-in-page all
+   * act on — was not the one moving the text.
    *
-   * The constant could be raised. It would be wrong again the next time
-   * anything joins the bar, and the failure would look the same: silent, and
-   * visible only to whoever opens that screen.
+   * So the grid has no height. The document scrolls, there is one scrollbar,
+   * it is the full height of the window, and the footer is at the end of the
+   * content where a footer goes. The menu is sticky, which is the only thing
+   * that needs to stay.
    *
-   * So there is no constant. `height: 100dvh` with rows `auto 1fr auto` makes
-   * the middle row exactly what is left after the bar and the footer, whatever
-   * those turn out to be. The browser does the arithmetic, it redoes it when
-   * the bar wraps or the type scales, and it cannot be wrong.
+   * # There is still no magic number
    *
-   * min-height: 0 on the scrolling children, because a grid item's automatic
-   * minimum size is its content — without it a long menu makes its own row
-   * taller than 1fr and pushes the footer off instead of scrolling.
+   * The bar used to be a fixed 3.5rem with the sidebar hanging below it at
+   * `calc(100vh - var(--bar-h))`, and that failed the way magic numbers do: a
+   * search box joined the bar, the base rule floors every text input at 48px
+   * for target size, 48px did not fit in 43px, and the input hung past the
+   * border and crossed the rule under it. Nothing said so.
    *
-   * # What this also removes
-   *
-   * Nothing is sticky any more. The bar is a row and stays where it is
-   * because the row does; the sidebar is a row and scrolls inside itself. The
-   * overhang this had before — a sticky box one viewport tall starting one
-   * bar-height down, so its end sat below the fold — cannot be expressed in
-   * this layout at all.
+   * The constant has not come back. The menu sticks to the top of the window
+   * rather than to the bottom of the bar, so nothing here knows or asks how
+   * tall the bar is — it is a row, and the row is whatever it needs to be.
    */
   body:has(> .sidenav) { display: grid; grid-template-columns: 14rem 1fr;
     grid-template-areas: "bar bar" "nav main" "nav foot";
-    grid-template-rows: auto 1fr auto; height: 100dvh; }
+    grid-template-rows: auto 1fr auto; }
   /* The footer needs a named area too. Without one it lands in the first
      free cell, which is under the sidebar, and wraps to three lines in a
      column meant for menu items. */
@@ -919,28 +915,36 @@ tr.detail td { padding-top: 0; border-top: 0; }
   .who { min-width: 0; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap; }
 
-  /* The menu column: exactly the space between the bar and the footer, and it
-     scrolls inside that. overscroll-behavior keeps that scroll from carrying
-     on into the page when it reaches the end. */
-  body:has(> .sidenav) > .sidenav { grid-area: nav; border-right: 1px solid var(--outline-variant);
+  /* The menu column runs the full height of the page, so the rule down its
+     edge is a rule down the edge of the page and not a line that stops where
+     the menu happens to end. The column is the grid item; what sticks is the
+     list inside it. */
+  body:has(> .sidenav) > .sidenav { grid-area: nav;
+    border-right: 1px solid var(--outline-variant);
     padding: 1rem .75rem; background: var(--surface-container-low);
-    position: relative;
-    min-height: 0; min-width: 0; overflow-y: auto;
+    min-width: 0; }
+  /* The menu itself, pinned. top: 1rem rather than 0 so it keeps the gap it
+     has before anybody scrolls, and max-height for the menu that is longer
+     than the window — that one scrolls inside itself, and
+     overscroll-behavior stops that scroll carrying on into the page when it
+     reaches the end.
+
+     The sticky element has to be this and not the column: a grid item
+     stretches to fill its row, and an element with no room to move inside its
+     own area cannot stick to anything. */
+  body:has(> .sidenav) > .sidenav > .navgroups {
+    position: sticky; top: 1rem;
+    max-height: calc(100dvh - 2rem); overflow-y: auto;
     overscroll-behavior: contain; }
-  /* And the content scrolls in its own row rather than the document
-     scrolling. That is the half of this that a reader notices: the bar and
-     the menu stay put because they are rows, not because anything is pinned
-     over the top of the page. */
-  /* position: relative is not decoration. The visually-hidden text this
-     interface is full of — .sr and .visually-hidden — is absolutely
-     positioned, and an absolutely positioned box is clipped by its containing
-     block rather than by whatever happens to scroll. With no positioned
-     ancestor that block is the page itself, so twenty-one of them escaped this
-     row and gave the document 505px of scroll it had nothing to show: a second
-     scrollbar beside the real one, moving nothing.
-     Invisible before this, because the document scrolled anyway. */
-  body:has(> .sidenav) > main { grid-area: main; position: relative;
-    min-height: 0; min-width: 0; overflow-y: auto; }
+  /* The groups keep their height instead of being squeezed into the ceiling
+     above. .navgroups is a flex column, and a flex item shrinks to fit by
+     default — so a menu longer than the window did not scroll, it compressed,
+     and the last group was still not reachable. That is the bug this whole
+     area exists for, arrived at from the other direction: measured, the
+     container's scrollHeight equalled its clientHeight with 1800px of content
+     inside it. */
+  body:has(> .sidenav) > .sidenav > .navgroups > * { flex-shrink: 0; }
+  body:has(> .sidenav) > main { grid-area: main; min-width: 0; }
   .sidenav .navgroups { flex-direction: column; gap: 1rem; align-items: stretch; }
   .sidenav .navgroup + .navgroup { border-left: 0; margin-left: 0; padding-left: 0; }
   .sidenav .nav { flex-direction: column; gap: .15rem; align-items: stretch;
