@@ -4,6 +4,8 @@
 package admin
 
 import (
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -283,4 +285,72 @@ func TestTheShellIsOnlyLaidOutWhereThereIsOne(t *testing.T) {
 				"ones that have no menu to arrange:\n  %s", line)
 		}
 	}
+}
+
+// The menu's ceiling leaves room for wherever the page has put it.
+//
+// A box capped at the height of the window but positioned below the bar ends
+// below the window by however far down it starts. Measured, that was 44px,
+// with the last item in the menu sitting in the strip — the oldest bug in this
+// area, arrived at from a third direction.
+//
+// So the cap is the window less 6rem rather than less 2rem: enough for the
+// menu to fit at the top of a page, where it starts under the bar, and when it
+// is stuck, where it starts at 1rem. The cost is that the stuck menu is 80px
+// shorter than the window rather than 32px; it scrolls inside itself either
+// way, so that is a slightly smaller window onto the same menu.
+//
+// # Why this is checked rather than asserted
+//
+// 6rem has to be at least as tall as the bar plus the gap above the menu, and
+// that is the shape of thing this file exists to distrust: "a length that has
+// to agree with content, kept in a place that does not know what the content
+// is". The difference is that nothing checked the last one. This reads the
+// bar's own padding, the tallest control the bar is allowed to hold, and the
+// menu column's padding, adds them up, and fails when 6rem stops covering
+// them — so the next control that goes in the bar is a failing test rather
+// than a strip of menu nobody can reach.
+func TestTheMenuCeilingClearsTheBar(t *testing.T) {
+	css := readStyle(t)
+
+	cap := remValue(t, ruleBody(t, css,
+		"body:has(> .sidenav) > .sidenav > .navgroups"), `max-height: calc\(100dvh - ([\d.]+)rem\)`)
+
+	// The bar: padding above and below, plus the tallest thing it may hold.
+	barPad := remValue(t, ruleBody(t, css, ".bar"), `padding: ([\d.]+)rem`)
+	control := pxValue(t, ruleBody(t, css, ".findbar input"), `min-height: (\d+)px`)
+	// The menu column's own padding, which is where the menu starts from.
+	navPad := remValue(t, ruleBody(t, css, "body:has(> .sidenav) > .sidenav"), `padding: ([\d.]+)rem`)
+
+	const px = 16.0                                 // 1rem, which this stylesheet does not change
+	needed := barPad*2*px + control + navPad*px + 1 // +1 for the bar's border
+
+	if cap*px < needed {
+		t.Errorf("the menu's ceiling is %.2frem (%.0fpx of the window) and the "+
+			"bar plus the gap above the menu now comes to %.0fpx. The menu "+
+			"starts that far down the page, so a box the window's height less "+
+			"the ceiling ends %.0fpx below the fold — with the last item in "+
+			"it. Raise the ceiling, or take something out of the bar.",
+			cap, cap*px, needed, needed-cap*px)
+	}
+}
+
+// remValue pulls a rem length out of a declaration.
+func remValue(t *testing.T, rule, pattern string) float64 {
+	t.Helper()
+	m := regexp.MustCompile(pattern).FindStringSubmatch(rule)
+	if m == nil {
+		t.Fatalf("no %q in:\n  %s", pattern, rule)
+	}
+	v, err := strconv.ParseFloat(m[1], 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+// pxValue pulls a pixel length out of a declaration.
+func pxValue(t *testing.T, rule, pattern string) float64 {
+	t.Helper()
+	return remValue(t, rule, pattern)
 }

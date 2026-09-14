@@ -966,7 +966,19 @@ tr.detail td { padding-top: 0; border-top: 0; }
        end of the menu and the page has scrolled, the menu has stuck, and the
        two agree. overscroll-behavior: contain would stop exactly that and
        leave the last strip unreachable. */
-    max-height: calc(100dvh - 2rem); overflow-y: auto;
+    /* 6rem, and the 6 is the point.
+       A box capped at the height of the window but positioned below the bar
+       ends below the window by however far down it starts — 44px, measured,
+       with the last item in the menu sitting in that strip. The cap has to
+       leave room for wherever the page has put the box, not just for the gap
+       it keeps once it is stuck.
+       So the cap is the window less enough for both: the menu fits at the top
+       of a page, where it starts under the bar, and it fits when it is stuck,
+       where it starts at 1rem. The test below reads the bar's own padding and
+       the tallest control the bar is allowed to hold and fails if 6rem stops
+       being enough — which is the check that was missing the last time a
+       length in here had to agree with what the bar contains. */
+    max-height: calc(100dvh - 6rem); overflow-y: auto;
     /* Thin and quiet, not the platform's block. It is an indication that
        there is more, which a reader needs; it is not a control anybody should
        have to aim at, and the wheel and the keyboard both reach this without
