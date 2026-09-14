@@ -37,6 +37,8 @@ func cmdTypes(root string, args []string) error {
 		return typesBindCollection(root, rest)
 	case "example":
 		return cmdTypeExample(args[1:])
+	case "stub":
+		return cmdTypeStub(root, args[1:])
 	case "check":
 		return typesCheck(root)
 	default:
@@ -410,6 +412,54 @@ func gateWrite(root string, pages map[string]any) (*schema.Store, error) {
 // struct tags.
 //
 // An extensibility feature nobody can use is not an extensibility feature.
+// cmdTypeStub prints what a new record of a type starts as.
+//
+// A record, not a type definition — which is what `type example` prints, and
+// the two are a step apart: one is the declaration, this is the first thing
+// somebody writes against it. Piped, so the shape does not have to be retyped:
+//
+//	quilzo type stub product > new.json
+//	quilzo records add products --from new.json
+func cmdTypeStub(root string, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: quilzo type stub <type>\n" +
+			"  quilzo type list  names them")
+	}
+	st, err := schema.Load(root)
+	if err != nil {
+		return err
+	}
+	if st.Registry == nil {
+		return fmt.Errorf("this store has no types yet")
+	}
+	t, ok := st.Registry.Get(args[0])
+	if !ok {
+		return fmt.Errorf("there is no type called %q; `quilzo type list` "+
+			"names them", args[0])
+	}
+	body, err := json.MarshalIndent(t.Blank(), "", "  ")
+	if err != nil {
+		return err
+	}
+	// The record on stdout alone, so a redirect produces a file the add
+	// command accepts. The guidance goes to stderr, for the same reason
+	// `type example` does it.
+	fmt.Println(string(body))
+	var required []string
+	for _, f := range t.Fields {
+		if f.Required {
+			required = append(required, f.Name)
+		}
+	}
+	if len(required) > 0 {
+		fmt.Fprintf(os.Stderr, "\n%smust be filled in: %s%s\n",
+			dim, strings.Join(required, ", "), reset)
+	}
+	fmt.Fprintf(os.Stderr, "%squilzo type stub %s > new.json && quilzo "+
+		"records add COLLECTION --from new.json%s\n", dim, args[0], reset)
+	return nil
+}
+
 func cmdTypeExample(args []string) error {
 	name := "article"
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {

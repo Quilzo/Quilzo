@@ -75,8 +75,15 @@ which is what an application holds rather than what a page does.</p>
   </div>
   <div class="row">
     <label style="flex:1 1 100%">Fields
-      <textarea name="fields" rows="6" spellcheck="false" aria-label="Fields"
-        placeholder='{"hostname": "laptop-14", "encrypted": true}'></textarea>
+      <textarea name="fields" rows="{{if .Blank}}14{{else}}6{{end}}"
+        spellcheck="false" aria-label="Fields"
+        placeholder='{"hostname": "laptop-14", "encrypted": true}'>{{.Blank}}</textarea>
+      {{if .BlankType}}
+      <span class="hint">The shape <code>{{.BlankType}}</code> declares, with
+        nothing filled in. Editing an existing record? Put its id above and
+        this is replaced by what you save — a record is stored as written,
+        not merged.</span>
+      {{end}}
     </label>
   </div>
   <p><button type="submit">Save</button></p>

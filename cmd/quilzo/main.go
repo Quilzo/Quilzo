@@ -164,6 +164,7 @@ content types
   quilzo type example > FILE.json          a definition you can edit
   quilzo type add FILE.json                define a type: flat fields, no regex
   quilzo type list | show NAME             what exists, and its address
+  quilzo type stub NAME > FILE.json        a blank record of that shape
   quilzo type bind PAGE TYPE               the page must satisfy the type
   quilzo type bind-collection NAME TYPE    every record in a collection must satisfy it
   quilzo type check                        validate every bound page

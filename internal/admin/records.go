@@ -89,6 +89,25 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 		"CanWrite": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
 	}
 
+	// What a new record of this collection's type starts as.
+	//
+	// The form was a textarea and a placeholder, so writing a record meant
+	// remembering the field names, remembering which were required, and
+	// finding out which you had got wrong by being refused. The type has
+	// declared all of it since it existed.
+	if selected != "" && s.Types != nil && s.Types.Load != nil {
+		if st, err := s.Types.Load(); err == nil && st != nil {
+			if name, bound := st.Collections[selected]; bound {
+				if t, ok := st.Registry.Get(name); ok {
+					if body, jerr := json.MarshalIndent(t.Blank(), "", "  "); jerr == nil {
+						data["Blank"] = string(body)
+						data["BlankType"] = name
+					}
+				}
+			}
+		}
+	}
+
 	if selected != "" {
 		q := collection.Query{Limit: 100, Sort: r.URL.Query().Get("sort")}
 		if f := strings.TrimSpace(r.URL.Query().Get("find")); f != "" {
