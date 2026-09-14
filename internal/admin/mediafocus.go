@@ -153,8 +153,20 @@ func (s *Server) handleMediaFocus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// "cleared", and not the position a cleared focus reports.
+	//
+	// Focus.Position answers "50% 50%" for a nil receiver, which is right for
+	// a renderer — an image with no focal point is centred — and wrong for a
+	// log. Clearing a focal point was recorded as moving it to the centre,
+	// indistinguishable from somebody deliberately choosing the centre, so the
+	// one thing an auditor of media changes wants to tell apart was the one
+	// thing this could not.
+	where := "cleared"
+	if f.Focus != nil {
+		where = f.Focus.Position()
+	}
 	s.audit("media.focus", "/"+f.ID, map[string]string{
-		"by": p.Name, "at": f.Focus.Position(),
+		"by": p.Name, "at": where,
 	})
 	http.Redirect(w, r, backTo(r), http.StatusSeeOther)
 }

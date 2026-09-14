@@ -51,6 +51,62 @@ func TestEveryLinkInTheInterfaceIsServed(t *testing.T) {
 	}
 }
 
+// A link built from a variable still starts with a literal, and that half is
+// checkable.
+//
+// The test above skips any href containing a template action, by the pattern
+// itself — `href="([^"{}]*)"`. Its comment defends that as admitting scope,
+// and the scope turned out to be most of the interface: every link to a page,
+// every link to a preview, every link built from a name. One of them was dead.
+// sections.html sends you to /edit?page=… , which nothing has ever served —
+// on the one screen whose job is to send you to the content.
+//
+// The path before the first {{ is a literal the template cannot change, so it
+// is checked. /page/{{.Name}} resolves through the /page/ subtree; /edit?page=
+// resolves through nothing. A link that is entirely a variable is still
+// skipped, because there is nothing there to check.
+func TestALinkBuiltFromAVariableStillStartsSomewhereServed(t *testing.T) {
+	served := servedRoutes(t)
+	checked := 0
+	var dead []string
+	for _, l := range scan(t, reHrefAny) {
+		literal := literalPath(l.href)
+		if literal == "" {
+			continue
+		}
+		checked++
+		if !resolves(served, literal) {
+			dead = append(dead, l.href+"  (in "+l.file+", the part before the "+
+				"first {{ is "+literal+")")
+		}
+	}
+	if checked < 10 {
+		t.Fatalf("only %d templated links have a literal prefix; the parse is "+
+			"wrong and a test that sees nothing passes", checked)
+	}
+	if len(dead) > 0 {
+		sort.Strings(dead)
+		t.Errorf("these links are rendered and nothing serves them:\n  %s",
+			strings.Join(dead, "\n  "))
+	}
+}
+
+// literalPath is the path an href begins with, before anything the template
+// fills in. Empty when there is nothing to check.
+//
+// scan has already dropped the query string, so /edit?page={{.Page}} arrives
+// here as /edit — which is how that link slipped past both the pattern that
+// skips braces and any check that only looked at templated hrefs.
+func literalPath(href string) string {
+	before, _, _ := strings.Cut(href, "{{")
+	if !strings.HasPrefix(before, "/") {
+		// Entirely a variable, or relative, or a fragment. There is no route
+		// to compare it to, and guessing is worse than admitting the scope.
+		return ""
+	}
+	return before
+}
+
 // Every form must post somewhere that exists, for the same reason.
 //
 // A dead link is a 404 the person can back out of. A dead form action is work
@@ -102,6 +158,7 @@ var (
 	reConst     = regexp.MustCompile(`(?m)^const (\w+) = "([^"]+)"`)
 	reHref      = regexp.MustCompile(`href="([^"{}]*)"`)
 	reAction    = regexp.MustCompile(`action="([^"{}]*)"`)
+	reHrefAny   = regexp.MustCompile(`href="([^"]*)"`)
 )
 
 func servedRoutes(t *testing.T) map[string]bool {

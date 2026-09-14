@@ -119,9 +119,21 @@
         than this site asks for.</p>
     {{end}}
   {{end}}
-  <form method="post" action="/checked/set" class="inline">
+  <form method="post" action="/checked/set">
     <input type="hidden" name="page" value="{{.Name}}">
     <input type="hidden" name="back" value="{{.Here}}">
+    <details>
+      <summary>Say how often, or why</summary>
+      <div class="grid2">
+        <p><label for="ck-every">Look at this again after</label>
+          <input id="ck-every" name="every" placeholder="168h">
+          <span class="hint">A duration — 168h is a week. Left empty, this
+            page follows the site's own answer.</span></p>
+        <p><label for="ck-note">Note</label>
+          <input id="ck-note" name="note"
+                 placeholder="checked the prices against the invoice"></p>
+      </div>
+    </details>
     <button type="submit">I have read this and it is still right</button>
   </form>
   <p class="help">Recorded against the page as it stands, with your name and
