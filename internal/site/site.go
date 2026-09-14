@@ -196,6 +196,46 @@ func SaveDraftLocked(s *store.Store, pages map[string]any, message, author,
 	return cid, s.SetRef(RefDraft, cid)
 }
 
+// CommitOnto writes a commit on top of a parent and moves nothing.
+//
+// Every other writer here moves the draft ref, which is the right default: the
+// draft is where work happens and a commit nobody points at is a commit nobody
+// finds. This is for the caller who is publishing one page and must not take
+// anything else with it.
+//
+// The draft ref is one ref for the whole store. A surface that lets somebody
+// publish their own page by committing the *draft* publishes whatever else is
+// in it — an embargoed announcement, a half-finished price change — put there
+// by somebody who has no idea that surface exists. Building on live instead
+// means "what is public, plus this page", which is what the person pressing
+// the button believes they are asking for, and it leaves the draft where it
+// was.
+//
+// Under the ref lock, because it reads a ref to carry records forward and then
+// writes.
+func CommitOnto(s *store.Store, pages map[string]any, message, author,
+	parent string) (string, error) {
+
+	var cid string
+	err := s.WithRefLock(func() error {
+		tree, terr := buildTreeKeepingRecords(s, pages, parent)
+		if terr != nil {
+			return terr
+		}
+		var parents []string
+		if parent != "" {
+			parents = []string{parent}
+		}
+		var err error
+		cid, err = s.PutCommit(store.Commit{
+			Tree: tree, Parents: parents, Message: message,
+			Author: author, At: time.Now().Unix(),
+		})
+		return err
+	})
+	return cid, err
+}
+
 // PagesAt reads every page at a ref or commit.
 func PagesAt(s *store.Store, refOrCommit string) (map[string]any, error) {
 	cid := s.GetRef(refOrCommit)
