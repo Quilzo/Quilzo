@@ -8,7 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/quilzo/quilzo/internal/egress"
+	"github.com/quilzo/quilzo/internal/fetch"
 	"io"
 	"net"
 	"net/http"
@@ -90,6 +90,11 @@ func (e *Exporter) Check() error {
 // Every address, not the first: a name resolving to both a loopback address
 // and a public one is not local, and taking the first answer would make the
 // decision depend on resolver ordering.
+//
+// This is the message rather than the boundary. The same rule runs again in
+// Control, on the address actually being dialled, because this lookup and the
+// transport's are two lookups and only the second one decides where the
+// socket goes — see fetch.Speaking.
 func isLocal(host string) (bool, string) {
 	if host == "" {
 		return false, "it names no host"
@@ -99,8 +104,10 @@ func isLocal(host string) (bool, string) {
 		return false, "its address could not be resolved"
 	}
 	for _, ip := range ips {
-		if !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() {
-			return false, "it resolves to " + ip.String() + ", which is public"
+		if why := fetch.OnThisNetwork(ip); why != "" {
+			// The reason names the address itself, so it is returned as it
+			// stands rather than introduced by one.
+			return false, why
 		}
 	}
 	return true, ""
@@ -149,7 +156,17 @@ func (e *Exporter) Export(ctx context.Context, spans []Span) error {
 	}
 
 	if e.client == nil {
-		e.client = egress.Client("telemetry", 0)
+		// Check() has already decided whether this collector may be off the
+		// machine. That decision is enforced again here, at the address being
+		// dialled, because Check resolves the name and the transport resolves
+		// it a second time — and the address that was checked is only the
+		// address that is connected to if nothing answers differently in
+		// between.
+		reach := fetch.OnThisNetwork
+		if e.AllowRemote {
+			reach = fetch.Anywhere
+		}
+		e.client = fetch.Speaking("telemetry", reach, 0)
 	}
 	resp, err := e.client.Do(req)
 	if err != nil {

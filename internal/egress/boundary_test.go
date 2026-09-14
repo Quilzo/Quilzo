@@ -31,6 +31,10 @@ func TestNothingReachesTheNetworkOutsideThisPackage(t *testing.T) {
 		"internal/fetch/fetch.go": "builds a transport with its own address " +
 			"rules — SSRF checks, per-hop revalidation — and calls " +
 			"egress.Allowed in front of its dialler, which a test below checks",
+		"internal/fetch/speaking.go": "the same boundary for the callers that " +
+			"speak their own protocol and cannot use Get: an address rule in " +
+			"Control, no redirects, and egress.Allowed in front of the " +
+			"dialler, which the test below checks too",
 		"internal/logd/logd.go": "dials a unix socket, which does not leave " +
 			"the host and is not egress",
 	}
@@ -94,14 +98,36 @@ func TestNothingReachesTheNetworkOutsideThisPackage(t *testing.T) {
 // than on a type — which is exactly the kind of thing that gets refactored
 // away by somebody who does not know why it is there.
 func TestFetchStillConsultsTheMode(t *testing.T) {
-	body, err := os.ReadFile("../fetch/fetch.go")
+	for _, file := range []string{"fetch.go", "speaking.go"} {
+		body, err := os.ReadFile("../fetch/" + file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), "egress.Allowed(") {
+			t.Fatalf("internal/fetch/%s no longer checks the network mode, "+
+				"so an offline\n  deployment still reaches the model, the "+
+				"collector, the authority and the chat API", file)
+		}
+	}
+}
+
+// And the clients it hands out still refuse to follow a redirect.
+//
+// The four protocols on the other end of these — a model API, a collector, a
+// timestamping authority, the Telegram Bot API — do not redirect, so
+// following one is all risk and no function. For Telegram it is a credential
+// leak rather than an abstract risk: the bot token is a path segment, and Go
+// strips the Authorization header across hosts but cannot strip a URL.
+func TestTheProtocolClientsRefuseRedirects(t *testing.T) {
+	body, err := os.ReadFile("../fetch/speaking.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "egress.Allowed(") {
-		t.Fatal("internal/fetch no longer checks the network mode, so an " +
-			"offline\n  deployment still fetches remote actors, imports and " +
-			"webfinger")
+	if !strings.Contains(string(body), "CheckRedirect") {
+		t.Fatal("fetch.Speaking no longer sets CheckRedirect, so Go's " +
+			"default applies:\n  up to ten hops, to wherever the far end " +
+			"names, carrying the bot token in\n  the URL it was asked to " +
+			"forward")
 	}
 }
 
