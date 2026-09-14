@@ -8,9 +8,10 @@ import (
 	"testing"
 )
 
-// The menu column is whatever is left, not a number somebody wrote down.
+// The last group in the menu can be reached, and no length here is a number
+// somebody wrote down.
 //
-// # Two bugs, one cause
+// # Three bugs, one cause, and then a fourth
 //
 // First the last group in the menu could not be scrolled to: the sidebar was a
 // sticky box one viewport tall starting one bar-height below the top, so it
@@ -24,13 +25,22 @@ import (
 // was a line through a control.
 //
 // Both are the same bug: a length that has to agree with content, kept in a
-// place that does not know what the content is. The second one is the one that
-// matters, because it says the first fix was never going to hold — the
-// constant would have been wrong again the next time anything joined the bar,
-// and wrong the same silent way.
+// place that does not know what the content is. The second says the first fix
+// was never going to hold — the constant would have been wrong again the next
+// time anything joined the bar, and wrong the same silent way.
 //
-// So this no longer checks the arithmetic. It checks that there is none.
-func TestTheMenuColumnIsWhateverIsLeft(t *testing.T) {
+// The answer to both was a screen-height grid with the content scrolling in
+// its own row, which removed every constant and brought the fourth: the window
+// became a frame. A long page had a short scrollbar in the middle of the
+// screen with the footer parked underneath it, and the browser's own scroll —
+// the one the wheel, the space bar, Home, End and find-in-page act on — was
+// not the one moving the text.
+//
+// So the page scrolls, and the menu is the only thing pinned. What this checks
+// is the three properties that keep the first bug fixed without the constant
+// coming back: the menu is measured against the window, it scrolls inside
+// itself, and where it sticks does not depend on how tall the bar is.
+func TestTheLastGroupInTheMenuCanBeReached(t *testing.T) {
 	css := readStyle(t)
 
 	if strings.Contains(css, "--bar-h") {
@@ -42,39 +52,68 @@ func TestTheMenuColumnIsWhateverIsLeft(t *testing.T) {
 
 	wide := mediaBlock(t, css, "@media (min-width: 60rem)")
 	body := ruleFor(t, wide, "body:has(> .sidenav) { display: grid;")
-	// A viewport-height grid, not a minimum. With min-height the middle row
-	// grows with its content and the sidebar stops being "the space between
-	// the bar and the footer".
-	if !strings.Contains(body, "height: 100dvh") || strings.Contains(body, "min-height: 100vh") {
-		t.Errorf("the wide layout is not a screen-height grid, so the row the "+
-			"menu sits in is not what is left over:\n  %s", body)
+	if strings.Contains(body, "height: 100dvh") {
+		t.Errorf("the wide layout is a screen-height grid again, so the "+
+			"document does not scroll — the scrollbar is a short one in the "+
+			"middle of the screen and the footer sits under it:\n  %s", body)
 	}
 	if !strings.Contains(body, "grid-template-rows: auto 1fr auto") {
-		t.Errorf("the rows are not auto/1fr/auto, so the bar and the footer do "+
-			"not take what they need and give the rest to the menu:\n  %s", body)
+		t.Errorf("the rows are not auto/1fr/auto, so the bar and the footer "+
+			"do not take what they need and give the rest to the menu:\n  %s",
+			body)
 	}
 
-	side := ruleFor(t, wide, "body:has(> .sidenav) > .sidenav {")
-	main := ruleFor(t, wide, "body:has(> .sidenav) > main {")
-	for what, rule := range map[string]string{"the menu": side, "the content": main} {
-		// A grid item's automatic minimum size is its content, so without this
-		// a long menu makes its own row taller than 1fr and pushes the footer
-		// off the screen instead of scrolling.
-		if !strings.Contains(rule, "min-height: 0") {
-			t.Errorf("%s can grow its own row instead of scrolling inside "+
-				"it:\n  %s", what, rule)
-		}
-		if !strings.Contains(rule, "overflow-y: auto") {
-			t.Errorf("%s does not scroll, so the screen-height grid clips "+
-				"it:\n  %s", what, rule)
-		}
+	// The menu, pinned. The column is a stretched grid item so its edge rule
+	// runs the height of the page; the list inside it is what sticks, because
+	// an element with no room to move inside its own area cannot stick.
+	menu := ruleFor(t, wide, "body:has(> .sidenav) > .sidenav > .navgroups {")
+	if !strings.Contains(menu, "position: sticky") {
+		t.Errorf("the menu is not pinned, so it scrolls away with the "+
+			"page:\n  %s", menu)
+	}
+	// The two that make the last group reachable. Either alone is the old bug:
+	// a pinned box with no ceiling runs past the bottom of the window, and a
+	// ceiling with nothing scrolling inside it cuts the end off.
+	if !strings.Contains(menu, "100dvh") {
+		t.Errorf("the menu is not measured against the window, so a long one "+
+			"runs past the bottom of it:\n  %s", menu)
+	}
+	if !strings.Contains(menu, "overflow-y: auto") {
+		t.Errorf("the menu does not scroll inside itself, so anything past "+
+			"its ceiling is cut off rather than reachable:\n  %s", menu)
+	}
+	// A column that scrolls is not a column that wraps. .navgroups is
+	// flex-wrap: wrap in the base rule, for the arrangement where the groups
+	// sit in a row — and giving a *column* flex container a height it cannot
+	// exceed makes wrap do what it is for: start a second column. The moment
+	// this gained a ceiling, half the menu moved into a second column that
+	// 14rem could not hold, and Assurance, Administration and Reference were
+	// sliced down the middle at the edge of the sidebar. Nothing overflowed
+	// anywhere a scrollbar could appear, so it looked deliberate.
+	if !strings.Contains(menu, "flex-wrap: nowrap") {
+		t.Errorf("the menu can wrap again, so its ceiling turns it into two "+
+			"columns in a 14rem space and the group names are cut off:\n  %s",
+			menu)
+	}
+	// The groups keep their height rather than being squeezed into that
+	// ceiling. .navgroups is a flex column and a flex item shrinks to fit by
+	// default, so a menu longer than the window compressed instead of
+	// scrolling — the same bug reached from the other direction, and one a
+	// short menu never shows. Measured: the container's scrollHeight equalled
+	// its clientHeight with 1800px of content in it.
+	if !strings.Contains(ruleFor(t, wide,
+		"body:has(> .sidenav) > .sidenav > .navgroups > * {"), "flex-shrink: 0") {
+		t.Error("the menu groups can shrink again, so a menu taller than the " +
+			"window compresses instead of scrolling and the last group is " +
+			"still not reachable")
 	}
 
-	// And nothing is pinned over anything. The overhang was only expressible
-	// because the sidebar was sticky; as a grid row it cannot be.
-	if strings.Contains(side, "position: sticky") {
-		t.Errorf("the menu is sticky again, which is what let it hang past "+
-			"the bottom of the screen:\n  %s", side)
+	// And where it sticks is not derived from the bar. That subtraction is
+	// exactly what put the end of the menu one bar-height under the fold.
+	if strings.Contains(menu, "var(--bar") || strings.Contains(menu, "- var(") {
+		t.Errorf("the menu's position is worked out from something else's "+
+			"height, which is the arithmetic this is here to keep out:\n  %s",
+			menu)
 	}
 }
 
