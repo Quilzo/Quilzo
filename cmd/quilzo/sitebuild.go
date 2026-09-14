@@ -473,6 +473,40 @@ func federationFrom(root string, cfg *config.Config, baseURL string) (
 		Followers: followers,
 		Save:      func() error { return saveJSON(path, followers) },
 
+		// The address to count a request against, when the deployment says
+		// something in front of it forwards one. Off by default: believing a
+		// forwarded header with nothing in front lets every caller choose
+		// their own bucket, which is the limit switched off.
+		ClientAddr: func(r *http.Request) string {
+			if !cfg.Bool("site.trusted_proxy") {
+				return ""
+			}
+			return forwardedFor(r)
+		},
+
+		// Who this site will not hear from. Read per request rather than
+		// captured, so `quilzo fediverse block` takes effect without a
+		// restart — a block is an answer to something happening now.
+		Blocked: func(actor string) bool {
+			list, err := loadBlocklist(root)
+			if err != nil {
+				// Unreadable is not "nobody is blocked". A file that will not
+				// parse is a list somebody wrote and this cannot honour, and
+				// carrying on as though it were empty is the direction that
+				// silently undoes their decision.
+				return true
+			}
+			return list.Blocks(actor)
+		},
+		OnBlocked: func(actor, activity string) {
+			record(root, audit.Record{
+				Action: "fediverse.refused", Resource: "/",
+				Outcome: audit.Denied, Principal: actor,
+				Kind:   audit.KindUnknown,
+				Detail: map[string]string{"activity": activity},
+			})
+		},
+
 		// The announcement marker: the last commit whose changed pages were
 		// delivered. Persisted so a restart resumes from where it left off
 		// rather than treating every page as newly published — which, on a
@@ -542,6 +576,21 @@ func fediverseKeyPath(root string) string {
 
 func fediverseFollowersPath(root string) string {
 	return filepath.Join(root, "followers.json")
+}
+
+// forwardedFor is the client address a trusted proxy put in the header.
+//
+// The last entry, not the first. A proxy appends the address it saw; anything
+// before that was written by whoever was talking to the proxy, and taking the
+// first is how a rate limit keyed on this becomes one the client chooses. Only
+// ever called when the deployment has said there is a proxy.
+func forwardedFor(r *http.Request) string {
+	raw := r.Header.Get("X-Forwarded-For")
+	if raw == "" {
+		return ""
+	}
+	parts := strings.Split(raw, ",")
+	return strings.TrimSpace(parts[len(parts)-1])
 }
 
 func fediverseAnnouncedPath(root string) string {

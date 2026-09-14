@@ -195,6 +195,8 @@ the assistant
   quilzo assist "..." --author WHO         propose changes; marks what it writes
   quilzo fediverse init                    a signing key, so the site can federate
   quilzo fediverse status | followers      whether it federates, and who follows
+  quilzo fediverse block HOST              refuse an instance, and drop its follows
+  quilzo fediverse unblock | blocked       take one back, or see the list
   quilzo provenance backfill [--dry-run]   mark content published before records existed
   quilzo provenance check [--ref REF]      who or what wrote each page
   quilzo provenance set PAGE --source T    record provenance by hand

@@ -27,10 +27,16 @@ func cmdFediverse(root string, args []string) error {
 		return fediverseStatus(root)
 	case "followers":
 		return fediverseFollowers(root)
+	case "block":
+		return fediverseBlock(root, args[1:])
+	case "unblock":
+		return fediverseUnblock(root, args[1:])
+	case "blocked":
+		return fediverseBlocked(root)
 	default:
 		return fmt.Errorf(
-			"unknown fediverse command %q; try init, status or followers",
-			args[0])
+			"unknown fediverse command %q; try init, status, followers, "+
+				"block, unblock or blocked", args[0])
 	}
 }
 
