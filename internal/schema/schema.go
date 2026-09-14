@@ -165,6 +165,20 @@ type Type struct {
 	Name        string  `json:"name"`
 	Description string  `json:"description,omitempty"`
 	Fields      []Field `json:"fields"`
+	// Stub is what a new record of this shape starts with, for the fields
+	// where an empty value is not the useful starting point — a currency, a
+	// status, a default range.
+	//
+	// Optional, and usually absent: Blank already gives every declared field
+	// an empty value of the right shape, which is most of what somebody
+	// writing their first record needs. This is for the handful where the
+	// answer is nearly always the same and typing it every time is how it
+	// comes to be typed wrong.
+	//
+	// Checked at compile time against the type's own rules, so a stub cannot
+	// carry a value the type would refuse or name a field nobody declared.
+	// See stub.go for why it is not checked as a complete record.
+	Stub map[string]any `json:"stub,omitempty"`
 }
 
 var (
@@ -322,7 +336,10 @@ func Compile(t Type) error {
 				f.Name, f.AltFor)
 		}
 	}
-	return nil
+	// The starting values, checked here so a stub the type would refuse cannot
+	// be stored as part of it — the alternative is a form that arrives already
+	// unsaveable, which reads as the tool being broken.
+	return checkStub(t)
 }
 
 // Problem is one validation failure, named so it can be shown beside the field.
