@@ -175,6 +175,11 @@ var commandNeeds = map[string]need{
 	"find": {action: auth.ActView},
 	// Reading which pages name which is reading the content and the types.
 	"links": {action: auth.ActView},
+	// Moving a page rewrites content, so it is an author's act — and the
+	// command checks both ends itself, because a move out of somebody's
+	// subtree takes a page out of their reach and a move in puts one where
+	// they may not have meant to.
+	"move": {action: auth.ActEditDraft},
 	// Editing a draft. A note is a remark about content, made by somebody who
 	// is working on it — so it takes the same authority the draft does.
 	// Saying a page is still right is a statement about the draft, made by

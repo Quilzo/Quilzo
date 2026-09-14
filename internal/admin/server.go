@@ -1296,7 +1296,31 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 		}
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	// In tree order, so a child follows its parent and a name that merely
+	// looks like one does not land in the middle of the branch.
+	//
+	// A plain sort put blog-drafts between blog and blog/first, because "/" is
+	// 0x2f and "-" is 0x2d — which reads as the list being wrong rather than
+	// as the sort being naive, and that is worse, because somebody trusts it.
+	// site.Tree compares segment by segment for the same reason auth.covers
+	// does.
+	depth := map[string]int{}
+	{
+		visible := make(map[string]any, len(names))
+		for _, n := range names {
+			visible[n] = pages[n]
+		}
+		names = names[:0]
+		for _, node := range site.Tree(visible) {
+			if !node.Exists {
+				// A branch nobody wrote a page at. It belongs in a tree and
+				// not in a list of pages to edit: there is nothing to open.
+				continue
+			}
+			names = append(names, node.Name)
+			depth[node.Name] = node.Depth
+		}
+	}
 
 	changed := map[string]bool{}
 	if draft != "" && live != "" && draft != live {
@@ -1340,6 +1364,7 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 		"Message":   r.URL.Query().Get("m"),
 		"Error":     r.URL.Query().Get("e"),
 		"Title":     "Pages", "Principal": p, "Names": names,
+		"Depth":   depth,
 		"Changed": changed, "Draft": draft, "Live": live,
 		"Unpublished": draft != "" && draft != live,
 		"CanEdit":     s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,

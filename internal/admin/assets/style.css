@@ -631,6 +631,24 @@ fieldset label { display: inline; font-weight: 600; }
 
 /* -- tables and lists ------------------------------------------------------ */
 
+/* A page's place is its name, and a list shows it.
+ *
+ * The slash in a page name has been structure to the store, to the public
+ * server and to auth.covers since each of them existed — blog/first is served
+ * at /blog/first, and a grant on /blog covers it. Nothing showed it to
+ * anybody: the list was flat and alphabetical, so a site with four sections
+ * and forty pages read as forty pages.
+ *
+ * Indentation rather than a widget. There is no JavaScript here and a tree
+ * that collapses is a tree with state to keep; the order already puts a child
+ * under its parent, and a step to the right is the whole of what a reader
+ * needs to see the shape. Four levels because the store allows eight and a
+ * sidebar that indents eight times has nothing left to write in. */
+.depth-1 { padding-left: 2rem; }
+.depth-2 { padding-left: 3.5rem; }
+.depth-3 { padding-left: 5rem; }
+.depth-4, .depth-5, .depth-6, .depth-7 { padding-left: 6.5rem; }
+
 /* A wide table scrolls inside this and not with the page.
  *
  * overflow-x alone did not achieve that, which took a real browser to see. The

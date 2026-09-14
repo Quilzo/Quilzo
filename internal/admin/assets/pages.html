@@ -51,7 +51,7 @@
       <td><input type="checkbox" name="page" value="{{.}}"
                  id="sel-{{.}}" aria-labelledby="name-{{.}}"></td>
       {{end}}
-      <th scope="row" id="name-{{.}}">{{.}}</th>
+      <th scope="row" id="name-{{.}}" class="depth-{{index $.Depth .}}">{{.}}</th>
       <td>{{if index $.Changed .}}<span class="tag tag-changed">changed</span>{{else}}<span class="tag">unchanged</span>{{end}}
         {{with index $.Windows .}}
           {{if eq . "expired"}}<span class="tag tag-bad">expired</span>

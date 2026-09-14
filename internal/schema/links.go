@@ -115,3 +115,42 @@ func (s *Store) linksFrom(page string, pages map[string]any) []Link {
 	}
 	return out
 }
+
+// Retarget rewrites every reference naming one page to name another.
+//
+// The other half internal/menu has had for as long as it has had links. A
+// rename without it breaks every page that named the old one, and the first
+// anybody hears is the publish gate refusing — naming pages somebody changed
+// for unrelated reasons, after the edit is already saved.
+//
+// The pages are edited in place, because the caller is holding a set it is
+// about to write and copying it here would leave them wondering which copy is
+// the one that counts. The names of the pages that changed come back, so the
+// caller can say what it did rather than that it did something.
+func (s *Store) Retarget(pages map[string]any, from, to string) []string {
+	var changed []string
+	for _, l := range s.LinksTo(pages, from) {
+		body, ok := pages[l.From].(map[string]any)
+		if !ok {
+			continue
+		}
+		body[l.Field] = to
+		changed = append(changed, l.From)
+	}
+	sort.Strings(changed)
+	return dedupe(changed)
+}
+
+// dedupe collapses a page that named the target twice.
+func dedupe(names []string) []string {
+	out := names[:0]
+	var last string
+	for i, n := range names {
+		if i > 0 && n == last {
+			continue
+		}
+		out = append(out, n)
+		last = n
+	}
+	return out
+}
