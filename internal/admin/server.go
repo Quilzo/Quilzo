@@ -440,6 +440,26 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 		Limits: tok.Scope, TokenID: tok.ID, Session: tok.IsSession()}, nil
 }
 
+// linksTo is the references pointing at a page, in the current draft.
+//
+// Empty when there is no type store, which is honest: without one nothing
+// knows which fields are references, so "nothing points here" would be a
+// claim rather than an answer.
+func (s *Server) linksTo(name string) []schema.Link {
+	if s.Types == nil || s.Types.Load == nil {
+		return nil
+	}
+	st, err := s.Types.Load()
+	if err != nil || st == nil {
+		return nil
+	}
+	pages, err := site.PagesAt(s.Store, site.RefDraft)
+	if err != nil {
+		return nil
+	}
+	return st.LinksTo(pages, name)
+}
+
 // can checks a permission and writes the refusal itself if there is one.
 //
 // The refusal says which role was needed. "Forbidden" with no explanation makes
@@ -1385,6 +1405,14 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	notes := s.noteRows(name, false)
 	cells, _ := s.checkedFor([]string{name})
 
+	// What points at this page, beside the thing somebody is about to change.
+	//
+	// The same walk that refuses a publish over a dangling reference, kept
+	// rather than thrown away. Somebody rewriting a page had no way to find
+	// out that two others name it until the publish said so, naming pages
+	// they had changed for unrelated reasons.
+	incoming := s.linksTo(name)
+
 	s.render(w, r, "edit.html", map[string]any{
 		"Nav":        "pages",
 		"CheckedOn":  s.Checked != nil && s.Checked.Store != nil,
@@ -1393,7 +1421,8 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		"Notes":      notes,
 		"Title":      "Edit " + name, "Principal": p, "Name": name,
 		"Fields": fields, "Exists": exists, "Type": typeName,
-		"Base": base, "HeldBy": heldBy,
+		"Incoming": incoming,
+		"Base":     base, "HeldBy": heldBy,
 		"CanEdit": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,
 	})
 }

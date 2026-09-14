@@ -209,6 +209,7 @@ access
   quilzo marking                           the classification scheme, if any
   quilzo transfer record DIR --approved-by WHO   paperwork for carrying an export
   quilzo transfer verify DIR               check what arrived is what left
+  quilzo links [PAGE] [--from] [--broken]  what points at what
   quilzo auth grant WHO ROLE [--on PATH]   reader | author | publisher | admin
   quilzo auth deny WHO ROLE [--on PATH]    a deny wins wherever it sits
   quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
@@ -433,6 +434,8 @@ func main() {
 		err = cmdNote(root, cmdArgs)
 	case "find":
 		err = cmdFind(root, cmdArgs)
+	case "links":
+		err = cmdLinks(root, cmdArgs)
 	case "diff":
 		err = cmdDiff(root)
 	case "publish":
