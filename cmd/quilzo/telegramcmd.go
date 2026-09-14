@@ -476,17 +476,18 @@ func (c *chatPublisher) Save(handle string, body map[string]any,
 		return "", fmt.Errorf("%s", strings.Join(blocking, " · "))
 	}
 
-	// The rest of the content gates are on main and not here.
-	//
-	// The upstream fix also runs classification, image rights, references,
-	// arrangement, claims, expiry and navigation on this surface. Those are
-	// reachable through one call only because #135 gave the four publish
-	// surfaces a single gate runner, and that refactor is not on this branch.
-	//
-	// So this surface still runs fewer checks than the command line does, and
-	// that is a known gap in this release rather than an oversight. What is
-	// fixed here is the escalation: publishing your own page no longer
-	// publishes everybody's.
+	// And every other check about the content — classification, image rights,
+	// references, arrangement, claims, expiry, navigation. This surface ran
+	// the type gate and accessibility and nothing else, on the one path where
+	// a message in a chat room goes straight to live with nobody looking at
+	// it first.
+	refused, _, gerr := contentGates(c.root, c.store, commit).Run()
+	if gerr != nil {
+		return "", gerr
+	}
+	if refused != nil {
+		return "", fmt.Errorf("%s", refused.Error())
+	}
 
 	// Dual authorization, where it is configured. A message in a chat room is
 	// still a publish, and an approval policy that a chat surface walks past

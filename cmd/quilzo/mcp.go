@@ -11,6 +11,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -286,6 +287,38 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			return nil, &mcp.Refusal{Reason: fmt.Sprintf(
 				"%d page(s) have no provenance: %s. Article 50 requires AI-generated "+
 					"content to be marked", len(unmarked), strings.Join(unmarked, ", "))}
+		}
+
+		// Every check about the content, the same set the command line and
+		// the browser run. This surface had two of nine.
+		refused, _, gerr := contentGates(root, s, draft).Run()
+		if gerr != nil {
+			return nil, &mcp.Refusal{Reason: gerr.Error()}
+		}
+		if refused != nil {
+			return nil, &mcp.Refusal{Reason: refused.Error()}
+		}
+
+		// And dual authorization, which is the gate that exists for exactly
+		// this caller. RequireHumanForAI is set to stop a model publishing its
+		// own work, and the model published through here without it.
+		if pol, perr := loadApprovalPolicy(root); perr != nil {
+			return nil, &mcp.Refusal{Reason: fmt.Sprintf(
+				"the approval policy could not be read, so publishing would "+
+					"claim a check that did not happen: %v", perr)}
+		} else if pol.Required > 0 || pol.RequireHumanForAI {
+			prop, _, cerr := currentProposal(root, s)
+			if cerr != nil {
+				return nil, &mcp.Refusal{Reason: fmt.Sprintf(
+					"the approval check could not run: %v", cerr)}
+			}
+			// kindOfPrincipal, the same answer every other surface gets. The
+			// proposal's author is whoever wrote the draft, and whether that
+			// was a person is what RequireHumanForAI turns on — not who is
+			// asking to publish it.
+			if d := pol.Evaluate(*prop, kindOfPrincipal(root), time.Now()); !d.Allowed {
+				return nil, &mcp.Refusal{Reason: d.Reason}
+			}
 		}
 
 		pub, err := site.Publish(s, "")

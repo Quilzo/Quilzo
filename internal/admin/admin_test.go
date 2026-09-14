@@ -15,6 +15,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/auth"
+	publishgate "github.com/quilzo/quilzo/internal/gate"
 	"github.com/quilzo/quilzo/internal/oidc"
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/provenance"
@@ -35,6 +36,11 @@ import (
 
 const siteTemplate = `<!doctype html><html lang="en"><head><title>{{ page.title }}</title></head>
 <body><h1>{{ page.title }}</h1><p>{{ page.body }}</p></body></html>`
+
+// noGates is the content-gate hook for a test that is not about the gates.
+func noGates(string) (*publishgate.Report, []publishgate.Finding, error) {
+	return nil, nil, nil
+}
 
 func setup(t *testing.T) (*Server, string) {
 	t.Helper()
@@ -66,6 +72,10 @@ func setup(t *testing.T) (*Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// No content gates in a test that is not about them. cmd/quilzo wires
+	// the real set; a nil one is refused by handlePublish, because a build
+	// that cannot run the checks must not report that they passed.
+	srv.ContentGates = noGates
 	idx := provenance.NewIndex()
 	srv.LoadProvenance = func() (*provenance.Index, error) { return idx, nil }
 	srv.SaveProvenance = func(i *provenance.Index) error { idx = i; return nil }
