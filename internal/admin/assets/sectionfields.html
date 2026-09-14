@@ -111,4 +111,54 @@
 </p>
 
 {{end}}
+{{if .NotesOn}}
+<section class="notes" aria-labelledby="sn-h">
+  <h2 id="sn-h">Notes on this section</h2>
+  {{if .ID}}
+  {{if .Notes}}
+  <ul class="notelist">
+    {{range .Notes}}
+    <li class="note">
+      <p class="notewho"><strong>{{.Author}}</strong>
+        <span class="hint">{{.When}}</span></p>
+      <p class="notetext">{{.Text}}</p>
+      {{if .Stale}}
+      <p class="notice warn">Written against an earlier version of this
+        section.</p>
+      {{end}}
+      <form method="post" action="/notes/resolve" class="inline">
+        <input type="hidden" name="page" value="{{$.Page}}">
+        <input type="hidden" name="id" value="{{.ID}}">
+        <input type="hidden" name="back" value="{{$.Here}}">
+        <button type="submit">Mark dealt with</button>
+      </form>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="hint">Nothing outstanding on this section.</p>
+  {{end}}
+
+  <form method="post" action="/notes/add" class="notefield">
+    <input type="hidden" name="page" value="{{.Page}}">
+    <input type="hidden" name="section" value="{{.ID}}">
+    <input type="hidden" name="back" value="{{.Here}}">
+    <div class="field">
+      <label for="sn-text">{{template "req"}}Leave a note</label>
+      <textarea id="sn-text" name="text" rows="3" required
+                aria-describedby="sn-help"
+                placeholder="this quote needs a source"></textarea>
+      <p id="sn-help" class="help">About this section, not the page. It stays
+        with it when something is added above, and says so if the section
+        changes underneath it.</p>
+    </div>
+    <button type="submit">Leave the note</button>
+  </form>
+  {{else}}
+  <p class="hint">This section has no name yet, so a note could not stay with
+    it. Move it up and down once and it will have one.</p>
+  {{end}}
+</section>
+{{end}}
+
 {{template "foot" .}}

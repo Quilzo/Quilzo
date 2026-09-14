@@ -142,9 +142,11 @@ func (s *Server) handleNoteAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	text := strings.TrimSpace(r.FormValue("text"))
+	sectionID := strings.TrimSpace(r.FormValue("section"))
 
 	n, err := s.Notes.Store.Add(note.Note{
 		Page:    page,
+		Section: sectionID,
 		Field:   strings.TrimSpace(r.FormValue("field")),
 		Author:  p.Name,
 		Text:    text,

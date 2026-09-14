@@ -87,6 +87,18 @@ type Note struct {
 	// is added above it, and a note that drifts to the wrong paragraph is the
 	// failure this is trying to avoid.
 	Field string `json:"field,omitempty"`
+	// Section is which block on the page this is about, by the id
+	// internal/section gives one.
+	//
+	// The comment above was right and it left notes unable to attach to a
+	// block at all, because a block had no name — it was a position in a list
+	// and nothing else. internal/section/id.go was written to fix that, and
+	// says so. This is the join.
+	//
+	// An id and not an index, for exactly the reason Field is a name and not
+	// a position: somebody inserting a banner at the top must not move
+	// everybody's remarks down one.
+	Section string `json:"section,omitempty"`
 	// Content is the hash of the page this was written against. See the
 	// package comment: it is what lets Stale be exact rather than a guess.
 	Content string `json:"content"`
