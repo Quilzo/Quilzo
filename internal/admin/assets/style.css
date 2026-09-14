@@ -898,9 +898,30 @@ tr.detail td { padding-top: 0; border-top: 0; }
    * The constant has not come back. The menu sticks to the top of the window
    * rather than to the bottom of the bar, so nothing here knows or asks how
    * tall the bar is — it is a row, and the row is whatever it needs to be.
+   *
+   * # Why the menu column starts at the top and the bar does not span it
+   *
+   * Because a box that starts below the top of the window and is sized
+   * against the whole of it hangs off the bottom by however far down it
+   * started. That is the original bug in this area, exactly: a sidebar one
+   * viewport tall beginning one bar-height down, ending one bar-height under
+   * the fold, with the last group in it unreachable.
+   *
+   * With the bar spanning both columns the menu began below it, so on a short
+   * window its last 44px sat under the fold until somebody scrolled the page
+   * — one gesture and it was fine, and "fine once you scroll" is how the same
+   * bug was justified the first time.
+   *
+   * Subtracting the bar's height would fix it and is the constant this whole
+   * area exists to keep out. So the column starts where the window starts
+   * instead, and then `top: 1rem` against `100dvh - 2rem` is exact whether the
+   * menu is stuck or not, and still knows nothing about the bar.
+   *
+   * The bar over the content column only is the visible cost, and it is the
+   * arrangement every other two-column application uses for the same reason.
    */
   body:has(> .sidenav) { display: grid; grid-template-columns: 14rem 1fr;
-    grid-template-areas: "bar bar" "nav main" "nav foot";
+    grid-template-areas: "nav bar" "nav main" "nav foot";
     grid-template-rows: auto 1fr auto; }
   /* The footer needs a named area too. Without one it lands in the first
      free cell, which is under the sidebar, and wraps to three lines in a

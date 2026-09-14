@@ -62,6 +62,21 @@ func TestTheLastGroupInTheMenuCanBeReached(t *testing.T) {
 			"do not take what they need and give the rest to the menu:\n  %s",
 			body)
 	}
+	// The menu column starts where the window starts. A box that begins below
+	// the top of the window and is sized against the whole of it hangs off the
+	// bottom by however far down it began — which is this area's original bug,
+	// exactly. With the bar spanning both columns the menu began below it and
+	// its last 44px sat under the fold until somebody scrolled, and "fine once
+	// you scroll" is how that bug was justified the first time.
+	//
+	// Subtracting the bar's height would also fix it, and is the constant this
+	// file exists to keep out.
+	if !strings.Contains(body, `grid-template-areas: "nav bar"`) {
+		t.Errorf("the menu column no longer starts at the top of the window, "+
+			"so it hangs below the fold by the height of whatever is above "+
+			"it and the last group is unreachable until the page is "+
+			"scrolled:\n  %s", body)
+	}
 
 	// The menu, pinned. The column is a stretched grid item so its edge rule
 	// runs the height of the page; the list inside it is what sticks, because
