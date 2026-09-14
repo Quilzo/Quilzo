@@ -150,6 +150,10 @@ type Listing struct {
 	// the final tie-break — so paging through a listing cannot repeat a row.
 	Descending bool `json:"descending,omitempty"`
 	Rows       int  `json:"rows,omitempty"`
+	// Agg is what the listing says about everything that matched, as against
+	// the rows it shows. See agg.go for why this is a closed set of named
+	// operations rather than anything that could be called a formula.
+	Agg []Agg `json:"agg,omitempty"`
 }
 
 // Set is every listing a site has.
@@ -298,6 +302,27 @@ func (l *Listing) Validate() error {
 			}
 		}
 	}
+
+	if len(l.Agg) > MaxAgg {
+		return fmt.Errorf(
+			"%q works out %d numbers about its collection and the limit is "+
+				"%d. Each one is a walk over everything that matched, and a "+
+				"page that quietly costs a dozen is a page that got slow "+
+				"without anybody choosing it", l.Name, len(l.Agg), MaxAgg)
+	}
+	named := map[string]bool{}
+	for _, a := range l.Agg {
+		if err := a.Validate(l.Fields); err != nil {
+			return fmt.Errorf("%q: %w", l.Name, err)
+		}
+		if named[a.As] {
+			return fmt.Errorf(
+				"%q works out two different numbers both called %q, so a "+
+					"template asking for it gets whichever was declared last",
+				l.Name, a.As)
+		}
+		named[a.As] = true
+	}
 	return nil
 }
 
@@ -320,6 +345,11 @@ type Result struct {
 	Total int
 	// Truncated is whether the limit cut the result.
 	Truncated bool
+	// Agg is every declared aggregate, by the name the listing gave it.
+	// Over everything that matched, not over the rows shown — an aggregate of
+	// the page would change when somebody set `rows` to 10, which is the shape
+	// of wrong nobody reports because it always looks plausible.
+	Agg map[string]any
 }
 
 // Resolve runs a listing against an index.
@@ -392,6 +422,12 @@ func Resolve(l *Listing, idx *collection.Index, args map[string]string) (Result,
 	out := Result{Total: total, Truncated: total > len(found)}
 	for _, r := range found {
 		out.Rows = append(out.Rows, project(l, r))
+	}
+	if len(l.Agg) > 0 {
+		// The matched set, unsorted and unwindowed. The walk is the one Total
+		// already pays for; asking for it again is a second pass over records
+		// already in memory, and only when a listing declares an aggregate.
+		out.Agg = aggregate(l.Agg, idx.Matching(q))
 	}
 	return out, nil
 }

@@ -80,10 +80,17 @@ func (r *Resolver) For(body any, args map[string]string) (map[string]any, error)
 		for _, row := range res.Rows {
 			rows = append(rows, map[string]any(row))
 		}
-		out[name] = map[string]any{
+		entry := map[string]any{
 			"rows": rows, "total": res.Total, "shown": len(rows),
 			"truncated": res.Truncated, "label": l.Label,
 		}
+		// Under its own key rather than spread alongside rows and total, so a
+		// listing may name an aggregate "rows" or "total" without either one
+		// quietly replacing the other.
+		if len(res.Agg) > 0 {
+			entry["agg"] = res.Agg
+		}
+		out[name] = entry
 	}
 	return out, nil
 }

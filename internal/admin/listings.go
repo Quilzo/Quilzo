@@ -58,6 +58,12 @@ func (s *Server) handleListings(w http.ResponseWriter, r *http.Request) {
 		listing.Listing
 		Total, Shown int
 		Sample       []listing.Row
+		// Numbers is what the listing works out about everything that
+		// matched, shown here for the same reason the sample rows are: "a
+		// query somebody cannot see the result of is a query they will get
+		// wrong twice before noticing", and an aggregate is the part of the
+		// result that is hardest to check by eye.
+		Numbers      map[string]any
 		Problem      string
 		Unrestricted bool
 	}
@@ -81,6 +87,7 @@ func (s *Server) handleListings(w http.ResponseWriter, r *http.Request) {
 			item.Problem = rerr.Error()
 		} else {
 			item.Total, item.Shown = res.Total, len(res.Rows)
+			item.Numbers = res.Agg
 			item.Sample = res.Rows
 			if len(item.Sample) > 3 {
 				item.Sample = item.Sample[:3]
