@@ -303,3 +303,53 @@ func TestOwnOnlyStacksWithTheResourcePath(t *testing.T) {
 		t.Error("an own-only binding on /blog reached /legal")
 	}
 }
+
+// A session carries the narrowing of the credential it came from.
+//
+// It did not carry the scope at all. Role and resource were capped — and are,
+// above — but Scope was left at its zero value, which CheckCredential reads as
+// no restriction. So a token issued --read-only, or --types article, produced
+// a session that could do anything its principal could:
+//
+//	parent scope:  read-only, types article
+//	session scope: unrestricted
+//
+// `quilzo token exchange` is what a CI integration runs with the credential it
+// was handed, so the credential deliberately issued read-only became one that
+// publishes. The three narrowing dimensions are checked in three different
+// places and only two of them are next to each other, which is how this
+// survived: nothing about the code around it looked wrong.
+func TestASessionKeepsItsParentsScope(t *testing.T) {
+	ts := &TokenStore{}
+	secret, parent, err := ts.IssueScoped("ci", "ci", RoleAdmin, "/",
+		time.Hour, RoleAdmin,
+		Scope{ReadOnly: true, Types: []string{"article"}, Locales: []string{"en"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !parent.Scope.ReadOnly {
+		t.Fatal("the premise is wrong: the parent is not read-only")
+	}
+
+	_, session, err := ts.Exchange(secret, RoleNone, "", time.Minute, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !session.Scope.ReadOnly {
+		t.Error("a read-only token exchanged for a session that may write. " +
+			"That is the credential doing the opposite of what it was issued for")
+	}
+	if len(session.Scope.Types) != 1 || session.Scope.Types[0] != "article" {
+		t.Errorf("the session may write any type: %v", session.Scope.Types)
+	}
+	if len(session.Scope.Locales) != 1 || session.Scope.Locales[0] != "en" {
+		t.Errorf("the session may write any locale: %v", session.Scope.Locales)
+	}
+
+	// And the copy is a copy: a session and its parent must not share a
+	// backing array, or narrowing one later narrows the other.
+	session.Scope.Types[0] = "changed"
+	if parent.Scope.Types[0] != "article" {
+		t.Error("the session and its parent share their type list")
+	}
+}
