@@ -165,6 +165,16 @@ var coverage = map[string]surfaces{
 			"Telegram accounts. An agent that could start one could point it " +
 			"at a store and accept writes from a billion strangers"},
 	"find": {GUI: "/find", MCP: []string{"find"}},
+	"move": {
+		Why: "a rename that carries a page's children, the references naming " +
+			"them and the menu entries pointing at them. The browser has no " +
+			"screen for it yet: doing it there means showing what would move " +
+			"before it moves, and a confirmation that lists forty pages is a " +
+			"screen to design rather than a button to add",
+		NoMCP: "renaming content is how a site's addresses change, and a " +
+			"model doing it on its own turns every link anybody has saved " +
+			"into a 404 — with the audit record attributing it to whoever " +
+			"was holding the credential"},
 	"links": {GUI: "/page/",
 		Why: "shown on the page it is about — a list of what points at this " +
 			"page belongs beside the thing somebody is about to change, not " +

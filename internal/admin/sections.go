@@ -400,10 +400,27 @@ func (s *Server) handleSectionFields(w http.ResponseWriter, r *http.Request) {
 		blocks[i].Fields = append(blocks[i].Fields, f)
 	}
 
+	// The remarks about this block, beside it.
+	//
+	// internal/note anchored to a page and a field name, and said why a
+	// position would not do: "a position moves when a paragraph is added
+	// above it". That was right and it left a note unable to attach to a
+	// block at all, because a block had no name. It has one now.
+	id := section.IDOf(sectionEntry(body, at))
+	var notes []noteRow
+	for _, n := range s.noteRows(name, false) {
+		if n.Section == id && id != "" {
+			notes = append(notes, n)
+		}
+	}
+
 	s.render(w, r, "sectionfields.html", map[string]any{
 		"Title": "Edit section", "Principal": p, "Nav": "sections",
 		"Page":    name,
 		"At":      at,
+		"ID":      id,
+		"NotesOn": s.Notes != nil && s.Notes.Store != nil,
+		"Notes":   notes,
 		"Kind":    kind,
 		"Own":     own,
 		"Blocks":  blocks,
@@ -412,6 +429,19 @@ func (s *Server) handleSectionFields(w http.ResponseWriter, r *http.Request) {
 		"Message": r.URL.Query().Get("m"),
 		"Error":   r.URL.Query().Get("e"),
 	})
+}
+
+// sectionEntry is the raw entry at a position, for reading its id.
+func sectionEntry(body any, at int) any {
+	m, ok := body.(map[string]any)
+	if !ok {
+		return nil
+	}
+	list, ok := m[section.Field].([]any)
+	if !ok || at < 0 || at >= len(list) {
+		return nil
+	}
+	return list[at]
 }
 
 // saveSectionFields is the write half: values, or a list entry added or removed.
