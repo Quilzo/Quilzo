@@ -149,6 +149,16 @@ func TestBlockingFailures(t *testing.T) {
 
 // The negatives matter as much. A checker that flags correct markup teaches
 // people to use the override, and after that it is not a control.
+//
+// The video here gained a captions track when 1.2.2 became a check. It used to
+// be an autoplaying muted loop with no track, which was correct under the
+// older rule set and is not under this one — and the honest reason it changed
+// rather than the rule being softened is that "muted" is not "silent". A muted
+// video is one the browser starts quiet and a reader can unmute; nothing in
+// the markup says whether there is anything to hear. A recording that
+// genuinely has no audio goes through the accessibility override with a
+// written reason, which records who claimed it, rather than through an
+// attribute that switches the check off.
 func TestCorrectMarkupIsNotFlagged(t *testing.T) {
 	good := `<!doctype html>
 <html lang="en">
@@ -165,7 +175,9 @@ func TestCorrectMarkupIsNotFlagged(t *testing.T) {
   <input type="hidden" name="csrf" value="x">
   <button type="submit">Send</button>
   <table><tr><th>Plan</th></tr><tr><td>Starter</td></tr></table>
-  <video autoplay muted src="loop.mp4"></video>
+  <video autoplay muted src="loop.mp4">
+    <track kind="captions" srclang="en" label="English" src="loop.vtt">
+  </video>
   <iframe title="Pricing calculator" src="/calc"></iframe>
 </body></html>`
 
@@ -291,4 +303,129 @@ func TestAnEmptyLinkIsStillReported(t *testing.T) {
 	if !found {
 		t.Fatal("an empty link was not reported")
 	}
+}
+
+// A video with no captions does not publish.
+//
+// WCAG 1.2.2 at Level A. This program refuses a Level A failure rather than
+// warning about it, and a video a deaf reader cannot follow is the definition
+// of the class — the same treatment as an image with no alternative text.
+//
+// The gap this closes: the gate checked exactly one thing about time-based
+// media, autoplay, and did not disclose that it checked nothing else. So the
+// conformance report this product generates — the VPAT-shaped document a buyer
+// is shown — carried no row for the Time-based Media guideline in any state,
+// for a product that ships a video section kind.
+func TestAVideoWithNoCaptionsIsBlocked(t *testing.T) {
+	r := Check("watch", page(`<video src="talk.mp4"></video>`))
+	if !r.Blocks() {
+		t.Fatalf("a video with no captions published: %v", r.Findings)
+	}
+	if !hasRule(r, "video-has-no-captions") {
+		t.Errorf("blocked by something else: %v", r.Findings)
+	}
+}
+
+// A source element counts as something to play.
+func TestAVideoWithASourceElementIsChecked(t *testing.T) {
+	r := Check("watch", page(
+		`<video><source src="talk.mp4" type="video/mp4"></video>`))
+	if !hasRule(r, "video-has-no-captions") {
+		t.Errorf("a video whose file is in a source element was not "+
+			"checked: %v", r.Findings)
+	}
+}
+
+// Subtitles do not satisfy it.
+//
+// They translate the dialogue for somebody who can hear the rest. Captions
+// carry the rest — a door closing, which of two people is speaking — and that
+// difference is the whole of what a deaf reader is missing. Accepting either
+// would make the check unable to tell whether it had been satisfied, and the
+// HTML default for a track with no kind is subtitles.
+func TestSubtitlesDoNotSatisfyCaptions(t *testing.T) {
+	for name, markup := range map[string]string{
+		"subtitles": `<video src="talk.mp4">` +
+			`<track kind="subtitles" srclang="fr" src="fr.vtt"></video>`,
+		"no kind at all": `<video src="talk.mp4">` +
+			`<track srclang="en" src="en.vtt"></video>`,
+		"descriptions": `<video src="talk.mp4">` +
+			`<track kind="descriptions" srclang="en" src="d.vtt"></video>`,
+	} {
+		if r := Check("watch", page(markup)); !hasRule(r, "video-has-no-captions") {
+			t.Errorf("%s was accepted as captions", name)
+		}
+	}
+}
+
+// A captions track satisfies it.
+func TestACaptionsTrackSatisfiesIt(t *testing.T) {
+	r := Check("watch", page(`<video src="talk.mp4">`+
+		`<track kind="captions" srclang="en" label="English" src="en.vtt">`+
+		`</video>`))
+	if hasRule(r, "video-has-no-captions") {
+		t.Errorf("a captioned video was blocked: %v", r.Findings)
+	}
+}
+
+// A video element with nothing to play is not a video without captions.
+//
+// It is what the shipped layout emits before a file is chosen. There is no
+// recording to caption, and a refusal there would be a refusal about nothing —
+// which is how somebody learns to reach for the override.
+func TestAnEmptyVideoElementIsNotBlocked(t *testing.T) {
+	r := Check("watch", page(`<video controls></video>`))
+	if hasRule(r, "video-has-no-captions") {
+		t.Errorf("an empty video element was blocked: %v", r.Findings)
+	}
+}
+
+// Two videos are judged separately, and a track inside one does not excuse
+// the next.
+func TestATrackDoesNotCarryToTheNextVideo(t *testing.T) {
+	r := Check("watch", page(
+		`<video src="a.mp4"><track kind="captions" srclang="en" src="a.vtt"></video>`+
+			`<video src="b.mp4"></video>`))
+	var found int
+	for _, f := range r.Findings {
+		if f.Rule == "video-has-no-captions" {
+			found++
+		}
+	}
+	if found != 1 {
+		t.Errorf("%d finding(s) for one captioned and one uncaptioned "+
+			"video, want 1: %v", found, r.Findings)
+	}
+}
+
+// The Time-based Media guideline is spoken about, one way or the other.
+//
+// A criterion named in neither the covered list nor the uncovered one appears
+// in no row of the conformance report at all — not supported, not failing, not
+// even unevaluated. That silence is what this test exists to end.
+func TestTimeBasedMediaIsAcknowledged(t *testing.T) {
+	said := strings.Join(append(Covered(), NotCovered()...), " ")
+	for _, criterion := range []string{"1.2.1", "1.2.2", "1.2.3", "1.2.5"} {
+		if !strings.Contains(said, criterion) {
+			t.Errorf("%s appears in neither list, so the conformance report "+
+				"says nothing about it in any state", criterion)
+		}
+	}
+}
+
+// page wraps markup in the minimum a page needs so only the interesting rule
+// can fire.
+func page(body string) string {
+	return `<!doctype html><html lang="en"><head><title>A page</title></head>` +
+		`<body><h1>A page</h1>` + body + `</body></html>`
+}
+
+// hasRule reports whether a report carries a finding with this rule id.
+func hasRule(r *Report, rule string) bool {
+	for _, f := range r.Findings {
+		if f.Rule == rule {
+			return true
+		}
+	}
+	return false
 }

@@ -22,6 +22,43 @@ func sourcesFor(root string, s *store.Store, commit, siteName string,
 	pages map[string]any) render.Sources {
 
 	src := render.Sources{Name: siteName, Pages: pages}
+
+	// What the asset library can be asked, wired here too.
+	//
+	// This mattered the moment captions existed. The accessibility gate
+	// renders pages through this builder and then refuses a <video> with no
+	// <track> — and the track is a companion the decorator asks the library
+	// for. Without these, the gate would have judged every captioned video as
+	// uncaptioned and refused a publish nobody could fix: the file had the
+	// captions and the document the gate read did not.
+	//
+	// The srcset goes with it for the reason this function exists at all. Its
+	// own comment says pages are "rendered the way the site serves them", and
+	// without this the pictures in the judged document carried no narrower
+	// copies while the served ones did.
+	if lib, lerr := openMedia(root); lerr == nil {
+		src.SrcSet = func(id string) string {
+			f, err := lib.Stat(id)
+			if err != nil {
+				return ""
+			}
+			return f.SrcSet("/media")
+		}
+		src.Tracks = func(id string) []any {
+			f, err := lib.Stat(id)
+			if err != nil || len(f.Tracks) == 0 {
+				return nil
+			}
+			out := make([]any, 0, len(f.Tracks))
+			for _, t := range f.Tracks {
+				out = append(out, map[string]any{
+					"src": "/media/" + t.ID, "lang": t.Lang,
+					"label": t.Label, "kind": t.Kind, "default": t.Default,
+				})
+			}
+			return out
+		}
+	}
 	if set, err := loadMenus(root); err == nil {
 		src.Menus = set
 	}

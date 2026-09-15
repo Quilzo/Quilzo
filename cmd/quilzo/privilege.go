@@ -240,6 +240,7 @@ var commandNeeds = map[string]need{
 	"media verify":     {action: auth.ActView},
 	"media edit":       {action: auth.ActEditDraft},
 	"media generate":   {action: auth.ActEditDraft},
+	"media captions":   {action: auth.ActEditDraft},
 	"agent probe":      {action: auth.ActView},
 	"media remove":     {action: auth.ActEditDraft},
 	"media renditions": {action: auth.ActEditDraft},

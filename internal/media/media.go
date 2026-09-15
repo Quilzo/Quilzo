@@ -62,9 +62,20 @@ import (
 type Kind string
 
 const (
-	Image    Kind = "image"
-	Video    Kind = "video"
-	Audio    Kind = "audio"
+	Image Kind = "image"
+	Video Kind = "video"
+	Audio Kind = "audio"
+	// Caption is a timed text track for a video: WebVTT.
+	//
+	// Its own kind rather than Text, because what a caption is for decides
+	// three things Text gets wrong. It is served inline, because a <track>
+	// element fetches it as a subresource and a download is not a caption. It
+	// is attached to a video rather than placed on a page, so a picker
+	// offering it beside the photographs would be offering something nobody
+	// can use there. And it is what the accessibility gate looks for before
+	// it will let a video be published, which is a question no other text
+	// file answers.
+	Caption  Kind = "caption"
 	Document Kind = "document"
 	Text     Kind = "text"
 )
@@ -188,6 +199,19 @@ var formats = map[string]Format{
 		Inline: true,
 		Magic:  [][]byte{[]byte("RIFF")},
 		Verify: verifyWAV,
+	},
+	// Captions, which are what make a video publishable at all.
+	//
+	// WCAG 1.2.2 is a Level A criterion and this program's gate refuses a
+	// Level A failure rather than warning about it — so a video section
+	// without one of these is a page that does not publish. Accepting the
+	// format is therefore not a convenience: it is the other half of a gate
+	// that would otherwise be unsatisfiable.
+	"vtt": {
+		MIME: "text/vtt; charset=utf-8", Kind: Caption, Ext: ".vtt",
+		MaxBytes: maxText, Inline: true,
+		Magic:  [][]byte{[]byte("WEBVTT")},
+		Verify: verifyVTT,
 	},
 	"txt": {
 		MIME: "text/plain; charset=utf-8", Kind: Text, Ext: ".txt",
@@ -385,6 +409,20 @@ type File struct {
 	// do I put on this page" was mostly answers nobody should choose.
 	RenditionOf string `json:"rendition_of,omitempty"`
 
+	// Tracks are the caption files for this video.
+	//
+	// On the video rather than on the section that shows it, for the same
+	// reason renditions are on the picture: captions belong to the recording,
+	// not to one placement of it, so a video used on three pages is captioned
+	// on all three — and nobody has to remember on the third.
+	//
+	// It also means the accessibility gate has one place to ask. A video with
+	// no captions is a WCAG 1.2.2 failure at Level A, which this program
+	// refuses rather than warns about, and a refusal that depended on which
+	// page the video happened to be on would be a refusal nobody could act
+	// on.
+	Tracks []Track `json:"tracks,omitempty"`
+
 	// EditOf names the picture this was derived from, and Edit is what was
 	// done to it.
 	//
@@ -443,6 +481,54 @@ func (f File) Extension() string {
 		return fm.Ext
 	}
 	return ""
+}
+
+// A Track is one caption file attached to a video.
+type Track struct {
+	// ID is the stored caption file.
+	ID string `json:"id"`
+	// Lang is a BCP 47 tag. Required: a track element without one is a track
+	// a browser cannot offer in a language menu, and a reader with two
+	// languages available cannot choose.
+	Lang string `json:"lang"`
+	// Label is what a person picks from that menu. Empty means the language
+	// tag is shown instead, which is worse and not wrong.
+	Label string `json:"label,omitempty"`
+	// Kind is "captions" or "subtitles".
+	//
+	// They are different things and the distinction is the accessible one:
+	// captions carry the non-speech audio a deaf reader needs — a door
+	// closing, who is speaking — and subtitles are a translation for somebody
+	// who can hear it. Only captions satisfy 1.2.2, so storing them under one
+	// name would make the gate unable to tell whether it had been satisfied.
+	Kind string `json:"kind"`
+	// Default marks the one a browser shows without being asked.
+	Default bool `json:"default,omitempty"`
+}
+
+// Captions reports whether this file has a track that satisfies 1.2.2.
+//
+// Subtitles do not. A translation of the dialogue is not an alternative to
+// hearing it: it omits the door closing and who is speaking, which is the
+// half a deaf reader is missing.
+func (f File) Captions() bool {
+	for _, t := range f.Tracks {
+		if t.Kind == TrackCaptions {
+			return true
+		}
+	}
+	return false
+}
+
+// The two kinds of timed text a track may be.
+const (
+	TrackCaptions  = "captions"
+	TrackSubtitles = "subtitles"
+)
+
+// ValidTrackKind reports whether this is one of the two.
+func ValidTrackKind(kind string) bool {
+	return kind == TrackCaptions || kind == TrackSubtitles
 }
 
 // Rendition is one narrower copy of an image.
@@ -886,6 +972,58 @@ func verifyUTF8(b []byte) error {
 		return fmt.Errorf("it contains a NUL byte, so it is not text")
 	}
 	return nil
+}
+
+// verifyVTT checks a caption file is one, and carries nothing executable.
+//
+// WebVTT permits a small amount of markup inside a cue — <b>, <i>, <u>, <c>,
+// <ruby>, and <v Speaker> for who is talking — and that is the whole list. A
+// browser parses a track in the page's own context, so anything else in there
+// is markup arriving through a file nobody thinks of as markup: the same
+// reasoning that refuses SVG outright, arrived at from the other direction.
+//
+// Refused rather than stripped. Stripping would mean deciding what somebody
+// meant by a tag the format does not have, and a caption file this program
+// silently rewrote is one whose timings nobody can trust afterwards.
+func verifyVTT(b []byte) error {
+	if err := verifyUTF8(b); err != nil {
+		return err
+	}
+	// The signature, which the specification requires at the very start. A
+	// byte-order mark before it is permitted and common.
+	head := bytes.TrimPrefix(b, []byte{0xEF, 0xBB, 0xBF})
+	if !bytes.HasPrefix(head, []byte("WEBVTT")) {
+		return fmt.Errorf(
+			"a caption file starts with WEBVTT, and this does not; an SRT " +
+				"file has to be converted rather than renamed")
+	}
+	// The signature line may carry a header and then must end.
+	if len(head) > 6 && head[6] != '\n' && head[6] != '\r' &&
+		head[6] != ' ' && head[6] != '\t' {
+		return fmt.Errorf("the WEBVTT signature runs into something else")
+	}
+	for _, tag := range vttForbidden {
+		if i := bytes.Index(bytes.ToLower(head), []byte(tag)); i >= 0 {
+			return fmt.Errorf(
+				"it contains %s, which is not part of WebVTT. A browser "+
+					"parses a track in the page's own context, so markup in "+
+					"here is markup in the page", tag)
+		}
+	}
+	return nil
+}
+
+// vttForbidden is what a caption file must not contain.
+//
+// An allowlist of cue tags would be the other way to write this and a worse
+// one: it would mean parsing cue payloads to find the tags, on a file from
+// outside, to decide whether to refuse it. This asks the question that matters
+// — is there anything here a browser would execute or fetch — and the list is
+// short because the answer is short.
+var vttForbidden = []string{
+	"<script", "<iframe", "<object", "<embed", "<link", "<style", "<base",
+	"<meta", "<!doctype", "<!entity", "javascript:", "vbscript:",
+	"data:text/html", "onerror=", "onload=", "onclick=",
 }
 
 // verifyCSV additionally refuses formula injection.

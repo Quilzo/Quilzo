@@ -1191,6 +1191,32 @@ func (st *Site) srcSet(id string) string {
 	return f.SrcSet("/media")
 }
 
+// tracks answers what caption files a video has, in the shape a template
+// walks.
+//
+// Plain maps and strings, because that is all the template language reads. The
+// paths are built here rather than in the layout for the reason the srcset is:
+// a layout that guessed at the address of a caption would emit a <track>
+// pointing at nothing, and a track pointing at nothing is worse than none —
+// a browser offers the reader a language that turns out to be empty.
+func (st *Site) tracks(id string) []any {
+	if st.MediaStat == nil {
+		return nil
+	}
+	f, err := st.MediaStat(id)
+	if err != nil || len(f.Tracks) == 0 {
+		return nil
+	}
+	out := make([]any, 0, len(f.Tracks))
+	for _, t := range f.Tracks {
+		out = append(out, map[string]any{
+			"src": "/media/" + t.ID, "lang": t.Lang,
+			"label": t.Label, "kind": t.Kind, "default": t.Default,
+		})
+	}
+	return out
+}
+
 // formData resolves a declared form for a template.
 //
 // Read from the same set the submit handler validates against, so what a page
@@ -1235,7 +1261,7 @@ func (st *Site) formData(name string) map[string]any {
 
 func (st *Site) sources() render.Sources {
 	src := render.Sources{Name: st.Name, Listings: st.Listings,
-		SrcSet: st.srcSet, Form: st.formData}
+		SrcSet: st.srcSet, Tracks: st.tracks, Form: st.formData}
 	if st.Menus != nil {
 		if set, err := st.Menus(); err == nil {
 			src.Menus = set

@@ -66,6 +66,11 @@ type Sources struct {
 	// page naming one gets no form data and its layout renders nothing, which
 	// is what every deployment did before the declaration was the only list.
 	Form func(name string) map[string]any
+	// Tracks answers what caption files a video has, in the shape a template
+	// walks. Nil means no captions anywhere, which is what every deployment
+	// had before they could be attached — and is why a video with none is a
+	// refusal at publication rather than a silent omission here.
+	Tracks func(id string) []any
 	// SrcSet answers what narrower copies an asset has, as a srcset value, or
 	// "" when it has none.
 	//
@@ -87,7 +92,7 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 		// Decorated, not raw. The derived companions — the negations a language
 		// with no else cannot express — are added here so that every renderer
 		// sees the same page. See derive.go for what they are and why.
-		"page":  decoratePage(body, s.SrcSet),
+		"page":  decoratePage(body, s.asks()),
 		"site":  map[string]any{"name": s.Name, "page": name},
 		"menus": s.menus(name),
 		// When this page was rendered, for a form's timing check.
@@ -135,6 +140,11 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 		ctx[Feeds] = rest
 	}
 	return ctx, nil
+}
+
+// asks bundles what the decorator may ask the library.
+func (s Sources) asks() asks {
+	return asks{srcSet: s.SrcSet, tracks: s.Tracks}
 }
 
 func (s Sources) now() time.Time {

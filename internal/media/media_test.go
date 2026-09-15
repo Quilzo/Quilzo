@@ -360,6 +360,13 @@ func TestDownloadNamesAreBuiltNotCleaned(t *testing.T) {
 // goes to a media decoder, and every one of them is decoded here before it is
 // stored. A PDF goes to a viewer with a scripting engine attached, and text in
 // the site's own origin is a page nobody wrote; both stay downloads.
+//
+// A caption is the fourth. It goes to the browser's WebVTT parser, which is
+// not a scripting engine, and it is checked here first — verifyVTT refuses
+// every tag a browser would execute or fetch from, for the same reason SVG is
+// refused outright. And it has to be inline for the same reason a video does:
+// a <track> element fetches it as a subresource, so a download is not a
+// caption, it is a feature that does not work.
 func TestOnlyMediaRendersInline(t *testing.T) {
 	inline := map[string]bool{}
 	for name, fm := range formats {
@@ -368,14 +375,15 @@ func TestOnlyMediaRendersInline(t *testing.T) {
 		}
 		inline[name] = true
 		switch fm.Kind {
-		case Image, Audio, Video:
-			// Handed to a decoder, and decoded here before storage.
+		case Image, Audio, Video, Caption:
+			// Handed to a decoder or a parser that is not a scripting engine,
+			// and checked here before storage.
 		default:
 			t.Errorf("%s is served inline and is a %s; only media may render "+
 				"in this origin", name, fm.Kind)
 		}
 	}
-	for _, want := range []string{"png", "jpeg", "mp4", "webm", "mp3"} {
+	for _, want := range []string{"png", "jpeg", "mp4", "webm", "mp3", "vtt"} {
 		if !inline[want] {
 			t.Errorf("%s should render in a page: a section kind puts one "+
 				"there, and a download instead is a feature that does not work",
