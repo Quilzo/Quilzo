@@ -1225,6 +1225,60 @@ tr.detail td { padding-top: 0; border-top: 0; }
 .findform input { flex: 1 1 22rem; min-width: 0; }
 .findform button { flex: none; }
 
+/* -- choosing a file ------------------------------------------------------- */
+
+/* The picker grid.
+ *
+ * A radio per file rather than a button per file: a keyboard walks it with the
+ * arrow keys and a screen reader reads it as the one question it is. The
+ * fieldset carries no border of its own, because the cards are the structure
+ * and a box around them would be a second one saying the same thing.
+ *
+ * min-inline-size: 0 on the fieldset because a fieldset will not shrink below
+ * its content otherwise, which is how a grid inside one pushes a page sideways
+ * on a phone. */
+.pickgrid { border: 0; padding: 0; margin: 0 0 1.25rem; min-inline-size: 0;
+  display: grid; gap: .75rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr)); }
+
+.pick { display: block; position: relative; cursor: pointer;
+  border: 1px solid var(--outline-variant); border-radius: var(--shape-s);
+  padding: .6rem; background: var(--surface-container-low); }
+.pick:hover { border-color: var(--outline); }
+/* The checked one is named by its border as well as by the radio, because a
+   radio inside a card is small and the card is what the eye lands on. */
+.pick-on { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.pick:focus-within { outline: 2px solid var(--primary); outline-offset: 2px; }
+.pick input { position: absolute; top: .6rem; right: .6rem; margin: 0; }
+.pick-body { display: block; }
+.pick-thumb { display: block; width: 100%; height: 7rem; object-fit: contain;
+  background: var(--surface-container-high); border-radius: var(--shape-xs);
+  margin-bottom: .45rem; }
+/* A format name where a picture cannot go. A video has no still until
+   something extracts one, and an empty box says less than "webm". */
+.pick-noshot { display: flex; align-items: center; justify-content: center;
+  font: var(--label-md); font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--on-surface-variant); }
+.pick-name { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.pick .hint { display: block; }
+.pick-alt { font-style: italic; }
+.pick-none { grid-column: 1 / -1; }
+.pick-none .pick-name { margin-bottom: .15rem; }
+
+/* The file attached to a field, beside the field.
+ *
+ * The input still holds the value — it is the value, and it can still be
+ * pasted — and this is what makes it legible: a hash says nothing about which
+ * photograph it is. */
+.filefield { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+  margin-top: .4rem; }
+.filefield-thumb { width: 4rem; height: 3rem; object-fit: contain;
+  background: var(--surface-container-high); border-radius: var(--shape-xs); }
+.filefield-noshot { display: flex; align-items: center; justify-content: center;
+  font: var(--label-md); font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--on-surface-variant); }
+.filefield-pick { font-weight: 600; }
+
 /* One result per row, and the reason it matched beside it rather than under
    it: a list where every entry is two lines is a list you cannot scan. */
 .findresults { list-style: none; margin: 0 0 1.5rem; padding: 0; }

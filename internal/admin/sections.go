@@ -378,12 +378,12 @@ func (s *Server) handleSectionFields(w http.ResponseWriter, r *http.Request) {
 		Label  string
 		List   string
 		Index  int
-		Fields []section.Editable
+		Fields []fieldView
 	}
-	var own []section.Editable
+	var own []fieldView
 	var blocks []block
 	index := map[string]int{}
-	for _, f := range fields {
+	for _, f := range viewsOf(fields, name, at, s.listingNames(kind) != nil) {
 		if f.Group == "" {
 			own = append(own, f)
 			continue
@@ -567,4 +567,70 @@ func (s *Server) listingNames(kind string) []string {
 		return nil
 	}
 	return set.Names()
+}
+
+// fieldView is one editable value plus what the screen needs to draw it.
+//
+// A thin wrapper rather than fields added to section.Editable, because "this
+// value is the id of a picture and here is where to look at it" is a fact
+// about this interface — the command line prints the id and is right to.
+type fieldView struct {
+	section.Editable
+	// Media is the kind of stored file this field names: image, video, audio,
+	// or empty for an ordinary value. See section.FileKind.
+	Media string
+	// Noun is Media with its article, because "choose a image" is what a
+	// template produces when it puts a constant article beside a kind name.
+	Noun string
+	// Asset is the id the field currently holds, when it holds one, so the
+	// form can show the picture instead of the hash of it.
+	Asset string
+	// Page and At say which section this field belongs to, because the picker
+	// is a link and a link has to carry where it came from. Repeated on every
+	// field rather than reached through $: inside a defined template $ is the
+	// template's own argument, so a partial that reads it would see the field
+	// and not the screen.
+	Page string
+	At   int
+	// Suggest says this field offers the screen's datalist of listing names.
+	Suggest bool
+}
+
+// viewsOf decorates the editable fields for the screen.
+func viewsOf(fields []section.Editable, page string, at int, suggest bool) []fieldView {
+	out := make([]fieldView, 0, len(fields))
+	for _, f := range fields {
+		v := fieldView{Editable: f, Page: page, At: at}
+		if kind, isFile := section.FileKind(f.Path); isFile {
+			v.Media = kind
+			v.Noun = nounFor(kind)
+			v.Asset = assetIDOf(f.Value)
+		}
+		// The listing section's name field is the one value on any section
+		// that has to match something declared elsewhere. See listingNames.
+		v.Suggest = suggest && f.Path == "name"
+		out = append(out, v)
+	}
+	return out
+}
+
+// assetIDOf pulls the library id out of whatever a field holds.
+//
+// A field may carry the bare id or the path the public site serves it at, and
+// both are written by real interfaces. Anything else — an external URL, a
+// half-typed value — returns empty, and the screen shows no preview rather
+// than a broken one.
+func assetIDOf(value string) string {
+	v := strings.TrimSpace(value)
+	v = strings.TrimPrefix(v, "/media/")
+	v = strings.TrimPrefix(v, "media/")
+	if len(v) != 64 {
+		return ""
+	}
+	for _, c := range v {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return ""
+		}
+	}
+	return v
 }
