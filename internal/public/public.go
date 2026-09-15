@@ -204,6 +204,11 @@ type Site struct {
 	// every image on the page, on every request. Nil means no srcset, which is
 	// the answer a deployment with no library needs anyway.
 	MediaStat func(id string) (media.File, error)
+	// MediaOpen streams an asset that is not a picture, so a range request
+	// does not read the whole file. Nil means everything goes through Media,
+	// which is what this did before and is correct for a store holding only
+	// images. See MediaStream.
+	MediaOpen MediaStream
 	// Menus are the site's navigation, as templates see it.
 	//
 	// This was the whole feature's missing half. Menus could be built, were

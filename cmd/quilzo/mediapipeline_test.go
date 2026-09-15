@@ -259,3 +259,23 @@ func jpegWithGPS(t *testing.T) []byte {
 	}
 	return out
 }
+
+// The public site is handed a way to stream, not only a way to read.
+//
+// public.MediaOpen is nil in a build that forgets it, and then everything
+// falls back to the byte lookup — which works, and reads a whole film to
+// answer a two-byte range request. That is the failure this exists to stop,
+// and a nil field has no symptom until somebody serves a recording to ten
+// people at once.
+func TestTheSiteIsHandedAWayToStream(t *testing.T) {
+	body, err := os.ReadFile("sitebuild.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"st.MediaOpen = ", "lib.Open("} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("sitebuild.go no longer wires %s, so a range request "+
+				"for two bytes of a recording reads the whole recording", want)
+		}
+	}
+}

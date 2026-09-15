@@ -254,3 +254,29 @@ func TestEditingSomethingThatIsNotThere(t *testing.T) {
 		t.Error("an unknown id did not explain itself")
 	}
 }
+
+// The limit on the form is the limit that is enforced.
+//
+// There are two ceilings and they differ by a factor of eight: the format
+// table permits 512 MiB of audio or video, and a file arriving through this
+// form is refused over 64. That is a real distinction — about the road rather
+// than the destination, since one multipart post has no progress and no
+// resumption in an interface that serves no script to draw either — but a
+// limit somebody discovers by waiting for a failure is a limit nobody was
+// told. So it is on the screen, and it is generated from the constant rather
+// than typed beside it.
+func TestTheUploadFormStatesTheLimitItEnforces(t *testing.T) {
+	srv, token := setup(t)
+	withPicture(t, srv)
+
+	html := get(t, srv, "/media", token).Body.String()
+	want := humanSize(MaxUpload)
+	if !strings.Contains(html, want) {
+		t.Errorf("the form does not say its limit is %s", want)
+	}
+	// And it points at the way round it, because the store holds more than
+	// the form will carry.
+	if !strings.Contains(html, "quilzo media add") {
+		t.Error("the form does not say what to do with a longer recording")
+	}
+}

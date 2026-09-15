@@ -256,6 +256,46 @@ func (l *Library) Get(id string) (media.File, []byte, error) {
 	return f, body, nil
 }
 
+// Open returns what a file is and a handle on its bytes.
+//
+// # Why this exists beside Get
+//
+// Because Get reads the whole file, and for a range request that is
+// pathological rather than merely wasteful. A player asking for two bytes of a
+// half-gigabyte recording — which is exactly what Safari does before it will
+// play anything — made this program read five hundred and twelve megabytes
+// into the heap to answer with two. Ten viewers seeking around one film is ten
+// copies of it resident.
+//
+// It was not an oversight in a handler. It was in the shape of the lookup: a
+// function returning []byte cannot answer any other way, so every caller
+// inherited it. Hence a second question rather than a fixed handler.
+//
+// # Why the caller closes it
+//
+// Because the caller is a handler that hands the reader to http.ServeContent
+// and cannot return until that is done. A library that closed it would be
+// closing a file somebody is still reading; a library that read it all so it
+// could close it would be Get.
+//
+// The identifier is validated first, as it is everywhere here: this is the
+// one function that turns a name from a URL into an open file descriptor, and
+// "the caller checked" is a property of the current caller.
+func (l *Library) Open(id string) (media.File, *os.File, error) {
+	if err := ValidID(id); err != nil {
+		return media.File{}, nil, err
+	}
+	f, err := l.Stat(id)
+	if err != nil {
+		return media.File{}, nil, err
+	}
+	h, err := os.Open(l.path(id))
+	if err != nil {
+		return media.File{}, nil, err
+	}
+	return f, h, nil
+}
+
 // Stat returns what a file is, without reading it.
 func (l *Library) Stat(id string) (media.File, error) {
 	if err := ValidID(id); err != nil {
