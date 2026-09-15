@@ -14,6 +14,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -616,21 +617,13 @@ func viewsOf(fields []section.Editable, page string, at int, suggest bool) []fie
 
 // assetIDOf pulls the library id out of whatever a field holds.
 //
-// A field may carry the bare id or the path the public site serves it at, and
-// both are written by real interfaces. Anything else — an external URL, a
-// half-typed value — returns empty, and the screen shows no preview rather
-// than a broken one.
+// One answer, shared with the gates: a reader here that disagreed with the one
+// deciding whether a licence has expired would show a preview for a picture
+// nothing was checking, or check a picture this screen said was not there.
 func assetIDOf(value string) string {
-	v := strings.TrimSpace(value)
-	v = strings.TrimPrefix(v, "/media/")
-	v = strings.TrimPrefix(v, "media/")
-	if len(v) != 64 {
+	id, ok := media.IDIn(value)
+	if !ok {
 		return ""
 	}
-	for _, c := range v {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return ""
-		}
-	}
-	return v
+	return id
 }

@@ -136,6 +136,22 @@ func provStatus(root string, args []string) error {
 	statuses := provenance.Check(idx, hashes)
 	gaps := provenance.Unmarked(statuses)
 
+	// The pictures, which the page records say nothing about.
+	//
+	// Surveyed here rather than gated at publication, for everything except a
+	// contradiction: almost every library has undeclared origins, because
+	// until recently nothing could set the field, and a gate on that would
+	// refuse the first publish of every existing site. A survey is what an
+	// audit wants and a refusal is not. See internal/provenance/media.go.
+	var survey provenance.MediaSurvey
+	var conflicts []provenance.Conflict
+	if lib, lerr := openMedia(root); lerr == nil {
+		if claims, cerr := mediaClaims(s, lib, *ref); cerr == nil {
+			survey = provenance.Survey(claims)
+			conflicts = provenance.Conflicts(idx, claims)
+		}
+	}
+
 	// The machine contract. Deliberately not a transcription of the prose
 	// below: it carries the fields a caller branches on, so the wording stays
 	// free to improve without breaking anyone.
@@ -169,12 +185,37 @@ func provStatus(root string, args []string) error {
 			}
 			rows = append(rows, r)
 		}
+		type clash struct {
+			Page    string `json:"page"`
+			Says    string `json:"page_declares"`
+			Asset   string `json:"asset"`
+			Carries string `json:"asset_declares"`
+		}
+		clashes := make([]clash, 0, len(conflicts))
+		for _, c := range conflicts {
+			clashes = append(clashes, clash{Page: c.Page, Says: string(c.Says),
+				Asset: c.Asset, Carries: string(c.Carries)})
+		}
 		w.JSON(map[string]any{
 			"ref": *ref, "pages": rows,
 			"without_provenance": len(gaps),
-			"compliant":          len(gaps) == 0,
+			"media": map[string]any{
+				"declared": survey.Declared, "generated": survey.Generated,
+				"undeclared": survey.Undeclared, "pages": survey.Pages,
+			},
+			"media_conflicts": clashes,
+			// Two different questions, and a caller branching on one should
+			// not be told the other. A page with no record at all is a gap; a
+			// page whose record its pictures contradict is a false claim, and
+			// only the second one this command cannot let through.
+			"compliant": len(gaps) == 0 && len(clashes) == 0,
 		})
-		if len(gaps) > 0 {
+		switch {
+		case len(clashes) > 0:
+			return errBlocked{fmt.Errorf(
+				"%d page(s) claim a provenance their pictures contradict",
+				len(clashes))}
+		case len(gaps) > 0:
 			return errBlocked{fmt.Errorf("%d page(s) without provenance", len(gaps))}
 		}
 		return nil
@@ -198,6 +239,31 @@ func provStatus(root string, args []string) error {
 			fmt.Printf("  %sok%s          %-16s %s%s%s\n",
 				green, reset, st.Page, dim, st.Record.SourceType.Describe(), reset)
 		}
+	}
+
+	if survey.Declared+survey.Undeclared > 0 {
+		// "on pages", not "in use". A picture on a record is not counted
+		// here, because a record carries no provenance for its media to
+		// contradict — and a total that silently meant something narrower
+		// than `quilzo rights` reports would read as one of them being wrong.
+		fmt.Printf("\n  %s%d picture(s) on pages: %d declared, %d generated, "+
+			"%d undeclared%s\n", dim, survey.Declared+survey.Undeclared,
+			survey.Declared, survey.Generated, survey.Undeclared, reset)
+		if survey.Undeclared > 0 {
+			fmt.Printf("  %sundeclared is a gap and not a claim, the same as "+
+				"it is for a page. `quilzo media origin ID --source-type T`%s\n",
+				dim, reset)
+		}
+	}
+
+	if len(conflicts) > 0 {
+		fmt.Printf("\n  %s%d page(s) claim a provenance their own pictures "+
+			"contradict:%s\n", red, len(conflicts), reset)
+		for _, c := range conflicts {
+			fmt.Printf("  %s%s%s  %s%s%s\n", red, c.Page, reset, dim, c.Detail(), reset)
+		}
+		return fmt.Errorf("%d page(s) contradicted by their own media",
+			len(conflicts))
 	}
 
 	if len(gaps) > 0 {

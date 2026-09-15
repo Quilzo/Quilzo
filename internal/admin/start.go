@@ -145,9 +145,16 @@ type gate struct {
 
 // gates is the list of refusals, in the order somebody meets them.
 //
-// Stated up front because a refusal nobody expected reads as a malfunction. The
-// override exists for every one of these and is recorded in the commit, which
-// is the part that makes refusing acceptable rather than obstructive.
+// Stated up front because a refusal nobody expected reads as a malfunction.
+//
+// Not every one of these can be overridden, and this used to say they all
+// could — "the override exists for every one of these", which was true of
+// accessibility and provenance and of nothing else. The seven checks about the
+// content itself are unwaivable by design: internal/gate's whole argument is
+// that one list is possible only because "every gate below either passes or
+// refuses, on every surface, with no per-surface question about what an
+// override means". Telling somebody an override exists for a gate that has
+// none is how a refusal becomes a support conversation.
 var gates = []gate{
 	{"Accessibility", "The page is rendered and checked. A failure that makes " +
 		"the page unusable for somebody stops the publish rather than warning " +
@@ -157,7 +164,11 @@ var gates = []gate{
 		"is refused before it is written rather than fixed afterwards."},
 	{"Provenance", "AI-generated content carries a machine-readable mark. " +
 		"Publishing unmarked AI content is refused, because the EU AI Act " +
-		"asks for the mark and a label people can read is not the same thing."},
+		"asks for the mark and a label people can read is not the same thing. " +
+		"A page's mark has to cover its pictures too: one that says a person " +
+		"wrote it while carrying a generated image is making a claim its own " +
+		"library contradicts, and that refusal cannot be overridden because " +
+		"the fix is one command."},
 	{"Menus", "A menu entry pointing at a page that is not going live is " +
 		"refused, naming the entry. A navigation link to nothing is a 404 " +
 		"somebody finds later."},

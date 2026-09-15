@@ -115,6 +115,40 @@ func contentGates(root string, s *store.Store, ref string) gate.Set {
 			},
 		},
 
+		// A page's mark has to cover its pictures.
+		//
+		// The page-level gate refuses a page that declares nothing. This is
+		// the other half: a page that declares humanEdits and carries an
+		// image declared trainedAlgorithmicMedia publishes a meta tag
+		// asserting human authorship over a document containing generated
+		// content. That is not a missing mark, it is a false one.
+		//
+		// Unwaivable, and here rather than beside the page gate's override,
+		// because there is always a correct answer and it is one command
+		// away: compositeWithTrainedAlgorithmicMedia is the IPTC term for
+		// human content with generated elements. A gate with a one-command fix
+		// and no legitimate exception should refuse.
+		{
+			Name: "media provenance",
+			Refusal: func(n int) string {
+				return fmt.Sprintf("%d page(s) claim a provenance their own "+
+					"pictures contradict.\n  A page carrying generated media "+
+					"is not human-written, and publishing says it is", n)
+			},
+			Run: func() (blocking, advisory []gate.Finding, err error) {
+				conflicts, cerr := mediaConflictsAt(root, s, at())
+				if cerr != nil {
+					return nil, nil, cerr
+				}
+				for _, c := range conflicts {
+					blocking = append(blocking, gate.Finding{
+						Page: c.Page, Detail: c.Detail(),
+					})
+				}
+				return blocking, nil, nil
+			},
+		},
+
 		// References resolve, or nothing is published. A reference field names
 		// another page; whether that page exists is a question about the set
 		// being published, so it is asked here and not when somebody saves.
