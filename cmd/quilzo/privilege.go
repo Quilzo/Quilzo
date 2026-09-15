@@ -239,6 +239,7 @@ var commandNeeds = map[string]need{
 	// parent's edit-draft would shut the check to exactly them.
 	"media verify":     {action: auth.ActView},
 	"media edit":       {action: auth.ActEditDraft},
+	"media generate":   {action: auth.ActEditDraft},
 	"agent probe":      {action: auth.ActView},
 	"media remove":     {action: auth.ActEditDraft},
 	"media renditions": {action: auth.ActEditDraft},
