@@ -493,6 +493,31 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 				"— and a focal point is a judgement about what matters in a " +
 				"photograph, which is the part a model has not made",
 		},
+		"captions.remove": {
+			// No screen, and the reason is that the gate is the interface.
+			//
+			// Taking the last captions track off a video makes every page
+			// showing it unpublishable — the accessibility gate refuses a
+			// <video> with no captions at Level A. So this is not a tidying
+			// operation somebody reaches for in a list; it is the deliberate
+			// undoing of the thing that lets the video be published, and the
+			// refusal at the next publish is what tells them so.
+			//
+			// A screen for attaching captions belongs in the admin and is
+			// worth building. A button for removing them, beside a video, with
+			// no indication that pressing it stops the site going out, is the
+			// version of this feature that should not exist.
+			GUI: "",
+			Why: "removing the last captions track makes every page showing " +
+				"the video unpublishable, so it is a deliberate act at the " +
+				"command line rather than a button in a list. Attaching them " +
+				"is the operation a screen should carry",
+			MCP: nil,
+			NoMCP: "as media, whose whole surface is off the agent interface " +
+				"— and whether a caption file describes a recording is a " +
+				"judgement about the recording, which a model that has not " +
+				"watched it has not made",
+		},
 		"origin.clear": {
 			// The provenance screen is where a page's disclosure is set, and a
 			// picture's belongs beside it. Clearing is not deletion of a

@@ -31,7 +31,12 @@ func TestUnevaluatedCriteriaAreNotClaimed(t *testing.T) {
 	}
 	// Criteria this program has no check for must not appear at all.
 	for _, c := range acr.Evaluated {
-		for _, unchecked := range []string{"1.2.2", "2.1.1", "1.4.4", "3.3.8"} {
+		// 1.2.2 was in this list and is not any more: captions became a
+		// check, so it is evaluated and belongs in a row. The list is a sample
+		// of criteria nothing measures, not a fixed set — an entry leaving it
+		// because the product grew a check is the outcome this whole file is
+		// arguing for.
+		for _, unchecked := range []string{"2.1.1", "1.4.4", "3.3.8"} {
 			if c.Number == unchecked {
 				t.Errorf("%s is reported as %q and this program has no check "+
 					"for it", unchecked, c.Result)

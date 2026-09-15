@@ -283,11 +283,18 @@ var templates = map[string]Template{
 					},
 				}},
 				map[string]any{"video": map[string]any{
-					"title":            "A video, served from this origin",
-					"src":              "",
-					"caption":          "Controls always, autoplay never — a video that starts on its own is what 1.4.2 is about.",
-					"transcript_label": "Read the transcript instead",
-					"transcript_href":  "/transcript",
+					"title": "A video, served from this origin",
+					"src":   "",
+					// No transcript link. This said /transcript, which no
+					// starter creates — a dangling link in shipped sample
+					// content, on the one section kind whose accessibility
+					// story is the point of it. The caption says what to do
+					// instead, and a link is added when there is a page to
+					// link to.
+					"caption": "Controls always, autoplay never — a video that " +
+						"starts on its own is what 1.4.2 is about. Captions are " +
+						"attached to the file with `quilzo media captions`, and " +
+						"a video without them does not publish.",
 				}},
 				map[string]any{"timeline": map[string]any{
 					"title": "What changed",

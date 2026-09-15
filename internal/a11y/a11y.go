@@ -116,6 +116,7 @@ var (
 		"no positive tabindex (2.4.3)",
 		"tables have header cells (1.3.1)",
 		"no auto-playing media (1.4.2)",
+		"video carries a captions track (1.2.2)",
 		"iframes are titled (4.1.2)",
 		// Not found by reading a page: the ratio lives in the stylesheet, and
 		// the stylesheet is generated from a theme this program can compute
@@ -125,6 +126,19 @@ var (
 	}
 	notCovered = []string{
 		"whether alt text is actually useful rather than merely present",
+		// Stated because it was not, and the silence was the worst of it. The
+		// conformance report is built from these two lists and from the
+		// findings, so a criterion named in neither appears in no row at all —
+		// not as supported, not as failing, not even as unevaluated. This
+		// program ships a video section kind, and its own VPAT-shaped document
+		// did not acknowledge that time-based media exists.
+		"whether captions are accurate, synchronised, or say who is speaking",
+		"an alternative for a video with no audio, or an audio description of " +
+			"what is only shown (1.2.1, 1.2.3, 1.2.5) — a transcript can be " +
+			"linked from a video section and whether it describes the " +
+			"recording is not a question a parser can answer",
+		"whether an audio recording has a transcript (1.2.1), which is a link " +
+			"somewhere on the page and not something in the audio element",
 		"colour contrast in a hand-written site.css, which is served as the " +
 			"operator wrote it and is not a stylesheet this program generated",
 		"keyboard operability of scripted widgets",
@@ -155,6 +169,7 @@ func Check(page, html string) *Report {
 	r.checkTabindex(tags)
 	r.checkTables(tags)
 	r.checkAutoplay(tags)
+	r.checkCaptions(tags)
 	r.checkFrames(tags)
 
 	sort.SliceStable(r.Findings, func(i, j int) bool {
@@ -434,6 +449,93 @@ func (r *Report) checkTables(tags []tag) {
 			depth--
 		}
 	}
+}
+
+// checkCaptions refuses a video with no captions track.
+//
+// WCAG 1.2.2 at Level A: prerecorded synchronised media needs captions. This
+// program's gate refuses a Level A failure rather than warning about it, and a
+// video nobody can follow without hearing it is the definition of the class —
+// so the same treatment as an image with no alternative text.
+//
+// # Captions, not subtitles
+//
+// A track marked subtitles does not satisfy it. Subtitles translate the
+// dialogue for somebody who can hear the rest; captions carry the rest — a
+// door closing, which of two people is talking — and that difference is the
+// whole of what a deaf reader is missing. Accepting either would make the
+// check unable to tell whether it had been satisfied.
+//
+// # What this cannot tell, and what follows
+//
+// Whether the recording has any audio at all. A silent video needs an
+// alternative under 1.2.1 rather than captions under 1.2.2, and no parser can
+// see which it is. So the refusal covers both cases with the stricter remedy,
+// and the accessibility override — a written reason, recorded — is what the
+// genuine exception goes through. That is the same shape as every other
+// waivable finding here, and better than a check that guesses.
+func (r *Report) checkCaptions(tags []tag) {
+	for i, t := range tags {
+		if t.closing || t.name != "video" {
+			continue
+		}
+		if _, ok := t.attrs["src"]; !ok && !hasSourceChild(tags, i) {
+			// A video element with nothing to play is what the shipped layout
+			// emits before a file is chosen. There is no recording to caption
+			// and a refusal here would be a refusal about nothing.
+			continue
+		}
+		if captionedWithin(tags, i) {
+			continue
+		}
+		r.add("video-has-no-captions", Blocking, "WCAG 1.2.2",
+			"this video carries no captions track, so a reader who cannot "+
+				"hear it has no way to follow it. Attach a WebVTT file with "+
+				"`quilzo media captions`, or record a reason for publishing "+
+				"without one",
+			t.raw)
+	}
+}
+
+// hasSourceChild reports whether a video element is followed by a <source>
+// before it closes.
+func hasSourceChild(tags []tag, from int) bool {
+	for i := from + 1; i < len(tags); i++ {
+		if tags[i].name == "video" {
+			return false
+		}
+		if tags[i].name == "source" && !tags[i].closing {
+			if _, ok := tags[i].attrs["src"]; ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// captionedWithin reports whether a video element has a captions track before
+// it closes.
+//
+// Walked forward to the closing tag rather than by nesting depth, because that
+// is what the rest of this file does with a flat tag list and a second model
+// of the document would be a second place for it to be wrong.
+func captionedWithin(tags []tag, from int) bool {
+	for i := from + 1; i < len(tags); i++ {
+		t := tags[i]
+		if t.name == "video" {
+			// The closing tag, or the next video. Either way this one is done.
+			return false
+		}
+		if t.name != "track" || t.closing {
+			continue
+		}
+		// Absent kind defaults to subtitles in HTML, which does not satisfy
+		// 1.2.2 — so it has to say captions.
+		if t.attrs["kind"] == "captions" {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Report) checkAutoplay(tags []tag) {

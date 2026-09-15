@@ -53,6 +53,7 @@ import (
 // share_image, or any other value that is a /media/ path:
 //
 //	<field>_srcset   the narrower copies of that picture, as a srcset value
+//	<field>_tracks   the caption files of that video, for <track> elements
 //
 // That one is not a pure function of the content: it asks the library which
 // renditions exist. It is here anyway, for the same reason as the rest — a
@@ -77,6 +78,17 @@ import (
 // Nothing is overwritten. A page that already carries "unlinked" keeps its own
 // value, because content an author wrote wins over content this inferred.
 
+// asks are the questions the decorator puts to the asset library.
+//
+// A struct rather than a parameter each. There were two — a srcset and a
+// caption list — and the next one would have been a third argument threaded
+// through a recursive walk and every call site, which is how a signature
+// becomes a place nobody wants to add anything.
+type asks struct {
+	srcSet func(string) string
+	tracks func(string) []any
+}
+
 // maxDeriveDepth bounds the walk. Content is nested by authors and by importers,
 // and a decorator that recursed without a limit would be a way to spend the
 // server's stack on a page somebody wrote.
@@ -89,7 +101,7 @@ const maxDeriveDepth = 10
 // into it would leak one page's derived fields into another's and, worse, do it
 // only after the first request — the class of bug that cannot be reproduced on
 // a fresh process.
-func decorate(v any, depth int, srcset func(string) string) any {
+func decorate(v any, depth int, ask asks) any {
 	if depth > maxDeriveDepth {
 		return v
 	}
@@ -97,15 +109,16 @@ func decorate(v any, depth int, srcset func(string) string) any {
 	case map[string]any:
 		out := make(map[string]any, len(t)+3)
 		for k, vv := range t {
-			out[k] = decorate(vv, depth+1, srcset)
+			out[k] = decorate(vv, depth+1, ask)
 		}
 		derive(out)
-		deriveSrcSets(out, srcset)
+		deriveSrcSets(out, ask.srcSet)
+		deriveTracks(out, ask.tracks)
 		return out
 	case []any:
 		out := make([]any, len(t))
 		for i, item := range t {
-			out[i] = decorate(item, depth+1, srcset)
+			out[i] = decorate(item, depth+1, ask)
 		}
 		// Position is a property of the list, so it is written after the items
 		// are copied rather than inside each one's own walk.
@@ -163,6 +176,37 @@ func deriveSrcSets(m map[string]any, srcset func(string) string) {
 	}
 }
 
+// deriveTracks adds the caption tracks of any field naming a stored video.
+//
+// The same shape as the srcset companion, and for the same reason: the
+// template language cannot ask the library a question, and a layout that
+// guessed at "this id, English captions" would emit a <track> pointing at
+// nothing. So the answer is computed here, once, and every renderer sees it.
+//
+// <field>_tracks, so a video section's src gets src_tracks. A list of maps,
+// because that is what the language can walk.
+func deriveTracks(m map[string]any, tracks func(string) []any) {
+	if tracks == nil {
+		return
+	}
+	for key, v := range m {
+		if strings.HasSuffix(key, "_tracks") {
+			continue
+		}
+		text, ok := v.(string)
+		if !ok {
+			continue
+		}
+		match := reAssetPath.FindStringSubmatch(strings.TrimSpace(text))
+		if match == nil {
+			continue
+		}
+		if list := tracks(match[1]); len(list) > 0 {
+			setIfAbsent(m, key+"_tracks", list)
+		}
+	}
+}
+
 func setIfAbsent(m map[string]any, key string, value any) {
 	if _, exists := m[key]; exists {
 		return
@@ -183,7 +227,7 @@ func hasText(m map[string]any, key string) bool {
 // picture wanted its narrower copies, and then it needed them on the page where
 // the picture is largest.
 func (s Sources) WithRecord(ctx map[string]any, row map[string]any) {
-	ctx["record"] = decorate(row, 0, s.SrcSet)
+	ctx["record"] = decorate(row, 0, s.asks())
 }
 
 // decoratePage decorates a page body and fills in the hero's inherited title.
@@ -191,8 +235,8 @@ func (s Sources) WithRecord(ctx map[string]any, row map[string]any) {
 // The hero inherits the page title because writing the same string twice is how
 // the two drift apart: somebody renames the page, the hero still says the old
 // name, and nothing catches it because both fields are populated.
-func decoratePage(body any, srcset func(string) string) any {
-	out := decorate(body, 0, srcset)
+func decoratePage(body any, ask asks) any {
+	out := decorate(body, 0, ask)
 	m, ok := out.(map[string]any)
 	if !ok {
 		return out
@@ -272,6 +316,7 @@ func (s Sources) feeds(data map[string]any) []any {
 			}
 			derive(copied)
 			deriveSrcSets(copied, s.SrcSet)
+			deriveTracks(copied, s.Tracks)
 			decorated = append(decorated, copied)
 		}
 		for i, item := range decorated {
