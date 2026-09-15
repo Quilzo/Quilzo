@@ -16,6 +16,18 @@
   draft commit like any other edit.
 </p>
 
+{{/*
+  The listings this site has, offered to the one field that must name one.
+  A datalist and nothing else: the admin serves script-src 'none', and this is
+  a suggestion rather than a constraint, so a name typed before the listing
+  exists still saves.
+*/}}
+{{if .ListingNames}}
+<datalist id="listing-names">
+  {{range .ListingNames}}<option value="{{.}}"></option>{{end}}
+</datalist>
+{{end}}
+
 <form method="post" action="/sections/fields">
   <input type="hidden" name="page" value="{{.Page}}">
   <input type="hidden" name="at" value="{{.At}}">
@@ -30,7 +42,9 @@
     <textarea id="f-{{.Path}}" name="v.{{.Path}}" rows="4" spellcheck="true">{{.Value}}</textarea>
     {{else}}
     <input id="f-{{.Path}}" name="v.{{.Path}}" value="{{.Value}}"
-      {{if .Number}}inputmode="numeric"{{end}} spellcheck="false">
+      {{if .Number}}inputmode="numeric"{{end}}
+      {{if and $.ListingNames (eq .Path "name")}}list="listing-names"{{end}}
+      spellcheck="false">
     {{end}}
   </p>
   {{end}}

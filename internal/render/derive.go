@@ -69,6 +69,11 @@ import (
 //	first, last  position, so a template can treat the ends differently
 //	n            one-based position, for "step 3 of 5" without arithmetic
 //
+// For a listing section, additionally — see place.go, which fills it:
+//
+//	rows, count, empty        the listing this section names, resolved here
+//	view_cards, view_list     the chosen view, as booleans a template can test
+//
 // Nothing is overwritten. A page that already carries "unlinked" keeps its own
 // value, because content an author wrote wins over content this inferred.
 

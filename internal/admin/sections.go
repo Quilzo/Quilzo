@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -422,12 +423,18 @@ func (s *Server) handleSectionFields(w http.ResponseWriter, r *http.Request) {
 		"NotesOn": s.Notes != nil && s.Notes.Store != nil,
 		"Notes":   notes,
 		"Kind":    kind,
-		"Own":     own,
-		"Blocks":  blocks,
-		"Lists":   section.Lists(body, at),
-		"Base":    s.Store.GetRef(site.RefDraft),
-		"Message": r.URL.Query().Get("m"),
-		"Error":   r.URL.Query().Get("e"),
+		// The listings this site has, for the one field whose value must name
+		// one of them. Typing it blind is how a page gets a listing name with
+		// a typo in it, and that page then refuses to publish — which is the
+		// right refusal arriving at the wrong moment, after the editing is
+		// done. A datalist is plain HTML and needs no script.
+		"ListingNames": s.listingNames(kind),
+		"Own":          own,
+		"Blocks":       blocks,
+		"Lists":        section.Lists(body, at),
+		"Base":         s.Store.GetRef(site.RefDraft),
+		"Message":      r.URL.Query().Get("m"),
+		"Error":        r.URL.Query().Get("e"),
 	})
 }
 
@@ -543,4 +550,21 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// listingNames is what a listing section's name field may be set to.
+//
+// Empty for every other kind, so the markup asks once and the screen carries
+// nothing it does not use. Empty too when the listings are unwired or
+// unreadable: a suggestion list that cannot be built is not an error, it is a
+// field without suggestions, which is what this screen has always been.
+func (s *Server) listingNames(kind string) []string {
+	if kind != listing.SectionKind || s.Listings == nil || s.Listings.Load == nil {
+		return nil
+	}
+	set, err := s.Listings.Load()
+	if err != nil || set == nil {
+		return nil
+	}
+	return set.Names()
 }

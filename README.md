@@ -165,7 +165,7 @@ could always edit the JSON — and the browser could not touch them at all. Both
 can now, over one implementation of the moves:
 
 ```bash
-quilzo section kinds                       # nineteen, grouped by what they do
+quilzo section kinds                       # twenty, grouped by what they do
 quilzo section add index pricing           # arrives with content that renders
 quilzo section move index 4 up             # refused at the ends, not clamped
 quilzo section fields index 0              # what is editable inside one

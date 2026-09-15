@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/store"
 )
 
@@ -349,4 +350,89 @@ func TestARowOmitsAnUnsetFieldRatherThanNullingIt(t *testing.T) {
 	if strings.Contains(string(encoded), "null") {
 		t.Errorf("a serialised row carries a null:\n%s", encoded)
 	}
+}
+
+// A listing a section names is a listing the page embeds.
+//
+// Everything that protects this feature hangs off On: the per-page budget, the
+// ETag that mixes in the data tree so a listing is not frozen at the page's own
+// hash, and the public server's refusal to render when no resolver is wired. A
+// section the page builder can add that On does not see gets none of them —
+// the rows would be served stale, uncounted, and on a build with no resolver
+// they would be served as a silent gap.
+func TestOnSeesListingSections(t *testing.T) {
+	body := map[string]any{
+		"listings": []any{"recent"},
+		"sections": []any{
+			map[string]any{"prose": map[string]any{"title": "Words"}},
+			map[string]any{"listing": map[string]any{"name": "catalogue"}},
+			map[string]any{"listing": map[string]any{"name": ""}},
+		},
+	}
+	got := On(body)
+	want := []string{"recent", "catalogue"}
+	if len(got) != len(want) {
+		t.Fatalf("On returned %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("On returned %v, want %v", got, want)
+		}
+	}
+}
+
+// One listing asked for twice is one query.
+//
+// A page that positions a listing and also names it in the page field is
+// asking for the same rows, and counting it twice would spend the page's
+// budget of eight on seven.
+func TestOnNamesEachListingOnce(t *testing.T) {
+	body := map[string]any{
+		"listings": []any{"recent", "recent"},
+		"sections": []any{
+			map[string]any{"listing": map[string]any{"name": "recent"}},
+		},
+	}
+	if got := On(body); len(got) != 1 || got[0] != "recent" {
+		t.Errorf("On returned %v, want one recent", got)
+	}
+}
+
+// Sections come back in the order they sit in the page, so the caller that
+// fills them can put the same rows in two places.
+func TestSectionsAreInPageOrder(t *testing.T) {
+	body := map[string]any{"sections": []any{
+		map[string]any{"listing": map[string]any{"name": "b"}},
+		map[string]any{"quote": map[string]any{"text": "not a listing"}},
+		map[string]any{"listing": map[string]any{"name": "a"}},
+		"not even an object",
+	}}
+	got := Sections(body)
+	if len(got) != 2 {
+		t.Fatalf("got %d section(s), want 2", len(got))
+	}
+	if got[0]["name"] != "b" || got[1]["name"] != "a" {
+		t.Errorf("sections came back as %v and %v", got[0]["name"], got[1]["name"])
+	}
+}
+
+// The kind this package looks for and the kind a screen can add are the same.
+//
+// Two halves of one capability, each correct on its own: a catalogue entry
+// renaming the section would leave this reading a key nothing writes, and
+// every positioned listing would go quietly unresolved — a heading over an
+// empty section, with no error anywhere. Neither file shows it.
+func TestTheSectionKindIsInTheCatalogue(t *testing.T) {
+	for _, k := range section.Kinds() {
+		if k.Name == SectionKind {
+			if _, ok := k.Stub["name"]; !ok {
+				t.Errorf("the %q stub has no name field, so a section added "+
+					"from a screen cannot say which listing it shows",
+					SectionKind)
+			}
+			return
+		}
+	}
+	t.Errorf("this package reads a %q section and the catalogue does not "+
+		"offer one, so nothing can add one", SectionKind)
 }
