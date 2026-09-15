@@ -174,6 +174,7 @@ working together
   quilzo lock list | release PAGE          who is working on what
   quilzo checked set PAGE [--every 168h]   record that a page is still right
   quilzo checked list | due | clear        when each page was last confirmed
+  quilzo checked own PAGE WHO | disown    whose job a page is
   quilzo note add PAGE "..."               say what is wrong with a page
   quilzo note list | resolve | remove      the remarks, and finishing with one
   quilzo review status                     who has agreed to the current draft

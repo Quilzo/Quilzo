@@ -139,6 +139,25 @@
   <p class="help">Recorded against the page as it stands, with your name and
     the date. It blocks nothing and publishes nothing — it is how the next
     person knows whether anybody has looked.</p>
+
+  {{/*
+    Whose job it is, which is not the same question as who last read it. A
+    form of its own rather than a field in the one above, because assigning a
+    page and confirming a page are two different acts and usually two
+    different people — and a page nobody has ever confirmed is exactly the one
+    most worth assigning. See internal/checked.
+  */}}
+  <form method="post" action="/checked/own" class="owner">
+    <input type="hidden" name="page" value="{{.Name}}">
+    <input type="hidden" name="back" value="{{.Here}}">
+    <p><label for="ck-owner">Whose job is this page?</label>
+      <input id="ck-owner" name="owner" maxlength="120"
+             value="{{with .CheckedNow}}{{.Owner}}{{end}}"
+             placeholder="a name, a team, an address">
+      <span class="hint">Who to ask when it goes out of date. Empty means
+        nobody has said — save it empty to hand the page back.</span></p>
+    <button type="submit">Record who owns this</button>
+  </form>
 </section>
 {{end}}
 

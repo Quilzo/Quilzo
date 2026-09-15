@@ -132,6 +132,7 @@ func TestADenyOnAPathBindsInTheBrowser(t *testing.T) {
 	for _, tc := range []struct{ path, body string }{
 		{"/notes/add", "page=about&text=a remark"},
 		{"/checked/set", "page=about&back=/"},
+		{"/checked/own", "page=about&owner=finance&back=/"},
 		{"/transfer/starter", "name=blog&page=about&overwrite=1"},
 		{"/publishing/lock/release", "page=about&holder=someone"},
 	} {
@@ -188,6 +189,8 @@ func TestAnAuthorScopedToAPathCanUseTheBrowser(t *testing.T) {
 		{"/notes/add", "page=legal/terms&text=outside it", http.StatusForbidden},
 		{"/checked/set", "page=blog/first&back=/", http.StatusSeeOther},
 		{"/checked/set", "page=legal/terms&back=/", http.StatusForbidden},
+		{"/checked/own", "page=blog/first&owner=bea&back=/", http.StatusSeeOther},
+		{"/checked/own", "page=legal/terms&owner=bea&back=/", http.StatusForbidden},
 	} {
 		w := postForm(t, srv, tc.path, tok["bea"], tc.body)
 		if w.Code != tc.want {

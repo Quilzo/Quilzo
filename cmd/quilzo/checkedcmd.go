@@ -34,11 +34,16 @@ func cmdChecked(root string, args []string) error {
 		return checkedList(root, args[1:], false)
 	case "due":
 		return checkedList(root, args[1:], true)
+	case "own":
+		return checkedOwn(root, args[1:])
+	case "disown":
+		return checkedDisown(root, args[1:])
 	case "clear":
 		return checkedClear(root, args[1:])
 	default:
 		return fmt.Errorf(
-			"unknown checked command %q; try set, list, due or clear", args[0])
+			"unknown checked command %q; try set, list, due, own, disown or "+
+				"clear", args[0])
 	}
 }
 
@@ -135,8 +140,15 @@ func checkedSet(root string, args []string) error {
 
 func checkedList(root string, args []string, dueOnly bool) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
+	owner := fs.String("owner", "",
+		"only pages this person is responsible for")
+	unowned := fs.Bool("unowned", false, "only pages nobody is responsible for")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *unowned && strings.TrimSpace(*owner) != "" {
+		return fmt.Errorf(
+			"--owner and --unowned ask for different lists; pass one")
 	}
 	st, err := openChecked(root)
 	if err != nil {
@@ -158,14 +170,39 @@ func checkedList(root string, args []string, dueOnly bool) error {
 		}
 		rows = kept
 	}
+	// "What is mine" and "what is nobody's" are the two questions an owner
+	// makes answerable, and both are the same list with a different row kept.
+	if who := strings.TrimSpace(*owner); who != "" || *unowned {
+		kept := rows[:0]
+		for _, r := range rows {
+			if (*unowned && r.Owner == "") || (!*unowned && r.Owner == who) {
+				kept = append(kept, r)
+			}
+		}
+		rows = kept
+	}
 
 	if w.JSON(rows) {
 		return nil
 	}
 	if len(rows) == 0 {
-		if dueOnly {
+		// Which of the four it is matters. "No page is finance's" about a
+		// person who owns six pages, none of them due, is the empty list
+		// describing the wrong absence — and somebody reads it as "nobody
+		// gave finance anything".
+		who := strings.TrimSpace(*owner)
+		switch {
+		case dueOnly && *unowned:
+			w.Human("  %snothing unowned needs attention%s\n", dim, reset)
+		case dueOnly && who != "":
+			w.Human("  %snothing of %s's needs attention%s\n", dim, who, reset)
+		case dueOnly:
 			w.Human("  %severy page has been checked and none is due%s\n", dim, reset)
-		} else {
+		case *unowned:
+			w.Human("  %severy page has somebody responsible for it%s\n", dim, reset)
+		case who != "":
+			w.Human("  %sno page is %s's%s\n", dim, who, reset)
+		default:
 			w.Human("  %sthere are no pages%s\n", dim, reset)
 		}
 		return nil
@@ -182,6 +219,9 @@ func checkedList(root string, args []string, dueOnly bool) error {
 		default:
 			w.Human("  %s%s by %s%s", dim,
 				time.Unix(r.At, 0).UTC().Format("2006-01-02"), r.By, reset)
+		}
+		if r.Owner != "" {
+			w.Human("  %s(%s)%s", dim, r.Owner, reset)
 		}
 		w.Human("\n")
 		if r.Note != "" {
@@ -206,4 +246,68 @@ func checkedClear(root string, args []string) error {
 		"/"+args[0], audit.Success, nil))
 	w.Human("  %scleared%s\n", dim, reset)
 	return nil
+}
+
+// checkedOwn says whose job a page is.
+//
+// A verb of its own rather than a flag on set, because naming an owner is not
+// the same act as confirming a page — see checked.Store.Own. Two positionals
+// and no flags, so leadingArgs has nothing to trip over.
+func checkedOwn(root string, args []string) error {
+	if len(args) != 2 {
+		return fmt.Errorf("usage: quilzo checked own PAGE WHO")
+	}
+	page, who := args[0], strings.TrimSpace(args[1])
+	if who == "" {
+		return fmt.Errorf(
+			"who owns it? To take the owner off a page, use checked disown")
+	}
+	r, err := setOwner(root, page, who)
+	if err != nil {
+		return err
+	}
+	if w.JSON(r) {
+		return nil
+	}
+	w.Human("  %s%s is %s's%s\n", dim, page, who, reset)
+	return nil
+}
+
+// checkedDisown takes the owner off a page.
+func checkedDisown(root string, args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: quilzo checked disown PAGE")
+	}
+	if _, err := setOwner(root, args[0], ""); err != nil {
+		return err
+	}
+	if w.JSON(map[string]string{"page": args[0], "owner": ""}) {
+		return nil
+	}
+	w.Human("  %snobody is responsible for %s%s\n", dim, args[0], reset)
+	return nil
+}
+
+// setOwner is the half both verbs share: the page has to exist, and the act is
+// logged with the name it lands on.
+func setOwner(root, page, who string) (checked.Record, error) {
+	_, hashes := draftPageIDs(root)
+	if _, exists := hashes[page]; !exists {
+		// Same refusal as set, for the same reason: an owner on a page that is
+		// not there is a typo, and it produces a record nothing will ever
+		// clear.
+		return checked.Record{}, fmt.Errorf(
+			"there is no page called %q in the draft", page)
+	}
+	st, err := openChecked(root)
+	if err != nil {
+		return checked.Record{}, err
+	}
+	r, err := st.Own(page, who)
+	if err != nil {
+		return checked.Record{}, err
+	}
+	record(root, resolveCaller(root, "").auditRecord("checked.own", "/"+page,
+		audit.Success, map[string]string{"owner": who}))
+	return r, nil
 }

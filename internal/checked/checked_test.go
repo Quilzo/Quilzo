@@ -6,6 +6,7 @@ package checked
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -269,5 +270,149 @@ func TestTheSurveyIsStable(t *testing.T) {
 				t.Fatalf("run %d reordered the survey", i)
 			}
 		}
+	}
+}
+
+// Confirming a page does not quietly take it off whoever owns it.
+//
+// The bug this forbids is the silent one: somebody assigns twelve pages, an
+// editor reads one and presses the button, and the page comes back unowned
+// because the form that recorded the check had no owner field in it. Every
+// caller would then have to remember to re-state the owner, and the one that
+// forgot would be the admin's bulk action, which does fifty at a time.
+func TestACheckKeepsTheOwnerThePageAlreadyHad(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Own("prices", "finance"); err != nil {
+		t.Fatal(err)
+	}
+	r, err := st.Set(Record{Page: "prices", By: "ada", Content: "h1"},
+		time.Unix(1_800_000_000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Owner != "finance" {
+		t.Errorf("the check returned owner %q, want finance", r.Owner)
+	}
+	back, err := st.Get("prices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Owner != "finance" {
+		t.Errorf("the stored record says owner %q, want finance", back.Owner)
+	}
+	if back.By != "ada" {
+		t.Errorf("the stored record says by %q, want ada", back.By)
+	}
+}
+
+// A caller that names an owner is obeyed, in both directions.
+func TestSetCanChangeTheOwnerAndOwnCanClearIt(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_800_000_000, 0)
+	if _, err := st.Own("prices", "finance"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Set(Record{Page: "prices", By: "ada", Owner: "legal"},
+		now); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := st.Get("prices"); r.Owner != "legal" {
+		t.Errorf("owner is %q, want legal", r.Owner)
+	}
+	if _, err := st.Own("prices", ""); err != nil {
+		t.Fatal(err)
+	}
+	r, err := st.Get("prices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Owner != "" {
+		t.Errorf("owner is %q after being cleared", r.Owner)
+	}
+	// Clearing the owner is not clearing the check. Somebody handing a page
+	// back has said nothing about whether it is right.
+	if r.By != "ada" || r.At != now.Unix() {
+		t.Errorf("clearing the owner lost the check: %+v", r)
+	}
+}
+
+// Owning a page says nothing about whether it is right.
+//
+// The page nobody has ever checked is the first row of every survey and the
+// one most worth assigning, so this has to work before any check exists — and
+// it must not invent one.
+func TestAPageCanBeOwnedBeforeItIsEverChecked(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Own("prices", "finance"); err != nil {
+		t.Fatal(err)
+	}
+	r, err := st.Get("prices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.At != 0 || r.By != "" {
+		t.Errorf("owning a page invented a check: %+v", r)
+	}
+	now := time.Unix(1_800_000_000, 0)
+	if s := Status(r, "h1", year, now); s != Never {
+		t.Errorf("state is %s, want never", s)
+	}
+	rows := Survey([]string{"prices"}, map[string]string{"prices": "h1"},
+		map[string]Record{"prices": r}, year, now)
+	if rows[0].Owner != "finance" || rows[0].State != Never {
+		t.Errorf("survey row is %+v, want finance/never", rows[0])
+	}
+}
+
+// Handing back a page nobody ever checked leaves nothing behind.
+//
+// A file holding only a page name unmarshals to a record with no date, which
+// Status reports as Never — the same as no file — but All() would still hand
+// it to every caller, and a store that accumulates one husk per page somebody
+// briefly assigned is a store that grows without recording anything.
+func TestDisowningAnUncheckedPageRemovesTheRecord(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Own("prices", "finance"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Own("prices", ""); err != nil {
+		t.Fatal(err)
+	}
+	all, err := st.All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 0 {
+		t.Errorf("the store kept %d record(s) for a page with nothing to say",
+			len(all))
+	}
+}
+
+// An owner is a name, not a place to write.
+func TestAnOwnerHasALimit(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	long := strings.Repeat("a", OwnerMax+1)
+	if _, err := st.Own("prices", long); err == nil {
+		t.Error("Own accepted an owner longer than a name")
+	}
+	if _, err := st.Set(Record{Page: "prices", By: "ada", Owner: long},
+		time.Unix(1_800_000_000, 0)); err == nil {
+		t.Error("Set accepted an owner longer than a name")
 	}
 }

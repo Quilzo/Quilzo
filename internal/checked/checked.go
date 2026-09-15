@@ -66,6 +66,39 @@ type Record struct {
 	// Note is what they want the next person to know. Optional, and the part
 	// that makes a record worth reading rather than counting.
 	Note string `json:"note,omitempty"`
+	// Owner is who this page is somebody's job, which is not the same
+	// question as who last read it.
+	//
+	// By is the past tense and Owner is the present one. Survey already sorts
+	// the pages needing attention to the top and had nobody to send them to,
+	// so the answer to "who chases this" was whoever happened to look at it
+	// last — which for the page nobody has ever checked, the first row in
+	// every survey, is nobody at all.
+	//
+	// Optional, because a site with one editor does not need it and a field
+	// that has to be filled in is a field that gets filled in with anything.
+	// Carried across a check rather than re-stated: Set keeps the owner a
+	// page already had unless the caller says otherwise, or confirming a page
+	// would quietly make you responsible for it.
+	Owner string `json:"owner,omitempty"`
+}
+
+// OwnerMax is the longest an owner may be.
+//
+// A name, or a team, or an address — not a paragraph. The field is free text
+// because the people responsible for pages are not always principals of this
+// server, and a limit is what keeps a free-text field from becoming a place to
+// write things nothing will ever read.
+const OwnerMax = 120
+
+// checkOwner is the one rule an owner has to follow.
+func checkOwner(owner string) error {
+	if len(owner) > OwnerMax {
+		return fmt.Errorf(
+			"an owner is a name, and %d characters is longer than a name",
+			len(owner))
+	}
+	return nil
 }
 
 // Interval is how long this page may go unchecked.
@@ -187,23 +220,74 @@ func (st *Store) Set(r Record, now time.Time) (Record, error) {
 					"checked", e)
 		}
 	}
-	p, err := st.path(r.Page)
+	if _, err := st.path(r.Page); err != nil {
+		return Record{}, err
+	}
+	r.Owner = strings.TrimSpace(r.Owner)
+	if err := checkOwner(r.Owner); err != nil {
+		return Record{}, err
+	}
+	if r.Owner == "" {
+		// Carried across the check rather than re-stated. Confirming a page is
+		// still right says nothing about whose job it is, and a caller that
+		// does not mention an owner has not asked for the owner to change —
+		// so reading a page would quietly take it off whoever it belonged to.
+		if was, err := st.Get(r.Page); err == nil {
+			r.Owner = was.Owner
+		}
+	}
+	r.At = now.Unix()
+	return r, st.write(r)
+}
+
+// Own says whose job a page is, and nothing about whether it is right.
+//
+// Separate from Set because these are two different acts, usually by two
+// different people: one assigns the work and the other does it. Folding them
+// together would mean an owner could only be named by somebody willing to
+// sign "I have read this and it is correct" at the same moment.
+//
+// A page nobody has ever checked can be owned — that is the case this is most
+// for, since it is the first row of every survey — so this leaves At alone,
+// and Status still reports such a page as Never.
+//
+// An empty owner clears it.
+func (st *Store) Own(page, owner string) (Record, error) {
+	r, err := st.Get(page)
 	if err != nil {
 		return Record{}, err
 	}
-	r.At = now.Unix()
-	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+	r.Page = page
+	r.Owner = strings.TrimSpace(owner)
+	if err := checkOwner(r.Owner); err != nil {
 		return Record{}, err
+	}
+	if r.At == 0 && r.Owner == "" {
+		// Nothing left to say. A file holding only a page name reads as a
+		// check somebody made and forgot to date, which is worse than no file.
+		return Record{}, st.Clear(page)
+	}
+	return r, st.write(r)
+}
+
+// write puts a record where it goes, whole or not at all.
+func (st *Store) write(r Record) error {
+	p, err := st.path(r.Page)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return err
 	}
 	body, err := json.Marshal(r)
 	if err != nil {
-		return Record{}, err
+		return err
 	}
 	tmp := p + ".tmp"
 	if err := os.WriteFile(tmp, append(body, '\n'), 0o600); err != nil {
-		return Record{}, err
+		return err
 	}
-	return r, os.Rename(tmp, p)
+	return os.Rename(tmp, p)
 }
 
 // Get reads a page's record. A page nobody has checked returns the zero
@@ -275,6 +359,8 @@ type Row struct {
 	Note string `json:"note,omitempty"`
 	// Due is when it is next wanted, zero when nobody has checked it.
 	Due int64 `json:"due,omitempty"`
+	// Owner is whose job this page is, empty when nobody has said.
+	Owner string `json:"owner,omitempty"`
 }
 
 // Survey reports where every page stands, worst first.
@@ -291,7 +377,7 @@ func Survey(pages []string, hashes map[string]string, records map[string]Record,
 		row := Row{
 			Page:  page,
 			State: Status(r, hashes[page], fallback, now),
-			By:    r.By, At: r.At, Note: r.Note,
+			By:    r.By, At: r.At, Note: r.Note, Owner: r.Owner,
 		}
 		if r.At != 0 {
 			row.Due = r.Due(fallback).Unix()

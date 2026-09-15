@@ -65,6 +65,12 @@
         {{else if eq .State "never"}}<span class="tag tag-warn">never</span>
         {{else if eq .State "changed"}}<span class="tag tag-warn">changed since</span>
         {{else}}<span class="tag tag-warn">due</span>{{end}}
+        {{/*
+          The owner sits under the state because that pairing is the whole
+          point of recording one: a row that needs attention and says who to
+          ask is actionable, and the same row without a name is a complaint.
+        */}}
+        {{if .Owner}}<span class="owner-of">{{.Owner}}</span>{{end}}
       {{end}}</td>
       {{end}}
       <td class="actions">
