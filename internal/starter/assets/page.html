@@ -348,6 +348,44 @@
 </section>
 {% end %}
 
+{% if s.listing %}
+<section class="section {{ s.listing.tone }} reveal">
+  <div class="wrap wrap-wide">
+    {% if s.listing.title %}<div class="section-head">
+      <h2>{{ s.listing.title }}</h2>
+      {% if s.listing.intro %}<p class="lead">{{ s.listing.intro }}</p>{% end %}
+    </div>{% end %}
+    {% if s.listing.view_cards %}
+    <div class="grid grid-3">
+      {% for row in s.listing.rows %}
+      <div class="card">
+        {% if row.image %}<img src="/media/{{ row.image }}"{% if row.image_srcset %} srcset="{{ row.image_srcset }}" sizes="(min-width: 64rem) 17vw, (min-width: 46rem) 34vw, 65vw"{% end %} alt="{{ row.alt }}" width="600" height="450" loading="lazy">{% end %}
+        <h3>{% if row.href %}<a class="card-link" href="{{ row.href }}">{{ row.name }}{{ row.title }}</a>{% end %}{% if row.unlinked %}{{ row.name }}{{ row.title }}{% end %}</h3>
+        {% if row.summary %}<p>{{ row.summary }}</p>{% end %}
+        <div class="foot price-line">
+          {% if row.price_display %}<span class="amount">{{ row.price_display }}</span>{% end %}
+          {% if row.availability_label %}<span class="state state-{{ row.state }}">{{ row.availability_label }}</span>{% end %}
+        </div>
+      </div>
+      {% end %}
+    </div>
+    {% end %}
+    {% if s.listing.view_list %}
+    <ul class="listing-rows">
+      {% for row in s.listing.rows %}
+      <li>
+        <p class="name">{% if row.href %}<a href="{{ row.href }}">{{ row.name }}{{ row.title }}</a>{% end %}{% if row.unlinked %}{{ row.name }}{{ row.title }}{% end %}</p>
+        {% if row.summary %}<p class="role">{{ row.summary }}</p>{% end %}
+        {% if row.price_display %}<p class="amount">{{ row.price_display }}</p>{% end %}
+      </li>
+      {% end %}
+    </ul>
+    {% end %}
+    {% if s.listing.empty %}<p class="lead">Nothing here yet.</p>{% end %}
+  </div>
+</section>
+{% end %}
+
 {% if s.people %}
 <section class="section {{ s.people.tone }} reveal">
   <div class="wrap wrap-wide">

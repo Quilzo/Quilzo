@@ -173,6 +173,18 @@ var kinds = []Kind{
 		},
 	},
 	{
+		Name: "listing", Group: "data",
+		Summary: "Rows from one of this site's listings, here rather than after everything else.",
+		Stub: map[string]any{
+			// No name. A stub naming a listing this site does not have would
+			// be a section somebody adds from a button and then cannot
+			// publish, and there is no name that is right for every site. An
+			// unnamed listing renders its heading and an empty line, which is
+			// what a listing matching nothing shows anyway.
+			"title": "Recent", "name": "", "view": "cards",
+		},
+	},
+	{
 		Name: "pricing", Group: "data", Summary: "Plan columns, one of them marked as featured.",
 		Stub: map[string]any{
 			"title": "Plans", "intro": "Say what the difference between them is.",

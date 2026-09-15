@@ -161,15 +161,15 @@ var templates = map[string]Template{
 		Name: "sections", Layout: "page",
 		Summary: "A page assembled from sections you order yourself: hero, " +
 			"features, metrics, charts, split, gallery, carousel, video, steps, " +
-			"timeline, quote, logos, pricing, FAQ, table, people, prose, " +
-			"notice, call to action.",
+			"timeline, quote, logos, pricing, FAQ, table, listing, people, " +
+			"prose, notice, call to action.",
 		Look: "Rounded, generous, a tinted hero. The shipped palette.",
 		Fields: []string{"title", "description", "hero", "sections", "footer",
 			"header_cta_label", "header_cta_href", "brand_mark", "breadcrumbs",
 			"share_image", "share_image_alt"},
 		Sample: map[string]any{
 			"title":       "Everything, in the order you choose",
-			"description": "One layout, nineteen kinds of section, arranged by the content rather than the markup.",
+			"description": "One layout, twenty kinds of section, arranged by the content rather than the markup.",
 			"hero": map[string]any{
 				"eyebrow": "New", "style": "center", "surface": "surface-wash",
 				"lead":      "Sections are data. Reorder them, drop one, use the same kind twice — without touching a template.",
@@ -305,6 +305,19 @@ var templates = map[string]Template{
 							"href": "/people/a-maintainer"},
 						map[string]any{"name": "You, possibly", "role": "Three merged pull requests and commit access"},
 					},
+				}},
+				map[string]any{"listing": map[string]any{
+					"title": "Straight from the records",
+					"intro": "A listing section shows one of this site's declared queries here, rather than after everything else. Point it at a listing and the rows arrive in this position.",
+					// No name. Every other section carries its own content, and
+					// this one carries the name of content that lives
+					// elsewhere — so a sample naming a listing would name one
+					// no site that applies this starter has, and the first
+					// thing anybody did with it would be a page that refuses
+					// to assemble. Unnamed, it renders as a listing that
+					// matched nothing, which is a real state and an honest
+					// one.
+					"name": "", "view": "cards",
 				}},
 				map[string]any{"logos": map[string]any{
 					"title": "In use at",

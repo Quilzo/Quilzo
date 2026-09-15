@@ -485,6 +485,20 @@ td.num, th.num { text-align: right; font-family: var(--font-mono); font-variant-
 .people .name { font-weight: 700; }
 .people .role { font-size: var(--text-sm); color: var(--on-surface-variant); }
 
+/* A listing rendered as a list rather than as cards.
+ *
+ * The other view a positioned listing offers: rows down the page with a rule
+ * between them, for twenty results where three cards would be right but twenty
+ * would be a wall. Same rows, same markup shape as .people uses for a name and
+ * a subtitle, so the two read as the same family. */
+.listing-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-4); }
+.listing-rows > li { padding-bottom: var(--space-4); border-bottom: 1px solid var(--outline-variant); }
+.listing-rows > li:last-child { border-bottom: 0; padding-bottom: 0; }
+.listing-rows p { margin: 0; }
+.listing-rows .name { font-weight: 700; }
+.listing-rows .role { font-size: var(--text-sm); color: var(--on-surface-variant); }
+.listing-rows .amount { font-weight: 700; margin-top: var(--space-2); }
+
 /* -- search ---------------------------------------------------------------- */
 
 .search { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-6); }

@@ -1324,16 +1324,27 @@ func cmdRender(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	names := make([]any, 0, len(pages))
-	for n := range pages {
-		names = append(names, n)
+	// The same context the server builds, not one assembled here.
+	//
+	// This command built its own: the page, and a list of page names. So it
+	// rendered a document with no navigation, no listings, no form stamp and
+	// none of the derived companions — which is not the page anybody is
+	// served, and this is the command people reach for to look at one. Found
+	// by adding a listing section to a page and rendering it: the heading came
+	// out and the rows did not, because nothing had resolved them.
+	//
+	// The same argument as the accessibility gate and the exports, which were
+	// moved onto this builder for the same reason. See internal/render.
+	cid := s.GetRef(*ref)
+	if cid == "" {
+		cid = *ref
 	}
-	sort.Slice(names, func(i, j int) bool { return names[i].(string) < names[j].(string) })
-
-	html, err := tmpl.Render(string(src), map[string]any{
-		"page": page,
-		"site": map[string]any{"pages": names},
-	})
+	ctx, err := sourcesFor(root, s, cid, siteName(root), pages).
+		For(pageName, page, nil)
+	if err != nil {
+		return err
+	}
+	html, err := tmpl.Render(string(src), ctx)
 	if err != nil {
 		return fmt.Errorf("template: %w", err)
 	}

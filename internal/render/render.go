@@ -114,6 +114,7 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 	if f := s.form(body); f != nil {
 		ctx["form"] = f
 	}
+	var arranged []any
 	if s.Listings != nil {
 		data, err := s.Listings.For(body, args)
 		if err != nil {
@@ -123,10 +124,15 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 			ctx[listing.Data] = data
 			// The same rows, arranged as a list, so a layout that does not know
 			// what this site called its listings can still render them.
-			if arranged := s.feeds(data); len(arranged) > 0 {
-				ctx[Feeds] = arranged
-			}
+			arranged = s.feeds(data)
 		}
+	}
+	// A listing the page positioned is filled in where it sits and leaves the
+	// trailing block, so it is not rendered twice. Outside the branch above
+	// because a section naming nothing still has to arrive as an empty
+	// listing rather than as a section with no rows key at all. See place.go.
+	if rest := placeListings(ctx["page"], arranged); len(rest) > 0 {
+		ctx[Feeds] = rest
 	}
 	return ctx, nil
 }

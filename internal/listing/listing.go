@@ -553,26 +553,83 @@ func Check(names []string, set *Set) (Budget, error) {
 // Field is the page field naming which listings a page embeds.
 const Field = "listings"
 
+// SectionKind is the section a page uses to put a listing somewhere.
+//
+// Spelled here rather than imported, because this package must not depend on
+// the page builder to answer "what does this page read". A test checks this
+// constant against the catalogue in internal/section, the same way the
+// catalogue is checked against the markup that renders it.
+const SectionKind = "listing"
+
+// sectionsField is where a page keeps its sections. See internal/section.Field.
+const sectionsField = "sections"
+
 // On reads the listing names a page asks for.
+//
+// Two places name one, and both have to be here. The page field is the whole
+// page saying "show these, after everything else"; a listing section is one
+// position in the page saying "show this one, here". A caller that saw only the
+// first would skip the budget check on a positioned listing, serve a stale ETag
+// for it, and let the public server render a page whose resolver is missing —
+// each of which is a bug this file already argues against for the other half.
+//
+// Named once. A page that asks for the same listing twice is asking for one
+// query, and counting it twice would spend the page's budget on nothing.
 func On(body any) []string {
 	m, ok := body.(map[string]any)
 	if !ok {
 		return nil
 	}
+	var out []string
+	seen := map[string]bool{}
+	add := func(name string) {
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+
 	switch v := m[Field].(type) {
 	case string:
-		if v == "" {
-			return nil
-		}
-		return []string{v}
+		add(v)
 	case []any:
-		out := make([]string, 0, len(v))
 		for _, item := range v {
-			if s, ok := item.(string); ok && s != "" {
-				out = append(out, s)
+			if s, ok := item.(string); ok {
+				add(s)
 			}
 		}
-		return out
 	}
-	return nil
+	for _, sec := range Sections(body) {
+		name, _ := sec["name"].(string)
+		add(name)
+	}
+	return out
+}
+
+// Sections returns the listing sections on a page, in the order they sit in it.
+//
+// The order matters to the caller that fills them: two sections may name the
+// same listing, and both show the same rows in two places rather than one of
+// them being silently dropped.
+func Sections(body any) []map[string]any {
+	m, ok := body.(map[string]any)
+	if !ok {
+		return nil
+	}
+	list, ok := m[sectionsField].([]any)
+	if !ok {
+		return nil
+	}
+	var out []map[string]any
+	for _, item := range list {
+		sec, isMap := item.(map[string]any)
+		if !isMap {
+			continue
+		}
+		if inner, isMap := sec[SectionKind].(map[string]any); isMap {
+			out = append(out, inner)
+		}
+	}
+	return out
 }
