@@ -12,6 +12,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/medialib"
 )
 
 // Cropping a picture without losing it.
@@ -85,58 +86,42 @@ func mediaEdit(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	parent, body, err := lib.Get(rest[0])
+	parent, err := lib.Stat(rest[0])
 	if err != nil {
 		return err
 	}
-	if parent.Kind != media.Image {
-		return fmt.Errorf(
-			"%s is a %s, and this edits pictures", shortID(parent.ID), parent.Kind)
-	}
-
-	derived, err := media.Derive(parent.Format, body, e, parent.Focus,
-		mediaOptionsAt(root))
-	if err != nil {
-		return err
-	}
-
-	f, err := media.Accept(editedName(parent, e), derived.Body, time.Now())
-	if err != nil {
-		return fmt.Errorf(
-			"the edited picture does not validate, so it has not been "+
-				"stored: %w", err)
-	}
-	// Everything that has to travel with it. See the comment at the top.
-	f.Alt = strings.TrimSpace(*alt)
-	if f.Alt == "" {
-		f.Alt = parent.Alt
-	}
-	f.Rights = parent.Rights
-	f.Origin = parent.Origin
-	f.Source = parent.Source
-	f.EditOf = parent.ID
-	f.Edit = &e
-	// Not the focal point. It was a point in the original, and after a crop or
-	// a turn it names a different part of the picture — carrying it across
-	// would silently move somebody's subject.
-	f.UploadedBy = resolveCaller(root, "").Name
 
 	if *dryRun {
+		// The same derivation, thrown away. Not a separate code path that
+		// resembles the real one: a rehearsal that works while the performance
+		// does not is the worst thing a --dry-run can be.
+		_, body, perr := lib.Preview(rest[0], e, 0)
+		if perr != nil {
+			return perr
+		}
+		would, aerr := media.Accept(medialib.EditedName(parent, e), body, time.Now())
+		if aerr != nil {
+			return aerr
+		}
 		if w.JSON(map[string]any{
-			"parent": parent.ID, "would_be": f.ID, "did": derived.Did,
-			"was":   fmt.Sprintf("%dx%d", parent.Width, parent.Height),
-			"now":   fmt.Sprintf("%dx%d", derived.Width, derived.Height),
-			"bytes": derived.Now, "stored": false,
+			"parent": parent.ID, "did": e.Describe(),
+			"was":    fmt.Sprintf("%dx%d", parent.Width, parent.Height),
+			"now":    fmt.Sprintf("%dx%d", would.Width, would.Height),
+			"stored": false,
 		}) {
 			return nil
 		}
-		w.Human("  %swould be %s%s\n", dim, shortID(f.ID), reset)
-		reportDerived(parent, f, derived)
+		w.Human("  %s%s%s\n", dim, e.Describe(), reset)
+		w.Human("  %sit would be about %dx%d, from %dx%d%s\n", dim,
+			would.Width, would.Height, parent.Width, parent.Height, reset)
+		inherits(parent)
 		w.Human("  %snothing was stored%s\n", dim, reset)
 		return nil
 	}
 
-	if err := lib.Put(f, derived.Body); err != nil {
+	f, err := lib.Edit(rest[0], e, mediaOptionsAt(root),
+		strings.TrimSpace(*alt), resolveCaller(root, "").Name)
+	if err != nil {
 		return err
 	}
 	record(root, resolveCaller(root, "").auditRecord("media.edit", "/",
@@ -149,7 +134,10 @@ func mediaEdit(root string, args []string) error {
 		return nil
 	}
 	w.Human("edited %s%s%s\n", bold, parent.Name, reset)
-	reportDerived(parent, f, derived)
+	w.Human("  %s%s%s\n", dim, e.Describe(), reset)
+	w.Human("  %s%dx%d from %dx%d · %s · %d bytes%s\n", dim,
+		f.Width, f.Height, parent.Width, parent.Height, f.Format, f.Size, reset)
+	inherits(parent)
 	w.Human("  %sid %s%s\n", dim, f.ID, reset)
 	w.Human("  %sin a page: /media/%s%s\n", dim, f.ID, reset)
 	w.Human("  %sthe original is untouched, and still %s%s\n",
@@ -157,13 +145,9 @@ func mediaEdit(root string, args []string) error {
 	return nil
 }
 
-func reportDerived(parent, f media.File, derived media.Optimised) {
-	for _, did := range derived.Did {
-		w.Human("  %s%s%s\n", dim, did, reset)
-	}
-	w.Human("  %s%dx%d from %dx%d · %s · %d bytes%s\n", dim,
-		derived.Width, derived.Height, parent.Width, parent.Height,
-		f.Format, derived.Now, reset)
+// inherits says what travelled with the copy, because a licence that silently
+// did not follow is a licence somebody publishes without.
+func inherits(parent media.File) {
 	if parent.Origin.Declared() {
 		w.Human("  %sit keeps the original's origin: %s%s\n",
 			dim, parent.Origin.SourceType, reset)
@@ -172,41 +156,6 @@ func reportDerived(parent, f media.File, derived media.Optimised) {
 		w.Human("  %sit keeps the original's licence: %s%s\n",
 			dim, parent.Rights.Licence, reset)
 	}
-}
-
-// editedName gives the derivative a name somebody can recognise in a list.
-//
-// The stored name is display only — the address is the hash — so this is
-// allowed to be prose. A library of files all called the same thing is a
-// library where the picker is useless, which is the screen this feature most
-// obviously feeds.
-func editedName(parent media.File, e media.Edit) string {
-	base := parent.Name
-	if base == "" {
-		base = shortID(parent.ID)
-	}
-	if i := strings.LastIndex(base, "."); i > 0 {
-		base = base[:i]
-	}
-	var tag string
-	switch {
-	case e.Crop != nil:
-		tag = "cropped"
-	case strings.TrimSpace(e.Aspect) != "":
-		tag = strings.ReplaceAll(strings.TrimSpace(e.Aspect), ":", "-")
-	case e.Turn != 0:
-		tag = "turned"
-	case strings.TrimSpace(e.Flip) != "":
-		tag = "flipped"
-	case e.Grey:
-		tag = "grey"
-	}
-	if e.Grey && tag != "grey" {
-		tag += "-grey"
-	}
-	// Extension already carries the dot, which is how the format table
-	// spells it — "name-16-9..png" is what adding another one produces.
-	return base + "-" + tag + parent.Extension()
 }
 
 // parseBox reads "x,y,w,h" as percentages.

@@ -135,7 +135,15 @@ so this is the screen that answers that gate.</p>{{end}}
     </td>
     <td class="hint">{{ago .UploadedAt}}{{if .UploadedBy}}<br>{{.UploadedBy}}{{end}}</td>
     {{if $.CanWrite}}
-    <td>
+    <td class="actions">
+      {{/*
+        Editing makes a copy and never touches this file, which is why it sits
+        beside Delete without being one of the dangerous things. See
+        internal/medialib/edit.go.
+      */}}
+      {{if eq (printf "%s" .Kind) "image"}}
+      <a href="/media/edit?id={{.ID}}">Crop<span class="sr"> {{.Name}}</span></a>
+      {{end}}
       <form method="post" action="/media/delete" class="inline">
         <input type="hidden" name="id" value="{{.ID}}">
         <button type="submit" class="danger">Delete</button>
