@@ -26,6 +26,8 @@
 
 {{if .Proposal}}
 <h2>Proposed: {{len .Names}} page(s)</h2>
+{{if .Retried}}<p class="hint">Asked again, with the findings from the last
+  attempt.</p>{{end}}
 {{if .Proposal.Notes}}<p>{{.Proposal.Notes}}</p>{{end}}
 
 {{if .Collides}}
@@ -49,6 +51,53 @@
   </tbody>
 </table>
 </div>
+
+{{/*
+  What the publish gates say about the draft this would make.
+
+  The checks were only ever asked at publication, which for a proposal is the
+  last possible moment: a model writes a claim with nothing behind it, somebody
+  accepts it because it reads well, and the refusal arrives days later against
+  a draft nobody remembers proposing. Asked here, the model that wrote it is
+  still one button away. See internal/admin/assist.go.
+*/}}
+{{if .GateError}}
+<div class="card warn">
+  <p><strong>A check could not run,</strong> so nothing here says whether this
+    would publish: {{.GateError}}</p>
+</div>
+{{end}}
+
+{{if .GateRefusal}}
+<div class="card warn">
+  <p><strong>This would not publish yet.</strong> {{.GateRefusal}}</p>
+  <ul class="findings">
+    {{range .GateFindings}}<li>{{.}}</li>{{end}}
+  </ul>
+  <p class="hint">You can still accept it — the draft is where unfinished work
+    belongs, and nothing is published by accepting. Or send the findings back
+    and ask for them fixed.</p>
+  <form method="post" action="/assist" class="inline">
+    <input type="hidden" name="instruction" value="{{.Instruction}}">
+    <input type="hidden" name="fix" value="{{.Fix}}">
+    <button type="submit">Ask {{.Model}} to fix this</button>
+  </form>
+</div>
+{{end}}
+
+{{if .GateClean}}
+<p class="hint">Every content check this site enforces at publication
+  passes on the draft this would make.</p>
+{{end}}
+
+{{if .GateAdvice}}
+<div class="card">
+  <p><strong>Worth knowing.</strong> None of these blocks anything:</p>
+  <ul class="findings">
+    {{range .GateAdvice}}<li>{{.}}</li>{{end}}
+  </ul>
+</div>
+{{end}}
 
 <form method="post" action="/assist/accept">
   <input type="hidden" name="proposal" value="{{.Serialised}}">
