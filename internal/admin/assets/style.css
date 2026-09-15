@@ -1225,6 +1225,41 @@ tr.detail td { padding-top: 0; border-top: 0; }
 .findform input { flex: 1 1 22rem; min-width: 0; }
 .findform button { flex: none; }
 
+/* -- editing a picture ------------------------------------------------------ */
+
+/* The original and what the recipe would make, side by side.
+ *
+ * Side by side because the question is a comparison — is the face still in
+ * frame — and stacked, on a narrow screen, because two 400-pixel pictures in a
+ * row on a phone are two pictures nobody can see. */
+.beforeafter { display: grid; gap: var(--space-5); margin: 0 0 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); }
+.beforeafter figure { margin: 0; }
+.beforeafter img { display: block; width: 100%; height: auto;
+  max-height: 22rem; object-fit: contain;
+  background: var(--surface-container-high); border-radius: var(--shape-s); }
+.beforeafter figcaption { font: var(--label-md); color: var(--on-surface-variant);
+  margin-top: .4rem; }
+/* Where a picture would go before there is one to show. Sized like the
+   pictures beside it, so pressing the button does not make the page jump. */
+.beforeafter .noshot { display: flex; align-items: center; justify-content: center;
+  text-align: center; padding: 1.5rem; min-height: 12rem;
+  background: var(--surface-container-low); border-radius: var(--shape-s);
+  border: 1px dashed var(--outline-variant); }
+
+/* The shapes, as a row of choices rather than a dropdown: a ratio is the one
+   part of a crop people know the answer to before they open the screen, and a
+   list you can see is faster than a list you have to open. */
+.shapes { border: 0; padding: 0; margin: 0 0 1.25rem; min-inline-size: 0; }
+.shapes legend { font-weight: 700; padding: 0; margin-bottom: .5rem; }
+.shape { display: inline-flex; align-items: center; gap: .4rem;
+  margin: 0 .5rem .5rem 0; padding: .35rem .7rem;
+  border: 1px solid var(--outline-variant); border-radius: var(--shape-s);
+  background: var(--surface-container-low); cursor: pointer; }
+.shape:hover { border-color: var(--outline); }
+.shape:focus-within { outline: 2px solid var(--primary); outline-offset: 2px; }
+.shape input { margin: 0; }
+
 /* -- choosing a file ------------------------------------------------------- */
 
 /* The picker grid.

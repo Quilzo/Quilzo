@@ -959,6 +959,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/media/rights", s.handleMediaRights)
 	mux.HandleFunc("/media/focus", s.handleMediaFocus)
 	mux.HandleFunc("/media/pick", s.handleMediaPick)
+	mux.HandleFunc("/media/edit", s.handleMediaEdit)
+	mux.HandleFunc("/media/edit/preview", s.handleMediaEditPreview)
 	mux.HandleFunc("/media/file/", s.handleMediaFile)
 	mux.HandleFunc("/publishing", s.handlePublishing)
 	mux.HandleFunc("/publishing/promote", s.handlePromote)

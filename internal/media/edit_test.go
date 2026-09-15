@@ -39,21 +39,48 @@ func markedPNG(t *testing.T, w, h int) []byte {
 }
 
 // corner says which corner of an image holds the red mark.
+//
+// An ordered slice rather than a map. The first version ranged over a map, so
+// when more than one sample fell inside the mark — which happens the moment
+// the crop is narrower than the mark in one axis — it returned whichever
+// corner the runtime reached first, and the test passed or failed depending on
+// the seed. A test that is right half the time is worse than no test, because
+// the half where it passes is the half somebody believes.
 func corner(t *testing.T, img image.Image) string {
 	t.Helper()
 	b := img.Bounds()
-	for name, p := range map[string]image.Point{
-		"top-left":     {b.Min.X + b.Dx()/8, b.Min.Y + b.Dy()/8},
-		"top-right":    {b.Max.X - b.Dx()/8 - 1, b.Min.Y + b.Dy()/8},
-		"bottom-left":  {b.Min.X + b.Dx()/8, b.Max.Y - b.Dy()/8 - 1},
-		"bottom-right": {b.Max.X - b.Dx()/8 - 1, b.Max.Y - b.Dy()/8 - 1},
+	for _, c := range []struct {
+		name string
+		at   image.Point
+	}{
+		{"top-left", image.Pt(b.Min.X+b.Dx()/8, b.Min.Y+b.Dy()/8)},
+		{"top-right", image.Pt(b.Max.X-b.Dx()/8-1, b.Min.Y+b.Dy()/8)},
+		{"bottom-left", image.Pt(b.Min.X+b.Dx()/8, b.Max.Y-b.Dy()/8-1)},
+		{"bottom-right", image.Pt(b.Max.X-b.Dx()/8-1, b.Max.Y-b.Dy()/8-1)},
 	} {
-		r, g, bl, _ := img.At(p.X, p.Y).RGBA()
+		r, g, bl, _ := img.At(c.at.X, c.at.Y).RGBA()
 		if r > g*2 && r > bl*2 {
-			return name
+			return c.name
 		}
 	}
 	return "nowhere"
+}
+
+// hasMark reports whether the red square survived at all.
+//
+// The right question for a crop that is narrow in one axis, where asking which
+// corner the mark is in has more than one true answer.
+func hasMark(img image.Image) bool {
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y += 4 {
+		for x := b.Min.X; x < b.Max.X; x += 4 {
+			r, g, bl, _ := img.At(x, y).RGBA()
+			if r > g*2 && r > bl*2 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // An aspect crop takes the largest rectangle of that shape that fits.
@@ -89,22 +116,26 @@ func TestAnAspectCropTakesTheLargestThatFits(t *testing.T) {
 func TestAnAspectCropIsTakenAroundTheFocalPoint(t *testing.T) {
 	src := marked(400, 400)
 
+	// A 4:1 strip out of the middle of a square misses a mark in the corner.
 	centred, err := ApplyEdit(src, Edit{Aspect: "4:1"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A 4:1 strip out of the middle of a square misses a mark in the corner.
-	if got := corner(t, centred); got != "nowhere" {
-		t.Errorf("a centred strip found the mark %s", got)
+	if hasMark(centred) {
+		t.Error("a strip taken from the middle found the mark in the corner")
 	}
 
+	// Focused at the top, it keeps it. Asked as "is it in frame" rather than
+	// "which corner": the strip is a quarter of the mark's height, so more
+	// than one corner sample falls inside it and the question has two true
+	// answers.
 	top, err := ApplyEdit(src, Edit{Aspect: "4:1"}, &Focus{X: 50, Y: 0})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := corner(t, top); got != "top-left" {
-		t.Errorf("a strip focused at the top found the mark %s, want top-left",
-			got)
+	if !hasMark(top) {
+		t.Error("a strip focused at the top lost the subject it was " +
+			"focused on")
 	}
 }
 

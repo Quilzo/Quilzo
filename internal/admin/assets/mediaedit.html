@@ -1,0 +1,125 @@
+{{template "head" .}}
+<h1>Edit a picture</h1>
+
+<p class="hint"><a href="/media">Back to the library</a></p>
+
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+
+<p class="lead">This makes a copy. <strong>{{.Parent.Name}}</strong> is not
+  changed, is not replaced, and stays on any page already using it.</p>
+
+{{/*
+  Two pictures, side by side: the original and what the recipe would make.
+
+  The preview is why this is a screen rather than a row of controls on the
+  media list. The policy on this response is script-free, so there are no drag
+  handles and no marching ants — cropping blind is cropping three times, and a
+  preview costs one page load in an interface where every operation already
+  costs one. See internal/admin/mediaedit.go for why it carries no state.
+*/}}
+<div class="beforeafter">
+  <figure>
+    <img src="/media/file/{{.Parent.ID}}" alt="{{.Parent.Alt}}" loading="lazy">
+    <figcaption>The original, {{.Parent.Width}}&times;{{.Parent.Height}}</figcaption>
+  </figure>
+  {{if .Preview}}
+  <figure>
+    <img src="{{.Preview}}" alt="A preview of {{.Did}}">
+    <figcaption>{{.Did}}</figcaption>
+  </figure>
+  {{else}}
+  <figure class="noshot">
+    <span class="hint">Choose a shape below and press Show me, and what it
+      would look like appears here.</span>
+  </figure>
+  {{end}}
+</div>
+
+<form method="post" action="/media/edit">
+  <input type="hidden" name="id" value="{{.Parent.ID}}">
+
+  <fieldset class="shapes">
+    <legend>Crop to a shape</legend>
+    <label class="shape">
+      <input type="radio" name="aspect" value=""{{if not .Edit.Aspect}} checked{{end}}>
+      <span>Leave the shape alone</span>
+    </label>
+    {{range .Aspects}}
+    <label class="shape">
+      <input type="radio" name="aspect" value="{{.Value}}"{{if .On}} checked{{end}}>
+      <span>{{.Label}}</span>
+    </label>
+    {{end}}
+    <p class="hint">A shape is cut around the focal point, so the part
+      somebody marked as the subject stays in frame.
+      {{if .Parent.Focus}}This picture's is at
+        {{.Parent.Focus.X}}%, {{.Parent.Focus.Y}}%.{{else}}
+        This picture has none, so the cut is taken from the middle —
+        <a href="/media">set one</a> and it follows the subject.{{end}}</p>
+  </fieldset>
+
+  <div class="grid2">
+    <fieldset>
+      <legend>Turn it</legend>
+      <p class="field"><label for="e-turn">Clockwise</label>
+        <select id="e-turn" name="turn">
+          <option value="">not at all</option>
+          <option value="90"{{if eq .Edit.Turn 90}} selected{{end}}>a quarter turn</option>
+          <option value="180"{{if eq .Edit.Turn 180}} selected{{end}}>a half turn</option>
+          <option value="270"{{if eq .Edit.Turn 270}} selected{{end}}>three quarters</option>
+        </select></p>
+    </fieldset>
+    <fieldset>
+      <legend>Mirror it</legend>
+      <p class="field"><label for="e-flip">Flip</label>
+        <select id="e-flip" name="flip">
+          <option value="">not at all</option>
+          <option value="across"{{if eq .Edit.Flip "across"}} selected{{end}}>left to right</option>
+          <option value="down"{{if eq .Edit.Flip "down"}} selected{{end}}>top to bottom</option>
+        </select></p>
+    </fieldset>
+  </div>
+
+  <p class="field"><label for="e-grey">Take the colour out</label>
+    <input id="e-grey" type="checkbox" name="grey" value="1"{{if .Edit.Grey}} checked{{end}}></p>
+
+  <details{{if .Edit.Crop}} open{{end}}>
+    <summary>Cut an exact rectangle instead</summary>
+    <p class="hint">Percentages, so the numbers mean the same thing on every
+      copy of this picture. Filling these in overrides the shape above.</p>
+    <div class="grid2">
+      <p class="field"><label for="e-x">Across, from the left</label>
+        <input id="e-x" name="x" inputmode="numeric"
+               value="{{with .Edit.Crop}}{{.X}}{{end}}"></p>
+      <p class="field"><label for="e-y">Down, from the top</label>
+        <input id="e-y" name="y" inputmode="numeric"
+               value="{{with .Edit.Crop}}{{.Y}}{{end}}"></p>
+      <p class="field"><label for="e-w">Width</label>
+        <input id="e-w" name="w" inputmode="numeric"
+               value="{{with .Edit.Crop}}{{.W}}{{end}}"></p>
+      <p class="field"><label for="e-h">Height</label>
+        <input id="e-h" name="h" inputmode="numeric"
+               value="{{with .Edit.Crop}}{{.H}}{{end}}"></p>
+    </div>
+  </details>
+
+  <p class="field"><label for="e-alt">What the copy shows</label>
+    <input id="e-alt" name="alt" value="{{.Alt}}">
+    <span class="hint">An image cannot go on a page without this. It starts as
+      the original's description, because a crop usually shows the same
+      thing — change it when it does not.</span></p>
+
+  <div class="bulkactions">
+    <button type="submit">Show me</button>
+    {{if .Preview}}
+    <button type="submit" name="keep" value="1">Keep this copy</button>
+    {{end}}
+  </div>
+</form>
+
+<p class="help">The copy carries the original's licence and its declared
+  origin, because an edit neither renews permission nor makes a picture a
+  model generated into one a person took. It does not carry the focal point:
+  that named a place in the original, and after a crop it names somewhere
+  else.</p>
+{{template "foot" .}}

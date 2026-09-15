@@ -180,6 +180,9 @@ var notAScreen = map[string]string{
 		"interface as a desktop application; there is no page to render",
 	"/decentralised/bundle": "sends a tar.gz of the rendered site, not a page; " +
 		"it redirects with an explanation when there is nothing published",
+	"/media/edit/preview": "derives a picture from a recipe in the query and " +
+		"sends the bytes. It is the <img> on the editing screen, not a page, " +
+		"and with no recipe there is nothing to derive",
 }
 
 // fullyWired builds a server with every capability connected, the way the
