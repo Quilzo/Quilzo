@@ -4,7 +4,6 @@
 package admin
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,14 +36,31 @@ type Media struct {
 	Options func() media.Options
 }
 
-// MaxUpload caps a single file.
+// MaxUpload caps a single file arriving through the browser.
 //
 // Larger than MaxRequestBody, which is 2 MiB and right for a form: a
 // photograph is routinely bigger than any amount of typed text, and applying
-// the text limit to a file upload would refuse most cameras. The formats have
-// their own caps below this — internal/media bounds each one separately,
-// because a 200 MB PNG is not a photograph, it is a decompression bomb with a
-// header.
+// the text limit to a file upload would refuse most cameras.
+//
+// # It is not above every format's own cap, and used to claim it was
+//
+// This said "the formats have their own caps below this", which is true of
+// images at 24 MiB and documents at 64, and false of audio and video at 512.
+// So the format table advertised half a gigabyte and the browser refused
+// anything over a sixteenth of it — with an error naming 64 MB, which reads as
+// the limit being wrong rather than as there being two.
+//
+// There are two, and the smaller one is about the road rather than the
+// destination. A file arriving this way comes through one multipart form post:
+// no progress, no resumption, and no way to tell a slow upload from a stalled
+// one, because the interface serves no script to draw any of that. Five
+// hundred megabytes over that is a spinning tab and a guess. The store will
+// hold it — `quilzo media add` puts a full-length recording in without going
+// near this — and this is the limit of what is reasonable to ask somebody to
+// do through a form.
+//
+// Stated on the screen for the same reason: a limit somebody discovers by
+// waiting for a failure is a limit nobody was told.
 const MaxUpload = 64 << 20 // 64 MiB
 
 func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +112,8 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 		"Rights": rights, "Undeclared": undeclared,
 		"WebP": webp, "HaveWebP": haveWebP,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
-		"CanWrite": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
+		"CanWrite":  s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
+		"MaxUpload": humanSize(MaxUpload),
 	})
 }
 
@@ -280,11 +297,17 @@ func (s *Server) handleMediaFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/media/file/")
-	f, body, err := lib.Get(id)
+	// A handle rather than the bytes, for the same reason the public server
+	// takes one: this hands the result to ServeContent, which answers a range
+	// request — and Safari asks for two bytes of a film before it will play
+	// it. Reading half a gigabyte to answer that is a cost the editor pays on
+	// every scrub of the timeline.
+	f, handle, err := lib.Open(id)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
+	defer handle.Close()
 
 	h := w.Header()
 	h.Set("Content-Type", f.MIME())
@@ -308,7 +331,7 @@ func (s *Server) handleMediaFile(w http.ResponseWriter, r *http.Request) {
 	if f.UploadedAt > 0 {
 		modtime = time.Unix(f.UploadedAt, 0).UTC()
 	}
-	http.ServeContent(w, r, "", modtime, bytes.NewReader(body))
+	http.ServeContent(w, r, "", modtime, handle)
 }
 
 func (s *Server) mediaRedirect(w http.ResponseWriter, r *http.Request, msg, errMsg string) {
@@ -320,4 +343,16 @@ func (s *Server) mediaRedirect(w http.ResponseWriter, r *http.Request, msg, errM
 		u += "?m=" + url.QueryEscape(msg)
 	}
 	http.Redirect(w, r, u, http.StatusSeeOther)
+}
+
+// humanSize writes a byte count the way somebody reading a form limit does.
+func humanSize(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return strconv.FormatInt(n/(1<<30), 10) + " GB"
+	case n >= 1<<20:
+		return strconv.FormatInt(n/(1<<20), 10) + " MB"
+	default:
+		return strconv.FormatInt(n/(1<<10), 10) + " kB"
+	}
 }

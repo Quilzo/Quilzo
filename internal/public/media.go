@@ -5,6 +5,7 @@ package public
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -33,6 +34,33 @@ import (
 // identifier and does the lookup; this package never builds a path.
 type MediaLookup func(id string) (media.File, []byte, error)
 
+// MediaStream opens an asset without reading it.
+//
+// # Why there are two of these
+//
+// Because the two kinds of asset here want opposite things, and one function
+// cannot give both.
+//
+// A picture is small, is signed on its way out — a C2PA manifest is embedded
+// into the bytes, which means having all of them — and the result is cached.
+// MediaLookup is right for that and the signing wrapper lives behind it.
+//
+// A recording is large and is signed by nothing, because this program
+// implements PNG and JPEG containers and no others. Reading it to answer a
+// range request is the thing that has to stop: a player asks for two bytes
+// before it will play anything, and answering that by loading half a gigabyte
+// is a denial of service somebody can aim with a <video> tag and a refresh
+// key.
+//
+// So: pictures go through the lookup, everything else through this. The split
+// is by Kind rather than by size, because "how big is it" is a property of one
+// file and "is this signed" is a property of the format — and the second is
+// the one that decides which question can be asked.
+//
+// Nil falls back to the lookup, which is what every deployment did before this
+// existed and is correct for a store holding only images.
+type MediaStream func(id string) (media.File, io.ReadSeekCloser, error)
+
 // reID is the shape of a stored asset's name: a SHA-256 in lowercase hex.
 //
 // Checked here, before the lookup, and not only inside it.
@@ -51,6 +79,23 @@ type MediaLookup func(id string) (media.File, []byte, error)
 // whatever is wired behind it.
 var reID = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+// stat answers what an asset is without reading it.
+//
+// MediaStat is the cheap question and is what decides which of the two
+// expensive ones to ask. Without it the only way to find out whether a file is
+// a picture would be to read it, which is the cost this whole arrangement
+// exists to avoid.
+func (st *Site) stat(id string) (media.File, error) {
+	if st.MediaStat != nil {
+		return st.MediaStat(id)
+	}
+	// No stat wired: fall back to the lookup, which reads the file. Correct
+	// and slower, and the same thing every deployment did before there was
+	// anything to stream.
+	f, _, err := st.Media(id)
+	return f, err
+}
+
 // mediaFile serves one asset.
 func (st *Site) mediaFile(w http.ResponseWriter, r *http.Request) {
 	if st.Media == nil {
@@ -62,13 +107,34 @@ func (st *Site) mediaFile(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	f, body, err := st.Media(id)
+	// Which question to ask depends on whether this is a picture. See
+	// MediaStream: a picture is signed and small, a recording is neither.
+	f, err := st.stat(id)
 	if err != nil {
 		// Not found, whatever went wrong. Distinguishing "no such file" from
 		// "malformed identifier" here would tell somebody probing the library
 		// which of their guesses were the right shape.
 		http.NotFound(w, r)
 		return
+	}
+	var content io.ReadSeeker
+	if f.Kind != media.Image && st.MediaOpen != nil {
+		var handle io.ReadSeekCloser
+		f, handle, err = st.MediaOpen(id)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		defer handle.Close()
+		content = handle
+	} else {
+		var body []byte
+		f, body, err = st.Media(id)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		content = bytes.NewReader(body)
 	}
 
 	h := w.Header()
@@ -109,5 +175,5 @@ func (st *Site) mediaFile(w http.ResponseWriter, r *http.Request) {
 	}
 	// The name is passed for nothing: ServeContent uses it only to guess a
 	// content type, and the type is already set from the format table above.
-	http.ServeContent(w, r, "", modtime, bytes.NewReader(body))
+	http.ServeContent(w, r, "", modtime, content)
 }

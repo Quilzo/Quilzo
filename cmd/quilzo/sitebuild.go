@@ -13,6 +13,7 @@ import (
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/httpsig"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -190,6 +191,18 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 		// every image on the page, on every request.
 		st.MediaStat = func(id string) (media.File, error) {
 			return lib.Stat(id)
+		}
+		// And a handle for everything that is not a picture, so a range
+		// request for two bytes of a film does not read the film. Pictures
+		// stay on the lookup above because that is where the manifest is
+		// attached, and a manifest needs all the bytes. See
+		// public.MediaStream.
+		st.MediaOpen = func(id string) (media.File, io.ReadSeekCloser, error) {
+			f, h, err := lib.Open(id)
+			if err != nil {
+				return media.File{}, nil, err
+			}
+			return f, h, nil
 		}
 	}
 

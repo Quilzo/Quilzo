@@ -4,7 +4,9 @@
 package public
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -270,5 +272,109 @@ func TestTheManifestCarriesTheSitesOwnColours(t *testing.T) {
 	if fallback["background_color"] == "" || fallback["theme_color"] == "" {
 		t.Error("a site with no theme got an empty colour, which a browser " +
 			"reads as no colour at all")
+	}
+}
+
+// countingFile is a reader that remembers how much of a file was read.
+type countingFile struct {
+	*bytes.Reader
+	read *int
+}
+
+func (c countingFile) Read(p []byte) (int, error) {
+	n, err := c.Reader.Read(p)
+	*c.read += n
+	return n, err
+}
+
+func (c countingFile) Close() error { return nil }
+
+// A range request for two bytes of a recording reads two bytes of it.
+//
+// It used to read all of them. The lookup returned []byte, so a handler could
+// not answer any other way, and a player asking for bytes 0-1 before it will
+// start — which is exactly what Safari does — made this program load half a
+// gigabyte into the heap to answer with two. Ten people seeking around one
+// film is ten copies of it resident, which is a denial of service somebody can
+// aim with a video tag and a refresh key.
+func TestARangeRequestDoesNotReadTheWholeRecording(t *testing.T) {
+	body := bytes.Repeat([]byte("0123456789"), 200_000) // 2 MB
+	f := media.File{
+		ID: strings.Repeat("a", 64), Name: "talk.webm", Format: "webm",
+		Kind: media.Video, Size: int64(len(body)), UploadedAt: 1,
+	}
+	var read int
+	st := &Site{
+		MediaStat: func(string) (media.File, error) { return f, nil },
+		MediaOpen: func(string) (media.File, io.ReadSeekCloser, error) {
+			return f, countingFile{Reader: bytes.NewReader(body), read: &read}, nil
+		},
+		Media: func(string) (media.File, []byte, error) {
+			t.Error("the byte lookup was used for a recording, which reads " +
+				"the whole file")
+			return f, body, nil
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/media/"+f.ID, nil)
+	req.Header.Set("Range", "bytes=0-1")
+	rec := httptest.NewRecorder()
+	st.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusPartialContent {
+		t.Fatalf("answered %d, not 206", rec.Code)
+	}
+	if rec.Body.Len() != 2 {
+		t.Errorf("asked for 2 bytes and got %d", rec.Body.Len())
+	}
+	// The number that matters. A little over two is fine — ServeContent reads
+	// in blocks — but anything near the file size means it was loaded.
+	if read > 64<<10 {
+		t.Errorf("answering a 2-byte range read %d bytes of a %d-byte file",
+			read, len(body))
+	}
+}
+
+// A picture still goes through the lookup, because that is where its manifest
+// is attached and a manifest needs all the bytes.
+func TestAPictureStillGoesThroughTheSignedLookup(t *testing.T) {
+	f, body := fixtureImage(t)
+	var opened bool
+	st := &Site{
+		MediaStat: func(string) (media.File, error) { return f, nil },
+		MediaOpen: func(string) (media.File, io.ReadSeekCloser, error) {
+			opened = true
+			return f, countingFile{Reader: bytes.NewReader(body),
+				read: new(int)}, nil
+		},
+		Media: func(string) (media.File, []byte, error) { return f, body, nil },
+	}
+	rec := httptest.NewRecorder()
+	st.Handler().ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, "/media/"+f.ID, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("answered %d", rec.Code)
+	}
+	if opened {
+		t.Error("a picture was streamed, so it was served without the " +
+			"manifest this site signs into it")
+	}
+}
+
+// A build with nothing to stream still serves, which is what every deployment
+// did before there was anything to stream.
+func TestServingWorksWithNoStreamWired(t *testing.T) {
+	f, body := fixtureImage(t)
+	st := &Site{Media: func(string) (media.File, []byte, error) {
+		return f, body, nil
+	}}
+	rec := httptest.NewRecorder()
+	st.Handler().ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, "/media/"+f.ID, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("answered %d with no stream and no stat wired", rec.Code)
+	}
+	if rec.Body.Len() != len(body) {
+		t.Errorf("served %d bytes of %d", rec.Body.Len(), len(body))
 	}
 }
