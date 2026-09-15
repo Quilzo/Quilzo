@@ -114,9 +114,11 @@ var Purposes = []Purpose{
 	},
 	{
 		Name: "assistant",
-		What: "sending a prompt to a language model over HTTP",
-		Without: "the writing assistant is unavailable. A model reachable on " +
-			"loopback still works, which is the usual arrangement here",
+		What: "sending a prompt to a language model over HTTP, for a page or " +
+			"for a picture",
+		Without: "the writing assistant and image generation are both " +
+			"unavailable. A model reachable on loopback still works, which " +
+			"is the usual arrangement here",
 	},
 	{
 		Name:    "chat",

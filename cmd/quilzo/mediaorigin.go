@@ -53,6 +53,30 @@ func mediaOrigin(root string, args []string) error {
 	}
 
 	if *clear {
+		// A mark that carries a legal obligation can be replaced and not
+		// erased.
+		//
+		// Removing one leaves the file undeclared, and undeclared is the state
+		// the publish gate correctly lets through — every library is full of
+		// pictures nobody has said anything about. So deleting the mark on a
+		// generated picture is the one way to turn a refusal into a silence,
+		// and it takes one flag and leaves the file looking like every
+		// ordinary photograph beside it.
+		//
+		// Saying it is something else is still allowed. That is a claim
+		// somebody makes and is accountable for, recorded with their name on
+		// it, which is a different act from making the question go away.
+		if provenance.SourceType(f.Origin.SourceType).RequiresDisclosure() {
+			return errBlocked{fmt.Errorf(
+				"%s is declared %s, and that mark is what the EU AI Act asks "+
+					"for.\n"+
+					"  Clearing it would leave the picture undeclared, which "+
+					"publishes without a word — so this is a refusal rather "+
+					"than a warning.\n"+
+					"  If the declaration is wrong, say what is true instead: "+
+					"--source-type humanEdits, with your name on it",
+				shortID(f.ID), f.Origin.SourceType)}
+		}
 		f.Origin = media.Origin{}
 	} else {
 		if strings.TrimSpace(*sourceType) == "" {

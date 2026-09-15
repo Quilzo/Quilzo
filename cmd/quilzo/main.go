@@ -105,6 +105,7 @@ importing
   quilzo media origin ID --source-type T   declare how a picture was made
   quilzo media focus ID --at top-left      which part survives a crop
   quilzo media edit ID --crop 16:9        derive a crop; the original stays
+  quilzo media generate "..." --alt "..."  ask a model; marked as generated
   quilzo media verify [ID]                check every manifest, ours and theirs
   quilzo form list | expire | erase VALUE  forms, retention and erasure
   quilzo listing list | run NAME           declared queries a page can show
