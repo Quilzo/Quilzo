@@ -124,15 +124,30 @@ func embeddable(f media.File) bool {
 }
 
 func (s *signedMedia) claimFor(f media.File) c2pa.Claim {
+	return claimForFile(f, s.agent, s.now)
+}
+
+// signingAgent names the software in every manifest this site writes. One
+// constant, so the command that checks a manifest and the server that writes
+// one cannot disagree about what it should say.
+const signingAgent = "Quilzo"
+
+// claimForFile is what this site asserts about one of its own pictures.
+//
+// A free function so `quilzo media verify` builds the same claim the server
+// would rather than one that resembles it. A check against a claim assembled
+// separately proves that the second assembly works, which is not the question
+// anybody is asking.
+func claimForFile(f media.File, agent string, now func() time.Time) c2pa.Claim {
 	when := time.Unix(f.UploadedAt, 0)
 	if f.UploadedAt == 0 {
-		when = s.now()
+		when = now()
 	}
 	return c2pa.Claim{
 		Title:             f.Name,
 		Format:            f.MIME(),
 		DigitalSourceType: f.Origin.SourceType,
-		SoftwareAgent:     s.agent,
+		SoftwareAgent:     agent,
 		Author:            f.Origin.Author,
 		Model:             f.Origin.Model,
 		Instruction:       f.Origin.Instruction,
@@ -190,5 +205,5 @@ func mediaLookup(root string) (func(string) (media.File, []byte, error), error) 
 	if kerr != nil {
 		return plain, kerr
 	}
-	return newSignedMedia(plain, chain, key, "Quilzo").get, nil
+	return newSignedMedia(plain, chain, key, signingAgent).get, nil
 }
