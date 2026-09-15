@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"image"
 	"image/color"
 	"image/png"
@@ -287,5 +288,130 @@ func TestVerifyNarrowsToTheFileNamed(t *testing.T) {
 	}
 	if err := cmdMediaVerify(root, []string{strings.Repeat("0", 64)}); err == nil {
 		t.Error("a file that is not in the library was not refused")
+	}
+}
+
+// A crop keeps everything that has to travel with it, and says what it is.
+//
+// The licence, because an edit does not renew permission and does not end it.
+// The origin, because a crop of a picture a model made is still a picture a
+// model made — dropping it would be a way to launder generated content into an
+// undeclared file, which is the exact failure the media provenance gate exists
+// to catch. And the alt text, because an image without one cannot go on a page
+// at all.
+func TestAnEditCarriesTheLicenceAndTheOrigin(t *testing.T) {
+	root, id := libraryWith(t, "shot.png", bigNoisyPNG(t), media.Origin{
+		SourceType: string(provenance.TrainedAlgorithmicMedia),
+		Model:      "a-model", Author: "somebody",
+	})
+	lib, err := openMedia(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := lib.Stat(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent.Rights = media.Rights{Licence: "cc-by-4.0", Holder: "a photographer"}
+	_, raw, err := lib.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lib.Put(parent, raw); err != nil {
+		t.Fatal(err)
+	}
+
+	w = out.New(true)
+	t.Cleanup(func() { w = nil })
+	if err := mediaEdit(root, []string{id, "--crop", "16:9"}); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := lib.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var derived *media.File
+	for i := range files {
+		if files[i].EditOf == id {
+			derived = &files[i]
+		}
+	}
+	if derived == nil {
+		t.Fatal("no derived file was stored")
+	}
+	if derived.Origin.SourceType != string(provenance.TrainedAlgorithmicMedia) {
+		t.Errorf("the crop declares %q; a crop of a generated picture is "+
+			"still generated", derived.Origin.SourceType)
+	}
+	if derived.Rights.Licence != "cc-by-4.0" {
+		t.Errorf("the crop's licence is %q", derived.Rights.Licence)
+	}
+	if derived.Alt != parent.Alt {
+		t.Errorf("the crop's description is %q, want the original's", derived.Alt)
+	}
+	if derived.Edit == nil || derived.Edit.Aspect != "16:9" {
+		t.Errorf("the crop does not record what was done: %+v", derived.Edit)
+	}
+
+	// And the original is exactly where it was.
+	if _, _, err := lib.Get(id); err != nil {
+		t.Errorf("the original is gone: %v", err)
+	}
+}
+
+// The manifest on an edit binds to the picture it was made from, and says the
+// picture was cropped rather than resized.
+func TestAnEditsManifestNamesItsParentAndWhatWasDone(t *testing.T) {
+	root, id := libraryWith(t, "shot.png", bigNoisyPNG(t), media.Origin{})
+
+	w = out.New(true)
+	t.Cleanup(func() { w = nil })
+	if err := mediaEdit(root, []string{id, "--crop", "16:9"}); err != nil {
+		t.Fatal(err)
+	}
+	lib, err := openMedia(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := lib.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var derivedID string
+	for _, f := range files {
+		if f.EditOf == id {
+			derivedID = f.ID
+		}
+	}
+	if derivedID == "" {
+		t.Fatal("no derived file was stored")
+	}
+
+	look, err := mediaLookup(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, served, err := look(derivedID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := c2pa.Read(served)
+	if err != nil {
+		t.Fatalf("the crop's manifest does not read: %v", err)
+	}
+	if len(st.DerivedFrom) == 0 {
+		t.Error("the crop's manifest names no parent, so \"derived from " +
+			"something\" is a claim no verifier can test")
+	}
+	// The parent as a reader receives it, which is the copy anybody could
+	// fetch and hash.
+	_, parentServed, err := look(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := sha256.Sum256(parentServed)
+	if !bytes.Equal(st.DerivedFrom, want[:]) {
+		t.Error("the crop binds to bytes nobody can download")
 	}
 }

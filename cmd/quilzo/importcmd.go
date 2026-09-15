@@ -217,13 +217,16 @@ func cmdMedia(root string, args []string) error {
 		return mediaOrigin(root, args[1:])
 	case "focus":
 		return mediaFocus(root, args[1:])
+	case "edit":
+		return mediaEdit(root, args[1:])
 	case "verify":
 		return cmdMediaVerify(root, args[1:])
 	case "formats":
 		return mediaFormats()
 	default:
 		return fmt.Errorf("unknown media command %q; try add, get, list, "+
-			"remove, renditions, origin, focus, verify or formats", args[0])
+			"remove, renditions, origin, focus, edit, verify or formats",
+			args[0])
 	}
 }
 

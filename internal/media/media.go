@@ -385,6 +385,23 @@ type File struct {
 	// do I put on this page" was mostly answers nobody should choose.
 	RenditionOf string `json:"rendition_of,omitempty"`
 
+	// EditOf names the picture this was derived from, and Edit is what was
+	// done to it.
+	//
+	// Both, because either alone is half an answer: the parent without the
+	// recipe says "this came from that" and cannot say how, and the recipe
+	// without the parent describes an operation on nothing. Together they are
+	// reproducible — somebody holding the original can carry out the same
+	// recipe and get the same bytes, which is the property that makes this a
+	// record rather than a note.
+	//
+	// The original is never touched. It keeps its own hash, stays in the
+	// library, and stays on any page already using it; what changes is that a
+	// page can now point at the derivative instead, which is an ordinary draft
+	// commit and rolls back like one.
+	EditOf string `json:"edit_of,omitempty"`
+	Edit   *Edit  `json:"edit,omitempty"`
+
 	// Supersedes is the file this one replaced, if any.
 	//
 	// Versioning falls out of content addressing — the old bytes are still
