@@ -10,6 +10,7 @@ import (
 	"image/color"
 	jpegenc "image/jpeg"
 	pngenc "image/png"
+	"strings"
 	"testing"
 )
 
@@ -304,4 +305,139 @@ func drawImage(t *testing.T, w, h int) []byte {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
+}
+
+// jpegWithEXIF is a real JPEG carrying an APP1 segment, so the optimiser sees
+// metadata to remove rather than a file that never had any.
+//
+// The segment holds an EXIF header and padding rather than a parsed TIFF
+// structure, because nothing here parses one: hasMetadata asks whether a
+// marker is present, and that is the whole question the pipeline needs
+// answered.
+func jpegWithEXIF(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	seed := uint32(0x2545f491)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			seed ^= seed << 13
+			seed ^= seed >> 17
+			seed ^= seed << 5
+			img.Set(x, y, color.RGBA{R: uint8(seed), G: uint8(seed >> 8),
+				B: uint8(seed >> 16), A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpegenc.Encode(&buf, img, &jpegenc.Options{Quality: 95}); err != nil {
+		t.Fatal(err)
+	}
+	plain := buf.Bytes()
+
+	payload := append([]byte("Exif\x00\x00"), bytes.Repeat([]byte{0x20}, 96)...)
+	seg := []byte{0xFF, 0xE1,
+		byte((len(payload) + 2) >> 8), byte((len(payload) + 2) & 0xFF)}
+	seg = append(seg, payload...)
+
+	out := make([]byte, 0, len(plain)+len(seg))
+	out = append(out, plain[:2]...) // SOI
+	out = append(out, seg...)
+	out = append(out, plain[2:]...)
+	if !hasMetadata("jpeg", out) {
+		t.Fatal("the fixture carries no metadata, so every test using it " +
+			"would pass without checking anything")
+	}
+	return out
+}
+
+// By default, metadata goes. This is the property the package comment calls
+// "a property of the pipeline rather than a filter somebody has to remember".
+func TestMetadataIsRemovedByDefault(t *testing.T) {
+	body := jpegWithEXIF(t, 200, 150)
+	out, err := Optimise("jpeg", body, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.StrippedMetadata {
+		t.Error("the optimiser did not notice the metadata")
+	}
+	if hasMetadata("jpeg", out.Body) {
+		t.Error("the stored bytes still carry it")
+	}
+}
+
+// media.strip_metadata off means the file is stored as it arrived.
+//
+// The setting was declared with two NIST controls and a Weaker clause, and
+// read by nothing: turning it off changed no behaviour at all. A control that
+// appears in the posture report and does nothing is a claim the product does
+// not keep.
+func TestKeepingMetadataStoresTheFileAsItArrived(t *testing.T) {
+	body := jpegWithEXIF(t, 200, 150)
+	out, err := Optimise("jpeg", body, Options{KeepMetadata: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.StrippedMetadata {
+		t.Error("it reported stripping metadata it was told to keep")
+	}
+	if !bytes.Equal(out.Body, body) {
+		t.Error("the bytes changed although nothing needed doing to them")
+	}
+	if !hasMetadata("jpeg", out.Body) {
+		t.Error("the metadata is gone")
+	}
+}
+
+// Keeping metadata does not switch the resize off, and does not go quiet
+// about the consequence.
+//
+// The two settings genuinely conflict: a re-encode is what makes a picture
+// smaller and a re-encode is what drops EXIF. The resize wins, because the
+// smaller picture is the thing being asked for — and Did says so, because a
+// setting that is silently overruled is worse than one that is off.
+func TestAResizeStillHappensAndSaysWhatItCost(t *testing.T) {
+	body := jpegWithEXIF(t, 1200, 900)
+	out, err := Optimise("jpeg", body, Options{KeepMetadata: true, MaxWidth: 400})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Width != 400 {
+		t.Errorf("it is %d wide; keeping metadata turned the resize off",
+			out.Width)
+	}
+	if hasMetadata("jpeg", out.Body) {
+		t.Error("a resized file kept metadata a re-encode cannot preserve")
+	}
+	var said bool
+	for _, did := range out.Did {
+		if strings.Contains(did, "resized, so its embedded metadata went with it") {
+			said = true
+		}
+	}
+	if !said {
+		t.Errorf("nothing says the metadata went: %v", out.Did)
+	}
+}
+
+// A file with nothing in it to keep is optimised as usual.
+//
+// Otherwise KeepMetadata would quietly become "never optimise anything",
+// which is a different setting than the one that is written down.
+func TestKeepingMetadataDoesNotStopOrdinaryOptimisation(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 1200, 900))
+	var buf bytes.Buffer
+	if err := jpegenc.Encode(&buf, img, &jpegenc.Options{Quality: 95}); err != nil {
+		t.Fatal(err)
+	}
+	body := buf.Bytes()
+	if hasMetadata("jpeg", body) {
+		t.Fatal("the fixture already carries metadata")
+	}
+	out, err := Optimise("jpeg", body, Options{KeepMetadata: true, MaxWidth: 400})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Width != 400 {
+		t.Errorf("it is %d wide; the resize did not run", out.Width)
+	}
 }

@@ -614,13 +614,17 @@ func (m *chatMedia) Save(owner, name string, body []byte,
 	// A photograph out of a phone is several megabytes and a page does not
 	// need it.
 	if file.Kind == media.Image {
-		opt, oerr := media.Optimise(file.Format, body, media.Options{
-			MaxWidth:    m.cfg.Int("media.max_width"),
-			MaxHeight:   m.cfg.Int("media.max_height"),
-			JPEGQuality: m.cfg.Int("media.jpeg_quality"),
-			WebP:        m.cfg.Bool("media.webp"),
-		})
-		if oerr == nil && len(opt.Body) > 0 && len(opt.Body) < len(body) {
+		opt, oerr := media.Optimise(file.Format, body, mediaOptions(m.cfg))
+		// Taken whenever the optimiser produced something, not only when it
+		// produced something smaller.
+		//
+		// The size test was the bug: Optimise deliberately keeps a re-encode
+		// that is a few bytes larger when metadata had to go, "because the
+		// point there was never the size" — and this threw that away. A
+		// photograph out of a phone whose stripped copy did not happen to
+		// shrink kept its GPS coordinates, on the surface most likely to
+		// receive a photograph straight out of a phone.
+		if oerr == nil && len(opt.Body) > 0 && len(opt.Did) > 0 {
 			// Re-accepted, because optimising produced different bytes and the
 			// id is the hash of the bytes. Trusting the first record would
 			// store one file under another file's name.

@@ -190,18 +190,7 @@ func cmdServe(root string, args []string) error {
 	}
 	srv.Media = &admin.Media{
 		Library: func() (*medialib.Library, error) { return openMedia(root) },
-		Options: func() media.Options {
-			c, err := loadConfig(root)
-			if err != nil {
-				return media.Options{}
-			}
-			return media.Options{
-				MaxWidth:    c.Int("media.max_width"),
-				MaxHeight:   c.Int("media.max_height"),
-				JPEGQuality: c.Int("media.jpeg_quality"),
-				WebP:        c.Bool("media.webp"),
-			}
-		},
+		Options: func() media.Options { return mediaOptionsAt(root) },
 	}
 	srv.Languages = &admin.Languages{
 		Load: func() (*i18n.Config, error) { return loadLocales(root) },

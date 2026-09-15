@@ -551,12 +551,7 @@ func mediaAdd(root string, args []string) error {
 		if cerr != nil {
 			return cerr
 		}
-		opt, oerr := media.Optimise(f.Format, body, media.Options{
-			MaxWidth:    cfg.Int("media.max_width"),
-			MaxHeight:   cfg.Int("media.max_height"),
-			JPEGQuality: cfg.Int("media.jpeg_quality"),
-			WebP:        cfg.Bool("media.webp"),
-		})
+		opt, oerr := media.Optimise(f.Format, body, mediaOptions(cfg))
 		if oerr != nil {
 			// Reported, not fatal. The file has already been proved to be a
 			// valid image; failing the upload because the optimiser could not
@@ -673,12 +668,49 @@ func mediaGet(root string, args []string) error {
 	f.Alt = strings.TrimSpace(*alt)
 	f.Source = res.FinalURL
 
+	// The same pipeline an uploaded image goes through.
+	//
+	// This ran no optimiser at all, which made it the one path that stored a
+	// photograph unresized with its EXIF intact — on the surface that fetches
+	// a file from somebody else's server, where the uploader is a stranger and
+	// the GPS tag is somebody else's home. Every other entrance did this and
+	// this one was written without it, which is what four copies of the
+	// settings buys you. See mediaOptions.
+	body := res.Body
+	if f.Kind == media.Image {
+		opt, oerr := media.Optimise(f.Format, body, mediaOptionsAt(root))
+		if oerr != nil {
+			// Reported, not fatal, the same as `media add`: the file has
+			// already been proved a valid image, and refusing it because the
+			// optimiser could not improve it would refuse something
+			// acceptable.
+			fmt.Fprintf(os.Stderr, "  %snot optimised: %v%s\n", dim, oerr, reset)
+		} else if len(opt.Did) > 0 {
+			body = opt.Body
+			for _, did := range opt.Did {
+				fmt.Fprintf(os.Stderr, "  %s%s%s\n", dim, did, reset)
+			}
+			// Re-accepted, because the id is the hash of the bytes and these
+			// are different bytes. Storing them under the original's hash
+			// would make every integrity check downstream verify a claim
+			// about a file that does not exist.
+			reaccepted, rerr := media.Accept(res.FinalURL, body, time.Now())
+			if rerr != nil {
+				return errBlocked{fmt.Errorf(
+					"the optimised image no longer validates, so it has not "+
+						"been stored: %w", rerr)}
+			}
+			reaccepted.Alt, reaccepted.Source = f.Alt, f.Source
+			f = reaccepted
+		}
+	}
+
 	// The same hole as `media add` had: fetched, validated, announced, dropped.
 	lib, err := openMedia(root)
 	if err != nil {
 		return fmt.Errorf("the media library could not be opened: %w", err)
 	}
-	if err := lib.Put(f, res.Body); err != nil {
+	if err := lib.Put(f, body); err != nil {
 		return fmt.Errorf("%s was fetched and could not be stored: %w", pos[0], err)
 	}
 
