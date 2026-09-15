@@ -147,6 +147,21 @@ type Options struct {
 	// present. Ignored when it is not: the pipeline degrades to native
 	// optimisation rather than failing an upload because a tool is missing.
 	WebP bool
+	// KeepMetadata leaves EXIF and its neighbours in the file.
+	//
+	// Off by default and documented as a weakening, because what is in there
+	// is a photographer's GPS coordinates and their camera's serial number.
+	// It exists because a site that publishes photography has a real reason to
+	// want the credit and the capture data to survive, and because
+	// media.strip_metadata was declared as a setting for two releases while
+	// nothing read it — a control that appears in the posture report and does
+	// nothing is worse than no control at all.
+	//
+	// It cannot always be honoured. A resize re-encodes, and a re-encode drops
+	// everything that is not pixels; when that happens the picture is stored
+	// resized and Did says the metadata went with it, rather than the resize
+	// being skipped or the loss going unmentioned.
+	KeepMetadata bool
 }
 
 func (o Options) withDefaults() Options {
@@ -204,21 +219,48 @@ func Optimise(format string, body []byte, opt Options) (Optimised, error) {
 		return out, nil
 	}
 
+	// The resize is decided before anything is written, because whether one is
+	// needed decides what keeping the metadata can mean.
+	resized, newW, newH, willResize := img, out.Width, out.Height, false
+	if opt.MaxWidth > 0 || opt.MaxHeight > 0 {
+		resized, newW, newH, willResize = fit(img, opt.MaxWidth, opt.MaxHeight)
+	}
+
+	carries := hasMetadata(format, body)
+
+	// Asked to keep it, and able to: nothing else needs doing to this file, so
+	// it is stored exactly as it arrived. Returning early rather than encoding
+	// and discarding the result, because a re-encode that happens to be
+	// smaller would otherwise be kept and take the metadata with it — which is
+	// the setting being ignored by a different route.
+	if opt.KeepMetadata && carries && !willResize && !opt.WebP {
+		out.Did = append(out.Did,
+			"kept as uploaded, metadata and all: media.strip_metadata is off")
+		return out, nil
+	}
 	// Metadata is detected before it is dropped, so the fact can be reported.
 	// A re-encode drops it either way; saying so is what makes it a feature
 	// rather than a side effect nobody knows about.
-	if hasMetadata(format, body) {
+	if carries {
 		out.StrippedMetadata = true
-		out.Did = append(out.Did, "removed embedded metadata")
+		if opt.KeepMetadata {
+			// The conflict, named. media.strip_metadata says keep it and
+			// media.max_width says make it smaller, and a resize cannot do
+			// both. The picture is the thing being asked for, so the resize
+			// wins — and somebody reading this knows why their EXIF is gone.
+			out.Did = append(out.Did, "resized, so its embedded metadata went "+
+				"with it: media.strip_metadata is off, but a resize cannot "+
+				"preserve it")
+		} else {
+			out.Did = append(out.Did, "removed embedded metadata")
+		}
 	}
 
-	if opt.MaxWidth > 0 || opt.MaxHeight > 0 {
-		if resized, w, h, did := fit(img, opt.MaxWidth, opt.MaxHeight); did {
-			img = resized
-			out.Did = append(out.Did, fmt.Sprintf("resized %dx%d to %dx%d",
-				out.Width, out.Height, w, h))
-			out.Width, out.Height = w, h
-		}
+	if willResize {
+		img = resized
+		out.Did = append(out.Did, fmt.Sprintf("resized %dx%d to %dx%d",
+			out.Width, out.Height, newW, newH))
+		out.Width, out.Height = newW, newH
 	}
 
 	encoded, encFormat, err := encode(img, format, opt)
