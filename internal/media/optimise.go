@@ -219,6 +219,18 @@ func Optimise(format string, body []byte, opt Options) (Optimised, error) {
 		return out, nil
 	}
 
+	// Which way up it is, before anything else, because turning it changes
+	// which dimension the width limit applies to. See orientation.go: the tag
+	// is about to be discarded, so the rotation it describes has to be in the
+	// pixels first or the photograph is stored on its side.
+	turn := orientationOf(format, body)
+	if turn.Transforms() {
+		img = applyOrientation(img, turn)
+		if turn.SwapsAxes() {
+			out.Width, out.Height = out.Height, out.Width
+		}
+	}
+
 	// The resize is decided before anything is written, because whether one is
 	// needed decides what keeping the metadata can mean.
 	resized, newW, newH, willResize := img, out.Width, out.Height, false
@@ -233,10 +245,18 @@ func Optimise(format string, body []byte, opt Options) (Optimised, error) {
 	// and discarding the result, because a re-encode that happens to be
 	// smaller would otherwise be kept and take the metadata with it — which is
 	// the setting being ignored by a different route.
+	//
+	// A rotation is not "nothing else". Keeping the file whole keeps the tag
+	// too, and a browser applies it — so this is the one case where leaving
+	// the pixels alone is the correct answer rather than a missed one.
 	if opt.KeepMetadata && carries && !willResize && !opt.WebP {
+		out.Width, out.Height = b.Dx(), b.Dy()
 		out.Did = append(out.Did,
 			"kept as uploaded, metadata and all: media.strip_metadata is off")
 		return out, nil
+	}
+	if turn.Transforms() {
+		out.Did = append(out.Did, describeOrientation(turn))
 	}
 	// Metadata is detected before it is dropped, so the fact can be reported.
 	// A re-encode drops it either way; saying so is what makes it a feature
@@ -556,6 +576,14 @@ func Renditions(format string, body []byte, opt Options) ([]Optimised, error) {
 	img, _, err := image.Decode(bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("cannot decode the image to resize it: %w", err)
+	}
+	// The same correction the parent gets, for the same reason and with the
+	// same safety: a rendition is re-encoded, so its orientation tag goes, so
+	// the rotation has to be in its pixels. Idempotent when the parent has
+	// already been through Optimise — that copy carries no tag, so this reads
+	// no orientation and turns nothing twice.
+	if turn := orientationOf(format, body); turn.Transforms() {
+		img = applyOrientation(img, turn)
 	}
 	full := img.Bounds().Dx()
 
