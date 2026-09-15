@@ -6,7 +6,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -35,16 +34,6 @@ import (
 // file. The number and the reason for it are in internal/media, beside the
 // method that uses it.
 const LapseWindow = media.LapseWindow
-
-// reAssetID matches a stored file's address.
-//
-// A media reference is not a typed field — content says whatever it says, and
-// an image lives in "image" on one type and "avatar" on another. What is
-// invariant is the value: a file is addressed by the SHA-256 of its bytes, so
-// any field holding 64 hex characters that the library also holds is a
-// reference to that file. Matching on the value rather than the field name is
-// what makes this work on content types nobody has written yet.
-var reAssetID = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // Use is one asset, and everything that points at it.
 type Use struct {
@@ -127,25 +116,21 @@ func assetUses(s *store.Store, lib *medialib.Library, ref string) (
 
 // assetIDsIn collects every value in one piece of content that could be an
 // address, including inside lists.
+// assetIDsIn finds every stored file this content refers to.
+//
+// It used to be this function, and it read the top level of the map and the
+// direct members of a list. A record is a flat map, so records were checked. A
+// page is not: every shipped layout puts its pictures inside sections, at
+// page.sections[3].split.image, three levels down — so the gate that refuses
+// to publish an expired licence had never examined a single image on a page.
+// It also matched the bare id only, while the picker and the chat editor both
+// store "/media/<id>".
+//
+// Both are now one answer in internal/media, because two readers that disagree
+// about what a reference looks like are two readers that check different
+// halves of the same site.
 func assetIDsIn(fields map[string]any) []string {
-	var out []string
-	add := func(v any) {
-		if s, ok := v.(string); ok && reAssetID.MatchString(s) {
-			out = append(out, s)
-		}
-	}
-	for _, v := range fields {
-		switch t := v.(type) {
-		case []any:
-			for _, item := range t {
-				add(item)
-			}
-		default:
-			add(v)
-		}
-	}
-	sort.Strings(out)
-	return out
+	return media.IDsIn(fields)
 }
 
 // RightsReport is what the gate found.
