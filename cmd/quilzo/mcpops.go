@@ -120,8 +120,12 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		Summary: "when each page was last confirmed to be right, and what is due",
 		Detail: "never means nobody has confirmed it; changed means it was " +
 			"edited after it was confirmed; overdue means the interval has " +
-			"passed. None of these blocks anything.",
-		Args:     map[string]string{"due": "optional: true for only what needs attention"},
+			"passed. None of these blocks anything. The columns are page, " +
+			"state, date, who confirmed it and whose job it is.",
+		Args: map[string]string{
+			"due":   "optional: true for only what needs attention",
+			"owner": "optional: only pages this person is responsible for",
+		},
 		Keywords: []string{"checked", "review", "stale", "accuracy", "audit", "due"},
 	}, func(arg map[string]any) (any, error) {
 		st, err := openChecked(root)
@@ -135,19 +139,34 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		pages, hashes := draftPageIDs(root)
 		rows := checked.Survey(pages, hashes, records, reviewEvery(root), time.Now())
 		dueOnly, _ := arg["due"].(bool)
+		owner, _ := arg["owner"].(string)
+		owner = strings.TrimSpace(owner)
 
 		var b strings.Builder
 		for _, r := range rows {
 			if dueOnly && !checked.NeedsAttention(r.State) {
 				continue
 			}
+			if owner != "" && r.Owner != owner {
+				continue
+			}
 			when := "-"
 			if r.At != 0 {
 				when = time.Unix(r.At, 0).UTC().Format("2006-01-02")
 			}
-			fmt.Fprintf(&b, "%s\t%s\t%s\t%s\n", r.Page, r.State, when, r.By)
+			// The owner last, because it is the column most often empty and a
+			// trailing dash is cheaper to read than a middle one.
+			who := r.Owner
+			if who == "" {
+				who = "-"
+			}
+			fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\n",
+				r.Page, r.State, when, r.By, who)
 		}
 		if b.Len() == 0 {
+			if owner != "" {
+				return "no page matching that owner", nil
+			}
 			return "every page has been confirmed and none is due", nil
 		}
 		return strings.TrimSpace(b.String()), nil

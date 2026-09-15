@@ -1442,6 +1442,25 @@ td.actions > *:last-child, th.actions > *:last-child { margin-right: 0; }
 .tag-warn { background: var(--warning-container); color: var(--on-warning-container); }
 .tag-changed { background: var(--primary-container); color: var(--on-primary-container); }
 
+/* The second form in the "Last confirmed" section: who owns the page.
+ *
+ * Ruled off from the confirm button above it, because two submit buttons in
+ * one box read as two ways to do one thing. They are two different acts. */
+.owner { margin-top: 1rem; padding-top: 1rem;
+         border-top: 1px solid var(--outline-variant); }
+
+/* Whose job a page is, under its state in the Checked column.
+ *
+ * Not a tag. A tag is a state with a fixed set of values and a colour that
+ * means something; an owner is a name, and painting names in state colours
+ * would say the name is a state. So: a plain quiet line, and its own block so
+ * a long name wraps under the tag instead of widening the column. */
+.owner-of {
+  display: block; margin-top: 0.2rem;
+  font: var(--label-md); color: var(--on-surface-variant);
+  overflow-wrap: anywhere;
+}
+
 /* The accessibility findings on the review screen. */
 .findings { list-style: none; padding: 0; margin: 0.5rem 0; }
 .findings li { margin: 0 0 0.6rem; padding-left: 0.9rem;

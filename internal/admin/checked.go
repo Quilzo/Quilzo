@@ -41,6 +41,9 @@ type checkedCell struct {
 	// the useful thing to show. The others are a word.
 	When string
 	By   string
+	// Owner is whose job the page is, which is a different question from who
+	// last read it and is empty far more often. See internal/checked.
+	Owner string
 }
 
 // checkedFor builds the column, and counts what needs attention.
@@ -64,7 +67,7 @@ func (s *Server) checkedFor(names []string) (map[string]checkedCell, int) {
 		if checked.NeedsAttention(r.State) {
 			due++
 		}
-		cell := checkedCell{State: r.State, By: r.By}
+		cell := checkedCell{State: r.State, By: r.By, Owner: r.Owner}
 		if r.At != 0 {
 			cell.When = time.Unix(r.At, 0).UTC().Format("2006-01-02")
 		}
@@ -139,5 +142,66 @@ func (s *Server) handleCheckedSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit("checked.set", "/"+page, map[string]string{"by": p.Name})
+	http.Redirect(w, r, backTo(r), http.StatusSeeOther)
+}
+
+// handleCheckedOwn says whose job a page is.
+//
+// A form of its own next to the confirm button rather than a field inside it,
+// because they are two different acts: one is "I have read this", the other is
+// "this is yours", and a person doing the second has usually not done the
+// first. See checked.Store.Own.
+func (s *Server) handleCheckedOwn(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if s.Checked == nil || s.Checked.Store == nil {
+		http.Error(w, "this build has nowhere to record an owner",
+			http.StatusServiceUnavailable)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+
+	page := strings.TrimSpace(r.FormValue("page"))
+	// The same scope as recording a check, and for the same reason: this is a
+	// statement about one page, made by somebody who works on that page.
+	if !s.canPage(w, r, p, auth.ActEditDraft, page) {
+		return
+	}
+	ids, err := site.PageIDsAt(s.Store, site.RefDraft)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if _, exists := ids[page]; !exists {
+		s.render(w, r, "message.html", map[string]any{
+			"Title": "Not recorded", "Principal": p, "Heading": "Not recorded",
+			"Body": "There is no page called " + page + " in the draft.",
+		})
+		return
+	}
+
+	owner := strings.TrimSpace(r.FormValue("owner"))
+	if _, err := s.Checked.Store.Own(page, owner); err != nil {
+		s.render(w, r, "message.html", map[string]any{
+			"Title": "Not recorded", "Principal": p, "Heading": "Not recorded",
+			"Body": err.Error(),
+		})
+		return
+	}
+	// Both directions are logged, and the empty one is logged as an empty
+	// owner rather than left out: "nobody owns this now" is the half somebody
+	// looking for how a page fell through the cracks needs to find.
+	s.audit("checked.own", "/"+page, map[string]string{
+		"by": p.Name, "owner": owner,
+	})
 	http.Redirect(w, r, backTo(r), http.StatusSeeOther)
 }

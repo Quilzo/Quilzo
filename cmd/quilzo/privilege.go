@@ -411,10 +411,12 @@ const wholeStore = -1
 // every subcommand it recognises is then listed too.
 var pageArgs = map[string]int{
 	// Saying a page is still right, and withdrawing that.
-	"checked set":   0,
-	"checked clear": 0,
-	"checked list":  wholeStore,
-	"checked due":   wholeStore,
+	"checked set":    0,
+	"checked clear":  0,
+	"checked own":    0,
+	"checked disown": 0,
+	"checked list":   wholeStore,
+	"checked due":    wholeStore,
 
 	// Remarks about a page. `note list` takes an optional page and surveys
 	// everything without one, which the missing-argument fallback handles.

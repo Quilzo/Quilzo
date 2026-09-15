@@ -938,6 +938,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/theme", s.handleTheme)
 	mux.HandleFunc("/find", s.handleFind)
 	mux.HandleFunc("/checked/set", s.handleCheckedSet)
+	mux.HandleFunc("/checked/own", s.handleCheckedOwn)
 	mux.HandleFunc("/pages/bulk", s.handleBulk)
 	mux.HandleFunc("/notes", s.handleNotes)
 	mux.HandleFunc("/notes/add", s.handleNoteAdd)
