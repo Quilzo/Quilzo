@@ -238,6 +238,7 @@ var commandNeeds = map[string]need{
 	// is an auditor who has been given view and nothing else. Inheriting the
 	// parent's edit-draft would shut the check to exactly them.
 	"media verify":     {action: auth.ActView},
+	"media edit":       {action: auth.ActEditDraft},
 	"agent probe":      {action: auth.ActView},
 	"media remove":     {action: auth.ActEditDraft},
 	"media renditions": {action: auth.ActEditDraft},

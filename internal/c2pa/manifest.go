@@ -70,6 +70,16 @@ type Claim struct {
 	// ParentTitle is what the source was called, for a reader rather than a
 	// verifier.
 	ParentTitle string
+
+	// Action overrides the C2PA action term this claim asserts.
+	//
+	// Empty means the term is worked out from DigitalSourceType and from
+	// whether there is a parent, which is right for an original and for a
+	// narrower copy. It is not right for an edit: c2pa.cropped and
+	// c2pa.resized are different statements, and telling a reader their
+	// photograph was resized when a third of it was cut off is the sort of
+	// approximation that makes a provenance record worth less than nothing.
+	Action string
 }
 
 // label is the manifest's identifier inside the store. C2PA wants it unique
@@ -299,6 +309,9 @@ func (c Claim) actions() Value {
 		// it. The origin of the content is still asserted below: resizing a
 		// picture a model made does not make it a photograph.
 		kind = "c2pa.resized"
+	}
+	if c.Action != "" {
+		kind = c.Action
 	}
 	action := Map{
 		"action":        Text(kind),

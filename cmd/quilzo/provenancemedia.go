@@ -143,7 +143,7 @@ func claimForFile(f media.File, agent string, now func() time.Time) c2pa.Claim {
 	if f.UploadedAt == 0 {
 		when = now()
 	}
-	return c2pa.Claim{
+	c := c2pa.Claim{
 		Title:             f.Name,
 		Format:            f.MIME(),
 		DigitalSourceType: f.Origin.SourceType,
@@ -153,6 +153,12 @@ func claimForFile(f media.File, agent string, now func() time.Time) c2pa.Claim {
 		Instruction:       f.Origin.Instruction,
 		When:              when,
 	}
+	if f.Edit != nil {
+		// What was actually done, not "resized". A reader asking what happened
+		// to a photograph is owed the difference between a crop and a scale.
+		c.Action = f.Edit.Action()
+	}
+	return c
 }
 
 // bindToParent fills in what a derivative was made from.
@@ -169,14 +175,23 @@ func claimForFile(f media.File, agent string, now func() time.Time) c2pa.Claim {
 // deterministic and cached, and because the recursion is one level deep: a
 // rendition is never made from a rendition.
 func (s *signedMedia) bindToParent(f media.File, c *c2pa.Claim) {
-	if f.RenditionOf == "" {
+	// Two ways to be a derivative, and both bind. A narrower copy for a phone
+	// and a crop somebody made are the same shape of claim — this came from
+	// that, and here is the hash so you can check — and an edit that did not
+	// bind would be the one derivative in the library whose parent is a note
+	// rather than a reference.
+	from := f.RenditionOf
+	if from == "" {
+		from = f.EditOf
+	}
+	if from == "" {
 		return
 	}
-	parent, body, err := s.get(f.RenditionOf)
+	parent, body, err := s.get(from)
 	if err != nil {
-		// A rendition whose parent cannot be read still gets a manifest of its
-		// own. It says less than it might, and that is better than refusing to
-		// serve a picture over a provenance link.
+		// A derivative whose parent cannot be read still gets a manifest of
+		// its own. It says less than it might, and that is better than
+		// refusing to serve a picture over a provenance link.
 		return
 	}
 	sum := sha256.Sum256(body)
