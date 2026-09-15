@@ -46,6 +46,17 @@ type Statement struct {
 	// of.
 	DerivedFrom []byte
 	ParentTitle string
+
+	// Signed says the claim signature was checked against a key the caller
+	// supplied and held.
+	//
+	// False means the manifest was read and its structure was checked — the
+	// assertions hash to what the claim lists, the claim binds to these exact
+	// bytes, and the excluded range is where the manifest actually sits — but
+	// nobody has said who signed it. That is a weaker thing and the difference
+	// has to travel with the answer: a Statement handed around without it is a
+	// Statement somebody will act on as though it were proved.
+	Signed bool
 }
 
 // GeneratedByModel reports whether the file was made or altered by a trained
@@ -58,8 +69,56 @@ func (s Statement) GeneratedByModel() bool {
 	return false
 }
 
+// Read reads a manifest without checking who signed it.
+//
+// # Why this exists beside Verify
+//
+// Because a file arriving from outside carries a manifest signed by a key this
+// program does not have. Verify1 takes the key from the caller and never from
+// the message, deliberately — "a signature verified against a key the message
+// chose is a signature that verifies against whatever key the attacker
+// attached" — and there is no trust list here to look one up in. So a foreign
+// manifest can be verified by nobody, and the choice is between reading it
+// unverified and not reading it at all.
+//
+// Not reading it is the worse answer. Three of the four checks need no key,
+// and they are the ones that say the manifest describes *these* bytes: the
+// assertions hash to what the claim lists, the data hash matches the file, and
+// the excluded range is exactly where the manifest sits. A manifest that
+// passes those and fails no signature check is not proof of who made the file,
+// and it is a great deal more than nothing.
+//
+// # What a caller may do with the answer
+//
+// Report it, and add an obligation — never remove one. A forged manifest
+// claiming trainedAlgorithmicMedia costs an attacker a disclosure on their own
+// content; a forged one claiming humanEdits would launder generated content
+// into a human mark, which is the failure this whole package exists to
+// prevent. The asymmetry is the rule: an unsigned claim may make a file look
+// more accountable and never less.
+//
+// Statement.Signed is false on everything this returns, so a caller that
+// forgets the distinction has it in the value.
+func Read(file []byte) (Statement, error) {
+	return verify(file, nil)
+}
+
 // Verify reads the manifest out of a file and checks it against the file.
 func Verify(file []byte, key ed25519.PublicKey) (Statement, error) {
+	if len(key) == 0 {
+		// Refused rather than treated as Read. A caller that reaches Verify
+		// with an empty key has lost its key somewhere, and answering as
+		// though it had asked the weaker question would hand it an unverified
+		// statement under the name of a verified one.
+		return Statement{}, fmt.Errorf(
+			"no key was supplied to verify against; c2pa.Read is the " +
+				"question that can be asked without one")
+	}
+	return verify(file, key)
+}
+
+// verify is both, with the signature check skipped for a nil key.
+func verify(file []byte, key ed25519.PublicKey) (Statement, error) {
 	raw, where, err := extract(file)
 	if err != nil {
 		return Statement{}, err
@@ -103,14 +162,22 @@ func Verify(file []byte, key ed25519.PublicKey) (Statement, error) {
 	// (1) The signature, first. Everything below reads values out of the
 	// claim, and reading them before knowing they were signed would mean
 	// acting on an attacker's numbers.
-	signedClaim, err := Verify1(sigBytes, key)
-	if err != nil {
-		return Statement{}, err
-	}
-	if !bytes.Equal(signedClaim, claimBytes) {
-		return Statement{}, fmt.Errorf(
-			"the signature covers a different claim than the one in the " +
-				"manifest, so the signed claim is not the one that would be read")
+	//
+	// Skipped only for Read, which exists because a foreign manifest is signed
+	// by a key nobody here holds. The values below are then attacker's numbers
+	// by construction, which is why Statement.Signed carries the difference
+	// out to the caller instead of the caller being trusted to remember.
+	signed := len(key) > 0
+	if signed {
+		signedClaim, err := Verify1(sigBytes, key)
+		if err != nil {
+			return Statement{}, err
+		}
+		if !bytes.Equal(signedClaim, claimBytes) {
+			return Statement{}, fmt.Errorf(
+				"the signature covers a different claim than the one in the " +
+					"manifest, so the signed claim is not the one that would be read")
+		}
 	}
 
 	claim, err := decodeMap(claimBytes)
@@ -133,8 +200,13 @@ func Verify(file []byte, key ed25519.PublicKey) (Statement, error) {
 		return Statement{}, err
 	}
 
-	return statementFrom(claim, byLabel[labelActions],
+	st, err := statementFrom(claim, byLabel[labelActions],
 		byLabel[labelIngredient], listed)
+	if err != nil {
+		return Statement{}, err
+	}
+	st.Signed = signed
+	return st, nil
 }
 
 // manifestStore picks the store out of the boxes at the top of the manifest.

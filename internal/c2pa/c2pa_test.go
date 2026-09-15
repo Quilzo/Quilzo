@@ -481,3 +481,87 @@ func TestAnOriginalHasNoIngredient(t *testing.T) {
 		t.Errorf("an original claims to be derived from %x", got.DerivedFrom)
 	}
 }
+
+// Read answers without a key, and says that is what it did.
+//
+// A foreign manifest is signed by a key this program does not hold and cannot
+// look up, so the choice is between reading it unverified and not reading it
+// at all. Three of the four checks need no key and they are the ones that say
+// the manifest describes these bytes.
+func TestReadAnswersWithoutAKeyAndSaysSo(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, err := Embed(samplePNG(t), Claim{
+		Title: "a picture", Format: "image/png",
+		DigitalSourceType: "trainedAlgorithmicMedia", Author: "somebody",
+	}, [][]byte{{1, 2, 3}}, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	read, err := Read(signed)
+	if err != nil {
+		t.Fatalf("a manifest this program wrote could not be read: %v", err)
+	}
+	if read.Signed {
+		t.Error("Read reported a checked signature, which it did not check")
+	}
+	if read.DigitalSourceType != "trainedAlgorithmicMedia" {
+		t.Errorf("it read %q", read.DigitalSourceType)
+	}
+
+	full, err := Verify(signed, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !full.Signed {
+		t.Error("Verify did not mark the statement as signed")
+	}
+}
+
+// The checks that need no key still run, so Read is not "believe anything".
+//
+// A manifest moved onto different pixels is the attack the hard binding
+// exists to stop, and it is stopped without knowing who signed anything.
+func TestReadStillRefusesAManifestThatDoesNotDescribeTheFile(t *testing.T) {
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, err := Embed(samplePNG(t), Claim{
+		Title: "a picture", Format: "image/png", Author: "somebody",
+	}, [][]byte{{1, 2, 3}}, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Change a byte of the image data, well past the manifest.
+	tampered := append([]byte{}, signed...)
+	tampered[len(tampered)-24] ^= 0xFF
+
+	if st, err := Read(tampered); err == nil {
+		t.Errorf("a manifest describing different pixels was read as fine: %+v", st)
+	}
+}
+
+// Verify with no key is a refusal, not a quiet downgrade.
+//
+// A caller that reaches Verify with an empty key has lost its key somewhere,
+// and answering the weaker question under the name of the stronger one is how
+// an unverified statement ends up being treated as proof.
+func TestVerifyWithoutAKeyIsRefused(t *testing.T) {
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, err := Embed(samplePNG(t), Claim{
+		Title: "a picture", Format: "image/png", Author: "somebody",
+	}, [][]byte{{1, 2, 3}}, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(signed, nil); err == nil {
+		t.Error("Verify accepted an empty key")
+	}
+}

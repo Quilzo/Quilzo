@@ -403,6 +403,17 @@ func fit(src image.Image, maxW, maxH int) (image.Image, int, int, bool) {
 	return dst, tw, th, true
 }
 
+// CarriesProvenance reports whether a file carries a C2PA manifest.
+//
+// Exported because "is there one" and "does it check out" are different
+// questions asked by different callers, and telling them apart is what lets a
+// report distinguish a file with no manifest from one whose manifest could not
+// be read. Structural either way: a file that does not parse cannot be asked
+// what it is.
+func CarriesProvenance(format string, body []byte) bool {
+	return hasProvenance(format, body)
+}
+
 // hasProvenance reports whether a file carries a C2PA manifest.
 //
 // Structural, like hasMetadata: the question is only whether one is present,

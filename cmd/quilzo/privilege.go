@@ -234,6 +234,10 @@ var commandNeeds = map[string]need{
 	"schedule list":    {action: auth.ActView},
 	"media formats":    {action: auth.ActView},
 	"media list":       {action: auth.ActView},
+	// Checking a manifest changes nothing, and the person most likely to ask
+	// is an auditor who has been given view and nothing else. Inheriting the
+	// parent's edit-draft would shut the check to exactly them.
+	"media verify":     {action: auth.ActView},
 	"agent probe":      {action: auth.ActView},
 	"media remove":     {action: auth.ActEditDraft},
 	"media renditions": {action: auth.ActEditDraft},
