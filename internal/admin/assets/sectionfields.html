@@ -33,36 +33,21 @@
   <input type="hidden" name="at" value="{{.At}}">
   <input type="hidden" name="base" value="{{.Base}}">
 
+  {{/*
+    One partial, used twice. These were two copies of the same markup and they
+    had already drifted: the datalist of listing names was added to the
+    section's own fields and not to the ones inside a list entry, so the same
+    field offered suggestions in one place and not the other. A partial is how
+    that stops happening again.
+  */}}
   {{if .Own}}
   <h2>The section</h2>
-  {{range .Own}}
-  <p class="field">
-    <label for="f-{{.Path}}">{{.Label}}</label>
-    {{if .Long}}
-    <textarea id="f-{{.Path}}" name="v.{{.Path}}" rows="4" spellcheck="true">{{.Value}}</textarea>
-    {{else}}
-    <input id="f-{{.Path}}" name="v.{{.Path}}" value="{{.Value}}"
-      {{if .Number}}inputmode="numeric"{{end}}
-      {{if and $.ListingNames (eq .Path "name")}}list="listing-names"{{end}}
-      spellcheck="false">
-    {{end}}
-  </p>
-  {{end}}
+  {{range .Own}}{{template "editfield" .}}{{end}}
   {{end}}
 
   {{range .Blocks}}
   <h2>{{.Label}}</h2>
-  {{range .Fields}}
-  <p class="field">
-    <label for="f-{{.Path}}">{{.Label}}</label>
-    {{if .Long}}
-    <textarea id="f-{{.Path}}" name="v.{{.Path}}" rows="4" spellcheck="true">{{.Value}}</textarea>
-    {{else}}
-    <input id="f-{{.Path}}" name="v.{{.Path}}" value="{{.Value}}"
-      {{if .Number}}inputmode="numeric"{{end}} spellcheck="false">
-    {{end}}
-  </p>
-  {{end}}
+  {{range .Fields}}{{template "editfield" .}}{{end}}
   {{end}}
 
   <p><button type="submit">Save this section</button></p>
@@ -176,3 +161,46 @@
 {{end}}
 
 {{template "foot" .}}
+
+{{/*
+  One editable value.
+
+  A file-valued field shows the file. Its value is the SHA-256 of the bytes,
+  which is the right name for a stored object and an impossible thing to read:
+  sixty-four hex characters say nothing about which photograph is attached. So
+  the input stays — it is still the value, and it can still be pasted — and
+  beside it go the picture itself and a way to choose another.
+
+  Choosing is a link to a screen rather than a control that opens something,
+  because the policy on this response is script-src 'none'. See
+  internal/admin/mediapick.go.
+*/}}
+{{define "editfield"}}
+<p class="field">
+  <label for="f-{{.Path}}">{{.Label}}</label>
+  {{if .Long}}
+  <textarea id="f-{{.Path}}" name="v.{{.Path}}" rows="4" spellcheck="true">{{.Value}}</textarea>
+  {{else}}
+  <input id="f-{{.Path}}" name="v.{{.Path}}" value="{{.Value}}"
+    {{if .Number}}inputmode="numeric"{{end}}
+    {{if .Suggest}}list="listing-names"{{end}}
+    spellcheck="false">
+  {{end}}
+  {{if .Media}}
+  <span class="filefield">
+    {{if .Asset}}
+      {{if eq .Media "image"}}
+      <img class="filefield-thumb" src="/media/file/{{.Asset}}" alt="" loading="lazy" decoding="async">
+      {{else}}
+      <span class="filefield-thumb filefield-noshot">{{.Media}}</span>
+      {{end}}
+    {{else}}
+    <span class="hint">Nothing chosen.</span>
+    {{end}}
+    <a class="filefield-pick"
+       href="/media/pick?page={{.Page}}&amp;at={{.At}}&amp;path={{.Path}}">Choose
+      {{.Noun}}<span class="sr"> for {{.Label}}</span></a>
+  </span>
+  {{end}}
+</p>
+{{end}}

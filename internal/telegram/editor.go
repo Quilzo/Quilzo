@@ -679,12 +679,8 @@ func singular(list string) string {
 func (a *App) fieldInput(f section.Editable, files []StoredFile) string {
 	id := "f-" + strings.ReplaceAll(f.Path, ".", "-")
 	name := "v." + f.Path
-	leaf := f.Path
-	if i := strings.LastIndex(leaf, "."); i >= 0 {
-		leaf = leaf[i+1:]
-	}
 
-	if kind, isFile := fileField(leaf); isFile {
+	if kind, isFile := section.FileKind(f.Path); isFile {
 		var b strings.Builder
 		fmt.Fprintf(&b, `<p class="field"><label for="%s">%s</label>`+
 			`<select id="%s" name="%s">`, esc(id), esc(f.Label), esc(id), esc(name))
@@ -715,7 +711,7 @@ func (a *App) fieldInput(f section.Editable, files []StoredFile) string {
 		return b.String()
 	}
 
-	if leaf == "tone" {
+	if leafOf(f.Path) == "tone" {
 		return choice(id, name, f.Label, tones, f.Value)
 	}
 	if f.Long {
@@ -732,17 +728,13 @@ func (a *App) fieldInput(f section.Editable, files []StoredFile) string {
 		esc(id), esc(f.Label), esc(id), esc(name), esc(f.Value), numeric)
 }
 
-// fileField says whether a field name refers to a stored file, and which kind.
-func fileField(leaf string) (string, bool) {
-	switch leaf {
-	case "image", "poster":
-		return "image", true
-	case "src":
-		return "video", true
-	case "audio":
-		return "audio", true
+// leafOf is the last segment of a dotted field path, which is the part that
+// says what the value means.
+func leafOf(path string) string {
+	if i := strings.LastIndex(path, "."); i >= 0 {
+		return path[i+1:]
 	}
-	return "", false
+	return path
 }
 
 func (a *App) libraryOf(user User) []StoredFile {

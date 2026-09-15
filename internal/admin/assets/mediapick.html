@@ -1,0 +1,83 @@
+{{template "head" .}}
+<h1>Choose {{.Noun}}</h1>
+
+<p class="hint"><a href="{{.Back}}">Back to the section</a></p>
+
+<p class="lead">For <code>{{.Path}}</code> on section {{.At}} of
+  <a href="/page/{{.Page}}">{{.Page}}</a>.</p>
+
+{{/*
+  A search box and a grid, because the policy on this response is
+  script-src 'none' and there is no overlay to open. The query is in the
+  address, so a search is a link somebody can keep or go back to — the same
+  mechanism the find screen uses, for the same reason.
+*/}}
+<form method="get" action="/media/pick" class="findform" role="search">
+  <input type="hidden" name="page" value="{{.Page}}">
+  <input type="hidden" name="at" value="{{.At}}">
+  <input type="hidden" name="path" value="{{.Path}}">
+  <label for="mp-q">Search by name or description</label>
+  <input id="mp-q" name="q" value="{{.Query}}" spellcheck="false">
+  <button type="submit">Search</button>
+</form>
+
+{{if .Shown}}
+{{/*
+  One form, one submit. Every choice is a radio rather than a button per file,
+  so a keyboard walks the grid with the arrow keys and a screen reader reads it
+  as the one question it is: which file goes in this field.
+
+  It posts to /sections/fields, which is where the edit form posts. Carrying
+  one value is safe because section.Apply only touches the paths it is given.
+*/}}
+<form method="post" action="/sections/fields">
+  <input type="hidden" name="page" value="{{.Page}}">
+  <input type="hidden" name="at" value="{{.At}}">
+  <input type="hidden" name="base" value="{{.Base}}">
+
+  <fieldset class="pickgrid">
+    <legend class="sr">Which {{.Kind}} goes in {{.Path}}</legend>
+
+    <label class="pick pick-none">
+      <input type="radio" name="v.{{.Path}}" value=""{{if not .Current}} checked{{end}}>
+      <span class="pick-body">
+        <span class="pick-name">Nothing</span>
+        <span class="hint">Leave this field empty. The section omits the
+          element rather than rendering a broken one.</span>
+      </span>
+    </label>
+
+    {{range .Shown}}
+    <label class="pick{{if .Current}} pick-on{{end}}">
+      <input type="radio" name="v.{{$.Path}}" value="/media/{{.ID}}"{{if .Current}} checked{{end}}>
+      <span class="pick-body">
+        {{if .Viewable}}
+        <img class="pick-thumb" src="/media/file/{{.ID}}" alt="{{.Alt}}"
+             loading="lazy" decoding="async"
+             {{if .Width}}width="{{.Width}}" height="{{.Height}}"{{end}}>
+        {{else}}
+        <span class="pick-thumb pick-noshot">{{.Format}}</span>
+        {{end}}
+        <span class="pick-name">{{.Name}}</span>
+        <span class="hint">{{if .Width}}{{.Width}}&times;{{.Height}} &middot; {{end}}{{.Size}}</span>
+        {{if .Alt}}<span class="hint pick-alt">{{.Alt}}</span>{{end}}
+      </span>
+    </label>
+    {{end}}
+  </fieldset>
+
+  <p><button type="submit">Use this {{.Kind}}</button></p>
+</form>
+{{template "paging" .}}
+
+{{else}}
+<p>{{if .Query}}Nothing in the library matches that.{{else}}There is no
+  {{.Kind}} in the library yet.{{end}}</p>
+<p><a href="/media">Upload one</a>, and it appears here.</p>
+{{end}}
+
+<p class="hint">Files are stored under the hash of their own bytes, so the same
+  picture uploaded twice is one file. Choosing here writes the section the same
+  way the edit form does: a draft commit with your name on it, which rolls
+  back like any other.</p>
+{{template "foot" .}}
