@@ -35,9 +35,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/quilzo/quilzo/internal/etag"
-	"github.com/quilzo/quilzo/internal/form"
-	"github.com/quilzo/quilzo/internal/media"
 	"io"
 	"net/http"
 	"sort"
@@ -46,10 +43,14 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/a2a"
+	"github.com/quilzo/quilzo/internal/compress"
 	"github.com/quilzo/quilzo/internal/crawl"
+	"github.com/quilzo/quilzo/internal/etag"
+	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/marking"
+	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/render"
@@ -276,7 +277,13 @@ func (st *Site) Handler() http.Handler {
 	// The banner is innermost, so it wraps the handler's own output and
 	// nothing else: the headers and the crawl gate go outside it, where a
 	// refusal is not a page and has nothing to mark.
-	return st.securityHeaders(st.crawlGate(st.marked(mux)))
+	//
+	// Compression is outermost, so what it compresses is what is actually
+	// going to be sent — after the banner has rewritten the body and after
+	// the gate has decided whether there is one. See internal/compress for
+	// why gzip only, why the ETag comes back weak, and why this is applied
+	// here and not to the admin.
+	return compress.Responses(st.securityHeaders(st.crawlGate(st.marked(mux))))
 }
 
 // CrawlGate enforces the published licence against identified crawlers.
