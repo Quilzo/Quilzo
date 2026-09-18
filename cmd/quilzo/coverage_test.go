@@ -214,6 +214,11 @@ var coverage = map[string]surfaces{
 		NoMCP: "starts a server"},
 	"site": {Why: "starts the public server, for the same reason",
 		NoMCP: "starts a server"},
+	"studio": {Why: "starts the capture surface, which is its own server " +
+		"because it runs a script and the admin does not. A button in the " +
+		"admin could start it, and then the admin would have to know its " +
+		"address — which is a deployment decision rather than a screen",
+		NoMCP: "starts a server, and a model has no screen to record"},
 	"logd": {Why: "runs as another account and must not be startable from this one",
 		NoMCP: "runs as another account"},
 	"mcp": {Why: "is the machine interface; it does not appear inside itself",

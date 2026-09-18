@@ -316,7 +316,11 @@ var commandNeeds = map[string]need{
 	// request, but deciding to expose the store at all is an operator act.
 	"serve": {action: auth.ActPublish},
 	"site":  {action: auth.ActPublish},
-	"mcp":   {action: auth.ActEditDraft},
+	// The capture surface enforces edit-draft per request, and it runs a
+	// script on a writable origin. Deciding to open that at all is the
+	// operator act, so it is held to the same bar as opening the admin.
+	"studio": {action: auth.ActPublish},
+	"mcp":    {action: auth.ActEditDraft},
 
 	// -- deliberately unauthenticated, each with the reason.
 	"__sandbox": {why: "is the sandbox shim this program re-executes itself as: " +
