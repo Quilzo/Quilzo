@@ -75,6 +75,11 @@ func (r Reader) Perform(s *agent.Session) func(context.Context, agent.Action) (s
 		ref = site.RefLive
 	}
 
+	// One scoped corpus per session, built on first use. See retrieve.go: the
+	// index covers exactly the pages this agent may read, so a page out of
+	// scope cannot appear in a result and cannot influence a score.
+	ix := &indexes{}
+
 	return func(ctx context.Context, a agent.Action) (string, error) {
 		if err := ctx.Err(); err != nil {
 			return "", err
@@ -90,6 +95,10 @@ func (r Reader) Perform(s *agent.Session) func(context.Context, agent.Action) (s
 			return r.listPages(s, ref)
 		case "read_page":
 			return r.readPage(s, ref, nameFrom(a))
+		case "search_pages":
+			return r.searchPages(s, ix, ref, a)
+		case "similar_pages":
+			return r.similarPages(s, ix, ref, a)
 		case "diff":
 			// Deliberately absent for now rather than approximated. A diff
 			// spans two refs, and an agent scoped to one has not been granted
