@@ -357,8 +357,22 @@ func agentCheckRun(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	sess := agent.NewSession(m, nil)
+
+	// Bounded by whoever started it, before the session is built.
+	//
+	// Not a check inside the run: a manifest narrowed here is narrower in
+	// every later decision, including the ones nobody thought to guard. The
+	// alternative — asking "may this caller do that?" at each step — is the
+	// arrangement that put the content-type gate in the CLI and not in the
+	// API. See agentnarrow.go.
 	caller := resolveCaller(root, "")
+	m = narrowedBy(m, caller)
+	if len(m.Capabilities) == 0 {
+		return fmt.Errorf(
+			"%s holds nothing once bounded by this token: the manifest and "+
+				"the token you are using have no capability in common", name)
+	}
+	sess := agent.NewSession(m, nil)
 
 	// Every capability the manifest holds, tried once, in a fixed order.
 	//
@@ -409,7 +423,15 @@ func agentCheckRun(root string, args []string) error {
 		// granted write report "not implemented", which reads as the agent
 		// behaving correctly rather than as a surface nobody connected.
 		Perform: agentexec.Dispatch(
-			agentexec.Reader{Store: s},
+			agentexec.Reader{
+				Store: s,
+				// Without these the manifest's type and locale scope is
+				// decoration: Reader treats a nil resolver as "nothing is
+				// typed" and Session.Retrieve reads that as unrestricted.
+				// See agentnarrow.go.
+				Types:  pageTypeOf(root),
+				Locale: pageLocaleOf(s, refOf(m)),
+			},
 			agentexec.Writer{
 				Store: s,
 				// Attributed to the agent. A commit signed with whoever

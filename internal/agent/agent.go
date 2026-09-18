@@ -442,12 +442,128 @@ func (m Manifest) Narrow(by Manifest) Manifest {
 		Retain:     Duration(minInt64(int64(m.Memory.Retain), int64(by.Memory.Retain))),
 	}
 
+	// Retrieval: the narrower of each dimension.
+	//
+	// This was missing, and it is the dimension that matters most. Capability
+	// and autonomy were intersected while the ref, the types, the locales and
+	// the path were taken from `by` wholesale — so a delegate scoped to the
+	// draft, or to types its parent may not read, was narrower in every
+	// respect the code checked and wider in the one it did not.
+	out.Retrieval = Retrieval{
+		Ref:     narrowerRef(m.Retrieval.Ref, by.Retrieval.Ref),
+		Types:   intersect(m.Retrieval.Types, by.Retrieval.Types),
+		Locales: intersect(m.Retrieval.Locales, by.Retrieval.Locales),
+		Path:    longerPath(m.Retrieval.Path, by.Retrieval.Path),
+	}
+
+	// Tools: only the hosts the bound already reaches.
+	//
+	// Matched on the declared host, because that is what Session.MayReach
+	// asks about. A delegate naming a host its parent does not hold would
+	// otherwise be a way to reach the network through a supervisor that
+	// cannot.
+	reachable := map[string]bool{}
+	for _, t := range m.Tools {
+		reachable[t.Host] = true
+	}
+	var tools []Tool
+	for _, t := range by.Tools {
+		if reachable[t.Host] {
+			tools = append(tools, t)
+		}
+	}
+	out.Tools = tools
+
 	// Approval is sticky: a parent that needs one cannot delegate its way out.
 	if m.HumanApproval {
 		out.HumanApproval = true
 	}
 	return out
 }
+
+// narrowerRef is the more restrictive of two refs.
+//
+// Live is narrower than draft: everything at live has been published, so an
+// agent reading it cannot disclose something nobody released. An empty ref
+// means "unstated", and unstated defers to whatever the other side says —
+// except that two unstated refs stay unstated, because the executor already
+// treats that as live and duplicating the default here would be a second
+// place to change it.
+func narrowerRef(a, b string) string {
+	switch {
+	case a == "":
+		return b
+	case b == "":
+		return a
+	case a == b:
+		return a
+	default:
+		// They differ and neither is empty, so one of them is the draft.
+		// Live wins.
+		return refLive
+	}
+}
+
+// refLive is site.RefLive, spelled here because this package deliberately
+// does not import the store or the site.
+//
+// Checked against the real constant by a test, so the two cannot drift.
+const refLive = "live"
+
+// intersect keeps the items both lists allow, where empty means all.
+//
+// Empty-means-all makes this not quite a set intersection: a bound that
+// restricts nothing must not narrow a list to nothing, and a list that
+// restricts nothing must take the bound's restriction whole.
+func intersect(bound, list []string) []string {
+	if len(bound) == 0 {
+		return list
+	}
+	if len(list) == 0 {
+		return bound
+	}
+	allowed := map[string]bool{}
+	for _, v := range bound {
+		allowed[strings.ToLower(v)] = true
+	}
+	var out []string
+	for _, v := range list {
+		if allowed[strings.ToLower(v)] {
+			out = append(out, v)
+		}
+	}
+	sort.Strings(out)
+	if out == nil {
+		// Both restricted and they do not overlap, so nothing is permitted.
+		// A non-nil empty list rather than nil, because nil means "all"
+		// everywhere else in this struct and returning it here would widen
+		// the very thing being narrowed.
+		return []string{}
+	}
+	return out
+}
+
+// longerPath is the deeper of two subtree restrictions.
+//
+// Deeper is narrower when one contains the other; when they diverge there is
+// no page both permit, and the sentinel says so rather than picking one.
+func longerPath(a, b string) string {
+	switch {
+	case a == "":
+		return b
+	case b == "":
+		return a
+	case strings.HasPrefix(b, a):
+		return b
+	case strings.HasPrefix(a, b):
+		return a
+	default:
+		return pathNothing
+	}
+}
+
+// pathNothing is a subtree no page is in, for two restrictions that diverge.
+const pathNothing = "\x00none"
 
 func minInt(a, b int) int {
 	if a < b {
