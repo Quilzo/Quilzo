@@ -138,7 +138,7 @@
       <textarea id="f-detail" name="detail" rows="5"></textarea></p>
     <p class="hp" aria-hidden="true"><label for="f-url">Leave this empty</label>
       <input id="f-url" name="website_url" type="text" tabindex="-1" autocomplete="off"></p>
-    <input type="hidden" name="form_started" value="{{ page.stamp }}">
+    <input type="hidden" name="form_started" value="{{ stamp }}">
     <p><button type="submit">Send</button></p>
   </form>
   {% if page.privacy %}<p class="privacy">{{ page.privacy }}</p>{% end %}

@@ -61,6 +61,32 @@ type ShareTarget struct {
 	TitleField string
 	TextField  string
 	URLField   string
+	// Limit is the rate limit for this route, which is deliberately not the
+	// form limiter.
+	//
+	// The comment on the check below has said for some time that /share "gets
+	// a harder limit rather than the same one", and it did not: it used
+	// Forms.Limit, the same limiter under the same policy. A share has one
+	// fewer defence than a form — the honeypot and the timing stamp both need
+	// a page this server rendered, and a share from the operating system did
+	// not load one — so the harder limit is the whole of what replaces them,
+	// and it was not there.
+	//
+	// Nil falls back to the form limiter, which is the previous behaviour and
+	// better than no limit at all. The host wires a tighter one; see
+	// cmd/quilzo/site.go.
+	Limit *throttle.Limiter
+}
+
+// limiter is the limiter this route runs under.
+func (t *ShareTarget) limiter(forms *Forms) *throttle.Limiter {
+	if t != nil && t.Limit != nil {
+		return t.Limit
+	}
+	if forms != nil {
+		return forms.Limit
+	}
+	return nil
 }
 
 // shareManifest is the manifest fragment for the share sheet.
@@ -150,22 +176,26 @@ func (st *Site) handleShare(w http.ResponseWriter, r *http.Request) {
 	//
 	// /share is an unauthenticated write with one fewer defence than a form,
 	// because the two a form has both need a page this server rendered and a
-	// share was not one. So it gets a harder limit rather than the same one.
+	// share was not one. So it gets a harder limit rather than the same one —
+	// which is now true, and was not: see ShareTarget.Limit.
 	source := sourceOf(r)
-	if st.Forms != nil && st.Forms.Limit != nil {
-		if d := st.Forms.Limit.Check(throttle.Subject{Source: source}); !d.Allowed {
+	limit := st.Share.limiter(st.Forms)
+	if limit != nil {
+		if d := limit.Check(throttle.Subject{Source: source}); !d.Allowed {
+			if secs := int(d.RetryAfter.Seconds()); secs > 0 {
+				w.Header().Set("Retry-After", fmt.Sprint(secs))
+			}
 			http.Error(w, "too many shares from here, try again shortly",
 				http.StatusTooManyRequests)
 			return
 		}
+		// Every share counts, accepted or not. A share that stores correctly
+		// is still a write from an address that loaded no page, and counting
+		// only the refused ones was what left this route unbounded.
+		limit.Spend(throttle.Subject{Source: source})
 	}
 
 	if err := st.storeShare(st.Share.Form, values, r); err != nil {
-		// A refused share counts against the limiter, so somebody probing for
-		// what passes is slowed by their own failures.
-		if st.Forms != nil && st.Forms.Limit != nil {
-			st.Forms.Limit.Fail(throttle.Subject{Source: source})
-		}
 		http.Error(w, "that share could not be stored",
 			http.StatusBadRequest)
 		return
