@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -137,14 +138,60 @@ type proposalFile struct {
 }
 
 func loadApprovalPolicy(root string) (collab.Policy, error) {
+	// The configured floor first.
+	//
+	// review.required_approvals and approval.required_humans were settable,
+	// validated, compliance-mapped, shown in the admin, and read by nothing.
+	// `quilzo config set approval.required_humans 2` reported success and did
+	// nothing — while the setting's own text ends "Set to two, nothing
+	// publishes without two people". That is the worst shape a control can
+	// have: not absent, but believed in.
+	//
+	// Both default to zero, so an install that never set them behaves exactly
+	// as before. Only an operator who asked for the requirement gets it, which
+	// is what keeps this from turning a single-person install into one that
+	// cannot publish at all — the reason the absent-file case below defaults
+	// to nothing rather than to collab.NewPolicy.
 	p := collab.Policy{}
-	if err := loadJSON(approvalPolicyPath(root), &p); err != nil {
+	if cfg, err := loadConfig(root); err == nil && cfg != nil {
+		p.Required = cfg.Int("review.required_approvals")
+		p.RequiredHumans = atoiOr(cfg.Raw("approval.required_humans"), 0)
+	}
+
+	// Then approval.json, which wins where it says anything.
+	//
+	// `quilzo review require` writes the whole policy, including fields the
+	// settings table does not offer, so a file that exists is the operator's
+	// more specific answer. Merged rather than replaced: a file written before
+	// these settings existed carries no opinion about them, and reading it as
+	// "zero" would silently undo a configured requirement.
+	onDisk := collab.Policy{}
+	if err := loadJSON(approvalPolicyPath(root), &onDisk); err != nil {
 		return p, err
 	}
-	// An absent file means dual authorization is not configured. Defaulting to
-	// NewPolicy would turn a single-person install into one that cannot publish
-	// at all, which is how a security control gets deleted rather than adopted.
+	if onDisk.Required > 0 {
+		p.Required = onDisk.Required
+	}
+	if onDisk.RequiredHumans > 0 {
+		p.RequiredHumans = onDisk.RequiredHumans
+	}
+	p.RequireHumanForAI = p.RequireHumanForAI || onDisk.RequireHumanForAI
 	return p, nil
+}
+
+// atoiOr parses a whole number, or gives the fallback.
+//
+// approval.required_humans is a Text setting rather than an Int one, so it
+// arrives as a string. Parsed leniently on purpose: the setting is validated
+// when it is set, and a value that has somehow become unparseable must not
+// make publishing impossible — it falls back to the number that changes
+// nothing.
+func atoiOr(raw string, fallback int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n < 0 {
+		return fallback
+	}
+	return n
 }
 
 // currentProposal returns the proposal for the draft as it stands, creating one

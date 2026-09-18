@@ -1106,7 +1106,34 @@ func cmdPublish(root string, args []string) error {
 	// The gate runs before the pointer moves. ATAG Part B asks that the tool
 	// help authors produce accessible content, and a report printed after
 	// publishing helps nobody — the inaccessible page is already being served.
-	if !*skip {
+	//
+	// publish.require_a11y is the same decision made once instead of per
+	// command, which is what its own text in the settings table says it is —
+	// and nothing read it, so the sentence was false and `quilzo config set
+	// publish.require_a11y false` reported success and changed nothing.
+	//
+	// Only the off value does anything here. A setting left at its default
+	// cannot turn the check on, because the check is already on; turning it
+	// off is a weakening, which is why the table attaches a Weaker rule to it
+	// and asks for a written reason before it is accepted.
+	required := true
+	if cfg, cerr := loadConfig(root); cerr == nil && cfg != nil {
+		required = cfg.Bool("publish.require_a11y")
+	}
+	if !required && !*skip {
+		// Recorded, because a configured skip is still a skip and the audit
+		// log is where "this publication was not checked" has to be legible.
+		// --no-a11y-check records the same thing per command; this records it
+		// per publication, which is the point of moving the decision.
+		record(root, caller.auditRecord("publish", "/", audit.Success,
+			map[string]string{
+				"a11y": "not checked",
+				"why":  "publish.require_a11y is off",
+			}))
+		w.Human("  %saccessibility not checked: publish.require_a11y is "+
+			"off%s\n", yellow, reset)
+	}
+	if required && !*skip {
 		candidate := target
 		if candidate == "" {
 			candidate = s.GetRef(site.RefDraft)
