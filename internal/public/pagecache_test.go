@@ -104,28 +104,69 @@ func TestAPublishIsPickedUp(t *testing.T) {
 // or — worse, with the clock the other way — reveal it early. So the decode is
 // memoised and the date comparison is not.
 func TestTheWindowIsAskedEveryTime(t *testing.T) {
-	soon := time.Now().Add(80 * time.Millisecond).UTC().Format(time.RFC3339Nano)
+	// An hour out, so nothing about how busy the machine is can decide this.
+	// The clock is moved by asking the memo about a different time rather
+	// than by waiting for one — an earlier version of this test slept 80ms
+	// and failed in the full suite, where building the store took longer
+	// than that and the embargo had already lifted before the first look.
+	opens := time.Now().Add(time.Hour).UTC()
 	st, _ := livePages(t, map[string]any{
-		"index":    map[string]any{"title": "Home"},
-		"announce": map[string]any{"title": "Announcement", site.Starts: soon},
+		"index": map[string]any{"title": "Home"},
+		"announce": map[string]any{"title": "Announcement",
+			site.Starts: opens.Format(time.RFC3339Nano)},
 	})
 
-	// Before the window opens: the memo is built here, with the page hidden.
-	pages, ids, err := st.pages()
+	set, err := st.decoded(st.Store.GetRef(st.ref()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := pages["announce"]; ok {
-		t.Fatal("an embargoed page was published early")
+	// The page is in the memo either way: what is cached is the decode, not
+	// the answer to a question about the time.
+	if _, ok := set.bodies["announce"]; !ok {
+		t.Fatal("the embargoed page is not in the decoded set, so the memo " +
+			"has filtered it and the filter is what must not be cached")
 	}
-	if _, ok := ids["announce"]; ok {
+
+	before, beforeIDs := set.visibleAt(opens.Add(-time.Minute))
+	if _, ok := before["announce"]; ok {
+		t.Error("an embargoed page was published early")
+	}
+	if _, ok := beforeIDs["announce"]; ok {
 		t.Error("an embargoed page is in the visible id set")
 	}
 
-	// Nothing is published in between. Only the clock moves.
-	time.Sleep(200 * time.Millisecond)
+	// The same memo, a later clock, nothing republished.
+	after, afterIDs := set.visibleAt(opens.Add(time.Minute))
+	if _, ok := after["announce"]; !ok {
+		t.Error("the embargo lifted and the page stayed hidden: the memo " +
+			"cached the answer to a question about the time")
+	}
+	if _, ok := afterIDs["announce"]; !ok {
+		t.Error("the page is visible and has no id, so nothing can link to it")
+	}
+}
 
-	pages, ids, err = st.pages()
+// And the same property through pages(), which is what the handlers call.
+//
+// A short wait here rather than an hour, and it is allowed to be short
+// because the assertion is one-sided: the page must become visible. If the
+// machine is slow the embargo has lifted by the first look too, and the test
+// still asserts the thing it exists to assert.
+func TestThePublishWindowOpensWithoutARepublish(t *testing.T) {
+	soon := time.Now().Add(150 * time.Millisecond).UTC()
+	st, _ := livePages(t, map[string]any{
+		"index": map[string]any{"title": "Home"},
+		"announce": map[string]any{"title": "Announcement",
+			site.Starts: soon.Format(time.RFC3339Nano)},
+	})
+
+	// Builds the memo, whichever side of the window this lands on.
+	if _, _, err := st.pages(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Until(soon.Add(150 * time.Millisecond)))
+
+	pages, ids, err := st.pages()
 	if err != nil {
 		t.Fatal(err)
 	}
