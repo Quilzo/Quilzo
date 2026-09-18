@@ -61,6 +61,9 @@ type Library struct {
 	// a failed optimisation, and silently losing the optimisation is how
 	// somebody spends an afternoon wondering why one image is heavy.
 	Warnings []string
+	// statMemo remembers what Stat read. See statcache.go for why the id is
+	// not a safe key on its own.
+	statMemo
 }
 
 // reID matches what media.Accept produces: a SHA-256 in lowercase hex.
@@ -114,6 +117,11 @@ func (l *Library) Put(f media.File, body []byte) error {
 				"the record's id would file the content under a name that is "+
 				"not its address", f.ID[:12], got.ID[:12])
 	}
+
+	// Dropped before anything is written, not after. A write that fails
+	// half-way through must not leave the memo holding what the file said
+	// before it — and "before" is the only moment at which that is certain.
+	l.forget(f.ID)
 
 	p := l.path(f.ID)
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
@@ -289,6 +297,7 @@ func (l *Library) renditions(parent media.File, body []byte) ([]media.Rendition,
 		f.Origin = parent.Origin
 		f.RenditionOf = parent.ID
 
+		l.forget(f.ID)
 		q := l.path(f.ID)
 		if err := os.MkdirAll(filepath.Dir(q), 0o700); err != nil {
 			return nil, err
@@ -397,7 +406,22 @@ func (l *Library) Stat(id string) (media.File, error) {
 	if err := ValidID(id); err != nil {
 		return media.File{}, err
 	}
-	body, err := os.ReadFile(l.path(id) + ".json")
+	p := l.path(id) + ".json"
+
+	// The stat comes first, because it is both the existence check and the
+	// thing that decides whether what was remembered is still true.
+	info, err := os.Stat(p)
+	if os.IsNotExist(err) {
+		return media.File{}, fmt.Errorf("there is no file %s here", id[:12])
+	}
+	if err != nil {
+		return media.File{}, err
+	}
+	if f, ok := l.remembered(id, info); ok {
+		return f, nil
+	}
+
+	body, err := os.ReadFile(p)
 	if os.IsNotExist(err) {
 		return media.File{}, fmt.Errorf("there is no file %s here", id[:12])
 	}
@@ -408,6 +432,11 @@ func (l *Library) Stat(id string) (media.File, error) {
 	if err := json.Unmarshal(body, &f); err != nil {
 		return media.File{}, fmt.Errorf("%s: %w", id[:12], err)
 	}
+	// Remembered under the fingerprint from before the read, not after. A
+	// write that landed in between therefore leaves a fingerprint that no
+	// longer matches, and the next reader does the work again — which is the
+	// safe direction to be wrong in.
+	l.remember(id, f, info)
 	return f, nil
 }
 
@@ -462,6 +491,7 @@ func (l *Library) Remove(id string) error {
 	if err := ValidID(id); err != nil {
 		return err
 	}
+	l.forget(id)
 	p := l.path(id)
 	if _, err := os.Stat(p); os.IsNotExist(err) {
 		return fmt.Errorf("there is no file %s here", id[:12])
