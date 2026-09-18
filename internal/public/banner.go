@@ -178,11 +178,11 @@ func insertBanner(body []byte, banner string) ([]byte, error) {
 // and braces — but it is configuration somebody types, and the one time it
 // does contain a stray character is not the time to discover the banner is an
 // injection point.
-func escapeBanner(s string) string {
-	r := strings.NewReplacer(
-		"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#39;")
-	return r.Replace(s)
-}
+func escapeBanner(s string) string { return bannerReplacer.Replace(s) }
+
+// Built once. The banner is escaped twice on every marked page.
+var bannerReplacer = strings.NewReplacer(
+	"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#39;")
 
 var errNoBody = errNoBodyError{}
 

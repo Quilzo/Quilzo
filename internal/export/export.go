@@ -633,11 +633,11 @@ func cdata(s string) string {
 	return strings.ReplaceAll(s, "]]>", "]]]]><![CDATA[>")
 }
 
-func xmlEscape(s string) string {
-	return strings.NewReplacer(
-		"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;",
-	).Replace(s)
-}
+func xmlEscape(s string) string { return xmlReplacer.Replace(s) }
+
+// Built once rather than per field of per item of per export.
+var xmlReplacer = strings.NewReplacer(
+	"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;")
 
 // -- shared ------------------------------------------------------------------
 

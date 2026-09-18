@@ -409,6 +409,19 @@ func (c *htmlContext) context(s string) (int, error) {
 	return ctxAttr, nil
 }
 
+// escapeTextContext escapes a value appearing as element content.
+//
+// Quotes are left alone: they are not special in text, and escaping them
+// renders an apostrophe in a sentence as &#39; for no gain.
+//
+// Built once rather than per value. strings.NewReplacer compiles a trie on
+// first use, and building it inside the render loop put 10% of a whole page
+// request inside strings.(*Replacer).build — the same three pairs, compiled
+// again for every interpolation on the page. A Replacer is safe for
+// concurrent use, which is what makes one shared instance correct.
+var escapeTextContext = strings.NewReplacer(
+	"&", "&amp;", "<", "&lt;", ">", "&gt;")
+
 // escapeBare escapes for a place where whitespace ends the value.
 //
 // Everything HTML escaping covers, plus the characters that terminate an
@@ -598,7 +611,7 @@ func walk(nodes []node, data map[string]any, out *strings.Builder, b *budget, de
 				esc = escapeBare(text)
 			default:
 				// Quotes left alone in text context; they are not special there.
-				esc = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(text)
+				esc = escapeTextContext.Replace(text)
 			}
 			if err := b.spendOutput(len(esc)); err != nil {
 				return err

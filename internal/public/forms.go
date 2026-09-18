@@ -207,11 +207,11 @@ func (st *Site) formResult(w http.ResponseWriter, r *http.Request,
 // in an attribute value. The result page prints one error string and two fixed
 // titles, so a full context-aware escaper would be more machinery than the
 // surface justifies — and the error strings are ours.
-func escape(s string) string {
-	r := strings.NewReplacer(
-		"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#39;")
-	return r.Replace(s)
-}
+func escape(s string) string { return formReplacer.Replace(s) }
+
+// Built once. A Replacer compiles a trie on first use and is safe to share.
+var formReplacer = strings.NewReplacer(
+	"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#39;")
 
 // sourceOf is the address a submission came from.
 //

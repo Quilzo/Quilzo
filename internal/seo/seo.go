@@ -140,11 +140,12 @@ func Sitemap(entries []Entry) (string, error) {
 // Hand-written rather than reached for from a library because the set is fixed
 // and small, and because a page name containing an ampersand producing an
 // invalid sitemap is a failure nobody notices until a crawler stops reading.
-func escapeXML(s string) string {
-	r := strings.NewReplacer(
-		"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;")
-	return r.Replace(s)
-}
+func escapeXML(s string) string { return xmlReplacer.Replace(s) }
+
+// Built once rather than per entry. A sitemap escapes several strings per URL
+// and a large site has thousands of them.
+var xmlReplacer = strings.NewReplacer(
+	"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;")
 
 // -- redirects ---------------------------------------------------------------
 

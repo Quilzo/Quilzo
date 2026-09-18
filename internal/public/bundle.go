@@ -222,6 +222,13 @@ func fetchSelf(h http.Handler, path string) ([]byte, int, error) {
 // A meta element is not as good as a header and is not meant to be. It is
 // what a file can carry, browsers honour it for everything that matters here,
 // and the alternative on the table was nothing.
+
+// cspAttrReplacer escapes a policy for a double-quoted attribute.
+//
+// Built once, because a Replacer compiles a trie on first use. Why only two
+// pairs is at the call site.
+var cspAttrReplacer = strings.NewReplacer("&", "&amp;", `"`, "&quot;")
+
 func carryCSP(body []byte, policy, ctype string) []byte {
 	if policy == "" || !strings.Contains(ctype, "text/html") {
 		return body
@@ -245,8 +252,7 @@ func carryCSP(body []byte, policy, ctype string) []byte {
 	// policy contains neither in practice. Escaping the apostrophes as well
 	// would be equally correct and would render 'none' as &#39;none&#39; in
 	// the one header an auditor is most likely to read by eye.
-	attr := strings.NewReplacer("&", "&amp;", `"`, "&quot;").
-		Replace(strings.Join(keep, "; "))
+	attr := cspAttrReplacer.Replace(strings.Join(keep, "; "))
 	meta := []byte(`<meta http-equiv="Content-Security-Policy" content="` +
 		attr + `">`)
 

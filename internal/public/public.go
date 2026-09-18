@@ -566,11 +566,11 @@ func (st *Site) licence(w http.ResponseWriter, r *http.Request) {
 // Hand-written rather than reached for, because the set is fixed and a licence
 // document that fails to parse because somebody's company name contains an
 // ampersand is a licence nothing reads.
-func escapeXMLText(s string) string {
-	return strings.NewReplacer(
-		"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;",
-	).Replace(s)
-}
+func escapeXMLText(s string) string { return xmlTextReplacer.Replace(s) }
+
+// Built once rather than per element of per document.
+var xmlTextReplacer = strings.NewReplacer(
+	"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;")
 
 // searchAPI answers a query, for a program.
 //
@@ -1128,10 +1128,11 @@ func shorten(name string) string {
 	return name[:12]
 }
 
-func escapeText(s string) string {
-	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;")
-	return r.Replace(s)
-}
+func escapeText(s string) string { return textReplacer.Replace(s) }
+
+// Built once rather than per line of every generated document.
+var textReplacer = strings.NewReplacer(
+	"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;")
 
 // Fingerprint is a stable identifier for the whole published site, for anything
 // that wants to know whether it has changed without diffing it.
