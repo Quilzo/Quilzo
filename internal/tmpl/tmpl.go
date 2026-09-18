@@ -49,6 +49,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const (
@@ -105,6 +106,80 @@ type node struct {
 	// pipe is the filter chain applied to the value before it is escaped.
 	// Empty for everything but nValue and nRaw.
 	pipe []pipeStep
+}
+
+// trees memoises Parse.
+//
+// # Why this is here rather than in the caller
+//
+// Because every caller had the same bug. A profile of one page request on this
+// program's own demo showed Parse at 10.7% of the whole request: the layout
+// was re-tokenised, re-matched against the tag expression and rebuilt into a
+// tree for every reader, every time, for a template that had not changed
+// since the process started. The same was true of the admin's screens, the
+// preview, the search page and every export.
+//
+// Putting it in the caller would mean putting it in seven callers, and the
+// eighth would be written without it.
+//
+// # Why this cannot go stale
+//
+// Parse is a pure function of its argument: the same source is the same tree,
+// and a changed template is a different string and therefore a different key.
+// There is nothing to invalidate.
+//
+// # Why the tree can be shared
+//
+// walk ranges over nodes by value and never assigns to a field of one, so a
+// render reads the tree and nothing else. That is a property worth stating
+// because it is what makes this safe under concurrency, and a future filter
+// that memoised something into a node would quietly break it — which is what
+// TestManyRendersOfOneTemplateAgree is for.
+var trees struct {
+	sync.Mutex
+	bySource map[string][]node
+}
+
+// maxTrees bounds the memo.
+//
+// A deployment has a handful of layouts, and the admin's screens are embedded
+// and fixed, so this is never approached in practice. It exists because one
+// caller renders a template from a path somebody typed, and an unbounded map
+// keyed on arbitrary file contents is a slow leak rather than a cache.
+//
+// When it fills, it is emptied rather than evicted one entry at a time. An LRU
+// for eight templates is machinery that would never run, and the cost of
+// being wrong is one re-parse.
+const maxTrees = 64
+
+// parsed is Parse, remembered.
+func parsed(src string) ([]node, error) {
+	trees.Lock()
+	nodes, ok := trees.bySource[src]
+	trees.Unlock()
+	if ok {
+		return nodes, nil
+	}
+
+	// Parsed outside the lock. Two goroutines meeting on a cold template both
+	// parse it and one of them wins the map, which wastes a parse once —
+	// against holding a global lock across every parse in the process, which
+	// would serialise the first request for every layout on a busy start.
+	nodes, err := Parse(src)
+	if err != nil {
+		// Not remembered. A template that does not parse is an error the
+		// caller reports and an operator fixes, so the entry would be read
+		// once and then be wrong.
+		return nil, err
+	}
+
+	trees.Lock()
+	if trees.bySource == nil || len(trees.bySource) >= maxTrees {
+		trees.bySource = make(map[string][]node, maxTrees)
+	}
+	trees.bySource[src] = nodes
+	trees.Unlock()
+	return nodes, nil
 }
 
 // Parse turns template text into nodes. An unknown tag is an error, not output.
@@ -586,7 +661,7 @@ func walk(nodes []node, data map[string]any, out *strings.Builder, b *budget, de
 
 // Render renders a template against decoded JSON data. Terminates for all input.
 func Render(src string, data map[string]any) (string, error) {
-	nodes, err := Parse(src)
+	nodes, err := parsed(src)
 	if err != nil {
 		return "", err
 	}
