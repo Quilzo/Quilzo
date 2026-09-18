@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/chat"
 	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
 	"github.com/quilzo/quilzo/internal/provenance"
@@ -260,12 +261,8 @@ func telegramServe(root string, args []string) error {
 		w.Human("  %sa link ends up pointing at somebody else's host%s\n\n", dim, reset)
 	}
 
-	srv := &http.Server{
-		Addr:              *addr,
-		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-	return srv.ListenAndServe()
+	srv := &http.Server{Addr: *addr, Handler: handler}
+	return listen.Default().Serve(srv)
 }
 
 // telegramCheck confirms the token before anybody spends an afternoon on the

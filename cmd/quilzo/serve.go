@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/quilzo/quilzo/internal/api"
 	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/logd"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/webauthn"
@@ -723,11 +724,7 @@ func cmdServe(root string, args []string) error {
 	// Loopback by default. An editing interface that binds every interface the
 	// moment someone runs it is how a development server ends up on the
 	// internet, and the fix has to be a decision rather than a default.
-	httpSrv := &http.Server{
-		Addr:              *addr,
-		Handler:           srv.Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	httpSrv := &http.Server{Addr: *addr, Handler: srv.Handler()}
 
 	fmt.Printf("admin on http://%s\n", *addr)
 	// Both commands. A token names the role it may act up to; a binding is
@@ -758,7 +755,11 @@ func cmdServe(root string, args []string) error {
 				"address is above%s\n", dim, reset)
 		}
 	}
-	return httpSrv.ListenAndServe()
+	// Uploads, because this is the interface a file arrives through: a
+	// recording added from the media screen is a request that takes as long
+	// as the connection takes, and a deadline on it would refuse the
+	// operation on exactly the slow link that needs longest.
+	return listen.Uploads().Serve(httpSrv)
 }
 
 // retentionJob sweeps submissions past the retention their form declares.

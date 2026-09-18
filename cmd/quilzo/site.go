@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/vector"
 	"net/http"
@@ -295,11 +296,7 @@ func cmdSite(root string, args []string) error {
 		}
 	}
 
-	srv := &http.Server{
-		Addr:              *addr,
-		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	srv := &http.Server{Addr: *addr, Handler: handler}
 
 	// Federation runs alongside serving: one loop notices a publish and queues
 	// the pages that changed, the other empties the queue. Both were built and
@@ -342,7 +339,11 @@ func cmdSite(root string, args []string) error {
 	} else {
 		fmt.Printf("  %snothing is published yet; run quilzo publish%s\n", yellow, reset)
 	}
-	return srv.ListenAndServe()
+	// listen.Media rather than Default: this server sends video, and a
+	// deadline on the whole response would cut off the reader it exists for.
+	// The media route sets its own, derived from the size it is about to
+	// send. See internal/listen.
+	return listen.Media().Serve(srv)
 }
 
 // licenceFrom builds the crawl terms from configuration, or nil for none.

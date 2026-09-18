@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
 	"github.com/quilzo/quilzo/internal/studio"
@@ -75,14 +75,10 @@ func cmdStudio(root string, args []string) error {
 			"without its length or a poster frame%s\n", dim, reset)
 	}
 
-	server := &http.Server{
-		Addr:              *addr,
-		Handler:           srv.Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
-		// No write timeout. A recording is large and the upload is the whole
-		// point; a deadline here would cut off the operation this server
-		// exists for, on exactly the slow connection that needs longest.
-		IdleTimeout: 2 * time.Minute,
-	}
-	return server.ListenAndServe()
+	server := &http.Server{Addr: *addr, Handler: srv.Handler()}
+	// A recording is large and the upload is the whole point, so neither the
+	// request nor the response is given a fixed deadline; what bounds this
+	// server is the idle deadline and the connection limit. The headers still
+	// have ten seconds. See internal/listen.
+	return listen.Uploads().Serve(server)
 }
