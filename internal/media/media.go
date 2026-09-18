@@ -409,6 +409,27 @@ type File struct {
 	// do I put on this page" was mostly answers nobody should choose.
 	RenditionOf string `json:"rendition_of,omitempty"`
 
+	// Seconds is how long a recording runs, when something could work it out.
+	//
+	// Zero means unknown rather than instantaneous — a store with no ffprobe
+	// knows nothing about the inside of a recording, and saying "0:00" would
+	// be an answer where there is none.
+	Seconds float64 `json:"seconds,omitempty"`
+
+	// Poster is a still taken from this recording, stored as its own picture.
+	//
+	// A file of its own rather than bytes on this record, because that is the
+	// only kind of thing this library holds: it gets its own hash, its own
+	// narrower copies for a phone, and its own description. Empty means none
+	// was made, which is what a store without ffmpeg has.
+	Poster string `json:"poster,omitempty"`
+
+	// PosterOf names the recording a still was taken from, on the still.
+	//
+	// The other direction, so a listing can tell a poster from a photograph
+	// somebody chose to upload — the same reason RenditionOf exists.
+	PosterOf string `json:"poster_of,omitempty"`
+
 	// Tracks are the caption files for this video.
 	//
 	// On the video rather than on the section that shows it, for the same

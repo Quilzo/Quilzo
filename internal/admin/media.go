@@ -102,6 +102,11 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 	}
 
 	webp, haveWebP := media.HaveWebP()
+	// Said for the same reason the WebP encoder is: a store that cannot read
+	// a recording holds the same recordings and does less with them, and
+	// somebody wondering why their video has no poster is owed the answer
+	// rather than left to guess it is a bug.
+	ffmpeg, haveFFmpeg := media.HaveFFmpeg()
 
 	s.render(w, r, "media.html", map[string]any{
 		// The nine places, per file, worked out here so the template does not
@@ -111,6 +116,7 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 		"Files": files, "Total": total, "Accepted": media.Accepted(),
 		"Rights": rights, "Undeclared": undeclared,
 		"WebP": webp, "HaveWebP": haveWebP,
+		"FFmpeg": ffmpeg, "HaveFFmpeg": haveFFmpeg,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"CanWrite":  s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
 		"MaxUpload": humanSize(MaxUpload),

@@ -71,6 +71,10 @@ type Sources struct {
 	// had before they could be attached — and is why a video with none is a
 	// refusal at publication rather than a silent omission here.
 	Tracks func(id string) []any
+	// Poster answers where a still from a recording is served, or "" when
+	// there is none — which is what a store with no ffmpeg has for every
+	// video it holds.
+	Poster func(id string) string
 	// SrcSet answers what narrower copies an asset has, as a srcset value, or
 	// "" when it has none.
 	//
@@ -144,7 +148,7 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 
 // asks bundles what the decorator may ask the library.
 func (s Sources) asks() asks {
-	return asks{srcSet: s.SrcSet, tracks: s.Tracks}
+	return asks{srcSet: s.SrcSet, tracks: s.Tracks, poster: s.Poster}
 }
 
 func (s Sources) now() time.Time {

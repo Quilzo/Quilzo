@@ -1222,6 +1222,18 @@ func (st *Site) tracks(id string) []any {
 	return out
 }
 
+// poster answers where a still from a recording is served.
+func (st *Site) poster(id string) string {
+	if st.MediaStat == nil {
+		return ""
+	}
+	f, err := st.MediaStat(id)
+	if err != nil || f.Poster == "" {
+		return ""
+	}
+	return "/media/" + f.Poster
+}
+
 // formData resolves a declared form for a template.
 //
 // Read from the same set the submit handler validates against, so what a page
@@ -1266,7 +1278,8 @@ func (st *Site) formData(name string) map[string]any {
 
 func (st *Site) sources() render.Sources {
 	src := render.Sources{Name: st.Name, Listings: st.Listings,
-		SrcSet: st.srcSet, Tracks: st.tracks, Form: st.formData}
+		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster,
+		Form: st.formData}
 	if st.Menus != nil {
 		if set, err := st.Menus(); err == nil {
 			src.Menus = set

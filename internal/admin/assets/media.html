@@ -47,6 +47,19 @@ so this is the screen that answers that gate.</p>{{end}}
   <code>{{.WebP}}</code>.{{else}}WebP conversion needs an external encoder,
   which is not installed here, so uploads are optimised natively instead.{{end}}
 </p>
+{{/*
+  What a recording gets, which depends on what is installed. Said here rather
+  than discovered: somebody whose video has no poster and no intrinsic size is
+  owed the reason, and "the tool is not on this machine" is a different answer
+  from "this is broken".
+*/}}
+<p class="hint">
+  {{if .HaveFFmpeg}}A video's dimensions and length are read on upload and a
+  poster frame is taken from it, via <code>{{.FFmpeg}}</code>.{{else}}A video
+  is stored as it arrives. Reading its dimensions and taking a poster frame
+  need <code>ffmpeg</code>, which is not installed here — so a player shows
+  no still and the page cannot reserve the right space for it.{{end}}
+</p>
 {{end}}
 
 {{if not .Files}}
@@ -68,7 +81,8 @@ so this is the screen that answers that gate.</p>{{end}}
       <div class="hint">On the published site: <code>/media/{{.ID}}</code></div>
     </th>
     <td>{{.Format}}<div class="hint">{{.Kind}}{{if not .Inline}} · download only{{end}}</div></td>
-    <td>{{.Size}}{{if .Width}}<div class="hint">{{.Width}}×{{.Height}}</div>{{end}}</td>
+    <td>{{.Size}}{{if .Width}}<div class="hint">{{.Width}}×{{.Height}}</div>{{end}}
+      {{if .Seconds}}<div class="hint">{{printf "%.0f" .Seconds}}s</div>{{end}}</td>
     <td>{{if .Alt}}{{.Alt}}{{else}}<span class="hint">decorative</span>{{end}}</td>
     <td>
       {{if .Width}}

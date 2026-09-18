@@ -55,6 +55,11 @@ import (
 //	<field>_srcset   the narrower copies of that picture, as a srcset value
 //	<field>_tracks   the caption files of that video, for <track> elements
 //
+// And for an object holding a video under "src", additionally:
+//
+//	poster     a still taken from the recording, when it has one and the
+//	           object does not already name a picture of its own
+//
 // That one is not a pure function of the content: it asks the library which
 // renditions exist. It is here anyway, for the same reason as the rest — a
 // template cannot call a function, and the alternative is every layout guessing
@@ -87,6 +92,7 @@ import (
 type asks struct {
 	srcSet func(string) string
 	tracks func(string) []any
+	poster func(string) string
 }
 
 // maxDeriveDepth bounds the walk. Content is nested by authors and by importers,
@@ -114,6 +120,7 @@ func decorate(v any, depth int, ask asks) any {
 		derive(out)
 		deriveSrcSets(out, ask.srcSet)
 		deriveTracks(out, ask.tracks)
+		derivePoster(out, ask.poster)
 		return out
 	case []any:
 		out := make([]any, len(t))
@@ -173,6 +180,34 @@ func deriveSrcSets(m map[string]any, srcset func(string) string) {
 		if set := srcset(match[1]); set != "" {
 			setIfAbsent(m, key+"_srcset", set)
 		}
+	}
+}
+
+// derivePoster fills in a still for a video that has one and no poster set.
+//
+// Not a <field>_poster companion, and that is the point. The video section
+// already reads s.video.poster, and this sets that key when it is empty — so
+// the shipped layout started showing posters with no change to the markup at
+// all, and a poster somebody chose by hand still wins, because setIfAbsent
+// never overwrites. The same thing the hero's title does with the page's.
+//
+// Guarded on the field being called src, which is the video section's shape.
+// A record that happens to hold a video id under some other name does not
+// grow a poster key it never had.
+func derivePoster(m map[string]any, poster func(string) string) {
+	if poster == nil {
+		return
+	}
+	text, ok := m["src"].(string)
+	if !ok {
+		return
+	}
+	match := reAssetPath.FindStringSubmatch(strings.TrimSpace(text))
+	if match == nil {
+		return
+	}
+	if at := poster(match[1]); at != "" {
+		setIfAbsent(m, "poster", at)
 	}
 }
 

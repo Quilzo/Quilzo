@@ -44,6 +44,13 @@ func sourcesFor(root string, s *store.Store, commit, siteName string,
 			}
 			return f.SrcSet("/media")
 		}
+		src.Poster = func(id string) string {
+			f, err := lib.Stat(id)
+			if err != nil || f.Poster == "" {
+				return ""
+			}
+			return "/media/" + f.Poster
+		}
 		src.Tracks = func(id string) []any {
 			f, err := lib.Stat(id)
 			if err != nil || len(f.Tracks) == 0 {
