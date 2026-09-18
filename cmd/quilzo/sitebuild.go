@@ -331,6 +331,11 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 				TitleField: cfg.Raw("share.title_field"),
 				TextField:  cfg.Raw("share.text_field"),
 				URLField:   cfg.Raw("share.url_field"),
+				// Its own limiter, not the form one. See sharePolicy: a
+				// share has one fewer defence than a form, so the harder
+				// limit is what replaces them — and the route's own comment
+				// claimed this for some time while it shared the form's.
+				Limit: throttle.New(sharePolicy(cfg)),
 			}
 			var required []string
 			if set, ferr := loadForms(root); ferr == nil {

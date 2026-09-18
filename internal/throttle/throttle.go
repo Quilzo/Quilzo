@@ -1,7 +1,12 @@
 // SPDX-FileCopyrightText: 2026 rsh1k
 // SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
 
-// Package throttle slows down repeated authentication failures.
+// Package throttle slows down repeated attempts from one subject.
+//
+// Two jobs, and they count different things. For authentication it counts
+// failures, which is what the standards below are about. For an anonymous
+// write it counts every attempt, because a successful one is the abuse — see
+// Spend.
 //
 // NIST SP 800-63B-4 says a verifier SHALL rate-limit failed authentication
 // attempts. ASVS 5.0 puts numbers on it: no more than 100 failures per hour on
@@ -274,6 +279,39 @@ func (l *Limiter) Fail(s Subject) (Decision, bool) {
 	}
 	return worst, alert
 }
+
+// Spend records one attempt against the window, successful or not.
+//
+// # Why this exists beside Fail
+//
+// Because this package was written for one job and is used for two, and the
+// two count different things.
+//
+// For sign-in, the thing to bound is failures. A person who signs in
+// successfully a hundred times is a person using the product; a hundred
+// failures is somebody guessing. Fail is right there, and Succeed clearing the
+// record is right, and the whole design follows.
+//
+// For an anonymous write — a form submission, a share — the thing to bound is
+// ATTEMPTS, because a successful one is the abuse. The public form path used
+// Check and Fail and nothing else, so only rejected submissions counted: a
+// script that loaded the form once, kept the timestamp and posted valid
+// submissions in a loop was never slowed at all. Measured against the demo
+// before this existed, eighty valid submissions from one address were eighty
+// accepted and none refused. The honeypot and the timing check both pass for
+// anything that read the page once, which is a low bar for a script and the
+// only bar there was.
+//
+// The counter underneath is the same counter. It has to be: a limiter with a
+// second, separate window would let an attacker spend both. What differs is
+// the intent of the caller, and that difference is worth a name — a future
+// reader finding Fail on the success path would correct it, and be wrong.
+//
+// Succeed must not be called on a path that uses this. Clearing the record
+// after an accepted write is how the limit stops existing. It happens to be a
+// no-op for a Subject with no principal, which every anonymous write has, but
+// that is a coincidence and not a guarantee.
+func (l *Limiter) Spend(s Subject) (Decision, bool) { return l.Fail(s) }
 
 // Succeed clears the principal's record. The source's is left to decay.
 //
