@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/chat"
 	"github.com/quilzo/quilzo/internal/discord"
+	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/slack"
 	"github.com/quilzo/quilzo/internal/telegram"
 )
@@ -273,10 +274,8 @@ func slackServe(root string, args []string) error {
 		strings.TrimSuffix(*appURL, "/"), reset)
 	w.Human("  %sit answers with a single-use link into the editor, shown "+
 		"only to whoever typed it%s\n", dim, reset)
-	srv := &http.Server{
-		Addr: *addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second,
-	}
-	return srv.ListenAndServe()
+	srv := &http.Server{Addr: *addr, Handler: mux}
+	return listen.Default().Serve(srv)
 }
 
 // slashCommand answers a verified slash command with a link into the editor.
@@ -385,10 +384,8 @@ func discordServe(root string, args []string) error {
 	w.Human("discord on http://%s\n", *addr)
 	w.Human("  %sinteractions endpoint: %s/interactions%s\n", dim,
 		strings.TrimSuffix(*appURL, "/"), reset)
-	srv := &http.Server{
-		Addr: *addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second,
-	}
-	return srv.ListenAndServe()
+	srv := &http.Server{Addr: *addr, Handler: mux}
+	return listen.Default().Serve(srv)
 }
 
 // interactions answers a verified Discord interaction.

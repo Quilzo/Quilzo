@@ -5,12 +5,14 @@ package public
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/media"
 )
 
@@ -156,6 +158,27 @@ func (st *Site) mediaFile(w http.ResponseWriter, r *http.Request) {
 	// same property the pages have, for the same reason.
 	h.Set("ETag", `"`+f.ID+`"`)
 	h.Set("Cache-Control", "public, max-age=31536000, immutable")
+
+	// A write deadline sized for what is about to be sent.
+	//
+	// The server this route runs under sets no WriteTimeout, because a
+	// deadline on the whole response cannot be right for both a thumbnail and
+	// a ninety-minute recording — so a route that knows the size sets its
+	// own. Without this, the only thing bounding a client that opens a
+	// connection, asks for a video and then reads nothing is the connection
+	// limit.
+	//
+	// Best effort: a ResponseWriter that cannot take a deadline is one in a
+	// test, and refusing to serve the file would be the wrong answer to that.
+	// See internal/listen for the grace and the rate it is derived from.
+	if err := http.NewResponseController(w).SetWriteDeadline(
+		time.Now().Add(listen.ResponseFor(f.Size))); err != nil &&
+		!errors.Is(err, http.ErrNotSupported) {
+		// Anything else means the connection is already in a state where a
+		// deadline cannot be set, and sending a body into it is pointless.
+		http.Error(w, "this file could not be sent", http.StatusInternalServerError)
+		return
+	}
 
 	// Served through ServeContent, for the ranges.
 	//

@@ -76,6 +76,20 @@ func (b *bannerWriter) Write(p []byte) (int, error) {
 	return b.buf.Write(p)
 }
 
+// Unwrap gives http.ResponseController the writer underneath.
+//
+// Without it, everything a handler can only do through the connection — set a
+// write deadline, take the socket — returns ErrNotSupported the moment
+// marking is switched on, because this wrapper is in the way and says nothing
+// about it. The media route sets a write deadline sized to the file it is
+// about to send; a deployment with a classification banner would have had
+// that silently do nothing.
+//
+// Flush is not implemented here on purpose: this wrapper buffers the whole
+// body so the banner can be put in it, and a flush that reached the
+// connection would send the beginning of an unmarked page.
+func (b *bannerWriter) Unwrap() http.ResponseWriter { return b.ResponseWriter }
+
 // isHTML reports whether this response will be rendered as a page.
 func (b *bannerWriter) isHTML() bool {
 	declared := b.ResponseWriter.Header().Get("Content-Type")
