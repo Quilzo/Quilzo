@@ -505,3 +505,94 @@ func allowedLocale(list []string, v string) bool {
 	}
 	return false
 }
+
+// MayCallTool authorises one tool call, by name.
+//
+// # Why the host does not come from the action
+//
+// It used to. The loop read Input["host"] — a field a model fills in — and
+// checked that string against the allow-list, while the thing actually dialled
+// is whatever the integration behind the tool name points at. A check on one
+// string and a connection to another is the bug every SSRF filter has had, and
+// the comment above MayReach already said the host must not be derived from
+// what the model produced.
+//
+// It is not enough that the model can only name hosts on the list. The list is
+// per agent; the mapping from a tool name to a host is per tool, declared by
+// somebody who needed `grant` to write it. Resolving from the name means the
+// model chooses which declared tool to call and nothing else — which is the
+// Action-Selector pattern, and the only part of this a model is entitled to
+// decide.
+//
+// # Why a disagreement is refused rather than ignored
+//
+// Because there is no legitimate reason for a model to name a host other than
+// the one its tool declares, and ignoring the field would accept something
+// that looks exactly like an injected page redirecting a tool call. Refusing
+// is also what the previous behaviour did for an undeclared host, so the
+// signal an operator was already getting does not quietly disappear.
+//
+// asked may be empty, which is the ordinary case: a model that names the tool
+// and leaves the host alone is behaving correctly.
+func (s *Session) MayCallTool(tool, asked string) error {
+	declared := s.HostFor(tool)
+	if asked != "" && !strings.EqualFold(
+		strings.TrimSpace(asked), strings.TrimSpace(declared)) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if declared == "" {
+			return s.refuse("fetch", fmt.Sprintf(
+				"%q is not one of this agent's declared tools, and nothing "+
+					"asked for %s may be reached on its word", tool, asked))
+		}
+		return s.refuse("fetch", fmt.Sprintf(
+			"the tool %q reaches %s, and something asked it to reach %s "+
+				"instead; a host is declared in the manifest and never "+
+				"taken from a request", tool, declared, asked))
+	}
+	return s.MayReach(declared)
+}
+
+// HostFor is the host a named tool is declared to reach.
+//
+// An unknown tool name resolves to the empty string, which MayReach refuses
+// with "no host was given". That is the right answer and the right message: a
+// tool this agent does not declare has no host, rather than a host that
+// happens not to be permitted. See MayCallTool for why this is resolved from
+// the name at all.
+func (s *Session) HostFor(tool string) string {
+	name := strings.ToLower(strings.TrimSpace(tool))
+	if name == "" {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.manifest.Tools {
+		if strings.ToLower(strings.TrimSpace(t.Name)) == name {
+			return t.Host
+		}
+	}
+	return ""
+}
+
+// ToolFor is the whole declaration behind a tool name.
+//
+// Returned by value, so a caller cannot reach into the session's copy of the
+// manifest and change what it declares. The second return is false for a tool
+// this agent does not hold, which a caller must treat as a refusal rather than
+// as an empty declaration — a Tool zero value has no host and no secret, and
+// calling with it would be calling nothing with nothing.
+func (s *Session) ToolFor(tool string) (Tool, bool) {
+	name := strings.ToLower(strings.TrimSpace(tool))
+	if name == "" {
+		return Tool{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.manifest.Tools {
+		if strings.ToLower(strings.TrimSpace(t.Name)) == name {
+			return t, true
+		}
+	}
+	return Tool{}, false
+}

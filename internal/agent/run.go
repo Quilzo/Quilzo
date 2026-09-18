@@ -96,6 +96,15 @@ type Step struct {
 	Result string
 	Err    string
 	At     time.Time
+	// Redirected records a tool call whose input named a different host from
+	// the one the tool declares.
+	//
+	// Nothing acts on it — the declared host is what is authorised and dialled
+	// either way — but it is exactly what an injected page trying to point a
+	// tool somewhere else looks like, and a run that silently corrected it
+	// would leave no trace of the attempt. internal/agentwatch reads the
+	// audit log for patterns like this.
+	Redirected string
 }
 
 // Trace is what a run produced, and is the audit record.
@@ -230,7 +239,13 @@ func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error)
 		// useful refusal for "call evil.example.com" names the host rather
 		// than the capability.
 		if action.Tool != "" {
-			err = s.MayReach(hostOf(action))
+			// Recorded whether or not it is refused, because the attempt is
+			// the finding. See Step.Redirected and Session.MayCallTool.
+			asked := hostAsked(action)
+			if asked != "" && !strings.EqualFold(asked, s.HostFor(action.Tool)) {
+				step.Redirected = asked
+			}
+			err = s.MayCallTool(action.Tool, asked)
 		} else {
 			err = s.Authorize(action.Op)
 		}
@@ -337,13 +352,14 @@ func spendOf(s *Session) Spend {
 	}
 }
 
-// hostOf extracts the host an action wants to reach.
+// hostAsked is the host an action's own input names.
 //
-// Read from the action's own field rather than parsed out of a URL the model
-// produced: the allow-list is checked against what the runner will dial, and a
-// host taken from one string while a different string is dialled is the bug
-// every SSRF filter has had.
-func hostOf(a Action) string {
+// Kept only to report the disagreement. Nothing authorises against it — see
+// Session.HostFor for why — but a model that asked for one host while its
+// tool declares another is worth saying out loud rather than silently
+// correcting, because it is what an injected page trying to redirect a tool
+// call looks like.
+func hostAsked(a Action) string {
 	if h, ok := a.Input["host"].(string); ok {
 		return strings.TrimSpace(h)
 	}
