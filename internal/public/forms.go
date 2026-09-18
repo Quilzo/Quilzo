@@ -140,14 +140,25 @@ func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Every attempt counts against the limiter, accepted or not.
+	//
+	// Spent before the submission is judged, because the thing being bounded
+	// is the rate of writes from one address and a valid write is still a
+	// write. Only counting rejections was the arrangement that let a script
+	// load the form once, keep the timestamp and post valid submissions in a
+	// loop: measured against the demo, eighty from one address were eighty
+	// accepted and none refused. The honeypot and the timing stamp both pass
+	// for anything that read the page once.
+	//
+	// Before rather than after, so a submission that fails somewhere further
+	// down — a full disk, a refused write — has still been counted. The
+	// alternative charges nothing for an attempt that did work.
+	if st.Forms.Limit != nil {
+		st.Forms.Limit.Spend(throttle.Subject{Source: source})
+	}
+
 	sub, err := form.Accept(f, values, source, time.Now())
 	if err != nil {
-		// Every failed attempt counts against the limiter, so a script probing
-		// for what passes is slowed by its own failures rather than only by
-		// its successes.
-		if st.Forms.Limit != nil {
-			st.Forms.Limit.Fail(throttle.Subject{Source: source})
-		}
 		if st.Forms.Audit != nil {
 			st.Forms.Audit(name, source, false)
 		}
