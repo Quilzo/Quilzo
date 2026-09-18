@@ -310,11 +310,12 @@ func (r *Record) JSONLD() (string, error) {
 // which are attacker-influenced in the case this whole project assumes. A
 // provenance mark that permits an attribute break-out would be an injection
 // vector introduced by the compliance feature, which would be a poor joke.
-func escapeAttr(s string) string {
-	rep := strings.NewReplacer(
-		"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#39;")
-	return rep.Replace(s)
-}
+func escapeAttr(s string) string { return attrReplacer.Replace(s) }
+
+// Built once. A Replacer compiles a trie on first use, and a provenance mark
+// escapes several fields on every page.
+var attrReplacer = strings.NewReplacer(
+	"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#39;")
 
 // Digest is a stable fingerprint of the index, for binding into a commit.
 func (i *Index) Digest() string {
