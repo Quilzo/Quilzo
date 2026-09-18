@@ -35,6 +35,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/etag"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/media"
 	"io"
@@ -374,13 +375,13 @@ func (st *Site) stylesheet(w http.ResponseWriter, r *http.Request) {
 	// cached hard — but it is validated by ETag anyway, so a proxy that ignores
 	// max-age still cannot serve a stale one after a redeploy.
 	sum := sha256.Sum256([]byte(st.Stylesheet))
-	etag := `"` + hex.EncodeToString(sum[:8]) + `"`
-	if match := r.Header.Get("If-None-Match"); match == etag {
+	tag := `"` + hex.EncodeToString(sum[:8]) + `"`
+	if etag.Matches(r.Header.Get("If-None-Match"), tag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
-	w.Header().Set("ETag", etag)
+	w.Header().Set("ETag", tag)
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	_, _ = io.WriteString(w, st.Stylesheet)
 }
@@ -744,14 +745,14 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	// So a page with listings mixes in the tree the listings read and the
 	// arguments they were given. Both are part of what was rendered, so both
 	// belong in the name of it.
-	etag := `"` + tree[name] + `"`
+	tag := `"` + tree[name] + `"`
 	args := firstOf(r.URL.Query())
 	if names := listing.On(body); len(names) > 0 {
-		etag = `"` + renderTag(tree[name], st.dataTree(), names, args) + `"`
+		tag = `"` + renderTag(tree[name], st.dataTree(), names, args) + `"`
 	}
-	w.Header().Set("ETag", etag)
+	w.Header().Set("ETag", tag)
 	w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
-	if match := r.Header.Get("If-None-Match"); match == etag {
+	if etag.Matches(r.Header.Get("If-None-Match"), tag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}

@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"net/http"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/etag"
 )
 
 // font serves one typeface from this site's own origin.
@@ -49,13 +51,13 @@ func (st *Site) font(w http.ResponseWriter, r *http.Request) {
 	// Validated by ETag as well as cached, so a proxy that ignores max-age
 	// still cannot serve a face the operator has replaced.
 	sum := sha256.Sum256(body)
-	etag := `"` + hex.EncodeToString(sum[:8]) + `"`
-	if match := r.Header.Get("If-None-Match"); match == etag {
+	tag := `"` + hex.EncodeToString(sum[:8]) + `"`
+	if etag.Matches(r.Header.Get("If-None-Match"), tag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 	w.Header().Set("Content-Type", "font/woff2")
-	w.Header().Set("ETag", etag)
+	w.Header().Set("ETag", tag)
 	// A font is immutable for as long as its filename is: the name carries the
 	// family, the weight and the style, so a changed font is a changed name.
 	// That is what makes a year of caching correct rather than optimistic.
