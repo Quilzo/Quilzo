@@ -14,12 +14,15 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/a11y"
+	"github.com/quilzo/quilzo/internal/agentexec"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/provenance"
+	"github.com/quilzo/quilzo/internal/search"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
+	"github.com/quilzo/quilzo/internal/vector"
 )
 
 // The MCP surface is the third interface onto the same content, and the two
@@ -142,6 +145,105 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		}
 		b, _ := json.MarshalIndent(body, "", "  ")
 		return string(b), nil
+	})
+
+	// Content search and similarity, over the draft.
+	//
+	// Both indexes already existed — a lexical one in internal/search and a
+	// TF-IDF one in internal/vector — built at publish, handed to the public
+	// API, and reachable from no agent at all. An agent asked which page
+	// covered a subject had one move: list every page and read them one at a
+	// time until its budget ran out.
+	//
+	// Registered here rather than only in internal/agentexec because this
+	// registry is what a manifest is validated against: an operation no
+	// interface offers cannot be declared as a capability. One name, two
+	// surfaces, each enforcing its own authority — the same arrangement
+	// read_page and write_page already have.
+	//
+	// `find` is not this. That one locates a screen, a setting, a content
+	// type or a file as well as a page, and answers with admin paths; it is
+	// "where is the thing", not "which page says this".
+	srv.Register(mcp.Operation{
+		Name: "search_pages", NeedsRole: "reader",
+		Summary: "find the pages whose content matches some words",
+		Detail: "Ranked by where the words appear — a title match outweighs " +
+			"a body match — and every word must appear somewhere in the " +
+			"page. An any-word search on two words returns most of the site " +
+			"and buries the page somebody wanted.",
+		Args: map[string]string{
+			"query": "the words to look for",
+			"limit": "optional, default and maximum 20",
+		},
+		Keywords: []string{"search", "content", "pages", "words", "which page"},
+	}, func(a map[string]any) (any, error) {
+		query, _ := a["query"].(string)
+		if strings.TrimSpace(query) == "" {
+			return nil, &mcp.Refusal{Reason: "search_pages needs a query"}
+		}
+		pages, err := site.PagesAt(s, site.RefDraft)
+		if err != nil {
+			return nil, err
+		}
+		idx := search.Build(s.GetRef(site.RefDraft), pages)
+		hits := idx.Search(query, mcpHits(a))
+		if len(hits) == 0 {
+			return fmt.Sprintf("nothing matches %q", query), nil
+		}
+		var b strings.Builder
+		for _, h := range hits {
+			title := h.Title
+			if strings.TrimSpace(title) == "" {
+				title = h.Page
+			}
+			fmt.Fprintf(&b, "%s\t%s\tmatched %d\t%s\n",
+				h.Page, title, h.Matched, strings.Join(h.Fields, ","))
+		}
+		return strings.TrimSpace(b.String()), nil
+	})
+
+	srv.Register(mcp.Operation{
+		Name: "similar_pages", NeedsRole: "reader",
+		Summary: "the pages closest in content to one named page",
+		Detail: "Cosine over TF-IDF vectors, exhaustive rather than " +
+			"approximate. Each result carries the terms the two pages share, " +
+			"strongest first. Read those as a hint and not as an " +
+			"explanation: on a small site common words survive the filter, " +
+			"so a match whose shared terms are all function words is " +
+			"probably a coincidence.",
+		Args: map[string]string{
+			"page":  "the page to compare against",
+			"limit": "optional, default and maximum 20",
+		},
+		Keywords: []string{"similar", "related", "like", "nearest", "duplicate"},
+	}, func(a map[string]any) (any, error) {
+		name, _ := a["page"].(string)
+		if strings.TrimSpace(name) == "" {
+			return nil, &mcp.Refusal{Reason: "similar_pages needs a page"}
+		}
+		pages, err := site.PagesAt(s, site.RefDraft)
+		if err != nil {
+			return nil, err
+		}
+		idx := vector.Build(s.GetRef(site.RefDraft), pages, search.Tokenise)
+		v, ok := idx.Vectors[name]
+		if !ok {
+			return nil, &mcp.Refusal{
+				Reason: fmt.Sprintf("there is no page %q", name)}
+		}
+		near, err := idx.Nearest(v, mcpHits(a), name)
+		if err != nil {
+			return nil, err
+		}
+		if len(near) == 0 {
+			return fmt.Sprintf("nothing else is close to %q", name), nil
+		}
+		var b strings.Builder
+		for _, n := range near {
+			fmt.Fprintf(&b, "%s\t%.3f\t%s\n",
+				n.Page, n.Score, strings.Join(n.Shared, " "))
+		}
+		return strings.TrimSpace(b.String()), nil
 	})
 
 	srv.Register(mcp.Operation{
@@ -439,4 +541,16 @@ func actionForRole(role string) (auth.Action, error) {
 		return auth.ActGrant, nil
 	}
 	return "", fmt.Errorf("%q is not a role this program has", role)
+}
+
+// mcpHits is how many results a retrieval operation was asked for, bounded.
+//
+// The same cap as agentexec.MaxHits, and for the same reason: without one the
+// caller decides how much of its own context the answer consumes, and a model
+// asking for a thousand results is not making a judgement about that.
+func mcpHits(a map[string]any) int {
+	if n, ok := a["limit"].(float64); ok && n > 0 && int(n) <= agentexec.MaxHits {
+		return int(n)
+	}
+	return agentexec.MaxHits
 }

@@ -164,7 +164,7 @@ var coverage = map[string]surfaces{
 		NoMCP: "runs a public, writable surface that publishes on behalf of " +
 			"Telegram accounts. An agent that could start one could point it " +
 			"at a store and accept writes from a billion strangers"},
-	"find": {GUI: "/find", MCP: []string{"find"}},
+	"find": {GUI: "/find", MCP: []string{"find", "search_pages", "similar_pages"}},
 	"move": {
 		Why: "a rename that carries a page's children, the references naming " +
 			"them and the menu entries pointing at them. The browser has no " +
