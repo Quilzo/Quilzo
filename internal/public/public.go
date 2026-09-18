@@ -41,6 +41,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/a2a"
@@ -62,6 +63,11 @@ import (
 // Site serves the live ref.
 type Site struct {
 	Store *store.Store
+	// pageMu and pageSet memoise the decoded published set for one commit.
+	// See pagecache.go for why a cache here can never be wrong and why the
+	// publish window is deliberately not part of it.
+	pageMu  sync.Mutex
+	pageSet *pageSet
 	// Layouts is every template this site can render a page through. A page
 	// names one in its own body; one that names none renders through the
 	// default. Resolution happens in internal/render, which is also where the
@@ -672,38 +678,15 @@ func (st *Site) pages() (map[string]any, map[string]string, error) {
 	if live == "" {
 		return nil, nil, fmt.Errorf("nothing is published")
 	}
-	c, err := st.Store.GetCommit(live)
+	// Decoded once per commit, filtered by the clock every time. See
+	// pagecache.go: the decode is the expensive half and cannot go stale,
+	// because the key is the content; the publish window is the cheap half and
+	// must not be cached, because it depends on the time.
+	set, err := st.decoded(live)
 	if err != nil {
 		return nil, nil, err
 	}
-	tree, err := st.Store.GetTree(c.Tree)
-	if err != nil {
-		return nil, nil, err
-	}
-	out := map[string]any{}
-	visible := map[string]string{}
-	now := time.Now()
-	for name, oid := range tree {
-		var body any
-		if err := st.Store.GetBlob(oid, &body); err != nil {
-			continue
-		}
-		// The publish window, evaluated here rather than by a scheduler.
-		//
-		// Every read path on this server goes through this function — the
-		// page, the sitemap, the search index, the machine-readable listing —
-		// so filtering once is what stops a page being excluded from one and
-		// linked from another. A page the sitemap advertises and the page
-		// handler 404s is worse than either alone.
-		//
-		// A malformed date hides the page. Failing closed is the whole
-		// argument: the alternative is a typo silently lifting an embargo.
-		if wnd, werr := site.WindowOf(body); werr != nil || !wnd.Public(now) {
-			continue
-		}
-		out[name] = body
-		visible[name] = oid
-	}
+	out, visible := set.visibleAt(time.Now())
 	return out, visible, nil
 }
 
