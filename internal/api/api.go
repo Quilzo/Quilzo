@@ -54,9 +54,10 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
+
+	tag "github.com/quilzo/quilzo/internal/etag"
 )
 
 // MaxPageSize bounds a listing.
@@ -258,30 +259,11 @@ func first(q map[string][]string, key string) string {
 
 // matches reports whether an If-None-Match or If-Match header covers an etag.
 //
-// The header is a comma-separated list and may be `*`, and a naive string
-// comparison against the whole header means a client sending two validators
-// gets a cache miss every time — which looks like the cache not working rather
-// than the parsing being wrong.
-func matches(header, etag string) bool {
-	header = strings.TrimSpace(header)
-	if header == "" {
-		return false
-	}
-	if header == "*" {
-		return true
-	}
-	for _, part := range strings.Split(header, ",") {
-		part = strings.TrimSpace(part)
-		// A weak validator compares equal for caching purposes. Stripping the
-		// prefix rather than refusing is right: this only ever emits strong
-		// ones, and a proxy may have weakened it in transit.
-		part = strings.TrimPrefix(part, "W/")
-		if strings.Trim(part, `"`) == strings.Trim(etag, `"`) {
-			return true
-		}
-	}
-	return false
-}
+// The parsing lives in internal/etag, because the public server had three
+// copies of a naive `match == etag` comparison while this correct one sat in
+// here. One implementation is the whole point; this stays as a name because
+// the call sites read better for it.
+func matches(header, etag string) bool { return tag.Matches(header, etag) }
 
 // quote formats an object id as a strong entity tag.
 func quote(etag string) string { return `"` + etag + `"` }
