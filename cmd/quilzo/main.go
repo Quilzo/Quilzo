@@ -279,6 +279,7 @@ interface
                                              desktop application
       /playground                            try the API against your own store
   quilzo site  [--addr HOST:PORT]          the published site, PWA-installable
+  quilzo studio [--addr HOST:PORT]         record the screen into the library
       --api                                 content API at /api/v1, read-only
       --api-writable                        allow PUT; every write needs If-Match
       --base-url https://example.com        needed for /sitemap.xml and /feed.xml
@@ -556,6 +557,8 @@ func main() {
 		err = cmdMCP(root, cmdArgs)
 	case "timestamp", "stamp":
 		err = cmdTimestamp(root, cmdArgs)
+	case "studio":
+		err = cmdStudio(root, cmdArgs)
 	case "site":
 		err = cmdSite(root, cmdArgs)
 	case "serve":
