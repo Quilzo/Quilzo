@@ -136,6 +136,20 @@ func (l *Library) Put(f media.File, body []byte) error {
 	// records is in collection.Put for exactly this reason. So it is here: an
 	// upload through any surface gets the same set, and a page written against
 	// any of them can offer a phone a picture its screen can use.
+	// What a recording turns out to be, and a still from it.
+	//
+	// Here for the reason the renditions are here: this is the one place every
+	// interface passes through, and three surfaces each working out a video's
+	// dimensions their own way would be three implementations of the same
+	// thing with two of them drifting.
+	//
+	// Both are best-effort and both are silent when the tools are absent. A
+	// store without ffmpeg holds the same recordings and says so once, rather
+	// than failing an upload over an optimisation. See media.Probe.
+	if f.Kind == media.Video {
+		l.describe(&f, body)
+	}
+
 	if rends, rerr := l.renditions(f, body); rerr == nil {
 		f.Renditions = rends
 	} else {
@@ -160,6 +174,88 @@ func (l *Library) Put(f media.File, body []byte) error {
 // written directly rather than through Put: a rendition of a rendition is a
 // smaller picture nobody asked for, and the recursion has to stop somewhere
 // obvious.
+// describe fills in what a recording is, and stores a still from it.
+//
+// Failures are warnings rather than errors. A video whose dimensions could not
+// be read is the video this library stored before anything could read them,
+// and refusing the upload over a poster frame would lose the recording to an
+// optimisation.
+func (l *Library) describe(f *media.File, body []byte) {
+	if sh, known, err := media.Probe(f.Format, body); err != nil {
+		l.Warnings = append(l.Warnings, fmt.Sprintf(
+			"%s was stored without its dimensions: %v", f.Name, err))
+	} else if known {
+		f.Width, f.Height, f.Seconds = sh.Width, sh.Height, sh.Seconds
+	}
+
+	// A moment in rather than the first frame, because the first frame of a
+	// recording is very often black and a poster nobody can see is the thing
+	// this replaces. A second in, or the middle of anything shorter.
+	at := 1.0
+	if f.Seconds > 0 && f.Seconds < 2 {
+		at = f.Seconds / 2
+	}
+	still, err := media.PosterFrom(f.Format, body, at)
+	if err != nil {
+		l.Warnings = append(l.Warnings, fmt.Sprintf(
+			"%s was stored without a poster frame: %v", f.Name, err))
+		return
+	}
+	if len(still) == 0 {
+		// No ffmpeg. Not a warning: it is a configuration, and saying so on
+		// every upload would be noise somebody learns to scroll past.
+		return
+	}
+
+	poster, aerr := media.Accept(posterName(*f), still, time.Unix(timeOf(*f).Unix(), 0))
+	if aerr != nil {
+		l.Warnings = append(l.Warnings, fmt.Sprintf(
+			"%s: the extracted frame was not a picture this can store: %v",
+			f.Name, aerr))
+		return
+	}
+	// Described as what it is. An image cannot be used on a page without a
+	// description, and a poster arrives without anybody having looked at it —
+	// so this says where it came from rather than what is in it, which is
+	// true and is a starting point somebody can improve.
+	poster.Alt = "A still from " + displayOf(*f)
+	poster.PosterOf = f.ID
+	poster.Rights = f.Rights
+	// A still from a generated recording is generated. Same rule as a crop:
+	// dropping it here would be a way to launder generated content into an
+	// undeclared file.
+	poster.Origin = f.Origin
+	poster.Source = f.Source
+	poster.UploadedBy = f.UploadedBy
+
+	// Through Put, so the poster gets its own narrower copies. It is a
+	// picture, so this does not come back here.
+	if err := l.Put(poster, still); err != nil {
+		l.Warnings = append(l.Warnings, fmt.Sprintf(
+			"%s: the poster frame could not be stored: %v", f.Name, err))
+		return
+	}
+	f.Poster = poster.ID
+}
+
+// posterName gives the still a name somebody can recognise beside its
+// recording.
+func posterName(f media.File) string {
+	base := displayOf(f)
+	if i := strings.LastIndex(base, "."); i > 0 {
+		base = base[:i]
+	}
+	return base + "-poster.png"
+}
+
+// displayOf is a file's name, or its short id when it has none.
+func displayOf(f media.File) string {
+	if f.Name != "" {
+		return f.Name
+	}
+	return ShortID(f.ID)
+}
+
 func (l *Library) renditions(parent media.File, body []byte) ([]media.Rendition, error) {
 	if parent.Kind != media.Image {
 		return nil, nil
