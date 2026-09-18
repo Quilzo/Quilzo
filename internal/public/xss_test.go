@@ -4,10 +4,18 @@
 package public
 
 import (
+	"bytes"
+	"compress/gzip"
+	"io"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/render"
+	"github.com/quilzo/quilzo/internal/search"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
@@ -114,4 +122,79 @@ func firstLinesOf(s string, n int) string {
 		lines = lines[:n]
 	}
 	return strings.Join(lines, "\n")
+}
+
+// The same claim again, on the compressed representation.
+//
+// CodeQL moved its report when internal/compress went in: the sink it names
+// is now the middleware's own Write, because a query parameter reaches the
+// template, the template reaches the handler, and the handler reaches the
+// compressor. A compressor cannot escape anything and escaping is not its job
+// — but "a pass-through cannot change the bytes" is a claim, and this is the
+// test of it.
+//
+// Decompressed and then checked, because a scanner reading the source cannot
+// tell a gzip stream from an escaped one, and neither can a reviewer.
+func TestTheCompressedResponseEscapesWhatWasTyped(t *testing.T) {
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A long body, so the response crosses the compressor's floor and this is
+	// really the compressed path rather than the pass-through.
+	pages := map[string]any{"search": map[string]any{
+		"title": "Search",
+		"body":  strings.Repeat("a paragraph of ordinary prose. ", 80),
+	}}
+	if _, err := site.SaveDraft(s, pages, "first", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	// The query reaches the page through search.query, which is the flow
+	// CodeQL traces to the compressor's Write.
+	st := New(s, render.OneLayout(
+		`<!doctype html><html lang="en"><head><title>{{ page.title }}</title>`+
+			`</head><body><input name="q" value="{{ search.query }}">`+
+			`<p>{{ search.query }}</p><p>{{ page.body }}</p></body></html>`))
+	live, _, perr := st.pages()
+	if perr != nil {
+		t.Fatal(perr)
+	}
+	st.Search = search.Build(s.GetRef(site.RefLive), live)
+
+	payload := `<script>alert(1)</script>`
+	req := httptest.NewRequest("GET", "/search?q="+url.QueryEscape(payload), nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	rec := httptest.NewRecorder()
+	st.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("the page failed on a hostile query (%d): %s",
+			rec.Code, firstLinesOf(rec.Body.String(), 3))
+	}
+	if got := rec.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("this did not take the compressed path (%q), so it proved "+
+			"nothing", got)
+	}
+
+	zr, err := gzip.NewReader(bytes.NewReader(rec.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("the body was labelled gzip and is not: %v", err)
+	}
+	out, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("truncated gzip stream: %v", err)
+	}
+	body := string(out)
+
+	if strings.Contains(body, payload) {
+		t.Errorf("the payload reached the decompressed response verbatim:\n%s",
+			firstLinesOf(body, 8))
+	}
+	if !strings.Contains(body, "&lt;script&gt;") {
+		t.Errorf("the payload is not in the page escaped either, so this "+
+			"tested the wrong thing:\n%s", firstLinesOf(body, 8))
+	}
 }

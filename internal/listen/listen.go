@@ -191,17 +191,25 @@ func (l Limits) Serve(srv *http.Server) error {
 		// reaches the default handler and kills the process. An operator
 		// pressing Ctrl-C twice means it.
 		stop()
-		drainCtx, cancel := context.WithTimeout(context.Background(), l.Drain)
-		defer cancel()
-		if err := srv.Shutdown(drainCtx); err != nil {
-			// The drain ran out. Close what is left rather than returning
-			// with connections still open, because the caller is about to
-			// exit and a half-closed socket outlives it.
-			_ = srv.Close()
+		if err := drain(srv, l.Drain); err != nil {
 			return err
 		}
 		return <-errs
 	}
+}
+
+// drain lets what is in flight finish, and stops waiting if it will not.
+func drain(srv *http.Server, within time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), within)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		// The drain ran out. Close what is left rather than returning with
+		// connections still open: the caller is about to exit, and a
+		// half-closed socket outlives it and keeps the port.
+		_ = srv.Close()
+		return err
+	}
+	return nil
 }
 
 // Cap returns a listener that accepts at most n connections at once.
