@@ -544,6 +544,28 @@ func (s *Store) History(oid string, limit int) ([]struct {
 // The point of content addressing is that this check exists and is cheap. A
 // conventional CMS cannot answer "has anything in here been altered outside the
 // application" at all.
+//
+// # It did not work on an encrypted store
+//
+// This read each file, looked for the null byte separating the kind from the
+// payload, and hashed what followed. On an encrypted store the file holds the
+// sealed form — JSON, no null byte — so the first object it reached was
+// reported malformed and the walk stopped:
+//
+//	object 4da978b9d015… is malformed
+//
+// So the one check this system is built around answered "corrupt" for every
+// store that turned encryption on, which is the configuration where an
+// operator most wants to ask it. Found by running it.
+//
+// A sealed object is now unsealed before it is hashed, which checks strictly
+// more than the plaintext path does: that the object decrypts under a key the
+// keyring holds, that its additional authenticated data is still its own
+// object id — so a ciphertext moved to another object's filename is caught —
+// and then that the plaintext hashes to that id.
+//
+// Both forms are handled, because turning encryption on does not rewrite what
+// is already there and a half-converted directory is the ordinary state.
 func (s *Store) Verify() (int, error) {
 	checked := 0
 	shards, err := os.ReadDir(s.objects)
@@ -566,6 +588,24 @@ func (s *Store) Verify() (int, error) {
 			body, err := os.ReadFile(filepath.Join(s.objects, shard.Name(), n.Name()))
 			if err != nil {
 				return checked, err
+			}
+			if vault.IsSealed(body) {
+				if s.keys == nil {
+					return checked, fmt.Errorf(
+						"object %s is encrypted and no key is loaded, so it "+
+							"cannot be checked; supply the keys this store "+
+							"was sealed with", oid)
+				}
+				sealed, uerr := vault.Unmarshal(body)
+				if uerr != nil {
+					return checked, fmt.Errorf("object %s is malformed: %w", oid, uerr)
+				}
+				// The object id as additional authenticated data, which is
+				// what Seal used. A ciphertext moved to a different filename
+				// fails here rather than later.
+				if body, err = s.keys.Open(sealed, []byte(oid)); err != nil {
+					return checked, fmt.Errorf("object %s: %w", oid, err)
+				}
 			}
 			i := strings.IndexByte(string(body), 0)
 			if i < 0 {
