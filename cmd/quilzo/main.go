@@ -230,7 +230,8 @@ access
 encryption at rest
   quilzo vault status                      whether objects are sealed on disk
   quilzo vault enable                      seal new objects; prints the key once
-  quilzo vault rotate                      new key, rewraps without re-encrypting
+  quilzo vault rotate                      a new key, active from now on
+  quilzo vault rewrap                      move what is there onto it
       QUILZO_KEY / _KEY_FILE / _KEY_COMMAND  where the key comes from
 
 compliance evidence

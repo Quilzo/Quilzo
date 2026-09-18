@@ -195,8 +195,11 @@ func cmdVault(root string, args []string) error {
 		return vaultEnable(root, args[1:])
 	case "rotate":
 		return vaultRotate(root, args[1:])
+	case "rewrap":
+		return vaultRewrap(root, args[1:])
 	default:
-		return fmt.Errorf("unknown vault command %q; try status, enable or rotate",
+		return fmt.Errorf(
+			"unknown vault command %q; try status, enable, rotate or rewrap",
 			args[0])
 	}
 }
@@ -332,11 +335,86 @@ func vaultRotate(root string, args []string) error {
 	})
 
 	w.Human("%s%s%s\n", bold, secret, reset)
-	w.Human("\n  %snew objects are sealed with %s. %s is retained and still\n"+
-		"  needed to read everything written before now — supply both:%s\n",
+	w.Human("\n  %snew objects are sealed with %s. %s is still needed to read\n"+
+		"  everything written before now — supply both:%s\n",
 		yellow, *id, previous, reset)
 	w.Human("    export %s='%s=…,%s=…'\n", keyEnv, previous, *id)
-	w.Human("\n  %snothing was re-encrypted. Rotation rewraps data keys, which is\n"+
-		"  why it is cheap enough to actually do.%s\n", dim, reset)
+	w.Human("\n  %sthen move what is already there:%s\n", bold, reset)
+	w.Human("    quilzo vault rewrap\n")
+	w.Human("\n  %suntil that runs, %s is mandatory. This command used to say\n"+
+		"  rotation rewraps data keys — it does, and nothing was calling the\n"+
+		"  function that does it, so the old key stayed necessary forever.%s\n",
+		dim, previous, reset)
+	return nil
+}
+
+// vaultRewrap moves every object onto the active key.
+//
+// # Why this is its own command
+//
+// Because rotation is two steps and pretending otherwise loses keys. The new
+// key's material exists only in memory and in whatever the operator copied off
+// the terminal — the keyring on disk holds ids and metadata and never the
+// bytes. So a rotate that generated a key, saved it as active, and then failed
+// part-way through rewrapping would leave a store whose active key nobody has:
+// unreadable for writing, and unrecoverable. I did exactly that to a test
+// store while building this.
+//
+// Splitting it also makes each step safe on its own. After rotate, every
+// object is still readable with the keys the operator already had. During
+// rewrap, both keys are loaded by definition — the command cannot start
+// otherwise — so an object is readable whichever side of the move it is on. A
+// rewrap that stops half way is finished by running it again.
+func vaultRewrap(root string, args []string) error {
+	fs := flag.NewFlagSet("rewrap", flag.ContinueOnError)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	kr, err := loadKeyring(root)
+	if err != nil {
+		return err
+	}
+	if kr == nil {
+		return fmt.Errorf("this store is not encrypted; use vault enable")
+	}
+
+	base, err := store.Open(root)
+	if err != nil {
+		return err
+	}
+	done, err := base.WithKeys(kr).Rewrap()
+	if err != nil {
+		return fmt.Errorf("%w\n  nothing is lost: every object is readable "+
+			"with the keys you already have. Run this again to finish", err)
+	}
+
+	caller := resolveCaller(root, "")
+	record(root, audit.Record{
+		Action: "vault.rewrap", Resource: "/", Outcome: audit.Success,
+		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Detail: map[string]string{
+			"kek_id": kr.Active,
+			"moved":  fmt.Sprint(done.Moved),
+		},
+	})
+
+	w.Human("  %s%d object(s) moved to %s", green, done.Moved, kr.Active)
+	if done.Current > 0 {
+		w.Human(", %d already on it", done.Current)
+	}
+	w.Human("%s\n", reset)
+	if done.Plain > 0 {
+		w.Human("  %s%d object(s) predate encryption and are still in the "+
+			"clear. Enabling the vault did not rewrite them and neither does "+
+			"this.%s\n", dim, done.Plain, reset)
+	}
+	if done.Moved+done.Current > 0 {
+		w.Human("\n  %severy sealed object is now wrapped with %s. The other "+
+			"keys are needed only for backups taken before now.%s\n",
+			yellow, kr.Active, reset)
+	}
+	w.Human("\n  %sthe content was never decrypted: this unwraps and re-wraps\n"+
+		"  thirty-two bytes an object, which is why it is cheap enough to\n"+
+		"  actually do.%s\n", dim, reset)
 	return nil
 }
