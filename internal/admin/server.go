@@ -1459,7 +1459,38 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 		"Nav":   "security",
 		"Title": "Security posture", "Principal": p,
 		"Report": rep, "Controls": controls, "Band": band(rep.Score),
+		"Throttled": s.throttled(),
 	})
+}
+
+// throttled is who is currently being slowed down, or nothing.
+//
+// # Why this screen and not a command
+//
+// throttle.Snapshot and Limiter.State were written "for `quilzo auth
+// throttled`", which does not exist — and could not, as written. The limiter's
+// counters live in the memory of the process holding them, and the command
+// line is a different process: a CLI subcommand would report an empty limiter
+// it had just constructed, every time, and look like nothing was happening.
+//
+// This is the process that has one. So the state goes on the posture screen,
+// which is where somebody asking "is something happening" already looks.
+//
+// Without it, auth.lockout.hard could be switched on and its consequences were
+// unobservable on every surface: no way to see that an account or an address
+// was locked out, or that the alert threshold had been crossed, short of
+// reading the audit log for auth.failures and counting.
+//
+// The subjects are opaque by construction — the limiter holds HMACs — so this
+// reports counts and timings and cannot say who. That is the package's own
+// decision and the right one: the list of principals currently being attacked
+// is itself worth protecting, and the audit log has the pseudonymised
+// identifiers for the case where somebody does need them.
+func (s *Server) throttled() []throttle.Snapshot {
+	if s.Throttle == nil {
+		return nil
+	}
+	return s.Throttle.State()
 }
 
 // band turns the score into a class name, so the colour is decided once.
