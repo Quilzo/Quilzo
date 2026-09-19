@@ -57,8 +57,17 @@ func cmdStudio(root string, args []string) error {
 		Library: func() (*medialib.Library, error) {
 			return openMedia(root)
 		},
-		Options:  func() media.Options { return mediaOptionsAt(root) },
-		Throttle: throttle.New(throttle.Default()),
+		Options: func() media.Options { return mediaOptionsAt(root) },
+		// The configured policy, not the compiled-in default.
+		//
+		// throttlePolicy's own comment says it exists so "the CLI, the admin
+		// interface and the API cannot end up with three different ideas of
+		// how many attempts are free" — and this was the fourth surface,
+		// built after that sentence was written, holding throttle.Default().
+		// Every auth.throttle and auth.lockout setting was silently ignored
+		// on this port, and the studio does authenticate tokens, so the
+		// policy mattered here.
+		Throttle: throttle.New(throttlePolicy(mustConfig(root))),
 		Audit: func(action, resource string, detail map[string]string) {
 			record(root, resolveCaller(root, "").auditRecord(
 				action, resource, audit.Success, detail))
