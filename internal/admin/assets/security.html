@@ -14,6 +14,54 @@
   </p>
 </div>
 
+{{/*
+  Who is currently being slowed down.
+  
+  throttle.Snapshot and Limiter.State were written "for `quilzo auth
+  throttled`", a command that does not exist and could not work: the counters
+  live in the memory of the process holding the limiter, and the command line
+  is a different process. This is the process that has one, so the state goes
+  where somebody asking "is something happening" already looks.
+  
+  No names. The limiter holds HMACs of its subjects, deliberately — the list
+  of principals currently being attacked is itself worth protecting — so this
+  says how many, how hard and how long, and the audit log has the
+  pseudonymised identifiers for the case where somebody needs them.
+*/}}
+{{if .Throttled}}
+<div class="notice warn">
+  <h2>Being slowed down</h2>
+  <p>{{len .Throttled}} subject(s) have recent failures on record. These are
+     addresses or principals — the limiter keeps them hashed, so this can say
+     how many and how hard and not who.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr>
+      <th scope="col">Failures</th><th scope="col">Over</th>
+      <th scope="col">Next attempt in</th><th scope="col">State</th>
+    </tr></thead>
+    <tbody>
+    {{range .Throttled}}
+    <tr>
+      <td>{{.Failures}}</td>
+      <td>{{.Since}}</td>
+      <td>{{if .RetryIn}}{{.RetryIn}}{{else}}<span class="hint">now</span>{{end}}</td>
+      <td>
+        {{if .Locked}}<span class="tag tag-bad">locked out</span>
+        {{else if .Alerted}}<span class="tag tag-warn">past the alert threshold</span>
+        {{else}}<span class="tag">delayed</span>{{end}}
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  <p class="help">A soft lockout is the default: the delay doubles and decays.
+     A hard one holds until the window passes, and is only on if
+     <code>auth.lockout.hard</code> was set.</p>
+</div>
+{{end}}
+
 {{if .Report.NotChecked}}
 <div class="notice warn">
   <h2>Not checked</h2>
