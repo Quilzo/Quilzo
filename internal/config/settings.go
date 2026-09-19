@@ -184,9 +184,13 @@ var settings = []Setting{
 			"request can ask for repeatedly"),
 	},
 	{
-		Key: "api.body.max_bytes", Kind: Int, Default: "1048576",
+		Key: "api.body.max_bytes", Kind: Int, Default: "2097152",
 		Summary: "the largest request body a write will read",
-		Why:     "One megabyte. A page is text; anything larger is a mistake or a probe.",
+		Why: "Two megabytes. A page is text; anything larger is a mistake " +
+			"or a probe.\n\nThis said one megabyte and the code enforced " +
+			"two, because nothing read the setting — so the documentation " +
+			"promised a tighter limit than existed and an operator who set " +
+			"it tighter still got two.",
 		Weaker: atMost(16*1024*1024, "%s bytes of request body per call is "+
 			"memory an unauthenticated-until-parsed request can ask for"),
 	},

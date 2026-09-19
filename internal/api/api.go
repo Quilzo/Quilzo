@@ -225,18 +225,26 @@ func writeError(w http.ResponseWriter, status int, e Error) {
 //
 // Clamping quietly means a client asking for a thousand receives a hundred and
 // believes it has everything. Refusing means they find out now.
-func parsePaging(q map[string][]string) (offset, limit int, err error) {
+func parsePaging(q map[string][]string, max int) (offset, limit int, err error) {
+	if max <= 0 {
+		max = MaxPageSize
+	}
 	limit = DefaultPageSize
+	if limit > max {
+		// A configured maximum below the default is an operator asking for
+		// small pages, not a contradiction to refuse.
+		limit = max
+	}
 	if v := first(q, "limit"); v != "" {
 		n, e := strconv.Atoi(v)
 		if e != nil || n < 1 {
 			return 0, 0, fmt.Errorf("limit must be a positive number")
 		}
-		if n > MaxPageSize {
+		if n > max {
 			return 0, 0, fmt.Errorf(
 				"limit is %d and the maximum is %d. Returning fewer than asked "+
 					"for without saying so is how a client comes to believe it "+
-					"has everything", n, MaxPageSize)
+					"has everything", n, max)
 		}
 		limit = n
 	}

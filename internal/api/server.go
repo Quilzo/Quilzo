@@ -40,6 +40,12 @@ type Server struct {
 	// both means every deployment has the larger one.
 	Writable bool
 
+	// MaxPage and MaxBody are the configured limits. Zero means the
+	// compile-time default, which is what an embedded use and every test
+	// wants. See limits.go: both were settings nothing read.
+	MaxPage int
+	MaxBody int
+
 	Limits Limits
 	// Now is injectable for tests.
 	Now func() time.Time
@@ -438,7 +444,7 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	offset, limit, err := parsePaging(r.URL.Query())
+	offset, limit, err := parsePaging(r.URL.Query(), s.pageMax())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, Error{
 			Error: "bad paging", Detail: err.Error()})
@@ -641,12 +647,12 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 		return
 	}
 
-	body, err := io.ReadAll(io.LimitReader(r.Body, MaxBodyBytes+1))
+	body, err := io.ReadAll(io.LimitReader(r.Body, int64(s.bodyMax())+1))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, Error{Error: "cannot read the body"})
 		return
 	}
-	if len(body) > MaxBodyBytes {
+	if len(body) > s.bodyMax() {
 		writeError(w, http.StatusRequestEntityTooLarge, Error{
 			Error: "the body is too large"})
 		return

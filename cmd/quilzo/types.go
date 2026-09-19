@@ -388,6 +388,31 @@ func gateWrite(root string, pages map[string]any) (*schema.Store, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// publish.require_types was in the settings table with an SI-10 mapping,
+	// an OWASP mapping, a rationale — "the store is immutable, so an invalid
+	// page that lands in it is in the history for good" — and a Weaker rule
+	// demanding a written reason before it is turned off. Nothing read it, so
+	// `quilzo config set publish.require_types false --reason "…"` collected
+	// the reason, recorded the risk acceptance, reported success, and changed
+	// nothing at all.
+	//
+	// Honoured now, in the one direction that means anything: the default is
+	// on and the check is on, so only the off value does work. That is the
+	// same shape as publish.require_a11y, and it is what the table's Weaker
+	// ceremony exists for — an operator who has written down why gets the
+	// behaviour they asked for, and one who has not cannot reach it.
+	//
+	// Still recorded. A page stored without being validated is exactly what
+	// schema.Binding's absence is supposed to mean, so nothing is written
+	// down as checked; skipping RecordAll is the honest half of honouring
+	// this, and adminwiring.go already states the invariant: unrecorded reads
+	// as unvalidated, which is the safe way round.
+	if cfg, cerr := loadConfig(root); cerr == nil && cfg != nil &&
+		!cfg.Bool("publish.require_types") {
+		return st, nil
+	}
+
 	failures := st.Gate(pages)
 	if len(failures) == 0 {
 		st.RecordAll(pages, time.Now())

@@ -251,8 +251,8 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 			Detail: err.Error()})
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, MaxBodyBytes+1))
-	if err != nil || len(body) > MaxBodyBytes {
+	body, err := io.ReadAll(io.LimitReader(r.Body, int64(s.bodyMax())+1))
+	if err != nil || len(body) > s.bodyMax() {
 		writeError(w, http.StatusRequestEntityTooLarge, Error{
 			Error: "the body is too large"})
 		return

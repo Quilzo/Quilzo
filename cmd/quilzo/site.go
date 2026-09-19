@@ -240,6 +240,10 @@ func cmdSite(root string, args []string) error {
 				PerMinute: cfg.Int("api.rate.per_minute"),
 				Burst:     cfg.Int("api.rate.burst"),
 			},
+			// The two limits the settings table offered and nothing read.
+			// See internal/api/limits.go.
+			MaxPage:      cfg.Int("api.page.max"),
+			MaxBody:      cfg.Int("api.body.max_bytes"),
 			Throttle:     throttle.New(throttlePolicy(cfg)),
 			ReloadTokens: tokenReloader(root, toks),
 			Tokenise:     search.Tokenise,

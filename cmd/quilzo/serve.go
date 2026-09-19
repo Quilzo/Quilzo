@@ -557,7 +557,35 @@ func cmdServe(root string, args []string) error {
 			PerMinute: cfg.Int("api.rate.per_minute"),
 			Burst:     cfg.Int("api.rate.burst"),
 		},
-		Types: func() (*schema.Store, error) { return schema.Load(root) },
+		// The two limits the settings table offered and nothing read. See
+		// internal/api/limits.go.
+		MaxPage: cfg.Int("api.page.max"),
+		MaxBody: cfg.Int("api.body.max_bytes"),
+		Types:   func() (*schema.Store, error) { return schema.Load(root) },
+		// Every write recorded, which it was not.
+		//
+		// api.Server documents OnWrite as existing "so the audit trail does
+		// not have a hole shaped like the API", and it was set on exactly one
+		// of the two servers that has one. This server leaves Writable false
+		// deliberately — no page writes — but Records.Writable is true, so
+		// POST, PUT and DELETE on /api/v1/records/… succeeded here and wrote
+		// nothing to the audit log. The same call under `quilzo site --api`
+		// was recorded as api.write.
+		//
+		// internal/admin/auditcover_test.go asserts "the content API writes
+		// through OnWrite", which was true of the contract and false of this
+		// wiring: that test drives the admin's HTML handlers and never this
+		// server.
+		OnWrite: func(principal, page, commit string) {
+			record(root, audit.Record{
+				Action: "api.write", Resource: "/" + page,
+				Outcome: audit.Success, Principal: principal,
+				Kind: audit.KindService, Verified: true,
+				Detail: map[string]string{
+					"commit": commit, "surface": "admin-api",
+				},
+			})
+		},
 		Records: &api.Records{
 			// Writable from the admin, because the admin is where somebody
 			// edits things and a console that can only read is a console
