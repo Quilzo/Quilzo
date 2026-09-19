@@ -53,6 +53,7 @@ package replica
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -202,7 +203,62 @@ func Pull(ctx context.Context, s *store.Store, src Source, peer, ref string,
 	if head == was {
 		return res, nil
 	}
-	return res, s.SetRef(local, head)
+
+	// Moved from what was read, not merely set.
+	//
+	// This read the ref, decided the fast-forward from what it read, and then
+	// wrote without holding anything in between — which is the arrangement
+	// internal/site's own comment describes as making a base check into
+	// advice: "sixteen concurrent writes against one base all passed the
+	// check and all committed, and fifteen edits vanished."
+	//
+	// Here the check is the ancestry test. Two pulls from the same peer, or a
+	// pull racing anything else that moves this ref, could both read the same
+	// `was`, both conclude they fast-forward, and both write — so the second
+	// overwrote a head the first had just established, and the descent that
+	// had been verified was verified against a value that no longer held.
+	//
+	// store.CompareAndSwapRef exists for exactly this and had no caller
+	// anywhere in the program. It takes the lock, compares, and writes under
+	// it, so there is no window at all.
+	if err := s.CompareAndSwapRef(local, was, head); err != nil {
+		var moved *store.RefMoved
+		if errors.As(err, &moved) {
+			// Not a transfer failure. Somebody else moved this peer's
+			// quarantine ref while the objects were being fetched, and the
+			// fetch itself is fine — every object is here, verified and
+			// immutable. Said as its own thing so a caller can retry rather
+			// than treat it as a broken peer.
+			return res, &Raced{
+				Peer: peer, Ref: local, Read: was, Found: moved.Found,
+				Head: head,
+			}
+		}
+		return res, err
+	}
+	return res, nil
+}
+
+// Raced reports a quarantine ref that moved while a pull was in flight.
+//
+// Its own type for the reason Divergence has one: it is not a failure of the
+// transfer. Every object fetched is present, verified and immutable, so the
+// work is not lost and the answer is to run the pull again — which will now
+// find almost everything already here.
+type Raced struct {
+	Peer, Ref string
+	// Read is what the ref held when the fast-forward was decided, Found is
+	// what it held when the write was attempted, and Head is what this pull
+	// would have set.
+	Read, Found, Head string
+}
+
+func (e *Raced) Error() string {
+	return fmt.Sprintf(
+		"%s moved while this pull was fetching: it held %s when the ancestry "+
+			"was checked and %s when the head was about to move, so nothing "+
+			"was written. The objects are here and verified; run the pull "+
+			"again", e.Ref, shortID(e.Read), shortID(e.Found))
 }
 
 // Divergence is a peer's head that does not descend from what this store had.
