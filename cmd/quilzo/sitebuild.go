@@ -157,15 +157,33 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	// happened the first time, and is invisible because an absent section
 	// looks exactly like an empty one.
 	if set, lerr := loadListings(root); lerr == nil {
-		commit := s.GetRef(site.RefLive)
-		tree := ""
-		if commit != "" {
-			if c, cerr := s.GetCommit(commit); cerr == nil {
-				tree = c.Tree
-			}
-		}
+		// Resolved per request, not captured at start-up.
+		//
+		// This read the live commit's tree once, here, and nothing ever
+		// refreshed it. So every listing-backed route — the catalogue, the
+		// feeds, the detail routes, a listing section on a page — served
+		// whatever the records were when the server booted, while the pages
+		// around them updated on every publish. A record added and published
+		// was in the page and not in the catalogue until somebody restarted
+		// the process.
+		//
+		// Found by giving the catalogue an ETag: the tag was keyed on the
+		// live commit and the body came from the frozen tree, and a test that
+		// added a record and expected the tag to move showed the two had
+		// nothing to do with each other.
 		st.Listings = &listing.Resolver{
-			Store: s, Index: collection.NewCache(), Tree: tree, Set: set,
+			Store: s, Index: collection.NewCache(), Set: set,
+			Live: func() string {
+				commit := s.GetRef(site.RefLive)
+				if commit == "" {
+					return ""
+				}
+				c, cerr := s.GetCommit(commit)
+				if cerr != nil {
+					return ""
+				}
+				return c.Tree
+			},
 		}
 	}
 	// The asset library. Opened once and looked up per request: the files are

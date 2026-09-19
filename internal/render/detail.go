@@ -163,7 +163,7 @@ func DetailRows(src Sources, name string, body any, d Detail) (
 			"%s reads records through the listing %q, which is not declared",
 			name, d.Listing)
 	}
-	idx, err := src.Listings.Index.For(src.Listings.Store, src.Listings.Tree,
+	idx, err := src.Listings.Index.For(src.Listings.Store, src.Listings.At(),
 		l.Collection)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s: %w", name, err)

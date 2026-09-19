@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/quilzo/quilzo/internal/etag"
 	"github.com/quilzo/quilzo/internal/listing"
 )
 
@@ -61,7 +62,7 @@ func (st *Site) catalogue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idx, err := st.Listings.Index.For(st.Listings.Store, st.Listings.Tree,
+	idx, err := st.Listings.Index.For(st.Listings.Store, st.Listings.At(),
 		l.Collection)
 	if err != nil {
 		http.Error(w, "the catalogue could not be read",
@@ -77,6 +78,32 @@ func (st *Site) catalogue(w http.ResponseWriter, r *http.Request) {
 		if len(v) > 0 {
 			args[k] = v[0]
 		}
+	}
+
+	// A validator, which this route had none of.
+	//
+	// This was the largest response the site serves — larger than the home
+	// page — with no ETag and no Cache-Control at all, on the one route whose
+	// entire purpose is being polled by a machine. A shopping agent asking
+	// every few minutes transferred all of it every time, and the answer is
+	// almost always that nothing changed. Found by listing the validators
+	// across every route rather than by reading this file.
+	//
+	// The same tag the listing pages use, built by the same function, because
+	// it is the same question: this listing, over this data, with these
+	// arguments. Mixing in only the arguments the listing declares is what
+	// stops a tracking parameter giving every request its own cache entry.
+	tag := `"` + renderTag(st.Catalogue, st.dataTree(),
+		[]string{l.Collection}, args) + `"`
+	h := w.Header()
+	h.Set("ETag", tag)
+	// Revalidated rather than held, like a page. The catalogue changes when a
+	// record does, and a product that is out of stock for ten minutes because
+	// somebody cached it is worse than a conditional request.
+	h.Set("Cache-Control", "public, max-age=0, must-revalidate")
+	if etag.Matches(r.Header.Get("If-None-Match"), tag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
 	}
 
 	res, err := listing.Resolve(l, idx, args)
@@ -120,8 +147,8 @@ func (st *Site) catalogue(w http.ResponseWriter, r *http.Request) {
 		out["terms"] = terms
 	}
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Type", "application/json; charset=utf-8")
+	h.Set("X-Content-Type-Options", "nosniff")
 	// The mining reservation applies here too. A catalogue is content, and an
 	// agent taking it for training is the case the reservation is about.
 	st.tdmHeaders(w)

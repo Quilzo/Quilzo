@@ -28,11 +28,44 @@ const Data = "listings"
 type Resolver struct {
 	Store *store.Store
 	Index *collection.Cache
-	// Tree is the content the listings read. The published tree when rendering
-	// the public site, the draft when previewing — a preview that showed live
-	// data would be a preview of a different page.
+	// Tree is the content the listings read, as a fixed snapshot. The draft
+	// when previewing, one commit's tree when exporting — a preview that
+	// showed live data would be a preview of a different page.
 	Tree string
+	// Live resolves the tree per call, for a server whose content changes
+	// under it. When set it wins over Tree.
+	//
+	// # Why both
+	//
+	// Because the two callers want opposite things and one field could only
+	// serve one of them. A preview and a static export are asking about one
+	// version and must not move; a running site is asking about now.
+	//
+	// The site had the snapshot. cmd/quilzo/sitebuild.go read the live
+	// commit's tree once, at start-up, and nothing ever refreshed it — so
+	// every listing-backed route served whatever the records were when the
+	// server booted, while the pages around them updated on every publish.
+	// A record added and published was in the page and not in the catalogue,
+	// the feeds, the detail routes or any listing section, until somebody
+	// restarted the process.
+	Live func() string
 	Set  *Set
+}
+
+// At is the tree to read, now.
+//
+// Live wins when it is set, because a caller that supplied it is saying the
+// content moves. Nil on the receiver answers empty rather than panicking:
+// every caller here already treats an absent resolver as "no listings", and a
+// nil check at four call sites is four places to forget it.
+func (r *Resolver) At() string {
+	if r == nil {
+		return ""
+	}
+	if r.Live != nil {
+		return r.Live()
+	}
+	return r.Tree
 }
 
 // For resolves every listing one page embeds.
@@ -64,7 +97,7 @@ func (r *Resolver) For(body any, args map[string]string) (map[string]any, error)
 		if !ok {
 			return nil, fmt.Errorf("%q is not a listing", name)
 		}
-		idx, err := r.Index.For(r.Store, r.Tree, l.Collection)
+		idx, err := r.Index.For(r.Store, r.At(), l.Collection)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
