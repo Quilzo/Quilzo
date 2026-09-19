@@ -752,6 +752,33 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 					}
 					return nil
 				}
+				// And the binding is recorded, which it was not.
+				//
+				// This gate refused invalid content and then wrote nothing
+				// down, while every other write path — the CLI, the admin,
+				// MCP, the importer, sections, Telegram — goes through
+				// gateWrite, which records. So a page written here was
+				// permanently indistinguishable from one nobody ever checked.
+				//
+				// internal/admin's wiring states the invariant this breaks:
+				// unrecorded reads as unvalidated, which is the safe way
+				// round. Safe, and wrong — schema.Validated exists to answer
+				// "did this exact content pass this exact type", and for
+				// anything written through the API the honest answer was no
+				// when the truth was yes.
+				types.RecordAll(pages, time.Now())
+				if serr := types.Save(); serr != nil {
+					// Refused rather than stored with the record missing. A
+					// write that cannot be attested is the case this whole
+					// gate exists for, and storing it anyway would recreate
+					// exactly the hole being closed.
+					status, conflict = http.StatusInternalServerError, &Error{
+						Error: "the content is valid and the validation " +
+							"could not be recorded, so it has not been stored",
+						Detail: serr.Error(),
+					}
+					return nil
+				}
 			}
 		}
 
