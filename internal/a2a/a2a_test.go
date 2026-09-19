@@ -17,6 +17,7 @@ func known() map[string]bool {
 		"read_page": true, "list_pages": true, "write_page": true,
 		"write_record": true, "publish": true, "diff": true,
 		"run_listing": true, "list_terms": true,
+		"search_pages": true, "similar_pages": true,
 	}
 }
 
