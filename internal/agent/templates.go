@@ -100,8 +100,12 @@ var templates = map[Kind]Template{
 			},
 			Autonomy:  AutonomyDraft,
 			Retrieval: Retrieval{Ref: "draft"},
-			Memory:    Memory{Episodic: true, Retain: hours(24 * 7)},
-			Budget:    Budget{Steps: 25, Tools: 15, Duration: mins(10)},
+			// No memory. Every tier is declarable, validated and published
+			// on the agent card, and nothing in this build stores one — so
+			// declaring it would advertise a retention policy for storage
+			// that does not exist. See Manifest.Validate.
+			Memory: Memory{},
+			Budget: Budget{Steps: 25, Tools: 15, Duration: mins(10)},
 		},
 	},
 
@@ -132,7 +136,11 @@ var templates = map[Kind]Template{
 			// Semantic only, and briefly: a copilot that remembers how you
 			// like things is useful; one that remembers what you wrote is a
 			// profile of an employee.
-			Memory: Memory{Semantic: true, Retain: hours(24 * 30)},
+			// No memory. Every tier is declarable, validated and published
+			// on the agent card, and nothing in this build stores one — so
+			// declaring it would advertise a retention policy for storage
+			// that does not exist. See Manifest.Validate.
+			Memory: Memory{},
 			Budget: Budget{Steps: 12, Tools: 6, Duration: mins(3)},
 		},
 	},
@@ -163,9 +171,13 @@ var templates = map[Kind]Template{
 				"read_page", "list_pages", "search_pages", "similar_pages",
 				"write_page",
 			},
-			Autonomy:      AutonomyDraft,
-			Retrieval:     Retrieval{Ref: "draft"},
-			Memory:        Memory{Episodic: true, Semantic: true, Retain: hours(24 * 14)},
+			Autonomy:  AutonomyDraft,
+			Retrieval: Retrieval{Ref: "draft"},
+			// No memory. Every tier is declarable, validated and published
+			// on the agent card, and nothing in this build stores one — so
+			// declaring it would advertise a retention policy for storage
+			// that does not exist. See Manifest.Validate.
+			Memory:        Memory{},
 			Budget:        Budget{Steps: 60, Tools: 40, Duration: mins(30)},
 			HumanApproval: true,
 		},
@@ -194,9 +206,13 @@ var templates = map[Kind]Template{
 				// holds one.
 				"read_page", "list_pages", "search_pages",
 			},
-			Autonomy:      AutonomyDraft,
-			Retrieval:     Retrieval{Ref: "draft"},
-			Memory:        Memory{Episodic: true, Retain: hours(24 * 7)},
+			Autonomy:  AutonomyDraft,
+			Retrieval: Retrieval{Ref: "draft"},
+			// No memory. Every tier is declarable, validated and published
+			// on the agent card, and nothing in this build stores one — so
+			// declaring it would advertise a retention policy for storage
+			// that does not exist. See Manifest.Validate.
+			Memory:        Memory{},
 			Budget:        Budget{Steps: 40, Tools: 20, Duration: mins(20)},
 			HumanApproval: true,
 		},
@@ -227,10 +243,11 @@ var templates = map[Kind]Template{
 			},
 			Autonomy:  AutonomyPropose,
 			Retrieval: Retrieval{Ref: "live"},
-			Memory: Memory{
-				Episodic: true, Semantic: true, Procedural: true,
-				Retain: MaxRetain,
-			},
+			// No memory. Every tier is declarable, validated and published
+			// on the agent card, and nothing in this build stores one — so
+			// declaring it would advertise a retention policy for storage
+			// that does not exist. See Manifest.Validate.
+			Memory: Memory{},
 			Budget: Budget{Steps: 15, Tools: 8, Duration: mins(5)},
 		},
 	},
@@ -265,7 +282,11 @@ var templates = map[Kind]Template{
 			Retrieval: Retrieval{Ref: "draft"},
 			// Procedural and episodic; deliberately not semantic. A skill is
 			// about the work. A conclusion about a person is not a skill.
-			Memory:        Memory{Episodic: true, Procedural: true, Retain: MaxRetain},
+			// No memory. Every tier is declarable, validated and published
+			// on the agent card, and nothing in this build stores one — so
+			// declaring it would advertise a retention policy for storage
+			// that does not exist. See Manifest.Validate.
+			Memory:        Memory{},
 			Budget:        Budget{Steps: 40, Tools: 25, Duration: mins(15)},
 			HumanApproval: true,
 		},
@@ -293,7 +314,11 @@ var templates = map[Kind]Template{
 			},
 			Autonomy:  AutonomyPropose,
 			Retrieval: Retrieval{Ref: "live"},
-			Memory:    Memory{Episodic: true, Retain: hours(24 * 7)},
+			// No memory. Every tier is declarable, validated and published
+			// on the agent card, and nothing in this build stores one — so
+			// declaring it would advertise a retention policy for storage
+			// that does not exist. See Manifest.Validate.
+			Memory: Memory{},
 			// No tools. Adding one is the decision, and it is made per host.
 			Tools:  nil,
 			Budget: Budget{Steps: 20, Tools: 10, Duration: mins(5)},

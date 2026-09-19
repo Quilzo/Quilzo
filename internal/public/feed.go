@@ -79,7 +79,7 @@ func (st *Site) feed(w http.ResponseWriter, r *http.Request) {
 			http.StatusInternalServerError)
 		return
 	}
-	idx, err := st.Listings.Index.For(st.Listings.Store, st.Listings.Tree,
+	idx, err := st.Listings.Index.For(st.Listings.Store, st.Listings.At(),
 		l.Collection)
 	if err != nil {
 		http.Error(w, "the feed could not be read", http.StatusInternalServerError)

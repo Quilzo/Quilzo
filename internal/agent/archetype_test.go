@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/agentexec"
@@ -116,4 +117,53 @@ func everyRegisteredOp() map[string]bool {
 		}
 	}
 	return out
+}
+
+// No archetype may declare memory, because nothing stores one.
+//
+// Six of the eight shipped with a tier on by default, and the archivist's
+// whole stated purpose is "Remember what happened and what was concluded, and
+// recall it on request". All three tiers were declarable, validated for
+// retention, rendered in two interfaces and published on the A2A agent card —
+// and no code anywhere writes or reads a memory.
+//
+// The published half is what made this worth refusing rather than leaving:
+// with site.agent_card on, the card told a remote delegating caller that the
+// agent retained conversational content for up to ninety days. That is a
+// data-retention disclosure about storage that does not exist.
+func TestNoArchetypeDeclaresMemory(t *testing.T) {
+	checked := 0
+	for _, kind := range agent.Kinds {
+		tpl, ok := agent.For(kind)
+		if !ok {
+			continue
+		}
+		checked++
+		if tpl.Manifest.Memory.Any() {
+			t.Errorf("the %s archetype declares memory and nothing stores "+
+				"one, so an agent made from it advertises a retention "+
+				"policy for storage that does not exist", kind)
+		}
+	}
+	if checked < 5 {
+		t.Fatalf("checked %d archetypes; the list is wrong", checked)
+	}
+}
+
+// And the refusal is in Validate, so a manifest somebody wrote by hand cannot
+// reach it either.
+func TestAManifestDeclaringMemoryIsRefused(t *testing.T) {
+	m, err := agent.New(agent.KindRetrieval, "remembers", everyRegisteredOp())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Memory = agent.Memory{Episodic: true, Retain: agent.Duration(time.Hour)}
+
+	err = m.Validate(everyRegisteredOp())
+	if err == nil {
+		t.Fatal("a manifest declaring memory validated")
+	}
+	if !strings.Contains(err.Error(), "nothing in this build stores one") {
+		t.Errorf("the refusal does not say why: %v", err)
+	}
 }

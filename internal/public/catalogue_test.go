@@ -14,6 +14,7 @@ import (
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/menu"
+	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
 
@@ -53,7 +54,24 @@ func catalogueSite(t *testing.T, catalogue string) *Site {
 		Store:     s,
 		Catalogue: catalogue,
 		Listings: &listing.Resolver{
-			Store: s, Index: nil, Tree: tree, Set: set,
+			Store: s, Index: nil, Set: set,
+			// Live, the way the site wires it: the tree comes from whatever
+			// is published now. A fixture holding a snapshot would test a
+			// configuration the site does not use, which is how the staleness
+			// this models went unnoticed.
+			Live: func() string {
+				commit := s.GetRef(site.RefLive)
+				if commit == "" {
+					// Nothing published yet, so the records written directly
+					// above are what there is.
+					return tree
+				}
+				c, err := s.GetCommit(commit)
+				if err != nil {
+					return tree
+				}
+				return c.Tree
+			},
 		},
 	}
 }

@@ -80,7 +80,7 @@ func (st *Site) findRecord(d Detail, key string, args map[string]string) (
 			"this page reads records through the listing %q, which is not "+
 				"declared", d.Listing)
 	}
-	idx, err := st.Listings.Index.For(st.Listings.Store, st.Listings.Tree,
+	idx, err := st.Listings.Index.For(st.Listings.Store, st.Listings.At(),
 		l.Collection)
 	if err != nil {
 		return nil, err
