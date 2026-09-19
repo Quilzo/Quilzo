@@ -72,9 +72,19 @@ func TestAProcessIntegrationMustBePinnedAndAbsolute(t *testing.T) {
 			Uses:   []string{"lookup"},
 		}
 	}
+	// A well-formed one is refused too, and for the other reason: nothing in
+	// this build calls a process integration. The rules below still fire
+	// first, so a malformed declaration gets its own specific error rather
+	// than the generic one — which is why the kind check is last in Validate
+	// and not first.
 	b := base()
-	if err := b.Validate(); err != nil {
-		t.Fatalf("a well-formed process integration was refused: %v", err)
+	err := b.Validate()
+	if err == nil {
+		t.Fatal("a process integration validated, and nothing executes one")
+	}
+	if !strings.Contains(err.Error(), "nothing in this build calls one") {
+		t.Errorf("a well-formed process integration was refused for the "+
+			"wrong reason: %v", err)
 	}
 
 	unpinned := base()

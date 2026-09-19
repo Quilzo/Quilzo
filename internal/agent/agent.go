@@ -343,17 +343,33 @@ func (m *Manifest) Validate(known map[string]bool) error {
 	}
 
 	if m.Memory.Any() {
-		if m.Memory.Retain <= 0 {
-			return fmt.Errorf(
-				"%s remembers and states no retention period. Memory with no "+
-					"expiry is a personal-data store nobody wrote a policy for",
-				m.Name)
-		}
-		if m.Memory.Retain > MaxRetain {
-			return fmt.Errorf(
-				"%s would remember for %s and the ceiling is %s",
-				m.Name, m.Memory.Retain, MaxRetain)
-		}
+		// Nothing stores it, so nothing may declare it.
+		//
+		// All three tiers were declarable, validated for retention, rendered
+		// in two interfaces, and published on the A2A agent card — and no
+		// code anywhere writes or reads a memory. Six of the eight archetypes
+		// shipped with a tier on by default, and the archivist's whole stated
+		// purpose is "Remember what happened and what was concluded, and
+		// recall it on request".
+		//
+		// The published half is the part that made this worth refusing rather
+		// than leaving. When site.agent_card is on, the card told a remote
+		// delegating caller that this agent retains conversational content
+		// for up to ninety days. That is a data-retention disclosure about
+		// storage that does not exist: wrong in the safe direction, and still
+		// a statement made to somebody else about what happens to their data.
+		//
+		// Refused rather than silently ignored, for the reason every other
+		// refusal in this file gives: a manifest that is quietly corrected is
+		// one whose author believes something false about what they deployed.
+		// The fields stay, so the shape is ready when there is something
+		// behind it, and this message is the one line to delete then.
+		return fmt.Errorf(
+			"%s declares memory and nothing in this build stores one. The "+
+				"tiers, the retention ceiling and the agent card entry are "+
+				"all here and no code writes or reads a memory, so an agent "+
+				"declaring it would advertise a retention policy for storage "+
+				"that does not exist. Remove the memory block", m.Name)
 	}
 
 	for _, t := range m.Tools {
