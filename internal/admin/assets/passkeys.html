@@ -21,14 +21,39 @@
   <p class="notice bad" role="alert">{{.Unavailable}}</p>
 {{end}}
 
+{{/*
+  The moment this matters is when somebody turns passkey.require_hardware on.
+  From then a new synced passkey is refused — and the ones already enrolled
+  keep working, invisibly, with nothing to say which they are.
+*/}}
+{{if and .RequiresHardware .Unidentified}}
+<div class="notice warn">
+  <p><strong>{{.Unidentified}} of your passkeys would not enrol now.</strong>
+     This deployment requires an authenticator that says what it is, and these
+     were added before that was set. They still work. Remove and re-add them
+     with a hardware key if that is what the policy is for.</p>
+</div>
+{{end}}
+
 <h2>Yours</h2>
 {{if .Keys}}
 <table>
-  <thead><tr><th scope="col">Name</th><th scope="col">Added</th><th scope="col">Last used</th><th scope="col"></th></tr></thead>
+  <thead><tr><th scope="col">Name</th><th scope="col">Kind</th><th scope="col">Added</th><th scope="col">Last used</th><th scope="col"></th></tr></thead>
   <tbody>
   {{range .Keys}}
     <tr>
       <td>{{.Label}}</td>
+      {{/*
+        What the authenticator said it was, at enrolment.
+
+        Recorded on every credential since this existed and read by nothing,
+        so "which of these are hardware keys" — the question the field's own
+        comment says it exists for — could not be asked anywhere. An
+        authenticator only says at registration, so it cannot be asked
+        retrospectively either.
+      */}}
+      <td>{{if .Identified}}<span class="tag tag-ok">hardware</span>
+          {{else}}<span class="tag">synced or unnamed</span>{{end}}</td>
       <td>{{when .CreatedAt}}</td>
       <td>{{ago .LastUsed}}</td>
       <td>
