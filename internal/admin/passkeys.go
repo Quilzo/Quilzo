@@ -253,10 +253,32 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 	// It presented as "the highlight does not work on Passkeys like it does
 	// everywhere else", which is how somebody notices a missing menu on a
 	// screen they reached from the menu.
+	// How many of these would not enrol under the policy in force now.
+	//
+	// webauthn.Credential.Identified is written at enrolment, with the
+	// comment that "the useful question later is 'which of these are hardware
+	// keys' and it cannot be answered retrospectively: the authenticator only
+	// says at registration". It was written and never read, so the question
+	// it exists to answer could not be asked on any surface.
+	//
+	// Which matters most at exactly the moment somebody turns
+	// passkey.require_hardware on. From then, a new synced passkey is
+	// refused — and the ones already enrolled keep working, invisibly, with
+	// nothing to say which they are. The field that answers it is right
+	// there on every record.
+	requires := s.Passkeys != nil && s.Passkeys.Enrol.RequireIdentified
+	unidentified := 0
+	for _, c := range mine {
+		if !c.Identified {
+			unidentified++
+		}
+	}
+
 	s.render(w, r, "passkeys.html", map[string]any{
 		"Nav": "passkeys", "Principal": who,
 		"Title": "Passkeys", "Nonce": n, "Keys": mine,
 		"Unavailable": unavailable, "Who": who.Name,
+		"RequiresHardware": requires, "Unidentified": unidentified,
 	})
 }
 
