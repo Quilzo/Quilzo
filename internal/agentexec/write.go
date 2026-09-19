@@ -315,10 +315,22 @@ func (wr Writer) localeOf(page string) string {
 // Routing is by agent.IsWrite, the same classification the session gate uses.
 // Two ideas of what counts as a write is how an operation ends up dispatched to
 // the writer and checked as a read.
-func Dispatch(read Reader, write Writer, s *agent.Session) func(context.Context, agent.Action) (string, error) {
+func Dispatch(read Reader, write Writer, tools Tools, s *agent.Session) func(context.Context, agent.Action) (string, error) {
 	r := read.Perform(s)
 	w := write.Perform(s)
+	t := tools.Perform(s)
 	return func(ctx context.Context, a agent.Action) (string, error) {
+		// A tool call first, because it is decided by a different question.
+		//
+		// An action with Tool set has no Op, so agent.IsWrite would say false
+		// and the reader would answer "is permitted for this agent and not
+		// implemented here" — which is what it did, for every tool call this
+		// program was capable of authorising. The run loop already routes the
+		// authorisation separately, through Session.MayCallTool rather than
+		// Session.Authorize; this is the matching half.
+		if strings.TrimSpace(a.Tool) != "" {
+			return t(ctx, a)
+		}
 		if agent.IsWrite(a.Op) {
 			return w(ctx, a)
 		}

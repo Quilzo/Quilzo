@@ -49,6 +49,20 @@ func Performs() []string {
 	}
 }
 
+// PerformsTools reports whether a tool call can be carried out.
+//
+// Separate from Performs because a tool is not an operation name: the
+// manifest declares tools by their own names, per agent, and this executor
+// performs whichever of them the install has an integration for. There is no
+// fixed list to compare a manifest against — Integrations.Resolve answers that
+// per call — so what can be said here is only whether the surface exists at
+// all.
+//
+// It did not. Dispatch had no branch for Action.Tool, so every tool call this
+// program was capable of authorising came back "is permitted for this agent
+// and not implemented here".
+func PerformsTools() bool { return true }
+
 // Refuses lists the operations this executor deliberately will not perform.
 //
 // Separate from "not implemented" because the two mean different things to

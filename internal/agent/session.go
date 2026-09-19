@@ -401,6 +401,23 @@ func (s *Session) MayReach(host string) error {
 			"the tool budget of %d calls is spent", s.manifest.Budget.Tools))
 	}
 	s.toolUses++
+
+	// A tool call taints the run, for the reason a store read does and more
+	// so.
+	//
+	// Retrieve's comment says everything out of the store is untrusted from
+	// there on, because it may have been written by a form submission, an
+	// importer, or a previous agent. A tool result is worse: it is whatever a
+	// third-party host chose to return, on this request, with no review by
+	// anybody here at all.
+	//
+	// So an agent that called out and then published without a person would
+	// be publishing content somebody else wrote, through a deputy holding
+	// this store's credentials. That is the confused-deputy shape the taint
+	// exists to stop, and nothing was stopping it: MayReach never set this,
+	// and it did not matter only because no executor performed a tool call.
+	// Wiring one makes it matter, so it is set here first.
+	s.tainted = true
 	return s.spend("fetch")
 }
 

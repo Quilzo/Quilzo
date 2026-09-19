@@ -89,6 +89,20 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 			Steps: maxBudget, Tools: maxBudget,
 			Duration: agent.Duration(1 << 62),
 		},
+		// The agent's own tools, unchanged.
+		//
+		// Narrow intersects tool hosts, so a bound declaring none removes
+		// every tool from every agent — which is exactly what happened, and
+		// is the same mistake the capability list made in this function
+		// before it was corrected: a caller's silence about something is not
+		// a caller forbidding it.
+		//
+		// A token says nothing about which third-party hosts an agent may
+		// reach; that is declared in the manifest, which needed `grant` to
+		// write, and bounded by autonomy below. Found by declaring a tool and
+		// watching the probe never try it.
+		Tools: m.Tools,
+
 		// Memory is the agent's, and a token says nothing about it.
 		Memory: agent.Memory{
 			Episodic: true, Semantic: true, Procedural: true,

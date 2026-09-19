@@ -222,3 +222,53 @@ func TestNarrowingToLiveMeansTheRealLiveRef(t *testing.T) {
 			got, site.RefLive)
 	}
 }
+
+// A caller's silence about tools is not a caller forbidding them.
+//
+// Narrow intersects tool hosts, so a bound declaring none removed every tool
+// from every agent — the same mistake the capability list made in boundOf
+// before it was corrected, in the same function, one field along.
+//
+// Found by declaring a tool and watching `quilzo agent run` never try it: the
+// probe walked the manifest, the manifest had a tool, and the session had
+// none.
+func TestACallerDoesNotStripAnAgentsTools(t *testing.T) {
+	m := wideAgent()
+	m.Tools = []agent.Tool{
+		{Name: "lookup", Host: "api.example.com", Purpose: "customers"},
+		{Name: "notify", Host: "hooks.example.org", Purpose: "alerts"},
+	}
+
+	for _, role := range []auth.Role{
+		auth.RoleReader, auth.RoleAuthor, auth.RolePublisher, auth.RoleAdmin} {
+		got := narrowedBy(m, asToken(role, auth.Scope{}))
+		if len(got.Tools) != len(m.Tools) {
+			t.Errorf("%s: the agent declared %d tool(s) and kept %d",
+				role, len(m.Tools), len(got.Tools))
+		}
+	}
+	// And a read-only token still keeps them: a tool call is not a write to
+	// this store, and whether it may happen is autonomy's question.
+	got := narrowedBy(m, asToken(auth.RolePublisher, auth.Scope{ReadOnly: true}))
+	if len(got.Tools) != len(m.Tools) {
+		t.Errorf("a read-only token stripped %d of %d tool(s)",
+			len(m.Tools)-len(got.Tools), len(m.Tools))
+	}
+}
+
+// And the session built from a narrowed manifest can still resolve them,
+// which is the half that actually failed.
+func TestANarrowedAgentCanStillReachItsHosts(t *testing.T) {
+	m := wideAgent()
+	m.Tools = []agent.Tool{
+		{Name: "lookup", Host: "api.example.com", Purpose: "customers"}}
+
+	got := narrowedBy(m, asToken(auth.RoleAuthor, auth.Scope{}))
+	s := agent.NewSession(got, nil)
+	if host := s.HostFor("lookup"); host != "api.example.com" {
+		t.Errorf("the narrowed session resolves lookup to %q", host)
+	}
+	if err := s.MayCallTool("lookup", ""); err != nil {
+		t.Errorf("a declared tool was refused after narrowing: %v", err)
+	}
+}
