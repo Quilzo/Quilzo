@@ -214,6 +214,46 @@ quilzo theme check                     # every pair, both schemes
 quilzo theme apply article             # take a starter's palette, keep your layout
 ```
 
+### The design system you already use
+
+The usual request is a theme named after the design system a company runs on,
+and that is the one thing this cannot be. A design system has two licences and
+people read the first one: the code licence — MIT for GitHub's Primer,
+Apache-2.0 for IBM's Carbon and Adobe's Spectrum — which usually does permit a
+derived palette, and the trademark policy, which separately does not permit the
+name. Apache-2.0 reserves marks explicitly in section 6; MIT simply never
+grants them. Two go further: Adobe's trademark guidelines bar copying "trade
+dress… the look and feel… distinctive colour combinations", and Shopify's main
+Polaris licence is a modified MIT whose rights apply only to apps that
+integrate with Shopify, requiring anything else to be "dissimilar and visually
+distinct". Apple's design resources may not be embedded in software at all.
+
+So this ships nobody's palette and nobody's name. It reads the token file the
+design system publishes, on the machine of somebody entitled to use it, in the
+W3C Design Tokens Format Module — version 2025.10, the first stable one,
+published in October 2025 with around forty backing organisations including
+Adobe, Figma, Google, Microsoft, Shopify and Salesforce. What a customer gets
+is their own design system rather than an imitation of it.
+
+```bash
+quilzo theme import tokens.json --list            # every path in the file, and its value
+quilzo theme import tokens.json --map pairs.json  # fill this site's tokens from it
+quilzo theme export --out tokens.json             # and the same thing going out
+```
+
+The pairing is written down rather than guessed. Naming is where design systems
+differ most — one calls the page background `background`, another `layer-01`,
+another `elevation.surface`, and `primary` means the brand colour in one and
+the main text colour in another, which is the opposite end of the contrast
+range. A matcher that got those two the wrong way round would produce a theme
+that is coherent, plausible and inverted, and because every value came from a
+real design system every one of them would look right on its own. `--list`
+exists so that writing the mapping is reading rather than guessing.
+
+Imported values go through the same door a hand-typed one does: matched against
+a pattern, then every contrast pair computed in both schemes. A design system
+with a reputation does not get to skip the check.
+
 Typefaces are served from the site's own origin or not at all. Put a `.woff2` in
 `templates/fonts/` and it is validated, served at `/fonts/`, and available to the
 type tokens by name; there is deliberately no way to name a font on somebody

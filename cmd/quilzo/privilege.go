@@ -218,22 +218,27 @@ var commandNeeds = map[string]need{
 	"theme check":      {action: auth.ActView},
 	"theme fonts":      {action: auth.ActView},
 	"theme css":        {action: auth.ActView},
-	"section list":     {action: auth.ActView},
-	"section kinds":    {action: auth.ActView},
-	"section fields":   {action: auth.ActView},
-	"telegram check":   {action: auth.ActView},
-	"telegram link":    {action: auth.ActPublish},
-	"sections fields":  {action: auth.ActView},
-	"sections list":    {action: auth.ActView},
-	"sections kinds":   {action: auth.ActView},
-	"templates list":   {action: auth.ActView},
-	"templates show":   {action: auth.ActView},
-	"lock list":        {action: auth.ActView},
-	"locks list":       {action: auth.ActView},
-	"review status":    {action: auth.ActView},
-	"schedule list":    {action: auth.ActView},
-	"media formats":    {action: auth.ActView},
-	"media list":       {action: auth.ActView},
+	// Exporting is `theme css` in another format: it reads what is set and
+	// writes nothing here. The person most likely to ask is a designer who
+	// was given view and nothing else, and shutting the export to exactly
+	// them would make the answer "email me the hex values".
+	"theme export":    {action: auth.ActView},
+	"section list":    {action: auth.ActView},
+	"section kinds":   {action: auth.ActView},
+	"section fields":  {action: auth.ActView},
+	"telegram check":  {action: auth.ActView},
+	"telegram link":   {action: auth.ActPublish},
+	"sections fields": {action: auth.ActView},
+	"sections list":   {action: auth.ActView},
+	"sections kinds":  {action: auth.ActView},
+	"templates list":  {action: auth.ActView},
+	"templates show":  {action: auth.ActView},
+	"lock list":       {action: auth.ActView},
+	"locks list":      {action: auth.ActView},
+	"review status":   {action: auth.ActView},
+	"schedule list":   {action: auth.ActView},
+	"media formats":   {action: auth.ActView},
+	"media list":      {action: auth.ActView},
 	// Checking a manifest changes nothing, and the person most likely to ask
 	// is an auditor who has been given view and nothing else. Inheriting the
 	// parent's edit-draft would shut the check to exactly them.

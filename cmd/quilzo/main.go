@@ -130,6 +130,9 @@ templates and design
   quilzo theme set TOKEN VALUE             change one, refused if unreadable
   quilzo theme check | fonts | css         contrast, typefaces, generated CSS
   quilzo theme apply STARTER               take a starter's palette, keep your layout
+  quilzo theme import FILE --list          what a design token file holds
+  quilzo theme import FILE --set T=PATH    fill this site's tokens from it
+  quilzo theme export [--out FILE]         this site's tokens, as design tokens
   quilzo section kinds                     what a page can be built out of
   quilzo section list [PAGE]               the sections on a page, in order
   quilzo section add PAGE KIND             add one, with content that renders
