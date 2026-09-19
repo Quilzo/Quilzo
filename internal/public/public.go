@@ -466,8 +466,47 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	h := w.Header()
+	// A validator, which this route had none of.
+	//
+	// A sitemap is fetched by every search engine that indexes the site, and
+	// this one served a kilobyte with no ETag and no Cache-Control at all —
+	// so every crawler took all of it, every time, whatever it already had.
+	//
+	// The commit is the whole of what it depends on: the pages, their names,
+	// and the date each last changed are all read from it, so a sitemap built
+	// from one commit is the same bytes every time. Revalidated rather than
+	// held, like a page, because a new page should be crawlable now and not
+	// in an hour.
+	if tag := st.contentTag("sitemap"); tag != "" {
+		h.Set("ETag", tag)
+		h.Set("Cache-Control", "public, max-age=0, must-revalidate")
+		if etag.Matches(r.Header.Get("If-None-Match"), tag) {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+	}
+	h.Set("Content-Type", "application/xml; charset=utf-8")
 	_, _ = io.WriteString(w, out)
+}
+
+// contentTag is an entity tag for a document derived from the whole published
+// set.
+//
+// The commit is the whole of what such a document depends on, so the tag is
+// that plus a name for which document it is — two routes built from the same
+// commit are not the same bytes, and giving them the same tag would tell a
+// cache holding one that the other had not changed.
+//
+// Empty when nothing is published, which the caller reads as "send no
+// validator": a document with no content behind it has no version to name.
+func (st *Site) contentTag(what string) string {
+	commit := st.Store.GetRef(st.ref())
+	if commit == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(what + "\x00" + commit))
+	return `"` + hex.EncodeToString(sum[:16]) + `"`
 }
 
 // redirected sends the response if this path has moved, and reports whether it

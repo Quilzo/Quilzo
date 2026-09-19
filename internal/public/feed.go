@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/etag"
 	"github.com/quilzo/quilzo/internal/listing"
 )
 
@@ -100,6 +101,28 @@ func (st *Site) feed(w http.ResponseWriter, r *http.Request) {
 
 	h := w.Header()
 	h.Set("Cache-Control", "public, max-age=300")
+	// And a validator, so the poll after the five minutes are up is
+	// conditional rather than another full transfer.
+	//
+	// max-age alone bounds how often a reader asks and not what it costs when
+	// it does: a reader polling every five minutes took the whole feed every
+	// five minutes, forever, for a document that changes when somebody
+	// publishes.
+	//
+	// The two formats get different tags from the same commit, because they
+	// are different bytes — a reader holding the Atom feed must not be told
+	// the JSON one has not changed.
+	format := "atom"
+	if strings.HasSuffix(r.URL.Path, ".json") {
+		format = "json"
+	}
+	if tag := st.contentTag("feed-" + format); tag != "" {
+		h.Set("ETag", tag)
+		if etag.Matches(r.Header.Get("If-None-Match"), tag) {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+	}
 	if strings.HasSuffix(r.URL.Path, ".json") {
 		st.jsonFeed(w, entries, updated)
 		return
