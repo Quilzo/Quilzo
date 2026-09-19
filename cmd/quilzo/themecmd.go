@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -54,9 +53,14 @@ func cmdTheme(root string, args []string) error {
 		return themeApply(root, args[1:])
 	case "generate":
 		return themeGenerate(root, args[1:])
+	case "import":
+		return themeImport(root, args[1:])
+	case "export":
+		return themeExport(args[1:])
 	default:
 		return fmt.Errorf("unknown theme command %q; try show, tokens, set, "+
-			"unset, check, fonts, css, apply or generate", args[0])
+			"unset, check, fonts, css, apply, generate, import or export",
+			args[0])
 	}
 }
 
@@ -542,14 +546,12 @@ func themeGenerate(root string, args []string) error {
 	// Somebody's own colours are not overwritten by accident. A generator that
 	// silently replaced a hand-tuned palette would be a command nobody could
 	// run twice.
-	var clash []string
-	for k := range generated {
-		if _, set := existing[k]; set {
-			clash = append(clash, k)
-		}
-	}
+	// By scope rather than by key: "primary" and "primary.light" are
+	// different strings and the same setting for the light scheme, so a key
+	// comparison finds nothing, generates over it, and leaves the hand-tuned
+	// value quietly in charge of the scheme it still names.
+	clash := theme.Colliding(existing, generated)
 	if len(clash) > 0 && !*replace {
-		sort.Strings(clash)
 		return fmt.Errorf(
 			"this theme already sets %d colour(s), starting with %s.\n"+
 				"  Generating would discard them. Say so if that is what you "+
@@ -560,6 +562,9 @@ func themeGenerate(root string, args []string) error {
 	next := map[string]string{}
 	for k, v := range existing {
 		next[k] = v
+	}
+	for _, k := range clash {
+		delete(next, k)
 	}
 	for k, v := range generated {
 		next[k] = v
