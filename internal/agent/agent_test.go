@@ -299,19 +299,25 @@ func TestAManifestRoundTripsReadably(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The budget's duration rather than the memory's retention. Both are the
+	// same Duration type and the point is the same — a nanosecond count is
+	// unreadable in a stored object somebody is reviewing — but no valid
+	// manifest carries a retention any more: nothing in this build stores a
+	// memory, so declaring one is refused. See Manifest.Validate.
 	raw, err := json.Marshal(m)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"2160h0m0s"`) {
-		t.Errorf("the retention period is not readable in the stored form: %s", raw)
+	if !strings.Contains(string(raw), `"5m0s"`) {
+		t.Errorf("the duration is not readable in the stored form: %s", raw)
 	}
 	var back Manifest
 	if err := json.Unmarshal(raw, &back); err != nil {
 		t.Fatal(err)
 	}
-	if back.Memory.Retain != m.Memory.Retain {
-		t.Errorf("retention came back as %s, sent %s", back.Memory.Retain, m.Memory.Retain)
+	if back.Budget.Duration != m.Budget.Duration {
+		t.Errorf("the duration came back as %s, sent %s",
+			back.Budget.Duration, m.Budget.Duration)
 	}
 	if len(back.Capabilities) != len(m.Capabilities) {
 		t.Error("the capability list did not survive the round trip")

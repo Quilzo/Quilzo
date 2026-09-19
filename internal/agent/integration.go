@@ -202,6 +202,33 @@ func (in *Integration) Validate() error {
 		}
 		seen[u] = true
 	}
+
+	// Only the kind something calls.
+	//
+	// http and process are declarable, digest-pinned, gated behind
+	// AllowProcess, rendered on the integrations screen and listed by the
+	// CLI — and nothing executes either. internal/mcpclient is the only
+	// caller, and its permits() refuses anything that is not an MCP server:
+	// "%s is a %s integration, not an MCP server". So declaring one produced
+	// a validated, displayed, switchable integration that could not be
+	// called, and AllowProcess was presented on two surfaces as a live
+	// control over behaviour that does not exist.
+	//
+	// The digest is the part that makes this worth refusing rather than
+	// leaving. It is validated as syntax and never compared against a file,
+	// so the supply-chain pin — the one control that would matter if a
+	// process integration ever ran — is already decoration. Wiring execution
+	// later means writing that check; allowing the declaration now means
+	// somebody may already be relying on a pin nothing verifies.
+	if in.Kind != IntegrationMCP {
+		return fmt.Errorf(
+			"%s is a %s integration and nothing in this build calls one. "+
+				"Only mcp is executed: internal/mcpclient is the single "+
+				"caller and refuses every other kind. The digest a process "+
+				"integration declares is checked for shape and never "+
+				"against a file, so a pin here would be a supply-chain "+
+				"control that does not run", in.Name, in.Kind)
+	}
 	return nil
 }
 

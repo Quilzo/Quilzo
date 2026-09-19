@@ -13,7 +13,31 @@ of schema validators, and content does not need them.</p>
   <p><strong>{{len .Orphans}} page(s) are bound to a type that no longer exists.</strong>
     Validation fails closed on that, so those pages cannot be written until the
     type is recreated or the binding removed.</p>
-  <ul>{{range .Orphans}}<li><code>{{.}}</code></li>{{end}}</ul>
+  <ul>{{range .Orphans}}<li><code>{{.}}</code></li>{{end}}
+
+{{/*
+  Bound pages with no recorded validation.
+
+  A different question from the failures above: those re-run the gate and say
+  whether a page satisfies its type now. This asks whether there is a RECORD
+  that this exact content passed this exact type — the attestation, written by
+  every write path and, until this screen asked, read by nothing.
+
+  So a page can satisfy its type and have no record of ever having been
+  checked: written before records existed, or through the content API, which
+  validated and wrote nothing down.
+*/}}
+{{if .Unattested}}
+<div class="notice">
+  <h2>Valid, and never recorded as valid</h2>
+  <p>These pages satisfy their type and nothing wrote that down, so
+     <code>quilzo types</code> cannot attest to them. Saving one records it.
+     Unrecorded reads as unvalidated, which is the safe way round and is why
+     they are listed rather than assumed.</p>
+  <ul>{{range .Unattested}}<li><a href="/page/{{.}}">{{.}}</a></li>{{end}}</ul>
+</div>
+{{end}}
+</ul>
 </div>
 {{end}}
 

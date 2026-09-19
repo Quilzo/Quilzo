@@ -255,17 +255,41 @@ func TestMemoryIsAbsentOrComplete(t *testing.T) {
 		t.Error("memory was published for an agent that keeps none")
 	}
 
+	// And a manifest declaring memory is not advertised at all, because it
+	// does not validate: nothing in this build stores a memory, so an agent
+	// cannot declare one. The card told a remote delegating caller that this
+	// agent retained conversational content for up to ninety days, about
+	// storage that does not exist.
+	//
+	// Checked here rather than only in internal/agent because this is the
+	// half that was published to somebody else. From omits a manifest that
+	// fails Validate rather than advertising it, which is the property that
+	// makes the two impossible to disagree.
 	remembers := plain
 	remembers.Memory = agent.Memory{
 		Episodic: true, Retain: agent.Duration(72 * time.Hour)}
 	c2 := From(map[string]agent.Manifest{"support": remembers}, known(), opts())
-	m := c2.Governance["support"].Memory
-	if m == nil {
-		t.Fatal("an agent that keeps episodic memory published none")
+	if _, ok := c2.Governance["support"]; ok {
+		t.Error("an agent declaring memory was advertised, and nothing " +
+			"stores one")
 	}
-	if m.Retain == "" || m.Retain == "0s" {
-		t.Errorf("memory published with retention %q, which is the state that "+
-			"makes it a personal-data store nobody agreed to", m.Retain)
+}
+
+// The rendering rule itself, on the shape rather than through a manifest.
+//
+// Kept because the fields are still here and ready for when there is
+// something behind them: "no memory" and "memory with no stated retention"
+// must not look the same to a caller deciding whether to send it anything.
+// No valid manifest reaches this today, which is the point of the test above.
+func TestTheMemoryShapeStillDistinguishesNoneFromUnstated(t *testing.T) {
+	none := Memory{}
+	if none.Retain != "" {
+		t.Errorf("an empty memory claims a retention of %q", none.Retain)
+	}
+	stated := Memory{Episodic: true, Retain: "72h0m0s"}
+	if stated.Retain == "" || stated.Retain == "0s" {
+		t.Errorf("a stated retention rendered as %q, which is the state that "+
+			"makes it a personal-data store nobody agreed to", stated.Retain)
 	}
 }
 
