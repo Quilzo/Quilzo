@@ -434,3 +434,125 @@ func TestARefusedSearchDoesNotTaint(t *testing.T) {
 		t.Error("a refused search tainted the session")
 	}
 }
+
+// subtreeAgent is scoped to one part of the site.
+func subtreeAgent(path string) *agent.Session {
+	m := agent.Manifest{
+		Name: "helpdesk", Kind: agent.KindRetrieval,
+		Purpose: "answer from one part of the site",
+		Capabilities: []string{
+			"list_pages", "read_page", "search_pages", "similar_pages"},
+		Autonomy:  agent.AutonomyPropose,
+		Retrieval: agent.Retrieval{Ref: site.RefLive, Path: path},
+		Budget: agent.Budget{
+			Steps: 40, Tools: 0, Duration: agent.Duration(time.Hour)},
+	}
+	return agent.NewSession(m, nil)
+}
+
+// treeStore has pages in two subtrees, with the same word in both.
+func treeStore(t *testing.T) *store.Store {
+	t.Helper()
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages := map[string]any{
+		"help/refunds": map[string]any{
+			"title": "How a refund works",
+			"body":  "A refund reaches the card it was paid on, within days.",
+		},
+		"help/shipping": map[string]any{
+			"title": "Shipping", "body": "Everything goes tracked.",
+		},
+		"legal/refunds": map[string]any{
+			"title": "Refund liability",
+			"body":  "The statutory position on a refund, in full.",
+		},
+		"helpdesk": map[string]any{
+			"title": "The helpdesk", "body": "A refund query goes here.",
+		},
+	}
+	if _, err := site.SaveDraft(s, pages, "first", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// A listing narrows rather than refusing, because a page the agent could not
+// read is a page it should not be told exists — the same reasoning that
+// already hides pages of another type.
+func TestAListingIsNarrowedToTheSubtree(t *testing.T) {
+	r := Reader{Store: treeStore(t)}
+	out, err := ask(t, r, subtreeAgent("/help"), "list_pages", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"help/refunds", "help/shipping"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("%q is missing:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "legal/refunds") {
+		t.Errorf("a page outside the subtree was listed:\n%s", out)
+	}
+	// And the prefix trap: "helpdesk" is not inside "help".
+	if strings.Contains(out, "helpdesk") {
+		t.Errorf("a sibling whose name starts with the subtree was listed:\n%s", out)
+	}
+}
+
+// Search is bounded by the same corpus filter, so a word that appears in both
+// subtrees only finds the one the agent may read.
+func TestSearchIsBoundedByTheSubtree(t *testing.T) {
+	r := Reader{Store: treeStore(t)}
+	out, err := ask(t, r, subtreeAgent("/help"), "search_pages",
+		map[string]any{"query": "refund"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "help/refunds") {
+		t.Errorf("the page inside the subtree is missing:\n%s", out)
+	}
+	if strings.Contains(out, "legal/refunds") {
+		t.Errorf("a page outside the subtree was found:\n%s", out)
+	}
+	if strings.Contains(out, "helpdesk") {
+		t.Errorf("a sibling whose name starts with the subtree was found:\n%s", out)
+	}
+}
+
+// Reading it directly is refused, not merely omitted from a listing.
+func TestReadingOutsideTheSubtreeIsRefused(t *testing.T) {
+	r := Reader{Store: treeStore(t)}
+	if _, err := ask(t, r, subtreeAgent("/help"), "read_page",
+		map[string]any{"page": "legal/refunds"}); err == nil {
+		t.Fatal("a page outside the subtree was read")
+	}
+	if _, err := ask(t, r, subtreeAgent("/help"), "read_page",
+		map[string]any{"page": "helpdesk"}); err == nil {
+		t.Fatal("a sibling whose name starts with the subtree was read")
+	}
+	if _, err := ask(t, r, subtreeAgent("/help"), "read_page",
+		map[string]any{"page": "help/refunds"}); err != nil {
+		t.Fatalf("a page inside the subtree was refused: %v", err)
+	}
+}
+
+// An agent with no subtree still reads everything, or the fix above closed the
+// hole by breaking the feature.
+func TestNoSubtreeStillReadsEverything(t *testing.T) {
+	r := Reader{Store: treeStore(t)}
+	out, err := ask(t, r, subtreeAgent(""), "list_pages", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"help/refunds", "legal/refunds", "helpdesk"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("%q is missing from an unscoped listing:\n%s", want, out)
+		}
+	}
+}

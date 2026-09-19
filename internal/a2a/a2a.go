@@ -179,6 +179,15 @@ type Scope struct {
 	Ref     string   `json:"ref,omitempty"`
 	Types   []string `json:"types,omitempty"`
 	Locales []string `json:"locales,omitempty"`
+	// Path is the subtree, when the agent is confined to one.
+	//
+	// This was missing, and it was missing while the field it describes was
+	// also unenforced — so an agent declared to read only /help was neither
+	// held to it nor observed to claim it. A delegating caller reading this
+	// card saw an agent with the run of the site. Both halves are fixed
+	// together on purpose: advertising a boundary nothing applies would be
+	// the worse of the two states.
+	Path string `json:"path,omitempty"`
 }
 
 // Budget is the per-run ceiling.
@@ -293,6 +302,7 @@ func governanceOf(m agent.Manifest, base string) Governance {
 			Ref:     m.Retrieval.Ref,
 			Types:   append([]string(nil), m.Retrieval.Types...),
 			Locales: append([]string(nil), m.Retrieval.Locales...),
+			Path:    m.Retrieval.Path,
 		},
 		Budget: Budget{
 			Steps:     m.Budget.Steps,

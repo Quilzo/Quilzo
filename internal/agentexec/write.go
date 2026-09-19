@@ -164,7 +164,7 @@ func (wr Writer) writePage(s *agent.Session, base string, a agent.Action) (strin
 	// The scope check before anything is built, and against the type already
 	// bound to the page — not against a type the action claims. A model that
 	// could name its own type would be choosing which scope applies to it.
-	if err := s.Mutate(site.RefDraft, wr.typeOf(name), wr.localeOf(name)); err != nil {
+	if err := s.Mutate(site.RefDraft, name, wr.typeOf(name), wr.localeOf(name)); err != nil {
 		return "", "", err
 	}
 

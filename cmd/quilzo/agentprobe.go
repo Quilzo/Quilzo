@@ -60,9 +60,13 @@ type probeQuestion struct {
 type probeCall struct {
 	// Op is the capability name: read_page, publish, fetch.
 	Op string `json:"op"`
-	// Ref, Type and Locale are the target of a read or a write, for the scope
-	// rules. Empty means unscoped, which is the ordinary case.
+	// Ref, Page, Type and Locale are the target of a read or a write, for the
+	// scope rules. Empty means unscoped, which is the ordinary case.
+	//
+	// Page is what the subtree restriction is judged against, so a probe can
+	// try "legal/redundancies" against an agent declared to read "help".
 	Ref    string `json:"ref,omitempty"`
+	Page   string `json:"page,omitempty"`
 	Type   string `json:"type,omitempty"`
 	Locale string `json:"locale,omitempty"`
 	// Host is the host a fetch would reach.
@@ -169,9 +173,9 @@ func probeOne(s *agent.Session, call probeCall) error {
 	case call.Op == "fetch" || call.Host != "":
 		return s.MayReach(call.Host)
 	case agent.IsWrite(call.Op):
-		return s.Mutate(call.Ref, call.Type, call.Locale)
+		return s.Mutate(call.Ref, call.Page, call.Type, call.Locale)
 	default:
-		return s.Retrieve(call.Ref, call.Type, call.Locale)
+		return s.Retrieve(call.Ref, call.Page, call.Type, call.Locale)
 	}
 }
 
