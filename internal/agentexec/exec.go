@@ -119,10 +119,12 @@ func (r Reader) Perform(s *agent.Session) func(context.Context, agent.Action) (s
 }
 
 func (r Reader) listPages(s *agent.Session, ref string) (string, error) {
-	// The scope check before the read, always. Type and locale are empty for a
-	// listing because a listing is not one typed thing; the per-page check
-	// happens in readPage.
-	if err := s.Retrieve(ref, "", ""); err != nil {
+	// A set read, said as one. A listing is not one page: it reads the
+	// published set and then hides what this agent may not see, so the
+	// per-page checks are in allowed() below rather than here. See
+	// Session.RetrieveSet for why that is a separate method and not Retrieve
+	// with nothing in it.
+	if err := s.RetrieveSet(ref); err != nil {
 		return "", err
 	}
 	pages, err := site.PagesAt(r.Store, ref)
@@ -149,7 +151,7 @@ func (r Reader) readPage(s *agent.Session, ref, name string) (string, error) {
 	if strings.TrimSpace(name) == "" {
 		return "", fmt.Errorf("no page was named")
 	}
-	if err := s.Retrieve(ref, r.typeOf(name), r.localeOf(name)); err != nil {
+	if err := s.Retrieve(ref, name, r.typeOf(name), r.localeOf(name)); err != nil {
 		return "", err
 	}
 	pages, err := site.PagesAt(r.Store, ref)
@@ -174,7 +176,8 @@ func (r Reader) readPage(s *agent.Session, ref, name string) (string, error) {
 func (r Reader) allowed(s *agent.Session, ref, name string) bool {
 	m := s.Manifest()
 	return within(m.Retrieval.Types, r.typeOf(name)) &&
-		withinLocale(m.Retrieval.Locales, r.localeOf(name))
+		withinLocale(m.Retrieval.Locales, r.localeOf(name)) &&
+		s.Inside(name)
 }
 
 func (r Reader) typeOf(page string) string {

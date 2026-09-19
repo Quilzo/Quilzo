@@ -150,10 +150,9 @@ func (r Reader) searchPages(s *agent.Session, ix *indexes, ref string, a agent.A
 	if query == "" {
 		return "", fmt.Errorf("no query was given")
 	}
-	// The scope check before the read, as everywhere else in this package.
-	// Type and locale are empty because a search is not one typed thing; the
-	// per-page decision is in the corpus filter.
-	if err := s.Retrieve(ref, "", ""); err != nil {
+	// A set read, said as one — the corpus filter below does the per-page
+	// half. See Session.RetrieveSet.
+	if err := s.RetrieveSet(ref); err != nil {
 		return "", err
 	}
 	c, err := ix.at(r, s, ref)
@@ -197,7 +196,7 @@ func (r Reader) similarPages(s *agent.Session, ix *indexes, ref string, a agent.
 	// A named page is one typed thing, so it gets the per-page check that
 	// readPage gets — asking for neighbours of a page out of scope must be
 	// refused the same way as reading it.
-	if err := s.Retrieve(ref, r.typeOf(name), r.localeOf(name)); err != nil {
+	if err := s.Retrieve(ref, name, r.typeOf(name), r.localeOf(name)); err != nil {
 		return "", err
 	}
 	c, err := ix.at(r, s, ref)
