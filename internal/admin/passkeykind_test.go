@@ -41,3 +41,31 @@ func TestThePasskeyScreenSaysWhichAreHardware(t *testing.T) {
 			"which is the first thing somebody reading it needs to know")
 	}
 }
+
+// schema.Validated is written by every write path and was read by nothing.
+//
+// It answers a different question from the live gate: not "does this page
+// satisfy its type now" but "is there a record that this exact content passed
+// this exact type". That record is what an assurance claim rests on, and it
+// could not be asked anywhere.
+//
+// So a page could satisfy its type and have no record of ever having been
+// checked — written before records existed, or through the content API, which
+// validated and wrote nothing down until it was fixed.
+func TestTheTypesScreenListsWhatWasNeverAttested(t *testing.T) {
+	src, err := assets.ReadFile("assets/types.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+	if !strings.Contains(body, ".Unattested") {
+		t.Error("the types screen does not list pages with no recorded " +
+			"validation, and every write path records one")
+	}
+	// It must not read as a failure. These pages are valid; what is missing
+	// is the record.
+	if !strings.Contains(body, "Valid, and never recorded as valid") {
+		t.Error("the heading does not distinguish an unattested page from a " +
+			"failing one, which are different problems with different fixes")
+	}
+}

@@ -119,13 +119,47 @@ func (s *Server) handleTypes(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(orphans)
 
+	// Bound pages with no recorded validation.
+	//
+	// A different question from Failing above, and the difference is the
+	// point. Failing re-runs the gate and says whether a page satisfies its
+	// type *now*. schema.Validated asks whether there is a record that this
+	// exact content passed this exact type — the attestation, written by
+	// every write path and, until it was asked here, read by nothing.
+	//
+	// So a page could satisfy its type and have no record of ever having been
+	// checked: written before records existed, or through the content API,
+	// which validated and wrote nothing down. internal/admin's own wiring
+	// states the invariant — "unrecorded reads as unvalidated, which is the
+	// safe way round" — and this is the screen where that shows.
+	//
+	// Listed rather than counted, because the useful action is to open one
+	// and save it, which records the binding.
+	var unattested []string
+	for page := range pages {
+		name, bound := st.Bound[page]
+		if !bound {
+			continue
+		}
+		// A page that is failing is already reported above, and reporting it
+		// twice for two reasons reads as two problems.
+		if failingPage(failures[name], page) {
+			continue
+		}
+		if !st.Validated(page, pages[page]) {
+			unattested = append(unattested, page)
+		}
+	}
+	sort.Strings(unattested)
+
 	s.render(w, r, "types.html", map[string]any{
 		"Nav": "types", "Title": "Types", "Principal": p,
 		"Rows": rows, "Unbound": unbound, "Orphans": orphans,
-		"Kinds":    schema.Kinds(),
-		"Message":  r.URL.Query().Get("m"),
-		"Error":    r.URL.Query().Get("e"),
-		"CanWrite": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
+		"Unattested": unattested,
+		"Kinds":      schema.Kinds(),
+		"Message":    r.URL.Query().Get("m"),
+		"Error":      r.URL.Query().Get("e"),
+		"CanWrite":   s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
 	})
 }
 
@@ -516,4 +550,20 @@ func shortHash(h string) string {
 		return h[:12]
 	}
 	return h
+}
+
+// failingPage reports whether this page is already in a type's failure list.
+//
+// A page that fails its type is reported above, and reporting it again as
+// unattested would read as two problems where there is one. It is also true
+// that a failing page has no valid record — but "this does not satisfy its
+// type" is the useful sentence, and "and was never attested" adds nothing to
+// it.
+func failingPage(fs []schema.Failure, page string) bool {
+	for _, f := range fs {
+		if f.Page == page {
+			return true
+		}
+	}
+	return false
 }
