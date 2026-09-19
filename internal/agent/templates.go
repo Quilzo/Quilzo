@@ -55,9 +55,18 @@ var templates = map[Kind]Template{
 		Manifest: Manifest{
 			Kind:    KindRetrieval,
 			Purpose: "Answer questions using published content only.",
-			// Read operations only. This is the entire point of the archetype.
+			// Read operations only. This is the entire point of the
+			// archetype.
+			//
+			// These are the four the executor performs. It used to name
+			// run_listing and list_terms, which validated against the machine
+			// interface's registry and which nothing carries out — so the
+			// archetype whose purpose is answering questions could do neither
+			// of the two things beyond reading that its purpose describes.
+			// search_pages and similar_pages are what an agent answering a
+			// question actually needs, and they exist.
 			Capabilities: []string{
-				"read_page", "list_pages", "run_listing", "list_terms",
+				"read_page", "list_pages", "search_pages", "similar_pages",
 			},
 			Autonomy: AutonomyPropose,
 			// Live, never draft. A bot answering from unpublished content is
@@ -80,7 +89,14 @@ var templates = map[Kind]Template{
 			Kind:    KindTask,
 			Purpose: "Carry out one named operation and report what it did.",
 			Capabilities: []string{
-				"read_page", "list_pages", "write_page", "check_accessibility",
+				// Only what the executor performs. These lists named diff,
+				// check_accessibility, check_translations and agent_activity —
+				// operations the machine interface registers and internal/agentexec
+				// does not carry out, so an agent made from this archetype
+				// validated, advertised them on its card, and failed at runtime.
+				// diff is refused by design: it spans two refs and a scoped agent
+				// holds one.
+				"read_page", "list_pages", "search_pages", "write_page",
 			},
 			Autonomy:  AutonomyDraft,
 			Retrieval: Retrieval{Ref: "draft"},
@@ -102,7 +118,14 @@ var templates = map[Kind]Template{
 			Kind:    KindCopilot,
 			Purpose: "Suggest edits to the page a person is working on.",
 			Capabilities: []string{
-				"read_page", "list_pages", "diff", "check_accessibility",
+				// Only what the executor performs. These lists named diff,
+				// check_accessibility, check_translations and agent_activity —
+				// operations the machine interface registers and internal/agentexec
+				// does not carry out, so an agent made from this archetype
+				// validated, advertised them on its card, and failed at runtime.
+				// diff is refused by design: it spans two refs and a scoped agent
+				// holds one.
+				"read_page", "list_pages", "search_pages", "similar_pages",
 			},
 			Autonomy:  AutonomyPropose,
 			Retrieval: Retrieval{Ref: "draft"},
@@ -130,8 +153,15 @@ var templates = map[Kind]Template{
 			Purpose: "Work towards a stated goal over multiple steps and " +
 				"report what changed.",
 			Capabilities: []string{
-				"read_page", "list_pages", "diff", "write_page",
-				"check_accessibility", "check_translations",
+				// Only what the executor performs. These lists named diff,
+				// check_accessibility, check_translations and agent_activity —
+				// operations the machine interface registers and internal/agentexec
+				// does not carry out, so an agent made from this archetype
+				// validated, advertised them on its card, and failed at runtime.
+				// diff is refused by design: it spans two refs and a scoped agent
+				// holds one.
+				"read_page", "list_pages", "search_pages", "similar_pages",
+				"write_page",
 			},
 			Autonomy:      AutonomyDraft,
 			Retrieval:     Retrieval{Ref: "draft"},
@@ -155,7 +185,14 @@ var templates = map[Kind]Template{
 			Kind:    KindSupervisor,
 			Purpose: "Break work into stages and delegate each to a named agent.",
 			Capabilities: []string{
-				"read_page", "list_pages", "diff",
+				// Only what the executor performs. These lists named diff,
+				// check_accessibility, check_translations and agent_activity —
+				// operations the machine interface registers and internal/agentexec
+				// does not carry out, so an agent made from this archetype
+				// validated, advertised them on its card, and failed at runtime.
+				// diff is refused by design: it spans two refs and a scoped agent
+				// holds one.
+				"read_page", "list_pages", "search_pages",
 			},
 			Autonomy:      AutonomyDraft,
 			Retrieval:     Retrieval{Ref: "draft"},
@@ -179,7 +216,14 @@ var templates = map[Kind]Template{
 			Kind:    KindArchivist,
 			Purpose: "Remember what happened and what was concluded, and recall it on request.",
 			Capabilities: []string{
-				"read_page", "list_pages", "diff", "agent_activity",
+				// Only what the executor performs. These lists named diff,
+				// check_accessibility, check_translations and agent_activity —
+				// operations the machine interface registers and internal/agentexec
+				// does not carry out, so an agent made from this archetype
+				// validated, advertised them on its card, and failed at runtime.
+				// diff is refused by design: it spans two refs and a scoped agent
+				// holds one.
+				"read_page", "list_pages", "search_pages", "similar_pages",
 			},
 			Autonomy:  AutonomyPropose,
 			Retrieval: Retrieval{Ref: "live"},
@@ -208,8 +252,14 @@ var templates = map[Kind]Template{
 			Purpose: "Distil successful runs into named, reusable procedures " +
 				"and apply them next time.",
 			Capabilities: []string{
-				"read_page", "list_pages", "diff", "write_page",
-				"check_accessibility",
+				// Only what the executor performs. These lists named diff,
+				// check_accessibility, check_translations and agent_activity —
+				// operations the machine interface registers and internal/agentexec
+				// does not carry out, so an agent made from this archetype
+				// validated, advertised them on its card, and failed at runtime.
+				// diff is refused by design: it spans two refs and a scoped agent
+				// holds one.
+				"read_page", "list_pages", "search_pages", "write_page",
 			},
 			Autonomy:  AutonomyDraft,
 			Retrieval: Retrieval{Ref: "draft"},

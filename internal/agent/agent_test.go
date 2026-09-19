@@ -18,6 +18,7 @@ func knownOps() map[string]bool {
 		"write_record": true, "publish": true, "diff": true,
 		"run_listing": true, "list_terms": true, "agent_activity": true,
 		"check_accessibility": true, "check_translations": true,
+		"search_pages": true, "similar_pages": true,
 	}
 }
 
