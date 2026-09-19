@@ -203,7 +203,14 @@ func authGrant(root string, args []string) error {
 	on := fs.String("on", "/", "resource path the binding covers")
 	deny := fs.Bool("deny", false, "deny instead of grant; a deny always wins")
 	note := fs.String("note", "", "why this access exists")
-	by := fs.String("by", "cli", "who granted it")
+	// Empty rather than "cli", so the authenticated caller can fill it in.
+	//
+	// Defaulting to the literal "cli" recorded the surface instead of the
+	// person, on every grant made without the flag — which is most of them.
+	// GrantedBy exists to answer "who gave this principal admin?", and "cli"
+	// is not an answer; it is the same non-answer for every operator who has
+	// ever run the command.
+	by := fs.String("by", "", "who granted it; the signed-in principal by default")
 	// Withdrawn rather than quietly dropped, so a script that passes it stops
 	// with a reason instead of silently granting something wider than it asked
 	// for — which is what it had been doing all along.
@@ -251,7 +258,7 @@ func authGrant(root string, args []string) error {
 	}
 	b := auth.Binding{
 		Principal: rest[0], Role: auth.Role(rest[1]), Resource: *on,
-		Deny: *deny, GrantedBy: *by, Note: *note,
+		Deny: *deny, GrantedBy: grantedBy(root, *by), Note: *note,
 	}
 	if err := p.Grant(b); err != nil {
 		return err
@@ -348,15 +355,34 @@ func authList(root string) error {
 		fmt.Println("no bindings; nobody has access")
 		return nil
 	}
-	fmt.Printf("  %-18s %-10s %-16s %s\n", "principal", "role", "resource", "")
-	fmt.Printf("  %s %s %s\n", strings.Repeat("-", 18), strings.Repeat("-", 10),
-		strings.Repeat("-", 16))
+	// Who granted it, which was recorded and readable nowhere.
+	//
+	// Binding.GrantedBy is written on both surfaces — the CLI defaults it to
+	// "cli", the admin sets the signed-in principal — and no command, screen
+	// or audit record ever read it back. So the answer to "who gave this
+	// principal admin?" was in policy.json and reachable only by opening the
+	// file by hand. For an AC-2 story that is the one field that matters, and
+	// its sibling Note was already on both surfaces, which is what makes this
+	// an oversight rather than a decision.
+	fmt.Printf("  %-18s %-10s %-16s %-14s %s\n",
+		"principal", "role", "resource", "granted by", "")
+	fmt.Printf("  %s %s %s %s\n", strings.Repeat("-", 18),
+		strings.Repeat("-", 10), strings.Repeat("-", 16),
+		strings.Repeat("-", 14))
 	for _, b := range p.Bindings {
 		mark := ""
 		if b.Deny {
 			mark = red + "DENY" + reset
 		}
-		fmt.Printf("  %-18s %-10s %-16s %s", b.Principal, b.Role, b.Resource, mark)
+		by := b.GrantedBy
+		if by == "" {
+			// A binding from before this was recorded. Said as unknown rather
+			// than left blank, because a blank column reads as "nobody" and
+			// the truthful answer is that nothing wrote it down.
+			by = dim + "unrecorded" + reset
+		}
+		fmt.Printf("  %-18s %-10s %-16s %-14s %s",
+			b.Principal, b.Role, b.Resource, by, mark)
 		if b.Note != "" {
 			fmt.Printf("  %s%s%s", dim, b.Note, reset)
 		}
@@ -803,4 +829,25 @@ func splitList(s string) []string {
 		}
 	}
 	return out
+}
+
+// grantedBy is who to record as having made a grant.
+//
+// The flag wins, because an operator scripting a migration may legitimately
+// be recording somebody else's decision. Otherwise the caller, if this store
+// knows who they are.
+//
+// The last resort is "cli", which is what the flag used to default to for
+// everybody. It is kept only for a store with no access control at all, where
+// there is genuinely no identity to record — and it is the honest answer
+// there, rather than a made-up name.
+func grantedBy(root, flag string) string {
+	if strings.TrimSpace(flag) != "" {
+		return flag
+	}
+	if c := resolveCaller(root, ""); c != nil && c.Verified &&
+		strings.TrimSpace(c.Name) != "" {
+		return c.Name
+	}
+	return "cli"
 }
