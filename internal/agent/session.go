@@ -5,6 +5,7 @@ package agent
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -249,7 +250,7 @@ func (s *Session) check(op string) error {
 // Writing does not taint. Taint tracks untrusted content coming in; a write is
 // content going out, and marking the session on the way out would make every
 // writing agent permanently unpublishable for having done its job.
-func (s *Session) Mutate(ref, typeName, locale string) error {
+func (s *Session) Mutate(ref, page, typeName, locale string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -276,6 +277,10 @@ func (s *Session) Mutate(ref, typeName, locale string) error {
 				strings.Join(types, ", "), typeName))
 		}
 	}
+	if sub := s.manifest.Retrieval.Path; sub != "" && !within(sub, page) {
+		return s.refuse("write", fmt.Sprintf(
+			"this agent works in %s and %s is not under it", sub, named(page)))
+	}
 	if !allowedLocale(s.manifest.Retrieval.Locales, locale) {
 		return s.refuse("write", fmt.Sprintf(
 			"this agent is scoped to %s and that is %s",
@@ -297,7 +302,7 @@ const RefLive = "live"
 // ref is which ref is being read; typeName and locale describe the content.
 // Empty values mean "not applicable", which is allowed — an untyped page is not
 // a page of some secret type.
-func (s *Session) Retrieve(ref, typeName, locale string) error {
+func (s *Session) Retrieve(ref, page, typeName, locale string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -318,9 +323,46 @@ func (s *Session) Retrieve(ref, typeName, locale string) error {
 			"this agent is scoped to %s and that is %s",
 			strings.Join(s.manifest.Retrieval.Locales, ", "), locale))
 	}
+	if sub := s.manifest.Retrieval.Path; sub != "" && !within(sub, page) {
+		return s.refuse("retrieve", fmt.Sprintf(
+			"this agent reads %s and %s is not under it", sub, named(page)))
+	}
 
 	// Everything read out of the store is untrusted from here on. It may have
 	// been written by a form submission, an importer, or a previous agent.
+	s.tainted = true
+	return nil
+}
+
+// RetrieveSet authorises reading the whole published set, to narrow it here.
+//
+// # Why this is not Retrieve with an empty page
+//
+// Because a scope check that treats a missing page as permissible is a scope
+// check a forgetful caller walks through, and that is the exact failure this
+// package keeps producing: a field left unset reading as "unrestricted".
+// Retrieve refuses a page it cannot name when a subtree is declared, and that
+// refusal caught a listing the first time it ran.
+//
+// A listing genuinely is a different question. It reads the set and then hides
+// what the agent may not see — a page the agent could not read is a page it
+// should not be told exists — so refusing the read outright would break the
+// operation rather than bound it. Saying so in a separate method means the
+// caller has to state that it is doing the narrowing, rather than getting
+// through by passing nothing.
+//
+// Everything else Retrieve does still happens: the ref is checked and the
+// session is tainted. What is skipped is the per-page half, and the caller
+// that skips it takes on Session.Inside and the type and locale filters.
+func (s *Session) RetrieveSet(ref string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	want := s.manifest.Retrieval.Ref
+	if want != "" && ref != "" && !strings.EqualFold(ref, want) {
+		return s.refuse("retrieve", fmt.Sprintf(
+			"this agent reads %s and something asked it for %s", want, ref))
+	}
 	s.tainted = true
 	return nil
 }
@@ -595,4 +637,73 @@ func (s *Session) ToolFor(tool string) (Tool, bool) {
 		}
 	}
 	return Tool{}, false
+}
+
+// within reports whether a page is inside a declared subtree.
+//
+// # The field this is for, and why it did nothing
+//
+// Manifest.Retrieval.Path is documented as "limits it to a subtree", and it
+// was the third field of a struct whose other two were already found to be
+// decoration: the executor was built with no type or locale resolver, so the
+// scope was never asked. That was fixed for Types and Locales and Path was
+// left out of the repair — it appeared in exactly one place in the whole
+// program, inside Narrow, where it was carefully intersected and then never
+// consulted by anything.
+//
+// # Segments, not a string prefix
+//
+// A prefix test says "helpdesk" is inside "help", which is a scope that leaks
+// to whoever names the next page. The comparison is on path segments, so
+// "help" contains "help" and "help/billing" and not "helpdesk".
+//
+// An empty declaration permits everything, which is what an unset field means
+// everywhere else in this struct. The sentinel Narrow produces for two
+// subtrees that do not overlap permits nothing, because that is what it means.
+func within(declared, page string) bool {
+	d := strings.Trim(strings.TrimSpace(declared), "/")
+	if d == "" {
+		return true
+	}
+	if declared == pathNothing {
+		// Two restrictions that had no page in common. Narrow says so with a
+		// sentinel rather than picking one of them.
+		return false
+	}
+	p := strings.Trim(strings.TrimSpace(page), "/")
+	if p == "" {
+		// A scope was declared and there is no page to judge. Refusing is the
+		// safe direction: a caller that cannot say what it is reading has not
+		// demonstrated it is inside the subtree.
+		return false
+	}
+	if strings.EqualFold(p, d) {
+		return true
+	}
+	return strings.HasPrefix(strings.ToLower(p), strings.ToLower(d)+"/")
+}
+
+// named describes a page in a refusal, without inventing one.
+//
+// A caller that passed no page gets "a page with no name" rather than an empty
+// pair of quotes, because the refusal is read by somebody working out why
+// their agent stopped.
+func named(page string) string {
+	if strings.TrimSpace(page) == "" {
+		return "a page with no name"
+	}
+	return strconv.Quote(page)
+}
+
+// Inside reports whether a page is within this agent's declared subtree,
+// without spending anything or recording a refusal.
+//
+// The quiet half of the path check, for a listing. Retrieve refuses and
+// records; a listing has to narrow instead, because a page the agent could not
+// read is a page it should not be told exists — the same reasoning that
+// already hides pages of another type.
+func (s *Session) Inside(page string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return within(s.manifest.Retrieval.Path, page)
 }

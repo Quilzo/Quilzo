@@ -192,10 +192,10 @@ func TestTheToolBudgetIsSeparate(t *testing.T) {
 func TestARetrievalAgentCannotReadTheDraft(t *testing.T) {
 	s := testSession(t, KindRetrieval)
 
-	if err := s.Retrieve("live", "article", "en"); err != nil {
+	if err := s.Retrieve("live", "page", "article", "en"); err != nil {
 		t.Fatalf("reading live was refused: %v", err)
 	}
-	err := s.Retrieve("draft", "article", "en")
+	err := s.Retrieve("draft", "page", "article", "en")
 	if err == nil {
 		t.Fatal("a live-scoped agent read the draft; that is a disclosure " +
 			"with a friendly interface")
@@ -214,16 +214,16 @@ func TestRetrievalScopeNarrowsByTypeAndLocale(t *testing.T) {
 	}
 	s := NewSession(m, nil)
 
-	if err := s.Retrieve("live", "article", "en-GB"); err != nil {
+	if err := s.Retrieve("live", "page", "article", "en-GB"); err != nil {
 		t.Errorf("en-GB was refused by a scope naming en: %v", err)
 	}
-	if err := s.Retrieve("live", "article", ""); err != nil {
+	if err := s.Retrieve("live", "page", "article", ""); err != nil {
 		t.Errorf("an untyped/unlocalised page was refused: %v", err)
 	}
-	if err := s.Retrieve("live", "legal", "en"); err == nil {
+	if err := s.Retrieve("live", "page", "legal", "en"); err == nil {
 		t.Error("a type outside the scope was read")
 	}
-	if err := s.Retrieve("live", "article", "de"); err == nil {
+	if err := s.Retrieve("live", "page", "article", "de"); err == nil {
 		t.Error("a locale outside the scope was read")
 	}
 }
@@ -250,7 +250,7 @@ func TestReadingStoredContentTaintsTheRun(t *testing.T) {
 	if ok, _ := s.Publishable(); !ok {
 		t.Fatal("a publish-autonomy run that read nothing was not publishable")
 	}
-	if err := s.Retrieve("live", "", ""); err != nil {
+	if err := s.Retrieve("live", "page", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if !s.Tainted() {
@@ -351,11 +351,11 @@ func TestNoAgentWritesToWhatThePublicIsBeingServed(t *testing.T) {
 	}
 	s := NewSession(m, nil)
 
-	if err := s.Mutate("draft", "", ""); err != nil {
+	if err := s.Mutate("draft", "page", "", ""); err != nil {
 		t.Fatalf("a draft write was refused: %v", err)
 	}
 	for _, ref := range []string{"live", "LIVE", "Live"} {
-		err := s.Mutate(ref, "", "")
+		err := s.Mutate(ref, "page", "", "")
 		if err == nil {
 			t.Errorf("a write to %q was allowed. What the public is being "+
 				"served changes when a person says so, and no manifest field "+
@@ -384,13 +384,13 @@ func TestWritingDoesNotTaintAndReadingDoes(t *testing.T) {
 	}
 	s := NewSession(m, nil)
 
-	if err := s.Mutate("draft", "", ""); err != nil {
+	if err := s.Mutate("draft", "page", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if s.Tainted() {
 		t.Error("writing tainted the run")
 	}
-	if err := s.Retrieve("draft", "", ""); err != nil {
+	if err := s.Retrieve("draft", "page", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if !s.Tainted() {
