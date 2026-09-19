@@ -17,11 +17,19 @@
 <h2>Bindings</h2>
 <div class="table-wrap">
 <table>
-  <thead><tr><th scope="col">Principal</th><th scope="col">Role</th><th scope="col">Resource</th><th scope="col">Kind</th><th scope="col">Note</th></tr></thead>
+  <thead><tr><th scope="col">Principal</th><th scope="col">Role</th><th scope="col">Resource</th><th scope="col">Kind</th><th scope="col">Granted by</th><th scope="col">Note</th></tr></thead>
   <tbody>
   {{range .Bindings}}
   <tr><th scope="row">{{.Principal}}</th><td>{{.Role}}</td><td><code>{{.Resource}}</code></td>
       <td>{{if .Deny}}<span class="tag tag-bad">deny</span>{{else}}<span class="tag tag-ok">grant</span>{{end}}</td>
+      {{/*
+        Who granted it. Recorded on both surfaces since this screen existed
+        and read by neither, so "who gave this principal admin?" lived in
+        policy.json and nowhere a person looks. A binding from before it was
+        recorded says so rather than showing an empty cell, because empty
+        reads as nobody.
+      */}}
+      <td>{{if .GrantedBy}}{{.GrantedBy}}{{else}}<span class="hint">unrecorded</span>{{end}}</td>
       <td>{{.Note}}</td></tr>
   {{end}}
   </tbody>
