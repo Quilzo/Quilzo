@@ -380,9 +380,24 @@ func agentCheckRun(root string, args []string) error {
 	// the plan is the manifest rather than anything chosen at run time — and
 	// a capability that is refused here is refused for a reason the operator
 	// can read rather than one a model stumbled into.
-	plan := make([]agent.Action, 0, len(m.Capabilities)+1)
+	plan := make([]agent.Action, 0, len(m.Capabilities)+len(m.Tools)+1)
 	for _, c := range m.Capabilities {
 		plan = append(plan, agent.Action{Op: c})
+	}
+	// And the tools, which the walk ignored.
+	//
+	// "Everything that decides what an agent may do is in the manifest" —
+	// and the tool list is half of it. A manifest declaring a tool was
+	// checked for its capabilities and never for whether the tool resolves:
+	// whether this install has an integration offering it, whether that
+	// integration is enabled, and whether it points where the manifest says.
+	//
+	// All three are answerable without a model and without reaching the far
+	// side, which is what this mode is for. An operator who has just declared
+	// a tool wants to know it is wired before an agent tries to use it in
+	// front of somebody.
+	for _, t := range m.Tools {
+		plan = append(plan, agent.Action{Tool: t.Name})
 	}
 	plan = append(plan, agent.Action{Say: "checked"})
 
@@ -440,6 +455,27 @@ func agentCheckRun(root string, args []string) error {
 				Author:  "agent/" + m.Name,
 				Gate:    pageGate(root),
 				Propose: proposeCommit(root, s),
+			},
+			// The tool surface, which had no executor at all.
+			//
+			// Every part of it existed — the manifest's host allow-list,
+			// Session.MayCallTool, Integrations.Resolve, and a client that
+			// refuses a tool the far side newly advertises — and Dispatch had
+			// no branch to reach them, so an authorised tool call came back
+			// "not implemented here".
+			//
+			// The same client `quilzo integrations call` uses, so the two
+			// surfaces cannot drift into different ideas of what may be
+			// reached or which credential is presented.
+			agentexec.Tools{
+				Installed: func() (agent.Integrations, error) {
+					set, err := loadIntegrations(root)
+					if err != nil || set == nil {
+						return agent.Integrations{}, err
+					}
+					return *set, nil
+				},
+				Call: newMCPClient(root),
 			},
 			sess,
 		),

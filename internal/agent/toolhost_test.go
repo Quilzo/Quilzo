@@ -197,3 +197,63 @@ func TestToolForRefusesWhatIsNotDeclared(t *testing.T) {
 		}
 	}
 }
+
+// A tool call taints the run, for the reason a store read does and more so: a
+// tool result is whatever a third-party host chose to return, on this request,
+// with no review by anybody here.
+//
+// Without it an agent could call out, receive attacker-controlled content, and
+// publish it without a person — through a deputy holding this store's
+// credentials. MayReach never set the taint, which did not matter only because
+// no executor performed a tool call.
+func TestAToolCallTaintsTheRun(t *testing.T) {
+	s := NewSession(twoToolAgent(), nil)
+	if s.Tainted() {
+		t.Fatal("tainted before doing anything")
+	}
+	if err := s.MayCallTool("crm", ""); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Tainted() {
+		t.Error("an agent that called out to a third party can still publish")
+	}
+}
+
+// A refused call taints nothing, or a caller could burn an agent's ability to
+// publish by asking it to do something it may not do.
+func TestARefusedToolCallDoesNotTaint(t *testing.T) {
+	for _, tc := range []struct{ tool, host string }{
+		{"crm", "evil.example.net"},  // a redirect
+		{"nope", ""},                 // an undeclared tool
+		{"crm", "hooks.example.org"}, // another of its own hosts
+	} {
+		s := NewSession(twoToolAgent(), nil)
+		if err := s.MayCallTool(tc.tool, tc.host); err == nil {
+			t.Fatalf("%s/%s was permitted", tc.tool, tc.host)
+		}
+		if s.Tainted() {
+			t.Errorf("a refused call to %s/%s tainted the run", tc.tool, tc.host)
+		}
+	}
+}
+
+// And an agent that has called a tool cannot publish, which is the whole point
+// of the taint.
+func TestAnAgentThatCalledOutCannotPublish(t *testing.T) {
+	m := twoToolAgent()
+	m.Capabilities = append(m.Capabilities, "publish")
+	m.Autonomy = AutonomyPublish
+	if err := m.Validate(map[string]bool{
+		"read_page": true, "publish": true}); err != nil {
+		// Validate forces HumanApproval for publish autonomy, which is a
+		// second reason this is refused. The taint is the first.
+		t.Logf("manifest note: %v", err)
+	}
+	s := NewSession(m, nil)
+	if err := s.MayCallTool("crm", ""); err != nil {
+		t.Fatal(err)
+	}
+	if ok, why := (&Trace{}).Publishable(s); ok {
+		t.Errorf("an agent that called a third-party tool is publishable: %s", why)
+	}
+}
