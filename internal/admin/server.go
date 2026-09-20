@@ -63,6 +63,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	stdpath "path"
 	"sort"
 	"strconv"
 	"strings"
@@ -72,6 +73,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/collection"
+	publishgate "github.com/quilzo/quilzo/internal/gate"
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/render"
@@ -245,6 +247,24 @@ type Server struct {
 	// audit log stays the host's concern.
 	OnSignIn func(principal, tokenID string)
 
+	// ContentGates is every check about the content being published, run
+	// before the ones that can be waived.
+	//
+	// Imported under a name because this package already has a `gate` type,
+	// for the screen that says up front what will refuse a publish. Two things
+	// with one name and different jobs is how somebody reads the wrong one.
+	//
+	// Wired from cmd/quilzo rather than built here, because the checks need
+	// the media library, the type registry, the claim rules and the menus, and
+	// that package is the one that has them all. See internal/gate: this screen
+	// ran four fewer gates than `quilzo publish` and published a draft the
+	// command line refuses.
+	//
+	// Nil means unwired, which a build without them is. It is not a pass: the
+	// handler says the checks could not run, for the same reason the command
+	// line refuses when one errors.
+	ContentGates func(ref string) (*publishgate.Report, []publishgate.Finding, error)
+
 	// Locks are advisory claims on pages, so two people do not each spend an
 	// afternoon on the same one. They never prevent a write — compare-and-swap
 	// does that — and they expire on their own.
@@ -373,6 +393,10 @@ type principal struct {
 	// and nowhere else. A read-only token could save a page and publish it
 	// through this interface, which is the interface most people use.
 	Limits auth.Scope
+	// TokenID and Session identify the credential itself, so signing out can
+	// revoke the session it was issued for rather than only forgetting it.
+	TokenID string
+	Session bool
 }
 
 // authenticate resolves a request to a principal.
@@ -398,7 +422,7 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 	}
 	return principal{
 		Name: tok.Principal, Role: tok.Role, Scope: tok.Resource,
-		Limits: tok.Scope}, nil
+		Limits: tok.Scope, TokenID: tok.ID, Session: tok.IsSession()}, nil
 }
 
 // can checks a permission and writes the refusal itself if there is one.
@@ -444,6 +468,95 @@ func (s *Server) can(w http.ResponseWriter, r *http.Request, p principal,
 		"Body":    d.Reason,
 	})
 	return false
+}
+
+// Asking the authorisation question about the page, and not about the site.
+//
+// # What was wrong
+//
+// The policy supports a binding scoped to part of the site — `--on /blog`,
+// which the README describes as enforced, and `--deny` on a path, which the
+// people screen renders as a rule. Eight handlers here read a page name out of
+// the request and then asked whether the caller could act on "/".
+//
+// That is wrong in both directions at once, and only one of them is visible.
+//
+// covers("/blog", "/") is false, so an author granted author on /blog was
+// refused everything: the pages list, their own page's notes, a review date on
+// a page inside their scope. The editor rendered and every control in it
+// answered 403. Somebody narrowed to part of the site could not use the
+// browser at all.
+//
+// And a deny scoped to a path never matched, because the target was always
+// "/". A principal holding admin on "/" and denied author on /about was
+// refused by the command line and permitted here:
+//
+//	quilzo note add about "…"                  denied author on /about
+//	POST /notes/add page=about text=…          200, and the note was written
+//
+// The browser is the surface where the deny is *displayed*, which makes this
+// the worse half: somebody reads the policy on the people screen, sees the
+// rule, and believes it.
+//
+// # The shape of the fix
+//
+// canPage for the handler that knows the name, canAnywhere for the screen that
+// is about to list things and does not know a name yet. A test walks this
+// package's source and fails when a handler reads a page name and authorises
+// "/", because this is a convention and the convention is what did not hold.
+
+// canPage is can() for a handler that knows which page it is about.
+func (s *Server) canPage(w http.ResponseWriter, r *http.Request, p principal,
+	act auth.Action, page string) bool {
+
+	return s.can(w, r, p, act, pageResource(page))
+}
+
+// canAnywhere is the gate for a screen that lists things it has not named yet.
+//
+// It asks whether the caller may do this anywhere at all, and the screen then
+// asks the per-page question for every row it is about to show. Weak on
+// purpose: it decides whether the screen opens, not what is on it.
+func (s *Server) canAnywhere(w http.ResponseWriter, r *http.Request,
+	p principal, act auth.Action) bool {
+
+	if s.Policy == nil {
+		return s.can(w, r, p, act, "/")
+	}
+	// The credential's own limits still apply. Its role cap and its read-only
+	// and type dimensions are site-wide by nature — a read-only token is
+	// read-only everywhere — so they are asked here in full. Only its path
+	// dimension is asked about itself rather than about "/", because a token
+	// scoped to /blog failing to cover "/" is the same wrong question this
+	// function exists to stop asking.
+	within := strings.TrimSpace(p.Scope)
+	if within == "" {
+		within = "/"
+	}
+	if s.Policy.Anywhere(p.Name, act) &&
+		auth.CheckCredential(p.Role, p.Scope, p.Limits, act, within) == nil {
+		return true
+	}
+	return s.can(w, r, p, act, "/")
+}
+
+// pageResource is the resource path for a page name.
+//
+// Refused rather than repaired, the same rule the command line's gate follows
+// and for the same reason: a name that does not survive path.Clean is not a
+// page this store holds, and cleaning it quietly would authorise one path and
+// act on another. "/" is the strict answer, since only a binding on the whole
+// site covers it.
+func pageResource(page string) string {
+	page = strings.TrimSpace(page)
+	if page == "" || strings.HasPrefix(page, "-") {
+		return "/"
+	}
+	res := "/" + strings.TrimPrefix(page, "/")
+	if stdpath.Clean(res) != res {
+		return "/"
+	}
+	return res
 }
 
 // renderTypeFailures explains a refused save.
@@ -871,13 +984,61 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
+	// The same limiter every other credential check goes through.
+	//
+	// This form did not. requireAuth throttles a token presented as a cookie,
+	// and the identical guess sent through the sign-in box was free: measured
+	// against the running server, forty wrong tokens through here returned
+	// forty 401s and never once a 429, while two through the cookie path were
+	// enough to start refusing.
+	//
+	// Worse than the missing limit is the missing count. Failures here never
+	// reached Throttle.Fail, so they did not contribute to the per-source
+	// counter that protects every other surface, and they never crossed the
+	// threshold that fires OnAuthFailure — so a sustained attempt against the
+	// one door built for people raised no alert at all.
+	sub := throttle.Subject{Source: sourceOf(r)}
+	if s.Throttle != nil {
+		if d := s.Throttle.Check(sub); !d.Allowed {
+			s.tooManyAttempts(w, r, d)
+			return
+		}
+	}
+
 	raw := strings.TrimSpace(r.FormValue("token"))
-	if _, err := s.Tokens.Authenticate(raw, time.Now()); err != nil {
+	tok, err := s.Tokens.Authenticate(raw, time.Now())
+	if err != nil {
+		if s.Throttle != nil {
+			d, alert := s.Throttle.Fail(sub)
+			if alert && s.OnAuthFailure != nil {
+				s.OnAuthFailure(sub.Source, d.Failures)
+			}
+			if !d.Allowed {
+				s.tooManyAttempts(w, r, d)
+				return
+			}
+		}
 		w.WriteHeader(http.StatusUnauthorized)
 		s.render(w, r, "signin.html", map[string]any{
 			"Title": "Sign in", "Error": err.Error(), "OIDC": s.OIDC != nil})
 		return
 	}
+
+	// Somebody signed in, and the log says so.
+	//
+	// It did not. OnSignIn exists and is assigned only inside the OIDC block
+	// in cmd/quilzo, so on the ordinary deployment — a token, or a passkey,
+	// and no identity provider — the log held content changes with no record
+	// of anybody ever signing in at all. AU-2 asks for the session, not only
+	// for what was done inside it.
+	//
+	// The success, not every failure. A failure record is written by whoever
+	// is failing, and an unauthenticated caller who can make the log grow is
+	// a way to bury the entries that matter; the throttle's alert above is the
+	// bounded version of the same signal.
+	s.audit("session.start", "/", map[string]string{
+		"by": tok.Principal, "credential": tok.ID, "how": "token",
+	})
 
 	// Secure over TLS, or where the deployment says something in front of it
 	// is terminating TLS. Not unconditionally: a Secure cookie is refused on a
@@ -915,6 +1076,27 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
+	// A session is revoked, not just forgotten.
+	//
+	// This cleared the cookie and left the credential alive. The OIDC and
+	// passkey paths mint a server-side session token that lasts eight hours,
+	// so somebody who signed in through an identity provider, pressed Sign
+	// out, and walked away had a working credential for the rest of the
+	// working day — in a proxy log, in a shared machine's memory, in whatever
+	// copied the Authorization header. Signing out is the one moment a person
+	// tells you they are finished with a credential, and it was the moment
+	// this did the least.
+	//
+	// Only a session. A long-lived token presented as a cookie is somebody's
+	// own credential, used deliberately, and revoking it because they closed
+	// a tab would destroy the thing they signed in with.
+	if p, err := s.authenticate(r); err == nil && p.TokenID != "" && p.Session {
+		if _, err := s.Tokens.Revoke(p.TokenID); err == nil {
+			if serr := s.save(); serr == nil {
+				s.audit("session.end", "/", map[string]string{"by": p.Name})
+			}
+		}
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil || s.behindTLSProxy(),
@@ -1036,7 +1218,10 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActView, "/") {
+	// Whether they may read anything, not whether they may read everything.
+	// This screen asked the second question, so an author granted author on
+	// /blog was refused the front door of the interface.
+	if !s.canAnywhere(w, r, p, auth.ActView) {
 		return
 	}
 
@@ -1044,8 +1229,15 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	live := s.Store.GetRef(site.RefLive)
 	pages, _ := site.PagesAt(s.Store, site.RefDraft)
 
+	// And then the listing is what they may read, page by page. A list that
+	// names pages somebody cannot open is a worse answer than a refusal: it
+	// tells them the pages exist and what they are called, which is most of
+	// what a scope was drawn to withhold.
 	names := make([]string, 0, len(pages))
 	for n := range pages {
+		if !s.mayUse(p, auth.ActView, pageResource(n)) {
+			continue
+		}
 		names = append(names, n)
 	}
 	sort.Strings(names)
@@ -1403,7 +1595,38 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 		"Nav":   "security",
 		"Title": "Security posture", "Principal": p,
 		"Report": rep, "Controls": controls, "Band": band(rep.Score),
+		"Throttled": s.throttled(),
 	})
+}
+
+// throttled is who is currently being slowed down, or nothing.
+//
+// # Why this screen and not a command
+//
+// throttle.Snapshot and Limiter.State were written "for `quilzo auth
+// throttled`", which does not exist — and could not, as written. The limiter's
+// counters live in the memory of the process holding them, and the command
+// line is a different process: a CLI subcommand would report an empty limiter
+// it had just constructed, every time, and look like nothing was happening.
+//
+// This is the process that has one. So the state goes on the posture screen,
+// which is where somebody asking "is something happening" already looks.
+//
+// Without it, auth.lockout.hard could be switched on and its consequences were
+// unobservable on every surface: no way to see that an account or an address
+// was locked out, or that the alert threshold had been crossed, short of
+// reading the audit log for auth.failures and counting.
+//
+// The subjects are opaque by construction — the limiter holds HMACs — so this
+// reports counts and timings and cannot say who. That is the package's own
+// decision and the right one: the list of principals currently being attacked
+// is itself worth protecting, and the audit log has the pseudonymised
+// identifiers for the case where somebody does need them.
+func (s *Server) throttled() []throttle.Snapshot {
+	if s.Throttle == nil {
+		return nil
+	}
+	return s.Throttle.State()
 }
 
 // band turns the score into a class name, so the colour is decided once.
@@ -1586,7 +1809,7 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActView, "/") {
+	if !s.canAnywhere(w, r, p, auth.ActView) {
 		return
 	}
 
@@ -1597,12 +1820,19 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 		changes, _ = site.Diff(s.Store, live, draft)
 	}
 
-	reports := s.checkAll(draft)
+	reports, a11yErr := s.checkAll(draft)
+	a11yUnavailable := ""
+	if a11yErr != nil {
+		// Said on the screen rather than left as an empty list, which is what
+		// "no blocking failures" would have been reporting.
+		a11yUnavailable = a11yErr.Error()
+	}
 	s.render(w, r, "review.html", map[string]any{
-		"Approval": s.approvalFor(p, draft),
-		"Message":  r.URL.Query().Get("m"),
-		"Nav":      "review",
-		"Title":    "Review", "Principal": p, "Changes": changes,
+		"AccessibilityUnavailable": a11yUnavailable,
+		"Approval":                 s.approvalFor(p, draft),
+		"Message":                  r.URL.Query().Get("m"),
+		"Nav":                      "review",
+		"Title":                    "Review", "Principal": p, "Changes": changes,
 		"Reports": reports, "Blocking": a11y.BlockingCount(reports),
 		"Saved":      r.URL.Query().Get("saved"),
 		"CanPublish": s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed,
@@ -1611,13 +1841,38 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 }
 
 // checkAll renders every page and runs the accessibility checks.
-func (s *Server) checkAll(commitID string) []*a11y.Report {
-	if commitID == "" || s.Layouts.Len() == 0 {
-		return nil
+//
+// The error is the difference between "nothing is wrong" and "nothing was
+// looked at", and this used to return only the first. Every failure on the way
+// to a rendered page — the draft unreadable, a page that would not assemble, a
+// template that would not render — came back as an empty slice, which reads to
+// every caller as a clean check, and the publish handler then reported zero
+// blocking failures over pages it had never rendered.
+//
+// The command line has refused on a gate error for as long as somebody has
+// been looking, and says why at length: a gate that cannot run must not exit
+// like a gate that passed.
+func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
+	if commitID == "" {
+		return nil, nil // no draft is nothing to check, not a failure
+	}
+	if s.Layouts.Len() == 0 {
+		// Not a failure. A server started without a template directory is a
+		// store that renders somewhere else, which the command line treats as
+		// the one legitimate reason to turn this gate off — it has
+		// --no-a11y-check for exactly this and nothing here would have an
+		// escape hatch. The review screen already says "no template
+		// configured, so nothing was rendered to check", which is the honest
+		// version of the same answer.
+		//
+		// The silent skips this function used to make were a different thing:
+		// those were layouts that exist, pages that should have rendered, and
+		// errors on the way.
+		return nil, nil
 	}
 	pages, err := site.PagesAt(s.Store, commitID)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	// Rendered the way the public server renders them, which is not what this
 	// did before: it passed the page and nothing else, so every check ran
@@ -1632,26 +1887,42 @@ func (s *Server) checkAll(commitID string) []*a11y.Report {
 	// neither.
 	src := s.sources(commitID, pages)
 	rendered := map[string]string{}
+
+	// A page asking for a layout this site does not have is a blocking failure
+	// of its own, named before anything is published. The comment here used to
+	// say it was "reported as its own blocking finding below rather than
+	// skipped" and the code skipped it, with nothing below — so a page with a
+	// typo in its layout name rendered to nothing for readers, contributed
+	// zero to the blocking count, and published cleanly from the browser while
+	// the command line refused it.
+	var extra []*a11y.Report
+	for page, layout := range s.Layouts.Missing(pages) {
+		extra = append(extra, a11y.Blocker(page, "layout-not-found", "",
+			fmt.Sprintf("this page asks for the %q layout, which this site "+
+				"does not have. It would not render for a reader at all. "+
+				"Layouts available: %s", layout,
+				strings.Join(s.Layouts.Names(), ", "))))
+	}
+
 	for name, body := range pages {
 		ctx, cerr := src.For(name, body, nil)
 		if cerr != nil {
-			continue
+			return nil, fmt.Errorf("assembling %s: %w", name, cerr)
 		}
 		_, layout, lerr := s.Layouts.For(body)
 		if lerr != nil {
-			// A page naming a layout this site does not have cannot be judged,
-			// and passing it silently would be a gate that reports clean over
-			// a page it never rendered. Reported as its own blocking finding
-			// below rather than skipped.
+			// Already reported above. Rendering it through something else to
+			// have something to check would be checking a document nobody is
+			// served.
 			continue
 		}
 		out, err := tmpl.Render(layout, ctx)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("rendering %s: %w", name, err)
 		}
 		rendered[name] = out
 	}
-	return a11y.CheckAll(rendered)
+	return append(a11y.CheckAll(rendered), extra...), nil
 }
 
 func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
@@ -1668,16 +1939,102 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	draft := s.Store.GetRef(site.RefDraft)
-	reports := s.checkAll(draft)
+	reports, checkErr := s.checkAll(draft)
+	if checkErr != nil {
+		// Refused rather than waived, for the reason the provenance branch
+		// below gives: the reason box is for a judgement about something
+		// somebody has read, and there is nothing here to read. Before this
+		// the helper swallowed the error and returned an empty slice, which
+		// reads to this handler as "nothing is wrong" — a page that could not
+		// be rendered published clean.
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, r, "message.html", map[string]any{
+			"Title": "Not published", "Principal": p,
+			"Heading": "The accessibility check could not run",
+			"Body": "Publishing would claim a check that did not happen: " +
+				checkErr.Error(),
+		})
+		return
+	}
+	// The unified content-gate runner is on main and not here.
+	//
+	// The upstream version of this hunk calls s.ContentGates, which #135
+	// added so the four publish surfaces stop running four different sets of
+	// checks. That refactor is not on this branch, so this screen still runs
+	// what checkAll runs — which is fewer gates than `quilzo publish` does,
+	// and is a known gap in this release rather than an oversight.
+	//
+	// What this commit fixes is separate and does apply: two helpers below
+	// returned an empty slice on every error, and an empty slice reads to the
+	// caller as "nothing is wrong".
+
+	// Every check about the content, first and unwaivable.
+	//
+	// This screen used to run four fewer gates than `quilzo publish` —
+	// classification, image rights, arrangement and claims — and published a
+	// draft the command line refuses, with an unsubstantiated claim on it.
+	// internal/gate has the table and the demonstration.
+	//
+	// Before the reason box, and not clearable by it. The waiver on this
+	// screen is one text field that already clears more gates than the person
+	// typing in it is thinking about; adding four more to it would be worse
+	// than leaving them out.
+	if s.ContentGates == nil {
+		http.Error(w, "the content checks are not wired up in this build, so "+
+			"publishing would claim checks that did not happen",
+			http.StatusServiceUnavailable)
+		return
+	}
+	refused, advisory, gerr := s.ContentGates(draft)
+	if gerr != nil {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, r, "message.html", map[string]any{
+			"Title": "Not published", "Principal": p,
+			"Heading": "A check could not run", "Body": gerr.Error(),
+		})
+		return
+	}
+	if refused != nil {
+		details := make([]string, 0, len(refused.Findings))
+		for _, f := range refused.Findings {
+			details = append(details, f.String())
+		}
+		s.audit("publish.refused", "/", map[string]string{
+			"gate": refused.Check.Name,
+			"how":  strconv.Itoa(len(refused.Findings)),
+		})
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, r, "message.html", map[string]any{
+			"Title": "Not published", "Principal": p,
+			"Heading": refused.Check.Refusal(len(refused.Findings)),
+			"Details": details,
+		})
+		return
+	}
+
 	blocking := a11y.BlockingCount(reports)
 	reason := strings.TrimSpace(r.FormValue("reason"))
+	_ = advisory
 
 	// Provenance is gated here for the same reason accessibility is: a control
 	// present on the command line and absent from the interface is a control
 	// with a hole in whichever one people actually use — and the interface is
 	// the one an editor uses, which is exactly the person likely to be
 	// publishing what an assistant wrote.
-	unmarked := s.unmarkedPages(draft)
+	unmarked, provErr := s.unmarkedPages(draft)
+	if provErr != nil {
+		// Refused, not waived, and for the same reason the accessibility error
+		// above is: the reason box is for a judgement call about something
+		// somebody has read, and there is nothing here to read.
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, r, "message.html", map[string]any{
+			"Title": "Not published", "Principal": p,
+			"Heading": "The provenance check could not run",
+			"Body": "Publishing would claim a check that did not happen: " +
+				provErr.Error(),
+		})
+		return
+	}
 	// What the one reason field waives, collected as each gate is reached.
 	//
 	// review.html shows a single free-text box, and typing anything in it
@@ -1881,7 +2238,14 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		"Body": fmt.Sprintf("%d change%s are now live. The previous version is "+
 			"still stored, so rolling back moves a pointer.",
 			len(pub.Changes), plural(len(pub.Changes))),
+		// What was waived, and not the word "accessibility" whatever it was.
+		// The template said "Published with an accessibility override" for
+		// every one of the four gates this box clears, so somebody who typed a
+		// reason for an unmarked page was told they had overridden an
+		// accessibility failure — which is the wrong record of the wrong
+		// decision, on the screen where the decision is confirmed.
 		"Override": reason,
+		"Waived":   waived,
 	})
 }
 
@@ -1924,28 +2288,58 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 }
 
 // unmarkedPages lists pages with no usable provenance at a commit.
-func (s *Server) unmarkedPages(commitID string) []string {
-	if commitID == "" || s.LoadProvenance == nil {
-		return nil
+// unmarkedPages is the pages in a commit that declare no provenance.
+//
+// The error matters as much as the list. Every failure here — an unreadable
+// provenance index, a draft that will not read — came back as an empty slice,
+// which reads as "nothing is unmarked", and the publish handler then reported
+// a clean provenance check, recorded an affirmative audit entry, and put the
+// content up. Corrupting the index was the way to publish unmarked AI content
+// through the browser. The command line and the agent interface both refuse on
+// a gate error and both say why.
+func (s *Server) unmarkedPages(commitID string) ([]string, error) {
+	if commitID == "" {
+		return nil, nil
+	}
+	if s.LoadProvenance == nil {
+		// Unwired, which is a build without provenance rather than a store
+		// with none. Reported so the caller can say which.
+		return nil, errNoProvenance
 	}
 	idx, err := s.LoadProvenance()
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	c, err := s.Store.GetCommit(commitID)
+	// site.PageIDsAt and not the raw tree.
+	//
+	// The tree holds more than pages. A store with records in it carries a
+	// "data" entry, and walking the tree treated that entry as a page called
+	// "data" — so this screen told an editor "1 page(s) have no usable
+	// provenance: data", named something they cannot open, cannot mark, and
+	// did not write. The only way past it was to type a reason into the
+	// override box, which then recorded a waiver for a page that does not
+	// exist.
+	//
+	// The agent interface had the same bug and was fixed the same way.
+	// site.PageIDsAt is the single answer to "what did this page say", and
+	// asking it is what keeps three screens from each having their own idea of
+	// what a page is.
+	tree, err := site.PageIDsAt(s.Store, commitID)
 	if err != nil {
-		return nil
-	}
-	tree, err := s.Store.GetTree(c.Tree)
-	if err != nil {
-		return nil
+		return nil, err
 	}
 	var out []string
 	for _, st := range provenance.Unmarked(provenance.Check(idx, tree)) {
 		out = append(out, st.Page)
 	}
-	return out
+	sort.Strings(out)
+	return out, nil
 }
+
+// errNoProvenance is a build with nowhere to read provenance from.
+var errNoProvenance = errors.New(
+	"this build has no provenance index, so whether the content carries a " +
+		"machine-readable mark is unknown rather than satisfied")
 
 func (s *Server) handleProvenance(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.requireAuth(w, r)
@@ -2236,4 +2630,20 @@ func plural(n int) string {
 		return ""
 	}
 	return "s"
+}
+
+// mayUse answers the authorisation question without writing a response.
+//
+// The same question can() asks and the same way, for the callers that need the
+// answer rather than the redirect. On main it arrived with internal/find and
+// lives in find.go; that package is not on this branch, and three lines of
+// predicate is not a feature to backport.
+//
+// No policy means no access control is configured, which is the single-operator
+// case and permits everything — matching navigation().
+func (s *Server) mayUse(p principal, act auth.Action, resource string) bool {
+	if s.Policy == nil {
+		return true
+	}
+	return s.Policy.Evaluate(p.Name, act, resource).Allowed
 }

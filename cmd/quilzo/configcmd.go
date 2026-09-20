@@ -66,6 +66,30 @@ func throttlePolicy(c *config.Config) throttle.Policy {
 	}
 }
 
+// sharePolicy is the throttle policy for the share sheet.
+//
+// Derived from the form policy rather than configured separately, because two
+// sets of numbers is two things to get wrong and the relationship between them
+// is the point: a share must be harder than a form, whatever a form is set to.
+//
+// Harder in the two dimensions that matter. One free attempt instead of five,
+// because a share arrives from the operating system's share sheet and nobody
+// shares the same page five times in a row by accident. Half the hourly
+// ceiling, because a share has one fewer defence than a form — the honeypot
+// and the timing stamp both need a page this server rendered, and a share
+// loaded none — so this limit is the whole of what replaces them.
+//
+// Deliberately not a separate config setting. An operator who tightens
+// auth.throttle tightens this with it, which is what they meant.
+func sharePolicy(c *config.Config) throttle.Policy {
+	p := throttlePolicy(c)
+	p.After = 1
+	if p.Ceiling > 1 {
+		p.Ceiling /= 2
+	}
+	return p
+}
+
 func cmdConfig(root string, args []string) error {
 	if len(args) == 0 {
 		return configShow(root)

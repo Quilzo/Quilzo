@@ -30,6 +30,7 @@ import (
 	"github.com/quilzo/quilzo/internal/ext"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/gate"
 	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/media"
@@ -408,6 +409,30 @@ func cmdServe(root string, args []string) error {
 		Record: func(pages []string, model, author string) error {
 			return recordAssisted(root, s, pages, model, author)
 		},
+		// The publish gates, asked about a draft that does not exist yet.
+		//
+		// CommitOnto writes the objects and moves no ref, which is what a
+		// content-addressed store makes cheap: the candidate is a real commit
+		// the checks can be pointed at, and nothing anybody can reach points
+		// at it. The alternative — teaching every check to read a map of
+		// pages instead of a commit — would be a second implementation of
+		// seven gates, which is the drift internal/gate exists to have
+		// stopped.
+		//
+		// It leaves a commit nothing points at, one per proposal. That is
+		// what this store does with every commit — it cannot forget, and a
+		// rolled-back publication is still in it — so the cost is the tree
+		// objects for the pages that changed, and the page bodies are already
+		// stored under their hashes by the time the gates run.
+		Gates: func(pages map[string]any) (*gate.Report, []gate.Finding, error) {
+			cid, err := site.CommitOnto(s, pages,
+				"a proposal, considered and not published", "assistant",
+				s.GetRef(site.RefDraft))
+			if err != nil {
+				return nil, nil, err
+			}
+			return contentGates(root, s, cid).Run()
+		},
 	}
 	// What people say about themselves. A display name and a way to reach
 	// them, and deliberately nothing else — every field here is data this
@@ -471,6 +496,26 @@ func cmdServe(root string, args []string) error {
 	// are turned on deliberately.
 	apiSrv := &api.Server{
 		Store: s, Policy: pol, Tokens: toks,
+		// The admin's own limiter and token reloader, not a second set and
+		// not nothing.
+		//
+		// It was nothing. Every throttle call in internal/api is guarded by
+		// `if s.Throttle != nil`, so under `quilzo serve` the bearer endpoint
+		// had no failed-authentication limit at all — tokens could be spent
+		// against it at line rate, uncounted, undelayed, and with no alert,
+		// while the same guesses against the admin's own screens were refused
+		// after five. `quilzo site` wired all three; this one wired none, and
+		// the two are the same API.
+		//
+		// The *same* limiter rather than another one, because a failure is a
+		// failure: an attacker who finds one door throttled should not get a
+		// fresh allowance by knocking on the other.
+		//
+		// ReloadTokens for the same reason it is set on the admin above. With
+		// it nil, a token revoked in another process kept authenticating here
+		// until an admin request happened to reload the store.
+		Throttle:     srv.Throttle,
+		ReloadTokens: srv.ReloadTokens,
 		// The same cache the admin uses. One process, one decoded copy of a
 		// collection — two would be the same memory spent twice and two
 		// chances for one of them to be built wrong.
@@ -491,6 +536,19 @@ func cmdServe(root string, args []string) error {
 				return commitTreeNoLock(s, tree, message, author)
 			},
 		},
+	}
+	// And the API reports its failures the same way, rather than reaching the
+	// threshold in silence. Set after Handler() is built because the handler
+	// closes over the server value, not over this field.
+	apiSrv.OnAuthFailure = func(source string, failures int) {
+		record(root, audit.Record{
+			Action: "auth.failures", Resource: "/api",
+			Outcome: audit.Denied, Principal: source, Kind: audit.KindUnknown,
+			Detail: map[string]string{
+				"failures": fmt.Sprintf("%d", failures),
+				"surface":  "api",
+			},
+		})
 	}
 	srv.API = apiSrv.Handler()
 	srv.OnAuthFailure = func(source string, failures int) {
@@ -596,6 +654,14 @@ func cmdServe(root string, args []string) error {
 			})
 		}
 		fmt.Fprintf(os.Stderr, "  %ssign-in via %s%s\n", dim, cfg.Issuer, reset)
+	}
+
+	// The same content gates `quilzo publish` runs, built here because this is
+	// the package that can reach the media library, the type registry, the
+	// claim rules and the menus. See internal/gate for what the browser used
+	// to publish that the command line refuses.
+	srv.ContentGates = func(ref string) (*gate.Report, []gate.Finding, error) {
+		return contentGates(root, s, ref).Run()
 	}
 
 	srv.Locks = func() (*collab.Locks, error) { return loadLocks(root) }

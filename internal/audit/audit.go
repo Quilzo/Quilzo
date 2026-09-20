@@ -311,6 +311,33 @@ type Record struct {
 // credentials do not belong in an audit log at any level of redaction.
 var forbidden = []string{"token", "secret", "password", "key", "body", "content"}
 
+// ForbiddenKey explains why a Detail key is refused, or answers empty.
+//
+// Exported because the refusal is the whole record, not the key: Append
+// returns an error and the callers print it and carry on, so a record with one
+// badly-named key is not a redacted record — it is no record. Two of them were
+// shipped that way. "token" for the id of a credential being revoked, and
+// "content" for the hash of a proposal a publish gate had just refused: both
+// are identifiers rather than secrets, both matched a substring, and both acts
+// went unlogged while the code that wrote them looked correct.
+//
+// So the list is checkable from outside, and a test walks the source and fails
+// on a literal that would be refused — before it becomes a hole in the trail
+// that only shows up when somebody goes looking for an act that is not there.
+func ForbiddenKey(k string) string {
+	lower := strings.ToLower(k)
+	for _, bad := range forbidden {
+		if strings.Contains(lower, bad) {
+			return fmt.Sprintf("detail key %q looks like it carries a secret "+
+				"or content; those are not logged at all, redacted or "+
+				"otherwise. The whole record is refused, so rename the key "+
+				"(%q is the part that matched) rather than leaving the act "+
+				"unlogged", k, bad)
+		}
+	}
+	return ""
+}
+
 // Append writes one event and returns it.
 func (l *Log) Append(r Record) (*Event, error) {
 	if strings.TrimSpace(r.Action) == "" {
@@ -350,13 +377,8 @@ func (l *Log) Append(r Record) (*Event, error) {
 				"because a credential proved it")
 	}
 	for k := range r.Detail {
-		lower := strings.ToLower(k)
-		for _, bad := range forbidden {
-			if strings.Contains(lower, bad) {
-				return nil, fmt.Errorf(
-					"detail key %q looks like it carries a secret or content; those are "+
-						"not logged at all, redacted or otherwise", k)
-			}
+		if why := ForbiddenKey(k); why != "" {
+			return nil, fmt.Errorf("%s", why)
 		}
 	}
 

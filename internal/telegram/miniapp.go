@@ -95,9 +95,34 @@ type Publisher interface {
 	// Save writes the page and publishes it, returning the path a reader can
 	// use. It runs the same gates as every other write: if it refuses, the
 	// reason is shown to the person who caused it.
-	Save(handle string, body map[string]any, author, message string) (string, error)
+	//
+	// wrote says whether the person is declaring the words as their own. The
+	// publish gate refuses content that declares no provenance, and this is
+	// the only surface where the person at the gate is also the author — so
+	// they are asked, rather than an answer being invented for them. It is
+	// the same question the browser's publish screen puts to an operator, put
+	// to the one person who actually knows.
+	Save(handle string, body map[string]any, author, message string,
+		wrote bool) (string, error)
 	// Designs lists what may be chosen.
 	Designs() []Design
+}
+
+// declaredAuthorship reads the answer to "who wrote this".
+//
+// Two named values rather than a checkbox, because an unticked box and an
+// unanswered question look the same on the wire and they are not the same
+// statement. Nothing is assumed from silence: the publish refuses and asks,
+// which is the honest version of a gate whose whole purpose is that the mark
+// means something.
+func declaredAuthorship(r *http.Request) (wrote, asked bool) {
+	switch r.FormValue("wrote") {
+	case "me":
+		return true, true
+	case "model":
+		return false, true
+	}
+	return false, false
 }
 
 // App serves the Mini App.
@@ -305,8 +330,16 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 				"without one.")
 			return
 		}
+		wrote, asked := declaredAuthorship(r)
+		if !asked {
+			a.editor(w, user, "", "Before publishing, say whether you wrote "+
+				"this yourself or a model wrote it. The law asks for "+
+				"AI-generated content to carry a mark, and nobody but you "+
+				"knows the answer.")
+			return
+		}
 		where, perr := a.Publisher.Save(user.Handle(), body, user.Label(),
-			"publish "+user.Handle()+" from Telegram")
+			"publish "+user.Handle()+" from Telegram", wrote)
 		if perr != nil {
 			a.editor(w, user, "", perr.Error())
 			return
@@ -343,8 +376,16 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 		body["design"] = design
 	}
 
+	wrote, asked := declaredAuthorship(r)
+	if !asked {
+		a.form(w, user, "", "Before publishing, say whether you wrote this "+
+			"yourself or a model wrote it. The law asks for AI-generated "+
+			"content to carry a mark, and nobody but you knows the answer.",
+			typed)
+		return
+	}
 	where, err := a.Publisher.Save(user.Handle(), body, user.Label(),
-		"publish "+user.Handle()+" from Telegram")
+		"publish "+user.Handle()+" from Telegram", wrote)
 	if err != nil {
 		// The gate's own words, not a summary of them — and everything they
 		// typed, back in the form. Somebody refused for a missing alt
@@ -427,6 +468,16 @@ func (a *App) form(w http.ResponseWriter, user User, notice, problem string, d d
 		`<textarea id="f-body" name="body" rows="8">%s</textarea>`+
 		`<span class="hint">A blank line starts a new paragraph.</span></p>`,
 		esc(d.Body))
+
+	b.WriteString(`<fieldset class="field"><legend>Who wrote this?</legend>` +
+		`<p><label><input type="radio" name="wrote" value="me" required> ` +
+		`I wrote it</label></p>` +
+		`<p><label><input type="radio" name="wrote" value="model"> ` +
+		`A model wrote it, or helped</label></p>` +
+		`<span class="hint">The law asks for AI-generated content to carry a ` +
+		`mark, and nobody but you knows the answer. It is recorded with the ` +
+		`page.</span></fieldset>` +
+		"")
 
 	if a.Publisher != nil {
 		if designs := a.Publisher.Designs(); len(designs) > 0 {

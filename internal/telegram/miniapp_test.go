@@ -17,6 +17,7 @@ import (
 type fakePublisher struct {
 	saved  map[string]any
 	handle string
+	wrote  bool
 	err    error
 }
 
@@ -24,11 +25,13 @@ func (f *fakePublisher) Page(string) (map[string]any, bool, error) { return nil,
 func (f *fakePublisher) Designs() []Design {
 	return []Design{{Name: "sections", Look: "Rounded and generous."}}
 }
-func (f *fakePublisher) Save(handle string, body map[string]any, _, _ string) (string, error) {
+func (f *fakePublisher) Save(handle string, body map[string]any, _, _ string,
+	wrote bool) (string, error) {
+
 	if f.err != nil {
 		return "", f.err
 	}
-	f.handle, f.saved = handle, body
+	f.handle, f.saved, f.wrote = handle, body, wrote
 	return "/" + handle, nil
 }
 
@@ -65,7 +68,7 @@ func TestAnUnsignedArrivalIsRefused(t *testing.T) {
 			t.Errorf("GET %s gave %d, want 403", target, w.Code)
 		}
 	}
-	if w := post(t, a, "/publish", url.Values{"title": {"x"}}); w.Code != http.StatusForbidden {
+	if w := post(t, a, "/publish", url.Values{"wrote": {"me"}, "title": {"x"}}); w.Code != http.StatusForbidden {
 		t.Errorf("an unsigned publish gave %d, want 403", w.Code)
 	}
 }
@@ -111,7 +114,7 @@ func TestASignedArrivalCanPublish(t *testing.T) {
 	}
 	grant := grantIn(t, form.Body.String())
 
-	done := post(t, a, "/publish", url.Values{
+	done := post(t, a, "/publish", url.Values{"wrote": {"me"},
 		"grant": {grant},
 		"title": {"A page I made in a chat"},
 		"lead":  {"One line."},
@@ -148,7 +151,7 @@ func TestALinkCannotBeSubmittedAsAGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := post(t, a, "/publish", url.Values{"grant": {link}, "title": {"x"}})
+	w := post(t, a, "/publish", url.Values{"wrote": {"me"}, "grant": {link}, "title": {"x"}})
 	if w.Code != http.StatusForbidden {
 		t.Errorf("a link was accepted as a form grant (%d)", w.Code)
 	}
@@ -169,7 +172,7 @@ func TestHostileInputIsInertOnEveryScreen(t *testing.T) {
 	// A gate refusing is the path that renders the person's own words back at
 	// them, which is exactly where an escaping mistake would land.
 	pub.err = errTest(`refused: <script>alert(1)</script>`)
-	again := post(t, a, "/publish", url.Values{
+	again := post(t, a, "/publish", url.Values{"wrote": {"me"},
 		"grant": {grant},
 		"title": {`" onmouseover="alert(1)`},
 		"body":  {`<img src=x onerror=alert(1)>`},
@@ -232,7 +235,7 @@ func TestARefusalKeepsWhatWasTyped(t *testing.T) {
 	grant := grantIn(t, get(t, a, "/?"+query).Body.String())
 
 	body := "First paragraph.\n\nSecond paragraph."
-	w := post(t, a, "/publish", url.Values{
+	w := post(t, a, "/publish", url.Values{"wrote": {"me"},
 		"grant":  {grant},
 		"title":  {"Notes on making things slowly"},
 		"lead":   {"A page about paper and ink."},
@@ -269,7 +272,7 @@ func TestTheEmptyTitleRefusalAlsoKeepsTheBody(t *testing.T) {
 	query, _ := NewLink(User{ID: 4}, botToken, now)
 	grant := grantIn(t, get(t, a, "/?"+query).Body.String())
 
-	out := post(t, a, "/publish", url.Values{
+	out := post(t, a, "/publish", url.Values{"wrote": {"me"},
 		"grant": {grant}, "title": {"  "}, "body": {"Words worth keeping."},
 	}).Body.String()
 
@@ -503,4 +506,55 @@ func galleryItems(t *testing.T, body map[string]any) []any {
 	}
 	items, _ := inner["items"].([]any)
 	return items
+}
+
+// Publishing asks who wrote the page, and refuses until it is answered.
+//
+// Every other surface refuses content that declares no provenance and this one
+// published it. Writing "a person wrote this" because a person typed it is the
+// substitution `provenance backfill` refuses: what arrives in a chat window
+// may have been typed or pasted out of a model.
+//
+// But the person can say, and here the person at the gate is the author —
+// which is true nowhere else. So they are asked, and nothing is assumed from
+// silence.
+func TestPublishingAsksWhoWroteThePage(t *testing.T) {
+	now := time.Now()
+	pub := &fakePublisher{}
+	a := testApp(t, pub, now)
+
+	query, err := NewLink(User{ID: 279058397, Username: "durov"}, botToken, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := get(t, a, "/?"+query)
+	grant := grantIn(t, form.Body.String())
+
+	if !strings.Contains(form.Body.String(), `name="wrote"`) {
+		t.Error("the publish form does not ask who wrote the page, so " +
+			"the answer can only be missing")
+	}
+
+	// Unanswered: refused, and nothing published.
+	w := post(t, a, "/publish", url.Values{
+		"grant": {grant}, "title": {"A page"}, "body": {"Words."},
+	})
+	if pub.handle != "" {
+		t.Error("a page was published without anybody saying who wrote it")
+	}
+	if !strings.Contains(w.Body.String(), "wrote this") {
+		t.Errorf("the refusal does not say what is missing:\n%s", w.Body.String())
+	}
+
+	// Answered: published, and the answer travels.
+	post(t, a, "/publish", url.Values{
+		"grant": {grant}, "title": {"A page"}, "body": {"Words."},
+		"wrote": {"model"},
+	})
+	if pub.handle == "" {
+		t.Fatal("answering the question did not let the page publish")
+	}
+	if pub.wrote {
+		t.Error(`"a model wrote it" reached the publisher as "I wrote it"`)
+	}
 }

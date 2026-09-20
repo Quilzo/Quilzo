@@ -31,7 +31,6 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/out"
-	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/tmpl"
@@ -197,7 +196,8 @@ access
 encryption at rest
   quilzo vault status                      whether objects are sealed on disk
   quilzo vault enable                      seal new objects; prints the key once
-  quilzo vault rotate                      new key, rewraps without re-encrypting
+  quilzo vault rotate                      a new key, active from now on
+  quilzo vault rewrap                      move what is there onto it
       QUILZO_KEY / _KEY_FILE / _KEY_COMMAND  where the key comes from
 
 compliance evidence
@@ -581,7 +581,24 @@ func open(root string) (*store.Store, error) { return openEncrypted(root) }
 // `valued` names the flags that consume the following argument; a boolean flag
 // must not swallow the token after it.
 func reorder(args []string, valued map[string]bool) []string {
-	var flags, positional []string
+	flags, positional := splitFlags(args, valued)
+	return append(flags, positional...)
+}
+
+// splitFlags separates the flags, and the values they consume, from the
+// positional arguments.
+//
+// Pulled out of reorder because the privilege gate needs the positional
+// arguments too: it has to know which page a command is about before the
+// command has parsed anything, so that a grant or a deny scoped to part of the
+// site is enforced here as well as in the browser.
+//
+// One function rather than two readings of the same arguments. A second copy
+// of "which flags take a value" would drift, and a drifted copy reads as a
+// page name the word the command reads as a flag value — which authorises one
+// resource and acts on another, and a check on the wrong resource is not a
+// check.
+func splitFlags(args []string, valued map[string]bool) (flags, positional []string) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {
@@ -603,7 +620,7 @@ func reorder(args []string, valued map[string]bool) []string {
 			i++
 		}
 	}
-	return append(flags, positional...)
+	return flags, positional
 }
 
 func cmdInit(root string) error {
@@ -622,6 +639,16 @@ func cmdInit(root string) error {
 	return nil
 }
 
+// addValued names the flags `add` takes that consume the argument after them.
+//
+// A package-level table rather than a literal at the call site, because the
+// privilege gate parses the same arguments to find out which pages are being
+// written. The two have to agree about where the flags stop or they disagree
+// about which word is a page.
+var addValued = map[string]bool{
+	"m": true, "author": true, "remove": true, "based-on": true,
+}
+
 func cmdAdd(root string, args []string) error {
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	msg := fs.String("m", "edit", "commit message")
@@ -635,8 +662,7 @@ func cmdAdd(root string, args []string) error {
 	merge := fs.Bool("merge", false,
 		"with --based-on: merge instead of refusing, unless you and they "+
 			"changed the same field")
-	if err := fs.Parse(reorder(args, map[string]bool{
-		"m": true, "author": true, "remove": true, "based-on": true})); err != nil {
+	if err := fs.Parse(reorder(args, addValued)); err != nil {
 		return err
 	}
 	if *merge && *basedOn == "" {
@@ -915,18 +941,39 @@ func cmdPublish(root string, args []string) error {
 	if len(args) > 0 {
 		target = args[0]
 	}
-	// Spillage, before anything else and with no flag to skip it.
+	// Every check about the content, run here and by every other surface.
 	//
-	// A page marked above what the deployment is accredited for must not
-	// reach it. Unlike the accessibility gate there is no --no-marking-check:
-	// the accessibility gate has a legitimate reason to be turned off, which
-	// is a store that renders elsewhere, and this one does not. A deployment
-	// that does not mark is unaffected, because the check is a no-op when no
-	// scheme is configured.
-	if err := checkMarking(root, s, target); err != nil {
+	// They used to be five blocks in this function, and only this function:
+	// classification, image rights, references, arrangement and claims were
+	// enforced on the command line and nowhere else, while "already expired"
+	// and "a menu entry pointing at nothing" were enforced in the browser and
+	// not here. internal/gate has the table and the demo that proves it.
+	//
+	// All of them before the two that can be waived, rather than interleaved
+	// with them. Nothing in this set takes an override, so a draft that is
+	// going to be refused is refused before anybody is asked to justify a
+	// waiver for something else — and before two colleagues are asked to
+	// approve it.
+	if refused, advice, gerr := contentGates(root, s, target).Run(); gerr != nil {
 		record(root, caller.auditRecord("publish", "/", audit.Denied,
-			map[string]string{"reason": "classification", "detail": err.Error()}))
-		return errBlocked{err}
+			map[string]string{"reason": "a gate could not run",
+				"detail": gerr.Error()}))
+		return errBlocked{gerr}
+	} else if refused != nil {
+		for _, f := range advice {
+			w.Human("  %s%s%s\n", dim, f.String(), reset)
+		}
+		for _, f := range refused.Findings {
+			w.Human("  %s%s%s\n", yellow, f.String(), reset)
+		}
+		record(root, caller.auditRecord("publish", "/", audit.Denied,
+			map[string]string{"reason": refused.Check.Name,
+				"count": fmt.Sprintf("%d", len(refused.Findings))}))
+		return errBlocked{fmt.Errorf("%s", refused.Check.Refusal(len(refused.Findings)))}
+	} else {
+		for _, f := range advice {
+			w.Human("  %s%s%s\n", dim, f.String(), reset)
+		}
 	}
 
 	// AI Act Article 50, on the surface a pipeline actually uses.
@@ -1058,130 +1105,6 @@ func cmdPublish(root string, args []string) error {
 		}
 	}
 
-	// The rights gate, with the other content gates.
-	//
-	// Only an expiry that has passed blocks. Lapsing and undeclared are
-	// printed and let through, because a gate that refuses three different
-	// things is a gate people switch off — and the lapsing report is the half
-	// that is actually worth having, since an expired licence cannot be fixed
-	// retroactively and one expiring in six weeks can.
-	if lib, lerr := openMedia(root); lerr == nil {
-		candidate := target
-		if candidate == "" {
-			candidate = s.GetRef(site.RefDraft)
-		}
-		at := time.Now()
-		rep, rerr := checkRights(s, lib, candidate, at)
-		if rerr != nil {
-			record(root, caller.auditRecord("publish", "/", audit.Denied,
-				map[string]string{"reason": "rights check could not run"}))
-			return errBlocked{fmt.Errorf(
-				"the image rights check could not run, so publishing would "+
-					"claim a check that did not happen: %w", rerr)}
-		}
-		if n := len(rep.Expired) + len(rep.Lapsing) + len(rep.Undeclared); n > 0 {
-			printRights(rep, at)
-		}
-		if rep.Blocking() > 0 {
-			record(root, caller.auditRecord("publish", "/", audit.Denied,
-				map[string]string{
-					"reason":  "image rights",
-					"expired": fmt.Sprintf("%d", rep.Blocking()),
-				}))
-			return errBlocked{fmt.Errorf(
-				"%d image(s) would be published under permission that has "+
-					"ended.\n  Renew the licence and record the new date, or "+
-					"take the image off the page", rep.Blocking())}
-		}
-	}
-
-	// The arrangement gate, with the other content gates.
-	//
-	// A section whose kind this build does not know renders as nothing at all:
-	// a page carrying "gallry" is a page with a gallery missing, no message
-	// anywhere, and a publish that reported success. The kinds are a closed
-	// list, so this is a check the tool can make and the author cannot.
-	//
-	// Blocking for the kind, advisory for the fields inside it — a layout may
-	// read a value the shipped stub does not mention, and refusing those would
-	// refuse pages that render correctly today.
-	{
-		candidate := target
-		if candidate == "" {
-			candidate = s.GetRef(site.RefDraft)
-		}
-		pages, perr := site.PagesAt(s, candidate)
-		if perr != nil {
-			return errBlocked{fmt.Errorf(
-				"the arrangement check could not run, so publishing would "+
-					"claim a check that did not happen: %w", perr)}
-		}
-		names := make([]string, 0, len(pages))
-		for name := range pages {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		blocking := 0
-		for _, name := range names {
-			bad, advice := section.Validate(pages[name])
-			for _, p := range advice {
-				w.Human("  %s%s: %s%s\n", dim, name, p, reset)
-			}
-			for _, p := range bad {
-				blocking++
-				w.Human("  %s%s: %s%s\n", yellow, name, p, reset)
-			}
-		}
-		if blocking > 0 {
-			record(root, caller.auditRecord("publish", "/", audit.Denied,
-				map[string]string{"reason": "arrangement",
-					"sections": fmt.Sprintf("%d", blocking)}))
-			return errBlocked{fmt.Errorf(
-				"%d section(s) would render as nothing. A kind this build does "+
-					"not know is not a section; `quilzo section kinds` lists "+
-					"the ones there are", blocking)}
-		}
-	}
-
-	// The claims gate, with the other content gates and before the one about
-	// people. A claim nobody can substantiate should be caught before two
-	// colleagues are asked to approve it, for the same reason an accessibility
-	// failure is.
-	//
-	// It reads its rules from a file that may not exist, which is the ordinary
-	// state and not a failure. A file that exists and does not parse IS a
-	// failure, because treating a broken rules file as "no rules" would make
-	// corrupting it the way to publish anything.
-	if rules, berr := loadBrand(root); berr != nil {
-		record(root, caller.auditRecord("publish", "/", audit.Denied,
-			map[string]string{"reason": "claim rules unreadable"}))
-		return errBlocked{berr}
-	} else if len(rules.Terms) > 0 {
-		candidate := target
-		if candidate == "" {
-			candidate = s.GetRef(site.RefDraft)
-		}
-		findings, _, ferr := brandFindings(s, rules, candidate)
-		if ferr != nil {
-			record(root, caller.auditRecord("publish", "/", audit.Denied,
-				map[string]string{"reason": "claim check could not run"}))
-			return errBlocked{fmt.Errorf(
-				"the claim check could not run, so publishing would claim a "+
-					"check that did not happen: %w", ferr)}
-		}
-		if len(findings) > 0 {
-			printBrand(findings)
-			record(root, caller.auditRecord("publish", "/", audit.Denied,
-				map[string]string{
-					"reason": "claims", "count": fmt.Sprintf("%d", len(findings))}))
-			return errBlocked{fmt.Errorf(
-				"%d claim(s) this business would have to stand behind and "+
-					"nothing here substantiates.\n"+
-					"  Add the field each one names, or say something else",
-				len(findings))}
-		}
-	}
-
 	// Dual authorization, last of the gates, because it is the one about people
 	// rather than about content. A change that fails the accessibility or
 	// provenance checks should be told that first — asking two colleagues to
@@ -1195,10 +1118,16 @@ func cmdPublish(root string, args []string) error {
 				if !d.Allowed {
 					record(root, caller.auditRecord("publish", "/", audit.Denied,
 						map[string]string{
+							// "proposal" and not "content": Append refuses
+							// any key containing "content" and refuses the
+							// whole record with it, so every publish blocked
+							// by dual authorisation went unrecorded — the one
+							// gate whose entire purpose is that somebody
+							// later can see it was tried.
 							"reason":     "dual-authorization",
 							"have":       fmt.Sprintf("%d", d.Have),
 							"need":       fmt.Sprintf("%d", d.Need),
-							"content":    prop.Content,
+							"proposal":   prop.Content,
 							"author":     prop.Author,
 							"authorkind": prop.AuthorKind,
 						}))

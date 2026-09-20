@@ -245,7 +245,10 @@ func (s *Server) handleStarter(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	// Whether they may write anything; which page is asked below, once the
+	// form has named it. A starter replaces a whole page, so this is the same
+	// authority as editing it.
+	if !s.canAnywhere(w, r, p, auth.ActEditDraft) {
 		return
 	}
 	if s.Transfer == nil || s.Transfer.Save == nil || s.Transfer.Pages == nil {
@@ -256,6 +259,17 @@ func (s *Server) handleStarter(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
+	// Which page, and whether they may have it, before anything else is
+	// looked up. Authorising after the work is done reads the same when it
+	// happens to refuse and is a different program when somebody reorders it.
+	page := strings.TrimSpace(r.FormValue("page"))
+	if page == "" {
+		page = "index"
+	}
+	if !s.canPage(w, r, p, auth.ActEditDraft, page) {
+		return
+	}
+
 	name := r.FormValue("name")
 	t, found := starter.Get(name)
 	if !found {
@@ -270,10 +284,6 @@ func (s *Server) handleStarter(w http.ResponseWriter, r *http.Request) {
 	}
 	if pages == nil {
 		pages = map[string]any{}
-	}
-	page := strings.TrimSpace(r.FormValue("page"))
-	if page == "" {
-		page = "index"
 	}
 	if _, exists := pages[page]; exists && r.FormValue("overwrite") == "" {
 		// Refused rather than merged. A starter's sample content is a complete

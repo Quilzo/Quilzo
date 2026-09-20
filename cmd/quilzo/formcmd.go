@@ -136,32 +136,54 @@ func formsErase(root string, args []string) error {
 		return err
 	}
 
-	if w.Mode == out.JSON {
-		w.JSON(map[string]any{"matched": len(found), "removed": !*dry})
-		return nil
-	}
-	if len(found) == 0 {
-		w.Human("nothing matches %q\n", pos[0])
-		return nil
-	}
-	for _, s := range found {
-		w.Human("  %s%s%s  %s\n", dim, s.Form, reset, short(s.ID))
+	// The JSON answer used to be written here, before any of the work, and it
+	// said `"removed": true`. So `quilzo form erase VALUE --json` — which is
+	// how an erasure request gets scripted — reported the erasure done,
+	// deleted nothing, and wrote no audit record either, because that came
+	// after the early return too.
+	//
+	// A tool that says it erased somebody's data and did not is worse than one
+	// that cannot: the request is closed, the obligation is recorded as met,
+	// and the data is still there. So the report comes after the deleting, and
+	// says what actually happened.
+	if w.Mode != out.JSON {
+		if len(found) == 0 {
+			w.Human("nothing matches %q\n", pos[0])
+			return nil
+		}
+		for _, s := range found {
+			w.Human("  %s%s%s  %s\n", dim, s.Form, reset, short(s.ID))
+		}
 	}
 	if *dry {
+		if w.JSON(map[string]any{
+			"matched": len(found), "removed": 0, "dry_run": true,
+		}) {
+			return nil
+		}
 		w.Human("\n%d submission(s) would be erased\n", len(found))
 		return nil
 	}
+	removed := 0
 	for _, s := range found {
 		if err := st.Delete(s.Form, s.ID); err != nil {
-			return err
+			// What was done before the failure is said, not swallowed. An
+			// erasure that stopped halfway is a different state from one that
+			// never started, and the operator has to know which they have.
+			return fmt.Errorf("erased %d of %d, then %s/%s failed: %w",
+				removed, len(found), s.Form, short(s.ID), err)
 		}
+		removed++
 	}
 	// The count and the forms, never the value that was searched for — that
 	// value is the personal data somebody asked to have removed, and writing
 	// it into an append-only log is the one place it would survive the
 	// erasure.
 	record(root, resolveCaller(root, "").auditRecord("form.erase", "/",
-		audit.Success, map[string]string{"removed": fmt.Sprint(len(found))}))
-	w.Human("\n%d submission(s) erased\n", len(found))
+		audit.Success, map[string]string{"removed": fmt.Sprint(removed)}))
+	if w.JSON(map[string]any{"matched": len(found), "removed": removed}) {
+		return nil
+	}
+	w.Human("\n%d submission(s) erased\n", removed)
 	return nil
 }

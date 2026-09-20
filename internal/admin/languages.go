@@ -116,6 +116,11 @@ func (s *Server) handleLanguageAdd(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Declaring a locale changes what every page may be written in, so this
+	// one is the site.
+	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+		return
+	}
 	raw := strings.TrimSpace(r.FormValue("locale"))
 	l, err := i18n.ParseLocale(raw)
 	if err != nil {
@@ -171,6 +176,9 @@ func (s *Server) handleLanguageTranslated(w http.ResponseWriter, r *http.Request
 		return
 	}
 	page := strings.TrimSpace(r.FormValue("page"))
+	if !s.canPage(w, r, p, auth.ActEditDraft, page) {
+		return
+	}
 	l, err := i18n.ParseLocale(strings.TrimSpace(r.FormValue("locale")))
 	if err != nil {
 		s.langRedirect(w, r, "", err.Error())
@@ -219,7 +227,10 @@ func (s *Server) langWriter(w http.ResponseWriter, r *http.Request) (principal, 
 	if !ok {
 		return principal{}, false
 	}
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	// Whether they may edit anything. Adding a locale is a site-wide act and
+	// asks again below; recording that one page was translated asks about that
+	// page, because it is a statement about that page's content.
+	if !s.canAnywhere(w, r, p, auth.ActEditDraft) {
 		return principal{}, false
 	}
 	if s.Languages == nil {

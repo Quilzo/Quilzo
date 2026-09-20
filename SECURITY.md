@@ -104,9 +104,21 @@ it.
 
 ## Supported versions
 
-Until 1.0 the most recent release is the supported one. There are no backports
-to earlier tags, and saying otherwise would be a promise this project cannot
-currently keep.
+Until 1.0 the most recent release line is the supported one. That is v0.2.x,
+and v0.2.2 is a backport release: the security fixes made since v0.2.1 were
+applied to it rather than only to the development branch.
+
+v0.1.x is not supported and cannot usefully be. v0.2.0 was itself a security
+release — an attribute-context escape, a replayable inbox request, an
+unenforced --own-only, twenty of twenty-three agent operations checking no
+authority — and a patch on top of v0.1.0 would leave every one of those. The
+fix for v0.1.x is to move to v0.2.x.
+
+Not everything backported. Three fixes on the development branch are not in
+v0.2.2 because the defect does not exist in that release: they are in code
+added afterwards. Two more are omitted because the thing they check does not
+exist there either, and a check that cannot fire is worse than an absent one
+because the table says it ran. NEWS names each.
 
 ## Our own claims, tested
 
