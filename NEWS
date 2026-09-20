@@ -144,6 +144,28 @@ correct about its own job and wrong about what another part was doing with it.
 
 ** Pictures and video
 
+*** A picture can be replaced.  media.File.Supersedes was declared with a
+    comment saying exactly why it matters -- "a page still pointing at last
+    season's packaging shot is not a corrupted store, it is a store where
+    nobody recorded that a newer one exists" -- and nothing in this program
+    ever wrote it or read it.  A field whose own documentation describes a
+    problem it does not solve.
+
+    `quilzo media replace OLD NEW`, and a control on the media screen.  The
+    succession is recorded on the newer file, because the older one cannot be
+    rewritten; every draft reference is pointed at the replacement in one
+    commit, on pages and on records, at whatever depth an author nested it;
+    and the listing shows both directions, since Supersedes points backwards
+    and the person looking at the retired picture is the one who needs to
+    know.  A chain is ordinary and a loop is refused.
+
+    One implementation for both surfaces.  Two that each walked the content
+    would disagree -- one would read pages and not records, or match the bare
+    id and not the "/media/..." spelling -- and the site would be half
+    replaced by whichever door somebody used.  That is not hypothetical: it is
+    what the image-rights gate did before internal/media held a single answer
+    about what a reference looks like.
+
 *** A photograph is stored the way up it is meant to be seen, and the metadata
     this pipeline promises to remove is removed on every path rather than
     most.

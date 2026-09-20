@@ -158,7 +158,16 @@ so this is the screen that answers that gate.</p>{{end}}
         <span class="hint">not an image</span>
       {{end}}
     </td>
-    <td class="hint">{{ago .UploadedAt}}{{if .UploadedBy}}<br>{{.UploadedBy}}{{end}}</td>
+    <td class="hint">{{ago .UploadedAt}}{{if .UploadedBy}}<br>{{.UploadedBy}}{{end}}
+      {{/*
+        Both directions. Supersedes points backwards, so a reader looking at a
+        retired picture has no way to know it was retired without the map the
+        handler builds.
+      */}}
+      {{if .Supersedes}}<br><span class="hint">replaces an earlier file</span>{{end}}
+      {{$by := index $.ReplacedBy .ID}}
+      {{if $by}}<br><strong>replaced by {{range $i, $n := $by}}{{if $i}} and {{end}}{{$n}}{{end}}</strong>{{end}}
+    </td>
     {{if $.CanWrite}}
     <td class="actions">
       {{/*
@@ -168,6 +177,24 @@ so this is the screen that answers that gate.</p>{{end}}
       */}}
       {{if eq (printf "%s" .Kind) "image"}}
       <a href="/media/edit?id={{.ID}}">Crop<span class="sr"> {{.Name}}</span></a>
+      {{end}}
+      {{/*
+        Replacing writes a draft commit and touches no stored bytes: the
+        retired file is still there under its own address, and History undoes
+        the commit. So it sits with Crop rather than with Delete.
+        The rewrite is site.ReplaceAsset, the same call the command line makes.
+      */}}
+      {{$others := index $.Replacements .ID}}
+      {{if $others}}
+      <form method="post" action="/media/replace" class="inline">
+        <input type="hidden" name="id" value="{{.ID}}">
+        <label class="sr" for="with-{{.ID}}">Replace {{.Name}} with</label>
+        <select id="with-{{.ID}}" name="with">
+          <option value="">Replace with…</option>
+          {{range $others}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+        </select>
+        <button type="submit">Replace</button>
+      </form>
       {{end}}
       <form method="post" action="/media/delete" class="inline">
         <input type="hidden" name="id" value="{{.ID}}">

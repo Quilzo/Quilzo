@@ -953,6 +953,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/media", s.handleMedia)
 	mux.HandleFunc(uploadPath, s.handleMediaUpload)
 	mux.HandleFunc("/media/delete", s.handleMediaDelete)
+	mux.HandleFunc("/media/replace", s.handleMediaReplace)
 	// What permits publishing a picture. See rights.go: the publish gate has
 	// always refused an expired licence and this interface had no field to
 	// record one in.
