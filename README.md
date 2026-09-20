@@ -357,7 +357,13 @@ identically by the CLI, the browser and the agent interface. Media with format
 validation by decoding rather than by extension, and alternative text required
 before an image may be published.
 
-**Pictures and video.** Format validated by decoding rather than by extension;
+**Pictures and video.** A picture can be replaced: the newer file records what
+it supersedes, every draft reference — on pages *and* on records, at whatever
+depth an author nested it — is pointed at it in one commit, and the listing
+shows both directions, because the field points backwards and somebody looking
+at the retired picture is the one who needs to know. Nothing is overwritten;
+the retired file is still there under its own address and the commit this moved
+from is still stored. Format validated by decoding rather than by extension;
 alternative text required before an image may be published; a focal point that
 says which part of a picture must survive a crop; a derived crop that leaves the
 original alone, because nothing here is overwritten; EXIF orientation applied so

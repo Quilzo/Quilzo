@@ -100,3 +100,59 @@ func collect(v any, depth int, into map[string]bool) {
 		}
 	}
 }
+
+// Rewriting a reference, which is the other half of recognising one.
+//
+// IDsIn exists because two readers that disagree about what a reference looks
+// like are two readers that check different halves of the same site. A writer
+// that disagreed with the reader would be worse: it would rewrite the
+// references the reader can see and leave the ones it cannot, so a picture
+// replaced everywhere the gate looks would still be on the page.
+//
+// So this walks the same structure, to the same depth, and decides by the same
+// IDIn — and it keeps the spelling it found. A field holding "/media/<id>" is
+// a field a template reads as a path; rewriting it to a bare id would replace
+// the picture and break the page it is on.
+
+// ReplaceID rewrites every reference to one stored file with another.
+//
+// Returns the rewritten content and how many references changed. The input is
+// not modified: content here comes out of a content-addressed object, and a
+// walk that edited it in place would be editing bytes something else may still
+// be holding under their own hash.
+func ReplaceID(v any, old, with string) (any, int) {
+	n := 0
+	out := replace(v, old, with, 0, &n)
+	return out, n
+}
+
+func replace(v any, old, with string, depth int, n *int) any {
+	if depth > maxReferenceDepth {
+		return v
+	}
+	switch t := v.(type) {
+	case string:
+		id, ok := IDIn(t)
+		if !ok || id != old {
+			return t
+		}
+		*n++
+		// The spelling is kept. A template reads "/media/<id>" as a path, so
+		// a rewrite that returned a bare id would replace the picture and
+		// break the page carrying it.
+		return strings.Replace(t, old, with, 1)
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, vv := range t {
+			out[k] = replace(vv, old, with, depth+1, n)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = replace(item, old, with, depth+1, n)
+		}
+		return out
+	}
+	return v
+}

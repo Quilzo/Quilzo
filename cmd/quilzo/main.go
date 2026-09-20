@@ -100,6 +100,7 @@ importing
   quilzo media get https://... --alt "..." fetch one, checked at connect time
   quilzo media list                        what is stored, and its path
   quilzo media remove ID                   take one out; refused if in use
+  quilzo media replace OLD NEW             a newer picture, everywhere the old one was
   quilzo media renditions                  narrower copies, for phones
   quilzo media formats                     what is accepted, and what is not
   quilzo media origin ID --source-type T   declare how a picture was made

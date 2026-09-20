@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -211,6 +212,8 @@ func cmdMedia(root string, args []string) error {
 		return mediaList(root, args[1:])
 	case "remove":
 		return mediaRemove(root, args[1:])
+	case "replace":
+		return mediaReplace(root, args[1:])
 	case "renditions":
 		return mediaRenditions(root, args[1:])
 	case "origin":
@@ -229,8 +232,8 @@ func cmdMedia(root string, args []string) error {
 		return mediaFormats()
 	default:
 		return fmt.Errorf("unknown media command %q; try add, get, list, "+
-			"remove, renditions, origin, focus, edit, generate, captions, "+
-			"verify or formats", args[0])
+			"remove, replace, renditions, origin, focus, edit, generate, "+
+			"captions, verify or formats", args[0])
 	}
 }
 
@@ -484,6 +487,26 @@ func mediaList(root string, args []string) error {
 	if w.JSON(files) {
 		return nil
 	}
+	// Built from the whole library rather than from the filtered list: a
+	// picture may be superseded by a file this listing is hiding, and the
+	// interesting direction is the one the reader cannot see from the record
+	// they are looking at. Supersedes points backwards, so there is no other
+	// way to answer "has this one been retired".
+	replacedBy := map[string][]string{}
+	if everything, lerr := lib.List(); lerr == nil {
+		for _, f := range everything {
+			if f.Supersedes != "" {
+				replacedBy[f.Supersedes] = append(replacedBy[f.Supersedes], f.Name)
+			}
+		}
+	}
+	// Sorted, because nothing stops two pictures claiming to replace the same
+	// one — retire it, then retire it again with something else — and a list
+	// that named whichever the map happened to yield would say something
+	// different each time it was read.
+	for id := range replacedBy {
+		sort.Strings(replacedBy[id])
+	}
 	if len(files) == 0 {
 		w.Human("nothing has been uploaded\n")
 		w.Human("  %squilzo media add photo.png --alt \"...\"%s\n", dim, reset)
@@ -501,6 +524,20 @@ func mediaList(root string, args []string) error {
 		}
 		if n := len(f.Renditions); n > 0 {
 			w.Human("  %s%d narrower copy(ies) for phones%s\n", dim, n, reset)
+		}
+		// The half a succession is recorded for. Storing the fact and never
+		// showing it would leave the next person to find the retired picture
+		// in this list with no way to know it was retired.
+		if f.Supersedes != "" {
+			if was, serr := lib.Stat(f.Supersedes); serr == nil {
+				w.Human("  %sreplaces %s%s\n", dim, was.Name, reset)
+			} else {
+				w.Human("  %sreplaces %s, which is no longer stored%s\n",
+					dim, short(f.Supersedes), reset)
+			}
+		}
+		if by := replacedBy[f.ID]; len(by) > 0 {
+			w.Human("  %sreplaced by %s%s\n", yellow, strings.Join(by, " and "), reset)
 		}
 		if f.Kind == media.Image && f.Alt == "" {
 			// Not a refusal: it is already stored. But a picture with no

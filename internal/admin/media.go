@@ -112,7 +112,12 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 		// The nine places, per file, worked out here so the template does not
 		// have to compare a point to nine others.
 		"Spots": mediaSpots(files),
-		"Nav":   "media", "Title": "Media", "Principal": p,
+		// Which files may stand in for each one, and what has already
+		// replaced what. Both worked out here: a template comparing every
+		// file to every other file is a template doing a join.
+		"Replacements": replacementsFor(files),
+		"ReplacedBy":   supersededBy(files),
+		"Nav":          "media", "Title": "Media", "Principal": p,
 		"Files": files, "Total": total, "Accepted": media.Accepted(),
 		"Rights": rights, "Undeclared": undeclared,
 		"WebP": webp, "HaveWebP": haveWebP,
