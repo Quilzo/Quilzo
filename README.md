@@ -629,7 +629,14 @@ verbatim — and asking the gate:
 ```
 
 Every attack refused there cannot succeed for *any* model, which makes the
-security figure a lower bound rather than an estimate. The 27% are the publish
+security figure a lower bound rather than an estimate — and that sentence is
+itself measured, because it is only true if the gate answers the same way every
+time. `scripts/agentdojo/passk.py` runs the whole corpus ten times in fresh
+processes and in shuffled order and compares every individual decision:
+**pass^10 = 1.00**. Writing that check found one place where it was not true —
+the refusal naming an agent's permitted hosts ranged over a map, so the same
+refusal produced a different sentence, and a different audit digest, on every
+run. The 27% are the publish
 rule and not a refusal of the work: an agent that can publish must have human
 approval, so the act happens once somebody agrees. Nothing in the suite is work
 the policy prevents entirely.

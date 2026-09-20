@@ -101,6 +101,27 @@ correct about its own job and wrong about what another part was doing with it.
     reason reading the store does, and more so: a third-party result is
     whatever a host returned on this request, reviewed by nobody here.
 
+*** The same refusal read differently each time.  The agent gate's refusal
+    naming which hosts an agent may reach was built by ranging over a map, and
+    Go randomises map iteration on purpose -- so the same refusal, for the same
+    reason, produced a different sentence on every run, into a tamper-evident
+    log where it was then recorded under a different digest depending on
+    nothing.
+
+    Found by writing the check for the claim it breaks.  The AgentDojo figure
+    is reported as a lower bound rather than an estimate, and that is only true
+    if the gate answers the same way every time; nothing was checking.
+    `scripts/agentdojo/passk.py` runs the whole corpus k times in fresh
+    processes and in shuffled order, comparing every individual decision and
+    its reason rather than the totals -- totals can agree while decisions swap.
+    pass^10 is 1.00, and the same property is a unit test so a change that
+    breaks it fails where it was broken.
+
+    Not the reliability literature's pass^k, which asks whether an agent
+    succeeds on all k attempts and needs a model.  Said in both the harness and
+    its README, because a benchmark that quietly substitutes one number for
+    another is worse than one that says what it lacks.
+
 *** A tainted run says what tainted it.  The taint rule is the load-bearing
     part of the agent design -- anything produced after reading content
     somebody else may have written needs a person -- and the person was handed

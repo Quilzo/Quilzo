@@ -5,6 +5,7 @@ package agent
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -443,11 +444,24 @@ func (s *Session) noteTool(tool, host string) {
 	s.note(FromTool, tool, host)
 }
 
+// hostList is the declared hosts, in one order.
+//
+// Sorted, and it was not. The set is a map and Go randomises map iteration
+// deliberately, so the refusal naming what an agent may reach listed them
+// differently on every run — which means the same refusal, for the same
+// reason, produced a different sentence each time it happened.
+//
+// That is not only untidy. The sentence goes into a tamper-evident audit log,
+// so one event was recorded under a different digest depending on nothing;
+// and scripts/agentdojo reports its figure as a lower bound rather than an
+// estimate, which is a claim that the gate answers the same way every time.
+// Found by a test written to check exactly that claim.
 func (s *Session) hostList() []string {
 	out := make([]string, 0, len(s.hosts))
 	for h := range s.hosts {
 		out = append(out, h)
 	}
+	sort.Strings(out)
 	return out
 }
 

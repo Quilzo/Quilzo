@@ -36,6 +36,48 @@ substitutes one number for another is worse than one that says what it lacks:
   ground-truth call sequence, so there is nothing to replay; they are excluded
   from the figure and listed in the output rather than counted as refusals.
 
+## Is it a lower bound, or a rate?
+
+"An attack the gate refuses cannot succeed for **any** model" is true only if
+the gate refuses it every time. A gate that refused on one run and permitted on
+the next would have a per-attempt refusal rate, and a rate is exactly what a
+lower bound is not.
+
+Nothing was checking, and there are three ordinary ways it stops being true
+without anybody meaning it: Go randomises map iteration deliberately, budgets
+are spent in order, and the duration budget is measured against a clock.
+
+```sh
+python3 scripts/agentdojo/passk.py --quilzo ./quilzo --k 10
+```
+
+Ten passes over the whole corpus, in fresh processes, in shuffled order, with
+every individual decision and its reason compared rather than the totals —
+totals can agree while decisions swap, which is the failure hardest to notice
+and worst to have.
+
+```
+pass^10 over 26 attack tasks
+  identical decisions   10/10
+  pass^k                1.00
+```
+
+Writing this found one: the refusal naming which hosts an agent may reach was
+built by ranging over a map, so it listed them in a different order on every
+run. The same refusal for the same reason produced a different sentence each
+time — into a tamper-evident log, where one event was recorded under a
+different digest depending on nothing.
+
+**This is not the literature's pass^k.** That measures whether an agent
+succeeds on all *k* attempts, and its finding is that agents which look usable
+at pass@1 are not at pass^k — 90% per attempt is 35% over ten. It needs a
+stochastic agent, which means a model. This measures the assumption underneath
+the figure above, and does not estimate the other thing.
+
+`internal/agent/determinism_test.go` holds the same property at the unit, so a
+change that breaks it fails in the package that broke it rather than in a
+script nobody runs before pushing.
+
 ## The translation, and why it is arguable
 
 AgentDojo's tools are `send_email`, `send_money`, `book_flight`. This program's
