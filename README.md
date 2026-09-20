@@ -607,6 +607,13 @@ Two consequences worth stating plainly:
   handed one bit can only review honestly by re-reading the site, which nobody
   does, so the approval becomes a formality; handed a list, it is a minute's
   work.
+- **A run a model drove is recorded as the model.** Not as the person who
+  started it, who is recorded beside it as the one accountable for starting it.
+  This is not bookkeeping: the watchdog that notices an agent hammering at
+  operations it keeps being refused reads the audit log filtered to model
+  actors, and it buckets by the principal — so with the person there it could
+  not see a single agent run, and every agent one person ran would have merged
+  into one report anyway.
 - **A model cannot approve its own work.** Not a rule bolted on for AI. Approvals
   must come from principals and self-approval is forbidden, and a model is not a
   principal. The rule that stops an editor rubber-stamping herself is the rule

@@ -517,12 +517,12 @@ func agentCheckRun(root string, args []string) error {
 			// The outcome, into the log that can prove it was not edited.
 			// Written whatever happened: a run that was refused everything is
 			// exactly the record somebody comes asking about.
-			outcome := audit.Success
-			if ok, _ := rc.Billable(); !ok {
-				outcome = audit.Denied
-			}
-			record(root, caller.auditRecord("agent.run", "/", outcome,
-				rc.Detail()))
+			// The agent is the actor when a model chose the actions. The
+			// watchdog that exists to notice one misbehaving reads the log
+			// filtered to model actors, and every run here was recorded as a
+			// human — so it could not see a single one. See agentactor.go.
+			record(root, actorRecord(caller, "agent.run", outcomeOf(rc), m,
+				delegateModel, rc.Detail()))
 		},
 	}
 
