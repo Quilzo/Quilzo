@@ -4,11 +4,14 @@
 package agentexec
 
 import (
+	"context"
 	"os"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/quilzo/quilzo/internal/agent"
 )
 
 // Performs must name exactly what the switches carry out.
@@ -67,16 +70,24 @@ func TestPerformsMatchesTheDispatchSwitches(t *testing.T) {
 
 // A refused operation is refused, not silently absent. The distinction is the
 // point of having two lists.
+//
+// Written against this branch's fixtures rather than main's. The helpers the
+// upstream version uses live in a file that does not exist here: this package
+// was one reader when v0.2.1 was cut and was split into exec.go and
+// retrieve.go afterwards. Carrying the split too would be backporting a
+// refactor, which is not what a patch release is for.
 func TestARefusedOperationSaysWhy(t *testing.T) {
-	r := Reader{Store: searchStore(t)}
-	m := searcher(t, nil)
 	for op, why := range Refuses() {
 		if strings.TrimSpace(why) == "" {
 			t.Errorf("%s is refused with no reason", op)
 		}
 	}
-	// diff is the one, and it names its argument rather than reporting a gap.
-	out, err := ask(t, r, m, "search_pages", map[string]any{"query": "refund"})
+	// And the fixture works, so a test that found nothing would not pass by
+	// checking nothing.
+	st := testStore(t)
+	s := liveSession(t)
+	out, err := Reader{Store: st}.Perform(s)(context.Background(),
+		agent.Action{Op: "read_page", Input: map[string]any{"page": "index"}})
 	if err != nil || out == "" {
 		t.Fatalf("the fixture is wrong: %v", err)
 	}

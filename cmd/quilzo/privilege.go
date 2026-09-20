@@ -388,24 +388,16 @@ const wholeStore = -1
 // first word as a page name, which is true of `lock` and of nothing else here;
 // every subcommand it recognises is then listed too.
 var pageArgs = map[string]int{
+	// The rows for `note` and `checked` are on main and not here: those
+	// commands were added after this release was cut. A row naming a command
+	// this build does not have would scope a binding against something
+	// nobody can run, and TestEveryPageRowNamesACommandThatExists refuses it
+	// — correctly, which is how this was found.
+
 	// Saying a page is still right, and withdrawing that.
-	"checked set":   0,
-	"checked clear": 0,
-	"checked list":  wholeStore,
-	"checked due":   wholeStore,
 
 	// Remarks about a page. `note list` takes an optional page and surveys
 	// everything without one, which the missing-argument fallback handles.
-	"note add":      0,
-	"note list":     0,
-	"note resolve":  0,
-	"note remove":   0,
-	"note rm":       0,
-	"notes add":     0,
-	"notes list":    0,
-	"notes resolve": 0,
-	"notes remove":  0,
-	"notes rm":      0,
 
 	// lock's dispatch sends anything that is not list or release to
 	// lockClaim, so the bare row is right by construction and the two it

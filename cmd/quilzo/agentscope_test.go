@@ -131,22 +131,14 @@ func TestReadingOutsideTheTypeScopeIsRefused(t *testing.T) {
 	}
 }
 
-// And search cannot reach it either, which is the operation added alongside
-// this fix — the corpus is filtered by the same check.
-func TestSearchIsBoundedByTheTypeScope(t *testing.T) {
-	root := typedStore(t)
-	m := scopedAgent([]string{"product"}, nil)
-	r := readerFor(t, root, m)
-
-	out, err := r.Perform(agent.NewSession(m, nil))(context.Background(),
-		agent.Action{Op: "search_pages", Input: map[string]any{"query": "returns"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(out, "returns") && !strings.Contains(out, "nothing") {
-		t.Errorf("a page of another type was found by search:\n%s", out)
-	}
-}
+// Search is not tested here, and is on main.
+//
+// The upstream fix also checks that search_pages is bounded by the same scope.
+// That operation was wired to the agent surface after this release was cut, so
+// there is nothing here to bound, and a test asserting that an absent
+// capability is correctly restricted would pass for the wrong reason. The type
+// scope is enforced in Session.Retrieve, which every read goes through, so the
+// check above covers this build.
 
 // The locale scope, which comes from the page's own field rather than from the
 // type — the same type exists in every language, which is the point of having

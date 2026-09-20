@@ -66,7 +66,7 @@ var templates = map[Kind]Template{
 			// search_pages and similar_pages are what an agent answering a
 			// question actually needs, and they exist.
 			Capabilities: []string{
-				"read_page", "list_pages", "search_pages", "similar_pages",
+				"read_page", "list_pages",
 			},
 			Autonomy: AutonomyPropose,
 			// Live, never draft. A bot answering from unpublished content is
@@ -96,7 +96,7 @@ var templates = map[Kind]Template{
 				// validated, advertised them on its card, and failed at runtime.
 				// diff is refused by design: it spans two refs and a scoped agent
 				// holds one.
-				"read_page", "list_pages", "search_pages", "write_page",
+				"read_page", "list_pages", "write_page",
 			},
 			Autonomy:  AutonomyDraft,
 			Retrieval: Retrieval{Ref: "draft"},
@@ -125,7 +125,7 @@ var templates = map[Kind]Template{
 				// validated, advertised them on its card, and failed at runtime.
 				// diff is refused by design: it spans two refs and a scoped agent
 				// holds one.
-				"read_page", "list_pages", "search_pages", "similar_pages",
+				"read_page", "list_pages",
 			},
 			Autonomy:  AutonomyPropose,
 			Retrieval: Retrieval{Ref: "draft"},
@@ -160,7 +160,7 @@ var templates = map[Kind]Template{
 				// validated, advertised them on its card, and failed at runtime.
 				// diff is refused by design: it spans two refs and a scoped agent
 				// holds one.
-				"read_page", "list_pages", "search_pages", "similar_pages",
+				"read_page", "list_pages",
 				"write_page",
 			},
 			Autonomy:      AutonomyDraft,
@@ -192,7 +192,7 @@ var templates = map[Kind]Template{
 				// validated, advertised them on its card, and failed at runtime.
 				// diff is refused by design: it spans two refs and a scoped agent
 				// holds one.
-				"read_page", "list_pages", "search_pages",
+				"read_page", "list_pages",
 			},
 			Autonomy:      AutonomyDraft,
 			Retrieval:     Retrieval{Ref: "draft"},
@@ -223,7 +223,7 @@ var templates = map[Kind]Template{
 				// validated, advertised them on its card, and failed at runtime.
 				// diff is refused by design: it spans two refs and a scoped agent
 				// holds one.
-				"read_page", "list_pages", "search_pages", "similar_pages",
+				"read_page", "list_pages",
 			},
 			Autonomy:  AutonomyPropose,
 			Retrieval: Retrieval{Ref: "live"},
@@ -259,7 +259,7 @@ var templates = map[Kind]Template{
 				// validated, advertised them on its card, and failed at runtime.
 				// diff is refused by design: it spans two refs and a scoped agent
 				// holds one.
-				"read_page", "list_pages", "search_pages", "write_page",
+				"read_page", "list_pages", "write_page",
 			},
 			Autonomy:  AutonomyDraft,
 			Retrieval: Retrieval{Ref: "draft"},

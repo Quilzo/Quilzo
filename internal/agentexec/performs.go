@@ -41,8 +41,13 @@ func Performs() []string {
 		// Reads, from exec.go.
 		"list_pages",
 		"read_page",
-		"search_pages",
-		"similar_pages",
+		// search_pages and similar_pages are not here, and are on main.
+		//
+		// They were wired to the agent surface after this release was cut.
+		// Listing them would make Validate accept a manifest declaring a
+		// capability this build cannot carry out -- which is the exact
+		// failure this list was added to prevent. A patch release fixes what
+		// is broken; adding a capability is not that.
 		// Writes, from write.go. publish does not publish: it proposes.
 		"write_page",
 		"publish",

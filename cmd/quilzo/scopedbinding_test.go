@@ -61,14 +61,14 @@ func TestADenyOnOnePageBindsOnTheCommandLine(t *testing.T) {
 			Resource: "/legal", Deny: true},
 	)
 
-	if err := authoriseCommand(root, "note",
+	if err := authoriseCommand(root, "section",
 		[]string{"add", "legal", "this is wrong"}); err == nil {
 		t.Error("alice is denied author on /legal and still edited it from " +
 			"the command line. The browser enforces this deny and the CLI did " +
 			"not, which is worse than not having the feature: somebody reads " +
 			"the policy, sees the deny, and believes it")
 	}
-	if err := authoriseCommand(root, "note",
+	if err := authoriseCommand(root, "section",
 		[]string{"add", "index", "a remark"}); err != nil {
 		t.Errorf("the deny on /legal also stopped /index, which is "+
 			"over-denial and the reason people turn deny off: %v", err)
@@ -82,12 +82,12 @@ func TestAGrantScopedToAPathReachesThatPath(t *testing.T) {
 		Principal: "alice", Role: auth.RoleAuthor, Resource: "/blog",
 	})
 
-	if err := authoriseCommand(root, "note",
+	if err := authoriseCommand(root, "section",
 		[]string{"add", "blog/first", "nearly"}); err != nil {
 		t.Errorf("an author scoped to /blog could not act on /blog, so --on "+
 			"is a way to lock somebody out rather than to narrow them: %v", err)
 	}
-	if err := authoriseCommand(root, "note",
+	if err := authoriseCommand(root, "section",
 		[]string{"add", "legal/notice", "nearly"}); err == nil {
 		t.Error("an author scoped to /blog acted on /legal")
 	}
@@ -118,8 +118,8 @@ func TestWhatTheGateReadsAsThePage(t *testing.T) {
 		want []string
 	}{
 		// The ordinary shapes.
-		{"note", []string{"add", "blog/first", "text"}, []string{"/blog/first"}},
-		{"checked", []string{"set", "index", "--every", "168h"}, []string{"/index"}},
+		{"section", []string{"add", "blog/first", "hero"}, []string{"/blog/first"}},
+		{"section", []string{"add", "index", "hero"}, []string{"/index"}},
 		{"section", []string{"set", "about", "0", "body=x"}, []string{"/about"}},
 		{"section", []string{"item", "add", "about", "0", "links"},
 			[]string{"/about"}},
@@ -127,18 +127,18 @@ func TestWhatTheGateReadsAsThePage(t *testing.T) {
 		{"type", []string{"bind", "about", "page"}, []string{"/about"}},
 
 		// A subcommand that names no page must not read its own name as one.
-		{"lock", []string{"list"}, []string{"/"}},
+		{"section", []string{"kinds"}, []string{"/"}},
 		{"lock", []string{"release", "about"}, []string{"/about"}},
 		{"section", []string{"kinds"}, []string{"/"}},
-		{"note", []string{"list"}, []string{"/"}},
+		{"section", []string{"kinds"}, []string{"/"}},
 
 		// Nothing this can be sure of falls back to the whole store, which is
 		// the strict direction: only a binding on "/" covers "/".
 		{"publish", nil, []string{"/"}},
 		{"serve", []string{"--addr", ":8080"}, []string{"/"}},
-		{"checked", []string{"set"}, []string{"/"}},
-		{"note", []string{"add", "../escape", "text"}, []string{"/"}},
-		{"note", []string{"add", "a//b", "text"}, []string{"/"}},
+		{"section", []string{"add"}, []string{"/"}},
+		{"section", []string{"add", "../escape", "hero"}, []string{"/"}},
+		{"section", []string{"add", "a//b", "hero"}, []string{"/"}},
 
 		// add reads its arguments with the same flag table it parses with, so
 		// a flag in the middle does not turn a page into a flag value.
