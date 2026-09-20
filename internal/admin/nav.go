@@ -75,7 +75,10 @@ var destinations = []destination{
 	{"listings", "Listings", "/listings", "Content", "listings", auth.ActView},
 	{"forms", "Forms", "/forms", "Content", "forms", auth.ActEditDraft},
 	{"media", "Media", "/media", "Content", "media", auth.ActView},
-	{"design", "Design", "/design", "Content", "templates", auth.ActEditDraft},
+	// Its own section rather than #templates. The template language and the
+	// theme are different things, and the screen an operator opens to change
+	// a colour was sending Help to the page explaining why there is no eval.
+	{"design", "Design", "/design", "Content", "design", auth.ActEditDraft},
 	{"sections", "Sections", "/sections", "Content", "templates", auth.ActEditDraft},
 	{"languages", "Languages", "/languages", "Content", "languages", auth.ActView},
 	{"assist", "Assistant", "/assist", "Content", "ai", auth.ActEditDraft},
@@ -149,7 +152,7 @@ var docSections = map[string]bool{
 	"transfer": true, "ipfs": true, "provenance": true, "security": true,
 	"logging": true, "users": true, "auth": true, "integrations": true,
 	"settings": true, "api": true, "profile": true, "start": true,
-	"agents": true,
+	"agents": true, "design": true,
 
 	// Sections no screen owns, because they explain a concept or a surface
 	// rather than a destination. Named individually so that one quietly

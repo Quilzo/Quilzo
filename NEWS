@@ -4,6 +4,196 @@ Newest first. Only what somebody running this would notice; the commit log
 has the rest.
 
 
+Unreleased — since v0.2.1
+=========================
+
+Eighty-two changes.  Most of them came out of two sweeps: driving the running
+program through a browser and a terminal rather than reading it, and an audit
+for things this program declared and never executed.  The second found more
+than the first, and the reason is consistent — in every case the code was
+correct about its own job and wrong about what another part was doing with it.
+
+** Declared, and never executed
+
+*** `quilzo vault rotate` printed that it had rotated and had not.  It added a
+    key and made it active; the objects wrapped under the old one were never
+    rewrapped, so the key nobody could remove was the one everything still
+    needed.  The rewrap existed, correct and complete, and had no caller.
+
+*** Six settings reported success and did nothing.  Settable, validated,
+    compliance-mapped, rendered in the admin, risk-acceptance recorded — and
+    read by nothing at all.
+
+*** Seven of eight agent archetypes could not do what they declared.  The
+    executor was constructed with no resolvers, so the content scope in a
+    manifest was never asked about anything.
+
+*** A manifest restricted nothing and said otherwise on every screen.  Three
+    more fields of the same struct followed: retrieval by type and locale, then
+    by path, each carefully intersected and then consulted by nobody.
+
+*** Two things were removed rather than wired, because a manifest may declare
+    only what this build does: agent memory, which was declarable in three
+    tiers, refused without a retention period, capped at ninety days, rendered
+    in two interfaces and published on the agent card, and which nothing wrote
+    or read; and the `http` and `process` integration kinds, which validated,
+    displayed and switched, and which only `mcp` is ever called for.  A
+    process integration's digest — the one supply-chain control that would
+    matter if one ran — was checked for shape and never against a file.
+
+*** A lockout nobody could see.  The throttle's snapshot was written for a
+    command that does not exist and, as written, could not: the counters live
+    in the memory of the process holding them.  `auth.lockout.hard` could be
+    switched on and its consequences were unobservable on every surface.  The
+    state is on the admin's posture screen now — how many, how hard, how long,
+    and no names, because the list of principals currently being attacked is
+    itself worth protecting.
+
+*** The content API validated content and wrote nothing down.  Every other
+    write path records a binding saying *this content, this type, at this
+    moment*; the API had its own copy of the gate and skipped that half, so
+    content arriving over HTTP was the one kind with no record of what it was
+    validated against.
+
+*** A field recorded on every WebAuthn enrolment to answer a question no
+    screen asked.
+
+*** `quilzo studio` was a fourth surface with its own idea of how many
+    sign-in attempts are free, built after the comment saying there is one
+    place for that.
+
+** Found by using it
+
+*** Eighty valid form submissions, one address, none refused.  Three faults on
+    the anonymous write path, including a demo form that could not be
+    submitted at all, and a spam check that worked perfectly and counted
+    nothing.
+
+*** A peer pull read a ref, decided from it, and wrote without holding it.
+    Sixteen concurrent writes against one base all passed the check and all
+    committed; fifteen edits vanished.
+
+*** The host a tool call reaches was a field the model filled in.  It is
+    resolved from the manifest now, and a request naming another host is
+    refused.
+
+*** Two keys can be the same setting.  `primary` and `primary.dark` are
+    different strings and the same setting for the dark scheme, so `theme
+    generate` and `theme import` both compared keys literally, never demanded
+    `--replace`, and left half the old design in charge of the scheme fewer
+    people look at.
+
+** Agents
+
+*** An agent can call a tool.  Everything guarding one already existed — a
+    host allow-list with no wildcards, a vault-named credential, a client that
+    refuses a tool the far side has newly advertised — and the dispatcher had
+    no branch for it, so every authorised call fell through and answered that
+    it was not implemented.  A tool call now taints the run for the same
+    reason reading the store does, and more so: a third-party result is
+    whatever a host returned on this request, reviewed by nobody here.
+
+*** Two working indexes no agent could ask.  Asked which page covered returns,
+    an agent's only move was to list every page and read them one at a time
+    until the budget ran out or it guessed right — while the full-text and
+    vector indexes were built at publish, handed to the public API, and
+    reachable from no agent at all.  Neither index is new; asking is.
+
+** The design system you already use
+
+*** `quilzo theme import` reads a W3C design token file — Design Tokens Format
+    Module 2025.10 — and fills this site's tokens from it.  `theme export`
+    goes the other way.  This ships nobody's palette and nobody's name: a
+    design system's code licence usually permits a derived palette and its
+    trademark policy does not permit the name, and two of the large ones
+    separately forbid copying the look.  Reading the file the system publishes,
+    on the machine of somebody entitled to use it, is a customer's own design
+    system rather than an imitation of one.
+
+    The pairing is written down and not guessed, because naming is where
+    design systems differ most and a matcher that swapped the brand colour for
+    the body text colour would produce a palette that is coherent, plausible
+    and inverted.  `--list` prints every path in the file; `--skeleton` writes
+    the left-hand side out.  Imported values go through the same contrast gate
+    a hand-typed one does.
+
+** Pictures and video
+
+*** A photograph is stored the way up it is meant to be seen, and the metadata
+    this pipeline promises to remove is removed on every path rather than
+    most.
+
+*** A picture can be chosen instead of typed as a hash, cropped in an
+    interface that has no canvas, and told which part of it must survive a
+    crop.  An edit derives a new object; the original stays, because nothing
+    here is overwritten.
+
+*** A video does not publish without captions, and the accessibility report
+    says so either way.  A range request for two bytes of a film reads two
+    bytes of it.
+
+*** A picture asked of a model cannot arrive undeclared.  `quilzo media
+    verify` checks every C2PA manifest, ours and theirs — the verifier this
+    program already had and could not reach.
+
+*** `quilzo studio` records the screen into the media library.  It is a fourth
+    process rather than a route in the admin, because a capture surface needs
+    JavaScript and the admin's policy is that it has none.
+
+** Writing, and the interface
+
+*** An editor can bold a word, make a list and link a phrase; edit from the
+    page rather than from a form describing it; say "this paragraph is wrong";
+    and do one thing to several pages at once.
+
+*** `quilzo find` searches pages, screens, settings, types and files from
+    anywhere.
+
+*** A field can name another page, and publishing refuses one that names
+    nothing.  A new record starts as the shape its type declares.  A listing
+    goes where the page puts it.  A section keeps its name when the one above
+    it is removed.
+
+*** What points at this page, which nothing could answer before.  When did
+    anybody last look at this.  Whose job a page is.
+
+*** Four screens scrolled sideways on a phone and the links were sixteen
+    pixels tall; five more scrolled sideways and then downwards because of it.
+    The menu, the bar and the scrolling column were rebuilt over several
+    passes until the page scrolls and the menu is the only thing pinned.
+
+** Speed, each figure measured on a running site
+
+*** A page cost the same whether the site had eleven pages or two hundred.
+    A listing pages now: 6.83 ms -> 2.66 ms on a 211-page site.
+
+*** The layout was re-parsed for every reader, and two thirds of the memory to
+    serve a page went on building the same escaper: 714 KB across 1163
+    allocations -> 234 KB across 737.
+
+*** A page re-read the media library from disk for every row.
+
+*** Seventy percent of every page was bytes nobody had to send.  Responses are
+    compressed: 6,443 -> 1,955 bytes for the home page.  A browser holding two
+    copies of a page sends two validators, and the list is now parsed the way
+    RFC 9110 says.
+
+*** The sitemap and the feeds transferred in full on every poll, and every
+    listing-backed route served whatever the records were at boot.
+    `/catalogue.json` — the largest thing the site serves, on the one route
+    whose purpose is being polled by a machine — had no validator and no
+    cache directive at all.
+
+*** Six servers had one timeout each and nothing bounding the rest.
+
+** Honesty
+
+*** The security report told you to run commands this program does not have.
+
+*** Every way to publish runs the same checks, and a test now walks the source
+    and fails on a surface that does not.
+
+
 v0.2.1 — 8 September 2026
 =========================
 

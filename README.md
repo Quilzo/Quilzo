@@ -319,12 +319,13 @@ execute, and the page goes out through the same gates as everything else — so
 the answer to "what if somebody pastes a script tag" is structural rather than a
 filter somebody has to keep ahead of.
 
-## The three processes
+## The four processes
 
 ```
-quilzo serve      the admin       loopback, behind your own auth
-quilzo site       the website     the thing you point the internet at
-quilzo telegram   the Mini App    authenticated, writable, framed by Telegram
+quilzo serve      the admin        loopback, behind your own auth
+quilzo site       the website      the thing you point the internet at
+quilzo telegram   the Mini App     authenticated, writable, framed by Telegram
+quilzo studio     screen recording loopback, and the only one that runs scripts
 ```
 
 Separate binaries-in-one, separate ports, separate exposure. The public process
@@ -333,11 +334,20 @@ submission to a store that is not the content store. It cannot read a submission
 back, cannot reach a ref, and cannot cause a commit. Reading the postbag happens
 in the admin, behind authentication.
 
-The third is the newest and the most exposed: it is authenticated, it can
-publish, and it is framed by somebody else's client. That combination is why it
-is a separate process with a separate policy rather than a route on one of the
-others — mixing it in would mean widening that one's policy to cover this one's
-needs, which is how a policy stops describing anything.
+The Mini App is authenticated, it can publish, and it is framed by somebody
+else's client. That combination is why it is a separate process with a separate
+policy rather than a route on one of the others — mixing it in would mean
+widening that one's policy to cover this one's needs, which is how a policy
+stops describing anything.
+
+The studio is the same argument arriving from the opposite direction. The
+admin's policy is `default-src 'none'` and a test asserts its screens execute
+nothing, but `getDisplayMedia` and `MediaRecorder` are JavaScript APIs — there
+is no form post that reaches a screen and there will not be one. So either
+recording does not happen here, or something runs a script. Rather than open a
+nonce route in the admin and weaken the claim that holds everywhere else, the
+capture surface is its own process: **the argument for that header is that the
+admin has no scripts, not that it has some the policy catches.**
 
 ## What is in it
 
@@ -346,6 +356,18 @@ fields — text, number, boolean, date, URL, email, slug, choice, list — enfor
 identically by the CLI, the browser and the agent interface. Media with format
 validation by decoding rather than by extension, and alternative text required
 before an image may be published.
+
+**Pictures and video.** Format validated by decoding rather than by extension;
+alternative text required before an image may be published; a focal point that
+says which part of a picture must survive a crop; a derived crop that leaves the
+original alone, because nothing here is overwritten; EXIF orientation applied so
+a photograph is stored the way up it is meant to be seen, and the rest of the
+metadata removed on every path into the store. A video does not publish without
+captions, and the accessibility report says so either way. Range requests read
+only the bytes asked for, so seeking in a film does not read the film. A picture
+asked of a model arrives declared as generated — it cannot arrive any other way
+— and `quilzo media verify` checks every C2PA manifest, the ones this program
+wrote and the ones that came with somebody else's file.
 
 **Views over records.** Declared queries with typed parameters, a field
 allowlist and a cost budget, resolved before rendering. A page names the
@@ -369,11 +391,16 @@ does not carry the approval forward. Every gate refuses rather than warns; the
 override is explicit and lands in the commit metadata.
 
 **Agents.** A manifest is the whole of what an agent may do: capabilities, a
-content scope, a budget and an autonomy level, enforced at one chokepoint every
-operation passes through. Reading stored content taints the run, so what an
-agent produced from input somebody else may have written needs a person before
-it goes live. A model may choose each action from the manifest's capabilities
-and cannot invent one. The design follows CaMeL (arXiv:2503.18813), which is
+content scope, a budget, an autonomy level, and the named tools it may call on
+hosts it named first — enforced at one chokepoint every operation passes
+through. Reading stored content taints the run, and so does calling a tool,
+because a third-party result is whatever a host returned on this request with no
+review by anybody here at all. What an agent produced after either needs a
+person before it goes live. A model may choose each action from the manifest's
+capabilities and cannot invent one; when it names a tool, the host is resolved
+from the manifest and from the install's own declarations, and **the two have to
+agree or nothing is called** — a host the model supplied is dropped rather than
+forwarded. The design follows CaMeL (arXiv:2503.18813), which is
 where the research settled: enforce policy outside the model with a
 deterministic gate, because no amount of training makes a model refuse every
 malicious instruction.
@@ -393,8 +420,9 @@ because rights *end* — a lapsed stock licence leaves a site infringing with an
 audit trail proving it was deliberate, and nothing notices.
 
 **Reaching other systems.** MCP in both directions: a server exposing this
-store, and a client calling servers an operator declared. The client's tool
-allow-list is the point — 17.2% of remote MCP servers surveyed in July 2026 were
+store, and a client calling servers an operator declared — from the command
+line, or by an agent whose manifest named that tool and that host. The client's
+tool allow-list is the point — 17.2% of remote MCP servers surveyed in July 2026 were
 dead, and the live risk is a server redefining a tool after the day somebody
 trusted it. Credentials are named in the declaration and read from the
 environment, never stored, because an object in this store cannot be deleted.
@@ -482,6 +510,29 @@ a published commitment to every entry so far.
 **Assurance.** A static scanner over your own templates and extensions, a
 Content-Security-Policy generated from what your content actually references, a
 software inventory, store integrity verification, and a posture report.
+
+**Speed, measured rather than assumed.** Every figure below came from profiling
+the running program on a real site, and each is checked by a test that fails if
+the cost comes back:
+
+```
+a page on a 211-page site      6.83 ms -> 2.66 ms   listings page rather than
+                                                    rendering the whole store
+the layout, per reader         re-parsed -> parsed once, then shared
+the escaper, per page          10% of the request -> built once
+                               714 KB/1163 allocs -> 234 KB/737 allocs
+the media library, per row     re-read from disk -> read once per request
+a page over the wire           6,443 B -> 1,955 B  (70%, deflate at level 6)
+a second copy of a page        an ETag list is parsed as RFC 9110 says
+the sitemap and the feeds      1,054 B -> 304, and no body
+```
+
+Compression weakens an ETag to `W/`, because a compressed response is not the
+bytes a strong validator named — the same thing nginx does — and `Vary:
+Accept-Encoding` goes on compressed and bodyless responses only, because serving
+identity to a client that would have taken gzip is harmless and the reverse is
+not. `io.ReaderFrom` is implemented on the compressing writer so `sendfile`
+still carries video.
 
 **Interfaces.** A browser interface covering every capability, grouped into five
 sections and reorderable per person, with light/dark and hide-the-navigation
