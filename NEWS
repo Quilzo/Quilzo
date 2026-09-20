@@ -7,6 +7,10 @@ has the rest.
 Unreleased — since v0.2.1
 =========================
 
+The security fixes below have also been applied to the v0.2.x release line, on
+the `release-v0.2` branch, and are listed there under v0.2.2 with a section
+naming what did not backport and why.
+
 Eighty-two changes.  Most of them came out of two sweeps: driving the running
 program through a browser and a terminal rather than reading it, and an audit
 for things this program declared and never executed.  The second found more
