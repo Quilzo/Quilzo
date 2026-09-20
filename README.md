@@ -375,6 +375,15 @@ asked of a model arrives declared as generated — it cannot arrive any other wa
 — and `quilzo media verify` checks every C2PA manifest, the ones this program
 wrote and the ones that came with somebody else's file.
 
+**Search that answers a sentence.** The ranker required every word of a query
+to appear, which scored perfectly on two-word queries and returned *nothing* as
+soon as one word was missing — so "how long does delivery take" matched no page
+on a site with a delivery page. It is BM25 now: saturation so the tenth
+occurrence of a word counts for almost nothing, and length normalisation so a
+long page is not rewarded for being long, which is what the conjunction was
+protecting against. Measured on a judgement corpus before and after, and both
+numbers are in the tests.
+
 **Views over records.** Declared queries with typed parameters, a field
 allowlist and a cost budget, resolved before rendering. A page names the
 listings it embeds; the template receives data, never a callable.

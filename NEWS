@@ -118,6 +118,28 @@ correct about its own job and wrong about what another part was doing with it.
     both agents, which is the half that makes it accountability rather than
     delegation.
 
+*** Search returned nothing for a question.  The ranker required every term of
+    a query to appear -- "Every term must appear.  Anything less returns most
+    of the site" -- which is correct for two words that are both on the page
+    somebody wants, and scores precision@1 of 1.00 on the judgement set.  It
+    also means one word the page does not happen to use empties the result, so
+    "how long does delivery take" matched nothing on a site with a delivery
+    page.  An empty result reads to a visitor as "this site does not cover
+    that" and to a model as a broken tool.
+
+    It is BM25 now, which is what the conjunction was standing in for: drop the
+    requirement and the longest page wins everything by having more of every
+    word, and saturation and length normalisation are exactly the two parts
+    that answer that.  The original six judgements still score 1.00; five
+    sentence-shaped queries went from nothing at all to 1.00.
+
+    Three other repairs were measured and rejected, and the reasons are
+    recorded in the tests: a cosine floor from the second index (a stopword
+    query scored higher than a real question), ranking by how many terms
+    matched (it puts the About page above the Delivery page, because About
+    holds "how", "does" and "take"), and requiring only the rare terms (rarity
+    is not relevance -- one incidental rare word empties the result again).
+
 *** Two working indexes no agent could ask.  Asked which page covered returns,
     an agent's only move was to list every page and read them one at a time
     until the budget ran out or it guessed right — while the full-text and

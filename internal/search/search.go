@@ -34,6 +34,7 @@
 package search
 
 import (
+	"math"
 	"sort"
 	"unicode"
 )
@@ -75,6 +76,19 @@ type Index struct {
 	Pages int `json:"pages"`
 	// Titles are kept so a result can be displayed without loading the page.
 	Titles map[string]string `json:"titles,omitempty"`
+	// Lengths is each page's weighted length, and Average is their mean.
+	//
+	// Needed for length normalisation, which is the part of BM25 that stops a
+	// long page winning every disjunctive query by having more of everything.
+	// Weighted by field, so a long body does not make a title match cheap:
+	// the same weights the ranker uses, applied to the count, so a page's
+	// length means the same thing to both halves.
+	//
+	// Absent from an index built by an older version, and the ranker falls
+	// back to the average when a page has no recorded length — which makes
+	// the normalisation a no-op for that page rather than a division by zero.
+	Lengths map[string]float64 `json:"lengths,omitempty"`
+	Average float64            `json:"average,omitempty"`
 }
 
 // fieldWeight decides how much a match in each field is worth.
@@ -93,8 +107,9 @@ var fieldWeight = map[string]float64{
 func Build(commit string, pages map[string]any) *Index {
 	idx := &Index{
 		Commit: commit, Terms: map[string][]Posting{},
-		Titles: map[string]string{},
+		Titles: map[string]string{}, Lengths: map[string]float64{},
 	}
+	length := idx.Lengths
 
 	names := make([]string, 0, len(pages))
 	for n := range pages {
@@ -134,11 +149,24 @@ func Build(commit string, pages map[string]any) *Index {
 					}
 					p.Count++
 				}
+				w := fieldWeight[field]
+				if w == 0 {
+					w = 1
+				}
 				for term, p := range counts {
 					idx.Terms[term] = append(idx.Terms[term], *p)
+					length[name] += w * float64(p.Count)
 				}
 			}
 		}
+	}
+
+	var total float64
+	for _, l := range idx.Lengths {
+		total += l
+	}
+	if idx.Pages > 0 {
+		idx.Average = total / float64(idx.Pages)
 	}
 
 	// Sorted, so the index is deterministic — two builds of the same content
@@ -310,19 +338,56 @@ func (idx *Index) Search(query string, limit int) []Result {
 	}
 	pages := map[string]*acc{}
 
+	// Terms most of the corpus contains are dropped before scoring.
+	//
+	// Not for speed. Dropping the conjunction means a query of nothing but
+	// ordinary words — "the and of to a it is" — has a positive score against
+	// most of the site and comes back as a ranked list of everything. Their
+	// inverse document frequency is small, so they do not decide the order,
+	// and that is not the complaint: the complaint is that ten results were
+	// returned at all, which reads as a search that is broken rather than a
+	// query that said nothing.
+	//
+	// The rule is the one internal/vector already defends for the same
+	// reason, where it drops such a term from an explanation on the grounds
+	// that "these two pages are alike because both contain 'the'" is true and
+	// useless. A term most pages contain cannot distinguish between pages,
+	// and a query made only of those has nothing in it to answer.
+	//
+	// It is a property of the corpus and not a word list, so it needs no
+	// language: on a site about indigo, "indigo" is on every page and is
+	// dropped, which is right — it does not tell that site's pages apart.
+	// Dropped only when something better remains. A query that is nothing but
+	// a common word — "company", on a site where every page says company —
+	// is a query somebody meant, and the honest answer is the pages that
+	// contain it ranked by length rather than none at all. What this removes
+	// is padding: the ordinary words around the word that was meant.
+	var kept, common []string
 	for _, term := range terms {
-		postings := idx.Terms[term]
-		if len(postings) == 0 {
+		docs := idx.pagesWith(term)
+		if docs == 0 {
+			// A word this corpus has never seen. Dropped rather than fatal:
+			// "shipping times for trade orders" works only because the words
+			// the site does not use fall away, and that is the query this
+			// ranker exists to answer.
 			continue
 		}
-		// Inverse document frequency, roughly: a term appearing on every page
-		// says nothing about which page is wanted, and one appearing on three
-		// says a great deal. Without this, common words dominate and the
-		// ranking is a word count.
-		rarity := float64(idx.Pages) / float64(len(postings))
-		if rarity < 1 {
-			rarity = 1
+		if docs > idx.ubiquitous() {
+			common = append(common, term)
+			continue
 		}
+		kept = append(kept, term)
+	}
+	if len(kept) == 0 {
+		kept = common
+	}
+	if len(kept) == 0 {
+		return nil
+	}
+
+	for _, term := range kept {
+		postings := idx.Terms[term]
+		idf := idfOf(idx.Pages, idx.pagesWith(term))
 
 		for _, p := range postings {
 			a := pages[p.Page]
@@ -334,16 +399,14 @@ func (idx *Index) Search(query string, limit int) []Result {
 			if w == 0 {
 				w = 1
 			}
-			// Diminishing returns on repetition: the tenth occurrence of a word
-			// says much less than the second, and without this a page that
-			// repeats a term wins every time.
-			repeat := 1 + float64(p.Count)/(float64(p.Count)+3)
-			// Earlier is better, gently.
+			// Earlier is better, gently. Kept from the version before this
+			// one: it is not part of BM25 and it is worth a little, and the
+			// judgement set does not get worse for it.
 			early := 1.0
 			if p.First < 20 {
 				early = 1.2
 			}
-			a.score += w * rarity * repeat * early
+			a.score += idf * idx.saturate(w*float64(p.Count), idx.lengthOf(p.Page)) * early
 			a.fields[p.Field] = true
 			a.matched[term] = true
 		}
@@ -351,18 +414,9 @@ func (idx *Index) Search(query string, limit int) []Result {
 
 	var out []Result
 	for page, a := range pages {
-		// Every term must appear. Anything less returns most of the site.
-		if len(a.matched) < len(terms) {
-			continue
-		}
-		var fields []string
-		for f := range a.fields {
-			fields = append(fields, f)
-		}
-		sort.Strings(fields)
 		out = append(out, Result{
 			Page: page, Title: idx.Titles[page], Score: a.score,
-			Fields: fields, Matched: len(a.matched),
+			Fields: fieldsSorted(a.fields), Matched: len(a.matched),
 		})
 	}
 
@@ -377,6 +431,127 @@ func (idx *Index) Search(query string, limit int) []Result {
 		out = out[:limit]
 	}
 	return out
+}
+
+func fieldsSorted(set map[string]bool) []string {
+	fields := make([]string, 0, len(set))
+	for f := range set {
+		fields = append(fields, f)
+	}
+	sort.Strings(fields)
+	return fields
+}
+
+// Ranking, and why this is BM25 now when the package said it need not be.
+//
+// The old ranker required every term to appear: "Every term must appear.
+// Anything less returns most of the site." That is correct for the query the
+// judgement set contains — two or three words, all of them on the page that
+// should win — and it scores precision@1 of 1.00 there.
+//
+// It returns the empty set for the query people type. Measured over the same
+// corpus, every sentence-shaped query — "how do I wash dyed cloth", "shipping
+// times for trade orders" — matched nothing at all, because one word the page
+// does not happen to use empties the result. An empty result reads to a
+// visitor as "this site does not cover that" and to a model as a broken tool.
+//
+// The obvious repair is to require only the rare terms, and it does not work:
+// rarity is not relevance. "how" appears on exactly one page of the judgement
+// corpus, so it survives the filter and then nothing matches both it and the
+// words the reader actually meant.
+//
+// So the conjunction goes, and what replaces it has to answer the objection
+// the conjunction existed for. That objection is length: drop the requirement
+// and the longest page wins every query by having more of everything. That is
+// precisely what BM25's two parts are for — saturation, so the tenth
+// occurrence of a word counts for almost nothing, and length normalisation, so
+// a long page is not rewarded for being long.
+//
+// The package's earlier note said "the length bias that BM25 exists to correct
+// does not appear here, because repetition saturates below what a title match
+// is worth". True, and true only under the conjunction: the long page could
+// not win a query it did not match every word of. Without that protection the
+// bias appears immediately, and relevance_test.go has the page that
+// demonstrates it.
+
+const (
+	// k1 controls how fast term frequency saturates. 1.2 is the conventional
+	// value and the one every published comparison uses as the baseline.
+	k1 = 1.2
+	// b is how much length normalisation is applied: 0 none, 1 fully. 0.75 is
+	// again the conventional value.
+	b = 0.75
+)
+
+// pagesWith is how many pages hold a term.
+//
+// In pages, not in postings. A term in a page's title and in its body is two
+// postings and one page, and counting postings makes a word appearing in
+// several fields of one page look as common as one spread across several.
+func (idx *Index) pagesWith(term string) int {
+	docs := map[string]bool{}
+	for _, p := range idx.Terms[term] {
+		docs[p.Page] = true
+	}
+	return len(docs)
+}
+
+// ubiquitous is the document frequency above which a term stops telling pages
+// apart.
+//
+// Half the corpus, with the exception internal/vector makes for the same rule:
+// on a site of two or three pages there is no such thing as a common term, and
+// applying it would refuse every query.
+func (idx *Index) ubiquitous() int {
+	if idx.Pages < 4 {
+		return idx.Pages
+	}
+	return idx.Pages / 2
+}
+
+// idfOf is the BM25 inverse document frequency.
+//
+// The +0.5 terms are the smoothing from the original formulation. The 1+ in
+// front of the ratio keeps it positive: without it a term appearing in more
+// than half the corpus gets a negative weight, so a page containing a common
+// word scores worse than one that does not contain it at all — which is a
+// ranking nobody can explain.
+func idfOf(pages, docs int) float64 {
+	if pages <= 0 || docs <= 0 {
+		return 0
+	}
+	n, d := float64(pages), float64(docs)
+	return math.Log(1 + (n-d+0.5)/(d+0.5))
+}
+
+// lengthOf is a page's weighted length.
+func (idx *Index) lengthOf(page string) float64 {
+	if l, ok := idx.Lengths[page]; ok && l > 0 {
+		return l
+	}
+	// An index built before lengths were recorded. Using the average makes
+	// the normalisation a no-op for that page rather than a division by zero
+	// or a page that looks infinitely short and wins everything.
+	return idx.Average
+}
+
+// saturate is BM25's term-frequency component, normalised for page length.
+//
+//	tf * (k1 + 1) / (tf + k1 * (1 - b + b * |D| / avgdl))
+//
+// The |D|/avgdl ratio is the whole point: a page twice the average length has
+// to say a word twice as often to score what an average-length page scores
+// once. With no corpus average — an index of one page, or one built before
+// lengths were recorded — the ratio is 1 and this is plain saturation, which
+// is the behaviour the ranker had before and is correct when there is nothing
+// to compare a length against.
+func (idx *Index) saturate(tf, length float64) float64 {
+	ratio := 1.0
+	if idx.Average > 0 && length > 0 {
+		ratio = length / idx.Average
+	}
+	norm := 1 - b + b*ratio
+	return tf * (k1 + 1) / (tf + k1*norm)
 }
 
 // Size reports how many terms the index holds, for deciding when this has been

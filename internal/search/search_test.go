@@ -62,26 +62,59 @@ func TestATitleMatchOutranksABodyMatch(t *testing.T) {
 	}
 }
 
-// An "any term" search on a two-word query returns most of the site and buries
-// the page somebody wanted.
-func TestEveryTermMustAppear(t *testing.T) {
+// Every term used to decide the result set, and now decides nothing on its own.
+//
+// This test used to assert that a page matching one word of a two-word query
+// was not returned at all. That was the ranker's contract and it was right
+// about the query it was written for: two words, both on the page that should
+// win. It was also why a sentence returned nothing — one word the page does
+// not happen to use emptied the result — which is the failure sentence_test.go
+// measures and the reason the ranker is BM25 now.
+//
+// So the conjunction goes, and what decides the order is the score: inverse
+// document frequency against page length. Counting matched terms instead was
+// tried and is worse on a real corpus — measured on the demo, "how long does
+// delivery take" put the About page first, because it holds "how", "does" and
+// "take" and the Delivery page holds only "delivery".
+//
+// A query with no known word in it still returns nothing, because a ranked
+// list of pages that do not answer the question is worse than being told the
+// site does not cover it.
+func TestNoTermIsRequiredAndAnUnknownOneIsIgnored(t *testing.T) {
 	idx := Build("abc", site())
 
 	both := idx.Search("pricing delivery", 10)
-	for _, r := range both {
-		if r.Page != "faq" {
-			t.Errorf("%q matched a two-word query it does not fully contain",
-				r.Page)
-		}
+	if len(both) == 0 {
+		t.Fatal("a query two pages between them contain returned nothing")
 	}
-	if len(both) != 1 {
-		t.Errorf("got %d results for a query only one page contains: %#v",
-			len(both), both)
+	// Both pages come back now. Which leads is decided by the score, and the
+	// score is inverse document frequency against page length — not by a
+	// count of terms, which rewards a page for containing the ordinary words
+	// around the word somebody meant.
+	seen := map[string]bool{}
+	for _, r := range both {
+		seen[r.Page] = true
+	}
+	if !seen["faq"] || !seen["pricing"] {
+		t.Errorf("a two-word query returned %#v; both pages hold one of them",
+			both)
+	}
+	if both[0].Matched < 1 {
+		t.Errorf("the first result matched no terms: %#v", both[0])
 	}
 
-	// A term nothing has means no results, not everything.
-	if got := idx.Search("pricing xyzzy", 10); len(got) != 0 {
-		t.Errorf("a query containing an unknown word returned %d results", len(got))
+	// An unknown word is ignored rather than fatal. It has to be: "shipping
+	// times for trade orders" works only because the words the site does not
+	// use fall away, and that is the query this ranker exists to answer.
+	one := idx.Search("pricing xyzzy", 10)
+	if len(one) == 0 || one[0].Page != "pricing" {
+		t.Errorf("a query with one known word and one unknown returned %#v",
+			one)
+	}
+
+	// A query of nothing but unknown words is nothing.
+	if got := idx.Search("xyzzy plugh", 10); len(got) != 0 {
+		t.Errorf("a query with no known word returned %d result(s)", len(got))
 	}
 }
 
