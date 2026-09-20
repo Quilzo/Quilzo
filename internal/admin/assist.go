@@ -15,7 +15,6 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/auth"
-	publishgate "github.com/quilzo/quilzo/internal/gate"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -43,20 +42,6 @@ type Assist struct {
 	Save func(pages map[string]any, message, author, base string) error
 	// Record marks the accepted pages as model-generated.
 	Record func(pages []string, model, author string) error
-	// Gates runs every unwaivable content check against what a proposal would
-	// make, without publishing and without moving anything anybody can see.
-	//
-	// The checks were only ever asked at publication, which is the last
-	// possible moment and the wrong one for this: a model writes a claim with
-	// nothing behind it, or a reference to a page that does not exist, a
-	// person accepts it because it reads well, and the refusal arrives days
-	// later against a draft nobody remembers proposing. Asking here turns a
-	// publish-time refusal into something the model can be told to fix while
-	// the instruction is still on the screen.
-	//
-	// Nil means the loop is absent and the screen says nothing about gates,
-	// rather than saying a proposal is clean when nothing checked it.
-	Gates func(pages map[string]any) (*publishgate.Report, []publishgate.Finding, error)
 	// Timeout bounds one request. Zero means the default below.
 	Timeout time.Duration
 }
@@ -111,21 +96,6 @@ func (s *Server) handleAssist(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, "assist.html", data)
 		return
 	}
-	// What the gates said about the last attempt, if this is a second one.
-	//
-	// Appended to what the model is asked rather than shown to the person and
-	// left there: the findings name a page and say what is wrong with it, in
-	// the same words the publish refusal uses, and that is already an
-	// instruction. What is displayed stays the original ask, because that is
-	// what the person wrote and what they will edit if this goes round again.
-	asked := instruction
-	if fix := strings.TrimSpace(r.FormValue("fix")); fix != "" {
-		if len(fix) > maxFixNote {
-			fix = fix[:maxFixNote]
-		}
-		asked = instruction + "\n\n" + fix
-		data["Retried"] = true
-	}
 
 	current := map[string]any{}
 	if s.Assist.Pages != nil {
@@ -141,7 +111,7 @@ func (s *Server) handleAssist(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	prop, err := assist.Ask(ctx, m, asked, current)
+	prop, err := assist.Ask(ctx, m, instruction, current)
 	if err != nil {
 		// A rejection is not a failure of the product, and it says which rule
 		// the answer broke. Showing that rather than "something went wrong" is
@@ -173,93 +143,7 @@ func (s *Server) handleAssist(w http.ResponseWriter, r *http.Request) {
 	data["Collides"] = collides
 	data["Instruction"] = instruction
 	data["Serialised"] = mustJSON(prop)
-	s.gateProposal(data, prop, current)
 	s.render(w, r, "assist.html", data)
-}
-
-// maxFixNote bounds what a browser may append to the next instruction.
-//
-// The findings are built here and put in a hidden field, so the field comes
-// back from a browser and is not to be trusted with the length either: it is
-// appended to what a model is asked, and an unbounded one is a way to spend
-// somebody's token budget from a form post.
-const maxFixNote = 4000
-
-// gateProposal asks every unwaivable content check about what this proposal
-// would make, and builds the instruction that would fix what it found.
-//
-// Not a refusal. The draft is where unfinished work belongs, and a proposal
-// that would not publish yet is an ordinary thing to accept and finish by
-// hand. What it must not be is a surprise at publication — so it is said here,
-// where the model that wrote it is still one button away.
-func (s *Server) gateProposal(data map[string]any, prop *assist.Proposal,
-	current map[string]any) {
-
-	if s.Assist == nil || s.Assist.Gates == nil {
-		return
-	}
-	// What the draft would hold if this were accepted, overwrite and all: the
-	// gates are about the set being published, so checking the proposal's
-	// pages alone would miss every finding that is about how they sit beside
-	// what is already there — a reference to a page that is not in the draft,
-	// a menu entry pointing at nothing.
-	would := make(map[string]any, len(current)+len(prop.Pages))
-	for name, body := range current {
-		would[name] = body
-	}
-	for name, body := range prop.Pages {
-		would[name] = body
-	}
-
-	refused, advisory, err := s.Assist.Gates(would)
-	if err != nil {
-		// Said, not swallowed. "The claim check could not run" reaching
-		// somebody as silence is the failure mode internal/gate names.
-		data["GateError"] = err.Error()
-		return
-	}
-	if len(advisory) > 0 {
-		data["GateAdvice"] = findingLines(advisory)
-	}
-	if refused == nil {
-		data["GateClean"] = true
-		return
-	}
-	data["GateRefusal"] = refused.Check.Refusal(len(refused.Findings))
-	data["GateFindings"] = findingLines(refused.Findings)
-	data["Fix"] = fixNote(refused)
-}
-
-// fixNote is what the model is told about its own draft.
-//
-// The publish refusal's own sentence, then the findings. Not a rewritten
-// version of them: the refusal already has to say what to do about it — that
-// is the contract every Check.Refusal is written to — so paraphrasing it here
-// would be a second, worse copy that drifts from the one a person sees.
-func fixNote(r *publishgate.Report) string {
-	var b strings.Builder
-	b.WriteString("Your last answer would not publish. ")
-	b.WriteString(r.Check.Refusal(len(r.Findings)))
-	b.WriteString("\n")
-	for _, f := range r.Findings {
-		b.WriteString("\n- ")
-		b.WriteString(f.String())
-	}
-	b.WriteString("\n\nWrite the pages again with those fixed. " +
-		"Keep everything else the same.")
-	if b.Len() > maxFixNote {
-		return b.String()[:maxFixNote]
-	}
-	return b.String()
-}
-
-// findingLines is the findings as text, for a screen.
-func findingLines(fs []publishgate.Finding) []string {
-	out := make([]string, 0, len(fs))
-	for _, f := range fs {
-		out = append(out, f.String())
-	}
-	return out
 }
 
 // handleAssistAccept writes a proposal into the draft.

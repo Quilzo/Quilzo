@@ -408,30 +408,6 @@ func cmdServe(root string, args []string) error {
 		Record: func(pages []string, model, author string) error {
 			return recordAssisted(root, s, pages, model, author)
 		},
-		// The publish gates, asked about a draft that does not exist yet.
-		//
-		// CommitOnto writes the objects and moves no ref, which is what a
-		// content-addressed store makes cheap: the candidate is a real commit
-		// the checks can be pointed at, and nothing anybody can reach points
-		// at it. The alternative — teaching every check to read a map of
-		// pages instead of a commit — would be a second implementation of
-		// seven gates, which is the drift internal/gate exists to have
-		// stopped.
-		//
-		// It leaves a commit nothing points at, one per proposal. That is
-		// what this store does with every commit — it cannot forget, and a
-		// rolled-back publication is still in it — so the cost is the tree
-		// objects for the pages that changed, and the page bodies are already
-		// stored under their hashes by the time the gates run.
-		Gates: func(pages map[string]any) (*gate.Report, []gate.Finding, error) {
-			cid, err := site.CommitOnto(s, pages,
-				"a proposal, considered and not published", "assistant",
-				s.GetRef(site.RefDraft))
-			if err != nil {
-				return nil, nil, err
-			}
-			return contentGates(root, s, cid).Run()
-		},
 	}
 	// What people say about themselves. A display name and a way to reach
 	// them, and deliberately nothing else — every field here is data this
