@@ -5,6 +5,7 @@ package agent
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -362,11 +363,24 @@ func (s *Session) MayReach(host string) error {
 	return s.spend("fetch")
 }
 
+// hostList is the declared hosts, in one order.
+//
+// Sorted, and it was not. The set is a map and Go randomises map iteration
+// deliberately, so the refusal naming what an agent may reach listed them
+// differently on every run — the same refusal, for the same reason, producing
+// a different sentence each time it happened.
+//
+// That sentence goes into a tamper-evident audit log, so one event was
+// recorded under a different digest depending on nothing. Found on main by a
+// test written to check a different claim: that the agent gate answers the
+// same way every time, which is what lets the AgentDojo figure be a lower
+// bound rather than a rate.
 func (s *Session) hostList() []string {
 	out := make([]string, 0, len(s.hosts))
 	for h := range s.hosts {
 		out = append(out, h)
 	}
+	sort.Strings(out)
 	return out
 }
 
