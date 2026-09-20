@@ -724,3 +724,138 @@ func (s *Session) Inside(page string) bool {
 	defer s.mu.Unlock()
 	return within(s.manifest.Retrieval.Path, page)
 }
+
+// Handing work to another agent, and the two ways that becomes a hole.
+//
+// A supervisor exists because a pipeline has stages that genuinely differ, and
+// the graph is named in the manifest rather than chosen at run time so that a
+// compromised supervisor cannot invent a worker. That is the governance claim
+// this program publishes on its agent card, under the heading the research
+// calls delegation with accountability.
+//
+// It was a claim about a field nothing read. Manifest.Delegates was validated,
+// copied out of an archetype and published to other systems, and no code path
+// anywhere handed work to anything. A supervisor agent's whole reason for
+// existing did nothing at all.
+//
+// Two holes have to stay shut, and they are the reason this is a gate rather
+// than a lookup:
+//
+//   - Capability laundering. A delegate holding more than its parent means
+//     the restriction on the parent was decoration: delegate, and the work
+//     happens with the wider set. Narrow answers that, and this refuses to
+//     delegate at all unless the caller has used it.
+//   - Taint laundering, which is the subtler one. If a tainted child's result
+//     came back to a clean parent, an agent could read untrusted content
+//     through a delegate and publish it — the taint rule defeated by an
+//     indirection the rule never looked at. So a child's taint is the
+//     parent's, and Fold is how a caller says so.
+
+// MayDelegate reports whether this agent may hand work to a named one.
+//
+// The name is matched against the manifest exactly the way a tool's host is:
+// what a model said is a request, and what the manifest says is the answer.
+// A delegate that is not on the list ends the run naming the list, because a
+// supervisor choosing a worker at run time is the thing the design refuses.
+func (s *Session) MayDelegate(name string) error {
+	want := strings.TrimSpace(name)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.manifest.Kind != KindSupervisor {
+		return s.refuse("delegate", fmt.Sprintf(
+			"this agent is a %s and only a supervisor delegates. Handing work "+
+				"onward from anything else would mean any agent could reach "+
+				"any other agent's capabilities", s.manifest.Kind))
+	}
+	if want == "" {
+		return s.refuse("delegate", "no agent was named")
+	}
+	for _, d := range s.manifest.Delegates {
+		if d == want {
+			// Spent as a step of the parent's budget as well as the child's
+			// own. A supervisor that could delegate without spending would
+			// have an unbounded budget with extra steps, which is the ceiling
+			// removed rather than moved.
+			return s.spend("delegate")
+		}
+	}
+	return s.refuse("delegate", fmt.Sprintf(
+		"%q is not one of this agent's delegates. It may hand work to %s, and "+
+			"the list is in the manifest so that the graph is reviewable and a "+
+			"supervisor that has been talked into something cannot invent a "+
+			"worker", want, delegateList(s.manifest.Delegates)))
+}
+
+// Delegates is the list this agent may hand work to.
+func (s *Session) Delegates() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.manifest.Delegates...)
+}
+
+// Fold brings a finished delegate's run back into this one.
+//
+// Everything the child spent is spent here too. A supervisor whose children's
+// costs did not land on its own budget would be a way to spend any amount by
+// spreading it, and the budget is the control that stops a goal-seeking agent
+// in a loop.
+//
+// The taint is the part that has to be right. A child that read stored content
+// produced output downstream of something somebody else may have written, and
+// that does not stop being true because it crossed a function boundary on the
+// way back. Refusals come back as well, because "the agent was refused four
+// times" is what an operator reads afterwards and a refusal that happened
+// inside a delegate is still a refusal this run caused.
+func (s *Session) Fold(child *Session) {
+	if child == nil || child == s {
+		return
+	}
+	steps, tools, _ := child.Spent()
+	tokens := child.TokensUsed()
+	tainted := child.Tainted()
+	refusals := child.Refusals()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.steps += steps
+	s.toolUses += tools
+	s.tokens += tokens
+	if tainted {
+		s.tainted = true
+	}
+	s.refusals = append(s.refusals, refusals...)
+}
+
+func delegateList(names []string) string {
+	if len(names) == 0 {
+		return "nothing — its delegate list is empty"
+	}
+	return strings.Join(names, ", ")
+}
+
+// Remaining is what is left of this session's budget.
+//
+// A delegate is given the smaller of its own budget and what its parent still
+// has, rather than the smaller of the two totals. Narrow compares the totals,
+// which is right for a manifest — a child may not be declared wider than its
+// parent — and wrong for a run: a supervisor with ten steps and three
+// delegates declaring ten each would hand out thirty. Fold catches that
+// afterwards, and afterwards is one delegate too late.
+func (s *Session) Remaining() Budget {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	steps := s.manifest.Budget.Steps - s.steps
+	tools := s.manifest.Budget.Tools - s.toolUses
+	left := time.Duration(s.manifest.Budget.Duration) - s.now().Sub(s.started)
+	if steps < 0 {
+		steps = 0
+	}
+	if tools < 0 {
+		tools = 0
+	}
+	if left < 0 {
+		left = 0
+	}
+	return Budget{Steps: steps, Tools: tools, Duration: Duration(left)}
+}

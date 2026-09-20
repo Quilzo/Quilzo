@@ -75,3 +75,19 @@ func Refuses() map[string]string {
 			"answering would quietly include the ref it was not granted",
 	}
 }
+
+// PerformsDelegates reports whether handing work to a named agent can be
+// carried out.
+//
+// Same reason PerformsTools is separate: a delegate is not an operation name.
+// The manifest names agents this install may or may not have, so there is no
+// fixed list to check a manifest against, and what can be stated here is that
+// the surface exists.
+//
+// It did not, and this one was published as a governance claim. Manifest.
+// Delegates was validated, refused on anything that is not a supervisor, and
+// written onto the A2A agent card under the gap the research calls delegation
+// with accountability — where another system reads it to decide what this one
+// will do before asking for anything. A claim about a field nothing reads is
+// the one kind of gap that is worse than a missing feature.
+func PerformsDelegates() bool { return true }

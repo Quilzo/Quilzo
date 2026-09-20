@@ -73,6 +73,14 @@ correct about its own job and wrong about what another part was doing with it.
     Sixteen concurrent writes against one base all passed the check and all
     committed; fifteen edits vanished.
 
+*** An action carrying only a delegate ended the run.  Action.Done was
+    `Op == "" && Tool == ""`, complete on the day it was written, and a
+    supervisor's first hand-off named neither -- so the loop stopped, took
+    whatever the supervisor had said to the delegate as its answer, and
+    reported a clean run that did nothing.  The same field was missing when
+    tool calls were added.  A test now compares what the dispatcher routes on
+    against what Done knows about, in the package that adds the branch.
+
 *** The host a tool call reaches was a field the model filled in.  It is
     resolved from the manifest now, and a request naming another host is
     refused.
@@ -92,6 +100,23 @@ correct about its own job and wrong about what another part was doing with it.
     it was not implemented.  A tool call now taints the run for the same
     reason reading the store does, and more so: a third-party result is
     whatever a host returned on this request, reviewed by nobody here.
+
+*** A supervisor can hand work to the agents it names.  Manifest.Delegates was
+    validated, refused on anything that is not a supervisor, copied out of the
+    supervisor archetype, and published on the A2A agent card under the
+    governance gap the research calls delegation with accountability -- where
+    another system reads it to decide what this one will do before asking for
+    anything.  Nothing read the field, so a supervisor's whole reason for
+    existing did not happen and the card said it did.
+
+    A delegate runs as the intersection of its own manifest and its
+    supervisor's, never as its own declaration, on what is left of the
+    supervisor's budget rather than on what it declared.  What the child spent,
+    what refused it, and whether it read untrusted content all come back to the
+    parent -- the last of those because a tainted child answering into a clean
+    parent would defeat the taint rule with one indirection.  The log names
+    both agents, which is the half that makes it accountability rather than
+    delegation.
 
 *** Two working indexes no agent could ask.  Asked which page covered returns,
     an agent's only move was to list every page and read them one at a time

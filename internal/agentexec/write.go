@@ -315,12 +315,21 @@ func (wr Writer) localeOf(page string) string {
 // Routing is by agent.IsWrite, the same classification the session gate uses.
 // Two ideas of what counts as a write is how an operation ends up dispatched to
 // the writer and checked as a read.
-func Dispatch(read Reader, write Writer, tools Tools, s *agent.Session) func(context.Context, agent.Action) (string, error) {
+func Dispatch(read Reader, write Writer, tools Tools, delegates Delegates,
+	s *agent.Session) func(context.Context, agent.Action) (string, error) {
 	r := read.Perform(s)
 	w := write.Perform(s)
 	t := tools.Perform(s)
+	d := delegates.Perform(s)
 	return func(ctx context.Context, a agent.Action) (string, error) {
-		// A tool call first, because it is decided by a different question.
+		// Delegation first, for the reason the tool branch gives below and
+		// one more: a delegated action is not an operation this agent
+		// performs at all, so there is no Op for IsWrite to be right or wrong
+		// about.
+		if strings.TrimSpace(a.Delegate) != "" {
+			return d(ctx, a)
+		}
+		// A tool call next, because it is decided by a different question.
 		//
 		// An action with Tool set has no Op, so agent.IsWrite would say false
 		// and the reader would answer "is permitted for this agent and not

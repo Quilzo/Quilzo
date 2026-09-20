@@ -400,7 +400,16 @@ person before it goes live. A model may choose each action from the manifest's
 capabilities and cannot invent one; when it names a tool, the host is resolved
 from the manifest and from the install's own declarations, and **the two have to
 agree or nothing is called** — a host the model supplied is dropped rather than
-forwarded. The design follows CaMeL (arXiv:2503.18813), which is
+forwarded.
+
+A supervisor hands stages to agents its manifest names in advance, so a
+supervisor that has been talked into something cannot invent a worker. The
+delegate runs as the intersection of the two manifests and never its own
+declaration — otherwise delegation is a way to launder capability — on what is
+left of the supervisor's budget rather than on what it declared, and everything
+the child spent, refused and was tainted by comes back to the parent. That last
+part is the one that matters: a tainted child answering into a clean parent
+would defeat the taint rule with a single indirection. The design follows CaMeL (arXiv:2503.18813), which is
 where the research settled: enforce policy outside the model with a
 deterministic gate, because no amount of training makes a model refuse every
 malicious instruction.
