@@ -601,7 +601,12 @@ Two consequences worth stating plainly:
 - **Reading stored content taints the run.** Not as a heuristic — as a fact
   that follows the data. Anything an agent produced after reading input somebody
   else could have written needs a person before it goes live, and the system
-  knows which runs those are without being told.
+  knows which runs those are without being told. **It also records what it
+  read** — the pages by name, a listing by its ref, a tool by its name and its
+  host, and a delegate's sources folded up into its supervisor's. A person
+  handed one bit can only review honestly by re-reading the site, which nobody
+  does, so the approval becomes a formality; handed a list, it is a minute's
+  work.
 - **A model cannot approve its own work.** Not a rule bolted on for AI. Approvals
   must come from principals and self-approval is forbidden, and a model is not a
   principal. The rule that stops an editor rubber-stamping herself is the rule

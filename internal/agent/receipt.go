@@ -71,6 +71,20 @@ type Receipt struct {
 	// input somebody else may have written. A buyer paying for an outcome
 	// should know whether a person still has to look.
 	Tainted bool
+	// Sources is what the taint came from, and Reads how many there were —
+	// including any past MaxSources that were counted and not named.
+	//
+	// An approval is a person deciding whether an agent's output is safe to
+	// publish, and the receipt used to hand them one bit: it read something.
+	// Reviewing that honestly means re-reading the site, which nobody does, so
+	// the control was exercised by clicking approve. Naming the sources makes
+	// it a minute's work.
+	Sources []Source
+	// Reads is how many times it read; Omitted how many distinct sources did
+	// not fit in Sources. Two different numbers, and using the first as the
+	// second reports "and 6 more" for a run that read three things twice each.
+	Reads   int
+	Omitted int
 	Spend   Spend
 }
 
@@ -83,6 +97,9 @@ func (t Trace) Receipt(s *Session) Receipt {
 	}
 	if s != nil {
 		r.Kind = s.Manifest().Kind
+		r.Sources = s.Sources()
+		r.Reads = s.Reads()
+		r.Omitted = s.Omitted()
 	}
 
 	seen := map[string]bool{}
@@ -156,6 +173,14 @@ func (r Receipt) Detail() map[string]string {
 	}
 	if len(r.Attempted) > 0 {
 		d["attempted"] = strings.Join(r.Attempted, " ")
+	}
+	// Only on a tainted run. A clean run has no sources by construction, and
+	// writing "sources: " into the record would read as a run whose
+	// provenance was lost rather than one that read nothing.
+	if r.Tainted {
+		if p := Provenance(r.Sources, r.Omitted); p != "" {
+			d["sources"] = p
+		}
 	}
 	return d
 }

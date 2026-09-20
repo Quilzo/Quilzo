@@ -587,6 +587,13 @@ func agentCheckRun(root string, args []string) error {
 	if rc.Tainted {
 		fmt.Printf("  %sread stored content, so anything it produced needs a "+
 			"person%s\n", dim, reset)
+		// And what it read, because that is the review. Being told a run is
+		// tainted and not what tainted it leaves the only honest check as
+		// re-reading the site, which nobody does — so the approval becomes a
+		// formality, which is the one outcome this rule cannot afford.
+		if p := agent.Provenance(rc.Sources, rc.Omitted); p != "" {
+			fmt.Printf("  %sit read: %s%s\n", dim, p, reset)
+		}
 	}
 	fmt.Printf("  %srecorded as agent.run %s%s\n", dim, rc.Fingerprint()[:12], reset)
 	return runErr

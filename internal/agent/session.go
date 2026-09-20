@@ -99,6 +99,14 @@ type Session struct {
 	// true for the life of the session — there is no sanitising step that
 	// clears it, because there is no sanitiser this package would trust.
 	tainted bool
+	// sources is what the taint came from, and reads is how many there were
+	// including any past MaxSources that are counted and not named. See
+	// provenance.go: a person asked to approve a tainted run was told that it
+	// had read something and not what.
+	sources []Source
+	seen    map[string]bool
+	reads   int
+	omitted int
 }
 
 // NewSession begins a run. The manifest is copied, so editing the stored
@@ -331,6 +339,7 @@ func (s *Session) Retrieve(ref, page, typeName, locale string) error {
 	// Everything read out of the store is untrusted from here on. It may have
 	// been written by a form submission, an importer, or a previous agent.
 	s.tainted = true
+	s.note(FromPage, page, "")
 	return nil
 }
 
@@ -364,6 +373,11 @@ func (s *Session) RetrieveSet(ref string) error {
 			"this agent reads %s and something asked it for %s", want, ref))
 	}
 	s.tainted = true
+	// The ref rather than the pages. A listing is a read of everything that
+	// matched, and which pages those were is the caller's business — saying
+	// "a listing of draft" is true, and naming pages this did not check would
+	// be a provenance record that is confidently wrong.
+	s.note(FromSet, ref, "")
 	return nil
 }
 
@@ -421,6 +435,14 @@ func (s *Session) MayReach(host string) error {
 	return s.spend("fetch")
 }
 
+// noteTool records which tool reached which host, which MayReach cannot: it
+// is given a host and never the name behind it.
+func (s *Session) noteTool(tool, host string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.note(FromTool, tool, host)
+}
+
 func (s *Session) hostList() []string {
 	out := make([]string, 0, len(s.hosts))
 	for h := range s.hosts {
@@ -459,10 +481,18 @@ func (s *Session) publishable() (bool, string) {
 		// downstream of untrusted input. That is precisely the condition under
 		// which "the agent decided to publish this" stops being evidence of
 		// anything.
-		return false, fmt.Sprintf(
+		why := fmt.Sprintf(
 			"%s read stored content during this run, so what it produced is "+
 				"downstream of input somebody else may have written. A person "+
 				"decides whether that goes live", s.manifest.Name)
+		// And what it read. The person this sentence is addressed to is being
+		// asked to make a judgement, and the judgement is not answerable from
+		// "it read something" — the honest review of that is to re-read the
+		// site, which nobody does.
+		if p := Provenance(s.sourcesLocked(), s.omitted); p != "" {
+			why += ". It read: " + p
+		}
+		return false, why
 	}
 	return true, ""
 }
@@ -609,7 +639,14 @@ func (s *Session) MayCallTool(tool, asked string) error {
 				"instead; a host is declared in the manifest and never "+
 				"taken from a request", tool, declared, asked))
 	}
-	return s.MayReach(declared)
+	if err := s.MayReach(declared); err != nil {
+		return err
+	}
+	// Recorded after it is permitted, and with the name: MayReach is handed a
+	// host and never the tool behind it, so "reached api.example.com" would be
+	// a provenance line nobody can act on without the manifest open beside it.
+	s.noteTool(tool, declared)
+	return nil
 }
 
 // HostFor is the host a named tool is declared to reach.
@@ -816,6 +853,10 @@ func (s *Session) Fold(child *Session) {
 	tainted := child.Tainted()
 	refusals := child.Refusals()
 
+	sources := child.Sources()
+	reads := child.Reads()
+	name := child.Manifest().Name
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.steps += steps
@@ -825,6 +866,19 @@ func (s *Session) Fold(child *Session) {
 		s.tainted = true
 	}
 	s.refusals = append(s.refusals, refusals...)
+	// The child's provenance, not only its taint. A supervisor whose receipt
+	// said "tainted" without saying what the delegate read would hand a
+	// reviewer strictly less than the delegate's own receipt already has, so
+	// the indirection would cost the person the very thing the taint is for.
+	if reads > 0 {
+		s.note(FromDelegate, name, "")
+	}
+	for _, src := range sources {
+		s.note(src.Kind, src.Name, src.Where)
+	}
+	s.reads += reads
+	// And the ones the child could not name, which stay unnamed here.
+	s.omitted += child.Omitted()
 }
 
 func delegateList(names []string) string {
