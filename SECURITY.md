@@ -104,15 +104,17 @@ it.
 
 ## Supported versions
 
-Until 1.0 the most recent release line is the supported one. That is v0.2.x,
-maintained on the `release-v0.2` branch, and the security fixes made on this
-branch since v0.2.1 have been applied there.
+Until 1.0 the most recent release line is the supported one. That is v0.3.x.
+
+v0.2.x is the previous line and had the security fixes made since v0.2.1
+backported to it, as v0.2.2, on the `release-v0.2` branch. It is where to be if
+v0.3 is too new for you; it is not where to stay.
 
 v0.1.x is not supported and cannot usefully be. v0.2.0 was itself a security
 release — an attribute-context escape, a replayable inbox request, an
 unenforced `--own-only`, twenty of twenty-three agent operations checking no
 authority — and a patch on top of v0.1.0 would leave every one of those. The
-fix for v0.1.x is to move to v0.2.x.
+fix for v0.1.x is to move forward, not to wait for one.
 
 Backporting is not a promise that everything reaches the release line. Some
 fixes are for code added after it, so the defect is not there to fix; and a

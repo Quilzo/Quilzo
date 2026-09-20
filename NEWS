@@ -4,12 +4,19 @@ Newest first. Only what somebody running this would notice; the commit log
 has the rest.
 
 
-Unreleased — since v0.2.1
-=========================
+v0.3.0 — 20 September 2026
+==========================
 
-The security fixes below have also been applied to the v0.2.x release line, on
-the `release-v0.2` branch, and are listed there under v0.2.2 with a section
-naming what did not backport and why.
+Ninety changes. Most came out of two sweeps: driving the running program
+through a browser and a terminal rather than reading it, and an audit for
+things this program declared and never executed. The second found more, and the
+reason is consistent -- in every case the code was correct about its own job
+and wrong about what another part was doing with it.
+
+The security fixes here also shipped as v0.2.2 on the v0.2.x line. That release
+notes what did not backport and why: three fixes are for code that does not
+exist in v0.2.x, and two checks were left out because their subject does not
+either.
 
 Eighty-two changes.  Most of them came out of two sweeps: driving the running
 program through a browser and a terminal rather than reading it, and an audit
@@ -335,6 +342,107 @@ correct about its own job and wrong about what another part was doing with it.
 
 *** Every way to publish runs the same checks, and a test now walks the source
     and fails on a surface that does not.
+
+
+v0.2.2 — 20 September 2026
+==========================
+
+A backport release. Everything here was fixed on the development branch after
+v0.2.1 and is applied to the v0.2.x line rather than left to wait for the next
+feature release.
+
+** The publish path
+
+*** Four ways to publish ran four different sets of checks.  Not a subset
+    each: a different set each.  The browser published a draft the command
+    line refuses, with an unsubstantiated claim on it; a message in a chat
+    room went straight to live having run the type gate and accessibility and
+    nothing else.  All four run the same table now, and a test walks the
+    source and fails on a surface that does not.
+
+*** Two gates in the browser exited like gates that had passed.  Both returned
+    an empty slice on every error, and an empty slice reads to the caller as
+    "nothing is wrong": a page that could not be rendered published clean.
+
+*** A proposal is put through the publish gates before anybody accepts it.
+    The checks were only asked at publication, which for a model's draft is
+    the last possible moment and the wrong one.
+
+** Access
+
+*** A binding scoped to part of the site meant nothing on either surface.
+    Every handler that read a page name asked whether the caller could act on
+    "/", and an admin denied author on /about still holds admin on "/" -- so
+    the deny never matched.  The browser is where that rule is displayed, and
+    somebody reads it there and believes it.
+
+*** A chat user published the operator's draft.  The draft ref is one ref for
+    the whole store, and the chat publisher read it, added the message's page
+    and published the lot.
+
+*** Four ways a credential was less than it said it was.
+
+*** A lockout nobody could see.  auth.lockout.hard could be switched on and
+    its consequences were unobservable on every surface.
+
+** Data
+
+*** An erasure reported success and erased nothing.  The JSON branch of
+    `quilzo form erase` answered {"matched": n, "removed": true} and returned
+    -- before the delete loop and before the audit record, both of which came
+    after it.
+
+*** Eighty valid form submissions, one address, none refused.  Three faults on
+    the anonymous write path, including a demo form that could not be
+    submitted at all and a spam check that worked perfectly and counted
+    nothing.
+
+*** A peer pull read a ref, decided from it, and wrote without holding it.
+    Sixteen concurrent writes against one base all passed the check and all
+    committed; fifteen edits vanished.
+
+*** The vault rotated nothing.  `quilzo vault rotate` added a key, made it
+    active, printed success, and left every object wrapped under the old one
+    -- so the key nobody could remove was the key everything still needed.
+
+** Agents
+
+*** A manifest restricted nothing and said otherwise on every screen, and
+    seven of eight archetypes could not do what they declared.
+
+*** The content API validated content and recorded no binding, so content
+    arriving over HTTP was the one kind with no record of what it was
+    validated against.
+
+*** The same refusal read differently each time.  The refusal naming which
+    hosts an agent may reach ranged over a map, so it produced a different
+    sentence -- and a different digest in a tamper-evident log -- on every run.
+
+** The audit log
+
+*** Two acts went unlogged because of the name of a field, a broken chain was
+    not mentioned, and a rule written to catch an empty log could never fire.
+
+** Not in this release, and why
+
+*** The Slack signing secret was also the editor's signing key.  There is no
+    Slack surface in v0.2.x; it was added afterwards, so the reuse cannot
+    happen here.
+
+*** Tool calls and delegation.  An agent's declared tool host was a field the
+    model filled in, and a tool call did not taint the run.  Neither exists in
+    v0.2.x: Manifest.Tools and Manifest.Delegates were both added afterwards.
+
+*** The "references" gate refuses a page whose field names a page that is not
+    being published.  It is built on the `page` field kind, which v0.2.x does
+    not have, so there is nothing for it to check -- and a gate that cannot
+    fire is worse than an absent one, because the table says it ran.
+
+*** search_pages and similar_pages are not in the archetypes or in the
+    executor's list here.  They were wired to the agent surface afterwards,
+    and listing them would let a manifest validate while declaring a
+    capability this build cannot carry out -- the exact failure that list was
+    added to prevent.
 
 
 v0.2.1 — 8 September 2026
