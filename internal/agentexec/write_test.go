@@ -324,7 +324,7 @@ func TestARunDownstreamOfStoredContentIsRefusedThePublish(t *testing.T) {
 		return nil
 	}}
 	rd := Reader{Store: s}
-	perform := Dispatch(rd, wr, Tools{}, sess)
+	perform := Dispatch(rd, wr, Tools{}, Delegates{}, sess)
 
 	// It reads a page — content anybody who can write a page may have written.
 	if _, err := perform(context.Background(), agent.Action{
@@ -350,7 +350,7 @@ func TestARunDownstreamOfStoredContentIsRefusedThePublish(t *testing.T) {
 func TestDispatchSendsWritesToTheWriterAndReadsToTheReader(t *testing.T) {
 	s := testStore(t)
 	sess := writerSession(t, nil, agent.AutonomyDraft)
-	perform := Dispatch(Reader{Store: s}, Writer{Store: s, Author: "a"}, Tools{}, sess)
+	perform := Dispatch(Reader{Store: s}, Writer{Store: s, Author: "a"}, Tools{}, Delegates{}, sess)
 
 	out, err := perform(context.Background(), agent.Action{Op: "list_pages"})
 	if err != nil {

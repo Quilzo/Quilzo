@@ -399,7 +399,22 @@ func agentCheckRun(root string, args []string) error {
 	for _, t := range m.Tools {
 		plan = append(plan, agent.Action{Tool: t.Name})
 	}
+	// And the delegates, for the same reason.
+	//
+	// Whether each named agent exists in this install, validates against this
+	// build, and is narrower than its supervisor are all answerable without a
+	// model — and all three are ways a pipeline is broken before anybody runs
+	// it. A supervisor that walks its own manifest and never tries to hand
+	// anything on has checked the half of itself that does not matter.
+	for _, name := range m.Delegates {
+		plan = append(plan, agent.Action{
+			Delegate: name,
+			Say:      "checking that this stage is wired",
+		})
+	}
 	plan = append(plan, agent.Action{Say: "checked"})
+
+	var delegateModel assist.Model
 
 	i := 0
 	// The scripted walk: the plan is the manifest, so nothing a model says can
@@ -422,6 +437,10 @@ func agentCheckRun(root string, args []string) error {
 		}
 		fmt.Printf("  %sdeciding with %s; the manifest is still the only "+
 			"vocabulary%s\n", dim, model.Name(), reset)
+		// Handed to delegates as well. A supervisor deciding with a model
+		// and children walking their manifests would be a pipeline where the
+		// stages that do the work cannot choose anything.
+		delegateModel = model
 		decide = agentmodel.Decider{
 			Model:   model,
 			Session: sess,
@@ -476,6 +495,21 @@ func agentCheckRun(root string, args []string) error {
 					return *set, nil
 				},
 				Call: newMCPClient(root),
+			},
+			// The delegate surface, which had no executor either.
+			//
+			// Manifest.Delegates was validated, refused on anything that is
+			// not a supervisor, copied out of the supervisor archetype and
+			// published on the agent card as this program's answer to the
+			// governance gap the research calls delegation with
+			// accountability. Nothing read it, so a supervisor's whole
+			// reason for existing did not happen and the card said it did.
+			agentexec.Delegates{
+				Manifest: manifestLoader(root),
+				Run: delegation{
+					root: root, store: s, model: delegateModel,
+					parent: m.Name,
+				},
 			},
 			sess,
 		),

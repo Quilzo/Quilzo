@@ -53,6 +53,9 @@ type Action struct {
 	Op string
 	// Tool is the external tool name, for an integration call.
 	Tool string
+	// Delegate is the named agent this work is handed to. Only a supervisor
+	// may set it, and only to a name its own manifest already lists.
+	Delegate string
 	// Input is whatever the operation needs. Opaque here.
 	Input map[string]any
 	// Say is the model's answer when it is finished.
@@ -60,7 +63,18 @@ type Action struct {
 }
 
 // Done reports whether this action ends the run.
-func (a Action) Done() bool { return a.Op == "" && a.Tool == "" }
+// Done reports that the model has finished.
+//
+// Every field that carries work has to be named here, and this is the second
+// time that has bitten. An action naming only a Tool had no Op, so before the
+// tool branch existed this said the run was over; the same was true of a
+// delegation, which named only an agent, so a supervisor's first hand-off
+// ended the run and the answer was whatever the supervisor had said to the
+// delegate. A probe walking a manifest reported three capabilities and no
+// pipeline, and looked exactly like a supervisor with nothing to do.
+func (a Action) Done() bool {
+	return a.Op == "" && a.Tool == "" && a.Delegate == ""
+}
 
 // Observation is the result of an action, fed back for the next decision.
 //
@@ -238,7 +252,15 @@ func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error)
 		// The one gate. A tool call is authorised by host first, because the
 		// useful refusal for "call evil.example.com" names the host rather
 		// than the capability.
-		if action.Tool != "" {
+		switch {
+		case action.Delegate != "":
+			// Authorised by name against the manifest's list, because a
+			// supervisor choosing a worker at run time is the thing the
+			// design refuses: the graph is named in advance so that a
+			// supervisor which has been talked into something cannot invent
+			// one.
+			err = s.MayDelegate(action.Delegate)
+		case action.Tool != "":
 			// Recorded whether or not it is refused, because the attempt is
 			// the finding. See Step.Redirected and Session.MayCallTool.
 			asked := hostAsked(action)
@@ -246,7 +268,7 @@ func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error)
 				step.Redirected = asked
 			}
 			err = s.MayCallTool(action.Tool, asked)
-		} else {
+		default:
 			err = s.Authorize(action.Op)
 		}
 		if err != nil {
@@ -286,14 +308,14 @@ func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error)
 		if perr != nil {
 			step.Err = perr.Error()
 			seen = append(seen, Observation{
-				From: action.Op + action.Tool, Err: perr,
+				From: from(action), Err: perr,
 				Body: "failed: " + perr.Error(),
 			})
 		} else {
 			step.Result = out
 			// Untrusted, always. It came out of the store or off a tool.
 			seen = append(seen, Observation{
-				From: action.Op + action.Tool, Body: out, Trusted: false,
+				From: from(action), Body: out, Trusted: false,
 			})
 		}
 		t.Steps = append(t.Steps, step)
@@ -374,4 +396,19 @@ func isBudget(err error) bool {
 	}
 	return strings.Contains(r.Reason, "budget") ||
 		strings.Contains(r.Reason, "has taken")
+}
+
+// from names what produced an observation.
+//
+// Concatenating the fields worked while there were two and one was always
+// empty. A delegate's answer would have come back labelled with the empty
+// string, which is the one label a model cannot use to tell two results apart.
+func from(a Action) string {
+	switch {
+	case a.Delegate != "":
+		return "delegate/" + a.Delegate
+	case a.Tool != "":
+		return a.Tool
+	}
+	return a.Op
 }
