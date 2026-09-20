@@ -12,7 +12,6 @@ import (
 	"github.com/quilzo/quilzo/internal/agentexec"
 	"github.com/quilzo/quilzo/internal/agentmodel"
 	"github.com/quilzo/quilzo/internal/assist"
-	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/store"
 )
 
@@ -111,18 +110,14 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 			child,
 		),
 		Record: func(rc agent.Receipt) {
-			outcome := audit.Success
-			if ok, _ := rc.Billable(); !ok {
-				outcome = audit.Denied
-			}
 			detail := rc.Detail()
 			// The half that makes this delegation with accountability rather
 			// than delegation. Without it the log holds two runs that look
 			// unrelated, and the question an auditor actually asks — who told
 			// it to do that — has no answer in the record.
 			detail["delegated_by"] = d.parent
-			record(d.root, caller.auditRecord("agent.delegate", "/", outcome,
-				detail))
+			record(d.root, actorRecord(caller, "agent.delegate", outcomeOf(rc),
+				m, d.model, detail))
 		},
 	}
 

@@ -101,6 +101,37 @@ correct about its own job and wrong about what another part was doing with it.
     reason reading the store does, and more so: a third-party result is
     whatever a host returned on this request, reviewed by nobody here.
 
+*** The watchdog could not see a single agent run.  internal/agentwatch exists
+    to notice a model behaving badly -- an agent hammering at operations it
+    keeps being refused -- and its only input is the audit log, filtered to
+    events where the actor was a model.  Every `agent run` was recorded under
+    the principal of whoever started it, with the manifest's name as a detail
+    field, so:
+
+        $ quilzo agents
+        no model has acted in the last 24h0m0s
+
+    with six runs in the log.  cmd/quilzo/assist.go already said why that is
+    the wrong way round -- "the model is the actor, and it is recorded as one"
+    -- and the MCP surface and the assistant both did it that way.  The runner
+    built specifically for agents did not.
+
+    The principal matters as much as the kind, because the watchdog buckets by
+    it: with the person there, every agent one person runs would have merged
+    into one report, and "the support bot is hammering at publish" and "the
+    archivist is fine" would have averaged into a number about neither.
+
+    A run without `--model` stays a person checking a manifest.  Nothing chose
+    anything -- the plan is the manifest, every capability tried once in a
+    fixed order -- so it cannot misbehave in the way the watchdog looks for.
+
+*** An outcome is not a bill.  Both agent record sites asked Receipt.Billable
+    and wrote "denied" when it said no.  Billable asks whether there is an
+    outcome to charge for; denied means the gate refused something.  Three runs
+    that could not reach the model were recorded as denied, and the watchdog
+    then reported an agent repeatedly refused -- its signal for one that has
+    not accepted the answer, which describes a broken endpoint not at all.
+
 *** The same refusal read differently each time.  The agent gate's refusal
     naming which hosts an agent may reach was built by ranging over a map, and
     Go randomises map iteration on purpose -- so the same refusal, for the same
