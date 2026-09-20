@@ -101,6 +101,24 @@ correct about its own job and wrong about what another part was doing with it.
     reason reading the store does, and more so: a third-party result is
     whatever a host returned on this request, reviewed by nobody here.
 
+*** A tainted run says what tainted it.  The taint rule is the load-bearing
+    part of the agent design -- anything produced after reading content
+    somebody else may have written needs a person -- and the person was handed
+    one bit.  The receipt said `tainted: true` and nothing else, so reviewing
+    it honestly meant re-reading the site, which nobody does, and the approval
+    became a click.
+
+    Every source is recorded as it is read: a page by name, a listing by its
+    ref, a tool by its name and the host it reached, and a delegate's sources
+    folded up into its supervisor's.  It appears in the receipt, in the audit
+    record, in the refusal that says the run cannot publish, and in what
+    `agent run` prints.
+
+    Found while driving it: the first version counted read events rather than
+    distinct sources, so a run that read three things repeatedly reported "and
+    6 more" and would have sent a reviewer looking for six pages that do not
+    exist.
+
 *** A supervisor can hand work to the agents it names.  Manifest.Delegates was
     validated, refused on anything that is not a supervisor, copied out of the
     supervisor archetype, and published on the A2A agent card under the
