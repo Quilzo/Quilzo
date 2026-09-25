@@ -75,6 +75,16 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// The event store. A screen over it is the analyst surface the whole
+	// SIEM half needs, and it arrives with querying rather than with storage.
+	"spool": {
+		Why: "storing and retaining events is an operator's job at a " +
+			"terminal; the screen arrives with the query surface that " +
+			"reads the store, not with the store",
+		NoMCP: "a model that can run retention can delete the evidence of " +
+			"what it did, and a hold it can lift is not a hold",
+	},
+
 	// A register of secrets and their hiding places, kept as a file the
 	// operator holds rather than in the store the web process serves.
 	"canary": {

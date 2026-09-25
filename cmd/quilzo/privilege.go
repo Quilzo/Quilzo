@@ -175,6 +175,15 @@ var commandNeeds = map[string]need{
 	// already holds are checked as views below — including mint, which
 	// writes nothing anywhere and produces random characters that are not a
 	// canary until somebody plants them.
+	// Deleting stored evidence and placing or lifting a hold are statements
+	// the organisation stands behind and cannot undo, so the default for the
+	// group is a publish. Storing events is an ordinary write, and the two
+	// that only read are views.
+	"spool":        {action: auth.ActPublish},
+	"spool add":    {action: auth.ActEditDraft},
+	"spool stats":  {action: auth.ActView},
+	"spool verify": {action: auth.ActView},
+
 	"canary":        {action: auth.ActPublish},
 	"canary mint":   {action: auth.ActView},
 	"canary watch":  {action: auth.ActView},
