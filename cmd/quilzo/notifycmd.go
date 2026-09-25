@@ -4,14 +4,18 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/notify"
 	"github.com/quilzo/quilzo/internal/telemetry"
 )
@@ -433,18 +437,58 @@ func notifyPlan(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	_ = st
-	plan, err := notify.Prepare(n, a, time.Now().UTC())
+	at := time.Now().UTC()
+	plan, err := notify.Prepare(n, a, at)
 	if err != nil {
 		return err
 	}
-	if w.JSON(plan) {
+	// Which channels have nothing behind them, found now rather than during
+	// the send. A deployment discovers its mail relay was never configured
+	// at the worst possible moment otherwise, and the plan is the moment
+	// somebody is actually reading.
+	senders, err := notifySenders(root, st, at)
+	if err != nil {
+		return err
+	}
+	unconfigured := missingChannels(plan, senders)
+	if w.JSON(map[string]any{
+		"plan": plan, "unconfigured": unconfigured,
+	}) {
 		return nil
 	}
 	reportPlan(n, plan)
+	for _, c := range unconfigured {
+		w.Human("  %snothing is configured to send on the %s channel, and "+
+			"%d of these deliveries need it%s\n",
+			red, c.channel, c.count, reset)
+	}
 	w.Human("\n  %snothing was sent. quilzo notify send %s%s\n",
 		dim, n.ID, reset)
 	return nil
+}
+
+type channelGap struct {
+	channel notify.Channel
+	count   int
+}
+
+// missingChannels names the channels a plan needs and this deployment has not
+// set up.
+func missingChannels(plan notify.Plan, senders notify.ByChannel) []channelGap {
+	counts := map[notify.Channel]int{}
+	for _, d := range plan.Send {
+		if s, ok := senders[d.Channel]; !ok || s == nil {
+			counts[d.Channel]++
+		}
+	}
+	out := make([]channelGap, 0, len(counts))
+	for c, n := range counts {
+		out = append(out, channelGap{channel: c, count: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].channel < out[j].channel
+	})
+	return out
 }
 
 func reportPlan(n notify.Notice, plan notify.Plan) {
@@ -490,8 +534,11 @@ func notifySend(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	out, err := notify.Deliver(n, plan, box,
-		notify.AppSender{Store: st, At: func() time.Time { return at }}, at)
+	senders, err := notifySenders(root, st, at)
+	if err != nil {
+		return err
+	}
+	out, err := notify.Deliver(n, plan, box, senders, at)
 	// Saved whatever happened. An outbox that is only written on success
 	// forgets who was told when something goes wrong halfway, and what it
 	// forgets is the reason not to tell them again.
@@ -529,6 +576,92 @@ func notifySend(root string, args []string) error {
 			"reaches them and tells nobody else twice%s\n", dim, reset)
 	}
 	return nil
+}
+
+// notifySenders builds the channel routing for this deployment.
+//
+// In-app always, because it needs no configuration and is the channel whose
+// delivery is a fact. Mail and webhook only where they have been set up — and
+// a delivery on a channel with nothing behind it is an error rather than a
+// quiet fallback, because a person recorded as told by the wrong channel is
+// one the retry will skip for ever.
+func notifySenders(root string, st *notify.Store, at time.Time) (
+	notify.ByChannel, error) {
+
+	clock := func() time.Time { return at }
+	out := notify.ByChannel{
+		notify.InApp: notify.AppSender{Store: st, At: clock},
+	}
+	conf, err := loadMailConfig(root)
+	if err != nil {
+		return nil, err
+	}
+	if conf != nil {
+		conf.At = clock
+		out[notify.Email] = *conf
+	}
+	hookSecret, err := loadHookSecret(root)
+	if err != nil {
+		return nil, err
+	}
+	if hookSecret != "" {
+		out[notify.Webhook] = notify.HookSender{
+			// The same SSRF-hardened client the CMS webhooks use. A
+			// customer's endpoint is a URL somebody configured and this
+			// program requests it from inside the network, which is the
+			// shape that needs a connect-time address check.
+			Post: sender{fetch.New()}, Secret: hookSecret, At: clock,
+		}
+	}
+	return out, nil
+}
+
+// mailConfig is notify/mail.json.
+//
+// A file rather than flags. The credentials for a mail relay on a command
+// line end up in a shell history and in the process table, and the one
+// command they would be typed on is the one run during an incident with
+// somebody watching over a shoulder.
+type mailConfig struct {
+	Host        string `json:"host"`
+	From        string `json:"from"`
+	Username    string `json:"username,omitempty"`
+	Password    string `json:"password,omitempty"`
+	Unsubscribe string `json:"unsubscribe,omitempty"`
+}
+
+func loadMailConfig(root string) (*notify.Mailer, error) {
+	var c mailConfig
+	b, err := os.ReadFile(filepath.Join(notifyDir(root), "mail.json"))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if uerr := json.Unmarshal(b, &c); uerr != nil {
+		return nil, fmt.Errorf("notify/mail.json is unreadable: %w", uerr)
+	}
+	if strings.TrimSpace(c.Host) == "" || strings.TrimSpace(c.From) == "" {
+		return nil, fmt.Errorf(
+			"notify/mail.json needs a host and a from address, or mail is " +
+				"configured in a way that fails at the moment it is used")
+	}
+	return &notify.Mailer{
+		Host: c.Host, From: c.From, Username: c.Username,
+		Password: c.Password, Unsubscribe: c.Unsubscribe,
+	}, nil
+}
+
+func loadHookSecret(root string) (string, error) {
+	b, err := os.ReadFile(filepath.Join(notifyDir(root), "hook.secret"))
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(b)), nil
 }
 
 func notifyLoad(root, id string) (*notify.Store, notify.Notice,

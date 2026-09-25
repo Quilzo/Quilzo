@@ -602,7 +602,13 @@ aware and applies to the supervisory authority only — Article 34 says "without
 undue delay" and sets no number, so none is invented. Erasure keeps a keyed
 fingerprint so a CRM re-import is refused rather than quietly turning one
 honoured objection into a fresh infringement, and the suppression list holds no
-addresses.
+addresses. Three channels: in the product, by mail, and as a signed POST to a
+customer's own endpoint. Mail requires STARTTLS and a webhook requires HTTPS,
+with no flag to disable either, because a notice describing what leaked is the
+last message to send in the clear. A channel with nothing configured behind it
+is an error at plan time and a failure at send time, never a quiet fallback to
+another one — somebody recorded as told by the wrong channel is somebody the
+retry skips for ever.
 
 ## How this uses AI, and why it is not what everyone else means
 

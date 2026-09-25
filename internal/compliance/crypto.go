@@ -160,6 +160,21 @@ func Inventory() []Algorithm {
 				"not yet for federation.",
 		},
 		{
+			Name: "TLS 1.2+", Package: "crypto/tls",
+			Purpose: "encrypting the SMTP submission of a notice before it " +
+				"leaves this machine",
+			Where: "notify", Use: Generated, Quantum: Broken,
+			Note: "The key agreement in a TLS 1.2 or 1.3 handshake is " +
+				"classical ECDHE unless both ends negotiate a hybrid group, " +
+				"which is a property of the relay and not of this program. " +
+				"It is here because there is no alternative that an " +
+				"installed mail server accepts, and it is why the in-app " +
+				"channel is the one whose delivery this program will " +
+				"vouch for. STARTTLS is required and there is no flag to " +
+				"disable it: a breach notice naming what leaked is the " +
+				"last message to send in the clear.",
+		},
+		{
 			Name: "X.509 / PKIX key parsing", Package: "crypto/x509",
 			Purpose: "reading a remote server's published public key out of " +
 				"its ActivityPub actor document",
