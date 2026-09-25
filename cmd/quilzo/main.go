@@ -144,6 +144,7 @@ templates and design
   quilzo section item add PAGE N LIST      add an entry to a list inside one
 
 messengers
+  quilzo hunt --field F [FILE]             what is rare, which is what is worth a look
   quilzo detect test [DIR]                 run every rule against its own fixtures
   quilzo detect list [DIR]                 the rules, what they read, what they miss
   quilzo detect fields                     how a rule may compare
@@ -555,6 +556,8 @@ func main() {
 		err = cmdSection(root, cmdArgs)
 	case "detect":
 		err = cmdDetect(root, cmdArgs)
+	case "hunt":
+		err = cmdHunt(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":
