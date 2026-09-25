@@ -158,6 +158,13 @@ messengers
   quilzo spool hold NAME --why W           pin everything while something is investigated
   quilzo spool lift NAME                   let retention run again
 
+workforce
+  quilzo workforce coverage [FILE]         did the join work, and what did not
+  quilzo workforce propose [FILE]          matches to confirm, and what would make each wrong
+  quilzo workforce link A B --because W    assert two records are one person
+  quilzo workforce people [FILE]           who exists, where, and on what hardware
+  quilzo workforce gaps [FILE]             what no single system could see
+
 telling people
   quilzo notify add ISSUER:VALUE           put somebody on the list, with provenance
   quilzo notify contacts                   who is on it, and who can still be reached
@@ -593,6 +600,8 @@ func main() {
 		err = cmdSpool(root, cmdArgs)
 	case "notify":
 		err = cmdNotify(root, cmdArgs)
+	case "workforce":
+		err = cmdWorkforce(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":

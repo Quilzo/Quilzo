@@ -75,6 +75,18 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// Reconciling people and devices across systems, from a file of
+	// normalised identities.
+	"workforce": {
+		Why: "it reads an export and reports what the join could and could " +
+			"not do; the screen arrives with the connectors that produce " +
+			"those exports on a schedule, rather than with the join",
+		NoMCP: "a model that can merge two people can merge the auditor " +
+			"into the intern; Link.Validate refuses an AI assertion, and a " +
+			"tool that could only propose would be a tool whose one useful " +
+			"call is the one it may not make",
+	},
+
 	// The contact list, the notices and what was delivered.
 	"notify": {
 		Why: "the contact list is personal data and the suppression list " +
