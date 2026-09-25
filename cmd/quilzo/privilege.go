@@ -162,6 +162,13 @@ var commandNeeds = map[string]need{
 	// The theme is what every page is rendered against, so changing it changes
 	// what every reader sees — the same authority as changing the template, and
 	// for the same reason.
+	// Deciding a risk is acceptable is a statement the organisation stands
+	// behind — the same weight as putting something in front of the public,
+	// and far heavier than editing a draft. `finding story` reads and is
+	// checked separately below.
+	"finding":       {action: auth.ActPublish},
+	"finding story": {action: auth.ActView},
+
 	// Running rules over a file and ranking the result. Reads, writes
 	// nothing, and is the job an analyst does first.
 	"triage": {action: auth.ActView},

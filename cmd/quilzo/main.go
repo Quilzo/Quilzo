@@ -145,6 +145,8 @@ templates and design
 
 messengers
   quilzo triage [FILE] --rules DIR         run the rules, rank what they found
+  quilzo finding decide ID STATE           record a decision in the audit chain
+  quilzo finding story [ID]                replay who decided what, and why
   quilzo hunt --field F [FILE]             what is rare, which is what is worth a look
   quilzo detect test [DIR]                 run every rule against its own fixtures
   quilzo detect list [DIR]                 the rules, what they read, what they miss
@@ -561,6 +563,8 @@ func main() {
 		err = cmdHunt(root, cmdArgs)
 	case "triage":
 		err = cmdTriage(root, cmdArgs)
+	case "finding":
+		err = cmdFinding(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":
