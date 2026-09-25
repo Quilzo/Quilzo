@@ -162,6 +162,11 @@ var commandNeeds = map[string]need{
 	// The theme is what every page is rendered against, so changing it changes
 	// what every reader sees — the same authority as changing the template, and
 	// for the same reason.
+	// Reading rule files and running them against their own fixtures. No
+	// store, no network, no writes — the same authority as looking at the
+	// repository the rules live in, which is where they are reviewed.
+	"detect": {action: auth.ActView},
+
 	// Reading a file somebody hands it and saying whether the events in it
 	// are usable. Touches no store and writes nothing, so it is the authority
 	// to look rather than the authority to change anything — and the person
