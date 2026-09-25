@@ -169,6 +169,17 @@ var commandNeeds = map[string]need{
 	"finding":       {action: auth.ActPublish},
 	"finding story": {action: auth.ActView},
 
+	// Planting a canary commits the organisation to acting when it fires,
+	// and puts a row in the audit log saying so. The same weight as a
+	// publish. The three subcommands that read a register the operator
+	// already holds are checked as views below — including mint, which
+	// writes nothing anywhere and produces random characters that are not a
+	// canary until somebody plants them.
+	"canary":        {action: auth.ActPublish},
+	"canary mint":   {action: auth.ActView},
+	"canary watch":  {action: auth.ActView},
+	"canary status": {action: auth.ActView},
+
 	// Running rules over a file and ranking the result. Reads, writes
 	// nothing, and is the job an analyst does first.
 	"triage": {action: auth.ActView},

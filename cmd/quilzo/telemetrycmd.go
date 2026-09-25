@@ -6,6 +6,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -33,6 +34,25 @@ import (
 // much of its content — so the reader is bounded rather than trusting the
 // newline to arrive.
 const MaxTelemetryLine = 1 << 20
+
+// eventFileArgs parses flags that may sit on either side of a file name.
+//
+// Go's flag package stops at the first argument that does not start with a
+// dash, so `quilzo triage events.jsonl --rules detections` parses no flags at
+// all. Nothing fails: the command runs happily against whatever the defaults
+// were, reports on rules the operator did not ask for, and says nothing about
+// it. That is the worst kind of wrong for a security tool, because the output
+// looks exactly like a clean run.
+//
+// Every command whose own help reads `COMMAND [FILE] --flags` has to split
+// the leading positional off before parsing, or its help is a lie.
+func eventFileArgs(fs *flag.FlagSet, args []string) ([]string, error) {
+	pos, flags := leadingArgs(args, 1)
+	if err := fs.Parse(flags); err != nil {
+		return nil, err
+	}
+	return append(pos, fs.Args()...), nil
+}
 
 func cmdTelemetry(root string, args []string) error {
 	if len(args) == 0 {
