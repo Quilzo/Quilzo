@@ -144,6 +144,9 @@ templates and design
   quilzo section item add PAGE N LIST      add an entry to a list inside one
 
 messengers
+  quilzo detect test [DIR]                 run every rule against its own fixtures
+  quilzo detect list [DIR]                 the rules, what they read, what they miss
+  quilzo detect fields                     how a rule may compare
   quilzo telemetry check [FILE]            can a connector's events be used at all
   quilzo telemetry fields [FILE]           what a detection may refer to
   quilzo telegram check                    confirm the bot token works
@@ -550,6 +553,8 @@ func main() {
 		err = cmdTheme(root, cmdArgs)
 	case "section", "sections":
 		err = cmdSection(root, cmdArgs)
+	case "detect":
+		err = cmdDetect(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":

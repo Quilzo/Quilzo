@@ -72,6 +72,16 @@ var coverage = map[string]surfaces{
 	// A connector author's tool, run while writing the connector — before
 	// there is anything for a screen to show or an agent to ask about. It
 	// reads a file and prints what is wrong with it.
+	// Detections are reviewed, versioned and diffed, so they live in a
+	// repository and the tooling is a command. `detect test` runs in CI on
+	// every change, which a screen cannot.
+	"detect": {
+		Why: "a rule is reviewed and diffed like code, so the place it is " +
+			"tested is the repository and not a screen",
+		NoMCP: "an agent that could edit detections could disable the one " +
+			"that would have caught it",
+	},
+
 	"telemetry": {
 		Why: "it checks a file a connector produced, at the point where " +
 			"there is no connector yet and nothing in the store to look at",
