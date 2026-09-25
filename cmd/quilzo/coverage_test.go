@@ -72,6 +72,16 @@ var coverage = map[string]surfaces{
 	// A connector author's tool, run while writing the connector — before
 	// there is anything for a screen to show or an agent to ask about. It
 	// reads a file and prints what is wrong with it.
+	// A decision goes in the audit chain and is replayed from it. The screen
+	// comes with the stored register; the agent surface deliberately does
+	// not come at all.
+	"finding": {
+		Why: "the register is a projection of the audit log, and the screen " +
+			"that renders it arrives with stored findings rather than here",
+		NoMCP: "a model that can close its own findings can close the one " +
+			"that would have caught it; Decision.Validate refuses an AI actor",
+	},
+
 	// Detections over exported events, ranked. The screen and the agent
 	// surface both come once findings are stored rather than computed per
 	// run, which is the next piece rather than this one.
