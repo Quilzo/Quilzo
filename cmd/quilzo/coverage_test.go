@@ -72,6 +72,15 @@ var coverage = map[string]surfaces{
 	// A connector author's tool, run while writing the connector — before
 	// there is anything for a screen to show or an agent to ask about. It
 	// reads a file and prints what is wrong with it.
+	// Stacking over a file somebody exported, at the point where they are
+	// looking for something and do not yet know what.
+	"hunt": {
+		Why: "it counts values in a file the analyst chose, before there is " +
+			"a finding for a screen to show or an agent to reason about",
+		NoMCP: "an agent given the rarity list is given the map of what is " +
+			"least likely to be noticed",
+	},
+
 	// Detections are reviewed, versioned and diffed, so they live in a
 	// repository and the tooling is a command. `detect test` runs in CI on
 	// every change, which a screen cannot.

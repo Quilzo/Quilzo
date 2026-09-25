@@ -162,6 +162,11 @@ var commandNeeds = map[string]need{
 	// The theme is what every page is rendered against, so changing it changes
 	// what every reader sees — the same authority as changing the template, and
 	// for the same reason.
+	// Counting values in a file it is handed. No store, no network, no
+	// writes. The person running it is hunting, which is the job view exists
+	// for.
+	"hunt": {action: auth.ActView},
+
 	// Reading rule files and running them against their own fixtures. No
 	// store, no network, no writes — the same authority as looking at the
 	// repository the rules live in, which is where they are reviewed.
