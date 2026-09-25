@@ -151,6 +151,12 @@ messengers
   quilzo canary watch [FILE] --canaries F  did anything touch one
   quilzo canary status --canaries F        which ones are still evidence
   quilzo canary mint [KIND]                a value, shaped like what it imitates
+  quilzo spool add [FILE]                  store events, sealed and digested
+  quilzo spool stats                       what the store covers, and how late things arrive
+  quilzo spool verify                      does every segment match what was signed
+  quilzo spool retain [--apply]            what retention would delete, then delete it
+  quilzo spool hold NAME --why W           pin everything while something is investigated
+  quilzo spool lift NAME                   let retention run again
   quilzo hunt --field F [FILE]             what is rare, which is what is worth a look
   quilzo detect test [DIR]                 run every rule against its own fixtures
   quilzo detect list [DIR]                 the rules, what they read, what they miss
@@ -571,6 +577,8 @@ func main() {
 		err = cmdFinding(root, cmdArgs)
 	case "canary":
 		err = cmdCanary(root, cmdArgs)
+	case "spool":
+		err = cmdSpool(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":
