@@ -592,6 +592,22 @@ recorded cannot move — with two retention limits, deletion that is never a sid
 effect, holds that survive a restart, and a watermark measured from observed
 arrival delay instead of guessed at by whoever wrote the rule.
 
+**Reconciling a workforce.** The identity provider knows who exists, the MDM
+knows which laptops check in, the training platform knows who clicked the
+phishing simulation, and none of them knows any of the others. Every
+interesting question is a join, and there is no shared key — so the join is
+evidence rather than a guess. Exactly one rule proposes links automatically,
+an exact match on a normalised address, and it states what would make it
+wrong; a role mailbox is never joined on, because joining on one merges
+everybody who has used it into a single person who then reports as compliant
+because at least one of them was. Everything else is confirmed by a person and
+appended to the audit chain. An unmatched record is the headline rather than a
+suppressed error: a dashboard reading 94% is 94% of the people the join
+happened to work for, and the leaver whose account was renamed on the way out
+is in the other 6%. The finding at the top of the queue is the one no single
+console will ever raise — an account disabled in the directory whose laptop
+checked in eight hours ago.
+
 **Telling people what happened.** Incidents, breaches, product changes and
 deprecations, delivered one recipient at a time and exactly once. The lawful
 basis is a property of the kind of notice and is not a setting, so somebody who

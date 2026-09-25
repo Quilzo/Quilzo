@@ -183,6 +183,16 @@ var commandNeeds = map[string]need{
 	// a regulator, and an erasure cannot be undone: both are publishes.
 	// Adding a contact and recording an objection are ordinary writes, and
 	// the three that only read are views.
+	// Merging two people's records reports one person's device compliance
+	// as another's, and the merge is appended to the audit chain rather
+	// than edited afterwards: the same authority as publishing. Reading the
+	// reconciliation is a view.
+	"workforce":          {action: auth.ActPublish},
+	"workforce coverage": {action: auth.ActView},
+	"workforce propose":  {action: auth.ActView},
+	"workforce people":   {action: auth.ActView},
+	"workforce gaps":     {action: auth.ActView},
+
 	"notify":          {action: auth.ActPublish},
 	"notify add":      {action: auth.ActEditDraft},
 	"notify object":   {action: auth.ActEditDraft},
