@@ -20,6 +20,7 @@ import (
 // any role on /". That reads as a broken program rather than a missing step,
 // and it is the first thing a new installation does.
 func TestTheDocumentedFirstRunLeavesSomebodyAbleToWork(t *testing.T) {
+	isolateToken(t)
 	t.Setenv("QUILZO_TOKEN", "")
 	root := t.TempDir()
 	if err := cmdInit(root); err != nil {
@@ -69,6 +70,7 @@ func TestTheDocumentedFirstRunLeavesSomebodyAbleToWork(t *testing.T) {
 // one: it is the ceiling the token may act up to, while the floor is whatever
 // the principal actually holds. Nothing said the floor was zero.
 func TestATokenForSomebodyWithNoRoleIsAKnownDeadEnd(t *testing.T) {
+	isolateToken(t)
 	t.Setenv("QUILZO_TOKEN", "")
 	root := t.TempDir()
 	if err := cmdInit(root); err != nil {

@@ -228,9 +228,98 @@ const (
 	categoryApplication = 6
 )
 
+// The record_integrity profile, and why this log is the unusual case that
+// can actually fill it in.
+//
+// OCSF 1.9.0 added record_integrity: "cryptographic attestations over the
+// event itself, providing integrity, authenticity, and non-repudiation
+// independent of any domain-specific content." It is domain-agnostic and
+// applies to every event class.
+//
+// Almost nothing can populate it honestly. A product that writes its log to a
+// file has nothing to attest with — a fingerprint it computes at export time
+// proves only that it hashed what it was about to send. This log is a hash
+// chain by construction: every entry carries the hash of the one before it,
+// and altering any entry breaks every link above it. That is exactly the
+// structure the profile describes, and it existed here before the profile
+// did.
+//
+// So the attestation is the chain, expressed in the schema's own terms rather
+// than in this program's. A consumer that has never heard of Quilzo can
+// follow prev_event.uid backwards and check each fingerprint.
+//
+// # What is deliberately not claimed
+//
+// signatures. The log is signed -- Ed25519 and ML-DSA-65 over a Merkle head,
+// see internal/audit/sign.go -- and the exporter cannot see them: signing is
+// over a Head, which is not what an export carries. Emitting an empty or
+// invented signature array would be worse than omitting an optional field,
+// because the profile's whole subject is non-repudiation. The constraint is
+// satisfied by fingerprint, which is present and true.
+//
+// chain_uid is omitted for the same reason. It identifies a chain across
+// exports, and this program has no stable identifier for one; correlation_uid
+// below names the export, which is a different thing and already there.
+//
+// Worth noting for whenever the signatures are wired through: OCSF's
+// digital_signature.algorithm_id enum is DSA, RSA, ECDSA, Authenticode, Code
+// Signing, App Package, Other. There is no Ed25519 and no ML-DSA, so a
+// post-quantum signature can only be carried as "Other" with the name in the
+// free-text algorithm field. The schema predates the algorithms.
+
+// attestationFor expresses one event's place in the chain.
+//
+// prev is the record before it in this export, or nil for the first, whose
+// predecessor is outside the range by construction -- that is what
+// Envelope.AnchorPrev is for.
+func attestationFor(e audit.Event, prev *audit.Event, env Envelope) map[string]any {
+	// The link backwards. For the first record in the export this is the
+	// anchor, which names an event the receiver may not hold: that is the
+	// point of exporting it, since a verifier holding the earlier log can
+	// confirm the export starts where it claims.
+	prevUID := e.Prev
+	if prevUID == "" {
+		prevUID = env.AnchorPrev
+	}
+	back := map[string]any{}
+	if prevUID != "" {
+		back["uid"] = prevUID
+		back["fingerprint"] = fingerprint(prevUID)
+	}
+	if prev != nil {
+		// Only when the previous record is in this export. type_uid directs a
+		// consumer to the class the previous event belongs to, and for the
+		// anchor this program does not know it -- the anchor is an event
+		// outside the range. Guessing would be a pointer into the wrong table.
+		back["type_uid"] = classFor(*prev)*100 + activityFor(*prev)
+	}
+
+	att := map[string]any{"fingerprint": fingerprint(e.Hash)}
+	if len(back) > 0 {
+		att["prev_event"] = back
+	}
+	return att
+}
+
+// fingerprint is an OCSF fingerprint object over a hex digest.
+//
+// algorithm_id 3 is SHA-256, which is what the chain uses. Required by the
+// schema, and the one field a consumer needs in order to recompute anything.
+func fingerprint(hex string) map[string]any {
+	return map[string]any{
+		"algorithm_id": 3,
+		"algorithm":    "SHA-256",
+		"value":        hex,
+	}
+}
+
 func renderOCSF(events []audit.Event, opt Options, env Envelope) (string, error) {
 	var b strings.Builder
-	for _, e := range events {
+	for i, e := range events {
+		var prev *audit.Event
+		if i > 0 {
+			prev = &events[i-1]
+		}
 		rec := map[string]any{
 			"class_uid":     classFor(e),
 			"category_uid":  categoryFor(e),
@@ -242,7 +331,30 @@ func renderOCSF(events []audit.Event, opt Options, env Envelope) (string, error)
 			"status_id":     statusFor(e),
 			"status":        string(e.Outcome),
 			"metadata": map[string]any{
-				"version": "1.3.0",
+				// 1.9.0, released 3 August 2026.
+				//
+				// This said 1.3.0, which was current when it was written and
+				// six minor releases stale by the time anybody checked. A
+				// version claim in an export is not decoration: a consumer
+				// uses it to decide how to parse, and OCSF backfilled a
+				// machine-readable superseded_by onto 126 deprecations in
+				// 1.9 precisely so that consumers can act on the number.
+				//
+				// Every attribute below was verified against the 1.9.0 schema
+				// rather than assumed: time, severity_id and metadata are
+				// still required on base_event, status_id still recommended,
+				// and time_dt does not exist.
+				"version": "1.9.0",
+				// The profiles this record uses, which is how a consumer knows
+				// to expect the attributes they add.
+				"profiles": []string{"record_integrity"},
+				// Required for a chain to be followable at all: prev_event
+				// refers to the previous record by its metadata.uid, so
+				// without this the link below has nothing to point at.
+				//
+				// The event's own hash, because that is already the thing
+				// that identifies it uniquely and links the chain.
+				"uid": e.Hash,
 				"product": map[string]any{
 					"name": opt.Product, "vendor_name": opt.Vendor,
 					"version": opt.Version,
@@ -255,6 +367,10 @@ func renderOCSF(events []audit.Event, opt Options, env Envelope) (string, error)
 				"correlation_uid": fmt.Sprintf("%s:%d-%d",
 					env.FirstHash[:16], env.FirstSeq, env.LastSeq),
 			},
+			// The record_integrity profile. An array because the schema
+			// allows independent attesters to contribute separately; this
+			// program is one attester and contributes one.
+			"attestation_list": []any{attestationFor(e, prev, env)},
 			"actor": map[string]any{
 				"user": map[string]any{
 					"name": principal(e, opt),
