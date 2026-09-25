@@ -144,6 +144,7 @@ templates and design
   quilzo section item add PAGE N LIST      add an entry to a list inside one
 
 messengers
+  quilzo triage [FILE] --rules DIR         run the rules, rank what they found
   quilzo hunt --field F [FILE]             what is rare, which is what is worth a look
   quilzo detect test [DIR]                 run every rule against its own fixtures
   quilzo detect list [DIR]                 the rules, what they read, what they miss
@@ -558,6 +559,8 @@ func main() {
 		err = cmdDetect(root, cmdArgs)
 	case "hunt":
 		err = cmdHunt(root, cmdArgs)
+	case "triage":
+		err = cmdTriage(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":

@@ -72,6 +72,16 @@ var coverage = map[string]surfaces{
 	// A connector author's tool, run while writing the connector — before
 	// there is anything for a screen to show or an agent to ask about. It
 	// reads a file and prints what is wrong with it.
+	// Detections over exported events, ranked. The screen and the agent
+	// surface both come once findings are stored rather than computed per
+	// run, which is the next piece rather than this one.
+	"triage": {
+		Why: "it runs rules over a file and prints a ranking; there is no " +
+			"stored register for a screen to show yet",
+		NoMCP: "every finding here rests on attacker-controlled log text, " +
+			"which is the input an agent must not act on unreviewed",
+	},
+
 	// Stacking over a file somebody exported, at the point where they are
 	// looking for something and do not yet know what.
 	"hunt": {
