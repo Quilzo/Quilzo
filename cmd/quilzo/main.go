@@ -157,6 +157,17 @@ messengers
   quilzo spool retain [--apply]            what retention would delete, then delete it
   quilzo spool hold NAME --why W           pin everything while something is investigated
   quilzo spool lift NAME                   let retention run again
+
+telling people
+  quilzo notify add ISSUER:VALUE           put somebody on the list, with provenance
+  quilzo notify contacts                   who is on it, and who can still be reached
+  quilzo notify object ISSUER:VALUE        record an Article 21 objection
+  quilzo notify erase ISSUER:VALUE         Article 17, and stay suppressed on re-import
+  quilzo notify draft --kind K --subject S write a notice; a breach needs Article 34(2)
+  quilzo notify list                       every notice drafted, and its deadlines
+  quilzo notify plan NOTICE                who would be told, and who would not, and why
+  quilzo notify send NOTICE                deliver it, once per person, exactly once
+  quilzo notify inbox ISSUER:VALUE         what is waiting for somebody in the app
   quilzo hunt --field F [FILE]             what is rare, which is what is worth a look
   quilzo detect test [DIR]                 run every rule against its own fixtures
   quilzo detect list [DIR]                 the rules, what they read, what they miss
@@ -579,6 +590,8 @@ func main() {
 		err = cmdCanary(root, cmdArgs)
 	case "spool":
 		err = cmdSpool(root, cmdArgs)
+	case "notify":
+		err = cmdNotify(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":
@@ -1285,7 +1298,7 @@ func cmdPublish(root string, args []string) error {
 	for _, c := range pub.Changes {
 		changed = append(changed, c.Path)
 	}
-	notify(root, "published", pub.Published, changed)
+	fireWebhooks(root, "published", pub.Published, changed)
 	fmt.Printf("live is now %s  (%d change(s))\n", short(pub.Published), len(pub.Changes))
 	if pub.Previous != "" {
 		fmt.Printf("  %sprevious %s is still stored; `quilzo rollback` moves the "+
