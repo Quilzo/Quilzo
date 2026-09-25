@@ -167,6 +167,7 @@ telling people
   quilzo notify list                       every notice drafted, and its deadlines
   quilzo notify plan NOTICE                who would be told, and who would not, and why
   quilzo notify send NOTICE                deliver it, once per person, exactly once
+  quilzo notify publish NOTICE             the Article 34(3)(c) public communication
   quilzo notify inbox ISSUER:VALUE         what is waiting for somebody in the app
   quilzo hunt --field F [FILE]             what is rare, which is what is worth a look
   quilzo detect test [DIR]                 run every rule against its own fixtures

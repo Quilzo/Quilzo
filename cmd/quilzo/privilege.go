@@ -187,6 +187,7 @@ var commandNeeds = map[string]need{
 	"notify add":      {action: auth.ActEditDraft},
 	"notify object":   {action: auth.ActEditDraft},
 	"notify draft":    {action: auth.ActEditDraft},
+	"notify publish":  {action: auth.ActEditDraft},
 	"notify contacts": {action: auth.ActView},
 	"notify list":     {action: auth.ActView},
 	"notify plan":     {action: auth.ActView},
