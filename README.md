@@ -576,6 +576,34 @@ pins as-is. Zero dependencies here too — the DAG-PB and CID encoding is about
 four hundred lines, verified against published identifiers and an independent
 reimplementation.
 
+**Security operations.** A normalised event model that carries a disposition on
+every event and refuses an identifier without an issuer, because "u-1043" from
+two directories is two people. Detections as data, where a rule that matches
+none of its own fixtures, or refuses none of them, is refused at load — a
+detection that cannot fire is not a detection, and between 13 and 18 percent of
+deployed SIEM rules never fire under any input. A behavioural baseline that
+answers "not enough observations yet" rather than "normal". Canaries, the one
+detection with no false positive problem, with the three ways that premise dies
+each given a state of its own. One register for what comes out of all of it,
+ranked rather than thresholded, whose state is the fold of an append-only audit
+log rather than a column somebody edits. An event store partitioned on arrival
+rather than on the timestamp in the event — the one clock the thing being
+recorded cannot move — with two retention limits, deletion that is never a side
+effect, holds that survive a restart, and a watermark measured from observed
+arrival delay instead of guessed at by whoever wrote the rule.
+
+**Telling people what happened.** Incidents, breaches, product changes and
+deprecations, delivered one recipient at a time and exactly once. The lawful
+basis is a property of the kind of notice and is not a setting, so somebody who
+unsubscribed from everything still receives a breach notice: Article 34 is an
+obligation and an obligation has no opt-out. A breach notice missing any of the
+four things Article 34(2) requires is refused. The 72 hours runs from becoming
+aware and applies to the supervisory authority only — Article 34 says "without
+undue delay" and sets no number, so none is invented. Erasure keeps a keyed
+fingerprint so a CRM re-import is refused rather than quietly turning one
+honoured objection into a fresh infringement, and the suppression list holds no
+addresses.
+
 ## How this uses AI, and why it is not what everyone else means
 
 Almost every CMS shipping "AI" in 2026 means one of two things: a text box that

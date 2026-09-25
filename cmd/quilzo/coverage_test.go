@@ -75,6 +75,17 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// The contact list, the notices and what was delivered.
+	"notify": {
+		Why: "the contact list is personal data and the suppression list " +
+			"is a list of people who asked to be left alone; neither goes " +
+			"in the store a web process serves, so the screen arrives with " +
+			"the customer-facing inbox rather than with the operator's side",
+		NoMCP: "a notice is the organisation speaking to its customers and " +
+			"to a regulator, and Notice.Validate refuses an AI author for " +
+			"that reason; a model may draft one and a person sends it",
+	},
+
 	// The event store. A screen over it is the analyst surface the whole
 	// SIEM half needs, and it arrives with querying rather than with storage.
 	"spool": {

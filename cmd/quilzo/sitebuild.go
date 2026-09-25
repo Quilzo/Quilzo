@@ -134,7 +134,7 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 			// answer whatever the receiver does. Delivery is bounded by the
 			// sender's own timeout and retry count.
 			Notify: func(name string) {
-				go notify(root, "submitted", "", nil, name)
+				go fireWebhooks(root, "submitted", "", nil, name)
 			},
 			Audit: func(name, source string, accepted bool) {
 				outcome := audit.Success

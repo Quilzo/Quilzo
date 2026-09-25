@@ -303,7 +303,14 @@ func notifyProposed(root string, prop *collab.Proposal) {
 	_ = saveJSON(hooksPath(root), f)
 }
 
-func notify(root, eventType, commit string, pages []string, form ...string) {
+// fireWebhooks posts an event to the configured endpoints.
+//
+// Named for what it does rather than the bare "notify" it used to be: since
+// internal/notify exists, a function called notify in this package would be
+// the one that tells machines, sitting next to the one that tells people,
+// with nothing in the name to say which.
+func fireWebhooks(root, eventType, commit string, pages []string,
+	form ...string) {
 	f := &hookFile{}
 	if err := loadJSON(hooksPath(root), f); err != nil || len(f.Endpoints) == 0 {
 		return

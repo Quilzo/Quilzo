@@ -179,6 +179,19 @@ var commandNeeds = map[string]need{
 	// the organisation stands behind and cannot undo, so the default for the
 	// group is a publish. Storing events is an ordinary write, and the two
 	// that only read are views.
+	// Sending a notice is the organisation speaking to its customers and to
+	// a regulator, and an erasure cannot be undone: both are publishes.
+	// Adding a contact and recording an objection are ordinary writes, and
+	// the three that only read are views.
+	"notify":          {action: auth.ActPublish},
+	"notify add":      {action: auth.ActEditDraft},
+	"notify object":   {action: auth.ActEditDraft},
+	"notify draft":    {action: auth.ActEditDraft},
+	"notify contacts": {action: auth.ActView},
+	"notify list":     {action: auth.ActView},
+	"notify plan":     {action: auth.ActView},
+	"notify inbox":    {action: auth.ActView},
+
 	"spool":        {action: auth.ActPublish},
 	"spool add":    {action: auth.ActEditDraft},
 	"spool stats":  {action: auth.ActView},
