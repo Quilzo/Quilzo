@@ -69,11 +69,20 @@ var coverage = map[string]surfaces{
 	"type":       {GUI: "/types", MCP: []string{"list_types"}},
 	"types":      {GUI: "/types", MCP: []string{"list_types"}},
 	"media":      {GUI: "/media", MCP: []string{"list_media"}},
-	"env":        {GUI: "/publishing", MCP: []string{"pipeline_status"}},
-	"schedule":   {GUI: "/publishing", MCP: []string{"pipeline_status"}},
-	"lang":       {GUI: "/languages", MCP: []string{"check_translations"}},
-	"scan":       {GUI: "/security/scan", MCP: []string{"scan_content"}},
-	"verify":     {GUI: "/security/integrity", MCP: []string{"verify_store"}},
+	// A connector author's tool, run while writing the connector — before
+	// there is anything for a screen to show or an agent to ask about. It
+	// reads a file and prints what is wrong with it.
+	"telemetry": {
+		Why: "it checks a file a connector produced, at the point where " +
+			"there is no connector yet and nothing in the store to look at",
+		NoMCP: "an agent reading unvalidated telemetry is the thing the " +
+			"validation exists to prevent",
+	},
+	"env":      {GUI: "/publishing", MCP: []string{"pipeline_status"}},
+	"schedule": {GUI: "/publishing", MCP: []string{"pipeline_status"}},
+	"lang":     {GUI: "/languages", MCP: []string{"check_translations"}},
+	"scan":     {GUI: "/security/scan", MCP: []string{"scan_content"}},
+	"verify":   {GUI: "/security/integrity", MCP: []string{"verify_store"}},
 	"transfer": {GUI: "/transfer",
 		NoMCP: "a transfer manifest names the people accountable for moving " +
 			"content between networks, and an agent that could write one " +
