@@ -75,6 +75,16 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// A register of secrets and their hiding places, kept as a file the
+	// operator holds rather than in the store the web process serves.
+	"canary": {
+		Why: "the register is the most useful file an attacker inside the " +
+			"estate could read; it does not go in the store a web process " +
+			"can reach, so there is nothing for a screen to render",
+		NoMCP: "handing a model the list of canaries and where they are " +
+			"planted is handing it the one file that defeats all of them",
+	},
+
 	"finding": {
 		Why: "the register is a projection of the audit log, and the screen " +
 			"that renders it arrives with stored findings rather than here",

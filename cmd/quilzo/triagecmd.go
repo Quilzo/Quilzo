@@ -36,10 +36,10 @@ func cmdTriage(root string, args []string) error {
 	fs := flag.NewFlagSet("triage", flag.ContinueOnError)
 	rules := fs.String("rules", "detections", "where the rules live")
 	top := fs.Int("top", 20, "how many findings to show")
-	if err := fs.Parse(args); err != nil {
+	rest, err := eventFileArgs(fs, args)
+	if err != nil {
 		return err
 	}
-	rest := fs.Args()
 
 	loaded, err := rulesIn(*rules)
 	if err != nil {

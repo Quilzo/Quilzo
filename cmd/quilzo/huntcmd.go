@@ -32,10 +32,10 @@ func cmdHunt(root string, args []string) error {
 	field := fs.String("field", "", "the field to stack, e.g. raw.user_agent")
 	by := fs.String("by", "", "count per entity: actor, device or target")
 	top := fs.Int("top", 20, "how many of the rarest to show")
-	if err := fs.Parse(args); err != nil {
+	rest, err := eventFileArgs(fs, args)
+	if err != nil {
 		return err
 	}
-	rest := fs.Args()
 	if strings.TrimSpace(*field) == "" {
 		return fmt.Errorf(
 			"usage: quilzo hunt --field FIELD [--by actor] [FILE]\n" +
