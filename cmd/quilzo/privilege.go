@@ -162,6 +162,10 @@ var commandNeeds = map[string]need{
 	// The theme is what every page is rendered against, so changing it changes
 	// what every reader sees — the same authority as changing the template, and
 	// for the same reason.
+	// Running rules over a file and ranking the result. Reads, writes
+	// nothing, and is the job an analyst does first.
+	"triage": {action: auth.ActView},
+
 	// Counting values in a file it is handed. No store, no network, no
 	// writes. The person running it is hunting, which is the job view exists
 	// for.
