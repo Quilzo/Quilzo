@@ -608,7 +608,15 @@ with no flag to disable either, because a notice describing what leaked is the
 last message to send in the clear. A channel with nothing configured behind it
 is an error at plan time and a failure at send time, never a quiet fallback to
 another one — somebody recorded as told by the wrong channel is somebody the
-retry skips for ever.
+retry skips for ever. Where individual notification is not possible, Article
+34(3)(c) permits a public communication instead — which in a CMS is a page,
+so it goes through the same accessibility, provenance and approval gates as
+every other page. That is not a shortcut avoided: the article permits a public
+communication only where people are informed "in an equally effective manner",
+and a notice page that fails an accessibility check is not equally effective
+for somebody reading it with a screen reader. The page never names anybody
+affected, and the prose is checked as well as the fields, because the way that
+goes wrong is somebody pasting a list into the body at two in the morning.
 
 ## How this uses AI, and why it is not what everyone else means
 
