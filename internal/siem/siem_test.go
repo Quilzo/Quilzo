@@ -473,3 +473,139 @@ func TestTheEnvelopeSaysWhetherItHoldsPersonalData(t *testing.T) {
 			"system has to guess whether it is holding personal data")
 	}
 }
+
+// The chain survives into the export, in the schema's own terms.
+//
+// OCSF 1.9.0 added record_integrity for exactly this, and almost nothing can
+// fill it in honestly: a product that writes its log to a file has nothing to
+// attest with, and a fingerprint computed at export time proves only that it
+// hashed what it was about to send. This log is a hash chain by construction,
+// so the attestation is a restatement of something that was already true.
+func TestTheChainIsExportedAsAnOCSFAttestation(t *testing.T) {
+	events := log(t, nil)
+	res, err := Export(OCSF, events, Options{}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recs := records(t, res.Body)
+	if len(recs) != len(events) {
+		t.Fatalf("%d record(s) for %d event(s)", len(recs), len(events))
+	}
+
+	for i, r := range recs {
+		meta, _ := r["metadata"].(map[string]any)
+		if meta == nil {
+			t.Fatalf("record %d has no metadata", i)
+		}
+		if got := meta["version"]; got != "1.9.0" {
+			t.Errorf("record %d claims OCSF %v", i, got)
+		}
+		// Without metadata.uid the chain below has nothing to point at:
+		// prev_event refers to the previous record *by its metadata.uid*.
+		if meta["uid"] != events[i].Hash {
+			t.Errorf("record %d is identified as %v, not by its hash",
+				i, meta["uid"])
+		}
+
+		list, _ := r["attestation_list"].([]any)
+		if len(list) != 1 {
+			t.Fatalf("record %d carries %d attestation(s)", i, len(list))
+		}
+		att, _ := list[0].(map[string]any)
+		fp, _ := att["fingerprint"].(map[string]any)
+		if fp == nil || fp["value"] != events[i].Hash {
+			t.Errorf("record %d does not attest its own hash: %v", i, fp)
+		}
+		// algorithm_id 3 is SHA-256 and is required by the schema. Without it
+		// a consumer cannot recompute anything.
+		if fp != nil && fp["algorithm_id"] != float64(3) {
+			t.Errorf("record %d names algorithm %v, and the chain is SHA-256",
+				i, fp["algorithm_id"])
+		}
+
+		back, _ := att["prev_event"].(map[string]any)
+		if events[i].Prev == "" {
+			// The genesis record. It links to nothing because there is
+			// nothing, and inventing a predecessor for it would be the one
+			// lie this profile exists to make impossible.
+			if back != nil {
+				t.Errorf("record %d is the start of the chain and claims a "+
+					"predecessor: %v", i, back)
+			}
+			continue
+		}
+		if back == nil {
+			t.Fatalf("record %d has a predecessor and links to nothing", i)
+		}
+		if back["uid"] != events[i].Prev {
+			t.Errorf("record %d links back to %v, and its predecessor is %s",
+				i, back["uid"], events[i].Prev)
+		}
+		// type_uid only where this export holds the previous record. For a
+		// partial export the first predecessor is the anchor, an event
+		// outside the range: naming a class for it would point a consumer at
+		// the wrong table.
+		if _, named := back["type_uid"]; i > 0 && !named {
+			t.Errorf("record %d does not say which class its predecessor is "+
+				"in, and this export holds it", i)
+		}
+	}
+}
+
+// The profile is declared, because that is how a consumer knows to look.
+func TestTheRecordIntegrityProfileIsDeclared(t *testing.T) {
+	res, err := Export(OCSF, log(t, nil), Options{}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, _ := records(t, res.Body)[0]["metadata"].(map[string]any)
+	profiles, _ := meta["profiles"].([]any)
+	var found bool
+	for _, p := range profiles {
+		if p == "record_integrity" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the record carries an attestation and declares profiles %v; "+
+			"a consumer keys off the declaration", profiles)
+	}
+}
+
+// Nothing is claimed about signatures.
+//
+// The log is signed -- Ed25519 and ML-DSA-65 over a Merkle head -- and the
+// exporter cannot see them, because signing is over a Head and an export does
+// not carry one. An empty or invented signatures array would be worse than an
+// absent optional field, since non-repudiation is the profile's whole subject.
+func TestNoSignatureIsClaimedThatTheExportCannotShow(t *testing.T) {
+	res, err := Export(OCSF, log(t, nil), Options{}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, _ := records(t, res.Body)[0]["attestation_list"].([]any)
+	att, _ := list[0].(map[string]any)
+	if _, claimed := att["signatures"]; claimed {
+		t.Error("the export claims signatures it does not hold")
+	}
+	// And the constraint the schema states is still met: at least one of
+	// fingerprint or signatures.
+	if _, ok := att["fingerprint"]; !ok {
+		t.Error("neither fingerprint nor signatures is present, and the " +
+			"schema requires one of them")
+	}
+}
+
+// records decodes a JSONL export into maps.
+func records(t *testing.T, body string) []map[string]any {
+	t.Helper()
+	var out []map[string]any
+	for i, line := range strings.Split(strings.TrimSpace(body), "\n") {
+		var rec map[string]any
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("line %d is not JSON: %v", i, err)
+		}
+		out = append(out, rec)
+	}
+	return out
+}

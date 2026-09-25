@@ -162,6 +162,13 @@ var commandNeeds = map[string]need{
 	// The theme is what every page is rendered against, so changing it changes
 	// what every reader sees — the same authority as changing the template, and
 	// for the same reason.
+	// Reading a file somebody hands it and saying whether the events in it
+	// are usable. Touches no store and writes nothing, so it is the authority
+	// to look rather than the authority to change anything — and the person
+	// most likely to run it is whoever is writing a connector, who may well
+	// have been given nothing else.
+	"telemetry": {action: auth.ActView},
+
 	"theme": {action: auth.ActEditDraft},
 	// Sections are content: adding, moving and removing one writes a draft
 	// commit, so it is the authority an author already has over a page.

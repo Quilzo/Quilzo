@@ -171,6 +171,7 @@ func TestPrivilegedCommandsAreRefusedWithoutAToken(t *testing.T) {
 	if err := saveJSON(policyPath(root), pol); err != nil {
 		t.Fatal(err)
 	}
+	isolateToken(t)
 	t.Setenv("QUILZO_TOKEN", "")
 
 	for _, tc := range []struct {
@@ -208,6 +209,7 @@ func TestReadsAreAlsoRefusedWithoutAToken(t *testing.T) {
 	if err := saveJSON(policyPath(root), pol); err != nil {
 		t.Fatal(err)
 	}
+	isolateToken(t)
 	t.Setenv("QUILZO_TOKEN", "")
 	for _, cmd := range []string{"log", "diff", "verify", "export", "siem"} {
 		if err := authoriseCommand(root, cmd, nil); err == nil {
@@ -230,6 +232,7 @@ func TestTheFirstTokenCanBeIssuedAfterTheFirstGrant(t *testing.T) {
 	if err := saveJSON(policyPath(root), pol); err != nil {
 		t.Fatal(err)
 	}
+	isolateToken(t)
 	t.Setenv("QUILZO_TOKEN", "")
 
 	if err := authoriseCommand(root, "token",
@@ -259,6 +262,7 @@ func TestTheBootstrapClosesOnceATokenExists(t *testing.T) {
 	if err := saveJSON(tokensPath(root), ts); err != nil {
 		t.Fatal(err)
 	}
+	isolateToken(t)
 	t.Setenv("QUILZO_TOKEN", "")
 
 	if err := authoriseCommand(root, "token",
@@ -280,6 +284,7 @@ func TestTheBootstrapOnlyIssuesToAPrincipalThePolicyKnows(t *testing.T) {
 	if err := saveJSON(policyPath(root), pol); err != nil {
 		t.Fatal(err)
 	}
+	isolateToken(t)
 	t.Setenv("QUILZO_TOKEN", "")
 
 	if err := authoriseCommand(root, "token",
@@ -297,6 +302,7 @@ func TestAnUnconfiguredStoreNeedsNoToken(t *testing.T) {
 	if err := cmdInit(root); err != nil {
 		t.Fatal(err)
 	}
+	isolateToken(t)
 	t.Setenv("QUILZO_TOKEN", "")
 	for _, cmd := range []string{"add", "publish", "log", "auth", "token"} {
 		if err := authoriseCommand(root, cmd, nil); err != nil {
@@ -316,6 +322,7 @@ func TestHelpNeedsNoAuthority(t *testing.T) {
 	if err := saveJSON(policyPath(root), pol); err != nil {
 		t.Fatal(err)
 	}
+	isolateToken(t)
 	t.Setenv("QUILZO_TOKEN", "")
 	if err := authoriseCommand(root, "publish", []string{"--help"}); err != nil {
 		t.Errorf("publish --help was refused: %v", err)

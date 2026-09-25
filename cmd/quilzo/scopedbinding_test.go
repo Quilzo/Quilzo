@@ -49,6 +49,7 @@ func scopedStore(t *testing.T, bindings ...auth.Binding) string {
 	if err := saveJSON(tokensPath(root), ts); err != nil {
 		t.Fatal(err)
 	}
+	isolateToken(t)
 	t.Setenv("QUILZO_TOKEN", secret)
 	return root
 }
@@ -231,4 +232,24 @@ func TestEveryPageRowNamesACommandThatExists(t *testing.T) {
 			t.Errorf("pageResolvers has %q and there is no such command", cmd)
 		}
 	}
+}
+
+// isolateToken stops a test reading the developer's own credential.
+//
+// findToken prefers ~/.quilzo/token over QUILZO_TOKEN, and deliberately: the
+// environment is inherited by every subprocess a user starts, including an
+// agent this CLI is built to be driven by, while a file at 0600 is read by
+// what opens it on purpose. That precedence is right and it makes a test that
+// only sets the variable non-hermetic -- the real file wins.
+//
+// It passes in CI, where no such file exists, and fails for any developer who
+// has ever issued a token and kept it. The failure reads as the feature being
+// broken ("an author scoped to /blog could not act on /blog") rather than as
+// the harness reaching outside itself, which is the expensive kind of wrong.
+//
+// Pointing HOME at the test's own directory is enough: tokenFile builds its
+// path from os.UserHomeDir.
+func isolateToken(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
 }
