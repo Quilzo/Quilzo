@@ -75,6 +75,16 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// Framework requirements, and which controls bear on them.
+	"framework": {
+		Why: "a crosswalk is read and argued about rather than clicked " +
+			"through, which is most of what is wrong with the screens " +
+			"that do offer it; the screen arrives with the stored register",
+		NoMCP: "proposing a crosswalk is a good use of a model and " +
+			"asserting that a control answers a regulator's clause is not; " +
+			"Mapping.Validate refuses an AI author for that reason",
+	},
+
 	// Controls and the evidence that they operated over a period.
 	"assurance": {
 		Why: "it reads a control file and an evidence log and reports what " +

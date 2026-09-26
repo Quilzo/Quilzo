@@ -592,6 +592,23 @@ recorded cannot move — with two retention limits, deletion that is never a sid
 effect, holds that survive a restart, and a watermark measured from observed
 arrival delay instead of guessed at by whoever wrote the rule.
 
+**Framework mappings that do not claim more than they say.** Every compliance
+platform shows a control with a row of framework tags — SOC2 CC6.1, ISO 27001
+A.8.5, NIST AC-2 — and counts those requirements as covered. The tags are
+almost never equality: a control enforcing MFA at the identity provider is a
+*part* of a clause about authenticating access to information systems, and it
+says nothing about the database with local accounts. The industry complaint
+about these products is exactly this, and it surfaces in week three of an
+audit. NIST IR 8477 already solved it with set theory: five relationships —
+equal, superset of, subset of, intersects with, no relationship — each with a
+documented rationale. Only equal and superset satisfy a requirement. A partial
+relation must name its remainder, and the remainder never rounds up. A
+requirement is met only when a satisfying control also has evidence across the
+period, so "mapped" and "operating" stay different facts; and a crosswalk where
+most relations claim exact equality is reported as one somebody clicked
+through, because two organisations writing independently about access control
+do not produce the same concept that often.
+
 **Evidence that a control operated over a period.** Every compliance tool
 collects screenshots. A picture of an MFA setting taken on 14 January is
 evidence about 14 January, and the question an auditor asks is whether the

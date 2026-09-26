@@ -158,6 +158,13 @@ messengers
   quilzo spool hold NAME --why W           pin everything while something is investigated
   quilzo spool lift NAME                   let retention run again
 
+frameworks
+  quilzo framework list                    which frameworks have requirements loaded
+  quilzo framework status NAME             where every requirement stands, and why
+  quilzo framework adopt NAME              what it would take to add one
+  quilzo framework map CONTROL REQ REL     record a relationship, with its rationale
+  quilzo framework relations               the five, and what each one means
+
 assurance
   quilzo assurance report                  what the evidence shows over a period, and what it does not
   quilzo assurance show CONTROL            every piece, and the days nobody can speak to
@@ -627,6 +634,8 @@ func main() {
 		err = cmdVuln(root, cmdArgs)
 	case "assurance":
 		err = cmdAssurance(root, cmdArgs)
+	case "framework":
+		err = cmdFramework(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":
