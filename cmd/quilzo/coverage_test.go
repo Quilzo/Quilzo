@@ -75,6 +75,16 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// What a code scanner found, and the part it left undone.
+	"appsec": {
+		Why: "it reads a scanner's output and gates a change, which happens " +
+			"in a pipeline rather than on a screen; the screen arrives " +
+			"with the stored register",
+		NoMCP: "the queue names credentials found in source by their " +
+			"location, and a model with a tool here has a list of where " +
+			"the secrets are",
+	},
+
 	// Access reviews, closed by a later import rather than by the
 	// reviewer.
 	"access": {
@@ -672,6 +682,22 @@ func readFile(t *testing.T, path string) string {
 func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 	// Where each removal flag lives in the admin, or why it does not.
 	removal := map[string]surfaces{
+		// Not a removal at all, and it is in this table because its name is
+		// a verb of removal and the guard reads names. It records that
+		// somebody rewrote a repository's history elsewhere, which is a
+		// fact being reported rather than an action being taken: nothing
+		// here removes anything, and the credential being dead is what
+		// closes the finding either way.
+		"rotated.purged": {
+			GUI: "",
+			NoMCP: "a model asserting that a credential is dead is how a " +
+				"finding gets closed over a key that still works; " +
+				"Rotation.Validate refuses an AI author",
+			Why: "it records that a history rewrite happened in the " +
+				"repository, which this program neither performs nor can " +
+				"verify. The screen for it would be a checkbox that " +
+				"changes nothing outside this log",
+		},
 		"add.remove": {GUI: "/page/delete",
 			MCP:   []string{"write_page"},
 			NoMCP: ""},
