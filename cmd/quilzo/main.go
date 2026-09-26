@@ -158,6 +158,9 @@ messengers
   quilzo spool hold NAME --why W           pin everything while something is investigated
   quilzo spool lift NAME                   let retention run again
 
+sharing a screen
+  quilzo screen cost --width 1920          what a shared screen actually costs, losslessly
+
 media encryption
   quilzo sframe suites --fps 30            the five RFC 9605 suites, and what each costs
   quilzo sframe check --suite 4            prove this build seals and opens correctly
@@ -689,6 +692,8 @@ func main() {
 		err = cmdAppsec(root, cmdArgs)
 	case "sframe":
 		err = cmdSframe(cmdArgs)
+	case "screen":
+		err = cmdScreen(cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":
