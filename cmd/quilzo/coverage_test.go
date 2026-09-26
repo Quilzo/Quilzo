@@ -199,6 +199,17 @@ var coverage = map[string]surfaces{
 			"trace to a scanner run is not evidence of anything",
 	},
 
+	// Which dependencies are affected, and which anybody can fix.
+	"sca": {
+		Why: "it reads a bill and an advisory file from a path; the queue " +
+			"these land in is internal/vuln's and has its own screen, " +
+			"and the thing worth seeing here — what is a bump and what " +
+			"is a conversation — is a list",
+		NoMCP: "a tool here would let a model supply the bill, and an " +
+			"inventory nobody can trace to a build is not evidence of " +
+			"what is deployed",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +

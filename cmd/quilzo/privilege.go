@@ -233,6 +233,9 @@ var commandNeeds = map[string]need{
 	// the caller asked for an output path.
 	"sarif": {action: auth.ActView},
 
+	// Reads a bill and an advisory file and matches them. Writes nothing.
+	"sca": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},

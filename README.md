@@ -1012,6 +1012,37 @@ of what was found. Nothing in any interface says so; the import does, because
 the OX Security benchmark above is about what happens to a team that cannot see
 its own queue.
 
+**Which dependencies are affected, and which of those anybody can fix.** Every
+scanner reports that a vulnerable package is present. Almost none report whether
+the team reading it can do anything, and those are different questions — only
+the second one is work. A direct dependency with a released fix is a version
+bump this afternoon; the same advisory four levels down is a conversation with
+whoever maintains the thing above it, and until they move the options are a
+fork, a replacement or an accepted risk. So the CycloneDX **dependency graph**,
+which most tools throw away, is the point here: every finding carries the path
+from something somebody chose down to the affected package, and names the
+nearest dependency the team actually controls. That name is the work item.
+"Upgrade transitive package X" is not an action anybody can take; "ask for a
+release of Y that takes X 2.4.1" is — and one package that has not moved is
+usually holding up a dozen advisories, which is one conversation rather than a
+dozen tickets. Where a bill arrives with no graph at all, that is reported
+rather than guessed, because assuming direct sends somebody to bump a version
+they do not control.
+
+OSV is the advisory half, and it carries a CVSS **vector** rather than a score,
+because a vector can be checked and a number is a summary of one. So the
+arithmetic is here rather than assumed, including the 3.1 roundup — which is
+not ordinary rounding, since 4.02 becomes 4.1 — implemented in the
+specification's integer form, because the floating-point version disagrees on
+values landing exactly on a tenth and a score 0.1 from the published one costs
+somebody an afternoon. It is checked against published vectors rather than
+against itself. Version ranges are evaluated properly from OSV's event
+encoding, where each `introduced` opens a run the next `fixed` closes; an
+`introduced` with nothing closing it means every version is affected and no fix
+exists, which changes what the work is rather than how urgent it is. Withdrawn
+advisories are skipped, because a retracted advisory is neither a fix nor a
+false positive.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025
