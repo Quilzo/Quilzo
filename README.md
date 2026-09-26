@@ -790,6 +790,33 @@ detector is not the defence — a detector that can be evaded is a detector — 
 manifest in `internal/agent` is, and this only keeps the worst case to a strange
 sentence in the minutes instead of a task somebody has to explain.
 
+**The assistant acts, and can say why.** `internal/agent` already decides what
+an agent may call at all — it is shaped after DeepMind's CaMeL, the manifest is
+enforced at a chokepoint every operation passes through, and an agent that has
+been entirely talked round by something it read can still only do what its
+manifest declared. That is the security property. Two things a manifest cannot
+see sit on top of it. It cannot know whether a task came from *anything*: so an
+errand carries the sentence somebody actually said, and "why is there a ticket
+with my name on it" has an answer that is not "the AI decided". And it cannot
+know that the address it is about to send to belongs to somebody who was not in
+the call — which is the ordinary shape of an agent leaking something, not a
+break-in but a helpful forward. Every errand carries the roster of the call it
+came from, anything reaching further is refused until a person agrees, and the
+refusal names exactly who would newly learn. An approval is recorded against
+those names rather than as a boolean, so agreeing to tell the security team is
+not agreeing to tell the security team and a mailing list.
+
+The third thing is smaller and gets got wrong everywhere: **the person who made
+the commitment is the person who confirms it.** If the minutes say grace will
+write the migration, it is grace's to confirm — not the meeting organiser's, not
+an administrator's. Every product that puts a single approve button in front of
+whoever opened the summary has quietly moved the decision to the wrong person.
+And when somebody withdraws consent and their words are erased, an errand
+resting on them is reported rather than silently dropped: either work that
+vanished off somebody's list, or work already done with nothing on record saying
+why. Something already carried out stays carried out, because rewriting a record
+to say a thing did not happen is a worse lie than the gap.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025

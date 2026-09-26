@@ -212,6 +212,10 @@ var commandNeeds = map[string]need{
 	// The note-taker's rules and a demonstration of them. Reads nothing.
 	"scribe": {action: auth.ActView},
 
+	// The assistant carrying out what a call agreed, against a manifest
+	// built for the run. Performs nothing outside itself.
+	"errand": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},
