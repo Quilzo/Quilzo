@@ -592,6 +592,25 @@ recorded cannot move — with two retention limits, deletion that is never a sid
 effect, holds that survive a restart, and a watermark measured from observed
 arrival delay instead of guessed at by whoever wrote the rule.
 
+**Third parties tiered by what they reach, not by what they cost.** Every
+product in this category has one field called "access". There are two
+directions and only one of them is usually modelled. A vendor this
+organisation holds a token for is bounded: if their service lies to us we get
+bad data. A vendor holding a token in *our* estate is not — their compromise
+is our breach, which is how one chat-widget vendor's stolen OAuth tokens
+reached more than 700 organisations' Salesforce instances in ten days in
+August 2025, none of which was itself broken into. So the tier is derived from
+what a vendor reaches rather than chosen once on an onboarding questionnaire,
+and a vendor holding a credential here is critical whatever anybody wrote —
+what makes it critical is not a judgement, it is a token. Critical vendors are
+reviewed twice as often, because the thing that makes them critical changes
+without anybody telling us. The register is reconciled against the connectors
+actually configured, so a credential issued to a processor nobody assessed is
+found rather than typed in; and the single most useful thing it computes is a
+terminated vendor whose token still works, because offboarding is the
+checklist item that reliably gets half done and nothing else in an
+organisation notices.
+
 **Questionnaire answers checked against our own register.** Every product in
 this category advertises 95% accuracy. The current CAIQ has over 260
 questions, so that is thirteen wrong answers per questionnaire, sent under the

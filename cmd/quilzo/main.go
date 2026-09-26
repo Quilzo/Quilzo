@@ -158,6 +158,12 @@ messengers
   quilzo spool hold NAME --why W           pin everything while something is investigated
   quilzo spool lift NAME                   let retention run again
 
+third parties
+  quilzo vendor list                       who they are, tiered by what they reach
+  quilzo vendor show ID                    access, data, and who their processors are
+  quilzo vendor reconcile                  the register against the credentials that exist
+  quilzo vendor review ID                  sign off a relationship, into the audit chain
+
 questionnaires
   quilzo attest claims                     what this organisation says about itself
   quilzo attest claim ID ANSWER --says W   record a claim, with what backs it
@@ -658,6 +664,8 @@ func main() {
 		err = cmdEngagement(root, cmdArgs)
 	case "attest":
 		err = cmdAttest(root, cmdArgs)
+	case "vendor":
+		err = cmdVendor(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":
