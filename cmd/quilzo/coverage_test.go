@@ -147,6 +147,17 @@ var coverage = map[string]surfaces{
 			"model answer that about itself",
 	},
 
+	// Work tracking, and the argument for four states.
+	"work": {
+		Why: "it builds a board for the run to show what a team's extra " +
+			"statuses really were; the boards people use arrive with the " +
+			"work, and the argument is one a terminal can make",
+		NoMCP: "a model moving work between states and excusing " +
+			"requirements would be deciding what counts as finished, " +
+			"which is the one judgement a definition of done exists to " +
+			"keep with people",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +
