@@ -184,6 +184,8 @@ sharing a screen
   quilzo sarif read results.sarif          import any scanner's findings, and what it left out
   quilzo sca scan --bom sbom.json --osv db.json   which dependencies you can actually fix
   quilzo correlate demo                    detections about several events, and when a window closes
+  quilzo incident duties                   who has to be told, how soon, and what starts the clock
+  quilzo incident demo                     an incident, its several clocks, and closing it
 
 media encryption
   quilzo sframe suites --fps 30            the five RFC 9605 suites, and what each costs
@@ -742,6 +744,8 @@ func main() {
 		err = cmdSCA(cmdArgs)
 	case "correlate":
 		err = cmdCorrelate(cmdArgs)
+	case "incident":
+		err = cmdIncident(cmdArgs)
 	case "room":
 		err = cmdRoom(root, cmdArgs)
 	case "telemetry":
