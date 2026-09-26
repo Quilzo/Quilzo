@@ -125,6 +125,17 @@ var coverage = map[string]surfaces{
 			"put a model on the inside of them",
 	},
 
+	// The AI note-taker, which is a participant rather than plumbing.
+	"scribe": {
+		Why: "it runs a call against identities generated for the run; " +
+			"what it has to say — which faculties are lawful, and who has " +
+			"to agree before anybody is recorded — is a table, and a " +
+			"table reads in a terminal",
+		NoMCP: "this decides whether a conversation may be recorded and " +
+			"what may be inferred from it, and a tool would let a model " +
+			"answer that question about itself",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +

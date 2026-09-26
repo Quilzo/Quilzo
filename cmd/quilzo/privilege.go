@@ -209,6 +209,9 @@ var commandNeeds = map[string]need{
 	// throwaway keys.
 	"huddle": {action: auth.ActView},
 
+	// The note-taker's rules and a demonstration of them. Reads nothing.
+	"scribe": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},

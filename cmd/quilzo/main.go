@@ -174,6 +174,8 @@ sharing a screen
   quilzo call cost --members 100           what a membership change costs on the wire
   quilzo huddle controls                   which call controls are real and which are requests
   quilzo huddle demo                       a whole call: link, lobby, shares, hands, mute, eject
+  quilzo scribe law                        what a note-taker may lawfully do, and who must agree
+  quilzo scribe demo                       a call with an AI note-taker sitting in it as a member
 
 media encryption
   quilzo sframe suites --fps 30            the five RFC 9605 suites, and what each costs
@@ -714,6 +716,8 @@ func main() {
 		err = cmdCall(cmdArgs)
 	case "huddle":
 		err = cmdHuddle(cmdArgs)
+	case "scribe":
+		err = cmdScribe(cmdArgs)
 	case "room":
 		err = cmdRoom(root, cmdArgs)
 	case "telemetry":
