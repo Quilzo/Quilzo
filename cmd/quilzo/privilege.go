@@ -229,6 +229,10 @@ var commandNeeds = map[string]need{
 	// run. Promotes nothing outside itself.
 	"proving": {action: auth.ActView},
 
+	// Reads a scanner's output file and reports on it. Writes only where
+	// the caller asked for an output path.
+	"sarif": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},
