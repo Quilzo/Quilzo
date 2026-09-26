@@ -61,7 +61,11 @@
 // than pretending to be an interchange format.
 package screen
 
-import "fmt"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+)
 
 // TileSize is the edge of a tile, in pixels.
 //
@@ -225,4 +229,79 @@ func (s Stats) Why() string {
 			"%d of %d tile(s) changed; %.0fx against raw, losslessly",
 			s.Changed, s.Tiles, s.Ratio())
 	}
+}
+
+// Fingerprint is the content hash of one tile.
+//
+// Content, not position. Two tiles holding the same pixels have the same
+// fingerprint wherever they are on the screen, which is what lets something
+// anchored to a tile follow it when the view scrolls.
+func (f Frame) Fingerprint(tx, ty int) string {
+	pix, _, _ := f.tile(tx, ty)
+	sum := sha256.Sum256(pix)
+	return hex.EncodeToString(sum[:])[:16]
+}
+
+// Index is where every tile's content sits in a frame.
+//
+// One fingerprint can appear in many places: a tile of blank background looks
+// like every other tile of blank background, and on a text editor most of the
+// screen is blank background. That is not a flaw in the index, it is the fact
+// anything anchoring to content has to deal with, and the index reports it
+// rather than picking one.
+type Index struct {
+	grid  [][]string
+	where map[string][]Tile
+}
+
+// Tile is a position in a frame, counted in tiles rather than pixels.
+type Tile struct {
+	X, Y int
+}
+
+// Index builds the content index for a frame.
+func (f Frame) Index() Index {
+	across, down := f.tiles()
+	out := Index{
+		grid:  make([][]string, down),
+		where: make(map[string][]Tile, across*down),
+	}
+	for ty := range down {
+		out.grid[ty] = make([]string, across)
+		for tx := range across {
+			k := f.Fingerprint(tx, ty)
+			out.grid[ty][tx] = k
+			out.where[k] = append(out.where[k], Tile{X: tx, Y: ty})
+		}
+	}
+	return out
+}
+
+// Size is the index's extent in tiles.
+func (i Index) Size() (across, down int) {
+	if len(i.grid) == 0 {
+		return 0, 0
+	}
+	return len(i.grid[0]), len(i.grid)
+}
+
+// Fingerprint is the content at a position, or empty when off the frame.
+func (i Index) Fingerprint(tx, ty int) string {
+	if ty < 0 || ty >= len(i.grid) || tx < 0 || tx >= len(i.grid[ty]) {
+		return ""
+	}
+	return i.grid[ty][tx]
+}
+
+// At returns every place a fingerprint appears.
+func (i Index) At(fingerprint string) []Tile {
+	return append([]Tile(nil), i.where[fingerprint]...)
+}
+
+// Distinctive reports whether a fingerprint appears exactly once.
+//
+// The interesting answer is the false one. A mark anchored to content that
+// occurs four hundred times on the screen is anchored to nothing.
+func (i Index) Distinctive(fingerprint string) bool {
+	return len(i.where[fingerprint]) == 1
 }

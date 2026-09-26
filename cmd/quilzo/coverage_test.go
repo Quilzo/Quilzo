@@ -94,6 +94,16 @@ var coverage = map[string]surfaces{
 			"way to ask a model to read a table that is already printed",
 	},
 
+	// Marks on a shared screen, anchored to content rather than pixels.
+	"annotate": {
+		Why: "it draws on a frame this build has no way to capture yet; " +
+			"the screen arrives with the sharing, and until then the " +
+			"demonstration is the terminal one",
+		NoMCP: "a tool here would let a model draw on somebody else's " +
+			"screen and sign it with their name, which is the one thing a " +
+			"mark has to be trusted about",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +

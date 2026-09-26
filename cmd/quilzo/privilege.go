@@ -198,6 +198,9 @@ var commandNeeds = map[string]need{
 	// Arithmetic over a synthetic frame. Reads nothing and writes nothing.
 	"screen": {action: auth.ActView},
 
+	// The same, with marks drawn on it. No store, so a view.
+	"annotate": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},
