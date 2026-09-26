@@ -180,6 +180,7 @@ sharing a screen
   quilzo work demo                         four states, and what the other nine statuses really were
   quilzo flow demo                         automation whose books have to add up
   quilzo sigma import ./rules              bring your own detections, in the open standard
+  quilzo proving demo                      what a detection has to survive before it goes live
 
 media encryption
   quilzo sframe suites --fps 30            the five RFC 9605 suites, and what each costs
@@ -730,6 +731,8 @@ func main() {
 		err = cmdFlow(cmdArgs)
 	case "sigma":
 		err = cmdSigma(cmdArgs)
+	case "proving":
+		err = cmdProving(cmdArgs)
 	case "room":
 		err = cmdRoom(root, cmdArgs)
 	case "telemetry":

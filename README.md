@@ -932,6 +932,55 @@ percent of deployed rules in this industry never fire under any input and nothin
 about a rule's text reveals which ones, so they do not load until somebody writes
 an event they should catch and one they should not.
 
+**Where a detection goes before it goes live.** On 19 July 2024 CrowdStrike
+shipped Channel File 291 — a *content* update, not code — and took down around
+eight and a half million Windows machines. The sensor expected twenty input
+fields and the update supplied twenty-one. CrowdStrike's own root cause analysis
+says the mismatch evaded multiple layers of build validation and testing, and
+gives the reason: **the tests used wildcard matching criteria** for the field
+that was wrong. That sentence is the whole argument. A rule tested only against
+inputs it was written to match proves nothing at all — it is the same point
+`internal/detect` makes when it refuses a detection with no negative fixture,
+generalised: what you have to show is not that a rule fires, it is what it does
+to everything else.
+
+So a candidate enters **shadow**, where it is evaluated and counted and nobody
+is woken up. It reaches **canary** when it has fixtures both ways and a replay
+over real recorded telemetry — at least ten thousand events spanning at least a
+day, because the traffic that makes a detection unusable is almost always
+periodic and a replay that never saw a nightly job has not seen the thing that
+will wake somebody at four in the morning. It reaches **live** when somebody has
+looked at the measured volume and accepted it by name, and that volume is stored
+on the promotion, so "we did not know it would do that" is not available
+afterwards. Nothing skips a ring, including a rule from a signed feed, because
+there is no argument for an exception that does not also excuse the next bad
+batch. A candidate matching more than one event in twenty is refused outright as
+the Channel File 291 shape. Because feeds ship in releases, a bad batch is
+recalled *as a batch* — the alternative is working out which of four hundred new
+rules arrived together at three in the morning.
+
+The measurement is the point. Every team deploys detections without knowing how
+often they will fire, finds out in production, and tunes by suppression — which
+is how an estate becomes a set of rules nobody trusts and an exception list
+nobody can explain. Replaying over last week gives the number *before* the
+decision. A replay over unlabelled events reports how loud a rule is and says
+plainly that it says nothing about whether the rule is right, rather than
+reporting a precision it cannot know. Editing a rule is compared rather than
+assumed: the report leads with what the new version **stopped** catching, which
+is the number nobody looks at and the way a tuning change quietly removes a
+detection. And the estate knows its own total alert volume per analyst per day —
+the number a detection estate is actually judged by, and which nobody computes
+because it lives across as many dashboards as there are tools.
+
+**An agent may propose a rule, write fixtures for it and run a replay.** All
+three are read-only or confined, bounded by the manifest in `internal/agent`.
+What it may never do is promote, and a rule a model proposed is held to exactly
+the same gates as one a person wrote, with one addition: whoever accepts it must
+not be whoever asked for it, because a proposal reviewed only by its requester
+has been reviewed by the request. There is no fast path for generated content,
+since a fast path for generated content is the only kind an attacker with a
+prompt needs.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025

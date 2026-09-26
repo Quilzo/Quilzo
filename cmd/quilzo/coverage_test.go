@@ -178,6 +178,17 @@ var coverage = map[string]surfaces{
 			"is the failure this package refuses at every other step",
 	},
 
+	// What a detection has to survive before it reaches anybody.
+	"proving": {
+		Why: "it runs a candidate through the rings against telemetry " +
+			"built for the run; the estate people promote from arrives " +
+			"with the detections, and the gates are an argument a " +
+			"terminal can make",
+		NoMCP: "this is the layer that decides whether a detection " +
+			"reaches anybody, and a model on the inside of it could " +
+			"promote the rule it wrote",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +
