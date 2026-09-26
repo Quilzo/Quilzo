@@ -181,6 +181,7 @@ sharing a screen
   quilzo flow demo                         automation whose books have to add up
   quilzo sigma import ./rules              bring your own detections, in the open standard
   quilzo proving demo                      what a detection has to survive before it goes live
+  quilzo sarif read results.sarif          import any scanner's findings, and what it left out
 
 media encryption
   quilzo sframe suites --fps 30            the five RFC 9605 suites, and what each costs
@@ -733,6 +734,8 @@ func main() {
 		err = cmdSigma(cmdArgs)
 	case "proving":
 		err = cmdProving(cmdArgs)
+	case "sarif":
+		err = cmdSarif(cmdArgs)
 	case "room":
 		err = cmdRoom(root, cmdArgs)
 	case "telemetry":

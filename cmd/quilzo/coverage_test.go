@@ -189,6 +189,16 @@ var coverage = map[string]surfaces{
 			"promote the rule it wrote",
 	},
 
+	// Any scanner's findings, and what the scanner left out.
+	"sarif": {
+		Why: "it reads a file a scanner produced and prints what came " +
+			"across; the queue these alerts land in is internal/appsec's " +
+			"and has its own screen, and an import report is a table",
+		NoMCP: "a tool here would let a model hand this program a set of " +
+			"findings, and a findings queue whose contents nobody can " +
+			"trace to a scanner run is not evidence of anything",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +

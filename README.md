@@ -981,6 +981,37 @@ has been reviewed by the request. There is no fast path for generated content,
 since a fast path for generated content is the only kind an attacker with a
 prompt needs.
 
+**One reader for every scanner, and the field they all forget.** SARIF 2.1.0
+is an OASIS standard and, unusually for this industry, it won: Semgrep, CodeQL,
+ZAP, OSV-Scanner, Trivy and most of the rest emit it, and GitHub code scanning
+consumes it. So one reader covers static analysis, dynamic analysis and
+dependency scanning, and one writer puts results back where developers already
+look.
+
+The useful part is what it says a scanner left out. GitHub tracks an alert
+across commits using `partialFingerprints`, and uses exactly one key from it:
+`primaryLocationLineHash`. When a tool omits it the uploader falls back to
+hashing the line — so **editing the line closes the alert and opens a new one**,
+and whitespace counts. A team that reformats a file gets a wave of new alerts
+and a matching wave of fixed ones, nobody connects the two, and the conclusion
+drawn is that the scanner is noisy. It is not the scanner; it is a field the
+scanner did not fill in. So the import reports which results arrived without
+one, names the tool responsible, and the writer always emits one.
+
+SARIF's `level` is `error`, `warning` or `note`, and it describes how the tool
+is *configured* rather than how much a finding matters — there is no risk
+concept in the standard at all, which is why GitHub bolts one on as a
+`security-severity` property from 0.0 to 10.0. Tools conflate the two
+constantly and the result is a queue sorted by whichever meaning the last
+scanner had in mind, so both are read and kept apart, mapped on the platform's
+own published boundaries, and the conversion records which was used. And the
+limits are not what they look like: a run may carry **twenty-five thousand
+results of which the top five thousand are displayed**, so a scanner emitting
+forty thousand findings produces a page that looks complete and is missing most
+of what was found. Nothing in any interface says so; the import does, because
+the OX Security benchmark above is about what happens to a team that cannot see
+its own queue.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025
