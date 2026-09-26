@@ -158,6 +158,16 @@ var coverage = map[string]surfaces{
 			"keep with people",
 	},
 
+	// Automation whose books have to add up.
+	"flow": {
+		Why: "it builds a flow and a week of runs to show three failures " +
+			"that are invisible elsewhere; the flows people run arrive " +
+			"with the running, and the ledger is a table",
+		NoMCP: "a model that could define a flow could define one whose " +
+			"filter drops everything, and the whole point here is that " +
+			"dropping is a decision somebody signs",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +

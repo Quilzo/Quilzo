@@ -855,6 +855,46 @@ different things, because they need different responses: work waiting on a named
 person has somebody to ask, and work that is in progress waiting on nothing has
 been picked up and put down.
 
+**Automation whose books have to add up.** Zapier's own troubleshooting advice
+contains this sentence: every time you use a filter or a path, you must ask what
+happens to the data that does not pass, and if you have no else-path or fallback
+notification, that data is gone forever. That is not a warning about an edge
+case — it is a description of the default behaviour of the largest automation
+platform in the world, and it is why an industry of third-party monitors exists
+whose entire product is telling you that your automation stopped. Errors are not
+the dangerous part; an error at least produces something eventually, even if
+Zapier's arrive batched or daily. The dangerous part is the filter that
+discards, because **a run that quietly dropped ninety-seven of a hundred items
+looks exactly like a quiet day.**
+
+So the organising idea is an accounting identity. Every item entering a run
+leaves through exactly one named exit — acted on, rejected by a named filter for
+a stated reason, failed at a named step, or held — and those have to add up to
+what came in. A run that cannot say where everything went does not report
+success with a caveat; it *is* the failure, and the check refuses it as an error
+rather than a log line, because a log line is how it gets found six weeks later
+by somebody looking for something else. Counting something twice is refused too,
+since it makes every other number unreliable. Three things follow. A filter must
+declare where its rejects go before the flow will validate: dropping is allowed
+and has to be chosen and explained, which is the whole difference between a
+decision and an accident. Silence is a failure — a flow states how often it
+should run, because otherwise a flow that has stopped and a flow with nothing to
+do are the same observation and only one of them is an incident. And a run states
+the window of source time it covered, so the gap between one run's window and the
+next is found rather than discovered later by somebody asking where their record
+went, which is how polling silently misses data when a source is busy or
+rate-limited.
+
+The failure that looks most like success gets its own detection: a **streak** of
+consecutive runs that received items and acted on none. A streak rather than a
+total, because a total is wrong in both directions — a flow that worked this
+morning and has discarded everything since is broken, and a flow with one busy
+hour in a quiet week is not. A quiet run in the middle does not break the streak,
+since nothing arriving is not evidence that whatever was discarding things has
+recovered. Everything is reported ranked rather than as one alert per condition,
+because an alert per condition is how a team learns to ignore alerts — and none
+of it has to be switched on.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025

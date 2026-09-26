@@ -219,6 +219,9 @@ var commandNeeds = map[string]need{
 	// A board built for the run, to make an argument about states.
 	"work": {action: auth.ActView},
 
+	// A flow and a week of runs, both built for the run. Executes nothing.
+	"flow": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},
