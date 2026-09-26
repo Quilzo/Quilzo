@@ -1115,6 +1115,38 @@ is one that escalates to somebody who is already on an earlier rung — that is 
 ladder pretending to escalate. One person cannot be both commander and scribe:
 an incident where one person did every role has no record of itself.
 
+**A scanner is only as good as the list it compares against.** The inventory is
+measured; the advisory database is fetched from somebody else, and everything
+about the answer depends on how recently. **A scanner whose database stopped
+updating three months ago reports no vulnerabilities. So does a system with no
+vulnerabilities. They are the same screen**, nothing errors, and the longer it
+goes on the more reassuring it looks. So staleness is a finding here, and any
+result derived from a mirror carries the mirror's age — a clean scan is a
+statement about a system *and* a database, and printing the first without the
+second is how a report becomes misleading without anybody lying. A fetch that
+succeeded and returned nothing is reported too, because a moved address
+answering 200 with an empty document reads exactly like a clean result.
+
+**"We have not fetched" and "they have not published" are different facts with
+different owners**, and conflating them is why staleness alerts get ignored. EPSS
+publishes a scored file every day, so a mirror three days behind is our problem
+and the number of missed publications is arithmetic. CISA's known-exploited
+catalogue has no fixed schedule at all — 2026 additions ranged from nine to
+thirty-one a month — so a quiet week is a normal week, and where a source has no
+cadence the only checkable claim is about our own fetching. Nothing here invents
+a schedule for somebody else's publication, so when that feed is behind it says
+plainly that how much is missing cannot be said. A source that has stopped
+publishing gets its own report, phrased as theirs rather than ours and still
+what the scanner is working from.
+
+A feed is a supply chain: an auto-updating database is a channel into the thing
+that decides what your scanner finds. Every release is identified, digested and —
+where the source signs — verified; a release that arrives unverified is **accepted
+and marked** rather than refused, because a mirror that stops updating over a
+signature problem has chosen the worse failure. And "unverified" is only said of
+a source that publishes signatures at all, since noise on that line is what
+trains people to skip it where it matters.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025

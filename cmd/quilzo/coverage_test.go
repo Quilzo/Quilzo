@@ -231,6 +231,17 @@ var coverage = map[string]surfaces{
 			"behalf when they became aware",
 	},
 
+	// How old the databases a scanner compares against are.
+	"feed": {
+		Why: "it shows the freshness of mirrors built for the run; the " +
+			"real ones arrive with the fetching, and what is worth " +
+			"seeing — which feed is behind and whose problem it is — is " +
+			"a table",
+		NoMCP: "this decides whether a clean scan can be read as a clean " +
+			"scan, and a model adjusting a feed's cadence would be " +
+			"adjusting what counts as current",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +

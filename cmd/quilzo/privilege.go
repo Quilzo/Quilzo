@@ -243,6 +243,10 @@ var commandNeeds = map[string]need{
 	// nobody: internal/notify is what sends anything.
 	"incident": {action: auth.ActView},
 
+	// Feed freshness, over mirrors built for the run. Fetches nothing:
+	// internal/fetch is what reaches a network.
+	"feed": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},
