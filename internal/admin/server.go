@@ -141,6 +141,13 @@ type Server struct {
 	// Assurance is the evidence: the code scanner, the generated policy, the
 	// inventory, the store's own integrity, the vault and the anchors.
 	Assurance *Assurance
+
+	// Running is the operational side of the same question: whether the
+	// things that should be happening are happening. Separate from
+	// Assurance because they are read by different people at different
+	// times — evidence answers an auditor once a year, and this answers
+	// whoever is on duty today.
+	Running *Running
 	// Transfer moves whole sites in and out, and applies starters.
 	Transfer *Transfer
 	// Decentralised renders the published site so its IPFS identifier can be
@@ -891,6 +898,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/integrity", s.handleIntegrityScreen)
 	mux.HandleFunc("/security/verify", s.handleVerify)
 	mux.HandleFunc("/security/agents", s.handleAgentsScreen)
+	mux.HandleFunc("/security/running", s.handleRunningScreen)
 	mux.HandleFunc("/languages", s.handleLanguages)
 	mux.HandleFunc("/languages/add", s.handleLanguageAdd)
 	mux.HandleFunc("/languages/translated", s.handleLanguageTranslated)
