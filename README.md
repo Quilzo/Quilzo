@@ -592,6 +592,24 @@ recorded cannot move — with two retention limits, deletion that is never a sid
 effect, holds that survive a restart, and a watermark measured from observed
 arrival delay instead of guessed at by whoever wrote the rule.
 
+**Questionnaire answers checked against our own register.** Every product in
+this category advertises 95% accuracy. The current CAIQ has over 260
+questions, so that is thirteen wrong answers per questionnaire, sent under the
+company's name into a customer's vendor file where they are relied upon and
+where a wrong one is a misrepresentation rather than a typo. The figure is
+published as a feature and the arithmetic is never done. The reason it does
+not help is that accuracy is measured against the text of previous answers: a
+confident answer about a control that stopped working in March matches what
+was said last time, and last time is exactly what is now false. So an answer
+here is a claim that points at what backs it, and a serious open finding
+against that backing stops the file — not a confidence score, which is the
+model's opinion about its own text, but this organisation's own records
+disagreeing with what it is about to tell a customer. A smaller finding casts
+doubt beside the answer rather than blocking it, because a check that fires on
+everything is a check somebody turns off. A question nothing answers is left
+blank rather than generated, because a generated answer there is the model's
+reading of the question rather than the organisation's position.
+
 **An evidence package the auditor can check without asking us anything.**
 Either the auditor gets a login to the whole platform — every company, every
 framework, every period, and a standing credential for as long as somebody

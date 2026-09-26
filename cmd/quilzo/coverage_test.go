@@ -75,6 +75,18 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// What this organisation says about itself, and whether its own
+	// register agrees.
+	"attest": {
+		Why: "a claim is argued about and signed rather than clicked " +
+			"through; the screen arrives with the stored register, where " +
+			"a contradicted answer belongs next to the finding that " +
+			"contradicts it",
+		NoMCP: "drafting an answer is exactly what a model is good at and " +
+			"signing one is a representation made to a customer under " +
+			"contract; Claim.Validate refuses an AI author for that reason",
+	},
+
 	// What an auditor is given, and what they can check without us.
 	"engagement": {
 		Why: "the deliverable is a file the auditor takes away and " +
