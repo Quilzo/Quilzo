@@ -187,6 +187,14 @@ var commandNeeds = map[string]need{
 	// as another's, and the merge is appended to the audit chain rather
 	// than edited afterwards: the same authority as publishing. Reading the
 	// reconciliation is a view.
+	// Evidence going to an auditor carries the organisation's word, and it
+	// is appended to the audit chain: an ordinary write, checked as one.
+	// Reading the report is a view.
+	"assurance":          {action: auth.ActEditDraft},
+	"assurance report":   {action: auth.ActView},
+	"assurance show":     {action: auth.ActView},
+	"assurance controls": {action: auth.ActView},
+
 	// Deciding a vulnerability does not apply is a statement the
 	// organisation stands behind and is appended to the audit chain rather
 	// than edited: the same authority as publishing. Reading the queue is a

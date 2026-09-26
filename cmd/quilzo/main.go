@@ -158,6 +158,12 @@ messengers
   quilzo spool hold NAME --why W           pin everything while something is investigated
   quilzo spool lift NAME                   let retention run again
 
+assurance
+  quilzo assurance report                  what the evidence shows over a period, and what it does not
+  quilzo assurance show CONTROL            every piece, and the days nobody can speak to
+  quilzo assurance record CONTROL OUTCOME  add evidence, into the audit chain as well
+  quilzo assurance controls                what this organisation says it does
+
 vulnerabilities
   quilzo vuln queue [INVENTORY]            what to work on, not sorted by severity
   quilzo vuln why CVE-ID                   what is known, and who decided what
@@ -619,6 +625,8 @@ func main() {
 		err = cmdConnect(root, cmdArgs)
 	case "vuln":
 		err = cmdVuln(root, cmdArgs)
+	case "assurance":
+		err = cmdAssurance(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":
