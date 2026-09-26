@@ -177,6 +177,7 @@ sharing a screen
   quilzo scribe law                        what a note-taker may lawfully do, and who must agree
   quilzo scribe demo                       a call with an AI note-taker sitting in it as a member
   quilzo errand demo                       the assistant acting, and why it was allowed to
+  quilzo work demo                         four states, and what the other nine statuses really were
 
 media encryption
   quilzo sframe suites --fps 30            the five RFC 9605 suites, and what each costs
@@ -721,6 +722,8 @@ func main() {
 		err = cmdScribe(cmdArgs)
 	case "errand":
 		err = cmdErrand(cmdArgs)
+	case "work":
+		err = cmdWork(cmdArgs)
 	case "room":
 		err = cmdRoom(root, cmdArgs)
 	case "telemetry":

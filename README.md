@@ -817,6 +817,44 @@ vanished off somebody's list, or work already done with nothing on record saying
 why. Something already carried out stays carried out, because rewriting a record
 to say a thing did not happen is a worse lie than the gap.
 
+**Four states, and no way to add a fifth.** Every Jira administrator has had
+the conversation about how many statuses is too many; Atlassian's own community
+has a thread called *Worst Jira Admin Contest: Multiple Green Statuses*, and
+real workflows read "in dev → dev done → ready for test → in test" with thirteen
+options in the transition menu. The usual diagnosis is that people are not
+thinking clearly, which is why the problem never goes away. Look at what the
+extra statuses are: "dev done" and "ready for test" are the same moment
+described from two sides, and "in review", "awaiting QA", "blocked" and "ready
+for deploy" are not states of the work at all — they are statements about who is
+holding it up, put in the only field available. One field is being asked to
+carry two independent facts, and proliferation is it splitting under the load.
+So the field is split deliberately: four states, fixed, and an orthogonal
+*waiting* that names a subject and what is wanted from them. Six invented
+statuses collapse into two states and one dimension — and because that dimension
+is a reference rather than a word, **"what is alan holding up" becomes a query**,
+which no amount of status design can give you. Linear's answer to the same
+problem is to fix the model and offer no escape hatch, which works for most
+teams and leaves the rest encoding their process in issue titles; the escape
+hatch here is structured rather than a new word in a dropdown.
+
+Multiple green statuses exist because "done" means different things, so the
+meaning is attached to the kind of work as a short list — capped, because a
+definition of done with fifteen lines is a process document that will be excused
+into meaninglessness within a quarter. An item reaches Done when the list is
+satisfied, or with a requirement **excused by a named person with a reason**,
+because the difference between "we did it" and "we decided not to" is the only
+thing anybody wants to know a quarter later and a green status cannot hold it.
+Moving backwards needs a reason, since an item that was Done and now is not is
+the most informative event on a board and is exactly why teams invent a Reopened
+status and then have two meaning To Do. Dropping work needs one too: silently
+abandoned work is what turns a backlog into a graveyard. Every item carries
+where it came from — including, for work that came out of a call, the sentence
+somebody actually said. Duplicates are reported and never merged, because two
+similar titles are sometimes two pieces of work. And *stuck* is reported as two
+different things, because they need different responses: work waiting on a named
+person has somebody to ask, and work that is in progress waiting on nothing has
+been picked up and put down.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025

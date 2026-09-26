@@ -216,6 +216,9 @@ var commandNeeds = map[string]need{
 	// built for the run. Performs nothing outside itself.
 	"errand": {action: auth.ActView},
 
+	// A board built for the run, to make an argument about states.
+	"work": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},
