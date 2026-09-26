@@ -236,6 +236,9 @@ var commandNeeds = map[string]need{
 	// Reads a bill and an advisory file and matches them. Writes nothing.
 	"sca": {action: auth.ActView},
 
+	// Runs correlations over events built for the run. Reads no store.
+	"correlate": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},
