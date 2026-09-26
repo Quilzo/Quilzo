@@ -262,6 +262,17 @@ var coverage = map[string]surfaces{
 			"escalation as contained",
 	},
 
+	// Which part holds what, and where the line belongs.
+	"boundary": {
+		Why: "it prints this program's own architecture and the " +
+			"credentials collecting each source costs; the screen that " +
+			"matters here is whether the separation is in force, which " +
+			"internal/logd already answers where it is enforced",
+		NoMCP: "this table is how somebody decides where to run the " +
+			"collector, and a model editing it would be reclassifying a " +
+			"credential that reads an estate as one that reads a log",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +

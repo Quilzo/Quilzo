@@ -1245,6 +1245,44 @@ capability that errors reports the error rather than returning quietly. What is
 silent gets **named rather than counted**: "four things are quiet" is a number
 somebody acknowledges, and naming them is what gets one of them looked at.
 
+**Should log analysis be separated from production?** The answer is known —
+NIST SP 800-53 **AU-9** puts it plainly, that log destinations operate in a
+separate security boundary from the systems they audit and the audited system
+may append and never read, modify or delete; **PCI DSS 10.3** says the same from
+the other side. The tempting next step is to apply that everywhere — separate the
+vulnerability scanner, separate the compliance evidence, separate the content —
+and that is wrong, because separating everything costs the same as separating the
+one thing that needs it and buys much less.
+
+The SIEM case is **two arguments wearing one name**, and only one of them
+generalises. *Nothing rewrites its own record* applies to every part equally, and
+this program already answers it without separating anything: the audit log is a
+hash chain with signed heads, `internal/logd` runs the writer as a different
+account so the application never holds a descriptor it could seek or truncate,
+and the event spool's segments are append-only and sealed. So the vulnerability
+queue, the GRC evidence and the CMS need their decisions in the chain, which they
+have, and not a process each.
+
+*What the collector holds* applies to exactly one part, and not because logs are
+sensitive. To read Okta's system log, Entra's sign-ins, CloudTrail and a dozen
+more, something must hold a credential **at each of those platforms** — which is
+the largest concentration of authority in an estate, and it points outward.
+Compromising the collector does not give an attacker your logs; it gives them
+read access to every system your logs come from. Nothing else here is like that:
+the vulnerability queue reads a bill of materials the build produced and a public
+database. So the line exists for one part, and the pairings that cost nothing say
+so rather than being discouraged by a blanket rule.
+
+**And part of it cannot be designed away.** Several platforms do not offer a
+credential that reads only their audit log — GitHub needed a roadmap item to add
+`read:audit_log` because one did not exist, and the same request is still open at
+others. Where a platform has no log-only scope, pulling its logs means holding
+something that reads more than its logs, and no care at this end changes that. So
+the table records, per source, the narrowest documented credential and what it
+reaches beyond the log: of sixteen sources, two cannot be narrowed to reading
+alone. That excess is not a configuration mistake, and naming it is the only
+thing that makes it possible to compensate for.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025

@@ -255,6 +255,10 @@ var commandNeeds = map[string]need{
 	// own design, which changes nothing.
 	"standing": {action: auth.ActView},
 
+	// What each part of this program holds. A table about its own
+	// architecture; reads no store and reaches nothing.
+	"boundary": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},

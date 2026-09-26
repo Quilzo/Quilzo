@@ -360,6 +360,8 @@ access
   quilzo auth deny WHO ROLE [--on PATH]    a deny wins wherever it sits
   quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
   quilzo standing list                     what a situation can hand somebody, and what it cannot
+  quilzo boundary show                     what each part holds, and what running two together costs
+  quilzo boundary credentials              what collecting each source costs to hold
   quilzo auth revoke WHO [--on PATH]       take a grant back
   quilzo auth recover                      break-glass when every admin token is lost
   quilzo auth list | roles
@@ -756,6 +758,8 @@ func main() {
 		err = cmdSource(cmdArgs)
 	case "standing":
 		err = cmdStanding(cmdArgs)
+	case "boundary":
+		err = cmdBoundary(cmdArgs)
 	case "room":
 		err = cmdRoom(root, cmdArgs)
 	case "telemetry":
