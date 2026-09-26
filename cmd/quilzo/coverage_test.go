@@ -75,6 +75,17 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// Access reviews, closed by a later import rather than by the
+	// reviewer.
+	"access": {
+		Why: "the campaign is driven from an import and closed by another " +
+			"one; the screen arrives with the stored register, where an " +
+			"unremediated revocation belongs beside every other finding",
+		NoMCP: "whether somebody still needs an access is a question about " +
+			"what they do all day, which is the one thing a model cannot " +
+			"see; Decision.Validate refuses an AI reviewer for that reason",
+	},
+
 	// Third parties, tiered by what they reach.
 	"vendor": {
 		Why: "the register is compared against the connector manifests, " +
