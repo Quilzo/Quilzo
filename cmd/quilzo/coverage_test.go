@@ -210,6 +210,16 @@ var coverage = map[string]surfaces{
 			"what is deployed",
 	},
 
+	// Detections about several events, and when a window may close.
+	"correlate": {
+		Why: "it runs correlations over events built for the run to show " +
+			"what a clock-closed window loses; the alerts these produce " +
+			"land in internal/finding, which has its own screen",
+		NoMCP: "a correlation decides what several events mean together, " +
+			"and a model that could write one could write the window that " +
+			"never closes",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +

@@ -1043,6 +1043,40 @@ exists, which changes what the work is rather than how urgent it is. Withdrawn
 advisories are skipped, because a retracted advisory is neither a fix nor a
 false positive.
 
+**Detections about several events, and the bug in every one of them.** Sigma
+version 2 defines four correlations, and they are the four questions a single
+event cannot answer: how many times did this happen, how many different things
+did it happen to, did these separate things happen close together, and did they
+happen in this order. All four are implemented, including `temporal_ordered`,
+which most backends skip and which is the difference between *these things
+happened* and *this sequence happened*.
+
+The part that matters is when a window closes. A correlation over fifteen
+minutes has to decide when fifteen minutes is up, and the obvious answer — the
+clock — is wrong, because events arrive late. A proxy buffers, an agent
+reconnects, a cloud export lands in five-minute batches. An event that happened
+at 10:02 and arrived at 10:20 belongs in the 10:00 window, and a window closed
+at 10:15 by the clock never saw it: **the rule does not fire, nothing reports an
+error, and the only evidence is an absence.** It also makes the detection
+non-reproducible, so replaying yesterday's events gives different answers from
+the live run and the rule cannot be tested — which is exactly what the proving
+ground above has to do before anything is promoted. So a window here closes when
+a **watermark** passes its end, `internal/telemetry` keeps arrival and event time
+apart for this reason, and a replay supplying the same watermarks gets the same
+answers as the live run. An event arriving after its window has closed is
+counted rather than swallowed, because a rising late count is how a team finds
+out its watermark is too aggressive for a source.
+
+Two smaller honesties. Counting without grouping is almost always a mistake —
+"ten failed logons in fifteen minutes" across an estate fires continuously and
+means nothing, while the same rule grouped by user is an account under attack —
+so it is permitted, because refusing a construct the standard defines would make
+portable rules unportable, and reported. And a group key an attacker controls is
+a way to exhaust the machine running the detection, so the engine refuses to open
+a new group past a cap and says so: a correlation that stopped tracking new
+groups has lost coverage, where one that consumed all the memory has lost
+everything.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025
