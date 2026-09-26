@@ -187,6 +187,15 @@ var commandNeeds = map[string]need{
 	// as another's, and the merge is appended to the audit chain rather
 	// than edited afterwards: the same authority as publishing. Reading the
 	// reconciliation is a view.
+	// Asserting that a control answers a regulator's clause is a statement
+	// the organisation stands behind, appended to the audit chain rather
+	// than edited: the same authority as publishing. Reading is a view.
+	"framework":           {action: auth.ActPublish},
+	"framework list":      {action: auth.ActView},
+	"framework status":    {action: auth.ActView},
+	"framework adopt":     {action: auth.ActView},
+	"framework relations": {action: auth.ActView},
+
 	// Evidence going to an auditor carries the organisation's word, and it
 	// is appended to the audit chain: an ordinary write, checked as one.
 	// Reading the report is a view.
