@@ -170,6 +170,8 @@ conversation
 sharing a screen
   quilzo screen cost --width 1920          what a shared screen actually costs, losslessly
   quilzo annotate follow --scroll 128      marks that follow the content when the view scrolls
+  quilzo call demo                         where the media encryption key comes from
+  quilzo call cost --members 100           what a membership change costs on the wire
 
 media encryption
   quilzo sframe suites --fps 30            the five RFC 9605 suites, and what each costs
@@ -706,6 +708,8 @@ func main() {
 		err = cmdScreen(cmdArgs)
 	case "annotate":
 		err = cmdAnnotate(cmdArgs)
+	case "call":
+		err = cmdCall(cmdArgs)
 	case "room":
 		err = cmdRoom(root, cmdArgs)
 	case "telemetry":

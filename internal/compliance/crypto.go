@@ -131,7 +131,8 @@ func Inventory() []Algorithm {
 			Name: "Ed25519", Package: "crypto/ed25519",
 			Purpose: "verifying interaction signatures from Discord, and " +
 				"HTTP message signatures under RFC 9421",
-			Where: "discord, httpsig, crawl", Use: Generated, Quantum: Broken,
+			Where: "discord, httpsig, crawl, groupkey", Use: Generated,
+			Quantum: Broken,
 			Note: "Signed and verified. internal/httpsig signs Ed25519 for " +
 				"any caller that asks — that is what Web Bot Auth uses — and " +
 				"no shipped call site passes it yet: the fediverse deliveries " +
@@ -149,7 +150,7 @@ func Inventory() []Algorithm {
 			Name: "ML-DSA-65 (FIPS 204)", Package: "crypto/mldsa",
 			Purpose: "the second signature on an audit head, so a published " +
 				"commitment stays unforgeable after a quantum computer exists",
-			Where: "audit", Use: Generated, Quantum: Safe,
+			Where: "audit, groupkey", Use: Generated, Quantum: Safe,
 			Note: "Alongside Ed25519, not instead of it: a head verifies only " +
 				"if both signatures do, so a break in either one forges " +
 				"nothing. This is the case where the threat is real rather " +
@@ -163,11 +164,35 @@ func Inventory() []Algorithm {
 			Name: "HKDF-SHA256 / HKDF-SHA512", Package: "crypto/hkdf",
 			Purpose: "deriving per-sender media keys, salts and ratchets " +
 				"from a group base key, under RFC 9605",
-			Where: "sframe", Use: Generated, Quantum: Reduced,
+			Where: "sframe, groupkey", Use: Generated, Quantum: Reduced,
 			Note: "A key derivation function is only as strong as the " +
-				"secret it expands. The base key it starts from is the " +
-				"deployment's to distribute; RFC 9605 says so explicitly, " +
-				"and nothing in this program yet does that part.",
+				"secret it expands. RFC 9605 says explicitly that the base " +
+				"key is the deployment's to distribute and specifies " +
+				"nothing about how; internal/groupkey is that part, and " +
+				"the same KDF runs the epoch schedule that produces the " +
+				"base key as runs the per-sender expansion underneath it.",
+		},
+		{
+			Name:    "ML-KEM-768 with X25519 (FIPS 203, RFC 9180)",
+			Package: "crypto/hpke",
+			Purpose: "encapsulating the per-epoch secret of a call to each " +
+				"participant, which is what gives SFrame its base key",
+			Where: "groupkey", Use: Generated, Quantum: Safe,
+			Note: "Hybrid, and the hybrid is the point: the shared secret " +
+				"holds if either ML-KEM or X25519 holds, so neither a " +
+				"lattice break nor a quantum computer is enough on its own. " +
+				"One is three years standardised and the other thirty, and " +
+				"nobody sensible bets a call on the younger one alone. " +
+				"Harvest-now-decrypt-later is the reason it matters here " +
+				"rather than notionally: a recorded call is a ciphertext " +
+				"somebody can keep, and the key that opens it is negotiated " +
+				"once, today.\n\nReached through crypto/hpke rather than " +
+				"crypto/mlkem and crypto/ecdh directly, which is why those " +
+				"two are not listed: this program does not touch either " +
+				"primitive, it asks the standard library's RFC 9180 " +
+				"implementation for a KEM and hands it a public key. The " +
+				"combination of the two shared secrets is the part that is " +
+				"easy to get wrong, and it is not done here.",
 		},
 		{
 			Name: "TLS 1.2+", Package: "crypto/tls",

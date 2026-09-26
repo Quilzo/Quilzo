@@ -149,6 +149,18 @@ func (s Suite) Overhead(header int) int {
 	return header + p.nt
 }
 
+// KeyBytes is the length of the base key a suite expects.
+//
+// RFC 9605 derives the base key as AEAD.Nk bytes. Derive will expand a base
+// key of any length, because HKDF-Extract accepts anything — but a key
+// management layer producing the base key needs to know the size the
+// specification asks for, and guessing it is how two implementations end up
+// with different keys and no idea why.
+func (s Suite) KeyBytes() int {
+	p, _ := s.params()
+	return p.nk
+}
+
 // TagBytes is the authentication tag length.
 func (s Suite) TagBytes() int {
 	p, _ := s.params()
