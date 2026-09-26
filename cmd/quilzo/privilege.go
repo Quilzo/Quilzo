@@ -225,6 +225,10 @@ var commandNeeds = map[string]need{
 	// Reads rule files and compiles them. Writes nothing.
 	"sigma": {action: auth.ActView},
 
+	// A candidate and a week of synthetic telemetry, both built for the
+	// run. Promotes nothing outside itself.
+	"proving": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},
