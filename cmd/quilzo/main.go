@@ -158,6 +158,11 @@ messengers
   quilzo spool hold NAME --why W           pin everything while something is investigated
   quilzo spool lift NAME                   let retention run again
 
+groups of companies
+  quilzo entity tree                       the structure, and who is accountable where
+  quilzo entity report [SCOPE]             every control across every company in scope
+  quilzo entity relies CO ON CONTROL       record why a parent's control counts here
+
 frameworks
   quilzo framework list                    which frameworks have requirements loaded
   quilzo framework status NAME             where every requirement stands, and why
@@ -636,6 +641,8 @@ func main() {
 		err = cmdAssurance(root, cmdArgs)
 	case "framework":
 		err = cmdFramework(root, cmdArgs)
+	case "entity":
+		err = cmdEntity(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":
