@@ -75,6 +75,15 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// A codec for screen content, and what sharing one costs.
+	"screen": {
+		Why: "it is arithmetic over a synthetic frame; the screen arrives " +
+			"with the sharing this is for, and there is nothing here for " +
+			"one to show in the meantime",
+		NoMCP: "it takes no input and holds no state, so a tool would be a " +
+			"way to ask a model to read a table that is already printed",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +

@@ -592,6 +592,24 @@ recorded cannot move — with two retention limits, deletion that is never a sid
 effect, holds that survive a restart, and a watermark measured from observed
 arrival delay instead of guessed at by whoever wrote the rule.
 
+**A codec for screens, and deliberately not one for video.** AV1 took a
+consortium several years; a codec written here would be five to ten times
+worse per bit, would have no hardware decoder on any device, and would cost
+battery on every phone it ran on. There is no version of that trade worth
+making. Screen content is a different problem. Video codecs assume natural
+images — smooth gradients, motion, and an eye that does not notice small
+errors — and screen content breaks all three: a terminal is flat colour with
+hard edges, a code editor changes one character between frames, and a small
+error in a letterform is a different letter. Every screen share on every
+platform runs the picture through a transform designed to discard what the eye
+will not miss, and at eight pixels tall what it discards is the difference
+between a colon and a semicolon. So this is lossless — not high quality, not
+visually lossless — and the damage model is the compression: at 1920x1080,
+a key frame is 90x smaller than raw, a keystroke costs 271 bytes and a still
+screen costs 89, which is about 8 KB/s of typing with the frame encryption on
+top. Pointed at a photograph it compresses barely at all, and it says so
+rather than quietly sending fifty megabytes a second.
+
 **End-to-end media encryption that an SFU cannot read.** A call between more
 than two people goes through a selective forwarding unit, which has to see RTP
 headers to route packets, drop layers and rewrite sequence numbers. SRTP is
