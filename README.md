@@ -895,6 +895,43 @@ recovered. Everything is reported ranked rather than as one alert per condition,
 because an alert per condition is how a team learns to ignore alerts — and none
 of it has to be switched on.
 
+**Bring your own detections, in the format they are already in.** Every
+security product invents a detection language, and the cost lands on the
+customer: rules written for one tool are worthless in the next, which is most of
+why replacing a SIEM takes a year. Sigma is the vendor-neutral answer — a YAML
+format with a public corpus of a few thousand community rules and converters
+into Splunk's SPL, Microsoft Sentinel's KQL, Elastic and Chronicle's YARA-L. So
+"bring your own rules" here means the format the rules are already in: a rule
+that runs on somebody's Splunk runs here, and one written here converts back
+out, because it is the same artefact. Per-deployment field naming is handled the
+way the standard handles it — a pipeline held separately from the rules, so the
+rules stay portable and the mapping is the single thing a customer edits rather
+than three thousand files.
+
+It never half-compiles. A rule using a construct this does not implement is
+reported with the construct named and is not loaded, because the alternative is
+worse than a failure: a rule that quietly lost its exclusion clause still fires,
+still looks like it is working, and is now a different rule from the one
+somebody reviewed. The import report separates the two kinds of skip, because
+they are work for two different people — a gap in this implementation, or a gap
+in the rule. Reading the YAML is deliberately a small reader for the corner of
+YAML that Sigma uses, with no type inference at all: everything is a string, so
+the country code `no` is the string "no" rather than the boolean false, and a
+version like `010` stays `010`.
+
+Two things fall out that no product offering Sigma import says out loud. The
+standard asks every rule for a **falsepositives** list, which is exactly the
+knowledge `internal/detect`'s blind-spot field exists for and observes that
+nobody ever fills in — so here it arrives filled in, and a rule claiming high or
+critical whose only stated false positive is "Unknown" is reported, because that
+pairing is a rule written confidently by somebody who has not run it anywhere.
+And **every imported rule is unproven**: Sigma has nowhere to record an event a
+rule is asserted to match, so a library of three thousand community rules arrives
+as three thousand rules nothing has demonstrated can fire. Between 13 and 18
+percent of deployed rules in this industry never fire under any input and nothing
+about a rule's text reveals which ones, so they do not load until somebody writes
+an event they should catch and one they should not.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025
