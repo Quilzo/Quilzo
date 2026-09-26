@@ -172,6 +172,8 @@ sharing a screen
   quilzo annotate follow --scroll 128      marks that follow the content when the view scrolls
   quilzo call demo                         where the media encryption key comes from
   quilzo call cost --members 100           what a membership change costs on the wire
+  quilzo huddle controls                   which call controls are real and which are requests
+  quilzo huddle demo                       a whole call: link, lobby, shares, hands, mute, eject
 
 media encryption
   quilzo sframe suites --fps 30            the five RFC 9605 suites, and what each costs
@@ -710,6 +712,8 @@ func main() {
 		err = cmdAnnotate(cmdArgs)
 	case "call":
 		err = cmdCall(cmdArgs)
+	case "huddle":
+		err = cmdHuddle(cmdArgs)
 	case "room":
 		err = cmdRoom(root, cmdArgs)
 	case "telemetry":

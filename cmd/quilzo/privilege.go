@@ -205,6 +205,10 @@ var commandNeeds = map[string]need{
 	// thrown away with it. Nothing reaches a store.
 	"call": {action: auth.ActView},
 
+	// The control plane of a call, demonstrated against those same
+	// throwaway keys.
+	"huddle": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},

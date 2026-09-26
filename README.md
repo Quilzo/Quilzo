@@ -703,6 +703,42 @@ algorithm, which is the part of MLS where implementation bugs actually live. A
 call is not a group of fifty thousand. `quilzo call cost` prints the table so
 that stays a decision rather than an assumption.
 
+**A row of buttons where some of them are real.** Every meeting product has
+the same controls and presents them as equally solid. They are not. "Remove
+from meeting" and "mute participant" sit next to each other in Zoom's
+interface, and one is enforced by arithmetic while the other is enforced by
+the other person's software choosing to cooperate — so in the meeting where it
+actually matters, nobody in the room knows what they are relying on. Here every
+control declares what stands behind it, and there are three honest answers.
+**Cryptographic**: removal, which holds against a modified client and a hostile
+server because the epoch secret was never encapsulated to them. **Agreed**:
+muting and speaking rights, which every participant derives from the same group
+state, so the server cannot lie about them and every honest client applies them
+— while software that ignores the mute can still put bytes on the wire, exactly
+as it can in every other product. **Requested**: "please unmute", which is a
+message to a person, and is in the list so that nothing else in the list has to
+be explained away. This is not a smaller claim than the competition makes; it is
+the same claim, made accurately. `quilzo huddle controls` prints the table.
+
+The same honesty runs through the door. Zoom's meeting identifiers are nine to
+eleven digits — about thirty-six bits — and researchers predicted four percent
+of them; an invitation here carries 160, which is the least interesting of its
+protections. The link is not the key. Presenting a valid invitation gets
+somebody into the lobby, and the lobby is not the server declining to forward
+media: it is a place where they hold no group secret, so the media would not
+mean anything if it arrived. Getting a key takes a host committing them into the
+group. A link that leaks, is forwarded, or outlives its meeting therefore buys a
+knock at a door — which is what everybody already assumes a waiting room is, and
+what in most products it is not. Invitations expire by construction, can be
+bound to one person so forwarding them achieves nothing, and are stored as
+hashes, so whoever holds the state of a call cannot turn it back into a working
+link. Several people share screens at once, and one person can share two windows
+at once, because RFC 9605 gives the SFrame key identifier a context field for
+precisely that — a second stream is a number to allocate, not a second key
+exchange, and no two streams ever share a salt. Raised hands queue in the call's
+own order rather than by timestamp, because two hands inside the same second
+should not be ranked by whose laptop was fast.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025

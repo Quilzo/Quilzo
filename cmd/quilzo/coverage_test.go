@@ -114,6 +114,17 @@ var coverage = map[string]surfaces{
 			"decision",
 	},
 
+	// Who is in a call, who may speak, and which controls are real.
+	"huddle": {
+		Why: "it runs a call against identities generated for the run; " +
+			"the screen for this arrives with the calling, and the point " +
+			"it makes — which controls hold and which are requests — is " +
+			"one a table can make in a terminal",
+		NoMCP: "admitting, ejecting and muting are the decisions that " +
+			"settle who can hear a private conversation, and a tool would " +
+			"put a model on the inside of them",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +
