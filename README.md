@@ -592,6 +592,25 @@ recorded cannot move — with two retention limits, deletion that is never a sid
 effect, holds that survive a restart, and a watermark measured from observed
 arrival delay instead of guessed at by whoever wrote the rule.
 
+**Access reviews closed by the import, not by the reviewer.** A manager is
+sent forty people and clicks approve on all of them in ninety seconds. The
+campaign closes at a hundred per cent, the evidence shows a completed review,
+the auditor sees a completed review, and nothing was reviewed. Every product
+reports completion rate, because that is what a dashboard can show; nothing
+reports the *shape* of the completion, which is the only part that
+distinguishes a review from a formality. So this records how long each
+decision took and reports a campaign that was all keeps, decided faster than a
+person can read a row, inside one sitting — not as an accusation but as a
+property of the evidence, because an auditor sampling it asks anyway and the
+version where they ask first is the expensive one. Reviewing your own access
+is refused. Keeping privileged access needs a reason, because that is the
+decision nobody writes down. And an item is not closed by the reviewer
+deciding: a revocation is done when the account is gone from a *later* import,
+which is the half of this control that fails and the half nothing else
+measures. A system declared in scope that no accounts came from is reported,
+because a review of whatever happened to be exported is silently narrower than
+it claims.
+
 **Third parties tiered by what they reach, not by what they cost.** Every
 product in this category has one field called "access". There are two
 directions and only one of them is usually modelled. A vendor this

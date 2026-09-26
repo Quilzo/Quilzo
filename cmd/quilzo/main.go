@@ -158,6 +158,13 @@ messengers
   quilzo spool hold NAME --why W           pin everything while something is investigated
   quilzo spool lift NAME                   let retention run again
 
+access reviews
+  quilzo access open ID [FILE] --scope S   start one, over the systems it covers
+  quilzo access items ID                   what the reviewer is shown, easiest first
+  quilzo access decide ID ACCOUNT VERDICT  keep, revoke or reduce
+  quilzo access close ID [FILE]            which revocations actually happened
+  quilzo access list                       every campaign, and the shape of its decisions
+
 third parties
   quilzo vendor list                       who they are, tiered by what they reach
   quilzo vendor show ID                    access, data, and who their processors are
@@ -666,6 +673,8 @@ func main() {
 		err = cmdAttest(root, cmdArgs)
 	case "vendor":
 		err = cmdVendor(root, cmdArgs)
+	case "access":
+		err = cmdAccess(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":

@@ -187,6 +187,15 @@ var commandNeeds = map[string]need{
 	// as another's, and the merge is appended to the audit chain rather
 	// than edited afterwards: the same authority as publishing. Reading the
 	// reconciliation is a view.
+	// A decision about somebody's access is signed and appended to the
+	// audit chain: the same authority as publishing. Opening a campaign is
+	// an ordinary write, and reading one is a view.
+	"access":       {action: auth.ActPublish},
+	"access open":  {action: auth.ActEditDraft},
+	"access list":  {action: auth.ActView},
+	"access items": {action: auth.ActView},
+	"access close": {action: auth.ActView},
+
 	// Signing off a third party's access is a statement the organisation
 	// stands behind: the same authority as publishing. Reading the
 	// register and comparing it against the connectors are views.
