@@ -131,6 +131,15 @@ var Purposes = []Purpose{
 		Without: "nothing is exported. A collector on loopback still receives",
 	},
 	{
+		Name: "connector",
+		What: "reading a company's own tools — an identity provider, an " +
+			"MDM, a training platform — over the endpoints a connector " +
+			"manifest declares",
+		Without: "no connector runs. Nothing is pulled from any tool, and " +
+			"the workforce reconciliation has only the files somebody " +
+			"exported by hand",
+	},
+	{
 		Name: "import",
 		What: "fetching a page or an image the operator asked to import",
 		Without: "importing by URL is refused. Importing from a file is not " +

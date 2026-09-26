@@ -592,6 +592,21 @@ recorded cannot move — with two retention limits, deletion that is never a sid
 effect, holds that survive a restart, and a watermark measured from observed
 arrival delay instead of guessed at by whoever wrote the rule.
 
+**Connecting to a company's tools.** One reviewable file per tool: its host,
+how it authenticates, which endpoints to read, how they paginate, and which
+fields to keep. Nothing is executed and nothing is loaded, so reviewing an
+integration means reading it rather than reading a program. A manifest
+declares exactly one host and cannot exceed it — including on the way back,
+because cursor pagination hands the upstream the next URL and a tool that
+answers with somewhere else is choosing where a request carrying its own
+credential goes. Only GET is ever sent. Every field the connector may keep is
+written down, and a mapping that refers to anything outside that list is
+refused at load, so the question "what does this have access to" is answered
+by reading four lines. The credential is a name; a manifest holding what looks
+like a token is refused, because the way that goes wrong is somebody pasting
+one in to test it and committing the file. `connect probe` prints the shape of
+a response and never its values.
+
 **Reconciling a workforce.** The identity provider knows who exists, the MDM
 knows which laptops check in, the training platform knows who clicked the
 phishing simulation, and none of them knows any of the others. Every

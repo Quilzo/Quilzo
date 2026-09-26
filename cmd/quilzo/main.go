@@ -158,6 +158,13 @@ messengers
   quilzo spool hold NAME --why W           pin everything while something is investigated
   quilzo spool lift NAME                   let retention run again
 
+connecting to a company's tools
+  quilzo connect list                      the connectors installed, and what each can reach
+  quilzo connect check NAME|FILE           read a manifest and say what it may touch
+  quilzo connect secret NAME               store a credential, from the environment
+  quilzo connect probe NAME ENDPOINT       what shape a tool's response is, never its values
+  quilzo connect run NAME [ENDPOINT]       pull records, one JSON object per line
+
 workforce
   quilzo workforce coverage [FILE]         did the join work, and what did not
   quilzo workforce propose [FILE]          matches to confirm, and what would make each wrong
@@ -602,6 +609,8 @@ func main() {
 		err = cmdNotify(root, cmdArgs)
 	case "workforce":
 		err = cmdWorkforce(root, cmdArgs)
+	case "connect":
+		err = cmdConnect(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":
