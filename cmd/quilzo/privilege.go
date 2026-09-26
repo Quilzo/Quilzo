@@ -201,6 +201,10 @@ var commandNeeds = map[string]need{
 	// The same, with marks drawn on it. No store, so a view.
 	"annotate": {action: auth.ActView},
 
+	// Group key agreement, run against keys generated for the run and
+	// thrown away with it. Nothing reaches a store.
+	"call": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},

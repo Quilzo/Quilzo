@@ -669,6 +669,40 @@ not do is stated in the package and in the command — it protects the media and
 not who is in the call, who is speaking, or for how long, and it says nothing
 about how the key got there.
 
+**Where the call's key actually comes from.** SFrame protects the media and
+says, in as many words, that it has nothing to say about how the base key got
+there; RFC 9605 leaves key management out deliberately and points at MLS. That
+is the honest position for a codec and an untenable one for a product, because
+until something fills it "end-to-end encrypted" is a claim about an algorithm
+rather than about a call. This fills it. Each epoch has a secret shared by
+exactly the people in the call at that moment, encapsulated to each of them
+under ML-KEM-768 and X25519 **together** — the hybrid holds if either one
+holds, which is the only defensible position while one is three years old and
+the other thirty, and it matters here rather than notionally because a
+recorded call is a ciphertext somebody can keep. Leaving is forward secret and
+rejoining tells you nothing about what you missed. A member whose device was
+compromised rotates their key in an Update, and the next epoch closes behind
+whoever had it. The property that is usually missing, though, is agreement:
+every member derives a confirmation tag from the roster, so a server that
+tells Ada the call is {Ada, Bob} while telling Bob it is {Ada, Bob, Eve}
+produces two tags that do not match and two clients that refuse — and each
+epoch's secret is sealed against the roster hash, so the rewritten commit does
+not even open. Most products that say "end-to-end encrypted group call" cannot
+do this, because the server is the only thing that knows who is in the room.
+It is **not MLS**: the key schedule follows RFC 9420 Section 8 in shape and
+the SFrame binding follows RFC 9605 Section 5.2 to the letter including the
+KID layout, but the labels are this project's and there is no ratchet tree,
+and the package says so rather than implying an interoperability it does not
+have. The tree is the one real omission and the arithmetic is printed rather
+than asserted: a flat commit costs 26 KB for a call of twenty and 118 KB for a
+hundred, against 92 KB for one key frame of the screen codec — about one video
+frame, once, when somebody joins or leaves. A tree would make those 6.6 KB and
+8.2 KB. That is a genuine saving on a cost that is already a single frame,
+bought with tree hashes, parent hashes, blank nodes and the resolution
+algorithm, which is the part of MLS where implementation bugs actually live. A
+call is not a group of fifty thousand. `quilzo call cost` prints the table so
+that stays a decision rather than an assumption.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025

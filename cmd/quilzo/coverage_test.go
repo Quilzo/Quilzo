@@ -104,6 +104,16 @@ var coverage = map[string]surfaces{
 			"mark has to be trusted about",
 	},
 
+	// Group key agreement for a call, demonstrated end to end.
+	"call": {
+		Why: "it runs the protocol against identities generated for the " +
+			"run; a real call's keys arrive with the calling, and until " +
+			"then the demonstration is the terminal one",
+		NoMCP: "the keys here are the ones that decide who can hear a " +
+			"call, and a tool would put a model on the inside of that " +
+			"decision",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +
