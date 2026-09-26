@@ -169,6 +169,7 @@ conversation
 
 sharing a screen
   quilzo screen cost --width 1920          what a shared screen actually costs, losslessly
+  quilzo annotate follow --scroll 128      marks that follow the content when the view scrolls
 
 media encryption
   quilzo sframe suites --fps 30            the five RFC 9605 suites, and what each costs
@@ -703,6 +704,8 @@ func main() {
 		err = cmdSframe(cmdArgs)
 	case "screen":
 		err = cmdScreen(cmdArgs)
+	case "annotate":
+		err = cmdAnnotate(cmdArgs)
 	case "room":
 		err = cmdRoom(root, cmdArgs)
 	case "telemetry":

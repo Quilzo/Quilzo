@@ -628,6 +628,28 @@ screen costs 89, which is about 8 KB/s of typing with the frame encryption on
 top. Pointed at a photograph it compresses barely at all, and it says so
 rather than quietly sending fifty megabytes a second.
 
+**Marks on a shared screen that follow the content, not the glass.** Everyone
+has sat through this: somebody circles line 40, the presenter scrolls, and the
+circle is now around line 52 — pointing, with complete confidence, at the
+wrong thing. Every product that draws on a screen share has this bug, because
+every one of them pins the drawing to a pixel and the pixel does not move. The
+codec above makes the fix available: a frame can be asked what its tiles
+contain, so a mark records the fingerprint of the content it was drawn on
+rather than the coordinate it landed on, and when the view scrolls the mark is
+found wherever that content went. Where the content did not land back on the
+tile grid — a scroll of a hundred pixels rather than a whole number of lines —
+the scroll itself is measured from the frames, one hash per pixel row and no
+search, and the mark moves by that distance instead. Both routes are labelled,
+because the first is a sighting and the second is an inference. What matters
+more is the third case. A mark whose content is gone, or now appears in four
+places with nothing to tell them apart, is **reported and not drawn**: a
+rectangle around the wrong function looks exactly like a rectangle around the
+right one, so the room has no way to catch it and the person who drew it has
+less, because on their screen it never moved. Marks carry no pixels — a kind,
+a path, an author and a hash — so what a group pointed at survives a retention
+schedule that the frames themselves do not, and taking a mark back leaves the
+retraction rather than a gap.
+
 **End-to-end media encryption that an SFU cannot read.** A call between more
 than two people goes through a selective forwarding unit, which has to see RTP
 headers to route packets, drop layers and rewrite sequence numbers. SRTP is
