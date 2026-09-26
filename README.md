@@ -592,6 +592,26 @@ recorded cannot move — with two retention limits, deletion that is never a sid
 effect, holds that survive a restart, and a watermark measured from observed
 arrival delay instead of guessed at by whoever wrote the rule.
 
+**An evidence package the auditor can check without asking us anything.**
+Either the auditor gets a login to the whole platform — every company, every
+framework, every period, and a standing credential for as long as somebody
+forgets to revoke it — or they get a folder of exported PDFs, which is scoped
+correctly and proves nothing, because it is a set of files the audited party
+assembled. The audit log here is a hash chain with an RFC 6962 Merkle tree
+over it and a head signed with Ed25519 and ML-DSA-65, which was built for
+exactly this: a package carries the evidence in scope, the audit entry that
+recorded each piece being gathered, an inclusion proof for every entry, and
+one signed head. `quilzo engagement check` verifies it against the published
+key on a machine that has never seen the store, the log or the network.
+Widening a date in the evidence is caught because it no longer matches the
+entry; editing the entry to match is caught because the leaf hash moves and
+the proof stops resolving. What it does not prove is that the log is complete
+— an entry can be omitted before the tree is built, no cryptography fixes
+that, and the package says so rather than leaving it to be assumed. Controls
+in scope with nothing behind them are named in the file rather than left out,
+because an auditor finds them anyway and finding them themselves is the
+version that costs a week.
+
 **A group of companies, measured as one.** A group defines a control, marks it
 shared across five subsidiaries, and the evidence arrives from the parent's
 identity provider. Every dashboard turns green for all five — and the German

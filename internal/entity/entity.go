@@ -287,6 +287,25 @@ func (t *Tree) Reaches(from, to string) bool {
 	return false
 }
 
+// Covers reports whether an entity's evidence belongs in a package scoped to
+// another.
+//
+// Two ways in, and only two. Either the entity is part of what is being
+// audited — inside the subtree — or it is above it, in which case its
+// evidence reaches down to the thing being audited and the auditor needs to
+// see it. A sibling is neither, and a cousin is neither.
+//
+// Scoping a package to the subtree alone looks tighter and is wrong: it
+// silently drops the group-wide controls the subsidiary depends on, and the
+// auditor discovers the omission by asking about a control that is not in the
+// file they were given.
+func (t *Tree) Covers(scope, id string) bool {
+	if t.Reaches(scope, id) {
+		return true
+	}
+	return t.Reaches(id, scope)
+}
+
 // Reliance is a subsidiary recording that it depends on an ancestor's control.
 //
 // Recorded rather than assumed. At audit the subsidiary has to show the

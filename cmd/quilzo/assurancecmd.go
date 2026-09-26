@@ -317,6 +317,8 @@ func assuranceRecord(root string, args []string) error {
 	what := fs.String("what", "", "what it shows, in one line")
 	source := fs.String("source", "", "what produced it")
 	ref := fs.String("ref", "", "where the artefact is")
+	entity := fs.String("entity", "",
+		"the company this speaks for; the group otherwise")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
@@ -335,8 +337,8 @@ func assuranceRecord(root string, args []string) error {
 		Control: pos[0], Outcome: assurance.Outcome(pos[1]),
 		From: period.From, To: period.To,
 		What: strings.TrimSpace(*what), Source: strings.TrimSpace(*source),
-		Ref: strings.TrimSpace(*ref), At: time.Now().UTC(),
-		By: caller.Name, Kind: caller.Kind,
+		Ref: strings.TrimSpace(*ref), Entity: strings.TrimSpace(*entity),
+		At: time.Now().UTC(), By: caller.Name, Kind: caller.Kind,
 	}
 	if err := e.Validate(); err != nil {
 		return err
@@ -389,7 +391,11 @@ func assuranceRecord(root string, args []string) error {
 	if w.JSON(e) {
 		return nil
 	}
-	w.Human("%s%s%s %s%s%s for %s\n", bold, e.Control, reset,
+	where := ""
+	if e.Entity != "" {
+		where = " at " + e.Entity
+	}
+	w.Human("%s%s%s%s %s%s%s for %s\n", bold, e.Control, where, reset,
 		outcomeColour(e.Outcome), e.Outcome, reset, period)
 	w.Human("  %s%s — %s%s\n", dim, e.What, e.Ref, reset)
 	w.Human("  %srecorded as %s in the audit chain%s\n",

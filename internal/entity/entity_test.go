@@ -509,3 +509,30 @@ func TestASingleCompanyScopeIsNotToldAboutAUnion(t *testing.T) {
 		t.Errorf("it does not say what is missing: %q", why)
 	}
 }
+
+// Scoping a package to the subtree alone looks tighter and is wrong: it drops
+// the group-wide controls the subsidiary depends on, and the auditor finds
+// the omission by asking about a control that is not in the file.
+func TestAScopedPackageCarriesTheSubtreeAndTheAncestors(t *testing.T) {
+	tree := acme(t)
+	for _, c := range []struct {
+		scope, entity string
+		want          bool
+	}{
+		{"acme-uk", "acme-uk", true},
+		{"acme-uk", "emea", true},
+		{"acme-uk", "acme", true},
+		{"acme-uk", "acme-de", false},
+		{"acme-uk", "acme-us", false},
+		{"acme-uk", "amer", false},
+		{"emea", "acme-de", true},
+		{"emea", "acme", true},
+		{"emea", "amer", false},
+		{"acme", "acme-de", true},
+	} {
+		if got := tree.Covers(c.scope, c.entity); got != c.want {
+			t.Errorf("a package scoped to %s covers %s = %v, want %v",
+				c.scope, c.entity, got, c.want)
+		}
+	}
+}
