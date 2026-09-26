@@ -359,6 +359,7 @@ access
   quilzo auth grant WHO ROLE [--on PATH]   reader | author | publisher | admin
   quilzo auth deny WHO ROLE [--on PATH]    a deny wins wherever it sits
   quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
+  quilzo standing list                     what a situation can hand somebody, and what it cannot
   quilzo auth revoke WHO [--on PATH]       take a grant back
   quilzo auth recover                      break-glass when every admin token is lost
   quilzo auth list | roles
@@ -753,6 +754,8 @@ func main() {
 		err = cmdFeed(cmdArgs)
 	case "source":
 		err = cmdSource(cmdArgs)
+	case "standing":
+		err = cmdStanding(cmdArgs)
 	case "room":
 		err = cmdRoom(root, cmdArgs)
 	case "telemetry":

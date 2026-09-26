@@ -252,6 +252,16 @@ var coverage = map[string]surfaces{
 			"quiet day",
 	},
 
+	// What a situation can hand somebody that a grant did not.
+	"standing": {
+		Why: "it prints this program's own register of situational " +
+			"authority; where that authority is exercised is the call, " +
+			"the incident or the board, each of which has its own screen",
+		NoMCP: "this is the table that says which powers survive their " +
+			"situation, and a model editing it would be reclassifying an " +
+			"escalation as contained",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +

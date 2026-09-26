@@ -251,6 +251,10 @@ var commandNeeds = map[string]need{
 	// Fetches nothing.
 	"source": {action: auth.ActView},
 
+	// The register of situational authority. A table about this program's
+	// own design, which changes nothing.
+	"standing": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},
