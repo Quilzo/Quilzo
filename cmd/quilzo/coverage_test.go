@@ -242,6 +242,16 @@ var coverage = map[string]surfaces{
 			"adjusting what counts as current",
 	},
 
+	// What a fetched log record means, per platform.
+	"source": {
+		Why: "it lists the mappings and checks one against records a " +
+			"caller supplies; the events these produce land in " +
+			"internal/telemetry, which has its own screen",
+		NoMCP: "a mapping decides what an event means, and a model " +
+			"editing one could make a stream of failures look like a " +
+			"quiet day",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +

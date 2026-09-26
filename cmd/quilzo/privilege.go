@@ -247,6 +247,10 @@ var commandNeeds = map[string]need{
 	// internal/fetch is what reaches a network.
 	"feed": {action: auth.ActView},
 
+	// Log source mappings, and a check against records a caller supplies.
+	// Fetches nothing.
+	"source": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},
