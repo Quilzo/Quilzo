@@ -592,6 +592,26 @@ recorded cannot move — with two retention limits, deletion that is never a sid
 effect, holds that survive a restart, and a watermark measured from observed
 arrival delay instead of guessed at by whoever wrote the rule.
 
+**A vulnerability queue that is not sorted by severity.** CVSS measures how
+bad something would be if it were exploited; FIRST says so, and every scanner
+sorts by it anyway. Holding coverage of actually-exploited vulnerabilities
+constant at 82%, an EPSS-driven strategy gets there by remediating about
+14,000 CVEs and a CVSS-seven-and-above strategy by remediating about 110,000 —
+eight times the work for the same result, and roughly 6% of published CVEs are
+ever exploited at all. So the order is attested exploitation, then probability,
+then reachability, then how long it has been known, and severity last as a
+tiebreak. "Exploited" is a list of attestations with authors rather than a
+boolean, because since ENISA became a CVE Root in November 2025 there are two
+known-exploited catalogues reflecting two agencies' visibility and they do not
+agree. The headline is the expected number of exploitations in the next thirty
+days and how much of it sits above the fold — the sum of the probabilities,
+which is what an expected value is, and the sentence somebody with a Tuesday
+afternoon actually needs. Saying something does not apply takes one of
+OpenVEX's five justifications, because "we looked and it is fine" is not on
+the list; an investigation expires, because a status that reads as work in
+progress and behaves as closed is how a backlog empties itself. And a version
+comparison that cannot decide reads as affected, never as fixed.
+
 **Connecting to a company's tools.** One reviewable file per tool: its host,
 how it authenticates, which endpoints to read, how they paginate, and which
 fields to keep. Nothing is executed and nothing is loaded, so reviewing an
