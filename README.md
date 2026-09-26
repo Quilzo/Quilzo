@@ -1226,6 +1226,25 @@ and demands authority anyway. A guard checks the register covers every package
 that reaches for the obvious vocabulary, because the failure this exists to
 prevent is a ninth model appearing quietly in the tenth package.
 
+**Four things that fail in the same direction, on one screen.** A feed that
+stopped updating reports no vulnerabilities. A log source that changed shape
+produces events with empty fields that match no detection. An automation whose
+filter started matching everything runs perfectly and does nothing. A detection
+estate with nothing live looks exactly like an estate with nothing to find.
+Every one of those looks like a quiet week, and the longer each goes on the more
+reassuring it becomes — so they belong together, and the screen's job is not to
+show that things are fine but to tell **fine from silent**, which is the
+distinction none of them can make alone.
+
+It follows the rule the evidence screens already set: every capability may be
+absent, and the screen says which rather than rendering an empty section. That
+matters twice as much here, because an empty list of stale feeds and a build
+that cannot see any feeds are the same picture and opposite facts. A build with
+nothing wired says so in the words that stop it being read as reassurance, and a
+capability that errors reports the error rather than returning quietly. What is
+silent gets **named rather than counted**: "four things are quiet" is a number
+somebody acknowledges, and naming them is what gets one of them looked at.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025

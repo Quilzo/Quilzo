@@ -1,0 +1,134 @@
+{{template "head" .}}
+<h1>Is it running</h1>
+
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+
+<p class="lead">Four things that fail in the same direction. A feed that
+stopped updating reports no vulnerabilities. A log source that changed shape
+produces events with empty fields that match no detection. An automation whose
+filter started matching everything runs perfectly and does nothing. An estate
+with no live rules looks exactly like an estate with nothing to find.</p>
+
+<p>Every one of those looks like a quiet week, and the longer each goes on the
+more reassuring it becomes. This screen exists to tell fine from silent.</p>
+
+{{if .Missing}}
+<p class="notice warn">This build cannot answer for
+{{range $i, $m := .Missing}}{{if $i}}; {{end}}{{$m}}{{end}}.
+A section that is absent is not a section that found nothing.</p>
+{{end}}
+
+{{if .Worries}}
+<h2>Not fine, quiet</h2>
+{{range .Worries}}
+<div class="card {{if .Bad}}bad{{else}}warn{{end}}">
+  <h3>{{.What}}</h3>
+  <p>{{.Detail}}</p>
+</div>
+{{end}}
+{{else}}
+<p class="notice ok">Nothing here is silent. Every feed is current, every
+source is mapping, every automation is acting on something, and something is
+live.</p>
+{{end}}
+
+{{if .Feeds}}
+<h2>What the scanners compare against</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Feed</th><th scope="col">Age</th>
+    <th scope="col">Entries</th><th scope="col">State</th>
+  </tr></thead>
+  <tbody>
+  {{range .Feeds}}
+  <tr>
+    <th scope="row"><code>{{.Feed}}</code></th>
+    <td>{{if .Fetched.IsZero}}never fetched{{else}}{{.Age}}{{end}}</td>
+    <td>{{.Entries}}</td>
+    <td>{{if .Stale}}<strong>behind</strong>{{else}}current{{end}}
+      <div class="hint">{{.Says}}</div></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+<p class="hint">Where a source publishes on a schedule, how far behind is
+arithmetic. Where it does not — a known-exploited catalogue with no fixed
+cadence — a quiet week says nothing, and this reports that rather than
+inventing a number.</p>
+{{end}}
+
+{{if .Sources}}
+<h2>What the logs are being read as</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Source</th><th scope="col">Records</th>
+    <th scope="col">Mapped</th><th scope="col">State</th>
+  </tr></thead>
+  <tbody>
+  {{range .Sources}}
+  <tr>
+    <th scope="row"><code>{{.Source}}</code></th>
+    <td>{{.Records}}</td>
+    <td>{{.Mapped}}</td>
+    <td>{{if .Drifted}}<strong>changed shape</strong>
+      {{else if .Quiet}}silent{{else}}mapping{{end}}
+      <div class="hint">{{.Why}}</div></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+<p class="hint">A record missing a required field produces a miss rather than
+an event with a hole in it, because a sign-in event with no user in it still
+counts, still appears on a dashboard, and still matches no detection.</p>
+{{end}}
+
+{{if .Flows}}
+<h2>What the automations did with what arrived</h2>
+{{range .Flows}}
+<div class="card {{if ge .Weight 80}}bad{{else}}warn{{end}}">
+  <h3>{{.Flow}} — {{.What}}</h3>
+  {{if .Detail}}<p>{{.Detail}}</p>{{end}}
+</div>
+{{end}}
+<p class="hint">Every item entering a run leaves it through exactly one named
+exit, and they have to add up. A run that cannot say where everything went is
+the failure rather than a run with a caveat.</p>
+{{end}}
+
+{{if .Noise}}
+<h2>What the live detections cost</h2>
+<p class="lead">{{printf "%.1f" .Noise.PerDay}} alert(s) a day from
+{{.Noise.Rules}} live rule(s){{if .Noise.Worst}}, the loudest being
+&ldquo;{{.Noise.Worst}}&rdquo; at {{printf "%.1f" .Noise.WorstAt}}{{end}}.</p>
+<p>The number a detection estate is actually judged by, and the one nobody
+computes, because it usually lives across as many dashboards as there are
+tools.</p>
+{{if .Loudest}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Rule</th><th scope="col">Ring</th>
+    <th scope="col">Origin</th>
+  </tr></thead>
+  <tbody>
+  {{range .Loudest}}
+  <tr>
+    <th scope="row">{{.Rule.Title}}</th>
+    <td>{{.Ring}}</td>
+    <td>{{.Origin.Kind}}{{if .Origin.Who}} · {{.Origin.Who}}{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+{{end}}
+
+<p class="hint">As of {{.As.Format "2006-01-02 15:04"}} UTC.</p>
+{{end}}
+<p class="hint"><a href="/security">Back to the posture dashboard.</a></p>
+{{template "foot" .}}
