@@ -75,6 +75,18 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// The vulnerability queue, read from an inventory and a set of
+	// advisories that a connector or a scanner produces.
+	"vuln": {
+		Why: "it ranks a file against a file and prints a queue; the screen " +
+			"arrives with the stored register, alongside the one for " +
+			"findings from every other source",
+		NoMCP: "a model that can mark things not_affected can mark the one " +
+			"that mattered; Assessment.Validate refuses an AI author, and " +
+			"a tool whose only useful call is the one it may not make is " +
+			"not a tool",
+	},
+
 	// One reviewable file per tool, and the credentials to reach them.
 	"connect": {
 		Why: "a connector manifest is reviewed by reading it and a " +

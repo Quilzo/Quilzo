@@ -158,6 +158,12 @@ messengers
   quilzo spool hold NAME --why W           pin everything while something is investigated
   quilzo spool lift NAME                   let retention run again
 
+vulnerabilities
+  quilzo vuln queue [INVENTORY]            what to work on, not sorted by severity
+  quilzo vuln why CVE-ID                   what is known, and who decided what
+  quilzo vuln assess CVE PKG STATUS        record that it does not apply, with a reason
+  quilzo vuln reasons                      the five reasons something is not affected
+
 connecting to a company's tools
   quilzo connect list                      the connectors installed, and what each can reach
   quilzo connect check NAME|FILE           read a manifest and say what it may touch
@@ -611,6 +617,8 @@ func main() {
 		err = cmdWorkforce(root, cmdArgs)
 	case "connect":
 		err = cmdConnect(root, cmdArgs)
+	case "vuln":
+		err = cmdVuln(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":

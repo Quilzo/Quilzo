@@ -187,6 +187,15 @@ var commandNeeds = map[string]need{
 	// as another's, and the merge is appended to the audit chain rather
 	// than edited afterwards: the same authority as publishing. Reading the
 	// reconciliation is a view.
+	// Deciding a vulnerability does not apply is a statement the
+	// organisation stands behind and is appended to the audit chain rather
+	// than edited: the same authority as publishing. Reading the queue is a
+	// view.
+	"vuln":         {action: auth.ActPublish},
+	"vuln queue":   {action: auth.ActView},
+	"vuln why":     {action: auth.ActView},
+	"vuln reasons": {action: auth.ActView},
+
 	// Storing a credential for another company's system is the heaviest
 	// thing here, and running a connector is an ordinary write. Reading a
 	// manifest is a view; probing makes a request and returns field names
