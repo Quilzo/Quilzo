@@ -592,6 +592,26 @@ recorded cannot move — with two retention limits, deletion that is never a sid
 effect, holds that survive a restart, and a watermark measured from observed
 arrival delay instead of guessed at by whoever wrote the rule.
 
+**Code scanning: the part the scanner leaves undone.** OX Security's 2026
+benchmark puts the average enterprise at 865,398 security alerts a year, of
+which 795 are critical after exploitability analysis — one in 1,088. A 2025
+study measured a 91% false positive rate for static analysis on open source;
+untuned tools run 30 to 60 per cent and developers stop adopting one above
+about 15. This does not scan and does not claim to reduce that rate: writing a
+static analyser with no dependencies would produce something worse than what
+exists, and a package claiming to fix false positives by reading their output
+would be claiming to know which of them were wrong. What it does is identify a
+finding so it survives a rename — scanners key on rule, path and line, so a
+reformat closes four hundred findings and opens four hundred new ones, and
+every age and trend over them is measuring whitespace. Driven over a full tree
+rename with reindented lines, 401 of 403 alerts were recognised as the same
+findings and only the two genuinely new ones surfaced. New is measured against
+the debt the organisation accepted, because a gate on total debt means nothing
+merges and is switched off within a month. And a secret is not fixed by
+deleting the line: the commit is in the history, on the server and in every
+clone, so a vanished credential stays open across runs until somebody records
+that it was rotated.
+
 **Access reviews closed by the import, not by the reviewer.** A manager is
 sent forty people and clicks approve on all of them in ninety seconds. The
 campaign closes at a hundred per cent, the evidence shows a completed review,

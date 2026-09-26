@@ -66,12 +66,20 @@ const (
 	FromQuestionnaire Kind = "questionnaire"
 	// FromVendor is something wrong with a third party you rely on.
 	FromVendor Kind = "vendor"
+	// FromCode is a weakness in something this organisation wrote.
+	//
+	// Apart from FromVulnerability, which is a known weakness in something
+	// installed. They arrive from different tools, are fixed by different
+	// people and have different lifecycles: a dependency is upgraded and a
+	// weakness is rewritten. The kind is a field, which is the whole
+	// argument here — one queue, and the origin says who picks it up.
+	FromCode Kind = "code"
 )
 
 // Kinds lists them, for a caller validating input.
 func Kinds() []Kind {
 	return []Kind{FromDetection, FromVulnerability, FromControl,
-		FromQuestionnaire, FromVendor}
+		FromQuestionnaire, FromVendor, FromCode}
 }
 
 func (k Kind) known() bool {

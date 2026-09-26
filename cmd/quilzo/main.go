@@ -158,6 +158,12 @@ messengers
   quilzo spool hold NAME --why W           pin everything while something is investigated
   quilzo spool lift NAME                   let retention run again
 
+code scanning
+  quilzo appsec triage ALERTS.jsonl        what this change introduced, grouped by rule
+  quilzo appsec gate ALERTS.jsonl          may it merge; on what is new, never on the debt
+  quilzo appsec accept ALERTS.jsonl        take the existing debt as the baseline
+  quilzo appsec rotated FINGERPRINT        the only thing that closes a secret
+
 access reviews
   quilzo access open ID [FILE] --scope S   start one, over the systems it covers
   quilzo access items ID                   what the reviewer is shown, easiest first
@@ -675,6 +681,8 @@ func main() {
 		err = cmdVendor(root, cmdArgs)
 	case "access":
 		err = cmdAccess(root, cmdArgs)
+	case "appsec":
+		err = cmdAppsec(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":
