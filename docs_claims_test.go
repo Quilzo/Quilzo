@@ -422,6 +422,43 @@ func TestTheReversedDecisionsStayRecorded(t *testing.T) {
 // The interesting property is not that the number is right today. It is that
 // being wrong is now a test failure that names the correct value, so the fix
 // is mechanical and nobody has to decide whether it is worth chasing.
+// spell writes a number the way INSTALL writes it, or says it cannot.
+//
+// Spelled out, because that is how INSTALL is written and a document that
+// switches to digits for one number reads like it was patched.
+func spell(n int) (string, bool) {
+	tens := map[int]string{2: "twenty", 3: "thirty", 4: "forty", 5: "fifty",
+		6: "sixty", 7: "seventy", 8: "eighty", 9: "ninety"}
+	// One to nineteen in full, because a hundred and one needs the "one" and
+	// deriving half of them from a tens map is how this went quiet the
+	// first time.
+	small := map[int]string{1: "one", 2: "two", 3: "three", 4: "four",
+		5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine",
+		10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen",
+		14: "fourteen", 15: "fifteen", 16: "sixteen", 17: "seventeen",
+		18: "eighteen", 19: "nineteen"}
+	if n < 20 || n > 999 {
+		return "", false
+	}
+	hundreds, rest := n/100, n%100
+	out := ""
+	if hundreds > 0 {
+		out = small[hundreds] + " hundred"
+		if rest == 0 {
+			return out, true
+		}
+		out += " and "
+	}
+	if rest < 20 {
+		return out + small[rest], true
+	}
+	out += tens[rest/10]
+	if u := rest % 10; u != 0 {
+		out += "-" + small[u]
+	}
+	return out, true
+}
+
 func TestInstallCountsTheTestSuiteCorrectly(t *testing.T) {
 	out, err := exec.Command("go", "list", "-f",
 		"{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}", "./...").Output()
@@ -434,15 +471,16 @@ func TestInstallCountsTheTestSuiteCorrectly(t *testing.T) {
 			"tree", want)
 	}
 
-	// Spelled out, because that is how INSTALL is written and a document that
-	// switches to digits for one number reads like it was patched.
-	tens := map[int]string{2: "twenty", 3: "thirty", 4: "forty", 5: "fifty",
-		6: "sixty", 7: "seventy", 8: "eighty", 9: "ninety"}
-	units := map[int]string{1: "one", 2: "two", 3: "three", 4: "four",
-		5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine"}
-	spelled := tens[want/10]
-	if u := want % 10; u != 0 {
-		spelled += "-" + units[u]
+	spelled, ok := spell(want)
+	if !ok {
+		// Refused rather than skipped. This check used to build the words
+		// from a tens map that stopped at ninety, so at one hundred it
+		// produced an empty string and asked whether INSTALL contained
+		// " packages" — which it always does. The guard went quiet at a
+		// round number and nobody would have noticed until the figure was
+		// out by twenty.
+		t.Fatalf("%d cannot be spelled by this test, so it would check "+
+			"nothing. Extend spell() rather than letting it pass", want)
 	}
 
 	install := read(t, "INSTALL")
@@ -490,5 +528,32 @@ func TestNoDocumentAsksForAnImageTagWithAVeePrefix(t *testing.T) {
 				"404s and the 404 looks like the image being private",
 				name, m)
 		}
+	}
+}
+
+// The guard above went quiet at a round number: it built the words from a
+// tens map that stopped at ninety, so at one hundred it asked whether INSTALL
+// contained " packages", which it always does. A check that stops checking
+// and keeps passing is worse than one that was never written.
+func TestTheSpellingGuardDoesNotGoQuietAtARoundNumber(t *testing.T) {
+	for n, want := range map[int]string{
+		42: "forty-two", 99: "ninety-nine", 100: "one hundred",
+		101: "one hundred and one", 120: "one hundred and twenty",
+		305: "three hundred and five",
+	} {
+		got, ok := spell(n)
+		if !ok || got != want {
+			t.Errorf("spell(%d) = %q (%v), want %q", n, got, ok, want)
+		}
+	}
+	// And where it cannot spell a number it says so rather than producing
+	// something that matches everything.
+	for _, n := range []int{0, 7, 19, 1000, -3} {
+		if got, ok := spell(n); ok && got == "" {
+			t.Errorf("spell(%d) claimed success with an empty string", n)
+		}
+	}
+	if got, _ := spell(0); strings.TrimSpace(got) != got {
+		t.Error("a refusal returned padding")
 	}
 }

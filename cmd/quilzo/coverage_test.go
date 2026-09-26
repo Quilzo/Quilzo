@@ -75,6 +75,16 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// Controls and the evidence that they operated over a period.
+	"assurance": {
+		Why: "it reads a control file and an evidence log and reports what " +
+			"a period can be spoken to; the screen arrives with the stored " +
+			"register, alongside every other kind of finding",
+		NoMCP: "evidence going to an auditor carries the organisation's " +
+			"word, and Evidence.Validate refuses a model as the attester " +
+			"for that reason",
+	},
+
 	// The vulnerability queue, read from an inventory and a set of
 	// advisories that a connector or a scanner produces.
 	"vuln": {

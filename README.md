@@ -592,6 +592,21 @@ recorded cannot move — with two retention limits, deletion that is never a sid
 effect, holds that survive a restart, and a watermark measured from observed
 arrival delay instead of guessed at by whoever wrote the rule.
 
+**Evidence that a control operated over a period.** Every compliance tool
+collects screenshots. A picture of an MFA setting taken on 14 January is
+evidence about 14 January, and the question an auditor asks is whether the
+control operated effectively *throughout* the period. So evidence here covers
+a span rather than carrying a timestamp, and what comes out is the complement:
+the days for which the organisation has nothing to show. A check that could
+not reach what it was pointed at covers nothing — counting those windows as
+covered is the easiest way to make a gap disappear. A quarterly control with
+one occurrence in six months has been shown to have happened, not to operate.
+A control with forty passes and no failure is either one that always works or
+a check that cannot report one, and internal/detect refuses a rule that has
+never matched for the same reason. There is no percentage: a compliance score
+is controls-passing over controls-in-scope, and scope is chosen by whoever
+wants the number.
+
 **A vulnerability queue that is not sorted by severity.** CVSS measures how
 bad something would be if it were exploited; FIRST says so, and every scanner
 sorts by it anyway. Holding coverage of actually-exploited vulnerabilities
