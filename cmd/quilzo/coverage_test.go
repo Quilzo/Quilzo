@@ -75,6 +75,16 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// Conversation, built so that what was said stays said.
+	"room": {
+		Why: "the reading surface is the thing this is for and it arrives " +
+			"with the client; the terminal commands are how it is driven " +
+			"and tested in the meantime",
+		NoMCP: "a model with a tool here could post as a person, edit what " +
+			"somebody is recorded as having said, or take words down; the " +
+			"author field would stop meaning anything",
+	},
+
 	// A codec for screen content, and what sharing one costs.
 	"screen": {
 		Why: "it is arithmetic over a synthetic frame; the screen arrives " +
@@ -715,6 +725,19 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 				"repository, which this program neither performs nor can " +
 				"verify. The screen for it would be a checkbox that " +
 				"changes nothing outside this log",
+		},
+		// Article 17, which outranks the rest of this package's design.
+		// An ordinary removal takes the words and leaves the shape; this
+		// one takes the words from the log as well, because an obligation
+		// to erase is not satisfied by a copy kept for integrity.
+		"remove.erase": {
+			GUI: "",
+			NoMCP: "a model with a tool here could erase what somebody is " +
+				"recorded as having said; the author field would stop " +
+				"meaning anything",
+			Why: "the reading surface arrives with the client, and an " +
+				"erasure is requested by a person and performed against a " +
+				"named message rather than browsed to",
 		},
 		"add.remove": {GUI: "/page/delete",
 			MCP:   []string{"write_page"},

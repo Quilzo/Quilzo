@@ -158,6 +158,15 @@ messengers
   quilzo spool hold NAME --why W           pin everything while something is investigated
   quilzo spool lift NAME                   let retention run again
 
+conversation
+  quilzo room list                         every room, and what it is for
+  quilzo room open ID --purpose W          start one, with a stated purpose
+  quilzo room say ROOM "..." [--reply ID]  post; a broadcast says who it interrupts
+  quilzo room read ROOM [--thread ID]      the conversation, tombstones and all
+  quilzo room edit ROOM MSG "..."          append a revision; the old words stay
+  quilzo room remove ROOM MSG              take the words and leave the shape
+  quilzo room history ROOM MSG             what it said, and when
+
 sharing a screen
   quilzo screen cost --width 1920          what a shared screen actually costs, losslessly
 
@@ -694,6 +703,8 @@ func main() {
 		err = cmdSframe(cmdArgs)
 	case "screen":
 		err = cmdScreen(cmdArgs)
+	case "room":
+		err = cmdRoom(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":
