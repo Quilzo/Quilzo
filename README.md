@@ -592,6 +592,24 @@ recorded cannot move — with two retention limits, deletion that is never a sid
 effect, holds that survive a restart, and a watermark measured from observed
 arrival delay instead of guessed at by whoever wrote the rule.
 
+**Conversation, built so that what was said stays said.** Slack shows
+"(edited)" and the previous text is gone — for everybody, including the person
+who already acted on it, recoverable only through a separate product on the
+top plan. "I said deploy to staging", edited to "I said deploy to prod", is
+unfalsifiable by design. Here a message is an append-only sequence of
+revisions and the current text is a fold of them; "edited" is not a flag
+somebody can clear but the observable fact that there is more than one. Slack's
+own documentation is plain that there is no recycle bin and a deleted message
+may be gone forever, which is two problems: the content is lost, and — worse —
+a conversation where message 47 is missing and nothing says so is a
+conversation somebody edited. So removing takes the words and leaves the
+shape. Retention does the same with a different actor, and only an Article 17
+erasure takes the words from the log as well, which it can because the log
+holds a digest and never the text. A reply is unread in the room rather than
+in a thread nobody is following, because that is the commonest structural
+complaint about the original. And a broadcast says how many people it
+interrupts *before* it goes.
+
 **A codec for screens, and deliberately not one for video.** AV1 took a
 consortium several years; a codec written here would be five to ten times
 worse per bit, would have no hardware decoder on any device, and would cost

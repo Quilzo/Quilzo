@@ -187,6 +187,14 @@ var commandNeeds = map[string]need{
 	// as another's, and the merge is appended to the audit chain rather
 	// than edited afterwards: the same authority as publishing. Reading the
 	// reconciliation is a view.
+	// Saying something is an ordinary write. Taking down somebody else's
+	// words, or erasing under Article 17, is checked as a publish inside
+	// the command because the answer depends on whose message it is.
+	"room":         {action: auth.ActEditDraft},
+	"room list":    {action: auth.ActView},
+	"room read":    {action: auth.ActView},
+	"room history": {action: auth.ActView},
+
 	// Arithmetic over a synthetic frame. Reads nothing and writes nothing.
 	"screen": {action: auth.ActView},
 
