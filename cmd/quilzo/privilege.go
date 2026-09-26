@@ -222,6 +222,9 @@ var commandNeeds = map[string]need{
 	// A flow and a week of runs, both built for the run. Executes nothing.
 	"flow": {action: auth.ActView},
 
+	// Reads rule files and compiles them. Writes nothing.
+	"sigma": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},

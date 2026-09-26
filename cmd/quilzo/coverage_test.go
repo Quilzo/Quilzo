@@ -168,6 +168,16 @@ var coverage = map[string]surfaces{
 			"dropping is a decision somebody signs",
 	},
 
+	// Detection rules in the open standard, compiled and reported on.
+	"sigma": {
+		Why: "it reads rule files from a path and prints what came " +
+			"across; the screen for a rule library arrives with the " +
+			"library, and an import report is a table",
+		NoMCP: "a model that could import rules could import one whose " +
+			"exclusion clause it wrote, and a detection nobody reviewed " +
+			"is the failure this package refuses at every other step",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +

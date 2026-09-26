@@ -50,6 +50,8 @@ package detect
 
 import (
 	"fmt"
+	"net/netip"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -79,11 +81,29 @@ const (
 	// severity threshold that behaves that way is worse than none.
 	Above Op = "above"
 	Below Op = "below"
+	// Matches is a regular expression.
+	//
+	// Safe here in a way it is not in most languages: Go's regexp is RE2,
+	// which has no backtracking and runs in time linear in the input. A
+	// detection language with a backtracking engine hands whoever can
+	// influence an event field a way to stop the detector, which is a
+	// strange property for a security control. Still the operator of last
+	// resort — a regular expression is the hardest thing on this list for
+	// the next person to read, and Contains or Prefix says what it means.
+	Matches Op = "matches"
+	// Inside tests whether an address falls in a CIDR block.
+	//
+	// Its own operator rather than a prefix match on the text, because
+	// "10.1.1.1" is not inside "10.1.1.0/24" by string comparison and is
+	// by arithmetic, and every team that has tried the string version has
+	// shipped a rule that missed half its range.
+	Inside Op = "inside"
 )
 
 // Ops lists every operator, for telling an author what exists.
 func Ops() []Op {
-	return []Op{Equals, Contains, Prefix, Suffix, Exists, Above, Below}
+	return []Op{Equals, Contains, Prefix, Suffix, Exists, Above, Below,
+		Matches, Inside}
 }
 
 func (o Op) known() bool {
@@ -256,6 +276,28 @@ func compare(op Op, got, want string) bool {
 			return g > w
 		}
 		return g < w
+	case Matches:
+		// Compiled per comparison rather than cached, because a Rule is
+		// data that can be edited between evaluations and a stale cached
+		// program is a rule that has silently stopped matching what it
+		// says. An invalid expression is false rather than a panic:
+		// Validate is where a bad pattern is refused, and a detector that
+		// crashes on an event is a detector somebody turns off.
+		re, err := regexp.Compile("(?i)" + want)
+		if err != nil {
+			return false
+		}
+		return re.MatchString(got)
+	case Inside:
+		net, err := netip.ParsePrefix(strings.TrimSpace(want))
+		if err != nil {
+			return false
+		}
+		addr, err := netip.ParseAddr(strings.TrimSpace(got))
+		if err != nil {
+			return false
+		}
+		return net.Contains(addr.Unmap())
 	}
 	return false
 }
@@ -443,6 +485,23 @@ func checkPredicate(p Predicate, depth int) error {
 						"matches differently than an author expects: with "+
 						"contains it matches every event that has the field "+
 						"at all", m.Op, m.Field)
+			}
+			switch m.Op {
+			case Matches:
+				// Refused here rather than discovered at evaluation time,
+				// where a pattern that does not compile is a rule that
+				// quietly matches nothing.
+				if _, err := regexp.Compile(v); err != nil {
+					return fmt.Errorf(
+						"%s on %s has a pattern that does not compile: %w",
+						m.Op, m.Field, err)
+				}
+			case Inside:
+				if _, err := netip.ParsePrefix(strings.TrimSpace(v)); err != nil {
+					return fmt.Errorf(
+						"%s on %s wants a CIDR block like 10.0.0.0/8, and "+
+							"%q is not one", m.Op, m.Field, v)
+				}
 			}
 		}
 		return nil
