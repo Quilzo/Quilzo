@@ -75,6 +75,15 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// End-to-end media encryption, and what it costs on the wire.
+	"sframe": {
+		Why: "it is arithmetic and a self-check over a library; the screen " +
+			"arrives with the calls the library is for, and there is " +
+			"nothing here for one to show in the meantime",
+		NoMCP: "it takes no input and holds no state, so a tool would be a " +
+			"way to ask a model to read a table that is already printed",
+	},
+
 	// What a code scanner found, and the part it left undone.
 	"appsec": {
 		Why: "it reads a scanner's output and gates a change, which happens " +

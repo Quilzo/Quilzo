@@ -160,6 +160,16 @@ func Inventory() []Algorithm {
 				"not yet for federation.",
 		},
 		{
+			Name: "HKDF-SHA256 / HKDF-SHA512", Package: "crypto/hkdf",
+			Purpose: "deriving per-sender media keys, salts and ratchets " +
+				"from a group base key, under RFC 9605",
+			Where: "sframe", Use: Generated, Quantum: Reduced,
+			Note: "A key derivation function is only as strong as the " +
+				"secret it expands. The base key it starts from is the " +
+				"deployment's to distribute; RFC 9605 says so explicitly, " +
+				"and nothing in this program yet does that part.",
+		},
+		{
 			Name: "TLS 1.2+", Package: "crypto/tls",
 			Purpose: "encrypting the SMTP submission of a notice before it " +
 				"leaves this machine",
