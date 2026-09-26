@@ -288,6 +288,16 @@ func (c Canary) Validate() error {
 	return nil
 }
 
+// Giveaway reports whether a value describes itself, and which word did it.
+//
+// Exported because Mint has to ask the same question Validate asks. The two
+// answering differently is how a minted value gets refused by the thing
+// that was supposed to accept it.
+func Giveaway(s string) (string, bool) {
+	w := gives(s)
+	return w, w != ""
+}
+
 func gives(s string) string {
 	low := strings.ToLower(s)
 	for _, w := range giveaways {

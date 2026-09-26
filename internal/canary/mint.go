@@ -45,6 +45,35 @@ const hexdigits = "0123456789abcdef"
 // measurably biased, and a biased canary is a canary whose value an attacker
 // with a few samples can start to predict. pick rejects instead.
 func Mint(kind Kind) (string, error) {
+	// Drawn and redrawn until the value says nothing about itself.
+	//
+	// Not theoretical. The address alphabet contains a, r, t and p, so a
+	// twenty-character draw spells "trap" about once in fifty thousand —
+	// which is never in a morning's testing and eventually in CI, and
+	// would otherwise be a canary that Validate refuses after Mint
+	// produced it. Mint and Validate disagreeing about what is acceptable
+	// is the bug; this is where it is cheapest to fix.
+	for range mintTries {
+		v, err := mint(kind)
+		if err != nil {
+			return "", err
+		}
+		if _, bad := Giveaway(v); !bad {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf(
+		"could not mint a %s value that does not describe itself in %d "+
+			"attempts, which means the alphabet and the giveaway list "+
+			"disagree about something", kind, mintTries)
+}
+
+// mintTries bounds the redraw. Reaching it is not bad luck, it is a
+// contradiction between the alphabet and the word list, and a loop that
+// hid one would hang instead.
+const mintTries = 64
+
+func mint(kind Kind) (string, error) {
 	switch kind {
 	case AsCredential:
 		// Forty characters of upper-case and digits: the shape of a secret
