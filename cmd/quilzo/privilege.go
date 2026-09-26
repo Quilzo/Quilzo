@@ -187,6 +187,14 @@ var commandNeeds = map[string]need{
 	// as another's, and the merge is appended to the audit chain rather
 	// than edited afterwards: the same authority as publishing. Reading the
 	// reconciliation is a view.
+	// Signing off a third party's access is a statement the organisation
+	// stands behind: the same authority as publishing. Reading the
+	// register and comparing it against the connectors are views.
+	"vendor":           {action: auth.ActPublish},
+	"vendor list":      {action: auth.ActView},
+	"vendor show":      {action: auth.ActView},
+	"vendor reconcile": {action: auth.ActView},
+
 	// An answer on a security questionnaire is a representation made under
 	// contract: the same authority as publishing. Filling one reads and
 	// writes nothing here.

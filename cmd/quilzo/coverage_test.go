@@ -75,6 +75,17 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// Third parties, tiered by what they reach.
+	"vendor": {
+		Why: "the register is compared against the connector manifests, " +
+			"which are files an operator reviews at a terminal; the screen " +
+			"arrives with the stored register, where a lingering " +
+			"credential belongs at the top of the same queue",
+		NoMCP: "this register says which third parties hold credentials in " +
+			"this estate and what each can reach, which is the shape of a " +
+			"target list; a model with a tool here has it too",
+	},
+
 	// What this organisation says about itself, and whether its own
 	// register agrees.
 	"attest": {
