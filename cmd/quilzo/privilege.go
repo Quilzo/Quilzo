@@ -187,6 +187,13 @@ var commandNeeds = map[string]need{
 	// as another's, and the merge is appended to the audit chain rather
 	// than edited afterwards: the same authority as publishing. Reading the
 	// reconciliation is a view.
+	// Saying a subsidiary need not perform a control itself is a statement
+	// its auditor will question, and it is appended to the audit chain:
+	// the same authority as publishing. Reading is a view.
+	"entity":        {action: auth.ActPublish},
+	"entity tree":   {action: auth.ActView},
+	"entity report": {action: auth.ActView},
+
 	// Asserting that a control answers a regulator's clause is a statement
 	// the organisation stands behind, appended to the audit chain rather
 	// than edited: the same authority as publishing. Reading is a view.

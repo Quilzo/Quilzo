@@ -75,6 +75,16 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// The group's structure, and every control measured across it.
+	"entity": {
+		Why: "the structure is a file somebody maintains and the report " +
+			"reads it; the screen arrives with the stored register, where " +
+			"the per-company breakdown belongs next to every other finding",
+		NoMCP: "whether a parent's evidence is in scope for a subsidiary's " +
+			"examination is a question about two audits and a contract; " +
+			"Reliance.Validate refuses a model for that reason",
+	},
+
 	// Framework requirements, and which controls bear on them.
 	"framework": {
 		Why: "a crosswalk is read and argued about rather than clicked " +

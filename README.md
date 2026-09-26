@@ -592,6 +592,23 @@ recorded cannot move — with two retention limits, deletion that is never a sid
 effect, holds that survive a restart, and a watermark measured from observed
 arrival delay instead of guessed at by whoever wrote the rule.
 
+**A group of companies, measured as one.** A group defines a control, marks it
+shared across five subsidiaries, and the evidence arrives from the parent's
+identity provider. Every dashboard turns green for all five — and the German
+subsidiary runs its own tenant that nobody ever connected. Nothing in the
+system is wrong: the control exists, the evidence is real, the connector
+works. It simply speaks for one company and is being read as speaking for the
+group, and that is the failure the enterprise literature means when it says
+control failures go undetected without multi-entity support. The fix is not a
+feature but an arithmetic decision: a control each company performs is exactly
+as covered as its *worst* company, and evidence flows down a group and never
+up or sideways — a subsidiary's export does not evidence the group, because
+the group contains companies that export never looked at. A parent's evidence
+does not quietly satisfy a per-company control either; relying on it is a
+claim the subsidiary records, with a reason, because at audit "the parent does
+that" is only an answer if the parent's evidence is in scope for this
+examination.
+
 **Framework mappings that do not claim more than they say.** Every compliance
 platform shows a control with a row of framework tags — SOC2 CC6.1, ISO 27001
 A.8.5, NIST AC-2 — and counts those requirements as covered. The tags are

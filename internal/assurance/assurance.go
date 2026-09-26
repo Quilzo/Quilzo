@@ -161,6 +161,17 @@ type Control struct {
 	// internal/detect on why an ATT&CK coverage percentage is dishonest for
 	// exactly the same reason.
 	Maps []string `json:"maps,omitempty"`
+	// Entity is the company that operates this control. Empty means the
+	// group, and a group control covers the companies beneath it.
+	Entity string `json:"entity,omitempty"`
+	// PerEntity says every company in scope has to evidence this itself.
+	//
+	// The difference between a group-wide identity provider, which one
+	// connector evidences for everybody, and an access review, which each
+	// company performs separately. Getting this wrong in the second
+	// direction is the shared-control illusion: one subsidiary's review
+	// reported as the group's.
+	PerEntity bool `json:"per_entity,omitempty"`
 	// Automated says a machine produces the evidence.
 	//
 	// Worth knowing because the failure modes differ: a manual control fails
@@ -208,6 +219,14 @@ type Evidence struct {
 	// Ref points at the artefact: an audit entry hash, an object id, a
 	// ticket. Required — see Validate.
 	Ref string `json:"ref"`
+
+	// Entity is the company this evidence speaks for.
+	//
+	// Empty means the group. Evidence gathered for one company never
+	// evidences a sibling and never evidences the group: see
+	// internal/entity on why that direction is the one everybody gets
+	// wrong.
+	Entity string `json:"entity,omitempty"`
 
 	At   time.Time  `json:"at"`
 	By   string     `json:"by"`
@@ -265,6 +284,20 @@ func (e Evidence) Validate() error {
 	return nil
 }
 
+// detailOf is what the audit log records about a piece of evidence.
+func detailOf(e Evidence) map[string]string {
+	d := map[string]string{
+		"control": e.Control, "what": e.What, "source": e.Source,
+		"ref":  e.Ref,
+		"from": e.From.UTC().Format(time.RFC3339),
+		"to":   e.To.UTC().Format(time.RFC3339),
+	}
+	if e.Entity != "" {
+		d["entity"] = e.Entity
+	}
+	return d
+}
+
 // Span is how long this evidence covers.
 func (e Evidence) Span() time.Duration { return e.To.Sub(e.From) }
 
@@ -283,12 +316,7 @@ func (e Evidence) Record() audit.Record {
 		Resource: "/control/" + e.Control, Outcome: outcome,
 		Principal: e.By, Kind: e.Kind,
 		Verified: e.Kind != audit.KindUnknown,
-		Detail: map[string]string{
-			"control": e.Control, "what": e.What, "source": e.Source,
-			"ref":  e.Ref,
-			"from": e.From.UTC().Format(time.RFC3339),
-			"to":   e.To.UTC().Format(time.RFC3339),
-		},
+		Detail:   detailOf(e),
 	}
 }
 
