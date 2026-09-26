@@ -220,6 +220,17 @@ var coverage = map[string]surfaces{
 			"never closes",
 	},
 
+	// Who has to be told about an incident, and what starts the clock.
+	"incident": {
+		Why: "it prints the reporting table and runs an incident built " +
+			"for the run; a live incident's screen arrives with the " +
+			"response, and what is worth seeing here is a table of " +
+			"deadlines and what starts each one",
+		NoMCP: "these are the decisions that start regulatory clocks, " +
+			"and a model recording one would be deciding on somebody's " +
+			"behalf when they became aware",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +

@@ -1077,6 +1077,44 @@ a new group past a cap and says so: a correlation that stopped tracking new
 groups has lost coverage, where one that consumed all the memory has lost
 everything.
 
+**Every reporting deadline runs from a decision, never from an
+investigation.** That is the whole of the regulatory problem and it is not
+obvious. GDPR Article 33's seventy-two hours run from awareness that a breach
+has likely occurred. DORA's four hours run from *classifying* an incident as
+major. The SEC's four business days run from *determining* materiality. NIS2's
+twenty-four hours run from awareness of a significant incident. None of them run
+from the end of the investigation, and every one starts at a moment somebody
+decided something — so the moment is recorded as a decision, with who made it
+and why, and each regime's clock hangs off its own. One incident therefore has
+several clocks starting at different times, which is the situation every team is
+actually in and almost no tool represents. Moving one afterwards is refused: the
+start of a clock is the thing a regulator asks about, and it is the one edit that
+cannot be innocent.
+
+The failure this is built against is subtler than missing a deadline. **A team
+that never formally determined materiality believes no clock is running, and is
+right, and is also three weeks into an incident a regulator will say was plainly
+reportable on day one.** So the obligations whose clock has *not* started are
+reported, each naming the decision that would start it — because "nothing is
+due" and "nobody has made the call that makes something due" look identical on a
+dashboard and are not the same situation. Closing refuses while anything is
+neither discharged nor ruled out, and those are separate entries, because "we
+told the regulator" and "we decided we did not have to" are different statements
+and a field that conflated them would lose the distinction that matters most
+later.
+
+**A page nobody answered is not a notification.** Escalation that does not
+escalate is the other ordinary disaster: a page goes out, nobody acknowledges,
+and the system considers itself to have notified somebody. It has not — it has
+sent a message. Acknowledgement here is a person saying they have it, escalation
+continues until one does, and a ladder that runs out with nobody answering is
+reported as the most serious thing on the board, because at that point the
+response depends on somebody noticing rather than on anything the system did. A
+ladder with one rung is refused, so is one whose first step waits an hour, and so
+is one that escalates to somebody who is already on an earlier rung — that is a
+ladder pretending to escalate. One person cannot be both commander and scribe:
+an incident where one person did every role has no record of itself.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025

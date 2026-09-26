@@ -239,6 +239,10 @@ var commandNeeds = map[string]need{
 	// Runs correlations over events built for the run. Reads no store.
 	"correlate": {action: auth.ActView},
 
+	// The reporting table, and an incident built for the run. Notifies
+	// nobody: internal/notify is what sends anything.
+	"incident": {action: auth.ActView},
+
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},
