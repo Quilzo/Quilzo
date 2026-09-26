@@ -186,6 +186,7 @@ sharing a screen
   quilzo correlate demo                    detections about several events, and when a window closes
   quilzo incident duties                   who has to be told, how soon, and what starts the clock
   quilzo incident demo                     an incident, its several clocks, and closing it
+  quilzo feed status                       what the scanner is working from, and how old it is
 
 media encryption
   quilzo sframe suites --fps 30            the five RFC 9605 suites, and what each costs
@@ -746,6 +747,8 @@ func main() {
 		err = cmdCorrelate(cmdArgs)
 	case "incident":
 		err = cmdIncident(cmdArgs)
+	case "feed":
+		err = cmdFeed(cmdArgs)
 	case "room":
 		err = cmdRoom(root, cmdArgs)
 	case "telemetry":
