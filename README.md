@@ -1186,6 +1186,46 @@ number and a cloud audit trail batching every fifteen minutes cannot share one
 with a local agent — a window closed on the fastest source's watermark is a
 window that never sees the slowest.
 
+**Two kinds of authority, and only one of them was written down.** The access
+model above is the standing kind: a binding says this principal has this role on
+this resource, an administrator granted it, it is revocable, and an explicit deny
+wins wherever it sits. The other kind arrived later and by accident. A call has a
+host who can eject people. An incident has a commander whose instructions others
+follow. An errand has an owner who is the only person who can confirm it. A
+detection has somebody who promotes it out of shadow. **Nobody granted any of
+those**, they expire when the situation does, and each was invented inside the
+package that needed one.
+
+That is not a mistake in itself — a call host is genuinely not a rung on a
+site-wide ladder, and forcing it to be one would produce exactly the
+over-granting the access model exists to avoid. The mistake is leaving the
+relationship unstated, because then two things become possible and neither is
+visible: situational authority quietly exceeding standing authority, or an
+administrator assuming an override that does not exist.
+
+The tempting rule — every situational role needs a standing one above some line
+— is wrong, and applying it would break the thing that works. The point of a call
+host is that an ordinary person can run a meeting; requiring an administrator to
+be present would mean meetings are run by whoever has the most access, which is a
+permission model shaping the organisation. **The rule that holds is about
+reach.** A power that acts inside its own situation needs nothing standing:
+ejecting somebody from a call ends when the call does, and the worst case is a
+bad meeting. A power that survives the situation is a standing act wearing a
+situational costume and needs the standing authority for what it actually does —
+recording awareness starts a regulatory clock that binds the organisation for
+years, promoting a detection changes what every team sees for as long as it runs,
+and excusing a definition-of-done requirement is the record an auditor reads a
+year later. All three land on **publish**, which the ladder already defines as
+the only action with an outside observer.
+
+So every situational role declares its powers and, for each, whether the effect
+survives — with the reason, because that classification is a judgement and an
+unexplained judgement is one nobody can disagree with. A power that reaches
+outside and names no standing action is refused, and so is one that acts inside
+and demands authority anyway. A guard checks the register covers every package
+that reaches for the obvious vocabulary, because the failure this exists to
+prevent is a ninth model appearing quietly in the tenth package.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025
