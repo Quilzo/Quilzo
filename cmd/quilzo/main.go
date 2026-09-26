@@ -158,6 +158,10 @@ messengers
   quilzo spool hold NAME --why W           pin everything while something is investigated
   quilzo spool lift NAME                   let retention run again
 
+media encryption
+  quilzo sframe suites --fps 30            the five RFC 9605 suites, and what each costs
+  quilzo sframe check --suite 4            prove this build seals and opens correctly
+
 code scanning
   quilzo appsec triage ALERTS.jsonl        what this change introduced, grouped by rule
   quilzo appsec gate ALERTS.jsonl          may it merge; on what is new, never on the debt
@@ -683,6 +687,8 @@ func main() {
 		err = cmdAccess(root, cmdArgs)
 	case "appsec":
 		err = cmdAppsec(root, cmdArgs)
+	case "sframe":
+		err = cmdSframe(cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":

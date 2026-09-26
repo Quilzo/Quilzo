@@ -592,6 +592,25 @@ recorded cannot move — with two retention limits, deletion that is never a sid
 effect, holds that survive a restart, and a watermark measured from observed
 arrival delay instead of guessed at by whoever wrote the rule.
 
+**End-to-end media encryption that an SFU cannot read.** A call between more
+than two people goes through a selective forwarding unit, which has to see RTP
+headers to route packets, drop layers and rewrite sequence numbers. SRTP is
+hop-by-hop, so the SFU holds the keys and can read everything — which is how
+most products that say "end-to-end encrypted group calls" resolve the tension,
+by not meaning what the phrase says. RFC 9605 is the resolution: the sender
+encrypts once, only the receivers decrypt, and the forwarding unit passes
+ciphertext it cannot read. All five cipher suites are implemented and checked
+against the working group's own test vectors — the derived keys, salts,
+nonces, associated data and ciphertexts, plus 289 header encodings — because a
+cryptographic implementation checked only against itself proves that it is
+self-consistent, which is the one property that does not matter. Three of the
+suites have tags shorter than sixteen bytes, and the arithmetic that makes
+them worth having is printed rather than assumed: at thirty frames a second
+across four streams the difference is 1,440 bytes a second. What SFrame does
+not do is stated in the package and in the command — it protects the media and
+not who is in the call, who is speaking, or for how long, and it says nothing
+about how the key got there.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025

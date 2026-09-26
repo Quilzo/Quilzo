@@ -187,6 +187,10 @@ var commandNeeds = map[string]need{
 	// as another's, and the merge is appended to the audit chain rather
 	// than edited afterwards: the same authority as publishing. Reading the
 	// reconciliation is a view.
+	// Arithmetic and a self-check. It reads nothing, writes nothing and
+	// touches no store, so it is a view.
+	"sframe": {action: auth.ActView},
+
 	// Baselining a codebase's debt decides what this organisation stops
 	// reporting, and recording a rotation asserts that a credential is
 	// dead: both are publishes. Reading a run and gating on it touch
