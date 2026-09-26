@@ -187,6 +187,17 @@ var commandNeeds = map[string]need{
 	// as another's, and the merge is appended to the audit chain rather
 	// than edited afterwards: the same authority as publishing. Reading the
 	// reconciliation is a view.
+	// Storing a credential for another company's system is the heaviest
+	// thing here, and running a connector is an ordinary write. Reading a
+	// manifest is a view; probing makes a request and returns field names
+	// rather than data, which is still a read of somebody else's system and
+	// is checked as an edit.
+	"connect":       {action: auth.ActPublish},
+	"connect run":   {action: auth.ActEditDraft},
+	"connect probe": {action: auth.ActEditDraft},
+	"connect list":  {action: auth.ActView},
+	"connect check": {action: auth.ActView},
+
 	"workforce":          {action: auth.ActPublish},
 	"workforce coverage": {action: auth.ActView},
 	"workforce propose":  {action: auth.ActView},

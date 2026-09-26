@@ -75,6 +75,17 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// One reviewable file per tool, and the credentials to reach them.
+	"connect": {
+		Why: "a connector manifest is reviewed by reading it and a " +
+			"credential is set from the environment; a screen that edited " +
+			"either would be a screen that could point this program at a " +
+			"host nobody approved",
+		NoMCP: "this is the component that holds credentials to every " +
+			"system the company uses, which is exactly what was stolen in " +
+			"the Drift compromise; a model with a tool here has them too",
+	},
+
 	// Reconciling people and devices across systems, from a file of
 	// normalised identities.
 	"workforce": {
