@@ -136,6 +136,17 @@ var coverage = map[string]surfaces{
 			"answer that question about itself",
 	},
 
+	// What the assistant does after a call, and what stops it.
+	"errand": {
+		Why: "it carries errands against a manifest and a performer built " +
+			"for the run; the screen for this is the one that shows " +
+			"somebody a task with their name on it, and that arrives with " +
+			"the tasks",
+		NoMCP: "this is the layer that decides whether an agent may act " +
+			"on what it heard and who it may tell, and a tool would let a " +
+			"model answer that about itself",
+	},
+
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +
