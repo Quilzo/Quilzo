@@ -187,6 +187,8 @@ sharing a screen
   quilzo incident duties                   who has to be told, how soon, and what starts the clock
   quilzo incident demo                     an incident, its several clocks, and closing it
   quilzo feed status                       what the scanner is working from, and how old it is
+  quilzo source list                       every platform whose logs this reads
+  quilzo source check --source okta/system records.json   what a mapping would do with real records
 
 media encryption
   quilzo sframe suites --fps 30            the five RFC 9605 suites, and what each costs
@@ -749,6 +751,8 @@ func main() {
 		err = cmdIncident(cmdArgs)
 	case "feed":
 		err = cmdFeed(cmdArgs)
+	case "source":
+		err = cmdSource(cmdArgs)
 	case "room":
 		err = cmdRoom(root, cmdArgs)
 	case "telemetry":

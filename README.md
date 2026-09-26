@@ -1147,6 +1147,45 @@ signature problem has chosen the worse failure. And "unverified" is only said of
 a source that publishes signatures at all, since noise on that line is what
 trains people to skip it where it matters.
 
+**Every SIEM ships two hundred integrations, and the integrations are the
+weakest part of the product.** For one reason: when a source changes shape, the
+mapping does not break. It keeps working and produces events with empty fields.
+A sign-in event with no user in it is still an event — it still counts, still
+appears on a dashboard, and still fails to match the detection written against
+the field that is now empty. Nothing errors. The detection simply stops firing,
+and the first evidence is an incident nobody was alerted to. So a mapping here
+declares which paths it requires, and a record missing one produces a **miss
+rather than an event with a hole in it**; a run reports its miss rate by path,
+because a page where two in five records fail on the same field has changed and
+somebody should be told today. Drift is measured per page rather than in
+aggregate, since one bad page among good ones means the opposite of a schema
+change and a check that could not tell them apart would be muted within a week.
+
+Sixteen platforms across cloud control planes (CloudTrail, Azure activity, GCP
+audit), identity (Entra, Workspace, Okta, Duo), endpoint and device
+(CrowdStrike, Jamf), the software supply chain (GitHub audit, Kubernetes
+audit), the edge (Cloudflare), the applications a business keeps its data in
+(Salesforce, Slack, Snowflake), and a machine with no API at all (Linux
+auditd). Salesforce is in that list for a specific reason: UNC6395, where OAuth
+tokens stolen from one integration vendor were used to query Salesforce across
+seven hundred organisations, and the tell was in the login history most of them
+were not reading.
+
+Three things each mapping has to state rather than guess. **The identity**,
+because the same person is a principal name in Entra, an email in Workspace, an
+IAM ARN in CloudTrail and an alternate id in Okta — so the issuer is the
+connector's own name and not a free string, since one source writing "azure"
+where another writes "entra" breaks every join in the estate with no error
+anywhere. **The outcome convention**, because three exist in the wild: named
+failure values (Okta writes FAILURE), a named *success* value with everything
+else a failure (Entra writes a zero error code and several hundred others), and
+presence itself (CloudTrail writes an error code only when there was an error).
+Guessing wrong inverts every disposition in a stream silently. And **how far
+behind the source runs**, because the correlation windows above close on that
+number and a cloud audit trail batching every fifteen minutes cannot share one
+with a local agent — a window closed on the fastest source's watermark is a
+window that never sees the slowest.
+
 **Code scanning: the part the scanner leaves undone.** OX Security's 2026
 benchmark puts the average enterprise at 865,398 security alerts a year, of
 which 795 are critical after exploitability analysis — one in 1,088. A 2025
