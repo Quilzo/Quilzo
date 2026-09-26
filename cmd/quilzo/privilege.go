@@ -187,6 +187,14 @@ var commandNeeds = map[string]need{
 	// as another's, and the merge is appended to the audit chain rather
 	// than edited afterwards: the same authority as publishing. Reading the
 	// reconciliation is a view.
+	// Granting an outside firm access to this organisation's evidence is a
+	// commercial decision with a contract behind it, and issuing a package
+	// hands it over: both are publishes. Checking a package reads a file
+	// and touches nothing here.
+	"engagement":       {action: auth.ActPublish},
+	"engagement list":  {action: auth.ActView},
+	"engagement check": {action: auth.ActView},
+
 	// Saying a subsidiary need not perform a control itself is a statement
 	// its auditor will question, and it is appended to the audit chain:
 	// the same authority as publishing. Reading is a view.

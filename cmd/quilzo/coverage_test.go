@@ -75,6 +75,16 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
+	// What an auditor is given, and what they can check without us.
+	"engagement": {
+		Why: "the deliverable is a file the auditor takes away and " +
+			"verifies on their own machine; a screen showing it here would " +
+			"be this organisation reading its own package back to itself",
+		NoMCP: "granting an outside firm access to this organisation's " +
+			"evidence is a commercial decision with a contract behind it, " +
+			"and Engagement.Validate refuses a model for that reason",
+	},
+
 	// The group's structure, and every control measured across it.
 	"entity": {
 		Why: "the structure is a file somebody maintains and the report " +

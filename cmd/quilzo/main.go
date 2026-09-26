@@ -158,6 +158,12 @@ messengers
   quilzo spool hold NAME --why W           pin everything while something is investigated
   quilzo spool lift NAME                   let retention run again
 
+auditors
+  quilzo engagement open ID --firm ...     engage a firm, scoped and with an end date
+  quilzo engagement list                   who has access to what, and until when
+  quilzo engagement issue ID -o FILE       one file: evidence, proofs and a signed head
+  quilzo engagement check FILE --keys K    verify one, touching nothing here
+
 groups of companies
   quilzo entity tree                       the structure, and who is accountable where
   quilzo entity report [SCOPE]             every control across every company in scope
@@ -643,6 +649,8 @@ func main() {
 		err = cmdFramework(root, cmdArgs)
 	case "entity":
 		err = cmdEntity(root, cmdArgs)
+	case "engagement":
+		err = cmdEngagement(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
 	case "telegram":
