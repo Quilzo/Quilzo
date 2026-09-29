@@ -350,6 +350,10 @@ the assistant
   quilzo experiment start|stop|remove NAME
   quilzo experiment list                   every test, running or not
   quilzo experiment report NAME            results, and a verdict only when there is one
+  quilzo personalise add NAME --page P --variant V --when campaign=X   by what the request says
+  quilzo personalise enable|disable|remove NAME
+  quilzo personalise test PAGE [--campaign X --language L --device phone]
+  quilzo personalise list                  every rule, in the order they are tried
   quilzo decide set FILE.json              declare typed questions with a confidence gate
   quilzo decide ask NAME STATE             answer them; under the threshold, a person decides
   quilzo decide eval NAME CASES.jsonl      how much it decides alone, and how often rightly
@@ -723,6 +727,8 @@ func main() {
 		err = cmdAnalytics(root, cmdArgs)
 	case "experiment":
 		err = cmdExperiment(root, cmdArgs)
+	case "personalise":
+		err = cmdPersonalise(root, cmdArgs)
 	case "canary":
 		err = cmdCanary(root, cmdArgs)
 	case "spool":

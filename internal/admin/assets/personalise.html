@@ -1,0 +1,64 @@
+{{template "head" .}}
+<h1>Personalisation</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+<p class="lead">Show a different version of a page to visitors who arrive a
+  certain way — from a campaign, from a partner's site, in another language,
+  on a phone, at a certain time — using only what their browser sends. No
+  cookie, no profile, no tracking. The first rule that matches is used.</p>
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+{{if .Rules}}
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Rule</th><th scope="col">On</th><th scope="col">Serves</th><th scope="col">When</th><th scope="col">State</th>{{if .CanSave}}<th scope="col"><span class="visually-hidden">Change</span></th>{{end}}</tr></thead>
+  <tbody>{{range .Rules}}
+  <tr><th scope="row">{{.Name}}</th><td><code>/{{.Page}}</code></td><td><code>/{{.Variant}}</code></td>
+    <td>{{range $i, $c := .When}}{{if $i}} and {{end}}{{$c.Field}}{{if $c.Name}}:{{$c.Name}}{{end}} is {{range $j, $v := $c.Values}}{{if $j}} or {{end}}<code>{{$v}}</code>{{end}}{{end}}{{if .Timezone}} <span class="hint">({{.Timezone}})</span>{{end}}</td>
+    <td>{{if .Enabled}}<span class="tag tag-ok">on</span>{{else}}<span class="tag">off</span>{{end}}</td>
+    {{if $.CanSave}}<td><div class="btn-group">
+      <form method="post" action="/personalise/change"><input type="hidden" name="name" value="{{.Name}}"><input type="hidden" name="op" value="{{if .Enabled}}disable{{else}}enable{{end}}"><button type="submit" class="btn-text">{{if .Enabled}}Turn off{{else}}Turn on{{end}}</button></form>
+      <form method="post" action="/personalise/change"><input type="hidden" name="name" value="{{.Name}}"><input type="hidden" name="op" value="remove"><button type="submit" class="btn-text">Remove</button></form>
+    </div></td>{{end}}</tr>
+  {{end}}</tbody>
+</table></div>
+{{else}}<p class="notice">No rules yet.</p>{{end}}
+
+<h2 id="try">Which version would a visitor get?</h2>
+<form method="get" action="/personalise#try" class="card">
+  <div class="grid2">
+    <div class="field"><label for="spage">Page</label><input id="spage" name="page" value="{{.Q.Get "page"}}" placeholder="pricing"></div>
+    <div class="field"><label for="scamp">Campaign</label><input id="scamp" name="campaign" value="{{.Q.Get "campaign"}}" placeholder="newsletter"></div>
+    <div class="field"><label for="sref">Came from</label><input id="sref" name="referrer" value="{{.Q.Get "referrer"}}" placeholder="https://partner.example/"></div>
+    <div class="field"><label for="slang">Language</label><input id="slang" name="language" value="{{.Q.Get "language"}}" placeholder="de-DE"></div>
+    <div class="field"><label for="sdev">Device</label><select id="sdev" name="device"><option value="desktop">desktop</option><option value="phone"{{if eq (.Q.Get "device") "phone"}} selected{{end}}>phone</option></select></div>
+    <div class="field"><label for="sat">At (UTC)</label><input id="sat" name="at" value="{{.Q.Get "at"}}" placeholder="2026-09-29T20:30:00Z"></div>
+  </div>
+  <button type="submit">Check</button>
+</form>
+{{if .SimError}}<p class="notice bad" role="alert">{{.SimError}}</p>{{end}}
+{{with .SimRule}}<p class="notice ok" role="status"><strong>{{.Name}}</strong> applies: <code>/{{.Variant}}</code> is served.</p>{{end}}
+{{with .SimNone}}<p class="notice" role="status">No rule applies: <code>/{{.}}</code> is served as it is.</p>{{end}}
+
+{{if .CanSave}}
+<h2>New rule</h2>
+<form method="post" action="/personalise/change" class="card">
+  <input type="hidden" name="op" value="add">
+  <div class="grid2">
+    <div class="field"><label for="rname">Name {{template "req"}}</label><input id="rname" name="name" required pattern="[a-z0-9][a-z0-9\-]{0,39}" placeholder="newsletter-landing"></div>
+    <div class="field"><label for="rtz">Timezone</label><input id="rtz" name="timezone" placeholder="Europe/London"></div>
+    <div class="field"><label for="rpage">On page {{template "req"}}</label><input id="rpage" name="page" required placeholder="index"></div>
+    <div class="field"><label for="rvar">Serve page {{template "req"}}</label><input id="rvar" name="variant" required placeholder="index-newsletter"></div>
+  </div>
+  <fieldset><legend>When all of these hold</legend>
+  {{range $i, $_ := (slice $.Fields 0 3)}}
+  <div class="grid2">
+    <div class="field"><label for="f{{$i}}">Looks at</label><select id="f{{$i}}" name="field{{$i}}"><option value="">—</option>{{range $.Fields}}<option>{{.}}</option>{{end}}</select></div>
+    <div class="field"><label for="v{{$i}}">Is one of</label><input id="v{{$i}}" name="values{{$i}}" placeholder="newsletter, partner"></div>
+  </div>
+  {{end}}
+  <p class="help">Language is like <code>de</code> or <code>en-gb</code>; device is <code>phone</code> or <code>desktop</code>; weekday is <code>mon</code>…<code>sun</code>; hour is a range like <code>9-17</code>.</p>
+  </fieldset>
+  <button type="submit">Add, turned off</button>
+</form>
+{{end}}
+{{end}}
+{{template "foot" .}}

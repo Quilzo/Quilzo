@@ -5,8 +5,10 @@ package public
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/experiment"
+	"github.com/quilzo/quilzo/internal/personalise"
 )
 
 // A/B tests, served. See internal/experiment for the design and its limits.
@@ -79,4 +81,29 @@ func (st *Site) convertPage(r *http.Request, path string) {
 			return
 		}
 	}
+}
+
+// personalFor returns the page a personalisation rule serves at name for this
+// request, if one matches and its page is published. See
+// internal/personalise: only what the request says is looked at.
+func (st *Site) personalFor(r *http.Request, name string, pages map[string]any) (string, any, bool) {
+	if st.Personalise == nil {
+		return "", nil, false
+	}
+	set, err := st.Personalise()
+	if err != nil {
+		return "", nil, false
+	}
+	rule, ok := set.For(name, r, time.Now())
+	if !ok {
+		return "", nil, false
+	}
+	body, published := pages[rule.Variant]
+	if !published {
+		return "", nil, false
+	}
+	if st.Analytics != nil {
+		st.Analytics.Convert(r, personalise.SeenKey(rule.Name))
+	}
+	return rule.Variant, body, true
 }

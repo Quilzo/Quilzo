@@ -186,7 +186,11 @@ var commandNeeds = map[string]need{
 	"experiment":        {action: auth.ActPublish},
 	"experiment list":   {action: auth.ActView},
 	"experiment report": {action: auth.ActView},
-	"finding story":     {action: auth.ActView},
+	// Per page: each change authorises publish on both pages it touches.
+	"personalise":      {action: auth.ActView},
+	"personalise list": {action: auth.ActView},
+	"personalise test": {action: auth.ActView},
+	"finding story":    {action: auth.ActView},
 
 	// Planting a canary commits the organisation to acting when it fires,
 	// and puts a row in the audit log saying so. The same weight as a

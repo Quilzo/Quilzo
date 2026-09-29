@@ -441,6 +441,13 @@ var coverage = map[string]surfaces{
 		MCP: []string{"list_assistants", "ask_assistant", "declare_assistant"},
 	},
 
+	"personalise": {
+		GUI: "/personalise",
+		NoMCP: "a rule changes what visitors see on a page, which is a " +
+			"publish; reading the rules is on the Personalisation screen and " +
+			"in the site's own declarations",
+	},
+
 	"experiment": {
 		GUI: "/experiments",
 		MCP: []string{"experiment_report"},

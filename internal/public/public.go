@@ -37,6 +37,7 @@ import (
 	"fmt"
 	"github.com/quilzo/quilzo/internal/analytics"
 	"github.com/quilzo/quilzo/internal/experiment"
+	"github.com/quilzo/quilzo/internal/personalise"
 	"io"
 	"net/http"
 	"sort"
@@ -70,6 +71,8 @@ type Site struct {
 	// Analytics counts page views and conversions without a script or a
 	// cookie. Nil counts nothing.
 	Analytics *analytics.Counter
+	// Personalise returns the site's personalisation rules. Nil runs none.
+	Personalise func() (*personalise.Set, error)
 	// Experiments are the site's A/B tests. They need Analytics, which
 	// assigns visitors and counts results; without it none runs.
 	Experiments func() (*experiment.Set, error)
@@ -794,7 +797,12 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	// An experiment on this page serves the variant's content at this
 	// address. See experiments.go.
 	served, inExperiment := name, false
-	if v, vbody, ok := st.variantFor(r, name, pages); ok {
+	if v, vbody, ok := st.personalFor(r, name, pages); ok {
+		// A rule decides first. An experiment on the same page is not run
+		// for this visitor: their version was chosen by who they are, and
+		// counting them in a random split would bias it.
+		served, body, inExperiment = v, vbody, true
+	} else if v, vbody, ok := st.variantFor(r, name, pages); ok {
 		served, body, inExperiment = v, vbody, true
 	}
 

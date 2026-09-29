@@ -230,8 +230,9 @@ func scan(t *testing.T, re *regexp.Regexp) []link {
 				strings.HasPrefix(href, "mailto:") {
 				continue
 			}
-			// A query string is not part of the route.
-			if i := strings.IndexByte(href, '?'); i >= 0 {
+			// A query string is not part of the route, and neither is a
+			// fragment: the browser never sends it.
+			if i := strings.IndexAny(href, "?#"); i >= 0 {
 				href = href[:i]
 			}
 			if href == "" {

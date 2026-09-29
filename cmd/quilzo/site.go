@@ -10,6 +10,7 @@ import (
 	"github.com/quilzo/quilzo/internal/analytics"
 	"github.com/quilzo/quilzo/internal/experiment"
 	"github.com/quilzo/quilzo/internal/listen"
+	"github.com/quilzo/quilzo/internal/personalise"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/vector"
 	"net/http"
@@ -228,6 +229,9 @@ func cmdSite(root string, args []string) error {
 		// takes effect on the next visitor rather than on the next restart.
 		st.Experiments = func() (*experiment.Set, error) {
 			return experiment.Load(experimentsPath(root))
+		}
+		st.Personalise = func() (*personalise.Set, error) {
+			return personalise.Load(personalisePath(root))
 		}
 		go func() {
 			for range time.Tick(30 * time.Second) {

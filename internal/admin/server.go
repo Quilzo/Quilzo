@@ -157,6 +157,8 @@ type Server struct {
 
 	// Experiments are the site's A/B tests.
 	Experiments *Experiments
+	// Personalise is the site's personalisation rules.
+	Personalise *Personalise
 
 	// Analytics is the site's traffic, counted without a script or cookie.
 	Analytics *Analytics
@@ -971,6 +973,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/models", s.handleModels)
 	mux.HandleFunc("/analytics", s.handleAnalytics)
 	mux.HandleFunc("/experiments", s.handleExperiments)
+	mux.HandleFunc("/personalise", s.handlePersonalise)
+	mux.HandleFunc("/personalise/change", s.handlePersonaliseChange)
 	mux.HandleFunc("/experiments/change", s.handleExperimentChange)
 	mux.HandleFunc("/decisions", s.handleDeciders)
 	mux.HandleFunc("/decisions/", s.handleDecider)
