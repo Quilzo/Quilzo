@@ -441,6 +441,13 @@ var coverage = map[string]surfaces{
 		MCP: []string{"list_assistants", "ask_assistant", "declare_assistant"},
 	},
 
+	"gateway": {
+		GUI: "/models",
+		NoMCP: "a route decides where prompts go, and an agent that could " +
+			"add one could send everything visitors type to an address of " +
+			"its choosing",
+	},
+
 	"finding": {
 		GUI: "/findings",
 		// Read, and propose. A decision stays off this surface: a model that
@@ -913,6 +920,12 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 		// fact being reported rather than an action being taken: nothing
 		// here removes anything, and the credential being dead is what
 		// closes the finding either way.
+		"budget.remove": {
+			GUI: "/models",
+			NoMCP: "as gateway: the model route and its limits are " +
+				"administrative, and an agent lifting its own budget is the " +
+				"thing the budget exists to stop",
+		},
 		// Removes an action from a chatbot, which only ever narrows what it
 		// may offer.
 		"action.remove": {

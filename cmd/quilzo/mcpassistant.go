@@ -69,7 +69,7 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, err
 		}
-		m, _ := assistantModel(bot)
+		m, _ := assistantModelAt(root, bot)
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 		ans, err := assistant.Respond(ctx, bot, idx, m, q)

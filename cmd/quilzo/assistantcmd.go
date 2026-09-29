@@ -273,8 +273,25 @@ func assistantDocument(root, id string) (name, format string, body []byte, err e
 // assistantModel is the configured model when the assistant uses one, and
 // nil — extractive — otherwise or when none is configured.
 func assistantModel(a assistant.Assistant) (assistant.Model, string) {
+	return assistantModelAt("", a)
+}
+
+// assistantModelAt routes a chatbot through the model gateway when one is
+// declared, as the caller "chatbot:NAME", so its routes, fallbacks and budget
+// apply. Over budget, the gateway refuses the call and the chatbot answers
+// from its pages instead.
+func assistantModelAt(root string, a assistant.Assistant) (assistant.Model, string) {
 	if !a.UseModel {
 		return nil, "extractive by declaration"
+	}
+	if root != "" {
+		gw, _, err := modelGateway(root)
+		if err != nil {
+			return nil, "the model gateway could not be read: " + err.Error()
+		}
+		if gw != nil {
+			return gw.For("chatbot:" + a.Name), ""
+		}
 	}
 	m, err := assist.NewHTTPModel()
 	if err != nil {
@@ -312,7 +329,7 @@ func assistantAsk(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	m, why := assistantModel(a)
+	m, why := assistantModelAt(root, a)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	ans, err := assistant.Respond(ctx, a, idx, m, pos[1])
@@ -376,7 +393,7 @@ func assistantEval(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	m, _ := assistantModel(a)
+	m, _ := assistantModelAt(root, a)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	r, err := assistant.Evaluate(ctx, a, idx, m, cases)
@@ -446,7 +463,9 @@ func assistantsCapability(root string) *admin.Assistants {
 			}
 			return out, nil
 		},
-		Model: assistantModel,
+		Model: func(a assistant.Assistant) (assistant.Model, string) {
+			return assistantModelAt(root, a)
+		},
 		Forms: func() ([]string, error) {
 			set, err := loadForms(root)
 			if err != nil {

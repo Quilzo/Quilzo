@@ -163,7 +163,7 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 			return assistantDocument(root, id)
 		},
 		Model: func(a assistant.Assistant) assistant.Model {
-			m, _ := assistantModel(a)
+			m, _ := assistantModelAt(root, a)
 			return m
 		},
 		Limit: throttle.New(throttlePolicy(mustConfig(root))),

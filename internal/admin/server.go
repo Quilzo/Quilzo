@@ -155,6 +155,9 @@ type Server struct {
 	// whoever is on duty today.
 	Running *Running
 
+	// Models is the model gateway: routes, budgets, today's spending.
+	Models *Models
+
 	// Assistants are the site's chatbots: declared here, served by the
 	// public site at /ask/NAME.
 	Assistants *Assistants
@@ -955,6 +958,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/running", s.handleRunningScreen)
 	mux.HandleFunc("/security/events", s.handleEventsScreen)
 	mux.HandleFunc("/findings", s.handleFindings)
+	mux.HandleFunc("/models", s.handleModels)
+	mux.HandleFunc("/models/change", s.handleModelsChange)
 	mux.HandleFunc("/assistants", s.handleAssistants)
 	mux.HandleFunc("/assistants/", s.handleAssistant)
 	mux.HandleFunc("/assistants/save", s.handleAssistantSave)

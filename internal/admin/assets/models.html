@@ -1,0 +1,109 @@
+{{template "head" .}}
+<h1>Models</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+<p class="lead">Where model calls go, what happens when a provider is down, and
+  what each chatbot and assistant has spent today. Prompts are never recorded
+  — only who asked, which route answered, and how much.</p>
+
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+
+<h2>Routes</h2>
+{{if not .Health}}
+<p class="notice">No routes yet, so every model call uses the one model set in
+  the environment. Add a route to get fallbacks and budgets.</p>
+{{else}}
+<p>Tried in this order. A route that fails three times in a row rests for a
+  minute and the next one answers.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Route</th><th scope="col">Model</th><th scope="col">Key</th>
+    <th scope="col">State</th><th scope="col"><span class="visually-hidden">Change</span></th></tr></thead>
+  <tbody>
+  {{range $i, $h := .Health}}
+  <tr>
+    <th scope="row">{{$h.Route.Name}}<div class="hint mono">{{$h.Route.URL}}</div></th>
+    <td><code>{{$h.Route.Model}}</code></td>
+    <td>{{if $h.Route.KeyEnv}}<code>${{$h.Route.KeyEnv}}</code>{{if not $h.KeySet}} <span class="tag tag-bad">not set</span>{{end}}{{else}}<span class="hint">none — this network only</span>{{end}}</td>
+    <td>{{if $h.Resting}}<span class="tag tag-warn">resting</span>{{else}}<span class="tag tag-ok">ready</span>{{end}}</td>
+    <td><div class="btn-group">
+      {{if $i}}<form method="post" action="/models/change"><input type="hidden" name="op" value="route-first"><input type="hidden" name="name" value="{{$h.Route.Name}}"><button class="btn-text" type="submit">Try first</button></form>{{end}}
+      <form method="post" action="/models/change"><input type="hidden" name="op" value="route-remove"><input type="hidden" name="name" value="{{$h.Route.Name}}"><button class="btn-text" type="submit">Remove</button></form>
+    </div></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<form method="post" action="/models/change" class="card">
+  <input type="hidden" name="op" value="route-add">
+  <h3>Add a route</h3>
+  <div class="field"><label for="rname">Name {{template "req"}}</label>
+    <input id="rname" name="name" required pattern="[a-z0-9][a-z0-9\-]{0,39}" placeholder="local"></div>
+  <div class="field"><label for="rurl">Address {{template "req"}}</label>
+    <input id="rurl" name="url" type="url" required placeholder="http://localhost:11434/v1" aria-describedby="rurl-help">
+    <p id="rurl-help" class="help">Any endpoint speaking the OpenAI chat protocol: Ollama, vLLM, LM Studio, llama.cpp, or a hosted provider.</p></div>
+  <div class="field"><label for="rmodel">Model {{template "req"}}</label>
+    <input id="rmodel" name="model" required placeholder="gpt-oss:20b"></div>
+  <div class="field"><label for="rkey">Key variable</label>
+    <input id="rkey" name="key_env" pattern="[A-Z_][A-Z0-9_]{0,63}" placeholder="HOSTED_MODEL_KEY" aria-describedby="rkey-help">
+    <p id="rkey-help" class="help">The name of the environment variable holding the key — never the key itself. Leave empty for a model on this network.</p></div>
+  <button type="submit">Add route</button>
+</form>
+
+<h2>Today</h2>
+{{if not .Spend}}<p>Nothing has called a model today.</p>{{else}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Caller</th><th scope="col">Used</th><th scope="col">Calls</th>
+    <th scope="col">Failed</th><th scope="col">Refused</th></tr></thead>
+  <tbody>
+  {{range .Spend}}
+  <tr>
+    <th scope="row"><code>{{.Consumer}}</code></th>
+    <td>{{if .Budget}}<meter min="0" max="{{.Budget}}" value="{{.Chars}}" low="{{.Budget}}" high="{{.Budget}}" optimum="0" aria-label="{{.Chars}} of {{.Budget}} characters">{{.Chars}} of {{.Budget}}</meter>
+      <div class="hint">{{.Chars}} of {{.Budget}} characters</div>{{else}}{{.Chars}} characters<div class="hint">no daily limit</div>{{end}}</td>
+    <td>{{.Calls}}</td><td>{{.Failed}}</td>
+    <td>{{if .Refused}}<span class="tag tag-warn">{{.Refused}}</span>{{else}}0{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<h2>Budgets</h2>
+<p>A chatbot over its daily budget answers from its pages without the model,
+  which is a plainer answer and not an outage. <code>*</code> is everybody
+  without a budget of their own.</p>
+{{with .Cfg}}{{if .Budgets}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Caller</th><th scope="col">Per minute</th><th scope="col">Characters a day</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+  <tbody>
+  {{range .Budgets}}
+  <tr><th scope="row"><code>{{.Consumer}}</code></th>
+    <td>{{if .PerMinute}}{{.PerMinute}}{{else}}unlimited{{end}}</td>
+    <td>{{if .CharsPerDay}}{{.CharsPerDay}}{{else}}unlimited{{end}}</td>
+    <td><form method="post" action="/models/change"><input type="hidden" name="op" value="budget-remove"><input type="hidden" name="name" value="{{.Consumer}}"><button class="btn-text" type="submit">Remove</button></form></td></tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}{{end}}
+<form method="post" action="/models/change" class="card">
+  <input type="hidden" name="op" value="budget">
+  <div class="field"><label for="bwho">Caller {{template "req"}}</label>
+    <input id="bwho" name="name" required placeholder="chatbot:help" aria-describedby="bwho-help">
+    <p id="bwho-help" class="help"><code>chatbot:NAME</code>, <code>assist</code>, <code>agent:NAME</code>, or <code>*</code>.</p></div>
+  <div class="field"><label for="bpm">Calls per minute</label>
+    <input id="bpm" name="per_minute" type="number" min="0" value="0"></div>
+  <div class="field"><label for="bpd">Characters per day</label>
+    <input id="bpd" name="chars_per_day" type="number" min="0" value="0" aria-describedby="bpd-help">
+    <p id="bpd-help" class="help">Prompt and reply together; about four characters to a token. 0 is unlimited.</p></div>
+  <button type="submit">Save budget</button>
+</form>
+{{end}}
+{{template "foot" .}}

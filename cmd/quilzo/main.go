@@ -345,6 +345,9 @@ the assistant
   quilzo assistant ask NAME "question"     try it, with its sources and what was removed
   quilzo assistant eval NAME CASES.jsonl   measure it, including what it should refuse
   quilzo assistant list | remove NAME
+  quilzo gateway status                    model routes, and what each caller spent today
+  quilzo gateway route add|remove NAME     where model calls go, in fallback order
+  quilzo gateway budget CALLER             calls a minute, characters a day
   quilzo fediverse init                    a signing key, so the site can federate
   quilzo fediverse status | followers      whether it federates, and who follows
   quilzo fediverse block HOST              refuse an instance, and drop its follows
@@ -703,6 +706,8 @@ func main() {
 		err = cmdFinding(root, cmdArgs)
 	case "assistant":
 		err = cmdAssistant(root, cmdArgs)
+	case "gateway":
+		err = cmdGateway(root, cmdArgs)
 	case "canary":
 		err = cmdCanary(root, cmdArgs)
 	case "spool":

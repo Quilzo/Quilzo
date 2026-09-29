@@ -115,6 +115,9 @@ var destinations = []destination{
 	// administrators could have.
 	{"passkeys", "Passkeys", "/passkeys", "Administration", "auth", auth.ActView},
 	{"integrations", "Integrations", "/integrations", "Administration", "integrations", auth.ActGrant},
+	// Beside Integrations: both decide what this program talks to, and a
+	// model route decides who receives what visitors typed.
+	{"models", "Models", "/models", "Administration", "ai", auth.ActGrant},
 	{"settings", "Settings", "/settings", "Administration", "settings", auth.ActEditDraft},
 
 	// Find is in Reference and not in Content, because it is about this

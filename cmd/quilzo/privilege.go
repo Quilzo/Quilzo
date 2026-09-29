@@ -173,7 +173,9 @@ var commandNeeds = map[string]need{
 	"assistant list": {action: auth.ActView},
 	"assistant ask":  {action: auth.ActView},
 	"assistant eval": {action: auth.ActView},
-	"finding story":  {action: auth.ActView},
+	// Grant: a model route decides who receives what visitors typed.
+	"gateway":       {action: auth.ActGrant},
+	"finding story": {action: auth.ActView},
 
 	// Planting a canary commits the organisation to acting when it fires,
 	// and puts a row in the audit log saying so. The same weight as a
