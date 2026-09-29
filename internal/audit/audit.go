@@ -267,6 +267,36 @@ func New(opt Options) (*Log, error) {
 // Pseudonymous reports whether identifiers are being protected.
 func (l *Log) Pseudonymous() bool { return len(l.key) > 0 }
 
+// IdentityKeys are detail keys whose values name a person or account.
+//
+// Pseudonymised like the principal. They were not: the principal was HMAC'd
+// and the same person's name sat beside it in clear under "by" or
+// "on_behalf_of" — every grant, every agent call, every sign-in — so a log
+// exported to a SIEM precisely so it would carry no identities carried them
+// all, in the one field nobody thought to check. A key added to this list is
+// covered everywhere; a writer inventing a new key for a person is the thing
+// a test here refuses.
+var IdentityKeys = map[string]bool{
+	"by": true, "on_behalf_of": true, "principal": true, "owner": true,
+	"granted": true, "for": true, "author": true,
+}
+
+// pseudonymDetail returns detail with identity values pseudonymised, leaving
+// the caller's map alone.
+func (l *Log) pseudonymDetail(d map[string]string) map[string]string {
+	if len(l.key) == 0 || len(d) == 0 {
+		return d
+	}
+	out := make(map[string]string, len(d))
+	for k, v := range d {
+		if IdentityKeys[k] && v != "" {
+			v = l.pseudonym(v)
+		}
+		out[k] = v
+	}
+	return out
+}
+
 // pseudonym maps an identifier to a stable, non-reversible handle.
 func (l *Log) pseudonym(id string) string {
 	if id == "" {
@@ -390,7 +420,7 @@ func (l *Log) Append(r Record) (*Event, error) {
 		Seq: l.seq, At: time.Now().UTC().Format(time.RFC3339Nano),
 		Prev: l.last, Action: r.Action, Resource: r.Resource, Source: l.src,
 		Outcome: r.Outcome, Principal: l.pseudonym(r.Principal), Kind: r.Kind,
-		Verified: r.Verified, Model: r.Model, Detail: r.Detail,
+		Verified: r.Verified, Model: r.Model, Detail: l.pseudonymDetail(r.Detail),
 	}
 	h, err := e.computeHash()
 	if err != nil {

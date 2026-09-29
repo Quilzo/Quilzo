@@ -102,7 +102,9 @@ func TestAProposalIsNotADecision(t *testing.T) {
 		t.Fatal("a proposal was read back as a decision")
 	}
 	props := finding.ProposalsFromAudit(events, id)
-	if len(props) != 1 || props[0].For != "dana" || props[0].By == "" {
+	// Both pseudonymised: the log names nobody in clear, including in its
+	// details.
+	if len(props) != 1 || props[0].For == "" || props[0].For == "dana" || props[0].By == "" {
 		t.Fatalf("the proposal was not recorded with its author: %+v", props)
 	}
 	// Recorded as a model's act, whatever the principal is pseudonymised to.

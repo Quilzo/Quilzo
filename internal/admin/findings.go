@@ -380,7 +380,7 @@ func (s *Server) handleFinding(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, pr := range ps {
-			pr.By = s.who(pr.By)
+			pr.By, pr.For = s.who(pr.By), s.who(pr.For)
 			props = append(props, proposed{Proposal: pr,
 				When: pr.At.UTC().Format("2006-01-02 15:04")})
 		}

@@ -125,6 +125,27 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 			if name := s.ResolvePrincipal(e.Principal); name != "" {
 				row.Who, row.Resolved = name, true
 			}
+			// Details naming a person are pseudonymised like the principal,
+			// and named here the same way: known people by name, anybody
+			// else left opaque.
+			var named map[string]string
+			for k, v := range e.Detail {
+				if !audit.IdentityKeys[k] {
+					continue
+				}
+				if name := s.ResolvePrincipal(v); name != "" {
+					if named == nil {
+						named = make(map[string]string, len(e.Detail))
+						for k2, v2 := range e.Detail {
+							named[k2] = v2
+						}
+					}
+					named[k] = name
+				}
+			}
+			if named != nil {
+				row.Detail = named
+			}
 		}
 		if who != "" && !strings.EqualFold(row.Who, who) {
 			continue
