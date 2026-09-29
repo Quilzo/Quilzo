@@ -345,6 +345,10 @@ the assistant
   quilzo assistant ask NAME "question"     try it, with its sources and what was removed
   quilzo assistant eval NAME CASES.jsonl   measure it, including what it should refuse
   quilzo assistant list | remove NAME
+  quilzo decide set FILE.json              declare typed questions with a confidence gate
+  quilzo decide ask NAME STATE             answer them; under the threshold, a person decides
+  quilzo decide eval NAME CASES.jsonl      how much it decides alone, and how often rightly
+  quilzo decide list | remove NAME
   quilzo gateway status                    model routes, and what each caller spent today
   quilzo gateway route add|remove NAME     where model calls go, in fallback order
   quilzo gateway budget CALLER             calls a minute, characters a day
@@ -708,6 +712,8 @@ func main() {
 		err = cmdAssistant(root, cmdArgs)
 	case "gateway":
 		err = cmdGateway(root, cmdArgs)
+	case "decide":
+		err = cmdDecide(root, cmdArgs)
 	case "canary":
 		err = cmdCanary(root, cmdArgs)
 	case "spool":

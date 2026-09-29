@@ -441,6 +441,11 @@ var coverage = map[string]surfaces{
 		MCP: []string{"list_assistants", "ask_assistant", "declare_assistant"},
 	},
 
+	"decide": {
+		GUI: "/decisions",
+		MCP: []string{"list_deciders", "decide"},
+	},
+
 	"gateway": {
 		GUI: "/models",
 		NoMCP: "a route decides where prompts go, and an agent that could " +

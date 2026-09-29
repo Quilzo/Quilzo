@@ -174,7 +174,13 @@ var commandNeeds = map[string]need{
 	"assistant ask":  {action: auth.ActView},
 	"assistant eval": {action: auth.ActView},
 	// Grant: a model route decides who receives what visitors typed.
-	"gateway":       {action: auth.ActGrant},
+	"gateway": {action: auth.ActGrant},
+	// Declaring a decider is a publish: above its threshold, what it
+	// answers drives other things with no person involved.
+	"decide":        {action: auth.ActPublish},
+	"decide list":   {action: auth.ActView},
+	"decide ask":    {action: auth.ActView},
+	"decide eval":   {action: auth.ActView},
 	"finding story": {action: auth.ActView},
 
 	// Planting a canary commits the organisation to acting when it fires,

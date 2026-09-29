@@ -1,0 +1,33 @@
+{{template "head" .}}
+<h1>Decisions</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+<p class="lead">Typed questions a model answers about some state — which
+  queue, is it abusive, how urgent — each with a confidence. Anything under
+  the threshold goes to a person. Confidence is not the model's word for it:
+  each question is asked several times, and an answer that changes between
+  asks is not a confident one.</p>
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+{{if .List}}
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Decider</th><th scope="col">Questions</th><th scope="col">Threshold</th></tr></thead>
+  <tbody>{{range .List}}
+  <tr><th scope="row"><a href="/decisions/{{.Name}}">{{.Title}}</a><div class="hint"><code>{{.Name}}</code></div></th>
+    <td>{{range $i, $q := .Questions}}{{if $i}}, {{end}}<code>{{$q.Name}}</code> <span class="hint">{{$q.Kind}}</span>{{end}}</td>
+    <td>{{if .MinConfidence}}{{.MinConfidence}}{{else}}0.8{{end}}</td></tr>
+  {{end}}</tbody>
+</table></div>
+{{else}}<p class="notice">No deciders yet.</p>{{end}}
+{{if .CanSave}}
+<h2>New decider</h2>
+<form method="post" action="/decisions/save" class="card">
+  <div class="field"><label for="declaration">Declaration {{template "req"}}</label>
+    <textarea id="declaration" name="declaration" rows="16" required class="mono" aria-describedby="decl-help">{{.Example}}</textarea>
+    <p id="decl-help" class="help">Questions are a <code>choice</code> of declared options,
+      a <code>yesno</code>, or a <code>score</code> from 0 to 1. An answer outside what
+      is declared is refused, whatever the model says.</p></div>
+  <button type="submit">Save</button>
+</form>
+{{end}}
+{{end}}
+{{template "foot" .}}

@@ -155,6 +155,9 @@ type Server struct {
 	// whoever is on duty today.
 	Running *Running
 
+	// Deciders answer typed questions with a confidence gate.
+	Deciders *Deciders
+
 	// Models is the model gateway: routes, budgets, today's spending.
 	Models *Models
 
@@ -959,6 +962,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/events", s.handleEventsScreen)
 	mux.HandleFunc("/findings", s.handleFindings)
 	mux.HandleFunc("/models", s.handleModels)
+	mux.HandleFunc("/decisions", s.handleDeciders)
+	mux.HandleFunc("/decisions/", s.handleDecider)
+	mux.HandleFunc("/decisions/save", s.handleDeciderSave)
+	mux.HandleFunc("/decisions/remove", s.handleDeciderRemove)
 	mux.HandleFunc("/models/change", s.handleModelsChange)
 	mux.HandleFunc("/assistants", s.handleAssistants)
 	mux.HandleFunc("/assistants/", s.handleAssistant)
