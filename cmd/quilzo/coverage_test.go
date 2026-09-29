@@ -5,6 +5,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -434,20 +435,19 @@ var coverage = map[string]surfaces{
 	},
 
 	"finding": {
-		Why: "the register is a projection of the audit log, and the screen " +
-			"that renders it arrives with stored findings rather than here",
-		NoMCP: "a model that can close its own findings can close the one " +
-			"that would have caught it; Decision.Validate refuses an AI actor",
+		GUI: "/findings",
+		// Read, and propose. A decision stays off this surface: a model that
+		// can close its own findings can close the one that would have
+		// caught it, and Decision.Validate refuses an AI actor besides.
+		MCP: []string{"list_findings", "read_finding", "propose_finding_decision"},
 	},
 
 	// Detections over exported events, ranked. The screen and the agent
 	// surface both come once findings are stored rather than computed per
 	// run, which is the next piece rather than this one.
 	"triage": {
-		Why: "it runs rules over a file and prints a ranking; there is no " +
-			"stored register for a screen to show yet",
-		NoMCP: "every finding here rests on attacker-controlled log text, " +
-			"which is the input an agent must not act on unreviewed",
+		GUI: "/findings",
+		MCP: []string{"list_findings"},
 	},
 
 	// Stacking over a file somebody exported, at the point where they are
@@ -811,7 +811,17 @@ func TestReportHowMuchIsNotInTheInterface(t *testing.T) {
 func registeredOperations(t *testing.T) map[string]bool {
 	t.Helper()
 	out := map[string]bool{}
-	for _, file := range []string{"mcp.go", "mcpops.go"} {
+	// Every mcp*.go rather than a list, so a file of operations added later
+	// is read without anybody remembering to add it here — the list form
+	// missed mcpsecurity.go on the day it was written.
+	files, err := filepath.Glob("mcp*.go")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no MCP sources found: %v", err)
+	}
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
 		for _, m := range reOpName.FindAllStringSubmatch(readFile(t, file), -1) {
 			out[m[1]] = true
 		}

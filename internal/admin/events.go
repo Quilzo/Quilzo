@@ -100,7 +100,7 @@ func (s *Server) handleEventsScreen(w http.ResponseWriter, r *http.Request) {
 	// intermediary's, and stale the moment it is rendered anyway.
 	w.Header().Set("Cache-Control", "no-store")
 	data := map[string]any{
-		"Nav": "security", "Title": "Events", "Principal": p,
+		"Nav": "events", "Title": "Events", "Principal": p,
 	}
 	if s.Events == nil || s.Events.Open == nil {
 		data["Unavailable"] = "This build was started without a telemetry " +

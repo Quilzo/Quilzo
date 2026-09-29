@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"github.com/quilzo/quilzo/internal/telemetry"
 	"net/http"
 	"path/filepath"
 	"sort"
@@ -269,13 +270,13 @@ func fullyWired(t *testing.T) (*Server, string) {
 	srv.Integrations = &Integrations{
 		Webhooks: func() ([]webhook.Endpoint, []webhook.Delivery, error) {
 			return []webhook.Endpoint{{
-				URL: "https://example.org/hook", Secret: "0123456789abcdef",
-				Types: []string{"publish"}, Note: "the deploy trigger",
-			}}, []webhook.Delivery{{
-				ID: "d1", URL: "https://example.org/hook", Type: "publish",
-				Attempt: 1, Status: 200, At: "2026-08-16T09:00:00Z",
-				Succeeded: true,
-			}}, nil
+					URL: "https://example.org/hook", Secret: "0123456789abcdef",
+					Types: []string{"publish"}, Note: "the deploy trigger",
+				}}, []webhook.Delivery{{
+					ID: "d1", URL: "https://example.org/hook", Type: "publish",
+					Attempt: 1, Status: 200, At: "2026-08-16T09:00:00Z",
+					Succeeded: true,
+				}}, nil
 		},
 		SaveWebhooks: func([]webhook.Endpoint) error { return nil },
 		Extensions: func() ([]ext.Manifest, error) {
@@ -421,6 +422,12 @@ func fullyWired(t *testing.T) (*Server, string) {
 		},
 		Commit: func(string, string, string) error { return nil },
 	}
+	// A queue with something in it, so the findings screens render rows,
+	// filters and a detail page rather than only their empty states.
+	srv.Findings = newFakeRegister(
+		detectionFinding("admin-dana", "failed sign-in", telemetry.SeverityHigh),
+	).wire()
+
 	return srv, token
 }
 

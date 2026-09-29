@@ -1686,3 +1686,20 @@ td.actions > *:last-child, th.actions > *:last-child { margin-right: 0; }
   .sidenav, .prefs, .findbar, .skip { display: none; }
   .bar { position: static; }
 }
+
+/* -- the finding queue ------------------------------------------------------
+ *
+ * A table, not a column of cards. The queue is scanned rather than read, and
+ * the same seven facts in the same seven places on every row is what lets
+ * somebody run an eye down severity, then age, then owner. The title cell
+ * carries the entity and the "a person decides" marker underneath, so the
+ * row stays one line of columns on a wide screen and the table-wrap scrolls
+ * it sideways on a narrow one rather than squashing it.
+ */
+table.queue td, table.queue th { vertical-align: top; }
+table.queue th[scope="row"] { font-weight: 600; min-width: 16rem; }
+table.queue th[scope="row"] a { text-decoration: none; }
+table.queue th[scope="row"] a:hover,
+table.queue th[scope="row"] a:focus-visible { text-decoration: underline; }
+table.queue td:nth-child(5), table.queue td:nth-child(6) {
+  font-variant-numeric: tabular-nums; white-space: nowrap; }

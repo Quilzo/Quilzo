@@ -59,11 +59,12 @@ type destination struct {
 // dashboard, which are three answers to "can I show somebody this is right" —
 // so Assurance, which is the word the people who ask for it use.
 var groups = []string{
-	"Content",        // what you make
-	"Release",        // how it goes out
-	"Assurance",      // evidence that it is right
-	"Administration", // who may do what, and what this talks to
-	"Reference",      // how any of it works
+	"Content",             // what you make
+	"Release",             // how it goes out
+	"Assurance",           // evidence that it is right
+	"Security operations", // what is wrong, and what is being done about it
+	"Administration",      // who may do what, and what this talks to
+	"Reference",           // how any of it works
 }
 
 // destinations is every screen, in the default order.
@@ -95,6 +96,12 @@ var destinations = []destination{
 	{"provenance", "Provenance", "/provenance", "Assurance", "provenance", auth.ActView},
 	{"security", "Security", "/security", "Assurance", "security", auth.ActGrant},
 	{"logs", "Log", "/logs", "Assurance", "logging", auth.ActGrant},
+
+	// The working half of security: the queue, and the events it is raised
+	// from. Apart from Assurance, which is evidence that the system is right;
+	// this is the list of what is currently wrong.
+	{"findings", "Findings", "/findings", "Security operations", "security", auth.ActGrant},
+	{"events", "Events", "/security/events", "Security operations", "security", auth.ActGrant},
 
 	{"agents", "Agents", "/agents", "Administration", "agents", auth.ActGrant},
 	{"people", "People", "/people", "Administration", "users", auth.ActGrant},

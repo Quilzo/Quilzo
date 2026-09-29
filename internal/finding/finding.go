@@ -115,7 +115,39 @@ const (
 	// that the asset dropped out of inventory. Recording the second as the
 	// first is how a register reports progress it did not make.
 	Stale State = "stale"
+	// FalsePositive is somebody looked and the finding is wrong: what it
+	// says happened did not, or is not what the rule meant.
+	//
+	// A verdict, not a tidy-up. It is the number a detection's precision is
+	// measured from, so it has to be distinct from Fixed (it was real and
+	// was dealt with) and from Benign (it was real and expected). Collapsing
+	// the three is how an estate ends up with rules nobody can say are any
+	// good.
+	FalsePositive State = "false-positive"
+	// Benign is somebody looked and it is real and expected: the backup job
+	// that does look like exfiltration, the administrator doing what
+	// administrators do. The rule was right to fire and nothing is wrong.
+	Benign State = "benign"
 )
+
+// Closed reports whether a state takes a finding off the queue.
+//
+// Accepted is not closed. It is a decision to carry a risk for a while, it
+// keeps its owner and it expires, and a register that counted it as done
+// would report as handled the one kind of finding most likely to come back.
+func (s State) Closed() bool {
+	switch s {
+	case Fixed, Stale, FalsePositive, Benign:
+		return true
+	}
+	return false
+}
+
+// States lists every state, in the order a finding usually moves through
+// them.
+func States() []State {
+	return []State{Open, Triaged, Accepted, Fixed, Stale, FalsePositive, Benign}
+}
 
 // Evidence is one thing that supports a finding.
 //
@@ -301,7 +333,7 @@ func (f Finding) Expired(now time.Time) bool {
 // because a weight somebody can change without reading this is a weight
 // nobody can explain afterwards.
 func (f Finding) Weight(now time.Time) float64 {
-	if f.State == Fixed || f.State == Stale {
+	if f.State.Closed() {
 		return 0
 	}
 	// Severity is the base and is deliberately not the whole answer: ranking
@@ -377,6 +409,9 @@ func (f Finding) Why(now time.Time) string {
 	return strings.Join(parts, ", ")
 }
 
+// MaxEvidence is how many pieces of evidence one finding keeps.
+const MaxEvidence = 25
+
 // Register holds findings and deduplicates them.
 type Register struct {
 	byKey map[string]*Finding
@@ -421,9 +456,20 @@ func (r *Register) Record(f Finding, at time.Time) (*Finding, bool) {
 		existing.Severity = f.Severity
 	}
 	// Re-opening. Something reported again is not fixed, whatever anybody
-	// ticked — and saying so is the whole reason to keep one row.
-	if existing.State == Fixed || existing.State == Stale {
+	// ticked — and saying so is the whole reason to keep one row. Decisions
+	// live in the audit log and are applied over this; Apply makes the same
+	// call against the time of the decision.
+	if existing.State.Closed() && existing.State != Benign {
 		existing.State = Open
+	}
+	// Bounded. A finding seen every minute for a month would otherwise carry
+	// forty thousand pieces of evidence, and the register is read on every
+	// page load. The first is kept because it is what the finding was opened
+	// on; the rest are the most recent.
+	if n := len(existing.Evidence); n > MaxEvidence {
+		keep := append([]Evidence{existing.Evidence[0]},
+			existing.Evidence[n-MaxEvidence+1:]...)
+		existing.Evidence = keep
 	}
 	return existing, false
 }

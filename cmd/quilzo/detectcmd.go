@@ -44,9 +44,11 @@ func cmdDetect(root string, args []string) error {
 		return detectList(args[1:])
 	case "fields":
 		return detectFields(args[1:])
+	case "run":
+		return detectRun(root, args[1:])
 	default:
 		return fmt.Errorf(
-			"unknown detect command %q; try test, list or fields", args[0])
+			"unknown detect command %q; try test, list, fields or run", args[0])
 	}
 }
 

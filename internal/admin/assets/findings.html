@@ -1,0 +1,79 @@
+{{template "head" .}}
+<h1>Findings</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+
+{{if not .Produced}}
+<div class="notice warn">
+  <p><strong>Nothing has looked yet.</strong> No detection run, scan or import
+    has ever written to the finding register, so an empty queue here would be
+    silence rather than a clean result.</p>
+  <p>Run the detections over the event store with
+    <code>quilzo detect run</code>. Findings from scanners arrive the same
+    way.</p>
+</div>
+{{else}}
+
+<p class="lead">{{.Open}} need{{if eq .Open 1}}s{{end}} attention of
+  {{.Total}} recorded. Ranked by severity, age, recurrence and ownership, so
+  the top of the list is the place to start.</p>
+
+<div class="chips" aria-label="Severity of what needs attention">
+  {{range .BySev}}<a href="{{.Href}}"{{if .On}} class="on" aria-current="true"{{end}}>
+    <span class="pill {{.Label}}">{{.Label}}</span><span class="count">{{.Count}}</span></a>{{end}}
+</div>
+
+<p class="hint">{{.Person}} rest{{if eq .Person 1}}s{{end}} on log text that
+  whoever is being detected can write, so a person decides ·
+  {{.Unowned}} owned by nobody{{if .Expired}} ·
+  <span class="bad">{{.Expired}} accepted risk(s) past their date, still
+  reported as handled</span>{{end}}</p>
+
+<nav aria-label="Filter by kind" class="chips">
+  {{range .Kinds}}<a href="{{.Href}}"{{if .On}} class="on" aria-current="true"{{end}}>{{.Label}}<span class="count">{{.Count}}</span></a>{{end}}
+</nav>
+<nav aria-label="Filter by state" class="chips">
+  {{range .States}}<a href="{{.Href}}"{{if .On}} class="on" aria-current="true"{{end}}>{{.Label}}<span class="count">{{.Count}}</span></a>{{end}}
+</nav>
+
+{{if not .Rows}}
+  {{if .Filtered}}<p class="notice">Nothing matches these filters.
+    <a href="/findings">Show what needs attention</a>.</p>
+  {{else}}<p class="notice ok">Nothing needs attention. Everything recorded has
+    a decision on it.</p>{{end}}
+{{else}}
+<div class="table-wrap">
+<table class="queue">
+  <caption class="visually-hidden">Findings, most urgent first</caption>
+  <thead><tr>
+    <th scope="col">Severity</th><th scope="col">Finding</th>
+    <th scope="col">Kind</th><th scope="col">State</th>
+    <th scope="col">Open for</th><th scope="col">Seen</th>
+    <th scope="col">Owner</th>
+  </tr></thead>
+  <tbody>
+  {{range .Rows}}
+  <tr>
+    <td><span class="pill {{.Sev}}">{{.Sev}}</span></td>
+    <th scope="row"><a href="/findings/{{.ID}}">{{.Title}}</a>
+      <div class="hint">{{if not .Entity.Zero}}<code>{{.Entity.String}}</code> · {{end}}{{.Source}}
+      {{if .Person}} · <span class="warn">a person decides</span>{{end}}</div></th>
+    <td>{{.Kind}}</td>
+    <td><span class="tag{{if .Expired}} tag-bad{{else if .Closed}} tag-ok{{end}}">{{.State}}{{if .Expired}} (lapsed){{end}}</span></td>
+    <td>{{.Age}}</td>
+    <td>{{.Seen}}</td>
+    <td>{{if .Owner}}{{.Owner}}{{else}}<span class="dim">nobody</span>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+{{end}}
+{{end}}
+<p class="hint">Decisions are written to the audit log, which is signed and
+  chained; this screen reads them back rather than keeping a copy that could
+  disagree.</p>
+{{template "foot" .}}

@@ -155,6 +155,10 @@ type Server struct {
 	// whoever is on duty today.
 	Running *Running
 
+	// Findings is the finding register: what the producers recorded, with
+	// the audit log's decisions applied.
+	Findings *Findings
+
 	// Events is the telemetry store. Separate from Running because one is
 	// about whether collection is working and the other is what was
 	// collected, and a person opens them at different moments.
@@ -946,6 +950,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/agents", s.handleAgentsScreen)
 	mux.HandleFunc("/security/running", s.handleRunningScreen)
 	mux.HandleFunc("/security/events", s.handleEventsScreen)
+	mux.HandleFunc("/findings", s.handleFindings)
+	mux.HandleFunc("/findings/", s.handleFinding)
+	mux.HandleFunc("/findings/decide", s.handleFindingDecide)
 	mux.HandleFunc("/languages", s.handleLanguages)
 	mux.HandleFunc("/languages/add", s.handleLanguageAdd)
 	mux.HandleFunc("/languages/translated", s.handleLanguageTranslated)

@@ -145,6 +145,7 @@ templates and design
 
 messengers
   quilzo triage [FILE] --rules DIR         run the rules, rank what they found
+  quilzo finding list [--state S --kind K] the queue, most urgent first
   quilzo finding decide ID STATE           record a decision in the audit chain
   quilzo finding story [ID]                replay who decided what, and why
   quilzo canary plant --where W --why Y    plant a value nothing should read
@@ -277,6 +278,7 @@ telling people
   quilzo detect test [DIR]                 run every rule against its own fixtures
   quilzo detect list [DIR]                 the rules, what they read, what they miss
   quilzo detect fields                     how a rule may compare
+  quilzo detect run [--rules DIR]          run the rules over new events, into the queue
   quilzo telemetry check [FILE]            can a connector's events be used at all
   quilzo telemetry fields [FILE]           what a detection may refer to
   quilzo telegram check                    confirm the bot token works
