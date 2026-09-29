@@ -291,6 +291,19 @@ func Client(purpose string, timeout time.Duration) *http.Client {
 			IdleConnTimeout:     30 * time.Second,
 			TLSHandshakeTimeout: 10 * time.Second,
 		},
+		// No redirects. Go's default follows ten, and strips Authorization
+		// and Cookie when the host changes — but not a key in a header of
+		// the API's own naming. A connector authenticating with X-Api-Key
+		// that was answered with a 302 would carry the key to whatever host
+		// the response named, past the declared-host check that only ever
+		// saw the first URL. Every API this reads answers where it is asked.
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return fmt.Errorf(
+				"%s redirected to %s. Nothing reached through this client "+
+					"redirects on purpose, and following it would send the "+
+					"request and its credential somewhere the configuration "+
+					"does not name", via[len(via)-1].URL.Host, req.URL.Host)
+		},
 	}
 }
 
