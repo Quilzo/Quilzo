@@ -181,6 +181,7 @@ var commandNeeds = map[string]need{
 	"decide list":   {action: auth.ActView},
 	"decide ask":    {action: auth.ActView},
 	"decide eval":   {action: auth.ActView},
+	"analytics":     {action: auth.ActView},
 	"finding story": {action: auth.ActView},
 
 	// Planting a canary commits the organisation to acting when it fires,

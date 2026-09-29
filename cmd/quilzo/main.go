@@ -345,6 +345,7 @@ the assistant
   quilzo assistant ask NAME "question"     try it, with its sources and what was removed
   quilzo assistant eval NAME CASES.jsonl   measure it, including what it should refuse
   quilzo assistant list | remove NAME
+  quilzo analytics [--days N]              views, visitors, referrers, conversions; no cookie
   quilzo decide set FILE.json              declare typed questions with a confidence gate
   quilzo decide ask NAME STATE             answer them; under the threshold, a person decides
   quilzo decide eval NAME CASES.jsonl      how much it decides alone, and how often rightly
@@ -714,6 +715,8 @@ func main() {
 		err = cmdGateway(root, cmdArgs)
 	case "decide":
 		err = cmdDecide(root, cmdArgs)
+	case "analytics":
+		err = cmdAnalytics(root, cmdArgs)
 	case "canary":
 		err = cmdCanary(root, cmdArgs)
 	case "spool":

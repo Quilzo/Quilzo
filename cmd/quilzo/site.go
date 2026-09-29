@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/analytics"
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/vector"
@@ -215,6 +216,20 @@ func cmdSite(root string, args []string) error {
 	}
 	if d := strings.TrimSpace(*desc); d != "" {
 		st.Description = d
+	}
+
+	// Counting, before the handler is built around it. Written every thirty
+	// seconds: a crash costs at most that much of the day's totals, and the
+	// totals are all there is — see internal/analytics.
+	if counter, cerr := analytics.Open(analyticsDir(root), nil); cerr == nil {
+		st.Analytics = counter
+		go func() {
+			for range time.Tick(30 * time.Second) {
+				_ = counter.Flush()
+			}
+		}()
+	} else {
+		fmt.Fprintf(os.Stderr, "analytics are off: %v\n", cerr)
 	}
 
 	handler := st.Handler()

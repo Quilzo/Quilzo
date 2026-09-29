@@ -35,6 +35,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/analytics"
 	"io"
 	"net/http"
 	"sort"
@@ -65,6 +66,9 @@ import (
 // Site serves the live ref.
 type Site struct {
 	Store *store.Store
+	// Analytics counts page views and conversions without a script or a
+	// cookie. Nil counts nothing.
+	Analytics *analytics.Counter
 	// Assistants are the site's declared chatbots, served at /ask/NAME.
 	// Nil means the route 404s.
 	Assistants *Assistants
@@ -288,7 +292,7 @@ func (st *Site) Handler() http.Handler {
 	// the gate has decided whether there is one. See internal/compress for
 	// why gzip only, why the ETag comes back weak, and why this is applied
 	// here and not to the admin.
-	return compress.Responses(st.securityHeaders(st.crawlGate(st.marked(mux))))
+	return compress.Responses(st.securityHeaders(st.crawlGate(st.marked(st.counted(mux)))))
 }
 
 // CrawlGate enforces the published licence against identified crawlers.

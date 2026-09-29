@@ -173,6 +173,9 @@ func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
 	if st.Forms.Audit != nil {
 		st.Forms.Audit(name, source, true)
 	}
+	if st.Analytics != nil {
+		st.Analytics.Convert(r, "form:"+name)
+	}
 	// After it is stored and before the reply is written, because the person
 	// who filled the form in is owed an answer whatever the receiver does. The
 	// host's implementation is what bounds the wait; this end knows only that

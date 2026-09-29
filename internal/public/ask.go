@@ -142,6 +142,9 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		if st.Assistants.Audit != nil {
 			st.Assistants.Audit(a.Name, source, !ans.Refused)
 		}
+		if st.Analytics != nil && !ans.Refused {
+			st.Analytics.Convert(r, "chatbot:"+a.Name)
+		}
 		view.Answer = &ans
 		view.Sources = st.citedSources(ans)
 		if ans.Proposed != nil {

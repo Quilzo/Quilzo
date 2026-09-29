@@ -478,6 +478,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 	registerSecurityOps(srv, root, caller)
 	registerAssistantOps(srv, root, caller)
 	registerDecideOps(srv, root, caller)
+	registerAnalyticsOps(srv, root, caller)
 
 	return srv
 }

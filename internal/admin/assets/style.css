@@ -1703,3 +1703,22 @@ table.queue th[scope="row"] a:hover,
 table.queue th[scope="row"] a:focus-visible { text-decoration: underline; }
 table.queue td:nth-child(5), table.queue td:nth-child(6) {
   font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* -- analytics --------------------------------------------------------------
+ * Figures in a row, and a bar chart drawn on the server. Tabular figures so a
+ * column of counts lines up; the chart takes its colour from the theme so it
+ * reads in both schemes.
+ */
+.stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: .75rem; margin: 1rem 0; }
+.stats-row > div { background: var(--surface-container-low);
+  border: 1px solid var(--outline-variant); border-radius: var(--shape-sm); padding: .75rem 1rem; }
+.stats-row dt { font: var(--label-md); color: var(--on-surface-variant); }
+.stats-row dd { margin: .2rem 0 0; font-size: 1.6rem; font-weight: 700;
+  font-variant-numeric: tabular-nums; }
+.chart { margin: 1rem 0; }
+.chart svg { width: 100%; height: 160px; display: block;
+  border-bottom: 1px solid var(--outline-variant); }
+.chart rect { fill: var(--primary); }
+.chart rect:hover { fill: var(--on-surface); }
+.chart figcaption { font: var(--label-md); color: var(--on-surface-variant); margin-top: .3rem; }

@@ -155,6 +155,9 @@ type Server struct {
 	// whoever is on duty today.
 	Running *Running
 
+	// Analytics is the site's traffic, counted without a script or cookie.
+	Analytics *Analytics
+
 	// Deciders answer typed questions with a confidence gate.
 	Deciders *Deciders
 
@@ -962,6 +965,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/events", s.handleEventsScreen)
 	mux.HandleFunc("/findings", s.handleFindings)
 	mux.HandleFunc("/models", s.handleModels)
+	mux.HandleFunc("/analytics", s.handleAnalytics)
 	mux.HandleFunc("/decisions", s.handleDeciders)
 	mux.HandleFunc("/decisions/", s.handleDecider)
 	mux.HandleFunc("/decisions/save", s.handleDeciderSave)

@@ -88,7 +88,7 @@ func (s *Server) handleDecider(w http.ResponseWriter, r *http.Request) {
 	decl, _ := json.MarshalIndent(d, "", "  ")
 	data := map[string]any{"Nav": "decisions", "Title": d.Title, "Principal": p, "D": d,
 		"Declaration": string(decl),
-		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
+		"Message":     r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"CanSave": s.mayUse(p, auth.ActPublish, "/") && !p.Limits.ReadOnly}
 
 	// The console. A POST, because the state may be somebody's ticket and

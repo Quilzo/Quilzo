@@ -1,0 +1,45 @@
+{{template "head" .}}
+<h1>Analytics</h1>
+<p class="lead">Counted at the server: no script on your pages, no cookie, no
+  banner, and no address kept. A visitor is recognised for one day only. The
+  site writes its counts every thirty seconds, so the last half-minute may not
+  be here yet.</p>
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<nav class="chips" aria-label="Period">
+  <a href="/analytics?days=7"{{if eq .Days 7}} class="on" aria-current="true"{{end}}>7 days</a>
+  <a href="/analytics?days=30"{{if eq .Days 30}} class="on" aria-current="true"{{end}}>30 days</a>
+  <a href="/analytics?days=90"{{if eq .Days 90}} class="on" aria-current="true"{{end}}>90 days</a>
+</nav>
+<dl class="stats-row">
+  <div><dt>Views</dt><dd>{{.S.Views}}</dd></div>
+  <div><dt>Visitor-days</dt><dd>{{.S.Visitors}}</dd></div>
+  <div><dt>Prefetched</dt><dd>{{.S.Prefetch}}</dd></div>
+  {{if .Conversion}}<div><dt>Converted</dt><dd>{{.Conversion}}</dd></div>{{end}}
+</dl>
+<figure class="chart">
+  <svg viewBox="0 0 600 140" role="img" aria-labelledby="chart-cap" preserveAspectRatio="none">
+    {{range .Bars}}<rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}"><title>{{.Label}}: {{.Views}} views</title></rect>{{end}}
+  </svg>
+  <figcaption id="chart-cap">Views per day, highest {{.Peak}}.</figcaption>
+</figure>
+<p class="hint">The site prefetches a page when a reader hovers its link, and a
+  prefetched page opens without asking the server again — so it is counted as
+  prefetched, not as a view. Most prefetched pages are then opened.</p>
+
+<div class="grid2">
+<section><h2>Pages</h2>
+{{if .S.Pages}}<div class="table-wrap"><table><thead><tr><th scope="col">Page</th><th scope="col">Views</th><th scope="col">Visitor-days</th></tr></thead><tbody>
+{{range .S.Pages}}<tr><th scope="row"><code>{{.Name}}</code></th><td>{{.Count}}</td><td>{{.Extra}}</td></tr>{{end}}
+</tbody></table></div>{{else}}<p>No views yet.</p>{{end}}</section>
+<section><h2>Came from</h2>
+{{if .S.Referrers}}<div class="table-wrap"><table><thead><tr><th scope="col">Source</th><th scope="col">Visits</th></tr></thead><tbody>
+{{range .S.Referrers}}<tr><th scope="row">{{.Name}}</th><td>{{.Count}}</td></tr>{{end}}
+</tbody></table></div>{{else}}<p>Nothing from other sites yet.</p>{{end}}</section>
+</div>
+
+<h2>Conversions</h2>
+{{if .S.Goals}}<div class="table-wrap"><table><thead><tr><th scope="col">Goal</th><th scope="col">Visitors</th></tr></thead><tbody>
+{{range .S.Goals}}<tr><th scope="row"><code>{{.Name}}</code></th><td>{{.Count}}</td></tr>{{end}}
+</tbody></table></div>{{else}}<p>No form sent or chatbot question answered yet.</p>{{end}}
+{{end}}
+{{template "foot" .}}
