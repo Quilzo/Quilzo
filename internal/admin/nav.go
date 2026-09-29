@@ -97,6 +97,7 @@ var destinations = []destination{
 	{"history", "History", "/history", "Release", "history", auth.ActView},
 	// With Release: what happened to what went out.
 	{"analytics", "Analytics", "/analytics", "Release", "publishing", auth.ActEditDraft},
+	{"experiments", "Experiments", "/experiments", "Release", "publishing", auth.ActEditDraft},
 	{"transfer", "Transfer", "/transfer", "Release", "transfer", auth.ActView},
 	{"decentralised", "Permanent web", "/decentralised", "Release", "ipfs", auth.ActView},
 

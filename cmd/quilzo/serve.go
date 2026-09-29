@@ -254,6 +254,7 @@ func cmdServe(root string, args []string) error {
 	srv.Models = gatewayCapability(root)
 	srv.Deciders = decidersCapability(root)
 	srv.Analytics = analyticsCapability(root)
+	srv.Experiments = experimentsCapability(root)
 	srv.Assurance = &admin.Assurance{
 		Scan: func() (int, []codescan.Finding, error) {
 			inputs, err := collectInputs(root, *tplDir, site.RefDraft)

@@ -346,6 +346,10 @@ the assistant
   quilzo assistant eval NAME CASES.jsonl   measure it, including what it should refuse
   quilzo assistant list | remove NAME
   quilzo analytics [--days N]              views, visitors, referrers, conversions; no cookie
+  quilzo experiment add NAME --page P --variant b=PAGE --goal G   an A/B test, no script or cookie
+  quilzo experiment start|stop|remove NAME
+  quilzo experiment list                   every test, running or not
+  quilzo experiment report NAME            results, and a verdict only when there is one
   quilzo decide set FILE.json              declare typed questions with a confidence gate
   quilzo decide ask NAME STATE             answer them; under the threshold, a person decides
   quilzo decide eval NAME CASES.jsonl      how much it decides alone, and how often rightly
@@ -717,6 +721,8 @@ func main() {
 		err = cmdDecide(root, cmdArgs)
 	case "analytics":
 		err = cmdAnalytics(root, cmdArgs)
+	case "experiment":
+		err = cmdExperiment(root, cmdArgs)
 	case "canary":
 		err = cmdCanary(root, cmdArgs)
 	case "spool":

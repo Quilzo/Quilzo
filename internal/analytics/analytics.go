@@ -415,3 +415,62 @@ func Summarise(days []Day) Summary {
 	}
 	return s
 }
+
+// Bucket assigns a request to one of several weighted arms, stably for the
+// day and with nothing stored: the daily visitor hash, keyed by the
+// experiment so that two experiments do not split the same visitors the same
+// way. Returns 0 — the first arm — for anything that is not a person, so a
+// crawler always sees the control.
+func (c *Counter) Bucket(r *http.Request, key string, weights []int) int {
+	total := 0
+	for _, w := range weights {
+		if w > 0 {
+			total += w
+		}
+	}
+	if total == 0 || !Human(r) {
+		return 0
+	}
+	c.mu.Lock()
+	c.roll()
+	salt := c.salt
+	c.mu.Unlock()
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	h := sha256.New()
+	h.Write(salt)
+	h.Write([]byte(host))
+	h.Write([]byte{0})
+	h.Write([]byte(r.UserAgent()))
+	h.Write([]byte{0})
+	h.Write([]byte(key))
+	n := int(binary.BigEndian.Uint64(h.Sum(nil)[:8]) % uint64(total))
+	for i, w := range weights {
+		if w <= 0 {
+			continue
+		}
+		if n < w {
+			return i
+		}
+		n -= w
+	}
+	return 0
+}
+
+// Reached reports whether this request's visitor has already reached a goal
+// today. An experiment attributes a conversion only to a visitor it showed a
+// variant to; one who converts without ever seeing the page would otherwise
+// count as a win for whichever arm the hash names. After a restart the day's
+// sets are empty, so a conversion is missed rather than invented.
+func (c *Counter) Reached(r *http.Request, goal string) bool {
+	if !Human(r) {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.roll()
+	set := c.goals[clean(goal)]
+	return set != nil && set[c.visitor(r)]
+}

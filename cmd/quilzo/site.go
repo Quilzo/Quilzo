@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/analytics"
+	"github.com/quilzo/quilzo/internal/experiment"
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/vector"
@@ -223,6 +224,11 @@ func cmdSite(root string, args []string) error {
 	// totals are all there is — see internal/analytics.
 	if counter, cerr := analytics.Open(analyticsDir(root), nil); cerr == nil {
 		st.Analytics = counter
+		// Read per request, so starting or stopping a test from the admin
+		// takes effect on the next visitor rather than on the next restart.
+		st.Experiments = func() (*experiment.Set, error) {
+			return experiment.Load(experimentsPath(root))
+		}
 		go func() {
 			for range time.Tick(30 * time.Second) {
 				_ = counter.Flush()

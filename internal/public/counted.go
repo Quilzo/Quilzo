@@ -32,6 +32,7 @@ func (st *Site) counted(next http.Handler) http.Handler {
 			r.Header.Get("Sec-Fetch-Dest") == "document"
 		if page || revisit {
 			st.Analytics.Visit(r, r.URL.Path)
+			st.convertPage(r, r.URL.Path)
 		}
 	})
 }

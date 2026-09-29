@@ -5,6 +5,7 @@ package analytics
 
 import (
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -161,5 +162,30 @@ func TestAConversionIsCountedOncePerVisitor(t *testing.T) {
 	c.Convert(r, "form:contact")
 	if d := c.Today(); d.Goals["form:contact"] != 1 {
 		t.Fatalf("%+v", d.Goals)
+	}
+}
+
+func TestBucketsAreStableWeightedAndCrawlersSeeTheControl(t *testing.T) {
+	c, _, _ := counter(t)
+	req := func(ip, ua string) *http.Request {
+		r := httptest.NewRequest("GET", "http://shop.example/pricing", nil)
+		r.RemoteAddr = ip + ":1"
+		r.Header.Set("User-Agent", ua)
+		return r
+	}
+	counts := make([]int, 2)
+	for i := 0; i < 4000; i++ {
+		ip := fmt.Sprintf("10.%d.%d.%d", i/65536, (i/256)%256, i%256)
+		b := c.Bucket(req(ip, chrome), "exp", []int{75, 25})
+		if again := c.Bucket(req(ip, chrome), "exp", []int{75, 25}); again != b {
+			t.Fatal("the same visitor moved between arms")
+		}
+		counts[b]++
+	}
+	if share := float64(counts[1]) / 4000; share < 0.22 || share > 0.28 {
+		t.Fatalf("a 25%% arm got %.3f", share)
+	}
+	if c.Bucket(req("10.0.0.1", "Googlebot/2.1"), "exp", []int{1, 1}) != 0 {
+		t.Fatal("a crawler was put in a variant")
 	}
 }

@@ -177,12 +177,16 @@ var commandNeeds = map[string]need{
 	"gateway": {action: auth.ActGrant},
 	// Declaring a decider is a publish: above its threshold, what it
 	// answers drives other things with no person involved.
-	"decide":        {action: auth.ActPublish},
-	"decide list":   {action: auth.ActView},
-	"decide ask":    {action: auth.ActView},
-	"decide eval":   {action: auth.ActView},
-	"analytics":     {action: auth.ActView},
-	"finding story": {action: auth.ActView},
+	"decide":      {action: auth.ActPublish},
+	"decide list": {action: auth.ActView},
+	"decide ask":  {action: auth.ActView},
+	"decide eval": {action: auth.ActView},
+	"analytics":   {action: auth.ActView},
+	// An experiment changes what visitors see: a publish.
+	"experiment":        {action: auth.ActPublish},
+	"experiment list":   {action: auth.ActView},
+	"experiment report": {action: auth.ActView},
+	"finding story":     {action: auth.ActView},
 
 	// Planting a canary commits the organisation to acting when it fires,
 	// and puts a row in the audit log saying so. The same weight as a

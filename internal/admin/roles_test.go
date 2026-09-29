@@ -37,7 +37,7 @@ func TestEachRoleReachesItsOwnWorkAndNoMore(t *testing.T) {
 			"/review", "/publishing", "/history", "/transfer",
 			"/provenance", "/playground", "/profile",
 		},
-		auth.RoleAuthor:    {"/assist", "/settings", "/assistants", "/decisions", "/analytics"},
+		auth.RoleAuthor:    {"/assist", "/settings", "/assistants", "/decisions", "/analytics", "/experiments"},
 		auth.RolePublisher: {},
 		auth.RoleAdmin: {
 			"/security", "/security/scan", "/security/policy",

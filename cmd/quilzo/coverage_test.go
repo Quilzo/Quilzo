@@ -441,6 +441,11 @@ var coverage = map[string]surfaces{
 		MCP: []string{"list_assistants", "ask_assistant", "declare_assistant"},
 	},
 
+	"experiment": {
+		GUI: "/experiments",
+		MCP: []string{"experiment_report"},
+	},
+
 	"analytics": {
 		GUI: "/analytics",
 		MCP: []string{"site_analytics"},

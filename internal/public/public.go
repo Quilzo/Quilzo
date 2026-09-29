@@ -36,6 +36,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/analytics"
+	"github.com/quilzo/quilzo/internal/experiment"
 	"io"
 	"net/http"
 	"sort"
@@ -69,6 +70,9 @@ type Site struct {
 	// Analytics counts page views and conversions without a script or a
 	// cookie. Nil counts nothing.
 	Analytics *analytics.Counter
+	// Experiments are the site's A/B tests. They need Analytics, which
+	// assigns visitors and counts results; without it none runs.
+	Experiments func() (*experiment.Set, error)
 	// Assistants are the site's declared chatbots, served at /ask/NAME.
 	// Nil means the route 404s.
 	Assistants *Assistants
@@ -787,6 +791,13 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// An experiment on this page serves the variant's content at this
+	// address. See experiments.go.
+	served, inExperiment := name, false
+	if v, vbody, ok := st.variantFor(r, name, pages); ok {
+		served, body, inExperiment = v, vbody, true
+	}
+
 	// The ETag is the content hash. Not derived from it — it is it.
 	// The page's own content hash is its identity — until the page embeds a
 	// listing, and then it is not.
@@ -800,13 +811,19 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	// So a page with listings mixes in the tree the listings read and the
 	// arguments they were given. Both are part of what was rendered, so both
 	// belong in the name of it.
-	tag := `"` + tree[name] + `"`
+	tag := `"` + tree[served] + `"`
 	args := firstOf(r.URL.Query())
 	if names := listing.On(body); len(names) > 0 {
-		tag = `"` + renderTag(tree[name], st.dataTree(), names, args) + `"`
+		tag = `"` + renderTag(tree[served], st.dataTree(), names, args) + `"`
 	}
 	w.Header().Set("ETag", tag)
-	w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
+	if inExperiment {
+		// Private: a shared cache holding one visitor's variant would hand
+		// it to everybody, which ends the experiment and ruins its data.
+		w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
+	} else {
+		w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
+	}
 	if etag.Matches(r.Header.Get("If-None-Match"), tag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
@@ -853,7 +870,7 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html = st.injectHead(html, name, tree[name], body)
+	html = st.injectHead(html, name, tree[served], body)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
 }

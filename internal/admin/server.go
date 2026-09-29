@@ -155,6 +155,9 @@ type Server struct {
 	// whoever is on duty today.
 	Running *Running
 
+	// Experiments are the site's A/B tests.
+	Experiments *Experiments
+
 	// Analytics is the site's traffic, counted without a script or cookie.
 	Analytics *Analytics
 
@@ -365,6 +368,7 @@ func (s *Server) refresh() {
 // exactly right and there is no surface to remove.
 func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Layouts) (*Server, error) {
 	t, err := template.New("").Funcs(template.FuncMap{
+		"pct": func(f float64) float64 { return f * 100 },
 		"short": func(id string) string {
 			if len(id) > 12 {
 				return id[:12]
@@ -966,6 +970,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/findings", s.handleFindings)
 	mux.HandleFunc("/models", s.handleModels)
 	mux.HandleFunc("/analytics", s.handleAnalytics)
+	mux.HandleFunc("/experiments", s.handleExperiments)
+	mux.HandleFunc("/experiments/change", s.handleExperimentChange)
 	mux.HandleFunc("/decisions", s.handleDeciders)
 	mux.HandleFunc("/decisions/", s.handleDecider)
 	mux.HandleFunc("/decisions/save", s.handleDeciderSave)
