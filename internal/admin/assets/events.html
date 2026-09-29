@@ -1,0 +1,119 @@
+{{template "head" .}}
+<h1>Events</h1>
+
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+
+<p class="lead">{{.Count}} event(s) in {{.Segments}} segment(s),
+{{.Bytes}} byte(s).</p>
+
+{{if .Note}}<p class="notice warn">{{.Note}}</p>{{end}}
+{{if .Skipped}}<p class="notice warn">The sources and recent events below are
+read from arrivals since {{.From.Format "2006-01-02 15:04"}} UTC. The
+{{.Skipped}} older segment(s) were not read on this page load, so a source
+that went quiet before then is not listed here — ask the store directly with
+<code>quilzo spool</code> for anything older.</p>{{end}}
+
+<h2>Whether a query over this means anything</h2>
+<p>A count is the easy number. These are the three that decide whether
+anything asked of this store can be believed.</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Measure</th><th scope="col">Value</th>
+    <th scope="col">What it decides</th>
+  </tr></thead>
+  <tbody>
+  <tr>
+    <th scope="row">Complete up to</th>
+    <td>{{if .Watermark.IsZero}}nothing yet{{else}}{{.Watermark.Format "2006-01-02 15:04"}}{{if .Behind}}<div class="hint">{{.Behind}} behind now</div>{{end}}{{end}}</td>
+    <td>A window ending after this is still waiting for events that have not
+      arrived. A correlation closed on the clock rather than on this never
+      sees them, the rule does not fire, and nothing reports an error.</td>
+  </tr>
+  <tr>
+    <th scope="row">Arrival delay</th>
+    <td>{{.Median}} median<br>{{.P99}} at the 99th<br>{{.Worst}} worst</td>
+    <td>How far behind the sources run. The 99th is the one a window has to
+      wait for; the median is what it feels like and is not the number that
+      loses events.</td>
+  </tr>
+  <tr>
+    <th scope="row">Oldest held</th>
+    <td>{{if .Oldest.IsZero}}nothing{{else}}{{.Oldest.Format "2006-01-02 15:04"}}{{end}}</td>
+    <td>How far back a question can reach. Anything before it was retained
+      away, and a search that finds nothing there has not looked.</td>
+  </tr>
+  </tbody>
+</table>
+</div>
+
+{{if .Holds}}
+<h2>Held for investigation</h2>
+<p>Retention will not delete anything covered by these, which is what stops an
+investigation losing its evidence to a schedule.</p>
+<ul>
+{{range .Holds}}<li><strong>{{.Name}}</strong> — {{.Why}}</li>{{end}}
+</ul>
+{{end}}
+
+<h2>What is sending</h2>
+{{if not .Senders}}
+<p class="notice warn">Nothing has sent anything. An empty store and a
+collector that has stopped look the same from here, and only one of them is
+fine.</p>
+{{else}}
+<p>Quietest first, because the source that has stopped is the one worth
+seeing and a list sorted by volume buries it under whatever is loudest.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Source</th><th scope="col">Events</th>
+    <th scope="col">Failed</th><th scope="col">Clock ahead</th>
+    <th scope="col">Last heard</th>
+  </tr></thead>
+  <tbody>
+  {{range .Senders}}
+  <tr>
+    <th scope="row"><code>{{.Source}}</code></th>
+    <td>{{.Count}}</td>
+    <td>{{.Failed}}</td>
+    <td>{{if .Ahead}}{{.Ahead}} event(s) dated after they arrived{{else}}—{{end}}</td>
+    <td>{{.Quiet}} ago<div class="hint">{{.Newest.Format "2006-01-02 15:04"}}</div></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<h2>Most recent</h2>
+{{if not .Recent}}
+<p>Nothing to show.</p>
+{{else}}
+<p>By arrival rather than by the time in the event, so a source with a wrong
+clock cannot push everything else off the screen.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Arrived</th><th scope="col">Source</th>
+    <th scope="col">Actor</th><th scope="col">What</th>
+  </tr></thead>
+  <tbody>
+  {{range .Recent}}
+  <tr>
+    <th scope="row">{{.Received.Format "15:04:05"}}</th>
+    <td><code>{{.Source}}</code></td>
+    <td>{{if .Actor.Zero}}—{{else}}{{.Actor.String}}{{end}}</td>
+    <td>{{.Message}}<div class="hint">{{.Disposition}}</div></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<p class="hint">As of {{.As.Format "2006-01-02 15:04"}} UTC.</p>
+{{end}}
+<p class="hint"><a href="/security">Back to the posture dashboard.</a></p>
+{{template "foot" .}}

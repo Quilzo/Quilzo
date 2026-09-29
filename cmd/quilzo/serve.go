@@ -248,6 +248,7 @@ func cmdServe(root string, args []string) error {
 				c.RequireVerifiedEmail, true
 		},
 	}
+	srv.Events = &admin.Events{Open: eventsOpener(root)}
 	srv.Assurance = &admin.Assurance{
 		Scan: func() (int, []codescan.Finding, error) {
 			inputs, err := collectInputs(root, *tplDir, site.RefDraft)

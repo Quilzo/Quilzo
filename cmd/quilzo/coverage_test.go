@@ -415,6 +415,7 @@ var coverage = map[string]surfaces{
 	// The event store. A screen over it is the analyst surface the whole
 	// SIEM half needs, and it arrives with querying rather than with storage.
 	"spool": {
+		GUI: "/security/events",
 		Why: "storing and retaining events is an operator's job at a " +
 			"terminal; the screen arrives with the query surface that " +
 			"reads the store, not with the store",

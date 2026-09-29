@@ -148,6 +148,11 @@ type Server struct {
 	// times — evidence answers an auditor once a year, and this answers
 	// whoever is on duty today.
 	Running *Running
+
+	// Events is the telemetry store. Separate from Running because one is
+	// about whether collection is working and the other is what was
+	// collected, and a person opens them at different moments.
+	Events *Events
 	// Transfer moves whole sites in and out, and applies starters.
 	Transfer *Transfer
 	// Decentralised renders the published site so its IPFS identifier can be
@@ -899,6 +904,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/verify", s.handleVerify)
 	mux.HandleFunc("/security/agents", s.handleAgentsScreen)
 	mux.HandleFunc("/security/running", s.handleRunningScreen)
+	mux.HandleFunc("/security/events", s.handleEventsScreen)
 	mux.HandleFunc("/languages", s.handleLanguages)
 	mux.HandleFunc("/languages/add", s.handleLanguageAdd)
 	mux.HandleFunc("/languages/translated", s.handleLanguageTranslated)

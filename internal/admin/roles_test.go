@@ -42,6 +42,7 @@ func TestEachRoleReachesItsOwnWorkAndNoMore(t *testing.T) {
 		auth.RoleAdmin: {
 			"/security", "/security/scan", "/security/policy",
 			"/security/inventory", "/security/integrity", "/security/agents",
+			"/security/events",
 			"/logs", "/people", "/access", "/integrations",
 		},
 	}
