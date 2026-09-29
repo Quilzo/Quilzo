@@ -1722,3 +1722,40 @@ table.queue td:nth-child(5), table.queue td:nth-child(6) {
 .chart rect { fill: var(--primary); }
 .chart rect:hover { fill: var(--on-surface); }
 .chart figcaption { font: var(--label-md); color: var(--on-surface-variant); margin-top: .3rem; }
+
+/* -- the menu, as a popover on a narrow screen --------------------------------
+ *
+ * The sidebar element carries the popover attribute. On a wide screen it is
+ * the sidebar, so the browser's popover styling is set aside — including the
+ * display:none a closed popover gets — for a body that has not hidden it.
+ * On a narrow screen it is a drawer the Menu button opens over the page.
+ */
+.menubutton, .menuclose { display: none; }
+@media (min-width: 60rem) {
+  body:not(.nav-hidden):has(> .sidenav) > .sidenav[popover] {
+    display: block; position: static; inset: auto; width: auto; height: auto;
+    margin: 0; overflow: visible; color: inherit;
+    border: 0; border-right: 1px solid var(--outline-variant); }
+}
+@media (max-width: 59.99rem) {
+  .navtoggle { display: none; }
+  .menubutton { display: inline-flex; align-items: center; gap: .4rem;
+    font: inherit; font-weight: 600; padding: .45rem .8rem; border-radius: 999px;
+    border: 1px solid var(--outline-variant); background: var(--surface-container-low);
+    color: var(--on-surface); cursor: pointer; }
+  .sidenav[popover]:popover-open, body.nav-hidden > .sidenav[popover]:popover-open {
+    display: block; position: fixed; inset: 0 auto 0 0; margin: 0;
+    width: min(20rem, 88vw); height: 100dvh; max-height: none; overflow: auto;
+    padding: 1rem; border: 0; border-right: 1px solid var(--outline-variant);
+    background: var(--surface-container-low); color: var(--on-surface);
+    box-shadow: 0 0 2rem rgb(0 0 0 / .25); }
+  .sidenav[popover]::backdrop { background: rgb(0 0 0 / .35); }
+  .sidenav[popover]:popover-open .menuclose { display: block; margin: 0 0 1rem auto;
+    font: inherit; padding: .4rem .8rem; border-radius: 8px;
+    border: 1px solid var(--outline-variant); background: transparent;
+    color: var(--on-surface); cursor: pointer; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sidenav[popover]:popover-open { animation: menu-in .15s ease-out; }
+  @keyframes menu-in { from { transform: translateX(-1rem); opacity: 0; } }
+}

@@ -157,8 +157,9 @@ var (
 	reHandleVar = regexp.MustCompile(`mux\.(?:HandleFunc|Handle)\(([A-Za-z_]\w*),`)
 	reConst     = regexp.MustCompile(`(?m)^const (\w+) = "([^"]+)"`)
 	reHref      = regexp.MustCompile(`href="([^"{}]*)"`)
-	reAction    = regexp.MustCompile(`action="([^"{}]*)"`)
-	reHrefAny   = regexp.MustCompile(`href="([^"]*)"`)
+	// A whole attribute: popovertargetaction="hide" is not a form action.
+	reAction  = regexp.MustCompile(`\saction="([^"{}]*)"`)
+	reHrefAny = regexp.MustCompile(`href="([^"]*)"`)
 )
 
 func servedRoutes(t *testing.T) map[string]bool {
