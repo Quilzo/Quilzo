@@ -157,3 +157,57 @@ func TestAFormIsOfferedForTheVisitorToSend(t *testing.T) {
 		t.Fatal("a sensitive field was pre-filled")
 	}
 }
+
+// TestOnlyListedSitesMayEmbedAChatbot.
+func TestOnlyListedSitesMayEmbedAChatbot(t *testing.T) {
+	bot := shopBot
+	bot.Embed = []string{"https://shop.example"}
+	st, _ := askSite(t, bot, assistant.Assistant{Name: "other", Title: "Other", Public: true})
+	csp := get(st, "/ask/help?embed=1", nil).Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "frame-ancestors 'self' https://shop.example") {
+		t.Fatalf("the listed site cannot embed it: %q", csp)
+	}
+	if strings.Count(csp, "frame-ancestors") != 1 {
+		t.Fatalf("two frame-ancestors directives: %q", csp)
+	}
+	// A chatbot with no list, and every other page, stay unframeable.
+	for _, path := range []string{"/ask/other?embed=1", "/returns", "/"} {
+		if c := get(st, path, nil).Header().Get("Content-Security-Policy"); !strings.Contains(c, "frame-ancestors 'none'") {
+			t.Errorf("%s can be framed: %q", path, c)
+		}
+	}
+	// A declaration edited by hand to carry a wildcard does not get through.
+	bad := shopBot
+	bad.Name, bad.Embed = "bad", []string{"*"}
+	st2, _ := askSite(t, shopBot)
+	set, _ := st2.Assistants.Set()
+	set.Assistants = append(set.Assistants, bad) // bypassing Put's validation
+	if c := get(st2, "/ask/bad", nil).Header().Get("Content-Security-Policy"); strings.Contains(c, "*") {
+		t.Fatalf("a wildcard reached the policy: %q", c)
+	}
+}
+
+func TestAFollowUpCarriesTheQuestionBefore(t *testing.T) {
+	st, _ := askSite(t, shopBot)
+	first := askPost(st, "help", "can I return opened ink?").Body.String()
+	if !strings.Contains(first, `name="prev" value="can I return opened ink?"`) {
+		t.Fatal("the answer page does not carry the question forward")
+	}
+}
+
+func TestADocumentIsCitedByItsFile(t *testing.T) {
+	bot := shopBot
+	id := strings.Repeat("d", 64)
+	bot.Documents = []string{id}
+	st, _ := askSite(t, bot)
+	st.Assistants.Document = func(got string) (string, string, []byte, error) {
+		if got != id {
+			t.Fatalf("read %s, which the chatbot was not given", got)
+		}
+		return "care.md", "md", []byte("## Cleaning nibs\n\nRinse the nib in cool water once a month."), nil
+	}
+	body := askPost(st, "help", "how often should I clean the nib").Body.String()
+	if !strings.Contains(body, "once a month") || !strings.Contains(body, `href="/media/`+id+`"`) {
+		t.Fatalf("%s", body)
+	}
+}

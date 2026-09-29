@@ -159,6 +159,9 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	st.Assistants = &public.Assistants{
 		Set:   func() (*assistant.Set, error) { return assistant.Load(assistantsPath(root)) },
 		Forms: func() (*form.Set, error) { return loadForms(root) },
+		Document: func(id string) (string, string, []byte, error) {
+			return assistantDocument(root, id)
+		},
 		Model: func(a assistant.Assistant) assistant.Model {
 			m, _ := assistantModel(a)
 			return m

@@ -15,9 +15,10 @@ import (
 )
 
 type fakeAssistants struct {
-	set     *assistant.Set
-	changes []string
-	model   assistant.Model
+	warnings []string
+	set      *assistant.Set
+	changes  []string
+	model    assistant.Model
 }
 
 func (f *fakeAssistants) wire() *Assistants {
@@ -32,11 +33,14 @@ func (f *fakeAssistants) wire() *Assistants {
 			f.changes = append(f.changes, by+" "+change+" "+name)
 			return nil
 		},
-		Index: func(a assistant.Assistant) (*assistant.Index, error) {
+		Index: func(a assistant.Assistant) (*assistant.Index, []string, error) {
 			return assistant.NewIndex(assistant.Chunk(map[string]any{
 				"returns": map[string]any{"title": "Returns",
 					"body": "Opened ink bottles cannot be returned. <b>bold</b>"},
-			}, a.Reads)), nil
+			}, a.Reads)), f.warnings, nil
+		},
+		Documents: func() ([]DocumentChoice, error) {
+			return []DocumentChoice{{ID: strings.Repeat("a", 64), Name: "care.pdf", Format: "pdf"}}, nil
 		},
 		Model: func(assistant.Assistant) (assistant.Model, string) { return f.model, "" },
 		Forms: func() ([]string, error) { return []string{"returns_form"}, nil },
@@ -143,5 +147,41 @@ func TestOnlyAPublisherChangesAChatbot(t *testing.T) {
 	reader.Assistants = fa.wire()
 	if w := get(t, reader, "/assistants", rtoken); w.Code == http.StatusOK {
 		t.Fatal("a reader opened the chatbots screen")
+	}
+}
+
+func TestDocumentsAndEmbeddingAreConfigured(t *testing.T) {
+	srv, token, fa := chatbots(t)
+	fa.set.Put(assistant.Assistant{Name: "help", Title: "Help"})
+	doc := strings.Repeat("a", 64)
+	decideForm(t, srv, "/assistants/save", token, url.Values{"name": {"help"}, "full": {"1"},
+		"title": {"Help"}, "public": {"1"}, "documents": {doc},
+		"embed": {"https://Shop.Example\nhttp://localhost:8080"}})
+	a, _ := fa.set.Get("help")
+	if len(a.Documents) != 1 || len(a.Embed) != 2 || a.Embed[0] != "https://shop.example" {
+		t.Fatalf("%+v", a)
+	}
+	body := get(t, srv, "/assistants/help", token).Body.String()
+	if !strings.Contains(body, "?embed=1") || !strings.Contains(body, `value="`+doc+`" checked`) {
+		t.Fatal("the embed snippet or the document choice is not shown")
+	}
+	// A wildcard is refused with the reason, and nothing is saved.
+	w := decideForm(t, srv, "/assistants/save", token, url.Values{"name": {"help"}, "full": {"1"},
+		"title": {"Help"}, "embed": {"*"}})
+	if !strings.Contains(w.Header().Get("Location"), "e=") {
+		t.Fatal("a wildcard embed was not refused")
+	}
+	if a, _ := fa.set.Get("help"); len(a.Embed) != 2 {
+		t.Fatal("a refused change was partly saved")
+	}
+}
+
+func TestTheConsoleSaysWhichDocumentsCouldNotBeRead(t *testing.T) {
+	srv, token, fa := chatbots(t)
+	fa.set.Put(assistant.Assistant{Name: "help", Title: "Help"})
+	fa.warnings = []string{"scan.pdf: no readable text: this PDF holds no text a program can read — it is probably scanned"}
+	body := get(t, srv, "/assistants/help?q=returns", token).Body.String()
+	if !strings.Contains(body, "probably scanned") {
+		t.Fatal("a document that could not be read is not reported")
 	}
 }

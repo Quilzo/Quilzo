@@ -6,6 +6,7 @@ package assistant
 import (
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/quilzo/quilzo/internal/search"
 	"github.com/quilzo/quilzo/internal/vector"
@@ -52,6 +53,16 @@ func tokens(s string) []string {
 }
 
 func fold(t string) string {
+	// -ing and -ed on longer words, so "cleaning" meets "clean" and
+	// "returned" meets "return". Six letters and up: "sing", "bed" and "red"
+	// are words, not inflections. The one concession to English here, and
+	// it can only merge a word with its own stem.
+	if len(t) >= 7 && strings.HasSuffix(t, "ing") {
+		return t[:len(t)-3]
+	}
+	if len(t) >= 6 && strings.HasSuffix(t, "ed") && !strings.HasSuffix(t, "eed") {
+		return t[:len(t)-2]
+	}
 	if len(t) < 4 || t[len(t)-1] != 's' {
 		return t
 	}

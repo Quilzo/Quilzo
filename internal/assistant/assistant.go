@@ -6,6 +6,7 @@ package assistant
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -45,6 +46,15 @@ type Assistant struct {
 	// UseModel answers with the configured model when there is one. Off, it
 	// is always extractive — no model call, no cost, nothing sent anywhere.
 	UseModel bool `json:"use_model,omitempty"`
+	// Documents are files from the media library it may also read, by id.
+	// Chosen one by one: the library holds drafts, contracts and whatever
+	// else somebody uploaded, and none of it is knowledge until an owner
+	// says so.
+	Documents []string `json:"documents,omitempty"`
+	// Embed are the sites allowed to show it in a frame, as origins like
+	// https://shop.example. Empty means it can be framed by nobody but this
+	// site, which is the safe default for a page that takes input.
+	Embed []string `json:"embed,omitempty"`
 }
 
 // ActionKind is a closed list of what an assistant can offer.
@@ -87,7 +97,41 @@ const (
 	MaxInstructions = 4000
 	MaxActions      = 12
 	MaxArg          = 500
+	MaxDocuments    = 50
+	MaxEmbed        = 10
 )
+
+var reDocID = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// Origin checks and normalises a site allowed to embed an assistant.
+//
+// HTTPS, a host, and nothing else: no path, no wildcard, no query. The value
+// lands in a frame-ancestors directive, where a wildcard would let any site
+// frame a page that takes input — the setup for clickjacking a visitor into
+// sending a form — and a stray semicolon would end the directive and start
+// another. http is allowed for localhost only, so an owner can try it.
+func Origin(o string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(o))
+	bad := func() (string, error) {
+		return "", fmt.Errorf("%q is not a site that can embed a chatbot: "+
+			"write it as https://example.com", o)
+	}
+	if err != nil || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") ||
+		u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(o, "*; '\"\\") {
+		return bad()
+	}
+	host := u.Hostname()
+	switch u.Scheme {
+	case "https":
+	case "http":
+		if host != "localhost" && host != "127.0.0.1" {
+			return bad()
+		}
+	default:
+		return bad()
+	}
+	return u.Scheme + "://" + strings.ToLower(u.Host), nil
+}
 
 // Validate refuses a declaration that could not work or could not be
 // trusted to.
@@ -106,6 +150,24 @@ func (a Assistant) Validate() error {
 	if a.Passages < 0 || a.Passages > 12 {
 		return fmt.Errorf("%s retrieves %d passages; between 1 and 12",
 			a.Name, a.Passages)
+	}
+	if len(a.Documents) > MaxDocuments {
+		return fmt.Errorf("%s reads %d documents, over %d", a.Name,
+			len(a.Documents), MaxDocuments)
+	}
+	for _, id := range a.Documents {
+		if !reDocID.MatchString(id) {
+			return fmt.Errorf("%q is not a media library id", id)
+		}
+	}
+	if len(a.Embed) > MaxEmbed {
+		return fmt.Errorf("%s may be embedded by %d sites, over %d", a.Name,
+			len(a.Embed), MaxEmbed)
+	}
+	for _, o := range a.Embed {
+		if _, err := Origin(o); err != nil {
+			return err
+		}
 	}
 	if len(a.Actions) > MaxActions {
 		return fmt.Errorf("%s declares %d actions, over %d", a.Name,

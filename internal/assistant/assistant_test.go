@@ -497,3 +497,90 @@ func TestAShortFieldKeepsItsName(t *testing.T) {
 		}
 	}
 }
+
+// TestAFollowUpRemembersTheQuestionBefore.
+func TestAFollowUpRemembersTheQuestionBefore(t *testing.T) {
+	idx := shopIndex(t, helper)
+	ctx := context.Background()
+	alone, _ := Respond(ctx, helper, idx, nil, "and to the EU?")
+	followed, err := RespondTo(ctx, helper, idx, nil, "and outside the EU?",
+		"how much does delivery cost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if followed.Refused || !strings.Contains(followed.Text, "outside the UK and the EU") {
+		t.Fatalf("the follow-up lost the conversation: %q (alone: %q)", followed.Text, alone.Text)
+	}
+	// A question that stands on its own is answered on its own.
+	own, _ := RespondTo(ctx, helper, idx, nil, "when was the workshop founded",
+		"how much does delivery cost")
+	if !strings.Contains(own.Text, "2019") {
+		t.Fatalf("a standalone question was dragged to the last topic: %q", own.Text)
+	}
+}
+
+func TestADocumentIsKnowledge(t *testing.T) {
+	md := []byte("# Care guide\n\n## Cleaning a nib\n\nRinse the nib in cool water once a month.\n\n## Storing ink\n\nKeep bottles out of direct sunlight.")
+	ps, err := ChunkDocument(strings.Repeat("a", 64), "care-guide.md", "md", md)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pdf, err := ChunkDocument(strings.Repeat("b", 64), "warranty.pdf", "pdf",
+		pdfWith([]byte(`BT /F1 10 Tf 72 700 Td (The copper pen carries a two year warranty.) Tj ET`), true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx := NewIndex(append(ps, pdf...))
+	ans, _ := Respond(context.Background(), helper, idx, nil, "how often should I clean the nib")
+	if ans.Refused || !strings.Contains(ans.Text, "once a month") {
+		t.Fatalf("%q", ans.Text)
+	}
+	if got := ans.Sources[0]; got.Header() != "care-guide.md › Cleaning a nib" ||
+		got.Link() != "/media/"+strings.Repeat("a", 64) {
+		t.Fatalf("header %q link %q", got.Header(), got.Link())
+	}
+	ans, _ = Respond(context.Background(), helper, idx, nil, "how long is the copper pen warranty")
+	if !strings.Contains(ans.Text, "two year warranty") {
+		t.Fatalf("the PDF was not read: %q", ans.Text)
+	}
+	if _, err := ChunkDocument(strings.Repeat("c", 64), "photo.jpg", "jpeg", []byte{1}); err == nil {
+		t.Fatal("a photograph was accepted as knowledge")
+	}
+}
+
+func TestOnlyARealSiteMayEmbed(t *testing.T) {
+	for _, bad := range []string{"*", "https://*.example.com", "http://shop.example",
+		"https://shop.example/path", "https://shop.example; script-src *",
+		"javascript:alert(1)", "shop.example", "https://user@shop.example",
+		"https://shop.example?x=1"} {
+		if _, err := Origin(bad); err == nil {
+			t.Errorf("%q was accepted", bad)
+		}
+	}
+	for in, want := range map[string]string{
+		"https://Shop.Example":      "https://shop.example",
+		"https://shop.example/":     "https://shop.example",
+		"http://localhost:8080":     "http://localhost:8080",
+		"https://shop.example:8443": "https://shop.example:8443",
+	} {
+		if got, err := Origin(in); err != nil || got != want {
+			t.Errorf("%q: %q %v", in, got, err)
+		}
+	}
+	a := helper
+	a.Documents = []string{"../../etc/passwd"}
+	if a.Validate() == nil {
+		t.Fatal("a path was accepted as a document id")
+	}
+}
+
+func TestAPDFTitleIsAHeadingNotPartOfASentence(t *testing.T) {
+	ps, err := ChunkDocument(strings.Repeat("e", 64), "w.pdf", "pdf", pdfWith([]byte(
+		`BT (Pen warranty) Tj ET BT (Every pen carries a two year warranty against faults.) Tj ET`), true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ps) != 1 || ps[0].Heading != "Pen warranty" || strings.HasPrefix(ps[0].Text, "Pen warranty") {
+		t.Fatalf("%+v", ps)
+	}
+}

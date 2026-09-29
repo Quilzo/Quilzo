@@ -67,6 +67,19 @@ type Answer struct {
 // is somebody else's text, and the model is told so.
 func Respond(ctx context.Context, a Assistant, idx *Index, m Model,
 	question string) (Answer, error) {
+	return RespondTo(ctx, a, idx, m, question, "")
+}
+
+// RespondTo answers a follow-up: previous is the question before it.
+//
+// "What about the EU?" means nothing alone, and a chatbot that answers it
+// with "I could not find that" after answering the question before has
+// forgotten a conversation that is still on the screen. So when the question
+// retrieves nothing on its own, it is asked again with the previous one
+// beside it. Only then: a follow-up that stands on its own is answered on
+// its own, rather than dragged back towards the last topic.
+func RespondTo(ctx context.Context, a Assistant, idx *Index, m Model,
+	question, previous string) (Answer, error) {
 
 	question = oneLine(question)
 	ans := Answer{Question: question, Mode: "extractive"}
@@ -78,14 +91,23 @@ func Respond(ctx context.Context, a Assistant, idx *Index, m Model,
 			MaxQuestion)
 	}
 
+	previous = oneLine(previous)
+	if len(previous) > MaxQuestion {
+		previous = previous[:MaxQuestion]
+	}
+	asked := question
 	hits := idx.Retrieve(question, a.depth())
+	if len(hits) == 0 && previous != "" {
+		asked = previous + " " + question
+		hits = idx.Retrieve(asked, a.depth())
+	}
 	ans.Sources = hits
 	if len(hits) == 0 {
 		return a.refuse(ans, "nothing on this site is about that"), nil
 	}
 
 	if m != nil {
-		got, err := askModel(ctx, a, m, question, hits)
+		got, err := askModel(ctx, a, m, asked, hits)
 		if err == nil {
 			ans.Mode = "model"
 			ans.Kept, ans.Dropped = got.kept, got.dropped
@@ -110,7 +132,7 @@ func Respond(ctx context.Context, a Assistant, idx *Index, m Model,
 		ans.Mode = "extractive"
 	}
 
-	ans.Kept = extract(question, hits)
+	ans.Kept = extract(asked, hits)
 	if len(ans.Kept) == 0 {
 		return a.refuse(ans, "the passages found do not contain an answer"), nil
 	}

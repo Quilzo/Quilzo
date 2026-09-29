@@ -25,13 +25,22 @@ import (
 // page does not say — three different fixes that look identical from the
 // outside.
 
+// DocumentChoice is a media library file offered as knowledge.
+type DocumentChoice struct {
+	ID, Name, Format string
+	On               bool
+}
+
 // Assistants is the site's chatbots, supplied by whatever wired this server.
 type Assistants struct {
 	Load func() (*assistant.Set, error)
 	// Save writes the set, recording who changed which assistant and how.
 	Save func(set *assistant.Set, by, change, name string) error
-	// Index is what an assistant reads: the published site, filtered.
-	Index func(assistant.Assistant) (*assistant.Index, error)
+	// Index is what an assistant reads: the published site, filtered, and
+	// its documents — with the reason any document could not be used.
+	Index func(assistant.Assistant) (*assistant.Index, []string, error)
+	// Documents lists the library files a chatbot could be given.
+	Documents func() ([]DocumentChoice, error)
 	// Model is the configured model, or nil with the reason there is none.
 	Model func(assistant.Assistant) (assistant.Model, string)
 	// Forms names the site's forms, for the action picker.
@@ -104,6 +113,19 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"CanSave": s.mayUse(p, auth.ActPublish, "/") && !p.Limits.ReadOnly,
 	}
+	if s.Assistants.Documents != nil {
+		if docs, derr := s.Assistants.Documents(); derr == nil {
+			on := map[string]bool{}
+			for _, id := range a.Documents {
+				on[id] = true
+			}
+			for i := range docs {
+				docs[i].On = on[docs[i].ID]
+			}
+			data["Docs"] = docs
+		}
+	}
+	data["EmbedList"] = strings.Join(a.Embed, "\n")
 	if s.Assistants.Forms != nil {
 		if names, ferr := s.Assistants.Forms(); ferr == nil {
 			data["FormNames"] = names
@@ -113,7 +135,8 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 	// The test console.
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" && s.Assistants.Index != nil {
 		data["Q"] = q
-		idx, ierr := s.Assistants.Index(a)
+		idx, warnings, ierr := s.Assistants.Index(a)
+		data["DocWarnings"] = warnings
 		if ierr != nil {
 			data["TestError"] = ierr.Error()
 		} else {
@@ -124,7 +147,8 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 			}
 			ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 			defer cancel()
-			ans, aerr := assistant.Respond(ctx, a, idx, m, q)
+			ans, aerr := assistant.RespondTo(ctx, a, idx, m, q,
+				r.URL.Query().Get("prev"))
 			if aerr != nil {
 				data["TestError"] = aerr.Error()
 			} else {
@@ -164,6 +188,18 @@ func (s *Server) handleAssistantSave(w http.ResponseWriter, r *http.Request) {
 			a.UseModel = r.FormValue("use_model") == "1"
 			n, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("passages")))
 			a.Passages = n
+			a.Documents = r.Form["documents"]
+			var origins []string
+			for _, line := range strings.Split(r.FormValue("embed"), "\n") {
+				if line = strings.TrimSpace(line); line != "" {
+					o, oerr := assistant.Origin(line)
+					if oerr != nil {
+						return oerr
+					}
+					origins = append(origins, o)
+				}
+			}
+			a.Embed = origins
 		} else {
 			a.Title = strings.TrimSpace(r.FormValue("title"))
 		}

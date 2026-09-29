@@ -120,6 +120,8 @@ func assistantAdd(root string, args []string) error {
 	public := fs.Bool("public", false, "serve it on the site at /ask/NAME")
 	model := fs.Bool("model", false, "answer with the configured model (default: extractive only)")
 	passages := fs.Int("passages", 0, "passages retrieved per question (default 5)")
+	documents := fs.String("documents", "", "comma-separated media library ids it may read")
+	embed := fs.String("embed", "", "comma-separated sites that may embed it, like https://shop.example")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
@@ -138,6 +140,7 @@ func assistantAdd(root string, args []string) error {
 		Name: pos[0], Title: *title, Greeting: *greeting, Instructions: instr,
 		Pages: splitList(*pages), Exclude: splitList(*exclude),
 		Refusal: *refusal, Public: *public, UseModel: *model, Passages: *passages,
+		Documents: splitList(*documents), Embed: splitList(*embed),
 	}
 	caller := resolveCaller(root, flagToken)
 	err := saveAssistant(root, caller, "declare", a.Name, func(s *assistant.Set) error {
@@ -215,21 +218,56 @@ func assistantRemove(root string, args []string) error {
 }
 
 // assistantIndex builds what an assistant may read: the published site,
-// through its page filter.
+// through its page filter, and the documents it was given.
 //
 // Published, never the draft. A visitor's assistant answering from a page
 // nobody has approved would be publishing it by another route.
 func assistantIndex(root string, a assistant.Assistant) (*assistant.Index, error) {
+	idx, _, err := assistantKnowledge(root, a)
+	return idx, err
+}
+
+// assistantKnowledge is assistantIndex with the reasons any document could
+// not be used, for the owner's console.
+func assistantKnowledge(root string, a assistant.Assistant) (*assistant.Index, []string, error) {
 	s, err := store.Open(root)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	pages, err := site.PagesAt(s, site.RefLive)
 	if err != nil {
-		return nil, fmt.Errorf("nothing is published yet, so there is "+
+		return nil, nil, fmt.Errorf("nothing is published yet, so there is "+
 			"nothing to answer from: %w", err)
 	}
-	return assistant.NewIndex(assistant.Chunk(pages, a.Reads)), nil
+	passages := assistant.Chunk(pages, a.Reads)
+	var warnings []string
+	for _, id := range a.Documents {
+		name, format, body, derr := assistantDocument(root, id)
+		if derr != nil {
+			warnings = append(warnings, id[:12]+": "+derr.Error())
+			continue
+		}
+		ps, cerr := assistant.ChunkDocument(id, name, format, body)
+		if cerr != nil {
+			warnings = append(warnings, cerr.Error())
+			continue
+		}
+		passages = append(passages, ps...)
+	}
+	return assistant.NewIndex(passages), warnings, nil
+}
+
+// assistantDocument reads one media library file for an assistant.
+func assistantDocument(root, id string) (name, format string, body []byte, err error) {
+	lib, err := openMedia(root)
+	if err != nil {
+		return "", "", nil, err
+	}
+	f, b, err := lib.Get(id)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("not in the media library")
+	}
+	return f.Name, f.Format, b, nil
 }
 
 // assistantModel is the configured model when the assistant uses one, and
@@ -386,8 +424,27 @@ func assistantsCapability(root string) *admin.Assistants {
 			})
 			return nil
 		},
-		Index: func(a assistant.Assistant) (*assistant.Index, error) {
-			return assistantIndex(root, a)
+		Index: func(a assistant.Assistant) (*assistant.Index, []string, error) {
+			return assistantKnowledge(root, a)
+		},
+		Documents: func() ([]admin.DocumentChoice, error) {
+			lib, err := openMedia(root)
+			if err != nil {
+				return nil, err
+			}
+			files, err := lib.List()
+			if err != nil {
+				return nil, err
+			}
+			var out []admin.DocumentChoice
+			for _, f := range files {
+				switch f.Format {
+				case "pdf", "md", "txt", "csv":
+					out = append(out, admin.DocumentChoice{ID: f.ID, Name: f.Name,
+						Format: f.Format})
+				}
+			}
+			return out, nil
 		},
 		Model: assistantModel,
 		Forms: func() ([]string, error) {

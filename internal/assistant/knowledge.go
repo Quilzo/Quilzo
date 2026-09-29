@@ -64,10 +64,28 @@ type Passage struct {
 	Title   string `json:"title,omitempty"`
 	Heading string `json:"heading,omitempty"`
 	Text    string `json:"text"`
+	// Doc is the media library id when the passage is from a document
+	// rather than a page, and DocName its file name.
+	Doc     string `json:"doc,omitempty"`
+	DocName string `json:"doc_name,omitempty"`
+}
+
+// Link is where a citation of this passage points.
+func (p Passage) Link() string {
+	if p.Doc != "" {
+		return "/media/" + p.Doc
+	}
+	return "/" + p.Page
 }
 
 // Header is what the passage is about, prepended when it is indexed.
 func (p Passage) Header() string {
+	if p.Title == "" && p.DocName != "" {
+		if p.Heading != "" {
+			return p.DocName + " › " + p.Heading
+		}
+		return p.DocName
+	}
 	switch {
 	case p.Title != "" && p.Heading != "":
 		return p.Title + " › " + p.Heading
@@ -273,4 +291,63 @@ func oneLine(s string) string {
 		return r
 	}, s)
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// ChunkDocument splits a file from the media library into passages.
+//
+// Markdown and plain text keep their headings and paragraphs; a PDF has its
+// text extracted first, and one whose text cannot be read is an error that
+// says why rather than an empty contribution nobody notices.
+func ChunkDocument(id, name, format string, body []byte) ([]Passage, error) {
+	var text string
+	switch format {
+	case "md", "txt", "csv":
+		text = string(body)
+	case "pdf":
+		t, err := PDFText(body)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		text = pdfParagraphs(t)
+	default:
+		return nil, fmt.Errorf("%s is a %s, which holds no text a chatbot can "+
+			"read; use a PDF, a Markdown or a text file", name, format)
+	}
+	var blocks []block
+	collect(text, "", &blocks, 0)
+	key := "doc:" + id
+	if len(id) > 12 {
+		key = "doc:" + id[:12]
+	}
+	ps := pack(key, "", blocks)
+	for i := range ps {
+		ps[i].Doc, ps[i].DocName = id, name
+	}
+	return ps, nil
+}
+
+// pdfParagraphs turns a PDF's lines into paragraphs and headings.
+//
+// A PDF has lines of layout, not paragraphs: a title and the sentence under
+// it arrive as two lines, and joined they read "Warranty Every pen carries".
+// A short line that does not end a sentence is taken as a heading, which is
+// what it nearly always is in a policy or a price list; other lines run on
+// into their paragraph.
+func pdfParagraphs(text string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			b.WriteString("\n\n")
+			continue
+		}
+		words := len(strings.Fields(line))
+		last := line[len(line)-1]
+		if words <= 8 && !strings.ContainsRune(".?!:;,", rune(last)) {
+			b.WriteString("\n\n## " + line + "\n\n")
+			continue
+		}
+		b.WriteString(line + " ")
+	}
+	return b.String()
 }

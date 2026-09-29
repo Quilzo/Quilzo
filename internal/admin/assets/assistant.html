@@ -17,6 +17,8 @@
   <button type="submit">Ask</button>
 </form>
 {{if .TestError}}<p class="notice bad" role="alert">{{.TestError}}</p>{{end}}
+{{if .DocWarnings}}<div class="notice warn" role="note"><p><strong>Some documents could not be used:</strong></p>
+  <ul>{{range .DocWarnings}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
 {{with .Ans}}
 <div class="card">
   <p class="hint">{{.Mode}} answer from {{$.Passages}} passage(s) this chatbot may read{{if .Note}} · {{.Note}}{{end}}</p>
@@ -24,6 +26,12 @@
   {{else}}{{range .Kept}}<p>{{.Text}}{{range .Cites}} <sup>[{{.}}]</sup>{{end}}</p>{{end}}{{end}}
   {{with .Proposed}}<p class="notice">Offers: <strong>{{.Action.Name}}</strong> — {{.Action.Description}}{{range $k, $v := .Args}} · <code>{{$k}}</code> = {{$v}}{{end}}</p>{{end}}
 </div>
+<form method="get" action="/assistants/{{$.A.Name}}#try" class="findform">
+  <input type="hidden" name="prev" value="{{$.Q}}">
+  <label for="fq" class="visually-hidden">Follow-up question {{template "req"}}</label>
+  <input id="fq" name="q" maxlength="1000" placeholder="Ask a follow-up, as a visitor would" required>
+  <button type="submit" class="btn-tonal">Follow up</button>
+</form>
 {{if .Dropped}}
 <h3>Removed before a visitor would see it</h3>
 <ul class="notelist">
@@ -41,7 +49,7 @@
   {{range $i, $h := .Sources}}
   <tr>
     <td>{{$i}}</td>
-    <th scope="row">{{$h.Header}}<div class="hint">{{$h.Text}}</div></th>
+    <th scope="row">{{$h.Header}}{{if $h.Doc}} <span class="tag">document</span>{{end}}<div class="hint">{{$h.Text}}</div></th>
     <td>{{if $h.BM25Rank}}{{$h.BM25Rank}}{{else}}—{{end}}</td>
     <td>{{if $h.VectorRank}}{{$h.VectorRank}}{{else}}—{{end}}</td>
     <td>{{range $h.Matched}}<code>{{.}}</code> {{end}}</td>
@@ -76,6 +84,16 @@
     <p id="pages-help" class="help">Comma-separated. Only published pages, never drafts.</p></div>
   <div class="field"><label for="exclude">Never reads pages under</label>
     <input id="exclude" name="exclude" value="{{.Exclude}}" placeholder="internal, legal/drafts"></div>
+  <fieldset class="field">
+    <legend>Documents it may also read</legend>
+    {{if .Docs}}{{range .Docs}}
+    <div><label><input type="checkbox" name="documents" value="{{.ID}}"{{if .On}} checked{{end}}>
+      {{.Name}} <span class="hint">{{.Format}}</span></label></div>{{end}}
+    <p class="help">Only the files ticked here. PDFs need to hold text:
+      a scanned PDF is a picture, and the console will say so.</p>
+    {{else}}<p class="help">Upload a PDF, Markdown or text file on the
+      <a href="/media">Media</a> screen and it will appear here.</p>{{end}}
+  </fieldset>
   <div class="field"><label for="refusal">When it does not know, it says</label>
     <input id="refusal" name="refusal" value="{{.A.Refusal}}" placeholder="I could not find that on this site."></div>
   <div class="field"><label for="passages">Passages per question</label>
@@ -85,10 +103,22 @@
     <p class="help">Off, it quotes your pages directly: no model, no cost,
       nothing sent anywhere. On, every sentence is still checked against the
       page it cites.</p></div>
+  <div class="field"><label for="embed">Sites that may embed it</label>
+    <textarea id="embed" name="embed" rows="2" placeholder="https://shop.example" aria-describedby="embed-help">{{.EmbedList}}</textarea>
+    <p id="embed-help" class="help">One per line, as https://example.com.
+      Nobody else can put it in a frame.</p></div>
   <div class="field"><label><input type="checkbox" name="public" value="1"{{if .A.Public}} checked{{end}}>
     Public — serve it on the site at <code>/ask/{{.A.Name}}</code></label></div>
   <button type="submit">Save</button>
 </form>
+
+{{if and .A.Public .A.Embed}}
+<h2>Embed it</h2>
+<p>Paste this into a page on {{index .A.Embed 0}}{{if gt (len .A.Embed) 1}} or the other listed sites{{end}}. It needs no script.</p>
+<pre class="code"><code>&lt;iframe src="/ask/{{.A.Name}}?embed=1" title="{{.A.Title}}"
+  style="width:100%;max-width:420px;height:560px;border:0"&gt;&lt;/iframe&gt;</code></pre>
+<p class="hint">Replace the start of the address with this site's own, as visitors reach it.</p>
+{{end}}
 
 <h2>What it can offer to do</h2>
 <p>A chatbot never acts on its own. It can offer a link, or fill in one of

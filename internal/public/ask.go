@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"html/template"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,6 +50,9 @@ type Assistants struct {
 	Model func(assistant.Assistant) assistant.Model
 	// Forms are the site's declared forms, for pre-filling a form action.
 	Forms func() (*form.Set, error)
+	// Document reads a media library file an assistant was given. Nil means
+	// assistants answer from pages only.
+	Document func(id string) (name, format string, body []byte, err error)
 	// Limit bounds questions per source. A question can cost a model call;
 	// an unbounded public endpoint that spends somebody's model budget is a
 	// way to spend it.
@@ -93,6 +97,7 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		view.Greeting = "Ask a question about this site."
 	}
 
+	view.Embedded = r.URL.Query().Get("embed") == "1"
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
 	case http.MethodPost:
@@ -115,6 +120,8 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		view.Question = r.PostFormValue("q")
+		view.Previous = r.PostFormValue("prev")
+		view.Embedded = r.PostFormValue("embed") == "1"
 		idx, ierr := st.assistantIndex(a)
 		if ierr != nil {
 			http.Error(w, "the site could not be read", http.StatusInternalServerError)
@@ -126,7 +133,7 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 		defer cancel()
-		ans, aerr := assistant.Respond(ctx, a, idx, m, view.Question)
+		ans, aerr := assistant.RespondTo(ctx, a, idx, m, view.Question, view.Previous)
 		if aerr != nil {
 			view.Problem = aerr.Error()
 			st.renderAsk(w, r, view, http.StatusUnprocessableEntity)
@@ -165,7 +172,8 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	h := sha256.New()
 	// The declaration is part of the key: an owner narrowing what the
 	// assistant reads must not be answered from the wider index.
-	h.Write([]byte(strings.Join(a.Pages, ",") + "|" + strings.Join(a.Exclude, ",")))
+	h.Write([]byte(strings.Join(a.Pages, ",") + "|" + strings.Join(a.Exclude, ",") +
+		"|" + strings.Join(a.Documents, ",")))
 	for _, n := range names {
 		h.Write([]byte(n + "\x00" + hashes[n] + "\x00"))
 	}
@@ -177,7 +185,21 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	if c, ok := as.cache[a.Name]; ok && c.key == key {
 		return c.idx, nil
 	}
-	idx := assistant.NewIndex(assistant.Chunk(pages, a.Reads))
+	passages := assistant.Chunk(pages, a.Reads)
+	if as.Document != nil {
+		for _, id := range a.Documents {
+			name, format, body, derr := as.Document(id)
+			if derr != nil {
+				continue // a removed file is not knowledge, and not an outage
+			}
+			ps, cerr := assistant.ChunkDocument(id, name, format, body)
+			if cerr != nil {
+				continue // the owner's console says why; a visitor is not told
+			}
+			passages = append(passages, ps...)
+		}
+	}
+	idx := assistant.NewIndex(passages)
 	if as.cache == nil {
 		as.cache = map[string]cachedIndex{}
 	}
@@ -189,6 +211,8 @@ type askView struct {
 	Assistant assistant.Assistant
 	Greeting  string
 	Question  string
+	Previous  string
+	Embedded  bool
 	Answer    *assistant.Answer
 	Sources   []askSource
 	Offer     *askOffer
@@ -224,8 +248,8 @@ func (st *Site) citedSources(ans assistant.Answer) []askSource {
 			}
 			seen[n] = true
 			h := ans.Sources[n-1]
-			href := "/" + h.Page
-			if h.Page == st.indexName() {
+			href := h.Link()
+			if h.Doc == "" && h.Page == st.indexName() {
 				href = "/"
 			}
 			out = append(out, askSource{N: n, Title: h.Header(), Href: href})
@@ -285,6 +309,7 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 	// Never cached: an answer is to one person's question.
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
+	allowFraming(h, v.Assistant.Embed)
 
 	pages, hashes, err := st.pages()
 	if err == nil {
@@ -347,8 +372,8 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 <link rel="stylesheet" href="/site.css">
 <link rel="stylesheet" href="/ask.css">
 </head>
-<body class="qz-ask"><main>
-<h1>{{.V.Assistant.Title}}</h1>
+<body class="qz-ask{{if .V.Embedded}} qz-embed{{end}}"><main>
+{{if .V.Embedded}}<p class="qz-embed-title">{{.V.Assistant.Title}}</p>{{else}}<h1>{{.V.Assistant.Title}}</h1>{{end}}
 {{if .V.Answer}}
 <section class="qz-turn" aria-label="Your question">
   <p class="qz-q">{{.V.Question}}</p>
@@ -358,12 +383,12 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
   {{else}}{{range .V.Answer.Kept}}<p>{{.Text}}{{range .Cites}} <sup><a href="#src-{{.}}">[{{.}}]</a></sup>{{end}}</p>{{end}}{{end}}
   {{if .V.Sources}}
   <h2>Sources</h2>
-  <ol class="qz-sources">{{range .V.Sources}}<li id="src-{{.N}}" value="{{.N}}"><a href="{{.Href}}">{{.Title}}</a></li>{{end}}</ol>
+  <ol class="qz-sources">{{range .V.Sources}}<li id="src-{{.N}}" value="{{.N}}"><a href="{{.Href}}"{{if $.V.Embedded}} target="_blank" rel="noopener"{{end}}>{{.Title}}</a></li>{{end}}</ol>
   {{end}}
 </section>
 {{with .V.Offer}}
 <section class="qz-offer" aria-label="Something I can help with">
-  {{if eq .Kind "link"}}<p><a class="qz-button" href="{{.Href}}">{{.Label}}</a></p>
+  {{if eq .Kind "link"}}<p><a class="qz-button" href="{{.Href}}"{{if $.V.Embedded}} target="_blank" rel="noopener"{{end}}>{{.Label}}</a></p>
   {{else}}
   <h2>{{.Label}}</h2>
   <p>I have filled in what I could. Check it, change anything that is
@@ -388,8 +413,10 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 {{end}}
 {{if .V.Problem}}<p class="qz-problem" role="alert">{{.V.Problem}}</p>{{end}}
 <form method="post" action="/ask/{{.V.Assistant.Name}}" class="qz-ask-form">
+  {{if .V.Answer}}<input type="hidden" name="prev" value="{{.V.Question}}">{{end}}
+  {{if .V.Embedded}}<input type="hidden" name="embed" value="1">{{end}}
   <label for="q">{{if .V.Answer}}Ask another question{{else}}Your question{{end}}</label>
-  <textarea id="q" name="q" rows="2" maxlength="1000" required autofocus></textarea>
+  <textarea id="q" name="q" rows="2" maxlength="1000" required{{if not .V.Embedded}} autofocus{{end}}></textarea>
   <button type="submit">Ask</button>
 </form>
 <p class="qz-small">Answers come from this site's pages, and every sentence
@@ -413,6 +440,9 @@ const askCSS = `.qz-ask main{max-width:42rem;margin:0 auto;padding:1.5rem 1rem 3
 .qz-hidden{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
 .qz-problem{padding:.7rem 1rem;border-radius:8px;border:1px solid}
 .qz-small{font-size:.85em;opacity:.75;margin-top:1.5rem}
+.qz-embed main{padding:.75rem .75rem 1rem;max-width:none}
+.qz-embed-title{font-weight:700;margin:0 0 .5rem}
+.qz-embed .qz-small{margin-top:.75rem}
 :focus-visible{outline:2px solid currentColor;outline-offset:2px}
 `
 
@@ -421,3 +451,34 @@ func (st *Site) askStylesheet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	_, _ = w.Write([]byte(askCSS))
 }
+
+// allowFraming lets the sites an owner listed show this page in a frame.
+//
+// Only this page, only those origins, and only by rewriting the one
+// directive: the rest of the policy stays exactly what the site sends. Every
+// other response keeps frame-ancestors 'none'. The origins were checked by
+// assistant.Origin when they were declared, so none can carry a wildcard or
+// end the directive early — and they are checked again here, because a
+// declaration file can be edited by hand.
+func allowFraming(h http.Header, origins []string) {
+	var ok []string
+	for _, o := range origins {
+		if n, err := assistant.Origin(o); err == nil {
+			ok = append(ok, n)
+		}
+	}
+	if len(ok) == 0 {
+		return
+	}
+	value := "frame-ancestors 'self' " + strings.Join(ok, " ")
+	for _, name := range []string{"Content-Security-Policy",
+		"Content-Security-Policy-Report-Only"} {
+		cur := h.Get(name)
+		if cur == "" {
+			continue
+		}
+		h.Set(name, reFrameAncestors.ReplaceAllString(cur, value))
+	}
+}
+
+var reFrameAncestors = regexp.MustCompile(`frame-ancestors[^;]*`)
