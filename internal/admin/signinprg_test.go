@@ -47,7 +47,7 @@ func TestAThrottledSignInLeavesNothingToResubmit(t *testing.T) {
 		t.Fatalf("a throttled sign-in answered %d; any page rendered here "+
 			"is a page the browser will offer to resubmit", w.Code)
 	}
-	loc := w.Header().Get("Location")
+	loc := unsigned(w.Header().Get("Location"))
 	if loc != "/signin?e=throttled" {
 		t.Fatalf("redirected to %q", loc)
 	}
@@ -68,9 +68,9 @@ func TestEveryRefusalIsARedirect(t *testing.T) {
 		"":            "/signin?e=format",
 	} {
 		w := signInPost(srv, token)
-		if w.Code != http.StatusSeeOther || w.Header().Get("Location") != want {
+		if w.Code != http.StatusSeeOther || unsigned(w.Header().Get("Location")) != want {
 			t.Errorf("%q: %d to %q, want 303 to %q", token, w.Code,
-				w.Header().Get("Location"), want)
+				unsigned(w.Header().Get("Location")), want)
 		}
 	}
 }
@@ -95,7 +95,7 @@ func TestTheFormSaysOnlyWhatItWasWritten(t *testing.T) {
 			t.Errorf("an unknown code produced an error at all: %q", e)
 		}
 	}
-	body := get(t, srv, "/signin?e=refused", "").Body.String()
+	body := get(t, srv, signFlash(srv.flashKey, "/signin?e=refused"), "").Body.String()
 	if !strings.Contains(body, "That token was not accepted") {
 		t.Fatal("a known code did not show its sentence")
 	}

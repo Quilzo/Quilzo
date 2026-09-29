@@ -202,7 +202,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 
 	// A short-lived session token, minted by this program and revocable here.
 	// The provider authenticated; everything after this is local.
-	secret, tok, err := s.Tokens.Issue(
+	secret, tok, err := s.Tokens.IssueSession(
 		"oidc:"+principal, principal, s.roleFor(principal), "/",
 		s.OIDC.ttl(), auth.RoleAdmin)
 	if err != nil {

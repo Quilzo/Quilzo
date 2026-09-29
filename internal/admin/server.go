@@ -90,6 +90,10 @@ var assets embed.FS
 
 // Server holds everything a request needs.
 type Server struct {
+	// flashKey signs the messages this server puts in a redirect, so a link
+	// from anywhere else cannot make a screen say something. See flash.go.
+	flashKey []byte
+
 	Store  *store.Store
 	Policy *auth.Policy
 	Tokens *auth.TokenStore
@@ -388,7 +392,7 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 		return nil, fmt.Errorf("admin templates: %w", err)
 	}
 	return &Server{Store: s, Policy: p, Tokens: ts, Layouts: layouts,
-		Records: collection.NewCache(), tpl: t}, nil
+		Records: collection.NewCache(), tpl: t, flashKey: newFlashKey()}, nil
 }
 
 // errNoCredential means nothing was presented, as distinct from something
@@ -1078,7 +1082,7 @@ func (s *Server) Handler() http.Handler {
 	// answering for documentation it no longer has and make a dead external
 	// site look like a broken admin.
 	mux.HandleFunc("/style.css", s.handleCSS)
-	return securityHeaders(sameSiteOnly(limitBody(s.readOnlyTokens(mux))))
+	return securityHeaders(s.signedFlash(sameSiteOnly(limitBody(s.readOnlyTokens(mux)))))
 }
 
 // handleSignIn exchanges a pasted token for a session cookie.
@@ -1156,8 +1160,41 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	// is failing, and an unauthenticated caller who can make the log grow is
 	// a way to bury the entries that matter; the throttle's alert above is the
 	// bounded version of the same signal.
+	// The cookie holds a session, never the token that was pasted.
+	//
+	// It held the token itself, which is somebody's long-lived credential —
+	// thirty days by default. A cookie is the credential most likely to be
+	// copied (a proxy log, a shared machine, a browser profile synced
+	// somewhere) and signing out could not help: revoking would destroy the
+	// token the person signs in with. An eight-hour session exchanged from it
+	// bounds the first and lets signing out revoke the second. A pasted
+	// session is already short-lived and cannot be exchanged again, so it is
+	// used as it is.
+	cookie, cookieTok := raw, *tok
+	if !tok.IsSession() {
+		secret, sess, xerr := s.Tokens.Exchange(raw, auth.RoleNone, "",
+			DefaultSessionTTL, time.Now())
+		if xerr != nil {
+			signInAgain(w, r, "refused")
+			return
+		}
+		if s.SaveTokens != nil {
+			if serr := s.SaveTokens(s.Tokens); serr != nil {
+				http.Error(w, "the session could not be stored: "+serr.Error(),
+					http.StatusInternalServerError)
+				return
+			}
+		}
+		cookie, cookieTok = secret, sess
+	}
+	maxAge := int(time.Until(time.Unix(cookieTok.ExpiresAt, 0)).Seconds())
+	if maxAge < 1 {
+		maxAge = 1
+	}
+
 	s.audit("session.start", "/", map[string]string{
-		"by": tok.Principal, "credential": tok.ID, "how": "token",
+		"by": tok.Principal, "credential": tok.ID, "session": cookieTok.ID,
+		"how": "token",
 	})
 
 	// Secure over TLS, or where the deployment says something in front of it
@@ -1173,11 +1210,11 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	// secureCookie, and admin.behind_tls_proxy, which is how a deployment says
 	// which it is.
 	http.SetCookie(w, &http.Cookie{
-		Name: "quilzo_token", Value: raw, Path: "/",
+		Name: "quilzo_token", Value: cookie, Path: "/",
 		HttpOnly: true,                    // unreadable by script; there is none, but the header outlives that
 		SameSite: http.SameSiteStrictMode, // the primary CSRF defence
 		Secure:   r.TLS != nil || s.behindTLSProxy(),
-		MaxAge:   8 * 3600,
+		MaxAge:   maxAge,
 	})
 	// Somebody signing in for the first time lands on the getting started
 	// screen instead of the page list.

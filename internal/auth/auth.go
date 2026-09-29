@@ -517,10 +517,24 @@ type Token struct {
 	// grants its principal. Zero value means unrestricted, which is what every
 	// token issued before this existed has.
 	Scope Scope `json:"scope,omitempty"`
+
+	// Session marks a sign-in session this program minted with no parent
+	// token: one an identity provider or a passkey vouched for.
+	//
+	// Parent alone could not say so. OIDC and passkey sign-in minted their
+	// eight-hour credentials with Issue, so they had no parent, IsSession
+	// said false, and signing out — which revokes sessions and deliberately
+	// leaves somebody's own long-lived token alone — left them working for
+	// the rest of the day. The comment on sign-out described revoking them;
+	// the test for it built its session with Exchange, which is the one path
+	// that set a parent.
+	Session bool `json:"session,omitempty"`
 }
 
-// IsSession reports whether this was exchanged from another token.
-func (t *Token) IsSession() bool { return t.Parent != "" }
+// IsSession reports whether this is a short-lived sign-in credential rather
+// than somebody's own long-lived token: exchanged from one, or minted for a
+// sign-in an identity provider or passkey vouched for.
+func (t *Token) IsSession() bool { return t.Parent != "" || t.Session }
 
 // MaxSessionTTL caps an exchanged credential. A session that can outlive a
 // working day is not doing the job a session exists for.
@@ -599,6 +613,59 @@ func (ts *TokenStore) IssueScoped(name, principal string, role Role,
 	resource string, ttl time.Duration, issuerRole Role, scope Scope) (
 	secret string, t Token, err error) {
 
+	return ts.issue(name, principal, role, resource, ttl, issuerRole, scope,
+		false)
+}
+
+// IssueSession mints a sign-in session for somebody an identity provider or
+// a passkey has just vouched for.
+//
+// Marked as a session so signing out revokes it, capped at MaxSessionTTL like
+// every other session, and a moment for clearing out sessions that ended long
+// ago — each sign-in adds one, and a store that only ever grows is a store
+// somebody eventually edits by hand.
+func (ts *TokenStore) IssueSession(name, principal string, role Role,
+	resource string, ttl time.Duration, issuerRole Role) (
+	secret string, t Token, err error) {
+
+	if ttl > MaxSessionTTL {
+		ttl = MaxSessionTTL
+	}
+	return ts.issue(name, principal, role, resource, ttl, issuerRole, Scope{},
+		true)
+}
+
+// SessionRetention is how long an ended session is kept before it is removed.
+//
+// A day, so "who was signed in yesterday afternoon" can still be answered
+// from the store as well as from the audit log, which is the record that
+// actually has to last.
+const SessionRetention = 24 * time.Hour
+
+// pruneSessions removes sessions that ended more than SessionRetention ago.
+// Only sessions: a long-lived token is somebody's credential and is removed
+// by revoking it on purpose, never by a sweep. Called with the lock held.
+func (ts *TokenStore) pruneSessions(now time.Time) {
+	cutoff := now.Add(-SessionRetention).Unix()
+	kept := ts.Tokens[:0]
+	for _, t := range ts.Tokens {
+		if t.IsSession() && t.ExpiresAt < cutoff {
+			continue
+		}
+		kept = append(kept, t)
+	}
+	// Zero the tail so the removed tokens' hashes are not left reachable in
+	// the backing array.
+	for i := len(kept); i < len(ts.Tokens); i++ {
+		ts.Tokens[i] = Token{}
+	}
+	ts.Tokens = kept
+}
+
+func (ts *TokenStore) issue(name, principal string, role Role,
+	resource string, ttl time.Duration, issuerRole Role, scope Scope,
+	session bool) (secret string, t Token, err error) {
+
 	if err := scope.Validate(); err != nil {
 		return "", Token{}, err
 	}
@@ -646,6 +713,10 @@ func (ts *TokenStore) IssueScoped(name, principal string, role Role,
 		ExpiresAt: now.Add(ttl).Unix(),
 	}
 	t.Scope = scope
+	t.Session = session
+	if session {
+		ts.pruneSessions(time.Now())
+	}
 	ts.Tokens = append(ts.Tokens, t)
 	return secret, t, nil
 }
@@ -744,6 +815,7 @@ func (ts *TokenStore) Exchange(parentSecret string, role Role, resource string,
 		// about which one wins.
 		Scope: parent.Scope.Narrow(Scope{}),
 	}
+	ts.pruneSessions(now)
 	ts.Tokens = append(ts.Tokens, t)
 	return secret, t, nil
 }

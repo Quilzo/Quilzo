@@ -42,7 +42,7 @@ func TestTheSignInFormIsThrottled(t *testing.T) {
 		req.RemoteAddr = "198.51.100.7:4444"
 		w := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(w, req)
-		codes[w.Header().Get("Location")]++
+		codes[unsigned(w.Header().Get("Location"))]++
 	}
 
 	if codes["/signin?e=throttled"] == 0 {

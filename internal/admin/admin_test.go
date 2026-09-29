@@ -410,9 +410,9 @@ func TestSignInRefusesABadToken(t *testing.T) {
 	// Refused by sending the browser back to the form, so there is no page
 	// answering the POST for a reload to resubmit.
 	if w.Code != http.StatusSeeOther ||
-		w.Header().Get("Location") != "/signin?e=refused" {
+		unsigned(w.Header().Get("Location")) != "/signin?e=refused" {
 		t.Errorf("a bad token should be refused with a redirect to the form, "+
-			"got %d to %q", w.Code, w.Header().Get("Location"))
+			"got %d to %q", w.Code, unsigned(w.Header().Get("Location")))
 	}
 	if len(w.Result().Cookies()) > 0 {
 		t.Error("a rejected sign-in must not set a session cookie")
