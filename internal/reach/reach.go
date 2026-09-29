@@ -35,14 +35,27 @@
 //
 // # What this does and does not prove
 //
-// A reference is an upper bound on reachability, and the bound is sound in
-// one direction only. If a symbol is never mentioned anywhere in the
-// source, nothing can call it — that is a proof, and it is where almost
-// all of the filtering comes from. If it is mentioned, it might be called,
-// or it might sit in a branch nothing takes. Saying "referenced" rather
-// than "reachable" for that case costs a little precision and buys the
-// property that the tool never claims something is exploitable when it
-// only knows the name appears.
+// A reference is an upper bound on reachability from the code that was read,
+// and the code that was read is this module and nothing else. Vendored
+// dependencies, the module cache and the standard library are not walked.
+//
+// So NotReferenced says this module does not call the symbol itself. It does
+// not say nothing calls it: a vulnerable crypto/x509 function is reached by
+// every http.Get without the program ever naming it, and a dependency can call
+// a vulnerable function in another dependency the same way. That is a real and
+// useful fact — it is most of what separates a direct exposure from one that
+// arrives through somebody else's code — and it is not a proof of
+// unreachability. Only a call graph over the whole program is, which is what
+// govulncheck builds.
+//
+// The consequence for callers: NotReferenced may propose a VEX statement, and
+// a person signs it with the question of indirect reach in front of them. It
+// must never close a finding on its own.
+//
+// If a symbol is mentioned, it might be called, or it might sit in a branch
+// nothing takes. Saying "referenced" rather than "reachable" for that case
+// costs a little precision and buys the property that the tool never claims
+// something is exploitable when it only knows the name appears.
 package reach
 
 import (
@@ -56,9 +69,9 @@ import (
 type Verdict string
 
 const (
-	// NotReferenced: the vulnerable symbol appears nowhere in the source.
-	// Nothing can call it. This is a proof and it is where the filtering
-	// comes from.
+	// NotReferenced: this module's own source never names the vulnerable
+	// symbol, so it does not call it directly. Dependencies and the standard
+	// library were not read and may still reach it — see the package note.
 	NotReferenced Verdict = "not-referenced"
 	// Referenced: the symbol is mentioned. It may be called, or it may sit
 	// in a branch nothing takes — a call graph would narrow it and this
@@ -101,8 +114,11 @@ func (v Verdict) Clears() bool { return v == NotReferenced }
 func (v Verdict) Why() string {
 	switch v {
 	case NotReferenced:
-		return "the vulnerable symbol appears nowhere in this source, so " +
-			"nothing can call it. That is a proof rather than an estimate"
+		return "this module's own code never names the vulnerable symbol, " +
+			"so it does not call it directly. Dependencies and the standard " +
+			"library were not read and can still reach it, so this is " +
+			"grounds for a VEX statement a person signs, not for closing " +
+			"the finding"
 	case Referenced:
 		return "the symbol is mentioned in this source. It may be called, " +
 			"or it may sit in a branch nothing takes — this looked for the " +

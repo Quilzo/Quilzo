@@ -51,8 +51,9 @@ const importsNothing = `package app
 func Nothing() {}
 `
 
-// TestNotReferencedIsAProof — where the filtering comes from.
-func TestNotReferencedIsAProof(t *testing.T) {
+// TestNotReferencedMeansNoDirectCall — where the filtering comes from, and
+// what it does not claim.
+func TestNotReferencedMeansNoDirectCall(t *testing.T) {
 	dir := tree(t, map[string]string{"app/a.go": usesSomethingElse})
 	r, err := Assess("GHSA-1", "github.com/acme/archive",
 		[]Affected{{Path: "github.com/acme/archive",
@@ -64,10 +65,16 @@ func TestNotReferencedIsAProof(t *testing.T) {
 		t.Fatalf("verdict = %s, found %v", r.Verdict, r.Found)
 	}
 	if !r.Verdict.Clears() || !r.Verdict.Settled() {
-		t.Fatal("a proof should clear and should count as settled")
+		t.Fatal("no direct call should clear and should count as settled")
 	}
-	if !strings.Contains(r.Verdict.Why(), "proof rather than an estimate") {
-		t.Fatalf("why = %q", r.Verdict.Why())
+	why := r.Verdict.Why()
+	if !strings.Contains(why, "does not call it directly") ||
+		!strings.Contains(why, "can still reach it") {
+		t.Fatalf("why = %q", why)
+	}
+	// And it never claims to be the proof it is not.
+	if strings.Contains(why, "proof") || strings.Contains(why, "nothing can call") {
+		t.Fatalf("NotReferenced overclaims: %q", why)
 	}
 }
 

@@ -99,8 +99,8 @@ func Assess(advisory, pkg string, imports []Affected, src Source) (Result,
 // look walks the source for references to any affected symbol.
 //
 // Every shortcut here errs towards Referenced, because the verdict it
-// protects is NotReferenced and that one is claimed as a proof. Four places
-// where an earlier version did not:
+// protects is NotReferenced and that one is trusted to mean no direct call.
+// Four places where an earlier version did not:
 //
 //   - A method. The advisory says Client.Do and the source says c.Do(),
 //     where c came from a constructor, a parameter, or another file of the
