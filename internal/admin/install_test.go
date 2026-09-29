@@ -145,9 +145,9 @@ func TestTheIconIsPaintedInTheBrandColour(t *testing.T) {
 // a value one of them rejects reaches the other. Both read Brand.
 func TestTheInstalledWindowUsesTheBrandTheInterfaceUses(t *testing.T) {
 	s := &Server{}
-	if got := s.themeColour(); got != "#00515f" {
+	if got := s.themeColour(); got != "#0842a0" {
 		t.Errorf("with no brand configured the colour is %q, want the built-in "+
-			"#00515f", got)
+			"#0842a0", got)
 	}
 
 	s.Brand = Brand{Name: "Acme", Colour: "#7a2618"}
@@ -164,7 +164,7 @@ func TestTheInstalledWindowUsesTheBrandTheInterfaceUses(t *testing.T) {
 			"this test is checking the wrong thing and the stylesheet has a " +
 			"bigger problem than the manifest does")
 	}
-	if got := s.themeColour(); got != "#00515f" {
+	if got := s.themeColour(); got != "#0842a0" {
 		t.Errorf("a colour the stylesheet refused was served to the platform "+
 			"as %q. The manifest and the stylesheet have to agree about what "+
 			"this deployment's colour is.", got)

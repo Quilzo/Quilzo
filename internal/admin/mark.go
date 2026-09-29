@@ -54,7 +54,7 @@ const MarkPath = "M2.5 8.5A6 6 0 0 1 8.5 2.5H15.5A6 6 0 0 1 21.5 8.5V15.5" +
 // the same accent as the interface they belong to.
 func MarkSVG(colour string) string {
 	if colour == "" {
-		colour = "#00515f"
+		colour = "#0842a0"
 	}
 	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">` +
 		`<path fill-rule="evenodd" fill="` + colour + `" d="` + MarkPath +

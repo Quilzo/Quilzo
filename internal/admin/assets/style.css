@@ -32,41 +32,52 @@
      page that ships its own stylesheet. */
   color-scheme: light dark;
 
-  /* primary — deep cyan, hue 215 */
-  --primary-0:#000409;   --primary-10:#002026;  --primary-20:#003741;
-  --primary-24:#00414d;  --primary-30:#00515f;  --primary-40:#006c7e;
-  --primary-50:#00889f;  --primary-60:#00a0b3;  --primary-70:#5eb8c7;
-  --primary-80:#93d0dc;  --primary-90:#c2e9f1;  --primary-95:#daf6fb;
-  --primary-98:#e7fdff;  --primary-100:#f1ffff;
+  /* The palettes Google's own apps use — the GM3 tonal palettes behind Gmail,
+     Drive, Calendar and Gemini — so this interface sits beside them in Chrome
+     as one of the family rather than as a stranger in teal. Primary is Google
+     blue (#0b57d0 at tone 40), secondary the light blue of a selected row in
+     Gmail (#c2e7ff at tone 90), and the neutrals are the cool greys of those
+     apps' surfaces. Values are Google's published tones, not derived here. */
 
-  /* secondary — the same hue, muted, for supporting emphasis */
-  --secondary-10:#121d1f; --secondary-20:#213337; --secondary-30:#304b50;
-  --secondary-40:#41646a; --secondary-80:#b5cace; --secondary-90:#d7e5e8;
-  --secondary-95:#e8f3f5;
+  /* primary — Google blue */
+  --primary-0:#000000;   --primary-10:#041e49;  --primary-20:#062e6f;
+  --primary-24:#07357f;  --primary-30:#0842a0;  --primary-40:#0b57d0;
+  --primary-50:#1b6ef3;  --primary-60:#4c8df6;  --primary-70:#7cacf8;
+  --primary-80:#a8c7fa;  --primary-90:#d3e3fd;  --primary-95:#ecf3fe;
+  --primary-98:#f8fafd;  --primary-100:#ffffff;
 
-  /* tertiary — the expressive third voice, a shifted hue so accents read as
-     deliberate rather than as a lighter primary */
-  --tertiary-10:#251723; --tertiary-20:#40293d; --tertiary-30:#5c3c58;
-  --tertiary-40:#7b5076; --tertiary-80:#dbbed6; --tertiary-90:#f0dded;
-  --tertiary-95:#fbedf8;
+  /* secondary — the light blue of selection and navigation in Google apps */
+  --secondary-10:#001d35; --secondary-20:#003355; --secondary-30:#004a77;
+  --secondary-40:#00639b; --secondary-80:#7fcfff; --secondary-90:#c2e7ff;
+  --secondary-95:#dff3ff;
 
-  --error-10:#33100e; --error-20:#571d1d; --error-24:#662222;
-  --error-30:#7d2a2b; --error-80:#ffb3ad; --error-90:#ffd6d1; --error-95:#ffe8e4;
+  /* tertiary — Google green, for the rare accent that must not read as blue */
+  --tertiary-10:#072711; --tertiary-20:#0a3818; --tertiary-30:#0f5223;
+  --tertiary-40:#146c2e; --tertiary-80:#6dd58c; --tertiary-90:#c4eed0;
+  --tertiary-95:#e7f8ed;
+
+  --error-10:#410e0b; --error-20:#601410; --error-24:#6d1712;
+  --error-30:#8c1d18; --error-40:#b3261e; --error-80:#f2b8b5; --error-90:#f9dedc; --error-95:#fceeee;
 
   /* Kept as roles rather than palettes: success and warning are not M3 roles,
-     but a CMS that reports gate results needs them, and inventing them here
-     keeps the pairing explicit instead of reaching for a raw green. */
-  --ok-10:#032111;  --ok-30:#0d5730;  --ok-80:#8fd9ae;  --ok-90:#b9ecce;
-  --warn-10:#231a00; --warn-30:#5c4600; --warn-80:#e8c95c; --warn-90:#f6e2a0;
+     but a CMS that reports gate results needs them. Google's green and amber,
+     at the tones its apps use for status. */
+  --ok-10:#072711;  --ok-30:#0f5223;  --ok-80:#6dd58c;  --ok-90:#c4eed0;
+  --warn-10:#291800; --warn-30:#5f4100; --warn-80:#fdd663; --warn-90:#ffe8a3;
 
-  --neutral-0:#000001;  --neutral-4:#0d0e0f;  --neutral-6:#121414;
-  --neutral-10:#1a1c1d; --neutral-12:#1e2021; --neutral-17:#282a2b;
-  --neutral-22:#323537; --neutral-24:#373a3b; --neutral-90:#e1e3e4;
-  --neutral-92:#e6e8e9; --neutral-94:#eceeef; --neutral-95:#eff1f2;
-  --neutral-96:#f2f4f5; --neutral-98:#f8f9fa; --neutral-100:#feffff;
+  /* Google's greys and the cool, faintly blue surfaces of its apps: the
+     #f8fafd page of Gmail and Drive with white panels on it, and Gemini's
+     #131314 in the dark. Named by what they are rather than by tone, because
+     Google's surfaces are not one neutral palette read at different tones. */
+  --grey-10:#1f1f1f; --grey-20:#303030; --grey-90:#e3e3e3; --grey-95:#f2f2f2;
+  --white:#ffffff;
+  --page-light:#f8fafd;  --container-light:#f0f4f9;
+  --high-light:#e9eef6;  --highest-light:#dde3ea;
+  --page-dark:#131314;   --lowest-dark:#0e0e0e;  --low-dark:#1b1b1b;
+  --container-dark:#1e1f20; --high-dark:#282a2c; --highest-dark:#333537;
 
-  --nvariant-30:#3d484e; --nvariant-50:#677a84; --nvariant-60:#83939c;
-  --nvariant-70:#a0adb4; --nvariant-80:#bec8cd; --nvariant-90:#dde3e7;
+  --nvariant-30:#444746; --nvariant-50:#747775; --nvariant-60:#8e918f;
+  --nvariant-70:#a9acaa; --nvariant-80:#c4c7c5; --nvariant-90:#e1e3e1;
 
   /* -- semantic roles -------------------------------------------------------
      "on-X" is what goes on top of X. "X-container" is a fill for foreground
@@ -86,9 +97,14 @@
      both. Writing the pair in one place is what makes the three states
      reachable at all; it also removes the duplicate block a fix by
      copy-and-paste would have left behind. */
+  /* Primary sits one tone darker than Google's #0b57d0 in the light scheme.
+     That blue is 6.4:1 on white, and this interface holds its text to 7:1
+     (contrast_test.go computes it); #0842a0 is Google's own next tone, so a
+     link and a filled button stay recognisably Google blue and stay AAA. The
+     focus ring, which needs 3:1 rather than 7:1, is the exact #0b57d0. */
   --primary: light-dark(var(--primary-30), var(--primary-80));
   --on-primary: light-dark(var(--primary-100), var(--primary-20));
-  --primary-container: light-dark(var(--primary-90), var(--primary-24));
+  --primary-container: light-dark(var(--primary-90), var(--primary-30));
   --on-primary-container: light-dark(var(--primary-10), var(--primary-90));
 
   --secondary: light-dark(var(--secondary-30), var(--secondary-80));
@@ -101,9 +117,9 @@
   --tertiary-container: light-dark(var(--tertiary-90), var(--tertiary-30));
   --on-tertiary-container: light-dark(var(--tertiary-10), var(--tertiary-90));
 
-  --error: light-dark(var(--error-30), var(--error-80));
+  --error: light-dark(var(--error-40), var(--error-80));
   --on-error: light-dark(#ffffff, var(--error-20));
-  --error-container: light-dark(var(--error-90), var(--error-24));
+  --error-container: light-dark(var(--error-90), var(--error-30));
   --on-error-container: light-dark(var(--error-10), var(--error-90));
 
   --ok: light-dark(var(--ok-30), var(--ok-80));
@@ -113,21 +129,22 @@
   --warning-container: light-dark(var(--warn-90), var(--warn-10));
   --on-warning-container: light-dark(var(--warn-10), var(--warn-80));
 
-  --surface: light-dark(var(--neutral-98), var(--neutral-6));
-  --on-surface: light-dark(var(--neutral-10), var(--neutral-90));
+  --surface: light-dark(var(--page-light), var(--page-dark));
+  --on-surface: light-dark(var(--grey-10), var(--grey-90));
   --surface-variant: light-dark(var(--nvariant-90), var(--nvariant-30));
   --on-surface-variant: light-dark(var(--nvariant-30), var(--nvariant-80));
 
   /* Six container levels replace elevation-by-shadow. A card is distinguished
      from the page by tone, not by a drop shadow, which is what keeps the
-     interface legible at high zoom and in forced-colours mode. */
-  --surface-container-lowest: light-dark(var(--neutral-100), var(--neutral-4));
-  --surface-container-low: light-dark(var(--neutral-96), var(--neutral-10));
-  --surface-container: light-dark(var(--neutral-94), var(--neutral-12));
-  --surface-container-high: light-dark(var(--neutral-92), var(--neutral-17));
-  --surface-container-highest: light-dark(var(--neutral-90), var(--neutral-22));
-  --inverse-surface: light-dark(var(--neutral-22), var(--neutral-90));
-  --inverse-on-surface: light-dark(var(--neutral-95), var(--neutral-22));
+     interface legible at high zoom and in forced-colours mode. In the light
+     scheme a card is white on the pale page, as a panel is in Drive. */
+  --surface-container-lowest: light-dark(var(--white), var(--lowest-dark));
+  --surface-container-low: light-dark(var(--white), var(--low-dark));
+  --surface-container: light-dark(var(--container-light), var(--container-dark));
+  --surface-container-high: light-dark(var(--high-light), var(--high-dark));
+  --surface-container-highest: light-dark(var(--highest-light), var(--highest-dark));
+  --inverse-surface: light-dark(var(--grey-20), var(--grey-90));
+  --inverse-on-surface: light-dark(var(--grey-95), var(--grey-20));
 
   --outline: light-dark(var(--nvariant-50), var(--nvariant-60));
   --outline-variant: light-dark(var(--nvariant-80), var(--nvariant-30));
@@ -204,7 +221,7 @@
   --state-focus: 10%;
   --state-press: 10%;
 
-  --focus-ring: light-dark(var(--primary-40), var(--primary-70));
+  --focus-ring: light-dark(var(--primary-40), var(--primary-80));
 }
 
 /* The three states of the appearance control, and the only place they are
@@ -938,7 +955,7 @@ tr.detail td { padding-top: 0; border-top: 0; }
    */
   body:has(> .sidenav) { display: grid; grid-template-columns: 14rem 1fr;
     grid-template-areas: "bar bar" "nav main" "nav foot";
-    grid-template-rows: auto 1fr auto; }
+    grid-template-rows: auto 1fr auto; min-height: 100dvh; }
   /* The footer needs a named area too. Without one it lands in the first
      free cell, which is under the sidebar, and wraps to three lines in a
      column meant for menu items. */
@@ -958,7 +975,7 @@ tr.detail td { padding-top: 0; border-top: 0; }
      list inside it. */
   body:has(> .sidenav) > .sidenav { grid-area: nav;
     border-right: 1px solid var(--outline-variant);
-    padding: 1rem .75rem; background: var(--surface-container-low);
+    padding: 1rem .75rem; background: var(--surface);
     min-width: 0; }
   /* The menu itself, pinned. top: 1rem rather than 0 so it keeps the gap it
      has before anybody scrolls, and max-height for the menu that is longer
@@ -1021,8 +1038,9 @@ tr.detail td { padding-top: 0; border-top: 0; }
   .sidenav .navgroup + .navgroup { border-left: 0; margin-left: 0; padding-left: 0; }
   .sidenav .nav { flex-direction: column; gap: .15rem; align-items: stretch;
     margin-top: 0; }
+  /* A pill, as the navigation rail is in Gmail and Drive. */
   .sidenav .nav a { display: block; padding: .5rem .75rem;
-    border-radius: var(--shape-s); min-height: 40px; line-height: 1.6; }
+    border-radius: var(--shape-full); min-height: 40px; line-height: 1.6; }
   .sidenav .nav a[aria-current="page"] { background: var(--secondary-container); }
 }
 

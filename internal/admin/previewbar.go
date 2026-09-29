@@ -231,13 +231,13 @@ const PreviewBarCSS = `
    sets a {color:white} or button {display:none} would otherwise decide what
    the panel looks like, or whether it can be opened at all. */
 .qz-bar,.qz-bar *{all:revert;box-sizing:border-box}
-.qz-bar{--qz-bg:#ffffff;--qz-fg:#16222a;--qz-muted:#55636b;--qz-line:#d0d9dc;
-  --qz-accent:#0b5563;--qz-on-accent:#ffffff;--qz-link:#0b5563;
+.qz-bar{--qz-bg:#ffffff;--qz-fg:#1f1f1f;--qz-muted:#444746;--qz-line:#c4c7c5;
+  --qz-accent:#0842a0;--qz-on-accent:#ffffff;--qz-link:#0842a0;
   font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   color:var(--qz-fg)}
-@media (prefers-color-scheme:dark){.qz-bar{--qz-bg:#152127;--qz-fg:#e3eaed;
-  --qz-muted:#9aaab2;--qz-line:#2a3a42;--qz-accent:#6cc3d3;--qz-on-accent:#0f171b;
-  --qz-link:#8fd3e0}}
+@media (prefers-color-scheme:dark){.qz-bar{--qz-bg:#1e1f20;--qz-fg:#e3e3e3;
+  --qz-muted:#c4c7c5;--qz-line:#444746;--qz-accent:#a8c7fa;--qz-on-accent:#062e6f;
+  --qz-link:#a8c7fa}}
 .qz-bar .qz-pill{position:fixed;z-index:2147483647;
   inset-inline-start:max(12px,env(safe-area-inset-left));
   inset-block-end:max(12px,env(safe-area-inset-bottom));

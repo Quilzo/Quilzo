@@ -123,7 +123,7 @@ func (s *Server) themeColour() string {
 	if s.Brand.Style() != "" {
 		return s.Brand.Colour
 	}
-	// The built-in primary at tone 30, which is what the stylesheet resolves
-	// --primary to in the light scheme.
-	return "#00515f"
+	// The built-in primary, Google blue at tone 30, which is what the
+	// stylesheet resolves --primary to in the light scheme.
+	return "#0842a0"
 }
