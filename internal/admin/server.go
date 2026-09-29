@@ -155,6 +155,10 @@ type Server struct {
 	// whoever is on duty today.
 	Running *Running
 
+	// Assistants are the site's chatbots: declared here, served by the
+	// public site at /ask/NAME.
+	Assistants *Assistants
+
 	// Findings is the finding register: what the producers recorded, with
 	// the audit log's decisions applied.
 	Findings *Findings
@@ -951,6 +955,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/running", s.handleRunningScreen)
 	mux.HandleFunc("/security/events", s.handleEventsScreen)
 	mux.HandleFunc("/findings", s.handleFindings)
+	mux.HandleFunc("/assistants", s.handleAssistants)
+	mux.HandleFunc("/assistants/", s.handleAssistant)
+	mux.HandleFunc("/assistants/save", s.handleAssistantSave)
+	mux.HandleFunc("/assistants/action", s.handleAssistantAction)
+	mux.HandleFunc("/assistants/remove", s.handleAssistantRemove)
 	mux.HandleFunc("/findings/", s.handleFinding)
 	mux.HandleFunc("/findings/decide", s.handleFindingDecide)
 	mux.HandleFunc("/languages", s.handleLanguages)

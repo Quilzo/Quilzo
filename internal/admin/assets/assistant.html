@@ -1,0 +1,144 @@
+{{template "head" .}}
+<p class="hint"><a href="/assistants">Chatbots</a></p>
+<h1>{{.A.Title}}</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+
+<p class="chips">
+  {{if .A.Public}}<span class="chip">public at <code>/ask/{{.A.Name}}</code></span>{{else}}<span class="chip">testing only — not on the site</span>{{end}}
+  <span class="chip">{{if .A.UseModel}}model answers, verified{{else}}quotes only{{end}}</span>
+  <span class="chip">{{len .A.Actions}} action(s)</span>
+</p>
+
+<h2 id="try">Try it</h2>
+<form method="get" action="/assistants/{{.A.Name}}#try" class="findform">
+  <label for="q" class="visually-hidden">Question {{template "req"}}</label>
+  <input id="q" name="q" value="{{.Q}}" maxlength="1000" placeholder="Ask what a visitor would ask" required>
+  <button type="submit">Ask</button>
+</form>
+{{if .TestError}}<p class="notice bad" role="alert">{{.TestError}}</p>{{end}}
+{{with .Ans}}
+<div class="card">
+  <p class="hint">{{.Mode}} answer from {{$.Passages}} passage(s) this chatbot may read{{if .Note}} · {{.Note}}{{end}}</p>
+  {{if .Refused}}<p><strong>Says it does not know:</strong> {{.Text}}</p>
+  {{else}}{{range .Kept}}<p>{{.Text}}{{range .Cites}} <sup>[{{.}}]</sup>{{end}}</p>{{end}}{{end}}
+  {{with .Proposed}}<p class="notice">Offers: <strong>{{.Action.Name}}</strong> — {{.Action.Description}}{{range $k, $v := .Args}} · <code>{{$k}}</code> = {{$v}}{{end}}</p>{{end}}
+</div>
+{{if .Dropped}}
+<h3>Removed before a visitor would see it</h3>
+<ul class="notelist">
+  {{range .Dropped}}<li>{{.Text}} <div class="hint bad">{{.Why}}</div></li>{{end}}
+</ul>
+{{end}}
+{{if .Sources}}
+<h3>What it retrieved</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">#</th><th scope="col">Passage</th>
+    <th scope="col">Keyword rank</th><th scope="col">Vector rank</th>
+    <th scope="col">Matched</th></tr></thead>
+  <tbody>
+  {{range $i, $h := .Sources}}
+  <tr>
+    <td>{{$i}}</td>
+    <th scope="row">{{$h.Header}}<div class="hint">{{$h.Text}}</div></th>
+    <td>{{if $h.BM25Rank}}{{$h.BM25Rank}}{{else}}—{{end}}</td>
+    <td>{{if $h.VectorRank}}{{$h.VectorRank}}{{else}}—{{end}}</td>
+    <td>{{range $h.Matched}}<code>{{.}}</code> {{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p class="hint">Nothing it may read shares enough with the question, which is
+  why it said it does not know. Check the page exists and is published, uses
+  the words a visitor would, and is not excluded below.</p>
+{{end}}
+{{end}}
+
+{{if .CanSave}}
+<h2>Settings</h2>
+<form method="post" action="/assistants/save" class="card">
+  <input type="hidden" name="name" value="{{.A.Name}}">
+  <input type="hidden" name="full" value="1">
+  <div class="field"><label for="title">Title {{template "req"}}</label>
+    <input id="title" name="title" value="{{.A.Title}}" required></div>
+  <div class="field"><label for="greeting">Greeting</label>
+    <input id="greeting" name="greeting" value="{{.A.Greeting}}" placeholder="Ask a question about this site."></div>
+  <div class="field"><label for="instructions">Tone and focus</label>
+    <textarea id="instructions" name="instructions" rows="4" maxlength="4000" aria-describedby="instr-help">{{.A.Instructions}}</textarea>
+    <p id="instr-help" class="help">How it should sound. This cannot widen
+      what it reads or does: those are the settings below, enforced whatever
+      the text says.</p></div>
+  <div class="field"><label for="pages">Reads only pages under</label>
+    <input id="pages" name="pages" value="{{.Pages}}" placeholder="help, returns — empty means every published page" aria-describedby="pages-help">
+    <p id="pages-help" class="help">Comma-separated. Only published pages, never drafts.</p></div>
+  <div class="field"><label for="exclude">Never reads pages under</label>
+    <input id="exclude" name="exclude" value="{{.Exclude}}" placeholder="internal, legal/drafts"></div>
+  <div class="field"><label for="refusal">When it does not know, it says</label>
+    <input id="refusal" name="refusal" value="{{.A.Refusal}}" placeholder="I could not find that on this site."></div>
+  <div class="field"><label for="passages">Passages per question</label>
+    <input id="passages" name="passages" type="number" min="0" max="12" value="{{.A.Passages}}"></div>
+  <div class="field"><label><input type="checkbox" name="use_model" value="1"{{if .A.UseModel}} checked{{end}}>
+    Write answers with the configured model</label>
+    <p class="help">Off, it quotes your pages directly: no model, no cost,
+      nothing sent anywhere. On, every sentence is still checked against the
+      page it cites.</p></div>
+  <div class="field"><label><input type="checkbox" name="public" value="1"{{if .A.Public}} checked{{end}}>
+    Public — serve it on the site at <code>/ask/{{.A.Name}}</code></label></div>
+  <button type="submit">Save</button>
+</form>
+
+<h2>What it can offer to do</h2>
+<p>A chatbot never acts on its own. It can offer a link, or fill in one of
+  your forms for the visitor to check and send themselves.</p>
+{{if .A.Actions}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Action</th><th scope="col">Kind</th><th scope="col">Goes to</th><th scope="col">Fills in</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+  <tbody>
+  {{range .A.Actions}}
+  <tr>
+    <th scope="row">{{.Name}}<div class="hint">{{.Description}}</div></th>
+    <td>{{.Kind}}</td><td><code>{{.Target}}</code></td>
+    <td>{{range .Fields}}<code>{{.}}</code> {{end}}</td>
+    <td><form method="post" action="/assistants/action">
+      <input type="hidden" name="assistant" value="{{$.A.Name}}">
+      <input type="hidden" name="action" value="{{.Name}}">
+      <input type="hidden" name="remove" value="1">
+      <button type="submit" class="btn-text">Remove</button></form></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+<form method="post" action="/assistants/action" class="card">
+  <input type="hidden" name="assistant" value="{{.A.Name}}">
+  <div class="field"><label for="action">Action name {{template "req"}}</label>
+    <input id="action" name="action" required pattern="[a-z0-9][a-z0-9\-]{0,62}" placeholder="start-return"></div>
+  <div class="field"><label for="kind">Kind</label>
+    <select id="kind" name="kind">
+      <option value="link">Link to a page</option>
+      <option value="form">Fill in a form</option>
+    </select></div>
+  <div class="field"><label for="target">Page or form {{template "req"}}</label>
+    <input id="target" name="target" required list="form-names" placeholder="contact"></div>
+  <datalist id="form-names">{{range .FormNames}}<option value="{{.}}">{{end}}</datalist>
+  <div class="field"><label for="description">What it does {{template "req"}}</label>
+    <input id="description" name="description" required placeholder="Start a return for an order"></div>
+  <div class="field"><label for="fields">Form fields it may fill in</label>
+    <input id="fields" name="fields" placeholder="order, reason" aria-describedby="fields-help">
+    <p id="fields-help" class="help">Only for a form. Fields marked sensitive
+      in the form are never filled in, whatever is listed here.</p></div>
+  <button type="submit">Add action</button>
+</form>
+
+<h2>Remove</h2>
+<form method="post" action="/assistants/remove">
+  <input type="hidden" name="name" value="{{.A.Name}}">
+  <button type="submit" class="btn-danger">Remove {{.A.Title}}</button>
+</form>
+{{end}}
+{{template "foot" .}}

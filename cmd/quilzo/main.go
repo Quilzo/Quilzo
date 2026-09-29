@@ -340,6 +340,11 @@ publishing
 
 the assistant
   quilzo assist "..." --author WHO         propose changes; marks what it writes
+  quilzo assistant add NAME --title T      declare a chatbot that answers from the site
+  quilzo assistant action NAME ACTION      what it may offer to do: a link or a form
+  quilzo assistant ask NAME "question"     try it, with its sources and what was removed
+  quilzo assistant eval NAME CASES.jsonl   measure it, including what it should refuse
+  quilzo assistant list | remove NAME
   quilzo fediverse init                    a signing key, so the site can federate
   quilzo fediverse status | followers      whether it federates, and who follows
   quilzo fediverse block HOST              refuse an instance, and drop its follows
@@ -696,6 +701,8 @@ func main() {
 		err = cmdTriage(root, cmdArgs)
 	case "finding":
 		err = cmdFinding(root, cmdArgs)
+	case "assistant":
+		err = cmdAssistant(root, cmdArgs)
 	case "canary":
 		err = cmdCanary(root, cmdArgs)
 	case "spool":

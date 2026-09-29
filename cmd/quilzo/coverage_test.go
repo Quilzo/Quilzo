@@ -434,6 +434,13 @@ var coverage = map[string]surfaces{
 			"planted is handing it the one file that defeats all of them",
 	},
 
+	// A site's chatbots. The agent surface builds and tests; it does not
+	// publish and it does not decide what a public one may do.
+	"assistant": {
+		GUI: "/assistants",
+		MCP: []string{"list_assistants", "ask_assistant", "declare_assistant"},
+	},
+
 	"finding": {
 		GUI: "/findings",
 		// Read, and propose. A decision stays off this surface: a model that
@@ -906,6 +913,14 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 		// fact being reported rather than an action being taken: nothing
 		// here removes anything, and the credential being dead is what
 		// closes the finding either way.
+		// Removes an action from a chatbot, which only ever narrows what it
+		// may offer.
+		"action.remove": {
+			GUI: "/assistants",
+			NoMCP: "what a public chatbot may offer to do is decided by a " +
+				"person; the agent surface builds chatbots and does not " +
+				"touch their actions",
+		},
 		"rotated.purged": {
 			GUI: "",
 			NoMCP: "a model asserting that a credential is dead is how a " +

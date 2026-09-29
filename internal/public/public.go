@@ -65,6 +65,9 @@ import (
 // Site serves the live ref.
 type Site struct {
 	Store *store.Store
+	// Assistants are the site's declared chatbots, served at /ask/NAME.
+	// Nil means the route 404s.
+	Assistants *Assistants
 	// pageMu and pageSet memoise the decoded published set for one commit.
 	// See pagecache.go for why a cache here can never be wrong and why the
 	// publish window is deliberately not part of it.
@@ -272,6 +275,8 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/llms.txt", st.llms)
 	mux.HandleFunc("/media/", st.mediaFile)
 	mux.HandleFunc("/form/", st.submit)
+	mux.HandleFunc("/ask/", st.ask)
+	mux.HandleFunc("/ask.css", st.askStylesheet)
 	mux.HandleFunc("/share", st.handleShare)
 	mux.HandleFunc("/", st.page)
 	// The banner is innermost, so it wraps the handler's own output and

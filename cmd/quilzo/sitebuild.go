@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/activitypub"
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/httpsig"
@@ -151,6 +152,30 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 				})
 			},
 		}
+	}
+	// The declared assistants, served at /ask/NAME. Read per request, so one
+	// declared or withdrawn from the admin or the command line takes effect
+	// without a restart — withdrawing a public assistant has to be immediate.
+	st.Assistants = &public.Assistants{
+		Set:   func() (*assistant.Set, error) { return assistant.Load(assistantsPath(root)) },
+		Forms: func() (*form.Set, error) { return loadForms(root) },
+		Model: func(a assistant.Assistant) assistant.Model {
+			m, _ := assistantModel(a)
+			return m
+		},
+		Limit: throttle.New(throttlePolicy(mustConfig(root))),
+		Audit: func(name, source string, answered bool) {
+			outcome := audit.Success
+			if !answered {
+				outcome = audit.Denied
+			}
+			// That a question was asked and whether it was answered. Never
+			// the question: what somebody asks a site is theirs.
+			record(root, audit.Record{
+				Action: "assistant.ask", Resource: "/ask/" + name,
+				Outcome: outcome, Principal: source, Kind: audit.KindUnknown,
+			})
+		},
 	}
 	// The declared listings, and one index cache for the process. Without
 	// these a page that shows a query renders without it — which is what

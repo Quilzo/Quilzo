@@ -83,6 +83,10 @@ var destinations = []destination{
 	{"sections", "Sections", "/sections", "Content", "templates", auth.ActEditDraft},
 	{"languages", "Languages", "/languages", "Content", "languages", auth.ActView},
 	{"assist", "Assistant", "/assist", "Content", "ai", auth.ActEditDraft},
+	// Beside Assistant, which drafts pages for the people editing them. This
+	// is the other side: chatbots the site offers its visitors, answering
+	// from what is published.
+	{"assistants", "Chatbots", "/assistants", "Content", "ai", auth.ActEditDraft},
 
 	// With Review rather than with Content: a note is part of agreeing that
 	// something is ready, which is what this group is about.

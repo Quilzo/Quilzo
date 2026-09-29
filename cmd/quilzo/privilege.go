@@ -166,8 +166,14 @@ var commandNeeds = map[string]need{
 	// behind — the same weight as putting something in front of the public,
 	// and far heavier than editing a draft. `finding story` reads and is
 	// checked separately below.
-	"finding":       {action: auth.ActPublish},
-	"finding story": {action: auth.ActView},
+	"finding": {action: auth.ActPublish},
+	// Declaring a chatbot is a publish: a public one is a new way for anybody
+	// on the internet to reach what the site says and what it offers to do.
+	"assistant":      {action: auth.ActPublish},
+	"assistant list": {action: auth.ActView},
+	"assistant ask":  {action: auth.ActView},
+	"assistant eval": {action: auth.ActView},
+	"finding story":  {action: auth.ActView},
 
 	// Planting a canary commits the organisation to acting when it fires,
 	// and puts a row in the audit log saying so. The same weight as a
