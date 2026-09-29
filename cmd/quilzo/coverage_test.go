@@ -601,12 +601,7 @@ var coverage = map[string]surfaces{
 			"agent already writes pages through save_page, which is the same " +
 			"change stated as content rather than as a sequence of moves"},
 	"sections": {GUI: "/sections", NoMCP: "as section"},
-	"telegram": {Why: "starts a server, like `serve` and `site`; there is no " +
-		"button inside an interface that could start another interface",
-		NoMCP: "runs a public, writable surface that publishes on behalf of " +
-			"Telegram accounts. An agent that could start one could point it " +
-			"at a store and accept writes from a billion strangers"},
-	"find": {GUI: "/find", MCP: []string{"find", "search_pages", "similar_pages"}},
+	"find":     {GUI: "/find", MCP: []string{"find", "search_pages", "similar_pages"}},
 	"move": {
 		Why: "a rename that carries a page's children, the references naming " +
 			"them and the menu entries pointing at them. The browser has no " +
@@ -632,12 +627,6 @@ var coverage = map[string]surfaces{
 		Why: "the remarks people leave on a draft"},
 	"notes": {GUI: "/notes", MCP: []string{"list_notes"},
 		Why: "as note"},
-	"slack": {Why: "starts a server, like `telegram`; there is no button " +
-		"inside an interface that could start another interface",
-		NoMCP: "as telegram"},
-	"discord": {Why: "starts a server, like `telegram`; there is no button " +
-		"inside an interface that could start another interface",
-		NoMCP: "as telegram"},
 	"theme": {GUI: "/design",
 		NoMCP: "changes the colours, type and spacing of every page. An agent " +
 			"that can set a palette can set an unreadable one, and the " +

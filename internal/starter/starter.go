@@ -279,7 +279,7 @@ var templates = map[string]Template{
 							"caption": "Add a picture: quilzo media add photo.png --alt \"…\""},
 						map[string]any{"image": "",
 							"alt":     "A brass pen beside a sheet of paper",
-							"caption": "Or send one to the Telegram bot"},
+							"caption": "Or upload one on the Media screen"},
 					},
 				}},
 				map[string]any{"video": map[string]any{

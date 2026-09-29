@@ -11,7 +11,7 @@ import (
 // The optimiser's settings, read in one place.
 //
 // They were read in four: the browser's upload, `media add`, the Telegram
-// bot, and nowhere at all in `media get`. Four copies of the same five lines
+// bot (since removed), and nowhere at all in `media get`. Four copies of the same five lines
 // is how the fifth caller comes to be written without them, and that is
 // exactly what happened — a fetched image was stored unresized with its EXIF
 // intact, on the one path that ingests a file from somebody else's server.

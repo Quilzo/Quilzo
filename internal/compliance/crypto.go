@@ -129,9 +129,8 @@ func Inventory() []Algorithm {
 		},
 		{
 			Name: "Ed25519", Package: "crypto/ed25519",
-			Purpose: "verifying interaction signatures from Discord, and " +
-				"HTTP message signatures under RFC 9421",
-			Where: "discord, httpsig, crawl, groupkey", Use: Generated,
+			Purpose: "HTTP message signatures under RFC 9421",
+			Where:   "httpsig, crawl, groupkey", Use: Generated,
 			Quantum: Broken,
 			Note: "Signed and verified. internal/httpsig signs Ed25519 for " +
 				"any caller that asks — that is what Web Bot Auth uses — and " +
@@ -140,11 +139,7 @@ func Inventory() []Algorithm {
 				"Listed as generated anyway, because a signing implementation " +
 				"is part of this program's cryptographic surface and a " +
 				"document about that surface should overstate it rather than " +
-				"understate it. Verification is the older half: Discord signs " +
-				"and this holds only the public key, which is the reason to " +
-				"prefer a key pair to a shared secret — a public key cannot " +
-				"sign anything, so losing it costs nothing, whereas a leaked " +
-				"HMAC secret lets somebody forge in both directions.",
+				"understate it.",
 		},
 		{
 			Name: "ML-DSA-65 (FIPS 204)", Package: "crypto/mldsa",

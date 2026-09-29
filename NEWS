@@ -4,6 +4,21 @@ Newest first. Only what somebody running this would notice; the commit log
 has the rest.
 
 
+Unreleased
+==========
+
+** Removed
+
+*** `quilzo telegram`, `quilzo slack` and `quilzo discord` are gone, with the
+    Telegram Mini App, its systemd unit, its Caddy host and port 8082.  Each
+    was a separate internet-facing process that could publish on behalf of an
+    outside account, holding a bot token or signing secret, and each duplicated
+    what the admin already does better: it can show what a publish will
+    change, and a chat window cannot.  Pages are written and published in the
+    admin, through the CLI, or by an agent over MCP.  Slack's audit log is
+    still a SIEM source; that reads a file and opens nothing.
+
+
 v0.3.0 — 20 September 2026
 ==========================
 

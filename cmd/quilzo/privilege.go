@@ -422,9 +422,6 @@ var commandNeeds = map[string]need{
 	// commit, so it is the authority an author already has over a page.
 	"section":  {action: auth.ActEditDraft},
 	"sections": {action: auth.ActEditDraft},
-	// Runs a server that publishes on behalf of Telegram accounts. That is the
-	// publish authority, delegated — so the operator starting it needs to hold
-	// it, whatever the person in the chat holds.
 	// Reading. The settings half asks for grant separately inside the command,
 	// because a key's summary describes a control and the rest is content.
 	"find": {action: auth.ActView},
@@ -439,14 +436,9 @@ var commandNeeds = map[string]need{
 	// is working on it — so it takes the same authority the draft does.
 	// Saying a page is still right is a statement about the draft, made by
 	// somebody who works on it.
-	"checked":  {action: auth.ActEditDraft},
-	"note":     {action: auth.ActEditDraft},
-	"notes":    {action: auth.ActEditDraft},
-	"telegram": {action: auth.ActPublish},
-	// The same as telegram, and for the same reason: each starts a surface
-	// that publishes on behalf of somebody else's account.
-	"slack":   {action: auth.ActPublish},
-	"discord": {action: auth.ActPublish},
+	"checked": {action: auth.ActEditDraft},
+	"note":    {action: auth.ActEditDraft},
+	"notes":   {action: auth.ActEditDraft},
 
 	// -- content types gate every write, so changing one is a change to what
 	// every author may store. Publisher, not author.
@@ -481,8 +473,6 @@ var commandNeeds = map[string]need{
 	"section list":    {action: auth.ActView},
 	"section kinds":   {action: auth.ActView},
 	"section fields":  {action: auth.ActView},
-	"telegram check":  {action: auth.ActView},
-	"telegram link":   {action: auth.ActPublish},
 	"sections fields": {action: auth.ActView},
 	"sections list":   {action: auth.ActView},
 	"sections kinds":  {action: auth.ActView},

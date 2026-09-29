@@ -121,11 +121,6 @@ var Purposes = []Purpose{
 			"is the usual arrangement here",
 	},
 	{
-		Name:    "chat",
-		What:    "polling and replying on Telegram, Slack or Discord",
-		Without: "the chat surfaces are unavailable, including the Mini App",
-	},
-	{
 		Name:    "telemetry",
 		What:    "exporting traces and metrics to an OTLP collector",
 		Without: "nothing is exported. A collector on loopback still receives",

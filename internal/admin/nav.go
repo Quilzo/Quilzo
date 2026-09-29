@@ -487,7 +487,7 @@ func Screens() []find.Destination {
 		"access": {"permission", "role", "grant", "token", "authorisation",
 			"authorization"},
 		"passkeys":     {"passkey", "webauthn", "2fa", "security key", "login"},
-		"integrations": {"webhook", "slack", "telegram", "siem", "extension"},
+		"integrations": {"webhook", "siem", "extension"},
 		"settings":     {"configuration", "config", "option", "preference"},
 		"start":        {"help", "documentation", "docs", "guide", "getting started"},
 		"playground":   {"api", "rest", "endpoint", "json"},

@@ -86,8 +86,8 @@ func (a authed) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // The API validated and wrote nothing down, so a page written through it was
 // permanently indistinguishable from one nobody ever checked.
 //
-// Every other write path — the CLI, the admin, MCP, the importer, sections,
-// Telegram — goes through gateWrite, which records. internal/admin's wiring
+// Every other write path — the CLI, the admin, MCP, the importer, sections —
+// goes through gateWrite, which records. internal/admin's wiring
 // states the invariant this broke: unrecorded reads as unvalidated, which is
 // the safe way round. Safe, and wrong: schema.Validated exists to answer "did
 // this exact content pass this exact type", and for the API the honest answer

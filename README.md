@@ -284,47 +284,18 @@ become, and the layout is not written at all while any remain. An `{% else %}`
 dropped in silence renders the wrong branch of every conditional, and the person
 who ran the conversion has no reason to look.
 
-## Publishing from a Telegram chat
-
-`quilzo telegram serve` is a third process: a Mini App that turns a form in a
-chat into a published page, and refuses to publish one a reader could not use.
-
-```bash
-export QUILZO_TELEGRAM_TOKEN=…        # never a flag; a flag is shell history
-quilzo telegram check                 # confirms the token, names the bot
-quilzo telegram serve --app-url https://your.tunnel --site-url https://example.com
-```
-
-The bot answers `/start` with a button, by long polling — which needs no inbound
-reachability of its own, since the Mini App already has to be behind https for
-Telegram to open it at all. A webhook is available instead and requires a secret,
-because an endpoint that acts on whatever is posted to it is not a webhook.
+## Deploying
 
 [deploy/](deploy/) has what a stable address needs: a Caddyfile that renews its
-own certificate, and two hardened systemd units. The admin is deliberately not
-in any of it — it is loopback and holds credentials, so it is reached over an SSH
-port forward rather than a hostname.
+own certificate, and a hardened systemd unit for the public site. The admin is
+deliberately not in any of it — it is loopback and holds credentials, so it is
+reached over an SSH port forward rather than a hostname.
 
-The surface serves `script-src 'none'`, which is not free on a Mini App.
-Telegram delivers launch parameters in the URL fragment, and a fragment is never
-sent to a server — so reading `initData` server-side normally means JavaScript
-on the page lifting it out and posting it back, on the one surface in this
-program where a stranger composes content. Instead the bot mints a signed,
-single-use, expiring credential in the query string, which the server does see.
-`initData` is implemented in full as well, at `POST /launch`, for anyone running
-this with Telegram's SDK.
-
-There is no HTML field. A field is text, it lands in a template that cannot
-execute, and the page goes out through the same gates as everything else — so
-the answer to "what if somebody pastes a script tag" is structural rather than a
-filter somebody has to keep ahead of.
-
-## The four processes
+## The three processes
 
 ```
 quilzo serve      the admin        loopback, behind your own auth
 quilzo site       the website      the thing you point the internet at
-quilzo telegram   the Mini App     authenticated, writable, framed by Telegram
 quilzo studio     screen recording loopback, and the only one that runs scripts
 ```
 
@@ -334,14 +305,8 @@ submission to a store that is not the content store. It cannot read a submission
 back, cannot reach a ref, and cannot cause a commit. Reading the postbag happens
 in the admin, behind authentication.
 
-The Mini App is authenticated, it can publish, and it is framed by somebody
-else's client. That combination is why it is a separate process with a separate
-policy rather than a route on one of the others — mixing it in would mean
-widening that one's policy to cover this one's needs, which is how a policy
-stops describing anything.
-
-The studio is the same argument arriving from the opposite direction. The
-admin's policy is `default-src 'none'` and a test asserts its screens execute
+The studio is a separate process for the same reason, arriving from the
+opposite direction. The admin's policy is `default-src 'none'` and a test asserts its screens execute
 nothing, but `getDisplayMedia` and `MediaRecorder` are JavaScript APIs — there
 is no form post that reaches a screen and there will not be one. So either
 recording does not happen here, or something runs a script. Rather than open a

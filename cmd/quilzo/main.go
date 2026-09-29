@@ -281,11 +281,6 @@ telling people
   quilzo detect run [--rules DIR]          run the rules over new events, into the queue
   quilzo telemetry check [FILE]            can a connector's events be used at all
   quilzo telemetry fields [FILE]           what a detection may refer to
-  quilzo telegram check                    confirm the bot token works
-  quilzo telegram serve                    the Mini App: publish from a chat
-  quilzo telegram link USER-ID             mint a one-time link without a bot
-  quilzo slack check | serve               a slash command, into the same editor
-  quilzo discord check | serve             an interaction, into the same editor
 
 this program
   quilzo --version                         version, copyright and licence
@@ -799,12 +794,6 @@ func main() {
 		err = cmdRoom(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
-	case "telegram":
-		err = cmdTelegram(root, cmdArgs)
-	case "slack":
-		err = cmdSlack(root, cmdArgs)
-	case "discord":
-		err = cmdDiscord(root, cmdArgs)
 	case "posture":
 		err = cmdPosture(root, cmdArgs)
 	case "type", "types":
