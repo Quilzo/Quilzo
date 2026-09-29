@@ -290,6 +290,37 @@ func (s *Server) handleMediaDelete(w http.ResponseWriter, r *http.Request) {
 // media package does not fully understand is sent as an attachment rather than
 // rendered, so a format with an unclear parser cannot become a page inside
 // this origin.
+// mediaByHash recognises the address a rendered page uses for a file.
+//
+// The public site serves media at /media/<sha256>, so that is what every page
+// links. The preview renders those same pages here, where the library screen
+// already owns /media and the bytes were at /media/file/ — so every image in
+// every preview was a 404. Exactly sixty-four lower-case hex digits and
+// nothing else: this is a hash, not a path, and nothing that could name a
+// directory reaches the library.
+func mediaByHash(path string) (string, bool) {
+	id, ok := strings.CutPrefix(path, "/media/")
+	if !ok || len(id) != 64 {
+		return "", false
+	}
+	for _, c := range id {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return "", false
+		}
+	}
+	return id, true
+}
+
+// handleMediaByHash serves /media/<sha256>, and 404s everything else under
+// /media/ that no more specific route claimed.
+func (s *Server) handleMediaByHash(w http.ResponseWriter, r *http.Request) {
+	if _, ok := mediaByHash(r.URL.Path); !ok {
+		http.NotFound(w, r)
+		return
+	}
+	s.handleMediaFile(w, r)
+}
+
 func (s *Server) handleMediaFile(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.requireAuth(w, r)
 	if !ok {
@@ -308,6 +339,9 @@ func (s *Server) handleMediaFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/media/file/")
+	if hashed, ok := mediaByHash(r.URL.Path); ok {
+		id = hashed
+	}
 	// A handle rather than the bytes, for the same reason the public server
 	// takes one: this hands the result to ServeContent, which answers a range
 	// request — and Safari asks for two bytes of a film before it will play

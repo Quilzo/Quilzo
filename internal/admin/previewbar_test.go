@@ -67,7 +67,7 @@ func TestNothingInAPageCanWriteMarkupIntoThePanel(t *testing.T) {
 // onlyPanelTags reports the first tag in s that previewBar does not write.
 func onlyPanelTags(s string) (string, bool) {
 	allowed := map[string]bool{
-		"div": true, "details": true, "summary": true, "span": true,
+		"div": true, "button": true, "span": true,
 		"p": true, "ul": true, "ol": true, "li": true, "a": true,
 	}
 	for i := 0; i < len(s); i++ {

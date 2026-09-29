@@ -60,6 +60,7 @@ import (
 	"github.com/quilzo/quilzo/internal/throttle"
 	"html/template"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -74,6 +75,7 @@ import (
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/collection"
 	publishgate "github.com/quilzo/quilzo/internal/gate"
+	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/render"
@@ -721,26 +723,61 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy",
-			// manifest-src is the one directive this needed to become
-			// installable. It permits a JSON file from this origin and
-			// nothing else — no script, no fetch, no capability the
-			// interface did not already have. An installed admin is the
-			// same server-rendered HTML in a window with different chrome.
-			// frame-src 'self' is what lets the editor show the real page
-			// beside the form. It permits a document from this origin and
-			// nothing else — the framed document is /preview/NAME, served
-			// by this same server under this same policy, so nothing
-			// inside it can execute either. Notably NOT frame-ancestors:
-			// this origin may frame itself, and nobody may frame it.
-			"default-src 'none'; style-src 'self'; img-src 'self' data:; "+
-				"manifest-src 'self'; frame-src 'self'; "+
-				"form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+		h.Set("Content-Security-Policy", adminPolicy("'none'"))
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("X-Frame-Options", "DENY")
+		// A window this origin opens, or that opens it, shares no handle
+		// with the other: no window.opener to navigate, no process to share
+		// with a page somebody else controls.
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		// Nothing here is meant to be embedded by another site — not the
+		// pages, and not the media, which is behind a sign-in anyway.
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
+		// Device capabilities this interface never uses, switched off so a
+		// page it renders cannot ask for them either. Credentials are left
+		// at the default, which is this origin: passkeys need it.
+		h.Set("Permissions-Policy",
+			"camera=(), microphone=(), geolocation=(), payment=(), usb=(), "+
+				"serial=(), hid=()")
+		// Not stored, by the browser or anything in between.
+		//
+		// Five handlers said so and the rest said nothing, so the pages
+		// listing people, tokens, audit entries and security events were
+		// cacheable — on a shared machine, the back button after signing out
+		// showed them. A default here, rather than a line per handler: a
+		// screen added later is covered without anybody remembering. The
+		// few responses that should be cached — the stylesheet, media
+		// addressed by its own hash — set their own value, which replaces
+		// this one.
+		h.Set("Cache-Control", "no-store")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// adminPolicy is the interface's content security policy, with the one
+// directive that differs between responses supplied.
+//
+// manifest-src is the one directive this needed to become installable. It
+// permits a JSON file from this origin and nothing else — no script, no
+// fetch, no capability the interface did not already have.
+//
+// frame-src 'self' is what lets the editor show the real page beside the
+// form. The framed document is /preview/NAME, served by this same server
+// under this same policy, so nothing inside it can execute either.
+//
+// frame-ancestors is 'none' everywhere except that document. It used to be
+// 'none' there too, beside a comment saying this origin may frame itself —
+// which 'none' forbids, so the editor's preview was a grey box in every
+// browser that enforces the directive, which is all of them.
+//
+// media-src 'self' because a preview of a page with a film on it is a
+// preview of that page.
+func adminPolicy(frameAncestors string) string {
+	return "default-src 'none'; style-src 'self'; img-src 'self' data:; " +
+		"media-src 'self'; manifest-src 'self'; frame-src 'self'; " +
+		"form-action 'self'; frame-ancestors " + frameAncestors +
+		"; base-uri 'none'"
 }
 
 // MaxRequestBody caps a POST. Without a limit a single request can make the
@@ -977,6 +1014,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/media/edit", s.handleMediaEdit)
 	mux.HandleFunc("/media/edit/preview", s.handleMediaEditPreview)
 	mux.HandleFunc("/media/file/", s.handleMediaFile)
+	mux.HandleFunc("/media/", s.handleMediaByHash)
 	mux.HandleFunc("/publishing", s.handlePublishing)
 	mux.HandleFunc("/publishing/promote", s.handlePromote)
 	mux.HandleFunc("/publishing/environment", s.handleEnvSave)
@@ -1049,10 +1087,17 @@ func (s *Server) Handler() http.Handler {
 // in the URL, and from there into browser history, the server's access log, and
 // the Referer header of every outbound link. A credential in a URL is a
 // credential in several places nobody thinks to clear.
+//
+// Every refusal is a redirect back to the form, never a page rendered in
+// answer to the POST. The page answering a POST is the page a browser offers
+// to resubmit: somebody who pasted the right token while throttled got the
+// "too many attempts" page, pressed reload once the wait was over, and was
+// signed in by a token they had not entered this time — the browser still
+// held it. It also sits in session history for back and forward to replay.
+// Post/Redirect/Get leaves nothing behind to send again.
 func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		s.render(w, r, "signin.html", map[string]any{
-			"Title": "Sign in", "OIDC": s.OIDC != nil})
+		s.signInForm(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -1075,7 +1120,9 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	sub := throttle.Subject{Source: sourceOf(r)}
 	if s.Throttle != nil {
 		if d := s.Throttle.Check(sub); !d.Allowed {
-			s.tooManyAttempts(w, r, d)
+			// Not looked at, so not counted: the token in this request is
+			// neither a failure nor a success.
+			signInAgain(w, r, "throttled")
 			return
 		}
 	}
@@ -1088,14 +1135,12 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 			if alert && s.OnAuthFailure != nil {
 				s.OnAuthFailure(sub.Source, d.Failures)
 			}
-			if !d.Allowed {
-				s.tooManyAttempts(w, r, d)
-				return
-			}
 		}
-		w.WriteHeader(http.StatusUnauthorized)
-		s.render(w, r, "signin.html", map[string]any{
-			"Title": "Sign in", "Error": err.Error(), "OIDC": s.OIDC != nil})
+		why := "refused"
+		if !strings.HasPrefix(raw, auth.TokenPrefix) {
+			why = "format"
+		}
+		signInAgain(w, r, why)
 		return
 	}
 
@@ -1148,6 +1193,57 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// signInReasons is every message the sign-in form will show from its address.
+//
+// A closed list, keyed by a short code. The code arrives in a query string
+// anybody can write, so it selects a sentence rather than supplying one — a
+// sign-in page that printed whatever the link said would be a phishing page
+// with this site's name on it.
+//
+// "refused" covers a token that does not exist and one that expired or was
+// revoked, deliberately: the API answers both the same way, because telling
+// them apart is how an enumeration oracle gets built by accident.
+var signInReasons = map[string]string{
+	"format": "That is not a Quilzo token. They start with " +
+		auth.TokenPrefix + " — check the whole of it was pasted.",
+	"refused": "That token was not accepted. It may be mistyped, expired " +
+		"or revoked; an administrator can issue a new one with quilzo " +
+		"token issue.",
+}
+
+// signInAgain sends the browser back to the form with a reason code.
+func signInAgain(w http.ResponseWriter, r *http.Request, why string) {
+	http.Redirect(w, r, "/signin?e="+url.QueryEscape(why),
+		http.StatusSeeOther)
+}
+
+// signInForm renders the form, saying why somebody is back at it.
+//
+// Whether they are throttled is read from the limiter rather than from the
+// address: the code in the query string says what happened to the last
+// attempt, and the limiter says what will happen to the next one. The second
+// is the one worth a 429.
+func (s *Server) signInForm(w http.ResponseWriter, r *http.Request) {
+	data := map[string]any{"Title": "Sign in", "OIDC": s.OIDC != nil}
+	if msg, ok := signInReasons[r.URL.Query().Get("e")]; ok {
+		data["Error"] = msg
+	}
+	if s.Throttle != nil {
+		sub := throttle.Subject{Source: sourceOf(r)}
+		if d := s.Throttle.Check(sub); !d.Allowed {
+			secs := int(math.Ceil(d.RetryAfter.Seconds()))
+			if secs < 1 {
+				secs = 1
+			}
+			w.Header().Set("Retry-After", strconv.Itoa(secs))
+			data["Title"] = "Too many attempts"
+			data["Error"] = "Too many attempts from this address. " + d.Why
+			w.WriteHeader(http.StatusTooManyRequests)
+		}
+	}
+	s.render(w, r, "signin.html", data)
 }
 
 func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
@@ -1286,7 +1382,7 @@ func sourceOf(r *http.Request) string {
 
 func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
-		http.NotFound(w, r)
+		s.followPreviewLink(w, r)
 		return
 	}
 	p, ok := s.requireAuth(w, r)
@@ -2771,9 +2867,24 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body, exists := pages[name]
+	var record map[string]any
 	if !exists {
-		http.NotFound(w, r)
-		return
+		// A detail address, /product/copper-pen, which is what a page's own
+		// links point at. Looked up through the listing the page declares,
+		// by the same code the public site uses, so the preview shows a
+		// record exactly when a reader would see it and with exactly the
+		// fields a reader would get.
+		row, status, derr := s.previewRecord(pages, name)
+		if status != 0 {
+			if status == http.StatusNotFound {
+				http.NotFound(w, r)
+				return
+			}
+			http.Error(w, derr.Error(), status)
+			return
+		}
+		name, _, _ = strings.Cut(name, "/")
+		body, record = pages[name], row
 	}
 	// Resolved against the draft, because this is a preview: showing published
 	// data on a preview of an unpublished page would be a preview of something
@@ -2785,6 +2896,9 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 	if cerr != nil {
 		http.Error(w, cerr.Error(), http.StatusUnprocessableEntity)
 		return
+	}
+	if record != nil {
+		s.sources(s.Store.GetRef(site.RefDraft), pages).WithRecord(ctx, record)
 	}
 	_, layout, lerr := s.Layouts.For(body)
 	if lerr != nil {
@@ -2815,8 +2929,79 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 		out = injectBar(out, previewBar(name, body, t, typed))
 	}
 
+	// The one document this origin may frame, and only this origin: the
+	// editor shows it beside the form. Everything else stays unframeable.
+	w.Header().Set("Content-Security-Policy", adminPolicy("'self'"))
+	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(out))
+}
+
+// previewRecord resolves a detail address in the draft.
+//
+// A zero status means found. 404 covers both "no such record" and "a record
+// the listing excludes", as it does on the public site, and a detail route
+// that cannot work is a 422 that says why.
+func (s *Server) previewRecord(pages map[string]any, path string) (
+	map[string]any, int, error) {
+
+	base, key, ok := strings.Cut(path, "/")
+	if !ok || base == "" || key == "" || strings.Contains(key, "/") {
+		return nil, http.StatusNotFound, nil
+	}
+	d, declared := render.DetailOf(pages[base])
+	if !declared {
+		return nil, http.StatusNotFound, nil
+	}
+	if !d.Declared() {
+		return nil, http.StatusUnprocessableEntity, fmt.Errorf(
+			"%s declares a detail route without both a listing and a key "+
+				"field, so it cannot answer for any record", base)
+	}
+	row, err := s.resolverAt(s.Store.GetRef(site.RefDraft)).
+		Record(d.Listing, d.Key, key, nil)
+	switch {
+	case errors.Is(err, listing.ErrNoRecord):
+		return nil, http.StatusNotFound, nil
+	case err != nil:
+		return nil, http.StatusUnprocessableEntity, err
+	}
+	return map[string]any(row), 0, nil
+}
+
+// followPreviewLink sends a link clicked inside a preview to the preview of
+// where it points.
+//
+// A previewed page links /about and /product/copper-pen, because that is what
+// its readers follow. Inside the admin those addresses answered 404, so every
+// link in every preview was a dead end — the preview showed a site nobody
+// could move around. An address whose first segment names a page in the
+// draft goes to that page's preview, with its query string; anything else is
+// still a 404.
+//
+// Signed in first, and only for pages this person may read, so the redirect
+// cannot be used to learn which page names exist.
+func (s *Server) followPreviewLink(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/")
+	base, _, _ := strings.Cut(path, "/")
+	pages, err := site.PagesAt(s.Store, site.RefDraft)
+	if err != nil || base == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if _, exists := pages[base]; !exists || !s.mayUse(p, auth.ActView, "/"+base) {
+		http.NotFound(w, r)
+		return
+	}
+	to := "/preview/" + (&url.URL{Path: path}).EscapedPath()
+	if r.URL.RawQuery != "" {
+		to += "?" + r.URL.Query().Encode()
+	}
+	http.Redirect(w, r, to, http.StatusSeeOther)
 }
 
 // previewCSS serves the editing panel's stylesheet.
@@ -2831,7 +3016,7 @@ func (s *Server) previewCSS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	// Immutable for the process: it is a constant in the binary, so a build
 	// changes it and nothing else does.
-	w.Header().Set("Cache-Control", "max-age=300")
+	w.Header().Set("Cache-Control", "private, max-age=300")
 	_, _ = w.Write([]byte(PreviewBarCSS))
 }
 
