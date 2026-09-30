@@ -89,10 +89,11 @@ survived the episode intact. The rest is worth setting out plainly:
   contributor rather than having existed before.
 - **Neither direction retracts anything.** Every release made under AGPL stays
   available under AGPL. The commits published during the Apache-2.0 window stay
-  available under Apache-2.0, permanently, to anyone who took a copy. [NOTICE](NOTICE)
-  names the commits and the times.
+  available under Apache-2.0, permanently, to anyone who took a copy.
+  [LICENSING.md](LICENSING.md#the-apache-20-window) names the commits and the times.
 
-Why it changed and changed back is in [NOTICE](NOTICE), stated as a decision
+Why it changed and changed back is in
+[LICENSING.md](LICENSING.md#the-apache-20-window), stated as a decision
 with a reason rather than as an inevitability. The short version: it was
 relicensed for a scenario the project turned out not to be pursuing, and a
 licence changed for a plan that changed should change back.

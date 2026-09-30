@@ -7,7 +7,7 @@
 >
 > For about eighty minutes on 22 August 2026 that was not true: the project was
 > relicensed to Apache-2.0 and reverted, for reasons unrelated to the ASF. See
-> [NOTICE](../NOTICE). It is mentioned here only so that a reader comparing this
+> [LICENSING.md](../LICENSING.md#the-apache-20-window). It is mentioned here only so that a reader comparing this
 > document against the repository's history is not confused by a window that
 > looks like this proposal having been acted on.
 >

@@ -1,6 +1,8 @@
 Quilzo
 Copyright (C) 2026 rsh1k
 
+SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU Affero General Public License as published by the Free
 Software Foundation, either version 3 of the License, or (at your option) any
@@ -13,99 +15,6 @@ PARTICULAR PURPOSE.  See the GNU Affero General Public License for more details.
 You should have received a copy of the GNU Affero General Public License along
 with this program.  If not, see <https://www.gnu.org/licenses/>.
 
----
-
-This program is also available under a commercial licence, at the licensee's
-option rather than in addition.
-
-  SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
-
-The AGPL text above is what you hold unless you have signed the other one, and
-almost every copy is that one. Nobody acquires the commercial licence by
-downloading anything; it is a negotiated agreement with a named party. See
-LICENSING.md, and LICENSES/LicenseRef-Quilzo-Commercial.txt for what it grants.
-
-It grants no more software. There is no feature held back for it, no separate
-build, and no code path in this repository that branches on which licence the
-operator holds.
-
-This was an addition and not a relicensing. It withdrew no permission anybody
-already held — which has to be said in the same terms as the Apache-2.0 window
-recorded below, because a change that cannot reach back is either a principle or
-a convenience, and it is only a principle if it holds when the change is one the
-author wanted.
-
----
-
-Why the Affero variant, and not something more permissive.
-
-Quilzo is a thing people run as a service for other people. An ordinary GPL
-obligation is triggered by *distributing* software, and nobody distributes a
-CMS they are hosting — so under GPL-3.0 a company could take this, run it for
-customers, modify it, and never publish a line. The Affero clause closes that:
-offering it over a network is the trigger, so anybody running a modified
-Quilzo for others has to offer their users the source.
-
-That is the whole reason to pick it. The author is not trying to stop anybody
-using this, charging for it, or building a business on it — all of that is
-permitted and intended. What it prevents is the one outcome that would make the
-project pointless: a closed fork, hosted at scale, with the improvements kept
-private and the author's name removed.
-
-Attribution is not a courtesy here, it is a licence term. Section 5 requires
-that modified versions carry prominent notices stating that they are modified
-and the date, and that the whole work stay under this licence, with these
-notices intact.
-
----
-
-There was an Apache-2.0 window on 22 August 2026, and it cannot be closed.
-
-Recorded because it is the kind of fact that has to be findable afterwards, and
-because pretending otherwise would be the same mistake in the other direction.
-
-Commit 656bc88 relicensed this project to Apache-2.0 and was pushed to the
-public repository at approximately 08:58 UTC on 22 August 2026. Commit 67a85b8
-was the last under those terms. The licence was reverted to AGPL-3.0-or-later
-about eighty minutes later.
-
-The reason for the revert is that the relicensing was aimed at a scenario the
-project is not pursuing — a third party embedding this in a closed product. The
-route actually taken is that the maintainer operates the service, which the
-Affero clause does not obstruct at all. A licence changed for a plan that
-changed should change back.
-
-What matters is the part that does not revert. **Apache-2.0 is permissive, and
-that grant is irrevocable for the commits it covered.** Anyone who obtained a
-copy of the repository between those two points holds an Apache-2.0 licence to
-that code, permanently, including the right to use it in a closed product
-without publishing their changes. Reverting the licence changes what happens
-next; it cannot reach back.
-
-How much exposure that is, rather than a word for it. The repository has no
-forks, stars or watchers, and none of those is how anybody clones a repository
-anyway. What is measurable is clone traffic: 697 clones from 189 unique sources
-in the fourteen days to 21 August, averaging around 46 unique sources a day over
-the last four of them. Eighty-five minutes is about 6% of a day, and it was a
-weekday morning in Europe rather than a quiet hour, so the expected number of
-unique parties who took a copy under Apache-2.0 is a small handful.
-
-That is an estimate from traffic and not a list of names, because GitHub does
-not publish who cloned. It is written down at that precision because "probably
-nobody" and "about two or three people" are different statements, and only one
-of them is honest about a permissive grant that cannot be withdrawn.
-
----
-
-Contributions are taken under the Developer Certificate of Origin and, since the
-commercial licence was added, a contributor licence agreement. Copyright stays
-with each contributor and there is no copyright assignment. See CLA.md, which
-states what the agreement costs a contributor rather than only what it permits
-the project.
-
-Until then this paragraph said there was no contributor licence agreement, and
-that was true when it said it. A DCO grants the right to submit under the
-project's licence and nothing further, so it cannot support offering somebody
-else's contribution under commercial terms. The sentence is replaced rather than
-deleted because a project that quietly drops a promise it stopped keeping is
-harder to trust than one that says which promise it stopped keeping.
+It is also available under a commercial licence, as an alternative and by signed
+agreement only. LICENSING.md says which applies to you, why the base licence is
+the Affero one, and what the project's licensing history is.

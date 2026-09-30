@@ -103,6 +103,7 @@ func TestTheReadmeClaimsTheLicenceThisRepositoryCarries(t *testing.T) {
 	licence := read(t, "LICENSE")
 	readme := read(t, "README.md")
 	notice := read(t, "NOTICE")
+	licensing := read(t, "LICENSING.md")
 
 	apache := strings.Contains(licence, "Apache License") &&
 		strings.Contains(licence, "Version 2.0, January 2004")
@@ -143,11 +144,17 @@ func TestTheReadmeClaimsTheLicenceThisRepositoryCarries(t *testing.T) {
 	// A licence change does not retract what was already granted, and saying so
 	// is the difference between a licence change and a claim to have revoked
 	// one. This runs in whichever direction the project is currently facing.
-	if !strings.Contains(notice, wrong) {
-		t.Errorf("NOTICE does not mention %s at all. This project has been "+
-			"released under it, that grant is irrevocable, and a NOTICE that "+
-			"omits a licence it once carried reads as a claim that it never "+
-			"applied", wrong)
+	//
+	// On the licensing page, which is where the history is kept. NOTICE is
+	// the short file a packager copies, and says where to look.
+	if !strings.Contains(licensing, wrong) {
+		t.Errorf("LICENSING.md does not mention %s at all. This project has "+
+			"been released under it, that grant is irrevocable, and a "+
+			"licensing page that omits a licence it once carried reads as a "+
+			"claim that it never applied", wrong)
+	}
+	if !strings.Contains(notice, "LICENSING.md") {
+		t.Error("NOTICE no longer says where the licensing history is kept")
 	}
 }
 
@@ -161,8 +168,12 @@ func TestTheReadmeClaimsTheLicenceThisRepositoryCarries(t *testing.T) {
 // away later — it is embarrassing, it is brief, and deleting the paragraph makes
 // the history look cleaner than it was. Someone auditing where this code may
 // have gone needs it to still be there.
+//
+// It is kept in LICENSING.md. It used to be in NOTICE as well, at length, and
+// was cut from there in September 2026: nothing requires a project to carry
+// the record in that file, and one place is easier to keep true than two.
 func TestTheApacheWindowStaysRecorded(t *testing.T) {
-	notice := read(t, "NOTICE")
+	notice := read(t, "LICENSING.md")
 	for _, required := range []string{
 		"Apache-2.0", // the licence that applied
 		"656bc88",    // where it started
@@ -170,7 +181,7 @@ func TestTheApacheWindowStaysRecorded(t *testing.T) {
 		"irrevocable",
 	} {
 		if !strings.Contains(notice, required) {
-			t.Errorf("NOTICE no longer records %q. The window was real and the "+
+			t.Errorf("LICENSING.md no longer records %q. The window was real and the "+
 				"grant it made cannot be withdrawn, so the record of it is the "+
 				"only honest thing left to keep", required)
 		}
@@ -399,8 +410,8 @@ func TestTheReversedDecisionsStayRecorded(t *testing.T) {
 		{"CONTRIBUTING.md", "No longer true",
 			"the bullet that said nobody could relicense your code without " +
 				"asking, corrected rather than deleted"},
-		{"NOTICE", "there was no contributor licence agreement",
-			"the same withdrawal, in the file a packager reads"},
+		{"LICENSING.md", "there was no contributor licence agreement",
+			"the same withdrawal, on the page that states the licence"},
 	} {
 		if !strings.Contains(read(t, want.file), want.phrase) {
 			t.Errorf("%s no longer contains %q — %s. A project that "+

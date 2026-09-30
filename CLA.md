@@ -83,7 +83,7 @@ testing are all contributions that need no agreement at all.
 - **Copyright is still not assigned.** There is no CAA and none is planned.
 - **Nothing already contributed is affected.** This applies to contributions made
   after it was published. A CLA cannot reach backwards any more than a licence
-  change can, which is the position [NOTICE](NOTICE) takes about the Apache-2.0
+  change can, which is the position [LICENSING.md](LICENSING.md#the-apache-20-window) takes about the Apache-2.0
   window and has to be the position here too.
 
 ## Before this is used on anybody

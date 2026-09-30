@@ -175,7 +175,7 @@ the DCO"* — there is one now, and there was not when that sentence was written
 It is quoted rather than edited down because somebody may have decided to
 contribute on the strength of it. **Nothing already contributed is affected**: a
 CLA cannot reach backwards any more than a licence change can, which is the
-position [NOTICE](NOTICE) takes about the Apache-2.0 window and has to be the
+position [LICENSING.md](LICENSING.md#the-apache-20-window) takes about the Apache-2.0 window and has to be the
 position here too.
 
 This is the second time this section has been corrected, and the paragraph below
@@ -200,7 +200,7 @@ written, and at the time nobody else had written any — so the guarantee was re
 for future contributors and empty for the project as it actually stood. That was
 demonstrated rather than argued: on 22 August 2026 the maintainer relicensed the
 project to Apache-2.0, which they could do precisely because they were still the
-only human author, and reverted it about eighty minutes later. [NOTICE](NOTICE)
+only human author, and reverted it about eighty minutes later. [LICENSING.md](LICENSING.md#the-apache-20-window)
 records the window, including the part of it that does not revert.
 
 So the promise was not broken by a loophole. It was made in a form that did not
