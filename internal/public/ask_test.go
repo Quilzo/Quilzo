@@ -13,6 +13,8 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/render"
+	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/throttle"
 )
 
@@ -209,5 +211,63 @@ func TestADocumentIsCitedByItsFile(t *testing.T) {
 	body := askPost(st, "help", "how often should I clean the nib").Body.String()
 	if !strings.Contains(body, "once a month") || !strings.Contains(body, `href="/media/`+id+`"`) {
 		t.Fatalf("%s", body)
+	}
+}
+
+// The same, through a page the owner designed.
+//
+// An owner who publishes an "ask" page has the conversation drawn by their
+// own layout instead of the built-in one, which is a different renderer:
+// internal/tmpl rather than html/template. What a visitor typed, and what
+// arrived in the address, has to come out as text there too — in an
+// element, in an attribute and in a link.
+func TestWhatAVisitorTypesIsEscapedInTheOwnersOwnPageToo(t *testing.T) {
+	const layout = `<!doctype html><html lang="en"><head><title>{{ page.title }}</title>
+</head><body><h1>{{ ask.title }}</h1><p id="q">{{ ask.question }}</p>
+<form action="{{ ask.action }}"><input name="q" value="{{ ask.question }}"></form>
+<a href="{{ ask.question }}">again</a><div id="a">{{ ask.answer }}</div>
+<p id="p">{{ ask.problem }}</p></body></html>`
+
+	st, _ := askSite(t, shopBot)
+	pages, err := site.PagesAt(st.Store, site.RefLive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["ask"] = map[string]any{"title": "Ask us"}
+	if _, err := site.SaveDraft(st.Store, pages, "an ask page", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(st.Store, ""); err != nil {
+		t.Fatal(err)
+	}
+	st.Layouts = render.OneLayout(layout)
+
+	for _, q := range []string{
+		`<script>alert(1)</script> returns?`,
+		`"><img src=x onerror=alert(1)> returns`,
+		`javascript:alert(1)`,
+		`' autofocus onfocus=alert(1) x='`,
+	} {
+		req := httptest.NewRequest(http.MethodPost,
+			"/ask/help?x=%3Cscript%3Ealert(2)%3C/script%3E",
+			strings.NewReader(url.Values{"q": {q}}.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.RemoteAddr = "198.51.100.9:1234"
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, req)
+		body := w.Body.String()
+
+		// Proof this is the owner's page and not the built-in one: a test
+		// of the wrong renderer would pass for the wrong reason.
+		if !strings.Contains(body, `<p id="q">`) {
+			t.Fatalf("the owner's ask page was not used:\n%s", body)
+		}
+		for _, bad := range []string{"<script>alert", "<img src=x",
+			`href="javascript:`, `value="' autofocus`, `value=""><`,
+			" onfocus=alert(1) x=''"} {
+			if strings.Contains(body, bad) {
+				t.Errorf("asking %q put %q on the owner's page:\n%s", q, bad, body)
+			}
+		}
 	}
 }

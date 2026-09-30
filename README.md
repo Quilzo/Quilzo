@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/brand/quilzo.svg" alt="Quilzo" width="96" height="96">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/quilzo-dark.svg">
+    <img src="docs/brand/quilzo.svg" alt="Quilzo" width="96" height="96">
+  </picture>
 </p>
 
 <h1 align="center">Quilzo</h1>
