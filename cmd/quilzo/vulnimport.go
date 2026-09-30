@@ -82,6 +82,7 @@ type importReport struct {
 	Unreadable int    `json:"files_unreadable,omitempty"`
 	Exploited  int    `json:"exploited,omitempty"`
 	Scored     int    `json:"scored,omitempty"`
+	Annotated  int    `json:"annotated,omitempty"`
 	ScoreDate  string `json:"score_date,omitempty"`
 	Advisories int    `json:"advisories_stored"`
 	Inventory  int    `json:"components_stored"`
@@ -97,12 +98,15 @@ func vulnImport(root string, args []string) error {
 		"as issuer:value, for example repo:storefront")
 	kev := fs.String("kev", "", "CISA's known exploited vulnerabilities, as JSON")
 	epss := fs.String("epss", "", "EPSS scores, as the .csv or .csv.gz FIRST publishes")
+	ssvc := fs.String("ssvc", "", "CVE records carrying CISA's SSVC "+
+		"annotations: a file, a directory or a .zip")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if len(osv) == 0 && *bom == "" && *kev == "" && *epss == "" {
+	if len(osv) == 0 && *bom == "" && *kev == "" && *epss == "" && *ssvc == "" {
 		return fmt.Errorf("usage: quilzo vuln import [--bom FILE --where " +
-			"ISSUER:VALUE] [--osv PATH]... [--kev FILE] [--epss FILE]")
+			"ISSUER:VALUE] [--osv PATH]... [--kev FILE] [--epss FILE] " +
+			"[--ssvc PATH]")
 	}
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
@@ -217,6 +221,7 @@ func vulnImport(root string, args []string) error {
 				old := advisories[i]
 				a.Known, a.EPSS, a.EPSSAt = old.Known, old.EPSS, old.EPSSAt
 				a.Exploited = old.Exploited
+				a.Exploitation, a.Automatable = old.Exploitation, old.Automatable
 			}
 			if a.Validate() != nil {
 				rep.Unreadable++
@@ -311,6 +316,33 @@ func vulnImport(root string, args []string) error {
 		advChanged = true
 	}
 
+	if *ssvc != "" {
+		notes, serr := readSSVC(*ssvc, &rep)
+		if serr != nil {
+			return fmt.Errorf("%s: %w", *ssvc, serr)
+		}
+		if len(notes) == 0 {
+			return fmt.Errorf("%s holds no CVE record with an SSVC "+
+				"annotation", *ssvc)
+		}
+		for i := range advisories {
+			a := &advisories[i]
+			for _, id := range append([]string{a.ID}, a.Aliases...) {
+				if n, ok := notes[strings.ToUpper(id)]; ok {
+					if n.Exploitation != "" {
+						a.Exploitation = n.Exploitation
+					}
+					if n.Automatable != nil {
+						a.Automatable = n.Automatable
+					}
+					rep.Annotated++
+					break
+				}
+			}
+		}
+		advChanged = true
+	}
+
 	if invChanged {
 		if err := writeJSONL(storedInventory(root), inventory); err != nil {
 			return err
@@ -379,6 +411,10 @@ func vulnImport(root string, args []string) error {
 	if *epss != "" {
 		w.Human("%s%d%s scored, as of %s\n", bold, rep.Scored, reset,
 			rep.ScoreDate)
+	}
+	if *ssvc != "" {
+		w.Human("%s%d%s of the stored advisories carry CISA's SSVC "+
+			"annotations\n", bold, rep.Annotated, reset)
 	}
 	w.Human("  %s%d advisory(ies) and %d component(s) stored; quilzo vuln "+
 		"plan says what to change%s\n", dim, rep.Advisories, rep.Inventory,
@@ -476,18 +512,30 @@ func readBounded(path string, limit int64) ([]byte, error) {
 
 // readOSV walks a file, a directory or a zip of OSV records.
 func readOSV(path string, take func(sca.Record), rep *importReport) error {
+	return walkRecords(path, rep, func(raw []byte) error {
+		records, err := sca.ReadOSV(raw)
+		if err != nil {
+			return err
+		}
+		for _, r := range records {
+			take(r)
+		}
+		return nil
+	})
+}
+
+// walkRecords hands each JSON file under a path to one: the file itself,
+// the .json files of a directory, or those of a zip read in place. A file
+// one cannot use is counted, except when it is the only thing named, where
+// it is the error.
+func walkRecords(path string, rep *importReport, use func([]byte) error) error {
 	st, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
 	one := func(raw []byte) {
-		records, rerr := sca.ReadOSV(raw)
-		if rerr != nil {
+		if use(raw) != nil {
 			rep.Unreadable++
-			return
-		}
-		for _, r := range records {
-			take(r)
 		}
 	}
 	switch {
@@ -556,15 +604,89 @@ func readOSV(path string, take func(sca.Record), rep *importReport) error {
 		if err != nil {
 			return err
 		}
-		records, err := sca.ReadOSV(raw)
-		if err != nil {
+		return use(raw)
+	}
+}
+
+// readSSVC reads CISA's annotations out of CVE records, as its
+// Vulnrichment repository publishes them: for each CVE, whether an exploit
+// is public and whether an attack could be automated.
+func readSSVC(path string, rep *importReport) (map[string]ssvcNote, error) {
+	out := map[string]ssvcNote{}
+	err := walkRecords(path, rep, func(raw []byte) error {
+		var rec struct {
+			Meta struct {
+				ID string `json:"cveId"`
+			} `json:"cveMetadata"`
+			Containers struct {
+				ADP []struct {
+					Metrics []struct {
+						Other struct {
+							Type    string `json:"type"`
+							Content struct {
+								Options []map[string]string `json:"options"`
+							} `json:"content"`
+						} `json:"other"`
+					} `json:"metrics"`
+				} `json:"adp"`
+			} `json:"containers"`
+		}
+		if err := json.Unmarshal(raw, &rec); err != nil {
 			return err
 		}
-		for _, r := range records {
-			take(r)
+		id := strings.ToUpper(strings.TrimSpace(rec.Meta.ID))
+		if id == "" {
+			return fmt.Errorf("not a CVE record")
+		}
+		var note ssvcNote
+		for _, adp := range rec.Containers.ADP {
+			for _, m := range adp.Metrics {
+				if !strings.EqualFold(m.Other.Type, "ssvc") {
+					continue
+				}
+				for _, opt := range m.Other.Content.Options {
+					for k, v := range opt {
+						v = strings.ToLower(strings.TrimSpace(v))
+						switch strings.ToLower(k) {
+						case "exploitation":
+							switch v {
+							case "none":
+								note.Exploitation = "none"
+							case "poc", "public poc":
+								note.Exploitation = "public poc"
+							case "active":
+								// Recorded as a public exploit and no more.
+								// "Being exploited" is an attestation, with a
+								// name and a date, and this annotation has
+								// neither.
+								note.Exploitation = "public poc"
+							}
+						case "automatable":
+							switch v {
+							case "yes":
+								yes := true
+								note.Automatable = &yes
+							case "no":
+								no := false
+								note.Automatable = &no
+							}
+						}
+					}
+				}
+			}
+		}
+		if note.Exploitation != "" || note.Automatable != nil {
+			out[id] = note
 		}
 		return nil
-	}
+	})
+	return out, err
+}
+
+// ssvcNote is what one CVE record says toward an SSVC decision.
+type ssvcNote struct {
+	Exploitation string
+	Automatable  *bool
 }
 
 // readKEV reads CISA's catalogue into attestations by CVE.

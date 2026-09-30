@@ -41,17 +41,46 @@
 
 <h2>The queue</h2>
 {{if .Queue}}<div class="table-wrap"><table class="wf-people">
-  <thead><tr><th scope="col">Vulnerability</th><th scope="col">In</th><th scope="col">Why it is here</th><th scope="col">Places</th><th scope="col">Weight</th></tr></thead>
+  <thead><tr><th scope="col">Vulnerability</th><th scope="col">In</th><th scope="col">Why it is here</th><th scope="col">Places</th>{{if .HasTree}}<th scope="col">SSVC</th>{{end}}<th scope="col">Weight</th></tr></thead>
   <tbody>{{range .Queue}}<tr>
     <th scope="row"><a href="{{.Href}}">{{.ID}}</a>{{if .Exploited}}<br><span class="wf-word critical">exploited</span>{{end}}{{if .Lapsed}}<br><span class="wf-word serious">decision ran out</span>{{end}}</th>
     <td>{{.Package}} <code>{{.Version}}</code></td>
     <td>{{.Why}}</td>
     <td>{{.Assets}}</td>
+    {{if $.HasTree}}<td>{{if .SSVC}}<span class="wf-word {{.SSVCTone}}">{{.SSVC}}</span>{{if .SSVCNote}}<br><span class="hint">{{.SSVCNote}}</span>{{end}}{{end}}</td>{{end}}
     <td class="wf-score"><span class="wf-points">{{.Weight}}</span>
       <svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.W}}" height="8" rx="4"></rect></svg></td>
   </tr>{{end}}</tbody></table></div>
 {{if .MoreQueue}}<p class="hint">{{.MoreQueue}} more are below these. <code>quilzo vuln queue --top 500</code> lists them.</p>{{end}}
 {{else}}<p>Nothing is in the queue.</p>{{end}}
+
+<h2>What you say about your machines</h2>
+{{if not .HasTree}}<p class="notice warn">No SSVC decision table is loaded, so no
+  decision is offered. The table is CERT/CC's and is loaded from the file
+  they publish: <code>quilzo vuln ssvc-tree FILE</code>.</p>{{end}}
+<p class="hint">An SSVC decision needs two things no feed knows: how exposed
+  a machine is, and what is lost if it is compromised. Where neither is
+  recorded the decision is given as a range, not as a guess.</p>
+{{if .Untagged}}<p class="notice warn"><strong>{{.Untagged}} asset(s) have no tag.</strong> For example {{.UntaggedExample}}.</p>{{end}}
+{{if .Tags}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Assets</th><th scope="col">Exposure</th><th scope="col">If it is lost</th><th scope="col">Why</th><th scope="col">By</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+  <tbody>{{range .Tags}}<tr><th scope="row"><code>{{.Match}}</code><br><span class="hint">{{.Count}} asset(s)</span></th>
+    <td>{{.Exposure}}</td><td>{{.Impact}}</td><td>{{.Because}}</td><td>{{.By}}<br><span class="hint">{{.When}}</span></td>
+    <td><form method="post" action="/security/vulns/act"><input type="hidden" name="do" value="untag"><input type="hidden" name="match" value="{{.Match}}"><button type="submit" class="danger">Remove</button></form></td></tr>{{end}}</tbody>
+</table></div>{{end}}
+<details class="wf-how"><summary>Tag an asset, or a group of them</summary>
+<form method="post" action="/security/vulns/act">
+  <input type="hidden" name="do" value="tag">
+  <div class="grid2">
+  <p><label>Asset, or a prefix ending in * <input type="text" name="match" required maxlength="300" placeholder="ec:srv-web-*"></label></p>
+  <p><label>Why <input type="text" name="because" required maxlength="300"></label></p>
+  <p><label>Exposure <select name="exposure">{{range .Exposures}}<option value="{{.}}">{{.}}</option>{{end}}</select></label>
+    <span class="hint">small: local or tightly controlled. controlled: networked, with access limits. open: reachable from the internet.</span></p>
+  <p><label>If it is lost <select name="impact">{{range .Impacts}}<option value="{{.}}">{{.}}</option>{{end}}</select></label>
+    <span class="hint">The worse of harm to people and harm to what the organisation does.</span></p>
+  </div>
+  <p><button type="submit">Tag</button></p>
+</form></details>
 
 <figure class="wf-fig">
   <figcaption><h2>Open vulnerabilities, over time</h2></figcaption>

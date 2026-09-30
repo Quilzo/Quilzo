@@ -941,6 +941,14 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 		// fact being reported rather than an action being taken: nothing
 		// here removes anything, and the credential being dead is what
 		// closes the finding either way.
+		// Takes away what was said about an asset, which widens its SSVC
+		// decisions back to a range.
+		"asset.remove": {
+			GUI: "/security/vulns",
+			NoMCP: "how exposed a machine is and what is lost with it is " +
+				"the organisation's judgement; a model removing one " +
+				"changes what is urgent without anybody deciding it",
+		},
 		"budget.remove": {
 			GUI: "/models",
 			NoMCP: "as gateway: the model route and its limits are " +

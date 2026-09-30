@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/admin"
@@ -303,7 +304,17 @@ func cmdServe(root string, args []string) error {
 	srv.Vulns = &admin.Vulns{
 		Load: func(now time.Time) (admin.VulnView, error) {
 			v, err := loadVulnView(root, now)
+			seen := map[string]bool{}
+			var assets []string
+			for _, c := range v.Inventory {
+				if a := c.Where.String(); !seen[a] {
+					seen[a] = true
+					assets = append(assets, a)
+				}
+			}
+			sort.Strings(assets)
 			return admin.VulnView{Advisories: v.Advisories,
+				Tree: v.Tree, Tags: v.Tags, Assets: assets,
 				Components: len(v.Inventory), Matched: v.Matched,
 				Assessments: v.Assessments, History: v.History,
 				AdvisoriesAt: v.AdvisoriesAt, InventoryAt: v.InventoryAt}, err
@@ -312,6 +323,14 @@ func cmdServe(root string, args []string) error {
 		// showed, so it is refused if the store does not know it.
 		Assess: func(a vuln.Assessment) error {
 			return recordAssessment(root, a, true)
+		},
+		Tag: func(tag vuln.AssetTag, by string) error {
+			return setAssetTag(root, &Caller{Name: by, Kind: audit.KindHuman,
+				Verified: true}, tag)
+		},
+		Untag: func(match, by string) error {
+			return removeAssetTag(root, &Caller{Name: by,
+				Kind: audit.KindHuman, Verified: true}, match)
 		},
 	}
 	srv.Cases = &admin.Cases{

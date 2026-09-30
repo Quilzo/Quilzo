@@ -59,6 +59,12 @@ func cmdVuln(root string, args []string) error {
 		return vulnImport(root, args[1:])
 	case "reach":
 		return vulnReach(root, args[1:])
+	case "ssvc-tree":
+		return vulnTree(root, args[1:])
+	case "asset":
+		return vulnAsset(root, args[1:])
+	case "assets":
+		return vulnAssets(root)
 	case "plan":
 		return vulnPlan(root, args[1:])
 	case "accept":
@@ -67,7 +73,8 @@ func cmdVuln(root string, args []string) error {
 		return vulnVEX(root, args[1:])
 	default:
 		return fmt.Errorf("unknown vuln command %q; try load, import, reach, "+
-			"queue, plan, why, assess, accept, vex or reasons", args[0])
+			"queue, plan, why, assess, accept, vex, ssvc-tree, asset, "+
+			"assets or reasons", args[0])
 	}
 }
 
@@ -206,6 +213,14 @@ func vulnQueue(root string, args []string) error {
 		return err
 	}
 
+	tree, err := loadSSVCTree(root)
+	if err != nil {
+		return err
+	}
+	tags, err := loadAssetTags(root)
+	if err != nil {
+		return err
+	}
 	at := time.Now().UTC()
 	ranked := vuln.Match(advisories, inventory, assessments, at)
 	var live []vuln.Exposure
@@ -264,6 +279,10 @@ func vulnQueue(root string, args []string) error {
 			e.Component.Version, reset, g.Assets())
 		w.Human("     %s%s%s\n", dim, e.Explain(at), reset)
 		w.Human("     %s%s%s\n", dim, g.Where(3), reset)
+		if tree != nil {
+			w.Human("     %sSSVC: %s%s\n", dim,
+				groupDecision(tree, tags, g).Says(), reset)
+		}
 	}
 	if len(groups) > shown {
 		rest := vuln.Expected(vuln.Flatten(groups[shown:]), at)
@@ -424,4 +443,16 @@ func orStored(given, local, stored string) string {
 		return local
 	}
 	return stored
+}
+
+// groupDecision is the most urgent SSVC decision among the places a
+// vulnerability is found.
+func groupDecision(tree vuln.Tree, tags vuln.Tags, g vuln.Group) vuln.Decision {
+	var worst vuln.Decision
+	for n, e := range g.On {
+		if d := tree.Decide(e, tags); n == 0 || d.More(worst) {
+			worst = d
+		}
+	}
+	return worst
 }

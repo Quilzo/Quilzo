@@ -118,6 +118,13 @@ type Advisory struct {
 	Affects []Range           `json:"affects,omitempty"`
 	FixedIn map[string]string `json:"fixed_in,omitempty"`
 
+	// Exploitation and Automatable are two inputs to an SSVC decision that
+	// are about the vulnerability and not the machine: whether an exploit
+	// is public ("none" or "public poc"), and whether an attack could be
+	// automated end to end. Empty and nil mean nobody has said.
+	Exploitation string `json:"exploitation,omitempty"`
+	Automatable  *bool  `json:"automatable,omitempty"`
+
 	// Imports are the affected symbols, where the database names them. Most
 	// do not: it is what makes "is the vulnerable code used here" a
 	// question with an answer, and only for the ecosystems that carry it.

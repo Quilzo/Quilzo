@@ -283,3 +283,88 @@ func TestAReachResultIsShownAsGroundsAndNotAsAVerdict(t *testing.T) {
 			"offered as grounds for dismissal")
 	}
 }
+
+// tinyTree is every combination with an outcome that rises with each
+// input. Not CERT/CC's table; a test needs to know the answer.
+func tinyTree() vuln.Tree {
+	t := vuln.Tree{}
+	for a, x := range vuln.Exploitations {
+		for e, y := range vuln.Exposures {
+			for c, z := range vuln.Automatables {
+				for h, w := range vuln.Impacts {
+					t[[4]string{x, y, z, w}] = vuln.Outcomes[(a*2+e+c+h)*3/10]
+				}
+			}
+		}
+	}
+	return t
+}
+
+func TestWithoutATableNoDecisionIsOfferedAndWithOneAMissingInputIsARange(t *testing.T) {
+	srv, token := setup(t)
+	wireVulns(srv)
+	body := get(t, srv, "/security/vulns", token).Body.String()
+	whole(t, body)
+	if !strings.Contains(body, "No SSVC decision table is loaded") ||
+		strings.Contains(body, `<th scope="col">SSVC</th>`) {
+		t.Error("with no table the page offers a decision, or does not say why not")
+	}
+	load := srv.Vulns.Load
+	var tags vuln.Tags
+	srv.Vulns.Load = func(now time.Time) (VulnView, error) {
+		v, err := load(now)
+		v.Tree, v.Tags = tinyTree(), tags
+		v.Assets = []string{"mdm:LAPTOP-1", "mdm:LAPTOP-2"}
+		return v, err
+	}
+	srv.Vulns.Tag = func(tag vuln.AssetTag, by string) error {
+		tag.By, tag.At = by, time.Now().UTC()
+		if err := tag.Validate(); err != nil {
+			return err
+		}
+		tags = append(tags, tag)
+		return nil
+	}
+	srv.Vulns.Untag = func(match, by string) error {
+		tags = nil
+		return nil
+	}
+	body = get(t, srv, "/security/vulns", token).Body.String()
+	whole(t, body)
+	for _, want := range []string{`<th scope="col">SSVC</th>`, "depends on",
+		"2 asset(s) have no tag", "mdm:LAPTOP-1"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page lacks %q", want)
+		}
+	}
+	act := func(v url.Values) string {
+		return postForm(t, srv, "/security/vulns/act", token, v.Encode()).Header().Get("Location")
+	}
+	for name, v := range map[string]url.Values{
+		"everything": {"do": {"tag"}, "match": {"*"}, "exposure": {"open"},
+			"impact": {"high"}, "because": {"x"}},
+		"no reason": {"do": {"tag"}, "match": {"mdm:*"}, "exposure": {"open"},
+			"impact": {"high"}},
+	} {
+		if loc := act(v); !strings.Contains(loc, "e=") || len(tags) != 0 {
+			t.Errorf("a tag for %s was taken (%s)", name, loc)
+		}
+	}
+	if loc := act(url.Values{"do": {"tag"}, "match": {"mdm:*"},
+		"exposure": {"open"}, "impact": {"high"},
+		"because": {"staff laptops travel"}}); !strings.Contains(loc, "m=") ||
+		!strings.HasPrefix(loc, "/security/vulns?") {
+		t.Fatalf("tag: %s", loc)
+	}
+	body = get(t, srv, "/security/vulns", token).Body.String()
+	if strings.Contains(body, "asset(s) have no tag") ||
+		!strings.Contains(body, "staff laptops travel") ||
+		!strings.Contains(body, "2 asset(s)") {
+		t.Error("the tag is not shown, or the assets still read as untagged")
+	}
+	one := get(t, srv, "/security/vuln/CVE-2026-1002", token).Body.String()
+	whole(t, one)
+	if !strings.Contains(one, `<th scope="col">SSVC</th>`) {
+		t.Error("the place rows carry no decision")
+	}
+}

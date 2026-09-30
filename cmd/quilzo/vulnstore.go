@@ -58,6 +58,10 @@ type vulnView struct {
 	History []vuln.Tally
 	// Reach is what reading source established, per advisory and asset.
 	Reach []vuln.Reach
+	// Tree is the SSVC decision table, nil when none is loaded, and Tags
+	// what this organisation says about its assets.
+	Tree vuln.Tree
+	Tags vuln.Tags
 	// Loaded is when each file was last replaced; zero when never.
 	AdvisoriesAt, InventoryAt time.Time
 }
@@ -102,6 +106,12 @@ func loadVulnView(root string, now time.Time) (vulnView, error) {
 	v.AdvisoriesAt = modTime(storedAdvisories(root))
 	v.InventoryAt = modTime(storedInventory(root))
 	if v.Reach, err = loadReach(root); err != nil {
+		return v, err
+	}
+	if v.Tree, err = loadSSVCTree(root); err != nil {
+		return v, err
+	}
+	if v.Tags, err = loadAssetTags(root); err != nil {
 		return v, err
 	}
 	v.Matched = vuln.ApplyReach(vuln.Match(v.Advisories, v.Inventory,

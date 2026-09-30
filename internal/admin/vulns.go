@@ -34,6 +34,9 @@ type Vulns struct {
 	Load func(now time.Time) (VulnView, error)
 	// Assess records one assessment, validated and audited.
 	Assess func(a vuln.Assessment) error
+	// Tag and Untag change what is said about an asset.
+	Tag   func(tag vuln.AssetTag, by string) error
+	Untag func(match, by string) error
 }
 
 // VulnView is the stored queue, matched.
@@ -43,6 +46,12 @@ type VulnView struct {
 	Matched     []vuln.Exposure
 	Assessments []vuln.Assessment
 	History     []vuln.Tally
+	// Tree is the SSVC decision table, nil when none is loaded, and Tags
+	// what this organisation says about its assets. Assets is every asset
+	// in the inventory, for saying which have no tag.
+	Tree   vuln.Tree
+	Tags   vuln.Tags
+	Assets []string
 	// When each list was last loaded. Zero is never.
 	AdvisoriesAt, InventoryAt time.Time
 }
@@ -190,6 +199,7 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 		Exploited, Lapsed               bool
 		Weight                          int
 		W                               float64
+		SSVC, SSVCTone, SSVCNote        string
 	}
 	var top float64
 	if len(groups) > 0 {
@@ -210,9 +220,48 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 		if top > 0 {
 			row.W = math.Round(e.Weight(now)/top*1000) / 10
 		}
+		if v.Tree != nil {
+			var worst vuln.Decision
+			for n, x := range g.On {
+				if d := v.Tree.Decide(x, v.Tags); n == 0 || d.More(worst) {
+					worst = d
+				}
+			}
+			row.SSVC, row.SSVCTone, row.SSVCNote = ssvcWord(worst)
+		}
 		queue = append(queue, row)
 	}
 	data["Queue"] = queue
+
+	// SSVC: whether there is a table, what is said about the assets, and
+	// which assets nothing is said about.
+	data["HasTree"] = v.Tree != nil
+	type tagRow struct {
+		vuln.AssetTag
+		When  string
+		Count int
+	}
+	var tagRows []tagRow
+	covered := map[string]int{}
+	untagged := 0
+	var example []string
+	for _, a := range v.Assets {
+		if t, ok := v.Tags.For(a); ok {
+			covered[t.Match]++
+			continue
+		}
+		untagged++
+		if len(example) < 5 {
+			example = append(example, a)
+		}
+	}
+	for _, t := range v.Tags {
+		tagRows = append(tagRows, tagRow{t, t.At.Format("2 Jan 2006"),
+			covered[t.Match]})
+	}
+	data["Tags"], data["Untagged"] = tagRows, untagged
+	data["UntaggedExample"] = strings.Join(example, ", ")
+	data["Exposures"], data["Impacts"] = vuln.Exposures, vuln.Impacts
 
 	// What has been decided, soonest to come back first.
 	type dRow struct {
@@ -382,6 +431,7 @@ func (s *Server) handleVuln(w http.ResponseWriter, r *http.Request) {
 	}
 	type place struct {
 		Where, Version, Reach, ReachNote, State, Tone, Fix string
+		SSVC, SSVCTone, SSVCNote                           string
 	}
 	// Open places whose own source does not name the vulnerable symbols:
 	// grounds for a decision, which is still a person's to make.
@@ -412,6 +462,9 @@ func (s *Server) handleVuln(w http.ResponseWriter, r *http.Request) {
 		if fix, ok := e.Fixable(); ok {
 			pl.Fix = fix
 		}
+		if v.Tree != nil && !e.Silenced {
+			pl.SSVC, pl.SSVCTone, pl.SSVCNote = ssvcWord(v.Tree.Decide(e, v.Tags))
+		}
 		if e.Silenced {
 			pl.State, pl.Tone = decisionWord(e.Assessed)
 		} else if worst == nil {
@@ -422,6 +475,7 @@ func (s *Server) handleVuln(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data["Places"], data["PlaceCount"] = places, len(mine)
+	data["HasTree"] = v.Tree != nil
 	data["Unnamed"] = unnamed
 	if worst != nil {
 		type term struct {
@@ -496,6 +550,33 @@ func (s *Server) handleVulnsAct(w http.ResponseWriter, r *http.Request) {
 			http.StatusServiceUnavailable)
 		return
 	}
+	if do := r.FormValue("do"); do == "tag" || do == "untag" {
+		to := func(msg string, err error) {
+			v := url.Values{}
+			if err != nil {
+				v.Set("e", err.Error())
+			} else {
+				v.Set("m", msg)
+			}
+			http.Redirect(w, r, "/security/vulns?"+v.Encode(),
+				http.StatusSeeOther)
+		}
+		if s.Vulns.Tag == nil || s.Vulns.Untag == nil {
+			http.Error(w, "this build cannot tag assets",
+				http.StatusServiceUnavailable)
+			return
+		}
+		match := strings.TrimSpace(r.FormValue("match"))
+		if do == "untag" {
+			to("The tag is removed.", s.Vulns.Untag(match, p.Name))
+			return
+		}
+		to("Tagged. Decisions for those assets no longer depend on a guess.",
+			s.Vulns.Tag(vuln.AssetTag{Match: match,
+				Exposure: r.FormValue("exposure"), Impact: r.FormValue("impact"),
+				Because: strings.TrimSpace(r.FormValue("because"))}, p.Name))
+		return
+	}
 	id := strings.TrimSpace(r.FormValue("advisory"))
 	back := func(msg string, err error) {
 		v := url.Values{}
@@ -561,4 +642,19 @@ func (s *Server) handleVulnsAct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back(done, s.Vulns.Assess(a))
+}
+
+// ssvcWord is an SSVC decision for a table cell: the word, its tone, and
+// what it depends on when an input is missing.
+func ssvcWord(d vuln.Decision) (word, tone, note string) {
+	if d.Worst == "" {
+		return "", "", ""
+	}
+	tone = map[string]string{"immediate": "critical", "out-of-cycle": "serious",
+		"scheduled": "warning", "defer": "unknown"}[d.Worst]
+	if d.Settled() || d.Worst == d.Best {
+		return d.Worst, tone, ""
+	}
+	return d.Best + " to " + d.Worst, tone,
+		"depends on " + strings.Join(d.Unknown, ", and ")
 }
