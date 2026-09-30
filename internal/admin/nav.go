@@ -110,6 +110,7 @@ var destinations = []destination{
 	// from. Apart from Assurance, which is evidence that the system is right;
 	// this is the list of what is currently wrong.
 	{"findings", "Findings", "/findings", "Security operations", "detection", auth.ActGrant},
+	{"risk", "Risk", "/security/risk", "Security operations", "detection", auth.ActGrant},
 	{"cases", "Cases", "/security/cases", "Security operations", "cases", auth.ActGrant},
 	{"events", "Events", "/security/events", "Security operations", "detection", auth.ActGrant},
 	{"hunt", "Hunt", "/security/hunt", "Security operations", "detection", auth.ActGrant},

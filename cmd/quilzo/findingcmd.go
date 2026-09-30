@@ -13,6 +13,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/finding"
+	"github.com/quilzo/quilzo/internal/telemetry"
 )
 
 // Deciding about a finding, and reading back what was decided.
@@ -38,8 +39,10 @@ func cmdFinding(root string, args []string) error {
 		return findingStory(root, args[1:])
 	case "list":
 		return findingList(root, args[1:])
+	case "risk":
+		return findingRisk(root)
 	default:
-		return fmt.Errorf("unknown finding command %q; try list, decide or story",
+		return fmt.Errorf("unknown finding command %q; try list, risk, decide or story",
 			args[0])
 	}
 }
@@ -247,4 +250,42 @@ func kindNames() string {
 		names = append(names, string(k))
 	}
 	return strings.Join(names, ", ")
+}
+
+// findingRisk prints what is open about each person or thing, added up.
+func findingRisk(root string) error {
+	now := time.Now().UTC()
+	q, err := loadQueue(root, now)
+	if err != nil {
+		return err
+	}
+	aliases, err := loadAliases(root)
+	if err != nil {
+		return err
+	}
+	risks := finding.Risk(q, func(id telemetry.ID) string {
+		return aliases[id.String()].Person
+	}, now)
+	if len(risks) > 50 {
+		risks = risks[:50]
+	}
+	if w.JSON(map[string]any{"entities": risks}) {
+		return nil
+	}
+	if len(risks) == 0 {
+		w.Human("Nothing is open about anybody.\n")
+		return nil
+	}
+	for _, e := range risks {
+		colour := dim
+		if e.Band == "critical" || e.Band == "high" {
+			colour = red
+		}
+		w.Human("%s%5.0f%s  %s%s%s  %s%s%s\n", colour, e.Score, reset, bold,
+			e.Entity, reset, dim, e.Why(), reset)
+		for _, p := range e.Parts {
+			w.Human("         %s%3.0f  %s%s\n", dim, p.Points, p.Finding.Title, reset)
+		}
+	}
+	return nil
 }

@@ -359,6 +359,17 @@ func cmdServe(root string, args []string) error {
 			return err
 		},
 	}
+	srv.People = func() map[string]string {
+		aliases, err := loadAliases(root)
+		if err != nil {
+			return nil
+		}
+		out := make(map[string]string, len(aliases))
+		for id, a := range aliases {
+			out[id] = a.Person
+		}
+		return out
+	}
 	srv.Indicators = &admin.Indicators{
 		List: func(now time.Time) ([]indicator.Indicator,
 			map[string]admin.IndicatorHits, error) {

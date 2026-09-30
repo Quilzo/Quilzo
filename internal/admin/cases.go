@@ -420,15 +420,32 @@ func (s *Server) handleCasesAct(w http.ResponseWriter, r *http.Request) {
 	do := r.FormValue("do")
 	if do == "declare" {
 		var findings []string
-		if f := strings.TrimSpace(r.FormValue("finding")); f != "" {
-			findings = []string{f}
+		for _, f := range r.Form["finding"] {
+			if f = strings.TrimSpace(f); f != "" {
+				findings = append(findings, f)
+			}
+		}
+		regimes := r.Form["regime"]
+		if len(findings) > 1 && len(regimes) == 0 && s.Cases.Regimes != nil {
+			// Declared from the risk screen, which has no list to tick:
+			// under what this organisation set as its own.
+			regimes = s.Cases.Regimes()
 		}
 		id, err := s.Cases.Declare(strings.TrimSpace(r.FormValue("title")),
-			incident.Grade(r.FormValue("grade")), r.Form["regime"], findings,
-			p.Name)
+			incident.Grade(r.FormValue("grade")), regimes, findings, p.Name)
 		if err != nil {
 			back("/security/cases", "", err)
 			return
+		}
+		if pb := r.FormValue("playbook"); pb != "" {
+			// Proposed by whoever declared, so it waits for somebody else,
+			// or the commander, like any other proposal.
+			if perr := s.Cases.Act(id, p.Name, incident.Action{Do: "propose",
+				Run: pb, Text: "fits the rules that raised these findings"}); perr != nil {
+				back(caseHref(id), "", fmt.Errorf("declared, and the "+
+					"playbook was not proposed: %w", perr))
+				return
+			}
 		}
 		back(caseHref(id), "Declared. Nothing is on a clock until "+
 			"somebody records the decision that starts it.", nil)

@@ -193,6 +193,9 @@ type Server struct {
 	Cases *Cases
 	// Indicators is the indicator store. Nil means none was wired.
 	Indicators *Indicators
+	// People gives the address each identifier is known by: what joins
+	// one person across platforms. Nil means nobody is joined.
+	People func() map[string]string
 
 	// Events is the telemetry store. Separate from Running because one is
 	// about whether collection is working and the other is what was
@@ -992,6 +995,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/findings", s.handleFindings)
 	mux.HandleFunc("/security/hunt", s.handleHunt)
 	mux.HandleFunc("/security/entity/", s.handleEntity)
+	mux.HandleFunc("/security/risk", s.handleRisk)
 	mux.HandleFunc("/security/indicators", s.handleIndicators)
 	mux.HandleFunc("/security/indicators/act", s.handleIndicatorsAct)
 	mux.HandleFunc("/security/cases", s.handleCases)

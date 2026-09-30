@@ -146,6 +146,7 @@ templates and design
 messengers
   quilzo triage [FILE] --rules DIR         run the rules, rank what they found
   quilzo finding list [--state S --kind K] the queue, most urgent first
+  quilzo finding risk                      what is open about each person or thing, added up
   quilzo finding decide ID STATE           record a decision in the audit chain
   quilzo finding story [ID]                replay who decided what, and why
   quilzo canary plant --where W --why Y    plant a value nothing should read

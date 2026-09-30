@@ -18,6 +18,8 @@
 <p class="lead">What is held about this entity, assembled now from the
   register, the events, the incidents and the vulnerability queue. Nothing
   is kept about it here.</p>
+{{if .IsPerson}}<p>One person. {{if .Theirs}}Known as {{range $i, $x := .Theirs}}{{if $i}}, {{end}}<a href="/security/entity/{{$x}}"><code>{{$x}}</code></a>{{end}}; this page is all of them together.{{else}}No identifier is known to be theirs yet, so this shows only what names the address itself.{{end}}</p>{{end}}
+{{if .PersonOf}}<p>This identifier belongs to <a href="/security/entity/person:{{.PersonOf}}"><code>{{.PersonOf}}</code></a>, whose page gathers every identifier they are known by.</p>{{end}}
 {{if .AnyIssuer}}<p class="notice warn">No issuer was given, so this matches <code>{{.ID.Value}}</code> under every issuer. Two systems can use one name for two different things.</p>{{end}}
 {{if .Nothing}}<p class="notice warn"><strong>Nothing here names it.</strong> That may be a name nothing uses, or a name spelt differently from how the source spells it. It is not evidence the entity is clean.</p>{{end}}
 

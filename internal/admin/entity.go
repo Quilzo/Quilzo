@@ -69,6 +69,37 @@ func sameEntity(want, got telemetry.ID) bool {
 	return got == want
 }
 
+// who is what a page is about, for matching: one identifier, a bare name
+// under any issuer, or a person and every identifier known to be theirs.
+type who struct {
+	id telemetry.ID
+	// person is set when the page is about a person; theirs is their
+	// identifiers.
+	person string
+	theirs map[string]bool
+}
+
+func (x who) is(got telemetry.ID) bool {
+	if x.person != "" {
+		return (got.Issuer == "person" && got.Value == x.person) ||
+			x.theirs[got.String()]
+	}
+	return sameEntity(x.id, got)
+}
+
+// did reports whether an event is this entity's, and in what part.
+func (x who) did(e telemetry.Event) string {
+	switch {
+	case x.is(e.Actor), x.person != "" && e.Raw["person"] == x.person:
+		return "did it"
+	case x.is(e.Target):
+		return "it was done to"
+	case x.is(e.Device):
+		return "it happened on"
+	}
+	return ""
+}
+
 func (s *Server) handleEntity(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.assuranceReader(w, r)
 	if !ok {
@@ -102,6 +133,26 @@ func (s *Server) handleEntity(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	data["Title"], data["ID"], data["Showing"] = id.String(), id, true
 	data["AnyIssuer"] = id.Issuer == ""
+	x := who{id: id}
+	var aliases map[string]string
+	if s.People != nil {
+		aliases = s.People()
+	}
+	if id.Issuer == "person" {
+		x.person, x.theirs = strings.ToLower(id.Value), map[string]bool{}
+		var theirs []string
+		for ident, p := range aliases {
+			if p == x.person {
+				x.theirs[ident] = true
+				theirs = append(theirs, ident)
+			}
+		}
+		sort.Strings(theirs)
+		data["Theirs"], data["IsPerson"] = theirs, true
+	} else if p := aliases[id.String()]; p != "" {
+		// An identifier somebody is known by: say whose, and link there.
+		data["PersonOf"] = p
+	}
 	hours := 168
 	if r.URL.Query().Get("hours") == "24" {
 		hours = 24
@@ -117,7 +168,7 @@ func (s *Server) handleEntity(w http.ResponseWriter, r *http.Request) {
 			data["FindingsError"] = err.Error()
 		}
 		for _, f := range q {
-			if sameEntity(id, f.Entity) {
+			if x.is(f.Entity) {
 				about[f.ID] = true
 				if len(mine) < 100 {
 					mine = append(mine, rowOf(f, now))
@@ -167,7 +218,7 @@ func (s *Server) handleEntity(w http.ResponseWriter, r *http.Request) {
 			data["VulnsError"] = err.Error()
 		}
 		for _, e := range v.Matched {
-			if e.Silenced || !sameEntity(id, e.Component.Where) {
+			if e.Silenced || !x.is(e.Component.Where) {
 				continue
 			}
 			yes, _ := e.Advisory.Attested()
@@ -181,7 +232,7 @@ func (s *Server) handleEntity(w http.ResponseWriter, r *http.Request) {
 	data["Vulns"] = vulns
 
 	// What it has been doing, and what has been done to it.
-	activity := s.entityActivity(id, now, hours, data)
+	activity := s.entityActivity(x, now, hours, data)
 
 	data["Tiles"] = []wfTile{
 		{Label: "Open findings", Value: fmt.Sprint(open),
@@ -202,7 +253,7 @@ func vulnWhy(e vuln.Exposure, now time.Time) string { return e.Explain(now) }
 
 // entityActivity reads the events for one entity and fills the page's
 // activity sections. It returns how many events named it.
-func (s *Server) entityActivity(id telemetry.ID, now time.Time, hours int,
+func (s *Server) entityActivity(x who, now time.Time, hours int,
 	data map[string]any) int {
 
 	if s.Events == nil || s.Events.Open == nil {
@@ -243,15 +294,8 @@ func (s *Server) entityActivity(id telemetry.ID, now time.Time, hours int,
 	var latest []telemetry.Event
 	total := 0
 	err = sp.Range(from, time.Time{}, func(e telemetry.Event) error {
-		as := ""
-		switch {
-		case sameEntity(id, e.Actor):
-			as = "did it"
-		case sameEntity(id, e.Target):
-			as = "it was done to"
-		case sameEntity(id, e.Device):
-			as = "it happened on"
-		default:
+		as := x.did(e)
+		if as == "" {
 			return nil
 		}
 		total++
