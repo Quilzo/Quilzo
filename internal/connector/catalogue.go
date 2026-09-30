@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -47,6 +48,20 @@ type Entry struct {
 	// Credentials names every credential the connector needs, with what
 	// each one is and where in the tool it is made.
 	Credentials map[string]string `json:"credentials"`
+	// Params are values a customer supplies that go into a host or a path:
+	// tenant, an Entra tenant ID; org, an Okta organisation's subdomain.
+	// Each is checked by its own pattern, so neither can make a host or a
+	// path point anywhere but the tool.
+	Params map[string]string `json:"params,omitempty"`
+}
+
+// paramPatterns are the only parameters there are, and what each must be.
+var paramPatterns = map[string]*regexp.Regexp{
+	// A GUID. Not "common" or "organizations", which accept any tenant's
+	// accounts, and not a domain name, whose issuer does not match.
+	"tenant": regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`),
+	// One DNS label: it becomes the part before .okta.com and nothing more.
+	"org": regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`),
 }
 
 // Catalogue returns the shipped connectors by name.
@@ -94,6 +109,14 @@ func (e Entry) RegionNames() []string {
 
 // For returns the manifest for one region, checked.
 func (e Entry) For(region string) (Manifest, error) {
+	return e.With(region, nil)
+}
+
+// With returns the manifest for one region with the entry's parameters
+// filled in, checked.
+func (e Entry) With(region string, params map[string]string) (Manifest,
+	error) {
+
 	if region == "" {
 		region = e.Default
 	}
@@ -102,11 +125,38 @@ func (e Entry) For(region string) (Manifest, error) {
 		return Manifest{}, fmt.Errorf("%s has no region %q; it runs in %s",
 			e.Tool, region, strings.Join(e.RegionNames(), ", "))
 	}
+	fill := func(s string) (string, error) {
+		for name := range e.Params {
+			v := strings.ToLower(strings.TrimSpace(params[name]))
+			pat, known := paramPatterns[name]
+			if !known {
+				return "", fmt.Errorf("%s declares a parameter %q that "+
+					"nothing checks", e.Tool, name)
+			}
+			if !pat.MatchString(v) {
+				return "", fmt.Errorf("%s needs --%s: %s", e.Tool, name,
+					e.Params[name])
+			}
+			s = strings.ReplaceAll(s, "{"+name+"}", v)
+		}
+		if strings.ContainsAny(s, "{}") {
+			return "", fmt.Errorf("%s leaves %q unfilled", e.Tool, s)
+		}
+		return s, nil
+	}
 	m := e.Manifest
-	m.Host = r.Host
+	var err error
+	if m.Host, err = fill(r.Host); err != nil {
+		return Manifest{}, err
+	}
 	if m.Auth.Token != nil {
 		t := *m.Auth.Token
-		t.Host = r.Token
+		if t.Host, err = fill(r.Token); err != nil {
+			return Manifest{}, err
+		}
+		if t.Path, err = fill(t.Path); err != nil {
+			return Manifest{}, err
+		}
 		m.Auth.Token = &t
 	}
 	// The endpoints are shared with the entry; copy them so a caller that

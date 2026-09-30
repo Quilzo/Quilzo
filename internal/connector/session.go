@@ -6,6 +6,7 @@ package connector
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -253,6 +255,11 @@ func (x *Session) exchange(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("%s token endpoint answered without a usable "+
 			"access token", x.m.Name)
 	}
+	if len(t.Roles) > 0 {
+		if err := checkRoles(got.AccessToken, t.Roles); err != nil {
+			return "", fmt.Errorf("%s: %w", x.m.Name, err)
+		}
+	}
 	life := time.Hour
 	if secs, ok := seconds(got.ExpiresIn); ok && secs > 0 {
 		life = time.Duration(secs) * time.Second
@@ -265,6 +272,52 @@ func (x *Session) exchange(ctx context.Context) (string, error) {
 	}
 	x.token, x.expires = got.AccessToken, x.now().Add(life-margin)
 	return x.token, nil
+}
+
+// checkRoles reads the permissions a token carries and refuses one that
+// carries any not declared.
+//
+// Read, not verified: the token is about to be sent to the API that issued
+// it, which verifies it; what is being asked here is what it would let this
+// program do, and the claim is the provider's own answer. A token that is
+// not a readable JWT, or has no roles claim, is refused — the check is the
+// reason to accept a .default scope at all, and it fails closed.
+func checkRoles(token string, allowed []string) error {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return fmt.Errorf("the token cannot be read for its permissions, so " +
+			"what it could do is unknown")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return fmt.Errorf("the token's permissions cannot be read")
+	}
+	var claims struct {
+		Roles []string `json:"roles"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil ||
+		len(claims.Roles) == 0 {
+		return fmt.Errorf("the token names no permissions, so what it could " +
+			"do is unknown")
+	}
+	ok := map[string]bool{}
+	for _, r := range allowed {
+		ok[strings.ToLower(r)] = true
+	}
+	var extra []string
+	for _, r := range claims.Roles {
+		if !ok[strings.ToLower(r)] {
+			extra = append(extra, r)
+		}
+	}
+	if len(extra) > 0 {
+		sort.Strings(extra)
+		return fmt.Errorf("the application was granted %s as well, which "+
+			"this connector does not declare. Remove the permission from the "+
+			"app registration: a reader holding a token that can change "+
+			"things is a reader in name only", strings.Join(extra, ", "))
+	}
+	return nil
 }
 
 // oauthCode keeps an OAuth error code if it looks like one and drops it

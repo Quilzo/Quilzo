@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -37,9 +38,35 @@ type oidcConfig struct {
 	// verified. On by default: an unverified address is a claim by whoever
 	// signed up, and mapping it to a principal lets them choose who to be.
 	RequireVerifiedEmail bool `json:"require_verified_email"`
+	// Provider is google or microsoft when configured from a preset, which
+	// switches on that provider's own check: hd for Google, tid and the
+	// sign-in name for Microsoft.
+	Provider string `json:"provider,omitempty"`
+	// Domains are the organisation's domains: the Workspace domains a
+	// Google token must be managed by, or the domains a Microsoft sign-in
+	// name must be in.
+	Domains []string `json:"domains,omitempty"`
+	// Tenant is the Entra tenant's identifier.
+	Tenant string `json:"tenant,omitempty"`
+}
+
+// providerLabel is what the sign-in button calls a preset.
+func (c *oidcConfig) providerLabel() string {
+	switch c.Provider {
+	case "google":
+		return "Google"
+	case "microsoft":
+		return "Microsoft"
+	}
+	return ""
 }
 
 const oidcSecretEnv = "QUILZO_OIDC_SECRET"
+
+var (
+	reDomain = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$`)
+	reTenant = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+)
 
 func loadOIDC(root string) (*oidcConfig, error) {
 	c := &oidcConfig{}
@@ -80,8 +107,50 @@ func oidcConfigure(root string, args []string) error {
 	claim := fs.String("claim", "email", "which claim becomes the principal: email or sub")
 	allowUnverified := fs.Bool("allow-unverified-email", false,
 		"accept an email the provider has not verified")
+	provider := fs.String("provider", "",
+		"google or microsoft, which sets the issuer and that provider's checks")
+	domains := fs.String("domain", "",
+		"the organisation's domain(s), comma-separated")
+	tenant := fs.String("tenant", "", "the Microsoft Entra tenant ID")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	var doms []string
+	for _, d := range strings.Split(*domains, ",") {
+		if d = strings.ToLower(strings.TrimSpace(d)); d != "" {
+			if !reDomain.MatchString(d) {
+				return fmt.Errorf("%q is not a domain", d)
+			}
+			doms = append(doms, d)
+		}
+	}
+	switch *provider {
+	case "":
+	case "google":
+		// Google's issuer is one for every account in the world, so the
+		// domain is what makes a sign-in this organisation's.
+		if len(doms) == 0 {
+			return fmt.Errorf("--provider google needs --domain: the " +
+				"Workspace domain whose accounts may sign in. Without it " +
+				"any Google account carrying a matching address would do, " +
+				"including a personal one somebody kept after leaving")
+		}
+		*issuer, *claim = "https://accounts.google.com", "email"
+		*allowUnverified = false
+	case "microsoft":
+		t := strings.ToLower(strings.TrimSpace(*tenant))
+		if !reTenant.MatchString(t) {
+			return fmt.Errorf("--provider microsoft needs --tenant, the " +
+				"tenant's ID (a GUID from the Entra admin centre). Not common, " +
+				"organizations or consumers: those accept every tenant's " +
+				"accounts, and not a domain name, whose issuer does not match")
+		}
+		*tenant = t
+		*issuer = "https://login.microsoftonline.com/" + t + "/v2.0"
+		*claim = "preferred_username"
+	default:
+		return fmt.Errorf("--provider is google or microsoft; for any other " +
+			"provider give --issuer")
 	}
 	if *issuer == "" || *clientID == "" || *redirect == "" {
 		return fmt.Errorf(
@@ -92,7 +161,7 @@ func oidcConfigure(root string, args []string) error {
 		return fmt.Errorf("the issuer URL is not usable: %w", err)
 	}
 	switch *claim {
-	case "email", "sub":
+	case "email", "sub", "preferred_username":
 	default:
 		return fmt.Errorf("--claim must be email or sub; %q is not a claim this "+
 			"maps to a principal", *claim)
@@ -102,6 +171,7 @@ func oidcConfigure(root string, args []string) error {
 		Issuer: strings.TrimSuffix(*issuer, "/"), ClientID: *clientID,
 		RedirectURI: *redirect, Claim: *claim,
 		RequireVerifiedEmail: !*allowUnverified,
+		Provider:             *provider, Domains: doms, Tenant: *tenant,
 	}
 	if err := saveJSON(oidcPath(root), cfg); err != nil {
 		return err
@@ -113,6 +183,7 @@ func oidcConfigure(root string, args []string) error {
 		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
 		Detail: map[string]string{
 			"issuer": cfg.Issuer, "client": cfg.ClientID, "claim": cfg.Claim,
+			"provider": cfg.Provider, "domains": strings.Join(cfg.Domains, ","),
 		},
 	})
 

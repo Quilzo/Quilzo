@@ -1,0 +1,63 @@
+{
+  "tool": "Microsoft Entra ID (with Intune)",
+  "about": "Everybody in the directory with whether their account is enabled, department, title and employee ID — the list of who works here that every other tool is compared with. With Intune, every managed device with its serial number, owner, encryption, jailbreak state and last sync.",
+  "default": "global",
+  "regions": {
+    "global": {"host": "graph.microsoft.com", "token": "login.microsoftonline.com"}
+  },
+  "params": {
+    "tenant": "the tenant ID, a GUID from the Entra admin centre's overview page"
+  },
+  "credentials": {
+    "entra-client-id": "The Application (client) ID of an app registration in this tenant.",
+    "entra-client-secret": "A client secret of that app registration. Give the app the application permissions User.Read.All and, for devices, DeviceManagementManagedDevices.Read.All, with admin consent, and nothing else: the token is refused if it carries any other permission."
+  },
+  "manifest": {
+    "name": "entra",
+    "tool": "Microsoft Entra ID (with Intune)",
+    "host": "",
+    "auth": {
+      "kind": "oauth-client",
+      "secret": "entra-client-secret",
+      "token": {"host": "", "path": "/{tenant}/oauth2/v2.0/token", "client": "entra-client-id",
+        "scopes": ["https://graph.microsoft.com/.default"],
+        "roles": ["User.Read.All", "DeviceManagementManagedDevices.Read.All"],
+        "body": "form"}
+    },
+    "rate": {"per_second": 5},
+    "note": "Graph's application tokens are requested for .default and mean whatever the app registration was granted, so the permissions are read from the token itself and a token carrying any not listed under roles is refused. Without Intune, the devices endpoint answers 403 and the people are still read.",
+    "endpoints": [
+      {
+        "name": "people",
+        "path": "/v1.0/users",
+        "query": {"$select": "id,displayName,givenName,surname,mail,userPrincipalName,accountEnabled,department,jobTitle,employeeId,officeLocation", "$top": "999"},
+        "produces": "identity",
+        "records": "value",
+        "page": {"kind": "next-url", "from": "@odata\\.nextLink"},
+        "reads": ["id", "displayName", "givenName", "surname", "mail", "userPrincipalName", "accountEnabled", "department", "jobTitle", "employeeId", "officeLocation"],
+        "map": {
+          "id": "id", "name": "displayName", "first_name": "givenName", "last_name": "surname",
+          "email": "mail", "upn": "userPrincipalName", "status": "accountEnabled",
+          "department": "department", "title": "jobTitle", "employee_number": "employeeId",
+          "office": "officeLocation"
+        }
+      },
+      {
+        "name": "devices",
+        "path": "/v1.0/deviceManagement/managedDevices",
+        "query": {"$select": "id,deviceName,serialNumber,userPrincipalName,emailAddress,operatingSystem,osVersion,isEncrypted,jailBroken,lastSyncDateTime,complianceState"},
+        "produces": "device",
+        "records": "value",
+        "page": {"kind": "next-url", "from": "@odata\\.nextLink"},
+        "reads": ["id", "deviceName", "serialNumber", "userPrincipalName", "emailAddress", "operatingSystem", "osVersion", "isEncrypted", "jailBroken", "lastSyncDateTime", "complianceState"],
+        "map": {
+          "id": "id", "name": "deviceName", "serial": "serialNumber",
+          "owner_email": "emailAddress", "user": "userPrincipalName",
+          "os": "operatingSystem", "os_version": "osVersion",
+          "encrypted": "isEncrypted", "rooted": "jailBroken",
+          "seen": "lastSyncDateTime", "compliance": "complianceState"
+        }
+      }
+    ]
+  }
+}

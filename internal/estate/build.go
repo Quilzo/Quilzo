@@ -233,6 +233,11 @@ func personFrom(source string, l Line, now time.Time) (Person, bool) {
 		PhishProne:   number(l["phish_prone"]),
 		RiskScore:    number(l["risk_score"]),
 	}
+	// A directory's sign-in name stands in for an address it does not have:
+	// Entra's mail is empty for anybody without a mailbox.
+	if p.Email == "" {
+		p.Email = Email(l["upn"])
+	}
 	p.Name = l["name"]
 	if p.Name == "" {
 		p.Name = strings.TrimSpace(l["first_name"] + " " + l["last_name"])

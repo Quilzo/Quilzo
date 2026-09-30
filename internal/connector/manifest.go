@@ -176,6 +176,12 @@ type TokenEndpoint struct {
 	// Body is how the request is encoded: "form", the OAuth default, or
 	// "json", which is what Vanta documents.
 	Body string `json:"body,omitempty"`
+	// Roles, for a provider that grants permissions to the application
+	// rather than per request — Microsoft Graph asks for the scope
+	// .default and means whatever the app registration was given — are
+	// the permissions the token may carry. The token's roles claim is read
+	// and a token holding anything else is refused before it is used.
+	Roles []string `json:"roles,omitempty"`
 }
 
 // Rate is what the tool allows, declared so a run stays inside it rather
@@ -706,10 +712,51 @@ func (t *TokenEndpoint) validate(name string, kind AuthKind) error {
 				"whose scopes nobody wrote down can reach whatever the "+
 				"application was granted", name)
 	}
+	for _, r := range t.Roles {
+		if err := readRole(r); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+	}
 	for _, sc := range t.Scopes {
+		if strings.HasSuffix(sc, "/.default") && len(t.Roles) > 0 {
+			// The scope says nothing; the roles are checked on the token.
+			continue
+		}
 		if err := readScope(sc); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
+	}
+	return nil
+}
+
+// readRole refuses an application permission that could do more than read.
+//
+// Microsoft names them Resource.Action.Scope — User.Read.All,
+// DeviceManagementManagedDevices.Read.All, Device.ReadWrite.All — so the
+// question is asked of the action, not of the whole name: some part must
+// be a read (Read, ReadBasic) and no part may write. A word test on the
+// whole name would refuse DeviceManagement… for containing "manage" and let
+// User.Invite.All through for containing nothing alarming.
+func readRole(r string) error {
+	r = strings.TrimSpace(r)
+	if r == "" || strings.ContainsAny(r, " \t\r\n") {
+		return fmt.Errorf("%q is not a permission", r)
+	}
+	parts := strings.Split(strings.ToLower(r), ".")
+	if len(parts) < 2 {
+		return fmt.Errorf("%q is not a Resource.Action permission", r)
+	}
+	reads := false
+	for _, p := range parts[1:] {
+		if strings.Contains(p, "write") {
+			return fmt.Errorf("%q writes", r)
+		}
+		if strings.HasPrefix(p, "read") {
+			reads = true
+		}
+	}
+	if !reads {
+		return fmt.Errorf("%q is not a read permission", r)
 	}
 	return nil
 }

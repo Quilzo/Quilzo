@@ -8,6 +8,7 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,6 +42,22 @@ type OIDC struct {
 	RequireVerifiedEmail bool
 	// SessionTTL bounds the token minted after a successful sign-in.
 	SessionTTL time.Duration
+
+	// Label names the provider on the sign-in button: "Google", "Microsoft".
+	// Empty says "your organisation".
+	Label string
+	// HostedDomains, for Google, are the Workspace domains a token's hd
+	// claim must name. Without it a personal Google account made with a
+	// work address — kept after its owner left, and still verified — signs
+	// in as that address. hd is only present for a managed account, so
+	// requiring it is requiring that the company's Workspace vouches.
+	HostedDomains []string
+	// Tenant, for Microsoft, is the one Entra tenant whose tokens count,
+	// checked against tid as well as the issuer.
+	Tenant string
+	// Domains limit a preferred_username principal to addresses in these
+	// domains, which the tenant has verified it owns.
+	Domains []string
 
 	mu      sync.Mutex
 	pending map[string]*oidc.Request
@@ -138,11 +155,63 @@ func (o *OIDC) callback(ctx context.Context, r *http.Request) (string, error) {
 	return principal, nil
 }
 
+// rawString reads a claim the Claims struct does not name.
+func rawString(c *oidc.Claims, name string) string {
+	if v, ok := c.Raw[name].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func domainIn(address string, domains []string) bool {
+	_, d, ok := strings.Cut(address, "@")
+	if !ok {
+		return false
+	}
+	for _, want := range domains {
+		if strings.EqualFold(d, want) {
+			return true
+		}
+	}
+	return false
+}
+
 // principalFor maps a verified token to a name the access policy knows.
 func (o *OIDC) principalFor(c *oidc.Claims) (string, error) {
+	if len(o.HostedDomains) > 0 {
+		hd := rawString(c, "hd")
+		ok := false
+		for _, d := range o.HostedDomains {
+			ok = ok || (hd != "" && strings.EqualFold(hd, d))
+		}
+		if !ok {
+			return "", fmt.Errorf(
+				"this Google account is not managed by %s (its hd claim is %q). "+
+					"A personal Google account can carry a work address, and "+
+					"one made while somebody worked here still does after they "+
+					"leave", strings.Join(o.HostedDomains, " or "), hd)
+		}
+	}
+	if o.Tenant != "" && !strings.EqualFold(rawString(c, "tid"), o.Tenant) {
+		return "", fmt.Errorf("this token is from another Microsoft tenant")
+	}
 	switch o.Claim {
 	case "sub":
 		return c.Subject, nil
+	case "preferred_username":
+		// Entra's email claim is an attribute an administrator — any
+		// tenant's administrator — can set to anything, which is how the
+		// "nOAuth" takeovers worked. preferred_username is the sign-in name,
+		// on a domain the tenant has proved it owns.
+		u := strings.ToLower(strings.TrimSpace(rawString(c, "preferred_username")))
+		if !strings.Contains(u, "@") {
+			return "", fmt.Errorf("the provider returned no sign-in name")
+		}
+		if len(o.Domains) > 0 && !domainIn(u, o.Domains) {
+			return "", fmt.Errorf("%s is not in %s", u,
+				strings.Join(o.Domains, " or "))
+		}
+		return u, nil
 	default:
 		if c.Email == "" {
 			return "", fmt.Errorf("the provider returned no email address, so " +
@@ -245,7 +314,7 @@ func (s *Server) refuseSignIn(w http.ResponseWriter, r *http.Request, reason, hi
 	w.WriteHeader(http.StatusForbidden)
 	s.render(w, r, "signin.html", map[string]any{
 		"Title": "Sign in", "Error": reason, "Hint": hint,
-		"OIDC": s.OIDC != nil,
+		"OIDC": s.OIDC != nil, "OIDCLabel": s.oidcLabel(),
 	})
 }
 
@@ -285,4 +354,12 @@ func (s *Server) roleFor(name string) auth.Role {
 		}
 	}
 	return auth.RoleReader
+}
+
+// oidcLabel is the name on the sign-in button.
+func (s *Server) oidcLabel() string {
+	if s.OIDC == nil {
+		return ""
+	}
+	return s.OIDC.Label
 }

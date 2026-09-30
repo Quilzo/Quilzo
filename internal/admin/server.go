@@ -1320,7 +1320,8 @@ func signInAgain(w http.ResponseWriter, r *http.Request, why string) {
 // attempt, and the limiter says what will happen to the next one. The second
 // is the one worth a 429.
 func (s *Server) signInForm(w http.ResponseWriter, r *http.Request) {
-	data := map[string]any{"Title": "Sign in", "OIDC": s.OIDC != nil}
+	data := map[string]any{"Title": "Sign in", "OIDC": s.OIDC != nil,
+		"OIDCLabel": s.oidcLabel()}
 	if msg, ok := signInReasons[r.URL.Query().Get("e")]; ok {
 		data["Error"] = msg
 	}
@@ -1429,7 +1430,8 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 			}
 		}
 		w.WriteHeader(http.StatusUnauthorized)
-		data := map[string]any{"Title": "Sign in", "OIDC": s.OIDC != nil}
+		data := map[string]any{"Title": "Sign in", "OIDC": s.OIDC != nil,
+			"OIDCLabel": s.oidcLabel()}
 		if !errors.Is(err, errNoCredential) {
 			data["Error"] = err.Error()
 		}

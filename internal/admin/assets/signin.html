@@ -33,9 +33,9 @@
 
     {{if .OIDC}}
     <div class="card">
-      <h2>Continue with your organisation</h2>
-      <p>You will be sent to your identity provider and back here.</p>
-      <p class="actions"><a class="btn" href="/signin/oidc">Continue</a></p>
+      <h2>{{if .OIDCLabel}}Sign in with {{.OIDCLabel}}{{else}}Continue with your organisation{{end}}</h2>
+      <p>You will be sent to {{if .OIDCLabel}}{{.OIDCLabel}}{{else}}your identity provider{{end}} and back here.</p>
+      <p class="actions"><a class="btn" href="/signin/oidc">{{if .OIDCLabel}}Continue with {{.OIDCLabel}}{{else}}Continue{{end}}</a></p>
     </div>
     <p class="help">Signing in there proves who you are. What you may do here
       is decided by this site’s access policy, which an administrator

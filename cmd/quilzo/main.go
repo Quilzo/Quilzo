@@ -254,6 +254,7 @@ connecting to a company's tools
   quilzo connect check NAME|FILE           read a manifest and say what it may touch
   quilzo connect catalogue                 the connectors that ship, and what each needs
   quilzo connect add NAME [--region R]     install a shipped connector as a readable file
+                   [--tenant ID] [--org O]  the Entra tenant, or the Okta organisation
   quilzo connect secret NAME               store a credential, from the environment
   quilzo connect probe NAME ENDPOINT       what shape a tool's response is, never its values
   quilzo connect run NAME [ENDPOINT]       pull records, one JSON object per line
@@ -379,6 +380,8 @@ the assistant
 
 access
   quilzo oidc configure --issuer ... --client-id ...   sign in with an IdP
+  quilzo oidc configure --provider google --domain D   sign in with Google Workspace
+  quilzo oidc configure --provider microsoft --tenant T   sign in with Microsoft Entra
   quilzo oidc status                       whether an IdP is configured, and which
   quilzo oidc check                        talk to the provider, report what it offers
   quilzo network                           what this may connect to, and whether

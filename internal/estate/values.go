@@ -47,7 +47,8 @@ var (
 		"on_leave": true, "enabled": true, "true": true}
 	gone = map[string]bool{"archived": true, "former": true, "inactive": true,
 		"terminated": true, "deactivated": true, "disabled": true,
-		"suspended": true, "deleted": true, "offboarded": true, "false": true}
+		"suspended": true, "deleted": true, "offboarded": true, "false": true,
+		"deprovisioned": true}
 )
 
 // current reads whether somebody is current. UPCOMING is neither: they have

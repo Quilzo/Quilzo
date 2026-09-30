@@ -742,6 +742,11 @@ func cmdServe(root string, args []string) error {
 			Provider: provider, ClientID: cfg.ClientID, Secret: secret,
 			RedirectURI: cfg.RedirectURI, Claim: cfg.Claim,
 			RequireVerifiedEmail: cfg.RequireVerifiedEmail,
+			Label:                cfg.providerLabel(), Tenant: cfg.Tenant,
+			Domains: cfg.Domains,
+		}
+		if cfg.Provider == "google" {
+			srv.OIDC.HostedDomains = cfg.Domains
 		}
 		srv.SaveTokens = func(ts *auth.TokenStore) error {
 			return saveJSON(tokensPath(root), ts)

@@ -5,6 +5,8 @@ package connector
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,6 +33,10 @@ func entry(t *testing.T, name string) Entry {
 	return e
 }
 
+// sampleParams fill any parameters an entry takes.
+var sampleParams = map[string]string{
+	"tenant": "72f988bf-86f1-41af-91ab-2d7cd011db47", "org": "acme"}
+
 func TestEveryShippedConnectorLoadsInEveryRegion(t *testing.T) {
 	all, err := Catalogue()
 	if err != nil {
@@ -48,7 +54,7 @@ func TestEveryShippedConnectorLoadsInEveryRegion(t *testing.T) {
 				name, e.Default)
 		}
 		for _, region := range e.RegionNames() {
-			m, err := e.For(region)
+			m, err := e.With(region, sampleParams)
 			if err != nil {
 				t.Errorf("%s/%s: %v", name, region, err)
 				continue
@@ -76,7 +82,7 @@ func TestEveryShippedConnectorLoadsInEveryRegion(t *testing.T) {
 					len(e.Credentials), len(names))
 			}
 		}
-		if _, err := e.For("mars"); err == nil {
+		if _, err := e.With("mars", sampleParams); err == nil {
 			t.Errorf("%s accepted a region it does not have", name)
 		}
 	}
@@ -491,5 +497,176 @@ func TestAChildOfATruncatedParentSaysSo(t *testing.T) {
 			t.Error("the apps of the first device read as the apps of the " +
 				"estate")
 		}
+	}
+}
+
+// A parameter goes into a host or a path, so it is checked to be what it
+// says and nothing more.
+func TestAParameterCannotPointAConnectorElsewhere(t *testing.T) {
+	okta, entra := entry(t, "okta"), entry(t, "entra")
+	for _, org := range []string{"evil.com/x", "acme.evil", "acme@evil.com",
+		"", "-acme", "a b", "acme.okta.com?"} {
+		if m, err := okta.With("okta", map[string]string{"org": org}); err == nil {
+			t.Errorf("org %q gave host %s", org, m.Host)
+		}
+	}
+	for _, tenant := range []string{"common", "organizations", "consumers",
+		"acme.com", "../x", ""} {
+		if _, err := entra.With("global", map[string]string{"tenant": tenant}); err == nil {
+			t.Errorf("tenant %q was accepted", tenant)
+		}
+	}
+	m, err := okta.With("emea", map[string]string{"org": "Acme"})
+	if err != nil || m.Host != "acme.okta-emea.com" {
+		t.Errorf("%s, %v", m.Host, err)
+	}
+	m, err = entra.With("", map[string]string{"tenant": sampleParams["tenant"]})
+	if err != nil || m.Auth.Token.Path != "/"+sampleParams["tenant"]+"/oauth2/v2.0/token" {
+		t.Errorf("%+v, %v", m.Auth.Token, err)
+	}
+}
+
+// jwt is an unsigned token carrying roles, which is all checkRoles reads.
+func jwt(roles ...string) string {
+	b, _ := json.Marshal(map[string]any{"roles": roles})
+	return "eyJhbGciOiJub25lIn0." + base64.RawURLEncoding.EncodeToString(b) + ".sig"
+}
+
+func TestEntraAgainstGraphsDocumentedResponses(t *testing.T) {
+	m, err := entry(t, "entra").With("", sampleParams)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := jwt("User.Read.All", "DeviceManagementManagedDevices.Read.All")
+	var seen []string
+	s := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.URL.Path+"?"+r.URL.RawQuery)
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/oauth2/v2.0/token"):
+			r.ParseForm()
+			if r.PostForm.Get("scope") != "https://graph.microsoft.com/.default" {
+				t.Errorf("scope %q", r.PostForm.Get("scope"))
+			}
+			fmt.Fprintf(w, `{"token_type":"Bearer","expires_in":3599,"access_token":%q}`, token)
+		case r.URL.Path == "/v1.0/users" && r.URL.Query().Get("$skiptoken") == "":
+			io.WriteString(w, `{"value":[{"id":"u1","displayName":"Ann Lee",
+				"mail":null,"userPrincipalName":"ann@acme.com","accountEnabled":false}],
+				"@odata.nextLink":"https://graph.microsoft.com/v1.0/users?$skiptoken=X2"}`)
+		case r.URL.Path == "/v1.0/users":
+			io.WriteString(w, `{"value":[{"id":"u2","displayName":"Bo Chen",
+				"mail":"bo@acme.com","userPrincipalName":"bo@acme.com","accountEnabled":true,
+				"department":"Finance"}]}`)
+		case r.URL.Path == "/v1.0/deviceManagement/managedDevices":
+			io.WriteString(w, `{"value":[{"id":"d1","deviceName":"ANN-PC",
+				"serialNumber":"5CD1234XYZ","emailAddress":"ann@acme.com",
+				"operatingSystem":"Windows","isEncrypted":false,"jailBroken":"Unknown",
+				"lastSyncDateTime":"2026-09-29T10:00:00Z"}]}`)
+		default:
+			t.Errorf("unexpected %s", r.URL.Path)
+		}
+	})
+	h := route(t, map[string]*httptest.Server{"graph.microsoft.com": s,
+		"login.microsoftonline.com": s})
+	got := readAll(t, m, h, MapFunc{"entra-client-id": "c",
+		"entra-client-secret": "s"})
+	if n := len(got["people"].Records); n != 2 {
+		t.Fatalf("%d people over two pages", n)
+	}
+	want(t, got["people"].Records[0], map[string]string{"id": "u1",
+		"upn": "ann@acme.com", "status": "false"})
+	want(t, got["devices"].Records[0], map[string]string{"serial": "5CD1234XYZ",
+		"encrypted": "false", "owner_email": "ann@acme.com"})
+	if !strings.Contains(seen[1], "%24select=") {
+		t.Errorf("the select was not asked for: %s", seen[1])
+	}
+}
+
+func TestAGraphTokenThatCanWriteIsNeverUsed(t *testing.T) {
+	m, _ := entry(t, "entra").With("", sampleParams)
+	for name, token := range map[string]string{
+		"granted write as well": jwt("User.Read.All", "User.ReadWrite.All"),
+		"granted mail sending":  jwt("User.Read.All", "Mail.Send"),
+		"no roles at all":       jwt(),
+		"not a JWT":             "opaque-token-abcdefgh",
+	} {
+		calls := 0
+		s := serve(t, func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/token") {
+				fmt.Fprintf(w, `{"expires_in":3599,"access_token":%q}`, token)
+				return
+			}
+			calls++
+			io.WriteString(w, `{"value":[]}`)
+		})
+		h := route(t, map[string]*httptest.Server{"graph.microsoft.com": s,
+			"login.microsoftonline.com": s})
+		_, err := Run(context.Background(), m, "people", h,
+			MapFunc{"entra-client-id": "c", "entra-client-secret": "s"},
+			State{}, noSleep)
+		if err == nil || calls != 0 {
+			t.Errorf("%s: used (%d calls, %v)", name, calls, err)
+		}
+	}
+	for _, role := range []string{"User.ReadWrite.All", "Mail.Send",
+		"User.Invite.All", "Directory.AccessAsUser.All", "Read"} {
+		if readRole(role) == nil {
+			t.Errorf("%s was taken for a read permission", role)
+		}
+	}
+	for _, role := range []string{"User.Read.All",
+		"DeviceManagementManagedDevices.Read.All", "User.ReadBasic.All"} {
+		if err := readRole(role); err != nil {
+			t.Errorf("%s: %v", role, err)
+		}
+	}
+}
+
+func TestOktaAgainstItsDocumentedResponses(t *testing.T) {
+	m, err := entry(t, "okta").With("okta", sampleParams)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var auth, search string
+	s := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		auth = r.Header.Get("Authorization")
+		if r.URL.Query().Get("search") != "" {
+			search = r.URL.Query().Get("search")
+			io.WriteString(w, `[{"id":"00u9","status":"DEPROVISIONED",
+				"profile":{"login":"gone@acme.com","email":"gone@acme.com"}}]`)
+			return
+		}
+		if r.URL.Query().Get("after") == "" {
+			w.Header().Set("Link", `<https://acme.okta.com/api/v1/users?limit=200>; rel="self", `+
+				`<https://acme.okta.com/api/v1/users?after=00u2&limit=200>; rel="next"`)
+			io.WriteString(w, `[{"id":"00u1","status":"ACTIVE","profile":{"login":"ann@acme.com",
+				"email":"ann@acme.com","firstName":"Ann","lastName":"Lee","department":"Sales"}}]`)
+			return
+		}
+		io.WriteString(w, `[{"id":"00u2","status":"SUSPENDED","profile":{"login":"bo@acme.com",
+			"email":"bo@acme.com"}}]`)
+	})
+	h := route(t, map[string]*httptest.Server{"acme.okta.com": s})
+	got := readAll(t, m, h, MapFunc{"okta-api-token": "00abc"})
+	if n := len(got["people"].Records); n != 2 {
+		t.Fatalf("%d people across the Link pages", n)
+	}
+	want(t, got["people"].Records[0], map[string]string{"email": "ann@acme.com",
+		"status": "ACTIVE", "department": "Sales"})
+	want(t, got["leavers"].Records[0], map[string]string{"status": "DEPROVISIONED"})
+	if auth != "SSWS 00abc" {
+		t.Errorf("sent %q; Okta expects SSWS", auth)
+	}
+	if search != `status eq "DEPROVISIONED"` {
+		t.Errorf("leavers searched for %q", search)
+	}
+}
+
+// A .default scope says nothing about what the token can do, so it is only
+// accepted where the roles on the token will be checked instead.
+func TestADefaultScopeNeedsItsRolesDeclared(t *testing.T) {
+	m, _ := entry(t, "entra").With("", sampleParams)
+	m.Auth.Token.Roles = nil
+	if m.Validate() == nil {
+		t.Error("a .default scope with no roles to check was accepted")
 	}
 }

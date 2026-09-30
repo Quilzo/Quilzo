@@ -665,12 +665,14 @@ func connectCatalogue() error {
 		About       string            `json:"about"`
 		Regions     []string          `json:"regions"`
 		Credentials map[string]string `json:"credentials"`
+		Params      map[string]string `json:"params,omitempty"`
 	}
 	var rows []row
 	for _, n := range names {
 		e := all[n]
 		rows = append(rows, row{Name: n, Tool: e.Tool, About: e.About,
-			Regions: e.RegionNames(), Credentials: e.Credentials})
+			Regions: e.RegionNames(), Credentials: e.Credentials,
+			Params: e.Params})
 	}
 	if w.JSON(rows) {
 		return nil
@@ -687,6 +689,9 @@ func connectCatalogue() error {
 		sort.Strings(creds)
 		for _, c := range creds {
 			w.Human("  %s%s%s: %s\n", yellow, c, reset, r.Credentials[c])
+		}
+		for p, what := range r.Params {
+			w.Human("  %s--%s%s: %s\n", bold, p, reset, what)
 		}
 		w.Human("\n")
 	}
@@ -708,6 +713,8 @@ func connectAdd(root string, args []string) error {
 	region := fs.String("region", "", "where the account lives")
 	replace := fs.Bool("replace", false,
 		"overwrite an installed connector of the same name")
+	tenant := fs.String("tenant", "", "an Entra tenant ID, for entra")
+	org := fs.String("org", "", "an Okta organisation's subdomain, for okta")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
@@ -724,7 +731,7 @@ func connectAdd(root string, args []string) error {
 		return fmt.Errorf("no connector called %q ships with this program; "+
 			"quilzo connect catalogue lists them", pos[0])
 	}
-	m, err := e.For(*region)
+	m, err := e.With(*region, map[string]string{"tenant": *tenant, "org": *org})
 	if err != nil {
 		return err
 	}
