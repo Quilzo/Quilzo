@@ -6,6 +6,7 @@ package agentmodel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -165,6 +166,55 @@ func TestInputsAreBoundedAndUnknownShapesAreDropped(t *testing.T) {
 	}
 }
 
+// A model granted a write has to be able to say what to write.
+//
+// Found by running one: the page's fields arrived as an object, were
+// dropped as an unknown shape, and every model-chosen write was refused
+// for having no fields.
+func TestAPagesFieldsReachAWriteAndNothingElseNestedDoes(t *testing.T) {
+	a, err := decide(t, &fakeModel{reply: `{"op":"write_page","input":{` +
+		`"page":"welcome","fields":{"title":"Welcome","order":2,"live":false,` +
+		`"deep":{"a":{"b":1}},"list":["x"]},` +
+		`"options":{"title":"not a page"},"content":{"only":{"nested":1}}}}`},
+		"write_page")(context.Background(), "write", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields, ok := a.Input["fields"].(map[string]any)
+	if !ok {
+		t.Fatalf("the page's fields did not arrive: %#v", a.Input)
+	}
+	if fields["title"] != "Welcome" || fields["order"] != 2.0 || fields["live"] != false {
+		t.Errorf("the fields arrived as %#v", fields)
+	}
+	for _, dropped := range []string{"deep", "list"} {
+		if _, there := fields[dropped]; there {
+			t.Errorf("a field carried %q, which is not text, a number or a "+
+				"yes-or-no", dropped)
+		}
+	}
+	// An object under any other name is still not an input, and one with
+	// nothing usable in it is not passed on empty.
+	for _, dropped := range []string{"options", "content"} {
+		if _, there := a.Input[dropped]; there {
+			t.Errorf("%q survived", dropped)
+		}
+	}
+
+	var many []string
+	for i := 0; i < MaxFields+20; i++ {
+		many = append(many, fmt.Sprintf(`"f%d":"v"`, i))
+	}
+	a, err = decide(t, &fakeModel{reply: `{"op":"write_page","input":{"fields":{` +
+		strings.Join(many, ",") + `}}}`}, "write_page")(context.Background(), "write", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(a.Input["fields"].(map[string]any)); n != MaxFields {
+		t.Errorf("%d fields came through", n)
+	}
+}
+
 // Untrusted observations are fenced and labelled.
 //
 // Advice to a model, not a control — the control is the closed vocabulary and
@@ -276,5 +326,19 @@ func TestAnOversizedAnswerIsRefusedAsOversized(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "limit") {
 		t.Errorf("the refusal does not say it was too big: %v", err)
+	}
+}
+
+// How a write is shaped is said to a model that may write, and not to one
+// that may not: a description of an operation it does not hold is an
+// invitation to ask for it.
+func TestOnlyAModelThatMayWriteIsToldHowAWriteIsShaped(t *testing.T) {
+	holds := systemPrompt(map[string]bool{"read_page": true, "write_page": true})
+	lacks := systemPrompt(map[string]bool{"read_page": true})
+	if !strings.Contains(holds, `"fields"`) {
+		t.Error("a model holding write_page is not told a write carries fields")
+	}
+	if strings.Contains(lacks, "write_page") || strings.Contains(lacks, `"fields"`) {
+		t.Error("a model that cannot write is told how to")
 	}
 }

@@ -1983,5 +1983,23 @@ textarea.code { font-family: var(--mono); font-size: 0.85rem; width: 100%; }
 
 /* The capabilities an agent may hold: many short names, so in columns. */
 fieldset.caps-set { max-width: 56rem; }
-.caps { columns: 15rem; column-gap: 1.5rem; }
-.caps p { break-inside: avoid; margin: 0 0 0.35rem; }
+.caps { columns: 19rem; column-gap: 2rem; }
+.caps p { break-inside: avoid; margin: 0 0 0.35rem; display: flex;
+  align-items: center; gap: 0.5rem; }
+.caps p label { white-space: nowrap; }
+
+/* Beside a capability: whether the agent stops and asks before using it. */
+.caps label.ask { margin-left: auto; font: var(--body-sm); color: var(--on-surface-variant); }
+.agmap .box.ask { fill: var(--warning-container); stroke: var(--viz-warning); }
+.agmap .label.ask { fill: var(--on-warning-container); }
+
+/* A button that is one of many in a table, and should not shout. */
+button.quiet { background: transparent; color: var(--primary);
+  border: 1px solid var(--outline-variant); padding: 0.25rem 0.7rem;
+  font: var(--label-md); font-weight: 700; }
+button.quiet:hover { background: var(--surface-container-high); }
+.wf-word.info { background: var(--primary-container); color: var(--on-primary-container); }
+
+/* Something a person is asked to agree to is shown whole, on any screen:
+   wrapped, never cut off at the edge. */
+pre.code.whole { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: visible; }

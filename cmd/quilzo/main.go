@@ -470,6 +470,11 @@ agents and integrations
   quilzo agent new NAME --kind KIND         declare what an agent may do
   quilzo agent list | show NAME | check     what is declared, and whether it still validates
   quilzo agent run NAME                    a model chooses, inside the manifest
+  quilzo agent runs [NAME] | trace RUN     the runs that are kept, and one step by step
+  quilzo agent approve RUN STEP            let the action a run is waiting on go ahead
+  quilzo agent decline RUN STEP            refuse it; the run carries on without
+  quilzo agent resume RUN                  continue a run that was cut off
+  quilzo agent replay RUN STEP             run it again from after a step, as a new run
   quilzo agent probe < question.json       ask the gate: would this agent be
                                             allowed to do this? JSON in, JSON out
   quilzo agents                            what models have been doing, and

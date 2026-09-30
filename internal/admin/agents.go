@@ -38,6 +38,12 @@ type Agents struct {
 	// Runs lists kept runs, newest first, of one agent or all of them.
 	Runs   func(name string) ([]agent.Record, error)
 	RunGet func(id string) (agent.Record, error)
+	// Answer decides the action a run is waiting on, Resume continues one
+	// that was cut off, and Replay runs one again from after a step and
+	// returns the new run.
+	Answer func(id string, step int, approve bool, by string) error
+	Resume func(id, by string) error
+	Replay func(id string, step int, by string) (string, error)
 }
 
 // agentRow is one declared agent as the screen shows it.

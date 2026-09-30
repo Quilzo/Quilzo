@@ -36,7 +36,33 @@ type Record struct {
 	Started time.Time `json:"started"`
 	Trace   Trace     `json:"trace"`
 	Receipt Receipt   `json:"receipt"`
+
+	// State is "running" while a process is working on it, and empty once
+	// that stretch has ended. Beat is when it was last written: a run that
+	// says it is running and has not been written for longer than its
+	// budget was interrupted.
+	State string    `json:"state,omitempty"`
+	Beat  time.Time `json:"beat,omitzero"`
+	// From is the run and step this one was run again from.
+	From string `json:"from,omitempty"`
+	// Answers are what people decided about the actions it stopped at.
+	Answers []Answer `json:"answers,omitempty"`
 }
+
+// Answer is one person's decision on one pending action, kept.
+type Answer struct {
+	N       int       `json:"n"`
+	Approve bool      `json:"approve"`
+	By      string    `json:"by"`
+	At      time.Time `json:"at"`
+}
+
+// Running is the state of a run a process is working on.
+const Running = "running"
+
+// StaleAfter is how long past its last write a running run is taken to
+// have been interrupted.
+const StaleAfter = 5 * time.Minute
 
 var recordID = regexp.MustCompile(`^run-[0-9]{8}-[0-9a-f]{8}$`)
 
@@ -62,7 +88,19 @@ func Keep(id, by, model string, started time.Time, t Trace, r Receipt) Record {
 
 // Outcome is a run in a word, for a list.
 func (r Record) Outcome() string {
+	return r.OutcomeAt(time.Time{})
+}
+
+// OutcomeAt is Outcome for a list that can also say a run is still going
+// or was cut off, which depends on when it is asked.
+func (r Record) OutcomeAt(now time.Time) string {
 	switch {
+	case r.Trace.Waiting != nil:
+		return "waiting"
+	case r.State == Running && !now.IsZero() && now.Sub(r.Beat) > StaleAfter:
+		return "interrupted"
+	case r.State == Running:
+		return "running"
 	case r.Receipt.Refused > 0 && r.Receipt.Did == 0:
 		return "refused"
 	case r.Receipt.Failed > 0:

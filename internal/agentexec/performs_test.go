@@ -127,7 +127,7 @@ func TestEveryRoutedFieldIsOneDoneKnowsAbout(t *testing.T) {
 
 	// And the run loop's own gate has to ask about them too, or the branch is
 	// reached with nothing having authorised it.
-	gate := functionBody(t, "../agent/run.go", "func (r Runner) Run(")
+	gate := functionBody(t, "../agent/run.go", "func (r Runner) run(")
 	asked := fieldsTestedIn(gate)
 	for _, f := range routed {
 		if !contains(asked, f) {

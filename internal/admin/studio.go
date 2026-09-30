@@ -124,6 +124,17 @@ func drawAgent(m agent.Manifest) agentMap {
 		}
 		does = append(does, item{t.Name, sub, class})
 	}
+	asks := map[string]bool{}
+	for _, a := range m.AskFirst {
+		asks[a] = true
+	}
+	asked := 0
+	for i := range does {
+		if asks[does[i].label] {
+			asked++
+			does[i].sub, does[i].class = "asks a person first", "ask"
+		}
+	}
 	for _, d := range m.Delegates {
 		does = append(does, item{d, "another agent", "deleg"})
 	}
@@ -191,13 +202,21 @@ func drawAgent(m agent.Manifest) agentMap {
 	}
 	out.Says = fmt.Sprintf("%s reads %d source(s) and may do %d thing(s), "+
 		"%d of which write; %s.", m.Name, len(reads), len(does), writes, person)
+	if asked > 0 {
+		if m.Autonomy != agent.AutonomyPropose && !m.HumanApproval {
+			person = "the rest goes ahead without one"
+		}
+		out.Says = fmt.Sprintf("%s reads %d source(s) and may do %d thing(s), "+
+			"%d of which write. It stops and asks a person before %d of "+
+			"them; %s.", m.Name, len(reads), len(does), writes, asked, person)
+	}
 	return out
 }
 
 // capRow is one capability as a checkbox.
 type capRow struct {
-	Name     string
-	On, Risk bool
+	Name          string
+	On, Risk, Ask bool
 }
 
 func (s *Server) studioAllowed(w http.ResponseWriter, r *http.Request) (principal, bool) {
@@ -226,9 +245,13 @@ func (s *Server) editData(data map[string]any, m agent.Manifest, isNew bool,
 	for _, c := range m.Capabilities {
 		held[c] = true
 	}
+	asks := map[string]bool{}
+	for _, a := range m.AskFirst {
+		asks[a] = true
+	}
 	var caps []capRow
 	for _, c := range known {
-		caps = append(caps, capRow{c, held[c], agent.IsWrite(c)})
+		caps = append(caps, capRow{c, held[c], agent.IsWrite(c), asks[c]})
 		delete(held, c)
 	}
 	// A capability the declaration holds and nothing offers is shown, and
@@ -348,6 +371,29 @@ func manifestFromForm(r *http.Request, base agent.Manifest) (agent.Manifest, err
 	m.Autonomy = agent.Autonomy(r.FormValue("autonomy"))
 	m.Capabilities = append([]string(nil), r.Form["cap"]...)
 	sort.Strings(m.Capabilities)
+	// Asking first: what the form ticked, and whatever was set on a tool,
+	// which the form does not show. Ticked for a capability that was not
+	// granted is dropped here rather than refused: the two boxes sit side
+	// by side and unticking one should not need the other unticked first.
+	granted := map[string]bool{}
+	for _, c := range m.Capabilities {
+		granted[c] = true
+	}
+	var ask []string
+	for _, a := range r.Form["ask"] {
+		if granted[a] {
+			ask = append(ask, a)
+		}
+	}
+	for _, a := range base.AskFirst {
+		for _, t := range base.Tools {
+			if t.Name == a {
+				ask = append(ask, a)
+			}
+		}
+	}
+	sort.Strings(ask)
+	m.AskFirst = ask
 	m.Retrieval.Ref = strings.TrimSpace(r.FormValue("ref"))
 	m.Retrieval.Path = strings.TrimSpace(r.FormValue("path"))
 	m.Retrieval.Types = list(r.FormValue("types"))
@@ -412,6 +458,10 @@ func (s *Server) handleAgentsAct(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	do := r.FormValue("do")
+	if do == "answer" || do == "resume" || do == "replay" {
+		s.handleRunAct(w, r, p, do, back)
+		return
+	}
 	if !agentName.MatchString(name) {
 		back("/agents", "", fmt.Errorf("an agent's name is lower-case "+
 			"letters, digits and hyphens"))
@@ -524,12 +574,13 @@ func runRows(in []agent.Record, now time.Time) []runRow {
 	for _, r := range in {
 		row := runRow{ID: r.ID, Agent: r.Agent, Goal: clipText(r.Goal, 120),
 			By: r.By, Model: r.Model, When: agoText(now.Sub(r.Started)),
-			Outcome: r.Outcome(), Did: r.Receipt.Did,
+			Outcome: r.OutcomeAt(now), Did: r.Receipt.Did,
 			Refused: r.Receipt.Refused, Failed: r.Receipt.Failed,
 			Steps: len(r.Trace.Steps), Tainted: r.Trace.Tainted,
 			Took: r.Trace.Spent.Elapsed.Round(time.Millisecond).String()}
 		row.Tone = map[string]string{"complete": "good", "refused": "warning",
-			"failed": "critical", "stopped": "serious"}[row.Outcome]
+			"failed": "critical", "stopped": "serious", "waiting": "warning",
+			"running": "info", "interrupted": "serious"}[row.Outcome]
 		out = append(out, row)
 	}
 	return out
@@ -622,8 +673,94 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		steps = append(steps, sr)
 	}
 	data["Steps"] = steps
+	data["State"] = rec.OutcomeAt(now)
+	row.Outcome = rec.OutcomeAt(now)
+	if tone, ok := map[string]string{"waiting": "warning", "running": "info",
+		"interrupted": "serious"}[row.Outcome]; ok {
+		row.Tone = tone
+	}
+	data["Row"] = row
+	if wt := rec.Trace.Waiting; wt != nil {
+		pend := stepRow{N: wt.N}
+		switch {
+		case wt.Action.Tool != "":
+			pend.What, pend.Kind = wt.Action.Tool, "tool"
+		default:
+			pend.What, pend.Kind = wt.Action.Op, "capability"
+		}
+		if len(wt.Action.Input) > 0 {
+			if b, jerr := json.MarshalIndent(wt.Action.Input, "", "  "); jerr == nil {
+				pend.Input = clipText(string(b), 8000)
+			}
+		}
+		data["Pending"] = pend
+		data["Asked"] = agoText(now.Sub(wt.Since))
+		data["Expired"] = now.Sub(wt.Since) > agent.PendingTTL
+	}
+	data["Answers"] = rec.Answers
+	data["CanReplay"] = s.Agents.Replay != nil && rec.Trace.Waiting == nil &&
+		rec.State != agent.Running
 	data["Provenance"] = agent.Provenance(rec.Receipt.Sources, rec.Receipt.Omitted)
+	data["Error"] = r.URL.Query().Get("e")
 	data["Tokens"] = rec.Trace.Spent.Tokens
 	data["Metered"] = rec.Trace.Spent.Metered
 	s.render(w, r, "agent_run.html", data)
+}
+
+// handleRunAct is what a person does to a kept run: answer the action it is
+// waiting on, continue one that was cut off, or run it again from a step.
+func (s *Server) handleRunAct(w http.ResponseWriter, r *http.Request,
+	p principal, do string, back func(to, msg string, err error)) {
+
+	id := r.FormValue("run")
+	if !agent.ValidRecordID(id) {
+		http.NotFound(w, r)
+		return
+	}
+	page := "/agents/run/" + id
+	step, err := strconv.Atoi(r.FormValue("step"))
+	switch do {
+	case "answer":
+		if s.Agents.Answer == nil {
+			http.NotFound(w, r)
+			return
+		}
+		verdict := r.FormValue("verdict")
+		if err != nil || (verdict != "approve" && verdict != "decline") {
+			back(page, "", fmt.Errorf("say which step, and whether it may go ahead"))
+			return
+		}
+		if aerr := s.Agents.Answer(id, step, verdict == "approve", p.Name); aerr != nil {
+			back(page, "", aerr)
+			return
+		}
+		if verdict == "approve" {
+			back(page, fmt.Sprintf("Step %d went ahead, as it was shown.", step), nil)
+		} else {
+			back(page, fmt.Sprintf("Step %d was declined, and the agent was told.", step), nil)
+		}
+	case "resume":
+		if s.Agents.Resume == nil {
+			http.NotFound(w, r)
+			return
+		}
+		back(page, "Continued from where it was cut off.",
+			s.Agents.Resume(id, p.Name))
+	case "replay":
+		if s.Agents.Replay == nil {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			back(page, "", fmt.Errorf("say which step to run it again from"))
+			return
+		}
+		newID, rerr := s.Agents.Replay(id, step, p.Name)
+		if newID == "" {
+			back(page, "", rerr)
+			return
+		}
+		back("/agents/run/"+newID, fmt.Sprintf("Run again from after step %d "+
+			"of the earlier run.", step), nil)
+	}
 }

@@ -200,6 +200,24 @@ func cmdServe(root string, args []string) error {
 		RunGet: func(id string) (agent.Record, error) {
 			return loadAgentRun(root, id)
 		},
+		Answer: func(id string, step int, approve bool, by string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
+			defer cancel()
+			_, err := continueAgentRun(ctx, root, id,
+				&agent.Verdict{N: step, Approve: approve}, signedIn(by))
+			return err
+		},
+		Resume: func(id, by string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
+			defer cancel()
+			_, err := continueAgentRun(ctx, root, id, nil, signedIn(by))
+			return err
+		},
+		Replay: func(id string, step int, by string) (string, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
+			defer cancel()
+			return replayAgentRun(ctx, root, id, step, signedIn(by))
+		},
 	}
 
 	srv.Types = &admin.Types{

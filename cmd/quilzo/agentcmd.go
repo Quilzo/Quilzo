@@ -88,6 +88,16 @@ func cmdAgent(root string, args []string) error {
 		return agentCheck(root)
 	case "run":
 		return agentCheckRun(root, args[1:])
+	case "runs":
+		return agentRuns(root, args[1:])
+	case "trace":
+		return agentTrace(root, args[1:])
+	case "approve", "decline":
+		return agentAnswer(root, args[0] == "approve", args[1:])
+	case "resume":
+		return agentResumeCmd(root, args[1:])
+	case "replay":
+		return agentReplay(root, args[1:])
 	default:
 		return agentUsage()
 	}
@@ -102,6 +112,12 @@ func agentUsage() error {
   show NAME              one manifest in full
   check                  re-validate every manifest against this build
   run NAME ["goal"]      exercise one against its manifest, and record it
+  runs [NAME]            the runs that are kept, newest first
+  trace RUN              one run, step by step
+  approve RUN STEP       agree to the action a run is waiting on
+  decline RUN STEP       refuse it, and let the run carry on without
+  resume RUN             continue a run that was interrupted
+  replay RUN STEP        run it again from after that step, as a new run
 
 kinds: %s`, strings.Join(agent.KindNames(), ", "))
 }
@@ -337,7 +353,7 @@ func agentCheckRun(root string, args []string) error {
 		goal = args[1]
 	}
 
-	out, runErr := executeAgent(context.Background(), root, name, goal,
+	id, out, runErr := runAgentKept(context.Background(), root, name, goal,
 		*withModel, resolveCaller(root, ""))
 	if out.Manifest.Name == "" {
 		return runErr
@@ -350,9 +366,8 @@ func agentCheckRun(root string, args []string) error {
 	if out.TraceError != "" {
 		fmt.Printf("  %straces not sent: %s%s\n", dim, out.TraceError, reset)
 	}
-	if _, serr := saveAgentRun(root, out, goal, *withModel,
-		resolveCaller(root, "").Name); serr != nil {
-		fmt.Printf("  %sthe run was not kept: %v%s\n", dim, serr, reset)
+	if id == "" {
+		fmt.Printf("  %sthe run was not kept%s\n", dim, reset)
 	}
 
 	fmt.Printf("%s%s%s  %s\n", bold, name, reset, m.Kind)
@@ -401,6 +416,12 @@ func agentCheckRun(root string, args []string) error {
 		}
 	}
 	fmt.Printf("  %srecorded as agent.run %s%s\n", dim, rc.Fingerprint()[:12], reset)
+	if id != "" {
+		fmt.Printf("  %skept as %s%s\n", dim, id, reset)
+	}
+	if w := trace.Waiting; w != nil {
+		printPending(id, w)
+	}
 	return runErr
 }
 
@@ -548,7 +569,27 @@ func agentRunModel(root, name string) (assist.Model, string) {
 func executeAgent(ctx context.Context, root, name, goal string,
 	withModel bool, caller *Caller) (agentOutcome, error) {
 
+	return executeAgentFrom(ctx, root, name, goal, withModel, caller, nil)
+}
+
+// agentResume is what a run is continued from, and how it is kept as it
+// goes. See internal/agent/durable.go.
+type agentResume struct {
+	// Prior is the run so far, nil for a run starting now.
+	Prior *agent.Record
+	// Verdict answers the action Prior is waiting on.
+	Verdict *agent.Verdict
+	// Checkpoint is handed the trace after every step.
+	Checkpoint func(agent.Trace)
+}
+
+func executeAgentFrom(ctx context.Context, root, name, goal string,
+	withModel bool, caller *Caller, from *agentResume) (agentOutcome, error) {
+
 	var out agentOutcome
+	if from == nil {
+		from = &agentResume{}
+	}
 	set, err := loadAgents(root)
 	if err != nil {
 		return out, err
@@ -584,6 +625,9 @@ func executeAgent(ctx context.Context, root, name, goal string,
 				"the token you are using have no capability in common", name)
 	}
 	sess := agent.NewSession(m, nil)
+	if from.Prior != nil {
+		sess.Recall(from.Prior.Receipt.Sources, from.Prior.Receipt.Omitted)
+	}
 
 	// Every capability the manifest holds, tried once, in a fixed order.
 	//
@@ -628,6 +672,14 @@ func executeAgent(ctx context.Context, root, name, goal string,
 	var delegateModel assist.Model
 
 	i := 0
+	if p := from.Prior; p != nil {
+		// A walk being continued carries on down the plan: one entry was
+		// used for each step taken, and one for the action it stopped at.
+		i = len(p.Trace.Steps)
+		if p.Trace.Waiting != nil {
+			i++
+		}
+	}
 	// The scripted walk: the plan is the manifest, so nothing a model says can
 	// change it. This is the default, and the only mode that costs nothing.
 	decide := func(context.Context, string, []agent.Observation) (agent.Action, error) {
@@ -736,8 +788,25 @@ func executeAgent(ctx context.Context, root, name, goal string,
 		},
 	}
 
+	// A run here can be held for a person and continued: every run made
+	// through this function is kept, which is what makes that possible.
+	runner.Pause, runner.Checkpoint = true, from.Checkpoint
+
 	started := time.Now()
-	trace, runErr := runner.Run(ctx, sess, goal)
+	var trace agent.Trace
+	var runErr error
+	if from.Prior != nil {
+		trace, runErr = runner.Continue(ctx, sess, from.Prior.Trace,
+			from.Verdict, started)
+		if runErr != nil && len(trace.Steps) == len(from.Prior.Trace.Steps) &&
+			trace.Waiting == from.Prior.Trace.Waiting {
+			// Refused before anything happened: not a run, and the record
+			// of the one it was asked about stays as it is.
+			return agentOutcome{}, runErr
+		}
+	} else {
+		trace, runErr = runner.Run(ctx, sess, goal)
+	}
 	rc := trace.Receipt(sess)
 	out.Manifest, out.Trace, out.Receipt, out.Started = m, trace, rc, started
 
@@ -761,4 +830,21 @@ func executeAgent(ctx context.Context, root, name, goal string,
 		}
 	}
 	return out, runErr
+}
+
+// printPending says what a run stopped at and how to answer it.
+func printPending(id string, w *agent.Pending) {
+	what := w.Action.Op
+	if what == "" {
+		what = w.Action.Tool
+	}
+	fmt.Printf("\n  %swaiting for a person%s  step %d wants %s\n", bold, reset,
+		w.N, what)
+	if len(w.Action.Input) > 0 {
+		if b, err := json.Marshal(w.Action.Input); err == nil {
+			fmt.Printf("    with %s\n", truncate(string(b), 600))
+		}
+	}
+	fmt.Printf("    quilzo agent approve %s %d\n", id, w.N)
+	fmt.Printf("    quilzo agent decline %s %d\n", id, w.N)
 }

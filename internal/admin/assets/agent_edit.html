@@ -37,7 +37,8 @@
 
   <fieldset class="caps-set"><legend>What it may do</legend>
     <div class="caps">
-    {{range .Caps}}<p><label><input type="checkbox" name="cap" value="{{.Name}}"{{if .On}} checked{{end}}> <code>{{.Name}}</code>{{if .Risk}} <span class="wf-word serious">writes</span>{{end}}</label></p>{{end}}
+    {{range .Caps}}<p><label><input type="checkbox" name="cap" value="{{.Name}}"{{if .On}} checked{{end}}> <code>{{.Name}}</code>{{if .Risk}} <span class="wf-word serious">writes</span>{{end}}</label>
+      <label class="ask"><input type="checkbox" name="ask" value="{{.Name}}"{{if .Ask}} checked{{end}}> ask first<span class="visually-hidden"> before {{.Name}}</span></label></p>{{end}}
     {{range .UnknownCaps}}<p><label><input type="checkbox" name="cap" value="{{.}}" checked> <code>{{.}}</code> <span class="wf-word critical">nothing offers this</span></label></p>{{end}}
     </div>
     {{if not .Caps}}<p class="hint">The list of capabilities could not be read, so what is held is kept as it is.</p>{{end}}
