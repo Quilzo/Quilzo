@@ -989,6 +989,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/events", s.handleEventsScreen)
 	mux.HandleFunc("/findings", s.handleFindings)
 	mux.HandleFunc("/security/hunt", s.handleHunt)
+	mux.HandleFunc("/security/entity/", s.handleEntity)
 	mux.HandleFunc("/security/cases", s.handleCases)
 	mux.HandleFunc("/security/cases/act", s.handleCasesAct)
 	mux.HandleFunc("/security/case/", s.handleCase)

@@ -4,6 +4,7 @@
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="hint"><a href="/security/entity/">Look up everything about one account or machine</a></p>
 
 {{if not .Produced}}
 <div class="notice warn">

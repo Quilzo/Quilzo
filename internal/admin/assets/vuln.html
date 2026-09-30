@@ -32,7 +32,7 @@
 <h2>Where it is</h2>
 {{if .Places}}<div class="table-wrap"><table>
   <thead><tr><th scope="col">Asset</th><th scope="col">Installed</th><th scope="col">Fixed in</th><th scope="col">Vulnerable code</th><th scope="col">State</th></tr></thead>
-  <tbody>{{range .Places}}<tr><th scope="row"><code>{{.Where}}</code></th><td><code>{{.Version}}</code></td>
+  <tbody>{{range .Places}}<tr><th scope="row"><a href="/security/entity/{{.Where}}"><code>{{.Where}}</code></a></th><td><code>{{.Version}}</code></td>
     <td>{{if .Fix}}<code>{{.Fix}}</code>{{else}}<span class="hint">no fix published</span>{{end}}</td>
     <td>{{.Reach}}{{if .ReachNote}}<br><span class="hint">{{.ReachNote}}</span>{{end}}</td><td><span class="wf-word {{.Tone}}">{{.State}}</span></td></tr>{{end}}</tbody>
 </table></div>
