@@ -61,6 +61,42 @@
       <button type="submit">Assign</button></form></td>{{end}}</tr>{{end}}</tbody>
 </table></div>
 
+<h2>Playbooks</h2>
+<p class="hint">A playbook does nothing itself. Each step is carried out by
+  a person, in their own tools, and recorded here with their name.</p>
+{{if .PlaybooksError}}<p class="notice bad">The playbooks could not be read: {{.PlaybooksError}}. Fix or remove the file; none is offered until they all read.</p>{{end}}
+{{range .Runs}}{{$run := .}}
+<h3>{{.Title}} <span class="hint">{{.ID}}</span></h3>
+<p class="hint">Proposed by {{.Asked}}</p>
+{{if not .ApprovedBy}}<div class="notice warn"><p><strong>Proposed, not approved.</strong> Nothing in it can be worked yet. Whoever proposed it does not also approve it, unless they are commanding this.</p>
+  {{if not $.Closed}}<form method="post" action="/security/cases/act">
+    <input type="hidden" name="id" value="{{$.I.ID}}"><input type="hidden" name="run" value="{{.ID}}">
+    <p><label>To withdraw it, why it does not fit <input type="text" name="text" maxlength="500"></label></p>
+    <p><button type="submit" name="do" value="approve">Approve it</button>
+      <button type="submit" name="do" value="withdraw" class="danger">Withdraw it</button></p></form>{{end}}</div>
+{{else}}<p>{{if .Left}}<span class="wf-word serious">{{.Left}} of {{.Total}} left</span>{{else}}<span class="wf-word good">all {{.Total}} settled</span>{{end}} <span class="hint">approved by {{.ApprovedBy}}</span></p>{{end}}
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Step</th><th scope="col">State</th><th scope="col">Record</th></tr></thead>
+  <tbody>{{range .Steps}}<tr>
+    <th scope="row">{{.Title}}<br><span class="hint">{{.Why}}</span>{{if .Undo}}<br><span class="hint">To reverse: {{.Undo}}</span>{{end}}</th>
+    <td><span class="wf-word {{.Tone}}">{{.Word}}</span>{{if .By}}<br><span class="hint">{{.By}}, {{.When}}</span>{{end}}{{if .Waits}}<br><span class="hint">after {{.Waits}}</span>{{end}}</td>
+    <td>{{if .Note}}{{.Note}}{{end}}
+      {{if and (not $.Closed) (or .CanDo .CanUndo)}}<details><summary>{{if .CanUndo}}Reverse it{{else}}Record it{{end}}</summary>
+      <form method="post" action="/security/cases/act">
+        <input type="hidden" name="do" value="step"><input type="hidden" name="id" value="{{$.I.ID}}"><input type="hidden" name="run" value="{{$run.ID}}"><input type="hidden" name="step" value="{{.ID}}">
+        <p><label>{{if .CanUndo}}Why it is being reversed{{else if .Evidence}}What was seen{{else}}What was seen, or why it is skipped{{end}} <input type="text" name="text" maxlength="1000"{{if or .CanUndo .Evidence}} required{{end}}></label></p>
+        <p>{{if .CanUndo}}<button type="submit" name="outcome" value="undo">Reversed</button>{{else}}<button type="submit" name="outcome" value="done">Done</button>
+          <button type="submit" name="outcome" value="skip">Skip, for that reason</button>{{end}}</p>
+      </form></details>{{end}}</td>
+  </tr>{{end}}</tbody></table></div>
+{{else}}<p>No playbook is being worked.</p>{{end}}
+{{if and .Offer (not .Closed)}}<form method="post" action="/security/cases/act">
+  <input type="hidden" name="do" value="propose"><input type="hidden" name="id" value="{{.I.ID}}">
+  <p><label>Propose a playbook <select name="run">{{range .Offer}}<option value="{{.ID}}">{{.Title}}</option>{{end}}</select></label></p>
+  <p><label>Why it fits <input type="text" name="text" required maxlength="500"></label></p>
+  <p><button type="submit">Propose it</button></p>
+</form>{{end}}
+
 <h2>Findings</h2>
 {{if .Findings}}<div class="table-wrap"><table>
   <thead><tr><th scope="col">Finding</th><th scope="col">Severity</th><th scope="col">State</th>{{if not .Closed}}<th scope="col"><span class="visually-hidden">Remove</span></th>{{end}}</tr></thead>
@@ -106,7 +142,7 @@
   <input type="hidden" name="do" value="close"><input type="hidden" name="id" value="{{.I.ID}}">
   <p><label>What was actually wrong <input type="text" name="text" required maxlength="500"></label></p>
   <p><label>What changes as a result, one to a line <textarea name="actions" rows="3" required maxlength="2000"></textarea></label></p>
-  <p class="hint">Refused while any obligation is neither met nor ruled out.</p>
+  <p class="hint">Refused while any obligation is neither met nor ruled out, or any playbook step is neither done nor skipped.</p>
   <p><button type="submit">Close</button></p>
 </form>
 </div>

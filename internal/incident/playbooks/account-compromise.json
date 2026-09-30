@@ -1,0 +1,68 @@
+{
+  "id": "account-compromise",
+  "title": "An account somebody else is using",
+  "for": "Sign-ins or actions by an account that its owner did not make.",
+  "steps": [
+    {
+      "id": "revoke-sessions",
+      "title": "Revoke the account's sessions and tokens in the identity provider",
+      "why": "A password change leaves every session already open still open.",
+      "evidence": true
+    },
+    {
+      "id": "reset-credentials",
+      "title": "Reset the password and re-enrol the second factor",
+      "why": "The attacker may have added a factor of their own; resetting only the password keeps theirs.",
+      "needs": [
+        "revoke-sessions"
+      ],
+      "evidence": true
+    },
+    {
+      "id": "suspend",
+      "title": "Suspend the account if it cannot be secured at once",
+      "why": "A suspended account does no more harm while the rest is worked out.",
+      "undo": "Unsuspend the account in the identity provider once its sessions and factors are clean."
+    },
+    {
+      "id": "review-factors",
+      "title": "List the account's second factors, recovery addresses and app passwords and remove any its owner does not recognise",
+      "why": "These are how access survives a reset.",
+      "needs": [
+        "revoke-sessions"
+      ],
+      "evidence": true
+    },
+    {
+      "id": "review-grants",
+      "title": "List OAuth grants, API tokens and mail forwarding rules and remove any its owner does not recognise",
+      "why": "A forwarding rule or a granted app keeps reading after the account is recovered.",
+      "needs": [
+        "revoke-sessions"
+      ],
+      "evidence": true
+    },
+    {
+      "id": "scope",
+      "title": "Read what the account did while it was not its owner's: sign-ins, data read, changes made",
+      "why": "What was reached decides whether personal data was involved, and so which clocks start.",
+      "evidence": true
+    },
+    {
+      "id": "decide-awareness",
+      "title": "Decide, on the incident, whether a breach has likely occurred",
+      "why": "The deadlines run from that decision, not from the end of this list.",
+      "needs": [
+        "scope"
+      ]
+    },
+    {
+      "id": "tell-owner",
+      "title": "Tell the account's owner what happened and what they need to do",
+      "why": "They will otherwise find out from a sign-in prompt, and approve the next one.",
+      "needs": [
+        "reset-credentials"
+      ]
+    }
+  ]
+}

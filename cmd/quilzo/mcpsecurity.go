@@ -159,6 +159,11 @@ func registerSecurityOps(srv *mcp.Server, root string, caller *Caller) {
 			Says    string `json:"says"`
 			Late    bool   `json:"late,omitempty"`
 		}
+		type run struct {
+			ID       string   `json:"id"`
+			Approved bool     `json:"approved"`
+			Left     []string `json:"steps_left,omitempty"`
+		}
 		type one struct {
 			ID       string   `json:"id"`
 			Title    string   `json:"title"`
@@ -169,6 +174,7 @@ func registerSecurityOps(srv *mcp.Server, root string, caller *Caller) {
 			Unfilled []string `json:"roles_unfilled,omitempty"`
 			Duties   []duty   `json:"duties"`
 			Findings int      `json:"findings"`
+			Runs     []run    `json:"playbooks,omitempty"`
 		}
 		out := []one{}
 		closed := 0
@@ -201,6 +207,15 @@ func registerSecurityOps(srv *mcp.Server, root string, caller *Caller) {
 					row.Due = d.Due.Format(time.RFC3339)
 				}
 				o.Duties = append(o.Duties, row)
+			}
+			for _, r := range i.Runs {
+				row := run{ID: r.ID, Approved: r.Approved != nil}
+				for _, st := range r.Steps {
+					if st.State == incident.Todo || st.State == incident.Undone {
+						row.Left = append(row.Left, st.ID)
+					}
+				}
+				o.Runs = append(o.Runs, row)
 			}
 			out = append(out, o)
 		}

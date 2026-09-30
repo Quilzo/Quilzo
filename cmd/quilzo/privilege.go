@@ -269,6 +269,8 @@ var commandNeeds = map[string]need{
 	"incident":        {action: auth.ActGrant},
 	"incident duties": {action: auth.ActView},
 	"incident demo":   {action: auth.ActView},
+	// The checklists themselves name no incident.
+	"incident playbooks": {action: auth.ActView},
 
 	// Feed freshness, over mirrors built for the run. Fetches nothing:
 	// internal/fetch is what reaches a network.

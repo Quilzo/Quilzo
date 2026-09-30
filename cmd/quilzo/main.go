@@ -190,6 +190,9 @@ sharing a screen
   quilzo incident decide ID aware --because "…"   the decision that starts a clock
   quilzo incident discharge|waive ID "REGIME" --because "…"   met, or ruled out
   quilzo incident note|assign|link|watch|reopen|close ID …   the rest of the record
+  quilzo incident playbooks [show ID | check FILE]   the checklists that ship, and yours
+  quilzo incident propose|approve|withdraw ID PLAYBOOK   attach one, agree to it, or take it back
+  quilzo incident step ID PLAYBOOK STEP done|skip|undo --because "…"   what became of a step
   quilzo incident regimes [eu nis2 …]      which obligations a new incident starts under
   quilzo incident duties                   who has to be told, how soon, and what starts the clock
   quilzo incident demo                     an incident, its several clocks, and closing it

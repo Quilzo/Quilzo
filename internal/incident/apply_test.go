@@ -180,3 +180,205 @@ func TestAnIdentifierIsAShapeAndNotAPath(t *testing.T) {
 		t.Errorf("scopes: %s", got)
 	}
 }
+
+// Every playbook that ships is one the engine will accept, names a reason
+// for every step, and says how each reversible step is reversed.
+func TestTheShippedPlaybooksAreWorkable(t *testing.T) {
+	all, err := Shipped()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) < 5 {
+		t.Fatalf("%d playbooks ship", len(all))
+	}
+	for _, p := range all {
+		reversible := 0
+		for _, s := range p.Steps {
+			if s.Undo != "" {
+				reversible++
+			}
+			// The words of an action this program cannot take. A step
+			// that reads as if it will be done for you is one nobody does.
+			for _, claim := range []string{"automatically", "quilzo will"} {
+				if strings.Contains(strings.ToLower(s.Title+s.Why), claim) {
+					t.Errorf("%s/%s reads as if it does itself", p.ID, s.ID)
+				}
+			}
+		}
+		if reversible == 0 {
+			t.Errorf("%s has no step that says how it is reversed", p.ID)
+		}
+	}
+}
+
+func TestAPlaybookThatCannotBeWorkedIsRefused(t *testing.T) {
+	ok := Playbook{ID: "x-1", Title: "t", For: "f", Steps: []Step{
+		{ID: "a", Title: "t", Why: "w"},
+		{ID: "b", Title: "t", Why: "w", Needs: []string{"a"}}}}
+	if err := ok.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for name, change := range map[string]func(*Playbook){
+		"no steps":              func(p *Playbook) { p.Steps = nil },
+		"a path as an id":       func(p *Playbook) { p.ID = "../x" },
+		"a step with no why":    func(p *Playbook) { p.Steps[0].Why = " " },
+		"two steps one name":    func(p *Playbook) { p.Steps[1].ID = "a" },
+		"a need that is not":    func(p *Playbook) { p.Steps[1].Needs = []string{"z"} },
+		"a need that is later":  func(p *Playbook) { p.Steps[0].Needs = []string{"b"} },
+		"a step needing itself": func(p *Playbook) { p.Steps[1].Needs = []string{"b"} },
+		"nothing it is for":     func(p *Playbook) { p.For = "" },
+	} {
+		p := Playbook{ID: ok.ID, Title: ok.Title, For: ok.For,
+			Steps: append([]Step(nil), ok.Steps...)}
+		change(&p)
+		if p.Validate() == nil {
+			t.Errorf("a playbook with %s was accepted", name)
+		}
+	}
+	if _, err := ReadPlaybook([]byte(`{"id":"x-1"}`)); err == nil {
+		t.Error("a playbook with nothing in it was read")
+	}
+}
+
+func TestARunIsProposedApprovedWorkedInOrderAndRecorded(t *testing.T) {
+	i := kept(t)
+	p := Playbook{ID: "exposed", Title: "Exposed data", For: "f", Steps: []Step{
+		{ID: "close", Title: "Close it", Why: "w", Evidence: true,
+			Undo: "restore the old policy"},
+		{ID: "logs", Title: "Export logs", Why: "w"},
+		{ID: "read", Title: "Read them", Why: "w", Needs: []string{"close", "logs"}},
+	}}
+	do := func(by string, a Action) error { return i.Apply(a, by, day0) }
+	step := func(by, id, outcome, note string) error {
+		return do(by, Action{Do: "step", Run: "exposed", Step: id,
+			Outcome: outcome, Text: note})
+	}
+	if do("dana", Action{Do: "propose", Playbook: &p}) == nil {
+		t.Error("proposed with no reason it fits")
+	}
+	if err := do("dana", Action{Do: "propose", Playbook: &p,
+		Text: "the bucket was public"}); err != nil {
+		t.Fatal(err)
+	}
+	if do("dana", Action{Do: "propose", Playbook: &p, Text: "again"}) == nil {
+		t.Error("the same playbook was started twice")
+	}
+	// Proposed is not agreed.
+	if step("dana", "logs", "done", "") == nil {
+		t.Error("a step was worked before anybody approved the run")
+	}
+	// Whoever proposed it does not also approve it.
+	_ = do("dana", Action{Do: "assign", Role: Commander, Who: "sam"})
+	if do("dana", Action{Do: "approve", Run: "exposed"}) == nil {
+		t.Error("the proposer approved their own proposal")
+	}
+	if err := do("sam", Action{Do: "approve", Run: "exposed"}); err != nil {
+		t.Fatal(err)
+	}
+	if do("sam", Action{Do: "approve", Run: "exposed"}) == nil {
+		t.Error("approved twice")
+	}
+	for name, err := range map[string]error{
+		"out of order":           step("li", "read", "done", "nothing odd"),
+		"done with no note":      step("li", "close", "done", " "),
+		"skipped for no reason":  step("li", "logs", "skip", ""),
+		"undone before done":     step("li", "close", "undo", "x"),
+		"a step that is not":     step("li", "zzz", "done", "x"),
+		"an outcome that is not": step("li", "logs", "forget", "x"),
+	} {
+		if err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+	if err := step("li", "close", "done", "policy now denies public read"); err != nil {
+		t.Fatal(err)
+	}
+	if step("li", "close", "done", "again") == nil {
+		t.Error("done twice")
+	}
+	if err := step("li", "logs", "skip", "the provider keeps them a year"); err != nil {
+		t.Fatal(err)
+	}
+	if step("li", "logs", "undo", "x") == nil {
+		t.Error("a skipped step, or one with no way back, was undone")
+	}
+	if err := step("omar", "read", "done", ""); err != nil {
+		t.Fatalf("a step whose needs were done or skipped: %v", err)
+	}
+	if step("omar", "read", "undo", "changed my mind") == nil {
+		t.Error("a step that does not say how it is reversed was recorded " +
+			"as reversed")
+	}
+	// Reversed, it is owed again, and an incident cannot close over it.
+	if err := step("li", "close", "undo", "a build depended on it"); err != nil {
+		t.Fatal(err)
+	}
+	r := i.run("exposed")
+	if r.Left() != 1 || r.Steps[0].State != Undone || r.Steps[0].By != "li" {
+		t.Errorf("%+v", r.Steps[0])
+	}
+	for _, d := range i.Duties(day0) {
+		_ = i.Apply(Action{Do: "waive", Regime: d.Regime, Text: "test"}, "sam", day0)
+	}
+	closing := Action{Do: "close", Text: "a template", Actions: []string{"x"}}
+	if err := do("sam", closing); err == nil ||
+		!strings.Contains(err.Error(), "exposed/close") {
+		t.Fatalf("closed over a step nobody finished: %v", err)
+	}
+	if err := step("li", "close", "done", "closed again, build fixed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := do("sam", closing); err != nil {
+		t.Fatal(err)
+	}
+	// All of it is in the record, by name.
+	var said []string
+	for _, e := range i.Timeline() {
+		said = append(said, e.By+" "+e.What)
+	}
+	record := strings.Join(said, "\n")
+	for _, want := range []string{"dana proposed playbook exposed",
+		"sam approved playbook exposed", "li did exposed/close",
+		"li skipped exposed/logs: the provider keeps them a year",
+		"li undid exposed/close: a build depended on it"} {
+		if !strings.Contains(record, want) {
+			t.Errorf("the record lacks %q", want)
+		}
+	}
+	// A run nobody approved is also something an incident cannot close over.
+	j := kept(t)
+	_ = j.Apply(Action{Do: "propose", Playbook: &p, Text: "fits"}, "dana", day0)
+	for _, d := range j.Duties(day0) {
+		_ = j.Apply(Action{Do: "waive", Regime: d.Regime, Text: "test"}, "dana", day0)
+	}
+	if err := j.Apply(closing, "dana", day0); err == nil ||
+		!strings.Contains(err.Error(), "never approved") {
+		t.Errorf("closed over a proposal nobody answered: %v", err)
+	}
+	// It is withdrawn with a reason, and an approved one is not.
+	if j.Apply(Action{Do: "withdraw", Run: "exposed"}, "dana", day0) == nil {
+		t.Error("withdrawn for no reason")
+	}
+	if err := j.Apply(Action{Do: "withdraw", Run: "exposed",
+		Text: "it was a share, not a bucket"}, "dana", day0); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Apply(closing, "dana", day0); err != nil {
+		t.Errorf("after withdrawing: %v", err)
+	}
+	// Unless they are the one commanding it; and a third person may.
+	k := kept(t)
+	_ = k.Apply(Action{Do: "assign", Role: Commander, Who: "Dana"}, "dana", day0)
+	_ = k.Apply(Action{Do: "propose", Playbook: &p, Text: "fits"}, "dana", day0)
+	if err := k.Apply(Action{Do: "approve", Run: "exposed"}, "dana", day0); err != nil {
+		t.Errorf("the commander could not approve their own proposal: %v", err)
+	}
+	l := kept(t)
+	_ = l.Apply(Action{Do: "propose", Playbook: &p, Text: "fits"}, "dana", day0)
+	if err := l.Apply(Action{Do: "approve", Run: "exposed"}, "omar", day0); err != nil {
+		t.Errorf("a second person could not approve: %v", err)
+	}
+	if k.Apply(Action{Do: "withdraw", Run: "exposed", Text: "x"}, "dana", day0) == nil {
+		t.Error("an approved run was withdrawn")
+	}
+}

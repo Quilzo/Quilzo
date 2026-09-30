@@ -257,6 +257,15 @@ func actOnIncident(root, id string, caller *Caller, a incident.Action,
 		return nil, fmt.Errorf("an incident's record is written by the " +
 			"people working it")
 	}
+	if a.Do == "propose" {
+		// Resolved here, from the catalogue, and copied into the incident:
+		// a caller names a playbook and never supplies its steps.
+		p, err := findPlaybook(root, a.Run)
+		if err != nil {
+			return nil, err
+		}
+		a.Playbook = &p
+	}
 	if a.Do == "link" {
 		if err := checkFinding(root, strings.TrimSpace(a.Finding), now); err != nil {
 			return nil, err
@@ -287,6 +296,11 @@ func actOnIncident(root, id string, caller *Caller, a incident.Action,
 		detail["role"] = string(a.Role)
 	case "link", "unlink":
 		detail["finding"] = a.Finding
+	case "propose", "approve", "withdraw":
+		detail["playbook"] = a.Run
+	case "step":
+		detail["playbook"], detail["step"] = a.Run, a.Step
+		detail["outcome"] = a.Outcome
 	}
 	return i, recordE(root, audit.Record{Action: "incident." + a.Do,
 		Resource: "/incidents/" + i.ID, Outcome: audit.Success,
@@ -450,7 +464,8 @@ func incidentShow(root string, args []string) error {
 func incidentDo(root, do string, args []string) error {
 	positional := map[string]int{"note": 2, "assign": 3, "decide": 2,
 		"discharge": 2, "waive": 2, "link": 2, "unlink": 2, "watch": 1,
-		"reopen": 1, "close": 1}[do]
+		"reopen": 1, "close": 1, "propose": 2, "approve": 2, "withdraw": 2,
+		"step": 4}[do]
 	pos, flags := leadingArgs(args, positional)
 	fs := flag.NewFlagSet(do, flag.ContinueOnError)
 	because := fs.String("because", "", "the reason, the cause, or how it was met")
@@ -470,6 +485,10 @@ func incidentDo(root, do string, args []string) error {
 		"watch":     `ID --because "what makes it look fixed"`,
 		"reopen":    `ID --because "what came back"`,
 		"close":     `ID --because "the cause" --action "what changes"`,
+		"propose":   `ID PLAYBOOK --because "why it fits"`,
+		"approve":   "ID PLAYBOOK",
+		"withdraw":  `ID PLAYBOOK --because "why it does not fit"`,
+		"step":      `ID PLAYBOOK STEP done|skip|undo --because "what was seen, or why"`,
 	}[do]
 	if len(pos) != positional {
 		return fmt.Errorf("usage: quilzo incident %s %s", do, usage)
@@ -487,6 +506,10 @@ func incidentDo(root, do string, args []string) error {
 		a.Regime = pos[1]
 	case "link", "unlink":
 		a.Finding = pos[1]
+	case "propose", "approve", "withdraw":
+		a.Run = pos[1]
+	case "step":
+		a.Run, a.Step, a.Outcome = pos[1], pos[2], pos[3]
 	}
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
@@ -502,5 +525,129 @@ func incidentDo(root, do string, args []string) error {
 	}
 	w.Human("%s%s%s  %s, %s\n", bold, i.ID, reset, i.Grade, i.State)
 	printIncidentState(i, now)
+	return nil
+}
+
+// Playbooks: the ones that ship, and the ones this organisation wrote.
+
+func playbooksDir(root string) string {
+	return filepath.Join(incidentsDir(root), "playbooks")
+}
+
+// loadPlaybooks is the catalogue: what ships, with anything in the store
+// of the same name in its place. One of the store's that does not validate
+// is an error, not a gap: a playbook quietly missing is found out during
+// the incident it was written for.
+func loadPlaybooks(root string) ([]incident.Playbook, error) {
+	shipped, err := incident.Shipped()
+	if err != nil {
+		return nil, err
+	}
+	by := map[string]incident.Playbook{}
+	for _, p := range shipped {
+		by[p.ID] = p
+	}
+	entries, err := os.ReadDir(playbooksDir(root))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	for _, e := range entries {
+		if !e.Type().IsRegular() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		b, err := readBounded(filepath.Join(playbooksDir(root), e.Name()), 256<<10)
+		if err != nil {
+			return nil, err
+		}
+		p, err := incident.ReadPlaybook(b)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", e.Name(), err)
+		}
+		if p.ID+".json" != e.Name() {
+			return nil, fmt.Errorf("%s holds the playbook %q; the file is "+
+				"named for the playbook", e.Name(), p.ID)
+		}
+		by[p.ID] = p
+	}
+	out := make([]incident.Playbook, 0, len(by))
+	for _, p := range by {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(a, b int) bool { return out[a].ID < out[b].ID })
+	return out, nil
+}
+
+func findPlaybook(root, id string) (incident.Playbook, error) {
+	all, err := loadPlaybooks(root)
+	if err != nil {
+		return incident.Playbook{}, err
+	}
+	for _, p := range all {
+		if p.ID == id {
+			return p, nil
+		}
+	}
+	return incident.Playbook{}, fmt.Errorf("there is no playbook %q; "+
+		"quilzo incident playbooks lists them", id)
+}
+
+func incidentPlaybooks(root string, args []string) error {
+	if len(args) == 2 && args[0] == "check" {
+		b, err := readBounded(args[1], 256<<10)
+		if err != nil {
+			return err
+		}
+		p, err := incident.ReadPlaybook(b)
+		if err != nil {
+			return err
+		}
+		if !w.JSON(p) {
+			w.Human("%s%s%s is workable: %d step(s). Put it in %s as "+
+				"%s.json\n", bold, p.ID, reset, len(p.Steps),
+				playbooksDir(root), p.ID)
+		}
+		return nil
+	}
+	if len(args) == 2 && args[0] == "show" {
+		p, err := findPlaybook(root, args[1])
+		if err != nil {
+			return err
+		}
+		if w.JSON(p) {
+			return nil
+		}
+		w.Human("%s%s · %s%s\n  %s%s%s\n\n", bold, p.ID, p.Title, reset,
+			dim, p.For, reset)
+		for n, s := range p.Steps {
+			w.Human("%s%2d.%s %s%s%s  %s%s%s\n", dim, n+1, reset, bold,
+				s.Title, reset, dim, s.ID, reset)
+			w.Human("     %s%s%s\n", dim, s.Why, reset)
+			if len(s.Needs) > 0 {
+				w.Human("     %safter %s%s\n", dim,
+					strings.Join(s.Needs, ", "), reset)
+			}
+			if s.Undo != "" {
+				w.Human("     %sto reverse: %s%s\n", yellow, s.Undo, reset)
+			}
+		}
+		return nil
+	}
+	if len(args) != 0 {
+		return fmt.Errorf("usage: quilzo incident playbooks [show ID | " +
+			"check FILE]")
+	}
+	all, err := loadPlaybooks(root)
+	if err != nil {
+		return err
+	}
+	if w.JSON(map[string]any{"playbooks": all}) {
+		return nil
+	}
+	for _, p := range all {
+		w.Human("%s%-20s%s %s  %s%d steps%s\n", bold, p.ID, reset, p.Title,
+			dim, len(p.Steps), reset)
+	}
+	w.Human("\n  %sa playbook does nothing itself: each step is carried "+
+		"out by a person, in their own tools, and recorded%s\n", dim, reset)
 	return nil
 }

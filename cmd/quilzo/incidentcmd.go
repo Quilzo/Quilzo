@@ -43,13 +43,16 @@ func cmdIncident(root string, args []string) error {
 		return incidentList(root)
 	case "show":
 		return incidentShow(root, args[1:])
+	case "playbooks":
+		return incidentPlaybooks(root, args[1:])
 	case "note", "assign", "decide", "discharge", "waive", "link", "unlink",
-		"watch", "reopen", "close":
+		"watch", "reopen", "close", "propose", "approve", "withdraw", "step":
 		return incidentDo(root, args[0], args[1:])
 	default:
 		return fmt.Errorf("unknown incident command %q; try declare, list, "+
 			"show, note, assign, decide, discharge, waive, link, watch, "+
-			"reopen, close, regimes, duties or demo", args[0])
+			"reopen, close, playbooks, propose, approve, withdraw, step, "+
+			"regimes, duties or demo", args[0])
 	}
 }
 

@@ -1,0 +1,61 @@
+{
+  "id": "lost-device",
+  "title": "A laptop or phone that is lost or stolen",
+  "for": "A managed device that is no longer in its owner's hands.",
+  "steps": [
+    {
+      "id": "confirm",
+      "title": "Confirm with the owner when and where it was last in their hands, and whether it was unlocked",
+      "why": "Locked and encrypted is a lost asset; unlocked is an incident about everything on it.",
+      "evidence": true
+    },
+    {
+      "id": "lock",
+      "title": "Send a remote lock from the device manager",
+      "why": "It costs nothing if the device turns up.",
+      "evidence": true,
+      "undo": "Unlock the device from the device manager once it is back with its owner."
+    },
+    {
+      "id": "check-encryption",
+      "title": "Read the device's last reported encryption and screen-lock state",
+      "why": "This is what decides whether data on it was exposed.",
+      "evidence": true
+    },
+    {
+      "id": "revoke-sessions",
+      "title": "Revoke the owner's sessions and the device's certificates",
+      "why": "A signed-in browser does not need the disk to be decrypted.",
+      "needs": [
+        "confirm"
+      ],
+      "evidence": true
+    },
+    {
+      "id": "wipe",
+      "title": "Send a remote wipe if it will not be recovered",
+      "why": "A lock can be waited out.",
+      "needs": [
+        "lock",
+        "check-encryption"
+      ],
+      "evidence": true
+    },
+    {
+      "id": "decide-awareness",
+      "title": "Decide, on the incident, whether a breach has likely occurred",
+      "why": "An unencrypted device holding personal data is one; the clocks run from the decision.",
+      "needs": [
+        "check-encryption"
+      ]
+    },
+    {
+      "id": "report",
+      "title": "Report the theft where the insurer or the law requires",
+      "why": "Some policies and jurisdictions need a report within days.",
+      "needs": [
+        "confirm"
+      ]
+    }
+  ]
+}

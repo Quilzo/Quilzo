@@ -218,3 +218,93 @@ func TestAnIncidentIdentifierCannotReachAnotherFile(t *testing.T) {
 		t.Error("the file outside the incidents was changed")
 	}
 }
+
+// A caller names a playbook; its steps come from the catalogue and are
+// copied into the incident, so a later edit does not rewrite the record.
+func TestAPlaybookIsResolvedFromTheCatalogueAndCopiedIn(t *testing.T) {
+	root, _ := incidentSite(t)
+	now := time.Now().UTC()
+	i, err := declareIncident(root, human("dana"), "Bucket", incident.Sev3,
+		nil, nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Steps supplied by the caller are not what runs.
+	forged := incident.Playbook{ID: "exposed-data", Title: "forged",
+		For: "x", Steps: []incident.Step{{ID: "only", Title: "do nothing", Why: "x"}}}
+	if _, err := actOnIncident(root, i.ID, human("dana"), incident.Action{
+		Do: "propose", Run: "exposed-data", Playbook: &forged,
+		Text: "the bucket was public"}, now); err != nil {
+		t.Fatal(err)
+	}
+	back, _ := loadIncident(root, i.ID)
+	if len(back.Runs) != 1 || len(back.Runs[0].Steps) != 8 ||
+		back.Runs[0].Title == "forged" {
+		t.Fatalf("the run is %+v", back.Runs)
+	}
+	if _, err := actOnIncident(root, i.ID, human("dana"), incident.Action{
+		Do: "approve", Run: "exposed-data"}, now); err == nil {
+		t.Error("the proposer approved their own proposal")
+	}
+	if _, err := actOnIncident(root, i.ID, human("sam"), incident.Action{
+		Do: "approve", Run: "exposed-data"}, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"step", i.ID, "exposed-data", "close", "done", "--because", "denied public read"},
+		{"step", i.ID, "exposed-data", "when", "skip", "--because", "known from the ticket"},
+		{"playbooks"}, {"playbooks", "show", "phishing"},
+	} {
+		if err := cmdIncident(root, args); err != nil {
+			t.Fatalf("incident %v: %v", args, err)
+		}
+	}
+	for name, args := range map[string][]string{
+		"a playbook that does not exist": {"propose", i.ID, "nope", "--because", "x"},
+		"a step out of order":            {"step", i.ID, "exposed-data", "who-read", "done", "--because", "x"},
+		"a playbook as a path":           {"propose", i.ID, "../../x", "--because", "x"},
+	} {
+		if cmdIncident(root, args) == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+	// The organisation's own playbook replaces the shipped one of the same
+	// name for the next incident, and not for this one.
+	mine := `{"id":"exposed-data","title":"Ours","for":"our buckets","steps":[{"id":"call","title":"Call the data owner","why":"they know what is in it"}]}`
+	put(t, filepath.Join(playbooksDir(root), "exposed-data.json"), mine)
+	p, err := findPlaybook(root, "exposed-data")
+	if err != nil || p.Title != "Ours" {
+		t.Fatalf("the store's playbook did not take the place of the shipped one: %v %v", p.Title, err)
+	}
+	if back, _ = loadIncident(root, i.ID); len(back.Runs[0].Steps) != 8 {
+		t.Error("editing the playbook rewrote what a running incident was told to do")
+	}
+	// One that does not validate is an error for the whole catalogue.
+	put(t, filepath.Join(playbooksDir(root), "broken.json"),
+		`{"id":"broken","title":"x","for":"y","steps":[{"id":"a","title":"t"}]}`)
+	if _, err := loadPlaybooks(root); err == nil {
+		t.Error("a playbook with a step that gives no reason was loaded, or skipped")
+	}
+	bad := put(t, filepath.Join(t.TempDir(), "p.json"), `{"id":"p","title":"x","for":"y","steps":[]}`)
+	if cmdIncident(root, []string{"playbooks", "check", bad}) == nil {
+		t.Error("check passed a playbook with no steps")
+	}
+	events, _ := audit.Read(auditPath(root))
+	var steps int
+	for _, e := range events {
+		if e.Action == "incident.step" {
+			steps++
+			if e.Detail["playbook"] != "exposed-data" || e.Detail["outcome"] == "" {
+				t.Errorf("a step's record: %v", e.Detail)
+			}
+			for _, v := range e.Detail {
+				if strings.Contains(v, "denied public read") {
+					t.Error("the note is in the audit record")
+				}
+			}
+		}
+	}
+	if steps != 2 {
+		t.Errorf("%d step records, not 2", steps)
+	}
+}

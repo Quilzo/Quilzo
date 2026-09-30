@@ -320,6 +320,9 @@ func cmdServe(root string, args []string) error {
 			return loadIncident(root, id)
 		},
 		Regimes: func() []string { return loadRegimes(root) },
+		Playbooks: func() ([]incident.Playbook, error) {
+			return loadPlaybooks(root)
+		},
 		// Signed in to the admin: a person, verified.
 		Declare: func(title string, grade incident.Grade, regimes,
 			findings []string, by string) (string, error) {

@@ -110,7 +110,7 @@ func (i *Incident) Unlink(finding, by string, at time.Time) error {
 // Action is one thing somebody does to an incident.
 type Action struct {
 	// Do is what: note, assign, decide, discharge, waive, link, unlink,
-	// watch, reopen or close.
+	// watch, reopen, close, propose, approve, withdraw or step.
 	Do string `json:"do"`
 	// Text is the words that go with it: the note, the reason, the cause.
 	Text    string  `json:"text,omitempty"`
@@ -121,6 +121,12 @@ type Action struct {
 	Finding string  `json:"finding,omitempty"`
 	// Actions is what changes as a result, for closing.
 	Actions []string `json:"actions,omitempty"`
+	// Playbook is the one being proposed, resolved by whoever holds the
+	// catalogue; Run, Step and Outcome name a step and what became of it.
+	Playbook *Playbook `json:"playbook,omitempty"`
+	Run      string    `json:"run,omitempty"`
+	Step     string    `json:"step,omitempty"`
+	Outcome  string    `json:"outcome,omitempty"`
 }
 
 // Decides reports whether an action is one of the judgements that start,
@@ -128,7 +134,7 @@ type Action struct {
 // model's.
 func (a Action) Decides() bool {
 	switch a.Do {
-	case "decide", "discharge", "waive", "close":
+	case "decide", "discharge", "waive", "close", "approve":
 		return true
 	}
 	return false
@@ -166,6 +172,17 @@ func (i *Incident) Apply(a Action, by string, at time.Time) error {
 		return i.Link(a.Finding, by, at)
 	case "unlink":
 		return i.Unlink(a.Finding, by, at)
+	case "propose":
+		if a.Playbook == nil {
+			return fmt.Errorf("which playbook")
+		}
+		return i.Propose(*a.Playbook, by, a.Text, at)
+	case "approve":
+		return i.Approve(a.Run, by, at)
+	case "withdraw":
+		return i.Withdraw(a.Run, by, a.Text, at)
+	case "step":
+		return i.Work(a.Run, a.Step, a.Outcome, by, a.Text, at)
 	case "watch":
 		if strings.TrimSpace(a.Text) == "" {
 			return fmt.Errorf("say what makes this look fixed")

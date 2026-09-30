@@ -35,7 +35,9 @@ type Cases struct {
 	Get  func(id string) (*incident.Incident, error)
 	// Regimes is what a new incident starts under.
 	Regimes func() []string
-	Declare func(title string, grade incident.Grade, regimes,
+	// Playbooks is the catalogue an incident can be given one from.
+	Playbooks func() ([]incident.Playbook, error)
+	Declare   func(title string, grade incident.Grade, regimes,
 		findings []string, by string) (string, error)
 	Act func(id, by string, a incident.Action) error
 }
@@ -320,6 +322,67 @@ func (s *Server) handleCase(w http.ResponseWriter, r *http.Request) {
 	}
 	data["Findings"] = findings
 
+	// The playbooks being worked, and the ones that could be.
+	type stepRow struct {
+		incident.RunStep
+		Word, Tone, When, Waits string
+		CanDo, CanUndo          bool
+	}
+	type runRow struct {
+		incident.Run
+		Steps             []stepRow
+		Left, Total       int
+		ApprovedBy, Asked string
+	}
+	var runs []runRow
+	running := map[string]bool{}
+	for _, r := range i.Runs {
+		running[r.ID] = true
+		rr := runRow{Run: r, Left: r.Left(), Total: len(r.Steps),
+			Asked: r.Proposed.By + ": " + r.Proposed.Why}
+		if r.Approved != nil {
+			rr.ApprovedBy = r.Approved.By
+		}
+		for _, st := range r.Steps {
+			sr := stepRow{RunStep: st, Word: string(st.State)}
+			switch st.State {
+			case incident.Done:
+				sr.Tone = "good"
+				sr.CanUndo = st.Undo != "" && r.Approved != nil
+			case incident.Skipped:
+				sr.Tone = "unknown"
+			case incident.Undone:
+				sr.Word, sr.Tone = "reversed", "warning"
+			default:
+				sr.Word, sr.Tone = "to do", "serious"
+			}
+			if !st.At.IsZero() {
+				sr.When = st.At.Format("2 Jan 15:04")
+			}
+			if st.State == incident.Todo || st.State == incident.Undone {
+				sr.Waits = strings.Join(r.Waiting(st.ID), ", ")
+				sr.CanDo = r.Approved != nil
+			}
+			rr.Steps = append(rr.Steps, sr)
+		}
+		runs = append(runs, rr)
+	}
+	data["Runs"] = runs
+	if s.Cases.Playbooks != nil {
+		all, perr := s.Cases.Playbooks()
+		if perr != nil {
+			data["PlaybooksError"] = perr.Error()
+		}
+		var offer []incident.Playbook
+		for _, pb := range all {
+			if !running[pb.ID] {
+				offer = append(offer, pb)
+			}
+		}
+		data["Offer"] = offer
+	}
+	data["Commander"] = strings.TrimSpace(i.Filled[incident.Commander])
+
 	type entry struct{ When, By, What string }
 	var timeline []entry
 	for _, e := range i.Timeline() {
@@ -381,7 +444,9 @@ func (s *Server) handleCasesAct(w http.ResponseWriter, r *http.Request) {
 		Who:     strings.TrimSpace(r.FormValue("who")),
 		Trigger: incident.Trigger(r.FormValue("trigger")),
 		Regime:  r.FormValue("regime"),
-		Finding: strings.TrimSpace(r.FormValue("finding"))}
+		Finding: strings.TrimSpace(r.FormValue("finding")),
+		Run:     r.FormValue("run"), Step: r.FormValue("step"),
+		Outcome: r.FormValue("outcome")}
 	if do == "close" {
 		a.Actions = strings.Split(r.FormValue("actions"), "\n")
 	}
@@ -391,6 +456,9 @@ func (s *Server) handleCasesAct(w http.ResponseWriter, r *http.Request) {
 		"discharge": "Recorded as met.", "waive": "Recorded as ruled out.",
 		"link": "The finding is part of this.", "unlink": "The finding is no longer part of this.",
 		"watch": "Being watched.", "reopen": "Open again.", "close": "Closed.",
+		"propose":  "Proposed. Nothing in it can be worked until it is approved.",
+		"approve":  "Approved. Its steps can be worked.",
+		"withdraw": "Withdrawn.", "step": "Recorded.",
 	}[do]
 	if said == "" {
 		http.Error(w, "nothing to do", http.StatusBadRequest)

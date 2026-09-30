@@ -53,8 +53,17 @@ func wireCases(srv *Server) map[string]*incident.Incident {
 			if !ok {
 				return fmt.Errorf("no incident %s", id)
 			}
+			if a.Do == "propose" {
+				all, _ := incident.Shipped()
+				for n := range all {
+					if all[n].ID == a.Run {
+						a.Playbook = &all[n]
+					}
+				}
+			}
 			return i.Apply(a, by, time.Now().UTC())
 		},
+		Playbooks: func() ([]incident.Playbook, error) { return incident.Shipped() },
 	}
 	return kept
 }
@@ -234,5 +243,95 @@ func TestOnlyAnAdministratorSeesOrChangesAnIncident(t *testing.T) {
 	if len(kept[id].Log) != before || len(kept) != 1 ||
 		strings.HasPrefix(loc, "/security/case/") {
 		t.Error("an author wrote to an incident, or declared one")
+	}
+}
+
+func TestAPlaybookOnTheScreenIsProposedApprovedAndWorkedByName(t *testing.T) {
+	srv, token := setup(t)
+	kept := wireCases(srv)
+	caseAct(t, srv, token, url.Values{"do": {"declare"}, "title": {"Bucket"},
+		"grade": {"sev3"}})
+	var id string
+	for k := range kept {
+		id = k
+	}
+	do := func(v url.Values) string {
+		v.Set("id", id)
+		_, loc := caseAct(t, srv, token, v)
+		return loc
+	}
+	page := func() string {
+		body := get(t, srv, "/security/case/"+id, token).Body.String()
+		whole(t, body)
+		return body
+	}
+	if body := page(); !strings.Contains(body, "No playbook is being worked") ||
+		!strings.Contains(body, `value="exposed-data"`) {
+		t.Fatal("the catalogue is not offered")
+	}
+	if loc := do(url.Values{"do": {"propose"}, "run": {"no-such-playbook"},
+		"text": {"x"}}); !strings.Contains(loc, "e=") {
+		t.Error("a playbook that does not exist was proposed")
+	}
+	if loc := do(url.Values{"do": {"propose"}, "run": {"exposed-data"},
+		"text": {"the export bucket was public"}}); !strings.Contains(loc, "m=") {
+		t.Fatalf("propose: %s", loc)
+	}
+	body := page()
+	for _, want := range []string{"Proposed, not approved",
+		"Remove the public or over-broad access", "To reverse:", "Approve it"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the proposed run lacks %q", want)
+		}
+	}
+	if strings.Contains(body, `name="outcome"`) {
+		t.Error("a step can be recorded before the run is approved")
+	}
+	if strings.Contains(body, `<option value="exposed-data"`) {
+		t.Error("a playbook already running is offered again")
+	}
+	step := func(name, outcome, text string) string {
+		return do(url.Values{"do": {"step"}, "run": {"exposed-data"},
+			"step": {name}, "outcome": {outcome}, "text": {text}})
+	}
+	if loc := step("close", "done", "denied"); !strings.Contains(loc, "e=") {
+		t.Error("worked before approval")
+	}
+	if loc := do(url.Values{"do": {"approve"}, "run": {"exposed-data"}}); !strings.Contains(loc, "e=") {
+		t.Error("the proposer approved their own proposal")
+	}
+	// Commanding it, they may.
+	do(url.Values{"do": {"assign"}, "role": {"commander"}, "who": {kept[id].By}})
+	if loc := do(url.Values{"do": {"approve"}, "run": {"exposed-data"}}); !strings.Contains(loc, "m=") {
+		t.Fatalf("approve as commander: %s", loc)
+	}
+	if loc := step("who-read", "done", "nothing"); !strings.Contains(loc, "e=") ||
+		!strings.Contains(loc, "waits") {
+		t.Errorf("a step was done before the ones it needs: %s", loc)
+	}
+	if loc := step("close", "done", ""); !strings.Contains(loc, "e=") {
+		t.Error("done with nothing seen")
+	}
+	if loc := step("close", "done", "policy denies <b>public</b> read"); !strings.Contains(loc, "m=") {
+		t.Fatalf("done: %s", loc)
+	}
+	body = page()
+	for _, want := range []string{"7 of 8 left", "policy denies &lt;b&gt;public&lt;/b&gt; read",
+		"Reverse it", "after preserve-logs, when"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the worked run lacks %q", want)
+		}
+	}
+	// Closing is refused over the steps left.
+	if loc := do(url.Values{"do": {"close"}, "text": {"a template"},
+		"actions": {"x"}}); !strings.Contains(loc, "e=") ||
+		!strings.Contains(loc, "playbook+step") {
+		t.Errorf("closed over playbook steps: %s", loc)
+	}
+	if loc := step("close", "undo", "a build depended on it"); !strings.Contains(loc, "m=") {
+		t.Fatalf("undo: %s", loc)
+	}
+	if !strings.Contains(page(), "reversed") {
+		t.Error("a reversed step is not shown as reversed")
 	}
 }

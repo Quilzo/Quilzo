@@ -199,6 +199,8 @@ type Incident struct {
 
 	// Findings are the findings this gathers, by identifier.
 	Findings []string `json:"findings,omitempty"`
+	// Runs are the playbooks being worked.
+	Runs []Run `json:"runs,omitempty"`
 
 	// Cause and Actions are required to close.
 	Cause   string   `json:"cause,omitempty"`
@@ -385,6 +387,12 @@ func (i *Incident) Close(by, cause string, actions []string,
 			continue
 		}
 		owed = append(owed, d.Regime+" — "+d.What)
+	}
+	if left := i.StepsLeft(); len(left) > 0 {
+		return fmt.Errorf(
+			"%d playbook step(s) are neither done nor skipped: %s. "+
+				"Skipping one takes a reason, and the reason is the record "+
+				"that somebody decided", len(left), strings.Join(left, ", "))
 	}
 	if len(owed) > 0 {
 		return fmt.Errorf(

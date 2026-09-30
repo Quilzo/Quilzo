@@ -1,0 +1,69 @@
+{
+  "id": "exposed-data",
+  "title": "Data reachable by people who should not reach it",
+  "for": "A bucket, share, repository or export that was public or over-shared.",
+  "steps": [
+    {
+      "id": "close",
+      "title": "Remove the public or over-broad access",
+      "why": "Every minute it stays open is more to account for.",
+      "evidence": true,
+      "undo": "Restore the previous access setting, if closing it broke something that depended on it."
+    },
+    {
+      "id": "preserve-logs",
+      "title": "Export the access logs for the whole period it was open before they age out",
+      "why": "Whether anybody read it is the question every later decision turns on, and logs expire.",
+      "evidence": true
+    },
+    {
+      "id": "when",
+      "title": "Establish when it became reachable",
+      "why": "The period is what the access logs are read against.",
+      "evidence": true
+    },
+    {
+      "id": "who-read",
+      "title": "Read the access logs for anything that was not yours",
+      "why": "Open and unread, and open and downloaded, are different incidents.",
+      "needs": [
+        "preserve-logs",
+        "when"
+      ],
+      "evidence": true
+    },
+    {
+      "id": "what",
+      "title": "List what was in it, and whether any of it is personal or secret",
+      "why": "This decides who has to be told.",
+      "evidence": true
+    },
+    {
+      "id": "rotate",
+      "title": "Rotate any credential or key that was in it",
+      "why": "A secret that was readable is a secret somebody may hold.",
+      "needs": [
+        "what"
+      ],
+      "evidence": true
+    },
+    {
+      "id": "decide-awareness",
+      "title": "Decide, on the incident, whether a breach has likely occurred",
+      "why": "Likely, not confirmed: the seventy-two hours run from here.",
+      "needs": [
+        "who-read",
+        "what"
+      ]
+    },
+    {
+      "id": "others",
+      "title": "Search for other places with the same setting",
+      "why": "The template that made this one made others.",
+      "needs": [
+        "close"
+      ],
+      "evidence": true
+    }
+  ]
+}
