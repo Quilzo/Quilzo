@@ -84,6 +84,13 @@ type Source struct {
 	Target string `json:"target,omitempty"`
 	Device string `json:"device,omitempty"`
 
+	// Person is the path to the acting person's address — the email or
+	// principal name the platform knows them by. It is what joins one
+	// person across platforms that each give them a different identifier,
+	// and it is kept beside the identifier, never instead of it: an address
+	// is reassigned and an identifier is not.
+	Person string `json:"person,omitempty"`
+
 	Message string `json:"message,omitempty"`
 	// Outcome is a path whose value says whether the action succeeded.
 	//
@@ -117,6 +124,9 @@ type Source struct {
 	// somebody else's source made up.
 	Lateness time.Duration `json:"lateness"`
 }
+
+// PersonField is the raw field an event carries its acting person in.
+const PersonField = "person"
 
 // Layouts for the sources that write a number where everybody else writes
 // a formatted time.
@@ -321,6 +331,14 @@ func (s Source) Map(doc any) (telemetry.Event, []Miss) {
 	for _, p := range s.Keep {
 		if v := connector.At(doc, p); v != "" {
 			e.Raw[leaf(p)] = v
+		}
+	}
+	if s.Person != "" {
+		if v := strings.ToLower(strings.TrimSpace(connector.At(doc,
+			s.Person))); strings.Contains(v, "@") && len(v) <= 254 {
+			// After Keep, so a kept field that happens to be called
+			// person cannot stand in for it.
+			e.Raw[PersonField] = v
 		}
 	}
 	return e, nil

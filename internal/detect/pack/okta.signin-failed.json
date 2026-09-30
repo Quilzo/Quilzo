@@ -1,0 +1,78 @@
+{
+  "id": "okta.signin-failed",
+  "title": "A sign-in to Okta failed",
+  "why": "one is a typo; many, or the same person on several platforms, is somebody guessing. Counted by correlations, and raises nothing itself",
+  "blind": "a sign-in refused before Okta saw it",
+  "sources": [
+    "okta/system"
+  ],
+  "severity": 2,
+  "when": {
+    "all": [
+      {
+        "match": {
+          "field": "class",
+          "op": "equals",
+          "values": [
+            "3002"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "disposition",
+          "op": "equals",
+          "values": [
+            "failed"
+          ]
+        }
+      }
+    ]
+  },
+  "technique": [
+    "T1110"
+  ],
+  "quiet": true,
+  "fixtures": [
+    {
+      "name": "a failed sign-in",
+      "match": true,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 4,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "user.session.start",
+        "raw": {
+          "eventType": "user.session.start",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "a sign-in that worked",
+      "match": false,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "User login to Okta",
+        "raw": {
+          "eventType": "user.session.start",
+          "person": "dana@acme.com"
+        }
+      }
+    }
+  ]
+}

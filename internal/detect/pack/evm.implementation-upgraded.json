@@ -1,0 +1,100 @@
+{
+  "id": "evm.implementation-upgraded",
+  "title": "A proxy contract's code or admin changed",
+  "why": "an upgrade replaces what the contract does while its address and balances stay where they were",
+  "blind": "a proxy pattern that emits neither of the standard events",
+  "sources": [
+    "evm/logs"
+  ],
+  "severity": 5,
+  "when": {
+    "any": [
+      {
+        "match": {
+          "field": "raw.signature",
+          "op": "equals",
+          "values": [
+            "0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b",
+            "0x7e644d79422f17c01e4894b5f4f588d331ebfa28653d42ae832dc59e38c9798f"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "raw.event",
+          "op": "prefix",
+          "values": [
+            "Upgraded(",
+            "AdminChanged("
+          ]
+        }
+      }
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "Upgraded, decoded by the explorer",
+      "match": true,
+      "event": {
+        "source": "evm/logs",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "evm",
+          "value": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "message": "Upgraded(address indexed a, address indexed b)",
+        "raw": {
+          "signature": "0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b",
+          "tx": "0xabc",
+          "block_number": "1",
+          "event": "Upgraded(address indexed a, address indexed b)"
+        }
+      }
+    },
+    {
+      "name": "AdminChanged, on a contract the explorer has not verified",
+      "match": true,
+      "event": {
+        "source": "evm/logs",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "evm",
+          "value": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "raw": {
+          "signature": "0x7e644d79422f17c01e4894b5f4f588d331ebfa28653d42ae832dc59e38c9798f",
+          "tx": "0xabc",
+          "block_number": "1"
+        }
+      }
+    },
+    {
+      "name": "an ordinary transfer",
+      "match": false,
+      "event": {
+        "source": "evm/logs",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "evm",
+          "value": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "message": "Transfer(address indexed a, address indexed b)",
+        "raw": {
+          "signature": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "tx": "0xabc",
+          "block_number": "1",
+          "event": "Transfer(address indexed a, address indexed b)"
+        }
+      }
+    }
+  ]
+}

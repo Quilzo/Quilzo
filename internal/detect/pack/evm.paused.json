@@ -1,0 +1,100 @@
+{
+  "id": "evm.paused",
+  "title": "A contract was paused or unpaused",
+  "why": "pausing is an emergency control; nobody expecting it means nobody here did it",
+  "blind": "a contract with a stop switch that emits another event",
+  "sources": [
+    "evm/logs"
+  ],
+  "severity": 4,
+  "when": {
+    "any": [
+      {
+        "match": {
+          "field": "raw.signature",
+          "op": "equals",
+          "values": [
+            "0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258",
+            "0x5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "raw.event",
+          "op": "prefix",
+          "values": [
+            "Paused(",
+            "Unpaused("
+          ]
+        }
+      }
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "Paused, decoded by the explorer",
+      "match": true,
+      "event": {
+        "source": "evm/logs",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "evm",
+          "value": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "message": "Paused(address indexed a, address indexed b)",
+        "raw": {
+          "signature": "0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258",
+          "tx": "0xabc",
+          "block_number": "1",
+          "event": "Paused(address indexed a, address indexed b)"
+        }
+      }
+    },
+    {
+      "name": "Unpaused, on a contract the explorer has not verified",
+      "match": true,
+      "event": {
+        "source": "evm/logs",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "evm",
+          "value": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "raw": {
+          "signature": "0x5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa",
+          "tx": "0xabc",
+          "block_number": "1"
+        }
+      }
+    },
+    {
+      "name": "an ordinary transfer",
+      "match": false,
+      "event": {
+        "source": "evm/logs",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "evm",
+          "value": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "message": "Transfer(address indexed a, address indexed b)",
+        "raw": {
+          "signature": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "tx": "0xabc",
+          "block_number": "1",
+          "event": "Transfer(address indexed a, address indexed b)"
+        }
+      }
+    }
+  ]
+}

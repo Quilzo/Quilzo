@@ -370,6 +370,13 @@ var coverage = map[string]surfaces{
 		NoMCP: "it is the agent. A model starting the analyst is a model " +
 			"starting a model, with nobody in the loop to have asked for it",
 	},
+	"identity": {GUI: "/security/entity/",
+		Why: "a person's page shows every identifier known to be theirs; " +
+			"saying whose one is happens once, by the operator",
+		NoMCP: "whose an identifier is decides whose activity is whose. A " +
+			"model that could say it could make one person's activity " +
+			"count as another's",
+	},
 	"collect": {GUI: "/security/events",
 		Why: "what each source sent and when is on the Events screen; " +
 			"installing a connector and a schedule are the operator's",

@@ -60,10 +60,12 @@ func cmdDetect(root string, args []string) error {
 		return detectReplay(root, args[1:])
 	case "learn":
 		return detectLearn(root, args[1:])
+	case "pack":
+		return detectPack(root, args[1:])
 	default:
 		return fmt.Errorf("unknown detect command %q; try test, list, "+
 			"fields, run, stats, ring, suppress, unsuppress, suppressions, "+
-			"replay or learn", args[0])
+			"replay, learn or pack", args[0])
 	}
 }
 

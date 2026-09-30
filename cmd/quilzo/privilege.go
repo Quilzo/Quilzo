@@ -366,6 +366,8 @@ var commandNeeds = map[string]need{
 	// The analyst reads every finding and spends the model budget.
 	"analyst":      {action: auth.ActGrant},
 	"analyst plan": {action: auth.ActView},
+	// Whose an identifier is decides whose activity is whose.
+	"identity": {action: auth.ActGrant},
 	// Collection reads other tools with stored credentials and writes the
 	// event store.
 	"collect": {action: auth.ActGrant},

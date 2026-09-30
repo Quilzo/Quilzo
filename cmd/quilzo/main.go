@@ -201,6 +201,9 @@ sharing a screen
   quilzo collect file ISSUER/STREAM FILE   the same for a log that arrives as a file
   quilzo collect status | auto 15m|off     what each source did last, and the schedule
   quilzo source add MAPPING.json --sample RECORDS.json   a mapping for an application of yours
+  quilzo identity list                     who is known, and by which identifiers on which platforms
+  quilzo identity link ISSUER:VALUE PERSON@…   say whose an identifier is, where a platform does not
+  quilzo identity unlink ISSUER:VALUE      take that back
   quilzo source list                       every platform whose logs this reads
   quilzo source check --source okta/system records.json   what a mapping would do with real records
 
@@ -330,6 +333,7 @@ telling people
   quilzo detect suppressions               what is suppressed, by whom, until when
   quilzo detect replay [--strict]          every rule over the corpus of events already ruled on
   quilzo detect learn FINDING              add the event behind a closed finding to the corpus
+  quilzo detect pack [install]             the rules that ship: identity, code, cloud and chain, and across them
   quilzo telemetry check [FILE]            can a connector's events be used at all
   quilzo telemetry fields [FILE]           what a detection may refer to
 
@@ -797,6 +801,8 @@ func main() {
 		err = cmdIntel(root, cmdArgs)
 	case "collect":
 		err = cmdCollect(root, cmdArgs)
+	case "identity":
+		err = cmdIdentity(root, cmdArgs)
 	case "analyst":
 		err = cmdAnalyst(root, cmdArgs)
 	case "assurance":

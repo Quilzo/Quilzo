@@ -1,0 +1,107 @@
+{
+  "id": "okta.policy-weakened",
+  "title": "A sign-on or security policy was switched off or deleted in Okta",
+  "why": "the rule that would have asked for a second factor is gone",
+  "blind": "a policy edited to allow more while staying active",
+  "sources": [
+    "okta/system"
+  ],
+  "severity": 4,
+  "when": {
+    "match": {
+      "field": "raw.eventType",
+      "op": "equals",
+      "values": [
+        "policy.lifecycle.deactivate",
+        "policy.lifecycle.delete",
+        "policy.rule.deactivate",
+        "policy.rule.delete"
+      ]
+    }
+  },
+  "technique": [
+    "T1562"
+  ],
+  "fixtures": [
+    {
+      "name": "a policy deactivated",
+      "match": true,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "policy.lifecycle.deactivate",
+        "raw": {
+          "eventType": "policy.lifecycle.deactivate",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "a rule deleted",
+      "match": true,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "policy.rule.delete",
+        "raw": {
+          "eventType": "policy.rule.delete",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "a policy created",
+      "match": false,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "policy.lifecycle.create",
+        "raw": {
+          "eventType": "policy.lifecycle.create",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "a rule updated",
+      "match": false,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "policy.rule.update",
+        "raw": {
+          "eventType": "policy.rule.update",
+          "person": "dana@acme.com"
+        }
+      }
+    }
+  ]
+}

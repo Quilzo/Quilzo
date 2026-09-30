@@ -84,6 +84,7 @@ func entraSignIn() Source {
 		// The object id, not the user principal name: a principal name
 		// changes when somebody marries and the object id does not.
 		Actor:   "userId",
+		Person:  "userPrincipalName",
 		Target:  "appDisplayName",
 		Device:  "deviceDetail.deviceId",
 		Message: "appDisplayName",
@@ -115,6 +116,7 @@ func workspaceLogin() Source {
 		// The profile id rather than the email, for the same reason as
 		// Entra: an address is reassigned and a profile id is not.
 		Actor:   "actor.profileId",
+		Person:  "actor.email",
 		Message: "events.name",
 		Outcome: "events.name",
 		Failed:  []string{"login_failure"},
@@ -136,6 +138,7 @@ func oktaSystem() Source {
 		Class: telemetry.ClassAuthentication, Activity: 1,
 		Time: "published", Layout: time.RFC3339,
 		Actor: "actor.id", Target: "target.id",
+		Person:  "actor.alternateId",
 		Message: "displayMessage",
 		Outcome: "outcome.result", Failed: []string{"FAILURE", "DENY"},
 		Observables: map[telemetry.ObservableKind]string{
@@ -421,6 +424,7 @@ func slackAudit() Source {
 		Class: telemetry.ClassAPIActivity, Activity: 1,
 		Time: "date_create", Layout: LayoutEpochSecond,
 		Actor: "actor.user.id", Target: "entity.type",
+		Person:  "actor.user.email",
 		Message: "action",
 		Observables: map[telemetry.ObservableKind]string{
 			telemetry.ObservableIP:    "context.ip_address",

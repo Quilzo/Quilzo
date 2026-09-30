@@ -1,0 +1,91 @@
+{
+  "id": "aws.trail-tampered",
+  "title": "A CloudTrail trail was stopped, deleted or narrowed",
+  "why": "the log is switched off before the thing that should not be in it",
+  "blind": "a bucket policy changed so the trail can no longer write",
+  "sources": [
+    "aws/cloudtrail"
+  ],
+  "severity": 5,
+  "when": {
+    "match": {
+      "field": "message",
+      "op": "equals",
+      "values": [
+        "StopLogging",
+        "DeleteTrail",
+        "UpdateTrail",
+        "PutEventSelectors"
+      ]
+    }
+  },
+  "technique": [
+    "T1562.008"
+  ],
+  "fixtures": [
+    {
+      "name": "logging stopped",
+      "match": true,
+      "event": {
+        "source": "aws/cloudtrail",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "aws",
+          "value": "arn:aws:iam::1:user/deploy"
+        },
+        "message": "StopLogging"
+      }
+    },
+    {
+      "name": "a trail deleted",
+      "match": true,
+      "event": {
+        "source": "aws/cloudtrail",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "aws",
+          "value": "arn:aws:iam::1:user/deploy"
+        },
+        "message": "DeleteTrail"
+      }
+    },
+    {
+      "name": "a trail described",
+      "match": false,
+      "event": {
+        "source": "aws/cloudtrail",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "aws",
+          "value": "arn:aws:iam::1:user/deploy"
+        },
+        "message": "DescribeTrails"
+      }
+    },
+    {
+      "name": "logging started",
+      "match": false,
+      "event": {
+        "source": "aws/cloudtrail",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "aws",
+          "value": "arn:aws:iam::1:user/deploy"
+        },
+        "message": "StartLogging"
+      }
+    }
+  ]
+}

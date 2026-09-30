@@ -336,3 +336,87 @@ func TestTheScheduleIsSetByAPersonAndReadsOnItsInterval(t *testing.T) {
 		t.Error("switched off, it still read")
 	}
 }
+
+// One person is known by a different identifier on each platform. The
+// address they share is carried on every event, learned where a platform
+// gives it and said by a person where it does not.
+func TestOnePersonIsJoinedAcrossPlatformsByTheAddressTheyShare(t *testing.T) {
+	now := time.Now().UTC()
+	withAddress := oktaEvent("e1", "dana", "SUCCESS", now.Add(-2*time.Hour))
+	// The same identifier, in a record that carries no address.
+	without := strings.Replace(oktaEvent("e2", "dana", "FAILURE", now.Add(-time.Hour)),
+		`,"alternateId":"dana@acme.com"`, "", 1)
+	tool := &fakeTool{answer: func(*http.Request) (int, string, http.Header) {
+		return 200, "[" + withAddress + "," + without + "]", nil
+	}}
+	root := collectSite(t, tool)
+	if err := cmdCollect(root, []string{"run"}); err != nil {
+		t.Fatal(err)
+	}
+	got := storedEvents(t, root)
+	if len(got) != 2 {
+		t.Fatalf("%d events", len(got))
+	}
+	for n, e := range got {
+		if e.Raw["person"] != "dana@acme.com" {
+			t.Errorf("event %d carries person %q", n, e.Raw["person"])
+		}
+		// The platform's identifier is still who acted.
+		if e.Actor.String() != "okta:00udana" {
+			t.Errorf("event %d: the actor became %s", n, e.Actor)
+		}
+	}
+	// GitHub knows a login and no address. A person says whose it is.
+	for _, bad := range [][]string{{"link", "github:dana-gh"},
+		{"link", "dana-gh", "dana@acme.com"}, {"link", "github:dana-gh", "dana"},
+		{"unlink", "github:nobody"}} {
+		if cmdIdentity(root, bad) == nil {
+			t.Errorf("identity %v was accepted", bad)
+		}
+	}
+	if err := cmdIdentity(root, []string{"link", "github:dana-gh", "Dana@Acme.com"}); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	audit := put(t, filepath.Join(dir, "gh.json"), fmt.Sprintf(
+		`[{"@timestamp":%d,"action":"protected_branch.destroy","actor":"dana-gh","repo":"acme/shop","actor_ip":"203.0.113.9"},`+
+			`{"@timestamp":%d,"action":"repo.create","actor":"stranger","repo":"acme/x"}]`,
+		now.UnixMilli(), now.UnixMilli()))
+	if err := cmdCollect(root, []string{"file", "github/audit", audit}); err != nil {
+		t.Fatal(err)
+	}
+	people := map[string]string{}
+	for _, e := range storedEvents(t, root) {
+		if e.Source == "github/audit" {
+			people[e.Actor.Value] = e.Raw["person"]
+		}
+	}
+	if people["dana-gh"] != "dana@acme.com" || people["stranger"] != "" {
+		t.Errorf("github events: %v", people)
+	}
+	aliases, _ := loadAliases(root)
+	byPerson := peopleOf(aliases)
+	if strings.Join(byPerson["dana@acme.com"], ",") != "github:dana-gh,okta:00udana" {
+		t.Errorf("dana is known as %v", byPerson["dana@acme.com"])
+	}
+	// What a person said is not overwritten by what a log says later.
+	e := telemetry.Event{Actor: telemetry.ID{Issuer: "github", Value: "dana-gh"},
+		Raw: map[string]string{"person": "someone-else@acme.com"}}
+	if personOf(&e, aliases, now) || aliases["github:dana-gh"].Person != "dana@acme.com" ||
+		e.Raw["person"] != "dana@acme.com" {
+		t.Errorf("a learned address replaced a link a person made: %+v %v",
+			aliases["github:dana-gh"], e.Raw)
+	}
+	// What was learned follows the platform when it changes.
+	e = telemetry.Event{Actor: telemetry.ID{Issuer: "okta", Value: "00udana"},
+		Raw: map[string]string{"person": "dana.lee@acme.com"}}
+	if !personOf(&e, aliases, now) || aliases["okta:00udana"].Person != "dana.lee@acme.com" {
+		t.Error("a changed address was not learned")
+	}
+	if err := cmdIdentity(root, []string{"list"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdIdentity(root, []string{"unlink", "github:dana-gh"}); err != nil {
+		t.Fatal(err)
+	}
+}

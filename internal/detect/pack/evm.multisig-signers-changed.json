@@ -1,0 +1,102 @@
+{
+  "id": "evm.multisig-signers-changed",
+  "title": "A multisig's signers or threshold changed",
+  "why": "who can move the funds, and how many of them it takes, is the whole of a multisig's security",
+  "blind": "a wallet that is not a Safe and names these events differently",
+  "sources": [
+    "evm/logs"
+  ],
+  "severity": 5,
+  "when": {
+    "any": [
+      {
+        "match": {
+          "field": "raw.signature",
+          "op": "equals",
+          "values": [
+            "0x9465fa0c962cc76958e6373a993326400c1c94f8be2fe3a952adfa7f60b2ea26",
+            "0xf8d49fc529812e9a7c5c50e69c20f0dccc0db8fa95c98bc58cc9a4f1c1299eaf",
+            "0x610f7ff2b304ae8903c3de74c60c6ab1f7d6226b3f52c5161905bb5ad4039c93"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "raw.event",
+          "op": "prefix",
+          "values": [
+            "AddedOwner(",
+            "RemovedOwner(",
+            "ChangedThreshold("
+          ]
+        }
+      }
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "AddedOwner, decoded by the explorer",
+      "match": true,
+      "event": {
+        "source": "evm/logs",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "evm",
+          "value": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "message": "AddedOwner(address indexed a, address indexed b)",
+        "raw": {
+          "signature": "0x9465fa0c962cc76958e6373a993326400c1c94f8be2fe3a952adfa7f60b2ea26",
+          "tx": "0xabc",
+          "block_number": "1",
+          "event": "AddedOwner(address indexed a, address indexed b)"
+        }
+      }
+    },
+    {
+      "name": "ChangedThreshold, on a contract the explorer has not verified",
+      "match": true,
+      "event": {
+        "source": "evm/logs",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "evm",
+          "value": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "raw": {
+          "signature": "0x610f7ff2b304ae8903c3de74c60c6ab1f7d6226b3f52c5161905bb5ad4039c93",
+          "tx": "0xabc",
+          "block_number": "1"
+        }
+      }
+    },
+    {
+      "name": "an ordinary transfer",
+      "match": false,
+      "event": {
+        "source": "evm/logs",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "evm",
+          "value": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "message": "Transfer(address indexed a, address indexed b)",
+        "raw": {
+          "signature": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "tx": "0xabc",
+          "block_number": "1",
+          "event": "Transfer(address indexed a, address indexed b)"
+        }
+      }
+    }
+  ]
+}

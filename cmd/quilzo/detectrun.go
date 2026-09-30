@@ -85,6 +85,9 @@ func detectRun(root string, args []string) error {
 		}
 		rules = append(rules, r)
 	}
+	if err := quietRulesAreCounted(rulesDir(root, *rulesAt), rules); err != nil {
+		return err
+	}
 	if len(rules) == 0 {
 		return fmt.Errorf("no rules to run in %s (%d switched off), so a "+
 			"run would find nothing and report that as a quiet estate",
@@ -159,6 +162,10 @@ func detectRun(root string, args []string) error {
 				}
 			}
 			if hidden {
+				continue
+			}
+			if r.Quiet {
+				// Counted by a correlation, and raising nothing itself.
 				continue
 			}
 			if _, isNew := reg.Record(finding.Finding{

@@ -1,0 +1,104 @@
+{
+  "id": "entra.legacy-protocol-signin",
+  "title": "A sign-in to Entra ID succeeded over a protocol that cannot ask for a second factor",
+  "why": "IMAP, POP and SMTP take a password and nothing else, which is why a stolen password is tried there first",
+  "blind": "a legacy protocol reported under a client name not listed here",
+  "sources": [
+    "entra/signin"
+  ],
+  "severity": 4,
+  "when": {
+    "all": [
+      {
+        "match": {
+          "field": "raw.clientAppUsed",
+          "op": "equals",
+          "values": [
+            "IMAP4",
+            "POP3",
+            "Authenticated SMTP",
+            "Exchange ActiveSync",
+            "Other clients"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "disposition",
+          "op": "equals",
+          "values": [
+            "allowed"
+          ]
+        }
+      }
+    ]
+  },
+  "technique": [
+    "T1078"
+  ],
+  "fixtures": [
+    {
+      "name": "a sign-in over IMAP",
+      "match": true,
+      "event": {
+        "source": "entra/signin",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 1,
+        "actor": {
+          "issuer": "entra",
+          "value": "7a1f"
+        },
+        "message": "Office 365",
+        "raw": {
+          "person": "dana@acme.com",
+          "clientAppUsed": "IMAP4",
+          "errorCode": "0"
+        }
+      }
+    },
+    {
+      "name": "a sign-in from a browser",
+      "match": false,
+      "event": {
+        "source": "entra/signin",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 1,
+        "actor": {
+          "issuer": "entra",
+          "value": "7a1f"
+        },
+        "message": "Office 365",
+        "raw": {
+          "person": "dana@acme.com",
+          "clientAppUsed": "Browser",
+          "errorCode": "0"
+        }
+      }
+    },
+    {
+      "name": "a refused one over IMAP",
+      "match": false,
+      "event": {
+        "source": "entra/signin",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 4,
+        "actor": {
+          "issuer": "entra",
+          "value": "7a1f"
+        },
+        "message": "Office 365",
+        "raw": {
+          "person": "dana@acme.com",
+          "clientAppUsed": "IMAP4",
+          "errorCode": "50126"
+        }
+      }
+    }
+  ]
+}

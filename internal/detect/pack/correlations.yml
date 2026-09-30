@@ -1,0 +1,61 @@
+# Correlations across platforms. Each counts rules in this directory.
+# The person a group is about is the address every platform knows them by,
+# carried on each event as raw.person.
+title: One person failed to sign in many times
+id: corr.signin-failures-one-person
+correlation:
+    type: event_count
+    rules:
+        - okta.signin-failed
+        - entra.signin-failed
+        - workspace.signin-failed
+    group-by:
+        - raw.person
+    timespan: 15m
+    condition:
+        gte: 10
+level: high
+---
+title: One person failed to sign in on more than one platform
+id: corr.signin-failures-across-platforms
+correlation:
+    type: value_count
+    rules:
+        - okta.signin-failed
+        - entra.signin-failed
+        - workspace.signin-failed
+    group-by:
+        - raw.person
+    field: source
+    timespan: 30m
+    condition:
+        gte: 2
+level: high
+---
+title: One address failed to sign in as many people
+id: corr.password-spray
+correlation:
+    type: value_count
+    rules:
+        - okta.signin-failed
+        - entra.signin-failed
+        - workspace.signin-failed
+    group-by:
+        - ip
+    field: raw.person
+    timespan: 30m
+    condition:
+        gte: 10
+level: critical
+---
+title: One person's second factor was reset and they removed a branch protection
+id: corr.identity-then-code
+correlation:
+    type: temporal
+    rules:
+        - okta.mfa-reset
+        - github.branch-protection-removed
+    group-by:
+        - raw.person
+    timespan: 24h
+level: critical

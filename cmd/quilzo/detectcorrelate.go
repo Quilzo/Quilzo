@@ -120,6 +120,11 @@ func hitEntity(h correlate.Hit) telemetry.ID {
 			}
 		}
 	}
+	// Grouped by the person: the hit is about them, whichever platform's
+	// identifier each event carried.
+	if v, ok := h.Group["raw.person"]; ok && v != "" {
+		return telemetry.ID{Issuer: "person", Value: v}
+	}
 	if len(h.Group) == 0 {
 		return telemetry.ID{Issuer: "estate", Value: "everything"}
 	}
@@ -278,4 +283,37 @@ func runCorrelations(root string, sp *spool.Spool, dir string,
 	}
 	cursors[correlateCursor] = watermark
 	return run, saveJSONFile(correlatedPath(root), raised)
+}
+
+// quietRulesAreCounted refuses a quiet rule that no correlation names. It
+// would match, raise nothing, and be counted by nobody: a detection that
+// looks installed and tells no one.
+func quietRulesAreCounted(dir string, rules []detect.Rule) error {
+	var quiet []string
+	for _, r := range rules {
+		if r.Quiet {
+			quiet = append(quiet, r.ID)
+		}
+	}
+	if len(quiet) == 0 {
+		return nil
+	}
+	corrs, err := correlationsIn(dir)
+	if err != nil {
+		return err
+	}
+	named := map[string]bool{}
+	for _, c := range corrs {
+		for _, id := range c.Rules {
+			named[id] = true
+		}
+	}
+	for _, id := range quiet {
+		if !named[id] {
+			return fmt.Errorf("%s is quiet and no correlation counts it, so "+
+				"it would match and tell nobody. Remove \"quiet\", or add "+
+				"the correlation it was written for", id)
+		}
+	}
+	return nil
 }

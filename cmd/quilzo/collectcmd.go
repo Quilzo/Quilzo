@@ -64,6 +64,8 @@ type collectStatus struct {
 	// Seen is the digests of the most recent records, so one returned
 	// again on the next read is not stored twice.
 	Seen []string `json:"seen,omitempty"`
+	// learned says the read taught the alias table something.
+	learned bool
 }
 
 // maxSeen is how many recent record digests are remembered per source.
@@ -324,7 +326,7 @@ func digestOf(doc any) string {
 // storeRecords maps raw records and appends what maps, leaving out what was
 // already stored. It fills the counts of st.
 func storeRecords(sp *spool.Spool, s source.Source, docs []any,
-	st *collectStatus, now time.Time) error {
+	st *collectStatus, aliases map[string]alias, now time.Time) error {
 
 	seen := map[string]bool{}
 	for _, d := range st.Seen {
@@ -347,6 +349,9 @@ func storeRecords(sp *spool.Spool, s source.Source, docs []any,
 			continue
 		}
 		e.Received = now
+		if personOf(&e, aliases, now) {
+			st.learned = true
+		}
 		if err := e.Validate(); err != nil {
 			st.Missed++
 			missing["(not a usable event)"]++
@@ -418,7 +423,8 @@ func collectables(root string) ([]collectable, []string, error) {
 
 // collectOne reads one source and stores what is new.
 func collectOne(root string, c collectable, sp *spool.Spool,
-	prev collectStatus, caller *Caller, now time.Time) collectStatus {
+	prev collectStatus, aliases map[string]alias, caller *Caller,
+	now time.Time) collectStatus {
 
 	st := collectStatus{Source: c.name(), At: now, Seen: prev.Seen}
 	// The first read of an incremental source starts a day back, not at
@@ -456,7 +462,7 @@ func collectOne(root string, c collectable, sp *spool.Spool,
 	for _, rec := range out.Records {
 		docs = append(docs, unflatten(rec))
 	}
-	if err := storeRecords(sp, c.S, docs, &st, now); err != nil {
+	if err := storeRecords(sp, c.S, docs, &st, aliases, now); err != nil {
 		st.Error = err.Error()
 		return st
 	}
@@ -513,9 +519,15 @@ func collectAll(root string, names []string, caller *Caller,
 		return nil, unmapped, err
 	}
 	defer sp.Close()
+	aliases, err := loadAliases(root)
+	if err != nil {
+		return nil, unmapped, err
+	}
+	learned := false
 	var out []collectStatus
 	for _, c := range todo {
-		st := collectOne(root, c, sp, status[c.name()], caller, now)
+		st := collectOne(root, c, sp, status[c.name()], aliases, caller, now)
+		learned = learned || st.learned
 		status[c.name()] = st
 		out = append(out, st)
 		outcome := audit.Success
@@ -529,6 +541,11 @@ func collectAll(root string, names []string, caller *Caller,
 			Detail: map[string]string{"records": fmt.Sprint(st.Records),
 				"stored": fmt.Sprint(st.Stored), "missed": fmt.Sprint(st.Missed),
 				"known": fmt.Sprint(st.Known)}})
+	}
+	if learned {
+		if err := saveAliases(root, aliases); err != nil {
+			return out, unmapped, err
+		}
 	}
 	return out, unmapped, saveCollectStatus(root, status)
 }
@@ -639,8 +656,17 @@ func collectFile(root string, args []string) error {
 	name := s.Issuer + "/" + s.Stream
 	now := time.Now().UTC()
 	st := collectStatus{Source: name, At: now, Seen: status[name].Seen}
-	if err := storeRecords(sp, s, docs, &st, now); err != nil {
+	aliases, err := loadAliases(root)
+	if err != nil {
 		return err
+	}
+	if err := storeRecords(sp, s, docs, &st, aliases, now); err != nil {
+		return err
+	}
+	if st.learned {
+		if err := saveAliases(root, aliases); err != nil {
+			return err
+		}
 	}
 	status[name] = st
 	if err := saveCollectStatus(root, status); err != nil {

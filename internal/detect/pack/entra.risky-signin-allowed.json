@@ -1,0 +1,101 @@
+{
+  "id": "entra.risky-signin-allowed",
+  "title": "A sign-in Entra ID judged risky was allowed",
+  "why": "Microsoft's own signal said this did not look like the person, and nothing stopped it",
+  "blind": "a tenant without the licence that produces a risk level",
+  "sources": [
+    "entra/signin"
+  ],
+  "severity": 4,
+  "when": {
+    "all": [
+      {
+        "match": {
+          "field": "raw.riskLevelDuringSignIn",
+          "op": "equals",
+          "values": [
+            "high",
+            "medium"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "disposition",
+          "op": "equals",
+          "values": [
+            "allowed"
+          ]
+        }
+      }
+    ]
+  },
+  "technique": [
+    "T1078"
+  ],
+  "fixtures": [
+    {
+      "name": "a high-risk sign-in that worked",
+      "match": true,
+      "event": {
+        "source": "entra/signin",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 1,
+        "actor": {
+          "issuer": "entra",
+          "value": "7a1f"
+        },
+        "message": "Office 365",
+        "raw": {
+          "person": "dana@acme.com",
+          "riskLevelDuringSignIn": "high",
+          "errorCode": "0"
+        }
+      }
+    },
+    {
+      "name": "a sign-in with no risk",
+      "match": false,
+      "event": {
+        "source": "entra/signin",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 1,
+        "actor": {
+          "issuer": "entra",
+          "value": "7a1f"
+        },
+        "message": "Office 365",
+        "raw": {
+          "person": "dana@acme.com",
+          "riskLevelDuringSignIn": "none",
+          "errorCode": "0"
+        }
+      }
+    },
+    {
+      "name": "a high-risk one that was refused",
+      "match": false,
+      "event": {
+        "source": "entra/signin",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 4,
+        "actor": {
+          "issuer": "entra",
+          "value": "7a1f"
+        },
+        "message": "Office 365",
+        "raw": {
+          "person": "dana@acme.com",
+          "riskLevelDuringSignIn": "high",
+          "errorCode": "53003"
+        }
+      }
+    }
+  ]
+}

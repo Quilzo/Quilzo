@@ -1,0 +1,78 @@
+{
+  "id": "workspace.signin-failed",
+  "title": "A sign-in to Google Workspace failed",
+  "why": "counted by correlations across platforms, and raises nothing itself",
+  "blind": "a sign-in refused by a third-party identity provider in front of Workspace",
+  "sources": [
+    "workspace/login"
+  ],
+  "severity": 2,
+  "when": {
+    "all": [
+      {
+        "match": {
+          "field": "class",
+          "op": "equals",
+          "values": [
+            "3002"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "disposition",
+          "op": "equals",
+          "values": [
+            "failed"
+          ]
+        }
+      }
+    ]
+  },
+  "technique": [
+    "T1110"
+  ],
+  "quiet": true,
+  "fixtures": [
+    {
+      "name": "a failed sign-in",
+      "match": true,
+      "event": {
+        "source": "workspace/login",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 4,
+        "actor": {
+          "issuer": "workspace",
+          "value": "1001"
+        },
+        "message": "login_failure",
+        "raw": {
+          "person": "dana@acme.com",
+          "name": "login_failure"
+        }
+      }
+    },
+    {
+      "name": "a sign-in that worked",
+      "match": false,
+      "event": {
+        "source": "workspace/login",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 1,
+        "actor": {
+          "issuer": "workspace",
+          "value": "1001"
+        },
+        "message": "login_success",
+        "raw": {
+          "person": "dana@acme.com",
+          "name": "login_success"
+        }
+      }
+    }
+  ]
+}

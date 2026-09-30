@@ -186,6 +186,11 @@ type Rule struct {
 	// be selling the metric the framework's stewards have disowned.
 	Technique []string `json:"technique,omitempty"`
 
+	// Quiet says the rule raises nothing on its own. It exists for a
+	// correlation to count: one failed sign-in is a typo, and the finding
+	// is that there were forty, or that they were on three platforms.
+	Quiet bool `json:"quiet,omitempty"`
+
 	Fixtures []Fixture `json:"fixtures"`
 }
 

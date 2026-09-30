@@ -1,0 +1,105 @@
+{
+  "id": "okta.mfa-reset",
+  "title": "A second factor was reset or removed in Okta",
+  "why": "resetting somebody's factors is the step before enrolling one's own",
+  "blind": "a factor replaced through the person's own self-service enrolment",
+  "sources": [
+    "okta/system"
+  ],
+  "severity": 4,
+  "when": {
+    "match": {
+      "field": "raw.eventType",
+      "op": "equals",
+      "values": [
+        "user.mfa.factor.reset_all",
+        "user.mfa.factor.deactivate"
+      ]
+    }
+  },
+  "technique": [
+    "T1556"
+  ],
+  "fixtures": [
+    {
+      "name": "every factor reset",
+      "match": true,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "user.mfa.factor.reset_all",
+        "raw": {
+          "eventType": "user.mfa.factor.reset_all",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "one factor removed",
+      "match": true,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "user.mfa.factor.deactivate",
+        "raw": {
+          "eventType": "user.mfa.factor.deactivate",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "a factor enrolled",
+      "match": false,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "user.mfa.factor.activate",
+        "raw": {
+          "eventType": "user.mfa.factor.activate",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "an ordinary sign-in",
+      "match": false,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "User login to Okta",
+        "raw": {
+          "eventType": "user.session.start",
+          "person": "dana@acme.com"
+        }
+      }
+    }
+  ]
+}
