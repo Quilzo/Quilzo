@@ -121,6 +121,19 @@ var Purposes = []Purpose{
 			"is the usual arrangement here",
 	},
 	{
+		Name: "mail",
+		What: "sending mail through the configured relay: notices to " +
+			"customers and reminders to staff",
+		Without: "no mail is sent. Notices wait in the outbox, and " +
+			"reminders are not sent by mail",
+	},
+	{
+		Name: "slack",
+		What: "sending reminders to people as direct messages from a " +
+			"Slack app, through slack.com only",
+		Without: "reminders are not sent in Slack",
+	},
+	{
 		Name:    "telemetry",
 		What:    "exporting traces and metrics to an OTLP collector",
 		Without: "nothing is exported. A collector on loopback still receives",

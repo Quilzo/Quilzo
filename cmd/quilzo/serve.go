@@ -12,6 +12,7 @@ import (
 	"github.com/quilzo/quilzo/internal/estate"
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/logd"
+	"github.com/quilzo/quilzo/internal/remind"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/webauthn"
 	"net/http"
@@ -256,6 +257,25 @@ func cmdServe(root string, args []string) error {
 			return buildEstate(root, now)
 		},
 		History: func() ([]estate.Summary, error) { return loadHistory(root) },
+	}
+	srv.Reminders = &admin.Reminders{
+		Preview: func(now time.Time) (remind.Config, []remind.Message,
+			[]remind.Held, map[remind.Channel]string, error) {
+			c, msgs, held, err := remindPlan(root, now)
+			if err != nil {
+				return c, nil, nil, nil, err
+			}
+			_, missing := remindSenders(root, c)
+			return c, msgs, held, missing, nil
+		},
+		Ledger: func() ([]remind.Sent, error) { return loadLedger(root) },
+		Enable: func(on bool, by string) error {
+			// Signed in to the admin: a person, verified.
+			return setRemindEnabled(root, on, by, audit.KindHuman)
+		},
+		Send: func(now time.Time, by string) (int, int, error) {
+			return remindSendNow(root, now, by, audit.KindHuman)
+		},
 	}
 	srv.Assistants = assistantsCapability(root)
 	srv.Models = gatewayCapability(root)

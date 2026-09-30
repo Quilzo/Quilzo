@@ -399,6 +399,11 @@ var coverage = map[string]surfaces{
 			"through list_findings instead",
 	},
 
+	"remind": {GUI: "/workforce/reminders",
+		NoMCP: "it sends a message to every employee with something " +
+			"outstanding, and to their managers; an agent able to do that " +
+			"can send whatever it was talked into to the whole company"},
+
 	// Reconciling people and devices across systems, from a file of
 	// normalised identities.
 	"workforce": {

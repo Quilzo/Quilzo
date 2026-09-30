@@ -1911,6 +1911,8 @@ table.queue td:nth-child(5), table.queue td:nth-child(6) {
   background: var(--surface-container-high); font: var(--label-md); }
 .wf-back { margin: 0 0 .25rem; font: var(--label-md); }
 .wf-reasons { margin-top: .75rem; }
+.wf-list { margin: 0; padding-inline-start: 1.1rem; }
+.stats-row > div.good { border-color: var(--viz-good); }
 .wf-how { margin: 2rem 0 0; }
 .wf-how summary { cursor: pointer; font-weight: 600; }
 

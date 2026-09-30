@@ -23,7 +23,8 @@
     </select></label>
   <button type="submit">Apply</button>
   {{if .Filtered}}<a href="/workforce">Clear</a>{{end}}
-  <a class="wf-aside" href="/workforce/devices">Machines</a>
+  <span class="wf-aside"><a href="/workforce/devices">Machines</a> ·
+    <a href="/workforce/reminders">Reminders</a></span>
 </form>
 
 <section class="wf-kpis" aria-label="Summary">

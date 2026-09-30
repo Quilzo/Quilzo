@@ -264,6 +264,11 @@ estate
   quilzo estate build                      put where the tools disagree in the findings register
   quilzo estate scores [--limit N]         each person's risk and the reasons for it (admins)
 
+reminders
+  quilzo remind preview                    who would be told what, now, and who is held back
+  quilzo remind enable | disable           allow reminders to be sent, or stop them
+  quilzo remind send                       send what is due, inside the configured hours
+
 workforce
   quilzo workforce coverage [FILE]         did the join work, and what did not
   quilzo workforce propose [FILE]          matches to confirm, and what would make each wrong
@@ -740,6 +745,8 @@ func main() {
 		err = cmdNotify(root, cmdArgs)
 	case "estate":
 		err = cmdEstate(root, cmdArgs)
+	case "remind":
+		err = cmdRemind(root, cmdArgs)
 	case "workforce":
 		err = cmdWorkforce(root, cmdArgs)
 	case "connect":

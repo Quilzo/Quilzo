@@ -207,6 +207,32 @@ func (m Mailer) Send(n Notice, d Delivery) error {
 	return m.deliver(d.Address, body)
 }
 
+// SendPlain delivers a message that is not a notice — a reminder — to one
+// address, under every rule a notice gets: TLS required, credentials only
+// after it, exactly one recipient, and headers checked for injection. No
+// unsubscribe header: a reminder programme has its own settings, and a
+// one-click unsubscribe on a security task is an offer this is not making.
+func (m Mailer) SendPlain(to, subject, body string) error {
+	if strings.TrimSpace(m.From) == "" || strings.TrimSpace(to) == "" {
+		return fmt.Errorf("mail needs a From and a To address")
+	}
+	raw := make([]byte, 12)
+	if _, err := rand.Read(raw); err != nil {
+		return err
+	}
+	domain := "localhost"
+	if _, d, ok := strings.Cut(m.From, "@"); ok && d != "" {
+		domain = d
+	}
+	msg := Message{From: m.From, To: to, Subject: subject, Body: body,
+		Date: m.now(), ID: hex.EncodeToString(raw) + "@" + domain}
+	b, err := msg.Bytes()
+	if err != nil {
+		return err
+	}
+	return m.deliver(to, b)
+}
+
 func (m Mailer) deliver(to string, body []byte) error {
 	host, port, err := net.SplitHostPort(m.Host)
 	if err != nil {

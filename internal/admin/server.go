@@ -181,6 +181,9 @@ type Server struct {
 	// people and machines, joined and scored.
 	Workforce *Workforce
 
+	// Reminders tells people what the estate says they still have to do.
+	Reminders *Reminders
+
 	// Events is the telemetry store. Separate from Running because one is
 	// about whether collection is working and the other is what was
 	// collected, and a person opens them at different moments.
@@ -980,6 +983,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/workforce", s.handleWorkforce)
 	mux.HandleFunc("/workforce/person/", s.handleWorkforcePerson)
 	mux.HandleFunc("/workforce/devices", s.handleWorkforceDevices)
+	mux.HandleFunc("/workforce/reminders", s.handleReminders)
+	mux.HandleFunc("/workforce/reminders/act", s.handleRemindersAct)
 	mux.HandleFunc("/models", s.handleModels)
 	mux.HandleFunc("/analytics", s.handleAnalytics)
 	mux.HandleFunc("/experiments", s.handleExperiments)

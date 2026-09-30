@@ -378,7 +378,10 @@ var commandNeeds = map[string]need{
 	"estate":       {action: auth.ActGrant},
 	"estate build": {action: auth.ActEditDraft},
 	"estate show":  {action: auth.ActView},
-	"connect add":  {action: auth.ActPublish},
+	// Reminders name people and what they have not done, and send messages
+	// to every employee: an administrator's, all of it.
+	"remind":      {action: auth.ActGrant},
+	"connect add": {action: auth.ActPublish},
 
 	"workforce":          {action: auth.ActPublish},
 	"workforce coverage": {action: auth.ActView},
