@@ -41,6 +41,69 @@ type Exposure struct {
 	Assessed  Assessment `json:"assessed,omitzero"`
 	// Silenced is whether an assessment takes this out of the queue now.
 	Silenced bool `json:"silenced,omitempty"`
+	// Reach is what reading the asset's source established about this
+	// advisory's symbols, when somebody has had it read.
+	Reach *Reach `json:"reach,omitempty"`
+}
+
+// Reach is one advisory's symbols looked for in one asset's source.
+//
+// Per advisory and per asset, which is the only grain at which it is true:
+// a library is not "reachable", one function of it is, from one codebase.
+type Reach struct {
+	Advisory string `json:"advisory"`
+	// Component is ecosystem:name, and Where the asset, as issuer:value.
+	Component string `json:"component"`
+	Where     string `json:"where"`
+	// Referenced is whether the source names any affected symbol.
+	Referenced bool `json:"referenced"`
+	// Symbols is how many the advisory named; Found the ones mentioned and
+	// Files where, so somebody can go and look.
+	Symbols int       `json:"symbols"`
+	Found   []string  `json:"found,omitempty"`
+	Files   []string  `json:"files,omitempty"`
+	At      time.Time `json:"at"`
+}
+
+// Says puts a reach result in a sentence, with its limit attached: what was
+// read is this asset's own source, and what was not is everything it
+// depends on.
+func (r Reach) Says() string {
+	if r.Referenced {
+		s := "this asset's source mentions " + strings.Join(r.Found, ", ")
+		if len(r.Files) > 0 {
+			s += " (in " + strings.Join(r.Files, ", ") + ")"
+		}
+		return s
+	}
+	return fmt.Sprintf("this asset's own source never names the %d "+
+		"affected symbol(s); its dependencies were not read", r.Symbols)
+}
+
+// ApplyReach attaches what was established about each exposure and ranks
+// again. A result for an asset applies to that asset only.
+func ApplyReach(in []Exposure, results []Reach, now time.Time) []Exposure {
+	if len(results) == 0 {
+		return in
+	}
+	by := map[string]*Reach{}
+	for i := range results {
+		r := &results[i]
+		by[r.Advisory+"\x00"+r.Component+"\x00"+r.Where] = r
+	}
+	out := append([]Exposure(nil), in...)
+	for i := range out {
+		e := &out[i]
+		r, ok := by[e.Advisory.ID+"\x00"+e.Component.Key()+"\x00"+
+			e.Component.Where.String()]
+		if !ok {
+			continue
+		}
+		e.Reach = r
+		reached := r.Referenced
+		e.Component.Reachable = &reached
+	}
+	return Rank(out, now)
 }
 
 // Fixable reports whether there is a version to move to.
@@ -123,6 +186,10 @@ func (e Exposure) Terms(now time.Time) []Term {
 
 	// What this deployment knows about its own code, which no feed knows.
 	switch {
+	case e.Reach != nil && e.Reach.Referenced:
+		out = append(out, Term{"Reachability", 120, e.Reach.Says()})
+	case e.Reach != nil:
+		out = append(out, Term{"Reachability", 0, e.Reach.Says()})
 	case e.Component.Reachable != nil && *e.Component.Reachable:
 		out = append(out, Term{"Reachability", 120,
 			"the vulnerable code is reachable here"})

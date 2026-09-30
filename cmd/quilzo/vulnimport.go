@@ -143,6 +143,11 @@ func vulnImport(root string, args []string) error {
 		inventory = append(kept, parts...)
 		rep.Components, rep.Unplaced = len(parts), unplaced
 		invChanged = true
+		// A new bill is new code. What reading the old code established
+		// is not carried over to it.
+		if err := dropReach(root, asset.String()); err != nil {
+			return err
+		}
 	}
 
 	installed := map[string]bool{}
@@ -710,6 +715,16 @@ func mergeAdvisory(into, from vuln.Advisory) vuln.Advisory {
 		if !seen[r] {
 			seen[r] = true
 			into.Affects = append(into.Affects, r)
+		}
+	}
+	for _, im := range from.Imports {
+		dup := false
+		for _, have := range into.Imports {
+			dup = dup || (have.Path == im.Path && have.Package == im.Package &&
+				strings.Join(have.Symbols, ",") == strings.Join(im.Symbols, ","))
+		}
+		if !dup {
+			into.Imports = append(into.Imports, im)
 		}
 	}
 	names := map[string]bool{strings.ToUpper(into.ID): true}

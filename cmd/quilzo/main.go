@@ -246,6 +246,7 @@ assurance
 vulnerabilities
   quilzo vuln load [--advisories F] [--inventory F]   put the lists in the store, checked
   quilzo vuln import [--bom F --where A] [--osv P] [--kev F] [--epss F]   from CycloneDX, OSV, CISA and EPSS files
+  quilzo vuln reach --source DIR --where A  whether an asset's source names the vulnerable symbols
   quilzo vuln queue [INVENTORY]            what to work on, not sorted by severity
   quilzo vuln plan                         the smallest upgrades that clear the most
   quilzo vuln accept CVE PKG --owner W --until DATE --because "…"   leave it, until a day

@@ -56,6 +56,8 @@ type vulnView struct {
 	// Matched is every exposure, ranked, including what is decided away.
 	Matched []vuln.Exposure
 	History []vuln.Tally
+	// Reach is what reading source established, per advisory and asset.
+	Reach []vuln.Reach
 	// Loaded is when each file was last replaced; zero when never.
 	AdvisoriesAt, InventoryAt time.Time
 }
@@ -99,7 +101,11 @@ func loadVulnView(root string, now time.Time) (vulnView, error) {
 	}
 	v.AdvisoriesAt = modTime(storedAdvisories(root))
 	v.InventoryAt = modTime(storedInventory(root))
-	v.Matched = vuln.Match(v.Advisories, v.Inventory, v.Assessments, now)
+	if v.Reach, err = loadReach(root); err != nil {
+		return v, err
+	}
+	v.Matched = vuln.ApplyReach(vuln.Match(v.Advisories, v.Inventory,
+		v.Assessments, now), v.Reach, now)
 	return v, nil
 }
 

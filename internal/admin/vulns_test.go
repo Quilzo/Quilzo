@@ -246,3 +246,40 @@ func TestAnUnloadedOrStaleStoreIsNotShownAsClean(t *testing.T) {
 		t.Error("a month-old advisory list was not called out")
 	}
 }
+
+// What reading the source established is shown with its limit, and offered
+// as grounds for a decision rather than made into one.
+func TestAReachResultIsShownAsGroundsAndNotAsAVerdict(t *testing.T) {
+	srv, token := setup(t)
+	wireVulns(srv)
+	load := srv.Vulns.Load
+	srv.Vulns.Load = func(now time.Time) (VulnView, error) {
+		v, err := load(now)
+		v.Matched = vuln.ApplyReach(v.Matched, []vuln.Reach{
+			{Advisory: "CVE-2026-1001", Component: "npm:left-pad",
+				Where: "mdm:LAPTOP-1", Symbols: 2},
+			{Advisory: "CVE-2026-1003", Component: "npm:left-pad",
+				Where: "mdm:LAPTOP-1", Referenced: true, Symbols: 1,
+				Found: []string{"leftpad.Pad"}, Files: []string{"main.go"}},
+		}, now)
+		return v, err
+	}
+	body := get(t, srv, "/security/vuln/CVE-2026-1001", token).Body.String()
+	whole(t, body)
+	for _, want := range []string{"not named in its source",
+		"its dependencies were not read", "In 1 open place(s)",
+		"which was not checked"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page lacks %q", want)
+		}
+	}
+	if !strings.Contains(body, ">open<") {
+		t.Error("a place left the queue on a reading of its source")
+	}
+	used := get(t, srv, "/security/vuln/CVE-2026-1003", token).Body.String()
+	if !strings.Contains(used, "leftpad.Pad") || !strings.Contains(used, "main.go") ||
+		strings.Contains(used, "open place(s) the asset") {
+		t.Error("a symbol the source uses is not shown as used, or was " +
+			"offered as grounds for dismissal")
+	}
+}

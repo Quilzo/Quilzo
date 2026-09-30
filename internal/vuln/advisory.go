@@ -117,6 +117,20 @@ type Advisory struct {
 	// that is not affected, by ecosystem and package.
 	Affects []Range           `json:"affects,omitempty"`
 	FixedIn map[string]string `json:"fixed_in,omitempty"`
+
+	// Imports are the affected symbols, where the database names them. Most
+	// do not: it is what makes "is the vulnerable code used here" a
+	// question with an answer, and only for the ecosystems that carry it.
+	Imports []Import `json:"imports,omitempty"`
+}
+
+// Import is the affected functions in one importable path of a package.
+// No symbols means the whole path is affected.
+type Import struct {
+	Ecosystem string   `json:"ecosystem"`
+	Package   string   `json:"package"`
+	Path      string   `json:"path"`
+	Symbols   []string `json:"symbols,omitempty"`
 }
 
 // Range is one package this advisory applies to.

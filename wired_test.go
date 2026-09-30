@@ -70,15 +70,7 @@ func TestEveryPackageIsReachedBySomething(t *testing.T) {
 // A registry rather than a rule, the same shape as cmd/quilzo's coverage
 // table: a pattern that excuses one package excuses the next one of that
 // shape, including the one that was an oversight.
-var notImported = map[string]string{
-	// Waiting to be wired, not to be deleted. It needs the affected-symbol
-	// list from OSV's ecosystem_specific.imports, which internal/sca does not
-	// yet read, and without that every advisory would come back Unanalysed.
-	// Remove this row when sca feeds it and vuln turns NotReferenced into a
-	// VEX statement.
-	"internal/reach": "waiting for internal/sca to read affected symbols " +
-		"from OSV, so there is something to look for",
-}
+var notImported = map[string]string{}
 
 // importGraph returns which packages are imported from outside themselves, and
 // every package in the tree.

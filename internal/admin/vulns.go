@@ -381,8 +381,11 @@ func (s *Server) handleVuln(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	type place struct {
-		Where, Version, Reach, State, Tone, Fix string
+		Where, Version, Reach, ReachNote, State, Tone, Fix string
 	}
+	// Open places whose own source does not name the vulnerable symbols:
+	// grounds for a decision, which is still a person's to make.
+	unnamed := 0
 	var places []place
 	packages := map[string]bool{}
 	var worst *vuln.Exposure
@@ -395,6 +398,15 @@ func (s *Server) handleVuln(w http.ResponseWriter, r *http.Request) {
 			pl.Reach = "not reachable"
 			if *e.Component.Reachable {
 				pl.Reach = "reachable"
+			}
+		}
+		if e.Reach != nil {
+			pl.Reach, pl.ReachNote = "named in its source", e.Reach.Says()
+			if !e.Reach.Referenced {
+				pl.Reach = "not named in its source"
+				if !e.Silenced {
+					unnamed++
+				}
 			}
 		}
 		if fix, ok := e.Fixable(); ok {
@@ -410,6 +422,7 @@ func (s *Server) handleVuln(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data["Places"], data["PlaceCount"] = places, len(mine)
+	data["Unnamed"] = unnamed
 	if worst != nil {
 		type term struct {
 			vuln.Term
