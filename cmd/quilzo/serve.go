@@ -36,6 +36,7 @@ import (
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/gate"
 	"github.com/quilzo/quilzo/internal/i18n"
+	"github.com/quilzo/quilzo/internal/incident"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
@@ -310,6 +311,29 @@ func cmdServe(root string, args []string) error {
 		// showed, so it is refused if the store does not know it.
 		Assess: func(a vuln.Assessment) error {
 			return recordAssessment(root, a, true)
+		},
+	}
+	srv.Cases = &admin.Cases{
+		List: func() ([]*incident.Incident, error) { return listIncidents(root) },
+		Get: func(id string) (*incident.Incident, error) {
+			return loadIncident(root, id)
+		},
+		Regimes: func() []string { return loadRegimes(root) },
+		// Signed in to the admin: a person, verified.
+		Declare: func(title string, grade incident.Grade, regimes,
+			findings []string, by string) (string, error) {
+			i, err := declareIncident(root, &Caller{Name: by,
+				Kind: audit.KindHuman, Verified: true}, title, grade, regimes,
+				findings, time.Now().UTC())
+			if err != nil {
+				return "", err
+			}
+			return i.ID, nil
+		},
+		Act: func(id, by string, a incident.Action) error {
+			_, err := actOnIncident(root, id, &Caller{Name: by,
+				Kind: audit.KindHuman, Verified: true}, a, time.Now().UTC())
+			return err
 		},
 	}
 	srv.Reminders = &admin.Reminders{

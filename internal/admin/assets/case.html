@@ -1,0 +1,114 @@
+{{template "head" .}}
+<p class="hint"><a href="/security/cases">Cases</a></p>
+<h1>{{.I.Title}}</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+<p><code>{{.I.ID}}</code> <span class="wf-word {{.GradeTone}}">{{.I.Grade}}</span>
+  <span class="wf-word {{.StateTone}}">{{.I.State}}</span>
+  <span class="hint">declared by {{.I.By}}, {{.Declared}} ({{.Age}})</span></p>
+{{if .NoCommander}}<p class="notice warn"><strong>Nobody is commanding this.</strong> Without one person deciding, several people fix what each of them thinks is wrong.</p>{{end}}
+{{if .Closed}}<p class="notice ok"><strong>Closed.</strong> {{.I.Cause}}</p>
+<ul>{{range .I.Actions}}<li>{{.}}</li>{{end}}</ul>{{end}}
+
+<h2>Decisions that start a clock</h2>
+{{if .NoRegimes}}<p class="notice warn">This incident is under no regime, so
+  nothing here will ever say a notification is due. That is a statement that
+  none of the obligations apply to this organisation, and it was made when
+  the incident was declared.</p>{{else}}
+{{if .Waiting}}<p class="notice warn"><strong>{{.Waiting}} decision(s) nobody has made.</strong>
+  Nothing being due and nobody having decided look the same, and are not.</p>{{end}}
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Decision</th><th scope="col">What it means</th><th scope="col">Starts</th><th scope="col">Made</th></tr></thead>
+  <tbody>{{range .Decisions}}<tr><th scope="row">{{.Trigger}}</th><td>{{.Means}}</td><td>{{.Starts}}</td>
+    <td>{{if .Made}}<span class="wf-word good">made</span><br><span class="hint">{{.When}} by {{.By}}: {{.Why}}</span>
+      {{else if $.Closed}}<span class="hint">never made</span>
+      {{else}}<form method="post" action="/security/cases/act">
+        <input type="hidden" name="do" value="decide"><input type="hidden" name="id" value="{{$.I.ID}}"><input type="hidden" name="trigger" value="{{.Trigger}}">
+        <p><label>Why now <input type="text" name="text" required maxlength="500"></label></p>
+        <p><button type="submit">Record it, as of now</button></p></form>{{end}}</td></tr>{{end}}</tbody>
+</table></div>
+<p class="hint">Once recorded, the time cannot be changed: moving the start
+  of a clock afterwards is the one edit that cannot be innocent.</p>
+
+<h2>Who has to be told</h2>
+<div class="table-wrap"><table class="wf-people">
+  <thead><tr><th scope="col">Obligation</th><th scope="col">Tell</th><th scope="col">Where it stands</th><th scope="col">Due</th><th scope="col"><span class="visually-hidden">Settle</span></th></tr></thead>
+  <tbody>{{range .Clocks}}<tr>
+    <th scope="row">{{.Regime}}{{if .Note}}<br><span class="hint">{{.Note}}</span>{{end}}</th>
+    <td>{{.Who}}: {{.What}}</td>
+    <td><span class="wf-word {{.Tone}}">{{.Word}}</span><br><span class="hint">{{.Detail}}</span></td>
+    <td class="wf-score">{{if .Timed}}{{.DueText}}
+      <svg class="wf-meter" viewBox="0 0 100 8" role="img" aria-label="{{.W}} percent of the time allowed has gone"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.W}}" height="8" rx="4"></rect></svg>{{else}}<span class="hint">{{if .Started}}no deadline{{else}}not running{{end}}</span>{{end}}</td>
+    <td>{{if and .Settle (not $.Closed)}}<details><summary>Settle</summary>
+      <form method="post" action="/security/cases/act">
+        <input type="hidden" name="id" value="{{$.I.ID}}"><input type="hidden" name="regime" value="{{.Regime}}">
+        <p><label>How it was met, or why it does not apply <input type="text" name="text" required maxlength="500"></label></p>
+        <p><button type="submit" name="do" value="discharge">It was met</button>
+          <button type="submit" name="do" value="waive">It does not apply</button></p>
+      </form></details>{{end}}</td>
+  </tr>{{end}}</tbody></table></div>
+<p class="hint">Published headline deadlines, counted from the decision
+  above. Business days skip weekends and not public holidays.</p>
+{{end}}
+
+<h2>Who is doing what</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Role</th><th scope="col">Held by</th>{{if not .Closed}}<th scope="col">Change</th>{{end}}</tr></thead>
+  <tbody>{{range .Roles}}<tr><th scope="row">{{.Role}}</th><td>{{if .Who}}{{.Who}}{{else}}<span class="hint">nobody</span>{{end}}</td>
+    {{if not $.Closed}}<td><form class="inline" method="post" action="/security/cases/act">
+      <input type="hidden" name="do" value="assign"><input type="hidden" name="id" value="{{$.I.ID}}"><input type="hidden" name="role" value="{{.Role}}">
+      <label><span class="visually-hidden">Who takes {{.Role}}</span><input type="text" name="who" required maxlength="120"></label>
+      <button type="submit">Assign</button></form></td>{{end}}</tr>{{end}}</tbody>
+</table></div>
+
+<h2>Findings</h2>
+{{if .Findings}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Finding</th><th scope="col">Severity</th><th scope="col">State</th>{{if not .Closed}}<th scope="col"><span class="visually-hidden">Remove</span></th>{{end}}</tr></thead>
+  <tbody>{{range .Findings}}<tr>
+    <th scope="row">{{if .Gone}}<code>{{.ID}}</code> <span class="hint">no longer in the register</span>{{else}}<a href="/findings/{{.ID}}">{{.Title}}</a>{{end}}</th>
+    <td>{{if .Sev}}<span class="pill {{.Sev}}">{{.Sev}}</span>{{end}}</td><td>{{.State}}</td>
+    {{if not $.Closed}}<td><form method="post" action="/security/cases/act"><input type="hidden" name="do" value="unlink"><input type="hidden" name="id" value="{{$.I.ID}}"><input type="hidden" name="finding" value="{{.ID}}"><button type="submit" class="danger">Remove</button></form></td>{{end}}
+  </tr>{{end}}</tbody></table></div>{{else}}<p>No finding is part of this.</p>{{end}}
+{{if not .Closed}}<form class="inline" method="post" action="/security/cases/act">
+  <input type="hidden" name="do" value="link"><input type="hidden" name="id" value="{{.I.ID}}">
+  <label>Add a finding by its identifier <input type="text" name="finding" required maxlength="200"></label>
+  <button type="submit">Add</button></form>{{end}}
+
+<h2>The record</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">When</th><th scope="col">Who</th><th scope="col">What</th></tr></thead>
+  <tbody>{{range .Timeline}}<tr><th scope="row">{{.When}}</th><td>{{.By}}</td><td>{{.What}}</td></tr>{{end}}</tbody>
+</table></div>
+<p class="hint">In the order it was written, which is not always the order
+  of the times beside it.</p>
+<form method="post" action="/security/cases/act">
+  <input type="hidden" name="do" value="note"><input type="hidden" name="id" value="{{.I.ID}}">
+  <p><label>Add to the record <textarea name="text" rows="2" required maxlength="4000"></textarea></label></p>
+  <p><button type="submit">Note it</button></p>
+</form>
+
+{{if not .Closed}}
+<h2>Ending it</h2>
+<div class="grid2">
+{{if .Watching}}<form method="post" action="/security/cases/act">
+  <h3>It came back</h3>
+  <input type="hidden" name="do" value="reopen"><input type="hidden" name="id" value="{{.I.ID}}">
+  <p><label>What came back <input type="text" name="text" required maxlength="500"></label></p>
+  <p><button type="submit">Open it again</button></p>
+</form>{{else}}<form method="post" action="/security/cases/act">
+  <h3>It looks fixed</h3>
+  <input type="hidden" name="do" value="watch"><input type="hidden" name="id" value="{{.I.ID}}">
+  <p><label>What makes it look fixed <input type="text" name="text" required maxlength="500"></label></p>
+  <p><button type="submit">Watch it</button></p>
+</form>{{end}}
+<form method="post" action="/security/cases/act">
+  <h3>Close it</h3>
+  <input type="hidden" name="do" value="close"><input type="hidden" name="id" value="{{.I.ID}}">
+  <p><label>What was actually wrong <input type="text" name="text" required maxlength="500"></label></p>
+  <p><label>What changes as a result, one to a line <textarea name="actions" rows="3" required maxlength="2000"></textarea></label></p>
+  <p class="hint">Refused while any obligation is neither met nor ruled out.</p>
+  <p><button type="submit">Close</button></p>
+</form>
+</div>
+{{end}}
+{{template "foot" .}}

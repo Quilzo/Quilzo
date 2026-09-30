@@ -19,6 +19,8 @@
 </div>
 {{end}}
 
+<p class="hint"><a href="/security/cases?finding={{.F.ID}}#declare">Declare an incident about this</a>, or add it to one from that incident's page with the identifier <code>{{.F.ID}}</code>.</p>
+
 <dl class="kv">
   <dt>About</dt><dd>{{if .F.Entity.Zero}}<span class="dim">no entity</span>{{else}}<code>{{.F.Entity.String}}</code>{{end}}</dd>
   <dt>Raised by</dt><dd><code>{{.F.Source}}</code></dd>

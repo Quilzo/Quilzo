@@ -110,6 +110,7 @@ var destinations = []destination{
 	// from. Apart from Assurance, which is evidence that the system is right;
 	// this is the list of what is currently wrong.
 	{"findings", "Findings", "/findings", "Security operations", "detection", auth.ActGrant},
+	{"cases", "Cases", "/security/cases", "Security operations", "cases", auth.ActGrant},
 	{"events", "Events", "/security/events", "Security operations", "detection", auth.ActGrant},
 	{"hunt", "Hunt", "/security/hunt", "Security operations", "detection", auth.ActGrant},
 	{"detections", "Detections", "/security/detections", "Security operations", "detection", auth.ActGrant},
@@ -175,8 +176,8 @@ var docSections = map[string]bool{
 	"listings": true, "forms": true, "media": true, "languages": true,
 	"ai": true, "publishing": true, "environments": true, "history": true,
 	"transfer": true, "ipfs": true, "provenance": true, "security": true, "detection": true,
-	"vulnerabilities": true,
-	"logging":         true, "users": true, "auth": true, "integrations": true,
+	"vulnerabilities": true, "cases": true,
+	"logging": true, "users": true, "auth": true, "integrations": true,
 	"settings": true, "api": true, "profile": true, "start": true,
 	"agents": true, "design": true, "workforce": true,
 

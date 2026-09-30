@@ -264,7 +264,11 @@ var commandNeeds = map[string]need{
 
 	// The reporting table, and an incident built for the run. Notifies
 	// nobody: internal/notify is what sends anything.
-	"incident": {action: auth.ActView},
+	// A live incident names what went wrong and who knew when. The table
+	// of deadlines and the worked example name nothing.
+	"incident":        {action: auth.ActGrant},
+	"incident duties": {action: auth.ActView},
+	"incident demo":   {action: auth.ActView},
 
 	// Feed freshness, over mirrors built for the run. Fetches nothing:
 	// internal/fetch is what reaches a network.

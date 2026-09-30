@@ -185,6 +185,12 @@ sharing a screen
   quilzo sarif read results.sarif          import any scanner's findings, and what it left out
   quilzo sca scan --bom sbom.json --osv db.json   which dependencies you can actually fix
   quilzo correlate demo                    detections about several events, and when a window closes
+  quilzo incident declare --title T --grade sev2 [--finding ID]   open one, under the regimes set
+  quilzo incident list | show ID           what is open, and each one's clocks and record
+  quilzo incident decide ID aware --because "…"   the decision that starts a clock
+  quilzo incident discharge|waive ID "REGIME" --because "…"   met, or ruled out
+  quilzo incident note|assign|link|watch|reopen|close ID …   the rest of the record
+  quilzo incident regimes [eu nis2 …]      which obligations a new incident starts under
   quilzo incident duties                   who has to be told, how soon, and what starts the clock
   quilzo incident demo                     an incident, its several clocks, and closing it
   quilzo feed status                       what the scanner is working from, and how old it is
@@ -816,7 +822,7 @@ func main() {
 	case "correlate":
 		err = cmdCorrelate(cmdArgs)
 	case "incident":
-		err = cmdIncident(cmdArgs)
+		err = cmdIncident(root, cmdArgs)
 	case "feed":
 		err = cmdFeed(cmdArgs)
 	case "source":

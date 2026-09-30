@@ -6,6 +6,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/incident"
 	"github.com/quilzo/quilzo/internal/vuln"
 	"strings"
 	"time"
@@ -126,6 +127,84 @@ func registerSecurityOps(srv *mcp.Server, root string, caller *Caller) {
 		}
 		b, err := json.Marshal(map[string]any{"rules": rules,
 			"proposals": t.Proposals, "suppressions": t.Suppressions})
+		return string(b), err
+	})
+
+	srv.Register(mcp.Operation{
+		Name: "incident_status", NeedsRole: "admin",
+		Summary: "open incidents: which notification clocks are running, " +
+			"which are late, and which nobody has started",
+		Detail: "Per incident that is not closed: its grade and state, " +
+			"the roles nobody holds, each obligation with its deadline " +
+			"and what is left, and the decisions that would start a clock " +
+			"and have not been made. The record people wrote is not " +
+			"returned. Read-only: declaring an incident, starting a " +
+			"clock and settling an obligation are a person's.",
+		Keywords: []string{"incident", "breach", "notification", "deadline",
+			"gdpr", "nis2", "dora", "case"},
+	}, func(a map[string]any) (any, error) {
+		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
+		all, err := listIncidents(root)
+		if err != nil {
+			return nil, err
+		}
+		now := time.Now().UTC()
+		type duty struct {
+			Regime  string `json:"regime"`
+			Needs   string `json:"needs"`
+			Started bool   `json:"started"`
+			Due     string `json:"due,omitempty"`
+			Says    string `json:"says"`
+			Late    bool   `json:"late,omitempty"`
+		}
+		type one struct {
+			ID       string   `json:"id"`
+			Title    string   `json:"title"`
+			Grade    string   `json:"grade"`
+			State    string   `json:"state"`
+			Declared string   `json:"declared"`
+			Regimes  []string `json:"regimes"`
+			Unfilled []string `json:"roles_unfilled,omitempty"`
+			Duties   []duty   `json:"duties"`
+			Findings int      `json:"findings"`
+		}
+		out := []one{}
+		closed := 0
+		for _, i := range all {
+			if i.State == incident.Closed {
+				closed++
+				continue
+			}
+			o := one{ID: i.ID, Title: i.Title, Grade: string(i.Grade),
+				State: string(i.State), Regimes: i.Regimes,
+				Declared: i.Declared.Format(time.RFC3339),
+				Findings: len(i.Findings), Duties: []duty{}}
+			for _, r := range i.Unfilled() {
+				o.Unfilled = append(o.Unfilled, string(r))
+			}
+			for _, d := range i.Duties(now) {
+				row := duty{Regime: d.Regime, Needs: string(d.Needs),
+					Started: d.Started, Late: d.Late()}
+				switch {
+				case d.Done:
+					row.Says = "done"
+				case d.Waived:
+					row.Says = "ruled out"
+				case !d.Started:
+					row.Says = "no clock: nobody has recorded " + string(d.Needs)
+				default:
+					row.Says = d.Says()
+				}
+				if !d.Due.IsZero() {
+					row.Due = d.Due.Format(time.RFC3339)
+				}
+				o.Duties = append(o.Duties, row)
+			}
+			out = append(out, o)
+		}
+		b, err := json.Marshal(map[string]any{"open": out, "closed": closed})
 		return string(b), err
 	})
 

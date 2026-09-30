@@ -189,6 +189,8 @@ type Server struct {
 	Detections *Detections
 	// Vulns is the vulnerability workbench. Nil means none was wired.
 	Vulns *Vulns
+	// Cases is the incident store. Nil means none was wired.
+	Cases *Cases
 
 	// Events is the telemetry store. Separate from Running because one is
 	// about whether collection is working and the other is what was
@@ -987,6 +989,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/events", s.handleEventsScreen)
 	mux.HandleFunc("/findings", s.handleFindings)
 	mux.HandleFunc("/security/hunt", s.handleHunt)
+	mux.HandleFunc("/security/cases", s.handleCases)
+	mux.HandleFunc("/security/cases/act", s.handleCasesAct)
+	mux.HandleFunc("/security/case/", s.handleCase)
 	mux.HandleFunc("/security/vulns", s.handleVulns)
 	mux.HandleFunc("/security/vulns/act", s.handleVulnsAct)
 	mux.HandleFunc("/security/vuln/", s.handleVuln)

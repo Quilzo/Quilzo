@@ -197,6 +197,9 @@ type Incident struct {
 	Pages []Page  `json:"pages,omitempty"`
 	Log   []Entry `json:"log,omitempty"`
 
+	// Findings are the findings this gathers, by identifier.
+	Findings []string `json:"findings,omitempty"`
+
 	// Cause and Actions are required to close.
 	Cause   string   `json:"cause,omitempty"`
 	Actions []string `json:"actions,omitempty"`

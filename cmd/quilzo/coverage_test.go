@@ -222,14 +222,9 @@ var coverage = map[string]surfaces{
 	},
 
 	// Who has to be told about an incident, and what starts the clock.
-	"incident": {
-		Why: "it prints the reporting table and runs an incident built " +
-			"for the run; a live incident's screen arrives with the " +
-			"response, and what is worth seeing here is a table of " +
-			"deadlines and what starts each one",
-		NoMCP: "these are the decisions that start regulatory clocks, " +
-			"and a model recording one would be deciding on somebody's " +
-			"behalf when they became aware",
+	"incident": {GUI: "/security/cases", MCP: []string{"incident_status"},
+		Why: "an agent reads which clocks are running and which nobody " +
+			"has started; the decisions that start them are a person's",
 	},
 
 	// How old the databases a scanner compares against are.
