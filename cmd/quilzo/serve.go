@@ -164,6 +164,11 @@ func cmdServe(root string, args []string) error {
 	// The agent declarations, read-only. This process owns the file; the admin
 	// shows what is in it and does not write manifests, because declaring one
 	// is an administrative act better done where a diff is in front of you.
+	signedIn := func(by string) *Caller {
+		// Signed in to the admin as an administrator: a person, verified.
+		return &Caller{Name: by, Kind: audit.KindHuman, Verified: true,
+			Role: auth.RoleAdmin}
+	}
 	srv.Agents = &admin.Agents{
 		Load: func() (map[string]agent.Manifest, error) {
 			set, err := loadAgents(root)
@@ -171,6 +176,29 @@ func cmdServe(root string, args []string) error {
 				return nil, err
 			}
 			return set.Agents, nil
+		},
+		Known: func() []string {
+			var out []string
+			for c := range knownCapabilities(root) {
+				out = append(out, c)
+			}
+			sort.Strings(out)
+			return out
+		},
+		Save: func(m agent.Manifest, isNew bool, by string) error {
+			return declareAgent(root, m, isNew, signedIn(by))
+		},
+		Remove: func(name, by string) error {
+			return withdrawAgent(root, name, signedIn(by))
+		},
+		Run: func(name, goal string, model bool, by string) (string, error) {
+			return runAgentOnce(root, name, goal, model, signedIn(by))
+		},
+		Runs: func(name string) ([]agent.Record, error) {
+			return listAgentRuns(root, name, 0)
+		},
+		RunGet: func(id string) (agent.Record, error) {
+			return loadAgentRun(root, id)
 		},
 	}
 

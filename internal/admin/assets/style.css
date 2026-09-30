@@ -1961,3 +1961,27 @@ table.queue td:nth-child(5), table.queue td:nth-child(6) {
 @media (forced-colors: active) {
   .dt-bar .real, .dt-bar .false, .dt-bar .benign { fill: CanvasText; }
 }
+
+/* The agent map: a declaration drawn. Reads on the left, the agent in the
+   middle, what it may do on the right. A write is the only thing in a
+   status colour, because it is the only thing on the map that is a risk. */
+.agmap { width: 100%; max-width: 760px; height: auto; display: block; }
+.agmap .box { fill: var(--surface-container-low); stroke: var(--outline-variant); stroke-width: 1; }
+.agmap .box.core { fill: var(--primary-container); stroke: var(--primary); stroke-width: 1.5; }
+.agmap .box.write { stroke: var(--viz-critical); stroke-width: 1.5; }
+.agmap .box.none { stroke-dasharray: 4 3; }
+.agmap .box.gate { fill: var(--warning-container); stroke: var(--viz-warning); }
+.agmap .box.cap, .agmap .box.read, .agmap .box.tool, .agmap .box.deleg { stroke: var(--outline-variant); }
+.agmap .edge { stroke: var(--outline-variant); stroke-width: 1; }
+.agmap .edge.write { stroke: var(--viz-critical); }
+.agmap .head { fill: var(--on-surface-variant); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.agmap .label { fill: var(--on-surface); font-size: 13px; font-weight: 600; }
+.agmap .label.core { font-size: 15px; }
+.agmap .sub { fill: var(--on-surface-variant); font-size: 11px; }
+.agmap .gatelabel { fill: var(--on-warning-container); font-size: 11px; font-weight: 600; }
+textarea.code { font-family: var(--mono); font-size: 0.85rem; width: 100%; }
+
+/* The capabilities an agent may hold: many short names, so in columns. */
+fieldset.caps-set { max-width: 56rem; }
+.caps { columns: 15rem; column-gap: 1.5rem; }
+.caps p { break-inside: avoid; margin: 0 0 0.35rem; }

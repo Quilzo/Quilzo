@@ -337,217 +337,22 @@ func agentCheckRun(root string, args []string) error {
 		goal = args[1]
 	}
 
-	set, err := loadAgents(root)
-	if err != nil {
-		return err
+	out, runErr := executeAgent(context.Background(), root, name, goal,
+		*withModel, resolveCaller(root, ""))
+	if out.Manifest.Name == "" {
+		return runErr
 	}
-	m, ok := set.Agents[name]
-	if !ok {
-		return fmt.Errorf("no agent called %q; `quilzo agent list`", name)
-	}
-	// Re-validated against this build before it runs. A manifest that was
-	// written when an operation existed and no longer does describes a
-	// permission nothing grants, and running it would report a clean result
-	// for an agent that cannot work.
-	if err := m.Validate(knownCapabilities(root)); err != nil {
-		return err
-	}
-
-	s, err := open(root)
-	if err != nil {
-		return err
-	}
-
-	// Bounded by whoever started it, before the session is built.
-	//
-	// Not a check inside the run: a manifest narrowed here is narrower in
-	// every later decision, including the ones nobody thought to guard. The
-	// alternative — asking "may this caller do that?" at each step — is the
-	// arrangement that put the content-type gate in the CLI and not in the
-	// API. See agentnarrow.go.
-	caller := resolveCaller(root, "")
-	m = narrowedBy(m, caller)
-	if len(m.Capabilities) == 0 {
-		return fmt.Errorf(
-			"%s holds nothing once bounded by this token: the manifest and "+
-				"the token you are using have no capability in common", name)
-	}
-	sess := agent.NewSession(m, nil)
-
-	// Every capability the manifest holds, tried once, in a fixed order.
-	//
-	// The point is to find out which of them this store actually answers, so
-	// the plan is the manifest rather than anything chosen at run time — and
-	// a capability that is refused here is refused for a reason the operator
-	// can read rather than one a model stumbled into.
-	plan := make([]agent.Action, 0, len(m.Capabilities)+len(m.Tools)+1)
-	for _, c := range m.Capabilities {
-		plan = append(plan, agent.Action{Op: c})
-	}
-	// And the tools, which the walk ignored.
-	//
-	// "Everything that decides what an agent may do is in the manifest" —
-	// and the tool list is half of it. A manifest declaring a tool was
-	// checked for its capabilities and never for whether the tool resolves:
-	// whether this install has an integration offering it, whether that
-	// integration is enabled, and whether it points where the manifest says.
-	//
-	// All three are answerable without a model and without reaching the far
-	// side, which is what this mode is for. An operator who has just declared
-	// a tool wants to know it is wired before an agent tries to use it in
-	// front of somebody.
-	for _, t := range m.Tools {
-		plan = append(plan, agent.Action{Tool: t.Name})
-	}
-	// And the delegates, for the same reason.
-	//
-	// Whether each named agent exists in this install, validates against this
-	// build, and is narrower than its supervisor are all answerable without a
-	// model — and all three are ways a pipeline is broken before anybody runs
-	// it. A supervisor that walks its own manifest and never tries to hand
-	// anything on has checked the half of itself that does not matter.
-	for _, name := range m.Delegates {
-		plan = append(plan, agent.Action{
-			Delegate: name,
-			Say:      "checking that this stage is wired",
-		})
-	}
-	plan = append(plan, agent.Action{Say: "checked"})
-
-	var delegateModel assist.Model
-
-	i := 0
-	// The scripted walk: the plan is the manifest, so nothing a model says can
-	// change it. This is the default, and the only mode that costs nothing.
-	decide := func(context.Context, string, []agent.Observation) (agent.Action, error) {
-		if i >= len(plan) {
-			return agent.Action{Say: "checked"}, nil
-		}
-		a := plan[i]
-		i++
-		return a, nil
-	}
-	if *withModel {
-		model, merr := assist.NewHTTPModel()
-		if merr != nil {
-			return fmt.Errorf(
-				"--model needs a model endpoint configured: %w\n"+
-					"  without one, `quilzo agent run %s` walks the manifest "+
-					"and needs nothing", merr, name)
-		}
+	m, trace, rc := out.Manifest, out.Trace, out.Receipt
+	if out.Model != "" {
 		fmt.Printf("  %sdeciding with %s; the manifest is still the only "+
-			"vocabulary%s\n", dim, model.Name(), reset)
-		// Handed to delegates as well. A supervisor deciding with a model
-		// and children walking their manifests would be a pipeline where the
-		// stages that do the work cannot choose anything.
-		delegateModel = model
-		decide = agentmodel.Decider{
-			Model:   model,
-			Session: sess,
-			// Reported by the provider, not measured here. Fed to the session
-			// so the budget counts what the run actually cost.
-			Tokens: sess.Tokens,
-		}.Decide()
+			"vocabulary%s\n", dim, out.Model, reset)
 	}
-
-	runner := agent.Runner{
-		Decide: decide,
-		// Reads and writes both, routed by the same classification the
-		// session gate uses. Wiring only the reader would have made every
-		// granted write report "not implemented", which reads as the agent
-		// behaving correctly rather than as a surface nobody connected.
-		Perform: agentexec.Dispatch(
-			agentexec.Reader{
-				Store: s,
-				// Without these the manifest's type and locale scope is
-				// decoration: Reader treats a nil resolver as "nothing is
-				// typed" and Session.Retrieve reads that as unrestricted.
-				// See agentnarrow.go.
-				Types:  pageTypeOf(root),
-				Locale: pageLocaleOf(s, refOf(m)),
-			},
-			agentexec.Writer{
-				Store: s,
-				// Attributed to the agent. A commit signed with whoever
-				// happened to start the run is a history that lies about who
-				// wrote it, and the review queue reads the author.
-				Author:  "agent/" + m.Name,
-				Gate:    pageGate(root),
-				Propose: proposeCommit(root, s),
-			},
-			// The tool surface, which had no executor at all.
-			//
-			// Every part of it existed — the manifest's host allow-list,
-			// Session.MayCallTool, Integrations.Resolve, and a client that
-			// refuses a tool the far side newly advertises — and Dispatch had
-			// no branch to reach them, so an authorised tool call came back
-			// "not implemented here".
-			//
-			// The same client `quilzo integrations call` uses, so the two
-			// surfaces cannot drift into different ideas of what may be
-			// reached or which credential is presented.
-			agentexec.Tools{
-				Installed: func() (agent.Integrations, error) {
-					set, err := loadIntegrations(root)
-					if err != nil || set == nil {
-						return agent.Integrations{}, err
-					}
-					return *set, nil
-				},
-				Call: newMCPClient(root),
-			},
-			// The delegate surface, which had no executor either.
-			//
-			// Manifest.Delegates was validated, refused on anything that is
-			// not a supervisor, copied out of the supervisor archetype and
-			// published on the agent card as this program's answer to the
-			// governance gap the research calls delegation with
-			// accountability. Nothing read it, so a supervisor's whole
-			// reason for existing did not happen and the card said it did.
-			agentexec.Delegates{
-				Manifest: manifestLoader(root),
-				Run: delegation{
-					root: root, store: s, model: delegateModel,
-					parent: m.Name,
-				},
-			},
-			sess,
-		),
-		Record: func(rc agent.Receipt) {
-			// The outcome, into the log that can prove it was not edited.
-			// Written whatever happened: a run that was refused everything is
-			// exactly the record somebody comes asking about.
-			// The agent is the actor when a model chose the actions. The
-			// watchdog that exists to notice one misbehaving reads the log
-			// filtered to model actors, and every run here was recorded as a
-			// human — so it could not see a single one. See agentactor.go.
-			record(root, actorRecord(caller, "agent.run", outcomeOf(rc), m,
-				delegateModel, rc.Detail()))
-		},
+	if out.TraceError != "" {
+		fmt.Printf("  %straces not sent: %s%s\n", dim, out.TraceError, reset)
 	}
-
-	started := time.Now()
-	trace, runErr := runner.Run(context.Background(), sess, goal)
-	rc := trace.Receipt(sess)
-
-	// Traces, when a collector is configured.
-	//
-	// After Run rather than inside the Record hook, because the hook fires
-	// before the trace exists — and Run returns the trace on every path it can
-	// take, including the ones that ended badly, which are the runs worth
-	// tracing most.
-	//
-	// Fail-soft and loud. A collector that is down must not fail a run that
-	// otherwise worked, and a trace that silently vanished is worse than one
-	// that says it could not be sent.
-	if exp := tracerFor(root); exp != nil {
-		spans, terr := otlp.FromTrace(trace, rc, m, started)
-		if terr == nil {
-			terr = exp.Export(context.Background(), spans)
-		}
-		if terr != nil {
-			fmt.Printf("  %straces not sent: %v%s\n", dim, terr, reset)
-		}
+	if _, serr := saveAgentRun(root, out, goal, *withModel,
+		resolveCaller(root, "").Name); serr != nil {
+		fmt.Printf("  %sthe run was not kept: %v%s\n", dim, serr, reset)
 	}
 
 	fmt.Printf("%s%s%s  %s\n", bold, name, reset, m.Kind)
@@ -705,4 +510,255 @@ func nonBlank(s, fallback string) string {
 		return fallback
 	}
 	return s
+}
+
+// agentOutcome is one run of an agent, as whoever asked for it needs it.
+type agentOutcome struct {
+	Manifest agent.Manifest
+	Trace    agent.Trace
+	Receipt  agent.Receipt
+	Started  time.Time
+	// Model is what chose the actions, empty when the manifest was walked.
+	Model string
+	// TraceError is why the run's trace did not reach a collector.
+	TraceError string
+}
+
+// agentRunModel is the model an agent's run asks: through the gateway when
+// one is declared, so the run is budgeted and recorded like every other
+// caller, and the one configured endpoint otherwise.
+func agentRunModel(root, name string) (assist.Model, string) {
+	gw, _, err := modelGateway(root)
+	if err != nil {
+		return nil, "the model gateway could not be read: " + err.Error()
+	}
+	if gw != nil {
+		return gw.For("agent:" + name), ""
+	}
+	m, err := assist.NewHTTPModel()
+	if err != nil {
+		return nil, err.Error()
+	}
+	return m, ""
+}
+
+// executeAgent runs one declared agent once: from the command line and
+// from the screen alike, so there is one place the manifest is narrowed by
+// the caller, the executors are wired, and the outcome is recorded.
+func executeAgent(ctx context.Context, root, name, goal string,
+	withModel bool, caller *Caller) (agentOutcome, error) {
+
+	var out agentOutcome
+	set, err := loadAgents(root)
+	if err != nil {
+		return out, err
+	}
+	m, ok := set.Agents[name]
+	if !ok {
+		return out, fmt.Errorf("no agent called %q; `quilzo agent list`", name)
+	}
+	// Re-validated against this build before it runs. A manifest that was
+	// written when an operation existed and no longer does describes a
+	// permission nothing grants, and running it would report a clean result
+	// for an agent that cannot work.
+	if err := m.Validate(knownCapabilities(root)); err != nil {
+		return out, err
+	}
+
+	s, err := open(root)
+	if err != nil {
+		return out, err
+	}
+
+	// Bounded by whoever started it, before the session is built.
+	//
+	// Not a check inside the run: a manifest narrowed here is narrower in
+	// every later decision, including the ones nobody thought to guard. The
+	// alternative — asking "may this caller do that?" at each step — is the
+	// arrangement that put the content-type gate in the CLI and not in the
+	// API. See agentnarrow.go.
+	m = narrowedBy(m, caller)
+	if len(m.Capabilities) == 0 {
+		return out, fmt.Errorf(
+			"%s holds nothing once bounded by this token: the manifest and "+
+				"the token you are using have no capability in common", name)
+	}
+	sess := agent.NewSession(m, nil)
+
+	// Every capability the manifest holds, tried once, in a fixed order.
+	//
+	// The point is to find out which of them this store actually answers, so
+	// the plan is the manifest rather than anything chosen at run time — and
+	// a capability that is refused here is refused for a reason the operator
+	// can read rather than one a model stumbled into.
+	plan := make([]agent.Action, 0, len(m.Capabilities)+len(m.Tools)+1)
+	for _, c := range m.Capabilities {
+		plan = append(plan, agent.Action{Op: c})
+	}
+	// And the tools, which the walk ignored.
+	//
+	// "Everything that decides what an agent may do is in the manifest" —
+	// and the tool list is half of it. A manifest declaring a tool was
+	// checked for its capabilities and never for whether the tool resolves:
+	// whether this install has an integration offering it, whether that
+	// integration is enabled, and whether it points where the manifest says.
+	//
+	// All three are answerable without a model and without reaching the far
+	// side, which is what this mode is for. An operator who has just declared
+	// a tool wants to know it is wired before an agent tries to use it in
+	// front of somebody.
+	for _, t := range m.Tools {
+		plan = append(plan, agent.Action{Tool: t.Name})
+	}
+	// And the delegates, for the same reason.
+	//
+	// Whether each named agent exists in this install, validates against this
+	// build, and is narrower than its supervisor are all answerable without a
+	// model — and all three are ways a pipeline is broken before anybody runs
+	// it. A supervisor that walks its own manifest and never tries to hand
+	// anything on has checked the half of itself that does not matter.
+	for _, name := range m.Delegates {
+		plan = append(plan, agent.Action{
+			Delegate: name,
+			Say:      "checking that this stage is wired",
+		})
+	}
+	plan = append(plan, agent.Action{Say: "checked"})
+
+	var delegateModel assist.Model
+
+	i := 0
+	// The scripted walk: the plan is the manifest, so nothing a model says can
+	// change it. This is the default, and the only mode that costs nothing.
+	decide := func(context.Context, string, []agent.Observation) (agent.Action, error) {
+		if i >= len(plan) {
+			return agent.Action{Say: "checked"}, nil
+		}
+		a := plan[i]
+		i++
+		return a, nil
+	}
+	if withModel {
+		model, why := agentRunModel(root, name)
+		if model == nil {
+			return out, fmt.Errorf(
+				"letting a model choose needs a model configured: %s\n"+
+					"  without one, the run walks the manifest and needs "+
+					"nothing", why)
+		}
+		out.Model = model.Name()
+		// Handed to delegates as well. A supervisor deciding with a model
+		// and children walking their manifests would be a pipeline where the
+		// stages that do the work cannot choose anything.
+		delegateModel = model
+		decide = agentmodel.Decider{
+			Model:   model,
+			Session: sess,
+			// Reported by the provider, not measured here. Fed to the session
+			// so the budget counts what the run actually cost.
+			Tokens: sess.Tokens,
+		}.Decide()
+	}
+
+	runner := agent.Runner{
+		Decide: decide,
+		// Reads and writes both, routed by the same classification the
+		// session gate uses. Wiring only the reader would have made every
+		// granted write report "not implemented", which reads as the agent
+		// behaving correctly rather than as a surface nobody connected.
+		Perform: agentexec.Dispatch(
+			agentexec.Reader{
+				Store: s,
+				// Without these the manifest's type and locale scope is
+				// decoration: Reader treats a nil resolver as "nothing is
+				// typed" and Session.Retrieve reads that as unrestricted.
+				// See agentnarrow.go.
+				Types:  pageTypeOf(root),
+				Locale: pageLocaleOf(s, refOf(m)),
+			},
+			agentexec.Writer{
+				Store: s,
+				// Attributed to the agent. A commit signed with whoever
+				// happened to start the run is a history that lies about who
+				// wrote it, and the review queue reads the author.
+				Author:  "agent/" + m.Name,
+				Gate:    pageGate(root),
+				Propose: proposeCommit(root, s),
+			},
+			// The tool surface, which had no executor at all.
+			//
+			// Every part of it existed — the manifest's host allow-list,
+			// Session.MayCallTool, Integrations.Resolve, and a client that
+			// refuses a tool the far side newly advertises — and Dispatch had
+			// no branch to reach them, so an authorised tool call came back
+			// "not implemented here".
+			//
+			// The same client `quilzo integrations call` uses, so the two
+			// surfaces cannot drift into different ideas of what may be
+			// reached or which credential is presented.
+			agentexec.Tools{
+				Installed: func() (agent.Integrations, error) {
+					set, err := loadIntegrations(root)
+					if err != nil || set == nil {
+						return agent.Integrations{}, err
+					}
+					return *set, nil
+				},
+				Call: newMCPClient(root),
+			},
+			// The delegate surface, which had no executor either.
+			//
+			// Manifest.Delegates was validated, refused on anything that is
+			// not a supervisor, copied out of the supervisor archetype and
+			// published on the agent card as this program's answer to the
+			// governance gap the research calls delegation with
+			// accountability. Nothing read it, so a supervisor's whole
+			// reason for existing did not happen and the card said it did.
+			agentexec.Delegates{
+				Manifest: manifestLoader(root),
+				Run: delegation{
+					root: root, store: s, model: delegateModel,
+					parent: m.Name,
+				},
+			},
+			sess,
+		),
+		Record: func(rc agent.Receipt) {
+			// The outcome, into the log that can prove it was not edited.
+			// Written whatever happened: a run that was refused everything is
+			// exactly the record somebody comes asking about.
+			// The agent is the actor when a model chose the actions. The
+			// watchdog that exists to notice one misbehaving reads the log
+			// filtered to model actors, and every run here was recorded as a
+			// human — so it could not see a single one. See agentactor.go.
+			record(root, actorRecord(caller, "agent.run", outcomeOf(rc), m,
+				delegateModel, rc.Detail()))
+		},
+	}
+
+	started := time.Now()
+	trace, runErr := runner.Run(ctx, sess, goal)
+	rc := trace.Receipt(sess)
+	out.Manifest, out.Trace, out.Receipt, out.Started = m, trace, rc, started
+
+	// Traces, when a collector is configured.
+	//
+	// After Run rather than inside the Record hook, because the hook fires
+	// before the trace exists — and Run returns the trace on every path it can
+	// take, including the ones that ended badly, which are the runs worth
+	// tracing most.
+	//
+	// Fail-soft and loud. A collector that is down must not fail a run that
+	// otherwise worked, and a trace that silently vanished is worse than one
+	// that says it could not be sent.
+	if exp := tracerFor(root); exp != nil {
+		spans, terr := otlp.FromTrace(trace, rc, m, started)
+		if terr == nil {
+			terr = exp.Export(context.Background(), spans)
+		}
+		if terr != nil {
+			out.TraceError = terr.Error()
+		}
+	}
+	return out, runErr
 }

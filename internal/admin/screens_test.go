@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/a11y"
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -298,6 +299,12 @@ func fullyWired(t *testing.T) (*Server, string) {
 		},
 	}
 
+	srv.Agents = &Agents{Load: func() (map[string]agent.Manifest, error) {
+		t, _ := agent.For(agent.KindRetrieval)
+		m := t.Manifest
+		m.Name = "answers"
+		return map[string]agent.Manifest{"answers": m}, nil
+	}}
 	srv.Assurance = &Assurance{
 		Scan: func() (int, []codescan.Finding, error) {
 			return 12, []codescan.Finding{{

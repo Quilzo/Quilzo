@@ -17,10 +17,8 @@ import (
 // is what makes the first worth reading — an activity log over agents whose
 // permissions nobody declared is a list of things that happened.
 //
-// Read-only here on purpose, for now. Declaring an agent is an administrative
-// act with a blast radius, and the command line is where it is done with a
-// diff in front of you; a screen that writes manifests is worth building once
-// the shape has settled rather than while it is still moving.
+// Declaring one is done in the studio (studio.go), from a form, a map drawn
+// from the declaration, and the declaration's own text.
 
 // Agents is what the host supplies so the admin can show declared agents.
 //
@@ -28,6 +26,18 @@ import (
 // where the manifests live, and the CLI is what owns that file.
 type Agents struct {
 	Load func() (map[string]agent.Manifest, error)
+	// Known is every capability the machine interface offers, which is
+	// what a declaration is validated against.
+	Known func() []string
+	// Save stores a declaration after validating it; Remove withdraws one.
+	Save   func(m agent.Manifest, isNew bool, by string) error
+	Remove func(name, by string) error
+	// Run runs an agent once and keeps the run, returning its identifier.
+	// A run that ended badly is still kept, and still returns one.
+	Run func(name, goal string, model bool, by string) (string, error)
+	// Runs lists kept runs, newest first, of one agent or all of them.
+	Runs   func(name string) ([]agent.Record, error)
+	RunGet func(id string) (agent.Record, error)
 }
 
 // agentRow is one declared agent as the screen shows it.
