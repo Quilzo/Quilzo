@@ -309,6 +309,9 @@ telling people
   quilzo notify publish NOTICE             the Article 34(3)(c) public communication
   quilzo notify inbox ISSUER:VALUE         what is waiting for somebody in the app
   quilzo hunt --field F [FILE]             what is rare, which is what is worth a look
+  quilzo analyst plan                      what the triage agent reads, in order
+  quilzo analyst triage [--limit N] [--dry-run]   a model's first pass over open findings, as suggestions
+  quilzo analyst eval [--k 3]              how reliable it is on what people ruled, and under planted text
   quilzo intel import FILE --source NAME   indicators from a STIX bundle or a list, then look back
   quilzo intel add VALUE --source NAME     one indicator; --until DATE, --note "…"
   quilzo intel list | remove ID            what is held, what each has found, and taking one out
@@ -788,6 +791,8 @@ func main() {
 		err = cmdVuln(root, cmdArgs)
 	case "intel":
 		err = cmdIntel(root, cmdArgs)
+	case "analyst":
+		err = cmdAnalyst(root, cmdArgs)
 	case "assurance":
 		err = cmdAssurance(root, cmdArgs)
 	case "framework":

@@ -126,7 +126,15 @@ func detectRun(root string, args []string) error {
 		from = now.Add(-*since)
 	}
 
+	// What the agents have done since the last run goes into the store
+	// first, so the rules below read it like any other source.
+	agentEvents, agentNew, err := storeAgentEvents(root, sp, reg, now)
+	if err != nil {
+		return err
+	}
+
 	var events, matches, opened, suppressed int
+	opened += agentNew
 	var through time.Time
 	err = sp.Range(from, time.Time{}, func(e telemetry.Event) error {
 		events++
@@ -214,6 +222,7 @@ func detectRun(root string, args []string) error {
 			"suppressed": strconv.Itoa(suppressed), "off": strconv.Itoa(off),
 			"correlations":   strconv.Itoa(corr.Rules),
 			"correlated":     strconv.Itoa(corr.Hits),
+			"agent_events":   strconv.Itoa(agentEvents),
 			"indicators":     strconv.Itoa(held.Len()),
 			"indicator_hits": strconv.Itoa(intelHit),
 		},

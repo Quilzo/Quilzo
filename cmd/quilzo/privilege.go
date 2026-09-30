@@ -360,6 +360,9 @@ var commandNeeds = map[string]need{
 	// organisation stands behind and is appended to the audit chain rather
 	// than edited: the same authority as publishing. Reading the queue is a
 	// view.
+	// The analyst reads every finding and spends the model budget.
+	"analyst":      {action: auth.ActGrant},
+	"analyst plan": {action: auth.ActView},
 	// An indicator raises findings about whoever touched it.
 	"intel":        {action: auth.ActGrant},
 	"vuln":         {action: auth.ActPublish},
