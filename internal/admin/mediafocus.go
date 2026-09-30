@@ -168,7 +168,7 @@ func (s *Server) handleMediaFocus(w http.ResponseWriter, r *http.Request) {
 	s.audit("media.focus", "/"+f.ID, map[string]string{
 		"by": p.Name, "at": where,
 	})
-	http.Redirect(w, r, backTo(r), http.StatusSeeOther)
+	goBack(w, r)
 }
 
 // mediaSpots builds the grid for every file on the screen.

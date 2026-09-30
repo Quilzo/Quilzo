@@ -51,3 +51,14 @@ func forTerminal(s string) string {
 	}
 	return b.String()
 }
+
+// onOneLine is forTerminal for a value that is printed inside one line of
+// output: a name, an identifier, a sentence of detail. A line break is
+// replaced as well, because in that position it lets whatever wrote the
+// value start a line of its own, and a line of this program's output is
+// read as this program speaking.
+func onOneLine(s string) string {
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	return forTerminal(s)
+}

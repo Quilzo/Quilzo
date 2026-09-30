@@ -66,3 +66,17 @@ func TestAStrippedEscapeLeavesAMark(t *testing.T) {
 			"the content carried one")
 	}
 }
+
+// A value printed inside a line cannot start a line of its own.
+func TestAValuePrintedInsideALineStaysOnIt(t *testing.T) {
+	got := onOneLine("missing alt text\nlive is now deadbeef\r\x1b[2K ok")
+	if strings.ContainsAny(got, "\n\r\x1b") {
+		t.Errorf("a line break or an escape survived: %q", got)
+	}
+	if !strings.Contains(got, "missing alt text") || !strings.Contains(got, "deadbeef") {
+		t.Errorf("the text itself was lost: %q", got)
+	}
+	if onOneLine("an ordinary sentence, with a tab\there") != "an ordinary sentence, with a tab\there" {
+		t.Error("an ordinary value was changed")
+	}
+}

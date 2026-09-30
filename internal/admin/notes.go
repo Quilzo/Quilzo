@@ -168,7 +168,7 @@ func (s *Server) handleNoteAdd(w http.ResponseWriter, r *http.Request) {
 	// Back to whichever screen this was said from, by the same mechanism the
 	// preference toggles use — and for the same reason: every response here
 	// sets Referrer-Policy: no-referrer, so the form has to carry it.
-	http.Redirect(w, r, backTo(r), http.StatusSeeOther)
+	goBack(w, r)
 }
 
 // handleNoteResolve marks one dealt with.
@@ -191,7 +191,7 @@ func (s *Server) handleNoteResolve(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit("note.resolve", pageResource(page),
 		map[string]string{"id": r.FormValue("id")})
-	http.Redirect(w, r, backTo(r), http.StatusSeeOther)
+	goBack(w, r)
 }
 
 // notesWriter is the shared gate on the two write endpoints.

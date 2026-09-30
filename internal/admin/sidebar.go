@@ -73,5 +73,5 @@ func (s *Server) handleSidebar(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "sidebar must be shown or hidden", http.StatusBadRequest)
 		return
 	}
-	http.Redirect(w, r, backTo(r), http.StatusSeeOther)
+	goBack(w, r)
 }

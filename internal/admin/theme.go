@@ -100,7 +100,7 @@ func (s *Server) handleTheme(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "theme must be system, dark or light", http.StatusBadRequest)
 		return
 	}
-	http.Redirect(w, r, backTo(r), http.StatusSeeOther)
+	goBack(w, r)
 }
 
 // backTo returns the screen the toggle was pressed on, if it is one of ours.
@@ -167,6 +167,47 @@ func backTo(r *http.Request) string {
 		return "/"
 	}
 	return safeLocalPath(u.Path, u.RawQuery)
+}
+
+// goBack sends a form post back to the screen it was made from.
+//
+// The destination comes from backTo, which has already rebuilt it as a path
+// on this server. It is checked again here, at the redirect, by a function
+// that answers one question and can be read on its own: is this a place on
+// this server. Two checks rather than one because they fail differently —
+// backTo decides what the destination is, and this decides whether a
+// destination may be used at all — and because a check that sits beside the
+// redirect still holds if a later change gives backTo another source.
+func goBack(w http.ResponseWriter, r *http.Request) {
+	dest := backTo(r)
+	if isLocalURL(dest) {
+		http.Redirect(w, r, dest, http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// isLocalURL reports whether s names a place on this server and nowhere
+// else: rooted, with one slash, no backslash, no control character, and
+// nothing a parser reads as a scheme or a host.
+func isLocalURL(s string) bool {
+	if len(s) == 0 || s[0] != '/' {
+		return false
+	}
+	if len(s) > 1 && (s[1] == '/' || s[1] == '\\') {
+		return false
+	}
+	for _, c := range s {
+		// A backslash anywhere, because some browsers read it as a slash
+		// before deciding what an authority is; and anything below a space,
+		// because a tab or a newline inside "/\t/host" is dropped by the
+		// same browsers.
+		if c == '\\' || c < 0x20 || c == 0x7f {
+			return false
+		}
+	}
+	u, err := url.Parse(s)
+	return err == nil && u.Scheme == "" && u.Host == "" && u.Opaque == ""
 }
 
 // safeLocalPath rebuilds a same-origin destination, or gives up and returns "/".
