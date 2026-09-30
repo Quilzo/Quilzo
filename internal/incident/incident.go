@@ -201,6 +201,8 @@ type Incident struct {
 	Findings []string `json:"findings,omitempty"`
 	// Runs are the playbooks being worked.
 	Runs []Run `json:"runs,omitempty"`
+	// Acts are the things done to other tools.
+	Acts []Act `json:"acts,omitempty"`
 
 	// Cause and Actions are required to close.
 	Cause   string   `json:"cause,omitempty"`
@@ -387,6 +389,10 @@ func (i *Incident) Close(by, cause string, actions []string,
 			continue
 		}
 		owed = append(owed, d.Regime+" — "+d.What)
+	}
+	if open := i.ActsOpen(); len(open) > 0 {
+		return fmt.Errorf("%d act(s) are unsettled: %s", len(open),
+			strings.Join(open, "; "))
 	}
 	if left := i.StepsLeft(); len(left) > 0 {
 		return fmt.Errorf(

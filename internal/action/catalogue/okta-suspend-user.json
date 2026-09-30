@@ -1,0 +1,33 @@
+{
+  "about": "Stops one account signing in while an incident about it is worked. The containment step for an account somebody else may be using.",
+  "hosts": {
+    "okta": "{org}.okta.com",
+    "emea": "{org}.okta-emea.com",
+    "preview": "{org}.oktapreview.com"
+  },
+  "default": "okta",
+  "credential": "An API token made by an administrator whose only role is one that can suspend users and clear their sessions \u2014 a custom role with those two permissions, or Help Desk Administrator scoped to the groups concerned. Not the token a connector reads with: that one is made by a read-only administrator so that it cannot do this.",
+  "action": {
+    "name": "okta-suspend-user",
+    "tool": "Okta",
+    "title": "Suspend an Okta account",
+    "host": "",
+    "secret": "okta-action-token",
+    "scheme": "SSWS",
+    "target": {
+      "issuer": "okta",
+      "pattern": "^00u[A-Za-z0-9]{8,40}$",
+      "what": "an Okta user id, as the system log names the actor"
+    },
+    "does": {
+      "method": "POST",
+      "path": "/api/v1/users/{target}/lifecycle/suspend"
+    },
+    "effect": "The account cannot sign in to Okta or to anything it signs in to through Okta. Sessions already open elsewhere are not closed by this; clear them as well.",
+    "reverts": "Unsuspending puts the account back as it was: same password, same factors, same groups.",
+    "undo": {
+      "method": "POST",
+      "path": "/api/v1/users/{target}/lifecycle/unsuspend"
+    }
+  }
+}

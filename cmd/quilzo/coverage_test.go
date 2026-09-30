@@ -370,6 +370,13 @@ var coverage = map[string]surfaces{
 		NoMCP: "it is the agent. A model starting the analyst is a model " +
 			"starting a model, with nobody in the loop to have asked for it",
 	},
+	"action": {GUI: "/security/cases",
+		Why: "an action is asked for and approved on the incident's page; " +
+			"installing one and giving it a credential are the operator's",
+		NoMCP: "it changes something in another tool, on somebody's " +
+			"account. A model takes no part: it neither installs one, asks " +
+			"for one, nor approves one",
+	},
 	"identity": {GUI: "/security/entity/",
 		Why: "a person's page shows every identifier known to be theirs; " +
 			"saying whose one is happens once, by the operator",

@@ -124,9 +124,13 @@ type Action struct {
 	// Playbook is the one being proposed, resolved by whoever holds the
 	// catalogue; Run, Step and Outcome name a step and what became of it.
 	Playbook *Playbook `json:"playbook,omitempty"`
-	Run      string    `json:"run,omitempty"`
-	Step     string    `json:"step,omitempty"`
-	Outcome  string    `json:"outcome,omitempty"`
+	// Act is an act being requested, resolved by whoever holds the
+	// declared actions; ActID names one already requested.
+	Act     *Act   `json:"act,omitempty"`
+	ActID   int    `json:"act_id,omitempty"`
+	Run     string `json:"run,omitempty"`
+	Step    string `json:"step,omitempty"`
+	Outcome string `json:"outcome,omitempty"`
 }
 
 // Decides reports whether an action is one of the judgements that start,
@@ -134,7 +138,7 @@ type Action struct {
 // model's.
 func (a Action) Decides() bool {
 	switch a.Do {
-	case "decide", "discharge", "waive", "close", "approve":
+	case "decide", "discharge", "waive", "close", "approve", "act-approve":
 		return true
 	}
 	return false
@@ -183,6 +187,14 @@ func (i *Incident) Apply(a Action, by string, at time.Time) error {
 		return i.Withdraw(a.Run, by, a.Text, at)
 	case "step":
 		return i.Work(a.Run, a.Step, a.Outcome, by, a.Text, at)
+	case "act-request":
+		if a.Act == nil {
+			return fmt.Errorf("which action, on what")
+		}
+		_, err := i.RequestAct(*a.Act, by, a.Text, at)
+		return err
+	case "act-withdraw":
+		return i.WithdrawAct(a.ActID, by, a.Text, at)
 	case "watch":
 		if strings.TrimSpace(a.Text) == "" {
 			return fmt.Errorf("say what makes this look fixed")

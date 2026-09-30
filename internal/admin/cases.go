@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +41,24 @@ type Cases struct {
 	Declare   func(title string, grade incident.Grade, regimes,
 		findings []string, by string) (string, error)
 	Act func(id, by string, a incident.Action) error
+
+	// Actions is what could be done to another tool from this incident:
+	// each installed action, and the accounts of the incident it may act
+	// on. Nil means none can.
+	Actions func(id string) ([]ActionOffer, error)
+	// ActRequest asks for one; ActApprove approves one, which sends it and
+	// returns what the tool answered; ActUndo reverses one.
+	ActRequest func(id, by, action, target, why string) error
+	ActApprove func(id, by string, act int) (int, error)
+	ActUndo    func(id, by string, act int, why string) (int, error)
+}
+
+// ActionOffer is one installed action as an incident may use it.
+type ActionOffer struct {
+	Name, Title, Effect, Reverts string
+	Reversible                   bool
+	// Targets is the accounts this incident may act on with it.
+	Targets []string
 }
 
 func caseHref(id string) string { return "/security/case/" + url.PathEscape(id) }
@@ -383,6 +402,51 @@ func (s *Server) handleCase(w http.ResponseWriter, r *http.Request) {
 	}
 	data["Commander"] = strings.TrimSpace(i.Filled[incident.Commander])
 
+	// What has been done to other tools, and what could be.
+	type actRow struct {
+		incident.Act
+		Word, Tone, Asked, ApprovedBy, When string
+		CanApprove, CanUndo                 bool
+	}
+	var acts []actRow
+	for _, a := range i.Acts {
+		ar := actRow{Act: a, Word: string(a.State),
+			Asked: a.Requested.By + ": " + a.Requested.Why}
+		switch a.State {
+		case incident.ActRequested:
+			ar.Word, ar.Tone, ar.CanApprove = "waiting for approval", "warning", true
+		case incident.ActApproved, incident.ActUndoing:
+			ar.Word, ar.Tone = "sent, outcome not known", "critical"
+		case incident.ActDone:
+			ar.Word, ar.Tone = "in force", "serious"
+			if !a.Reversible {
+				ar.Word, ar.Tone = "done", "good"
+			}
+			ar.CanUndo = a.Reversible
+		case incident.ActFailed:
+			ar.Word, ar.Tone = "refused by the tool", "critical"
+		case incident.ActUndone:
+			ar.Tone = "good"
+		default:
+			ar.Tone = "unknown"
+		}
+		if a.Approved != nil {
+			ar.ApprovedBy = a.Approved.By
+		}
+		if !a.At.IsZero() {
+			ar.When = a.At.Format("2 Jan 15:04")
+		}
+		acts = append(acts, ar)
+	}
+	data["Acts"] = acts
+	if s.Cases.Actions != nil && i.State != incident.Closed {
+		offers, aerr := s.Cases.Actions(i.ID)
+		if aerr != nil {
+			data["ActionsError"] = aerr.Error()
+		}
+		data["Offers"] = offers
+	}
+
 	type entry struct{ When, By, What string }
 	var timeline []entry
 	for _, e := range i.Timeline() {
@@ -456,7 +520,43 @@ func (s *Server) handleCasesAct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "which incident", http.StatusBadRequest)
 		return
 	}
+	// An action on another tool. Asking records a request; approving sends
+	// it; undoing sends its reverse. Each says what the tool answered.
+	actID, _ := strconv.Atoi(r.FormValue("act"))
+	switch do {
+	case "act-request":
+		if s.Cases.ActRequest == nil {
+			http.Error(w, "this build cannot take actions",
+				http.StatusServiceUnavailable)
+			return
+		}
+		back(caseHref(id), "Requested. Nothing has been sent: somebody "+
+			"else, or the commander, approves it.",
+			s.Cases.ActRequest(id, p.Name, r.FormValue("action"),
+				r.FormValue("target"), strings.TrimSpace(r.FormValue("text"))))
+		return
+	case "act-approve":
+		if s.Cases.ActApprove == nil {
+			http.Error(w, "this build cannot take actions",
+				http.StatusServiceUnavailable)
+			return
+		}
+		code, err := s.Cases.ActApprove(id, p.Name, actID)
+		back(caseHref(id), fmt.Sprintf("Sent. The tool answered %d.", code), err)
+		return
+	case "act-undo":
+		if s.Cases.ActUndo == nil {
+			http.Error(w, "this build cannot take actions",
+				http.StatusServiceUnavailable)
+			return
+		}
+		code, err := s.Cases.ActUndo(id, p.Name, actID,
+			strings.TrimSpace(r.FormValue("text")))
+		back(caseHref(id), fmt.Sprintf("Undone. The tool answered %d.", code), err)
+		return
+	}
 	a := incident.Action{Do: do, Text: strings.TrimSpace(r.FormValue("text")),
+		ActID:   actID,
 		Role:    incident.Role(r.FormValue("role")),
 		Who:     strings.TrimSpace(r.FormValue("who")),
 		Trigger: incident.Trigger(r.FormValue("trigger")),
@@ -476,6 +576,7 @@ func (s *Server) handleCasesAct(w http.ResponseWriter, r *http.Request) {
 		"propose":  "Proposed. Nothing in it can be worked until it is approved.",
 		"approve":  "Approved. Its steps can be worked.",
 		"withdraw": "Withdrawn.", "step": "Recorded.",
+		"act-withdraw": "The request is withdrawn. Nothing was sent.",
 	}[do]
 	if said == "" {
 		http.Error(w, "nothing to do", http.StatusBadRequest)

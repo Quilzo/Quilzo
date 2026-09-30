@@ -5,6 +5,7 @@ package incident
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -380,5 +381,135 @@ func TestARunIsProposedApprovedWorkedInOrderAndRecorded(t *testing.T) {
 	}
 	if k.Apply(Action{Do: "withdraw", Run: "exposed", Text: "x"}, "dana", day0) == nil {
 		t.Error("an approved run was withdrawn")
+	}
+}
+
+func TestAnActIsAskedForApprovedBySomebodyElseAndItsOutcomeRecorded(t *testing.T) {
+	i := kept(t)
+	spec := Act{Action: "okta-suspend-user", Title: "Suspend an Okta account",
+		Target: "okta:00u1a2b3c4d5", Reversible: true,
+		Says: "POST https://acme.okta.com/api/v1/users/00u1a2b3c4d5/lifecycle/suspend"}
+	if _, err := i.RequestAct(spec, "dana", " ", day0); err == nil {
+		t.Error("an act was requested with no reason")
+	}
+	id, err := i.RequestAct(spec, "dana", "sessions from two countries", day0)
+	if err != nil || id != 1 {
+		t.Fatal(id, err)
+	}
+	if _, err := i.RequestAct(spec, "sam", "again", day0); err == nil {
+		t.Error("the same act on the same account was requested twice")
+	}
+	if i.FinishAct(id, true, 200, day0) == nil {
+		t.Error("an outcome was recorded for something never approved or sent")
+	}
+	if _, err := i.ApproveAct(id, "dana", day0); err == nil {
+		t.Error("whoever asked also approved")
+	}
+	a, err := i.ApproveAct(id, "sam", day0)
+	if err != nil || a.State != ActApproved || !a.Unknown() {
+		t.Fatalf("%+v %v", a, err)
+	}
+	if _, err := i.ApproveAct(id, "li", day0); err == nil {
+		t.Error("approved twice")
+	}
+	// Sent and not yet answered: that is what the record says, and an
+	// incident cannot be closed over it.
+	for _, d := range i.Duties(day0) {
+		_ = i.Apply(Action{Do: "waive", Regime: d.Regime, Text: "test"}, "sam", day0)
+	}
+	closing := Action{Do: "close", Text: "a cause", Actions: []string{"x"}}
+	if err := i.Apply(closing, "sam", day0); err == nil ||
+		!strings.Contains(err.Error(), "outcome not known") {
+		t.Fatalf("closed over an act whose outcome is unknown: %v", err)
+	}
+	if err := i.FinishAct(id, true, 200, day0); err != nil {
+		t.Fatal(err)
+	}
+	if got := i.InForce(); len(got) != 1 {
+		t.Errorf("in force: %v", got)
+	}
+	// Undone by anybody, with a reason; a failed undo leaves it in force.
+	if _, err := i.UndoAct(id, "dana", "", day0); err == nil {
+		t.Error("undone for no reason")
+	}
+	if _, err := i.UndoAct(id, "dana", "cleared by the owner", day0); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.FinishUndo(id, false, 500, day0); err != nil {
+		t.Fatal(err)
+	}
+	if i.Acts[0].State != ActDone || i.Acts[0].Undone != nil {
+		t.Errorf("a failed undo left it %s", i.Acts[0].State)
+	}
+	_, _ = i.UndoAct(id, "dana", "cleared by the owner", day0)
+	_ = i.FinishUndo(id, true, 200, day0)
+	if i.Acts[0].State != ActUndone || len(i.InForce()) != 0 {
+		t.Errorf("after undoing: %+v", i.Acts[0])
+	}
+	if _, err := i.UndoAct(id, "dana", "again", day0); err == nil {
+		t.Error("undone twice")
+	}
+
+	// One that cannot be reversed is not recorded as reversed.
+	clear := Act{Action: "okta-clear-sessions", Title: "Clear sessions",
+		Target: "okta:00u1a2b3c4d5", Says: "DELETE https://acme.okta.com/x"}
+	cid, _ := i.RequestAct(clear, "dana", "after the reset", day0)
+	_, _ = i.ApproveAct(cid, "sam", day0)
+	_ = i.FinishAct(cid, false, 403, day0)
+	if i.Acts[1].State != ActFailed || i.Acts[1].Code != 403 {
+		t.Errorf("a refused call: %+v", i.Acts[1])
+	}
+	if _, err := i.UndoAct(cid, "dana", "x", day0); err == nil {
+		t.Error("a failed act was undone")
+	}
+	// A failed one may be asked for again; a request can be withdrawn.
+	rid, err := i.RequestAct(clear, "dana", "retry with the right token", day0)
+	if err != nil {
+		t.Fatalf("a failed act could not be asked for again: %v", err)
+	}
+	if i.WithdrawAct(rid, "dana", "", day0) == nil {
+		t.Error("withdrawn for no reason")
+	}
+	if err := i.Apply(closing, "sam", day0); err == nil ||
+		!strings.Contains(err.Error(), "never approved or withdrawn") {
+		t.Fatalf("closed over a request nobody answered: %v", err)
+	}
+	if err := i.WithdrawAct(rid, "dana", "not needed", day0); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Apply(closing, "sam", day0); err != nil {
+		t.Fatal(err)
+	}
+	var said []string
+	for _, e := range i.Timeline() {
+		said = append(said, e.By+" "+e.What)
+	}
+	record := strings.Join(said, "\n")
+	for _, want := range []string{"dana requested okta-suspend-user on okta:00u1a2b3c4d5: sessions from two countries",
+		"sam approved okta-suspend-user", "quilzo okta-suspend-user on okta:00u1a2b3c4d5 done (the tool answered 200)",
+		"failed (the tool answered 500); it is still in force", "undone (the tool answered 200)"} {
+		if !strings.Contains(record, want) {
+			t.Errorf("the record lacks %q", want)
+		}
+	}
+	// The commander may approve what they asked for; and there is a limit.
+	j := kept(t)
+	_ = j.Apply(Action{Do: "assign", Role: Commander, Who: "dana"}, "dana", day0)
+	jid, _ := j.RequestAct(spec, "dana", "x", day0)
+	if _, err := j.ApproveAct(jid, "dana", day0); err != nil {
+		t.Errorf("the commander could not approve: %v", err)
+	}
+	k := kept(t)
+	for n := 0; n < MaxActs; n++ {
+		s := spec
+		s.Target = fmt.Sprintf("okta:00u%012d", n)
+		if _, err := k.RequestAct(s, "dana", "x", day0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	over := spec
+	over.Target = "okta:00uover00000000"
+	if _, err := k.RequestAct(over, "dana", "x", day0); err == nil {
+		t.Error("an incident took more acts than the limit")
 	}
 }

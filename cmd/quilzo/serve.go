@@ -342,6 +342,41 @@ func cmdServe(root string, args []string) error {
 		Playbooks: func() ([]incident.Playbook, error) {
 			return loadPlaybooks(root)
 		},
+		Actions: func(id string) ([]admin.ActionOffer, error) {
+			all, err := loadActions(root)
+			if err != nil || len(all) == 0 {
+				return nil, err
+			}
+			i, err := loadIncident(root, id)
+			if err != nil {
+				return nil, err
+			}
+			var out []admin.ActionOffer
+			for _, a := range all {
+				targets, terr := actionTargets(root, i, a, time.Now().UTC())
+				if terr != nil {
+					return nil, terr
+				}
+				out = append(out, admin.ActionOffer{Name: a.Name,
+					Title: a.Title, Effect: a.Effect, Reverts: a.Reverts,
+					Reversible: a.Reversible(), Targets: targets})
+			}
+			return out, nil
+		},
+		ActRequest: func(id, by, name, target, why string) error {
+			return requestAct(root, id, &Caller{Name: by,
+				Kind: audit.KindHuman, Verified: true}, name, target, why,
+				time.Now().UTC())
+		},
+		ActApprove: func(id, by string, act int) (int, error) {
+			return approveAct(root, id, &Caller{Name: by,
+				Kind: audit.KindHuman, Verified: true}, act, time.Now().UTC())
+		},
+		ActUndo: func(id, by string, act int, why string) (int, error) {
+			return undoAct(root, id, &Caller{Name: by,
+				Kind: audit.KindHuman, Verified: true}, act, why,
+				time.Now().UTC())
+		},
 		// Signed in to the admin: a person, verified.
 		Declare: func(title string, grade incident.Grade, regimes,
 			findings []string, by string) (string, error) {

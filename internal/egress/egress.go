@@ -139,6 +139,15 @@ var Purposes = []Purpose{
 		Without: "nothing is exported. A collector on loopback still receives",
 	},
 	{
+		Name: "action",
+		What: "doing one declared thing to a company's own tool during an " +
+			"incident — suspending an account — after a second person has " +
+			"approved the exact call",
+		Without: "no action can be taken from here. Playbook steps are " +
+			"still recorded; each is carried out by a person in the tool " +
+			"itself",
+	},
+	{
 		Name: "connector",
 		What: "reading a company's own tools — an identity provider, an " +
 			"MDM, a training platform — over the endpoints a connector " +

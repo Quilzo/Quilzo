@@ -301,6 +301,12 @@ func actOnIncident(root, id string, caller *Caller, a incident.Action,
 	case "step":
 		detail["playbook"], detail["step"] = a.Run, a.Step
 		detail["outcome"] = a.Outcome
+	case "act-request":
+		if a.Act != nil {
+			detail["action"], detail["subject"] = a.Act.Action, a.Act.Target
+		}
+	case "act-withdraw":
+		detail["act"] = fmt.Sprint(a.ActID)
 	}
 	return i, recordE(root, audit.Record{Action: "incident." + a.Do,
 		Resource: "/incidents/" + i.ID, Outcome: audit.Success,

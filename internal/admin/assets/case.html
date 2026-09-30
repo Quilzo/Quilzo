@@ -97,6 +97,41 @@
   <p><button type="submit">Propose it</button></p>
 </form>{{end}}
 
+{{if or .Acts .Offers .ActionsError}}
+<h2>Actions on other tools</h2>
+<p class="hint">These are carried out by this program, in the tool itself.
+  Each is asked for by one person and approved by another, or by the
+  commander; approving sends it. Only an account this incident is already
+  about can be acted on.</p>
+{{if .ActionsError}}<p class="notice bad">The installed actions could not be read: {{.ActionsError}}.</p>{{end}}
+{{if .Acts}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Action</th><th scope="col">On</th><th scope="col">The call</th><th scope="col">Where it stands</th><th scope="col"><span class="visually-hidden">Decide</span></th></tr></thead>
+  <tbody>{{range .Acts}}<tr>
+    <th scope="row">{{.Title}}<br><span class="hint">asked by {{.Asked}}</span></th>
+    <td><code>{{.Target}}</code></td>
+    <td><code>{{.Says}}</code></td>
+    <td><span class="wf-word {{.Tone}}">{{.Word}}</span>{{if .ApprovedBy}}<br><span class="hint">approved by {{.ApprovedBy}}</span>{{end}}{{if .Code}}<br><span class="hint">the tool answered {{.Code}}{{if .When}}, {{.When}}{{end}}</span>{{end}}</td>
+    <td>{{if and .CanApprove (not $.Closed)}}<form method="post" action="/security/cases/act">
+        <input type="hidden" name="id" value="{{$.I.ID}}"><input type="hidden" name="act" value="{{.ID}}">
+        <p><label>To withdraw it, why <input type="text" name="text" maxlength="300"></label></p>
+        <p><button type="submit" name="do" value="act-approve">Approve and send</button>
+          <button type="submit" name="do" value="act-withdraw" class="danger">Withdraw</button></p></form>{{end}}
+      {{if and .CanUndo (not $.Closed)}}<form method="post" action="/security/cases/act">
+        <input type="hidden" name="do" value="act-undo"><input type="hidden" name="id" value="{{$.I.ID}}"><input type="hidden" name="act" value="{{.ID}}">
+        <p><label>Why it is being undone <input type="text" name="text" required maxlength="300"></label></p>
+        <p><button type="submit">Undo it</button></p></form>{{end}}</td>
+  </tr>{{end}}</tbody></table></div>{{end}}
+{{range .Offers}}{{if .Targets}}<details class="wf-how"><summary>{{.Title}}</summary>
+  <p><strong>What it does:</strong> {{.Effect}}</p>
+  <p><strong>Putting it back:</strong> {{.Reverts}}</p>
+  <form method="post" action="/security/cases/act">
+    <input type="hidden" name="do" value="act-request"><input type="hidden" name="id" value="{{$.I.ID}}"><input type="hidden" name="action" value="{{.Name}}">
+    <p><label>On <select name="target">{{range .Targets}}<option value="{{.}}">{{.}}</option>{{end}}</select></label></p>
+    <p><label>Why <input type="text" name="text" required maxlength="300"></label></p>
+    <p><button type="submit">Ask for it</button></p>
+  </form></details>{{end}}{{end}}
+{{end}}
+
 <h2>Findings</h2>
 {{if .Findings}}<div class="table-wrap"><table>
   <thead><tr><th scope="col">Finding</th><th scope="col">Severity</th><th scope="col">State</th>{{if not .Closed}}<th scope="col"><span class="visually-hidden">Remove</span></th>{{end}}</tr></thead>

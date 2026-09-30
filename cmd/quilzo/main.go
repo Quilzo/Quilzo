@@ -194,6 +194,11 @@ sharing a screen
   quilzo incident playbooks [show ID | check FILE]   the checklists that ship, and yours
   quilzo incident propose|approve|withdraw ID PLAYBOOK   attach one, agree to it, or take it back
   quilzo incident step ID PLAYBOOK STEP done|skip|undo --because "…"   what became of a step
+  quilzo incident act ID ACTION ISSUER:VALUE --because "…"   ask for an action on an account the incident is about
+  quilzo incident act-approve ID N         approve it, which sends it; act-undo and act-withdraw take it back
+  quilzo action catalogue | list           what can be done to another tool, and what is installed
+  quilzo action add NAME --org ORG         install one; it has a credential of its own
+  quilzo action remove NAME
   quilzo incident regimes [eu nis2 …]      which obligations a new incident starts under
   quilzo incident duties                   who has to be told, how soon, and what starts the clock
   quilzo incident demo                     an incident, its several clocks, and closing it
@@ -804,6 +809,8 @@ func main() {
 		err = cmdCollect(root, cmdArgs)
 	case "identity":
 		err = cmdIdentity(root, cmdArgs)
+	case "action":
+		err = cmdAction(root, cmdArgs)
 	case "analyst":
 		err = cmdAnalyst(root, cmdArgs)
 	case "assurance":

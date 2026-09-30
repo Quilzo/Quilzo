@@ -45,6 +45,8 @@ func cmdIncident(root string, args []string) error {
 		return incidentShow(root, args[1:])
 	case "playbooks":
 		return incidentPlaybooks(root, args[1:])
+	case "act", "act-approve", "act-undo", "act-withdraw":
+		return incidentAct(root, args[0], args[1:])
 	case "note", "assign", "decide", "discharge", "waive", "link", "unlink",
 		"watch", "reopen", "close", "propose", "approve", "withdraw", "step":
 		return incidentDo(root, args[0], args[1:])
@@ -52,6 +54,7 @@ func cmdIncident(root string, args []string) error {
 		return fmt.Errorf("unknown incident command %q; try declare, list, "+
 			"show, note, assign, decide, discharge, waive, link, watch, "+
 			"reopen, close, playbooks, propose, approve, withdraw, step, "+
+			"act, act-approve, act-undo, act-withdraw, "+
 			"regimes, duties or demo", args[0])
 	}
 }
