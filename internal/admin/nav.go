@@ -113,7 +113,7 @@ var destinations = []destination{
 	{"events", "Events", "/security/events", "Security operations", "security", auth.ActGrant},
 	// People and their machines, from what the company's tools say. Admin
 	// only: a person's score is a file on an employee.
-	{"workforce", "Workforce risk", "/workforce", "Security operations", "security", auth.ActGrant},
+	{"workforce", "Workforce risk", "/workforce", "Security operations", "workforce", auth.ActGrant},
 
 	{"agents", "Agents", "/agents", "Administration", "agents", auth.ActGrant},
 	{"people", "People", "/people", "Administration", "users", auth.ActGrant},
@@ -174,7 +174,7 @@ var docSections = map[string]bool{
 	"transfer": true, "ipfs": true, "provenance": true, "security": true,
 	"logging": true, "users": true, "auth": true, "integrations": true,
 	"settings": true, "api": true, "profile": true, "start": true,
-	"agents": true, "design": true,
+	"agents": true, "design": true, "workforce": true,
 
 	// Sections no screen owns, because they explain a concept or a surface
 	// rather than a destination. Named individually so that one quietly
