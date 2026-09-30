@@ -1,0 +1,23 @@
+{{template "head" .}}
+<p class="wf-back"><a href="/workforce">Workforce risk</a></p>
+<h1>Machines</h1>
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">Every machine, matched across tools by serial number. A serial
+  a manufacturer ships unset, or one a tool gives to two machines, matches
+  nothing.</p>
+<nav class="chips" aria-label="Show">
+  {{range .Chips}}<a href="{{.Href}}"{{if .On}} class="on" aria-current="true"{{end}}>{{.Label}}<span class="count">{{.Count}}</span></a>{{end}}
+</nav>
+{{if .Rows}}<div class="table-wrap"><table class="wf-machines">
+  <thead><tr><th scope="col">Machine</th><th scope="col">Serial</th><th scope="col">Owner</th><th scope="col">Last seen</th>
+    {{range .Tools}}<th scope="col">{{.}}</th>{{end}}
+    {{range (index .Rows 0).Posture}}<th scope="col">{{.Label}}</th>{{end}}</tr></thead>
+  <tbody>{{range .Rows}}<tr><th scope="row">{{.Name}}{{if .Class}} <span class="hint">{{.Class}}</span>{{end}}</th>
+    <td>{{if .Serial}}<code>{{.Serial}}</code>{{else}}<span class="hint">none usable</span>{{end}}</td>
+    <td>{{if .OwnerKey}}<a href="/workforce/person/{{.OwnerKey}}">{{.Owner}}</a>{{else if .Owner}}{{.Owner}}{{else}}<span class="hint">nobody</span>{{end}}</td>
+    <td>{{.Seen}}</td>
+    {{range .In}}<td>{{if .}}<span class="wf-word good">Yes</span>{{else}}<span class="wf-word unknown">No</span>{{end}}</td>{{end}}
+    {{range .Posture}}<td><span class="wf-word {{.Tone}}" title="{{.Title}}">{{.Word}}</span></td>{{end}}</tr>{{end}}</tbody>
+</table></div>{{else}}<p>No machine matches.</p>{{end}}
+{{end}}
+{{template "foot" .}}

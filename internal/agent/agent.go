@@ -264,6 +264,11 @@ type Manifest struct {
 	// HumanApproval requires a person to agree before anything this agent did
 	// becomes public. Forced on for publish autonomy; see Validate.
 	HumanApproval bool `json:"human_approval,omitempty"`
+
+	// AskFirst are the capabilities and tools this agent holds and may only
+	// use once a person has seen the exact call and agreed to it. The run
+	// stops there and is continued afterwards; see durable.go.
+	AskFirst []string `json:"ask_first,omitempty"`
 }
 
 // writeOps are capabilities that change stored content.
@@ -311,6 +316,17 @@ func (m *Manifest) Validate(known map[string]bool) error {
 			return fmt.Errorf(
 				"%s asks for the capability %q and no interface offers it",
 				m.Name, c)
+		}
+	}
+
+	// Asking first about something the agent does not hold is a line that
+	// reads as a safeguard and guards nothing.
+	for _, a := range m.AskFirst {
+		if !m.holds(a) {
+			return fmt.Errorf(
+				"%s asks a person first about %q, which it does not hold. "+
+					"A safeguard on something it cannot do reads as one and "+
+					"is not", m.Name, a)
 		}
 	}
 
@@ -494,7 +510,35 @@ func (m Manifest) Narrow(by Manifest) Manifest {
 	if m.HumanApproval {
 		out.HumanApproval = true
 	}
+
+	// Asking first is sticky the same way: either side may add it and
+	// neither may take it away.
+	var ask []string
+	asked := map[string]bool{}
+	for _, a := range append(append([]string(nil), m.AskFirst...), by.AskFirst...) {
+		if !asked[a] && out.holds(a) {
+			asked[a] = true
+			ask = append(ask, a)
+		}
+	}
+	sort.Strings(ask)
+	out.AskFirst = ask
 	return out
+}
+
+// holds reports whether a name is a capability or a tool of this manifest.
+func (m Manifest) holds(name string) bool {
+	for _, c := range m.Capabilities {
+		if c == name {
+			return true
+		}
+	}
+	for _, t := range m.Tools {
+		if t.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // narrowerRef is the more restrictive of two refs.

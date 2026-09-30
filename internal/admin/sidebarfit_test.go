@@ -55,7 +55,10 @@ func TestTheLastGroupInTheMenuCanBeReached(t *testing.T) {
 
 	wide := mediaBlock(t, css, "@media (min-width: 60rem)")
 	body := ruleFor(t, wide, "body:has(> .sidenav) { display: grid;")
-	if strings.Contains(body, "height: 100dvh") {
+	// A fixed height is the fault; min-height is not, since it only stops a
+	// short page leaving the menu column short, and the document still grows.
+	if regexp.MustCompile(`(^|[^-])(max-)?height:\s*100dvh`).MatchString(
+		strings.ReplaceAll(body, "min-height", "")) {
 		t.Errorf("the wide layout is a screen-height grid again, so the "+
 			"document does not scroll — the scrollbar is a short one in the "+
 			"middle of the screen and the footer sits under it:\n  %s", body)

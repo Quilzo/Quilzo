@@ -1,0 +1,109 @@
+{
+  "id": "okta.signin-through-proxy",
+  "title": "A sign-in to Okta succeeded through an anonymising proxy",
+  "why": "staff do not usually sign in through one, and somebody hiding where they are does",
+  "blind": "a commercial VPN Okta does not class as a proxy",
+  "sources": [
+    "okta/system"
+  ],
+  "severity": 3,
+  "when": {
+    "all": [
+      {
+        "match": {
+          "field": "raw.eventType",
+          "op": "equals",
+          "values": [
+            "user.session.start"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "raw.isProxy",
+          "op": "equals",
+          "values": [
+            "true"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "disposition",
+          "op": "equals",
+          "values": [
+            "allowed"
+          ]
+        }
+      }
+    ]
+  },
+  "technique": [
+    "T1090"
+  ],
+  "fixtures": [
+    {
+      "name": "a sign-in through a proxy",
+      "match": true,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "user.session.start",
+        "raw": {
+          "eventType": "user.session.start",
+          "person": "dana@acme.com",
+          "isProxy": "true"
+        }
+      }
+    },
+    {
+      "name": "a sign-in with no proxy",
+      "match": false,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "user.session.start",
+        "raw": {
+          "eventType": "user.session.start",
+          "person": "dana@acme.com",
+          "isProxy": "false"
+        }
+      }
+    },
+    {
+      "name": "a refused one through a proxy",
+      "match": false,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 4,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "user.session.start",
+        "raw": {
+          "eventType": "user.session.start",
+          "person": "dana@acme.com",
+          "isProxy": "true"
+        }
+      }
+    }
+  ]
+}

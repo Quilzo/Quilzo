@@ -1,8 +1,8 @@
 # The published site: anonymous, read-only, the thing pointed at the internet.
 #
-# Separate from the Mini App unit because they have different exposures and
-# different failure consequences. This one holds no credentials at all, which is
-# why it needs no EnvironmentFile and why its store path is read-only.
+# Separate from the admin because they have different exposures and different
+# failure consequences. This one holds no credentials at all, which is why it
+# needs no EnvironmentFile and why its store path is read-only.
 #
 #   sudo cp deploy/quilzo-site.service /etc/systemd/system/
 #   sudo systemctl enable --now quilzo-site

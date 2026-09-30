@@ -475,6 +475,12 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 	// operations. In another file because this one was already the length where
 	// somebody adding an operation stops reading the gates at the top.
 	registerContentOps(srv, root, s, caller)
+	registerSecurityOps(srv, root, caller)
+	registerEstateOps(srv, root, caller)
+	registerAssistantOps(srv, root, caller)
+	registerDecideOps(srv, root, caller)
+	registerAnalyticsOps(srv, root, caller)
+	registerExperimentOps(srv, root, caller)
 
 	return srv
 }

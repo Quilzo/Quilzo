@@ -427,11 +427,17 @@ func TestAToolThatKeepsLimitingIsLeftForTheNextRun(t *testing.T) {
 
 // A watermark past records nobody read is a gap that never reports itself.
 func TestTheCheckpointDoesNotMoveWhenARunWasTruncated(t *testing.T) {
+	// An endless cursor that moves: each page names a new one, so it is the
+	// page limit that stops the run and not the check for a tool pointing
+	// back at the page it served.
+	n := 0
 	s := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		n++
 		w.Write(page([]map[string]any{
 			{"device_id": 1, "last_check_in": "2026-09-01T00:00:00Z"},
 			{"device_id": 2, "last_check_in": "2026-09-20T00:00:00Z"},
-		}, map[string]any{"meta": map[string]any{"next": "more"}}))
+		}, map[string]any{"meta": map[string]any{
+			"next": "more-" + strconv.Itoa(n)}}))
 	})
 	m := people()
 	m.Endpoints[0].Page = Pagination{Kind: Cursor, From: "meta.next",

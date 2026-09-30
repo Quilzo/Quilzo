@@ -182,6 +182,18 @@ func openAudit(root string) (*audit.Log, error) {
 // for an accountability one. Reporting loudly and continuing is the choice, and
 // `quilzo auditlog verify` is what catches a gap afterwards.
 func record(root string, r audit.Record) {
+	if err := recordE(root, r); err != nil {
+		fmt.Fprintf(os.Stderr, "%s%v%s\n", red, err, reset)
+	}
+}
+
+// recordE is record, for a caller whose action is the record.
+//
+// A finding decision is nothing but its audit entry, so reporting one as made
+// when the entry was refused is reporting something that did not happen.
+// record prints the failure and carries on, which is right for a page save
+// that is already in the store; for a decision the caller has to be told.
+func recordE(root string, r audit.Record) error {
 	// A separate writer, if one is running. Its presence is the configuration:
 	// the socket existing means somebody set this up, and going around it would
 	// make the separation optional at exactly the moment it matters.
@@ -197,23 +209,21 @@ func record(root string, r audit.Record) {
 			// ability to edit the log, which is the whole thing this prevents —
 			// and where the separation is properly configured the fallback
 			// would fail anyway, because this account cannot open the file.
-			fmt.Fprintf(os.Stderr,
-				"%saudit record NOT written: %v%s\n"+
-					"  %sthe log writer is configured and unreachable. This "+
-					"action is not in the record.%s\n",
-				red, err, reset, red, reset)
+			return fmt.Errorf("audit record NOT written: %v. The log writer "+
+				"is configured and unreachable; this action is not in the "+
+				"record", err)
 		}
-		return
+		return nil
 	}
 
 	l, err := openAudit(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%saudit log unavailable: %v%s\n", red, err, reset)
-		return
+		return fmt.Errorf("audit log unavailable: %v", err)
 	}
 	if _, err := l.Append(r); err != nil {
-		fmt.Fprintf(os.Stderr, "%saudit record refused: %v%s\n", red, err, reset)
+		return fmt.Errorf("audit record refused: %v", err)
 	}
+	return nil
 }
 
 func fileExists(path string) bool {

@@ -34,7 +34,7 @@ func TestAProtocolClientRefusesToFollowARedirect(t *testing.T) {
 		}))
 	defer from.Close()
 
-	c := Speaking("chat", Anywhere, 5*time.Second)
+	c := Speaking("assistant", Anywhere, 5*time.Second)
 	resp, err := c.Get(from.URL + "/bot12345:TOKEN/getMe")
 	if err == nil {
 		resp.Body.Close()
@@ -122,7 +122,7 @@ func TestAClientWithNoRuleRefusesEverything(t *testing.T) {
 		func(w http.ResponseWriter, r *http.Request) {}))
 	defer srv.Close()
 
-	if _, err := Speaking("chat", nil, time.Second).Get(srv.URL); err == nil {
+	if _, err := Speaking("assistant", nil, time.Second).Get(srv.URL); err == nil {
 		t.Fatal("a client built with no address rule connected anyway, so " +
 			"forgetting the argument is a silent hole rather than a failure")
 	}

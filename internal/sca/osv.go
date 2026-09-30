@@ -75,6 +75,21 @@ type Affected struct {
 	Package  Package  `json:"package"`
 	Ranges   []VRange `json:"ranges,omitempty"`
 	Versions []string `json:"versions,omitempty"`
+	// Specific is what the ecosystem's own database adds. Read for one
+	// thing: the affected symbols Go's database records here.
+	//
+	// Kept raw and read leniently. Every database puts its own shape in
+	// this field, and one that used the same key for something else must
+	// not make the rest of its record unreadable.
+	Specific json.RawMessage `json:"ecosystem_specific,omitempty"`
+}
+
+// Specific is the part of ecosystem_specific this reads.
+type Specific struct {
+	Imports []struct {
+		Path    string   `json:"path"`
+		Symbols []string `json:"symbols,omitempty"`
+	} `json:"imports,omitempty"`
 }
 
 // Package names something in an ecosystem.
@@ -282,6 +297,16 @@ func (r Record) Advisory(known time.Time) vuln.Advisory {
 			continue
 		}
 		key := vuln.Key(eco, name)
+		var specific Specific
+		if len(af.Specific) > 0 && json.Unmarshal(af.Specific, &specific) == nil {
+			for _, im := range specific.Imports {
+				if strings.TrimSpace(im.Path) == "" {
+					continue
+				}
+				a.Imports = append(a.Imports, vuln.Import{Ecosystem: eco,
+					Package: name, Path: im.Path, Symbols: im.Symbols})
+			}
+		}
 		for _, rg := range af.Ranges {
 			var open string
 			var opened bool
@@ -301,7 +326,7 @@ func (r Record) Advisory(known time.Time) vuln.Advisory {
 				case ev.LastAffected != "":
 					a.Affects = append(a.Affects, vuln.Range{
 						Ecosystem: eco, Package: name,
-						Introduced: open,
+						Introduced: open, LastAffected: ev.LastAffected,
 					})
 					opened = false
 				}
@@ -319,9 +344,11 @@ func (r Record) Advisory(known time.Time) vuln.Advisory {
 			// databases use for ecosystems with no ordering anybody
 			// agrees on.
 			for _, v := range af.Versions {
+				// Exactly that version: read as "from v onwards" this
+				// reports every later release for ever.
 				a.Affects = append(a.Affects, vuln.Range{
 					Ecosystem: eco, Package: name,
-					Introduced: v, Fixed: "",
+					Introduced: v, LastAffected: v,
 				})
 			}
 		}

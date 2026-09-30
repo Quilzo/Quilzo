@@ -1,0 +1,72 @@
+{
+  "id": "aws.root-account-used",
+  "title": "The AWS root account did something",
+  "why": "root cannot be restricted and should be used for nothing; any use is somebody holding its credentials",
+  "blind": "root activity in an account whose trail is not collected",
+  "sources": [
+    "aws/cloudtrail"
+  ],
+  "severity": 4,
+  "when": {
+    "match": {
+      "field": "actor.value",
+      "op": "suffix",
+      "values": [
+        ":root"
+      ]
+    }
+  },
+  "technique": [
+    "T1078.004"
+  ],
+  "fixtures": [
+    {
+      "name": "root lists buckets",
+      "match": true,
+      "event": {
+        "source": "aws/cloudtrail",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "aws",
+          "value": "arn:aws:iam::123456789012:root"
+        },
+        "message": "ListBuckets"
+      }
+    },
+    {
+      "name": "a user lists buckets",
+      "match": false,
+      "event": {
+        "source": "aws/cloudtrail",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "aws",
+          "value": "arn:aws:iam::1:user/deploy"
+        },
+        "message": "ListBuckets"
+      }
+    },
+    {
+      "name": "a role named for root",
+      "match": false,
+      "event": {
+        "source": "aws/cloudtrail",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "aws",
+          "value": "arn:aws:iam::1:role/rootless"
+        },
+        "message": "ListBuckets"
+      }
+    }
+  ]
+}

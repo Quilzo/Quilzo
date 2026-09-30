@@ -1,0 +1,113 @@
+{{template "head" .}}
+<p class="hint"><a href="/findings">Findings</a></p>
+<h1>{{.F.Title}}</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+
+<p class="chips">
+  <span class="pill {{.F.Sev}}">{{.F.Sev}}</span>
+  <span class="chip">{{.F.Kind}}</span>
+  <span class="chip">{{.F.State}}{{if .F.Expired}} — lapsed{{end}}</span>
+</p>
+
+{{if and .NeedsAPerson (not .F.Closed)}}
+<div class="notice warn" role="note">
+  <p><strong>A person decides this one.</strong> {{.NeedsAPerson}}</p>
+  <p>The evidence below is shown as text and never interpreted. If any of it
+    reads like an instruction, that is worth recording as evidence in its
+    own right.</p>
+</div>
+{{end}}
+
+<p class="hint"><a href="/security/cases?finding={{.F.ID}}#declare">Declare an incident about this</a>, or add it to one from that incident's page with the identifier <code>{{.F.ID}}</code>.</p>
+
+<dl class="kv">
+  <dt>About</dt><dd>{{if .F.Entity.Zero}}<span class="dim">no entity</span>{{else}}<a href="/security/entity/{{.F.Entity.String}}"><code>{{.F.Entity.String}}</code></a>{{end}}</dd>
+  <dt>Raised by</dt><dd><code>{{.F.Source}}</code></dd>
+  <dt>Seen</dt><dd>{{.F.Seen}} time(s), {{.Span}}</dd>
+  <dt>Why it ranks here</dt><dd>{{.F.Why}}</dd>
+  <dt>Owner</dt><dd>{{if .F.Owner}}{{.F.Owner}}{{else}}nobody{{end}}</dd>
+  {{if .F.Technique}}<dt>ATT&amp;CK</dt><dd>{{range $i, $t := .F.Technique}}{{if $i}}, {{end}}<code>{{$t}}</code>{{end}}</dd>{{end}}
+  {{if .F.Because}}<dt>Reason on record</dt><dd>{{.F.Because}}</dd>{{end}}
+  {{if not .F.Until.IsZero}}<dt>Accepted until</dt><dd{{if .F.Expired}} class="bad"{{end}}>{{.F.Until.Format "2006-01-02"}}</dd>{{end}}
+  <dt>Id</dt><dd><code>{{.F.ID}}</code></dd>
+</dl>
+
+<h2>Evidence</h2>
+{{if not .F.Evidence}}<p class="dim">None recorded.</p>{{else}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">When</th><th scope="col">From</th><th scope="col">What it said</th></tr></thead>
+  <tbody>
+  {{range .F.Evidence}}
+  <tr>
+    <td class="mono">{{.When}}</td>
+    <td><code>{{.Source}}</code>{{if .Tainted}} <span class="tag tag-warn" title="Written by whoever can reach this source, which can include whoever is being detected">untrusted</span>{{end}}</td>
+    <td>{{if .What}}{{.What}}{{else}}<span class="dim">no message</span>{{end}}{{if .Ref}}<div class="hint mono">{{.Ref}}</div>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+{{if .Proposals}}
+<h2>Suggested by an agent</h2>
+<div class="notice warn" role="note">
+  <p>These were written by a model that read the evidence above — evidence
+    whoever is being detected may have written. Nothing here has changed the
+    finding. Check the reasoning against the evidence, and if you agree,
+    record the decision yourself below.</p>
+</div>
+<ol class="notelist">
+  {{range .Proposals}}
+  <li><strong>{{.To}}</strong> suggested for {{if .For}}{{.For}}{{else}}somebody{{end}}
+    <span class="dim">{{.When}}</span>
+    {{if .Because}}<div>{{.Because}}</div>{{end}}</li>
+  {{end}}
+</ol>
+{{end}}
+
+<h2>What has been decided</h2>
+{{if not .History}}<p>Nobody has decided anything about this yet.</p>{{else}}
+<ol class="notelist">
+  {{range .History}}
+  <li><strong>{{.To}}</strong> by {{.By}} <span class="dim">{{.When}}</span>
+    {{if .Because}}<div>{{.Because}}</div>{{end}}
+    {{if .Until}}<div class="hint">until {{.Until}}</div>{{end}}</li>
+  {{end}}
+</ol>
+{{end}}
+
+{{if .CanDecide}}
+<h2>Decide</h2>
+<form method="post" action="/findings/decide" class="card">
+  <input type="hidden" name="id" value="{{.F.ID}}">
+  <fieldset>
+    <legend>What is true about this finding</legend>
+    {{range .Options}}
+    <div class="field"><label><input type="radio" name="to" value="{{.Value}}"{{if .On}} checked{{end}} required>
+      {{.Words}}</label></div>
+    {{end}}
+  </fieldset>
+  <div class="field">
+    <label for="because">Why</label>
+    <textarea id="because" name="because" rows="3" aria-describedby="because-help"></textarea>
+    <p id="because-help" class="help">Required for false positive, benign
+      and accepted. A verdict nobody can check is one nobody can learn from.</p>
+  </div>
+  <div class="field">
+    <label for="until">Accepted until</label>
+    <input id="until" name="until" type="date" min="{{.MinUntil}}" aria-describedby="until-help">
+    <p id="until-help" class="help">Only for an accepted risk, which always
+      expires.</p>
+  </div>
+  <button type="submit">Record the decision</button>
+  <p class="help">Written to the audit log under your name. A model may
+    propose a decision through the machine interface; only a person records
+    one.</p>
+</form>
+{{else}}
+<p class="hint">Recording a decision needs publish rights.</p>
+{{end}}
+{{template "foot" .}}

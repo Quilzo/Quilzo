@@ -374,3 +374,41 @@ func TestVerifiedDefaultsToFalse(t *testing.T) {
 		t.Error("Verified must default to false")
 	}
 }
+
+// TestIdentitiesInDetailArePseudonymisedToo.
+//
+// The principal was pseudonymised and the same person's name sat beside it
+// under "by" or "on_behalf_of", in clear — so an export made to carry no
+// identities carried them all.
+func TestIdentitiesInDetailArePseudonymisedToo(t *testing.T) {
+	key, err := NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, path := newLog(t, key)
+	detail := map[string]string{"by": "sam@example.com", "on_behalf_of": "dana",
+		"page": "about"}
+	ok(t, l, Record{Action: "grant", Resource: "/", Outcome: Success,
+		Principal: "sam@example.com", Kind: KindHuman, Detail: detail})
+	raw, _ := os.ReadFile(path)
+	for _, id := range []string{"sam@example.com", "dana"} {
+		if strings.Contains(string(raw), `"`+id+`"`) {
+			t.Errorf("%s is in the log in the clear", id)
+		}
+	}
+	events, _ := Read(path)
+	d := events[0].Detail
+	if d["page"] != "about" {
+		t.Error("a detail that names no person was changed")
+	}
+	if !l.Matches(d["on_behalf_of"], "dana") || d["by"] != events[0].Principal {
+		t.Error("a pseudonymised detail cannot be matched by the key holder")
+	}
+	if detail["by"] != "sam@example.com" {
+		t.Error("the caller's map was modified")
+	}
+	// Still verifies: the hash is over what was written.
+	if okChain, problems := Verify(events); !okChain {
+		t.Fatalf("the chain does not verify: %v", problems)
+	}
+}

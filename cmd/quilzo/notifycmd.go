@@ -4,9 +4,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/egress"
 	"github.com/quilzo/quilzo/internal/ext"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/notify"
@@ -717,6 +720,12 @@ func loadMailConfig(root string) (*notify.Mailer, error) {
 	return &notify.Mailer{
 		Host: c.Host, From: c.From, Username: c.Username,
 		Password: c.Password, Unsubscribe: c.Unsubscribe,
+		// Through egress, so mail obeys offline mode and is in the report
+		// of what this program talks to. It used net.Dial, and was in
+		// neither.
+		Dial: func(network, address string) (net.Conn, error) {
+			return egress.Dial(context.Background(), "mail", network, address)
+		},
 	}, nil
 }
 

@@ -67,8 +67,29 @@ func previewBar(page string, body any, t schema.Type, typed bool) string {
 	esc := html.EscapeString
 	q := url.QueryEscape
 
-	b.WriteString(`<div class="qz-bar"><details class="qz-panel" open>`)
-	fmt.Fprintf(&b, `<summary><span class="qz-mark">Preview</span> %s</summary>`,
+	// A pill in the corner that opens a panel, rather than a panel across
+	// the top that has to be closed. The panel was a <details open> fixed
+	// over the page, so every preview began with the top two hundred pixels
+	// of the page — its header, its navigation, its headline — hidden under
+	// the furniture that was meant to help somebody look at it.
+	//
+	// The popover attribute gives the rest with no script, which this
+	// response's policy forbids: the panel sits in the top layer rather than
+	// in the page's stacking order, closes on Escape or a click elsewhere,
+	// and the pill is a real button that keyboards and screen readers treat
+	// as one. A browser without popover support shows the panel inline at
+	// the foot of the page, which is still usable and still covers nothing.
+	b.WriteString(`<div class="qz-bar">`)
+	fmt.Fprintf(&b,
+		`<button type="button" class="qz-pill" popovertarget="qz-preview-panel" `+
+			`aria-label="Preview of %s: open the editing panel">`+
+			`<span class="qz-mark">Preview</span><span class="qz-name">%s</span></button>`,
+		esc(page), esc(page))
+	b.WriteString(`<div id="qz-preview-panel" class="qz-panel" popover>`)
+	fmt.Fprintf(&b, `<p class="qz-head"><span class="qz-mark">Preview</span> `+
+		`<span class="qz-name">%s</span>`+
+		`<button type="button" class="qz-close" popovertarget="qz-preview-panel" `+
+		`popovertargetaction="hide" aria-label="Close the panel">Close</button></p>`,
 		esc(page))
 	b.WriteString(`<div class="qz-body">`)
 
@@ -76,8 +97,9 @@ func previewBar(page string, body any, t schema.Type, typed bool) string {
 	fmt.Fprintf(&b,
 		`<p class="qz-row"><a href="/page/%s">Edit this page</a> · `+
 			`<a href="/sections?page=%s">Arrange sections</a> · `+
-			`<a href="/">All pages</a></p>`,
-		q(page), q(page))
+			`<a href="/">All pages</a> · `+
+			`<a href="/preview/%s?plain=1">Hide this panel</a></p>`,
+		q(page), q(page), q(page))
 
 	if fields := previewFields(body, t, typed); len(fields) > 0 {
 		b.WriteString(`<p class="qz-what">Fields</p><ul class="qz-list">`)
@@ -120,7 +142,7 @@ func previewBar(page string, body any, t schema.Type, typed bool) string {
 	b.WriteString(`<p class="qz-note">This is the draft, rendered by the ` +
 		`renderer readers get. Nothing here is public until somebody ` +
 		`publishes.</p>`)
-	b.WriteString(`</div></details></div>`)
+	b.WriteString(`</div></div></div>`)
 	return b.String()
 }
 
@@ -204,33 +226,69 @@ func peek(v any) string {
 // is a toolbar for. It must also not move the page — position: fixed, so the
 // layout below it is exactly the layout a reader gets.
 const PreviewBarCSS = `
-.qz-bar{position:fixed;top:0;left:0;right:0;z-index:2147483647;
-  font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;
-  color:#f4f4f5;background:#18181b;border-bottom:1px solid #3f3f46;
-  box-shadow:0 1px 8px rgba(0,0,0,.3);max-height:70vh;overflow-y:auto}
-.qz-bar a{color:#7dd3fc;text-decoration:underline}
-.qz-bar a:hover{color:#bae6fd}
-.qz-panel>summary{cursor:pointer;padding:.5rem .9rem;list-style:none;
-  display:flex;gap:.5rem;align-items:center;font-weight:600}
-.qz-panel>summary::-webkit-details-marker{display:none}
-.qz-panel>summary::after{content:"▾";margin-left:auto;opacity:.7}
-.qz-panel[open]>summary::after{content:"▴"}
-.qz-mark{background:#f4f4f5;color:#18181b;border-radius:999px;
-  padding:.05rem .5rem;font-size:12px;font-weight:700;letter-spacing:.04em;
-  text-transform:uppercase}
-.qz-body{padding:0 .9rem .8rem}
-.qz-row{margin:0 0 .6rem}
-.qz-what{margin:.6rem 0 .2rem;font-size:12px;font-weight:700;opacity:.75;
-  letter-spacing:.06em;text-transform:uppercase}
-.qz-list{margin:0;padding-left:1.2rem}
-.qz-list li{margin:.15rem 0}
-.qz-peek{opacity:.6}
-.qz-note{margin:.7rem 0 0;opacity:.7;font-size:12px}
-/* The page keeps its own top: the bar is fixed, so it covers rather than
-   pushes, and a preview that shifted its content down would not be a preview
-   of what a reader sees. Padding is added to the document instead of a margin
-   on the body, which a page may already set. */
-html{scroll-padding-top:3rem}
+/* The page's own styles must not reach in. Everything inside the furniture is
+   reverted to the browser's defaults first, then styled here; a page that
+   sets a {color:white} or button {display:none} would otherwise decide what
+   the panel looks like, or whether it can be opened at all. */
+.qz-bar,.qz-bar *{all:revert;box-sizing:border-box}
+.qz-bar{--qz-bg:#ffffff;--qz-fg:#1f1f1f;--qz-muted:#444746;--qz-line:#c4c7c5;
+  --qz-accent:#0842a0;--qz-on-accent:#ffffff;--qz-link:#0842a0;
+  font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color:var(--qz-fg)}
+@media (prefers-color-scheme:dark){.qz-bar{--qz-bg:#1e1f20;--qz-fg:#e3e3e3;
+  --qz-muted:#c4c7c5;--qz-line:#444746;--qz-accent:#a8c7fa;--qz-on-accent:#062e6f;
+  --qz-link:#a8c7fa}}
+.qz-bar .qz-pill{position:fixed;z-index:2147483647;
+  inset-inline-start:max(12px,env(safe-area-inset-left));
+  inset-block-end:max(12px,env(safe-area-inset-bottom));
+  display:inline-flex;align-items:center;gap:.5em;max-width:min(60vw,22rem);
+  padding:.4em .8em .4em .45em;border:1px solid var(--qz-line);border-radius:999px;
+  background:var(--qz-bg);color:var(--qz-fg);font:inherit;font-weight:600;
+  box-shadow:0 2px 10px rgba(0,0,0,.18);cursor:pointer;opacity:.92}
+.qz-bar .qz-pill:hover,.qz-bar .qz-pill:focus-visible{opacity:1}
+.qz-bar :focus-visible{outline:2px solid var(--qz-accent);outline-offset:2px}
+.qz-bar .qz-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-weight:600}
+.qz-bar .qz-mark{background:var(--qz-accent);color:var(--qz-on-accent);
+  border-radius:999px;padding:.1em .55em;font-size:11px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;flex:none}
+.qz-bar .qz-panel{margin:0;padding:0;border:1px solid var(--qz-line);
+  border-radius:12px;background:var(--qz-bg);color:var(--qz-fg);
+  box-shadow:0 8px 32px rgba(0,0,0,.28);
+  width:min(26rem,calc(100vw - 24px));max-height:min(70vh,36rem);overflow:auto;
+  inset:auto auto max(60px,calc(env(safe-area-inset-bottom) + 60px))
+    max(12px,env(safe-area-inset-left))}
+.qz-bar .qz-panel::backdrop{background:transparent}
+.qz-bar .qz-head{display:flex;align-items:center;gap:.5em;margin:0;
+  padding:.7em .9em;border-bottom:1px solid var(--qz-line);position:sticky;
+  top:0;background:var(--qz-bg)}
+.qz-bar .qz-close{margin-inline-start:auto;font:inherit;font-size:13px;
+  padding:.25em .7em;border:1px solid var(--qz-line);border-radius:6px;
+  background:transparent;color:var(--qz-fg);cursor:pointer}
+.qz-bar .qz-body{padding:.6em .9em .9em}
+.qz-bar a{color:var(--qz-link);text-decoration:underline;
+  text-underline-offset:2px}
+.qz-bar .qz-row{margin:0 0 .5em}
+.qz-bar .qz-what{margin:.8em 0 .25em;font-size:11px;font-weight:700;
+  color:var(--qz-muted);letter-spacing:.07em;text-transform:uppercase}
+.qz-bar .qz-list{margin:0;padding-inline-start:1.2em}
+.qz-bar .qz-list li{margin:.2em 0}
+.qz-bar .qz-peek{color:var(--qz-muted)}
+.qz-bar .qz-note{margin:.8em 0 0;color:var(--qz-muted);font-size:12px}
+/* Without popover support the panel is an ordinary block at the foot of the
+   page: nothing covered, everything reachable. */
+@supports not selector(:popover-open){
+  .qz-bar .qz-pill,.qz-bar .qz-close{display:none}
+  .qz-bar .qz-panel{position:static;display:block;width:auto;max-height:none;
+    margin:2rem 12px;box-shadow:none}
+}
+@media print{.qz-bar{display:none}}
+@media (prefers-reduced-motion:no-preference){
+  .qz-bar .qz-panel{transition:opacity .12s,display .12s allow-discrete,
+    overlay .12s allow-discrete;opacity:0}
+  .qz-bar .qz-panel:popover-open{opacity:1}
+  @starting-style{.qz-bar .qz-panel:popover-open{opacity:0}}
+}
 `
 
 // injectBar puts the stylesheet in the head and the panel inside the body.

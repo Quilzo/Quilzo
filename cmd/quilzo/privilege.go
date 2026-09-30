@@ -166,8 +166,31 @@ var commandNeeds = map[string]need{
 	// behind — the same weight as putting something in front of the public,
 	// and far heavier than editing a draft. `finding story` reads and is
 	// checked separately below.
-	"finding":       {action: auth.ActPublish},
-	"finding story": {action: auth.ActView},
+	"finding": {action: auth.ActPublish},
+	// Declaring a chatbot is a publish: a public one is a new way for anybody
+	// on the internet to reach what the site says and what it offers to do.
+	"assistant":      {action: auth.ActPublish},
+	"assistant list": {action: auth.ActView},
+	"assistant ask":  {action: auth.ActView},
+	"assistant eval": {action: auth.ActView},
+	// Grant: a model route decides who receives what visitors typed.
+	"gateway": {action: auth.ActGrant},
+	// Declaring a decider is a publish: above its threshold, what it
+	// answers drives other things with no person involved.
+	"decide":      {action: auth.ActPublish},
+	"decide list": {action: auth.ActView},
+	"decide ask":  {action: auth.ActView},
+	"decide eval": {action: auth.ActView},
+	"analytics":   {action: auth.ActView},
+	// An experiment changes what visitors see: a publish.
+	"experiment":        {action: auth.ActPublish},
+	"experiment list":   {action: auth.ActView},
+	"experiment report": {action: auth.ActView},
+	// Per page: each change authorises publish on both pages it touches.
+	"personalise":      {action: auth.ActView},
+	"personalise list": {action: auth.ActView},
+	"personalise test": {action: auth.ActView},
+	"finding story":    {action: auth.ActView},
 
 	// Planting a canary commits the organisation to acting when it fires,
 	// and puts a row in the audit log saying so. The same weight as a
@@ -241,7 +264,13 @@ var commandNeeds = map[string]need{
 
 	// The reporting table, and an incident built for the run. Notifies
 	// nobody: internal/notify is what sends anything.
-	"incident": {action: auth.ActView},
+	// A live incident names what went wrong and who knew when. The table
+	// of deadlines and the worked example name nothing.
+	"incident":        {action: auth.ActGrant},
+	"incident duties": {action: auth.ActView},
+	"incident demo":   {action: auth.ActView},
+	// The checklists themselves name no incident.
+	"incident playbooks": {action: auth.ActView},
 
 	// Feed freshness, over mirrors built for the run. Fetches nothing:
 	// internal/fetch is what reaches a network.
@@ -249,7 +278,10 @@ var commandNeeds = map[string]need{
 
 	// Log source mappings, and a check against records a caller supplies.
 	// Fetches nothing.
-	"source": {action: auth.ActView},
+	// Adding a mapping decides what an application's records become.
+	"source":       {action: auth.ActGrant},
+	"source list":  {action: auth.ActView},
+	"source check": {action: auth.ActView},
 
 	// The register of situational authority. A table about this program's
 	// own design, which changes nothing.
@@ -331,10 +363,26 @@ var commandNeeds = map[string]need{
 	// organisation stands behind and is appended to the audit chain rather
 	// than edited: the same authority as publishing. Reading the queue is a
 	// view.
+	// The analyst reads every finding and spends the model budget.
+	"analyst":      {action: auth.ActGrant},
+	"analyst plan": {action: auth.ActView},
+	// An action changes something in somebody else's tool.
+	"action":           {action: auth.ActGrant},
+	"action catalogue": {action: auth.ActView},
+	// Whose an identifier is decides whose activity is whose.
+	"identity": {action: auth.ActGrant},
+	// Collection reads other tools with stored credentials and writes the
+	// event store.
+	"collect": {action: auth.ActGrant},
+	// An indicator raises findings about whoever touched it.
+	"intel":        {action: auth.ActGrant},
 	"vuln":         {action: auth.ActPublish},
 	"vuln queue":   {action: auth.ActView},
 	"vuln why":     {action: auth.ActView},
 	"vuln reasons": {action: auth.ActView},
+	"vuln plan":    {action: auth.ActView},
+	"vuln vex":     {action: auth.ActView},
+	"vuln assets":  {action: auth.ActView},
 
 	// Storing a credential for another company's system is the heaviest
 	// thing here, and running a connector is an ordinary write. Reading a
@@ -346,6 +394,19 @@ var commandNeeds = map[string]need{
 	"connect probe": {action: auth.ActEditDraft},
 	"connect list":  {action: auth.ActView},
 	"connect check": {action: auth.ActView},
+	// Listing what ships is reading the binary. Adding one installs a file
+	// that can reach another company's system with a stored credential,
+	// which is the weight of storing the credential itself.
+	"connect catalogue": {action: auth.ActView},
+	// Scores name employees, so the estate is an administrator's; building
+	// it writes findings, as detect run does, and a summary is reading.
+	"estate":       {action: auth.ActGrant},
+	"estate build": {action: auth.ActEditDraft},
+	"estate show":  {action: auth.ActView},
+	// Reminders name people and what they have not done, and send messages
+	// to every employee: an administrator's, all of it.
+	"remind":      {action: auth.ActGrant},
+	"connect add": {action: auth.ActPublish},
 
 	"workforce":          {action: auth.ActPublish},
 	"workforce coverage": {action: auth.ActView},
@@ -399,9 +460,6 @@ var commandNeeds = map[string]need{
 	// commit, so it is the authority an author already has over a page.
 	"section":  {action: auth.ActEditDraft},
 	"sections": {action: auth.ActEditDraft},
-	// Runs a server that publishes on behalf of Telegram accounts. That is the
-	// publish authority, delegated — so the operator starting it needs to hold
-	// it, whatever the person in the chat holds.
 	// Reading. The settings half asks for grant separately inside the command,
 	// because a key's summary describes a control and the rest is content.
 	"find": {action: auth.ActView},
@@ -416,14 +474,9 @@ var commandNeeds = map[string]need{
 	// is working on it — so it takes the same authority the draft does.
 	// Saying a page is still right is a statement about the draft, made by
 	// somebody who works on it.
-	"checked":  {action: auth.ActEditDraft},
-	"note":     {action: auth.ActEditDraft},
-	"notes":    {action: auth.ActEditDraft},
-	"telegram": {action: auth.ActPublish},
-	// The same as telegram, and for the same reason: each starts a surface
-	// that publishes on behalf of somebody else's account.
-	"slack":   {action: auth.ActPublish},
-	"discord": {action: auth.ActPublish},
+	"checked": {action: auth.ActEditDraft},
+	"note":    {action: auth.ActEditDraft},
+	"notes":   {action: auth.ActEditDraft},
 
 	// -- content types gate every write, so changing one is a change to what
 	// every author may store. Publisher, not author.
@@ -458,8 +511,6 @@ var commandNeeds = map[string]need{
 	"section list":    {action: auth.ActView},
 	"section kinds":   {action: auth.ActView},
 	"section fields":  {action: auth.ActView},
-	"telegram check":  {action: auth.ActView},
-	"telegram link":   {action: auth.ActPublish},
 	"sections fields": {action: auth.ActView},
 	"sections list":   {action: auth.ActView},
 	"sections kinds":  {action: auth.ActView},

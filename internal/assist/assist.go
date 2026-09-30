@@ -449,20 +449,19 @@ func NewHTTPModel() (*HTTPModel, error) {
 	if key == "" {
 		key = os.Getenv("OLLAMA_API_KEY")
 	}
-	// A model on this machine needs no key, and demanding one refused the
-	// arrangement that costs nothing.
-	//
-	// The wire protocol here is OpenAI's /chat/completions, which is what
-	// Ollama, llama.cpp, LM Studio and vLLM all serve — so a local model was
-	// already supported by everything except this check. Requiring a key made
-	// the zero-cost path the one configuration that could not work.
-	//
-	// Keyless is allowed for a loopback or private endpoint and refused for a
-	// public one, which is the same boundary the rest of this program draws.
-	// The direction matters: a keyless call to a public endpoint is not a
-	// cheaper deployment, it is an operator who believes they are
-	// authenticated and is not, and it fails at the far end with a message
-	// about the far end rather than about the configuration.
+	model := os.Getenv("QUILZO_MODEL")
+	if model == "" {
+		model = "gpt-oss:20b"
+	}
+	return NewHTTPModelAt(base, key, model)
+}
+
+// NewHTTPModelAt is a model at a given endpoint, under the same rule as the
+// configured one: a keyless endpoint must resolve to this network, because a
+// public endpoint that answers without a key is one anybody's traffic can
+// reach and nobody is accountable for. The model gateway builds its routes
+// through this so the rule is written once.
+func NewHTTPModelAt(base, key, model string) (*HTTPModel, error) {
 	if key == "" {
 		local, why := isLocalEndpoint(base)
 		if !local {
@@ -474,14 +473,6 @@ func NewHTTPModel() (*HTTPModel, error) {
 				base, why)
 		}
 	}
-	model := os.Getenv("QUILZO_MODEL")
-	if model == "" {
-		model = "gpt-oss:20b"
-	}
-	// A keyed endpoint is a hosted model the operator named, so only the
-	// deployment's mode decides whether it may be reached. An unkeyed one was
-	// admitted above *because* it is on this machine or network, and that is
-	// the rule its connections are then held to.
 	reach := fetch.Anywhere
 	if key == "" {
 		reach = fetch.OnThisNetwork

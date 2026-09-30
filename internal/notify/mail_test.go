@@ -364,3 +364,26 @@ func TestAChannelWithNoSenderIsAnErrorAndNotAFallback(t *testing.T) {
 type senderFunc func(Notice, Delivery) error
 
 func (f senderFunc) Send(n Notice, d Delivery) error { return f(n, d) }
+
+// A reminder's subject and address pass the same header checks as a notice,
+// before anything is dialled.
+func TestAPlainMessageCannotInjectAHeader(t *testing.T) {
+	dialled := false
+	m := Mailer{Host: "relay.example.com:587", From: "security@acme.com",
+		Dial: func(string, string) (net.Conn, error) {
+			dialled = true
+			return nil, fmt.Errorf("no network in this test")
+		}}
+	for _, c := range []struct{ to, subject string }{
+		{"sam@acme.com", "Tasks\r\nBcc: everyone@acme.com"},
+		{"sam@acme.com\r\nBcc: everyone@acme.com", "Tasks"},
+		{"", "Tasks"},
+	} {
+		if err := m.SendPlain(c.to, c.subject, "body"); err == nil {
+			t.Errorf("%q / %q was sent", c.to, c.subject)
+		}
+	}
+	if dialled {
+		t.Error("the relay was dialled for a message that should have been refused")
+	}
+}

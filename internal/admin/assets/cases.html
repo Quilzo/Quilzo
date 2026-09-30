@@ -1,0 +1,45 @@
+{{template "head" .}}
+<h1>Cases</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">An incident, the findings it gathers, who is running it, and
+  the notification deadlines that start when somebody decides something.
+  Every deadline runs from a decision, never from the end of an
+  investigation.</p>
+
+<dl class="stats-row">{{range .Tiles}}<div{{if .Tone}} class="{{.Tone}}"{{end}}><dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{if .Note}}<dd class="wf-note">{{.Note}}</dd>{{end}}</div>{{end}}</dl>
+
+{{if .Rows}}<div class="table-wrap"><table class="wf-people">
+  <thead><tr><th scope="col">Incident</th><th scope="col">Grade</th><th scope="col">State</th><th scope="col">Commander</th><th scope="col">Next deadline</th><th scope="col">Declared</th></tr></thead>
+  <tbody>{{range .Rows}}<tr>
+    <th scope="row"><a href="{{.Href}}">{{.Title}}</a><br><code>{{.ID}}</code>{{if .Findings}} <span class="hint">{{.Findings}} finding(s)</span>{{end}}</th>
+    <td><span class="wf-word {{.GradeTone}}">{{.Grade}}</span></td>
+    <td><span class="wf-word {{.StateTone}}">{{.State}}</span></td>
+    <td>{{if .Commander}}{{.Commander}}{{else}}<span class="hint">nobody</span>{{end}}</td>
+    <td>{{if .Next}}<span class="wf-word {{.NextTone}}">{{.Next}}</span>{{end}}{{if .Unstarted}}{{if .Next}}<br>{{end}}<span class="wf-word warning">{{.Unstarted}} with no clock yet</span>{{end}}{{if and (not .Next) (not .Unstarted)}}<span class="hint">none owed</span>{{end}}</td>
+    <td>{{.Age}}</td>
+  </tr>{{end}}</tbody></table></div>
+{{else}}<p>No incident has been declared.</p>{{end}}
+
+<h2 id="declare">Declare an incident</h2>
+<form method="post" action="/security/cases/act">
+  <input type="hidden" name="do" value="declare">
+  <div class="grid2">
+  <p><label>What is wrong, in a line <input type="text" name="title" required maxlength="200"></label></p>
+  <p><label>Grade <select name="grade">{{range .Grades}}<option value="{{.}}"{{if eq (print .) "sev3"}} selected{{end}}>{{.}}</option>{{end}}</select></label>
+    <span class="hint">sev1 and sev2 need a commander.</span></p>
+  </div>
+  <fieldset><legend>Which obligations apply to this organisation</legend>
+    {{range .Scopes}}<p><label><input type="checkbox" name="regime" value="{{.Name}}"{{if .On}} checked{{end}}> <strong>{{.Name}}</strong> <span class="hint">{{.Regimes}}</span></label></p>{{end}}
+    {{if .NoRegimes}}<p class="hint">None is set as the default. <code>quilzo incident regimes eu nis2</code> sets what a new incident starts with.</p>{{end}}
+  </fieldset>
+  <p><label>A finding this is about (optional) <input type="text" name="finding" value="{{.Finding}}" maxlength="200"></label></p>
+  <p class="hint">Declaring starts no clock. The page that follows lists the
+    decisions that would, and what each one starts. This is a table of
+    published deadlines, not legal advice: whether a regime applies is
+    somebody's judgement.</p>
+  <p><button type="submit">Declare</button></p>
+</form>
+{{end}}
+{{template "foot" .}}

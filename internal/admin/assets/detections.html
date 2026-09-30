@@ -1,0 +1,88 @@
+{{template "head" .}}
+<h1>Detections</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">What each rule has been worth, measured from the verdicts
+  people gave its findings. A rule is a file, reviewed like code; what
+  changes here is which ring it is in and what is suppressed, each with a
+  reason on the record.</p>
+
+<dl class="stats-row">
+  <div><dt>In the queue</dt><dd>{{.Live}}</dd></div>
+  <div{{if .Trial}} class="serious"{{end}}><dt>On trial</dt><dd>{{.Trial}}</dd></div>
+  <div><dt>Switched off</dt><dd>{{.Off}}</dd></div>
+  <div{{if .Silent}} class="serious"{{end}}><dt>Never fired</dt><dd>{{.Silent}}</dd></div>
+</dl>
+
+{{if .Proposals}}<section class="notice warn dt-proposals"><h2>Worth considering</h2>
+  <p>Suggested by the numbers. Nothing here has been changed.</p>
+  <ul>{{range .Proposals}}<li><strong>{{.What}}.</strong> {{.Why}}.</li>{{end}}</ul></section>{{end}}
+
+<h2>Rules</h2>
+<p class="wf-scale" aria-hidden="true"><span class="dt-key real">real</span><span class="dt-key false">false</span><span class="dt-key benign">benign</span><span class="dt-key open">undecided</span></p>
+{{if .Rows}}<div class="table-wrap"><table class="wf-people dt-rules">
+  <thead><tr><th scope="col">Rule</th><th scope="col">Ring</th><th scope="col">Raised</th><th scope="col">Verdicts</th><th scope="col">How good</th><th scope="col">Last fired</th></tr></thead>
+  <tbody>{{range .Rows}}<tr>
+    <th scope="row">{{.Title}}<br><code>{{.ID}}</code> <span class="pill {{.Severity}}">{{.Severity}}</span></th>
+    <td><span class="wf-word {{.RingTone}}">{{.S.Ring}}</span></td>
+    <td>{{if .S.Findings}}{{.S.Findings}} <span class="hint">({{.S.Fired}} times)</span>{{else}}<span class="hint">never</span>{{end}}{{if .S.Suppressed}}<br><span class="hint">{{.S.Suppressed}} hidden</span>{{end}}</td>
+    <td>{{if .S.Findings}}<svg class="dt-bar" viewBox="0 0 200 10" role="img" aria-label="{{.S.Real}} real, {{.S.False}} false, {{.S.Benign}} benign, {{.S.Undecided}} undecided">
+        <title>{{.S.Real}} real, {{.S.False}} false, {{.S.Benign}} benign, {{.S.Undecided}} undecided</title>
+        {{if .Bar.RealW}}<rect class="real" x="0" y="0" width="{{.Bar.RealW}}" height="10" rx="2"></rect>{{end}}
+        {{if .Bar.FalseW}}<rect class="false" x="{{.Bar.FalseX}}" y="0" width="{{.Bar.FalseW}}" height="10" rx="2"></rect>{{end}}
+        {{if .Bar.BenignW}}<rect class="benign" x="{{.Bar.BenignX}}" y="0" width="{{.Bar.BenignW}}" height="10" rx="2"></rect>{{end}}
+        {{if .Bar.OpenW}}<rect class="open" x="{{.Bar.OpenX}}" y="0" width="{{.Bar.OpenW}}" height="10" rx="2"></rect>{{end}}
+      </svg><br><span class="hint">{{.S.Real}} · {{.S.False}} · {{.S.Benign}} · {{.S.Undecided}}</span>{{else}}<span class="hint">—</span>{{end}}</td>
+    <td>{{if .Enough}}{{.Quality}}{{else}}<span class="hint">{{.Quality}}</span>{{end}}</td>
+    <td>{{if .Last}}{{.Last}}{{else}}<span class="hint">never</span>{{end}}</td>
+  </tr>
+  <tr class="dt-more"><td colspan="6"><details><summary>Why, what it misses, and changing it</summary>
+    {{if .Why}}<p><strong>Looks for:</strong> {{.Why}}</p>{{end}}
+    {{if .Blind}}<p><strong>Does not catch:</strong> {{.Blind}}</p>{{else}}<p class="hint">Nobody has written down what this rule does not catch.</p>{{end}}
+    <p class="hint">Reads {{range $i, $s := .Sources}}{{if $i}}, {{end}}{{$s}}{{end}}{{if .Technique}} · names {{range $i, $t := .Technique}}{{if $i}}, {{end}}{{$t}}{{end}}{{end}}{{if .S.NoisyEntity}} · most of its noise is about <code>{{.S.NoisyEntity}}</code> ({{.S.NoisyCount}}){{end}}</p>
+    <div class="grid2">
+    <form method="post" action="/security/detections/act">
+      <input type="hidden" name="do" value="ring"><input type="hidden" name="rule" value="{{.ID}}">
+      <p><label>Ring <select name="ring">{{$cur := .S.Ring}}{{range $.Rings}}<option value="{{.}}"{{if eq . $cur}} selected{{end}}>{{.}}</option>{{end}}</select></label></p>
+      <p><label>Why <input type="text" name="because" maxlength="300"></label></p>
+      <p class="hint">A reason is needed to take a rule out of the queue.</p>
+      <p><button type="submit">Move the rule</button></p>
+    </form>
+    <form method="post" action="/security/detections/act">
+      <input type="hidden" name="do" value="suppress"><input type="hidden" name="rule" value="{{.ID}}">
+      <p><label>Where <select name="field"><option value="actor">actor</option><option value="target">target</option><option value="device">device</option><option value="ip">ip</option></select></label>
+        <label>is exactly <input type="text" name="value" required maxlength="256" placeholder="okta:svc-backup"{{if .S.NoisyEntity}} value="{{.S.NoisyEntity}}"{{end}}></label></p>
+      <p><label>Owner <input type="text" name="owner" required maxlength="120"></label>
+        <label>Until <input type="date" name="until" required min="{{$.Tomorrow}}" max="{{$.MaxUntil}}"></label></p>
+      <p><label>Why <input type="text" name="because" required maxlength="300"></label></p>
+      <p><button type="submit">Suppress this one thing</button></p>
+    </form>
+    </div></details></td></tr>{{end}}</tbody>
+</table></div>{{else}}<p>No rules were found.</p>{{end}}
+
+<h2>Suppressions</h2>
+{{if .Suppressions}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Rule</th><th scope="col">Not raised where</th><th scope="col">Why</th><th scope="col">Owner</th><th scope="col">Until</th><th scope="col">Hidden</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+  <tbody>{{range .Suppressions}}<tr><th scope="row"><code>{{.Rule}}</code></th>
+    <td>{{.Field}} is <code>{{.Value}}</code></td><td>{{.Because}}</td><td>{{.Owner}}</td>
+    <td>{{.Until.Format "2 Jan 2006"}}{{if .Expired}} <span class="wf-word critical">expired</span>{{else}}<br><span class="hint">{{.Left}}</span>{{end}}</td>
+    <td>{{.Hidden}}</td>
+    <td><form method="post" action="/security/detections/act"><input type="hidden" name="do" value="unsuppress"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="danger">Remove</button></form></td></tr>{{end}}</tbody>
+</table></div>
+<p class="hint">Hidden is how many events each one kept out of the queue. One
+  that hides a great deal is worth a second look; one that hides nothing is
+  worth removing.</p>{{else}}<p>Nothing is suppressed.</p>{{end}}
+
+<h2>Techniques the rules name</h2>
+{{if .Techniques}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">ATT&amp;CK technique</th><th scope="col">Rules that name it</th><th scope="col">Any of them fired</th></tr></thead>
+  <tbody>{{range .Techniques}}<tr><th scope="row"><code>{{.ID}}</code></th>
+    <td>{{range $i, $r := .Rules}}{{if $i}}, {{end}}<code>{{$r}}</code>{{end}}</td>
+    <td>{{if .Fired}}<span class="wf-word good">Yes</span>{{else}}<span class="wf-word unknown">Not yet</span>{{end}}</td></tr>{{end}}</tbody>
+</table></div>{{else}}<p>No rule names a technique.</p>{{end}}
+<p class="hint">Named, not covered. A rule naming a technique says nothing
+  about whether it catches every way of doing it, which is why there is no
+  coverage percentage here.</p>
+{{end}}
+{{template "foot" .}}

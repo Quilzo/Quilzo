@@ -59,11 +59,12 @@ type destination struct {
 // dashboard, which are three answers to "can I show somebody this is right" —
 // so Assurance, which is the word the people who ask for it use.
 var groups = []string{
-	"Content",        // what you make
-	"Release",        // how it goes out
-	"Assurance",      // evidence that it is right
-	"Administration", // who may do what, and what this talks to
-	"Reference",      // how any of it works
+	"Content",             // what you make
+	"Release",             // how it goes out
+	"Assurance",           // evidence that it is right
+	"Security operations", // what is wrong, and what is being done about it
+	"Administration",      // who may do what, and what this talks to
+	"Reference",           // how any of it works
 }
 
 // destinations is every screen, in the default order.
@@ -82,6 +83,11 @@ var destinations = []destination{
 	{"sections", "Sections", "/sections", "Content", "templates", auth.ActEditDraft},
 	{"languages", "Languages", "/languages", "Content", "languages", auth.ActView},
 	{"assist", "Assistant", "/assist", "Content", "ai", auth.ActEditDraft},
+	// Beside Assistant, which drafts pages for the people editing them. This
+	// is the other side: chatbots the site offers its visitors, answering
+	// from what is published.
+	{"assistants", "Chatbots", "/assistants", "Content", "ai", auth.ActEditDraft},
+	{"decisions", "Decisions", "/decisions", "Content", "ai", auth.ActEditDraft},
 
 	// With Review rather than with Content: a note is part of agreeing that
 	// something is ready, which is what this group is about.
@@ -89,12 +95,31 @@ var destinations = []destination{
 	{"review", "Review", "/review", "Release", "publishing", auth.ActView},
 	{"publishing", "Publishing", "/publishing", "Release", "environments", auth.ActView},
 	{"history", "History", "/history", "Release", "history", auth.ActView},
+	// With Release: what happened to what went out.
+	{"analytics", "Analytics", "/analytics", "Release", "publishing", auth.ActEditDraft},
+	{"experiments", "Experiments", "/experiments", "Release", "publishing", auth.ActEditDraft},
+	{"personalise", "Personalisation", "/personalise", "Release", "publishing", auth.ActEditDraft},
 	{"transfer", "Transfer", "/transfer", "Release", "transfer", auth.ActView},
 	{"decentralised", "Permanent web", "/decentralised", "Release", "ipfs", auth.ActView},
 
 	{"provenance", "Provenance", "/provenance", "Assurance", "provenance", auth.ActView},
 	{"security", "Security", "/security", "Assurance", "security", auth.ActGrant},
 	{"logs", "Log", "/logs", "Assurance", "logging", auth.ActGrant},
+
+	// The working half of security: the queue, and the events it is raised
+	// from. Apart from Assurance, which is evidence that the system is right;
+	// this is the list of what is currently wrong.
+	{"findings", "Findings", "/findings", "Security operations", "detection", auth.ActGrant},
+	{"risk", "Risk", "/security/risk", "Security operations", "detection", auth.ActGrant},
+	{"cases", "Cases", "/security/cases", "Security operations", "cases", auth.ActGrant},
+	{"events", "Events", "/security/events", "Security operations", "detection", auth.ActGrant},
+	{"hunt", "Hunt", "/security/hunt", "Security operations", "detection", auth.ActGrant},
+	{"detections", "Detections", "/security/detections", "Security operations", "detection", auth.ActGrant},
+	{"indicators", "Indicators", "/security/indicators", "Security operations", "detection", auth.ActGrant},
+	{"vulns", "Vulnerabilities", "/security/vulns", "Security operations", "vulnerabilities", auth.ActGrant},
+	// People and their machines, from what the company's tools say. Admin
+	// only: a person's score is a file on an employee.
+	{"workforce", "Workforce risk", "/workforce", "Security operations", "workforce", auth.ActGrant},
 
 	{"agents", "Agents", "/agents", "Administration", "agents", auth.ActGrant},
 	{"people", "People", "/people", "Administration", "users", auth.ActGrant},
@@ -104,6 +129,9 @@ var destinations = []destination{
 	// administrators could have.
 	{"passkeys", "Passkeys", "/passkeys", "Administration", "auth", auth.ActView},
 	{"integrations", "Integrations", "/integrations", "Administration", "integrations", auth.ActGrant},
+	// Beside Integrations: both decide what this program talks to, and a
+	// model route decides who receives what visitors typed.
+	{"models", "Models", "/models", "Administration", "ai", auth.ActGrant},
 	{"settings", "Settings", "/settings", "Administration", "settings", auth.ActEditDraft},
 
 	// Find is in Reference and not in Content, because it is about this
@@ -149,10 +177,11 @@ var docSections = map[string]bool{
 	"pages": true, "data": true, "types": true, "structure": true,
 	"listings": true, "forms": true, "media": true, "languages": true,
 	"ai": true, "publishing": true, "environments": true, "history": true,
-	"transfer": true, "ipfs": true, "provenance": true, "security": true,
+	"transfer": true, "ipfs": true, "provenance": true, "security": true, "detection": true,
+	"vulnerabilities": true, "cases": true,
 	"logging": true, "users": true, "auth": true, "integrations": true,
 	"settings": true, "api": true, "profile": true, "start": true,
-	"agents": true, "design": true,
+	"agents": true, "design": true, "workforce": true,
 
 	// Sections no screen owns, because they explain a concept or a surface
 	// rather than a destination. Named individually so that one quietly
@@ -468,7 +497,7 @@ func Screens() []find.Destination {
 		"access": {"permission", "role", "grant", "token", "authorisation",
 			"authorization"},
 		"passkeys":     {"passkey", "webauthn", "2fa", "security key", "login"},
-		"integrations": {"webhook", "slack", "telegram", "siem", "extension"},
+		"integrations": {"webhook", "siem", "extension"},
 		"settings":     {"configuration", "config", "option", "preference"},
 		"start":        {"help", "documentation", "docs", "guide", "getting started"},
 		"playground":   {"api", "rest", "endpoint", "json"},

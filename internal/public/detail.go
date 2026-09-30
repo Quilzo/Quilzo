@@ -58,11 +58,9 @@ type Detail = render.Detail
 
 func detailOf(body any) (Detail, bool) { return render.DetailOf(body) }
 
-// findRecord returns the one record a detail URL names.
-//
-// The listing does the filtering, so this is a scan of what the listing already
-// decided is visible. That is the point: there is no second query with second
-// rules, and a record the listing excludes is not found here either.
+// findRecord returns the one record a detail URL names, through the listing
+// the page declares. The lookup itself is listing.Resolver.Record, shared with
+// the admin's preview so the two cannot disagree about what is visible.
 func (st *Site) findRecord(d Detail, key string, args map[string]string) (
 	listing.Row, error) {
 
@@ -74,51 +72,12 @@ func (st *Site) findRecord(d Detail, key string, args map[string]string) (
 	if st.Listings == nil || st.Listings.Set == nil {
 		return nil, fmt.Errorf("no listings are declared")
 	}
-	l, ok := st.Listings.Set.Get(d.Listing)
-	if !ok {
-		return nil, fmt.Errorf(
-			"this page reads records through the listing %q, which is not "+
-				"declared", d.Listing)
-	}
-	idx, err := st.Listings.Index.For(st.Listings.Store, st.Listings.At(),
-		l.Collection)
-	if err != nil {
-		return nil, err
-	}
-	res, err := listing.Resolve(l, idx, args)
-	if err != nil {
-		return nil, err
-	}
-
-	return matchOne(res.Rows, d.Key, key)
+	return st.Listings.Record(d.Listing, d.Key, key, args)
 }
 
-// matchOne finds the single row whose key field holds a value.
-//
-// Separate from the lookup so the three answers — none, one, several — can be
-// tested without building a store to produce each. The several case is the one
-// that matters: answering it by taking the first is a decision made by whatever
-// order the index happened to return, which nobody reviewed, and the two pages
-// would swap places on a reindex.
+// matchOne is listing.MatchOne, named here for the tests beside the route.
 func matchOne(rows []listing.Row, field, want string) (listing.Row, error) {
-	var found listing.Row
-	var n int
-	for _, row := range rows {
-		if v, _ := row[field].(string); v == want {
-			found = row
-			n++
-		}
-	}
-	switch n {
-	case 0:
-		return nil, errNoRecord
-	case 1:
-		return found, nil
-	default:
-		return nil, fmt.Errorf(
-			"%d records share the %s %q, so this address does not name one "+
-				"of them", n, field, want)
-	}
+	return listing.MatchOne(rows, field, want)
 }
 
 func missingHalf(d Detail) string {
@@ -131,13 +90,8 @@ func missingHalf(d Detail) string {
 	return "nothing"
 }
 
-// errNoRecord is a record that is not there, or that the listing excludes.
-//
-// One error for both, deliberately. Distinguishing them turns the route into
-// an oracle for what is in the store: a different answer for "no such product"
-// and "a product you may not see" tells anybody who asks which unpublished
-// slugs exist.
-var errNoRecord = fmt.Errorf("no such record")
+// errNoRecord is listing.ErrNoRecord: absent and excluded answer the same.
+var errNoRecord = listing.ErrNoRecord
 
 // detailRoute answers a URL of the form /page/key when the page declares one.
 //

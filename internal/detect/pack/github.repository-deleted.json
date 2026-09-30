@@ -1,0 +1,68 @@
+{
+  "id": "github.repository-deleted",
+  "title": "A repository was deleted on GitHub",
+  "why": "deleting is rare, and deleting after copying is what leaving with the code looks like",
+  "blind": "a repository transferred out of the organisation",
+  "sources": [
+    "github/audit"
+  ],
+  "severity": 4,
+  "when": {
+    "match": {
+      "field": "message",
+      "op": "equals",
+      "values": [
+        "repo.destroy"
+      ]
+    }
+  },
+  "technique": [
+    "T1485"
+  ],
+  "fixtures": [
+    {
+      "name": "a repository deleted",
+      "match": true,
+      "event": {
+        "source": "github/audit",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "github",
+          "value": "dana-gh"
+        },
+        "message": "repo.destroy",
+        "raw": {
+          "action": "repo.destroy",
+          "repo": "acme/shop",
+          "org": "acme",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "a repository created",
+      "match": false,
+      "event": {
+        "source": "github/audit",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "github",
+          "value": "dana-gh"
+        },
+        "message": "repo.create",
+        "raw": {
+          "action": "repo.create",
+          "repo": "acme/shop",
+          "org": "acme",
+          "person": "dana@acme.com"
+        }
+      }
+    }
+  ]
+}

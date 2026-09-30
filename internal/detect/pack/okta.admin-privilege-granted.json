@@ -1,0 +1,105 @@
+{
+  "id": "okta.admin-privilege-granted",
+  "title": "An administrator role was granted in Okta",
+  "why": "a new administrator is how access outlives the account that was compromised",
+  "blind": "a role that arrives through a group somebody was already in",
+  "sources": [
+    "okta/system"
+  ],
+  "severity": 4,
+  "when": {
+    "match": {
+      "field": "raw.eventType",
+      "op": "equals",
+      "values": [
+        "user.account.privilege.grant",
+        "group.privilege.grant"
+      ]
+    }
+  },
+  "technique": [
+    "T1098"
+  ],
+  "fixtures": [
+    {
+      "name": "a role granted to a user",
+      "match": true,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "user.account.privilege.grant",
+        "raw": {
+          "eventType": "user.account.privilege.grant",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "a role granted to a group",
+      "match": true,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "group.privilege.grant",
+        "raw": {
+          "eventType": "group.privilege.grant",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "an ordinary sign-in",
+      "match": false,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "User login to Okta",
+        "raw": {
+          "eventType": "user.session.start",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "a role revoked",
+      "match": false,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "user.account.privilege.revoke",
+        "raw": {
+          "eventType": "user.account.privilege.revoke",
+          "person": "dana@acme.com"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+{{template "head" .}}
+<p class="hint"><a href="/agents">Agents</a></p>
+<h1>{{if .New}}Declare an agent{{else}}{{.M.Name}}{{end}}</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .New}}<p class="lead">Starting from <strong>{{.M.Kind}}</strong>: {{.Summary}}. {{.When}}</p>
+{{else}}<p class="lead">{{.M.Purpose}}</p>{{end}}
+{{if .Invalid}}<p class="notice warn"><strong>As it stands this would be refused:</strong> {{.Invalid}}</p>{{end}}
+
+<figure class="wf-fig">
+  <figcaption><h2>What it reads, and what it may do</h2></figcaption>
+  <svg class="agmap" viewBox="0 0 {{.Map.W}} {{.Map.H}}" role="img" aria-label="{{.Map.Says}}">
+    {{range .Map.Heads}}<text class="head" x="{{.TX}}" y="{{.TY}}">{{.Label}}</text>{{end}}
+    {{range .Map.Lines}}<line class="{{.Class}}" x1="{{.X1}}" y1="{{.Y1}}" x2="{{.X2}}" y2="{{.Y2}}"></line>{{end}}
+    {{range .Map.Boxes}}<rect class="box {{.Class}}" x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}" rx="6"></rect>
+    {{if eq .Class "gate"}}<text class="gatelabel" x="{{.TX}}" y="{{.TY}}" transform="rotate(-90 {{.TX}} {{.TY}})" text-anchor="middle">{{.Label}}</text>
+    {{else}}<text class="label {{.Class}}" x="{{.TX}}" y="{{.TY}}">{{.Label}}</text>{{if .Sub}}<text class="sub" x="{{.TX}}" y="{{.TY}}" dy="14">{{.Sub}}</text>{{end}}{{end}}{{end}}
+  </svg>
+  <p class="hint">{{.Map.Says}} Drawn from the declaration below; the two cannot disagree.</p>
+</figure>
+
+<form method="post" action="/agents/act">
+  <input type="hidden" name="do" value="save">
+  {{if .New}}<input type="hidden" name="new" value="1"><input type="hidden" name="kind" value="{{.M.Kind}}">
+  <p><label>Name <input type="text" name="name" required maxlength="41" pattern="[a-z0-9][a-z0-9\-]*" placeholder="support-answers"></label>
+    <span class="hint">Lower-case letters, digits and hyphens. It is how every log entry says which agent acted.</span></p>
+  {{else}}<input type="hidden" name="name" value="{{.M.Name}}">{{end}}
+  <p><label>What it is for <textarea name="purpose" rows="2" required maxlength="600">{{.M.Purpose}}</textarea></label>
+    <span class="hint">A capability list nobody can check against an intention is one nobody reviews.</span></p>
+
+  <fieldset><legend>How far it may go on its own</legend>
+    <p><label><input type="radio" name="autonomy" value="propose"{{if eq (print .M.Autonomy) "propose"}} checked{{end}}> <strong>Propose</strong> <span class="hint">it suggests; a person does</span></label></p>
+    <p><label><input type="radio" name="autonomy" value="draft"{{if eq (print .M.Autonomy) "draft"}} checked{{end}}> <strong>Draft</strong> <span class="hint">it writes drafts nobody is served until a person publishes</span></label></p>
+    <p><label><input type="radio" name="autonomy" value="publish"{{if eq (print .M.Autonomy) "publish"}} checked{{end}}> <strong>Publish</strong> <span class="hint">what it writes goes live</span></label></p>
+    <p><label><input type="checkbox" name="human_approval" value="1"{{if .M.HumanApproval}} checked{{end}}> A person approves before anything it did becomes public</label></p>
+  </fieldset>
+
+  <fieldset class="caps-set"><legend>What it may do</legend>
+    <div class="caps">
+    {{range .Caps}}<p><label><input type="checkbox" name="cap" value="{{.Name}}"{{if .On}} checked{{end}}> <code>{{.Name}}</code>{{if .Risk}} <span class="wf-word serious">writes</span>{{end}}</label>
+      <label class="ask"><input type="checkbox" name="ask" value="{{.Name}}"{{if .Ask}} checked{{end}}> ask first<span class="visually-hidden"> before {{.Name}}</span></label></p>{{end}}
+    {{range .UnknownCaps}}<p><label><input type="checkbox" name="cap" value="{{.}}" checked> <code>{{.}}</code> <span class="wf-word critical">nothing offers this</span></label></p>{{end}}
+    </div>
+    {{if not .Caps}}<p class="hint">The list of capabilities could not be read, so what is held is kept as it is.</p>{{end}}
+  </fieldset>
+
+  <fieldset><legend>What it may read</legend>
+    <div class="grid2">
+    <p><label>Which site <select name="ref"><option value=""{{if not .M.Retrieval.Ref}} selected{{end}}>what is published</option><option value="draft"{{if eq .M.Retrieval.Ref "draft"}} selected{{end}}>drafts as well</option></select></label></p>
+    <p><label>Only under this path <input type="text" name="path" value="{{.M.Retrieval.Path}}" maxlength="200" placeholder="/docs"></label></p>
+    <p><label>Only these content types <input type="text" name="types" value="{{.Types}}" maxlength="300" placeholder="article, faq"></label></p>
+    <p><label>Only these languages <input type="text" name="locales" value="{{.Locales}}" maxlength="120" placeholder="en, fr"></label></p>
+    </div>
+  </fieldset>
+
+  <fieldset><legend>What it remembers between runs</legend>
+    <p><label><input type="checkbox" name="episodic" value="1"{{if .M.Memory.Episodic}} checked{{end}}> What happened in earlier runs</label></p>
+    <p><label><input type="checkbox" name="semantic" value="1"{{if .M.Memory.Semantic}} checked{{end}}> Facts it learned</label></p>
+    <p><label><input type="checkbox" name="procedural" value="1"{{if .M.Memory.Procedural}} checked{{end}}> How it did something that worked</label></p>
+    <p><label>Kept for <input type="text" name="retain" value="{{.Retain}}" maxlength="12" placeholder="720h"></label>
+      <span class="hint">Ninety days at most. Empty when it remembers nothing.</span></p>
+  </fieldset>
+
+  <fieldset><legend>How much one run may spend</legend>
+    <div class="grid2">
+    <p><label>Steps <input type="number" name="steps" value="{{.M.Budget.Steps}}" min="1" max="500" required></label></p>
+    <p><label>Tool calls <input type="number" name="tool_calls" value="{{.M.Budget.Tools}}" min="1" max="500" required></label></p>
+    <p><label>Time <input type="text" name="duration" value="{{.Duration}}" maxlength="12" required placeholder="5m"></label></p>
+    </div>
+  </fieldset>
+
+  {{if .Others}}<fieldset><legend>Other agents it may hand work to</legend>
+    {{range .Others}}<p><label><input type="checkbox" name="delegate" value="{{.Name}}"{{if .On}} checked{{end}}> {{.Name}}</label></p>{{end}}
+    <p class="hint">Only a supervisor delegates. An agent it hands work to keeps its own limits.</p>
+  </fieldset>{{end}}
+
+  {{if .M.Tools}}<p class="hint">It may also reach {{range $i, $t := .M.Tools}}{{if $i}}, {{end}}<code>{{$t.Name}}</code> on {{$t.Host}}{{end}}. Tools are changed in the text below.</p>{{end}}
+  <p><button type="submit">{{if .New}}Declare it{{else}}Save{{end}}</button></p>
+</form>
+
+{{if not .New}}
+<h2>Try it</h2>
+<form method="post" action="/agents/act">
+  <input type="hidden" name="do" value="run"><input type="hidden" name="name" value="{{.M.Name}}">
+  <p><label>What it should do <textarea name="goal" rows="2" maxlength="2000" placeholder="Find the page that explains refunds and say what it says"></textarea></label></p>
+  <p><label><input type="checkbox" name="model" value="1"> Let a model choose the actions</label>
+    <span class="hint">Unticked, every capability is tried once with no model: that shows what this store answers, and costs nothing.</span></p>
+  <p><button type="submit">Run it once</button></p>
+  <p class="hint">It runs with your own authority as its ceiling, inside its declaration. The run is kept, step by step.</p>
+</form>
+{{if .Runs}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Run</th><th scope="col">Outcome</th><th scope="col">Did</th><th scope="col">Refused</th><th scope="col">Failed</th><th scope="col">When</th></tr></thead>
+  <tbody>{{range .Runs}}<tr><th scope="row"><a href="/agents/run/{{.ID}}">{{if .Goal}}{{.Goal}}{{else}}{{.ID}}{{end}}</a></th>
+    <td><span class="wf-word {{.Tone}}">{{.Outcome}}</span></td><td>{{.Did}}</td><td>{{.Refused}}</td><td>{{.Failed}}</td><td>{{.When}}</td></tr>{{end}}</tbody>
+</table></div>
+<p class="hint"><a href="/agents/runs?agent={{.M.Name}}">Every run of {{.M.Name}}</a></p>{{end}}
+
+<h2>The declaration</h2>
+<p class="hint">This is the agent: one document, reviewable as text. The form
+  above edits it and the map is drawn from it.</p>
+<form method="post" action="/agents/act">
+  <input type="hidden" name="do" value="define"><input type="hidden" name="name" value="{{.M.Name}}">
+  <p><label><span class="visually-hidden">The declaration, as JSON</span><textarea class="code" name="definition" rows="18" spellcheck="false">{{.Definition}}</textarea></label></p>
+  <p><button type="submit">Save from the text</button></p>
+</form>
+
+<h2>Withdraw it</h2>
+<form method="post" action="/agents/act">
+  <input type="hidden" name="do" value="remove"><input type="hidden" name="name" value="{{.M.Name}}">
+  <p class="hint">It can no longer be run. What it did stays in the runs and in the audit log.</p>
+  <p><button type="submit" class="danger">Withdraw {{.M.Name}}</button></p>
+</form>
+{{end}}
+{{template "foot" .}}

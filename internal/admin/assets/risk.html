@@ -1,0 +1,46 @@
+{{template "head" .}}
+<h1>Risk</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">Everything open about each person or thing, added up. Three
+  medium findings about one account on two platforms are one thing to look
+  at, and a queue shows them as three things to get to later.</p>
+{{if not .Produced}}<p class="notice warn">Nothing has ever written to the finding register, so an empty list here is silence and not a clean result.</p>{{end}}
+<p class="hint">{{.Entities}} with something open; {{.High}} high or critical.
+  A finding counts for fourteen days and fades; what was ruled false or
+  benign, and what a rule on trial raised, is not counted. Several rules
+  agreeing count for more than one rule firing several times.</p>
+
+{{range .Rows}}
+<section class="card">
+  <h2><a href="{{.Href}}"><code>{{.Entity}}</code></a> <span class="wf-word {{.Tone}}">{{.Band}}</span></h2>
+  <p class="wf-score"><span class="wf-points">{{.Score}}</span>
+    <svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.W}}" height="8" rx="4"></rect></svg>
+</p>
+  <p class="hint">{{.Why}}</p>
+  {{if .Person}}<p class="hint">One person, known as {{range $i, $x := .Identifiers}}{{if $i}}, {{end}}<code>{{$x}}</code>{{end}}.</p>{{end}}
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Finding</th><th scope="col">Severity</th><th scope="col">Last seen</th><th scope="col">Points</th><th scope="col">Incident</th></tr></thead>
+    <tbody>{{range .Parts}}<tr><th scope="row"><a href="/findings/{{.ID}}">{{.Title}}</a><br><span class="hint">{{.Source}}</span></th>
+      <td><span class="pill {{.Sev}}">{{.Sev}}</span></td><td>{{.Age}}</td><td>{{.Points}}</td>
+      <td>{{if .Case}}<a href="/security/case/{{.Case}}"><code>{{.Case}}</code></a>{{else}}<span class="hint">none</span>{{end}}</td></tr>{{end}}</tbody>
+  </table></div>
+  {{if .Offer}}<details class="wf-how"><summary>These look like one thing: declare an incident</summary>
+  <form method="post" action="/security/cases/act">
+    <input type="hidden" name="do" value="declare">
+    {{range .Offer}}<input type="hidden" name="finding" value="{{.}}">{{end}}
+    <p><label>What is wrong, in a line <input type="text" name="title" required maxlength="200" value="{{.OfferTitle}}"></label></p>
+    <p><label>Grade <select name="grade"><option value="sev2">sev2</option><option value="sev3" selected>sev3</option><option value="sev1">sev1</option><option value="sev4">sev4</option></select></label></p>
+    {{if .Playbook}}<p><label><input type="checkbox" name="playbook" value="{{.Playbook}}" checked> Propose the playbook that fits the rules behind these: <strong>{{.PlaybookTitle}}</strong></label></p>{{end}}
+    <p class="hint">Offered because there are several, from more than one
+      rule. It gathers the {{len .Offer}} finding(s) no incident has yet,
+      under the obligations set as this organisation's. Nothing is declared
+      until you do it, and a playbook proposed here still needs approving.</p>
+    <p><button type="submit">Declare the incident</button></p>
+  </form></details>{{end}}
+</section>
+{{else}}<p>Nothing is open about anybody.</p>{{end}}
+{{if .More}}<p class="hint">{{.More}} more are below these.</p>{{end}}
+{{end}}
+{{template "foot" .}}

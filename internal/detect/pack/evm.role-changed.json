@@ -1,0 +1,100 @@
+{
+  "id": "evm.role-changed",
+  "title": "A role was granted or revoked on a contract",
+  "why": "a role is the right to mint, pause or upgrade, and granting one is how that right is taken",
+  "blind": "a contract that checks permissions without the standard access-control events",
+  "sources": [
+    "evm/logs"
+  ],
+  "severity": 4,
+  "when": {
+    "any": [
+      {
+        "match": {
+          "field": "raw.signature",
+          "op": "equals",
+          "values": [
+            "0x2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d",
+            "0xf6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "raw.event",
+          "op": "prefix",
+          "values": [
+            "RoleGranted(",
+            "RoleRevoked("
+          ]
+        }
+      }
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "RoleGranted, decoded by the explorer",
+      "match": true,
+      "event": {
+        "source": "evm/logs",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "evm",
+          "value": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "message": "RoleGranted(address indexed a, address indexed b)",
+        "raw": {
+          "signature": "0x2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d",
+          "tx": "0xabc",
+          "block_number": "1",
+          "event": "RoleGranted(address indexed a, address indexed b)"
+        }
+      }
+    },
+    {
+      "name": "RoleRevoked, on a contract the explorer has not verified",
+      "match": true,
+      "event": {
+        "source": "evm/logs",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "evm",
+          "value": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "raw": {
+          "signature": "0xf6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b",
+          "tx": "0xabc",
+          "block_number": "1"
+        }
+      }
+    },
+    {
+      "name": "an ordinary transfer",
+      "match": false,
+      "event": {
+        "source": "evm/logs",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "evm",
+          "value": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "message": "Transfer(address indexed a, address indexed b)",
+        "raw": {
+          "signature": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "tx": "0xabc",
+          "block_number": "1",
+          "event": "Transfer(address indexed a, address indexed b)"
+        }
+      }
+    }
+  ]
+}

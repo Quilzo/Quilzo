@@ -7,7 +7,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/analytics"
+	"github.com/quilzo/quilzo/internal/experiment"
 	"github.com/quilzo/quilzo/internal/listen"
+	"github.com/quilzo/quilzo/internal/personalise"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/vector"
 	"net/http"
@@ -215,6 +218,28 @@ func cmdSite(root string, args []string) error {
 	}
 	if d := strings.TrimSpace(*desc); d != "" {
 		st.Description = d
+	}
+
+	// Counting, before the handler is built around it. Written every thirty
+	// seconds: a crash costs at most that much of the day's totals, and the
+	// totals are all there is — see internal/analytics.
+	if counter, cerr := analytics.Open(analyticsDir(root), nil); cerr == nil {
+		st.Analytics = counter
+		// Read per request, so starting or stopping a test from the admin
+		// takes effect on the next visitor rather than on the next restart.
+		st.Experiments = func() (*experiment.Set, error) {
+			return experiment.Load(experimentsPath(root))
+		}
+		st.Personalise = func() (*personalise.Set, error) {
+			return personalise.Load(personalisePath(root))
+		}
+		go func() {
+			for range time.Tick(30 * time.Second) {
+				_ = counter.Flush()
+			}
+		}()
+	} else {
+		fmt.Fprintf(os.Stderr, "analytics are off: %v\n", cerr)
 	}
 
 	handler := st.Handler()

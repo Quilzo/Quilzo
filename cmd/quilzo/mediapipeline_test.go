@@ -4,22 +4,15 @@
 package main
 
 import (
-	"bytes"
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"image"
-	"image/color"
-	"image/jpeg"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/config"
-	"github.com/quilzo/quilzo/internal/media"
-	"github.com/quilzo/quilzo/internal/medialib"
 )
 
 // Every way an image gets into the library runs it through the pipeline.
@@ -41,7 +34,6 @@ func TestEveryImageEntranceRunsTheOptimiser(t *testing.T) {
 	entrances := map[string]string{
 		"mediaAdd": "quilzo media add",
 		"mediaGet": "quilzo media get",
-		"Save":     "the chat surfaces, through chatMedia.Save",
 	}
 	found := map[string]bool{}
 
@@ -168,96 +160,6 @@ func TestABadConfigStillOptimises(t *testing.T) {
 	if opt.KeepMetadata {
 		t.Error("a site with no config keeps EXIF")
 	}
-}
-
-// A photograph sent to the bot is stored without its metadata, even when the
-// stripped copy is not smaller.
-//
-// The bug this forbids was a size test. Optimise deliberately keeps a
-// re-encode that came out a few bytes larger when metadata had to go —
-// "because the point there was never the size" — and the chat surface threw
-// that away with `len(opt.Body) < len(body)`. So a photograph whose stripped
-// copy did not happen to shrink kept its GPS coordinates, on the one surface
-// where the file arrives straight out of somebody's phone.
-func TestAPhotographSentToTheBotLosesItsMetadata(t *testing.T) {
-	dir := t.TempDir()
-	lib, err := medialib.Open(filepath.Join(dir, "media"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := &chatMedia{root: dir, lib: lib, cfg: config.New()}
-
-	body := jpegWithGPS(t)
-	if !bytes.Contains(body, []byte("GPSLatitude")) {
-		t.Fatal("the fixture carries no coordinates, so this checks nothing")
-	}
-	id, _, err := m.Save("someone", "photo.jpg", body, "a photograph")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, stored, err := lib.Get(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Contains(stored, []byte("GPSLatitude")) {
-		t.Error("the stored photograph still carries the coordinates it " +
-			"arrived with")
-	}
-	if bytes.Contains(stored, []byte("Exif")) {
-		t.Error("the stored photograph still carries an EXIF segment")
-	}
-}
-
-// jpegWithGPS is a JPEG carrying an APP1 segment with coordinates in it, built
-// so that re-encoding it makes it BIGGER.
-//
-// That is the whole point of the fixture. Noise at quality 20 re-encoded at
-// the pipeline's default of 82 grows by several kilobytes, so removing
-// fifty-eight bytes of EXIF still leaves a larger file — which is exactly the
-// case the old `len(opt.Body) < len(body)` test rejected, keeping the original
-// and publishing the coordinates. A fixture that shrinks would let the bug
-// pass.
-func jpegWithGPS(t *testing.T) []byte {
-	t.Helper()
-	const w, h = 160, 120
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	seed := uint32(0x2545f491)
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			seed ^= seed << 13
-			seed ^= seed >> 17
-			seed ^= seed << 5
-			img.Set(x, y, color.RGBA{R: uint8(seed), G: uint8(seed >> 8),
-				B: uint8(seed >> 16), A: 255})
-		}
-	}
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 20}); err != nil {
-		t.Fatal(err)
-	}
-	plain := buf.Bytes()
-
-	payload := append([]byte("Exif\x00\x00"),
-		[]byte("GPSLatitude=51.5074 GPSLongitude=-0.1278 Serial=ABC123")...)
-	seg := []byte{0xFF, 0xE1,
-		byte((len(payload) + 2) >> 8), byte((len(payload) + 2) & 0xFF)}
-	seg = append(seg, payload...)
-
-	out := append([]byte{}, plain[:2]...)
-	out = append(out, seg...)
-	out = append(out, plain[2:]...)
-
-	// The fixture has to be the hard case or the test is decoration.
-	opt, err := media.Optimise("jpeg", out, mediaOptions(config.New()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(opt.Body) <= len(out) {
-		t.Fatalf("the stripped copy is %d bytes against %d: this fixture "+
-			"shrinks, so it would pass against the size test that caused the "+
-			"bug", len(opt.Body), len(out))
-	}
-	return out
 }
 
 // The public site is handed a way to stream, not only a way to read.

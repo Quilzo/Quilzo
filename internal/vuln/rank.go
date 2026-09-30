@@ -41,6 +41,69 @@ type Exposure struct {
 	Assessed  Assessment `json:"assessed,omitzero"`
 	// Silenced is whether an assessment takes this out of the queue now.
 	Silenced bool `json:"silenced,omitempty"`
+	// Reach is what reading the asset's source established about this
+	// advisory's symbols, when somebody has had it read.
+	Reach *Reach `json:"reach,omitempty"`
+}
+
+// Reach is one advisory's symbols looked for in one asset's source.
+//
+// Per advisory and per asset, which is the only grain at which it is true:
+// a library is not "reachable", one function of it is, from one codebase.
+type Reach struct {
+	Advisory string `json:"advisory"`
+	// Component is ecosystem:name, and Where the asset, as issuer:value.
+	Component string `json:"component"`
+	Where     string `json:"where"`
+	// Referenced is whether the source names any affected symbol.
+	Referenced bool `json:"referenced"`
+	// Symbols is how many the advisory named; Found the ones mentioned and
+	// Files where, so somebody can go and look.
+	Symbols int       `json:"symbols"`
+	Found   []string  `json:"found,omitempty"`
+	Files   []string  `json:"files,omitempty"`
+	At      time.Time `json:"at"`
+}
+
+// Says puts a reach result in a sentence, with its limit attached: what was
+// read is this asset's own source, and what was not is everything it
+// depends on.
+func (r Reach) Says() string {
+	if r.Referenced {
+		s := "this asset's source mentions " + strings.Join(r.Found, ", ")
+		if len(r.Files) > 0 {
+			s += " (in " + strings.Join(r.Files, ", ") + ")"
+		}
+		return s
+	}
+	return fmt.Sprintf("this asset's own source never names the %d "+
+		"affected symbol(s); its dependencies were not read", r.Symbols)
+}
+
+// ApplyReach attaches what was established about each exposure and ranks
+// again. A result for an asset applies to that asset only.
+func ApplyReach(in []Exposure, results []Reach, now time.Time) []Exposure {
+	if len(results) == 0 {
+		return in
+	}
+	by := map[string]*Reach{}
+	for i := range results {
+		r := &results[i]
+		by[r.Advisory+"\x00"+r.Component+"\x00"+r.Where] = r
+	}
+	out := append([]Exposure(nil), in...)
+	for i := range out {
+		e := &out[i]
+		r, ok := by[e.Advisory.ID+"\x00"+e.Component.Key()+"\x00"+
+			e.Component.Where.String()]
+		if !ok {
+			continue
+		}
+		e.Reach = r
+		reached := r.Referenced
+		e.Component.Reachable = &reached
+	}
+	return Rank(out, now)
 }
 
 // Fixable reports whether there is a version to move to.
@@ -74,44 +137,79 @@ func (e Exposure) Fixable() (string, bool) {
 // remediating about 110,000. Sorting by severity is eight times the work for
 // the same result, and it is what every scanner does by default.
 func (e Exposure) Weight(now time.Time) float64 {
-	if e.Silenced || e.Verdict == Outside || e.Verdict == Patched {
-		return 0
-	}
 	var w float64
+	for _, t := range e.Terms(now) {
+		w += t.Points
+	}
+	return w
+}
+
+// Term is one reason an exposure sits where it does, and what it is worth.
+type Term struct {
+	Name   string  `json:"name"`
+	Points float64 `json:"points"`
+	Why    string  `json:"why"`
+}
+
+// Terms is Weight, shown as its working.
+//
+// The weight is the sum of these and of nothing else, so a screen that
+// prints them has printed the whole reason for a row's position. A rank
+// nobody can take apart is a rank nobody can argue with, and one nobody can
+// argue with is one nobody trusts.
+func (e Exposure) Terms(now time.Time) []Term {
+	if e.Silenced || e.Verdict == Outside || e.Verdict == Patched {
+		return nil
+	}
+	var out []Term
 
 	// A fact beats every prediction. Each independent source that says so
 	// counts, because two agencies agreeing is more than one asserting.
 	if yes, who := e.Advisory.Attested(); yes {
-		w += 1000 * float64(len(who))
+		out = append(out, Term{"Exploited", 1000 * float64(len(who)),
+			strings.Join(who, " and ") + " says it is being exploited"})
 	}
 
 	// The probability, scaled. Stale figures are discounted rather than
 	// ignored: EPSS moves daily and a month-old number is about last month,
 	// but it is still the best available estimate.
-	epss := e.Advisory.EPSS
+	epss, stale := e.Advisory.EPSS, ""
 	if !e.Advisory.Fresh(now) {
 		epss *= 0.5
+		stale = ", halved because the figure is over a week old"
 	}
-	w += 800 * epss
+	if epss > 0 {
+		out = append(out, Term{"Probability", 800 * epss, fmt.Sprintf(
+			"%.1f%% chance of exploitation in thirty days%s",
+			e.Advisory.EPSS*100, stale)})
+	}
 
 	// What this deployment knows about its own code, which no feed knows.
 	switch {
+	case e.Reach != nil && e.Reach.Referenced:
+		out = append(out, Term{"Reachability", 120, e.Reach.Says()})
+	case e.Reach != nil:
+		out = append(out, Term{"Reachability", 0, e.Reach.Says()})
 	case e.Component.Reachable != nil && *e.Component.Reachable:
-		w += 120
+		out = append(out, Term{"Reachability", 120,
+			"the vulnerable code is reachable here"})
 	case e.Component.Reachable != nil:
-		w += 0
+		out = append(out, Term{"Reachability", 0,
+			"the vulnerable code is not reachable here"})
 	default:
 		// Unknown reachability sits between the two. Treating it as
 		// unreachable would silently sink everything nobody has analysed,
 		// which is most things.
-		w += 40
+		out = append(out, Term{"Reachability", 40,
+			"nobody has analysed whether the vulnerable code is reachable"})
 	}
 	if e.Component.Direct {
-		w += 20
+		out = append(out, Term{"Direct dependency", 20,
+			"this was chosen, not pulled in by something else"})
 	}
 	if e.Verdict == Undecided {
 		// The comparator could not tell. Ranked as present, and visible.
-		w += 30
+		out = append(out, Term{"Version not comparable", 30, e.Why})
 	}
 
 	// Age from when we knew, capped at sixty days. Past that it is not
@@ -123,19 +221,26 @@ func (e Exposure) Weight(now time.Time) float64 {
 		days = 60
 	}
 	if days > 0 {
-		w += days
+		out = append(out, Term{"Age", days, fmt.Sprintf(
+			"known here since %s; counted up to sixty days",
+			e.Advisory.Known.Format("2 Jan 2006"))})
 	}
 
-	// A lapsed investigation returns at full weight and says so, rather than
+	// A lapsed decision returns at full weight and says so, rather than
 	// quietly reappearing at the bottom.
 	if e.Assessed.Lapsed(now) {
-		w += 50
+		out = append(out, Term{"Lapsed decision", 50, fmt.Sprintf(
+			"%s by %s ran out on %s", e.Assessed.What(), e.Assessed.By,
+			e.Assessed.Until.Format("2 Jan 2006"))})
 	}
 
 	// Severity, last. It breaks ties between things that are otherwise
 	// equal, which is the job it can actually do.
-	w += e.Advisory.CVSS
-	return w
+	if e.Advisory.CVSS > 0 {
+		out = append(out, Term{"Severity", e.Advisory.CVSS, fmt.Sprintf(
+			"CVSS %.1f, as a tiebreak", e.Advisory.CVSS)})
+	}
+	return out
 }
 
 // Why explains an exposure's position in one line.
@@ -174,7 +279,7 @@ func (e Exposure) Explain(now time.Time) string {
 	}
 	if e.Assessed.Lapsed(now) {
 		parts = append(parts, fmt.Sprintf(
-			"an investigation by %s lapsed on %s", e.Assessed.By,
+			"%s by %s lapsed on %s", e.Assessed.What(), e.Assessed.By,
 			e.Assessed.Until.Format("2006-01-02")))
 	}
 	if len(parts) == 0 {
@@ -260,8 +365,28 @@ func Match(advisories []Advisory, inventory []Component,
 		byKey[a.Key()] = a
 	}
 
+	// By package, so an advisory is compared with the installations of what
+	// it names and not with everything installed. The answer is the same;
+	// a hundred thousand advisories against a fleet is otherwise a product
+	// nobody waits for.
+	byPackage := map[string][]Component{}
+	for _, c := range inventory {
+		byPackage[c.Key()] = append(byPackage[c.Key()], c)
+	}
 	var out []Exposure
 	for _, adv := range advisories {
+		var named []string
+		seen := map[string]bool{}
+		for _, r := range adv.Affects {
+			if k := Key(r.Ecosystem, r.Package); !seen[k] {
+				seen[k] = true
+				named = append(named, k)
+			}
+		}
+		var inventory []Component
+		for _, k := range named {
+			inventory = append(inventory, byPackage[k]...)
+		}
 		for _, c := range inventory {
 			verdict, why := adv.Applies(c)
 			if verdict == Outside || verdict == Patched {

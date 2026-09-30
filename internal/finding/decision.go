@@ -100,6 +100,13 @@ func (d Decision) Validate() error {
 	}
 	switch d.To {
 	case Open, Triaged, Fixed, Stale:
+	case FalsePositive, Benign:
+		if strings.TrimSpace(d.Because) == "" {
+			return fmt.Errorf(
+				"%s is being marked %s with no reason. The verdict is what a "+
+					"detection's precision is measured from, and one nobody "+
+					"can check is one nobody can learn from", d.Finding, d.To)
+		}
 	case Accepted:
 		if strings.TrimSpace(d.Because) == "" {
 			return fmt.Errorf(
@@ -178,15 +185,35 @@ func Apply(f Finding, decisions []Decision) Finding {
 	})
 
 	out := f
+	var last time.Time
 	for _, d := range mine {
 		out.State = d.To
 		out.Because, out.Until = d.Because, d.Until
-		if d.To != Accepted {
-			// Only an acceptance carries a justification and an expiry.
-			// Leaving the previous one attached to a later state would let a
-			// finding read as accepted-until-June while being open.
+		if d.To != Accepted && !d.To.Closed() {
+			// Only an acceptance or a closing verdict carries a reason, and
+			// only an acceptance an expiry. Leaving an earlier one attached
+			// to a later state would let a finding read as
+			// accepted-until-June while being open.
 			out.Because, out.Until = "", time.Time{}
 		}
+		if d.To != Accepted {
+			out.Until = time.Time{}
+		}
+		last = d.At
+	}
+	// Reported again after it was closed. Register.Record reopens a finding
+	// the scanners see again, and then this fold put the old decision back
+	// on top, so a vulnerability marked fixed stayed fixed while the scanner
+	// reported it every day. Seen after the decision means the decision is
+	// about something that has since happened again.
+	//
+	// Not for Benign, which says the activity is expected and will recur —
+	// reopening it on every recurrence is the noise suppression exists to
+	// remove — and not for Accepted, which expires on its own clock.
+	if out.State.Closed() && out.State != Benign && !last.IsZero() &&
+		f.Last.After(last) {
+		out.State = Open
+		out.Because = ""
 	}
 	return out
 }
@@ -239,4 +266,82 @@ func Story(id string, decisions []Decision) string {
 		parts = append(parts, line)
 	}
 	return strings.Join(parts, "; ")
+}
+
+// FromAudit rebuilds decisions from audit entries.
+//
+// Read back rather than kept alongside. Two copies of one fact is two things
+// that can disagree, and the copy in the chain is the one that can be proved.
+//
+// Only actions naming a real state count. The action is "finding." plus the
+// state, so an entry some other part of the program writes under that prefix
+// — a proposal, a note — would otherwise be read as a move to a state called
+// "proposed", which Apply would put on the finding.
+func FromAudit(events []audit.Event) []Decision {
+	known := map[State]bool{}
+	for _, s := range States() {
+		known[s] = true
+	}
+	var out []Decision
+	for _, e := range events {
+		to, found := strings.CutPrefix(e.Action, "finding.")
+		if !found || e.Detail["finding"] == "" || !known[State(to)] {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339Nano, e.At)
+		if err != nil {
+			continue
+		}
+		d := Decision{
+			Finding: e.Detail["finding"], At: at, By: e.Principal,
+			Kind: e.Kind, To: State(to), Because: e.Detail["because"],
+		}
+		if u := e.Detail["until"]; u != "" {
+			if parsed, perr := time.Parse(time.RFC3339, u); perr == nil {
+				d.Until = parsed
+			}
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+// Proposal is a decision a model suggested and nobody has made.
+//
+// Kept as a different kind of audit entry, never as a decision with a flag
+// on it. FromAudit reads "finding.<state>" and nothing else, so no reading of
+// the log — by this program or by anybody's script over the export — can
+// mistake a suggestion for a verdict. A person adopts a proposal by making
+// the decision themselves, under their own name.
+type Proposal struct {
+	Finding string    `json:"finding"`
+	At      time.Time `json:"at"`
+	// By is the agent, and For the person it was acting for.
+	By      string `json:"by"`
+	For     string `json:"for"`
+	To      State  `json:"to"`
+	Because string `json:"because,omitempty"`
+}
+
+// ProposalAction is the audit action a proposal is written under.
+const ProposalAction = "proposal.finding"
+
+// ProposalsFromAudit returns the proposals about one finding, newest first.
+func ProposalsFromAudit(events []audit.Event, id string) []Proposal {
+	var out []Proposal
+	for _, e := range events {
+		if e.Action != ProposalAction || e.Detail["finding"] != id {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339Nano, e.At)
+		if err != nil {
+			continue
+		}
+		out = append(out, Proposal{
+			Finding: id, At: at, By: e.Principal, For: e.Detail["on_behalf_of"],
+			To: State(e.Detail["to"]), Because: e.Detail["because"],
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
+	return out
 }

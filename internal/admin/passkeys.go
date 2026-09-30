@@ -556,7 +556,7 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 	// A session token, exactly as the OIDC path mints one: the passkey
 	// authenticated, and everything after this is local. The role is what the
 	// policy already grants — a session, not a promotion.
-	secret, tok, err := s.Tokens.Issue("passkey:"+cred.Principal, cred.Principal,
+	secret, tok, err := s.Tokens.IssueSession("passkey:"+cred.Principal, cred.Principal,
 		s.roleFor(cred.Principal), "/", DefaultSessionTTL, auth.RoleAdmin)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err)

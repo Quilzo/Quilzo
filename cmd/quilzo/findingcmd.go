@@ -6,12 +6,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/finding"
+	"github.com/quilzo/quilzo/internal/telemetry"
 )
 
 // Deciding about a finding, and reading back what was decided.
@@ -35,8 +37,12 @@ func cmdFinding(root string, args []string) error {
 		return findingDecide(root, args[1:])
 	case "story":
 		return findingStory(root, args[1:])
+	case "list":
+		return findingList(root, args[1:])
+	case "risk":
+		return findingRisk(root)
 	default:
-		return fmt.Errorf("unknown finding command %q; try decide or story",
+		return fmt.Errorf("unknown finding command %q; try list, risk, decide or story",
 			args[0])
 	}
 }
@@ -53,7 +59,8 @@ func findingDecide(root string, args []string) error {
 	if len(pos) != 2 {
 		return fmt.Errorf(
 			"usage: quilzo finding decide ID STATE [--because ... --until ...]\n" +
-				"  states: open, triaged, accepted, fixed, stale")
+				"  states: open, triaged, accepted, fixed, stale, " +
+				"false-positive, benign")
 	}
 
 	caller := resolveCaller(root, flagToken)
@@ -84,7 +91,9 @@ func findingDecide(root string, args []string) error {
 	// that looks like a credential and refuses the whole entry rather than
 	// the key, so a decision reported as made and not written down is a
 	// failure mode this has to rule out by ordering.
-	record(root, d.Record())
+	if err := recordE(root, d.Record()); err != nil {
+		return err
+	}
 
 	if w.JSON(map[string]any{
 		"finding": d.Finding, "to": string(d.To), "by": d.By,
@@ -146,32 +155,137 @@ func findingStory(root string, args []string) error {
 	return nil
 }
 
-// decisionsFrom rebuilds decisions out of audit entries.
-//
-// Read back rather than kept alongside. Two copies of one fact is two things
-// that can disagree, and the copy in the chain is the one that can be proved.
+// decisionsFrom rebuilds decisions out of audit entries; see
+// finding.FromAudit, which the screens and the machine interface share.
 func decisionsFrom(events []audit.Event) []finding.Decision {
-	var out []finding.Decision
-	for _, e := range events {
-		to, found := strings.CutPrefix(e.Action, "finding.")
-		if !found || e.Detail["finding"] == "" {
-			continue
+	return finding.FromAudit(events)
+}
+
+// findingList prints the queue: what the producers recorded, with every
+// decision in the audit log applied, most urgent first.
+func findingList(root string, args []string) error {
+	fs := flag.NewFlagSet("list", flag.ContinueOnError)
+	state := fs.String("state", "", "only this state (default: everything not closed)")
+	kind := fs.String("kind", "", "only this kind: "+kindNames())
+	top := fs.Int("top", 50, "how many to show")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	caller := resolveCaller(root, flagToken)
+	if err := authorise(root, caller, auth.ActView, "/"); err != nil {
+		return err
+	}
+	queue, err := loadQueue(root, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	out := filterQueue(queue, finding.State(*state), finding.Kind(*kind))
+	total := len(out)
+	if *top > 0 && len(out) > *top {
+		out = out[:*top]
+	}
+	if w.JSON(map[string]any{"total": total, "findings": out}) {
+		return nil
+	}
+	if total == 0 {
+		w.Human("nothing in the queue\n")
+		return nil
+	}
+	now := time.Now().UTC()
+	w.Human("%s%d finding(s)%s\n", bold, total, reset)
+	for _, f := range out {
+		w.Human("\n%s%s%s  %s  %s[%s]%s\n", bold, f.Title, reset,
+			f.Entity.String(), dim, f.State, reset)
+		w.Human("  %s%s · %s · %s%s\n", dim, f.ID, f.Source, f.Why(now), reset)
+		if why := f.NeedsAPerson(); why != "" && !f.State.Closed() {
+			w.Human("  %s%s%s\n", yellow, why, reset)
 		}
-		at, err := time.Parse(time.RFC3339Nano, e.At)
-		if err != nil {
-			continue
-		}
-		d := finding.Decision{
-			Finding: e.Detail["finding"], At: at, By: e.Principal,
-			Kind: e.Kind, To: finding.State(to),
-			Because: e.Detail["because"],
-		}
-		if u := e.Detail["until"]; u != "" {
-			if parsed, perr := time.Parse(time.RFC3339, u); perr == nil {
-				d.Until = parsed
+	}
+	return nil
+}
+
+// loadQueue is the register with the audit log's decisions applied.
+func loadQueue(root string, now time.Time) ([]finding.Finding, error) {
+	reg, _, err := finding.Load(findingsPath(root))
+	if err != nil {
+		return nil, err
+	}
+	events, err := audit.Read(auditPath(root))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	return finding.View(reg, finding.FromAudit(events), now), nil
+}
+
+// filterQueue keeps one state (or everything not closed) and one kind.
+func filterQueue(in []finding.Finding, state finding.State,
+	kind finding.Kind) []finding.Finding {
+
+	var out []finding.Finding
+	for _, f := range in {
+		// "trial" is a filter and not a state: what rules in their trial
+		// ring have raised that nobody has closed. The default queue leaves
+		// those out, which is what the trial ring is for.
+		switch {
+		case state == "trial":
+			if !f.Trial || f.State.Closed() {
+				continue
 			}
+		case state == "" && (f.State.Closed() || f.Trial):
+			continue
+		case state != "" && f.State != state:
+			continue
 		}
-		out = append(out, d)
+		if kind != "" && f.Kind != kind {
+			continue
+		}
+		out = append(out, f)
 	}
 	return out
+}
+
+func kindNames() string {
+	var names []string
+	for _, k := range finding.Kinds() {
+		names = append(names, string(k))
+	}
+	return strings.Join(names, ", ")
+}
+
+// findingRisk prints what is open about each person or thing, added up.
+func findingRisk(root string) error {
+	now := time.Now().UTC()
+	q, err := loadQueue(root, now)
+	if err != nil {
+		return err
+	}
+	aliases, err := loadAliases(root)
+	if err != nil {
+		return err
+	}
+	risks := finding.Risk(q, func(id telemetry.ID) string {
+		return aliases[id.String()].Person
+	}, now)
+	if len(risks) > 50 {
+		risks = risks[:50]
+	}
+	if w.JSON(map[string]any{"entities": risks}) {
+		return nil
+	}
+	if len(risks) == 0 {
+		w.Human("Nothing is open about anybody.\n")
+		return nil
+	}
+	for _, e := range risks {
+		colour := dim
+		if e.Band == "critical" || e.Band == "high" {
+			colour = red
+		}
+		w.Human("%s%5.0f%s  %s%s%s  %s%s%s\n", colour, e.Score, reset, bold,
+			e.Entity, reset, dim, e.Why(), reset)
+		for _, p := range e.Parts {
+			w.Human("         %s%3.0f  %s%s\n", dim, p.Points, p.Finding.Title, reset)
+		}
+	}
+	return nil
 }

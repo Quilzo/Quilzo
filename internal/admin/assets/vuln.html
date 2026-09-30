@@ -1,0 +1,105 @@
+{{template "head" .}}
+<p class="hint"><a href="/security/vulns">Vulnerabilities</a></p>
+{{if .Unavailable}}<h1>Vulnerability</h1><p class="notice bad">{{.Unavailable}}</p>
+{{else if .Empty}}<h1>Vulnerability</h1><p class="notice warn">Nothing has been loaded. <a href="/security/vulns">The workbench</a> says how.</p>
+{{else}}
+<h1>{{.A.ID}}</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Stale}}<p class="notice warn" role="status">{{.Stale}}</p>{{end}}
+<p class="lead">{{.A.Summary}}</p>
+<p class="hint">The summary is the advisory's own text, as published.{{if .A.Aliases}} Also known as {{range $i, $x := .A.Aliases}}{{if $i}}, {{end}}{{$x}}{{end}}.{{end}}</p>
+
+<dl class="stats-row">
+  <div{{if .Exploited}} class="critical"{{end}}><dt>Exploited</dt><dd>{{if .Exploited}}Yes{{else}}Not attested{{end}}</dd><dd class="wf-note">{{if .Exploited}}per {{.ExploitedBy}}{{else}}which is not the same as nobody exploiting it{{end}}</dd></div>
+  <div><dt>Chance in 30 days</dt><dd>{{.EPSS}}</dd><dd class="wf-note">{{if .EPSSStale}}from a figure over a week old{{else}}EPSS{{end}}</dd></div>
+  <div><dt>Severity</dt><dd>{{printf "%.1f" .A.CVSS}}</dd><dd class="wf-note">CVSS, the tiebreak here</dd></div>
+  <div><dt>Known here</dt><dd>{{.KnownAge}}</dd><dd class="wf-note">since {{.Known}}</dd></div>
+</dl>
+
+{{if .Open}}
+<h2>Why it ranks where it does</h2>
+<div class="table-wrap"><table class="wf-people">
+  <thead><tr><th scope="col">Reason</th><th scope="col">Points</th><th scope="col">Because</th></tr></thead>
+  <tbody>{{range .Terms}}<tr><th scope="row">{{.Name}}</th>
+    <td class="wf-score"><span class="wf-points">{{.Pts}}</span>
+      <svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.W}}" height="8" rx="4"></rect></svg></td>
+    <td>{{.Why}}</td></tr>{{end}}
+  <tr><th scope="row">Weight</th><td><strong>{{.Weight}}</strong></td><td class="hint">the sum of the rows above and of nothing else, for the place it ranks highest</td></tr></tbody>
+</table></div>
+{{else}}<p class="notice ok">Nothing here is in the queue: every place it was found has been decided.</p>{{end}}
+
+<h2>Where it is</h2>
+{{if .Places}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Asset</th><th scope="col">Installed</th><th scope="col">Fixed in</th><th scope="col">Vulnerable code</th>{{if .HasTree}}<th scope="col">SSVC</th>{{end}}<th scope="col">State</th></tr></thead>
+  <tbody>{{range .Places}}<tr><th scope="row"><a href="/security/entity/{{.Where}}"><code>{{.Where}}</code></a></th><td><code>{{.Version}}</code></td>
+    <td>{{if .Fix}}<code>{{.Fix}}</code>{{else}}<span class="hint">no fix published</span>{{end}}</td>
+    <td>{{.Reach}}{{if .ReachNote}}<br><span class="hint">{{.ReachNote}}</span>{{end}}</td>{{if $.HasTree}}<td>{{if .SSVC}}<span class="wf-word {{.SSVCTone}}">{{.SSVC}}</span>{{if .SSVCNote}}<br><span class="hint">{{.SSVCNote}}</span>{{end}}{{end}}</td>{{end}}
+    <td><span class="wf-word {{.Tone}}">{{.State}}</span></td></tr>{{end}}</tbody>
+</table></div>
+<p class="hint">{{.PlaceCount}} place(s).</p>
+{{else}}<p>Nothing installed here is affected by it.</p>{{end}}
+
+<h2>What has been said about it</h2>
+{{if .Said}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">When</th><th scope="col">In</th><th scope="col">Decision</th><th scope="col">Why</th><th scope="col">By</th><th scope="col">Until</th></tr></thead>
+  <tbody>{{range .Said}}<tr><th scope="row">{{.When}}</th><td><code>{{.Component}}</code>{{if .Where}}<br><span class="hint">on {{.Where}}</span>{{end}}</td>
+    <td><span class="wf-word {{.Tone}}">{{.What}}</span>{{if .Justification}}<br><span class="hint">{{.Justification}}</span>{{end}}</td>
+    <td>{{.Because}}{{if .Impact}}<br><span class="hint">Stated outside as: {{.Impact}}</span>{{end}}</td>
+    <td>{{.By}}{{if .Owner}}<br><span class="hint">owner: {{.Owner}}</span>{{end}}</td>
+    <td>{{if .UntilText}}{{.UntilText}}{{if .Lapsed}} <span class="wf-word serious">ran out</span>{{end}}{{else}}<span class="hint">—</span>{{end}}</td></tr>{{end}}</tbody>
+</table></div>
+<p class="hint">Newest first. The newest one for a package is the one in force; the rest are the record.</p>
+{{else}}<p>Nobody has decided anything about it.</p>{{end}}
+
+{{if .Packages}}
+<h2>Decide</h2>
+<p>Each of these takes it out of the queue with your name on it. None of them
+  can be made by an agent.</p>
+{{if .Unnamed}}<p class="notice warn">In {{.Unnamed}} open place(s) the asset's own source never names
+  the affected symbols. That is grounds for "it does not apply here" with
+  <code>vulnerable_code_not_in_execute_path</code> — if you are satisfied that
+  nothing it depends on calls them either, which was not checked.</p>{{end}}
+<div class="grid2">
+<form method="post" action="/security/vulns/act">
+  <h3>It does not apply here</h3>
+  <input type="hidden" name="do" value="not_affected"><input type="hidden" name="advisory" value="{{.A.ID}}">
+  <p><label>In <select name="component">{{range .Packages}}<option value="{{.}}">{{.}}</option>{{end}}</select></label></p>
+  <p><label>Because <select name="reason" required>{{range .Reasons}}<option value="{{.}}">{{.}}</option>{{end}}</select></label></p>
+  <p><label>What was checked <input type="text" name="because" required maxlength="500"></label></p>
+  <p><label>What to tell a customer (optional) <input type="text" name="impact" maxlength="500"></label></p>
+  <p><button type="submit">Record as not affected</button></p>
+</form>
+<form method="post" action="/security/vulns/act">
+  <h3>Leave it for now</h3>
+  <input type="hidden" name="do" value="accept"><input type="hidden" name="advisory" value="{{.A.ID}}">
+  <p><label>In <select name="component">{{range .Packages}}<option value="{{.}}">{{.}}</option>{{end}}</select></label></p>
+  <p><label>Who answers for it <input type="text" name="owner" required maxlength="120"></label>
+    <label>Until <input type="date" name="until" required min="{{.Tomorrow}}" max="{{.MaxAccept}}"></label></p>
+  <p><label>Why <input type="text" name="because" required maxlength="500"></label></p>
+  <p class="hint">At most {{.AcceptDays}} days{{if .Exploited}}, because it is being exploited{{end}}. It comes back into the queue on that day.</p>
+  <p><button type="submit">Accept until then</button></p>
+</form>
+<form method="post" action="/security/vulns/act">
+  <h3>Somebody is looking into it</h3>
+  <input type="hidden" name="do" value="investigate"><input type="hidden" name="advisory" value="{{.A.ID}}">
+  <p><label>In <select name="component">{{range .Packages}}<option value="{{.}}">{{.}}</option>{{end}}</select></label></p>
+  <p><label>An answer by <input type="date" name="until" required min="{{.Tomorrow}}" max="{{.MaxLook}}"></label></p>
+  <p><label>What is being checked <input type="text" name="because" required maxlength="500"></label></p>
+  <p><button type="submit">Out of the queue until then</button></p>
+</form>
+<form method="post" action="/security/vulns/act">
+  <h3>Put it back, or mark it patched</h3>
+  <input type="hidden" name="advisory" value="{{.A.ID}}">
+  <p><label>In <select name="component">{{range .Packages}}<option value="{{.}}">{{.}}</option>{{end}}</select></label></p>
+  <p><label>Why <input type="text" name="because" required maxlength="500"></label></p>
+  <p class="hint">An upgrade needs nothing here: load the new inventory and it
+    leaves the queue by itself. "Patched" is for a fix applied without the
+    version changing.</p>
+  <p><button type="submit" name="do" value="reopen">Back in the queue</button>
+    <button type="submit" name="do" value="fixed">Patched in place</button></p>
+</form>
+</div>
+{{end}}
+{{end}}
+{{template "foot" .}}

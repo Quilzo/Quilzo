@@ -1,0 +1,73 @@
+{{template "head" .}}
+{{if not .Showing}}
+<h1>Look up an account or a machine</h1>
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+<p class="lead">Everything held about one entity: the findings about it, the
+  incidents those are part of, what it has been doing, and what is wrong
+  with the software on it.</p>
+<form class="inline" method="get" action="/security/entity/">
+  <label>Entity <input type="text" name="q" required maxlength="512" placeholder="okta:dana"></label>
+  <button type="submit">Look it up</button>
+</form>
+<p class="hint">Written as issuer:value, the way findings and events name
+  things. A value alone matches under any issuer. Opening an entity is
+  recorded in the audit log.</p>
+{{else}}
+<p class="hint"><a href="/security/entity/">Look up another</a></p>
+<h1><code>{{.ID.String}}</code></h1>
+<p class="lead">What is held about this entity, assembled now from the
+  register, the events, the incidents and the vulnerability queue. Nothing
+  is kept about it here.</p>
+{{if .IsPerson}}<p>One person. {{if .Theirs}}Known as {{range $i, $x := .Theirs}}{{if $i}}, {{end}}<a href="/security/entity/{{$x}}"><code>{{$x}}</code></a>{{end}}; this page is all of them together.{{else}}No identifier is known to be theirs yet, so this shows only what names the address itself.{{end}}</p>{{end}}
+{{if .PersonOf}}<p>This identifier belongs to <a href="/security/entity/person:{{.PersonOf}}"><code>{{.PersonOf}}</code></a>, whose page gathers every identifier they are known by.</p>{{end}}
+{{if .AnyIssuer}}<p class="notice warn">No issuer was given, so this matches <code>{{.ID.Value}}</code> under every issuer. Two systems can use one name for two different things.</p>{{end}}
+{{if .Nothing}}<p class="notice warn"><strong>Nothing here names it.</strong> That may be a name nothing uses, or a name spelt differently from how the source spells it. It is not evidence the entity is clean.</p>{{end}}
+
+<dl class="stats-row">{{range .Tiles}}<div><dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{if .Note}}<dd class="wf-note">{{.Note}}</dd>{{end}}</div>{{end}}</dl>
+
+<h2>Findings about it</h2>
+{{if .FindingsError}}<p class="notice bad">The register could not be read: {{.FindingsError}}.</p>{{end}}
+{{if .Findings}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Finding</th><th scope="col">Severity</th><th scope="col">State</th><th scope="col">Last seen</th></tr></thead>
+  <tbody>{{range .Findings}}<tr><th scope="row"><a href="/findings/{{.ID}}">{{.Title}}</a><br><span class="hint">{{.Source}}</span></th>
+    <td><span class="pill {{.Sev}}">{{.Sev}}</span></td><td>{{.State}}</td><td>{{.Age}}</td></tr>{{end}}</tbody>
+</table></div>{{else}}<p>No finding is about it.</p>{{end}}
+
+{{if or .Cases .CasesError}}<h2>Incidents</h2>
+{{if .CasesError}}<p class="notice bad">The incidents could not be read: {{.CasesError}}.</p>{{end}}
+<ul>{{range .Cases}}<li><a href="{{.Href}}">{{.Title}}</a> <span class="wf-word {{.Tone}}">{{.State}}</span></li>{{end}}</ul>{{end}}
+
+<h2>Activity</h2>
+<p class="hint">Over the last {{if eq .Hours 24}}24 hours (<a href="{{.Self}}">7 days</a>){{else}}7 days (<a href="{{.Self}}?hours=24">24 hours</a>){{end}}.
+  {{if .Short}}<strong>Not the whole period:</strong> only what arrived since {{.Short.Format "2 Jan 15:04 UTC"}} was read.{{end}}</p>
+{{if .EventsError}}<p class="notice warn">{{.EventsError}}</p>
+{{else if .Sources}}
+<p>{{.Roles}}. First seen {{.First}}, last seen {{.Last}}.</p>
+<div class="table-wrap"><table class="wf-people">
+  <thead><tr><th scope="col">Source</th><th scope="col">Outcome</th><th scope="col">Events</th><th scope="col">Last</th></tr></thead>
+  <tbody>{{range .Sources}}<tr><th scope="row">{{.Source}}</th><td>{{.Outcome}}</td>
+    <td class="wf-score"><span class="wf-points">{{.Count}}</span>
+      <svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.W}}" height="8" rx="4"></rect></svg></td>
+    <td>{{.Last}}</td></tr>{{end}}</tbody>
+</table></div>
+{{if .Addresses}}<h3>Addresses, rarest first</h3>
+<div class="table-wrap"><table><thead><tr><th scope="col">Address</th><th scope="col">Events</th></tr></thead>
+  <tbody>{{range .Addresses}}<tr><th scope="row"><code>{{.Value}}</code></th><td>{{.Count}}</td></tr>{{end}}</tbody></table></div>
+<p class="hint">{{.AddressCount}} distinct. The one used once is the one worth reading.</p>{{end}}
+<h3>Most recent</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">When</th><th scope="col">Source</th><th scope="col">Actor</th><th scope="col">Target</th><th scope="col">Outcome</th><th scope="col">What it said</th></tr></thead>
+  <tbody>{{range .Events}}<tr><th scope="row">{{.Time.Format "2 Jan 15:04:05"}}</th><td>{{.Source}}</td><td><code>{{.Actor}}</code></td><td>{{if not .Target.Zero}}<code>{{.Target}}</code>{{end}}</td><td>{{.Disposition}}</td><td>{{.Message}}</td></tr>{{end}}</tbody>
+</table></div>
+<p class="hint">What an event says was written by whoever could reach that log.</p>
+{{else}}<p>No event in the period names it.</p>{{end}}
+
+{{if or .Vulns .VulnsError}}<h2>Vulnerabilities on it</h2>
+{{if .VulnsError}}<p class="notice bad">The vulnerability store could not be read: {{.VulnsError}}.</p>{{end}}
+{{if .Vulns}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Vulnerability</th><th scope="col">In</th><th scope="col">Why it ranks</th></tr></thead>
+  <tbody>{{range .Vulns}}<tr><th scope="row"><a href="{{.Href}}">{{.ID}}</a>{{if .Exploited}} <span class="wf-word critical">exploited</span>{{end}}</th>
+    <td>{{.Package}} <code>{{.Version}}</code></td><td>{{.Why}}</td></tr>{{end}}</tbody>
+</table></div>{{end}}{{end}}
+{{end}}
+{{template "foot" .}}

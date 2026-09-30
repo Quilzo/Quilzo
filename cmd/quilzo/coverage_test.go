@@ -5,6 +5,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -221,14 +222,9 @@ var coverage = map[string]surfaces{
 	},
 
 	// Who has to be told about an incident, and what starts the clock.
-	"incident": {
-		Why: "it prints the reporting table and runs an incident built " +
-			"for the run; a live incident's screen arrives with the " +
-			"response, and what is worth seeing here is a table of " +
-			"deadlines and what starts each one",
-		NoMCP: "these are the decisions that start regulatory clocks, " +
-			"and a model recording one would be deciding on somebody's " +
-			"behalf when they became aware",
+	"incident": {GUI: "/security/cases", MCP: []string{"incident_status"},
+		Why: "an agent reads which clocks are running and which nobody " +
+			"has started; the decisions that start them are a person's",
 	},
 
 	// How old the databases a scanner compares against are.
@@ -368,14 +364,45 @@ var coverage = map[string]surfaces{
 
 	// The vulnerability queue, read from an inventory and a set of
 	// advisories that a connector or a scanner produces.
-	"vuln": {
-		Why: "it ranks a file against a file and prints a queue; the screen " +
-			"arrives with the stored register, alongside the one for " +
-			"findings from every other source",
-		NoMCP: "a model that can mark things not_affected can mark the one " +
-			"that mattered; Assessment.Validate refuses an AI author, and " +
-			"a tool whose only useful call is the one it may not make is " +
-			"not a tool",
+	"analyst": {GUI: "/findings",
+		Why: "its suggestions are shown on each finding's page, where a " +
+			"person agrees with them or not",
+		NoMCP: "it is the agent. A model starting the analyst is a model " +
+			"starting a model, with nobody in the loop to have asked for it",
+	},
+	"action": {GUI: "/security/cases",
+		Why: "an action is asked for and approved on the incident's page; " +
+			"installing one and giving it a credential are the operator's",
+		NoMCP: "it changes something in another tool, on somebody's " +
+			"account. A model takes no part: it neither installs one, asks " +
+			"for one, nor approves one",
+	},
+	"identity": {GUI: "/security/entity/",
+		Why: "a person's page shows every identifier known to be theirs; " +
+			"saying whose one is happens once, by the operator",
+		NoMCP: "whose an identifier is decides whose activity is whose. A " +
+			"model that could say it could make one person's activity " +
+			"count as another's",
+	},
+	"collect": {GUI: "/security/events",
+		Why: "what each source sent and when is on the Events screen; " +
+			"installing a connector and a schedule are the operator's",
+		NoMCP: "it reads other tools with stored credentials. A model " +
+			"deciding when that happens is a model spending those " +
+			"credentials",
+	},
+	"intel": {GUI: "/security/indicators",
+		Why: "what an indicator found is a finding, and findings are " +
+			"what an agent reads",
+		NoMCP: "adding an indicator raises findings about whoever touched " +
+			"it, so a model that could add one could accuse anybody; and " +
+			"the list itself is other people's infrastructure, which a " +
+			"model has no use for that the findings do not serve",
+	},
+	"vuln": {GUI: "/security/vulns", MCP: []string{"vuln_plan"},
+		Why: "an agent reads the plan and the counts; deciding that " +
+			"something does not apply stays a person's, and " +
+			"Assessment.Validate refuses an AI author",
 	},
 
 	// One reviewable file per tool, and the credentials to reach them.
@@ -388,6 +415,17 @@ var coverage = map[string]surfaces{
 			"system the company uses, which is exactly what was stolen in " +
 			"the Drift compromise; a model with a tool here has them too",
 	},
+
+	// The tools' records joined, and where they disagree.
+	"estate": {GUI: "/workforce", MCP: []string{"estate_summary"},
+		Why: "an agent gets the numbers — bands, areas, trend, what could " +
+			"not be checked — and never the people; the findings it raised " +
+			"are read one at a time through list_findings"},
+
+	"remind": {GUI: "/workforce/reminders",
+		NoMCP: "it sends a message to every employee with something " +
+			"outstanding, and to their managers; an agent able to do that " +
+			"can send whatever it was talked into to the whole company"},
 
 	// Reconciling people and devices across systems, from a file of
 	// normalised identities.
@@ -415,6 +453,7 @@ var coverage = map[string]surfaces{
 	// The event store. A screen over it is the analyst surface the whole
 	// SIEM half needs, and it arrives with querying rather than with storage.
 	"spool": {
+		GUI: "/security/events",
 		Why: "storing and retaining events is an operator's job at a " +
 			"terminal; the screen arrives with the query surface that " +
 			"reads the store, not with the store",
@@ -432,28 +471,63 @@ var coverage = map[string]surfaces{
 			"planted is handing it the one file that defeats all of them",
 	},
 
+	// A site's chatbots. The agent surface builds and tests; it does not
+	// publish and it does not decide what a public one may do.
+	"assistant": {
+		GUI: "/assistants",
+		MCP: []string{"list_assistants", "ask_assistant", "declare_assistant"},
+	},
+
+	"personalise": {
+		GUI: "/personalise",
+		NoMCP: "a rule changes what visitors see on a page, which is a " +
+			"publish; reading the rules is on the Personalisation screen and " +
+			"in the site's own declarations",
+	},
+
+	"experiment": {
+		GUI: "/experiments",
+		MCP: []string{"experiment_report"},
+	},
+
+	"analytics": {
+		GUI: "/analytics",
+		MCP: []string{"site_analytics"},
+	},
+
+	"decide": {
+		GUI: "/decisions",
+		MCP: []string{"list_deciders", "decide"},
+	},
+
+	"gateway": {
+		GUI: "/models",
+		NoMCP: "a route decides where prompts go, and an agent that could " +
+			"add one could send everything visitors type to an address of " +
+			"its choosing",
+	},
+
 	"finding": {
-		Why: "the register is a projection of the audit log, and the screen " +
-			"that renders it arrives with stored findings rather than here",
-		NoMCP: "a model that can close its own findings can close the one " +
-			"that would have caught it; Decision.Validate refuses an AI actor",
+		GUI: "/findings",
+		// Read, and propose. A decision stays off this surface: a model that
+		// can close its own findings can close the one that would have
+		// caught it, and Decision.Validate refuses an AI actor besides.
+		MCP: []string{"list_findings", "read_finding", "propose_finding_decision"},
 	},
 
 	// Detections over exported events, ranked. The screen and the agent
 	// surface both come once findings are stored rather than computed per
 	// run, which is the next piece rather than this one.
 	"triage": {
-		Why: "it runs rules over a file and prints a ranking; there is no " +
-			"stored register for a screen to show yet",
-		NoMCP: "every finding here rests on attacker-controlled log text, " +
-			"which is the input an agent must not act on unreviewed",
+		GUI: "/findings",
+		MCP: []string{"list_findings"},
 	},
 
 	// Stacking over a file somebody exported, at the point where they are
 	// looking for something and do not yet know what.
-	"hunt": {
-		Why: "it counts values in a file the analyst chose, before there is " +
-			"a finding for a screen to show or an agent to reason about",
+	"hunt": {GUI: "/security/hunt",
+		Why: "the command stacks a file the analyst chose; the screen " +
+			"stacks the store, where the events are",
 		NoMCP: "an agent given the rarity list is given the map of what is " +
 			"least likely to be noticed",
 	},
@@ -461,12 +535,12 @@ var coverage = map[string]surfaces{
 	// Detections are reviewed, versioned and diffed, so they live in a
 	// repository and the tooling is a command. `detect test` runs in CI on
 	// every change, which a screen cannot.
-	"detect": {
-		Why: "a rule is reviewed and diffed like code, so the place it is " +
-			"tested is the repository and not a screen",
-		NoMCP: "an agent that could edit detections could disable the one " +
-			"that would have caught it",
-	},
+	"detect": {GUI: "/security/detections", MCP: []string{"detection_stats"},
+		Why: "a rule is reviewed and diffed like code, so it is tested in " +
+			"the repository; the screen shows what each has been worth and " +
+			"moves rings and suppressions. An agent reads the numbers and " +
+			"the proposals and changes neither: one that could quieten a " +
+			"detection could quieten the one that would have caught it"},
 
 	"telemetry": {
 		Why: "it checks a file a connector produced, at the point where " +
@@ -564,12 +638,7 @@ var coverage = map[string]surfaces{
 			"agent already writes pages through save_page, which is the same " +
 			"change stated as content rather than as a sequence of moves"},
 	"sections": {GUI: "/sections", NoMCP: "as section"},
-	"telegram": {Why: "starts a server, like `serve` and `site`; there is no " +
-		"button inside an interface that could start another interface",
-		NoMCP: "runs a public, writable surface that publishes on behalf of " +
-			"Telegram accounts. An agent that could start one could point it " +
-			"at a store and accept writes from a billion strangers"},
-	"find": {GUI: "/find", MCP: []string{"find", "search_pages", "similar_pages"}},
+	"find":     {GUI: "/find", MCP: []string{"find", "search_pages", "similar_pages"}},
 	"move": {
 		Why: "a rename that carries a page's children, the references naming " +
 			"them and the menu entries pointing at them. The browser has no " +
@@ -595,12 +664,6 @@ var coverage = map[string]surfaces{
 		Why: "the remarks people leave on a draft"},
 	"notes": {GUI: "/notes", MCP: []string{"list_notes"},
 		Why: "as note"},
-	"slack": {Why: "starts a server, like `telegram`; there is no button " +
-		"inside an interface that could start another interface",
-		NoMCP: "as telegram"},
-	"discord": {Why: "starts a server, like `telegram`; there is no button " +
-		"inside an interface that could start another interface",
-		NoMCP: "as telegram"},
 	"theme": {GUI: "/design",
 		NoMCP: "changes the colours, type and spacing of every page. An agent " +
 			"that can set a palette can set an unreadable one, and the " +
@@ -810,7 +873,17 @@ func TestReportHowMuchIsNotInTheInterface(t *testing.T) {
 func registeredOperations(t *testing.T) map[string]bool {
 	t.Helper()
 	out := map[string]bool{}
-	for _, file := range []string{"mcp.go", "mcpops.go"} {
+	// Every mcp*.go rather than a list, so a file of operations added later
+	// is read without anybody remembering to add it here — the list form
+	// missed mcpsecurity.go on the day it was written.
+	files, err := filepath.Glob("mcp*.go")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no MCP sources found: %v", err)
+	}
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
 		for _, m := range reOpName.FindAllStringSubmatch(readFile(t, file), -1) {
 			out[m[1]] = true
 		}
@@ -895,6 +968,28 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 		// fact being reported rather than an action being taken: nothing
 		// here removes anything, and the credential being dead is what
 		// closes the finding either way.
+		// Takes away what was said about an asset, which widens its SSVC
+		// decisions back to a range.
+		"asset.remove": {
+			GUI: "/security/vulns",
+			NoMCP: "how exposed a machine is and what is lost with it is " +
+				"the organisation's judgement; a model removing one " +
+				"changes what is urgent without anybody deciding it",
+		},
+		"budget.remove": {
+			GUI: "/models",
+			NoMCP: "as gateway: the model route and its limits are " +
+				"administrative, and an agent lifting its own budget is the " +
+				"thing the budget exists to stop",
+		},
+		// Removes an action from a chatbot, which only ever narrows what it
+		// may offer.
+		"action.remove": {
+			GUI: "/assistants",
+			NoMCP: "what a public chatbot may offer to do is decided by a " +
+				"person; the agent surface builds chatbots and does not " +
+				"touch their actions",
+		},
 		"rotated.purged": {
 			GUI: "",
 			NoMCP: "a model asserting that a credential is dead is how a " +

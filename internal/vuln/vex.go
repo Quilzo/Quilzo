@@ -132,6 +132,44 @@ type Assessment struct {
 	Until time.Time `json:"until,omitempty"`
 	// Because is the evidence, in one line.
 	Because string `json:"because"`
+	// Owner is who answers for an accepted risk when it comes back. Not By:
+	// the person who typed it in is often not the person whose system it is.
+	Owner string `json:"owner,omitempty"`
+}
+
+// MaxAcceptance is the longest a known vulnerability may be left alone on
+// somebody's say-so.
+//
+// Ninety days, the same as a detection suppression and for the same reason:
+// a quarterly review renews what is still true, and an exception written
+// while a vendor was slow does not outlive the vendor's fix by two years.
+const MaxAcceptance = 90 * 24 * time.Hour
+
+// MaxAcceptanceExploited is the ceiling when somebody has attested the
+// vulnerability is being exploited. The same length as an investigation:
+// long enough to schedule the change, not long enough to forget it.
+const MaxAcceptanceExploited = MaxInvestigation
+
+// Accepted reports whether this is a decision to leave an affected thing as
+// it is for a while.
+//
+// Spelt as affected-with-a-date rather than as a fifth status, because VEX
+// has four and an exported document has to say something true: the product
+// is affected, and what is being done about it is waiting, until a day.
+func (a Assessment) Accepted() bool {
+	return a.Status == Affected && !a.Until.IsZero()
+}
+
+// What names the decision in a sentence.
+func (a Assessment) What() string {
+	switch {
+	case a.Accepted():
+		return "an acceptance"
+	case a.Status == UnderInvestigation:
+		return "an investigation"
+	default:
+		return "a decision"
+	}
 }
 
 // Validate refuses an assessment that would take something out of the queue
@@ -200,6 +238,32 @@ func (a Assessment) Validate() error {
 					"remembers the question", a.Advisory,
 				a.Until.Sub(a.At).Round(24*time.Hour), MaxInvestigation)
 		}
+	case Affected:
+		if a.Justification != "" {
+			return fmt.Errorf(
+				"%s is %s and carries a justification, which only "+
+					"not_affected takes", a.Advisory, a.Status)
+		}
+		if a.Until.IsZero() {
+			break
+		}
+		if strings.TrimSpace(a.Owner) == "" {
+			return fmt.Errorf(
+				"%s is accepted with no owner. When the date arrives "+
+					"somebody has to decide again, and \"the team\" has "+
+					"never once answered an email", a.Advisory)
+		}
+		if !a.Until.After(a.At) {
+			return fmt.Errorf("%s is accepted until a moment that has "+
+				"already passed", a.Advisory)
+		}
+		if a.Until.Sub(a.At) > MaxAcceptance {
+			return fmt.Errorf(
+				"%s is accepted for %s. The ceiling is %d days: renew it "+
+					"then if it is still true", a.Advisory,
+				a.Until.Sub(a.At).Round(24*time.Hour),
+				int(MaxAcceptance.Hours()/24))
+		}
 	default:
 		if a.Justification != "" {
 			return fmt.Errorf(
@@ -212,8 +276,8 @@ func (a Assessment) Validate() error {
 
 // Lapsed reports whether an investigation has run out.
 func (a Assessment) Lapsed(now time.Time) bool {
-	return a.Status == UnderInvestigation && !a.Until.IsZero() &&
-		now.After(a.Until)
+	return (a.Status == UnderInvestigation || a.Accepted()) &&
+		!a.Until.IsZero() && now.After(a.Until)
 }
 
 // Silences reports whether this assessment takes a vulnerability out of the
@@ -224,6 +288,8 @@ func (a Assessment) Silences(now time.Time) bool {
 		return true
 	case UnderInvestigation:
 		return !a.Lapsed(now)
+	case Affected:
+		return a.Accepted() && !a.Lapsed(now)
 	default:
 		return false
 	}
@@ -241,6 +307,9 @@ func (a Assessment) Record() audit.Record {
 	if a.Justification != "" {
 		detail["justification"] = string(a.Justification)
 	}
+	if a.Owner != "" {
+		detail["owner"] = a.Owner
+	}
 	if !a.Until.IsZero() {
 		detail["until"] = a.Until.UTC().Format(time.RFC3339)
 	}
@@ -252,8 +321,14 @@ func (a Assessment) Record() audit.Record {
 		// interesting cases.
 		outcome = audit.Denied
 	}
+	action := "vuln." + string(a.Status)
+	if a.Accepted() {
+		// Its own action, so "who has been accepting risk" is one query
+		// rather than a search through every affected statement.
+		action = "vuln.accepted"
+	}
 	return audit.Record{
-		Action: "vuln." + string(a.Status), Resource: "/vuln/" + a.Advisory,
+		Action: action, Resource: "/vuln/" + a.Advisory,
 		Outcome: outcome, Principal: a.By, Kind: a.Kind,
 		Verified: a.Kind != audit.KindUnknown, Detail: detail,
 	}

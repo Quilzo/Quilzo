@@ -1,0 +1,54 @@
+{{template "head" .}}
+<h1>Experiments</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+<p class="lead">Serve another version of a page to some visitors and see which
+  converts better — with no script and no cookie. A visitor sees one version
+  all day. A verdict appears only once every version has {{.MinSample}}
+  visitor-days: checking earlier and stopping at the first good-looking
+  moment is how false winners are declared.</p>
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+{{range .Reports}}
+<section class="card">
+  <h2>{{.Experiment.Name}} <span class="tag{{if .Experiment.Running}} tag-ok{{end}}">{{if .Experiment.Running}}running{{else}}stopped{{end}}</span></h2>
+  <p class="hint">On <code>/{{.Experiment.Page}}</code> · goal <code>{{.Experiment.Goal}}</code></p>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Version</th><th scope="col">Page</th><th scope="col">Visitor-days</th><th scope="col">Converted</th><th scope="col">Rate</th><th scope="col">Against control</th></tr></thead>
+    <tbody>{{range $i, $a := .Arms}}
+    <tr><th scope="row">{{$a.Variant}}</th><td><code>/{{$a.Page}}</code></td><td>{{$a.Seen}}</td><td>{{$a.Won}}</td>
+      <td>{{printf "%.1f%%" (pct $a.Rate)}}</td>
+      <td>{{if $i}}{{printf "%+.0f%%" (pct $a.Lift)}} <span class="hint">p = {{printf "%.3f" $a.P}}</span>{{else}}—{{end}}</td></tr>
+    {{end}}</tbody>
+  </table></div>
+  <p{{if not .Ready}} class="hint"{{end}}>{{.Verdict}}</p>
+  {{if $.CanSave}}<div class="btn-group">
+    <form method="post" action="/experiments/change"><input type="hidden" name="name" value="{{.Experiment.Name}}">
+      <input type="hidden" name="op" value="{{if .Experiment.Running}}stop{{else}}start{{end}}">
+      <button type="submit">{{if .Experiment.Running}}Stop{{else}}Start{{end}}</button></form>
+    <form method="post" action="/experiments/change"><input type="hidden" name="name" value="{{.Experiment.Name}}">
+      <input type="hidden" name="op" value="remove"><button type="submit" class="btn-text">Remove</button></form>
+  </div>{{end}}
+</section>
+{{else}}<p class="notice">No experiments yet.</p>{{end}}
+{{if .CanSave}}
+<h2>New experiment</h2>
+<form method="post" action="/experiments/change" class="card">
+  <input type="hidden" name="op" value="add">
+  <div class="field"><label for="xname">Name {{template "req"}}</label>
+    <input id="xname" name="name" required pattern="[a-z0-9][a-z0-9\-]{0,39}" placeholder="pricing-headline"></div>
+  <div class="field"><label for="xpage">Page being tested {{template "req"}}</label>
+    <input id="xpage" name="page" required placeholder="pricing" aria-describedby="xpage-help">
+    <p id="xpage-help" class="help">Its current content is the control.</p></div>
+  <div class="field"><label for="xvariant">Variant page {{template "req"}}</label>
+    <input id="xvariant" name="variant" required placeholder="pricing-b" aria-describedby="xvariant-help">
+    <p id="xvariant-help" class="help">A published page with the change. It is shown at the tested page's address.</p></div>
+  <div class="field"><label for="xweight">Share of visitors who see the variant (%)</label>
+    <input id="xweight" name="weight" type="number" min="1" max="99" value="50"></div>
+  <div class="field"><label for="xgoal">Goal {{template "req"}}</label>
+    <input id="xgoal" name="goal" required placeholder="form:contact" aria-describedby="xgoal-help">
+    <p id="xgoal-help" class="help"><code>form:NAME</code> for a form sent, <code>chatbot:NAME</code> for a question answered, <code>page:/path</code> for reaching a page.</p></div>
+  <button type="submit">Create, stopped</button>
+</form>
+{{end}}
+{{end}}
+{{template "foot" .}}

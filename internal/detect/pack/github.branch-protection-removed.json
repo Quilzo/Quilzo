@@ -1,0 +1,90 @@
+{
+  "id": "github.branch-protection-removed",
+  "title": "A branch protection rule was removed on GitHub",
+  "why": "the rule that required a review is what stood between one account and the main branch",
+  "blind": "a rule edited to require nothing while still existing",
+  "sources": [
+    "github/audit"
+  ],
+  "severity": 4,
+  "when": {
+    "match": {
+      "field": "message",
+      "op": "equals",
+      "values": [
+        "protected_branch.destroy"
+      ]
+    }
+  },
+  "technique": [
+    "T1562"
+  ],
+  "fixtures": [
+    {
+      "name": "a protection removed",
+      "match": true,
+      "event": {
+        "source": "github/audit",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "github",
+          "value": "dana-gh"
+        },
+        "message": "protected_branch.destroy",
+        "raw": {
+          "action": "protected_branch.destroy",
+          "repo": "acme/shop",
+          "org": "acme",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "a protection created",
+      "match": false,
+      "event": {
+        "source": "github/audit",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "github",
+          "value": "dana-gh"
+        },
+        "message": "protected_branch.create",
+        "raw": {
+          "action": "protected_branch.create",
+          "repo": "acme/shop",
+          "org": "acme",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "a push",
+      "match": false,
+      "event": {
+        "source": "github/audit",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "github",
+          "value": "dana-gh"
+        },
+        "message": "git.push",
+        "raw": {
+          "action": "git.push",
+          "repo": "acme/shop",
+          "org": "acme",
+          "person": "dana@acme.com"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{{template "head" .}}
+<p class="hint"><a href="/agents/runs?agent={{.R.Agent}}">Runs of {{.R.Agent}}</a></p>
+<h1>{{if .R.Goal}}{{.R.Goal}}{{else}}A run of {{.R.Agent}}{{end}}</h1>
+<p><a href="/agents/edit/{{.R.Agent}}"><code>{{.R.Agent}}</code></a> <span class="wf-word {{.Row.Tone}}">{{.Row.Outcome}}</span>
+  <span class="hint">started by {{.R.By}}, {{.Started}}; {{if .R.Model}}a model ({{.R.Model}}) chose each action{{else}}the declaration was walked, with no model{{end}}</span></p>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .R.From}}<p class="hint">Run again from an earlier run: <code>{{.R.From}}</code>. What that run had already done stayed done.</p>{{end}}
+{{if .Pending}}<section class="notice warn" aria-labelledby="asks">
+  <h2 id="asks">It is asking before step {{.Pending.N}}</h2>
+  <p>{{.R.Agent}} wants to use the {{.Pending.Kind}} <code>{{.Pending.What}}</code>{{if .Pending.Input}} with:{{else}}, with nothing given.{{end}}</p>
+  {{if .Pending.Input}}<pre class="code whole"><code>{{.Pending.Input}}</code></pre>{{end}}
+  <p class="hint">Asked {{.Asked}}. Nothing has been done or charged. If you agree, exactly this goes ahead, through the same limits as everything else it does; the model is not asked again.{{if .R.Trace.Tainted}} It had read stored content before asking, and content can carry instructions: read what it wants to do as if a stranger had asked.{{end}}</p>
+  {{if .Expired}}<p><strong>This was asked too long ago to agree to.</strong> Decline it, or run the agent again.</p>{{end}}
+  <form method="post" action="/agents/act">
+    <input type="hidden" name="do" value="answer"><input type="hidden" name="run" value="{{.R.ID}}"><input type="hidden" name="step" value="{{.Pending.N}}">
+    <p class="actions">{{if not .Expired}}<button type="submit" name="verdict" value="approve">Let it go ahead</button>{{end}}
+    <button type="submit" name="verdict" value="decline" class="danger">Decline</button></p>
+  </form>
+</section>
+{{else if eq .State "interrupted"}}<section class="notice warn" aria-labelledby="cut">
+  <h2 id="cut">It was cut off</h2>
+  <p>The process running it stopped after step {{len .Steps}}. What it had done is kept below.</p>
+  <form method="post" action="/agents/act"><input type="hidden" name="do" value="resume"><input type="hidden" name="run" value="{{.R.ID}}">
+    <button type="submit">Continue from there</button></form>
+</section>
+{{else if .R.Trace.Stopped}}<p class="notice warn"><strong>It stopped before finishing:</strong> {{.R.Trace.Stopped}}</p>{{end}}
+
+<dl class="stats-row">
+  <div><dt>Did</dt><dd>{{.Row.Did}}</dd></div>
+  <div{{if .Row.Refused}} class="serious"{{end}}><dt>Refused</dt><dd>{{.Row.Refused}}</dd><dd class="wf-note">asked for, and outside its declaration</dd></div>
+  <div{{if .Row.Failed}} class="critical"{{end}}><dt>Failed</dt><dd>{{.Row.Failed}}</dd><dd class="wf-note">allowed, and did not work</dd></div>
+  <div><dt>Took</dt><dd>{{.Row.Took}}</dd>{{if .Metered}}<dd class="wf-note">{{.Tokens}} tokens</dd>{{end}}</div>
+</dl>
+
+{{if .R.Trace.Tainted}}<div class="notice warn" role="note"><p><strong>It read stored content</strong>, so
+  anything it produced needs a person before it is relied on: content can
+  carry instructions.{{if .Provenance}} It read: {{.Provenance}}.{{end}}</p></div>{{end}}
+
+<h2>Step by step</h2>
+{{if .Steps}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">#</th><th scope="col">It tried</th><th scope="col">Outcome</th><th scope="col">What came back</th>{{if .CanReplay}}<th scope="col"><span class="visually-hidden">Run again</span></th>{{end}}</tr></thead>
+  <tbody>{{range .Steps}}<tr>
+    <th scope="row">{{.N}}</th>
+    <td><code>{{.What}}</code>{{if .Kind}}<br><span class="hint">{{.Kind}}</span>{{end}}{{if .Input}}<br><span class="hint">with</span> <code>{{.Input}}</code>{{end}}</td>
+    <td><span class="wf-word {{.Tone}}">{{.Word}}</span>{{if .Why}}<br><span class="hint">{{.Why}}</span>{{end}}{{if .Redirected}}<br><span class="hint">sent instead to {{.Redirected}}</span>{{end}}</td>
+    <td>{{if .Err}}<span class="hint">{{.Err}}</span>{{end}}{{if .Result}}<details><summary>Show</summary><pre class="code"><code>{{.Result}}</code></pre></details>{{end}}</td>
+    {{if $.CanReplay}}<td>{{if ne .What "finished"}}<form method="post" action="/agents/act"><input type="hidden" name="do" value="replay"><input type="hidden" name="run" value="{{$.R.ID}}"><input type="hidden" name="step" value="{{.N}}">
+      <button type="submit" class="quiet">Run again from here<span class="visually-hidden">, after step {{.N}}</span></button></form>{{end}}</td>{{end}}
+  </tr>{{end}}</tbody></table></div>
+{{if .Answers}}<p class="hint">{{range .Answers}}Step {{.N}} was {{if .Approve}}let go ahead{{else}}declined{{end}} by {{.By}}. {{end}}</p>{{end}}
+<p class="hint">What came back is shown as text and is not interpreted. Long results are cut.</p>
+{{else}}<p>It took no step.</p>{{end}}
+
+{{if .R.Trace.Answer}}<h2>What it said at the end</h2>
+<pre class="code"><code>{{.R.Trace.Answer}}</code></pre>{{end}}
+{{template "foot" .}}

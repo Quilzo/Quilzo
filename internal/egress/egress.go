@@ -121,14 +121,31 @@ var Purposes = []Purpose{
 			"is the usual arrangement here",
 	},
 	{
-		Name:    "chat",
-		What:    "polling and replying on Telegram, Slack or Discord",
-		Without: "the chat surfaces are unavailable, including the Mini App",
+		Name: "mail",
+		What: "sending mail through the configured relay: notices to " +
+			"customers and reminders to staff",
+		Without: "no mail is sent. Notices wait in the outbox, and " +
+			"reminders are not sent by mail",
+	},
+	{
+		Name: "slack",
+		What: "sending reminders to people as direct messages from a " +
+			"Slack app, through slack.com only",
+		Without: "reminders are not sent in Slack",
 	},
 	{
 		Name:    "telemetry",
 		What:    "exporting traces and metrics to an OTLP collector",
 		Without: "nothing is exported. A collector on loopback still receives",
+	},
+	{
+		Name: "action",
+		What: "doing one declared thing to a company's own tool during an " +
+			"incident — suspending an account — after a second person has " +
+			"approved the exact call",
+		Without: "no action can be taken from here. Playbook steps are " +
+			"still recorded; each is carried out by a person in the tool " +
+			"itself",
 	},
 	{
 		Name: "connector",
@@ -295,6 +312,19 @@ func Client(purpose string, timeout time.Duration) *http.Client {
 			MaxIdleConns:        16,
 			IdleConnTimeout:     30 * time.Second,
 			TLSHandshakeTimeout: 10 * time.Second,
+		},
+		// No redirects. Go's default follows ten, and strips Authorization
+		// and Cookie when the host changes — but not a key in a header of
+		// the API's own naming. A connector authenticating with X-Api-Key
+		// that was answered with a 302 would carry the key to whatever host
+		// the response named, past the declared-host check that only ever
+		// saw the first URL. Every API this reads answers where it is asked.
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return fmt.Errorf(
+				"%s redirected to %s. Nothing reached through this client "+
+					"redirects on purpose, and following it would send the "+
+					"request and its credential somewhere the configuration "+
+					"does not name", via[len(via)-1].URL.Host, req.URL.Host)
 		},
 	}
 }

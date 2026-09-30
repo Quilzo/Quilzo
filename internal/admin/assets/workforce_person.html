@@ -1,0 +1,61 @@
+{{template "head" .}}
+<p class="wf-back"><a href="/workforce">Workforce risk</a></p>
+{{if .Unavailable}}<h1>Person</h1><p class="notice bad">{{.Unavailable}}</p>{{else}}
+{{with .Person}}<h1>{{.Name}}</h1>
+<p class="hint">{{range $i, $e := .Emails}}{{if $i}}, {{end}}{{$e}}{{end}}
+  · known to {{range $i, $s := .Records}}{{if $i}}, {{end}}{{$s.ID.Issuer}}{{end}}
+  {{if .JoinedBy}}· joined by {{range $i, $j := .JoinedBy}}{{if $i}} and {{end}}{{if eq $j "email"}}the same address in each tool{{else}}a link somebody confirmed{{end}}{{end}}{{end}}</p>{{end}}
+
+{{with .Score}}
+<section class="wf-kpis" aria-label="Score">
+  <p class="wf-hero"><span class="wf-hero-n">{{.Points}}</span>
+    <span class="wf-band {{$.Tone}}"><span class="wf-icon" aria-hidden="true"></span>{{.Band}}</span>
+    <span>out of 100{{if .Leaver}}; has left{{end}}</span></p>
+  {{if .Vendor}}<p class="hint">{{range $tool, $v := .Vendor}}{{$tool}}'s own risk score: {{$v}}. {{end}}Shown for comparison, never mixed in.</p>{{end}}
+</section>
+
+<figure class="wf-fig"><figcaption><h2>What the score is made of</h2></figcaption>
+{{if .Factors}}{{template "wfbars" $.Factors}}
+<table class="wf-reasons"><thead><tr><th scope="col">Reason</th><th scope="col">From</th><th scope="col">Points</th></tr></thead>
+  <tbody>{{range .Factors}}<tr><td>{{.What}}</td><td>{{.Source}}</td><td>{{printf "%+d" .Points}}</td></tr>{{end}}</tbody></table>
+{{else}}<p>Nothing any tool reports counts against them.</p>{{end}}
+{{if .Unknown}}<div class="notice warn"><p><strong>Unknown, not safe.</strong></p>
+  <ul>{{range $a, $why := .Unknown}}<li>{{$a}}: {{$why}}</li>{{end}}</ul></div>{{end}}
+</figure>
+{{else}}<p class="notice warn">Not scored: they have left and nothing of
+  theirs still checks in.</p>{{end}}
+
+<h2>What each tool says</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Tool</th><th scope="col">Address</th><th scope="col">Current</th><th scope="col">Department</th><th scope="col">Title</th><th scope="col">Tasks</th></tr></thead>
+  <tbody>{{range .Person.Records}}<tr><th scope="row">{{.ID.Issuer}}</th><td>{{.Email}}</td>
+    <td>{{if .Active}}{{if deref .Active}}yes{{else}}<strong>no</strong>{{end}}{{else}}<span class="hint">not said</span>{{end}}</td>
+    <td>{{.Department}}</td><td>{{.Title}}</td>
+    <td>{{range $t, $st := .Tasks}}<span class="wf-task">{{$t}}: {{$st}}</span> {{end}}</td></tr>{{end}}</tbody>
+</table></div>
+
+<h2>Machines</h2>
+{{if .Machines}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Machine</th><th scope="col">Serial</th><th scope="col">Last seen</th><th scope="col">Known to</th>
+    {{range (index .Machines 0).Posture}}<th scope="col">{{.Label}}</th>{{end}}</tr></thead>
+  <tbody>{{range .Machines}}<tr><th scope="row">{{.Name}}</th><td><code>{{.Serial}}</code></td><td>{{.Seen}}</td><td>{{.Tools}}</td>
+    {{range .Posture}}<td><span class="wf-word {{.Tone}}" title="{{.Title}}">{{.Word}}</span></td>{{end}}</tr>{{end}}</tbody>
+</table></div>{{else}}<p>No tool reports a machine of theirs.</p>{{end}}
+
+<h2>Training</h2>
+{{if .Person.Training}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Course or policy</th><th scope="col">Status</th><th scope="col">Finished</th><th scope="col">From</th></tr></thead>
+  <tbody>{{range .Person.Training}}<tr><th scope="row">{{.Module}}{{if .Policy}} <span class="wf-tag">policy</span>{{end}}</th>
+    <td>{{.Status}}</td><td>{{if not .Completed.IsZero}}{{.Completed.Format "2 Jan 2006"}}{{end}}</td><td>{{.ID.Issuer}}</td></tr>{{end}}</tbody>
+</table></div>{{else}}<p>No enrolments.</p>{{end}}
+
+<h2>Phishing tests</h2>
+{{if .Person.Phishing}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Test</th><th scope="col">Delivered</th><th scope="col">What they did</th><th scope="col">When</th></tr></thead>
+  <tbody>{{range .Person.Phishing}}<tr><th scope="row">{{if .TestName}}{{.TestName}}{{else}}Test {{.Test}}{{end}}</th>
+    <td>{{if not .Delivered.IsZero}}{{.Delivered.Format "2 Jan 2006"}}{{end}}</td>
+    <td>{{$o := .Outcome}}{{if or (eq $o "Entered data") (eq $o "Clicked")}}<span class="wf-word critical">{{$o}}</span>{{else if eq $o "Reported it"}}<span class="wf-word good">{{$o}}</span>{{else}}{{$o}}{{end}}</td>
+    <td>{{if not .DataEntered.IsZero}}{{.DataEntered.Format "2 Jan 2006"}}{{else if not .Clicked.IsZero}}{{.Clicked.Format "2 Jan 2006"}}{{else if not .Reported.IsZero}}{{.Reported.Format "2 Jan 2006"}}{{end}}</td></tr>{{end}}</tbody>
+</table></div>{{else}}<p>No results in the tests read.</p>{{end}}
+{{end}}
+{{template "foot" .}}

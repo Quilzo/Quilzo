@@ -1,0 +1,72 @@
+{{template "head" .}}
+<p class="wf-back"><a href="/workforce">Workforce risk</a></p>
+<h1>Reminders</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">One message to each person listing everything their tools
+  say they still have to do. No tracking, no sign-in, and links only to the
+  tools themselves. A manager hears about it only after repeated reminders,
+  and never about phishing results.</p>
+
+<dl class="stats-row">
+  <div class="{{if .Config.Enabled}}good{{else}}serious{{end}}"><dt>State</dt><dd>{{if .Config.Enabled}}Enabled{{else}}Disabled{{end}}</dd></div>
+  <div><dt>Due now</dt><dd>{{len .Rows}}</dd></div>
+  <div><dt>Held back</dt><dd>{{len .Held}}</dd></div>
+</dl>
+
+<div class="table-wrap"><table><tbody>
+  <tr><th scope="row">About</th><td>{{.Campaigns}}</td></tr>
+  <tr><th scope="row">Sent by</th><td>{{.Channels}}</td></tr>
+  <tr><th scope="row">At most</th><td>once every {{.Config.EveryDays}} day(s) to each person</td></tr>
+  <tr><th scope="row">Only during</th><td>{{.Window}}{{if not .InHours}} <span class="hint">— outside it now</span>{{end}}</td></tr>
+  <tr><th scope="row">Manager told</th><td>{{if .Config.EscalateAfter}}after {{.Config.EscalateAfter}} reminders over {{.Config.EscalateDays}} days, never about phishing{{else}}never{{end}}</td></tr>
+  <tr><th scope="row">Signed</th><td>{{.Config.Signature}}</td></tr>
+</tbody></table></div>
+<p class="hint">These are set in <code>remind/config.json</code>.</p>
+{{range $ch, $why := .Unusable}}<p class="notice warn"><strong>{{$ch}}</strong> cannot be used: {{$why}}</p>{{end}}
+
+<div class="grid2">
+{{if .Config.Enabled}}
+<form method="post" action="/workforce/reminders/act">
+  <input type="hidden" name="do" value="send">
+  <p><label><input type="checkbox" name="confirm" value="yes" required> Send
+    to everybody below now</label></p>
+  <p><button type="submit"{{if not .InHours}} disabled{{end}}>Send now</button></p>
+</form>
+<form method="post" action="/workforce/reminders/act">
+  <input type="hidden" name="do" value="disable">
+  <p><button type="submit" class="danger">Disable reminders</button></p>
+</form>
+{{else}}
+<form method="post" action="/workforce/reminders/act">
+  <input type="hidden" name="do" value="enable">
+  <p><label><input type="checkbox" name="read" value="yes" required> I have
+    read the preview below</label></p>
+  <p><button type="submit">Enable reminders</button></p>
+</form>
+{{end}}
+</div>
+
+<h2>Would be sent now</h2>
+{{if .Rows}}<div class="table-wrap"><table class="wf-people">
+  <thead><tr><th scope="col">To</th><th scope="col">By</th><th scope="col">What it lists</th></tr></thead>
+  <tbody>{{range .Rows}}<tr><th scope="row">{{if .Manager}}Manager of {{.Name}}{{else}}{{.Name}}{{end}}</th>
+    <td>{{.Channel}}</td>
+    <td><ul class="wf-list">{{range .Lines}}<li>{{.}}</li>{{end}}</ul></td></tr>{{end}}</tbody>
+</table></div>{{else}}<p>Nobody has anything due.</p>{{end}}
+
+{{if .Held}}<details class="wf-how"><summary>Held back ({{len .Held}})</summary>
+  <ul>{{range .Held}}<li>{{.Name}}: {{.Why}}</li>{{end}}</ul></details>{{end}}
+
+<h2>Sent</h2>
+{{if .Sent}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">When</th><th scope="col">By</th><th scope="col">Items</th><th scope="col">Result</th></tr></thead>
+  <tbody>{{range .Sent}}<tr><th scope="row">{{.When}}</th><td>{{.Channel}}{{if .Manager}} (manager){{end}}</td>
+    <td>{{len .Items}}</td>
+    <td>{{if .OK}}<span class="wf-word good">Accepted</span>{{else}}<span class="wf-word critical">Not sent</span> {{.Error}}{{end}}</td></tr>{{end}}</tbody>
+</table></div>
+<p class="hint">Accepted means the mail relay or Slack took it, not that it
+  was read. Addresses are not kept.</p>{{else}}<p>Nothing sent yet.</p>{{end}}
+{{end}}
+{{template "foot" .}}

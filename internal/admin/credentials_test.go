@@ -33,7 +33,7 @@ func TestTheSignInFormIsThrottled(t *testing.T) {
 	alerts := 0
 	srv.OnAuthFailure = func(string, int) { alerts++ }
 
-	codes := map[int]int{}
+	codes := map[string]int{}
 	for i := 0; i < 25; i++ {
 		req := httptest.NewRequest(http.MethodPost, "/signin",
 			strings.NewReader("token=qz_definitelynotarealtoken"))
@@ -42,13 +42,22 @@ func TestTheSignInFormIsThrottled(t *testing.T) {
 		req.RemoteAddr = "198.51.100.7:4444"
 		w := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(w, req)
-		codes[w.Code]++
+		codes[unsigned(w.Header().Get("Location"))]++
 	}
 
-	if codes[http.StatusTooManyRequests] == 0 {
+	if codes["/signin?e=throttled"] == 0 {
 		t.Errorf("twenty-five wrong tokens through the sign-in form and not "+
 			"one was refused for trying too often: %v. The same guesses sent "+
 			"as a cookie are throttled after two", codes)
+	}
+	// And the form, reached by that redirect, says so with a 429.
+	req := httptest.NewRequest(http.MethodGet, "/signin?e=throttled", nil)
+	req.RemoteAddr = "198.51.100.7:4444"
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" {
+		t.Errorf("the throttled form answered %d with Retry-After %q",
+			w.Code, w.Header().Get("Retry-After"))
 	}
 	if alerts == 0 {
 		t.Error("no failure threshold was ever reported, so a sustained " +

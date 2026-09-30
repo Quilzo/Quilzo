@@ -85,8 +85,14 @@ anything. See [LICENSES/LicenseRef-Quilzo-Commercial.txt](LICENSES/LicenseRef-Qu
 
 ## Why AGPL is the base, and why it stays
 
-The reasoning is in [NOTICE](NOTICE) and has not changed: nobody distributes a
-CMS, they host it, so a licence triggered by distribution would never trigger.
+The reasoning has not changed: nobody distributes software like this, they host
+it, so a licence triggered by distribution would never trigger. Under GPL-3.0 a
+company could take Quilzo, run it for customers, modify it, and never publish a
+line. The Affero clause closes that: offering it over a network is the trigger,
+so anybody running a modified Quilzo for others has to offer their users the
+source. Using it, charging for it and building a business on it are all
+permitted and intended. What the licence prevents is a closed fork, hosted at
+scale, with the improvements kept private.
 
 What is worth adding here is that the industry tested the alternative and came
 back. Elastic left Apache-2.0 for SSPL and ELv2 in 2021 and
@@ -121,7 +127,7 @@ prohibition is not an argument anybody can win by writing better code.
 
 So this is an addition and not a relicensing. **No permission anyone holds today
 is withdrawn by it.** Every copy already taken stays under the terms it was taken
-under, which is the same thing [NOTICE](NOTICE) says about the Apache-2.0 window
+under, which is the same thing this page says below about the Apache-2.0 window
 running in the other direction — a licence change decides what happens next and
 cannot reach back, and that has to hold when the change is one you like.
 
@@ -132,18 +138,26 @@ not grant. A DCO says you had the right to submit your work under the project's
 licence; it says nothing about the maintainer's right to offer it under a
 commercial one.
 
-Until this change the project took contributions under a DCO alone and said so
-in strong terms. That is no longer sufficient and [CLA.md](CLA.md) explains what
+Until this change there was no contributor licence agreement: the project took
+contributions under a DCO alone and said so in strong terms. That is no longer sufficient and [CLA.md](CLA.md) explains what
 replaced it, what it costs a contributor, and which parts of the old promise
 survive. [CONTRIBUTING.md](CONTRIBUTING.md) records what the section used to say.
 
 ## The Apache-2.0 window
 
-For approximately eighty minutes on 22 August 2026 this project was public under
-Apache-2.0. That grant is permanent for anyone who took a copy, covering commits
-`656bc88` through `67a85b8`, and it permits exactly the closed use a commercial
-licence is otherwise needed for.
+For about eighty minutes on 22 August 2026 this project was public under
+Apache-2.0. Commit `656bc88` relicensed it and was pushed at approximately 08:58
+UTC; `67a85b8` was the last commit under those terms; the licence was then
+reverted to AGPL-3.0-or-later.
 
-It is stated here, on the licensing page, rather than only in NOTICE, because a
-prospective licensee's counsel will find it either way and there is no version of
-this where they should find it from someone other than us.
+An Apache-2.0 grant is irrevocable. Anyone who took a copy of those commits in
+that window holds them under Apache-2.0 permanently, which permits exactly the
+closed use a commercial licence is otherwise needed for. It covers the code as
+it stood that morning and nothing written since. From clone traffic at the time,
+the number of parties who took a copy is a small handful; GitHub does not
+publish who.
+
+It was reverted because the relicensing was aimed at a plan the project is not
+pursuing. It is recorded here, on the licensing page, because a prospective
+licensee's counsel will find it in the history either way and should find it
+from us.

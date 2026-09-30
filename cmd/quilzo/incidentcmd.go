@@ -26,18 +26,36 @@ import (
 // running, is right, and is three weeks into something a regulator will say
 // was plainly reportable on day one.
 
-func cmdIncident(args []string) error {
+func cmdIncident(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"demo"}
+		args = []string{"list"}
 	}
 	switch args[0] {
 	case "demo":
 		return incidentDemo(args[1:])
 	case "duties":
 		return incidentDuties()
+	case "regimes":
+		return incidentRegimes(root, args[1:])
+	case "declare":
+		return incidentDeclare(root, args[1:])
+	case "list":
+		return incidentList(root)
+	case "show":
+		return incidentShow(root, args[1:])
+	case "playbooks":
+		return incidentPlaybooks(root, args[1:])
+	case "act", "act-approve", "act-undo", "act-withdraw":
+		return incidentAct(root, args[0], args[1:])
+	case "note", "assign", "decide", "discharge", "waive", "link", "unlink",
+		"watch", "reopen", "close", "propose", "approve", "withdraw", "step":
+		return incidentDo(root, args[0], args[1:])
 	default:
-		return fmt.Errorf("unknown incident command %q; try demo or duties",
-			args[0])
+		return fmt.Errorf("unknown incident command %q; try declare, list, "+
+			"show, note, assign, decide, discharge, waive, link, watch, "+
+			"reopen, close, playbooks, propose, approve, withdraw, step, "+
+			"act, act-approve, act-undo, act-withdraw, "+
+			"regimes, duties or demo", args[0])
 	}
 }
 

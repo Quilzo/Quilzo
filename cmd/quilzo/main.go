@@ -145,6 +145,8 @@ templates and design
 
 messengers
   quilzo triage [FILE] --rules DIR         run the rules, rank what they found
+  quilzo finding list [--state S --kind K] the queue, most urgent first
+  quilzo finding risk                      what is open about each person or thing, added up
   quilzo finding decide ID STATE           record a decision in the audit chain
   quilzo finding story [ID]                replay who decided what, and why
   quilzo canary plant --where W --why Y    plant a value nothing should read
@@ -184,9 +186,30 @@ sharing a screen
   quilzo sarif read results.sarif          import any scanner's findings, and what it left out
   quilzo sca scan --bom sbom.json --osv db.json   which dependencies you can actually fix
   quilzo correlate demo                    detections about several events, and when a window closes
+  quilzo incident declare --title T --grade sev2 [--finding ID]   open one, under the regimes set
+  quilzo incident list | show ID           what is open, and each one's clocks and record
+  quilzo incident decide ID aware --because "…"   the decision that starts a clock
+  quilzo incident discharge|waive ID "REGIME" --because "…"   met, or ruled out
+  quilzo incident note|assign|link|watch|reopen|close ID …   the rest of the record
+  quilzo incident playbooks [show ID | check FILE]   the checklists that ship, and yours
+  quilzo incident propose|approve|withdraw ID PLAYBOOK   attach one, agree to it, or take it back
+  quilzo incident step ID PLAYBOOK STEP done|skip|undo --because "…"   what became of a step
+  quilzo incident act ID ACTION ISSUER:VALUE --because "…"   ask for an action on an account the incident is about
+  quilzo incident act-approve ID N         approve it, which sends it; act-undo and act-withdraw take it back
+  quilzo action catalogue | list           what can be done to another tool, and what is installed
+  quilzo action add NAME --org ORG         install one; it has a credential of its own
+  quilzo action remove NAME
+  quilzo incident regimes [eu nis2 …]      which obligations a new incident starts under
   quilzo incident duties                   who has to be told, how soon, and what starts the clock
   quilzo incident demo                     an incident, its several clocks, and closing it
   quilzo feed status                       what the scanner is working from, and how old it is
+  quilzo collect run [SOURCE]              read each platform's new log records, map them, store them
+  quilzo collect file ISSUER/STREAM FILE   the same for a log that arrives as a file
+  quilzo collect status | auto 15m|off     what each source did last, and the schedule
+  quilzo source add MAPPING.json --sample RECORDS.json   a mapping for an application of yours
+  quilzo identity list                     who is known, and by which identifiers on which platforms
+  quilzo identity link ISSUER:VALUE PERSON@…   say whose an identifier is, where a platform does not
+  quilzo identity unlink ISSUER:VALUE      take that back
   quilzo source list                       every platform whose logs this reads
   quilzo source check --source okta/system records.json   what a mapping would do with real records
 
@@ -243,7 +266,16 @@ assurance
   quilzo assurance controls                what this organisation says it does
 
 vulnerabilities
+  quilzo vuln load [--advisories F] [--inventory F]   put the lists in the store, checked
+  quilzo vuln import [--bom F --where A] [--osv P] [--kev F] [--epss F]   from CycloneDX, OSV, CISA and EPSS files
+  quilzo vuln reach --source DIR --where A  whether an asset's source names the vulnerable symbols
+  quilzo vuln ssvc-tree FILE               load CERT/CC's deployer decision table
+  quilzo vuln asset MATCH --exposure E --impact I --because "…"   what you say about your machines
+  quilzo vuln assets                       the tags, and how many assets have none
   quilzo vuln queue [INVENTORY]            what to work on, not sorted by severity
+  quilzo vuln plan                         the smallest upgrades that clear the most
+  quilzo vuln accept CVE PKG --owner W --until DATE --because "…"   leave it, until a day
+  quilzo vuln vex --author A --id URL      the decisions as an OpenVEX draft
   quilzo vuln why CVE-ID                   what is known, and who decided what
   quilzo vuln assess CVE PKG STATUS        record that it does not apply, with a reason
   quilzo vuln reasons                      the five reasons something is not affected
@@ -251,9 +283,25 @@ vulnerabilities
 connecting to a company's tools
   quilzo connect list                      the connectors installed, and what each can reach
   quilzo connect check NAME|FILE           read a manifest and say what it may touch
+  quilzo connect catalogue                 the connectors that ship, and what each needs
+  quilzo connect add NAME [--region R]     install a shipped connector as a readable file
+                   [--tenant ID] [--org O]  the Entra tenant, or the Okta organisation
   quilzo connect secret NAME               store a credential, from the environment
   quilzo connect probe NAME ENDPOINT       what shape a tool's response is, never its values
   quilzo connect run NAME [ENDPOINT]       pull records, one JSON object per line
+  quilzo connect run NAME --save           and keep them as the tool's latest read
+
+estate
+  quilzo estate show                       what the tools say, joined, and what could not be
+  quilzo estate build                      put where the tools disagree in the findings register
+  quilzo estate scores [--limit N]         each person's risk and the reasons for it (admins)
+  quilzo estate sync [--remind]            read every installed tool, then build (admins)
+  quilzo estate auto --every 24h [--remind] | --off   have the admin server sync on a schedule
+
+reminders
+  quilzo remind preview                    who would be told what, now, and who is held back
+  quilzo remind enable | disable           allow reminders to be sent, or stop them
+  quilzo remind send                       send what is due, inside the configured hours
 
 workforce
   quilzo workforce coverage [FILE]         did the join work, and what did not
@@ -274,16 +322,26 @@ telling people
   quilzo notify publish NOTICE             the Article 34(3)(c) public communication
   quilzo notify inbox ISSUER:VALUE         what is waiting for somebody in the app
   quilzo hunt --field F [FILE]             what is rare, which is what is worth a look
+  quilzo analyst plan                      what the triage agent reads, in order
+  quilzo analyst triage [--limit N] [--dry-run]   a model's first pass over open findings, as suggestions
+  quilzo analyst eval [--k 3]              how reliable it is on what people ruled, and under planted text
+  quilzo intel import FILE --source NAME   indicators from a STIX bundle or a list, then look back
+  quilzo intel add VALUE --source NAME     one indicator; --until DATE, --note "…"
+  quilzo intel list | remove ID            what is held, what each has found, and taking one out
   quilzo detect test [DIR]                 run every rule against its own fixtures
   quilzo detect list [DIR]                 the rules, what they read, what they miss
   quilzo detect fields                     how a rule may compare
+  quilzo detect run [--rules DIR]          run the rules over new events, into the queue
+  quilzo detect stats                      what each rule has been worth, and what to change
+  quilzo detect ring RULE live|trial|off --because "…"   move a rule in or out of the queue
+  quilzo detect suppress RULE FIELD=VALUE --owner W --until DATE --because "…"
+  quilzo detect unsuppress ID              remove a suppression
+  quilzo detect suppressions               what is suppressed, by whom, until when
+  quilzo detect replay [--strict]          every rule over the corpus of events already ruled on
+  quilzo detect learn FINDING              add the event behind a closed finding to the corpus
+  quilzo detect pack [install]             the rules that ship: identity, code, cloud and chain, and across them
   quilzo telemetry check [FILE]            can a connector's events be used at all
   quilzo telemetry fields [FILE]           what a detection may refer to
-  quilzo telegram check                    confirm the bot token works
-  quilzo telegram serve                    the Mini App: publish from a chat
-  quilzo telegram link USER-ID             mint a one-time link without a bot
-  quilzo slack check | serve               a slash command, into the same editor
-  quilzo discord check | serve             an interaction, into the same editor
 
 this program
   quilzo --version                         version, copyright and licence
@@ -338,6 +396,27 @@ publishing
 
 the assistant
   quilzo assist "..." --author WHO         propose changes; marks what it writes
+  quilzo assistant add NAME --title T      declare a chatbot that answers from the site
+  quilzo assistant action NAME ACTION      what it may offer to do: a link or a form
+  quilzo assistant ask NAME "question"     try it, with its sources and what was removed
+  quilzo assistant eval NAME CASES.jsonl   measure it, including what it should refuse
+  quilzo assistant list | remove NAME
+  quilzo analytics [--days N]              views, visitors, referrers, conversions; no cookie
+  quilzo experiment add NAME --page P --variant b=PAGE --goal G   an A/B test, no script or cookie
+  quilzo experiment start|stop|remove NAME
+  quilzo experiment list                   every test, running or not
+  quilzo experiment report NAME            results, and a verdict only when there is one
+  quilzo personalise add NAME --page P --variant V --when campaign=X   by what the request says
+  quilzo personalise enable|disable|remove NAME
+  quilzo personalise test PAGE [--campaign X --language L --device phone]
+  quilzo personalise list                  every rule, in the order they are tried
+  quilzo decide set FILE.json              declare typed questions with a confidence gate
+  quilzo decide ask NAME STATE             answer them; under the threshold, a person decides
+  quilzo decide eval NAME CASES.jsonl      how much it decides alone, and how often rightly
+  quilzo decide list | remove NAME
+  quilzo gateway status                    model routes, and what each caller spent today
+  quilzo gateway route add|remove NAME     where model calls go, in fallback order
+  quilzo gateway budget CALLER             calls a minute, characters a day
   quilzo fediverse init                    a signing key, so the site can federate
   quilzo fediverse status | followers      whether it federates, and who follows
   quilzo fediverse block HOST              refuse an instance, and drop its follows
@@ -348,6 +427,8 @@ the assistant
 
 access
   quilzo oidc configure --issuer ... --client-id ...   sign in with an IdP
+  quilzo oidc configure --provider google --domain D   sign in with Google Workspace
+  quilzo oidc configure --provider microsoft --tenant T   sign in with Microsoft Entra
   quilzo oidc status                       whether an IdP is configured, and which
   quilzo oidc check                        talk to the provider, report what it offers
   quilzo network                           what this may connect to, and whether
@@ -389,6 +470,11 @@ agents and integrations
   quilzo agent new NAME --kind KIND         declare what an agent may do
   quilzo agent list | show NAME | check     what is declared, and whether it still validates
   quilzo agent run NAME                    a model chooses, inside the manifest
+  quilzo agent runs [NAME] | trace RUN     the runs that are kept, and one step by step
+  quilzo agent approve RUN STEP            let the action a run is waiting on go ahead
+  quilzo agent decline RUN STEP            refuse it; the run carries on without
+  quilzo agent resume RUN                  continue a run that was cut off
+  quilzo agent replay RUN STEP             run it again from after a step, as a new run
   quilzo agent probe < question.json       ask the gate: would this agent be
                                             allowed to do this? JSON in, JSON out
   quilzo agents                            what models have been doing, and
@@ -694,18 +780,44 @@ func main() {
 		err = cmdTriage(root, cmdArgs)
 	case "finding":
 		err = cmdFinding(root, cmdArgs)
+	case "assistant":
+		err = cmdAssistant(root, cmdArgs)
+	case "gateway":
+		err = cmdGateway(root, cmdArgs)
+	case "decide":
+		err = cmdDecide(root, cmdArgs)
+	case "analytics":
+		err = cmdAnalytics(root, cmdArgs)
+	case "experiment":
+		err = cmdExperiment(root, cmdArgs)
+	case "personalise":
+		err = cmdPersonalise(root, cmdArgs)
 	case "canary":
 		err = cmdCanary(root, cmdArgs)
 	case "spool":
 		err = cmdSpool(root, cmdArgs)
 	case "notify":
 		err = cmdNotify(root, cmdArgs)
+	case "estate":
+		err = cmdEstate(root, cmdArgs)
+	case "remind":
+		err = cmdRemind(root, cmdArgs)
 	case "workforce":
 		err = cmdWorkforce(root, cmdArgs)
 	case "connect":
 		err = cmdConnect(root, cmdArgs)
 	case "vuln":
 		err = cmdVuln(root, cmdArgs)
+	case "intel":
+		err = cmdIntel(root, cmdArgs)
+	case "collect":
+		err = cmdCollect(root, cmdArgs)
+	case "identity":
+		err = cmdIdentity(root, cmdArgs)
+	case "action":
+		err = cmdAction(root, cmdArgs)
+	case "analyst":
+		err = cmdAnalyst(root, cmdArgs)
 	case "assurance":
 		err = cmdAssurance(root, cmdArgs)
 	case "framework":
@@ -751,11 +863,11 @@ func main() {
 	case "correlate":
 		err = cmdCorrelate(cmdArgs)
 	case "incident":
-		err = cmdIncident(cmdArgs)
+		err = cmdIncident(root, cmdArgs)
 	case "feed":
 		err = cmdFeed(cmdArgs)
 	case "source":
-		err = cmdSource(cmdArgs)
+		err = cmdSource(root, cmdArgs)
 	case "standing":
 		err = cmdStanding(cmdArgs)
 	case "boundary":
@@ -764,12 +876,6 @@ func main() {
 		err = cmdRoom(root, cmdArgs)
 	case "telemetry":
 		err = cmdTelemetry(root, cmdArgs)
-	case "telegram":
-		err = cmdTelegram(root, cmdArgs)
-	case "slack":
-		err = cmdSlack(root, cmdArgs)
-	case "discord":
-		err = cmdDiscord(root, cmdArgs)
 	case "posture":
 		err = cmdPosture(root, cmdArgs)
 	case "type", "types":

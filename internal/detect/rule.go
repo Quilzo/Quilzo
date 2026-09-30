@@ -186,6 +186,11 @@ type Rule struct {
 	// be selling the metric the framework's stewards have disowned.
 	Technique []string `json:"technique,omitempty"`
 
+	// Quiet says the rule raises nothing on its own. It exists for a
+	// correlation to count: one failed sign-in is a typo, and the finding
+	// is that there were forty, or that they were on three platforms.
+	Quiet bool `json:"quiet,omitempty"`
+
 	Fixtures []Fixture `json:"fixtures"`
 }
 
@@ -569,4 +574,15 @@ func (r Rule) Test() []Result {
 		})
 	}
 	return out
+}
+
+// Holds reports whether a comparison is satisfied by an event's fields: the
+// same comparison a rule makes, for a hunt that is looking before there is
+// a rule.
+func (m Match) Holds(f map[string]string) bool { return m.eval(f) }
+
+// Usable reports whether a comparison could be evaluated, without the rest
+// of a rule around it.
+func (m Match) Usable() error {
+	return checkPredicate(Predicate{Match: &m}, 0)
 }

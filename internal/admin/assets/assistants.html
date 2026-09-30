@@ -1,0 +1,52 @@
+{{template "head" .}}
+<h1>Chatbots</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+<p class="lead">Assistants that answer visitors from your published pages,
+  and can offer to take them somewhere or fill in one of your forms. Every
+  sentence they say links to the page it came from, and anything a page does
+  not say is removed before a visitor sees it.</p>
+
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+
+{{if .List}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Chatbot</th><th scope="col">Where</th>
+    <th scope="col">Answers with</th><th scope="col">Can offer</th></tr></thead>
+  <tbody>
+  {{range .List}}
+  <tr>
+    <th scope="row"><a href="/assistants/{{.Name}}">{{.Title}}</a><div class="hint"><code>{{.Name}}</code></div></th>
+    <td>{{if .Public}}<span class="tag tag-ok">public</span> <code>/ask/{{.Name}}</code>{{else}}<span class="tag">testing only</span>{{end}}</td>
+    <td>{{if .UseModel}}the configured model, verified{{else}}quotes from your pages{{end}}</td>
+    <td>{{len .Actions}} action(s)</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p class="notice">No chatbots yet. Create one below; it starts private, so you
+  can try it here before anybody else can.</p>
+{{end}}
+
+{{if .CanSave}}
+<h2>New chatbot</h2>
+<form method="post" action="/assistants/save" class="card">
+  <div class="field">
+    <label for="name">Name {{template "req"}}</label>
+    <input id="name" name="name" required pattern="[a-z0-9][a-z0-9\-]{0,62}"
+           aria-describedby="name-help" placeholder="help">
+    <p id="name-help" class="help">Lower-case letters, digits and hyphens.
+      Visitors reach it at <code>/ask/</code>name.</p>
+  </div>
+  <div class="field">
+    <label for="title">Title {{template "req"}}</label>
+    <input id="title" name="title" required placeholder="Ask the shop">
+  </div>
+  <button type="submit">Create</button>
+</form>
+{{end}}
+{{end}}
+{{template "foot" .}}

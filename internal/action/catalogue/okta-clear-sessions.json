@@ -1,0 +1,29 @@
+{
+  "about": "Ends the sessions an attacker may be holding, after the credentials have been reset or the account suspended.",
+  "hosts": {
+    "okta": "{org}.okta.com",
+    "emea": "{org}.okta-emea.com",
+    "preview": "{org}.oktapreview.com"
+  },
+  "default": "okta",
+  "credential": "An API token made by an administrator whose only role is one that can suspend users and clear their sessions \u2014 a custom role with those two permissions, or Help Desk Administrator scoped to the groups concerned. Not the token a connector reads with: that one is made by a read-only administrator so that it cannot do this.",
+  "action": {
+    "name": "okta-clear-sessions",
+    "tool": "Okta",
+    "title": "Clear an Okta account's sessions",
+    "host": "",
+    "secret": "okta-action-token",
+    "scheme": "SSWS",
+    "target": {
+      "issuer": "okta",
+      "pattern": "^00u[A-Za-z0-9]{8,40}$",
+      "what": "an Okta user id, as the system log names the actor"
+    },
+    "does": {
+      "method": "DELETE",
+      "path": "/api/v1/users/{target}/sessions"
+    },
+    "effect": "Every Okta session the account has open is ended, so the next request from any browser has to sign in again.",
+    "reverts": "It cannot be undone and does not need to be: the person signs in again. Somebody who holds the password and a factor can too, so this is not containment by itself."
+  }
+}

@@ -43,6 +43,13 @@
       </button>
     </form>
     <div class="prefs">
+      <button type="button" class="menubutton" popovertarget="sitenav">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor"
+                stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+        <span>Menu</span>
+      </button>
       {{template "navtoggle" .}}
       {{template "themetoggle" .}}
     </div>
@@ -58,7 +65,19 @@
   breakpoint wrong and a screen reader reads every section twice. Rendering it
   once removes the possibility rather than relying on a rule to hide it.
 */}}
-<div class="sidenav">
+{{/*
+  On a narrow screen the navigation is a menu that opens over the page, and on
+  a wide one it is the sidebar. One element, both roles: the popover attribute
+  makes it a closed menu the Menu button opens (Escape or a tap outside closes
+  it, no script), and on wide screens the stylesheet sets aside the browser's
+  popover styling so it is an ordinary column. A browser without popover
+  support ignores the attribute and shows the navigation as it always did.
+
+  It was a column of every section stacked above the content, so on a phone
+  the first screen of every page was menu.
+*/}}
+<div class="sidenav" id="sitenav" popover>
+  <button type="button" class="menuclose" popovertarget="sitenav" popovertargetaction="hide">Close menu</button>
   {{template "navlist" .}}
 </div>
 

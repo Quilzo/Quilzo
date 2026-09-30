@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"github.com/quilzo/quilzo/internal/telemetry"
 	"net/http"
 	"path/filepath"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/a11y"
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -297,6 +299,12 @@ func fullyWired(t *testing.T) (*Server, string) {
 		},
 	}
 
+	srv.Agents = &Agents{Load: func() (map[string]agent.Manifest, error) {
+		t, _ := agent.For(agent.KindRetrieval)
+		m := t.Manifest
+		m.Name = "answers"
+		return map[string]agent.Manifest{"answers": m}, nil
+	}}
 	srv.Assurance = &Assurance{
 		Scan: func() (int, []codescan.Finding, error) {
 			return 12, []codescan.Finding{{
@@ -421,6 +429,12 @@ func fullyWired(t *testing.T) (*Server, string) {
 		},
 		Commit: func(string, string, string) error { return nil },
 	}
+	// A queue with something in it, so the findings screens render rows,
+	// filters and a detail page rather than only their empty states.
+	srv.Findings = newFakeRegister(
+		detectionFinding("admin-dana", "failed sign-in", telemetry.SeverityHigh),
+	).wire()
+
 	return srv, token
 }
 

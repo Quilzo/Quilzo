@@ -1,0 +1,84 @@
+{
+  "id": "okta.api-token-created",
+  "title": "An API token was created in Okta",
+  "why": "a token does whatever its maker can, without a second factor, until somebody revokes it",
+  "blind": "a token created before the log was collected",
+  "sources": [
+    "okta/system"
+  ],
+  "severity": 3,
+  "when": {
+    "match": {
+      "field": "raw.eventType",
+      "op": "equals",
+      "values": [
+        "system.api_token.create"
+      ]
+    }
+  },
+  "technique": [
+    "T1528"
+  ],
+  "fixtures": [
+    {
+      "name": "a token created",
+      "match": true,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "system.api_token.create",
+        "raw": {
+          "eventType": "system.api_token.create",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "a token revoked",
+      "match": false,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "system.api_token.revoke",
+        "raw": {
+          "eventType": "system.api_token.revoke",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "an ordinary sign-in",
+      "match": false,
+      "event": {
+        "source": "okta/system",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 1,
+        "actor": {
+          "issuer": "okta",
+          "value": "00u1"
+        },
+        "message": "User login to Okta",
+        "raw": {
+          "eventType": "user.session.start",
+          "person": "dana@acme.com"
+        }
+      }
+    }
+  ]
+}

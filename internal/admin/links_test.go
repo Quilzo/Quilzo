@@ -157,8 +157,9 @@ var (
 	reHandleVar = regexp.MustCompile(`mux\.(?:HandleFunc|Handle)\(([A-Za-z_]\w*),`)
 	reConst     = regexp.MustCompile(`(?m)^const (\w+) = "([^"]+)"`)
 	reHref      = regexp.MustCompile(`href="([^"{}]*)"`)
-	reAction    = regexp.MustCompile(`action="([^"{}]*)"`)
-	reHrefAny   = regexp.MustCompile(`href="([^"]*)"`)
+	// A whole attribute: popovertargetaction="hide" is not a form action.
+	reAction  = regexp.MustCompile(`\saction="([^"{}]*)"`)
+	reHrefAny = regexp.MustCompile(`href="([^"]*)"`)
 )
 
 func servedRoutes(t *testing.T) map[string]bool {
@@ -230,8 +231,9 @@ func scan(t *testing.T, re *regexp.Regexp) []link {
 				strings.HasPrefix(href, "mailto:") {
 				continue
 			}
-			// A query string is not part of the route.
-			if i := strings.IndexByte(href, '?'); i >= 0 {
+			// A query string is not part of the route, and neither is a
+			// fragment: the browser never sends it.
+			if i := strings.IndexAny(href, "?#"); i >= 0 {
 				href = href[:i]
 			}
 			if href == "" {

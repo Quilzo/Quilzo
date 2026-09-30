@@ -134,6 +134,9 @@ type Trace struct {
 	Spent    Spend
 	Stopped  string
 	Complete bool
+	// Waiting is the action this run stopped at for a person to decide.
+	// See durable.go.
+	Waiting *Pending `json:",omitempty"`
 }
 
 // Spend is what the run cost.
@@ -192,6 +195,13 @@ type Runner struct {
 	// Nil records nothing, which is right for a test and wrong for anything
 	// somebody is billed for.
 	Record func(Receipt)
+	// Checkpoint is called with the trace after every step, so a host can
+	// keep a run that outlives the process. Pause says the host can hold a
+	// run for a person and continue it afterwards; without it an action
+	// that asks first is refused, because there is nobody to ask. See
+	// durable.go.
+	Checkpoint func(Trace)
+	Pause      bool
 }
 
 // ErrNoDecide is returned when a runner has no way to decide anything.
@@ -203,7 +213,18 @@ var ErrNoDecide = errors.New("this runner has no Decide function")
 // it did, there would be two places that decide what an agent may do, and the
 // history of this project is that the two disagree.
 func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error) {
-	t := Trace{Agent: s.Manifest().Name, Goal: goal}
+	return r.run(ctx, s, Trace{Agent: s.Manifest().Name, Goal: goal}, nil, nil)
+}
+
+// run is the loop, from the start or from where an earlier run stopped.
+//
+// seen is what the steps already taken returned, and first is an action
+// already chosen — the one a person has just approved — which goes through
+// the same gate as any other and is not asked about twice.
+func (r Runner) run(ctx context.Context, s *Session, t Trace,
+	seen []Observation, first *Action) (Trace, error) {
+
+	goal := t.Goal
 	if r.Decide == nil {
 		// Recorded too. A runner wired without a way to decide anything is a
 		// misconfiguration that produces no work and no error anybody sees
@@ -221,8 +242,7 @@ func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error)
 		maxTurns = s.Manifest().Budget.Steps * 3
 	}
 
-	var seen []Observation
-	for turn := 1; turn <= maxTurns; turn++ {
+	for turn := len(t.Steps) + 1; turn <= maxTurns; turn++ {
 		if err := ctx.Err(); err != nil {
 			t.Stopped = "cancelled"
 			t.Spent = spendOf(s)
@@ -230,8 +250,12 @@ func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error)
 			return t, err
 		}
 
-		action, err := r.Decide(ctx, goal, seen)
-		if err != nil {
+		var action Action
+		var err error
+		approved := first != nil
+		if approved {
+			action, first = *first, nil
+		} else if action, err = r.Decide(ctx, goal, seen); err != nil {
 			t.Stopped = "the model could not be asked: " + err.Error()
 			t.Spent = spendOf(s)
 			r.record(t, s)
@@ -246,6 +270,26 @@ func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error)
 			step.Allowed = true
 			step.Result = "done"
 			t.Steps = append(t.Steps, step)
+			break
+		}
+
+		// Asked about before it is charged or done. Only an action the
+		// declaration would allow anyway: one it refuses needs no person to
+		// refuse it, and asking would teach people to approve without
+		// reading.
+		if !approved && s.AsksFirst(action) && s.wouldAllow(action) {
+			if !r.Pause {
+				step.Why = fmt.Sprintf("%s asks a person first, and this run "+
+					"has nobody to ask", from(action))
+				t.Steps = append(t.Steps, step)
+				seen = append(seen, Observation{From: "quilzo",
+					Body: "refused: " + step.Why, Trusted: true})
+				r.checkpoint(t, s)
+				continue
+			}
+			t.Waiting = &Pending{N: turn, Action: action, Since: step.At}
+			t.Stopped = fmt.Sprintf("waiting for a person to decide on %s",
+				from(action))
 			break
 		}
 
@@ -293,6 +337,7 @@ func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error)
 				t.Stopped = err.Error()
 				break
 			}
+			r.checkpoint(t, s)
 			continue
 		}
 
@@ -319,6 +364,7 @@ func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error)
 			})
 		}
 		t.Steps = append(t.Steps, step)
+		r.checkpoint(t, s)
 	}
 
 	if !t.Complete && t.Stopped == "" {

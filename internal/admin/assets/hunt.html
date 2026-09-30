@@ -1,0 +1,70 @@
+{{template "head" .}}
+<h1>Hunt</h1>
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">Look through the events before there is a rule. Pick a field
+  and read the values that are rare: most of what is malicious is rare, and
+  most of what is rare is not malicious, which is why a person reads this.</p>
+
+<form class="wf-filters" method="get" action="/security/hunt" aria-label="Hunt">
+  <label>Stack by
+    <select name="field" required>
+      <option value="">Choose a field</option>
+      {{range .Fields}}<option value="{{.Name}}"{{if eq .Name $.Field}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select></label>
+  <label>Over the last
+    <select name="hours">
+      <option value="1"{{if eq .Hours 1}} selected{{end}}>hour</option>
+      <option value="24"{{if eq .Hours 24}} selected{{end}}>24 hours</option>
+      <option value="168"{{if eq .Hours 168}} selected{{end}}>7 days</option>
+    </select></label>
+  <label>Only where
+    <select name="where">
+      <option value="">everything</option>
+      {{range .Fields}}<option value="{{.Name}}"{{if eq .Name $.Where}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select></label>
+  <label><span class="visually-hidden">Comparison</span>
+    <select name="op">{{range .Ops}}<option value="{{.}}"{{if eq (print .) $.Op}} selected{{end}}>{{.}}</option>{{end}}</select></label>
+  <label><span class="visually-hidden">Value</span>
+    <input type="text" name="is" value="{{.Is}}" maxlength="256"></label>
+  <button type="submit">Hunt</button>
+</form>
+
+<p class="hint">{{.Scanned}} event(s) read{{if .Filtered}}, {{.Matched}} matching{{end}}{{if .Absent}}; {{.Absent}} do not carry <code>{{.Field}}</code>{{end}}.
+  {{if .Short}}<strong>Not the whole period:</strong> only what arrived since {{.Short.Format "2 Jan 15:04 UTC"}} was read, so a value shown as rare may be common before that.{{end}}</p>
+{{if .TooMany}}<p class="notice warn"><code>{{.Field}}</code> has more distinct
+  values than can be stacked. It is close to unique per event, and rarest
+  means nothing on a field like that.</p>{{end}}
+
+{{if .Showing}}
+<h2>Events where {{.Field}} is <code>{{.Show}}</code></h2>
+<p class="hint"><a href="{{.Back}}">Back to every value</a></p>
+{{if .Events}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">When</th><th scope="col">Source</th><th scope="col">Actor</th><th scope="col">Outcome</th><th scope="col">What it said</th></tr></thead>
+  <tbody>{{range .Events}}<tr><th scope="row">{{.Time.Format "2 Jan 15:04:05"}}</th><td>{{.Source}}</td><td><code>{{.Actor}}</code></td><td>{{.Disposition}}</td><td>{{.Message}}</td></tr>{{end}}</tbody>
+</table></div>
+<p class="hint">The most recent, newest first. What an event says was
+  written by whoever could reach that log.</p>{{else}}<p>None in the period.</p>{{end}}
+{{if .Draft}}<details class="wf-how"><summary>As the start of a rule</summary>
+  <p>Copy this into the rules repository, name it, and say what it must
+    <em>not</em> match: <code>quilzo detect test</code> refuses a rule that
+    has only been shown to fire. Nothing here has been saved.</p>
+  <pre class="code"><code>{{.Draft}}</code></pre></details>{{end}}
+{{else if .Field}}
+<h2>Values of {{.Field}}, rarest first</h2>
+{{if .Rows}}<div class="table-wrap"><table class="wf-people">
+  <thead><tr><th scope="col">Value</th><th scope="col">Events</th><th scope="col">Share</th><th scope="col">Accounts</th><th scope="col">First seen</th><th scope="col">Last seen</th></tr></thead>
+  <tbody>{{range .Rows}}<tr><th scope="row"><a href="{{.Href}}"><code>{{.Value}}</code></a></th>
+    <td class="wf-score"><span class="wf-points">{{.Count}}</span>
+      <svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.W}}" height="8" rx="4"></rect></svg></td>
+    <td>{{.Share}}</td><td>{{.Actors}}</td><td>{{.First}}</td><td>{{.Last}}</td></tr>{{end}}</tbody>
+</table></div>
+<p class="hint">{{.Distinct}} distinct value(s){{if .More}}; the {{.More}} most common are not shown{{end}}.</p>
+{{else}}<p>No event in the period carries that field.</p>{{end}}
+{{else}}
+<h2>What these events carry</h2>
+<div class="table-wrap"><table><thead><tr><th scope="col">Field</th><th scope="col">Events carrying it</th></tr></thead>
+  <tbody>{{range .Fields}}<tr><th scope="row"><code>{{.Name}}</code></th><td>{{.Count}}</td></tr>{{end}}</tbody></table></div>
+{{end}}
+{{end}}
+{{template "foot" .}}

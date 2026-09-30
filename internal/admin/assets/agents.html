@@ -4,8 +4,9 @@
 anything. An agent holds the capabilities named here and no others — an
 instruction found in content it reads cannot widen them, because the list is
 fixed before the run rather than decided during it.</p>
-<p class="help">This screen shows the declarations. <a href="/security/agents">Agent
-activity</a> shows what they have actually been doing.</p>
+<p class="help"><a href="/agents/runs">Runs</a> shows what each run did,
+step by step. <a href="/security/agents">Agent activity</a> watches for one
+misbehaving.</p>
 
 {{if .Unavailable}}
 <div class="notice warn"><p>{{.Unavailable}}</p></div>
@@ -24,7 +25,7 @@ their own are the ones worth reading first.</p>
   <tbody>
   {{range .Agents}}
     <tr>
-      <th scope="row">{{.Name}}<br><span class="help">{{.Purpose}}</span></th>
+      <th scope="row"><a href="/agents/edit/{{.Name}}">{{.Name}}</a><br><span class="help">{{.Purpose}}</span></th>
       <td>{{.Kind}}</td>
       <td>
         {{if eq .Autonomy "publish"}}<span class="tag tag-bad">publish</span>
@@ -48,13 +49,14 @@ their own are the ones worth reading first.</p>
 {{end}}
 
 <h2>The archetypes</h2>
-<p>Each one is a starting manifest with its defaults set to the narrow answer.
-Declare one with <code>quilzo agent new NAME --kind KIND</code> and widen what
-you actually need — that is the direction that fails safe.</p>
+<p>Each one is a starting declaration with its defaults set to the narrow
+answer. Start from the one nearest what you want and widen only what you
+need — that is the direction that fails safe.
+<a href="/agents/new">Declare an agent</a>, or pick a starting point below.</p>
 
 <dl class="gates">
 {{range .Templates}}
-  <dt>{{.Manifest.Kind}} — {{.Summary}}</dt>
+  <dt><a href="/agents/new?kind={{.Manifest.Kind}}">{{.Manifest.Kind}}</a> — {{.Summary}}</dt>
   <dd>{{.When}}<br><span class="help">{{.Research}}</span></dd>
 {{end}}
 </dl>

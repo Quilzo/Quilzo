@@ -1,0 +1,78 @@
+{
+  "id": "entra.signin-failed",
+  "title": "A sign-in to Entra ID failed",
+  "why": "counted by correlations across platforms, and raises nothing itself",
+  "blind": "a sign-in blocked before it reached Entra",
+  "sources": [
+    "entra/signin"
+  ],
+  "severity": 2,
+  "when": {
+    "all": [
+      {
+        "match": {
+          "field": "class",
+          "op": "equals",
+          "values": [
+            "3002"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "disposition",
+          "op": "equals",
+          "values": [
+            "failed"
+          ]
+        }
+      }
+    ]
+  },
+  "technique": [
+    "T1110"
+  ],
+  "quiet": true,
+  "fixtures": [
+    {
+      "name": "a failed sign-in",
+      "match": true,
+      "event": {
+        "source": "entra/signin",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 4,
+        "actor": {
+          "issuer": "entra",
+          "value": "7a1f"
+        },
+        "message": "Office 365",
+        "raw": {
+          "person": "dana@acme.com",
+          "errorCode": "50126"
+        }
+      }
+    },
+    {
+      "name": "a sign-in that worked",
+      "match": false,
+      "event": {
+        "source": "entra/signin",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 3002,
+        "disposition": 1,
+        "actor": {
+          "issuer": "entra",
+          "value": "7a1f"
+        },
+        "message": "Office 365",
+        "raw": {
+          "person": "dana@acme.com",
+          "errorCode": "0"
+        }
+      }
+    }
+  ]
+}

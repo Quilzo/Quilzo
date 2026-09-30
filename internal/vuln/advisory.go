@@ -117,6 +117,27 @@ type Advisory struct {
 	// that is not affected, by ecosystem and package.
 	Affects []Range           `json:"affects,omitempty"`
 	FixedIn map[string]string `json:"fixed_in,omitempty"`
+
+	// Exploitation and Automatable are two inputs to an SSVC decision that
+	// are about the vulnerability and not the machine: whether an exploit
+	// is public ("none" or "public poc"), and whether an attack could be
+	// automated end to end. Empty and nil mean nobody has said.
+	Exploitation string `json:"exploitation,omitempty"`
+	Automatable  *bool  `json:"automatable,omitempty"`
+
+	// Imports are the affected symbols, where the database names them. Most
+	// do not: it is what makes "is the vulnerable code used here" a
+	// question with an answer, and only for the ecosystems that carry it.
+	Imports []Import `json:"imports,omitempty"`
+}
+
+// Import is the affected functions in one importable path of a package.
+// No symbols means the whole path is affected.
+type Import struct {
+	Ecosystem string   `json:"ecosystem"`
+	Package   string   `json:"package"`
+	Path      string   `json:"path"`
+	Symbols   []string `json:"symbols,omitempty"`
 }
 
 // Range is one package this advisory applies to.
@@ -128,6 +149,15 @@ type Range struct {
 	// urgent it is.
 	Introduced string `json:"introduced,omitempty"`
 	Fixed      string `json:"fixed,omitempty"`
+	// LastAffected is the last version known to be affected, for a database
+	// that records that instead of a fix. It is not a fix: the version after
+	// it may not exist. But a version past it is not inside the range, and
+	// reading the range as open-ended reports every later release for ever.
+	//
+	// Equal to Introduced, it names exactly one version — how a database
+	// lists affected versions for an ecosystem with no ordering anybody
+	// agrees on.
+	LastAffected string `json:"last_affected,omitempty"`
 }
 
 // Key is how a package is named across the two halves.
@@ -290,6 +320,34 @@ func (a Advisory) Applies(c Component) (Verdict, string) {
 }
 
 func (r Range) covers(version string) (Verdict, string) {
+	if r.LastAffected != "" && r.Introduced == r.LastAffected {
+		// One named version. Compared as written first: these lists exist
+		// for versions that do not order, and a string that is not on the
+		// list is not the version the list names.
+		if version == r.LastAffected {
+			return Vulnerable, fmt.Sprintf("%s is listed as affected",
+				version)
+		}
+		if cmp, ok := Compare(version, r.LastAffected); ok && cmp == 0 {
+			return Vulnerable, fmt.Sprintf("%s is listed as affected, as %s",
+				version, r.LastAffected)
+		}
+		return Outside, fmt.Sprintf("%s is not the listed version %s",
+			version, r.LastAffected)
+	}
+	if r.LastAffected != "" {
+		cmp, ok := Compare(version, r.LastAffected)
+		if !ok {
+			return Undecided, fmt.Sprintf(
+				"cannot compare %s against the last affected version %s, "+
+					"so this reads as affected rather than being closed on "+
+					"a guess", version, r.LastAffected)
+		}
+		if cmp > 0 {
+			return Outside, fmt.Sprintf("%s is after %s, the last version "+
+				"affected", version, r.LastAffected)
+		}
+	}
 	if r.Introduced != "" {
 		cmp, ok := Compare(version, r.Introduced)
 		if !ok {

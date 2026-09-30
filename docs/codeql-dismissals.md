@@ -106,6 +106,56 @@ convenience as the motive.
 
 ---
 
+## `go/reflected-xss` — alerts #64, #65
+
+**Dismissed** 30 September 2026 as *false positive*.
+
+| alert | sink |
+|---|---|
+| #64 | `internal/public/ask.go` — `w.Write` of the conversation, drawn through the owner's own "ask" page |
+| #65 | `internal/public/counted.go` — `statusWriter.Write`, a response wrapper |
+
+### #64: the flow, and why the claim does not hold
+
+Here the value **does** reach the data, which is what separates this from the
+four above. What a visitor types in the question box (`r.FormValue("q")`) is
+put in the template context as `ask.question` and rendered by `internal/tmpl`
+on the same request. That is a reflected flow, and the rule is right to look.
+
+It is not a vulnerability because `internal/tmpl` escapes every interpolated
+value for the place it lands: `html.EscapeString` in an element and in an
+attribute, `escapeBare` in an unquoted one, and `escapeURL` in a link, which
+replaces a scheme that can execute with `#unsafe-url`. The layout is the
+owner's, and the value is never part of the template source.
+
+**This is tested rather than argued.**
+`TestWhatAVisitorTypesIsEscapedInTheOwnersOwnPageToo` publishes an "ask" page,
+gives it a layout that puts the question in an element, an attribute and an
+`href`, and posts a script tag, an attribute break-out, a `javascript:` URL and
+an event handler, with a script in the query string as well. It fails if any of
+them arrives as markup, and it was confirmed to fail when the engine's
+attribute escaping is removed. The built-in page, which uses `html/template`,
+has `TestWhatAVisitorTypesIsEscaped`.
+
+### #65: why the claim does not hold
+
+`statusWriter` wraps the response so the site can tell whether a page was
+served. Its `Write` passes the bytes it is given to the writer underneath and
+adds nothing. It sits in front of every handler, so every flow CodeQL follows
+into any handler's response also passes through it, and the alert is those
+flows reported a second time at the wrapper. Each handler's own sink is the
+place to judge them, and each has its own alert or its own entry here.
+
+### What would make these wrong
+
+- A second way to make a `tmpl.Markup`, the one type `internal/tmpl` writes
+  out as it is. Today only `tmpl.Prose` returns one, and it escapes what it is
+  given before adding its own fixed tags. A constructor that did not would
+  make #64 real the moment a visitor's input reached it.
+- `statusWriter.Write` changing what it writes, rather than passing it on.
+
+---
+
 ## `go/cookie-secure-not-set` — alerts #42–#50
 
 **Dismissed** September 2026 as *won't fix*.

@@ -35,6 +35,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/analytics"
+	"github.com/quilzo/quilzo/internal/experiment"
+	"github.com/quilzo/quilzo/internal/personalise"
 	"io"
 	"net/http"
 	"sort"
@@ -65,6 +68,17 @@ import (
 // Site serves the live ref.
 type Site struct {
 	Store *store.Store
+	// Analytics counts page views and conversions without a script or a
+	// cookie. Nil counts nothing.
+	Analytics *analytics.Counter
+	// Personalise returns the site's personalisation rules. Nil runs none.
+	Personalise func() (*personalise.Set, error)
+	// Experiments are the site's A/B tests. They need Analytics, which
+	// assigns visitors and counts results; without it none runs.
+	Experiments func() (*experiment.Set, error)
+	// Assistants are the site's declared chatbots, served at /ask/NAME.
+	// Nil means the route 404s.
+	Assistants *Assistants
 	// pageMu and pageSet memoise the decoded published set for one commit.
 	// See pagecache.go for why a cache here can never be wrong and why the
 	// publish window is deliberately not part of it.
@@ -272,6 +286,8 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/llms.txt", st.llms)
 	mux.HandleFunc("/media/", st.mediaFile)
 	mux.HandleFunc("/form/", st.submit)
+	mux.HandleFunc("/ask/", st.ask)
+	mux.HandleFunc("/ask.css", st.askStylesheet)
 	mux.HandleFunc("/share", st.handleShare)
 	mux.HandleFunc("/", st.page)
 	// The banner is innermost, so it wraps the handler's own output and
@@ -283,7 +299,7 @@ func (st *Site) Handler() http.Handler {
 	// the gate has decided whether there is one. See internal/compress for
 	// why gzip only, why the ETag comes back weak, and why this is applied
 	// here and not to the admin.
-	return compress.Responses(st.securityHeaders(st.crawlGate(st.marked(mux))))
+	return compress.Responses(st.securityHeaders(st.crawlGate(st.marked(st.counted(mux)))))
 }
 
 // CrawlGate enforces the published licence against identified crawlers.
@@ -778,6 +794,18 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// An experiment on this page serves the variant's content at this
+	// address. See experiments.go.
+	served, inExperiment := name, false
+	if v, vbody, ok := st.personalFor(r, name, pages); ok {
+		// A rule decides first. An experiment on the same page is not run
+		// for this visitor: their version was chosen by who they are, and
+		// counting them in a random split would bias it.
+		served, body, inExperiment = v, vbody, true
+	} else if v, vbody, ok := st.variantFor(r, name, pages); ok {
+		served, body, inExperiment = v, vbody, true
+	}
+
 	// The ETag is the content hash. Not derived from it — it is it.
 	// The page's own content hash is its identity — until the page embeds a
 	// listing, and then it is not.
@@ -791,13 +819,19 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	// So a page with listings mixes in the tree the listings read and the
 	// arguments they were given. Both are part of what was rendered, so both
 	// belong in the name of it.
-	tag := `"` + tree[name] + `"`
+	tag := `"` + tree[served] + `"`
 	args := firstOf(r.URL.Query())
 	if names := listing.On(body); len(names) > 0 {
-		tag = `"` + renderTag(tree[name], st.dataTree(), names, args) + `"`
+		tag = `"` + renderTag(tree[served], st.dataTree(), names, args) + `"`
 	}
 	w.Header().Set("ETag", tag)
-	w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
+	if inExperiment {
+		// Private: a shared cache holding one visitor's variant would hand
+		// it to everybody, which ends the experiment and ruins its data.
+		w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
+	} else {
+		w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
+	}
 	if etag.Matches(r.Header.Get("If-None-Match"), tag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
@@ -844,7 +878,7 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html = st.injectHead(html, name, tree[name], body)
+	html = st.injectHead(html, name, tree[served], body)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
 }

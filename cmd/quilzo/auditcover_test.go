@@ -45,7 +45,11 @@ func TestEveryMutatingCommandCanReachTheAuditLog(t *testing.T) {
 			t.Errorf("%q is in the privilege table but nothing dispatches it", cmd)
 			continue
 		}
-		if !reaches(entry, "record", calls, fns, map[string]bool{}) {
+		// recordE is record returning its error, for commands whose action
+		// is the record itself — a finding decision — and must fail rather
+		// than report success when the entry was refused.
+		if !reaches(entry, "record", calls, fns, map[string]bool{}) &&
+			!reaches(entry, "recordE", calls, fns, map[string]bool{}) {
 			missing = append(missing, cmd+" ("+entry+")")
 		}
 	}

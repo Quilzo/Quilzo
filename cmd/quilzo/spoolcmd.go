@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/spool"
@@ -60,6 +61,31 @@ func cmdSpool(root string, args []string) error {
 
 func openSpool(root string, o spool.Options) (*spool.Spool, error) {
 	return spool.Open(spoolDir(root), o)
+}
+
+// eventsOpener opens the telemetry store for the events screen, per request
+// rather than held.
+//
+// A spool is a directory another process may be appending to, so a handle
+// kept for the life of the server would hold a descriptor on a file that
+// rotates under it. The screen is a reader and closes what it opened — and
+// it does not create the store: spool.Open makes the directory when it is
+// absent, and a page view that did that would turn "nothing has ever been
+// collected" into an empty store that looks like a quiet one.
+func eventsOpener(root string) func() (*spool.Spool, func() error, error) {
+	return func() (*spool.Spool, func() error, error) {
+		if _, err := os.Stat(spoolDir(root)); err != nil {
+			if os.IsNotExist(err) {
+				return nil, nil, admin.ErrNeverCollected
+			}
+			return nil, nil, err
+		}
+		sp, err := openSpool(root, spool.Options{})
+		if err != nil {
+			return nil, nil, err
+		}
+		return sp, sp.Close, nil
+	}
 }
 
 // spoolAdd ingests events.

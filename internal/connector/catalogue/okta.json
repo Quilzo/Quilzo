@@ -1,0 +1,146 @@
+{
+  "tool": "Okta",
+  "about": "Everybody in the Okta organisation with their lifecycle status \u2014 active, suspended, deprovisioned \u2014 department, title and employee number: the list of who works here that every other tool is compared with, leavers included. And the system log: every sign-in, every administrative change and every policy decision, read incrementally.",
+  "default": "okta",
+  "regions": {
+    "okta": {
+      "host": "{org}.okta.com"
+    },
+    "emea": {
+      "host": "{org}.okta-emea.com"
+    },
+    "preview": {
+      "host": "{org}.oktapreview.com"
+    }
+  },
+  "params": {
+    "org": "the organisation's subdomain: acme for acme.okta.com"
+  },
+  "credentials": {
+    "okta-api-token": "An API token made by an administrator holding the Read-Only Administrator role, and no other: an Okta API token can do whatever its maker can, so it must be made by an account that can only read."
+  },
+  "manifest": {
+    "name": "okta",
+    "tool": "Okta",
+    "host": "",
+    "auth": {
+      "kind": "bearer",
+      "secret": "okta-api-token",
+      "scheme": "SSWS"
+    },
+    "rate": {
+      "per_minute": 100
+    },
+    "note": "Okta's user list leaves out deprovisioned users unless asked, so leavers are read by an endpoint of their own. The next page is in the Link header, and is followed only to the organisation's own host. The system log is read from where the last read stopped; the first read goes back one day.",
+    "endpoints": [
+      {
+        "name": "people",
+        "path": "/api/v1/users",
+        "query": {
+          "limit": "200"
+        },
+        "produces": "identity",
+        "page": {
+          "kind": "next-url",
+          "from": "header:Link"
+        },
+        "reads": [
+          "id",
+          "status",
+          "profile.login",
+          "profile.email",
+          "profile.firstName",
+          "profile.lastName",
+          "profile.department",
+          "profile.title",
+          "profile.employeeNumber"
+        ],
+        "map": {
+          "id": "id",
+          "status": "status",
+          "upn": "profile.login",
+          "email": "profile.email",
+          "first_name": "profile.firstName",
+          "last_name": "profile.lastName",
+          "department": "profile.department",
+          "title": "profile.title",
+          "employee_number": "profile.employeeNumber"
+        }
+      },
+      {
+        "name": "leavers",
+        "path": "/api/v1/users",
+        "query": {
+          "limit": "200",
+          "search": "status eq \"DEPROVISIONED\""
+        },
+        "produces": "identity",
+        "page": {
+          "kind": "next-url",
+          "from": "header:Link"
+        },
+        "reads": [
+          "id",
+          "status",
+          "profile.login",
+          "profile.email",
+          "profile.firstName",
+          "profile.lastName"
+        ],
+        "map": {
+          "id": "id",
+          "status": "status",
+          "upn": "profile.login",
+          "email": "profile.email",
+          "first_name": "profile.firstName",
+          "last_name": "profile.lastName"
+        }
+      },
+      {
+        "name": "system",
+        "path": "/api/v1/logs",
+        "query": {
+          "limit": "1000",
+          "sortOrder": "ASCENDING"
+        },
+        "produces": "event",
+        "page": {
+          "kind": "next-url",
+          "from": "header:Link"
+        },
+        "since": "since",
+        "watermark": "published",
+        "reads": [
+          "published",
+          "eventType",
+          "displayMessage",
+          "actor.id",
+          "actor.alternateId",
+          "outcome.result",
+          "outcome.reason",
+          "client.ipAddress",
+          "client.userAgent.rawUserAgent",
+          "client.geographicalContext.country",
+          "securityContext.isProxy",
+          "uuid",
+          "target.0.id"
+        ],
+        "map": {
+          "published": "published",
+          "eventType": "eventType",
+          "displayMessage": "displayMessage",
+          "actor.id": "actor.id",
+          "actor.alternateId": "actor.alternateId",
+          "outcome.result": "outcome.result",
+          "outcome.reason": "outcome.reason",
+          "client.ipAddress": "client.ipAddress",
+          "client.userAgent.rawUserAgent": "client.userAgent.rawUserAgent",
+          "client.geographicalContext.country": "client.geographicalContext.country",
+          "securityContext.isProxy": "securityContext.isProxy",
+          "uuid": "uuid",
+          "target.id": "target.0.id"
+        }
+      }
+    ]
+  }
+}

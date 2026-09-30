@@ -37,6 +37,8 @@ func Known() []Source {
 		cloudflareFirewall(),
 		// The applications the business actually keeps its data in.
 		salesforceLogin(), slackAudit(), snowflakeLogins(),
+		// A contract's own events, which are its audit log.
+		evmLogs(),
 		// On-premise, where there is no API and a line of text arrives.
 		linuxAuditd(),
 	}
@@ -82,6 +84,7 @@ func entraSignIn() Source {
 		// The object id, not the user principal name: a principal name
 		// changes when somebody marries and the object id does not.
 		Actor:   "userId",
+		Person:  "userPrincipalName",
 		Target:  "appDisplayName",
 		Device:  "deviceDetail.deviceId",
 		Message: "appDisplayName",
@@ -113,6 +116,7 @@ func workspaceLogin() Source {
 		// The profile id rather than the email, for the same reason as
 		// Entra: an address is reassigned and a profile id is not.
 		Actor:   "actor.profileId",
+		Person:  "actor.email",
 		Message: "events.name",
 		Outcome: "events.name",
 		Failed:  []string{"login_failure"},
@@ -134,6 +138,7 @@ func oktaSystem() Source {
 		Class: telemetry.ClassAuthentication, Activity: 1,
 		Time: "published", Layout: time.RFC3339,
 		Actor: "actor.id", Target: "target.id",
+		Person:  "actor.alternateId",
 		Message: "displayMessage",
 		Outcome: "outcome.result", Failed: []string{"FAILURE", "DENY"},
 		Observables: map[telemetry.ObservableKind]string{
@@ -419,6 +424,7 @@ func slackAudit() Source {
 		Class: telemetry.ClassAPIActivity, Activity: 1,
 		Time: "date_create", Layout: LayoutEpochSecond,
 		Actor: "actor.user.id", Target: "entity.type",
+		Person:  "actor.user.email",
 		Message: "action",
 		Observables: map[telemetry.ObservableKind]string{
 			telemetry.ObservableIP:    "context.ip_address",
@@ -478,5 +484,28 @@ func linuxAuditd() Source {
 		Keep: []string{"type", "exe", "auid", "uid", "res", "key",
 			"comm", "tty"},
 		Lateness: time.Minute,
+	}
+}
+
+// evmLogs is the events one contract emits on an EVM chain, as a block
+// explorer decodes them.
+func evmLogs() Source {
+	return Source{
+		Issuer: "evm", Tool: "EVM chain", Stream: "logs",
+		Class: telemetry.ClassAPIActivity, Activity: 1,
+		Time: "block_timestamp", Layout: time.RFC3339,
+		// The contract is who acted: the event is its own statement that
+		// something about it changed. Who sent the transaction is not in a
+		// log, and naming them would be a guess from an argument.
+		Actor: "contract", Message: "event",
+		// The signature is what the chain itself recorded. The decoded
+		// name comes from the explorer, only for a verified contract, so
+		// it is kept and not required.
+		Require: []string{"block_timestamp", "contract", "signature"},
+		Keep: []string{"event", "event_id", "signature", "tx", "block_number",
+			"log_index", "arg0_name", "arg0", "arg1_name", "arg1",
+			"arg2_name", "arg2"},
+		// A block is final in minutes, and an explorer indexes behind it.
+		Lateness: 10 * time.Minute,
 	}
 }

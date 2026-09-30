@@ -1,0 +1,98 @@
+{
+  "id": "evm.ownership-transferred",
+  "title": "A contract's owner changed",
+  "why": "whoever owns the contract can usually do everything else to it",
+  "blind": "ownership held through a role or a proxy admin instead of an owner",
+  "sources": [
+    "evm/logs"
+  ],
+  "severity": 5,
+  "when": {
+    "any": [
+      {
+        "match": {
+          "field": "raw.signature",
+          "op": "equals",
+          "values": [
+            "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "raw.event",
+          "op": "prefix",
+          "values": [
+            "OwnershipTransferred("
+          ]
+        }
+      }
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "OwnershipTransferred, decoded by the explorer",
+      "match": true,
+      "event": {
+        "source": "evm/logs",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "evm",
+          "value": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "message": "OwnershipTransferred(address indexed a, address indexed b)",
+        "raw": {
+          "signature": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0",
+          "tx": "0xabc",
+          "block_number": "1",
+          "event": "OwnershipTransferred(address indexed a, address indexed b)"
+        }
+      }
+    },
+    {
+      "name": "OwnershipTransferred, on a contract the explorer has not verified",
+      "match": true,
+      "event": {
+        "source": "evm/logs",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "evm",
+          "value": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "raw": {
+          "signature": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0",
+          "tx": "0xabc",
+          "block_number": "1"
+        }
+      }
+    },
+    {
+      "name": "an ordinary transfer",
+      "match": false,
+      "event": {
+        "source": "evm/logs",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "evm",
+          "value": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "message": "Transfer(address indexed a, address indexed b)",
+        "raw": {
+          "signature": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "tx": "0xabc",
+          "block_number": "1",
+          "event": "Transfer(address indexed a, address indexed b)"
+        }
+      }
+    }
+  ]
+}

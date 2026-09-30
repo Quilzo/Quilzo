@@ -1,0 +1,68 @@
+{
+  "id": "github.deploy-key-added",
+  "title": "A deploy key was added to a repository on GitHub",
+  "why": "a key is access that belongs to no person and survives everybody leaving",
+  "blind": "a key added through an application installation",
+  "sources": [
+    "github/audit"
+  ],
+  "severity": 3,
+  "when": {
+    "match": {
+      "field": "message",
+      "op": "equals",
+      "values": [
+        "public_key.create"
+      ]
+    }
+  },
+  "technique": [
+    "T1098"
+  ],
+  "fixtures": [
+    {
+      "name": "a key added",
+      "match": true,
+      "event": {
+        "source": "github/audit",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "github",
+          "value": "dana-gh"
+        },
+        "message": "public_key.create",
+        "raw": {
+          "action": "public_key.create",
+          "repo": "acme/shop",
+          "org": "acme",
+          "person": "dana@acme.com"
+        }
+      }
+    },
+    {
+      "name": "a key removed",
+      "match": false,
+      "event": {
+        "source": "github/audit",
+        "time": "2026-09-01T00:00:00Z",
+        "received": "2026-09-01T00:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "github",
+          "value": "dana-gh"
+        },
+        "message": "public_key.delete",
+        "raw": {
+          "action": "public_key.delete",
+          "repo": "acme/shop",
+          "org": "acme",
+          "person": "dana@acme.com"
+        }
+      }
+    }
+  ]
+}

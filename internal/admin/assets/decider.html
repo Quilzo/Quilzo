@@ -1,0 +1,43 @@
+{{template "head" .}}
+<p class="hint"><a href="/decisions">Decisions</a></p>
+<h1>{{.D.Title}}</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+
+<h2 id="try">Try it</h2>
+<form method="post" action="/decisions/{{.D.Name}}#try" class="card">
+  <div class="field"><label for="state">State, as JSON {{template "req"}}</label>
+    <textarea id="state" name="state" rows="6" required class="mono" placeholder='{"subject": "Refund", "body": "It arrived broken"}'>{{.State}}</textarea></div>
+  <button type="submit">Decide</button>
+</form>
+{{if .TestError}}<p class="notice bad" role="alert">{{.TestError}}</p>{{end}}
+{{with .Res}}
+{{if .Note}}<p class="hint">{{.Note}}</p>{{end}}
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Question</th><th scope="col">Answer</th><th scope="col">Confidence</th><th scope="col">Agreement</th><th scope="col">Outcome</th></tr></thead>
+  <tbody>{{range .Answers}}
+  <tr><th scope="row"><code>{{.Question}}</code></th>
+    <td>{{if .Value}}{{.Value}}{{else}}—{{end}}</td>
+    <td><meter min="0" max="1" low="0.5" high="0.8" optimum="1" value="{{.Confidence}}">{{.Confidence}}</meter> {{printf "%.2f" .Confidence}}</td>
+    <td>{{printf "%.2f" .Agreement}}</td>
+    <td>{{if .Escalate}}<span class="tag tag-warn">a person decides</span><div class="hint">{{.Why}}</div>{{else}}<span class="tag tag-ok">decided</span>{{end}}</td></tr>
+  {{end}}</tbody>
+</table></div>
+{{end}}
+
+{{if .CanSave}}
+<h2>Declaration</h2>
+<form method="post" action="/decisions/save" class="card">
+  <div class="field"><label for="declaration">Declaration {{template "req"}}</label>
+    <textarea id="declaration" name="declaration" rows="16" required class="mono">{{.Declaration}}</textarea></div>
+  <button type="submit">Save</button>
+</form>
+<form method="post" action="/decisions/remove">
+  <input type="hidden" name="name" value="{{.D.Name}}">
+  <button type="submit" class="btn-danger">Remove {{.D.Title}}</button>
+</form>
+{{else}}
+<h2>Declaration</h2>
+<pre class="code"><code>{{.Declaration}}</code></pre>
+{{end}}
+{{template "foot" .}}

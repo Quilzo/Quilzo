@@ -1,0 +1,142 @@
+{{define "wfbars"}}<svg class="wfbars" viewBox="0 0 600 {{.H}}" role="img" aria-label="{{.Label}}">
+<g transform="translate(120 0)">{{range .Bars}}<g class="bar {{.Tone}}"><title>{{.Title}}</title>
+<text class="lbl" x="-12" y="{{.TextY}}" text-anchor="end">{{.Label}}</text>
+{{if .Href}}<a href="{{.Href}}">{{end}}<rect class="hit" x="0" y="{{.Y}}" width="440" height="{{.H}}"></rect>{{if .D}}<path d="{{.D}}"></path>{{end}}{{if .Href}}</a>{{end}}
+<text class="val" x="{{.TextX}}" y="{{.TextY}}">{{.Value}}</text></g>{{end}}</g></svg>
+<details class="astable"><summary>Show as a table</summary>
+<table><tbody>{{range .Bars}}<tr><th scope="row">{{.Label}}</th><td>{{.Value}}</td></tr>{{end}}</tbody></table></details>{{end}}
+{{template "head" .}}
+<h1>Workforce risk</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
+<form method="post" action="/workforce/sync" class="wf-sync"><button type="submit">Read the tools now</button></form>{{else}}
+<p class="lead">What your tools say about each person and their machines,
+  joined and scored from reasons you can check. Only administrators see this
+  page, and opening a person's page is written to the log.</p>
+
+<form class="wf-filters" method="get" action="/workforce" aria-label="Filter">
+  <label>Department
+    <select name="department"><option value="">All departments</option>
+      {{range .Departments}}<option value="{{.}}"{{if eq . $.Department}} selected{{end}}>{{.}}</option>{{end}}
+    </select></label>
+  <label>Band
+    <select name="band"><option value="">Every band</option>
+      {{range .BandList}}<option value="{{.}}"{{if eq (print .) $.Band}} selected{{end}}>{{.}}</option>{{end}}
+    </select></label>
+  <button type="submit">Apply</button>
+  {{if .Filtered}}<a href="/workforce">Clear</a>{{end}}
+  <span class="wf-aside"><a href="/workforce/devices">Machines</a> ·
+    <a href="/workforce/reminders">Reminders</a></span>
+</form>
+
+<form method="post" action="/workforce/sync" class="wf-sync">
+  <p class="hint">{{with .Sync}}{{if .Running}}<strong>Reading the tools now.</strong>
+    {{else if $.SyncAge}}Tools last read {{$.SyncAge}} ago{{if .Problems}}; {{len .Problems}} with a problem{{end}}.
+    {{else}}The tools have not been read from here yet.{{end}}
+    {{if $.SyncEvery}}Read every {{$.SyncEvery}}.{{else}}Not read on a schedule (quilzo estate auto).{{end}}{{end}}</p>
+  {{with .Sync}}{{if not .Running}}<button type="submit">Read the tools now</button>{{end}}{{end}}
+  {{with .Sync}}{{range .Problems}}<p class="hint warn">{{.}}</p>{{end}}{{end}}
+</form>
+
+<section class="wf-kpis" aria-label="Summary">
+  <p class="wf-hero"><span class="wf-hero-n">{{.Hero}}</span>
+    <span>of {{.HeroOf}} people at high or critical risk</span></p>
+  <dl class="stats-row">{{range .Tiles}}<div{{if .Tone}} class="{{.Tone}}"{{end}}><dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{if .Note}}<dd class="wf-note">{{.Note}}</dd>{{end}}</div>{{end}}</dl>
+</section>
+
+<div class="grid2 wf-charts">
+  <figure class="wf-fig"><figcaption><h2>People by band</h2>
+    <p class="hint">Select a band to list only its people.</p></figcaption>
+    {{template "wfbars" .Bands}}</figure>
+  <figure class="wf-fig"><figcaption><h2>Where the risk is</h2>
+    <p class="hint">People with at least one reason in each area.</p></figcaption>
+    {{template "wfbars" .Areas}}</figure>
+</div>
+
+<figure class="wf-fig">
+  <figcaption><h2>People at high or critical risk, over time</h2></figcaption>
+  {{if .TrendNote}}<p class="hint">{{.TrendNote}}</p>{{else}}
+  <svg class="wftrend" viewBox="0 0 640 140" role="img" aria-label="People at high or critical risk, by day">
+    <line class="base" x1="10" y1="110" x2="590" y2="110"></line>
+    {{with .TrendStart}}<text class="axis" x="10" y="132">{{.Date}}</text>
+    <text class="val" x="{{.X}}" y="{{.Y}}" dy="-10">{{.Value}}</text>{{end}}
+    {{with .TrendEnd}}<text class="axis" x="590" y="132" text-anchor="end">{{.Date}}</text>{{end}}
+    <polyline points="{{.TrendLine}}"></polyline>
+    {{range .Trend}}<circle class="hit" cx="{{.X}}" cy="{{.Y}}" r="10"><title>{{.Date}}: {{.Value}}</title></circle>{{end}}
+    {{with .TrendEnd}}<circle class="end" cx="{{.X}}" cy="{{.Y}}" r="4"></circle>
+    <text class="val" x="{{.X}}" y="{{.Y}}" dx="10" dy="4">{{.Value}}</text>{{end}}
+  </svg>
+  <details class="astable"><summary>Show as a table</summary>
+    <table><thead><tr><th scope="col">Day</th><th scope="col">Scored</th><th scope="col">High or critical</th><th scope="col">Average</th></tr></thead>
+    <tbody>{{range .History}}<tr><th scope="row">{{.Date}}</th><td>{{.Scored}}</td><td>{{.AtRisk}}</td><td>{{.Mean}}</td></tr>{{end}}</tbody></table></details>
+  {{end}}
+</figure>
+
+<h2>By department</h2>
+<p class="hint">The share of each department with a reason in each area. The
+  twelve largest departments are shown; the rest are one row.</p>
+{{if .Heat}}<div class="table-wrap"><table class="wf-heat">
+  <thead><tr><th scope="col">Department</th>{{range .AreaNames}}<th scope="col">{{.}}</th>{{end}}</tr></thead>
+  <tbody>{{range .Heat}}<tr><th scope="row">{{.Label}} <span class="wf-n">{{.Count}}</span></th>
+    {{range .Cells}}<td class="{{.Step}}" title="{{.Title}}">{{.Value}}</td>{{end}}</tr>{{end}}</tbody>
+</table></div>
+<p class="wf-scale" aria-hidden="true"><span class="h0">0%</span><span class="h1">under 10%</span><span class="h2">10–25%</span><span class="h3">25–50%</span><span class="h4">50% or more</span></p>
+{{else}}<p>Nobody to show.</p>{{end}}
+
+<h2>People</h2>
+{{if .People}}<div class="table-wrap"><table class="wf-people">
+  <thead><tr><th scope="col">Person</th><th scope="col">Department</th><th scope="col">Score</th><th scope="col">Main reason</th><th scope="col">Reasons</th></tr></thead>
+  <tbody>{{range .People}}<tr>
+    <th scope="row"><a href="/workforce/person/{{.Path}}">{{.Name}}</a>{{if .Leaver}} <span class="wf-tag">left</span>{{end}}</th>
+    <td>{{.Dept}}</td>
+    <td class="wf-score"><span class="wf-band {{.Tone}}"><span class="wf-icon" aria-hidden="true"></span>{{.Band}}</span>
+      <svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect>{{if .Meter}}<rect class="fill {{.Tone}}" width="{{.Meter}}" height="8" rx="4"></rect>{{end}}</svg>
+      <span class="wf-points">{{.Points}}</span></td>
+    <td>{{if .Top}}{{.Top}}{{else}}<span class="hint">nothing found</span>{{end}}</td>
+    <td>{{len .Factors}}{{if .Unknown}}, {{len .Unknown}} area(s) unknown{{end}}</td>
+  </tr>{{end}}</tbody>
+</table></div>{{else}}<p>Nobody matches.</p>{{end}}
+
+<h2>What this is built from</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Tool</th><th scope="col">Last read</th></tr></thead>
+  <tbody>{{range .Sources}}<tr><th scope="row">{{.Name}}</th><td>{{.State}}</td></tr>{{end}}</tbody>
+</table></div>
+{{if .Skipped}}<div class="notice warn"><p><strong>Not checked.</strong> These
+  comparisons need a tool that was not read, or not read to the end. That is
+  not the same as nothing being wrong.</p>
+  <ul>{{range $id, $why := .Skipped}}<li><code>{{$id}}</code>: {{$why}}</li>{{end}}</ul></div>{{end}}
+{{with .Unplaced}}{{if or .Training .Phishing .Software .Vulns .Posture}}<p class="hint warn">Not
+  attached to anybody or anything: {{.Training}} training, {{.Phishing}}
+  phishing, {{.Software}} software, {{.Vulns}} vulnerability and {{.Posture}}
+  posture record(s).</p>{{end}}{{end}}
+{{range .Notes}}<p class="hint">{{.}}</p>{{end}}
+
+<details class="wf-how"><summary>How a score is made</summary>
+  <p>Every point is a fact a tool reported, with the tool's name on it. The
+    worst machine a person uses counts, because an attacker needs one. An area
+    no tool reports on scores nothing and is listed as unknown, never as safe.
+    A tool's own score, such as KnowBe4's, is shown beside this one and never
+    mixed into it.</p>
+  {{with .Weights}}<table><tbody>
+    <tr><th scope="row">Entered data into a simulated phish (90 days)</th><td>{{.DataEntered}}</td></tr>
+    <tr><th scope="row">Clicked or opened one (90 days)</th><td>{{.OtherFailure}}</td></tr>
+    <tr><th scope="row">Reported one (90 days), with no failure</th><td>{{.Reported}}</td></tr>
+    <tr><th scope="row">Phish-prone percentage of {{.PhishProneFrom}}% or more, per 5%</th><td>{{.PerPhishProneFifth}}, at most {{.PhishProneCap}}</td></tr>
+    <tr><th scope="row">Training overdue / due soon</th><td>{{.TrainingOverdue}} / {{.TrainingDueSoon}}</td></tr>
+    <tr><th scope="row">Not in the training platform</th><td>{{.NotInTraining}}</td></tr>
+    <tr><th scope="row">Policies not accepted / policy not acknowledged</th><td>{{.PoliciesOverdue}} / {{.PolicyUnacknowledged}}</td></tr>
+    <tr><th scope="row">No device any tool can see</th><td>{{.NoDevice}}</td></tr>
+    <tr><th scope="row">Unencrypted / rooted or jailbroken</th><td>{{.Unencrypted}} / {{.Rooted}}</td></tr>
+    <tr><th scope="row">No antivirus / no screen lock / no passcode</th><td>{{.NoAntivirus}} / {{.NoScreenLock}} / {{.NoPasscode}}</td></tr>
+    <tr><th scope="row">Prohibited software / not managed by a tool that should</th><td>{{.Prohibited}} / {{.Unmanaged}}</td></tr>
+    <tr><th scope="row">Missing patches, each</th><td>{{.PerMissingPatch}}, at most {{.PatchCap}}</td></tr>
+    <tr><th scope="row">Open critical or important vulnerability, each</th><td>{{.PerSevereVuln}}, at most {{.VulnCap}}</td></tr>
+    <tr><th scope="row">Has left, and a device still checks in</th><td>{{.LeaverWithDevice}}</td></tr>
+  </tbody></table>
+  <p class="hint">Bands: low under 25, moderate 25–49, high 50–74, critical 75
+    and over. A score is at most 100.</p>{{end}}
+</details>
+{{end}}
+{{template "foot" .}}

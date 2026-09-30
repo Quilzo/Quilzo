@@ -182,7 +182,7 @@ func Fill(q Questionnaire, l *Library, register []finding.Finding,
 	// value — which is what makes this a lookup rather than a guess.
 	against := map[string][]finding.Finding{}
 	for _, item := range register {
-		if item.State == finding.Fixed || item.State == finding.Stale {
+		if item.State.Closed() {
 			continue
 		}
 		against[key(item.Entity)] = append(against[key(item.Entity)], item)

@@ -1,0 +1,76 @@
+{
+  "id": "phishing",
+  "title": "A phishing message that reached people",
+  "for": "A message asking for credentials, payment or a download, delivered to one or more mailboxes.",
+  "steps": [
+    {
+      "id": "collect",
+      "title": "Get the original message with its headers, not a forward",
+      "why": "The sender, the links and the route are in the headers a forward drops.",
+      "evidence": true
+    },
+    {
+      "id": "who-received",
+      "title": "Search the mail system for every copy",
+      "why": "One report usually means many deliveries.",
+      "needs": [
+        "collect"
+      ],
+      "evidence": true
+    },
+    {
+      "id": "remove",
+      "title": "Remove the message from every mailbox it reached",
+      "why": "The person who has not opened it yet still can.",
+      "needs": [
+        "who-received"
+      ],
+      "evidence": true,
+      "undo": "Restore the message from quarantine if it turns out to be legitimate."
+    },
+    {
+      "id": "block",
+      "title": "Block the sender, the links and any attachment digest, and add them as indicators",
+      "why": "The next wave reuses them, and adding them looks back through what is already stored.",
+      "needs": [
+        "collect"
+      ],
+      "evidence": true,
+      "undo": "Remove the block and the indicators if they turn out to be legitimate."
+    },
+    {
+      "id": "who-clicked",
+      "title": "Find who followed the link or opened the attachment, from proxy, DNS or mail logs",
+      "why": "Receiving it is not the incident; acting on it is.",
+      "needs": [
+        "collect"
+      ],
+      "evidence": true
+    },
+    {
+      "id": "who-entered",
+      "title": "Ask those people whether they entered a password or approved a prompt",
+      "why": "Logs show the visit and not what was typed.",
+      "needs": [
+        "who-clicked"
+      ],
+      "evidence": true
+    },
+    {
+      "id": "compromised",
+      "title": "Open the account playbook for anybody who did",
+      "why": "From here it is an account somebody else may be using.",
+      "needs": [
+        "who-entered"
+      ]
+    },
+    {
+      "id": "tell",
+      "title": "Tell the people who received it what it was",
+      "why": "They will otherwise keep wondering whether to click.",
+      "needs": [
+        "remove"
+      ]
+    }
+  ]
+}

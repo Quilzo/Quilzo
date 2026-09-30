@@ -1,0 +1,51 @@
+{{template "head" .}}
+<h1>Indicators</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">Addresses, domains, URLs, digests and senders somebody else
+  has said are bad. Each is a claim with an author and an end date: past it
+  the address belongs to whoever holds it now, and it stops matching.</p>
+
+<dl class="stats-row">{{range .Tiles}}<div{{if .Tone}} class="{{.Tone}}"{{end}}><dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{if .Note}}<dd class="wf-note">{{.Note}}</dd>{{end}}</div>{{end}}</dl>
+
+{{if .Held}}
+<form class="inline" method="get" action="/security/indicators" aria-label="Find an indicator">
+  <label>Find <input type="text" name="q" value="{{.Q}}" maxlength="200"></label>
+  <button type="submit">Find</button>
+</form>
+{{if .Rows}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Indicator</th><th scope="col">Said by</th><th scope="col">Believed until</th><th scope="col">Found</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+  <tbody>{{range .Rows}}<tr>
+    <th scope="row"><code>{{.Value}}</code><br><span class="hint">{{.Kind}}{{if .Note}} · {{.Note}}{{end}}</span></th>
+    <td>{{.Sources}}</td>
+    <td>{{.UntilText}}{{if .Lapsed}} <span class="wf-word critical">lapsed</span>{{else}}<br><span class="hint">{{.Left}}</span>{{end}}</td>
+    <td>{{if .H.Findings}}<strong>{{.H.Findings}}</strong> finding(s), last {{.LastHit}}
+      {{if .H.Real}}<br><span class="wf-word serious">{{.H.Real}} real</span>{{end}}{{if .H.False}}<br><span class="wf-word warning">{{.H.False}} ruled false</span>{{end}}{{else}}<span class="hint">nothing</span>{{end}}</td>
+    <td><form method="post" action="/security/indicators/act"><input type="hidden" name="do" value="remove"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="danger">Remove</button></form></td>
+  </tr>{{end}}</tbody></table></div>
+<p class="hint">{{.Matching}} of {{.Held}} shown{{if .More}}, less {{.More}} past the first page; find by value to narrow it{{end}}. What found something is first, then what has lapsed.
+  A value is shown as text and is not a link.</p>
+{{else}}<p>Nothing held matches that.</p>{{end}}
+{{else}}<p>No indicators are held.</p>{{end}}
+
+<h2>Add one</h2>
+<form method="post" action="/security/indicators/act">
+  <input type="hidden" name="do" value="add">
+  <div class="grid2">
+  <p><label>Value <input type="text" name="value" required maxlength="2048" placeholder="203.0.113.9 or evil[.]example"></label></p>
+  <p><label>What it is <select name="kind"><option value="">work it out</option>{{range .Kinds}}<option value="{{.}}">{{.}}</option>{{end}}</select></label></p>
+  <p><label>Who says so <input type="text" name="source" required maxlength="200"></label></p>
+  <p><label>Believed until <input type="date" name="until" min="{{.Tomorrow}}" max="{{.MaxUntil}}"></label>
+    <span class="hint">Ninety days when left empty; a year at most.</span></p>
+  </div>
+  <p><label>What it is said to be (optional) <input type="text" name="note" maxlength="500"></label></p>
+  <p class="hint">The events already stored are read for it straight away.
+    A private address, a domain shared by many unrelated people and the
+    digest of the empty file are refused: each matches ordinary activity. A
+    whole feed is imported from a file with
+    <code>quilzo intel import FILE --source NAME</code>.</p>
+  <p><button type="submit">Add, and look back</button></p>
+</form>
+{{end}}
+{{template "foot" .}}

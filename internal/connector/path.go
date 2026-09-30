@@ -11,8 +11,11 @@ import (
 
 // Reaching into a JSON document, in the smallest language that does the job.
 //
-// Dotted keys and numeric indexes: user.profile.email, devices.0.serial. No
-// wildcards, no filters, no functions, no arithmetic, nothing that can loop.
+// Dotted keys and numeric indexes: user.profile.email, devices.0.serial. A
+// key that itself contains a dot is written with it escaped — Endpoint
+// Central names a field invsw.software_name, which is one key, reached as
+// invsw\.software_name. No wildcards, no filters, no functions, no
+// arithmetic, nothing that can loop.
 //
 // That is the whole point. A mapping language with expressions in it is a
 // program, a manifest carrying one is executable content, and the review that
@@ -66,7 +69,7 @@ func lookupNode(doc any, path string) (any, bool) {
 		return nil, false
 	}
 	cur := doc
-	for _, part := range strings.Split(path, ".") {
+	for _, part := range splitPath(path) {
 		if part == "" {
 			return nil, false
 		}
@@ -88,6 +91,28 @@ func lookupNode(doc any, path string) (any, bool) {
 		}
 	}
 	return cur, true
+}
+
+// splitPath splits on the dots that are not escaped, and unescapes them.
+//
+// A backslash escapes a dot and nothing else; any other backslash is part of
+// the key, so a key with a backslash in it needs no ceremony.
+func splitPath(path string) []string {
+	var parts []string
+	var cur strings.Builder
+	for i := 0; i < len(path); i++ {
+		switch {
+		case path[i] == '\\' && i+1 < len(path) && path[i+1] == '.':
+			cur.WriteByte('.')
+			i++
+		case path[i] == '.':
+			parts = append(parts, cur.String())
+			cur.Reset()
+		default:
+			cur.WriteByte(path[i])
+		}
+	}
+	return append(parts, cur.String())
 }
 
 func asString(v any) string {
@@ -155,7 +180,10 @@ func walk(node any, prefix string, out *[]string, limit int) {
 	}
 }
 
+// join writes a key into a path, escaping its dots so the path Paths prints
+// is one an author can paste into a manifest and have it mean the same key.
 func join(prefix, key string) string {
+	key = strings.ReplaceAll(key, ".", `\.`)
 	if prefix == "" {
 		return key
 	}
