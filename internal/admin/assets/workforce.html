@@ -7,7 +7,10 @@
 <table><tbody>{{range .Bars}}<tr><th scope="row">{{.Label}}</th><td>{{.Value}}</td></tr>{{end}}</tbody></table></details>{{end}}
 {{template "head" .}}
 <h1>Workforce risk</h1>
-{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
+<form method="post" action="/workforce/sync" class="wf-sync"><button type="submit">Read the tools now</button></form>{{else}}
 <p class="lead">What your tools say about each person and their machines,
   joined and scored from reasons you can check. Only administrators see this
   page, and opening a person's page is written to the log.</p>
@@ -25,6 +28,15 @@
   {{if .Filtered}}<a href="/workforce">Clear</a>{{end}}
   <span class="wf-aside"><a href="/workforce/devices">Machines</a> ·
     <a href="/workforce/reminders">Reminders</a></span>
+</form>
+
+<form method="post" action="/workforce/sync" class="wf-sync">
+  <p class="hint">{{with .Sync}}{{if .Running}}<strong>Reading the tools now.</strong>
+    {{else if $.SyncAge}}Tools last read {{$.SyncAge}} ago{{if .Problems}}; {{len .Problems}} with a problem{{end}}.
+    {{else}}The tools have not been read from here yet.{{end}}
+    {{if $.SyncEvery}}Read every {{$.SyncEvery}}.{{else}}Not read on a schedule (quilzo estate auto).{{end}}{{end}}</p>
+  {{with .Sync}}{{if not .Running}}<button type="submit">Read the tools now</button>{{end}}{{end}}
+  {{with .Sync}}{{range .Problems}}<p class="hint warn">{{.}}</p>{{end}}{{end}}
 </form>
 
 <section class="wf-kpis" aria-label="Summary">

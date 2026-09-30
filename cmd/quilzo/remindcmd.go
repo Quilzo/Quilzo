@@ -230,6 +230,12 @@ func remindSendNow(root string, now time.Time, by string,
 			return sent, failed, lerr
 		}
 	}
+	if sent+failed == 0 {
+		// Nothing was due. The schedule asks every quarter hour in office
+		// hours, and an entry each time saying so would bury the ones that
+		// record a message going out.
+		return 0, 0, nil
+	}
 	record(root, audit.Record{
 		Action: "remind.send", Resource: "/workforce/reminders",
 		Outcome: audit.Success, Principal: by, Kind: kind,

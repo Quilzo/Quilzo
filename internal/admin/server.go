@@ -983,6 +983,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/workforce", s.handleWorkforce)
 	mux.HandleFunc("/workforce/person/", s.handleWorkforcePerson)
 	mux.HandleFunc("/workforce/devices", s.handleWorkforceDevices)
+	mux.HandleFunc("/workforce/sync", s.handleWorkforceSync)
 	mux.HandleFunc("/workforce/reminders", s.handleReminders)
 	mux.HandleFunc("/workforce/reminders/act", s.handleRemindersAct)
 	mux.HandleFunc("/models", s.handleModels)

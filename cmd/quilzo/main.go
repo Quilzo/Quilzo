@@ -264,6 +264,8 @@ estate
   quilzo estate show                       what the tools say, joined, and what could not be
   quilzo estate build                      put where the tools disagree in the findings register
   quilzo estate scores [--limit N]         each person's risk and the reasons for it (admins)
+  quilzo estate sync [--remind]            read every installed tool, then build (admins)
+  quilzo estate auto --every 24h [--remind] | --off   have the admin server sync on a schedule
 
 reminders
   quilzo remind preview                    who would be told what, now, and who is held back

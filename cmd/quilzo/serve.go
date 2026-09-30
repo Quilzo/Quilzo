@@ -257,6 +257,25 @@ func cmdServe(root string, args []string) error {
 			return buildEstate(root, now)
 		},
 		History: func() ([]estate.Summary, error) { return loadHistory(root) },
+		Status:  func() (admin.SyncStatus, error) { return syncStatus(root) },
+		Sync: func(by string) error {
+			if syncRunning(root) {
+				return fmt.Errorf("the tools are being read already")
+			}
+			// In the background: a read paced to the tools' limits can take
+			// longer than a browser waits. The lock inside estateSync is
+			// what keeps two from overlapping; this check is only so the
+			// button can say so.
+			go func() {
+				caller := &Caller{Name: by, Kind: audit.KindHuman, Verified: true}
+				if _, err := estateSync(root, time.Now().UTC(), caller,
+					false); err != nil {
+					fmt.Fprintf(os.Stderr, "  %sestate sync: %v%s\n", dim, err,
+						reset)
+				}
+			}()
+			return nil
+		},
 	}
 	srv.Reminders = &admin.Reminders{
 		Preview: func(now time.Time) (remind.Config, []remind.Message,
@@ -333,18 +352,28 @@ func cmdServe(root string, args []string) error {
 	// this, nothing removed them: the ceiling was a sentence in a policy and
 	// not a thing the program did. See internal/upkeep for why this sweeps
 	// here while scheduled publishing keeps its external timer.
+	//
+	// And the estate's schedule, which does nothing until an administrator
+	// sets one with quilzo estate auto.
+	jobs := []upkeep.Job{estateJob(root)}
 	if job, ok := retentionJob(root); ok {
-		upkeepCtx, stopUpkeep := context.WithCancel(context.Background())
-		defer stopUpkeep()
-		go upkeep.Run(upkeepCtx, upkeep.Every, func(j upkeep.Job, n int, err error) {
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "  %s%s: %v%s\n", dim, j.Name, err, reset)
-				return
-			}
+		jobs = append(jobs, job)
+	}
+	upkeepCtx, stopUpkeep := context.WithCancel(context.Background())
+	defer stopUpkeep()
+	go upkeep.Run(upkeepCtx, upkeep.Every, func(j upkeep.Job, n int, err error) {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  %s%s: %v%s\n", dim, j.Name, err, reset)
+			return
+		}
+		switch j.Name {
+		case "retention":
 			fmt.Printf("  %sretention: removed %s past the period their form "+
 				"declares%s\n", dim, count(n, "submission"), reset)
-		}, job)
-	}
+		case "estate":
+			fmt.Printf("  %sestate: synced %s%s\n", dim, count(n, "tool"), reset)
+		}
+	}, jobs...)
 
 	// Dual authorisation. The same files and the same engine the command line
 	// uses — a second implementation of an approval rule would be a second

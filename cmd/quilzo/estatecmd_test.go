@@ -89,7 +89,7 @@ func TestTheEstateFindsWhatTwoToolsDisagreeOnAndLetsItGo(t *testing.T) {
 	}
 	read()
 	for _, f := range []string{"vanta.jsonl", "endpointcentral.json"} {
-		info, err := os.Stat(filepath.Join(estateDir(root), f))
+		info, err := os.Stat(filepath.Join(toolsDir(root), f))
 		if err != nil {
 			t.Fatal(err)
 		}

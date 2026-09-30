@@ -26,7 +26,7 @@ func TestRemindersGoOnceToWhoeverHasSomethingToDo(t *testing.T) {
 	lines := `{"_source":"vanta","_endpoint":"people","_produces":"identity","id":"v1","email":"sam@acme.com","name":"Sam Okafor","employment":"CURRENT","training":"OVERDUE"}
 {"_source":"vanta","_endpoint":"people","_produces":"identity","id":"v2","email":"ann@acme.com","name":"Ann Lee","employment":"CURRENT","training":"COMPLETE"}
 `
-	os.MkdirAll(estateDir(root), 0o700)
+	os.MkdirAll(toolsDir(root), 0o700)
 	b, _ := json.Marshal(snap)
 	records, meta := snapshotPaths(root, "vanta")
 	os.WriteFile(meta, b, 0o600)

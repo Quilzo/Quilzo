@@ -35,8 +35,14 @@ import (
 
 func estateDir(root string) string { return filepath.Join(root, "estate") }
 
+// toolsDir holds each tool's latest read, apart from the estate's own
+// files — its schedule, its last sync, its history — so that no tool's name
+// can collide with one of them and no file of the estate's is ever read as
+// a tool.
+func toolsDir(root string) string { return filepath.Join(estateDir(root), "tools") }
+
 func snapshotPaths(root, source string) (records, meta string) {
-	dir := estateDir(root)
+	dir := toolsDir(root)
 	return filepath.Join(dir, source+".jsonl"), filepath.Join(dir, source+".json")
 }
 
@@ -71,7 +77,7 @@ func saveSnapshot(root string, m connector.Manifest,
 			}
 		}
 	}
-	if err := os.MkdirAll(estateDir(root), 0o700); err != nil {
+	if err := os.MkdirAll(toolsDir(root), 0o700); err != nil {
 		return err
 	}
 	records, meta := snapshotPaths(root, m.Name)
@@ -88,7 +94,7 @@ func saveSnapshot(root string, m connector.Manifest,
 
 // loadSnapshots reads every tool's latest read.
 func loadSnapshots(root string) ([]estate.Snapshot, error) {
-	entries, err := os.ReadDir(estateDir(root))
+	entries, err := os.ReadDir(toolsDir(root))
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -166,9 +172,13 @@ func cmdEstate(root string, args []string) error {
 		return estateBuild(root, args[1:])
 	case "scores":
 		return estateScores(root, args[1:])
+	case "sync":
+		return cmdEstateSync(root, args[1:])
+	case "auto":
+		return cmdEstateAuto(root, args[1:])
 	default:
-		return fmt.Errorf("unknown estate command %q; try show, build or "+
-			"scores", args[0])
+		return fmt.Errorf("unknown estate command %q; try show, build, "+
+			"scores, sync or auto", args[0])
 	}
 }
 
@@ -312,21 +322,37 @@ func estateBuild(root string, args []string) error {
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
 		return err
 	}
-	now := time.Now().UTC()
-	e, o, err := buildEstate(root, now)
+	s, err := buildAndRecord(root, time.Now().UTC(), caller.Name, caller.Kind,
+		caller.Verified)
 	if err != nil {
 		return err
 	}
+	if w.JSON(s) {
+		return nil
+	}
+	printSummary(s, true)
+	return nil
+}
 
+// buildAndRecord joins the tools' latest reads, records what disagrees in
+// the findings register, stales what no longer does, and keeps the day's
+// aggregates. The command and the scheduled sync both come here.
+func buildAndRecord(root string, now time.Time, by string, kind audit.Kind,
+	verified bool) (estateSummary, error) {
+
+	e, o, err := buildEstate(root, now)
+	if err != nil {
+		return estateSummary{}, err
+	}
 	path := findingsPath(root)
 	unlock, err := finding.Lock(path)
 	if err != nil {
-		return err
+		return estateSummary{}, err
 	}
 	defer unlock()
 	reg, cursors, err := finding.Load(path)
 	if err != nil {
-		return err
+		return estateSummary{}, err
 	}
 	s := summariseEstate(e, o)
 	reported := map[string]bool{}
@@ -365,14 +391,14 @@ func estateBuild(root string, args []string) error {
 	}, reported)
 	s.Staled = len(staled)
 	if err := finding.Save(path, reg, cursors); err != nil {
-		return err
+		return estateSummary{}, err
 	}
 	if err := saveDay(root, estate.Summarise(e.Scores(now), now)); err != nil {
-		return err
+		return estateSummary{}, err
 	}
 	record(root, audit.Record{
 		Action: "estate.build", Resource: "/findings", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: by, Kind: kind, Verified: verified,
 		Detail: map[string]string{
 			"sources":  strings.Join(sortedKeysOf(s.Sources), ","),
 			"people":   fmt.Sprint(s.People),
@@ -382,11 +408,7 @@ func estateBuild(root string, args []string) error {
 			"skipped": strings.Join(sortedKeysOf(s.Skipped), ","),
 		},
 	})
-	if w.JSON(s) {
-		return nil
-	}
-	printSummary(s, true)
-	return nil
+	return s, nil
 }
 
 func historyPath(root string) string {

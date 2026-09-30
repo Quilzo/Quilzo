@@ -391,13 +391,10 @@ var coverage = map[string]surfaces{
 	},
 
 	// The tools' records joined, and where they disagree.
-	"estate": {
-		Why: "its findings are in the findings queue already; the screens " +
-			"for people, machines and scores arrive with the risk view",
-		NoMCP: "it holds every person's training, phishing results and " +
-			"devices at once; an agent reads the findings it produced " +
-			"through list_findings instead",
-	},
+	"estate": {GUI: "/workforce", MCP: []string{"estate_summary"},
+		Why: "an agent gets the numbers — bands, areas, trend, what could " +
+			"not be checked — and never the people; the findings it raised " +
+			"are read one at a time through list_findings"},
 
 	"remind": {GUI: "/workforce/reminders",
 		NoMCP: "it sends a message to every employee with something " +

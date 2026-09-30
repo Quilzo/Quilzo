@@ -33,6 +33,19 @@ type Workforce struct {
 	Load func(now time.Time) (*estate.Estate, estate.Outcome, error)
 	// History is the daily aggregates, oldest first.
 	History func() ([]estate.Summary, error)
+	// Status says when the tools were last read and whether a read is
+	// under way; Sync starts one in the background.
+	Status func() (SyncStatus, error)
+	Sync   func(by string) error
+}
+
+// SyncStatus is the state of reading the tools.
+type SyncStatus struct {
+	Last     time.Time
+	Tools    int
+	Problems []string
+	Running  bool
+	Every    time.Duration
 }
 
 // wfLoad is the shared start of every workforce page.
@@ -162,6 +175,8 @@ func (s *Server) handleWorkforce(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	data["Message"], data["Error"] = r.URL.Query().Get("m"),
+		r.URL.Query().Get("e")
 	now := time.Now().UTC()
 	scores := e.Scores(now)
 
@@ -322,6 +337,17 @@ func (s *Server) handleWorkforce(w http.ResponseWriter, r *http.Request) {
 		sources = append(sources, source{Name: name, State: state})
 	}
 	data["Sources"] = sources
+	if s.Workforce.Status != nil {
+		if st, serr := s.Workforce.Status(); serr == nil {
+			data["Sync"] = st
+			if !st.Last.IsZero() {
+				data["SyncAge"] = wfAge(now.Sub(st.Last))
+			}
+			if st.Every > 0 {
+				data["SyncEvery"] = st.Every.String()
+			}
+		}
+	}
 	data["Skipped"] = o.Skipped
 	data["Notes"] = e.Notes
 	data["Unplaced"] = e.Unplaced
@@ -695,4 +721,32 @@ func (s *Server) handleWorkforceDevices(w http.ResponseWriter, r *http.Request) 
 	}
 	data["Chips"], data["Tools"], data["Rows"] = chips, tools, rows
 	s.render(w, r, "workforce_devices.html", data)
+}
+
+// handleWorkforceSync starts reading every tool, in the background: a read
+// paced to the tools' limits can take many minutes, longer than a browser
+// waits for an answer.
+func (s *Server) handleWorkforceSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "use the button", http.StatusMethodNotAllowed)
+		return
+	}
+	p, ok := s.assuranceReader(w, r)
+	if !ok {
+		return
+	}
+	if s.Workforce == nil || s.Workforce.Sync == nil {
+		http.Error(w, "this build cannot read the tools",
+			http.StatusServiceUnavailable)
+		return
+	}
+	v := url.Values{}
+	if err := s.Workforce.Sync(p.Name); err != nil {
+		v.Set("e", err.Error())
+	} else {
+		v.Set("m", "Reading the tools. This page shows the result when it "+
+			"finishes; reload in a few minutes.")
+	}
+	http.Redirect(w, r, "/workforce?"+v.Encode(), http.StatusSeeOther)
 }

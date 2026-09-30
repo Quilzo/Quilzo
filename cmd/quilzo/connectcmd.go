@@ -466,17 +466,71 @@ func connectRun(root string, args []string) error {
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
 		return err
 	}
-	held, err := loadSecrets(root)
+	out, failed, err := runConnector(root, m, names, *full, *save, caller)
 	if err != nil {
 		return err
+	}
+
+	if w.JSON(out) {
+		return failed
+	}
+	// One record per line on stdout, so this pipes into workforce and spool
+	// without a format in the middle that either of them has to know about.
+	enc := json.NewEncoder(os.Stdout)
+	for _, rec := range out.Records {
+		if err := enc.Encode(rec); err != nil {
+			return err
+		}
+	}
+	for _, r := range out.Runs {
+		if msg, ok := r["error"]; ok {
+			fmt.Fprintf(os.Stderr, "%s%v: %v%s\n", red, r["endpoint"], msg,
+				reset)
+			continue
+		}
+		line := fmt.Sprintf("%v: %v record(s) over %v page(s)",
+			r["endpoint"], r["records"], r["pages"])
+		if r["complete"] != true {
+			line += ", " + fmt.Sprint(r["truncated"])
+		}
+		if n, _ := r["skipped"].(int); n > 0 {
+			line += fmt.Sprintf(", %d parent(s) skipped: their key was not "+
+				"safe to put in a path", n)
+		}
+		fmt.Fprintf(os.Stderr, "%s%s%s\n", dim, line, reset)
+	}
+	fmt.Fprintf(os.Stderr, "%s%d request(s) to %s%s\n", dim, out.Requests,
+		m.Name, reset)
+	return failed
+}
+
+// connectOut is what one run of a connector read.
+type connectOut struct {
+	Connector string              `json:"connector"`
+	Records   []map[string]string `json:"records"`
+	Runs      []map[string]any    `json:"runs"`
+	Requests  int                 `json:"requests"`
+}
+
+// runConnector reads a connector's endpoints — all of them when names is
+// empty — keeping the daily budget, the checkpoints and, with save, the
+// tool's latest read. The command and the scheduled sync both come here, so
+// there is one place those rules live. It returns the first endpoint that
+// failed separately from an error that stopped the run.
+func runConnector(root string, m connector.Manifest, names []string, full,
+	save bool, caller *Caller) (connectOut, error, error) {
+
+	held, err := loadSecrets(root)
+	if err != nil {
+		return connectOut{}, nil, err
 	}
 	states, err := loadStates(root)
 	if err != nil {
-		return err
+		return connectOut{}, nil, err
 	}
 	budgets, err := loadBudgets(root)
 	if err != nil {
-		return err
+		return connectOut{}, nil, err
 	}
 	_, _, timeout := m.Limits()
 
@@ -485,7 +539,7 @@ func connectRun(root string, args []string) error {
 	x, err := connector.NewSession(m, client(timeout),
 		connector.MapFunc(held), connectSleep)
 	if err != nil {
-		return err
+		return connectOut{}, nil, err
 	}
 	today := time.Now().UTC().Format("2006-01-02")
 	spent := budgets[m.Name]
@@ -495,14 +549,14 @@ func connectRun(root string, args []string) error {
 	if m.Rate.PerDay > 0 {
 		x.Budget = m.Rate.PerDay - spent.Used
 		if x.Budget <= 0 {
-			return fmt.Errorf(
+			return connectOut{}, nil, fmt.Errorf(
 				"%s has been sent %d requests today and allows %d. The day "+
 					"is shared with the tool's own console, so the rest waits "+
 					"for tomorrow (UTC)", m.Name, spent.Used, m.Rate.PerDay)
 		}
 	}
 	from := map[string]connector.State{}
-	if !*full {
+	if !full {
 		for _, e := range m.Endpoints {
 			from[e.Name] = states[m.Name+"/"+e.Name]
 		}
@@ -515,15 +569,10 @@ func connectRun(root string, args []string) error {
 	spent.Used += x.Requests
 	budgets[m.Name] = spent
 	if err := saveBudgets(root, budgets); err != nil {
-		return err
+		return connectOut{}, nil, err
 	}
 
-	out := struct {
-		Connector string              `json:"connector"`
-		Records   []map[string]string `json:"records"`
-		Runs      []map[string]any    `json:"runs"`
-		Requests  int                 `json:"requests"`
-	}{Connector: m.Name, Requests: x.Requests}
+	out := connectOut{Connector: m.Name, Requests: x.Requests}
 	var failed error
 	for _, r := range reads {
 		e, _ := m.Endpoint(r.Endpoint)
@@ -575,45 +624,14 @@ func connectRun(root string, args []string) error {
 		})
 	}
 	if err := saveStates(root, states); err != nil {
-		return err
+		return out, failed, err
 	}
-	if *save {
+	if save {
 		if err := saveSnapshot(root, m, reads, time.Now().UTC()); err != nil {
-			return err
+			return out, failed, err
 		}
 	}
-
-	if w.JSON(out) {
-		return failed
-	}
-	// One record per line on stdout, so this pipes into workforce and spool
-	// without a format in the middle that either of them has to know about.
-	enc := json.NewEncoder(os.Stdout)
-	for _, rec := range out.Records {
-		if err := enc.Encode(rec); err != nil {
-			return err
-		}
-	}
-	for _, r := range out.Runs {
-		if msg, ok := r["error"]; ok {
-			fmt.Fprintf(os.Stderr, "%s%v: %v%s\n", red, r["endpoint"], msg,
-				reset)
-			continue
-		}
-		line := fmt.Sprintf("%v: %v record(s) over %v page(s)",
-			r["endpoint"], r["records"], r["pages"])
-		if r["complete"] != true {
-			line += ", " + fmt.Sprint(r["truncated"])
-		}
-		if n, _ := r["skipped"].(int); n > 0 {
-			line += fmt.Sprintf(", %d parent(s) skipped: their key was not "+
-				"safe to put in a path", n)
-		}
-		fmt.Fprintf(os.Stderr, "%s%s%s\n", dim, line, reset)
-	}
-	fmt.Fprintf(os.Stderr, "%s%d request(s) to %s%s\n", dim, x.Requests,
-		m.Name, reset)
-	return failed
+	return out, failed, nil
 }
 
 // dayBudget is how many requests one tool has been sent on one day.
