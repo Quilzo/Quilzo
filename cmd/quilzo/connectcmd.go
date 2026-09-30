@@ -373,6 +373,10 @@ var connectDoer = func(timeout time.Duration) connector.Doer {
 	return egress.Client("connector", timeout)
 }
 
+// connectSleep is how a run waits between requests: nil is real time. A
+// test sets it so a tool's declared pace does not become the test's.
+var connectSleep connector.Sleeper
+
 func connectProbe(root string, args []string) error {
 	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("probe", flag.ContinueOnError)
@@ -432,11 +436,17 @@ func connectRun(root string, args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	full := fs.Bool("full", false,
 		"ignore the checkpoint and read everything again")
+	save := fs.Bool("save", false,
+		"keep this read as the tool's latest, for quilzo estate")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
 	if len(pos) < 1 {
-		return fmt.Errorf("usage: quilzo connect run NAME [ENDPOINT]")
+		return fmt.Errorf("usage: quilzo connect run NAME [ENDPOINT] [--save]")
+	}
+	if *save && len(pos) == 2 {
+		return fmt.Errorf("--save keeps a tool's whole read, and one endpoint " +
+			"of it would replace the rest with nothing")
 	}
 	m, err := findConnector(root, pos[0])
 	if err != nil {
@@ -473,7 +483,7 @@ func connectRun(root string, args []string) error {
 	// One session for the whole run: one access token (Vanta revokes the
 	// last when a new one is issued), one pace, one budget.
 	x, err := connector.NewSession(m, client(timeout),
-		connector.MapFunc(held), nil)
+		connector.MapFunc(held), connectSleep)
 	if err != nil {
 		return err
 	}
@@ -566,6 +576,11 @@ func connectRun(root string, args []string) error {
 	}
 	if err := saveStates(root, states); err != nil {
 		return err
+	}
+	if *save {
+		if err := saveSnapshot(root, m, reads, time.Now().UTC()); err != nil {
+			return err
+		}
 	}
 
 	if w.JSON(out) {

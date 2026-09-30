@@ -291,8 +291,12 @@ type Pagination struct {
 type Produces string
 
 const (
-	// Identities become workforce records: people, devices, service accounts.
+	// Identities become workforce records: people and service accounts.
 	Identities Produces = "identity"
+	// Devices are machines that check in: a laptop, a phone. Separate from
+	// identity so a computer with no serial number is never read as a
+	// person with no email address.
+	Devices Produces = "device"
 	// Events become telemetry.
 	Events Produces = "event"
 	// Training is an enrolment in a course, and whether it was finished.
@@ -311,8 +315,8 @@ const (
 
 // ProducesKinds lists what an endpoint's records may become.
 func ProducesKinds() []Produces {
-	return []Produces{Identities, Events, Training, Phishing, Policy,
-		Software, Vulnerability, Control}
+	return []Produces{Identities, Devices, Events, Training, Phishing,
+		Policy, Software, Vulnerability, Control}
 }
 
 func (p Produces) known() bool {

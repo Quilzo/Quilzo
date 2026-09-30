@@ -257,6 +257,11 @@ connecting to a company's tools
   quilzo connect secret NAME               store a credential, from the environment
   quilzo connect probe NAME ENDPOINT       what shape a tool's response is, never its values
   quilzo connect run NAME [ENDPOINT]       pull records, one JSON object per line
+  quilzo connect run NAME --save           and keep them as the tool's latest read
+
+estate
+  quilzo estate show                       what the tools say, joined, and what could not be
+  quilzo estate build                      put where the tools disagree in the findings register
 
 workforce
   quilzo workforce coverage [FILE]         did the join work, and what did not
@@ -732,6 +737,8 @@ func main() {
 		err = cmdSpool(root, cmdArgs)
 	case "notify":
 		err = cmdNotify(root, cmdArgs)
+	case "estate":
+		err = cmdEstate(root, cmdArgs)
 	case "workforce":
 		err = cmdWorkforce(root, cmdArgs)
 	case "connect":

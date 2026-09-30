@@ -34,7 +34,7 @@
         "path": "/dcapi/inventory/viewData/scanComputers",
         "query": {"toolID": "2131"},
         "accept": "application/InventoryMobileAPI.v1+json",
-        "produces": "identity",
+        "produces": "device",
         "records": "messageResponse",
         "page": {"kind": "next-url", "from": "Links.next"},
         "reads": ["resource_id", "resource_name", "fqdn_name", "servicetag", "os_name", "os_version", "build_number", "agent_last_contact_time", "computer_live_status", "name", "domain_netbios_name", "branch_office_name", "last_successful_scan", "agent_version"],

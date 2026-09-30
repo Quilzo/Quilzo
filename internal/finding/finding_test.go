@@ -299,3 +299,36 @@ func TestAFindingWithNoSourceIsRefused(t *testing.T) {
 		t.Error("a finding nobody can trace to what raised it was accepted")
 	}
 }
+
+func TestAFindingNoLongerReportedGoesStaleOnlyIfItWasLookedFor(t *testing.T) {
+	r := NewRegister()
+	at := time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC)
+	mk := func(source, entity string) Finding {
+		return Finding{Kind: FromControl, Title: "t", Source: source,
+			Entity: telemetry.ID{Issuer: "vanta", Value: entity},
+			State: Open, Severity: telemetry.SeverityMedium}
+	}
+	a, _ := r.Record(mk("estate/leaver-device", "1"), at)
+	b, _ := r.Record(mk("estate/leaver-device", "2"), at)
+	c, _ := r.Record(mk("estate/unmanaged-device", "3"), at)
+	got := r.Unreported(func(f Finding) bool {
+		return f.Source == "estate/leaver-device"
+	}, map[string]bool{a.ID: true})
+	if len(got) != 1 || got[0] != b.ID {
+		t.Fatalf("staled %v", got)
+	}
+	if f, _ := r.Get(b.ID); f.State != Stale {
+		t.Errorf("%s is %s", b.ID, f.State)
+	}
+	if f, _ := r.Get(c.ID); f.State != Open {
+		t.Error("a finding from a check that did not run was closed")
+	}
+	if f, _ := r.Get(a.ID); f.State != Open {
+		t.Error("a finding reported this round was closed")
+	}
+	// Reported again, it is open again.
+	r.Record(mk("estate/leaver-device", "2"), at.Add(time.Hour))
+	if f, _ := r.Get(b.ID); f.State != Open {
+		t.Error("a stale finding reported again stayed stale")
+	}
+}

@@ -485,3 +485,27 @@ func (r *Register) All(now time.Time) []Finding {
 
 // Len is how many findings the register holds.
 func (r *Register) Len() int { return len(r.byKey) }
+
+// Unreported marks as stale the open findings a producer looked for and did
+// not report this round, and returns their ids.
+//
+// Stale and not fixed: the producer no longer sees it, which may be because
+// it was fixed and may be because what it reads changed. Looked decides
+// which findings the round was able to see at all — a finding about a tool
+// that was not read this time was not looked for, and marking it stale would
+// close it for having been out of sight.
+func (r *Register) Unreported(looked func(Finding) bool,
+	reported map[string]bool) []string {
+
+	var ids []string
+	for key, f := range r.byKey {
+		if reported[key] || f.State.Closed() || f.State == Accepted ||
+			!looked(*f) {
+			continue
+		}
+		f.State = Stale
+		ids = append(ids, key)
+	}
+	sort.Strings(ids)
+	return ids
+}

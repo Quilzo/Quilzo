@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -88,9 +89,10 @@ func pointConnectorsAt(t *testing.T, h http.HandlerFunc) *int {
 	}))
 	t.Cleanup(s.Close)
 	u, _ := url.Parse(s.URL)
-	old := connectDoer
+	old, oldSleep := connectDoer, connectSleep
 	connectDoer = func(time.Duration) connector.Doer { return toLocal{u} }
-	t.Cleanup(func() { connectDoer = old })
+	connectSleep = func(context.Context, time.Duration) error { return nil }
+	t.Cleanup(func() { connectDoer, connectSleep = old, oldSleep })
 	return &calls
 }
 

@@ -48,7 +48,7 @@
       {
         "name": "computers",
         "path": "/v1/monitored-computers",
-        "produces": "identity",
+        "produces": "device",
         "records": "results.data",
         "page": {"kind": "cursor", "from": "results.pageInfo.endCursor", "param": "pageCursor", "size": 100, "size_param": "pageSize", "more": "results.pageInfo.hasNextPage"},
         "reads": ["id", "integrationId", "serialNumber", "udid", "lastCheckDate", "screenlock.outcome", "diskEncryption.outcome", "passwordManager.outcome", "antivirusInstallation.outcome", "operatingSystem.type", "operatingSystem.version", "owner.id", "owner.emailAddress", "owner.displayName"],

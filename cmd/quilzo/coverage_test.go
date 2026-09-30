@@ -390,6 +390,15 @@ var coverage = map[string]surfaces{
 			"the Drift compromise; a model with a tool here has them too",
 	},
 
+	// The tools' records joined, and where they disagree.
+	"estate": {
+		Why: "its findings are in the findings queue already; the screens " +
+			"for people, machines and scores arrive with the risk view",
+		NoMCP: "it holds every person's training, phishing results and " +
+			"devices at once; an agent reads the findings it produced " +
+			"through list_findings instead",
+	},
+
 	// Reconciling people and devices across systems, from a file of
 	// normalised identities.
 	"workforce": {
