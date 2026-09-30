@@ -257,7 +257,7 @@ func setRemindEnabled(root string, on bool, by string,
 	record(root, audit.Record{Action: action, Resource: "/workforce/reminders",
 		Outcome: audit.Success, Principal: by, Kind: kind,
 		Verified: kind != audit.KindUnknown,
-		Detail: map[string]string{"by": by}})
+		Detail:   map[string]string{"by": by}})
 	return nil
 }
 
