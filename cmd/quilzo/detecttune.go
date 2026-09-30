@@ -115,6 +115,15 @@ func loadTuning(root, dir string, now time.Time) (tuning, error) {
 	if t.Rules, err = rulesIn(rulesDir(root, dir)); err != nil {
 		return t, err
 	}
+	// Correlations sit beside the rules they are over: same rings, same
+	// verdicts, same screen.
+	corrs, err := correlationsIn(rulesDir(root, dir))
+	if err != nil {
+		return t, err
+	}
+	for _, c := range corrs {
+		t.Rules = append(t.Rules, asRule(c))
+	}
 	if t.Rings, err = loadRings(root); err != nil {
 		return t, err
 	}
@@ -149,6 +158,13 @@ func setRing(root, dir, rule string, ring detect.Ring, because, by string,
 	rules, err := rulesIn(rulesDir(root, dir))
 	if err != nil {
 		return err
+	}
+	corrs, err := correlationsIn(rulesDir(root, dir))
+	if err != nil {
+		return err
+	}
+	for _, c := range corrs {
+		rules = append(rules, asRule(c))
 	}
 	if !knownRule(rules, rule) {
 		return fmt.Errorf("there is no rule called %q; a ring set for a name "+

@@ -176,6 +176,14 @@ func detectRun(root string, args []string) error {
 	if !through.IsZero() {
 		cursors[detectCursor] = through
 	}
+	// Correlations: the detections about several events. Over every rule
+	// that is not switched off, whether or not it raises on its own.
+	corr, err := runCorrelations(root, sp, rulesDir(root, *rulesAt), rules,
+		rings, sups, reg, cursors, now)
+	if err != nil {
+		return err
+	}
+	opened += corr.Opened
 	if err := finding.Save(path, reg, cursors); err != nil {
 		return err
 	}
@@ -191,6 +199,8 @@ func detectRun(root string, args []string) error {
 			"rules": strconv.Itoa(len(rules)), "events": strconv.Itoa(events),
 			"matches": strconv.Itoa(matches), "opened": strconv.Itoa(opened),
 			"suppressed": strconv.Itoa(suppressed), "off": strconv.Itoa(off),
+			"correlations": strconv.Itoa(corr.Rules),
+			"correlated":   strconv.Itoa(corr.Hits),
 		},
 	})
 
@@ -198,6 +208,8 @@ func detectRun(root string, args []string) error {
 		"rules": len(rules), "events": events, "matches": matches,
 		"opened": opened, "findings": reg.Len(), "through": through,
 		"suppressed": suppressed, "off": off,
+		"correlations": corr.Rules, "correlated": corr.Hits,
+		"correlation_dropped": corr.Dropped,
 	}) {
 		return nil
 	}
@@ -206,6 +218,15 @@ func detectRun(root string, args []string) error {
 	if suppressed > 0 || off > 0 {
 		w.Human("  %s%d match(es) hidden by suppressions; %d rule(s) switched "+
 			"off%s\n", dim, suppressed, off, reset)
+	}
+	if corr.Rules > 0 {
+		w.Human("  %s%d correlation(s): %d window(s) met their condition%s\n",
+			dim, corr.Rules, corr.Hits, reset)
+		if corr.Dropped > 0 {
+			w.Human("  %s%d event(s) could not be placed in a group, or were "+
+				"past the cap on groups; that correlation has lost cover%s\n",
+				yellow, corr.Dropped, reset)
+		}
 	}
 	if events == 0 {
 		w.Human("  %snothing arrived since the last run%s\n", dim, reset)
