@@ -191,6 +191,8 @@ type Server struct {
 	Vulns *Vulns
 	// Cases is the incident store. Nil means none was wired.
 	Cases *Cases
+	// Indicators is the indicator store. Nil means none was wired.
+	Indicators *Indicators
 
 	// Events is the telemetry store. Separate from Running because one is
 	// about whether collection is working and the other is what was
@@ -990,6 +992,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/findings", s.handleFindings)
 	mux.HandleFunc("/security/hunt", s.handleHunt)
 	mux.HandleFunc("/security/entity/", s.handleEntity)
+	mux.HandleFunc("/security/indicators", s.handleIndicators)
+	mux.HandleFunc("/security/indicators/act", s.handleIndicatorsAct)
 	mux.HandleFunc("/security/cases", s.handleCases)
 	mux.HandleFunc("/security/cases/act", s.handleCasesAct)
 	mux.HandleFunc("/security/case/", s.handleCase)

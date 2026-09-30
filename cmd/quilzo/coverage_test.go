@@ -364,6 +364,14 @@ var coverage = map[string]surfaces{
 
 	// The vulnerability queue, read from an inventory and a set of
 	// advisories that a connector or a scanner produces.
+	"intel": {GUI: "/security/indicators",
+		Why: "what an indicator found is a finding, and findings are " +
+			"what an agent reads",
+		NoMCP: "adding an indicator raises findings about whoever touched " +
+			"it, so a model that could add one could accuse anybody; and " +
+			"the list itself is other people's infrastructure, which a " +
+			"model has no use for that the findings do not serve",
+	},
 	"vuln": {GUI: "/security/vulns", MCP: []string{"vuln_plan"},
 		Why: "an agent reads the plan and the counts; deciding that " +
 			"something does not apply stays a person's, and " +

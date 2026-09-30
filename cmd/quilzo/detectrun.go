@@ -184,6 +184,19 @@ func detectRun(root string, args []string) error {
 		return err
 	}
 	opened += corr.Opened
+	// Indicators: each new event against everything still believed.
+	held, err := loadIndicators(root)
+	if err != nil {
+		return err
+	}
+	var intelHit, intelOpened int
+	if held.Len() > 0 {
+		_, intelHit, intelOpened, err = intelCatchUp(sp, held, reg, cursors, now)
+		if err != nil {
+			return err
+		}
+		opened += intelOpened
+	}
 	if err := finding.Save(path, reg, cursors); err != nil {
 		return err
 	}
@@ -199,8 +212,10 @@ func detectRun(root string, args []string) error {
 			"rules": strconv.Itoa(len(rules)), "events": strconv.Itoa(events),
 			"matches": strconv.Itoa(matches), "opened": strconv.Itoa(opened),
 			"suppressed": strconv.Itoa(suppressed), "off": strconv.Itoa(off),
-			"correlations": strconv.Itoa(corr.Rules),
-			"correlated":   strconv.Itoa(corr.Hits),
+			"correlations":   strconv.Itoa(corr.Rules),
+			"correlated":     strconv.Itoa(corr.Hits),
+			"indicators":     strconv.Itoa(held.Len()),
+			"indicator_hits": strconv.Itoa(intelHit),
 		},
 	})
 
@@ -210,6 +225,7 @@ func detectRun(root string, args []string) error {
 		"suppressed": suppressed, "off": off,
 		"correlations": corr.Rules, "correlated": corr.Hits,
 		"correlation_dropped": corr.Dropped,
+		"indicators":          held.Len(), "indicator_hits": intelHit,
 	}) {
 		return nil
 	}
@@ -227,6 +243,10 @@ func detectRun(root string, args []string) error {
 				"past the cap on groups; that correlation has lost cover%s\n",
 				yellow, corr.Dropped, reset)
 		}
+	}
+	if held.Len() > 0 {
+		w.Human("  %s%d indicator(s): %d event(s) carried one%s\n", dim,
+			held.Len(), intelHit, reset)
 	}
 	if events == 0 {
 		w.Human("  %snothing arrived since the last run%s\n", dim, reset)

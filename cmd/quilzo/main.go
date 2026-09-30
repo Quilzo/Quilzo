@@ -303,6 +303,9 @@ telling people
   quilzo notify publish NOTICE             the Article 34(3)(c) public communication
   quilzo notify inbox ISSUER:VALUE         what is waiting for somebody in the app
   quilzo hunt --field F [FILE]             what is rare, which is what is worth a look
+  quilzo intel import FILE --source NAME   indicators from a STIX bundle or a list, then look back
+  quilzo intel add VALUE --source NAME     one indicator; --until DATE, --note "…"
+  quilzo intel list | remove ID            what is held, what each has found, and taking one out
   quilzo detect test [DIR]                 run every rule against its own fixtures
   quilzo detect list [DIR]                 the rules, what they read, what they miss
   quilzo detect fields                     how a rule may compare
@@ -777,6 +780,8 @@ func main() {
 		err = cmdConnect(root, cmdArgs)
 	case "vuln":
 		err = cmdVuln(root, cmdArgs)
+	case "intel":
+		err = cmdIntel(root, cmdArgs)
 	case "assurance":
 		err = cmdAssurance(root, cmdArgs)
 	case "framework":

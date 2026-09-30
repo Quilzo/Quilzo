@@ -114,6 +114,7 @@ var destinations = []destination{
 	{"events", "Events", "/security/events", "Security operations", "detection", auth.ActGrant},
 	{"hunt", "Hunt", "/security/hunt", "Security operations", "detection", auth.ActGrant},
 	{"detections", "Detections", "/security/detections", "Security operations", "detection", auth.ActGrant},
+	{"indicators", "Indicators", "/security/indicators", "Security operations", "detection", auth.ActGrant},
 	{"vulns", "Vulnerabilities", "/security/vulns", "Security operations", "vulnerabilities", auth.ActGrant},
 	// People and their machines, from what the company's tools say. Admin
 	// only: a person's score is a file on an employee.

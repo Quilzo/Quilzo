@@ -358,6 +358,8 @@ var commandNeeds = map[string]need{
 	// organisation stands behind and is appended to the audit chain rather
 	// than edited: the same authority as publishing. Reading the queue is a
 	// view.
+	// An indicator raises findings about whoever touched it.
+	"intel":        {action: auth.ActGrant},
 	"vuln":         {action: auth.ActPublish},
 	"vuln queue":   {action: auth.ActView},
 	"vuln why":     {action: auth.ActView},

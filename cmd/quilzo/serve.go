@@ -37,6 +37,7 @@ import (
 	"github.com/quilzo/quilzo/internal/gate"
 	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/incident"
+	"github.com/quilzo/quilzo/internal/indicator"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
@@ -334,6 +335,41 @@ func cmdServe(root string, args []string) error {
 			_, err := actOnIncident(root, id, &Caller{Name: by,
 				Kind: audit.KindHuman, Verified: true}, a, time.Now().UTC())
 			return err
+		},
+	}
+	srv.Indicators = &admin.Indicators{
+		List: func(now time.Time) ([]indicator.Indicator,
+			map[string]admin.IndicatorHits, error) {
+			set, err := loadIndicators(root)
+			if err != nil {
+				return nil, nil, err
+			}
+			q, err := loadQueue(root, now)
+			if err != nil {
+				return nil, nil, err
+			}
+			hits := map[string]admin.IndicatorHits{}
+			for id, h := range countIntelHits(q) {
+				hits[id] = admin.IndicatorHits{Findings: h.Findings,
+					Real: h.Real, False: h.False, Last: h.Last}
+			}
+			return set.All(), hits, nil
+		},
+		Add: func(kind, value, source, note, until, by string) (int, int,
+			bool, error) {
+			now := time.Now().UTC()
+			i, err := makeIndicator(kind, value, source, note, until, now)
+			if err != nil {
+				return 0, 0, false, err
+			}
+			res, err := takeIndicators(root, &Caller{Name: by,
+				Kind: audit.KindHuman, Verified: true},
+				[]indicator.Indicator{i}, indicator.Report{Read: 1}, now)
+			return res.Hits, res.Opened, res.Known > 0, err
+		},
+		Remove: func(id, by string) error {
+			return removeIndicator(root, &Caller{Name: by,
+				Kind: audit.KindHuman, Verified: true}, id)
 		},
 	}
 	srv.Reminders = &admin.Reminders{
