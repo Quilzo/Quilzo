@@ -15,6 +15,13 @@ worth keeping.
 
 ## `go/reflected-xss` — alerts #32, #33, #34, #40
 
+> **September 2026, later:** these were written up as dismissed and were still
+> open on GitHub. The repository requires a second person to approve a
+> dismissal, and the requests had never been filed. Alert #32 has also been
+> renumbered #63 by a change to the file it is in; it is the same sink. The
+> requests for #33, #34, #40 and #63 were filed on 30 September 2026 with this
+> section as the reason.
+
 **Dismissed** September 2026 as *false positive*.
 
 | alert | sink |
@@ -156,9 +163,38 @@ place to judge them, and each has its own alert or its own entry here.
 
 ---
 
-## `go/cookie-secure-not-set` — alerts #42–#50
+## `go/reflected-xss` — alerts #60, #61
+
+**Dismissal requested** as *false positive*.
+
+| alert | sink |
+|---|---|
+| #60 | `internal/compress/compress.go` — `writer.Write`, passing bytes to the gzip stream or the response |
+| #61 | `internal/compress/compress.go` — `writer.start`, writing what was held while deciding whether to compress |
+
+`compress.writer` wraps the response to decide whether a body is worth
+compressing. It holds the first bytes, then writes exactly what it was given,
+compressed or not. It adds nothing and changes nothing but the encoding. Like
+`statusWriter` in #65, it sits in front of every handler, so every flow the
+analyser follows into any response is reported again here. Each handler's own
+sink is where the question is answered.
+
+What would make this wrong: the wrapper writing anything it was not handed —
+an error page of its own that included part of the request, for instance.
+
+---
+
+## `go/cookie-secure-not-set` — alerts #42–#50, #59, #66
 
 **Dismissed** September 2026 as *won't fix*.
+
+> **September 2026, later:** as with the alerts above, these were never
+> dismissed on GitHub because the requests were not filed. They were filed on
+> 30 September 2026, together with two that have appeared since: #66, a second
+> number for the sign-in cookie in `internal/admin/server.go`, and #59, the
+> cookie in `internal/studio/studio.go`. #59 is a stronger case of the same
+> argument: that server only ever listens on loopback, so it sets no `Secure`
+> attribute at all and says so in a comment.
 
 Nine alerts, one per place this program sets a cookie:
 `internal/admin/oidcauth.go`, `nav.go` (two), `passkeys.go`, `sidebar.go`,
@@ -229,9 +265,24 @@ having fixed anything.
 
 ## `go/url-redirection-from-remote-source` — the note handlers
 
-**Not dismissed.** Recorded here because the alerts are open, the code is
-believed correct, and the belief needs to be checkable by somebody who did not
-write it.
+**Not dismissed, and since changed in code.** Seven alerts by the end of
+September 2026 (#51–#56 and #58): the two note handlers, `/sidebar`, `/theme`,
+two in `checked.go` and one in `mediafocus.go`, all the same call.
+
+What this section says below is still true of `backTo`. What changed is that
+the redirect no longer relies on it alone. All seven now go through `goBack`,
+which asks `isLocalURL` about the destination at the redirect itself and sends
+the browser to `/` if the answer is no. `isLocalURL` does not rebuild anything:
+it accepts a rooted path with one slash, no backslash, no control character and
+nothing a parser reads as a scheme or a host, and
+`TestOnlyAPlaceOnThisServerIsSomewhereToGoBackTo` pins that. The point is a
+check that sits beside the sink and can be read on its own, which is also the
+shape the analyser follows.
+
+The original entry, kept:
+
+Recorded here because the alerts are open, the code is believed correct, and
+the belief needs to be checkable by somebody who did not write it.
 
 | alert | sink |
 |---|---|
@@ -297,3 +348,24 @@ about its own claim can still be pointing at something.
 - The `Referrer-Policy` header being relaxed, which would make the Referer
   branch of `backTo` reachable again and put a second source into the same
   sink.
+
+---
+
+## `go/log-injection` — alerts #37, #38, #62
+
+**Fixed in code**, not dismissed.
+
+Three places in `cmd/quilzo/main.go` printed a value to the terminal inside a
+line of this program's own output: the commit that was published, the file a
+preview was written to, and the rule, criterion and detail of an accessibility
+finding. The third is the real one. A finding's detail is built from page
+content, and page content is written by whoever can edit a page; a line break
+in it starts a new line that reads as the program speaking, and an escape
+sequence can rewrite lines already printed. The excerpt beside it was already
+passed through `forTerminal`; the detail was not.
+
+All three now go through `onOneLine`, which replaces line breaks and then
+applies `forTerminal`. The first two could not have carried anything — one is
+a hash and the other is the operator's own argument — and are changed anyway,
+because a rule that every value printed inside a line is cleaned is easier to
+keep than a list of the ones that did not need it.
