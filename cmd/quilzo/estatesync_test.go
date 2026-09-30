@@ -176,4 +176,3 @@ func TestAnAgentGetsTheEstateInNumbersOnly(t *testing.T) {
 		t.Errorf("summary: %s", text)
 	}
 }
-
