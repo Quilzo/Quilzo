@@ -31,17 +31,19 @@ import (
 // `source list` shows what is mapped. `source check` runs a mapping
 // against real records and says what it would do with them.
 
-func cmdSource(args []string) error {
+func cmdSource(root string, args []string) error {
 	if len(args) == 0 {
 		args = []string{"list"}
 	}
 	switch args[0] {
+	case "add":
+		return sourceAdd(root, args[1:])
 	case "list":
 		return sourceList()
 	case "check":
 		return sourceCheck(args[1:])
 	default:
-		return fmt.Errorf("unknown source command %q; try list or check",
+		return fmt.Errorf("unknown source command %q; try list, check or add",
 			args[0])
 	}
 }

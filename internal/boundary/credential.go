@@ -157,6 +157,14 @@ func Credentials() []Credential {
 				"which is the shape of the problem across this table",
 		},
 		{
+			Source: "evm/logs", Narrowness: Local,
+			Narrowest: "none; a contract's events are public and a block " +
+				"explorer serves them to anybody",
+			Note: "there is nothing to steal, and the other side of that " +
+				"is that the explorer sees which contracts are being " +
+				"watched, from which address",
+		},
+		{
 			Source: "kubernetes/audit", Narrowness: Local,
 			Narrowest: "none; the audit log is a file or a webhook the " +
 				"API server writes",

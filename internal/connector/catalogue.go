@@ -62,6 +62,8 @@ var paramPatterns = map[string]*regexp.Regexp{
 	"tenant": regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`),
 	// One DNS label: it becomes the part before .okta.com and nothing more.
 	"org": regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`),
+	// A contract or account on an EVM chain: forty hex digits.
+	"address": regexp.MustCompile(`^0x[0-9a-f]{40}$`),
 }
 
 // Catalogue returns the shipped connectors by name.
@@ -162,6 +164,19 @@ func (e Entry) With(region string, params map[string]string) (Manifest,
 	// The endpoints are shared with the entry; copy them so a caller that
 	// edits the result does not edit the catalogue.
 	m.Endpoints = append([]Endpoint(nil), m.Endpoints...)
+	for i := range m.Endpoints {
+		// A parameter may also be part of a path: an organisation's audit
+		// log, one contract's events. It was matched against its pattern
+		// above, so it is one segment and nothing else.
+		// {key} is not a parameter: it is each parent record's key, filled
+		// when the endpoint is read.
+		const key = "\x00key\x00"
+		path := strings.ReplaceAll(m.Endpoints[i].Path, "{key}", key)
+		if path, err = fill(path); err != nil {
+			return Manifest{}, err
+		}
+		m.Endpoints[i].Path = strings.ReplaceAll(path, key, "{key}")
+	}
 	if err := m.Validate(); err != nil {
 		return Manifest{}, err
 	}

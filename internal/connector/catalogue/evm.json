@@ -1,0 +1,81 @@
+{
+  "tool": "EVM chain (Blockscout)",
+  "about": "The events one contract emits on an EVM chain, read from a Blockscout explorer: ownership transferred, implementation upgraded, a role granted, paused, a signer added. The contract is yours \u2014 a treasury, a token, a multisig \u2014 and its administrative events are as much an audit log as any console's.",
+  "default": "ethereum",
+  "regions": {
+    "ethereum": {
+      "host": "eth.blockscout.com"
+    },
+    "base": {
+      "host": "base.blockscout.com"
+    },
+    "optimism": {
+      "host": "optimism.blockscout.com"
+    },
+    "arbitrum": {
+      "host": "arbitrum.blockscout.com"
+    },
+    "polygon": {
+      "host": "polygon.blockscout.com"
+    },
+    "gnosis": {
+      "host": "gnosis.blockscout.com"
+    }
+  },
+  "params": {
+    "address": "the contract's address, 0x and forty hex digits"
+  },
+  "credentials": {},
+  "manifest": {
+    "name": "evm",
+    "tool": "EVM chain (Blockscout)",
+    "host": "",
+    "auth": {
+      "kind": "none"
+    },
+    "rate": {
+      "per_second": 2
+    },
+    "note": "A public explorer needs no credential and says nothing it has not already published. It returns the newest fifty events and no way to ask for those since a moment, so this reads that page and leaves out what it has already stored; a contract emitting more than fifty events between reads is read incompletely, and the read says so. Events are decoded by the explorer only for a verified contract.",
+    "endpoints": [
+      {
+        "name": "logs",
+        "path": "/api/v2/addresses/{address}/logs",
+        "produces": "event",
+        "records": "items",
+        "reads": [
+          "block_timestamp",
+          "block_number",
+          "transaction_hash",
+          "index",
+          "address.hash",
+          "decoded.method_call",
+          "decoded.method_id",
+          "topics.0",
+          "decoded.parameters.0.name",
+          "decoded.parameters.0.value",
+          "decoded.parameters.1.name",
+          "decoded.parameters.1.value",
+          "decoded.parameters.2.name",
+          "decoded.parameters.2.value"
+        ],
+        "map": {
+          "block_timestamp": "block_timestamp",
+          "block_number": "block_number",
+          "tx": "transaction_hash",
+          "log_index": "index",
+          "contract": "address.hash",
+          "event": "decoded.method_call",
+          "event_id": "decoded.method_id",
+          "signature": "topics.0",
+          "arg0_name": "decoded.parameters.0.name",
+          "arg0": "decoded.parameters.0.value",
+          "arg1_name": "decoded.parameters.1.name",
+          "arg1": "decoded.parameters.1.value",
+          "arg2_name": "decoded.parameters.2.name",
+          "arg2": "decoded.parameters.2.value"
+        }
+      }
+    ]
+  }
+}

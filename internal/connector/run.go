@@ -157,7 +157,21 @@ func (m Manifest) first(e Endpoint, from State) *url.URL {
 		q.Set(e.Page.Param, strconv.Itoa(start))
 	}
 	if e.Since != "" && from.Watermark != "" {
-		q.Set(e.Since, from.Watermark)
+		mark := from.Watermark
+		if e.WatermarkLayout == "epoch-ms" {
+			if ms, err := strconv.ParseInt(mark, 10, 64); err == nil {
+				mark = time.UnixMilli(ms).UTC().Format(time.RFC3339)
+			}
+		}
+		switch {
+		case e.SinceAs == "":
+			q.Set(e.Since, mark)
+		case checkpointShape.MatchString(mark):
+			// Only a checkpoint that looks like one goes into a filter: it
+			// came from the tool's own records, and a filter is a place
+			// where a value with a quote in it is a second clause.
+			q.Set(e.Since, strings.Replace(e.SinceAs, "{since}", mark, 1))
+		}
 	}
 	u.RawQuery = q.Encode()
 	return u

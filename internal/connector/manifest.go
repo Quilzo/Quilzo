@@ -384,6 +384,13 @@ type Endpoint struct {
 	// the source path whose highest value is remembered for next time.
 	Since     string `json:"since,omitempty"`
 	Watermark string `json:"watermark,omitempty"`
+	// SinceAs is what the since parameter is set to, with {since} standing
+	// for the checkpoint, for a tool that takes a filter and not a bare
+	// time: "createdDateTime ge {since}". Empty means the checkpoint itself.
+	SinceAs string `json:"since_as,omitempty"`
+	// WatermarkLayout says the watermark is "epoch-ms" and is sent back as
+	// a time. Empty means it is sent as it was read.
+	WatermarkLayout string `json:"watermark_layout,omitempty"`
 
 	// Each, when set, reads this endpoint once per record of another.
 	Each *Each `json:"each,omitempty"`
@@ -556,6 +563,15 @@ func (m Manifest) checkEach(e Endpoint) error {
 	}
 	return nil
 }
+
+// sinceAsShape is what a since_as filter may be made of, around its
+// checkpoint: a field name, a comparison, and nothing that closes a string
+// or starts another clause.
+var sinceAsShape = regexp.MustCompile(`^[A-Za-z0-9_.:<>= ]{1,60}$`)
+
+// checkpointShape is what a checkpoint must look like before it is put
+// into a filter: a time or a number, as the tool wrote it.
+var checkpointShape = regexp.MustCompile(`^[0-9][0-9TZ:.+-]{3,40}$`)
 
 // checkHost refuses anything that is not one ordinary hostname.
 func checkHost(host string) error {
@@ -872,6 +888,17 @@ func (e Endpoint) validate(tool string) error {
 	if e.Watermark != "" && !allowed[e.Watermark] {
 		return fmt.Errorf("%s remembers %s and does not declare reading it",
 			where, e.Watermark)
+	}
+	if e.SinceAs != "" {
+		if e.Since == "" || strings.Count(e.SinceAs, "{since}") != 1 ||
+			!sinceAsShape.MatchString(strings.Replace(e.SinceAs, "{since}", "", 1)) {
+			return fmt.Errorf("%s: since_as is a short filter with {since} "+
+				"in it once, and needs since to say which parameter", where)
+		}
+	}
+	if e.WatermarkLayout != "" && e.WatermarkLayout != "epoch-ms" {
+		return fmt.Errorf("%s: a watermark layout is epoch-ms or nothing",
+			where)
 	}
 	if e.Since != "" && e.Watermark == "" {
 		return fmt.Errorf(

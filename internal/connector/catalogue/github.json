@@ -1,0 +1,72 @@
+{
+  "tool": "GitHub",
+  "about": "The organisation's audit log: who changed a repository's visibility, a branch protection, a member's role, a token or a deploy key, and from which address. GitHub Enterprise Cloud organisations only; other plans have no audit log API.",
+  "default": "github",
+  "regions": {
+    "github": {
+      "host": "api.github.com"
+    }
+  },
+  "params": {
+    "org": "the organisation's login, as in github.com/ORG"
+  },
+  "credentials": {
+    "github-audit-token": "A fine-grained personal access token, or a classic one with read:audit_log and nothing else, made by an organisation owner. It is sent as a bearer token to api.github.com only."
+  },
+  "manifest": {
+    "name": "github",
+    "tool": "GitHub",
+    "host": "",
+    "auth": {
+      "kind": "bearer",
+      "secret": "github-audit-token"
+    },
+    "rate": {
+      "per_minute": 60
+    },
+    "note": "Read from where the last read stopped, oldest first. GitHub writes the time as milliseconds since the epoch and takes it back as a date inside the search phrase.",
+    "endpoints": [
+      {
+        "name": "audit",
+        "path": "/orgs/{org}/audit-log",
+        "query": {
+          "include": "all",
+          "per_page": "100",
+          "order": "asc"
+        },
+        "produces": "event",
+        "accept": "application/vnd.github+json",
+        "page": {
+          "kind": "next-url",
+          "from": "header:Link"
+        },
+        "since": "phrase",
+        "since_as": "created:>={since}",
+        "watermark": "@timestamp",
+        "watermark_layout": "epoch-ms",
+        "reads": [
+          "@timestamp",
+          "action",
+          "actor",
+          "actor_ip",
+          "repo",
+          "org",
+          "business",
+          "user",
+          "_document_id"
+        ],
+        "map": {
+          "@timestamp": "@timestamp",
+          "action": "action",
+          "actor": "actor",
+          "actor_ip": "actor_ip",
+          "repo": "repo",
+          "org": "org",
+          "business": "business",
+          "user": "user",
+          "_document_id": "_document_id"
+        }
+      }
+    ]
+  }
+}

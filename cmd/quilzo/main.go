@@ -197,6 +197,10 @@ sharing a screen
   quilzo incident duties                   who has to be told, how soon, and what starts the clock
   quilzo incident demo                     an incident, its several clocks, and closing it
   quilzo feed status                       what the scanner is working from, and how old it is
+  quilzo collect run [SOURCE]              read each platform's new log records, map them, store them
+  quilzo collect file ISSUER/STREAM FILE   the same for a log that arrives as a file
+  quilzo collect status | auto 15m|off     what each source did last, and the schedule
+  quilzo source add MAPPING.json --sample RECORDS.json   a mapping for an application of yours
   quilzo source list                       every platform whose logs this reads
   quilzo source check --source okta/system records.json   what a mapping would do with real records
 
@@ -791,6 +795,8 @@ func main() {
 		err = cmdVuln(root, cmdArgs)
 	case "intel":
 		err = cmdIntel(root, cmdArgs)
+	case "collect":
+		err = cmdCollect(root, cmdArgs)
 	case "analyst":
 		err = cmdAnalyst(root, cmdArgs)
 	case "assurance":
@@ -842,7 +848,7 @@ func main() {
 	case "feed":
 		err = cmdFeed(cmdArgs)
 	case "source":
-		err = cmdSource(cmdArgs)
+		err = cmdSource(root, cmdArgs)
 	case "standing":
 		err = cmdStanding(cmdArgs)
 	case "boundary":

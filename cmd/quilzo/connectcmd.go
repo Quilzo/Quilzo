@@ -732,7 +732,9 @@ func connectAdd(root string, args []string) error {
 	replace := fs.Bool("replace", false,
 		"overwrite an installed connector of the same name")
 	tenant := fs.String("tenant", "", "an Entra tenant ID, for entra")
-	org := fs.String("org", "", "an Okta organisation's subdomain, for okta")
+	org := fs.String("org", "", "an Okta organisation's subdomain, for "+
+		"okta; a GitHub organisation's login, for github")
+	address := fs.String("address", "", "a contract's address, for evm")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
@@ -749,7 +751,8 @@ func connectAdd(root string, args []string) error {
 		return fmt.Errorf("no connector called %q ships with this program; "+
 			"quilzo connect catalogue lists them", pos[0])
 	}
-	m, err := e.With(*region, map[string]string{"tenant": *tenant, "org": *org})
+	m, err := e.With(*region, map[string]string{"tenant": *tenant,
+		"org": *org, "address": *address})
 	if err != nil {
 		return err
 	}

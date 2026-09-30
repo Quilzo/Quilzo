@@ -472,7 +472,7 @@ func cmdServe(root string, args []string) error {
 	//
 	// And the estate's schedule, which does nothing until an administrator
 	// sets one with quilzo estate auto.
-	jobs := []upkeep.Job{estateJob(root)}
+	jobs := []upkeep.Job{estateJob(root), collectJob(root)}
 	if job, ok := retentionJob(root); ok {
 		jobs = append(jobs, job)
 	}

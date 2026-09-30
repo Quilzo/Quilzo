@@ -278,7 +278,10 @@ var commandNeeds = map[string]need{
 
 	// Log source mappings, and a check against records a caller supplies.
 	// Fetches nothing.
-	"source": {action: auth.ActView},
+	// Adding a mapping decides what an application's records become.
+	"source":       {action: auth.ActGrant},
+	"source list":  {action: auth.ActView},
+	"source check": {action: auth.ActView},
 
 	// The register of situational authority. A table about this program's
 	// own design, which changes nothing.
@@ -363,6 +366,9 @@ var commandNeeds = map[string]need{
 	// The analyst reads every finding and spends the model budget.
 	"analyst":      {action: auth.ActGrant},
 	"analyst plan": {action: auth.ActView},
+	// Collection reads other tools with stored credentials and writes the
+	// event store.
+	"collect": {action: auth.ActGrant},
 	// An indicator raises findings about whoever touched it.
 	"intel":        {action: auth.ActGrant},
 	"vuln":         {action: auth.ActPublish},

@@ -37,6 +37,8 @@ func Known() []Source {
 		cloudflareFirewall(),
 		// The applications the business actually keeps its data in.
 		salesforceLogin(), slackAudit(), snowflakeLogins(),
+		// A contract's own events, which are its audit log.
+		evmLogs(),
 		// On-premise, where there is no API and a line of text arrives.
 		linuxAuditd(),
 	}
@@ -478,5 +480,28 @@ func linuxAuditd() Source {
 		Keep: []string{"type", "exe", "auid", "uid", "res", "key",
 			"comm", "tty"},
 		Lateness: time.Minute,
+	}
+}
+
+// evmLogs is the events one contract emits on an EVM chain, as a block
+// explorer decodes them.
+func evmLogs() Source {
+	return Source{
+		Issuer: "evm", Tool: "EVM chain", Stream: "logs",
+		Class: telemetry.ClassAPIActivity, Activity: 1,
+		Time: "block_timestamp", Layout: time.RFC3339,
+		// The contract is who acted: the event is its own statement that
+		// something about it changed. Who sent the transaction is not in a
+		// log, and naming them would be a guess from an argument.
+		Actor: "contract", Message: "event",
+		// The signature is what the chain itself recorded. The decoded
+		// name comes from the explorer, only for a verified contract, so
+		// it is kept and not required.
+		Require: []string{"block_timestamp", "contract", "signature"},
+		Keep: []string{"event", "event_id", "signature", "tx", "block_number",
+			"log_index", "arg0_name", "arg0", "arg1_name", "arg1",
+			"arg2_name", "arg2"},
+		// A block is final in minutes, and an explorer indexes behind it.
+		Lateness: 10 * time.Minute,
 	}
 }

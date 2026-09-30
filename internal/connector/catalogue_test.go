@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -35,7 +36,8 @@ func entry(t *testing.T, name string) Entry {
 
 // sampleParams fill any parameters an entry takes.
 var sampleParams = map[string]string{
-	"tenant": "72f988bf-86f1-41af-91ab-2d7cd011db47", "org": "acme"}
+	"address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+	"tenant":  "72f988bf-86f1-41af-91ab-2d7cd011db47", "org": "acme"}
 
 func TestEveryShippedConnectorLoadsInEveryRegion(t *testing.T) {
 	all, err := Catalogue()
@@ -65,6 +67,10 @@ func TestEveryShippedConnectorLoadsInEveryRegion(t *testing.T) {
 			// Every credential the manifest names is explained to the
 			// person who has to go and make it, and nothing else is.
 			names := []string{m.Auth.Secret}
+			if m.Auth.Kind == NoAuth {
+				// A public source: nothing to make, and nothing explained.
+				names = nil
+			}
 			if m.Auth.Token != nil {
 				names = append(names, m.Auth.Token.Client)
 				if m.Auth.Token.Refresh != "" {
@@ -537,7 +543,8 @@ func TestEntraAgainstGraphsDocumentedResponses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token := jwt("User.Read.All", "DeviceManagementManagedDevices.Read.All")
+	token := jwt("User.Read.All", "DeviceManagementManagedDevices.Read.All",
+		"AuditLog.Read.All")
 	var seen []string
 	s := serve(t, func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, r.URL.Path+"?"+r.URL.RawQuery)
@@ -561,6 +568,11 @@ func TestEntraAgainstGraphsDocumentedResponses(t *testing.T) {
 				"serialNumber":"5CD1234XYZ","emailAddress":"ann@acme.com",
 				"operatingSystem":"Windows","isEncrypted":false,"jailBroken":"Unknown",
 				"lastSyncDateTime":"2026-09-29T10:00:00Z"}]}`)
+		case r.URL.Path == "/v1.0/auditLogs/signIns":
+			io.WriteString(w, `{"value":[{"id":"s1","createdDateTime":"2026-09-30T10:00:00Z",
+				"userId":"u2","userPrincipalName":"bo@acme.com","appDisplayName":"Office 365",
+				"ipAddress":"203.0.113.9","status":{"errorCode":50126,"failureReason":"Invalid username or password"},
+				"location":{"countryOrRegion":"NL"},"deviceDetail":{"deviceId":""}}]}`)
 		default:
 			t.Errorf("unexpected %s", r.URL.Path)
 		}
@@ -569,6 +581,9 @@ func TestEntraAgainstGraphsDocumentedResponses(t *testing.T) {
 		"login.microsoftonline.com": s})
 	got := readAll(t, m, h, MapFunc{"entra-client-id": "c",
 		"entra-client-secret": "s"})
+	want(t, got["signin"].Records[0], map[string]string{"userId": "u2",
+		"status.errorCode": "50126", "ipAddress": "203.0.113.9",
+		"location.countryOrRegion": "NL"})
 	if n := len(got["people"].Records); n != 2 {
 		t.Fatalf("%d people over two pages", n)
 	}
@@ -668,5 +683,86 @@ func TestADefaultScopeNeedsItsRolesDeclared(t *testing.T) {
 	m.Auth.Token.Roles = nil
 	if m.Validate() == nil {
 		t.Error("a .default scope with no roles to check was accepted")
+	}
+}
+
+// A checkpoint goes back to the tool in the form the tool takes it: bare,
+// inside a filter, or converted from the milliseconds it was written in.
+// One that does not look like a checkpoint is never put into a filter.
+func TestACheckpointIsSentInTheFormTheToolTakes(t *testing.T) {
+	okta, _ := entry(t, "okta").With("okta", sampleParams)
+	entra, _ := entry(t, "entra").With("", sampleParams)
+	github, _ := entry(t, "github").With("", sampleParams)
+	at := func(m Manifest, name, mark string) url.Values {
+		e, ok := m.Endpoint(name)
+		if !ok {
+			t.Fatalf("%s has no endpoint %s", m.Name, name)
+		}
+		return m.first(e, State{Watermark: mark}).Query()
+	}
+	if got := at(okta, "system", "2026-09-30T10:00:00.000Z").Get("since"); got != "2026-09-30T10:00:00.000Z" {
+		t.Errorf("okta: since=%q", got)
+	}
+	if got := at(entra, "signin", "2026-09-30T10:00:00Z").Get("$filter"); got != "createdDateTime ge 2026-09-30T10:00:00Z" {
+		t.Errorf("entra: $filter=%q", got)
+	}
+	if got := at(github, "audit", "1790762400000").Get("phrase"); got != "created:>=2026-09-30T10:00:00Z" {
+		t.Errorf("github: phrase=%q", got)
+	}
+	if !strings.Contains(github.Endpoints[0].Path, "/orgs/acme/") {
+		t.Errorf("the organisation is not in the path: %s", github.Endpoints[0].Path)
+	}
+	// A checkpoint with a second clause in it stays out of the filter.
+	for _, bad := range []string{"2026-09-30T10:00:00Z or userId ne ''",
+		"x') or (1 eq 1", "2026 created:<2030"} {
+		if got := at(entra, "signin", bad).Get("$filter"); got != "" {
+			t.Errorf("a checkpoint of %q was sent as %q", bad, got)
+		}
+	}
+	// With no checkpoint, nothing is asked for since.
+	if q := at(entra, "signin", ""); q.Has("$filter") {
+		t.Error("a filter with no checkpoint")
+	}
+	for name, change := range map[string]func(*Endpoint){
+		"a filter with no place for it":  func(e *Endpoint) { e.SinceAs = "createdDateTime ge" },
+		"two places":                     func(e *Endpoint) { e.SinceAs = "{since} {since}" },
+		"a quote":                        func(e *Endpoint) { e.SinceAs = "x eq '{since}'" },
+		"a filter with no parameter":     func(e *Endpoint) { e.Since = "" },
+		"a layout this does not convert": func(e *Endpoint) { e.WatermarkLayout = "roman" },
+	} {
+		m := entra
+		m.Endpoints = append([]Endpoint(nil), entra.Endpoints...)
+		for i := range m.Endpoints {
+			if m.Endpoints[i].Name == "signin" {
+				change(&m.Endpoints[i])
+			}
+		}
+		if m.Validate() == nil {
+			t.Errorf("a manifest with %s was accepted", name)
+		}
+	}
+}
+
+// A path parameter is one segment, checked, and the per-record key beside
+// it is left for the run to fill.
+func TestAParameterInAPathIsCheckedLikeOneInAHost(t *testing.T) {
+	evm := entry(t, "evm")
+	m, err := evm.With("base", map[string]string{
+		"address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Host != "base.blockscout.com" || m.Endpoints[0].Path !=
+		"/api/v2/addresses/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/logs" {
+		t.Errorf("%s %s", m.Host, m.Endpoints[0].Path)
+	}
+	for _, bad := range []string{"", "0x123", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/../x",
+		"0xZZb86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800"} {
+		if _, err := evm.With("", map[string]string{"address": bad}); err == nil {
+			t.Errorf("an address of %q was accepted", bad)
+		}
+	}
+	if _, err := entry(t, "github").With("", map[string]string{"org": "acme/../x"}); err == nil {
+		t.Error("an organisation with a path in it was accepted")
 	}
 }
