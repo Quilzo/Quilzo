@@ -6,9 +6,7 @@ package connector
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
@@ -85,6 +83,9 @@ type Result struct {
 	// Waited is how long was spent honouring rate limits, which is the
 	// number that explains a slow run.
 	Waited time.Duration `json:"waited,omitempty"`
+	// Skipped counts parent records a per-record endpoint could not be read
+	// for, because the tool's key for them was not safe to put in a path.
+	Skipped int `json:"skipped,omitempty"`
 }
 
 // Complete reports whether the run saw everything there was.
@@ -121,99 +122,18 @@ func realSleep(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// Run reads one endpoint to the end, or to a limit.
+// Run reads one endpoint to the end, or to a limit, in a session of its own.
+//
+// A caller reading several endpoints of one tool should hold a Session
+// instead, so they share one access token and one budget.
 func Run(ctx context.Context, m Manifest, name string, c Doer, s Secrets,
 	from State, sleep Sleeper) (Result, error) {
 
-	var out Result
-	if err := m.Validate(); err != nil {
-		return out, err
+	x, err := NewSession(m, c, s, sleep)
+	if err != nil {
+		return Result{}, err
 	}
-	e, ok := m.Endpoint(name)
-	if !ok {
-		return out, fmt.Errorf("%s has no endpoint called %q", m.Name, name)
-	}
-	if sleep == nil {
-		sleep = realSleep
-	}
-	credential := ""
-	if m.Auth.Kind != NoAuth {
-		got, err := s.Secret(m.Auth.Secret)
-		if err != nil {
-			return out, fmt.Errorf("%s: %w", m.Name, err)
-		}
-		if strings.TrimSpace(got) == "" {
-			return out, fmt.Errorf(
-				"the credential named %q is empty. An empty credential "+
-					"produces an authentication failure that reads exactly "+
-					"like a revoked token", m.Auth.Secret)
-		}
-		credential = got
-	}
-	maxPages, maxRecords, timeout := m.Limits()
-
-	next := m.first(e, from)
-	highest := from.Watermark
-	for page := 0; ; page++ {
-		if page >= maxPages {
-			out.Truncated = fmt.Sprintf(
-				"stopped after %d page(s); there may be more", maxPages)
-			break
-		}
-		body, retry, err := fetchPage(ctx, next, m, e, credential, c, timeout,
-			sleep, &out)
-		if err != nil {
-			return out, err
-		}
-		if retry {
-			page--
-			continue
-		}
-
-		records, err := recordsIn(body, e.Records)
-		if err != nil {
-			return out, fmt.Errorf("%s/%s page %d: %w", m.Name, e.Name,
-				page+1, err)
-		}
-		for _, rec := range records {
-			if len(out.Records) >= maxRecords {
-				out.Truncated = fmt.Sprintf(
-					"stopped after %d record(s); there may be more",
-					maxRecords)
-				break
-			}
-			out.Records = append(out.Records, apply(e, rec))
-			if e.Watermark != "" {
-				if v := At(rec, e.Watermark); v > highest {
-					highest = v
-				}
-			}
-		}
-		out.Pages = page + 1
-		if out.Truncated != "" {
-			break
-		}
-
-		advance, why, err := m.next(e, next, body, page, len(records))
-		if err != nil {
-			return out, err
-		}
-		if why != "" {
-			out.Truncated = why
-			break
-		}
-		if advance == nil {
-			break
-		}
-		next = advance
-	}
-
-	// The checkpoint moves only when the run saw everything. A watermark
-	// past records nobody read is a gap that never reports itself.
-	if out.Complete() {
-		out.Watermark = highest
-	}
-	return out, nil
+	return x.Run(ctx, name, from)
 }
 
 // first builds the opening URL.
@@ -244,32 +164,38 @@ func (m Manifest) first(e Endpoint, from State) *url.URL {
 }
 
 // next decides where the following page is, or why there is not one.
-func (m Manifest) next(e Endpoint, current *url.URL, body any, page,
-	got int) (*url.URL, string, error) {
+func (m Manifest) next(e Endpoint, current *url.URL, body any,
+	header http.Header, got int) (*url.URL, error) {
 
 	if got == 0 || e.Page.Kind.one() {
-		return nil, "", nil
+		return nil, nil
+	}
+	if e.Page.More != "" && At(body, e.Page.More) == "false" {
+		return nil, nil
 	}
 	switch e.Page.Kind {
 	case Cursor:
-		cursor := At(body, e.Page.From)
+		cursor := pointer(body, header, e.Page.From)
 		if cursor == "" {
-			return nil, "", nil
+			return nil, nil
+		}
+		if cursor == current.Query().Get(e.Page.Param) {
+			return nil, m.loop(e)
 		}
 		u := *current
 		q := u.Query()
 		q.Set(e.Page.Param, cursor)
 		u.RawQuery = q.Encode()
-		return &u, "", nil
+		return &u, nil
 
 	case NextURL:
-		raw := At(body, e.Page.From)
+		raw := pointer(body, header, e.Page.From)
 		if raw == "" {
-			return nil, "", nil
+			return nil, nil
 		}
 		u, err := url.Parse(raw)
 		if err != nil {
-			return nil, "", fmt.Errorf(
+			return nil, fmt.Errorf(
 				"%s/%s returned %q as the next page, which is not a URL",
 				m.Name, e.Name, raw)
 		}
@@ -278,44 +204,90 @@ func (m Manifest) next(e Endpoint, current *url.URL, body any, page,
 			// host comes from the manifest either way.
 			joined := current.ResolveReference(u)
 			joined.Scheme, joined.Host = "https", m.Host
-			return joined, "", nil
+			if joined.String() == current.String() {
+				return nil, m.loop(e)
+			}
+			return joined, nil
 		}
 		if !sameHost(u.Host, m.Host) || u.Scheme != "https" {
 			// The whole reason this strategy is named separately. A tool
 			// that answers with somewhere else is a tool choosing where a
 			// request carrying its credential goes next.
-			return nil, "", fmt.Errorf(
+			return nil, fmt.Errorf(
 				"%s/%s handed back %s as the next page, and this connector "+
 					"declared %s. A next URL is chosen by the server, so "+
 					"following it would let the tool aim a request that "+
 					"carries its own credential at a host nobody approved",
 				m.Name, e.Name, u.Scheme+"://"+u.Host, m.Host)
 		}
-		return u, "", nil
+		if u.String() == current.String() {
+			return nil, m.loop(e)
+		}
+		return u, nil
 
 	case Offset:
 		u := *current
 		q := u.Query()
 		at, _ := strconv.Atoi(q.Get(e.Page.Param))
 		if got < e.Page.Size {
-			return nil, "", nil
+			return nil, nil
 		}
 		q.Set(e.Page.Param, strconv.Itoa(at+e.Page.Size))
 		u.RawQuery = q.Encode()
-		return &u, "", nil
+		return &u, nil
 
 	case PageNumber:
 		u := *current
 		q := u.Query()
 		at, _ := strconv.Atoi(q.Get(e.Page.Param))
 		if got < e.Page.Size {
-			return nil, "", nil
+			return nil, nil
 		}
 		q.Set(e.Page.Param, strconv.Itoa(at+1))
 		u.RawQuery = q.Encode()
-		return &u, "", nil
+		return &u, nil
 	}
-	return nil, "", nil
+	return nil, nil
+}
+
+// loop is a tool pointing back at the page it just served.
+//
+// Followed, it reads that page again until the page ceiling — a thousand
+// requests of a day's budget spent on one page, and a result holding it a
+// thousand times.
+func (m Manifest) loop(e Endpoint) error {
+	return fmt.Errorf("%s/%s pointed back at the page it had just returned. "+
+		"Following it would read that page until the page limit", m.Name,
+		e.Name)
+}
+
+// pointer reads where the next page is: a body path, or "header:Name".
+//
+// A Link header is read for its rel="next" target, which is how the
+// standard spells it (RFC 8288); any other header is taken whole.
+func pointer(body any, header http.Header, from string) string {
+	name, isHeader := strings.CutPrefix(from, "header:")
+	if !isHeader {
+		return At(body, from)
+	}
+	v := header.Get(name)
+	if !strings.EqualFold(name, "Link") {
+		return strings.TrimSpace(v)
+	}
+	for _, part := range strings.Split(v, ",") {
+		target, params, ok := strings.Cut(part, ";")
+		if !ok {
+			continue
+		}
+		for _, p := range strings.Split(params, ";") {
+			k, val, _ := strings.Cut(strings.TrimSpace(p), "=")
+			if strings.EqualFold(k, "rel") &&
+				strings.EqualFold(strings.Trim(val, `"`), "next") {
+				return strings.Trim(strings.TrimSpace(target), "<>")
+			}
+		}
+	}
+	return ""
 }
 
 func sameHost(got, want string) bool {
@@ -341,77 +313,14 @@ func splitPort(h string) (string, string, error) {
 // trying turns one busy afternoon into a queue somebody has to drain.
 const MaxAttempts = 4
 
-// fetchPage gets one page, honouring rate limits. The bool says to try again.
-func fetchPage(ctx context.Context, u *url.URL, m Manifest, e Endpoint,
-	credential string, c Doer, timeout time.Duration, sleep Sleeper,
-	out *Result) (any, bool, error) {
-
-	for attempt := 1; ; attempt++ {
-		reqCtx, cancel := context.WithTimeout(ctx, timeout)
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet,
-			u.String(), nil)
-		if err != nil {
-			cancel()
-			return nil, false, err
-		}
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("User-Agent", "quilzo-connector")
-		m.Auth.decorate(req, credential)
-
-		res, err := c.Do(req)
-		if err != nil {
-			cancel()
-			return nil, false, fmt.Errorf("%s/%s: %w", m.Name, e.Name, err)
-		}
-		status := res.StatusCode
-		if status == http.StatusTooManyRequests ||
-			(status >= 500 && status < 600) {
-			wait := backoff(res, attempt)
-			res.Body.Close()
-			cancel()
-			if attempt >= MaxAttempts {
-				return nil, false, fmt.Errorf(
-					"%s/%s answered %d %d times. A tool limiting for this "+
-						"long is one to come back to on the next scheduled "+
-						"run", m.Name, e.Name, status, attempt)
-			}
-			out.Waited += wait
-			if serr := sleep(ctx, wait); serr != nil {
-				return nil, false, serr
-			}
-			continue
-		}
-		if status < 200 || status > 299 {
-			res.Body.Close()
-			cancel()
-			return nil, false, fmt.Errorf("%s/%s answered %d", m.Name,
-				e.Name, status)
-		}
-
-		body, err := io.ReadAll(io.LimitReader(res.Body, MaxBody+1))
-		res.Body.Close()
-		cancel()
-		if err != nil {
-			return nil, false, err
-		}
-		if len(body) > MaxBody {
-			return nil, false, fmt.Errorf(
-				"%s/%s returned more than %d bytes in one page. A reader "+
-					"with no ceiling is a way to fill a disk from outside",
-				m.Name, e.Name, MaxBody)
-		}
-		var parsed any
-		if err := json.Unmarshal(body, &parsed); err != nil {
-			return nil, false, fmt.Errorf("%s/%s: %w", m.Name, e.Name, err)
-		}
-		return parsed, false, nil
-	}
-}
-
 func (a Auth) decorate(req *http.Request, credential string) {
 	switch a.Kind {
-	case Bearer:
-		req.Header.Set("Authorization", "Bearer "+credential)
+	case Bearer, OAuthClient, OAuthRefresh:
+		scheme := a.Scheme
+		if scheme == "" {
+			scheme = "Bearer"
+		}
+		req.Header.Set("Authorization", scheme+" "+credential)
 	case HeaderKey:
 		req.Header.Set(a.Header, credential)
 	case Basic:
@@ -551,37 +460,4 @@ func apply(e Endpoint, rec any) map[string]string {
 		}
 	}
 	return out
-}
-
-// Shape fetches one page and returns the parsed body, for an author working
-// out what a tool returns.
-//
-// Deliberately separate from Run and deliberately one page. It exists so that
-// `connect probe` can show the shape of a response; the caller is expected to
-// print paths rather than values, because an author needs to know a tool
-// returns user.email and does not need a page of somebody's staff list in
-// their terminal's history.
-func Shape(ctx context.Context, m Manifest, name string, c Doer,
-	s Secrets) (any, error) {
-
-	if err := m.Validate(); err != nil {
-		return nil, err
-	}
-	e, ok := m.Endpoint(name)
-	if !ok {
-		return nil, fmt.Errorf("%s has no endpoint called %q", m.Name, name)
-	}
-	credential := ""
-	if m.Auth.Kind != NoAuth {
-		got, err := s.Secret(m.Auth.Secret)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", m.Name, err)
-		}
-		credential = got
-	}
-	_, _, timeout := m.Limits()
-	var out Result
-	body, _, err := fetchPage(ctx, m.first(e, State{}), m, e, credential, c,
-		timeout, realSleep, &out)
-	return body, err
 }

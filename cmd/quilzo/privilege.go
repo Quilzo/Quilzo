@@ -369,6 +369,11 @@ var commandNeeds = map[string]need{
 	"connect probe": {action: auth.ActEditDraft},
 	"connect list":  {action: auth.ActView},
 	"connect check": {action: auth.ActView},
+	// Listing what ships is reading the binary. Adding one installs a file
+	// that can reach another company's system with a stored credential,
+	// which is the weight of storing the credential itself.
+	"connect catalogue": {action: auth.ActView},
+	"connect add":       {action: auth.ActPublish},
 
 	"workforce":          {action: auth.ActPublish},
 	"workforce coverage": {action: auth.ActView},

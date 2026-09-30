@@ -252,6 +252,8 @@ vulnerabilities
 connecting to a company's tools
   quilzo connect list                      the connectors installed, and what each can reach
   quilzo connect check NAME|FILE           read a manifest and say what it may touch
+  quilzo connect catalogue                 the connectors that ship, and what each needs
+  quilzo connect add NAME [--region R]     install a shipped connector as a readable file
   quilzo connect secret NAME               store a credential, from the environment
   quilzo connect probe NAME ENDPOINT       what shape a tool's response is, never its values
   quilzo connect run NAME [ENDPOINT]       pull records, one JSON object per line

@@ -1,0 +1,77 @@
+{
+  "tool": "ManageEngine Mobile Device Manager Plus (cloud)",
+  "about": "Every managed phone and tablet with its serial number, owner and platform; each one's encryption, passcode, root or jailbreak state and supervision; and the apps installed on it.",
+  "default": "us",
+  "regions": {
+    "us": {"host": "mdm.manageengine.com", "token": "accounts.zoho.com"},
+    "eu": {"host": "mdm.manageengine.eu", "token": "accounts.zoho.eu"},
+    "in": {"host": "mdm.manageengine.in", "token": "accounts.zoho.in"},
+    "au": {"host": "mdm.manageengine.com.au", "token": "accounts.zoho.com.au"},
+    "jp": {"host": "mdm.manageengine.jp", "token": "accounts.zoho.jp"},
+    "ca": {"host": "mdm.manageengine.ca", "token": "accounts.zohocloud.ca"},
+    "uk": {"host": "mdm.manageengine.uk", "token": "accounts.zoho.uk"}
+  },
+  "credentials": {
+    "zoho-client-id": "The client ID of a Self Client made in the Zoho API Console for this data centre.",
+    "zoho-client-secret": "That Self Client's secret.",
+    "mdmplus-refresh-token": "A refresh token generated from that Self Client with the scope MDMOnDemand.MDMInventory.READ and access_type offline. Nothing broader: this connector is refused a scope that is not a read."
+  },
+  "manifest": {
+    "name": "mdmplus",
+    "tool": "ManageEngine Mobile Device Manager Plus (cloud)",
+    "host": "",
+    "auth": {
+      "kind": "oauth-refresh",
+      "secret": "zoho-client-secret",
+      "scheme": "Zoho-oauthtoken",
+      "token": {"host": "", "path": "/oauth/v2/token", "client": "zoho-client-id", "refresh": "mdmplus-refresh-token", "scopes": ["MDMOnDemand.MDMInventory.READ"], "body": "form"}
+    },
+    "rate": {"per_minute": 60},
+    "note": "Two requests per device, for its details and its apps. Device identifiers are past 2^53 and are kept exactly. MDM Plus's documentation shows www.mdm.manageengine.com, a name that does not resolve; the hosts here do. Device locations, firmware passwords, certificates and command history are never read: the scope reaches them and nothing here needs them.",
+    "endpoints": [
+      {
+        "name": "devices",
+        "path": "/api/v1/mdm/devices",
+        "produces": "identity",
+        "records": "devices",
+        "page": {"kind": "next-url", "from": "paging.next"},
+        "reads": ["device_id", "device_name", "serial_number", "udid", "imei", "platform_type", "os_version", "model", "product_name", "owned_by", "is_removed", "is_lost_mode_enabled", "user.user_email", "user.user_name", "user.user_id"],
+        "map": {
+          "id": "device_id", "name": "device_name", "serial": "serial_number",
+          "udid": "udid", "imei": "imei", "platform": "platform_type",
+          "os_version": "os_version", "model": "model", "maker": "product_name",
+          "ownership": "owned_by", "removed": "is_removed", "lost_mode": "is_lost_mode_enabled",
+          "owner_email": "user.user_email", "owner_name": "user.user_name", "owner": "user.user_id"
+        }
+      },
+      {
+        "name": "device_security",
+        "path": "/api/v1/mdm/devices/{key}",
+        "each": {"of": "devices", "key": "id"},
+        "single": true,
+        "produces": "control",
+        "reads": ["serial_number", "is_supervised", "managed_status", "registered_time", "security.storage_encryption", "security.passcode_present", "security.passcode_complaint", "security.device_rooted", "os.os_version"],
+        "map": {
+          "serial": "serial_number", "supervised": "is_supervised",
+          "managed": "managed_status", "enrolled": "registered_time",
+          "encrypted": "security.storage_encryption",
+          "passcode_set": "security.passcode_present",
+          "passcode_compliant": "security.passcode_complaint",
+          "rooted": "security.device_rooted", "os_version": "os.os_version"
+        }
+      },
+      {
+        "name": "apps",
+        "path": "/api/v1/mdm/devices/{key}/apps",
+        "each": {"of": "devices", "key": "id"},
+        "produces": "software",
+        "records": "installed_apps",
+        "reads": ["app_name", "identifier", "app_version", "platform_type"],
+        "map": {
+          "name": "app_name", "identifier": "identifier",
+          "version": "app_version", "platform": "platform_type"
+        }
+      }
+    ]
+  }
+}

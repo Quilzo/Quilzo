@@ -1,0 +1,108 @@
+{
+  "tool": "ManageEngine Endpoint Central (cloud)",
+  "about": "Every managed computer with its service tag (the serial number), operating system, last contact and logged-on user; each computer's disk encryption by drive, missing patch and prohibited software counts, installed software; and open vulnerabilities by computer.",
+  "default": "us",
+  "regions": {
+    "us": {"host": "endpointcentral.manageengine.com", "token": "accounts.zoho.com"},
+    "eu": {"host": "endpointcentral.manageengine.eu", "token": "accounts.zoho.eu"},
+    "in": {"host": "endpointcentral.manageengine.in", "token": "accounts.zoho.in"},
+    "au": {"host": "endpointcentral.manageengine.com.au", "token": "accounts.zoho.com.au"},
+    "jp": {"host": "endpointcentral.manageengine.jp", "token": "accounts.zoho.jp"},
+    "ca": {"host": "endpointcentral.manageengine.ca", "token": "accounts.zohocloud.ca"},
+    "uk": {"host": "endpointcentral.manageengine.uk", "token": "accounts.zoho.uk"}
+  },
+  "credentials": {
+    "zoho-client-id": "The client ID of a Self Client made in the Zoho API Console for this data centre.",
+    "zoho-client-secret": "That Self Client's secret.",
+    "endpointcentral-refresh-token": "A refresh token generated from that Self Client with the scopes DesktopCentralCloud.Inventory.READ and DesktopCentralCloud.VulnerabilityMgmt.READ and access_type offline."
+  },
+  "manifest": {
+    "name": "endpointcentral",
+    "tool": "ManageEngine Endpoint Central (cloud)",
+    "host": "",
+    "auth": {
+      "kind": "oauth-refresh",
+      "secret": "zoho-client-secret",
+      "scheme": "Zoho-oauthtoken",
+      "token": {"host": "", "path": "/oauth/v2/token", "client": "zoho-client-id", "refresh": "endpointcentral-refresh-token", "scopes": ["DesktopCentralCloud.Inventory.READ", "DesktopCentralCloud.VulnerabilityMgmt.READ"], "body": "form"}
+    },
+    "rate": {"per_minute": 100},
+    "note": "Endpoint Central allows 120 calls a minute (30 to the vulnerability report) and locks the client out for five minutes when either is passed, so this keeps below both. Three or more requests per computer. The /api/1.4 paths ManageEngine marks as deprecating are not used. IP and MAC addresses are not read, and BitLocker recovery keys and stored credentials are refused whatever the scope allows.",
+    "endpoints": [
+      {
+        "name": "computers",
+        "path": "/dcapi/inventory/viewData/scanComputers",
+        "query": {"toolID": "2131"},
+        "accept": "application/InventoryMobileAPI.v1+json",
+        "produces": "identity",
+        "records": "messageResponse",
+        "page": {"kind": "next-url", "from": "Links.next"},
+        "reads": ["resource_id", "resource_name", "fqdn_name", "servicetag", "os_name", "os_version", "build_number", "agent_last_contact_time", "computer_live_status", "name", "domain_netbios_name", "branch_office_name", "last_successful_scan", "agent_version"],
+        "map": {
+          "id": "resource_id", "name": "resource_name", "fqdn": "fqdn_name",
+          "serial": "servicetag", "os": "os_name", "os_version": "os_version",
+          "build": "build_number", "seen": "agent_last_contact_time",
+          "live": "computer_live_status", "user": "name",
+          "domain": "domain_netbios_name", "office": "branch_office_name",
+          "scanned": "last_successful_scan", "agent_version": "agent_version"
+        }
+      },
+      {
+        "name": "encryption",
+        "path": "/dcapi/inventory/computers/{key}/diskEncryptionStatus",
+        "each": {"of": "computers", "key": "id"},
+        "produces": "control",
+        "records": "diskEncryptionStatusDetails",
+        "reads": ["logicalDriveName", "encryptionStatus", "logicalDiskType", "encryptionMethod"],
+        "map": {
+          "drive": "logicalDriveName", "status": "encryptionStatus",
+          "drive_type": "logicalDiskType", "method": "encryptionMethod"
+        }
+      },
+      {
+        "name": "posture",
+        "path": "/dcapi/inventory/computers/{key}/assetSummary",
+        "each": {"of": "computers", "key": "id"},
+        "single": true,
+        "produces": "control",
+        "reads": ["missingPatchesCount", "prohibitedSoftwaresCount", "totalSoftwaresCount", "commercialSoftwaresCount"],
+        "map": {
+          "missing_patches": "missingPatchesCount",
+          "prohibited_software": "prohibitedSoftwaresCount",
+          "software": "totalSoftwaresCount", "commercial_software": "commercialSoftwaresCount"
+        }
+      },
+      {
+        "name": "software",
+        "path": "/dcapi/inventory/computers/{key}/softwareInfo",
+        "each": {"of": "computers", "key": "id"},
+        "accept": "application/softwareInfo.v1+json",
+        "produces": "software",
+        "records": "data",
+        "page": {"kind": "next-url", "from": "links.next", "size": 500, "size_param": "limit"},
+        "reads": ["invsw\\.software_name", "invsw\\.software_version", "invmanufacturer\\.manufacturer_name", "invsw\\.is_usage_prohibited", "invswinstalled\\.installed_date"],
+        "map": {
+          "name": "invsw\\.software_name", "version": "invsw\\.software_version",
+          "maker": "invmanufacturer\\.manufacturer_name",
+          "prohibited": "invsw\\.is_usage_prohibited",
+          "installed": "invswinstalled\\.installed_date"
+        }
+      },
+      {
+        "name": "vulnerabilities",
+        "path": "/dcapi/threats/systemreport/vulnerabilities",
+        "produces": "vulnerability",
+        "records": "message_response.systemreport",
+        "explode": "vulnerabilities",
+        "rate": {"per_minute": 25},
+        "page": {"kind": "page", "param": "page", "size": 100, "size_param": "pageLimit", "start": 1},
+        "reads": ["^.resource_id", "vulnerabilityid", "vulnerabilityname", "severity", "vulnerability_status", "updatedtime"],
+        "map": {
+          "computer": "^.resource_id", "id": "vulnerabilityid",
+          "name": "vulnerabilityname", "severity": "severity",
+          "status": "vulnerability_status", "updated": "updatedtime"
+        }
+      }
+    ]
+  }
+}

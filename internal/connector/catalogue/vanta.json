@@ -1,0 +1,94 @@
+{
+  "tool": "Vanta",
+  "about": "Personnel with employment status and whether their training, policy acceptance, device monitoring and background check are done; the computers Vanta monitors with serial number and their screen lock, disk encryption, password manager and antivirus results; each automated test and its outcome; and each policy's approval.",
+  "default": "commercial",
+  "regions": {
+    "commercial": {"host": "api.vanta.com", "token": "api.vanta.com"},
+    "gov": {"host": "api.vanta-gov.com", "token": "api.vanta-gov.com"}
+  },
+  "credentials": {
+    "vanta-client-id": "The client ID of a Manage Vanta application, made in Vanta's Developer Console.",
+    "vanta-client-secret": "That application's client secret. Vanta allows one live token per application and revokes the last when a new one is issued, so give this connector an application of its own."
+  },
+  "manifest": {
+    "name": "vanta",
+    "tool": "Vanta",
+    "host": "",
+    "auth": {
+      "kind": "oauth-client",
+      "secret": "vanta-client-secret",
+      "token": {"host": "", "path": "/oauth/token", "client": "vanta-client-id", "scopes": ["vanta-api.all:read"], "body": "json"}
+    },
+    "rate": {"per_minute": 50},
+    "note": "Vanta's EU and Australian accounts are read through the same API host; only its FedRAMP service has its own. The list of policies a person has not accepted is an array, which this does not flatten: it reads whether the task is complete, overdue or due soon.",
+    "endpoints": [
+      {
+        "name": "people",
+        "path": "/v1/people",
+        "produces": "identity",
+        "records": "results.data",
+        "page": {"kind": "cursor", "from": "results.pageInfo.endCursor", "param": "pageCursor", "size": 100, "size_param": "pageSize", "more": "results.pageInfo.hasNextPage"},
+        "reads": ["id", "emailAddress", "name.display", "name.first", "name.last", "employment.status", "employment.startDate", "employment.endDate", "employment.jobTitle", "tasksSummary.status", "tasksSummary.dueDate", "tasksSummary.details.completeTrainings.status", "tasksSummary.details.completeTrainings.dueDate", "tasksSummary.details.completeTrainings.completionDate", "tasksSummary.details.acceptPolicies.status", "tasksSummary.details.acceptPolicies.dueDate", "tasksSummary.details.acceptPolicies.completionDate", "tasksSummary.details.installDeviceMonitoring.status", "tasksSummary.details.completeBackgroundChecks.status"],
+        "map": {
+          "id": "id", "email": "emailAddress", "name": "name.display",
+          "first_name": "name.first", "last_name": "name.last",
+          "employment": "employment.status", "started": "employment.startDate",
+          "ended": "employment.endDate", "title": "employment.jobTitle",
+          "tasks": "tasksSummary.status", "tasks_due": "tasksSummary.dueDate",
+          "training": "tasksSummary.details.completeTrainings.status",
+          "training_due": "tasksSummary.details.completeTrainings.dueDate",
+          "training_done": "tasksSummary.details.completeTrainings.completionDate",
+          "policies": "tasksSummary.details.acceptPolicies.status",
+          "policies_due": "tasksSummary.details.acceptPolicies.dueDate",
+          "policies_done": "tasksSummary.details.acceptPolicies.completionDate",
+          "device_monitoring": "tasksSummary.details.installDeviceMonitoring.status",
+          "background_check": "tasksSummary.details.completeBackgroundChecks.status"
+        }
+      },
+      {
+        "name": "computers",
+        "path": "/v1/monitored-computers",
+        "produces": "identity",
+        "records": "results.data",
+        "page": {"kind": "cursor", "from": "results.pageInfo.endCursor", "param": "pageCursor", "size": 100, "size_param": "pageSize", "more": "results.pageInfo.hasNextPage"},
+        "reads": ["id", "integrationId", "serialNumber", "udid", "lastCheckDate", "screenlock.outcome", "diskEncryption.outcome", "passwordManager.outcome", "antivirusInstallation.outcome", "operatingSystem.type", "operatingSystem.version", "owner.id", "owner.emailAddress", "owner.displayName"],
+        "map": {
+          "id": "id", "source": "integrationId", "serial": "serialNumber", "udid": "udid",
+          "seen": "lastCheckDate", "screenlock": "screenlock.outcome",
+          "encryption": "diskEncryption.outcome", "password_manager": "passwordManager.outcome",
+          "antivirus": "antivirusInstallation.outcome", "os": "operatingSystem.type",
+          "os_version": "operatingSystem.version", "owner": "owner.id",
+          "owner_email": "owner.emailAddress", "owner_name": "owner.displayName"
+        }
+      },
+      {
+        "name": "tests",
+        "path": "/v1/tests",
+        "produces": "control",
+        "records": "results.data",
+        "page": {"kind": "cursor", "from": "results.pageInfo.endCursor", "param": "pageCursor", "size": 100, "size_param": "pageSize", "more": "results.pageInfo.hasNextPage"},
+        "reads": ["id", "name", "category", "status", "lastTestRunDate", "latestFlipDate", "remediationStatusInfo.status", "remediationStatusInfo.itemCount", "remediationStatusInfo.soonestRemediateByDate", "deactivatedStatusInfo.isDeactivated"],
+        "map": {
+          "id": "id", "name": "name", "category": "category", "status": "status",
+          "ran": "lastTestRunDate", "flipped": "latestFlipDate",
+          "remediation": "remediationStatusInfo.status",
+          "failing_items": "remediationStatusInfo.itemCount",
+          "remediate_by": "remediationStatusInfo.soonestRemediateByDate",
+          "deactivated": "deactivatedStatusInfo.isDeactivated"
+        }
+      },
+      {
+        "name": "policies",
+        "path": "/v1/policies",
+        "produces": "policy",
+        "records": "results.data",
+        "page": {"kind": "cursor", "from": "results.pageInfo.endCursor", "param": "pageCursor", "size": 100, "size_param": "pageSize", "more": "results.pageInfo.hasNextPage"},
+        "reads": ["id", "name", "status", "approvedAtDate", "latestVersion.status"],
+        "map": {
+          "id": "id", "name": "name", "status": "status",
+          "approved": "approvedAtDate", "latest_version": "latestVersion.status"
+        }
+      }
+    ]
+  }
+}

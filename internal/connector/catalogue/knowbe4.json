@@ -1,0 +1,86 @@
+{
+  "tool": "KnowBe4 Security Awareness Training",
+  "about": "People with their phish-prone percentage and risk score, every training and policy enrolment with its completion, and each person's result in the phishing tests of the last six months.",
+  "default": "us",
+  "regions": {
+    "us": {"host": "us.api.knowbe4.com"},
+    "eu": {"host": "eu.api.knowbe4.com"},
+    "ca": {"host": "ca.api.knowbe4.com"},
+    "uk": {"host": "uk.api.knowbe4.com"},
+    "de": {"host": "de.api.knowbe4.com"}
+  },
+  "credentials": {
+    "knowbe4-reporting-key": "A Reporting API key, made under Account Settings > API > Reporting API. It reads and cannot change anything. Needs a Platinum, Diamond, SAT Foundation or SAT Advanced subscription."
+  },
+  "manifest": {
+    "name": "knowbe4",
+    "tool": "KnowBe4 Security Awareness Training",
+    "host": "",
+    "auth": {"kind": "bearer", "secret": "knowbe4-reporting-key"},
+    "rate": {"per_second": 4, "per_minute": 50, "per_day": 2000},
+    "note": "Pages by number, which KnowBe4 retires in November 2026 in favour of a cursor whose response it has not yet documented. `quilzo connect probe knowbe4 users` lists the response headers; when a cursor appears, change each page to {\"kind\": \"cursor\", \"from\": \"header:NAME\", \"param\": \"cursor\"} with query cursor=true. The IP address, location, browser and operating system KnowBe4 records for each phishing click are deliberately not read.",
+    "endpoints": [
+      {
+        "name": "users",
+        "path": "/v1/users",
+        "produces": "identity",
+        "page": {"kind": "page", "param": "page", "size": 500, "size_param": "per_page", "start": 1},
+        "reads": ["id", "employee_number", "first_name", "last_name", "email", "job_title", "department", "division", "location", "manager_name", "manager_email", "status", "phish_prone_percentage", "current_risk_score", "joined_on", "last_sign_in", "archived_at", "employee_start_date"],
+        "map": {
+          "id": "id", "employee_number": "employee_number",
+          "first_name": "first_name", "last_name": "last_name", "email": "email",
+          "title": "job_title", "department": "department", "division": "division",
+          "office": "location", "manager": "manager_name", "manager_email": "manager_email",
+          "status": "status", "phish_prone": "phish_prone_percentage",
+          "risk_score": "current_risk_score", "joined": "joined_on",
+          "last_sign_in": "last_sign_in", "archived": "archived_at",
+          "started": "employee_start_date"
+        }
+      },
+      {
+        "name": "enrollments",
+        "path": "/v1/training/enrollments",
+        "query": {"include_employee_number": "true"},
+        "produces": "training",
+        "page": {"kind": "page", "param": "page", "size": 500, "size_param": "per_page", "start": 1},
+        "reads": ["enrollment_id", "content_type", "module_name", "user.id", "user.email", "user.employee_number", "campaign_name", "enrollment_date", "start_date", "completion_date", "status", "time_spent", "policy_acknowledged"],
+        "map": {
+          "id": "enrollment_id", "kind": "content_type", "module": "module_name",
+          "user": "user.id", "email": "user.email", "employee_number": "user.employee_number",
+          "campaign": "campaign_name", "enrolled": "enrollment_date",
+          "started": "start_date", "completed": "completion_date", "status": "status",
+          "time_spent": "time_spent", "policy_acknowledged": "policy_acknowledged"
+        }
+      },
+      {
+        "name": "phishing_tests",
+        "path": "/v1/phishing/security_tests",
+        "produces": "event",
+        "page": {"kind": "page", "param": "page", "size": 500, "size_param": "per_page", "start": 1},
+        "reads": ["pst_id", "campaign_id", "name", "status", "started_at", "phish_prone_percentage", "delivered_count", "opened_count", "clicked_count", "reported_count", "data_entered_count"],
+        "map": {
+          "id": "pst_id", "campaign": "campaign_id", "name": "name", "status": "status",
+          "started": "started_at", "phish_prone": "phish_prone_percentage",
+          "delivered": "delivered_count", "opened": "opened_count",
+          "clicked": "clicked_count", "reported": "reported_count",
+          "data_entered": "data_entered_count"
+        }
+      },
+      {
+        "name": "phishing_results",
+        "path": "/v1/phishing/security_tests/{key}/recipients",
+        "each": {"of": "phishing_tests", "key": "id", "when": "started", "within_days": 180},
+        "produces": "phishing",
+        "page": {"kind": "page", "param": "page", "size": 500, "size_param": "per_page", "start": 1},
+        "reads": ["recipient_id", "user.id", "user.email", "delivered_at", "opened_at", "clicked_at", "replied_at", "attachment_opened_at", "macro_enabled_at", "data_entered_at", "qr_code_scanned", "reported_at", "bounced_at"],
+        "map": {
+          "id": "recipient_id", "user": "user.id", "email": "user.email",
+          "delivered": "delivered_at", "opened": "opened_at", "clicked": "clicked_at",
+          "replied": "replied_at", "attachment_opened": "attachment_opened_at",
+          "macro_enabled": "macro_enabled_at", "data_entered": "data_entered_at",
+          "qr_scanned": "qr_code_scanned", "reported": "reported_at", "bounced": "bounced_at"
+        }
+      }
+    ]
+  }
+}
