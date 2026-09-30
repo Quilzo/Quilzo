@@ -55,6 +55,8 @@ func cmdVuln(root string, args []string) error {
 		return vulnReasons()
 	case "load":
 		return vulnLoad(root, args[1:])
+	case "import":
+		return vulnImport(root, args[1:])
 	case "plan":
 		return vulnPlan(root, args[1:])
 	case "accept":
@@ -62,8 +64,8 @@ func cmdVuln(root string, args []string) error {
 	case "vex":
 		return vulnVEX(root, args[1:])
 	default:
-		return fmt.Errorf("unknown vuln command %q; try load, queue, plan, "+
-			"why, assess, accept, vex or reasons", args[0])
+		return fmt.Errorf("unknown vuln command %q; try load, import, queue, "+
+			"plan, why, assess, accept, vex or reasons", args[0])
 	}
 }
 

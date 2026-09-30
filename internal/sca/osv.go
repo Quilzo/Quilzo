@@ -301,7 +301,7 @@ func (r Record) Advisory(known time.Time) vuln.Advisory {
 				case ev.LastAffected != "":
 					a.Affects = append(a.Affects, vuln.Range{
 						Ecosystem: eco, Package: name,
-						Introduced: open,
+						Introduced: open, LastAffected: ev.LastAffected,
 					})
 					opened = false
 				}
@@ -319,9 +319,11 @@ func (r Record) Advisory(known time.Time) vuln.Advisory {
 			// databases use for ecosystems with no ordering anybody
 			// agrees on.
 			for _, v := range af.Versions {
+				// Exactly that version: read as "from v onwards" this
+				// reports every later release for ever.
 				a.Affects = append(a.Affects, vuln.Range{
 					Ecosystem: eco, Package: name,
-					Introduced: v, Fixed: "",
+					Introduced: v, LastAffected: v,
 				})
 			}
 		}

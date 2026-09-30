@@ -298,8 +298,28 @@ func Match(advisories []Advisory, inventory []Component,
 		byKey[a.Key()] = a
 	}
 
+	// By package, so an advisory is compared with the installations of what
+	// it names and not with everything installed. The answer is the same;
+	// a hundred thousand advisories against a fleet is otherwise a product
+	// nobody waits for.
+	byPackage := map[string][]Component{}
+	for _, c := range inventory {
+		byPackage[c.Key()] = append(byPackage[c.Key()], c)
+	}
 	var out []Exposure
 	for _, adv := range advisories {
+		var named []string
+		seen := map[string]bool{}
+		for _, r := range adv.Affects {
+			if k := Key(r.Ecosystem, r.Package); !seen[k] {
+				seen[k] = true
+				named = append(named, k)
+			}
+		}
+		var inventory []Component
+		for _, k := range named {
+			inventory = append(inventory, byPackage[k]...)
+		}
 		for _, c := range inventory {
 			verdict, why := adv.Applies(c)
 			if verdict == Outside || verdict == Patched {

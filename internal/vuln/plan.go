@@ -413,6 +413,12 @@ func purl(component string) string {
 		eco = "gem"
 	case "packagist":
 		eco = "composer"
+	case "debian", "ubuntu":
+		eco = "deb"
+	case "red hat", "rocky linux", "almalinux":
+		eco = "rpm"
+	case "alpine":
+		eco = "apk"
 	case "maven":
 		name = strings.ReplaceAll(name, ":", "/")
 	}

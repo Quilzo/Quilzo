@@ -314,3 +314,59 @@ func TestADraftVEXDocumentSaysWhatIsDecidedAndNotWhoOrWhy(t *testing.T) {
 		t.Error("a statement with no author")
 	}
 }
+
+// A database that records the last affected version, not a fix: a release
+// after it is not reported, and one at or before it is.
+func TestAVersionPastTheLastAffectedIsNotReported(t *testing.T) {
+	a := advisory("CVE-LAST", 7, 0.1)
+	a.Affects = []Range{{Ecosystem: "npm", Package: "left-pad",
+		Introduced: "1.0.0", LastAffected: "1.2.3"}}
+	for version, want := range map[string]Verdict{
+		"1.2.3": Vulnerable, "1.1.0": Vulnerable, "1.2.4": Outside,
+		"2.0.0": Outside, "0.9.0": Outside, "banana": Undecided,
+	} {
+		if got, why := a.Applies(comp("left-pad", version, 1)); got != want {
+			t.Errorf("%s reads as %s, not %s (%s)", version, got, want, why)
+		}
+	}
+	// No fix is known, so there is nothing to upgrade to on its say-so.
+	e := Exposure{Advisory: a, Component: comp("left-pad", "1.2.0", 1)}
+	if fix, ok := e.Fixable(); ok {
+		t.Errorf("a last-affected version was offered as the fix: %s", fix)
+	}
+}
+
+// An enumerated list names versions; it does not start ranges.
+func TestAListedVersionIsThatVersionAndNoOther(t *testing.T) {
+	a := advisory("CVE-LIST", 7, 0.1)
+	a.Affects = []Range{
+		{Ecosystem: "npm", Package: "left-pad", Introduced: "1.2.0",
+			LastAffected: "1.2.0"},
+		{Ecosystem: "npm", Package: "left-pad", Introduced: "2021a",
+			LastAffected: "2021a"},
+	}
+	for version, want := range map[string]Verdict{
+		"1.2.0": Vulnerable, "1.2.1": Outside, "9.0.0": Outside,
+		"2021a": Vulnerable, "2021b": Outside,
+	} {
+		if got, why := a.Applies(comp("left-pad", version, 1)); got != want {
+			t.Errorf("%s reads as %s, not %s (%s)", version, got, want, why)
+		}
+	}
+}
+
+// Indexing by package changes how long matching takes and not what it
+// finds.
+func TestMatchingComparesAnAdvisoryOnlyWithWhatItNames(t *testing.T) {
+	a := fixedAt("CVE-A", "1.0.0", "1.3.0", 0.1)
+	b := fixedAt("CVE-B", "1.0.0", "1.3.0", 0.1)
+	b.Affects = append(b.Affects, Range{Ecosystem: "npm", Package: "is-odd",
+		Introduced: "0", Fixed: "2.0.0"}, b.Affects[0])
+	inv := []Component{comp("left-pad", "1.2.0", 1), comp("is-odd", "1.0.0", 1),
+		comp("unrelated", "1.0.0", 1)}
+	got := Match([]Advisory{a, b}, inv, nil, now)
+	if len(got) != 3 {
+		t.Fatalf("%d exposures: one for A, two for B, none for the "+
+			"unrelated package and none twice", len(got))
+	}
+}
