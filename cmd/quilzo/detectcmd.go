@@ -46,9 +46,20 @@ func cmdDetect(root string, args []string) error {
 		return detectFields(args[1:])
 	case "run":
 		return detectRun(root, args[1:])
+	case "stats":
+		return detectStats(root, args[1:])
+	case "ring":
+		return detectRing(root, args[1:])
+	case "suppress":
+		return detectSuppress(root, args[1:])
+	case "unsuppress":
+		return detectUnsuppress(root, args[1:])
+	case "suppressions":
+		return detectSuppressions(root)
 	default:
-		return fmt.Errorf(
-			"unknown detect command %q; try test, list, fields or run", args[0])
+		return fmt.Errorf("unknown detect command %q; try test, list, "+
+			"fields, run, stats, ring, suppress, unsuppress or suppressions",
+			args[0])
 	}
 }
 

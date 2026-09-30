@@ -220,10 +220,17 @@ func filterQueue(in []finding.Finding, state finding.State,
 
 	var out []finding.Finding
 	for _, f := range in {
-		if state == "" && f.State.Closed() {
+		// "trial" is a filter and not a state: what rules in their trial
+		// ring have raised that nobody has closed. The default queue leaves
+		// those out, which is what the trial ring is for.
+		switch {
+		case state == "trial":
+			if !f.Trial || f.State.Closed() {
+				continue
+			}
+		case state == "" && (f.State.Closed() || f.Trial):
 			continue
-		}
-		if state != "" && f.State != state {
+		case state != "" && f.State != state:
 			continue
 		}
 		if kind != "" && f.Kind != kind {

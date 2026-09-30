@@ -295,6 +295,11 @@ telling people
   quilzo detect list [DIR]                 the rules, what they read, what they miss
   quilzo detect fields                     how a rule may compare
   quilzo detect run [--rules DIR]          run the rules over new events, into the queue
+  quilzo detect stats                      what each rule has been worth, and what to change
+  quilzo detect ring RULE live|trial|off --because "…"   move a rule in or out of the queue
+  quilzo detect suppress RULE FIELD=VALUE --owner W --until DATE --because "…"
+  quilzo detect unsuppress ID              remove a suppression
+  quilzo detect suppressions               what is suppressed, by whom, until when
   quilzo telemetry check [FILE]            can a connector's events be used at all
   quilzo telemetry fields [FILE]           what a detection may refer to
 

@@ -41,7 +41,7 @@ const detectCursor = "detect"
 // detectRun evaluates the rules over events that arrived since the last run.
 func detectRun(root string, args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
-	rulesDir := fs.String("rules", "detections", "where the rules live")
+	rulesAt := fs.String("rules", "", "where the rules live")
 	since := fs.Duration("since", 0,
 		"on a first run, how far back to look (zero means everything held)")
 	if err := fs.Parse(args); err != nil {
@@ -53,22 +53,42 @@ func detectRun(root string, args []string) error {
 		return err
 	}
 
-	loaded, err := rulesIn(*rulesDir)
+	loaded, err := rulesIn(rulesDir(root, *rulesAt))
+	if err != nil {
+		return err
+	}
+	rings, err := loadRings(root)
+	if err != nil {
+		return err
+	}
+	sups, err := loadDetectSuppressions(root)
+	if err != nil {
+		return err
+	}
+	hits, err := loadHits(root)
 	if err != nil {
 		return err
 	}
 	var rules []detect.Rule
+	off := 0
 	for _, r := range loaded {
 		if verr := r.Validate(); verr != nil {
 			// Refused, not skipped. A run that silently dropped a rule looks
 			// clean because nothing was asked.
 			return fmt.Errorf("%s cannot be run: %w", r.ID, verr)
 		}
+		if rings[r.ID].Ring == detect.Off {
+			// Switched off on the record, with a reason. Counted, so the
+			// run says how many rules it did not ask.
+			off++
+			continue
+		}
 		rules = append(rules, r)
 	}
 	if len(rules) == 0 {
-		return fmt.Errorf("no rules in %s, so a run would find nothing and "+
-			"report that as a quiet estate", *rulesDir)
+		return fmt.Errorf("no rules to run in %s (%d switched off), so a "+
+			"run would find nothing and report that as a quiet estate",
+			rulesDir(root, *rulesAt), off)
 	}
 
 	// Read the store without creating it: a run against a site that has
@@ -106,7 +126,7 @@ func detectRun(root string, args []string) error {
 		from = now.Add(-*since)
 	}
 
-	var events, matches, opened int
+	var events, matches, opened, suppressed int
 	var through time.Time
 	err = sp.Range(from, time.Time{}, func(e telemetry.Event) error {
 		events++
@@ -118,10 +138,26 @@ func detectRun(root string, args []string) error {
 				continue
 			}
 			matches++
+			// Suppressed: counted against the suppression that hid it and
+			// not recorded, so what a suppression costs is a number
+			// somebody can look at.
+			hidden := false
+			for _, sup := range sups {
+				if sup.Hides(r.ID, e, now) {
+					hits[sup.ID]++
+					suppressed++
+					hidden = true
+					break
+				}
+			}
+			if hidden {
+				continue
+			}
 			if _, isNew := reg.Record(finding.Finding{
 				Kind: finding.FromDetection, Title: r.Title, Source: r.ID,
 				Entity: e.Actor, Severity: r.Severity, State: finding.Open,
 				Technique: r.Technique,
+				Trial:     rings[r.ID].Ring == detect.Trial,
 				Evidence: []finding.Evidence{{
 					At: e.Time, What: e.Message, Source: e.Source,
 					// Always. Log text is written by whoever can reach the
@@ -143,23 +179,34 @@ func detectRun(root string, args []string) error {
 	if err := finding.Save(path, reg, cursors); err != nil {
 		return err
 	}
+	if suppressed > 0 {
+		if err := saveJSONFile(hitsPath(root), hits); err != nil {
+			return err
+		}
+	}
 	record(root, audit.Record{
 		Action: "detect.run", Resource: "/findings", Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
 		Detail: map[string]string{
 			"rules": strconv.Itoa(len(rules)), "events": strconv.Itoa(events),
 			"matches": strconv.Itoa(matches), "opened": strconv.Itoa(opened),
+			"suppressed": strconv.Itoa(suppressed), "off": strconv.Itoa(off),
 		},
 	})
 
 	if w.JSON(map[string]any{
 		"rules": len(rules), "events": events, "matches": matches,
 		"opened": opened, "findings": reg.Len(), "through": through,
+		"suppressed": suppressed, "off": off,
 	}) {
 		return nil
 	}
 	w.Human("%s%d rule(s) over %d new event(s): %d match(es), %d new "+
 		"finding(s)%s\n", bold, len(rules), events, matches, opened, reset)
+	if suppressed > 0 || off > 0 {
+		w.Human("  %s%d match(es) hidden by suppressions; %d rule(s) switched "+
+			"off%s\n", dim, suppressed, off, reset)
+	}
 	if events == 0 {
 		w.Human("  %snothing arrived since the last run%s\n", dim, reset)
 	} else {

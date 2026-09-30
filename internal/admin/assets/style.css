@@ -1931,3 +1931,33 @@ table.queue td:nth-child(5), table.queue td:nth-child(6) {
   .wftrend polyline { stroke: CanvasText; }
   .wf-heat td { border-color: CanvasText; }
 }
+
+/* -- detections ---------------------------------------------------------------
+ * A rule's verdicts as one bar: real, false, benign, undecided, in that
+ * order, with the four counts written under it so the colours are never
+ * the only way to read it.
+ */
+.dt-bar { width: 10rem; height: .625rem; display: inline-block; }
+.dt-bar .real, .dt-key.real { fill: var(--viz-good); }
+.dt-bar .false, .dt-key.false { fill: var(--viz-critical); }
+.dt-bar .benign, .dt-key.benign { fill: var(--viz-warning); }
+.dt-bar .open { fill: var(--viz-track); }
+.dt-key { display: inline-flex; align-items: center; gap: .35rem; padding: 0; }
+.dt-key::before { content: ""; width: .75rem; height: .75rem; border-radius: 2px;
+  background: var(--viz-track); }
+.dt-key.real::before { background: var(--viz-good); }
+.dt-key.false::before { background: var(--viz-critical); }
+.dt-key.benign::before { background: var(--viz-warning); }
+.wf-scale:has(.dt-key) { gap: 1rem; }
+.dt-rules .dt-more td { padding-top: 0; border-top: 0; }
+/* A list of suggestions is read, not shouted: the notice's weight is for a
+   single line. */
+.dt-proposals p, .dt-proposals li { font-weight: 400; }
+.dt-proposals h2 { margin-top: 0; }
+.dt-more summary { cursor: pointer; font: var(--label-md); color: var(--primary); }
+.dt-more form label { display: grid; gap: .25rem; font: var(--label-md);
+  color: var(--on-surface-variant); margin-bottom: .5rem; }
+.wf-word.warning { background: var(--warning-container); color: var(--on-warning-container); }
+@media (forced-colors: active) {
+  .dt-bar .real, .dt-bar .false, .dt-bar .benign { fill: CanvasText; }
+}

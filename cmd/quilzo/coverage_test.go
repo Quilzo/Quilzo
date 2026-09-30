@@ -509,12 +509,12 @@ var coverage = map[string]surfaces{
 	// Detections are reviewed, versioned and diffed, so they live in a
 	// repository and the tooling is a command. `detect test` runs in CI on
 	// every change, which a screen cannot.
-	"detect": {
-		Why: "a rule is reviewed and diffed like code, so the place it is " +
-			"tested is the repository and not a screen",
-		NoMCP: "an agent that could edit detections could disable the one " +
-			"that would have caught it",
-	},
+	"detect": {GUI: "/security/detections", MCP: []string{"detection_stats"},
+		Why: "a rule is reviewed and diffed like code, so it is tested in " +
+			"the repository; the screen shows what each has been worth and " +
+			"moves rings and suppressions. An agent reads the numbers and " +
+			"the proposals and changes neither: one that could quieten a " +
+			"detection could quieten the one that would have caught it"},
 
 	"telemetry": {
 		Why: "it checks a file a connector produced, at the point where " +

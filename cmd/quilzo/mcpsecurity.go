@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/detect"
 	"github.com/quilzo/quilzo/internal/finding"
 	"github.com/quilzo/quilzo/internal/mcp"
 )
@@ -86,6 +87,44 @@ func registerSecurityOps(srv *mcp.Server, root string, caller *Caller) {
 			})
 		}
 		b, err := json.Marshal(map[string]any{"total": len(q), "findings": out})
+		return string(b), err
+	})
+
+	srv.Register(mcp.Operation{
+		Name: "detection_stats", NeedsRole: "admin",
+		Summary: "what each detection rule has been worth, and what the " +
+			"numbers suggest changing",
+		Detail: "Per rule: its ring, how much it has raised, the verdicts " +
+			"people gave, and the share that were real once there are " +
+			"enough to say. Plus proposals — demote, promote, suppress one " +
+			"thing — and what is suppressed. Read-only: a ring or a " +
+			"suppression is changed by a person, with a reason.",
+		Keywords: []string{"detections", "rules", "precision", "tuning",
+			"false positives", "suppressions", "noise"},
+	}, func(a map[string]any) (any, error) {
+		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
+		t, err := loadTuning(root, "", time.Now().UTC())
+		if err != nil {
+			return nil, err
+		}
+		type rule struct {
+			detect.Stats
+			Useful string `json:"useful"`
+		}
+		var rules []rule
+		for _, st := range t.Stats {
+			r := rule{Stats: st, Useful: fmt.Sprintf(
+				"too few verdicts: %d of %d", st.Decided(), detect.MinVerdicts)}
+			if rate, low, high, enough := st.Useful(); enough {
+				r.Useful = fmt.Sprintf("%.0f%% real, likely %.0f-%.0f%%",
+					rate*100, low*100, high*100)
+			}
+			rules = append(rules, r)
+		}
+		b, err := json.Marshal(map[string]any{"rules": rules,
+			"proposals": t.Proposals, "suppressions": t.Suppressions})
 		return string(b), err
 	})
 

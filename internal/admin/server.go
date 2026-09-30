@@ -184,6 +184,10 @@ type Server struct {
 	// Reminders tells people what the estate says they still have to do.
 	Reminders *Reminders
 
+	// Detections is the rules: what each has been worth, its ring, and
+	// what is suppressed.
+	Detections *Detections
+
 	// Events is the telemetry store. Separate from Running because one is
 	// about whether collection is working and the other is what was
 	// collected, and a person opens them at different moments.
@@ -980,6 +984,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/running", s.handleRunningScreen)
 	mux.HandleFunc("/security/events", s.handleEventsScreen)
 	mux.HandleFunc("/findings", s.handleFindings)
+	mux.HandleFunc("/security/detections", s.handleDetections)
+	mux.HandleFunc("/security/detections/act", s.handleDetectionsAct)
 	mux.HandleFunc("/workforce", s.handleWorkforce)
 	mux.HandleFunc("/workforce/person/", s.handleWorkforcePerson)
 	mux.HandleFunc("/workforce/devices", s.handleWorkforceDevices)

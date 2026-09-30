@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/quilzo/quilzo/internal/api"
 	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/detect"
 	"github.com/quilzo/quilzo/internal/estate"
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/logd"
@@ -275,6 +276,25 @@ func cmdServe(root string, args []string) error {
 				}
 			}()
 			return nil
+		},
+	}
+	srv.Detections = &admin.Detections{
+		Load: func(now time.Time) (admin.DetectionView, error) {
+			t, err := loadTuning(root, "", now)
+			return admin.DetectionView{Rules: t.Rules, Stats: t.Stats,
+				Proposals: t.Proposals, Suppressions: t.Suppressions,
+				Hits: t.Hits}, err
+		},
+		Ring: func(rule string, ring detect.Ring, because, by string,
+			kind audit.Kind) error {
+			return setRing(root, "", rule, ring, because, by, kind)
+		},
+		Suppress: func(sp detect.Suppression) error {
+			_, err := addSuppression(root, "", sp)
+			return err
+		},
+		Unsuppress: func(id, by string, kind audit.Kind) error {
+			return removeSuppression(root, id, by, kind)
 		},
 	}
 	srv.Reminders = &admin.Reminders{

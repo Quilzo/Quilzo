@@ -211,6 +211,12 @@ type Finding struct {
 	Because string    `json:"because,omitempty"`
 	Until   time.Time `json:"until,omitempty"`
 
+	// Trial marks a finding raised by a rule in its trial ring: recorded
+	// and decided on like any other, so the rule's precision can be
+	// measured, and kept out of the queue people work from until the rule
+	// has earned its place there.
+	Trial bool `json:"trial,omitempty"`
+
 	// Technique are ATT&CK ids, for navigation. Never summed into a score;
 	// see internal/detect for why a coverage figure would be dishonest.
 	Technique []string `json:"technique,omitempty"`
@@ -447,6 +453,9 @@ func (r *Register) Record(f Finding, at time.Time) (*Finding, bool) {
 
 	existing.Last = at
 	existing.Seen++
+	// The ring is the rule's as it stands now: a rule promoted out of trial
+	// takes what it has already found into the queue with it.
+	existing.Trial = f.Trial
 	existing.Evidence = append(existing.Evidence, f.Evidence...)
 	// Severity can rise and does not fall on its own. A control that failed
 	// worse today is worse; one that reported lower today may simply have

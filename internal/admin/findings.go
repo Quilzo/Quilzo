@@ -179,7 +179,11 @@ func (s *Server) handleFindings(w http.ResponseWriter, r *http.Request) {
 	inState := func(f finding.Finding) bool {
 		switch state {
 		case "":
-			return !f.State.Closed()
+			// Trial-ring findings are kept out of the working queue;
+			// that is what the ring is for.
+			return !f.State.Closed() && !f.Trial
+		case "trial":
+			return f.Trial && !f.State.Closed()
 		case "all":
 			return true
 		}
@@ -191,7 +195,7 @@ func (s *Server) handleFindings(w http.ResponseWriter, r *http.Request) {
 	bySev := map[string]int{}
 	var open, person, unowned, expired int
 	for _, f := range all {
-		if !f.State.Closed() {
+		if !f.State.Closed() && !f.Trial {
 			open++
 			if f.NeedsAPerson() != "" {
 				person++
@@ -206,7 +210,11 @@ func (s *Server) handleFindings(w http.ResponseWriter, r *http.Request) {
 		}
 		if (kind == "" || f.Kind == kind) && (sev == "" || severityName(f.Severity) == sev) {
 			byState[string(f.State)]++
-			if !f.State.Closed() {
+			switch {
+			case f.State.Closed():
+			case f.Trial:
+				byState["trial"]++
+			default:
 				byState[""]++
 			}
 			byState["all"]++
@@ -257,6 +265,11 @@ func (s *Server) handleFindings(w http.ResponseWriter, r *http.Request) {
 		states = append(states, facet{Label: string(st),
 			Href: link(string(kind), string(st), sev), Count: byState[string(st)],
 			On: state == string(st)})
+	}
+	if byState["trial"] > 0 || state == "trial" {
+		states = append(states, facet{Label: "From rules on trial",
+			Href: link(string(kind), "trial", sev), Count: byState["trial"],
+			On: state == "trial"})
 	}
 	states = append(states, facet{Label: "Everything",
 		Href: link(string(kind), "all", sev), Count: byState["all"], On: state == "all"})
