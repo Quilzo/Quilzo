@@ -775,7 +775,7 @@ func TestAnInnerArrayBecomesRecordsThatKnowTheirOuterRecord(t *testing.T) {
 		Host: "endpointcentral.manageengine.com",
 		Auth: Auth{Kind: Bearer, Secret: "t"},
 		Endpoints: []Endpoint{{Name: "vulns",
-			Path: "/dcapi/threats/systemreport/vulnerabilities",
+			Path:     "/dcapi/threats/systemreport/vulnerabilities",
 			Produces: Vulnerability, Records: "message_response.systemreport",
 			Explode: "vulnerabilities",
 			Reads:   []string{"^.resource_id", "vulnerabilityid", "severity"},

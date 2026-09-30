@@ -225,7 +225,7 @@ func TestKnowBe4AgainstItsDocumentedResponses(t *testing.T) {
 	}
 	want(t, got["phishing_results"].Records[0], map[string]string{
 		"parent": "1", "email": "psmith@kb4-demo.com",
-		"clicked": "2019-04-02T15:02:38.000Z",
+		"clicked":      "2019-04-02T15:02:38.000Z",
 		"data_entered": "2019-04-02T15:02:38.000Z"})
 	if _, ok := got["phishing_results"].Records[0]["reported"]; ok {
 		t.Error("a null reported_at was mapped to something")

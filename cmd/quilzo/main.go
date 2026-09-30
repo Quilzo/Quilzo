@@ -262,6 +262,7 @@ connecting to a company's tools
 estate
   quilzo estate show                       what the tools say, joined, and what could not be
   quilzo estate build                      put where the tools disagree in the findings register
+  quilzo estate scores [--limit N]         each person's risk and the reasons for it (admins)
 
 workforce
   quilzo workforce coverage [FILE]         did the join work, and what did not

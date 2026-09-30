@@ -164,9 +164,11 @@ func cmdEstate(root string, args []string) error {
 		return estateShow(root)
 	case "build":
 		return estateBuild(root, args[1:])
+	case "scores":
+		return estateScores(root, args[1:])
 	default:
-		return fmt.Errorf("unknown estate command %q; try show or build",
-			args[0])
+		return fmt.Errorf("unknown estate command %q; try show, build or "+
+			"scores", args[0])
 	}
 }
 
@@ -365,6 +367,9 @@ func estateBuild(root string, args []string) error {
 	if err := finding.Save(path, reg, cursors); err != nil {
 		return err
 	}
+	if err := saveDay(root, estate.Summarise(e.Scores(now), now)); err != nil {
+		return err
+	}
 	record(root, audit.Record{
 		Action: "estate.build", Resource: "/findings", Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
@@ -381,5 +386,119 @@ func estateBuild(root string, args []string) error {
 		return nil
 	}
 	printSummary(s, true)
+	return nil
+}
+
+func historyPath(root string) string {
+	return filepath.Join(estateDir(root), "history.jsonl")
+}
+
+// loadHistory reads the daily aggregates, oldest first.
+func loadHistory(root string) ([]estate.Summary, error) {
+	b, err := os.ReadFile(historyPath(root))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []estate.Summary
+	for n, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var d estate.Summary
+		if uerr := json.Unmarshal([]byte(line), &d); uerr != nil {
+			return nil, fmt.Errorf("history.jsonl line %d: %w", n+1, uerr)
+		}
+		out = append(out, d)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Date < out[j].Date })
+	return out, nil
+}
+
+// maxHistory is how many days are kept: a year of trend, and nothing
+// older, because a trend is for deciding what to do next.
+const maxHistory = 366
+
+// saveDay records a day's aggregates, replacing an earlier build the same
+// day. Aggregates only: a history of named scores would be a file on each
+// employee kept for ever, and a trend does not need one.
+func saveDay(root string, day estate.Summary) error {
+	hist, err := loadHistory(root)
+	if err != nil {
+		return err
+	}
+	kept := hist[:0]
+	for _, d := range hist {
+		if d.Date != day.Date {
+			kept = append(kept, d)
+		}
+	}
+	kept = append(kept, day)
+	sort.Slice(kept, func(i, j int) bool { return kept[i].Date < kept[j].Date })
+	if len(kept) > maxHistory {
+		kept = kept[len(kept)-maxHistory:]
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	for _, d := range kept {
+		if err := enc.Encode(d); err != nil {
+			return err
+		}
+	}
+	if err := os.MkdirAll(estateDir(root), 0o700); err != nil {
+		return err
+	}
+	return atomicfile.Write(historyPath(root), buf.Bytes(), 0o600)
+}
+
+// estateScores lists each person's score and why. Administrators only, like
+// the screen: a score is a file on an employee.
+func estateScores(root string, args []string) error {
+	fs := flag.NewFlagSet("scores", flag.ContinueOnError)
+	limit := fs.Int("limit", 20, "how many people to list, highest first")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	caller := resolveCaller(root, flagToken)
+	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	e, _, err := buildEstate(root, now)
+	if err != nil {
+		return err
+	}
+	scores := e.Scores(now)
+	record(root, audit.Record{
+		Action: "estate.scores", Resource: "/workforce", Outcome: audit.Success,
+		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Detail: map[string]string{"listed": fmt.Sprint(min(*limit, len(scores)))},
+	})
+	if *limit > 0 && len(scores) > *limit {
+		scores = scores[:*limit]
+	}
+	if w.JSON(scores) {
+		return nil
+	}
+	for _, s := range scores {
+		colour := dim
+		switch s.Band {
+		case estate.BandCritical, estate.BandHigh:
+			colour = red
+		case estate.BandModerate:
+			colour = yellow
+		}
+		w.Human("%s%3d %-8s%s %s%s%s  %s\n", colour, s.Points, s.Band, reset,
+			bold, s.Name, reset, s.Department)
+		for _, f := range s.Factors {
+			w.Human("      %s%+3d  %s (%s)%s\n", dim, f.Points, f.What, f.Source,
+				reset)
+		}
+		for a, why := range s.Unknown {
+			w.Human("      %s  ?  %s unknown: %s%s\n", yellow, a, why, reset)
+		}
+	}
 	return nil
 }

@@ -138,8 +138,8 @@ func TestAConfirmedLinkJoinsWhatEmailCannot(t *testing.T) {
 		built = append(built, s.build())
 	}
 	e := Build(built, []workforce.Link{{
-		A: telemetry.ID{Issuer: "vanta", Value: "v1"},
-		B: telemetry.ID{Issuer: "knowbe4", Value: "k1"},
+		A:  telemetry.ID{Issuer: "vanta", Value: "v1"},
+		B:  telemetry.ID{Issuer: "knowbe4", Value: "k1"},
 		At: now, By: "ada", Because: "renamed"}}, now)
 	if len(e.People) != 1 || e.People[0].JoinedBy[0] != "confirmed" {
 		t.Errorf("a confirmed link was not applied: %d people", len(e.People))
@@ -396,7 +396,7 @@ func windows(n int, seen string) []Line {
 	for i := 0; i < n; i++ {
 		out = append(out, Line{"id": fmt.Sprint(300 + i),
 			"serial": fmt.Sprintf("DELLTAG%03d", i),
-			"os": "Windows 11 Professional", "seen": seen})
+			"os":     "Windows 11 Professional", "seen": seen})
 	}
 	return out
 }

@@ -1777,3 +1777,152 @@ table.queue td:nth-child(5), table.queue td:nth-child(6) {
   .sidenav[popover]:popover-open { animation: menu-in .15s ease-out; }
   @keyframes menu-in { from { transform: translateX(-1rem); opacity: 0; } }
 }
+
+/* -- workforce risk -----------------------------------------------------------
+ *
+ * Charts drawn by the server as SVG, coloured from here. The marks follow one
+ * spec throughout: bars 20 thick with 12 of air, square at the baseline and
+ * rounded at the value end, hairline solid gridlines, and values in text
+ * colours rather than in the colour of their bar.
+ *
+ * Status colours mean something and are never a series: a band is good,
+ * warning, serious or critical, and always carries its word and an icon
+ * beside the colour, so nobody reads it by hue alone. The heatmap is one hue,
+ * light to dark for more; in the dark scheme the order runs the other way, so
+ * more is still the one that stands out.
+ */
+:root {
+  --viz-series: light-dark(var(--primary-40), var(--primary-80));
+  --viz-good: light-dark(#1e8e3e, #81c995);
+  --viz-warning: light-dark(#f9ab00, #fdd663);
+  --viz-serious: light-dark(#e8710a, #fcad70);
+  --viz-critical: light-dark(#d93025, #f28b82);
+  --viz-track: var(--surface-container-high);
+  --viz-grid: var(--outline-variant);
+  --serious-container: light-dark(#ffdbc8, #6b2c00);
+  --on-serious-container: light-dark(#331200, #ffdbc8);
+  --heat-0: light-dark(var(--container-light), var(--container-dark));
+  --heat-1: light-dark(var(--primary-90), var(--primary-10));
+  --heat-2: light-dark(var(--primary-80), var(--primary-30));
+  --heat-3: light-dark(var(--primary-60), var(--primary-70));
+  --heat-4: light-dark(var(--primary-30), var(--primary-90));
+  --on-heat-low: var(--on-surface);
+  --on-heat-3: light-dark(var(--grey-10), var(--page-dark));
+  --on-heat-4: light-dark(var(--white), var(--page-dark));
+}
+
+.wf-filters { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: end;
+  margin: 0 0 1.5rem; }
+.wf-filters label { display: grid; gap: .25rem; font: var(--label-md);
+  color: var(--on-surface-variant); }
+.wf-filters select { min-width: 12rem; }
+.wf-filters .wf-aside { margin-inline-start: auto; }
+
+.wf-kpis { display: grid; gap: 1rem; margin: 0 0 1.5rem; }
+.wf-hero { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem;
+  margin: 0; color: var(--on-surface-variant); }
+.wf-hero-n { font: 600 3.5rem/1 var(--font); color: var(--on-surface); }
+.stats-row > div.serious dd { color: var(--on-surface); }
+.stats-row > div.serious { border-color: var(--viz-serious); }
+.wf-note { font: var(--label-md) !important; color: var(--on-surface-variant); }
+
+.wf-charts { gap: 1.5rem; }
+.wf-fig { margin: 0 0 1.75rem; }
+.wf-fig figcaption h2 { margin: 0 0 .25rem; }
+.wf-fig figcaption .hint { margin: 0 0 .5rem; }
+
+/* Capped, because an SVG scales its text with it: a chart stretched across a
+   wide column would set its labels in headline type. */
+.wfbars { width: 100%; max-width: 40rem; height: auto; display: block;
+  overflow: visible; }
+.wfbars .lbl, .wfbars .val, .wftrend .val { font: 500 15px/1 var(--font);
+  fill: var(--on-surface); }
+.wftrend .axis { font: 400 13px/1 var(--font); fill: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums; }
+.wfbars .lbl { fill: var(--on-surface-variant); }
+.wfbars .val, .wftrend .val { font-variant-numeric: tabular-nums; }
+.wfbars .hit { fill: transparent; }
+.wfbars path { fill: var(--viz-series); }
+.wfbars .good path { fill: var(--viz-good); }
+.wfbars .warning path { fill: var(--viz-warning); }
+.wfbars .serious path { fill: var(--viz-serious); }
+.wfbars .critical path { fill: var(--viz-critical); }
+.wfbars .bar:hover path, .wfbars a:focus-visible path { opacity: .8; }
+.wfbars a:focus-visible { outline: 3px solid var(--focus-ring); }
+
+.wftrend { width: 100%; max-width: 56rem; height: auto; display: block;
+  overflow: visible; }
+.wftrend .base { stroke: var(--viz-grid); stroke-width: 1; }
+.wftrend polyline { fill: none; stroke: var(--viz-series); stroke-width: 2;
+  stroke-linejoin: round; stroke-linecap: round; }
+.wftrend .hit { fill: transparent; }
+.wftrend .hit:hover { fill: var(--viz-series); fill-opacity: .15; }
+.wftrend .end { fill: var(--viz-series); stroke: var(--surface); stroke-width: 2; }
+
+.astable { margin: .5rem 0 0; }
+.astable summary { cursor: pointer; font: var(--label-md); color: var(--primary); }
+.astable table { margin-top: .5rem; }
+
+.wf-heat { font-variant-numeric: tabular-nums; }
+.wf-heat td { text-align: center; font-weight: 500; border: 2px solid var(--surface); }
+.wf-heat .h0, .wf-scale .h0 { background: var(--heat-0); color: var(--on-heat-low); }
+.wf-heat .h1, .wf-scale .h1 { background: var(--heat-1); color: var(--on-heat-low); }
+.wf-heat .h2, .wf-scale .h2 { background: var(--heat-2); color: var(--on-heat-low); }
+.wf-heat .h3, .wf-scale .h3 { background: var(--heat-3); color: var(--on-heat-3); }
+.wf-heat .h4, .wf-scale .h4 { background: var(--heat-4); color: var(--on-heat-4); }
+.wf-n { font: var(--label-md); color: var(--on-surface-variant); }
+.wf-scale { display: flex; flex-wrap: wrap; gap: 2px; margin: .5rem 0 1.5rem;
+  font: var(--label-md); }
+.wf-scale span { padding: .25rem .6rem; border-radius: var(--shape-xs); }
+
+.wf-people td, .wf-people th, .wf-machines td, .wf-machines th {
+  vertical-align: middle; }
+.wf-score { white-space: nowrap; }
+.wf-meter { width: 5rem; height: .5rem; vertical-align: middle; margin: 0 .5rem; }
+.wf-meter .track { fill: var(--viz-track); }
+.wf-meter .fill { fill: var(--viz-series); }
+.wf-meter .good { fill: var(--viz-good); }
+.wf-meter .warning { fill: var(--viz-warning); }
+.wf-meter .serious { fill: var(--viz-serious); }
+.wf-meter .critical { fill: var(--viz-critical); }
+.wf-points { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* A band: its word, an icon, and a colour, in that order of importance. */
+.wf-band { display: inline-flex; align-items: center; gap: .3rem;
+  padding: .1rem .55rem .1rem .4rem; border-radius: var(--shape-full);
+  font: 500 .8125rem/1.5 var(--font); text-transform: capitalize; }
+.wf-icon::before { font-weight: 700; }
+.wf-band.good { background: var(--ok-container); color: var(--on-ok-container); }
+.wf-band.good .wf-icon::before { content: "✓"; }
+.wf-band.warning { background: var(--warning-container); color: var(--on-warning-container); }
+.wf-band.warning .wf-icon::before { content: "!"; }
+.wf-band.serious { background: var(--serious-container); color: var(--on-serious-container); }
+.wf-band.serious .wf-icon::before { content: "▲"; }
+.wf-band.critical { background: var(--error-container); color: var(--on-error-container); }
+.wf-band.critical .wf-icon::before { content: "✕"; }
+
+.wf-word { display: inline-block; padding: 0 .5rem; border-radius: var(--shape-xs);
+  font: 500 .8125rem/1.6 var(--font); }
+.wf-word.good { background: var(--ok-container); color: var(--on-ok-container); }
+.wf-word.serious { background: var(--serious-container); color: var(--on-serious-container); }
+.wf-word.critical { background: var(--error-container); color: var(--on-error-container); }
+.wf-word.unknown { color: var(--on-surface-variant); }
+.wf-tag, .wf-task { display: inline-block; padding: 0 .45rem; border-radius: var(--shape-xs);
+  background: var(--surface-container-high); font: var(--label-md); }
+.wf-back { margin: 0 0 .25rem; font: var(--label-md); }
+.wf-reasons { margin-top: .75rem; }
+.wf-how { margin: 2rem 0 0; }
+.wf-how summary { cursor: pointer; font-weight: 600; }
+
+/* On a phone the charts are drawn at about three fifths of their size, and
+   the text with them; set it larger in the drawing so it is read at 13px. */
+@media (max-width: 40rem) {
+  .wfbars .lbl, .wfbars .val, .wftrend .val { font-size: 22px; }
+  .wftrend .axis { font-size: 20px; }
+}
+
+@media (forced-colors: active) {
+  .wfbars path, .wf-meter .fill, .wftrend .end { fill: CanvasText; }
+  .wftrend polyline { stroke: CanvasText; }
+  .wf-heat td { border-color: CanvasText; }
+}

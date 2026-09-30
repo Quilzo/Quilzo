@@ -134,6 +134,8 @@ type Estate struct {
 	personOf    map[string]*Individual
 	machineOf   map[string]*Machine
 	testStarted map[string]time.Time
+	// Tests names each phishing test, by tool and identifier.
+	Tests map[string]string `json:"-"`
 }
 
 // Unplaced counts what could not be attached to anybody or anything, which
@@ -169,7 +171,8 @@ func (e *Estate) With(k Kind) []string {
 func Build(snaps []Snapshot, links []workforce.Link, now time.Time) *Estate {
 	e := &Estate{At: now, Sources: map[string]Snapshot{},
 		byEmail: map[string]*Individual{}, personOf: map[string]*Individual{},
-		machineOf: map[string]*Machine{}, testStarted: map[string]time.Time{}}
+		machineOf: map[string]*Machine{}, testStarted: map[string]time.Time{},
+		Tests: map[string]string{}}
 	var persons []Person
 	var devices []Device
 	var posture, training, phishing, software, vulns []Line
@@ -197,6 +200,9 @@ func Build(snaps []Snapshot, links []workforce.Link, now time.Time) *Estate {
 			case kind == KindEvent:
 				if t := when(l["started"]); !t.IsZero() && l["id"] != "" {
 					e.testStarted[s.Source+":"+l["id"]] = t
+				}
+				if l["id"] != "" && l["name"] != "" {
+					e.Tests[s.Source+":"+l["id"]] = l["name"]
 				}
 			case kind == KindPhishing:
 				phishing = append(phishing, l)
@@ -594,7 +600,7 @@ func (e *Estate) place(training, phishing, software, vulns []Line) {
 	for _, l := range phishing {
 		src := l["_source"]
 		p := Phish{ID: telemetry.ID{Issuer: src, Value: l["id"]},
-			Test: l["parent"], User: telemetry.ID{Issuer: src, Value: l["user"]},
+			Test: l["parent"], TestName: e.Tests[src+":"+l["parent"]], User: telemetry.ID{Issuer: src, Value: l["user"]},
 			Email: Email(l["email"]), Delivered: when(l["delivered"]),
 			Clicked: when(l["clicked"]), DataEntered: when(l["data_entered"]),
 			Reported: when(l["reported"])}

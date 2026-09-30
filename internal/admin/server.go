@@ -177,6 +177,10 @@ type Server struct {
 	// the audit log's decisions applied.
 	Findings *Findings
 
+	// Workforce is the estate: what the company's tools say about its
+	// people and machines, joined and scored.
+	Workforce *Workforce
+
 	// Events is the telemetry store. Separate from Running because one is
 	// about whether collection is working and the other is what was
 	// collected, and a person opens them at different moments.
@@ -371,6 +375,9 @@ func (s *Server) refresh() {
 func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Layouts) (*Server, error) {
 	t, err := template.New("").Funcs(template.FuncMap{
 		"pct": func(f float64) float64 { return f * 100 },
+		// deref reads a yes or no a tool may not have given; the template
+		// checks for nil before calling it.
+		"deref": func(b *bool) bool { return b != nil && *b },
 		"short": func(id string) string {
 			if len(id) > 12 {
 				return id[:12]
@@ -970,6 +977,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/running", s.handleRunningScreen)
 	mux.HandleFunc("/security/events", s.handleEventsScreen)
 	mux.HandleFunc("/findings", s.handleFindings)
+	mux.HandleFunc("/workforce", s.handleWorkforce)
+	mux.HandleFunc("/workforce/person/", s.handleWorkforcePerson)
+	mux.HandleFunc("/workforce/devices", s.handleWorkforceDevices)
 	mux.HandleFunc("/models", s.handleModels)
 	mux.HandleFunc("/analytics", s.handleAnalytics)
 	mux.HandleFunc("/experiments", s.handleExperiments)

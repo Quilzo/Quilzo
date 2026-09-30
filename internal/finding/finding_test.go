@@ -306,7 +306,7 @@ func TestAFindingNoLongerReportedGoesStaleOnlyIfItWasLookedFor(t *testing.T) {
 	mk := func(source, entity string) Finding {
 		return Finding{Kind: FromControl, Title: "t", Source: source,
 			Entity: telemetry.ID{Issuer: "vanta", Value: entity},
-			State: Open, Severity: telemetry.SeverityMedium}
+			State:  Open, Severity: telemetry.SeverityMedium}
 	}
 	a, _ := r.Record(mk("estate/leaver-device", "1"), at)
 	b, _ := r.Record(mk("estate/leaver-device", "2"), at)

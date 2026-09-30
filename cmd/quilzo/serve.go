@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/quilzo/quilzo/internal/api"
 	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/estate"
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/logd"
 	"github.com/quilzo/quilzo/internal/throttle"
@@ -250,6 +251,12 @@ func cmdServe(root string, args []string) error {
 	}
 	srv.Events = &admin.Events{Open: eventsOpener(root)}
 	srv.Findings = findingsCapability(root)
+	srv.Workforce = &admin.Workforce{
+		Load: func(now time.Time) (*estate.Estate, estate.Outcome, error) {
+			return buildEstate(root, now)
+		},
+		History: func() ([]estate.Summary, error) { return loadHistory(root) },
+	}
 	srv.Assistants = assistantsCapability(root)
 	srv.Models = gatewayCapability(root)
 	srv.Deciders = decidersCapability(root)

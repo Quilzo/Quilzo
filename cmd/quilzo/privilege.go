@@ -373,11 +373,12 @@ var commandNeeds = map[string]need{
 	// that can reach another company's system with a stored credential,
 	// which is the weight of storing the credential itself.
 	"connect catalogue": {action: auth.ActView},
-	// Building the joined estate writes findings, as detect run does;
-	// looking at it is reading.
-	"estate":      {action: auth.ActEditDraft},
-	"estate show": {action: auth.ActView},
-	"connect add": {action: auth.ActPublish},
+	// Scores name employees, so the estate is an administrator's; building
+	// it writes findings, as detect run does, and a summary is reading.
+	"estate":       {action: auth.ActGrant},
+	"estate build": {action: auth.ActEditDraft},
+	"estate show":  {action: auth.ActView},
+	"connect add":  {action: auth.ActPublish},
 
 	"workforce":          {action: auth.ActPublish},
 	"workforce coverage": {action: auth.ActView},

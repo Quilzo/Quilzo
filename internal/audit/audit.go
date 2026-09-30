@@ -279,6 +279,10 @@ func (l *Log) Pseudonymous() bool { return len(l.key) > 0 }
 var IdentityKeys = map[string]bool{
 	"by": true, "on_behalf_of": true, "principal": true, "owner": true,
 	"granted": true, "for": true, "author": true,
+	// The person whose workforce profile was opened. Pseudonymised like the
+	// one who opened it; whoever holds the log's key can still answer the
+	// question the entry exists for, which is who looked at whose profile.
+	"subject": true,
 }
 
 // pseudonymDetail returns detail with identity values pseudonymised, leaving

@@ -201,6 +201,7 @@ type Training struct {
 type Phish struct {
 	ID          telemetry.ID `json:"id"`
 	Test        string       `json:"test,omitempty"`
+	TestName    string       `json:"test_name,omitempty"`
 	User        telemetry.ID `json:"user"`
 	Email       string       `json:"email,omitempty"`
 	Delivered   time.Time    `json:"delivered,omitempty"`
@@ -210,6 +211,23 @@ type Phish struct {
 	// Other is the first of the other failures: a reply, an opened
 	// attachment, enabled macros, a scanned QR code.
 	Other time.Time `json:"other,omitempty"`
+}
+
+// Outcome is the result in words, worst first.
+func (p Phish) Outcome() string {
+	switch {
+	case !p.DataEntered.IsZero():
+		return "Entered data"
+	case !p.Clicked.IsZero():
+		return "Clicked"
+	case !p.Other.IsZero():
+		return "Opened an attachment, replied or scanned"
+	case !p.Reported.IsZero():
+		return "Reported it"
+	case !p.Delivered.IsZero():
+		return "Did nothing"
+	}
+	return "Not delivered"
 }
 
 // Failed reports whether this result is a failure, and when.
