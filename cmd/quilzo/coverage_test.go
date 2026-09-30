@@ -499,9 +499,9 @@ var coverage = map[string]surfaces{
 
 	// Stacking over a file somebody exported, at the point where they are
 	// looking for something and do not yet know what.
-	"hunt": {
-		Why: "it counts values in a file the analyst chose, before there is " +
-			"a finding for a screen to show or an agent to reason about",
+	"hunt": {GUI: "/security/hunt",
+		Why: "the command stacks a file the analyst chose; the screen " +
+			"stacks the store, where the events are",
 		NoMCP: "an agent given the rarity list is given the map of what is " +
 			"least likely to be noticed",
 	},

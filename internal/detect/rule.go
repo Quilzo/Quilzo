@@ -570,3 +570,14 @@ func (r Rule) Test() []Result {
 	}
 	return out
 }
+
+// Holds reports whether a comparison is satisfied by an event's fields: the
+// same comparison a rule makes, for a hunt that is looking before there is
+// a rule.
+func (m Match) Holds(f map[string]string) bool { return m.eval(f) }
+
+// Usable reports whether a comparison could be evaluated, without the rest
+// of a rule around it.
+func (m Match) Usable() error {
+	return checkPredicate(Predicate{Match: &m}, 0)
+}

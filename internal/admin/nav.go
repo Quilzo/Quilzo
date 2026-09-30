@@ -111,6 +111,7 @@ var destinations = []destination{
 	// this is the list of what is currently wrong.
 	{"findings", "Findings", "/findings", "Security operations", "security", auth.ActGrant},
 	{"events", "Events", "/security/events", "Security operations", "security", auth.ActGrant},
+	{"hunt", "Hunt", "/security/hunt", "Security operations", "security", auth.ActGrant},
 	{"detections", "Detections", "/security/detections", "Security operations", "security", auth.ActGrant},
 	// People and their machines, from what the company's tools say. Admin
 	// only: a person's score is a file on an employee.
