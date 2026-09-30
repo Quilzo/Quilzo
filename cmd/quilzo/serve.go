@@ -48,6 +48,7 @@ import (
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/taxonomy"
 	"github.com/quilzo/quilzo/internal/upkeep"
+	"github.com/quilzo/quilzo/internal/vuln"
 	"github.com/quilzo/quilzo/internal/webhook"
 )
 
@@ -295,6 +296,20 @@ func cmdServe(root string, args []string) error {
 		},
 		Unsuppress: func(id, by string, kind audit.Kind) error {
 			return removeSuppression(root, id, by, kind)
+		},
+	}
+	srv.Vulns = &admin.Vulns{
+		Load: func(now time.Time) (admin.VulnView, error) {
+			v, err := loadVulnView(root, now)
+			return admin.VulnView{Advisories: v.Advisories,
+				Components: len(v.Inventory), Matched: v.Matched,
+				Assessments: v.Assessments, History: v.History,
+				AdvisoriesAt: v.AdvisoriesAt, InventoryAt: v.InventoryAt}, err
+		},
+		// From the screen an assessment always names something the screen
+		// showed, so it is refused if the store does not know it.
+		Assess: func(a vuln.Assessment) error {
+			return recordAssessment(root, a, true)
 		},
 	}
 	srv.Reminders = &admin.Reminders{

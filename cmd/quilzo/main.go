@@ -244,7 +244,11 @@ assurance
   quilzo assurance controls                what this organisation says it does
 
 vulnerabilities
+  quilzo vuln load [--advisories F] [--inventory F]   put the lists in the store, checked
   quilzo vuln queue [INVENTORY]            what to work on, not sorted by severity
+  quilzo vuln plan                         the smallest upgrades that clear the most
+  quilzo vuln accept CVE PKG --owner W --until DATE --because "…"   leave it, until a day
+  quilzo vuln vex --author A --id URL      the decisions as an OpenVEX draft
   quilzo vuln why CVE-ID                   what is known, and who decided what
   quilzo vuln assess CVE PKG STATUS        record that it does not apply, with a reason
   quilzo vuln reasons                      the five reasons something is not affected

@@ -6,6 +6,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/vuln"
 	"strings"
 	"time"
 
@@ -125,6 +126,43 @@ func registerSecurityOps(srv *mcp.Server, root string, caller *Caller) {
 		}
 		b, err := json.Marshal(map[string]any{"rules": rules,
 			"proposals": t.Proposals, "suppressions": t.Suppressions})
+		return string(b), err
+	})
+
+	srv.Register(mcp.Operation{
+		Name: "vuln_plan", NeedsRole: "admin",
+		Summary: "the smallest upgrades that clear the most vulnerability " +
+			"risk, and the queue as counts",
+		Detail: "Per package: what is installed, the lowest version that " +
+			"clears every open advisory with a fix, which advisories that " +
+			"clears and which it leaves, and how much expected exploitation " +
+			"it removes. Identifiers, versions and numbers: no " +
+			"advisory summaries and no host names. Read-only: marking something " +
+			"not affected or accepted is a person's decision.",
+		Keywords: []string{"vulnerabilities", "cve", "upgrade", "patch",
+			"remediation", "epss", "kev"},
+	}, func(a map[string]any) (any, error) {
+		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
+		now := time.Now().UTC()
+		v, err := loadVulnView(root, now)
+		if err != nil {
+			return nil, err
+		}
+		if len(v.Inventory) == 0 || len(v.Advisories) == 0 {
+			return nil, &mcp.Refusal{Reason: "no inventory or no advisories " +
+				"are loaded, so there is no plan; that is not a clean result"}
+		}
+		ups := vuln.Upgrades(v.Live(), v.Advisories, now)
+		total := len(ups)
+		if len(ups) > 50 {
+			ups = ups[:50]
+		}
+		b, err := json.Marshal(map[string]any{"upgrades": ups,
+			"packages": total, "tally": vuln.Summarise(v.Matched, now),
+			"advisories_loaded": v.AdvisoriesAt,
+			"inventory_loaded":  v.InventoryAt})
 		return string(b), err
 	})
 

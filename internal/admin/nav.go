@@ -113,6 +113,7 @@ var destinations = []destination{
 	{"events", "Events", "/security/events", "Security operations", "detection", auth.ActGrant},
 	{"hunt", "Hunt", "/security/hunt", "Security operations", "detection", auth.ActGrant},
 	{"detections", "Detections", "/security/detections", "Security operations", "detection", auth.ActGrant},
+	{"vulns", "Vulnerabilities", "/security/vulns", "Security operations", "vulnerabilities", auth.ActGrant},
 	// People and their machines, from what the company's tools say. Admin
 	// only: a person's score is a file on an employee.
 	{"workforce", "Workforce risk", "/workforce", "Security operations", "workforce", auth.ActGrant},
@@ -174,7 +175,8 @@ var docSections = map[string]bool{
 	"listings": true, "forms": true, "media": true, "languages": true,
 	"ai": true, "publishing": true, "environments": true, "history": true,
 	"transfer": true, "ipfs": true, "provenance": true, "security": true, "detection": true,
-	"logging": true, "users": true, "auth": true, "integrations": true,
+	"vulnerabilities": true,
+	"logging":         true, "users": true, "auth": true, "integrations": true,
 	"settings": true, "api": true, "profile": true, "start": true,
 	"agents": true, "design": true, "workforce": true,
 

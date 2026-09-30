@@ -358,6 +358,8 @@ var commandNeeds = map[string]need{
 	"vuln queue":   {action: auth.ActView},
 	"vuln why":     {action: auth.ActView},
 	"vuln reasons": {action: auth.ActView},
+	"vuln plan":    {action: auth.ActView},
+	"vuln vex":     {action: auth.ActView},
 
 	// Storing a credential for another company's system is the heaviest
 	// thing here, and running a connector is an ordinary write. Reading a

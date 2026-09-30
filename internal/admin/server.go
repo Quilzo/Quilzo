@@ -187,6 +187,8 @@ type Server struct {
 	// Detections is the rules: what each has been worth, its ring, and
 	// what is suppressed.
 	Detections *Detections
+	// Vulns is the vulnerability workbench. Nil means none was wired.
+	Vulns *Vulns
 
 	// Events is the telemetry store. Separate from Running because one is
 	// about whether collection is working and the other is what was
@@ -985,6 +987,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/events", s.handleEventsScreen)
 	mux.HandleFunc("/findings", s.handleFindings)
 	mux.HandleFunc("/security/hunt", s.handleHunt)
+	mux.HandleFunc("/security/vulns", s.handleVulns)
+	mux.HandleFunc("/security/vulns/act", s.handleVulnsAct)
+	mux.HandleFunc("/security/vuln/", s.handleVuln)
 	mux.HandleFunc("/security/detections", s.handleDetections)
 	mux.HandleFunc("/security/detections/act", s.handleDetectionsAct)
 	mux.HandleFunc("/workforce", s.handleWorkforce)

@@ -53,9 +53,17 @@ func cmdVuln(root string, args []string) error {
 		return vulnWhy(root, args[1:])
 	case "reasons":
 		return vulnReasons()
+	case "load":
+		return vulnLoad(root, args[1:])
+	case "plan":
+		return vulnPlan(root, args[1:])
+	case "accept":
+		return vulnAccept(root, args[1:])
+	case "vex":
+		return vulnVEX(root, args[1:])
 	default:
-		return fmt.Errorf("unknown vuln command %q; try queue, assess, "+
-			"why or reasons", args[0])
+		return fmt.Errorf("unknown vuln command %q; try load, queue, plan, "+
+			"why, assess, accept, vex or reasons", args[0])
 	}
 }
 
@@ -159,24 +167,25 @@ func loadAssessments(root string) ([]vuln.Assessment, error) {
 
 func vulnQueue(root string, args []string) error {
 	fs := flag.NewFlagSet("queue", flag.ContinueOnError)
-	advPath := fs.String("advisories", "advisories.jsonl",
-		"one advisory per line")
+	advFlag := fs.String("advisories", "",
+		"one advisory per line; by default what vuln load stored")
 	top := fs.Int("top", 15, "how many to show")
 	rest, err := eventFileArgs(fs, args)
 	if err != nil {
 		return err
 	}
-	invPath := "inventory.jsonl"
+	advPath := orStored(*advFlag, "advisories.jsonl", storedAdvisories(root))
+	invPath := orStored("", "inventory.jsonl", storedInventory(root))
 	if len(rest) > 0 {
 		invPath = rest[0]
 	}
 
-	advisories, err := loadAdvisories(*advPath)
+	advisories, err := loadAdvisories(advPath)
 	if err != nil {
 		return err
 	}
 	if len(advisories) == 0 {
-		return fmt.Errorf("no advisories in %s", *advPath)
+		return fmt.Errorf("no advisories in %s", advPath)
 	}
 	inventory, err := loadInventory(invPath)
 	if err != nil {
@@ -263,7 +272,7 @@ func vulnQueue(root string, args []string) error {
 
 func vulnWhy(root string, args []string) error {
 	fs := flag.NewFlagSet("why", flag.ContinueOnError)
-	advPath := fs.String("advisories", "advisories.jsonl", "")
+	advFlag := fs.String("advisories", "", "")
 	pos, flags := leadingArgs(args, 1)
 	if err := fs.Parse(flags); err != nil {
 		return err
@@ -271,7 +280,8 @@ func vulnWhy(root string, args []string) error {
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: quilzo vuln why CVE-ID")
 	}
-	advisories, err := loadAdvisories(*advPath)
+	advPath := orStored(*advFlag, "advisories.jsonl", storedAdvisories(root))
+	advisories, err := loadAdvisories(advPath)
 	if err != nil {
 		return err
 	}
@@ -328,7 +338,7 @@ func vulnWhy(root string, args []string) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("no advisory %s in %s", pos[0], *advPath)
+	return fmt.Errorf("no advisory %s in %s", pos[0], advPath)
 }
 
 func vulnAssess(root string, args []string) error {
@@ -378,26 +388,9 @@ func vulnAssess(root string, args []string) error {
 	if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(vulnDir(root), 0o700); err != nil {
+	if err := recordAssessment(root, a, false); err != nil {
 		return err
 	}
-	line, err := json.Marshal(a)
-	if err != nil {
-		return err
-	}
-	f, err := os.OpenFile(assessmentsPath(root),
-		os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(append(line, '\n')); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	record(root, a.Record())
 
 	if w.JSON(a) {
 		return nil
@@ -415,4 +408,16 @@ func vulnAssess(root string, args []string) error {
 	w.Human("  %srecorded as %s in the audit chain%s\n",
 		dim, a.Record().Action, reset)
 	return nil
+}
+
+// orStored picks the file a command reads: the one named, else the one in
+// the working directory if there is one, else what vuln load stored.
+func orStored(given, local, stored string) string {
+	if given != "" {
+		return given
+	}
+	if _, err := os.Stat(local); err == nil {
+		return local
+	}
+	return stored
 }

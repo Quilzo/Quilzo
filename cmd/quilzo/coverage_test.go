@@ -369,14 +369,10 @@ var coverage = map[string]surfaces{
 
 	// The vulnerability queue, read from an inventory and a set of
 	// advisories that a connector or a scanner produces.
-	"vuln": {
-		Why: "it ranks a file against a file and prints a queue; the screen " +
-			"arrives with the stored register, alongside the one for " +
-			"findings from every other source",
-		NoMCP: "a model that can mark things not_affected can mark the one " +
-			"that mattered; Assessment.Validate refuses an AI author, and " +
-			"a tool whose only useful call is the one it may not make is " +
-			"not a tool",
+	"vuln": {GUI: "/security/vulns", MCP: []string{"vuln_plan"},
+		Why: "an agent reads the plan and the counts; deciding that " +
+			"something does not apply stays a person's, and " +
+			"Assessment.Validate refuses an AI author",
 	},
 
 	// One reviewable file per tool, and the credentials to reach them.

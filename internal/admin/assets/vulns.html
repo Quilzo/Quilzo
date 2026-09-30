@@ -1,0 +1,90 @@
+{{template "head" .}}
+<h1>Vulnerabilities</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
+{{else if .Empty}}
+<p class="notice warn"><strong>Nothing has been loaded, which is not the same
+  as nothing being wrong.</strong>
+  {{if .NoInventory}}There is no inventory of what is installed. {{end}}{{if .NoAdvisories}}There is no list of advisories. {{end}}
+  A queue needs both.</p>
+<pre class="code"><code>quilzo vuln load --advisories advisories.jsonl --inventory inventory.jsonl</code></pre>
+<p class="hint">Each file is one JSON object per line and is checked line by
+  line as it is loaded; loading replaces what was there.</p>
+{{else}}
+<p class="lead">What to change, smallest change first. The order is what is
+  being exploited, then how likely, then whether the code is reachable here,
+  then how long it has been known. Severity is the tiebreak.</p>
+{{if .Stale}}<p class="notice warn" role="status">{{.Stale}}</p>{{end}}
+
+<dl class="stats-row">{{range .Tiles}}<div{{if .Tone}} class="{{.Tone}}"{{end}}><dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{if .Note}}<dd class="wf-note">{{.Note}}</dd>{{end}}</div>{{end}}</dl>
+{{if .Concentration}}<p><strong>{{.Concentration}}</strong></p>{{end}}
+<p class="hint">{{.AdvisoryCount}} advisory(ies), loaded {{.AdvisoriesAge}}, against {{.ComponentCount}} installed component(s), loaded {{.InventoryAge}}.</p>
+
+<h2>What to change</h2>
+{{if .Upgrades}}<div class="table-wrap"><table class="wf-people">
+  <thead><tr><th scope="col">Package</th><th scope="col">Installed</th><th scope="col">Move to</th><th scope="col">Clears</th><th scope="col">On</th><th scope="col">Risk removed</th></tr></thead>
+  <tbody>{{range .Upgrades}}<tr>
+    <th scope="row">{{.Name}}<br><span class="hint">{{.Ecosystem}}</span>{{if .Exploited}} <span class="wf-word critical">exploited</span>{{end}}</th>
+    <td><code>{{.From}}</code></td>
+    <td>{{if .To}}<strong><code>{{.To}}</code></strong>{{if .Into}}<br><span class="wf-word warning">itself affected</span> <span class="hint">by {{range $i, $x := .Into}}{{if $i}}, {{end}}{{$x}}{{end}}</span>{{end}}{{else}}<span class="wf-word unknown">no fix yet</span>{{end}}</td>
+    <td>{{range $i, $c := .Clears}}{{if $i}}, {{end}}<a href="/security/vuln/{{$c}}">{{$c}}</a>{{end}}{{$cleared := len .Clears}}
+      {{range $i, $l := .Leaves}}{{if or $i $cleared}}<br>{{end}}<span class="hint">leaves <a href="/security/vuln/{{$l.ID}}">{{$l.ID}}</a>: {{$l.Why}}</span>{{end}}</td>
+    <td>{{.Assets}}</td>
+    <td class="wf-score">{{if .Share}}<span class="wf-points">{{.Share}}</span>
+      <svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.W}}" height="8" rx="4"></rect></svg>{{else}}<span class="hint">—</span>{{end}}</td>
+  </tr>{{end}}</tbody></table></div>
+<p class="hint">"Move to" is the lowest version that clears everything listed
+  beside it, checked against every advisory loaded, not only the open ones.
+  Risk removed is that change's share of the expected exploitation.{{if .MoreUpgrades}} {{.MoreUpgrades}} more package(s) are not shown; <code>quilzo vuln plan --top 500</code> lists them.{{end}}</p>
+{{else}}<p>Nothing is open.</p>{{end}}
+
+<h2>The queue</h2>
+{{if .Queue}}<div class="table-wrap"><table class="wf-people">
+  <thead><tr><th scope="col">Vulnerability</th><th scope="col">In</th><th scope="col">Why it is here</th><th scope="col">Places</th><th scope="col">Weight</th></tr></thead>
+  <tbody>{{range .Queue}}<tr>
+    <th scope="row"><a href="{{.Href}}">{{.ID}}</a>{{if .Exploited}}<br><span class="wf-word critical">exploited</span>{{end}}{{if .Lapsed}}<br><span class="wf-word serious">decision ran out</span>{{end}}</th>
+    <td>{{.Package}} <code>{{.Version}}</code></td>
+    <td>{{.Why}}</td>
+    <td>{{.Assets}}</td>
+    <td class="wf-score"><span class="wf-points">{{.Weight}}</span>
+      <svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.W}}" height="8" rx="4"></rect></svg></td>
+  </tr>{{end}}</tbody></table></div>
+{{if .MoreQueue}}<p class="hint">{{.MoreQueue}} more are below these. <code>quilzo vuln queue --top 500</code> lists them.</p>{{end}}
+{{else}}<p>Nothing is in the queue.</p>{{end}}
+
+<figure class="wf-fig">
+  <figcaption><h2>Open vulnerabilities, over time</h2></figcaption>
+  {{if .TrendNote}}<p class="hint">{{.TrendNote}}</p>{{else}}
+  <svg class="wftrend" viewBox="0 0 640 140" role="img" aria-label="Open vulnerabilities, by day">
+    <line class="base" x1="10" y1="110" x2="590" y2="110"></line>
+    {{with .TrendStart}}<text class="axis" x="10" y="132">{{.Date}}</text>
+    <text class="val" x="{{.X}}" y="{{.Y}}" dy="-10">{{.Value}}</text>{{end}}
+    {{with .TrendEnd}}<text class="axis" x="590" y="132" text-anchor="end">{{.Date}}</text>{{end}}
+    <polyline points="{{.TrendLine}}"></polyline>
+    {{range .Trend}}<circle class="hit" cx="{{.X}}" cy="{{.Y}}" r="10"><title>{{.Date}}: {{.Value}}</title></circle>{{end}}
+    {{with .TrendEnd}}<circle class="end" cx="{{.X}}" cy="{{.Y}}" r="4"></circle>
+    <text class="val" x="{{.X}}" y="{{.Y}}" dx="10" dy="4">{{.Value}}</text>{{end}}
+  </svg>
+  <details class="astable"><summary>Show as a table</summary>
+    <table><thead><tr><th scope="col">Day</th><th scope="col">Open</th><th scope="col">Being exploited</th><th scope="col">Expected in 30 days</th><th scope="col">Accepted</th><th scope="col">Not affected</th></tr></thead>
+    <tbody>{{range .History}}<tr><th scope="row">{{.Date}}</th><td>{{.Open}}</td><td>{{.Exploited}}</td><td>{{.Expected}}</td><td>{{.Accepted}}</td><td>{{.NotAffected}}</td></tr>{{end}}</tbody></table></details>
+  {{end}}
+</figure>
+
+<h2>Decided</h2>
+{{if .Decided}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Vulnerability</th><th scope="col">In</th><th scope="col">Decision</th><th scope="col">Why</th><th scope="col">By</th><th scope="col">Comes back</th></tr></thead>
+  <tbody>{{range .Decided}}<tr><th scope="row"><a href="{{.Href}}">{{.ID}}</a></th>
+    <td><code>{{.Component}}</code><br><span class="hint">{{.Places}} place(s)</span></td>
+    <td><span class="wf-word {{.Tone}}">{{.What}}</span></td><td>{{.Because}}</td>
+    <td>{{.By}}{{if .Owner}}<br><span class="hint">owner: {{.Owner}}</span>{{end}}</td>
+    <td>{{if .Until}}{{.Until}}<br><span class="hint">{{.Left}}</span>{{else}}<span class="hint">does not</span>{{end}}</td></tr>{{end}}</tbody>
+</table></div>
+<p class="hint">Out of the queue, not out of the record. Anything with a date
+  comes back on it, above where it left.
+  <code>quilzo vuln vex --author "…" --id URL</code> writes these as an
+  OpenVEX draft, without the names or the internal reasons.</p>
+{{else}}<p>Nothing has been decided away.</p>{{end}}
+{{end}}
+{{template "foot" .}}

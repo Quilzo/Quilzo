@@ -74,44 +74,75 @@ func (e Exposure) Fixable() (string, bool) {
 // remediating about 110,000. Sorting by severity is eight times the work for
 // the same result, and it is what every scanner does by default.
 func (e Exposure) Weight(now time.Time) float64 {
-	if e.Silenced || e.Verdict == Outside || e.Verdict == Patched {
-		return 0
-	}
 	var w float64
+	for _, t := range e.Terms(now) {
+		w += t.Points
+	}
+	return w
+}
+
+// Term is one reason an exposure sits where it does, and what it is worth.
+type Term struct {
+	Name   string  `json:"name"`
+	Points float64 `json:"points"`
+	Why    string  `json:"why"`
+}
+
+// Terms is Weight, shown as its working.
+//
+// The weight is the sum of these and of nothing else, so a screen that
+// prints them has printed the whole reason for a row's position. A rank
+// nobody can take apart is a rank nobody can argue with, and one nobody can
+// argue with is one nobody trusts.
+func (e Exposure) Terms(now time.Time) []Term {
+	if e.Silenced || e.Verdict == Outside || e.Verdict == Patched {
+		return nil
+	}
+	var out []Term
 
 	// A fact beats every prediction. Each independent source that says so
 	// counts, because two agencies agreeing is more than one asserting.
 	if yes, who := e.Advisory.Attested(); yes {
-		w += 1000 * float64(len(who))
+		out = append(out, Term{"Exploited", 1000 * float64(len(who)),
+			strings.Join(who, " and ") + " says it is being exploited"})
 	}
 
 	// The probability, scaled. Stale figures are discounted rather than
 	// ignored: EPSS moves daily and a month-old number is about last month,
 	// but it is still the best available estimate.
-	epss := e.Advisory.EPSS
+	epss, stale := e.Advisory.EPSS, ""
 	if !e.Advisory.Fresh(now) {
 		epss *= 0.5
+		stale = ", halved because the figure is over a week old"
 	}
-	w += 800 * epss
+	if epss > 0 {
+		out = append(out, Term{"Probability", 800 * epss, fmt.Sprintf(
+			"%.1f%% chance of exploitation in thirty days%s",
+			e.Advisory.EPSS*100, stale)})
+	}
 
 	// What this deployment knows about its own code, which no feed knows.
 	switch {
 	case e.Component.Reachable != nil && *e.Component.Reachable:
-		w += 120
+		out = append(out, Term{"Reachability", 120,
+			"the vulnerable code is reachable here"})
 	case e.Component.Reachable != nil:
-		w += 0
+		out = append(out, Term{"Reachability", 0,
+			"the vulnerable code is not reachable here"})
 	default:
 		// Unknown reachability sits between the two. Treating it as
 		// unreachable would silently sink everything nobody has analysed,
 		// which is most things.
-		w += 40
+		out = append(out, Term{"Reachability", 40,
+			"nobody has analysed whether the vulnerable code is reachable"})
 	}
 	if e.Component.Direct {
-		w += 20
+		out = append(out, Term{"Direct dependency", 20,
+			"this was chosen, not pulled in by something else"})
 	}
 	if e.Verdict == Undecided {
 		// The comparator could not tell. Ranked as present, and visible.
-		w += 30
+		out = append(out, Term{"Version not comparable", 30, e.Why})
 	}
 
 	// Age from when we knew, capped at sixty days. Past that it is not
@@ -123,19 +154,26 @@ func (e Exposure) Weight(now time.Time) float64 {
 		days = 60
 	}
 	if days > 0 {
-		w += days
+		out = append(out, Term{"Age", days, fmt.Sprintf(
+			"known here since %s; counted up to sixty days",
+			e.Advisory.Known.Format("2 Jan 2006"))})
 	}
 
-	// A lapsed investigation returns at full weight and says so, rather than
+	// A lapsed decision returns at full weight and says so, rather than
 	// quietly reappearing at the bottom.
 	if e.Assessed.Lapsed(now) {
-		w += 50
+		out = append(out, Term{"Lapsed decision", 50, fmt.Sprintf(
+			"%s by %s ran out on %s", e.Assessed.What(), e.Assessed.By,
+			e.Assessed.Until.Format("2 Jan 2006"))})
 	}
 
 	// Severity, last. It breaks ties between things that are otherwise
 	// equal, which is the job it can actually do.
-	w += e.Advisory.CVSS
-	return w
+	if e.Advisory.CVSS > 0 {
+		out = append(out, Term{"Severity", e.Advisory.CVSS, fmt.Sprintf(
+			"CVSS %.1f, as a tiebreak", e.Advisory.CVSS)})
+	}
+	return out
 }
 
 // Why explains an exposure's position in one line.
@@ -174,7 +212,7 @@ func (e Exposure) Explain(now time.Time) string {
 	}
 	if e.Assessed.Lapsed(now) {
 		parts = append(parts, fmt.Sprintf(
-			"an investigation by %s lapsed on %s", e.Assessed.By,
+			"%s by %s lapsed on %s", e.Assessed.What(), e.Assessed.By,
 			e.Assessed.Until.Format("2006-01-02")))
 	}
 	if len(parts) == 0 {
