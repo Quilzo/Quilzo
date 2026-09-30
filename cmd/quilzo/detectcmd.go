@@ -56,10 +56,14 @@ func cmdDetect(root string, args []string) error {
 		return detectUnsuppress(root, args[1:])
 	case "suppressions":
 		return detectSuppressions(root)
+	case "replay":
+		return detectReplay(root, args[1:])
+	case "learn":
+		return detectLearn(root, args[1:])
 	default:
 		return fmt.Errorf("unknown detect command %q; try test, list, "+
-			"fields, run, stats, ring, suppress, unsuppress or suppressions",
-			args[0])
+			"fields, run, stats, ring, suppress, unsuppress, suppressions, "+
+			"replay or learn", args[0])
 	}
 }
 

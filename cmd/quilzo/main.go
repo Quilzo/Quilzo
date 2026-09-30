@@ -300,6 +300,8 @@ telling people
   quilzo detect suppress RULE FIELD=VALUE --owner W --until DATE --because "…"
   quilzo detect unsuppress ID              remove a suppression
   quilzo detect suppressions               what is suppressed, by whom, until when
+  quilzo detect replay [--strict]          every rule over the corpus of events already ruled on
+  quilzo detect learn FINDING              add the event behind a closed finding to the corpus
   quilzo telemetry check [FILE]            can a connector's events be used at all
   quilzo telemetry fields [FILE]           what a detection may refer to
 
