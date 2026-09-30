@@ -142,7 +142,7 @@ func (s *Server) handleCheckedSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit("checked.set", "/"+page, map[string]string{"by": p.Name})
-	http.Redirect(w, r, backTo(r), http.StatusSeeOther)
+	goBack(w, r)
 }
 
 // handleCheckedOwn says whose job a page is.
@@ -203,5 +203,5 @@ func (s *Server) handleCheckedOwn(w http.ResponseWriter, r *http.Request) {
 	s.audit("checked.own", "/"+page, map[string]string{
 		"by": p.Name, "owner": owner,
 	})
-	http.Redirect(w, r, backTo(r), http.StatusSeeOther)
+	goBack(w, r)
 }

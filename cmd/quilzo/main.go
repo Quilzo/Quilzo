@@ -1575,7 +1575,7 @@ func cmdPublish(root string, args []string) error {
 		changed = append(changed, c.Path)
 	}
 	fireWebhooks(root, "published", pub.Published, changed)
-	fmt.Printf("live is now %s  (%d change(s))\n", short(pub.Published), len(pub.Changes))
+	fmt.Printf("live is now %s  (%d change(s))\n", onOneLine(short(pub.Published)), len(pub.Changes))
 	if pub.Previous != "" {
 		fmt.Printf("  %sprevious %s is still stored; `quilzo rollback` moves the "+
 			"pointer back%s\n", dim, short(pub.Previous), reset)
@@ -1713,7 +1713,7 @@ func cmdRender(root string, args []string) error {
 		if err := os.WriteFile(*out, []byte(html), 0o644); err != nil {
 			return err
 		}
-		fmt.Printf("wrote %s\n", *out)
+		fmt.Printf("wrote %s\n", onOneLine(*out))
 		return nil
 	}
 	fmt.Print(html)
@@ -1769,7 +1769,8 @@ func printA11y(reports []*a11y.Report) {
 				colour = red
 			}
 			fmt.Printf("    %s%s%s  %s (%s)\n      %s\n",
-				colour, f.Severity, reset, f.Rule, f.Criterion, f.Detail)
+				colour, f.Severity, reset, onOneLine(f.Rule), onOneLine(f.Criterion),
+				onOneLine(f.Detail))
 			if f.Excerpt != "" {
 				fmt.Printf("      %s%s%s\n", dim, forTerminal(f.Excerpt), reset)
 			}

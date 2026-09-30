@@ -296,3 +296,26 @@ func formWithAction(body, action string) string {
 	}
 	return body[start : start+end]
 }
+
+// The check beside the redirect, on its own.
+//
+// goBack asks it after backTo has already rebuilt the destination, so on
+// every path a screen produces both agree. This pins what it says when
+// asked directly, because it is the one that still holds if backTo is ever
+// given another source.
+func TestOnlyAPlaceOnThisServerIsSomewhereToGoBackTo(t *testing.T) {
+	for _, local := range []string{"/", "/agents", "/agents/edit/helper",
+		"/security/findings?state=open&m=Saved.", "/page/docs/intro"} {
+		if !isLocalURL(local) {
+			t.Errorf("%q is a screen here and was refused", local)
+		}
+	}
+	for _, elsewhere := range []string{"", "agents", "https://evil.test/x",
+		"//evil.test/x", `/\evil.test/x`, `\\evil.test\x`, `/agents\..\x`,
+		"javascript:alert(1)", "/\t/evil.test", "/\n/evil.test",
+		"http:/evil.test", " /agents", "/agents\x00"} {
+		if isLocalURL(elsewhere) {
+			t.Errorf("%q was taken for a place on this server", elsewhere)
+		}
+	}
+}
