@@ -769,7 +769,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	data["DocsBase"] = DocsBase
 	// The mark, from the one place it is defined.
 	data["MarkPath"] = MarkPath
-	data["MarkLoop"], data["MarkTick"] = MarkLoop, MarkTick
+	data["MarkLoop"], data["MarkTail"] = MarkLoop, MarkTail
 
 	// The navigation itself, filtered to what this person may use and sorted
 	// into the order they chose.

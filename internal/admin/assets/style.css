@@ -2012,8 +2012,8 @@ ol.thread .msg.from-visitor { background: var(--primary-container); color: var(-
 ol.thread .msg:not(.from-visitor) { justify-self: end; }
 ol.thread .who { display: block; font: var(--label-md); font-weight: 700; margin-bottom: 0.2rem; }
 
-/* The mark in its two colours: the loop in the interface's blue, the tick
-   in teal. Lighter tones in the dark theme, so both clear 3:1 against the
+/* The mark in its two colours: the loop in the interface's blue, the tail
+   in violet. Lighter tones in the dark theme, so both clear 3:1 against the
    surface behind them, which is what a graphic needs (WCAG 1.4.11). */
 /* The typeface: a Latin cut of Google Sans Flex, the face Google's own
    apps are moving to, renamed and served from here (assets/fonts). One
@@ -2030,10 +2030,10 @@ ol.thread .who { display: block; font: var(--label-md); font-weight: 700; margin
 }
 :root {
   --mark-loop: light-dark(#0b57d0, #a8c7fa);
-  --mark-tick: light-dark(#00897b, #4fd1c5);
+  --mark-tail: light-dark(#7b4dff, #c8b6ff);
 }
 .mark .mark-loop { fill: var(--mark-loop); }
-.mark .mark-tick { fill: var(--mark-tick); }
+.mark .mark-tail { fill: var(--mark-tail); }
 
 /* =========================================================================
    The October 2026 refresh.

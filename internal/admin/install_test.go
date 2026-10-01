@@ -111,7 +111,7 @@ func TestEverySurfaceDrawsTheSameMark(t *testing.T) {
 		{"/signin", "", "the sign-in page, which nobody signed in ever sees"},
 	} {
 		body := get(t, srv, page.path, page.token).Body.String()
-		if !strings.Contains(body, MarkLoop) || !strings.Contains(body, MarkTick) {
+		if !strings.Contains(body, MarkLoop) || !strings.Contains(body, MarkTail) {
 			t.Errorf("%s does not draw the mark from MarkPath, so it is a "+
 				"copy that will fall behind", page.what)
 		}
@@ -119,11 +119,11 @@ func TestEverySurfaceDrawsTheSameMark(t *testing.T) {
 
 	// And the file a browser fetches carries the same path.
 	w := get(t, srv, "/icon.svg", token)
-	if !strings.Contains(w.Body.String(), MarkLoop) || !strings.Contains(w.Body.String(), MarkTick) {
+	if !strings.Contains(w.Body.String(), MarkLoop) || !strings.Contains(w.Body.String(), MarkTail) {
 		t.Error("/icon.svg draws something other than the mark")
 	}
 	// In its two colours: the tick is its own colour, not the loop's.
-	if !strings.Contains(w.Body.String(), `fill="`+MarkTickColour+`"`) {
+	if !strings.Contains(w.Body.String(), `fill="`+MarkTailColour+`"`) {
 		t.Error("/icon.svg draws the tick in the loop's colour")
 	}
 	// Nonzero, not evenodd. The tick crosses the ring, and under evenodd
