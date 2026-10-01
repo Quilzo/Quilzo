@@ -51,7 +51,7 @@
       <td><input type="checkbox" name="page" value="{{.}}"
                  id="sel-{{.}}" aria-labelledby="name-{{.}}"></td>
       {{end}}
-      <th scope="row" id="name-{{.}}" class="depth-{{index $.Depth .}}">{{.}}</th>
+      <th scope="row" id="name-{{.}}" class="depth-{{index $.Depth .}}"><a href="/page/{{.}}">{{.}}</a></th>
       <td>{{if index $.Changed .}}<span class="tag tag-changed">changed</span>{{else}}<span class="tag">unchanged</span>{{end}}
         {{with index $.Windows .}}
           {{if eq . "expired"}}<span class="tag tag-bad">expired</span>
@@ -73,15 +73,25 @@
         {{if .Owner}}<span class="owner-of">{{.Owner}}</span>{{end}}
       {{end}}</td>
       {{end}}
+      {{/*
+        The row's actions in a menu, as a row in Gmail or Drive has them:
+        the name opens the page, and the rest is one button away rather
+        than three controls on every row. A popover, so it needs no script.
+
+        Removing uses a form of its own, outside the table, named by the
+        button's form attribute. It used to be a form inside this table's
+        own form, which browsers do not allow: the inner one was dropped
+        and the button submitted the bulk form with no action, so removing
+        a single page did nothing.
+      */}}
       <td class="actions">
-        <a href="/page/{{.}}">{{if $.CanEdit}}Edit{{else}}View{{end}} <span class="sr">{{.}}</span></a>
-        <a href="/preview/{{.}}">Preview <span class="sr">{{.}}</span></a>
-        {{if $.CanEdit}}
-        <form method="post" action="/page/delete" class="inline">
-          <input type="hidden" name="name" value="{{.}}">
-          <button type="submit" class="danger">Remove <span class="sr">{{.}} from the draft</span></button>
-        </form>
-        {{end}}
+        <button type="button" class="rowmenu-open" popovertarget="row-{{.}}"
+                title="More for {{.}}"><svg class="icon" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path d="M480-160q-33 0-56.5-23.5T400-240q0-33 23.5-56.5T480-320q33 0 56.5 23.5T560-240q0 33-23.5 56.5T480-160Zm0-240q-33 0-56.5-23.5T400-480q0-33 23.5-56.5T480-560q33 0 56.5 23.5T560-480q0 33-23.5 56.5T480-400Zm0-240q-33 0-56.5-23.5T400-720q0-33 23.5-56.5T480-800q33 0 56.5 23.5T560-720q0 33-23.5 56.5T480-640Z"/></svg><span class="visually-hidden">More for {{.}}</span></button>
+        <div id="row-{{.}}" class="menu rowmenu" popover>
+          <a href="/page/{{.}}">{{if $.CanEdit}}Edit{{else}}View{{end}}</a>
+          <a href="/preview/{{.}}">Preview</a>
+          {{if $.CanEdit}}<button type="submit" form="del-{{.}}" class="menu-danger">Remove from the draft</button>{{end}}
+        </div>
       </td>
     </tr>
   {{end}}
@@ -97,6 +107,8 @@
 </div>
 {{end}}
 </form>
+{{if .CanEdit}}{{range .Shown}}<form id="del-{{.}}" method="post" action="/page/delete" hidden><input type="hidden" name="name" value="{{.}}"></form>
+{{end}}{{end}}
 {{template "paging" .}}
 {{else}}
 <p>No pages yet. Open <a href="/page/index">index</a> to write the first one,

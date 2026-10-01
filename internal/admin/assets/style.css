@@ -2204,3 +2204,19 @@ th[scope="row"] { font-weight: 500; }
   .sidenav .nav a { display: flex; align-items: center; gap: .85rem;
     padding: 0 .9rem; min-height: 40px; border-radius: var(--shape-full); }
 }
+
+/* A row's menu: the button a row ends with, and the list it opens beside
+   it. Anchored to the button where the browser can, and centred where it
+   cannot. */
+.rowmenu-open { min-height: 40px; width: 40px; height: 40px; padding: 0;
+  border-radius: var(--shape-full); background: transparent; color: var(--on-surface-variant); }
+.rowmenu-open:hover { background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
+.rowmenu { position: fixed; position-area: bottom span-left; top: auto; right: auto;
+  margin: .25rem 0 0; min-width: 13rem; }
+.menu button, .menu-danger { display: flex; align-items: center; justify-content: flex-start;
+  width: 100%; min-height: 40px; padding: 0 .9rem; border: 0; border-radius: var(--shape-full);
+  background: transparent; color: var(--on-surface); font: var(--label-lg); }
+.menu .menu-danger { color: var(--error); }
+.menu button:hover { background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
+.menu .menu-danger:hover { background: var(--error-container); color: var(--on-error-container); }
+.rowmenu { position-try-fallbacks: flip-block; }
