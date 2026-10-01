@@ -2178,3 +2178,16 @@ th[scope="row"] { font-weight: 500; }
   .sidenav .nav { flex-direction: column; align-items: stretch; gap: .1rem; }
   .sidenav .nav a { width: 100%; box-sizing: border-box; }
 }
+
+/* The navigation's icons: Material Symbols, as Chrome's settings draw them,
+   20px beside the label. Filled with the text colour, so they follow the
+   theme and a forced-colours one. */
+.nav a { display: flex; align-items: center; gap: .85rem; }
+.navicon { width: 20px; height: 20px; flex: none; fill: currentColor; }
+@media (max-width: 59.99rem) {
+  .sidenav .nav a { justify-content: flex-start; }
+}
+@media (min-width: 60rem) {
+  .sidenav .nav a { display: flex; align-items: center; gap: .85rem;
+    padding: 0 .9rem; min-height: 40px; border-radius: var(--shape-full); }
+}

@@ -305,7 +305,7 @@
     <summary><h2>{{.Name}}</h2></summary>
     <ul class="nav">
       {{range .Items}}
-      <li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>
+      <li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{if .Icon}}<svg class="navicon" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path d="{{.Icon}}"/></svg>{{end}}<span>{{.Label}}</span></a></li>
       {{end}}
     </ul>
   </details>
