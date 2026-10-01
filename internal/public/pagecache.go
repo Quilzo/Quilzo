@@ -71,6 +71,9 @@ type pageSet struct {
 	// hides the page — failing closed, because the alternative is a typo
 	// silently lifting an embargo.
 	hidden map[string]bool
+	// members is the pages marked members_only. Left out of visibleAt, so
+	// no public read path can reach one; see members.go.
+	members map[string]bool
 }
 
 // decoded returns the memo for a commit, building it at most once.
@@ -98,11 +101,12 @@ func (st *Site) decoded(commit string) (*pageSet, error) {
 	}
 
 	set := &pageSet{
-		commit: commit,
-		bodies: make(map[string]any, len(tree)),
-		oids:   make(map[string]string, len(tree)),
-		window: make(map[string]site.Window, len(tree)),
-		hidden: map[string]bool{},
+		commit:  commit,
+		bodies:  make(map[string]any, len(tree)),
+		oids:    make(map[string]string, len(tree)),
+		window:  make(map[string]site.Window, len(tree)),
+		hidden:  map[string]bool{},
+		members: map[string]bool{},
 	}
 	for name, oid := range tree {
 		var body any
@@ -111,6 +115,9 @@ func (st *Site) decoded(commit string) (*pageSet, error) {
 		}
 		set.bodies[name] = body
 		set.oids[name] = oid
+		if membersOnly(body) {
+			set.members[name] = true
+		}
 		if wnd, werr := site.WindowOf(body); werr != nil {
 			set.hidden[name] = true
 		} else {
@@ -143,11 +150,37 @@ func (s *pageSet) visibleAt(now time.Time) (map[string]any, map[string]string) {
 		// so filtering once is what stops a page being excluded from one and
 		// linked from another. A page the sitemap advertises and the page
 		// handler 404s is worse than either alone.
-		if s.hidden[name] || !s.window[name].Public(now) {
+		if s.hidden[name] || s.members[name] || !s.window[name].Public(now) {
 			continue
 		}
 		out[name] = body
 		visible[name] = s.oids[name]
 	}
 	return out, visible
+}
+
+// membersAt is the members-only pages as they stand at one moment, under
+// the same publish window as every other page. Only the page handler and
+// the account page ask for these, and only for a signed-in member.
+func (s *pageSet) membersAt(now time.Time) (map[string]any, map[string]string) {
+	out := map[string]any{}
+	visible := map[string]string{}
+	for name := range s.members {
+		if s.hidden[name] || !s.window[name].Public(now) {
+			continue
+		}
+		out[name] = s.bodies[name]
+		visible[name] = s.oids[name]
+	}
+	return out, visible
+}
+
+// membersOnly reports whether a page is for members.
+func membersOnly(body any) bool {
+	m, ok := body.(map[string]any)
+	if !ok {
+		return false
+	}
+	v, _ := m[MembersOnlyField].(bool)
+	return v
 }

@@ -544,6 +544,15 @@ const askCSS = `.qz-ask main{max-width:42rem;margin:0 auto;padding:1.5rem 1rem 3
 .qz-sources-title{font-size:1em;margin:.8rem 0 .2rem}
 .qz-status{font-size:.9em;opacity:.8;margin:.5rem 0}
 .qz-status:empty{display:none}
+.qz-account .qz-turn h2{font-size:1.2rem;margin:0 0 .5rem}
+.qz-account .qz-turn{padding:1.1rem 1.3rem}
+.qz-account input:not([type=hidden]){width:100%;box-sizing:border-box;font:inherit;padding:.5rem .6rem;border-radius:8px;border:1px solid color-mix(in srgb,currentColor 35%,transparent);margin:.25rem 0 .6rem}
+.qz-codes{font-family:var(--font-mono,ui-monospace,monospace);columns:2 12rem;padding-left:1.6rem}
+.qz-keys{list-style:none;padding:0}.qz-keys li{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;padding:.4rem 0}
+.qz-keys form{margin-left:auto}
+.qz-inline{display:inline-block;margin-right:.5rem}
+.qz-notice{padding:.7rem 1rem;border-radius:8px;background:color-mix(in srgb,currentColor 7%,transparent)}
+.qz-danger{border-color:color-mix(in srgb,#b3261e 45%,transparent)}
 .qz-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 `
 

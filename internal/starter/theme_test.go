@@ -235,7 +235,7 @@ func TestEveryStubRendersAndPassesTheGate(t *testing.T) {
 				t.Fatal(ierr)
 			}
 			out, rerr := tmpl.Render(layout, map[string]any{
-				"page": decorated(body), "site": map[string]any{"name": "Example"},
+				"page": decorated(body), "site": siteContext(),
 			})
 			if rerr != nil {
 				t.Fatalf("the %s stub does not render: %v", k.Name, rerr)
@@ -251,6 +251,18 @@ func TestEveryStubRendersAndPassesTheGate(t *testing.T) {
 			}
 		})
 	}
+}
+
+// siteContext is what a template knows about the site, as the renderer
+// builds it, rather than a map written here that could lack a field the
+// layout reads.
+func siteContext() map[string]any {
+	ctx, err := renderpkg.Sources{Name: "Example"}.For("index", map[string]any{}, nil)
+	if err != nil {
+		return map[string]any{"name": "Example", "name_whole": true}
+	}
+	out, _ := ctx["site"].(map[string]any)
+	return out
 }
 
 // decorated applies the derived companions the renderer adds, so a stub is

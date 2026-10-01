@@ -294,6 +294,26 @@ var settings = []Setting{
 			"ignored, and the site has no icon, as before.",
 	},
 	{
+		Key: "site.members", Kind: Text, Default: "off",
+		Summary: "accounts for the site's visitors: off, open, or invite",
+		Why: "A site could publish to everybody and be edited by its staff, " +
+			"and nobody in between could have an account — the first thing a " +
+			"community, a course or an app needs. open lets anybody make one; " +
+			"invite needs a code from `quilzo member invite`. Accounts sign in " +
+			"with passkeys, need site.base_url on HTTPS (or localhost), and keep " +
+			"a name and the passkeys, nothing else. Anything but open or invite " +
+			"is off, so a typo does not open sign-up to the world.",
+	},
+	{
+		Key: "site.icon_initial", Kind: Bool, Default: "false",
+		Summary: "the icon is the site name's first letter, so it is set in that letter's place",
+		Why: "A site whose icon is its initial — a Q for Quilzo — drew the " +
+			"icon and then the whole name beside it, which spells the letter " +
+			"twice. With this on, the header sets the icon as the first letter " +
+			"and the rest of the name after it, and a screen reader is given " +
+			"the whole name.",
+	},
+	{
 		Key: "site.trusted_proxy", Kind: Bool, Default: "false",
 		Summary: "something in front of this forwards the client's address",
 		Why: "Whether the inbox's rate limit can tell one remote instance " +

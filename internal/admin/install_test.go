@@ -275,3 +275,27 @@ func TestThePreviewSaysWhenItChanges(t *testing.T) {
 			"reads as live and is not")
 	}
 }
+
+// The mark is the Q of the name, so the header does not spell it with two.
+//
+// It drew the mark and then the whole word beside it, which read as "Q
+// Quilzo". A renamed interface keeps the mark beside its own name: the mark
+// is the Q of Quilzo and of nothing else.
+func TestTheMarkIsTheQOfTheName(t *testing.T) {
+	srv, token := setup(t)
+	for _, page := range []struct{ path, token string }{{"/", token}, {"/signin", ""}} {
+		body := get(t, srv, page.path, page.token).Body.String()
+		if !strings.Contains(body, `role="img" aria-label="Quilzo"`) ||
+			!strings.Contains(body, `<span aria-hidden="true">uilzo</span>`) {
+			t.Errorf("%s does not set the mark as the Q of the name", page.path)
+		}
+		if strings.Contains(body, `</svg><span>Quilzo</span>`) {
+			t.Errorf("%s still spells the name beside the mark", page.path)
+		}
+	}
+	srv.Brand = Brand{Name: "Acme"}
+	body := get(t, srv, "/", token).Body.String()
+	if !strings.Contains(body, "<span>Acme</span>") || strings.Contains(body, `aria-hidden="true">uilzo<`) {
+		t.Error("a renamed interface did not keep its own name whole")
+	}
+}

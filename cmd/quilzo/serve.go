@@ -170,6 +170,7 @@ func cmdServe(root string, args []string) error {
 			Role: auth.RoleAdmin}
 	}
 	srv.Inbox = inboxHooks(root)
+	srv.Members = membersHooks(root)
 	srv.Agents = &admin.Agents{
 		Load: func() (map[string]agent.Manifest, error) {
 			set, err := loadAgents(root)

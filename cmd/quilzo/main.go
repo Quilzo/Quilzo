@@ -404,6 +404,9 @@ the assistant
   quilzo assistant list | remove NAME
   quilzo inbox list | show ASSISTANT/ID     visitors who asked a chatbot for a person
   quilzo inbox reply ASSISTANT/ID "text"    answer one, as yourself; inbox close ends it
+  quilzo member list | show ID              the site's accounts (site.members turns them on)
+  quilzo member disable | enable | remove ID   stop one signing in, or erase it
+  quilzo member invite [--note T] | invites | revoke-invite HASH   sign-up by invitation
   quilzo analytics [--days N]              views, visitors, referrers, conversions; no cookie
   quilzo experiment add NAME --page P --variant b=PAGE --goal G   an A/B test, no script or cookie
   quilzo experiment start|stop|remove NAME
@@ -788,6 +791,8 @@ func main() {
 		err = cmdAssistant(root, cmdArgs)
 	case "inbox":
 		err = cmdInbox(root, cmdArgs)
+	case "member":
+		err = cmdMember(root, cmdArgs)
 	case "gateway":
 		err = cmdGateway(root, cmdArgs)
 	case "decide":

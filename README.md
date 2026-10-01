@@ -1,11 +1,9 @@
-<p align="center">
+<h1 align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/quilzo-dark.svg">
-    <img src="docs/brand/quilzo.svg" alt="Quilzo" width="96" height="96">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/quilzo-wordmark-dark.svg">
+    <img src="docs/brand/quilzo-wordmark.svg" alt="Quilzo" width="300">
   </picture>
-</p>
-
-<h1 align="center">Quilzo</h1>
+</h1>
 
 <p align="center"><strong>AI agents that ask before they act.</strong></p>
 

@@ -486,6 +486,13 @@ var coverage = map[string]surfaces{
 			"is sent",
 	},
 
+	"member": {
+		GUI: "/members",
+		NoMCP: "who has an account on the site is personal data, and " +
+			"disabling, deleting or inviting somebody is an access decision " +
+			"a person makes",
+	},
+
 	"personalise": {
 		GUI: "/personalise",
 		NoMCP: "a rule changes what visitors see on a page, which is a " +
