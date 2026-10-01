@@ -116,12 +116,11 @@ func TestEverySurfaceDrawsTheSameMark(t *testing.T) {
 	if !strings.Contains(w.Body.String(), MarkPath) {
 		t.Error("/icon.svg draws something other than MarkPath")
 	}
-	// The centre of the ring is a hole rather than a white shape, which is what lets one mark
-	// work on the light theme, the dark theme and an operator's own accent.
-	// Without evenodd the subpaths fill solid and the ring closes up.
-	if !strings.Contains(w.Body.String(), "evenodd") {
-		t.Error("the mark is not drawn with fill-rule=evenodd, so the ring is " +
-			"filled in rather than knocked out and the shape is a blob")
+	// Nonzero, not evenodd. The tick crosses the ring, and under evenodd
+	// every place two parts overlap would be cut out of the mark.
+	if strings.Contains(w.Body.String(), "evenodd") {
+		t.Error("the mark is drawn with fill-rule=evenodd, which cuts a hole " +
+			"wherever the tick crosses the ring")
 	}
 }
 

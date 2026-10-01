@@ -7,27 +7,24 @@ package admin
 //
 // # What it is
 //
-// A Q drawn as a loop with something at its centre: a ring, a dot inside
-// it, and a short tail leaving at the lower right.
+// A Q left open, whose tail is a tick. The ring is a run going round —
+// decide, act, look, decide again — and it does not close on itself: the
+// tick passes through the gap. That is the product in one shape. An agent
+// works in a loop, and what leaves the loop is what somebody agreed to.
 //
-// The ring is a run going round — decide, act, look, decide again. The dot
-// is what the loop goes round: the person an agent stops for, and the
-// declaration it cannot leave. The tail is what makes the ring a letter,
-// and it is drawn just clear of the ring so that it reads at sixteen
-// pixels as a Q and not as a magnifying glass with a thick handle.
+// The two marks before it were a quill nib, from when this was a content
+// management system and nothing else, and a ring with a dot at its centre,
+// replaced within a day because a well-known software company's registered
+// mark is a Q built the same way.
 //
-// The mark it replaced was a quill nib, from when this was a content
-// management system and nothing else.
+// # Why one path, and why nonzero
 //
-// # Why one path and not several
-//
-// The hole in the ring is a hole, not a white shape. Drawn with
-// fill-rule="evenodd" in a single path, the ground shows through it — so
-// the mark works on the light theme, the dark theme and whatever accent an
-// operator has configured, without a second colour or a second copy for
-// dark mode. The dot is a third subpath inside the hole, and the same rule
-// turns it solid again. The tail does not touch the ring for the same
-// reason: where two subpaths overlap, that rule would cut a notch.
+// Three subpaths: the ring with its two rounded ends, and the tick as two
+// strokes meeting at a rounded corner. The tick's short stroke starts
+// inside the ring and its long one crosses the ring's gap, so the shapes
+// overlap. They are all drawn in the same direction and filled with the
+// nonzero rule, under which an overlap is simply filled; the evenodd rule
+// the earlier marks used would cut a hole wherever two parts meet.
 //
 // # Why it is in Go rather than in the template
 //
@@ -39,10 +36,9 @@ package admin
 // Coordinates are absolute in a 24×24 box, so a consumer that only reads
 // the `d` attribute — an icon pipeline, an SVG favicon — gets the same
 // shape as the browser does.
-const MarkPath = "M12 2.5A9.5 9.5 0 1 0 12 21.5A9.5 9.5 0 1 0 12 2.5Z " +
-	"M12 6.7A5.3 5.3 0 1 0 12 17.3A5.3 5.3 0 1 0 12 6.7Z " +
-	"M12 9.9A2.1 2.1 0 1 0 12 14.1A2.1 2.1 0 1 0 12 9.9Z " +
-	"M20.23 17.97L22.13 19.87A1.6 1.6 0 0 1 19.87 22.13L17.97 20.23Z"
+const MarkPath = "M15.04 18.59A8.60 8.60 0 1 1 19.08 8.06A1.60 1.60 0 0 1 16.07 9.15A5.40 5.40 0 1 0 13.54 15.77A1.60 1.60 0 0 1 15.04 18.59Z " +
+	"M12.73 12.27L16.03 15.57A1.60 1.60 0 0 1 13.77 17.83L10.47 14.53A1.60 1.60 0 0 1 12.73 12.27Z " +
+	"M13.72 15.62L20.22 8.52A1.60 1.60 0 0 1 22.58 10.68L16.08 17.78A1.60 1.60 0 0 1 13.72 15.62Z"
 
 // MarkSVG is the mark as a standalone document, for the favicon and the
 // installed icon.
@@ -56,6 +52,6 @@ func MarkSVG(colour string) string {
 		colour = "#0842a0"
 	}
 	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">` +
-		`<path fill-rule="evenodd" fill="` + colour + `" d="` + MarkPath +
+		`<path fill="` + colour + `" d="` + MarkPath +
 		`"/></svg>`
 }
