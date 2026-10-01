@@ -482,15 +482,15 @@
     } else {
       var n = log.querySelectorAll(".qz-a").length + 1;
       var id = "src-" + n;
-      ans.sentences.forEach(function (s) {
-        var p = el("p", "", s + " ");
-        var sup = el("sup");
-        var a = el("a", "", "[1]");
-        a.href = "#" + id;
-        sup.appendChild(a);
-        p.appendChild(sup);
-        reply.appendChild(p);
-      });
+      // One passage is quoted, so one citation, after the quote: a marker on
+      // every sentence of it would say the same thing each time.
+      var p = el("p", "", ans.sentences.join(" ") + " ");
+      var sup = el("sup");
+      var a = el("a", "", "[1]");
+      a.href = "#" + id;
+      sup.appendChild(a);
+      p.appendChild(sup);
+      reply.appendChild(p);
       var best = k.passages[ans.hits[0].i];
       reply.appendChild(el("h2", "qz-sources-title", "Source"));
       var list = el("ol", "qz-sources");
@@ -503,9 +503,20 @@
       reply.appendChild(list);
     }
     log.appendChild(reply);
-    status.textContent = ans.refused ? k.refusal : "Answered from " +
-      (k.passages[ans.hits[0].i].header || "this site") + ".";
+    announce(ans.refused ? k.refusal : "Answered from " +
+      (k.passages[ans.hits[0].i].header || "this site") + ".");
     reply.scrollIntoView({ block: "nearest" });
+  }
+
+  // An answer is announced, for somebody who cannot see it arrive, and not
+  // shown twice to somebody who can. A problem is shown.
+  function announce(text) {
+    status.className = "qz-status qz-sr";
+    status.textContent = text;
+  }
+  function problem(text) {
+    status.className = "qz-status";
+    status.textContent = text;
   }
 
   function ask(question) {
@@ -514,7 +525,7 @@
     }
     var ans = current.engine.respond(question, previous);
     if (ans.problem) {
-      status.textContent = ans.problem;
+      problem(ans.problem);
       return;
     }
     show(ans.question, ans, current.k);
@@ -536,7 +547,7 @@
     }
   });
 
-  status.textContent = "Loading what this chatbot answers from.";
+  announce("Loading what this chatbot answers from.");
   fetch(page + "/knowledge.json", { credentials: "omit" })
     .then(function (r) {
       if (!r.ok) {
@@ -550,14 +561,14 @@
       }
       current = { k: k, engine: new Engine(k) };
       form.removeAttribute("aria-busy");
-      status.textContent = "";
+      announce("");
       var q = new URLSearchParams(location.search).get("q");
       if (q) {
         ask(q);
       }
     })
     .catch(function () {
-      status.textContent = "This chatbot could not load what it answers " +
-        "from. Reload the page to try again.";
+      problem("This chatbot could not load what it answers from. Reload " +
+        "the page to try again.");
     });
 })();

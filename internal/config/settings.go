@@ -282,6 +282,18 @@ var settings = []Setting{
 			"with the site; the flag still overrides it for one run.",
 	},
 	{
+		Key: "site.icon", Kind: Text, Default: "",
+		Summary: "the media library id of the picture used as this site's icon",
+		Why: "A published site had no icon: every page's request for " +
+			"/favicon.ico was a 404, a browser tab showed a blank square, and " +
+			"the manifest offered an installed site nothing to put on its " +
+			"tile. One picture from the media library — a square PNG of 512 " +
+			"pixels suits every place it is shown — linked from every page, " +
+			"declared in the manifest at its real size, and served at " +
+			"/favicon.ico. A value that names no picture in the library is " +
+			"ignored, and the site has no icon, as before.",
+	},
+	{
 		Key: "site.trusted_proxy", Kind: Bool, Default: "false",
 		Summary: "something in front of this forwards the client's address",
 		Why: "Whether the inbox's rate limit can tell one remote instance " +

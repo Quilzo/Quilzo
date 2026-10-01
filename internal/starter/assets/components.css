@@ -185,6 +185,7 @@ pre {
   text-decoration: none;
   display: inline-flex; align-items: center; gap: var(--space-2);
 }
+.brand-icon { width: 1.6em; height: 1.6em; object-fit: contain; flex: none; }
 .brand-mark {
   width: 1.6em; height: 1.6em;
   display: grid; place-items: center;

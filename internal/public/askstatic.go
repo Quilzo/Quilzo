@@ -115,6 +115,8 @@ func (st *Site) renderAskStatic(w http.ResponseWriter, v askView) {
 		// The constant, as JS rather than as text, so html/template places
 		// the bytes the hash was taken over. Never anything from a request.
 		"Script": template.JS(askStaticJS),
+		// Built from an id checked against the library; see icon.go.
+		"Icon": template.HTML(st.iconLink()),
 	})
 }
 
@@ -146,14 +148,14 @@ var askStaticTemplate = template.Must(template.New("ask-static").Parse(`<!doctyp
 <meta name="robots" content="noindex">
 <link rel="stylesheet" href="/site.css">
 <link rel="stylesheet" href="/ask.css">
-</head>
+{{.Icon}}</head>
 <body class="qz-ask qz-static"><main>
 <p class="qz-home"><a href="/">Back to the site</a></p>
 <h1>{{.V.Assistant.Title}}</h1>
 <p class="qz-greeting">{{.V.Greeting}}</p>
 <div id="qz-log" class="qz-log"></div>
 <p id="qz-status" class="qz-status" role="status"></p>
-<form id="qz-form" method="get" action="/ask/{{.V.Assistant.Name}}" class="qz-ask-form" aria-busy="true">
+<form id="qz-form" method="get" action="/ask/{{.V.Assistant.Name}}/" class="qz-ask-form" aria-busy="true">
   <label for="q">Your question</label>
   <textarea id="q" name="q" rows="2" maxlength="1000" required autofocus></textarea>
   <button type="submit">Ask</button>

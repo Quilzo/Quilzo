@@ -387,7 +387,9 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 	w.WriteHeader(status)
 	_ = askTemplate.Execute(w, map[string]any{
 		"Disclosure": Disclosure,
-		"V":          v, "Honeypot": form.Honeypot, "StampField": form.StampField,
+		// Built from an id checked against the library; see icon.go.
+		"Icon": template.HTML(st.iconLink()),
+		"V":    v, "Honeypot": form.Honeypot, "StampField": form.StampField,
 	})
 }
 
@@ -436,7 +438,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 <title>{{.V.Assistant.Title}}</title>
 <link rel="stylesheet" href="/site.css">
 <link rel="stylesheet" href="/ask.css">
-</head>
+{{.Icon}}</head>
 <body class="qz-ask{{if .V.Embedded}} qz-embed{{end}}"><main>
 {{if .V.Embedded}}<p class="qz-embed-title">{{.V.Assistant.Title}}</p>{{else}}<h1>{{.V.Assistant.Title}}</h1>{{end}}
 {{if .V.Answer}}
@@ -542,6 +544,7 @@ const askCSS = `.qz-ask main{max-width:42rem;margin:0 auto;padding:1.5rem 1rem 3
 .qz-sources-title{font-size:1em;margin:.8rem 0 .2rem}
 .qz-status{font-size:.9em;opacity:.8;margin:.5rem 0}
 .qz-status:empty{display:none}
+.qz-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 `
 
 func (st *Site) askStylesheet(w http.ResponseWriter, r *http.Request) {

@@ -232,7 +232,7 @@ func TestAStaticCopyCarriesTheChatbot(t *testing.T) {
 	// still names it.
 	moved := render.Rebase(files, "/demo")
 	checkScriptHash(t, string(moved["ask/help/index.html"]))
-	if !strings.Contains(string(moved["ask/help/index.html"]), `action="/demo/ask/help"`) {
+	if !strings.Contains(string(moved["ask/help/index.html"]), `action="/demo/ask/help/"`) {
 		t.Error("the form's action was not moved, and the script finds " +
 			"everything else from it")
 	}
@@ -351,4 +351,14 @@ func head(st *Site, path string) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
 	st.Handler().ServeHTTP(w, req)
 	return w
+}
+
+// The conversation answers at its address with a trailing slash, which is
+// where a static host serves the directory it is in.
+func TestTheAskAddressTakesATrailingSlash(t *testing.T) {
+	st, _ := askSite(t, shopBot)
+	w := get(st, "/ask/help/?q=can+I+return+opened+ink", nil)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "cannot be returned") {
+		t.Fatalf("%d", w.Code)
+	}
 }

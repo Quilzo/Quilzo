@@ -111,7 +111,14 @@ func Collect(pages map[string]any) Sources {
 				}
 			}
 		case map[string]any:
-			for _, vv := range t {
+			for k, vv := range t {
+				// A link is somewhere a reader goes, not something the page
+				// fetches, so it needs nothing from the policy. Read as an
+				// image, every "Get it on GitHub" button added the whole of
+				// github.com to img-src.
+				if isLink(k) {
+					continue
+				}
 				walk(vv)
 			}
 		case []any:
@@ -125,6 +132,12 @@ func Collect(pages map[string]any) Sources {
 	sort.Strings(s.Media)
 	sort.Strings(s.Frame)
 	return s
+}
+
+// isLink reports whether a field holds the target of a link: "href" and
+// anything ending "_href", which is how every shipped layout names one.
+func isLink(field string) bool {
+	return field == "href" || strings.HasSuffix(field, "_href")
 }
 
 type kind string

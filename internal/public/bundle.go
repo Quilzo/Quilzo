@@ -170,6 +170,7 @@ func (st *Site) Routes() ([]route, error) {
 		{path: atomPath, file: strings.TrimPrefix(atomPath, "/")},
 		{path: jsonPath, file: strings.TrimPrefix(jsonPath, "/")},
 		{path: "/.well-known/agent-card.json", file: ".well-known/agent-card.json"},
+		{path: "/favicon.ico", file: "favicon.ico"},
 	} {
 		out = append(out, r)
 	}

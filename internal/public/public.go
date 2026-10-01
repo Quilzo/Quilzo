@@ -222,6 +222,9 @@ type Site struct {
 	// field existed, the behaviour of every deployment including the ones with
 	// one.
 	Media MediaLookup
+	// Icon is the media library id of the site's icon. Empty means none.
+	// See icon.go.
+	Icon string
 	// MediaStat reads what an asset is without reading its bytes.
 	//
 	// Separate from Media because a page asking which narrower copies a
@@ -288,6 +291,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc(SpeculationPath, st.speculationRules)
 	mux.HandleFunc("/llms.txt", st.llms)
 	mux.HandleFunc("/media/", st.mediaFile)
+	mux.HandleFunc("/favicon.ico", st.favicon)
 	mux.HandleFunc("/form/", st.submit)
 	mux.HandleFunc("/ask/", st.ask)
 	mux.HandleFunc("/ask.css", st.askStylesheet)
@@ -895,6 +899,7 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 func (st *Site) injectHead(html, page, hash string, body any) string {
 	var b strings.Builder
 	b.WriteString(`<link rel="manifest" href="/manifest.webmanifest">` + "\n")
+	b.WriteString(st.iconLink())
 
 	// The catalogue, so an agent finds it without being told where to look.
 	//
@@ -980,7 +985,7 @@ func (st *Site) manifest(w http.ResponseWriter, r *http.Request) {
 		"theme_color":      firstColour(st.ThemeColour, "#0b5c6b"),
 		// An installable app has to work offline, and this is the page that
 		// makes that true rather than a promise.
-		"icons": []map[string]any{},
+		"icons": st.iconManifest(),
 	}
 	// Shortcuts, from the site's own navigation.
 	//
@@ -1349,6 +1354,9 @@ func (st *Site) sources() render.Sources {
 	src := render.Sources{Name: st.Name, Listings: st.Listings,
 		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster,
 		Form: st.formData}
+	if _, ok := st.iconFile(); ok {
+		src.Icon = "/media/" + st.Icon
+	}
 	if st.Menus != nil {
 		if set, err := st.Menus(); err == nil {
 			src.Menus = set

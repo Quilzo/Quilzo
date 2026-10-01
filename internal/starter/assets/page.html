@@ -20,7 +20,7 @@
 
 <header class="site-header {{ page.header_class }}">
   <div class="wrap wrap-wide">
-    {% if site.name %}<a class="brand" href="/">{% if page.brand_mark %}<span class="brand-mark" aria-hidden="true">{{ page.brand_mark }}</span>{% end %}{{ site.name }}</a>{% end %}
+    {% if site.name %}<a class="brand" href="/">{% if site.icon %}<img class="brand-icon" src="{{ site.icon }}"{% if site.icon_srcset %} srcset="{{ site.icon_srcset }}" sizes="28px"{% end %} alt="" width="28" height="28">{% end %}{% if page.brand_mark %}<span class="brand-mark" aria-hidden="true">{{ page.brand_mark }}</span>{% end %}{{ site.name }}</a>{% end %}
     {% if menus.main %}
     <nav class="nav" aria-label="Main">
       <ul>
@@ -518,7 +518,7 @@
     <div class="ask-box">
       {% if s.ask.title %}<h2>{{ s.ask.title }}</h2>{% end %}
       {% if s.ask.intro %}<p class="lead">{{ s.ask.intro }}</p>{% end %}
-      <form class="ask-form" method="get" action="/ask/{{ s.ask.assistant }}">
+      <form class="ask-form" method="get" action="/ask/{{ s.ask.assistant }}/">
         <label for="ask-{{ s.id }}{{ s.ask.assistant | slug }}">{{ s.ask.label | default:Your question }}</label>
         <div class="search-row">
           <input id="ask-{{ s.id }}{{ s.ask.assistant | slug }}" name="q" type="text" maxlength="1000" required autocomplete="off"{% if s.ask.placeholder %} placeholder="{{ s.ask.placeholder }}"{% end %}>
@@ -526,7 +526,7 @@
         </div>
       </form>
       {% if s.ask.suggestions %}
-      <form class="ask-suggestions" method="get" action="/ask/{{ s.ask.assistant }}">
+      <form class="ask-suggestions" method="get" action="/ask/{{ s.ask.assistant }}/">
         <p class="muted">{{ s.ask.suggestions_label | default:Or try }}</p>
         {% for q in s.ask.suggestions %}<button type="submit" name="q" value="{{ q }}">{{ q }}</button>{% end %}
       </form>
