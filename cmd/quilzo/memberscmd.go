@@ -106,10 +106,13 @@ func cmdMember(root string, args []string) error {
 		if len(args) != 2 {
 			return memberUsage()
 		}
+		if posts, perr := openPosts(root); perr == nil {
+			posts.RemoveAuthor(args[1])
+		}
 		if err := store.Delete(args[1]); err != nil {
 			return err
 		}
-		w.Human("removed %s, with its passkeys, recovery codes and sessions\n", args[1])
+		w.Human("removed %s, with its passkeys, recovery codes, sessions and posts\n", args[1])
 		return done("member.removed", args[1])
 	case "invite":
 		fs := flag.NewFlagSet("member invite", flag.ContinueOnError)

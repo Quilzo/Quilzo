@@ -486,6 +486,12 @@ var coverage = map[string]surfaces{
 			"is sent",
 	},
 
+	"board": {
+		GUI: "/boards",
+		NoMCP: "what members wrote is theirs, and approving or deleting it " +
+			"is a judgement about somebody's words that a person makes",
+	},
+
 	"member": {
 		GUI: "/members",
 		NoMCP: "who has an account on the site is personal data, and " +

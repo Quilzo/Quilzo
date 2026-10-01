@@ -225,6 +225,8 @@ type Site struct {
 	// Members is the site's accounts for its visitors. Nil means it has
 	// none. See members.go.
 	Members *Members
+	// Boards is what members may write under pages. See boards.go.
+	Boards *Boards
 	// Icon is the media library id of the site's icon. Empty means none.
 	// See icon.go.
 	Icon string
@@ -305,6 +307,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/account", st.account)
 	mux.HandleFunc("/account/", st.account)
 	mux.HandleFunc("/account.js", st.accountScript)
+	mux.HandleFunc("/board/", st.post)
 	mux.HandleFunc("/", st.page)
 	// The banner is innermost, so it wraps the handler's own output and
 	// nothing else: the headers and the crawl gate go outside it, where a
@@ -915,6 +918,7 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	if names := listing.On(body); len(names) > 0 {
 		tag = `"` + renderTag(tree[served], st.dataTree(), names, args) + `"`
 	}
+	tag = st.threadsTag(tag, name, commentsOn(body))
 	w.Header().Set("ETag", tag)
 	if forMembers {
 		// One member's request, never a shared cache's. no-store rather
@@ -1443,7 +1447,7 @@ func (st *Site) formData(name string) map[string]any {
 func (st *Site) sources() render.Sources {
 	src := render.Sources{Name: st.Name, Listings: st.Listings,
 		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster,
-		Form: st.formData}
+		Form: st.formData, Thread: st.threadData}
 	if _, ok := st.iconFile(); ok {
 		src.Icon = "/media/" + st.Icon
 		src.IconInitial = st.IconInitial

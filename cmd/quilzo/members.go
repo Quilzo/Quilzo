@@ -130,6 +130,10 @@ func membersHooks(root string) *admin.MembersAdmin {
 			return note(action, by, id)
 		},
 		Remove: func(id, by string) error {
+			// What they wrote first: an erased account's posts go with it.
+			if posts, perr := openPosts(root); perr == nil {
+				posts.RemoveAuthor(id)
+			}
 			if err := store.Delete(id); err != nil {
 				return err
 			}

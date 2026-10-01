@@ -1,0 +1,53 @@
+{{template "head" .}}
+<h1>Boards</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">Places on the site where members write: comments under a page,
+  a discussion. A page shows one with a comments section naming the board.</p>
+
+<h2>Waiting for a person</h2>
+{{if .Held}}<ul class="post-queue">{{range .Held}}<li class="card">
+  <p class="hint"><strong>{{.Name}}</strong> on <a href="{{.Href}}">{{.Thread}}</a> · {{.Board}} · {{.When}}</p>
+  <p class="post-text">{{.Body}}</p>
+  <form method="post" action="/boards/act" class="actions"><input type="hidden" name="id" value="{{.ID}}">
+    <button type="submit" name="do" value="approve">Approve<span class="visually-hidden"> the post by {{.Name}}</span></button>
+    <button type="submit" name="do" value="delete" class="danger">Delete<span class="visually-hidden"> the post by {{.Name}}</span></button></form>
+</li>{{end}}</ul>{{else}}<p>Nothing is waiting.</p>{{end}}
+
+<h2>Recently posted</h2>
+{{if .Recent}}<ul class="post-queue">{{range .Recent}}<li class="card">
+  <p class="hint"><strong>{{.Name}}</strong> on <a href="{{.Href}}">{{.Thread}}</a> · {{.Board}} · {{.When}}</p>
+  <p class="post-text">{{.Body}}</p>
+  <form method="post" action="/boards/act"><input type="hidden" name="id" value="{{.ID}}">
+    <button type="submit" name="do" value="delete" class="quiet">Delete<span class="visually-hidden"> the post by {{.Name}}</span></button></form>
+</li>{{end}}</ul>{{else}}<p>Nobody has posted yet.</p>{{end}}
+
+<h2>The boards</h2>
+{{if .Boards}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Board</th><th scope="col">Shown</th><th scope="col">Longest post</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+  <tbody>{{range .Boards}}<tr>
+    <th scope="row">{{.Title}}<br><span class="hint mono">{{.Name}}</span></th>
+    <td>{{if eq .Moderation "pre"}}after a person approves{{else}}at once{{end}}{{if .Closed}}, closed{{end}}</td>
+    <td>{{.Limit}} characters</td>
+    <td>{{if $.CanDeclare}}<form method="post" action="/boards/act"><input type="hidden" name="do" value="remove"><input type="hidden" name="name" value="{{.Name}}">
+      <button type="submit" class="quiet">Remove<span class="visually-hidden"> {{.Title}}</span></button></form>{{end}}</td>
+  </tr>{{end}}</tbody></table></div>{{else}}<p>No boards yet.</p>{{end}}
+
+{{if .CanDeclare}}<form method="post" action="/boards/act" class="card">
+  <input type="hidden" name="do" value="declare">
+  <h3>Add or change a board</h3>
+  <div class="field"><label for="b-name">Name {{template "req"}}</label>
+    <input id="b-name" name="name" required pattern="[a-z][a-z0-9\-]{0,39}" aria-describedby="b-name-help">
+    <p id="b-name-help" class="help">Lower-case letters, digits and hyphens. A page's comments section names it.</p></div>
+  <div class="field"><label for="b-title">Title {{template "req"}}</label><input id="b-title" name="title" required></div>
+  <fieldset class="field"><legend>When a post is shown</legend>
+    <label><input type="radio" name="moderation" value="post" checked> At once; anybody can report it to you</label><br>
+    <label><input type="radio" name="moderation" value="pre"> After a person approves it here</label></fieldset>
+  <div class="field"><label for="b-max">Longest post, in characters</label><input id="b-max" name="max" type="number" min="0" max="10000" value="0" aria-describedby="b-max-help">
+    <p id="b-max-help" class="help">0 means 2000.</p></div>
+  <div class="field"><label><input type="checkbox" name="closed" value="1"> Closed: keep what is there and take nothing new</label></div>
+  <button type="submit">Save the board</button>
+</form>{{end}}
+{{end}}
+{{template "foot" .}}

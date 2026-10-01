@@ -448,6 +448,17 @@ pre {
 .quotes .by { margin: 0; display: flex; flex-direction: column; font-size: var(--text-sm); }
 .quotes .by span { color: var(--on-surface-variant); }
 
+/* -- what members wrote ---------------------------------------------------- */
+
+.posts { list-style: none; margin: 0 0 var(--space-5); padding: 0; display: grid; gap: var(--space-3); }
+.post { background: var(--surface-container-low); border: var(--border) solid var(--outline-variant);
+  border-radius: var(--radius-lg); padding: var(--space-4); }
+.post-by { margin: 0 0 var(--space-2); font-size: var(--text-sm); display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* Text as it was written, line breaks kept: a post is not markup. */
+.post-body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.post-form { display: grid; gap: var(--space-2); max-width: var(--measure); }
+.post-form .btn { justify-self: start; }
+
 /* -- a question for a chatbot ---------------------------------------------- */
 
 .ask-box {
@@ -860,7 +871,7 @@ figure { margin: 0; }
 
 @media (forced-colors: active) {
   .card, .hero, .chip, .metric, .plan, .notice, .table-wrap, .side,
-  .faq details, blockquote.pull, .quotes li, .ask-box, .tab-list {
+  .faq details, blockquote.pull, .quotes li, .ask-box, .tab-list, .post {
     border: 1px solid CanvasText;
   }
   /* The chosen tab is a filled pill, and forced colours discard fills. */

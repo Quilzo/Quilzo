@@ -134,6 +134,18 @@ func (v *visitor) form(path string, values url.Values) *httptest.ResponseRecorde
 	return v.do(http.MethodPost, path, []byte(values.Encode()), "application/x-www-form-urlencoded")
 }
 
+var memberSiteParty = webauthn.Party{ID: "example.org", Origin: memberOrigin}
+
+// memberID is the account the visitor is signed in to.
+func (v *visitor) memberID(t *testing.T) string {
+	t.Helper()
+	m, err := v.st.Members.Store.SessionMember(v.cookie)
+	if err != nil {
+		t.Fatalf("the visitor is not signed in: %v", err)
+	}
+	return m.ID
+}
+
 func memberSite(t *testing.T, mode string) (*Site, *member.Store) {
 	t.Helper()
 	st := published(t, map[string]any{

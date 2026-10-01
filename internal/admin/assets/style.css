@@ -2268,3 +2268,7 @@ th[scope="row"] { font-weight: 500; }
 .inline-remove { display: inline-block; margin-left: .5rem; }
 .inline-remove summary { cursor: pointer; color: var(--error, #b3261e); font-weight: 500; }
 .inline-remove form { display: grid; gap: .4rem; margin-top: .5rem; max-width: 18rem; }
+
+/* Boards: what members wrote, as text, one card each. */
+.post-queue { list-style: none; padding: 0; display: grid; gap: .75rem; }
+.post-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: .5rem 0; }

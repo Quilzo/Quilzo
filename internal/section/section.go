@@ -314,6 +314,13 @@ var kinds = []Kind{
 		},
 	},
 	{
+		Name: "comments", Group: "closing", Summary: "What members write under this page, on one of the site's boards, with a form to add to it.",
+		Stub: map[string]any{
+			"title": "Comments", "board": "comments",
+			"intro": "", "label": "Your comment", "button": "Post",
+		},
+	},
+	{
 		Name: "notice", Group: "closing", Summary: "A short banner in one of four tones: plain, positive, caution, critical.",
 		Stub: map[string]any{
 			"tone": "caution", "title": "Something worth saying at the top",

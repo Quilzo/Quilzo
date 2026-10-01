@@ -538,6 +538,35 @@
 </section>
 {% end %}
 
+{% if s.comments %}
+<section class="section {{ s.comments.tone }}" id="comments">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>{{ s.comments.title | default:Comments }}</h2>
+      {% if s.comments.intro %}<p class="lead">{{ s.comments.intro }}</p>{% end %}
+    </div>
+    {% if s.comments.empty %}<p class="muted">Nothing here yet.</p>{% end %}
+    <ol class="posts" role="list">
+      {% for p in s.comments.posts %}
+      <li class="post">
+        <p class="post-by"><strong>{{ p.name }}</strong> <time datetime="{{ p.created }}">{{ p.created | date }}</time>{% if p.edited %} <span class="muted">edited</span>{% end %}</p>
+        <p class="post-body">{{ p.body }}</p>
+      </li>
+      {% end %}
+    </ol>
+    {% if s.comments.open %}
+    <form class="post-form" method="post" action="/board/{{ s.comments.board }}">
+      <input type="hidden" name="thread" value="{{ s.comments.thread }}">
+      <label for="post-{{ s.id }}{{ s.comments.board }}">{{ s.comments.label | default:Your comment }}</label>
+      <textarea id="post-{{ s.id }}{{ s.comments.board }}" name="body" rows="4" maxlength="10000" required></textarea>
+      <p class="muted">Posting needs an account on this site{% if s.comments.held %}, and a person reads each post before it is shown{% end %}. <a href="/account">Sign in</a></p>
+      <button class="btn" type="submit">{{ s.comments.button | default:Post }}</button>
+    </form>
+    {% end %}
+  </div>
+</section>
+{% end %}
+
 {% if s.cta %}
 <section class="section {{ s.cta.tone | default:tone-primary }} reveal">
   <div class="wrap">
