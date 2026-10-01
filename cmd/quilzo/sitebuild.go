@@ -156,6 +156,18 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	// The declared assistants, served at /ask/NAME. Read per request, so one
 	// declared or withdrawn from the admin or the command line takes effect
 	// without a restart — withdrawing a public assistant has to be immediate.
+	// Somebody going after this Quilzo in particular: hunting for the
+	// admin on the public site, guessing conversation addresses, or trying
+	// to inject instructions into a chatbot. Recorded once per source per
+	// window for the quilzo.* rules. See internal/public/signals.go.
+	st.Signals = &public.SignalWatch{Window: 10 * time.Minute,
+		After: map[string]int{public.AdminHunt: 3, public.ConversationGuess: 5,
+			public.ChatbotInjection: 1},
+		Report: func(kind, source string, n int) {
+			record(root, audit.Record{Action: "site." + kind, Resource: "/",
+				Outcome: audit.Denied, Principal: source, Kind: audit.KindUnknown,
+				Detail: map[string]string{"count": fmt.Sprint(n)}})
+		}}
 	st.Assistants = &public.Assistants{
 		Set:     func() (*assistant.Set, error) { return assistant.Load(assistantsPath(root)) },
 		Handoff: handoffStore(root),

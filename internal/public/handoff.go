@@ -147,6 +147,7 @@ func (st *Site) handoffConversation(w http.ResponseWriter, r *http.Request,
 	id := handoff.IDFor(secret)
 	c, err := store.Get(a.Name, id)
 	if err != nil {
+		st.signal(ConversationGuess, r)
 		st.notFound(w, r)
 		return
 	}

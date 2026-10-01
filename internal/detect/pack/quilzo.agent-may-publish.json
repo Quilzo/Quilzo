@@ -1,0 +1,110 @@
+{
+  "id": "quilzo.agent-may-publish",
+  "title": "An agent was given permission to publish",
+  "why": "an agent that can publish puts its work in front of the public; a person still approves it, but this is the setting to know about",
+  "blind": "an agent widened by editing its declaration file directly",
+  "sources": [
+    "quilzo/audit"
+  ],
+  "severity": 2,
+  "when": {
+    "all": [
+      {
+        "match": {
+          "field": "raw.action",
+          "op": "equals",
+          "values": [
+            "agent.declare",
+            "agent.changed"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "raw.autonomy",
+          "op": "equals",
+          "values": [
+            "publish"
+          ]
+        }
+      }
+    ]
+  },
+  "technique": [
+    "T1098"
+  ],
+  "fixtures": [
+    {
+      "name": "declared with publish",
+      "match": true,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "agent.declare",
+        "raw": {
+          "action": "agent.declare",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human",
+          "agent": "writer",
+          "autonomy": "publish"
+        }
+      }
+    },
+    {
+      "name": "changed to publish",
+      "match": true,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "agent.changed",
+        "raw": {
+          "action": "agent.changed",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human",
+          "agent": "writer",
+          "autonomy": "publish"
+        }
+      }
+    },
+    {
+      "name": "declared to propose",
+      "match": false,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "agent.declare",
+        "raw": {
+          "action": "agent.declare",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human",
+          "agent": "helper",
+          "autonomy": "propose"
+        }
+      }
+    }
+  ]
+}

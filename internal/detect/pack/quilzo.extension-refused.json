@@ -1,0 +1,68 @@
+{
+  "id": "quilzo.extension-refused",
+  "title": "An extension tried something it is not allowed to",
+  "why": "an extension asking for more than it declared is misconfigured or compromised",
+  "blind": "an extension that stays inside its limits while doing harm within them",
+  "sources": [
+    "quilzo/audit"
+  ],
+  "severity": 3,
+  "when": {
+    "match": {
+      "field": "raw.action",
+      "op": "equals",
+      "values": [
+        "ext.refused"
+      ]
+    }
+  },
+  "technique": [
+    "T1059"
+  ],
+  "fixtures": [
+    {
+      "name": "refused",
+      "match": true,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 2,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "ext.refused",
+        "raw": {
+          "action": "ext.refused",
+          "outcome": "denied",
+          "resource": "/",
+          "kind": "human"
+        }
+      }
+    },
+    {
+      "name": "installed",
+      "match": false,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "ext.add",
+        "raw": {
+          "action": "ext.add",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human"
+        }
+      }
+    }
+  ]
+}

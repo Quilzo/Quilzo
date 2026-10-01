@@ -1,0 +1,83 @@
+{
+  "id": "quilzo.admin-granted",
+  "title": "Somebody was made an administrator of Quilzo",
+  "why": "administrator is the role that can change every other control",
+  "blind": "a role granted outside Quilzo, on the machine it runs on",
+  "sources": [
+    "quilzo/audit"
+  ],
+  "severity": 3,
+  "when": {
+    "all": [
+      {
+        "match": {
+          "field": "raw.action",
+          "op": "equals",
+          "values": [
+            "access.grant"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "raw.role",
+          "op": "equals",
+          "values": [
+            "admin"
+          ]
+        }
+      }
+    ]
+  },
+  "technique": [
+    "T1098"
+  ],
+  "fixtures": [
+    {
+      "name": "made an administrator",
+      "match": true,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "access.grant",
+        "raw": {
+          "action": "access.grant",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human",
+          "role": "admin"
+        }
+      }
+    },
+    {
+      "name": "made an author",
+      "match": false,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "access.grant",
+        "raw": {
+          "action": "access.grant",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human",
+          "role": "author"
+        }
+      }
+    }
+  ]
+}

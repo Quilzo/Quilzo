@@ -101,6 +101,9 @@ type Site struct {
 	// package does not import the csp package, which would make the dependency
 	// point the wrong way: the policy is built from content, and this is what
 	// serves content.
+	// Signals counts what only somebody going after this Quilzo does: see
+	// signals.go. Nil counts nothing.
+	Signals  *SignalWatch
 	CSP      func() (string, bool)
 	CSPValue func() string
 	// Speculate is how eagerly a browser may fetch the next page: off,

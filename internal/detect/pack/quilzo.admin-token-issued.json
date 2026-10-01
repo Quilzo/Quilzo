@@ -1,0 +1,83 @@
+{
+  "id": "quilzo.admin-token-issued",
+  "title": "A token with administrator rights was issued",
+  "why": "an administrator token can change who may do what, including granting itself more",
+  "blind": "a narrower token issued and widened later through a grant",
+  "sources": [
+    "quilzo/audit"
+  ],
+  "severity": 3,
+  "when": {
+    "all": [
+      {
+        "match": {
+          "field": "raw.action",
+          "op": "equals",
+          "values": [
+            "token.issue"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "raw.role",
+          "op": "equals",
+          "values": [
+            "admin"
+          ]
+        }
+      }
+    ]
+  },
+  "technique": [
+    "T1098"
+  ],
+  "fixtures": [
+    {
+      "name": "an admin token",
+      "match": true,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "token.issue",
+        "raw": {
+          "action": "token.issue",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human",
+          "role": "admin"
+        }
+      }
+    },
+    {
+      "name": "an author's token",
+      "match": false,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "token.issue",
+        "raw": {
+          "action": "token.issue",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human",
+          "role": "author"
+        }
+      }
+    }
+  ]
+}

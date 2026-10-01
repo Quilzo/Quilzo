@@ -146,6 +146,9 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		view.Question = r.PostFormValue("q")
+		if LooksLikeInjection(view.Question) {
+			st.signal(ChatbotInjection, r)
+		}
 		view.Previous = r.PostFormValue("prev")
 		view.Embedded = r.PostFormValue("embed") == "1"
 		idx, ierr := st.assistantIndex(a)
