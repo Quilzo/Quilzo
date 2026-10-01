@@ -642,6 +642,9 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		What, Kind, Input, Why, Result, Err string
 		Allowed                             bool
 		Word, Tone, Redirected              string
+		// Fields is the input as a person reads it, when every value in
+		// it is plain: each name with its text, line breaks kept.
+		Fields []inputField
 	}
 	var steps []stepRow
 	for _, st := range rec.Trace.Steps {
@@ -692,6 +695,7 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 			if b, jerr := json.MarshalIndent(wt.Action.Input, "", "  "); jerr == nil {
 				pend.Input = clipText(string(b), 8000)
 			}
+			pend.Fields = readableInput(wt.Action.Input)
 		}
 		data["Pending"] = pend
 		data["Asked"] = agoText(now.Sub(wt.Since))
@@ -763,4 +767,57 @@ func (s *Server) handleRunAct(w http.ResponseWriter, r *http.Request,
 		back("/agents/run/"+newID, fmt.Sprintf("Run again from after step %d "+
 			"of the earlier run.", step), nil)
 	}
+}
+
+// inputField is one value an agent wants to use, by name.
+type inputField struct{ Name, Value string }
+
+// readableInput lays out what an agent asked to do the way a person reads
+// it, for the one decision that depends on reading it.
+//
+// As JSON, a page body is one string with its line breaks written as \n,
+// and the person asked to approve it is reading escapes rather than the
+// text. So a plain input is shown field by field — a write's page fields
+// under the page they belong to — and the JSON stays beside it, exact.
+// Anything nested deeper than that, or not text, a number or a yes or no,
+// returns nil and the JSON is all there is: a view that left something out
+// would be worse than one that is hard to read.
+func readableInput(in map[string]any) []inputField {
+	var out []inputField
+	plain := func(prefix string, m map[string]any) bool {
+		names := make([]string, 0, len(m))
+		for k := range m {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		for _, k := range names {
+			var v string
+			switch t := m[k].(type) {
+			case string:
+				v = t
+			case bool, float64, int:
+				v = fmt.Sprint(t)
+			default:
+				return false
+			}
+			out = append(out, inputField{Name: prefix + k, Value: v})
+		}
+		return true
+	}
+	top := map[string]any{}
+	var fields map[string]any
+	for k, v := range in {
+		if f, ok := v.(map[string]any); ok && k == "fields" {
+			fields = f
+			continue
+		}
+		top[k] = v
+	}
+	if !plain("", top) {
+		return nil
+	}
+	if fields != nil && !plain("fields › ", fields) {
+		return nil
+	}
+	return out
 }

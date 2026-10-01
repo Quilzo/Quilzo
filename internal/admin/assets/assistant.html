@@ -43,7 +43,7 @@
 <div class="table-wrap">
 <table>
   <thead><tr><th scope="col">#</th><th scope="col">Passage</th>
-    <th scope="col">Keyword rank</th><th scope="col">Vector rank</th>
+    <th scope="col">Keyword rank</th><th scope="col">Vector rank</th><th scope="col">Heading rank</th>
     <th scope="col">Matched</th></tr></thead>
   <tbody>
   {{range $i, $h := .Sources}}
@@ -52,6 +52,7 @@
     <th scope="row">{{$h.Header}}{{if $h.Doc}} <span class="tag">document</span>{{end}}<div class="hint">{{$h.Text}}</div></th>
     <td>{{if $h.BM25Rank}}{{$h.BM25Rank}}{{else}}—{{end}}</td>
     <td>{{if $h.VectorRank}}{{$h.VectorRank}}{{else}}—{{end}}</td>
+    <td>{{if $h.HeadingRank}}{{$h.HeadingRank}}{{else}}—{{end}}</td>
     <td>{{range $h.Matched}}<code>{{.}}</code> {{end}}</td>
   </tr>
   {{end}}
@@ -118,6 +119,12 @@
     <p id="handoff-days-help" class="help">After it last moves. 0 means thirty; ninety at most.</p></div>
   <div class="field"><label><input type="checkbox" name="public" value="1"{{if .A.Public}} checked{{end}}>
     Public — serve it on the site at <code>/ask/{{.A.Name}}</code></label></div>
+  <div class="field"><label><input type="checkbox" name="static" value="1"{{if .A.Static}} checked{{end}} aria-describedby="static-help">
+    Answer on static copies of the site too</label>
+    <p id="static-help" class="help">For a copy made with <code>quilzo export</code>
+      or <code>quilzo ipfs write</code>. The copy answers in the visitor's
+      browser, without a model, from published pages only — the passages are
+      published with it as a file anyone can download. Needs Public.</p></div>
   <button type="submit">Save</button>
 </form>
 

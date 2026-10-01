@@ -1823,34 +1823,6 @@ quilzo brand check    # every claim, and what substantiates it
 quilzo rights         # image licences: expired, lapsing, undeclared
 ```
 
-### A second one, published
-
-**[Aster & Alum](https://quilzo.github.io/demo2/)** is a natural dyer's site,
-built with the same tool and serving the other half of the argument. Marginalia
-is a shop and exercises the things a shop needs — a price that has to be a
-number, a sale that has not opened yet, a catalogue an agent can read.
-Aster & Alum is a business that writes: a journal, a guide with substantiated
-claims, an impact page whose numbers come from records rather than from
-enthusiasm.
-
-It is worth having both because the failure modes differ. A shop is where typed
-records and closed vocabularies earn their keep. A site that publishes prose is
-where the brand gate does — every claim on it is one somebody has to be able to
-stand behind, and `quilzo brand check` is what asks.
-
-```
-/demo2/catalogue.json     the range, machine-readable
-/demo2/journal/           dated writing, with a feed
-/demo2/feed.xml           and the feed itself
-/demo2/guide/             long-form: how to keep an indigo vat
-/demo2/impact/            figures that come from records, not from enthusiasm
-/demo2/search/            reader-facing search over nested content
-```
-
-It is a static export served from GitHub Pages, with no origin behind it and
-nothing executing on the other end — which is most of the point. The search
-works because it was built at publish time, not because a script is running.
-
 ## No dependencies
 
 `go.mod` has no `require` block. Not a preference — a supply-chain position. A

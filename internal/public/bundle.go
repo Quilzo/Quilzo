@@ -173,6 +173,19 @@ func (st *Site) Routes() ([]route, error) {
 	} {
 		out = append(out, r)
 	}
+
+	// A chatbot that answers on a static copy: its page, what it answers
+	// from, and the stylesheet both of its pages use. See askstatic.go.
+	if names := st.staticAssistants(); len(names) > 0 {
+		out = append(out, route{path: "/ask.css", file: "ask.css", required: true})
+		for _, n := range names {
+			out = append(out,
+				route{path: "/ask/" + n + "?copy=" + staticCopy,
+					file: "ask/" + n + "/index.html", required: true},
+				route{path: "/ask/" + n + "/knowledge.json",
+					file: "ask/" + n + "/knowledge.json", required: true})
+		}
+	}
 	return out, nil
 }
 

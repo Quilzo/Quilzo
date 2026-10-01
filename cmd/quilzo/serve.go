@@ -654,6 +654,12 @@ func cmdServe(root string, args []string) error {
 		Save:    func(values map[string]string) error { return writeThemeFile(*tplDir, values) },
 		Layouts: func() []string { return design.Layouts.Names() },
 		Fonts:   func() []string { return design.Fonts.Names() },
+		FontFile: func(name string) ([]byte, bool) {
+			if design.Fonts == nil {
+				return nil, false
+			}
+			return design.Fonts.File(name)
+		},
 		OwnStylesheet: func() bool {
 			return fileExists(filepath.Join(*tplDir, "site.css"))
 		},

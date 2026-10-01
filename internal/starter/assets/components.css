@@ -222,6 +222,21 @@ pre {
 }
 .site-footer .wrap { display: flex; flex-direction: column; gap: var(--space-4); }
 .site-footer ul { list-style: none; display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: 0; padding: 0; }
+/* A footer menu with headings becomes columns, one per heading, without a
+   change to its markup: as many columns as there are headings, counted with
+   :has(), and each heading starts the next one. Stacked on a narrow screen,
+   where a forced column break would push a group off the side. A menu with
+   no headings stays the row above. */
+.site-footer ul:has(> li.depth-1) { display: block; column-gap: var(--space-6); }
+.site-footer ul:has(> li.depth-1) > li { break-inside: avoid; padding-block: var(--space-1); }
+.site-footer ul:has(> li.depth-1) > li.depth-0 { font-weight: 600; color: var(--on-surface); padding-top: var(--space-3); }
+@media (min-width: 40rem) {
+  .site-footer ul:has(> li.depth-0 ~ li.depth-0) { columns: 2; max-width: 30rem; }
+  .site-footer ul:has(> li.depth-0 ~ li.depth-0 ~ li.depth-0) { columns: 3; max-width: 45rem; }
+  .site-footer ul:has(> li.depth-0 ~ li.depth-0 ~ li.depth-0 ~ li.depth-0) { columns: 4; max-width: 60rem; }
+  .site-footer ul:has(> li.depth-0 ~ li.depth-0) > li.depth-0 { break-before: column; padding-top: 0; }
+  .site-footer ul:has(> li.depth-0 ~ li.depth-0) > li.depth-0:first-child { break-before: auto; }
+}
 .site-footer .colophon { max-width: var(--measure); }
 
 /* -- buttons --------------------------------------------------------------- */
@@ -293,9 +308,13 @@ pre {
 .card-link:hover h3 { text-decoration: underline; text-decoration-thickness: 2px; }
 
 .grid { display: grid; gap: var(--space-4); }
-.grid-2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
-.grid-3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
-.grid-4 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); }
+/* "columns": "3" means at most three. The minimum width alone let a wide
+   page fit five across, and six cards became a row of five and one alone;
+   the max() keeps each card at least a third of the row, so the grid
+   steps down from three to two to one and never goes past three. */
+.grid-2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, max(20rem, (100% - var(--space-4)) / 2)), 1fr)); }
+.grid-3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, max(15rem, (100% - 2 * var(--space-4)) / 3)), 1fr)); }
+.grid-4 { grid-template-columns: repeat(auto-fit, minmax(min(100%, max(11rem, (100% - 3 * var(--space-4)) / 4)), 1fr)); }
 
 /* A bento arrangement: the first cell spans two where there is room. The
    query itself is generated from --break-sm and appended after this file,
@@ -318,7 +337,12 @@ pre {
 .tone-accent { background: var(--tertiary-container); color: var(--on-tertiary-container); }
 .tone-primary { background: var(--primary-container); color: var(--on-primary-container); }
 .tone-quiet, .tone-raised, .tone-contrast, .tone-accent, .tone-primary { padding-block: var(--space-7); }
-.tone-accent a, .tone-primary a { color: inherit; }
+/* Links take the surface's text colour. A filled button does not: it is
+   its own surface, and its label colour is the one the theme checked
+   against it. As ".tone-primary a" alone this outranked ".btn", and every
+   filled button on a tinted band lost its label colour. */
+.tone-accent a:not(.btn), .tone-primary a:not(.btn),
+.tone-accent .btn-outlined, .tone-primary .btn-outlined { color: inherit; }
 
 /* -- hero ------------------------------------------------------------------ */
 
@@ -359,8 +383,96 @@ pre {
 /* -- split (media beside text) --------------------------------------------- */
 
 .split { display: grid; gap: var(--space-6); align-items: center; }
-.split img { border-radius: var(--radius-lg); width: 100%; }
+.split img { border-radius: var(--radius-lg); width: 100%; border: var(--border) solid var(--outline-variant); }
 .split-text { display: flex; flex-direction: column; gap: var(--space-3); }
+
+/* -- tabs ------------------------------------------------------------------ */
+
+/* One panel at a time, chosen with radio buttons rather than a script. A radio
+   group is what a keyboard and a screen reader already know how to use: Tab
+   reaches the group, the arrow keys move through it, and the choice is
+   announced. The panel follows the choice through :has(). A browser without
+   :has() shows every panel, one under another, which is the content in full
+   rather than a set of buttons that do nothing. */
+.tabs { display: flex; flex-direction: column; gap: var(--space-5); }
+.tab-list {
+  border: 0; margin: 0 auto; padding: var(--space-1);
+  display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-1);
+  background: var(--surface-container); border-radius: var(--radius-pill);
+}
+.tab { position: relative; display: inline-flex; }
+.tab input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.tab span {
+  display: inline-flex; align-items: center; min-height: 44px;
+  padding-inline: var(--space-4); border-radius: var(--radius-pill);
+  font-weight: 600; color: var(--on-surface-variant);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.tab:hover span { color: var(--on-surface); }
+.tab input:checked + span { background: var(--primary); color: var(--on-primary); }
+.tab input:focus-visible + span { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+.tab-panel { display: grid; gap: var(--space-5); align-items: center; }
+.tab-panel img { width: 100%; border-radius: var(--radius-lg); border: var(--border) solid var(--outline-variant); }
+.tab-text { display: flex; flex-direction: column; gap: var(--space-3); }
+@supports selector(:has(*)) {
+  .tab-panel { display: none; }
+  .tabs:has(.tab:nth-of-type(1) input:checked) .tab-panel:nth-of-type(1),
+  .tabs:has(.tab:nth-of-type(2) input:checked) .tab-panel:nth-of-type(2),
+  .tabs:has(.tab:nth-of-type(3) input:checked) .tab-panel:nth-of-type(3),
+  .tabs:has(.tab:nth-of-type(4) input:checked) .tab-panel:nth-of-type(4),
+  .tabs:has(.tab:nth-of-type(5) input:checked) .tab-panel:nth-of-type(5),
+  .tabs:has(.tab:nth-of-type(6) input:checked) .tab-panel:nth-of-type(6),
+  .tabs:has(.tab:nth-of-type(7) input:checked) .tab-panel:nth-of-type(7),
+  .tabs:has(.tab:nth-of-type(8) input:checked) .tab-panel:nth-of-type(8),
+  .tabs:not(:has(.tab input:checked)) .tab-panel:first-of-type { display: grid; }
+  /* Past eight tabs the rest are shown, rather than unreachable. */
+  .tab-panel:nth-of-type(n+9) { display: grid; }
+}
+
+/* -- quotes ---------------------------------------------------------------- */
+
+.quotes { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); }
+.quotes li {
+  background: var(--surface-container-low); border: var(--border) solid var(--outline-variant);
+  border-radius: var(--radius-lg); padding: var(--space-5);
+  display: flex; flex-direction: column; justify-content: space-between; gap: var(--space-4);
+}
+.quotes blockquote { margin: 0; font-size: var(--text-lg); line-height: 1.5; }
+.quotes blockquote p { margin: 0; }
+.quotes .by { margin: 0; display: flex; flex-direction: column; font-size: var(--text-sm); }
+.quotes .by span { color: var(--on-surface-variant); }
+
+/* -- a question for a chatbot ---------------------------------------------- */
+
+.ask-box {
+  background: var(--surface-container-low); border: var(--border) solid var(--outline-variant);
+  border-radius: var(--radius-xl); padding: clamp(var(--space-5), 4vw, var(--space-7));
+  display: flex; flex-direction: column; gap: var(--space-4);
+}
+.ask-box h2 { margin: 0; }
+.ask-form { display: flex; flex-direction: column; gap: var(--space-2); }
+.ask-suggestions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.ask-suggestions p { margin: 0; }
+/* A suggested question is a sentence, so it keeps its case. */
+.ask-suggestions button {
+  border: var(--border) solid var(--outline-variant); cursor: pointer;
+  font: inherit; font-size: var(--text-sm); min-height: 44px;
+  padding-inline: var(--space-4); border-radius: var(--radius-pill);
+  background: var(--surface-container-lowest); color: var(--on-surface);
+}
+.ask-suggestions button:hover { background: var(--primary-container); color: var(--on-primary-container); border-color: transparent; }
+
+/* -- a showcase under the hero --------------------------------------------- */
+
+.hero-showcase { width: 100%; margin-top: var(--space-5); }
+.hero-showcase img {
+  display: block; width: 100%; height: auto;
+  border-radius: var(--radius-lg);
+  border: var(--border) solid var(--outline-variant);
+  box-shadow: 0 1.5rem 3rem -1.5rem color-mix(in srgb, var(--on-surface) 35%, transparent);
+}
+
 
 /* -- metrics and charts ---------------------------------------------------- */
 
@@ -623,7 +735,10 @@ figure { margin: 0; }
 /* -- gradient surface ------------------------------------------------------ */
 
 .surface-gradient { background: var(--gradient); color: var(--on-primary-container); }
-.surface-gradient a { color: inherit; }
+/* As a section's tone, it pads like the other tones do. */
+.section.surface-gradient { padding-block: var(--space-7); }
+.section.surface-gradient + .section { padding-top: var(--space-7); }
+.surface-gradient a:not(.btn), .surface-gradient .btn-outlined { color: inherit; }
 
 /* -- carousel -------------------------------------------------------------- */
 
@@ -740,9 +855,12 @@ figure { margin: 0; }
 
 @media (forced-colors: active) {
   .card, .hero, .chip, .metric, .plan, .notice, .table-wrap, .side,
-  .faq details, blockquote.pull {
+  .faq details, blockquote.pull, .quotes li, .ask-box, .tab-list {
     border: 1px solid CanvasText;
   }
+  /* The chosen tab is a filled pill, and forced colours discard fills. */
+  .tab input:checked + span { background: Highlight; color: HighlightText; forced-color-adjust: none; }
+  .tab input:focus-visible + span { outline: 3px solid Highlight; }
   .btn { border: 1px solid ButtonText; }
   .bar > span, .steps > li::before, .timeline > li::before { background: CanvasText; }
   .donut { background: Canvas; border: 1px solid CanvasText; }

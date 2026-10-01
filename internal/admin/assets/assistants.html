@@ -18,7 +18,7 @@
   {{range .List}}
   <tr>
     <th scope="row"><a href="/assistants/{{.Name}}">{{.Title}}</a><div class="hint"><code>{{.Name}}</code></div></th>
-    <td>{{if .Public}}<span class="tag tag-ok">public</span> <code>/ask/{{.Name}}</code>{{else}}<span class="tag">testing only</span>{{end}}</td>
+    <td>{{if .Public}}<span class="tag tag-ok">public</span> <code>/ask/{{.Name}}</code>{{if .Static}} <span class="tag">static copies too</span>{{end}}{{else}}<span class="tag">testing only</span>{{end}}</td>
     <td>{{if .UseModel}}the configured model, verified{{else}}quotes from your pages{{end}}</td>
     <td>{{len .Actions}} action(s)</td>
   </tr>

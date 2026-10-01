@@ -16,7 +16,8 @@
 <form method="post" action="/inbox/act">
   <input type="hidden" name="assistant" value="{{.C.Assistant}}"><input type="hidden" name="id" value="{{.C.ID}}">
   <p><label for="reply">Reply {{template "req"}}</label><textarea id="reply" name="text" rows="5" maxlength="2000" required>{{.Draft}}</textarea></p>
-  {{if .DraftSources}}<p class="hint">The suggestion came from: {{range $i, $s := .DraftSources}}{{if $i}}, {{end}}{{$s}}{{end}}.</p>{{end}}
+  {{if .DraftSources}}<p class="hint">The suggestion came from:</p>
+  <ul class="hint">{{range .DraftSources}}<li>{{.}}</li>{{end}}</ul>{{end}}
   <p class="actions"><button type="submit" name="do" value="reply">Send</button>
     {{if .CanSuggest}}<button type="submit" name="do" value="suggest" formnovalidate class="quiet">Suggest a reply</button>{{end}}</p>
   <p class="hint">A suggestion is the chatbot's answer to their last message, taken from your site. It's never sent until you send it.</p>

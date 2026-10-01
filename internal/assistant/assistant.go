@@ -62,6 +62,13 @@ type Assistant struct {
 	// HandoffDays is how long such a conversation is kept after it last
 	// moved. Zero is the default of thirty; at most ninety.
 	HandoffDays int `json:"handoff_days,omitempty"`
+	// Static lets a static copy of the site answer too: `ipfs write` and
+	// `export` carry the conversation page and the passages it answers
+	// from, and the visitor's browser does the answering. Published pages
+	// only, because the passages ship as a file anybody can download, and a
+	// document is knowledge the owner chose to quote from, not to publish.
+	// Extractive only, because a static host has no model to ask.
+	Static bool `json:"static,omitempty"`
 }
 
 // MaxHandoffDays is the longest a handed-off conversation may be kept.
@@ -186,6 +193,10 @@ func (a Assistant) Validate() error {
 		if _, err := Origin(o); err != nil {
 			return err
 		}
+	}
+	if a.Static && !a.Public {
+		return fmt.Errorf("%s answers on a static copy but is not public; "+
+			"a static copy carries only what the live site serves", a.Name)
 	}
 	if a.HandoffDays < 0 || a.HandoffDays > MaxHandoffDays {
 		return fmt.Errorf("%s keeps conversations for %d days; between 1 and "+

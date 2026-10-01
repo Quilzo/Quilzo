@@ -74,6 +74,9 @@ func assistantList(root string) error {
 		if a.Public {
 			where = "/ask/" + a.Name
 		}
+		if a.Static {
+			where += ", and on static copies"
+		}
 		w.Human("%s%s%s  %s  %s(%s, %d action(s))%s\n", bold, a.Name, reset,
 			a.Title, dim, where, len(a.Actions), reset)
 	}
@@ -118,6 +121,7 @@ func assistantAdd(root string, args []string) error {
 	exclude := fs.String("exclude", "", "comma-separated page prefixes it may not read")
 	refusal := fs.String("refusal", "", "what it says when it does not know")
 	public := fs.Bool("public", false, "serve it on the site at /ask/NAME")
+	static := fs.Bool("static", false, "answer on static copies too, in the visitor's browser, from published pages only (needs --public)")
 	model := fs.Bool("model", false, "answer with the configured model (default: extractive only)")
 	passages := fs.Int("passages", 0, "passages retrieved per question (default 5)")
 	documents := fs.String("documents", "", "comma-separated media library ids it may read")
@@ -141,7 +145,7 @@ func assistantAdd(root string, args []string) error {
 	a := assistant.Assistant{
 		Name: pos[0], Title: *title, Greeting: *greeting, Instructions: instr,
 		Pages: splitList(*pages), Exclude: splitList(*exclude),
-		Refusal: *refusal, Public: *public, UseModel: *model, Passages: *passages,
+		Refusal: *refusal, Public: *public, Static: *static, UseModel: *model, Passages: *passages,
 		Handoff: *handoffOn, HandoffDays: *handoffDays,
 		Documents: splitList(*documents), Embed: splitList(*embed),
 	}
@@ -161,6 +165,9 @@ func assistantAdd(root string, args []string) error {
 	w.Human("%s%s%s declared\n", bold, a.Name, reset)
 	if a.Public {
 		w.Human("  %sserved at /ask/%s once the site is running%s\n", dim, a.Name, reset)
+		if a.Static {
+			w.Human("  %sstatic copies carry it, with the passages it answers from%s\n", dim, reset)
+		}
 	} else {
 		w.Human("  %snot public; try it with quilzo assistant ask %s \"...\"%s\n",
 			dim, a.Name, reset)

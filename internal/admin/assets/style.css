@@ -2239,3 +2239,19 @@ th[scope="row"] { font-weight: 500; }
   .bar a, .bar button, .bar input, .bar form, .bar [popover] {
     -webkit-app-region: no-drag; app-region: no-drag; }
 }
+
+/* What an agent is asking to do, field by field: the name above, the text
+   below it as written, line breaks kept. */
+.ask-fields { margin: 0 0 12px; display: grid; gap: 8px; }
+.ask-fields > div {
+  background: var(--surface-container-lowest); border: 1px solid var(--outline-variant);
+  border-radius: 12px; padding: 10px 14px;
+}
+.ask-fields dt { font: 500 13px/1.4 var(--mono); color: var(--on-surface-variant); }
+.ask-fields dd { margin: 4px 0 0; font-weight: 400; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.ask-json summary { cursor: pointer; font-weight: 500; margin-bottom: 8px; }
+
+/* A run's steps: the long column is what it tried, so the controls beside
+   it keep their words on one line rather than wrapping into a circle. */
+.run-steps button, .run-steps summary, .run-steps thead th { white-space: nowrap; }
+.run-steps td:nth-child(2) code { overflow-wrap: anywhere; }

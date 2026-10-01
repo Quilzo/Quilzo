@@ -69,6 +69,9 @@
       {% if page.hero.secondary_href %}<a class="btn btn-outlined btn-lg" href="{{ page.hero.secondary_href }}">{{ page.hero.secondary_label }}</a>{% end %}
     </div>
     {% end %}
+    {% if page.hero.showcase %}
+    <div class="hero-showcase"><img src="{{ page.hero.showcase }}"{% if page.hero.showcase_srcset %} srcset="{{ page.hero.showcase_srcset }}" sizes="(min-width: 80rem) 76rem, 94vw"{% end %} alt="{{ page.hero.showcase_alt }}" width="1600" height="1000"></div>
+    {% end %}
   </div>
 </div>
 {% end %}
@@ -135,6 +138,37 @@
         {% if f.body %}<p>{{ f.body }}</p>{% end %}
       </div>
       {% end %}
+    </div>
+  </div>
+</section>
+{% end %}
+
+{% if s.tabs %}
+<section class="section {{ s.tabs.tone }} reveal">
+  <div class="wrap wrap-wide">
+    {% if s.tabs.title %}
+    <div class="section-head center">
+      <h2>{{ s.tabs.title }}</h2>
+      {% if s.tabs.intro %}<p class="lead">{{ s.tabs.intro }}</p>{% end %}
+    </div>
+    {% end %}
+    <div class="tabs">
+      <fieldset class="tab-list">
+        <legend class="visually-hidden">{{ s.tabs.legend | default:Show }}</legend>
+        {% for t in s.tabs.items %}<label class="tab"><input type="radio" name="tabs-{{ s.id }}{{ s.tabs.title | slug }}"{% if t.first %} checked{% end %}><span>{{ t.label }}</span></label>{% end %}
+      </fieldset>
+      <div class="tab-panels">
+        {% for t in s.tabs.items %}
+        <div class="tab-panel">
+          <div class="tab-text">
+            <h3>{{ t.title }}</h3>
+            {% if t.body %}<p>{{ t.body }}</p>{% end %}
+            {% if t.cta_href %}<p><a class="btn btn-tonal" href="{{ t.cta_href }}">{{ t.cta_label }}</a></p>{% end %}
+          </div>
+          {% if t.image %}<img src="{{ t.image }}"{% if t.image_srcset %} srcset="{{ t.image_srcset }}" sizes="(min-width: 64rem) 60vw, 92vw"{% end %} alt="{{ t.alt }}" width="1440" height="900" loading="lazy">{% end %}
+        </div>
+        {% end %}
+      </div>
     </div>
   </div>
 </section>
@@ -462,6 +496,47 @@
 </section>
 {% end %}
 
+{% if s.quotes %}
+<section class="section {{ s.quotes.tone }} reveal">
+  <div class="wrap wrap-wide">
+    {% if s.quotes.title %}<div class="section-head center"><h2>{{ s.quotes.title }}</h2></div>{% end %}
+    <ul class="quotes" role="list">
+      {% for q in s.quotes.items %}
+      <li>
+        <blockquote><p>{{ q.text }}</p></blockquote>
+        {% if q.by %}<p class="by"><strong>{{ q.by }}</strong>{% if q.role %}<span>{{ q.role }}</span>{% end %}</p>{% end %}
+      </li>
+      {% end %}
+    </ul>
+  </div>
+</section>
+{% end %}
+
+{% if s.ask %}
+<section class="section {{ s.ask.tone }} reveal">
+  <div class="wrap">
+    <div class="ask-box">
+      {% if s.ask.title %}<h2>{{ s.ask.title }}</h2>{% end %}
+      {% if s.ask.intro %}<p class="lead">{{ s.ask.intro }}</p>{% end %}
+      <form class="ask-form" method="get" action="/ask/{{ s.ask.assistant }}">
+        <label for="ask-{{ s.id }}{{ s.ask.assistant | slug }}">{{ s.ask.label | default:Your question }}</label>
+        <div class="search-row">
+          <input id="ask-{{ s.id }}{{ s.ask.assistant | slug }}" name="q" type="text" maxlength="1000" required autocomplete="off"{% if s.ask.placeholder %} placeholder="{{ s.ask.placeholder }}"{% end %}>
+          <button class="btn" type="submit">{{ s.ask.button | default:Ask }}</button>
+        </div>
+      </form>
+      {% if s.ask.suggestions %}
+      <form class="ask-suggestions" method="get" action="/ask/{{ s.ask.assistant }}">
+        <p class="muted">{{ s.ask.suggestions_label | default:Or try }}</p>
+        {% for q in s.ask.suggestions %}<button type="submit" name="q" value="{{ q }}">{{ q }}</button>{% end %}
+      </form>
+      {% end %}
+      {% if s.ask.note %}<p class="muted">{{ s.ask.note }}</p>{% end %}
+    </div>
+  </div>
+</section>
+{% end %}
+
 {% if s.cta %}
 <section class="section {{ s.cta.tone | default:tone-primary }} reveal">
   <div class="wrap">
@@ -548,6 +623,12 @@
     </form>
     <p class="muted">{{ form.notice }}</p>
   </div>
+</section>
+{% end %}
+
+{% if page.body %}
+<section class="section">
+  <div class="wrap"><div class="prose narrow">{{ page.body | prose }}</div></div>
 </section>
 {% end %}
 

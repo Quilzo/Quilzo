@@ -85,19 +85,31 @@ func suggestReply(root, name, question string) (string, []string, error) {
 		return "", nil, fmt.Errorf("the site does not answer that; it needs " +
 			"a person, which is why they asked for one")
 	}
+	// The sentences without their [n] markers. In the chatbot those point
+	// at a list of sources under the answer; in a reply the visitor reads
+	// they point at nothing. The sources are named to the person instead,
+	// and only the ones the answer actually cites.
+	var text []string
 	var sources []string
 	seen := map[string]bool{}
-	for _, h := range ans.Sources {
-		title := h.Title
-		if title == "" {
-			title = h.Page
-		}
-		if title != "" && !seen[title] {
-			seen[title] = true
-			sources = append(sources, title)
+	for _, sen := range ans.Kept {
+		text = append(text, sen.Text)
+		for _, n := range sen.Cites {
+			if n < 1 || n > len(ans.Sources) {
+				continue
+			}
+			h := ans.Sources[n-1]
+			title := h.Header()
+			if title == "" {
+				title = h.Page
+			}
+			if title != "" && !seen[title] {
+				seen[title] = true
+				sources = append(sources, title)
+			}
 		}
 	}
-	return ans.Text, sources, nil
+	return strings.Join(text, " "), sources, nil
 }
 
 // inboxHooks is the admin's inbox, over the store.

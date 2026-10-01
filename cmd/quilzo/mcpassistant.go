@@ -94,9 +94,10 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 	srv.Register(mcp.Operation{
 		Name: "declare_assistant", NeedsRole: "author", Writes: true,
 		Summary: "create or change a private chatbot: its title, tone and what it reads",
-		Detail: "Never public from here. A person makes a chatbot public, and " +
-			"decides what it may offer to do, on the Chatbots screen. A chatbot " +
-			"that is already public cannot be changed from here.",
+		Detail: "Never public from here. A person makes a chatbot public, " +
+			"decides whether static copies of the site carry it, and decides " +
+			"what it may offer to do, on the Chatbots screen. A chatbot that " +
+			"is already public cannot be changed from here.",
 		Args: map[string]string{
 			"name": "lower-case, digits and hyphens", "title": "what visitors see",
 			"greeting": "optional", "instructions": "optional tone and focus",

@@ -185,6 +185,7 @@ func (s *Server) handleAssistantSave(w http.ResponseWriter, r *http.Request) {
 			a.Pages = splitCSV(r.FormValue("pages"))
 			a.Exclude = splitCSV(r.FormValue("exclude"))
 			a.Public = r.FormValue("public") == "1"
+			a.Static = r.FormValue("static") == "1"
 			a.UseModel = r.FormValue("use_model") == "1"
 			n, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("passages")))
 			a.Passages = n

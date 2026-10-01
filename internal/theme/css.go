@@ -213,13 +213,14 @@ func (t *Theme) Responsive() string {
 		"  .grid-bento > :first-child { grid-column: span 2; grid-row: span 2; }\n"+
 		"}\n", sm)
 
-	// A split, a hero with an image and a record's detail all become two
-	// columns at the same point, because they are the same shape.
+	// A split, a hero with an image, a record's detail and a tab's panel all
+	// become two columns at the same point, because they are the same shape.
 	fmt.Fprintf(&b, "@container (min-width: %s) {\n"+
 		"  .split { grid-template-columns: 1fr 1fr; }\n"+
 		"  .split.flip > :first-child { order: 2; }\n"+
 		"  .detail-grid { grid-template-columns: 1fr 1fr; }\n"+
 		"  .hero-split { grid-template-columns: 1.1fr 1fr; }\n"+
+		"  .tab-panel { grid-template-columns: 2fr 3fr; }\n"+
 		"}\n", md)
 
 	// A sidebar needs more room than a split does: it is a narrow column that

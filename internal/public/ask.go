@@ -108,6 +108,10 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if rest == "knowledge.json" {
+		st.askKnowledge(w, r, a)
+		return
+	}
 	if rest != "" {
 		if !st.handoffRoute(w, r, a, rest) {
 			st.notFound(w, r)
@@ -126,19 +130,20 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 	view.Embedded = r.URL.Query().Get("embed") == "1"
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
-	case http.MethodPost:
-		source := sourceOf(r)
-		if l := st.Assistants.Limit; l != nil {
-			if d := l.Check(throttle.Subject{Source: source}); !d.Allowed {
-				secs := int(d.RetryAfter.Seconds()) + 1
-				w.Header().Set("Retry-After", strconv.Itoa(secs))
-				view.Problem = "You have asked a lot of questions in a short " +
-					"time. Please wait a moment and try again."
-				st.renderAsk(w, r, view, http.StatusTooManyRequests)
+		if a.Static && r.URL.Query().Get("copy") == staticCopy {
+			st.renderAskStatic(w, view)
+			return
+		}
+		// A question in the address is answered, as site search answers
+		// one: the question box a page carries is a GET form, so the same
+		// form works on the live site and on a static copy.
+		if q := r.URL.Query().Get("q"); q != "" && r.Method == http.MethodGet {
+			view.Question = q
+			if !st.answer(w, r, a, &view) {
 				return
 			}
-			l.Spend(throttle.Subject{Source: source})
 		}
+	case http.MethodPost:
 		r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 		if err := r.ParseForm(); err != nil {
 			view.Problem = "That question could not be read."
@@ -146,38 +151,10 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		view.Question = r.PostFormValue("q")
-		if LooksLikeInjection(view.Question) {
-			st.signal(ChatbotInjection, r)
-		}
 		view.Previous = r.PostFormValue("prev")
 		view.Embedded = r.PostFormValue("embed") == "1"
-		idx, ierr := st.assistantIndex(a)
-		if ierr != nil {
-			http.Error(w, "the site could not be read", http.StatusInternalServerError)
+		if !st.answer(w, r, a, &view) {
 			return
-		}
-		var m assistant.Model
-		if a.UseModel && st.Assistants.Model != nil {
-			m = st.Assistants.Model(a)
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-		defer cancel()
-		ans, aerr := assistant.RespondTo(ctx, a, idx, m, view.Question, view.Previous)
-		if aerr != nil {
-			view.Problem = aerr.Error()
-			st.renderAsk(w, r, view, http.StatusUnprocessableEntity)
-			return
-		}
-		if st.Assistants.Audit != nil {
-			st.Assistants.Audit(a.Name, source, !ans.Refused)
-		}
-		if !ans.Refused {
-			st.convert(r, "chatbot:"+a.Name)
-		}
-		view.Answer = &ans
-		view.Sources = st.citedSources(ans)
-		if ans.Proposed != nil {
-			view.Offer = st.offerFor(*ans.Proposed)
 		}
 	default:
 		w.Header().Set("Allow", "GET, POST")
@@ -185,6 +162,57 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st.renderAsk(w, r, view, http.StatusOK)
+}
+
+// answer puts the view's question to the assistant and fills in the answer.
+// False means a response has already been written.
+func (st *Site) answer(w http.ResponseWriter, r *http.Request,
+	a assistant.Assistant, view *askView) bool {
+
+	source := sourceOf(r)
+	if l := st.Assistants.Limit; l != nil {
+		if d := l.Check(throttle.Subject{Source: source}); !d.Allowed {
+			secs := int(d.RetryAfter.Seconds()) + 1
+			w.Header().Set("Retry-After", strconv.Itoa(secs))
+			view.Problem = "You have asked a lot of questions in a short " +
+				"time. Please wait a moment and try again."
+			st.renderAsk(w, r, *view, http.StatusTooManyRequests)
+			return false
+		}
+		l.Spend(throttle.Subject{Source: source})
+	}
+	if LooksLikeInjection(view.Question) {
+		st.signal(ChatbotInjection, r)
+	}
+	idx, ierr := st.assistantIndex(a)
+	if ierr != nil {
+		http.Error(w, "the site could not be read", http.StatusInternalServerError)
+		return false
+	}
+	var m assistant.Model
+	if a.UseModel && st.Assistants.Model != nil {
+		m = st.Assistants.Model(a)
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	ans, aerr := assistant.RespondTo(ctx, a, idx, m, view.Question, view.Previous)
+	if aerr != nil {
+		view.Problem = aerr.Error()
+		st.renderAsk(w, r, *view, http.StatusUnprocessableEntity)
+		return false
+	}
+	if st.Assistants.Audit != nil {
+		st.Assistants.Audit(a.Name, source, !ans.Refused)
+	}
+	if !ans.Refused {
+		st.convert(r, "chatbot:"+a.Name)
+	}
+	view.Answer = &ans
+	view.Sources = st.citedSources(ans)
+	if ans.Proposed != nil {
+		view.Offer = st.offerFor(*ans.Proposed)
+	}
+	return true
 }
 
 // assistantIndex is the assistant's knowledge at the published commit,
@@ -489,7 +517,7 @@ const askCSS = `.qz-ask main{max-width:42rem;margin:0 auto;padding:1.5rem 1rem 3
 .qz-offer{margin:1.2rem 0;padding:1rem 1.1rem;border-radius:12px;border:2px solid color-mix(in srgb,currentColor 30%,transparent)}
 .qz-offer input:not([type=checkbox]),.qz-offer textarea,.qz-offer select,.qz-ask-form textarea{width:100%;box-sizing:border-box;font:inherit;padding:.5rem .6rem;border-radius:8px;border:1px solid color-mix(in srgb,currentColor 35%,transparent)}
 .qz-ask-form{display:grid;gap:.5rem;margin-top:1.5rem}
-.qz-ask-form button,.qz-offer button,.qz-button{justify-self:start;font:inherit;font-weight:600;padding:.55rem 1.1rem;border-radius:999px;border:0;cursor:pointer;text-decoration:none;display:inline-block;background:CanvasText;color:Canvas}
+.qz-ask-form button,.qz-offer button,.qz-button{justify-self:start;font:inherit;font-weight:600;padding:.55rem 1.1rem;border-radius:999px;border:0;cursor:pointer;text-decoration:none;display:inline-block;background:var(--primary,CanvasText);color:var(--on-primary,Canvas)}
 .qz-hidden{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
 .qz-problem{padding:.7rem 1rem;border-radius:8px;border:1px solid}
 .qz-small{font-size:.85em;opacity:.75;margin-top:1.5rem}
@@ -508,6 +536,12 @@ const askCSS = `.qz-ask main{max-width:42rem;margin:0 auto;padding:1.5rem 1rem 3
 .qz-actions{margin:.8rem 0}
 .qz-button-quiet{font:inherit;padding:.4rem .9rem;border-radius:999px;border:1px solid color-mix(in srgb,currentColor 35%,transparent);background:transparent;color:inherit;cursor:pointer;text-decoration:none;display:inline-block}
 .qz-end{margin-top:1.5rem}
+.qz-home{margin:0 0 .75rem;font-size:.9em}
+.qz-log{display:grid}
+.qz-log .qz-q-turn{justify-self:end;max-width:85%;background:color-mix(in srgb,currentColor 7%,transparent)}
+.qz-sources-title{font-size:1em;margin:.8rem 0 .2rem}
+.qz-status{font-size:.9em;opacity:.8;margin:.5rem 0}
+.qz-status:empty{display:none}
 `
 
 func (st *Site) askStylesheet(w http.ResponseWriter, r *http.Request) {

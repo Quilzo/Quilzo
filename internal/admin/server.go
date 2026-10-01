@@ -1206,6 +1206,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/style.css", s.handleCSS)
 	mux.HandleFunc("/admin.js", s.handleJS)
 	mux.HandleFunc("/fonts/quilzo-ui.woff2", s.handleFont)
+	mux.HandleFunc("/fonts/", s.handleSiteFont)
 	return securityHeaders(s.signedFlash(sameSiteOnly(limitBody(s.readOnlyTokens(mux)))))
 }
 

@@ -115,6 +115,11 @@ func TestASuggestionComesFromTheSiteOrNotAtAll(t *testing.T) {
 	if draft == "" || len(sources) == 0 {
 		t.Errorf("the suggestion is %q from %v", draft, sources)
 	}
+	// Written to be sent: no [n] markers pointing at a source list the
+	// visitor never sees.
+	if strings.Contains(draft, "[1]") {
+		t.Errorf("the suggestion carries citation markers: %q", draft)
+	}
 	if _, _, err := suggestReply(root, "help", "what is the airspeed of a swallow"); err == nil {
 		t.Error("a question the site does not answer produced a suggestion")
 	}

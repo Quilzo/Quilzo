@@ -160,16 +160,17 @@ var templates = map[string]Template{
 	"sections": {
 		Name: "sections", Layout: "page",
 		Summary: "A page assembled from sections you order yourself: hero, " +
-			"features, metrics, charts, split, gallery, carousel, video, steps, " +
-			"timeline, quote, logos, pricing, FAQ, table, listing, people, " +
-			"prose, notice, call to action.",
+			"features, tabs, metrics, charts, split, gallery, carousel, video, " +
+			"steps, timeline, quote, quotes, logos, pricing, FAQ, table, " +
+			"listing, people, prose, notice, a question for a chatbot, call " +
+			"to action.",
 		Look: "Rounded, generous, a tinted hero. The shipped palette.",
 		Fields: []string{"title", "description", "hero", "sections", "footer",
 			"header_cta_label", "header_cta_href", "brand_mark", "breadcrumbs",
 			"share_image", "share_image_alt"},
 		Sample: map[string]any{
 			"title":       "Everything, in the order you choose",
-			"description": "One layout, twenty kinds of section, arranged by the content rather than the markup.",
+			"description": "One layout, twenty-three kinds of section, arranged by the content rather than the markup.",
 			"hero": map[string]any{
 				"eyebrow": "New", "style": "center", "surface": "surface-wash",
 				"lead":      "Sections are data. Reorder them, drop one, use the same kind twice — without touching a template.",
@@ -191,6 +192,20 @@ var templates = map[string]Template{
 						map[string]any{"title": "Features", "body": "A grid of cards, two to four across, optionally linked.", "chip": "Grid"},
 						map[string]any{"title": "Metrics", "body": "Labelled figures with a change and a bar, for a dashboard.", "chip": "Data"},
 						map[string]any{"title": "Split", "body": "An image beside prose, flipped if you want it the other way.", "chip": "Media"},
+					},
+				}},
+				map[string]any{"tabs": map[string]any{
+					"title": "One at a time",
+					"intro": "Tabs are radio buttons underneath, so they work with a keyboard and without a script.",
+					"items": []any{
+						map[string]any{"label": "Write", "title": "Content is typed",
+							"body": "Every field is checked as it is saved.", "image": "",
+							"alt": "The page editor beside a preview of the page"},
+						map[string]any{"label": "Check", "title": "The gate reads every page",
+							"body":      "A page a reader could not use does not publish.",
+							"cta_label": "How the gate works", "cta_href": "/guide"},
+						map[string]any{"label": "Publish", "title": "One pointer moves",
+							"body": "Undoing a publish sets it back."},
 					},
 				}},
 				map[string]any{"metrics": map[string]any{
@@ -231,6 +246,15 @@ var templates = map[string]Template{
 				map[string]any{"quote": map[string]any{
 					"text": "We reordered the whole homepage over lunch and never opened the template.",
 					"by":   "A person who has not said this", "role": "because this is sample text",
+				}},
+				map[string]any{"quotes": map[string]any{
+					"title": "Said about it",
+					"items": []any{
+						map[string]any{"text": "Sample text, standing in for something a person said.",
+							"by": "A. Person", "role": "who has not said this"},
+						map[string]any{"text": "A second quote, so the grid has something to arrange.",
+							"by": "B. Person"},
+					},
 				}},
 				map[string]any{"pricing": map[string]any{
 					"title": "Plans", "intro": "Three columns, one of them marked.",
@@ -336,6 +360,13 @@ var templates = map[string]Template{
 						"A prose section is a list of paragraphs at a readable measure.",
 						"It is a list rather than one rich-text field because a starter that reached for raw would teach that on the first page anybody writes.",
 					},
+				}},
+				map[string]any{"ask": map[string]any{
+					"title": "Ask this site", "assistant": "help",
+					"intro":       "The question opens the chatbot named here, already asked.",
+					"placeholder": "How do I publish a page?",
+					"suggestions": []any{"How do I publish a page?", "Can I undo a publish?"},
+					"note":        "It answers from this site's pages and says which one.",
 				}},
 				map[string]any{"cta": map[string]any{
 					"title":     "Start from this and delete what you do not need",

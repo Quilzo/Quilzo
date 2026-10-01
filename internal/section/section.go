@@ -129,6 +129,25 @@ var kinds = []Kind{
 	},
 
 	{
+		Name: "tabs", Group: "telling", Summary: "Several features, one shown at a time. No script: the tabs are radio buttons.",
+		Stub: map[string]any{
+			"title": "See it at work", "intro": "",
+			// Read by assistive technology only: what the row of tabs is for.
+			"legend": "Choose one",
+			// Images empty for the same reason as split's: the field is there
+			// to fill in, and a picker appears beside it.
+			"items": []any{
+				map[string]any{"label": "First", "title": "What the first one does",
+					"body": "Two sentences about it.", "image": "", "alt": "",
+					"cta_label": "", "cta_href": ""},
+				map[string]any{"label": "Second", "title": "What the second one does",
+					"body": "Two sentences about it.", "image": "", "alt": ""},
+				map[string]any{"label": "Third", "title": "What the third one does",
+					"body": "Two sentences about it.", "image": "", "alt": ""},
+			},
+		},
+	},
+	{
 		Name: "metrics", Group: "data", Summary: "Labelled figures with a change and a bar. For a dashboard.",
 		Stub: map[string]any{
 			"title": "This month",
@@ -275,6 +294,26 @@ var kinds = []Kind{
 		},
 	},
 	{
+		Name: "quotes", Group: "closing", Summary: "Several short quotes side by side, each with who said it.",
+		Stub: map[string]any{
+			"title": "What people say",
+			"items": []any{
+				map[string]any{"text": "Something one person said.", "by": "Who", "role": "What they do"},
+				map[string]any{"text": "Something another said.", "by": "Who", "role": "What they do"},
+				map[string]any{"text": "And a third.", "by": "Who", "role": "What they do"},
+			},
+		},
+	},
+	{
+		Name: "ask", Group: "closing", Summary: "A question box that opens one of the site's chatbots with the question already asked.",
+		Stub: map[string]any{
+			"title": "Ask a question", "intro": "", "assistant": "help",
+			"label": "Your question", "placeholder": "", "button": "Ask",
+			"suggestions": []any{"How do I start?", "What does it cost?"},
+			"note":        "",
+		},
+	},
+	{
 		Name: "notice", Group: "closing", Summary: "A short banner in one of four tones: plain, positive, caution, critical.",
 		Stub: map[string]any{
 			"tone": "caution", "title": "Something worth saying at the top",
@@ -286,6 +325,7 @@ var kinds = []Kind{
 		Stub: map[string]any{
 			"title": "What next", "body": "Tell somebody the one thing to do.",
 			"cta_label": "Do it", "cta_href": "/start",
+			"secondary_label": "", "secondary_href": "",
 		},
 	},
 }

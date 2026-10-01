@@ -584,3 +584,68 @@ func TestAPDFTitleIsAHeadingNotPartOfASentence(t *testing.T) {
 		t.Fatalf("%+v", ps)
 	}
 }
+
+// A page's furniture is not knowledge.
+//
+// Asked a question a page's question box suggests, the chatbot found the
+// suggestion — the very words it was asked — and quoted it as the answer.
+func TestAPagesFurnitureIsNotKnowledge(t *testing.T) {
+	pages := map[string]any{"index": map[string]any{
+		"title": "Home",
+		"hero": map[string]any{"style": "center", "surface": "surface-gradient",
+			"cta_label": "Get it", "cta_href": "https://example.com/get"},
+		"sections": []any{
+			map[string]any{"ask": map[string]any{"assistant": "help",
+				"placeholder": "What happens when an agent publishes?",
+				"suggestions": []any{"What happens when an agent publishes?"},
+				"button":      "Ask"}},
+			map[string]any{"prose": map[string]any{"tone": "tone-raised",
+				"paragraphs": []any{"When an agent publishes, the run stops and a person approves the write first."}}},
+		},
+	}}
+	ps := Chunk(pages, nil)
+	var all strings.Builder
+	for _, p := range ps {
+		all.WriteString(p.Text + "\n")
+	}
+	for _, furniture := range []string{"surface-gradient", "Get it", "example.com",
+		"What happens when an agent publishes?", "tone-raised", "Ask."} {
+		if strings.Contains(all.String(), furniture) {
+			t.Errorf("%q was read as knowledge:\n%s", furniture, all.String())
+		}
+	}
+	ans, err := Respond(context.Background(), Assistant{Name: "help", Title: "Help"},
+		NewIndex(ps), nil, "What happens when an agent publishes?")
+	if err != nil || ans.Refused || !strings.Contains(ans.Text, "a person approves") {
+		t.Errorf("the answer was %q (%v)", ans.Text, err)
+	}
+}
+
+// A visitor asking an FAQ's question gets that FAQ's answer.
+//
+// Before the heading counted, a short, dense passage that shared the
+// question's words outranked the answer whose question was the visitor's,
+// word for word.
+func TestAnFAQsQuestionFindsItsAnswer(t *testing.T) {
+	pages := map[string]any{
+		"agents": map[string]any{"title": "Agents",
+			"description": "Run an agent with any model and approve the actions that matter before they happen; the agent chooses, the declaration decides what happens."},
+		"index": map[string]any{"title": "Home", "sections": []any{
+			map[string]any{"faq": map[string]any{"items": []any{
+				map[string]any{"q": "What happens when an agent wants to publish?",
+					"a": "It stops and asks. A person sees the exact page it wants to write, and nothing is written until they agree."},
+				map[string]any{"q": "Is it free?", "a": "Yes, under the AGPL."},
+			}}},
+		}},
+	}
+	ps := Chunk(pages, nil)
+	ans, err := Respond(context.Background(), Assistant{Name: "help", Title: "Help"},
+		NewIndex(ps), nil, "What happens when an agent wants to publish?")
+	if err != nil || len(ans.Sources) == 0 {
+		t.Fatalf("%v %+v", err, ans)
+	}
+	if !strings.Contains(ans.Text, "It stops and asks") || ans.Sources[0].HeadingRank != 1 {
+		t.Errorf("answered %q from %s (heading rank %d)", ans.Text,
+			ans.Sources[0].ID, ans.Sources[0].HeadingRank)
+	}
+}

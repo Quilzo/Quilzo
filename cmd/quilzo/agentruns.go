@@ -448,6 +448,9 @@ func agentRuns(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	if w.JSON(map[string]any{"runs": runs}) {
+		return nil
+	}
 	if len(runs) == 0 {
 		fmt.Println("  no runs are kept")
 		return nil
@@ -467,6 +470,9 @@ func agentTrace(root string, args []string) error {
 	r, err := loadAgentRun(root, args[0])
 	if err != nil {
 		return err
+	}
+	if w.JSON(r) {
+		return nil
 	}
 	printAgentRun(r)
 	return nil

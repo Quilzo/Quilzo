@@ -203,7 +203,7 @@ func menuItemSet(root string, args []string) error {
 	fs := flag.NewFlagSet("menu add", flag.ContinueOnError)
 	id := fs.String("id", "", "item id; generated when absent, and the way to edit an existing one")
 	label := fs.String("label", "", "what the entry says")
-	kind := fs.String("kind", string(menu.Page), "page, link or heading")
+	kind := fs.String("kind", string(menu.Page), "page, external or heading")
 	target := fs.String("target", "", "the page name, or the URL")
 	parent := fs.String("parent", "", "id of the item this nests under")
 	order := fs.Int("order", 0, "position among its siblings; lower first")

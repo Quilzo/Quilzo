@@ -114,7 +114,7 @@ func TestASuggestedReplyIsOnlyEverADraft(t *testing.T) {
 		t.Fatalf("a suggestion answered %d to %q", code, loc)
 	}
 	if !strings.Contains(body, ">Unopened items can be returned within 30 days.</textarea>") ||
-		!strings.Contains(body, "came from: Returns") {
+		!strings.Contains(body, "<li>Returns</li>") {
 		t.Error("the suggestion is not in the reply box with its source")
 	}
 	if len(*asked) != 1 || !strings.HasPrefix((*asked)[0], "help|I'd like to return order 1182") {

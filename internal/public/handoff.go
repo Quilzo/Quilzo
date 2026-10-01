@@ -382,24 +382,5 @@ var (
 // that it did not write. Like allowFraming, it rewrites only the directives
 // it needs, in whichever policy header the site sends.
 func allowLiveScript(h http.Header, nonce string) {
-	script := "script-src 'nonce-" + nonce + "'"
-	for _, name := range []string{"Content-Security-Policy",
-		"Content-Security-Policy-Report-Only"} {
-		cur := h.Get(name)
-		if cur == "" {
-			continue
-		}
-		if reScriptSrc.MatchString(cur) {
-			cur = reScriptSrc.ReplaceAllString(cur, script)
-		} else {
-			cur += "; " + script
-		}
-		switch {
-		case !reConnectSrc.MatchString(cur):
-			cur += "; connect-src 'self'"
-		case strings.Contains(reConnectSrc.FindString(cur), "'none'"):
-			cur = reConnectSrc.ReplaceAllString(cur, "connect-src 'self'")
-		}
-		h.Set(name, cur)
-	}
+	allowScript(h, "'nonce-"+nonce+"'")
 }
