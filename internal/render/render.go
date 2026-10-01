@@ -34,6 +34,7 @@ import (
 	"github.com/quilzo/quilzo/internal/menu"
 	"strconv"
 	"time"
+	"unicode/utf8"
 )
 
 // Sources is everything a template can be shown.
@@ -47,6 +48,13 @@ type Sources struct {
 	// Icon is the address of the site's icon, for a layout that shows it
 	// beside the name. Empty when the site has none.
 	Icon string
+	// IconInitial says the icon is the first letter of the name, so a
+	// layout sets it in that letter's place rather than beside the whole
+	// name, which would spell the letter twice.
+	IconInitial bool
+	// Members says the site has accounts, so a layout can offer the way to
+	// sign in. The same for everybody: nothing here is about who is asking.
+	Members bool
 	// Menus is the navigation. Nil means the template sees an empty map rather
 	// than a missing key, so {% for item in menus.main %} renders nothing
 	// instead of failing.
@@ -234,6 +242,19 @@ func Href(r menu.Rendered) string {
 // site is what a template knows about the site as a whole.
 func (s Sources) site(page string) map[string]any {
 	out := map[string]any{"name": s.Name, "page": page}
+	if s.Members {
+		out["members"] = true
+	}
+	// As booleans and a remainder, because the template language has
+	// neither else nor string slicing: name_rest is the name without its
+	// first letter, and name_whole says to print the name as it is.
+	initial := s.IconInitial && s.Icon != "" && utf8.RuneCountInString(s.Name) > 1
+	out["name_whole"] = !initial
+	if initial {
+		_, size := utf8.DecodeRuneInString(s.Name)
+		out["icon_initial"] = true
+		out["name_rest"] = s.Name[size:]
+	}
 	if s.Icon != "" {
 		out["icon"] = s.Icon
 		// The narrower copies, as every other picture gets: an icon drawn

@@ -222,9 +222,14 @@ type Site struct {
 	// field existed, the behaviour of every deployment including the ones with
 	// one.
 	Media MediaLookup
+	// Members is the site's accounts for its visitors. Nil means it has
+	// none. See members.go.
+	Members *Members
 	// Icon is the media library id of the site's icon. Empty means none.
 	// See icon.go.
 	Icon string
+	// IconInitial says the icon is the name's first letter.
+	IconInitial bool
 	// MediaStat reads what an asset is without reading its bytes.
 	//
 	// Separate from Media because a page asking which narrower copies a
@@ -297,6 +302,9 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/ask.css", st.askStylesheet)
 	mux.HandleFunc("/ask-live.js", st.askLiveScript)
 	mux.HandleFunc("/share", st.handleShare)
+	mux.HandleFunc("/account", st.account)
+	mux.HandleFunc("/account/", st.account)
+	mux.HandleFunc("/account.js", st.accountScript)
 	mux.HandleFunc("/", st.page)
 	// The banner is innermost, so it wraps the handler's own output and
 	// nothing else: the headers and the crawl gate go outside it, where a
@@ -665,7 +673,12 @@ func (st *Site) searchAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := st.Search.Search(q, 20)
+	visible, _, err := st.pages()
+	if err != nil {
+		http.Error(w, "nothing is published", http.StatusServiceUnavailable)
+		return
+	}
+	results := st.searchVisible(q, visible, 20)
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	// No caching. A results page cached by a proxy is a results page served to
@@ -676,6 +689,27 @@ func (st *Site) searchAPI(w http.ResponseWriter, r *http.Request) {
 		"results": results,
 		"count":   len(results),
 	})
+}
+
+// searchVisible is a search answered only from pages a visitor may read now.
+//
+// The index is built from everything published, so it holds pages for
+// members and pages whose publish window has not opened or has closed. Both
+// the search page and the API answered from it unfiltered, and so named
+// those pages — title and address — to anybody who searched for a word in
+// them. Asked for more than it returns, so the filtering does not leave a
+// page of results short when hidden pages ranked high.
+func (st *Site) searchVisible(q string, visible map[string]any, n int) []search.Result {
+	out := []search.Result{}
+	for _, res := range st.Search.Search(q, n*3) {
+		if _, ok := visible[res.Page]; ok {
+			out = append(out, res)
+			if len(out) == n {
+				break
+			}
+		}
+	}
+	return out
 }
 
 // securityHeaders for a public site.
@@ -761,6 +795,38 @@ func (st *Site) pages() (map[string]any, map[string]string, error) {
 	return out, visible, nil
 }
 
+// membersOnlyPages is the published pages for members, visible now.
+func (st *Site) membersOnlyPages() (map[string]any, error) {
+	live := st.Store.GetRef(st.ref())
+	if live == "" {
+		return nil, fmt.Errorf("nothing is published")
+	}
+	set, err := st.decoded(live)
+	if err != nil {
+		return nil, err
+	}
+	out, _ := set.membersAt(time.Now())
+	return out, nil
+}
+
+// memberPage is a members-only page, its object id, and whether it is one.
+func (st *Site) memberPage(name string) (any, string, bool) {
+	if !st.membersOn() {
+		return nil, "", false
+	}
+	live := st.Store.GetRef(st.ref())
+	if live == "" {
+		return nil, "", false
+	}
+	set, err := st.decoded(live)
+	if err != nil {
+		return nil, "", false
+	}
+	pages, ids := set.membersAt(time.Now())
+	body, ok := pages[name]
+	return body, ids[name], ok
+}
+
 func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	// The mining reservation, before anything can return. A crawler that took
 	// the page has been told on the response that carried it, which is the
@@ -786,6 +852,20 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body, ok := pages[name]
+	forMembers := false
+	if !ok {
+		// A page for members: served to one who is signed in, privately, and
+		// to anybody else as a page saying so. Not part of pages, so nothing
+		// below this — experiments, the sitemap, feeds — ever sees it.
+		if mbody, oid, isMembers := st.memberPage(name); isMembers {
+			if _, in := st.signedIn(r); !in {
+				st.membersOnlyGate(w, "/"+name)
+				return
+			}
+			body, ok, forMembers = mbody, true, true
+			tree = map[string]string{name: oid}
+		}
+	}
 	if !ok {
 		// Before giving up: a two-segment path may be a record on a page that
 		// declares a detail route. Tried here rather than as its own mux
@@ -805,7 +885,10 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	// An experiment on this page serves the variant's content at this
 	// address. See experiments.go.
 	served, inExperiment := name, false
-	if v, vbody, ok := st.personalFor(r, name, pages); ok {
+	if forMembers {
+		// No experiment and no personalisation on a members' page: both
+		// choose between public pages.
+	} else if v, vbody, ok := st.personalFor(r, name, pages); ok {
 		// A rule decides first. An experiment on the same page is not run
 		// for this visitor: their version was chosen by who they are, and
 		// counting them in a random split would bias it.
@@ -833,7 +916,14 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		tag = `"` + renderTag(tree[served], st.dataTree(), names, args) + `"`
 	}
 	w.Header().Set("ETag", tag)
-	if inExperiment {
+	if forMembers {
+		// One member's request, never a shared cache's. no-store rather
+		// than private: a browser back button on a shared computer should
+		// not show it after its member has signed out.
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Vary", "Cookie")
+		w.Header().Set("X-Robots-Tag", "noindex")
+	} else if inExperiment {
 		// Private: a shared cache holding one visitor's variant would hand
 		// it to everybody, which ends the experiment and ruins its data.
 		w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
@@ -1356,7 +1446,9 @@ func (st *Site) sources() render.Sources {
 		Form: st.formData}
 	if _, ok := st.iconFile(); ok {
 		src.Icon = "/media/" + st.Icon
+		src.IconInitial = st.IconInitial
 	}
+	src.Members = st.membersOn()
 	if st.Menus != nil {
 		if set, err := st.Menus(); err == nil {
 			src.Menus = set

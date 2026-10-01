@@ -134,7 +134,7 @@ func (st *Site) searchData(query string, pages map[string]any) map[string]any {
 		return data
 	}
 
-	found := st.Search.Search(query, 20)
+	found := st.searchVisible(query, pages, 20)
 	rows := make([]any, 0, len(found))
 	for _, res := range found {
 		title := res.Title

@@ -282,6 +282,8 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	if cfg, cerr := loadConfig(root); cerr == nil {
 		st.HSTS = cfg.Dur("site.hsts")
 		st.Icon = strings.TrimSpace(cfg.Raw("site.icon"))
+		st.Members = siteMembers(root, cfg, st.BaseURL)
+		st.IconInitial = cfg.Bool("site.icon_initial")
 		// The deployment's classification scheme, when it has one. Refused
 		// rather than ignored if it does not parse: a banner that silently
 		// failed to apply is the exact outcome marking exists to prevent.

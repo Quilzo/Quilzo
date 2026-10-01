@@ -1,0 +1,56 @@
+{{template "head" .}}
+<h1>Members</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">People with an account on the published site. They sign in
+  with passkeys, and an account holds a name and those passkeys, nothing else.</p>
+{{if eq .Mode "off"}}<p class="notice warn">Accounts are off, so nobody can sign up or sign in.
+  Turn them on with <code>site.members</code> under <a href="/settings">Settings</a>:
+  <em>open</em> for anybody, or <em>invite</em> for people given a code here.</p>
+{{else}}<p>Sign-up is <strong>{{if eq .Mode "open"}}open to anybody{{else}}by invitation{{end}}</strong>.</p>{{end}}
+
+{{if .Code}}<section class="notice ok" aria-labelledby="code-h">
+  <h2 id="code-h">The invitation code</h2>
+  <p>Give this to the person you are inviting. It makes one account, works for fourteen days, and is not shown again.</p>
+  <p class="code-big"><code>{{.Code}}</code></p>
+</section>{{end}}
+
+{{if .Rows}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Name</th><th scope="col">Joined</th><th scope="col">Last seen</th><th scope="col">Passkeys</th><th scope="col">Signed in on</th><th scope="col">State</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+  <tbody>{{range .Rows}}<tr>
+    <th scope="row">{{.Name}}<br><span class="hint mono">{{.ID}}</span></th>
+    <td>{{.Joined}}</td><td>{{.Seen}}</td><td>{{.Passkeys}}</td><td>{{.Sessions}} browser(s)</td>
+    <td>{{if .Disabled}}<span class="wf-word warning">disabled</span>{{else}}<span class="wf-word good">active</span>{{end}}</td>
+    <td><form method="post" action="/members/act" class="inline">
+        <input type="hidden" name="id" value="{{.ID}}">
+        {{if .Disabled}}<button type="submit" name="do" value="enable" class="quiet">Enable<span class="visually-hidden"> {{.Name}}</span></button>
+        {{else}}<button type="submit" name="do" value="disable" class="quiet">Disable<span class="visually-hidden"> {{.Name}}</span></button>{{end}}
+      </form>
+      <details class="inline-remove"><summary>Remove<span class="visually-hidden"> {{.Name}}</span></summary>
+        <form method="post" action="/members/act">
+          <input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="do" value="remove">
+          <label for="confirm-{{.ID}}">Type <strong>remove</strong> to erase this account {{template "req"}}</label>
+          <input id="confirm-{{.ID}}" name="confirm" autocomplete="off" required>
+          <button type="submit" class="danger">Remove</button>
+        </form></details></td>
+  </tr>{{end}}</tbody></table></div>
+{{else}}<p>Nobody has an account yet.</p>{{end}}
+
+<h2>Invitations</h2>
+<form method="post" action="/members/act" class="card">
+  <input type="hidden" name="do" value="invite">
+  <div class="field"><label for="note">Who it is for</label>
+    <input id="note" name="note" maxlength="80" aria-describedby="note-help">
+    <p id="note-help" class="help">So you can tell this invitation apart in the list. Optional.</p></div>
+  <button type="submit">Make an invitation code</button>
+</form>
+{{if .Invites}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Invitation</th><th scope="col">For</th><th scope="col">Made by</th><th scope="col">Until</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+  <tbody>{{range .Invites}}<tr>
+    <th scope="row"><span class="mono">{{.Short}}</span></th><td>{{.Note}}</td><td>{{.By}}</td><td>{{.Until}}</td>
+    <td><form method="post" action="/members/act"><input type="hidden" name="do" value="revoke"><input type="hidden" name="hash" value="{{.Hash}}">
+      <button type="submit" class="quiet">Withdraw<span class="visually-hidden"> {{.Short}}</span></button></form></td>
+  </tr>{{end}}</tbody></table></div>{{else}}<p>No unused invitations.</p>{{end}}
+{{end}}
+{{template "foot" .}}

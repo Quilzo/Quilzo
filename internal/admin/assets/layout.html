@@ -16,7 +16,7 @@
 <a class="skip" href="#main">Skip to main content</a>
 <header class="bar">
   <div class="bar-inner">
-    <a class="brand" href="/">{{if .BrandMark}}<span class="mark mark-initial" aria-hidden="true">{{.BrandMark}}</span>{{else}}<svg class="mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path class="mark-loop" d="{{.MarkLoop}}"/><path class="mark-tail" d="{{.MarkTail}}"/></svg>{{end}}<span>{{.Brand}}</span></a>
+    <a class="brand" href="/">{{if .BrandMark}}<span class="mark mark-initial" aria-hidden="true">{{.BrandMark}}</span><span>{{.Brand}}</span>{{else if eq .Brand "Quilzo"}}{{template "lockup" .}}{{else}}<svg class="mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path class="mark-loop" d="{{.MarkLoop}}"/><path class="mark-tail" d="{{.MarkTail}}"/></svg><span>{{.Brand}}</span>{{end}}</a>
 
     {{/*
       The search box, in the bar rather than on a screen you have to find
@@ -157,6 +157,9 @@
   person already has the star -- so each reader gets the one that works and
   neither gets both.
 */}}
+{{/* The logotype: the mark is the Q of the name, so the word is not
+     spelled with two of them. Read out as the whole word. */}}
+{{define "lockup"}}<span class="lockup" role="img" aria-label="Quilzo"><svg class="mark lockup-q" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path class="mark-loop" d="{{.MarkLoop}}"/><path class="mark-tail" d="{{.MarkTail}}"/></svg><span aria-hidden="true">uilzo</span></span>{{end}}
 {{define "req"}}<span class="req" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{{end}}
 
 {{/*

@@ -247,6 +247,10 @@ var reserved = map[string]bool{
 	// that had to declare it would be a type somebody forgot to.
 	"starts":  true,
 	"expires": true,
+	// public.MembersOnlyField — a page only signed-in members are served.
+	// Cross-cutting for the same reason as the window: any kind of content
+	// can be for members.
+	"members_only": true,
 }
 
 // Reserved reports whether a field name belongs to the system.

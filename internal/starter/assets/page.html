@@ -20,7 +20,7 @@
 
 <header class="site-header {{ page.header_class }}">
   <div class="wrap wrap-wide">
-    {% if site.name %}<a class="brand" href="/">{% if site.icon %}<img class="brand-icon" src="{{ site.icon }}"{% if site.icon_srcset %} srcset="{{ site.icon_srcset }}" sizes="28px"{% end %} alt="" width="28" height="28">{% end %}{% if page.brand_mark %}<span class="brand-mark" aria-hidden="true">{{ page.brand_mark }}</span>{% end %}{{ site.name }}</a>{% end %}
+    {% if site.name %}<a class="brand" href="/">{% if site.icon_initial %}<span class="brand-lockup" role="img" aria-label="{{ site.name }}"><img class="brand-initial" src="{{ site.icon }}"{% if site.icon_srcset %} srcset="{{ site.icon_srcset }}" sizes="32px"{% end %} alt="" width="28" height="28"><span aria-hidden="true">{{ site.name_rest }}</span></span>{% end %}{% if site.name_whole %}{% if site.icon %}<img class="brand-icon" src="{{ site.icon }}"{% if site.icon_srcset %} srcset="{{ site.icon_srcset }}" sizes="28px"{% end %} alt="" width="28" height="28">{% end %}{% if page.brand_mark %}<span class="brand-mark" aria-hidden="true">{{ page.brand_mark }}</span>{% end %}{{ site.name }}{% end %}</a>{% end %}
     {% if menus.main %}
     <nav class="nav" aria-label="Main">
       <ul>
@@ -28,6 +28,7 @@
       </ul>
     </nav>
     {% end %}
+    {% if site.members %}<a class="btn btn-quiet" href="/account">Account</a>{% end %}
     {% if page.header_cta_href %}<a class="btn" href="{{ page.header_cta_href }}">{{ page.header_cta_label }}</a>{% end %}
   </div>
 </header>

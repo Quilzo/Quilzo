@@ -28,10 +28,12 @@ func sourcesFor(root string, s *store.Store, commit, siteName string,
 	// The icon, so a layout showing it beside the name is judged and
 	// exported as it is served. Only an id the library holds as a picture.
 	if cfg, err := loadConfig(root); err == nil {
+		src.Members = membersMode(cfg) != "off"
 		if id := strings.TrimSpace(cfg.Raw("site.icon")); id != "" {
 			if lib, lerr := openMedia(root); lerr == nil {
 				if f, _, gerr := lib.Get(id); gerr == nil && f.Kind == media.Image {
 					src.Icon = "/media/" + id
+					src.IconInitial = cfg.Bool("site.icon_initial")
 				}
 			}
 		}

@@ -125,6 +125,8 @@ var destinations = []destination{
 
 	{"agents", "Agents", "/agents", "Administration", "agents", auth.ActGrant},
 	{"people", "People", "/people", "Administration", "users", auth.ActGrant},
+	// The site's own accounts, beside the people who run it.
+	{"members", "Members", "/members", "Administration", "members", auth.ActGrant},
 	{"access", "Access", "/access", "Administration", "auth", auth.ActGrant},
 	// View, not grant: everybody manages their own passkeys, and a screen that
 	// only administrators could open would be a second factor only
@@ -180,6 +182,7 @@ var docSections = map[string]bool{
 	"listings": true, "forms": true, "media": true, "languages": true,
 	"ai": true, "publishing": true, "environments": true, "history": true,
 	"transfer": true, "ipfs": true, "provenance": true, "security": true, "detection": true,
+	"members":         true,
 	"vulnerabilities": true, "cases": true,
 	"logging": true, "users": true, "auth": true, "integrations": true,
 	"settings": true, "api": true, "profile": true, "start": true,

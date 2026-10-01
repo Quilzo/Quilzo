@@ -2255,3 +2255,16 @@ th[scope="row"] { font-weight: 500; }
    it keep their words on one line rather than wrapping into a circle. */
 .run-steps button, .run-steps summary, .run-steps thead th { white-space: nowrap; }
 .run-steps td:nth-child(2) code { overflow-wrap: anywhere; }
+
+/* The logotype: the mark set as the Q, its ring on the baseline at the
+   letters' cap height and its tail descending, as a Q's does. Sized in em so
+   it follows whatever size the name is set at. */
+.lockup { display: inline-flex; align-items: baseline; white-space: nowrap; }
+.lockup .lockup-q { width: .955em; height: .955em; position: relative; top: .167em; margin-right: -.1em; flex: none; }
+
+/* Members: an invitation code shown once, large enough to copy by eye, and
+   a removal that has to be opened before it can be confirmed. */
+.code-big code { font-size: 1.4rem; letter-spacing: .06em; padding: .4rem .7rem; }
+.inline-remove { display: inline-block; margin-left: .5rem; }
+.inline-remove summary { cursor: pointer; color: var(--error, #b3261e); font-weight: 500; }
+.inline-remove form { display: grid; gap: .4rem; margin-top: .5rem; max-width: 18rem; }

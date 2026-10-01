@@ -176,6 +176,9 @@ var commandNeeds = map[string]need{
 	// What a visitor said to a person is personal data, and answering it is
 	// speaking for the business. Edit-draft, like the chatbots themselves.
 	"inbox": {action: auth.ActEditDraft},
+	// Grant: who may have an account on the site, and whether they keep it,
+	// is an access decision, and the list is personal data.
+	"member": {action: auth.ActGrant},
 	// Grant: a model route decides who receives what visitors typed.
 	"gateway": {action: auth.ActGrant},
 	// Declaring a decider is a publish: above its threshold, what it
