@@ -1,6 +1,7 @@
 {{template "head" .}}
-<h1>Security posture</h1>
-<p class="hint"><a href="/security/frameworks">Read against FedRAMP, ISO 27001, SOC 2, GDPR, the EU AI Act and more</a></p>
+<h1>Security</h1>
+<p class="lead">How this installation is set up, checked against security and privacy rules.
+  <a href="/security/frameworks">See results by framework</a> — FedRAMP, ISO 27001, SOC 2, GDPR, the EU AI Act and more.</p>
 
 <div class="posture-head">
   <p class="score {{.Band}}"><strong>{{.Report.Score}}</strong><span class="outof">/100</span></p>
@@ -11,7 +12,7 @@
       <span class="pill ok">No findings</span>
     {{end}}
     <br>
-    <span class="help">Checked {{.Report.Checked}} rules at {{.Report.At}}. Unchecked areas cost points too — a scan that looked at nothing is not a clean scan.</span>
+    <span class="help">{{.Report.Checked}} checks, run {{.Ran}}. Anything that couldn't be checked lowers the score too.</span>
   </p>
 </div>
 
@@ -31,10 +32,10 @@
 */}}
 {{if .Throttled}}
 <div class="notice warn">
-  <h2>Being slowed down</h2>
-  <p>{{len .Throttled}} subject(s) have recent failures on record. These are
-     addresses or principals — the limiter keeps them hashed, so this can say
-     how many and how hard and not who.</p>
+  <h2>Sign-ins being slowed down</h2>
+  <p>{{len .Throttled}} source{{if ne (len .Throttled) 1}}s{{end}} failed to sign in
+     repeatedly and are being slowed down. They are stored scrambled, so only
+     the numbers are shown.</p>
   <div class="table-wrap">
   <table>
     <thead><tr>
@@ -73,7 +74,7 @@
 
 {{if .Report.Findings}}
 <h2>Findings</h2>
-<p class="help">Ordered by what an attacker gains, not by how alarming the rule sounds.</p>
+<p class="help">Most serious first.</p>
 {{range .Report.Findings}}
 <article class="finding {{.Severity}}">
   <h3><span class="pill {{.Severity}}">{{.Severity}}</span> {{.Title}}</h3>

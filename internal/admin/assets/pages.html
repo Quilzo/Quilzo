@@ -13,8 +13,8 @@
 
 {{if and .CheckedOn .DueCount}}
 <p class="notice" role="status">
-  <strong>{{.DueCount}} page{{if ne .DueCount 1}}s{{end}}</strong> nobody has
-  confirmed recently. That blocks nothing — it is a question put to a person.
+  <strong>{{.DueCount}} page{{if ne .DueCount 1}}s{{end}}</strong> haven't been
+  checked recently. Nothing is blocked — it's a reminder to look them over.
 </p>
 {{end}}
 
@@ -32,7 +32,7 @@
 <input type="hidden" name="back" value="{{.Here}}">
 <div class="table-wrap">
 <table>
-  <caption>{{len .Names}} page(s) in the current draft</caption>
+  <caption>{{len .Names}} page{{if ne (len .Names) 1}}s{{end}} in the draft</caption>
   {{/*
     "Checked" is a column here rather than a screen of its own. The question
     it answers — when did anybody last confirm this is still true — is asked
@@ -100,10 +100,9 @@
 </div>
 {{if .CanEdit}}
 <div class="bulkactions">
-  <button type="submit" name="checked" value="1">Mark selected as still right</button>
+  <button type="submit" name="checked" value="1">Mark selected as checked</button>
   <button type="submit" name="remove" value="1" class="danger">Remove selected…</button>
-  <span class="hint">The ellipsis is not decoration: removing asks again and
-    lists what would go.</span>
+  <span class="hint">You'll see what would be removed and confirm first.</span>
 </div>
 {{end}}
 </form>
@@ -114,7 +113,6 @@
 <p>No pages yet. Open <a href="/page/index">index</a> to write the first one,
 or stage one from a file with <code>quilzo add</code>.</p>
 {{end}}
-<p class="hint">Removing a page takes it out of the draft and, once you publish,
-off the live site. Nothing is erased: the store keeps every commit, so an
-earlier version of the page is still there and still addressable.</p>
+<p class="hint">A removed page leaves the live site the next time you publish.
+Every earlier version is kept, so it can be brought back.</p>
 {{template "foot" .}}

@@ -28,7 +28,7 @@ func TestTheFrameworksScreenReadsTheSameScan(t *testing.T) {
 	body := get(t, srv, "/security/frameworks", token).Body.String()
 	whole(t, body)
 	for _, want := range []string{"FedRAMP Moderate", "ISO/IEC 27001", "EU AI Act",
-		"GDPR", "NIST AI RMF", "/security/frameworks/eu-ai-act", "not claimed"} {
+		"GDPR", "NIST AI RMF", "/security/frameworks/eu-ai-act", "isn't listed"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the frameworks screen is missing %q", want)
 		}

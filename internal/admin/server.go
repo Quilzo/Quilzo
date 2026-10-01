@@ -2056,9 +2056,9 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 
 	s.render(w, r, "security.html", map[string]any{
 		"Nav":   "security",
-		"Title": "Security posture", "Principal": p,
+		"Title": "Security", "Principal": p,
 		"Report": rep, "Controls": controls, "Band": band(rep.Score),
-		"Throttled": s.throttled(),
+		"Throttled": s.throttled(), "Ran": ranAgo(rep.At),
 	})
 }
 
@@ -3261,4 +3261,14 @@ func initialOf(name string) string {
 		return strings.ToUpper(string(r))
 	}
 	return "?"
+}
+
+// ranAgo is when a scan ran, as a person says it: "just now", "5 min ago".
+// The report keeps the exact time; the screen does not need it.
+func ranAgo(at string) string {
+	t, err := time.Parse(time.RFC3339, at)
+	if err != nil {
+		return at
+	}
+	return agoText(time.Since(t))
 }

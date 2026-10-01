@@ -3,8 +3,8 @@
 {{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
-<p class="lead">Visitors who asked a chatbot for a person. The ones waiting
-  for an answer are first.</p>
+<p class="lead">Visitors who asked a chatbot to talk to a person. Those waiting
+  for a reply come first.</p>
 {{if .Rows}}
 <p>{{if .Waiting}}<strong>{{.Waiting}}</strong> waiting for a reply.{{else}}Nobody is waiting.{{end}}</p>
 <div class="table-wrap"><table>
@@ -15,8 +15,8 @@
     <td><span class="wf-word {{.Tone}}">{{.State}}</span></td>
     <td>{{.Count}}</td><td>{{.When}}</td>
   </tr>{{end}}</tbody></table></div>
-{{else}}<p>No conversations. A chatbot offers visitors a person only when
-  <em>Let a visitor ask for a person</em> is ticked on its
-  <a href="/assistants">Chatbots</a> page.</p>{{end}}
+{{else}}<p>No conversations yet. To let visitors reach a person, turn on
+  <em>Let a visitor ask for a person</em> for a chatbot under
+  <a href="/assistants">Chatbots</a>.</p>{{end}}
 {{end}}
 {{template "foot" .}}

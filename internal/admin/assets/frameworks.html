@@ -2,16 +2,16 @@
 <p class="hint"><a href="/security">Security</a></p>
 <h1>Frameworks</h1>
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
-<p class="lead">The same checks as the Security screen, read against the
-  frameworks people ask about. A requirement is <strong>failing</strong> when a
-  check that bears on it found something, <strong>passing</strong> when every
-  check that bears on it ran and found nothing, and <strong>not checked</strong>
-  when one of them could not run.</p>
-<p class="notice">A requirement no check here bears on is not listed at all: it
-  is not claimed, which is different from passing. These checks are evidence
-  towards a framework, gathered from the running system; they are not an
-  auditor's opinion, and they cover what software can see, not your policies,
-  training or contracts.</p>
+<p class="lead">Your security results, grouped by the frameworks auditors and
+  customers ask about.</p>
+<ul class="legend">
+  <li><span class="wf-word critical">Failing</span> a check found a problem</li>
+  <li><span class="wf-word good">Passing</span> every check ran and found nothing</li>
+  <li><span class="wf-word warning">Not checked</span> a check couldn't run</li>
+</ul>
+<p class="notice">This is evidence from the running system, not a
+  certification. It doesn't cover your policies, training or contracts, and a
+  requirement no check covers isn't listed.</p>
 <div class="table-wrap"><table>
   <thead><tr><th scope="col">Framework</th><th scope="col">Failing</th><th scope="col">Passing</th><th scope="col">Not checked</th><th scope="col">What it is</th></tr></thead>
   <tbody>{{range .Rows}}<tr>

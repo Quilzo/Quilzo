@@ -2220,3 +2220,8 @@ th[scope="row"] { font-weight: 500; }
 .menu button:hover { background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
 .menu .menu-danger:hover { background: var(--error-container); color: var(--on-error-container); }
 .rowmenu { position-try-fallbacks: flip-block; }
+
+/* A short key to coloured words on the screen above a table. */
+.legend { list-style: none; padding: 0; margin: .5rem 0 1rem; display: flex;
+  flex-wrap: wrap; gap: .5rem 1.5rem; font: var(--body-md); color: var(--on-surface-variant); }
+.legend .wf-word { margin-right: .35rem; }

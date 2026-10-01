@@ -15,7 +15,7 @@
     <td>{{range .Findings}}<p><strong>{{.Title}}</strong><br>{{.Detail}}{{if .Fix}}<br><span class="hint">Fix: <code>{{.Fix}}</code></span>{{end}}</p>{{end}}
       <span class="hint">{{range $i, $r := .Rules}}{{if $i}}, {{end}}<code>{{$r}}</code>{{end}}</span></td>
   </tr>{{end}}</tbody></table></div>
-{{else}}<p>No check here bears on this framework yet.</p>{{end}}
-<p class="hint">A requirement not listed is not claimed. What is listed is
-  evidence from the running system towards it, not a certification.</p>
+{{else}}<p>No check covers this framework yet.</p>{{end}}
+<p class="hint">Requirements not listed aren't covered by any check. What's
+  listed is evidence from the running system, not a certification.</p>
 {{template "foot" .}}
