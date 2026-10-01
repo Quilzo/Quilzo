@@ -200,6 +200,9 @@ func (s *Server) handleAssistantSave(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			a.Embed = origins
+			a.Handoff = r.FormValue("handoff") == "1"
+			days, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("handoff_days")))
+			a.HandoffDays = days
 		} else {
 			a.Title = strings.TrimSpace(r.FormValue("title"))
 		}

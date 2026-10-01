@@ -87,6 +87,8 @@ var destinations = []destination{
 	// is the other side: chatbots the site offers its visitors, answering
 	// from what is published.
 	{"assistants", "Chatbots", "/assistants", "Content", "ai", auth.ActEditDraft},
+	// Next to the chatbots it is fed by: what a visitor asked a person.
+	{"inbox", "Inbox", "/inbox", "Content", "ai", auth.ActEditDraft},
 	{"decisions", "Decisions", "/decisions", "Content", "ai", auth.ActEditDraft},
 
 	// With Review rather than with Content: a note is part of agreeing that

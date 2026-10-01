@@ -122,6 +122,8 @@ func assistantAdd(root string, args []string) error {
 	passages := fs.Int("passages", 0, "passages retrieved per question (default 5)")
 	documents := fs.String("documents", "", "comma-separated media library ids it may read")
 	embed := fs.String("embed", "", "comma-separated sites that may embed it, like https://shop.example")
+	handoffOn := fs.Bool("handoff", false, "let a visitor ask for a person; the conversation goes to the inbox")
+	handoffDays := fs.Int("handoff-days", 0, "days a handed-over conversation is kept after it last moves (default 30, at most 90)")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
@@ -140,6 +142,7 @@ func assistantAdd(root string, args []string) error {
 		Name: pos[0], Title: *title, Greeting: *greeting, Instructions: instr,
 		Pages: splitList(*pages), Exclude: splitList(*exclude),
 		Refusal: *refusal, Public: *public, UseModel: *model, Passages: *passages,
+		Handoff: *handoffOn, HandoffDays: *handoffDays,
 		Documents: splitList(*documents), Embed: splitList(*embed),
 	}
 	caller := resolveCaller(root, flagToken)

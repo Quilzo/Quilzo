@@ -157,7 +157,11 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	// declared or withdrawn from the admin or the command line takes effect
 	// without a restart — withdrawing a public assistant has to be immediate.
 	st.Assistants = &public.Assistants{
-		Set:   func() (*assistant.Set, error) { return assistant.Load(assistantsPath(root)) },
+		Set:     func() (*assistant.Set, error) { return assistant.Load(assistantsPath(root)) },
+		Handoff: handoffStore(root),
+		HandoffEvent: func(action, name, id, source string) {
+			recordHandoff(root, action, name, id, source, audit.KindUnknown)
+		},
 		Forms: func() (*form.Set, error) { return loadForms(root) },
 		Document: func(id string) (string, string, []byte, error) {
 			return assistantDocument(root, id)

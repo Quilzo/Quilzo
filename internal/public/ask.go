@@ -18,6 +18,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/handoff"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
@@ -59,6 +60,12 @@ type Assistants struct {
 	Limit *throttle.Limiter
 	// Audit records that a question was asked, never what.
 	Audit func(name, source string, answered bool)
+	// Handoff keeps conversations an assistant passed to a person. Nil means
+	// no assistant on this site can hand over, whatever it declares.
+	Handoff *handoff.Store
+	// HandoffEvent is told that a conversation was opened, added to or
+	// ended — which one and from where, never what was said.
+	HandoffEvent func(action, name, id, source string)
 
 	mu    sync.Mutex
 	cache map[string]cachedIndex
@@ -79,6 +86,7 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/ask/")
+	name, rest, _ := strings.Cut(name, "/")
 	set, err := st.Assistants.Set()
 	if err != nil {
 		http.Error(w, "this assistant is not available", http.StatusServiceUnavailable)
@@ -92,7 +100,17 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if rest != "" {
+		if !st.handoffRoute(w, r, a, rest) {
+			st.notFound(w, r)
+		}
+		return
+	}
+
 	view := askView{Assistant: a, Greeting: a.Greeting}
+	if _, ok := st.handoffStore(a); ok {
+		view.Handoff = handoffAction(a)
+	}
 	if view.Greeting == "" {
 		view.Greeting = "Ask a question about this site."
 	}
@@ -220,6 +238,9 @@ type askView struct {
 	Sources   []askSource
 	Offer     *askOffer
 	Problem   string
+	// Handoff is where the "talk to a person" form posts, when this
+	// assistant may hand over.
+	Handoff string
 }
 
 type askSource struct {
@@ -415,6 +436,22 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 <p class="qz-greeting">{{.V.Greeting}}</p>
 {{end}}
 {{if .V.Problem}}<p class="qz-problem" role="alert">{{.V.Problem}}</p>{{end}}
+{{if and .V.Answer .V.Handoff}}
+<details class="qz-handoff"{{if .V.Answer.Refused}} open{{end}}>
+  <summary>Talk to a person instead</summary>
+  <form method="post" action="{{.V.Handoff}}">
+    <input type="hidden" name="q" value="{{.V.Question}}">
+    {{if .V.Embedded}}<input type="hidden" name="embed" value="1">{{end}}
+    <p><label for="handoff-message">What would you like to ask?</label><br>
+    <textarea id="handoff-message" name="message" rows="3" maxlength="2000" required>{{.V.Question}}</textarea></p>
+    <p class="qz-small">Sending this starts a conversation that somebody at
+      the business will read and answer. Unlike your questions to the
+      assistant, it is kept: for {{.V.Assistant.Keep}} days after it last
+      moves, then deleted. Please do not include passwords or card numbers.</p>
+    <p><button type="submit">Send to a person</button></p>
+  </form>
+</details>
+{{end}}
 <form method="post" action="/ask/{{.V.Assistant.Name}}" class="qz-ask-form">
   {{if .V.Answer}}<input type="hidden" name="prev" value="{{.V.Question}}">{{end}}
   {{if .V.Embedded}}<input type="hidden" name="embed" value="1">{{end}}
@@ -447,6 +484,17 @@ const askCSS = `.qz-ask main{max-width:42rem;margin:0 auto;padding:1.5rem 1rem 3
 .qz-embed-title{font-weight:700;margin:0 0 .5rem}
 .qz-embed .qz-small{margin-top:.75rem}
 :focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.qz-handoff{margin:1.2rem 0;padding:.8rem 1.1rem;border-radius:12px;border:1px dashed color-mix(in srgb,currentColor 35%,transparent)}
+.qz-handoff summary{cursor:pointer;font-weight:600}
+.qz-handoff textarea{width:100%;box-sizing:border-box;font:inherit;padding:.5rem .6rem;border-radius:8px;border:1px solid color-mix(in srgb,currentColor 35%,transparent)}
+.qz-handoff button{font:inherit;font-weight:600;padding:.55rem 1.1rem;border-radius:999px;border:0;cursor:pointer;background:CanvasText;color:Canvas}
+.qz-thread{list-style:none;padding:0;margin:1rem 0;display:grid;gap:.6rem}
+.qz-msg{padding:.7rem 1rem;border-radius:12px;max-width:85%;border:1px solid color-mix(in srgb,currentColor 18%,transparent);white-space:pre-wrap;overflow-wrap:anywhere}
+.qz-msg.qz-visitor{justify-self:end;background:color-mix(in srgb,currentColor 7%,transparent)}
+.qz-who{display:block;font-size:.8em;font-weight:700;opacity:.75;margin-bottom:.2rem}
+.qz-actions{margin:.8rem 0}
+.qz-button-quiet{font:inherit;padding:.4rem .9rem;border-radius:999px;border:1px solid color-mix(in srgb,currentColor 35%,transparent);background:transparent;color:inherit;cursor:pointer;text-decoration:none;display:inline-block}
+.qz-end{margin-top:1.5rem}
 `
 
 func (st *Site) askStylesheet(w http.ResponseWriter, r *http.Request) {

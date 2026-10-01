@@ -1,0 +1,29 @@
+{{template "head" .}}
+<p class="hint"><a href="/inbox">Inbox</a></p>
+<h1>A visitor, through {{.Through}}</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+<p class="hint">Started {{.Opened}}.{{if .C.Closed}} Ended by {{if eq .C.ClosedBy "visitor"}}the visitor{{else}}{{.C.ClosedBy}}{{end}}.{{end}}
+  Your name is kept with what you send; the visitor sees it as from the business.</p>
+{{if .C.Question}}<p><span class="hint">They had asked the chatbot:</span> {{.C.Question}}</p>{{end}}
+
+<ol class="thread" aria-label="Conversation">
+{{range .Lines}}<li class="msg{{if .Visitor}} from-visitor{{end}}"><span class="who">{{.Who}} <span class="hint">{{.At}}</span></span><span>{{.Text}}</span></li>
+{{end}}</ol>
+
+{{if .C.Closed}}<p class="notice">This conversation has ended. Nothing more can be sent in it.</p>
+{{else}}
+<form method="post" action="/inbox/act">
+  <input type="hidden" name="assistant" value="{{.C.Assistant}}"><input type="hidden" name="id" value="{{.C.ID}}">
+  <p><label for="reply">Reply {{template "req"}}</label><textarea id="reply" name="text" rows="5" maxlength="2000" required>{{.Draft}}</textarea></p>
+  {{if .DraftSources}}<p class="hint">The suggestion came from: {{range $i, $s := .DraftSources}}{{if $i}}, {{end}}{{$s}}{{end}}.</p>{{end}}
+  <p class="actions"><button type="submit" name="do" value="reply">Send</button>
+    {{if .CanSuggest}}<button type="submit" name="do" value="suggest" formnovalidate class="quiet">Suggest a reply</button>{{end}}</p>
+  <p class="hint">A suggestion is the chatbot's answer to their last message, from the site. It is put in the box for you to read; it is never sent on its own.</p>
+</form>
+<form method="post" action="/inbox/act">
+  <input type="hidden" name="assistant" value="{{.C.Assistant}}"><input type="hidden" name="id" value="{{.C.ID}}">
+  <p><button type="submit" name="do" value="close" class="danger">End the conversation</button></p>
+</form>
+{{end}}
+{{template "foot" .}}

@@ -402,6 +402,8 @@ the assistant
   quilzo assistant ask NAME "question"     try it, with its sources and what was removed
   quilzo assistant eval NAME CASES.jsonl   measure it, including what it should refuse
   quilzo assistant list | remove NAME
+  quilzo inbox list | show ASSISTANT/ID     visitors who asked a chatbot for a person
+  quilzo inbox reply ASSISTANT/ID "text"    answer one, as yourself; inbox close ends it
   quilzo analytics [--days N]              views, visitors, referrers, conversions; no cookie
   quilzo experiment add NAME --page P --variant b=PAGE --goal G   an A/B test, no script or cookie
   quilzo experiment start|stop|remove NAME
@@ -783,6 +785,8 @@ func main() {
 		err = cmdFinding(root, cmdArgs)
 	case "assistant":
 		err = cmdAssistant(root, cmdArgs)
+	case "inbox":
+		err = cmdInbox(root, cmdArgs)
 	case "gateway":
 		err = cmdGateway(root, cmdArgs)
 	case "decide":

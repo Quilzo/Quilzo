@@ -169,6 +169,7 @@ func cmdServe(root string, args []string) error {
 		return &Caller{Name: by, Kind: audit.KindHuman, Verified: true,
 			Role: auth.RoleAdmin}
 	}
+	srv.Inbox = inboxHooks(root)
 	srv.Agents = &admin.Agents{
 		Load: func() (map[string]agent.Manifest, error) {
 			set, err := loadAgents(root)
@@ -1086,11 +1087,18 @@ func retentionJob(root string) (upkeep.Job, bool) {
 	return upkeep.Job{
 		Name: "retention",
 		Do: func(now time.Time) (int, error) {
+			// Conversations handed to a person, which carry their own
+			// period from the assistant they came through.
+			gone, herr := handoffStore(root).Expire(handoffKeep(root), now)
+			if herr != nil {
+				return gone, herr
+			}
 			set, lerr := loadForms(root)
 			if lerr != nil || set == nil || len(set.Forms) == 0 {
-				return 0, nil
+				return gone, nil
 			}
-			return st.Expire(set, now)
+			n, err := st.Expire(set, now)
+			return n + gone, err
 		},
 	}, true
 }

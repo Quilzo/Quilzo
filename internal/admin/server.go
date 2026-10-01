@@ -134,6 +134,8 @@ type Server struct {
 	// because an empty list and no access look identical and mean opposite
 	// things.
 	Agents *Agents
+	// Inbox is the conversations the site's assistants handed to a person.
+	Inbox *Inbox
 	// Publishing is the deployment pipeline: environments, promotion and work
 	// queued for later.
 	Publishing *Publishing
@@ -1023,6 +1025,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/decisions/save", s.handleDeciderSave)
 	mux.HandleFunc("/decisions/remove", s.handleDeciderRemove)
 	mux.HandleFunc("/models/change", s.handleModelsChange)
+	mux.HandleFunc("/inbox", s.handleInbox)
+	mux.HandleFunc("/inbox/act", s.handleInboxAct)
+	mux.HandleFunc("/inbox/", s.handleConversation)
 	mux.HandleFunc("/assistants", s.handleAssistants)
 	mux.HandleFunc("/assistants/", s.handleAssistant)
 	mux.HandleFunc("/assistants/save", s.handleAssistantSave)

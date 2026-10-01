@@ -2003,3 +2003,11 @@ button.quiet:hover { background: var(--surface-container-high); }
 /* Something a person is asked to agree to is shown whole, on any screen:
    wrapped, never cut off at the edge. */
 pre.code.whole { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: visible; }
+
+/* A conversation handed over from a chatbot. */
+ol.thread { list-style: none; padding: 0; margin: 1rem 0; display: grid; gap: 0.6rem; max-width: 46rem; }
+ol.thread .msg { padding: 0.7rem 1rem; border-radius: var(--shape-sm); border: 1px solid var(--outline-variant);
+  background: var(--surface-container-low); white-space: pre-wrap; overflow-wrap: anywhere; max-width: 85%; }
+ol.thread .msg.from-visitor { background: var(--primary-container); color: var(--on-primary-container); justify-self: start; }
+ol.thread .msg:not(.from-visitor) { justify-self: end; }
+ol.thread .who { display: block; font: var(--label-md); font-weight: 700; margin-bottom: 0.2rem; }

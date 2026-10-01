@@ -288,6 +288,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/form/", st.submit)
 	mux.HandleFunc("/ask/", st.ask)
 	mux.HandleFunc("/ask.css", st.askStylesheet)
+	mux.HandleFunc("/ask-live.js", st.askLiveScript)
 	mux.HandleFunc("/share", st.handleShare)
 	mux.HandleFunc("/", st.page)
 	// The banner is innermost, so it wraps the handler's own output and

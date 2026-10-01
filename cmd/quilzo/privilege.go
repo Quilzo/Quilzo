@@ -173,6 +173,9 @@ var commandNeeds = map[string]need{
 	"assistant list": {action: auth.ActView},
 	"assistant ask":  {action: auth.ActView},
 	"assistant eval": {action: auth.ActView},
+	// What a visitor said to a person is personal data, and answering it is
+	// speaking for the business. Edit-draft, like the chatbots themselves.
+	"inbox": {action: auth.ActEditDraft},
 	// Grant: a model route decides who receives what visitors typed.
 	"gateway": {action: auth.ActGrant},
 	// Declaring a decider is a publish: above its threshold, what it

@@ -1,0 +1,22 @@
+{{template "head" .}}
+<h1>Inbox</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">Visitors who asked a chatbot for a person. The ones waiting
+  for an answer are first.</p>
+{{if .Rows}}
+<p>{{if .Waiting}}<strong>{{.Waiting}}</strong> waiting for a reply.{{else}}Nobody is waiting.{{end}}</p>
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Last said</th><th scope="col">Through</th><th scope="col">State</th><th scope="col">Messages</th><th scope="col">Moved</th></tr></thead>
+  <tbody>{{range .Rows}}<tr>
+    <th scope="row"><a href="{{.Href}}">{{if .Preview}}{{.Preview}}{{else}}(nothing yet){{end}}</a></th>
+    <td>{{.Title}}</td>
+    <td><span class="wf-word {{.Tone}}">{{.State}}</span></td>
+    <td>{{.Count}}</td><td>{{.When}}</td>
+  </tr>{{end}}</tbody></table></div>
+{{else}}<p>No conversations. A chatbot offers visitors a person only when
+  <em>Let a visitor ask for a person</em> is ticked on its
+  <a href="/assistants">Chatbots</a> page.</p>{{end}}
+{{end}}
+{{template "foot" .}}
