@@ -501,6 +501,7 @@ security posture
   quilzo config unset KEY                  put one back to the default
   quilzo posture scan [--min SEV]          continuous misconfiguration check
   quilzo posture rules | explain RULE      what is checked, and why it matters
+  quilzo posture frameworks [ID]           FedRAMP, ISO 27001, SOC 2, GDPR, EU AI Act and more, read off the checks
   quilzo posture suppress ID --reason ...  accept a risk, for at most 90 days
 
 interface

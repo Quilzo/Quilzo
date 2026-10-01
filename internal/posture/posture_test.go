@@ -65,6 +65,11 @@ func clean(t *testing.T) State {
 		Extra: map[string]string{
 			"published_heads": "2", "published_head_size": "20",
 		},
+		// A local model and one public chatbot that says what it is and was
+		// measured last week.
+		AI: AIFacts{Checked: true, ModelHost: "127.0.0.1:11434", ModelLocal: true,
+			Agents: 1, Chatbots: []ChatbotFact{{Name: "help", Public: true,
+				UseModel: true, Disclosed: true, LastEval: now.Add(-7 * 24 * time.Hour)}}},
 		Now: now,
 	}
 }

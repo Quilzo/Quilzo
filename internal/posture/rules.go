@@ -20,6 +20,111 @@ import (
 // finding be handed to an assessor as evidence rather than as an opinion, and
 // it is what makes "we monitor continuously" a claim with a list behind it.
 var rules = []Rule{
+	// The AI and privacy checks. Written for the frameworks that 800-53
+	// does not describe; their mappings are in internal/frameworks.
+	{
+		ID:       "ai.chatbot-undisclosed",
+		Title:    "A public chatbot does not say it is automated",
+		Severity: High,
+		Controls: []string{"PL-4"},
+		Why: "EU AI Act Article 50(1), in force since 2 August 2026: a person " +
+			"interacting with an AI system is told so, unless it is obvious. " +
+			"The built-in conversation page says so on every answer; a page " +
+			"an owner designed has to carry it too.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, c := range s.AI.Chatbots {
+				if c.Public && !c.Disclosed {
+					out = append(out, Finding{Resource: c.Name,
+						Detail: c.Name + " is public and its conversation page does " +
+							"not tell the visitor they are talking to an " +
+							"automated assistant",
+						Fix: "add {{ ask.disclosure }} to the layout of the " +
+							"published \"ask\" page"})
+				}
+			}
+			return out
+		},
+	},
+	{
+		ID:       "ai.chatbot-unevaluated",
+		Title:    "A public chatbot has not been measured recently",
+		Severity: Medium,
+		Controls: []string{"CA-7"},
+		Why: "What a chatbot says changes when the site does, and when its " +
+			"model does. One that has never been measured against what it " +
+			"should answer and what it should refuse is one nobody knows " +
+			"the error rate of.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, c := range s.AI.Chatbots {
+				if !c.Public {
+					continue
+				}
+				switch {
+				case c.LastEval.IsZero():
+					out = append(out, Finding{Resource: c.Name,
+						Detail: c.Name + " is public and has never been evaluated",
+						Fix:    "quilzo assistant eval " + c.Name + " CASES.jsonl"})
+				case s.Now.Sub(c.LastEval) > 90*24*time.Hour:
+					out = append(out, Finding{Resource: c.Name,
+						Detail: fmt.Sprintf("%s was last evaluated %s ago",
+							c.Name, roughly(s.Now.Sub(c.LastEval))),
+						Fix: "quilzo assistant eval " + c.Name + " CASES.jsonl"})
+				}
+			}
+			return out
+		},
+	},
+	{
+		ID:       "ai.agent-flagged",
+		Title:    "An agent keeps trying what it was refused",
+		Severity: High,
+		Controls: []string{"SI-4", "AC-6"},
+		Why: "An agent asking again and again for what its declaration does " +
+			"not allow is either badly configured or being steered by " +
+			"something it read. Both need a person.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, a := range s.AI.Flagged {
+				out = append(out, Finding{Resource: a,
+					Detail: a + " is flagged by the agent watchdog",
+					Fix:    "quilzo agents"})
+			}
+			return out
+		},
+	},
+	{
+		ID:       "privacy.model-egress",
+		Title:    "What visitors and editors write is sent to an outside model",
+		Severity: Medium,
+		Controls: []string{"SA-9"},
+		Why: "A model reached over the network is a processor of whatever it " +
+			"is sent: visitors' questions to a chatbot, page text to an " +
+			"agent. That needs an agreement with the provider and, outside " +
+			"the EU, a lawful basis for the transfer. Recorded here so the " +
+			"decision is made rather than inherited from a setting.",
+		Check: func(s State) []Finding {
+			if s.AI.ModelHost == "" || s.AI.ModelLocal {
+				return nil
+			}
+			users := 0
+			for _, c := range s.AI.Chatbots {
+				if c.UseModel {
+					users++
+				}
+			}
+			if users == 0 && s.AI.Agents == 0 {
+				return nil
+			}
+			return []Finding{{Resource: s.AI.ModelHost,
+				Detail: fmt.Sprintf("%s receives what %d chatbot(s) and %d "+
+					"agent(s) send it", s.AI.ModelHost, users, s.AI.Agents),
+				Fix: "record the processing agreement, then quilzo posture " +
+					"suppress privacy.model-egress:" + s.AI.ModelHost +
+					" --days 365 --reason \"DPA signed …\""}}
+		},
+	},
 
 	// -- access control -----------------------------------------------------
 

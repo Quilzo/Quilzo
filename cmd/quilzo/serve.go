@@ -565,7 +565,12 @@ func cmdServe(root string, args []string) error {
 	//
 	// And the estate's schedule, which does nothing until an administrator
 	// sets one with quilzo estate auto.
-	jobs := []upkeep.Job{estateJob(root), collectJob(root)}
+	jobs := []upkeep.Job{estateJob(root), collectJob(root),
+		// The posture, rescanned on the same schedule, so a check that
+		// starts failing is a finding in the queue rather than something
+		// waiting for somebody to open the Security screen.
+		postureJob(root, *tplDir, posture.ServerFacts{AdminAddr: *addr,
+			PublicAddr: *publicAddr, BehindProxy: *behindProxy})}
 	if job, ok := retentionJob(root); ok {
 		jobs = append(jobs, job)
 	}

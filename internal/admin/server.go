@@ -984,6 +984,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/save", s.handleSave)
 	mux.HandleFunc("/page/delete", s.handlePageDelete)
 	mux.HandleFunc("/security", s.handleSecurity)
+	mux.HandleFunc("/security/frameworks", s.handleFrameworks)
+	mux.HandleFunc("/security/frameworks/", s.handleFramework)
 	mux.HandleFunc("/security/rules", s.handleRules)
 	mux.HandleFunc("/security/rule/", s.handleRule)
 	mux.HandleFunc("/security/scan", s.handleScanScreen)

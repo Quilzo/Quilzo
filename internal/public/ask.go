@@ -76,6 +76,14 @@ type cachedIndex struct {
 	idx *assistant.Index
 }
 
+// Disclosure is what every conversation page says about who is answering.
+//
+// EU AI Act Article 50(1): somebody talking to an AI system is told so,
+// unless it is obvious. The built-in page says it under every answer; a
+// page an owner designs gets it as {{ ask.disclosure }}, and the posture
+// check ai.chatbot-undisclosed reports a published one that leaves it out.
+const Disclosure = "You are talking to an automated assistant, not a person."
+
 // askPageName is the published page an owner may design the conversation
 // with. Absent, a plain built-in page is served.
 const askPageName = "ask"
@@ -347,7 +355,8 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 	}
 	w.WriteHeader(status)
 	_ = askTemplate.Execute(w, map[string]any{
-		"V": v, "Honeypot": form.Honeypot, "StampField": form.StampField,
+		"Disclosure": Disclosure,
+		"V":          v, "Honeypot": form.Honeypot, "StampField": form.StampField,
 	})
 }
 
@@ -363,6 +372,7 @@ func (st *Site) askThroughLayout(body any, hash string, r *http.Request, v askVi
 		"name": v.Assistant.Name, "title": v.Assistant.Title,
 		"greeting": v.Greeting, "question": v.Question, "problem": v.Problem,
 		"action": "/ask/" + v.Assistant.Name, "answered": v.Answer != nil,
+		"disclosure": Disclosure,
 	}
 	if v.Answer != nil {
 		data["answer"] = v.Answer.Text
@@ -459,8 +469,8 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
   <textarea id="q" name="q" rows="2" maxlength="1000" required{{if not .V.Embedded}} autofocus{{end}}></textarea>
   <button type="submit">Ask</button>
 </form>
-<p class="qz-small">Answers come from this site's pages, and every sentence
-  links to where it came from. Nothing you ask is stored.</p>
+<p class="qz-small">{{.Disclosure}} Answers come from this site's pages, and
+  every sentence links to where it came from. Nothing you ask is stored.</p>
 </main></body></html>`))
 
 // askCSS is the built-in page's stylesheet, served at /ask.css. Small and

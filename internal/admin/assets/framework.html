@@ -1,0 +1,21 @@
+{{template "head" .}}
+<p class="hint"><a href="/security/frameworks">Frameworks</a></p>
+<h1>{{.F.Name}}</h1>
+<p class="lead">{{.F.About}} <span class="hint">{{.F.Version}}. <a href="{{.F.URL}}" rel="noreferrer">The text</a>.</span></p>
+<dl class="stats-row">
+  <div{{if .Failing}} class="critical"{{end}}><dt>Failing</dt><dd>{{.Failing}}</dd></div>
+  <div><dt>Passing</dt><dd>{{.Passing}}</dd></div>
+  <div{{if .Unchecked}} class="serious"{{end}}><dt>Not checked</dt><dd>{{.Unchecked}}</dd></div>
+</dl>
+{{if .View}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Requirement</th><th scope="col">State</th><th scope="col">What bears on it</th></tr></thead>
+  <tbody>{{range .View}}<tr>
+    <th scope="row">{{.Ref.ID}}</th>
+    <td><span class="wf-word {{if eq .State "failing"}}critical{{else if eq .State "passing"}}good{{else}}warning{{end}}">{{.State}}</span></td>
+    <td>{{range .Findings}}<p><strong>{{.Title}}</strong><br>{{.Detail}}{{if .Fix}}<br><span class="hint">Fix: <code>{{.Fix}}</code></span>{{end}}</p>{{end}}
+      <span class="hint">{{range $i, $r := .Rules}}{{if $i}}, {{end}}<code>{{$r}}</code>{{end}}</span></td>
+  </tr>{{end}}</tbody></table></div>
+{{else}}<p>No check here bears on this framework yet.</p>{{end}}
+<p class="hint">A requirement not listed is not claimed. What is listed is
+  evidence from the running system towards it, not a certification.</p>
+{{template "foot" .}}

@@ -47,6 +47,7 @@ package posture
 
 import (
 	"fmt"
+	"github.com/quilzo/quilzo/internal/frameworks"
 	"sort"
 	"strings"
 	"time"
@@ -104,6 +105,10 @@ type Finding struct {
 	Controls []string `json:"controls,omitempty"`
 	// OWASP is the Top 10:2025 category.
 	OWASP string `json:"owasp,omitempty"`
+	// Refs is every framework requirement the finding bears on: FedRAMP,
+	// ISO 27001, SOC 2, GDPR, the EU AI Act and the rest. See
+	// internal/frameworks for what a mapping is and is not.
+	Refs []frameworks.Ref `json:"refs,omitempty"`
 }
 
 // ID is the stable identity of a finding: the same problem in the same place
@@ -224,6 +229,33 @@ type ExtFacts struct {
 //
 // Assembled by the caller. The scanner reads this and nothing else — there is
 // no path from a rule to the filesystem, the network or the clock.
+// ChatbotFact is one chatbot as the AI checks see it.
+type ChatbotFact struct {
+	Name     string `json:"name"`
+	Public   bool   `json:"public"`
+	UseModel bool   `json:"use_model"`
+	// Disclosed is whether a visitor is told they are talking to an
+	// automated assistant on the page that serves it.
+	Disclosed bool `json:"disclosed"`
+	// LastEval is when it was last measured, zero for never.
+	LastEval time.Time `json:"last_eval,omitempty"`
+}
+
+// AIFacts are the chatbots, agents and models, for the AI and privacy
+// checks.
+type AIFacts struct {
+	Checked  bool          `json:"checked"`
+	Chatbots []ChatbotFact `json:"chatbots,omitempty"`
+	// ModelHost is the host a configured model is reached on, and
+	// ModelLocal whether that host is this machine or its own network.
+	ModelHost  string `json:"model_host,omitempty"`
+	ModelLocal bool   `json:"model_local,omitempty"`
+	// Agents is how many agents are declared, and Flagged the ones the
+	// watchdog reports as not accepting refusals.
+	Agents  int      `json:"agents"`
+	Flagged []string `json:"flagged,omitempty"`
+}
+
 type State struct {
 	Policy *auth.Policy     `json:"-"`
 	Tokens *auth.TokenStore `json:"-"`
@@ -245,6 +277,7 @@ type State struct {
 	Upkeep    UpkeepFacts       `json:"upkeep"`
 	Agents    AgentFacts        `json:"agents"`
 	Ext       ExtFacts          `json:"ext"`
+	AI        AIFacts           `json:"ai"`
 	Now       time.Time         `json:"-"`
 	Extra     map[string]string `json:"extra,omitempty"`
 }
@@ -284,14 +317,17 @@ const MaxSuppression = 90 * 24 * time.Hour
 
 // Report is the result of one scan.
 type Report struct {
-	At         string          `json:"at"`
-	Findings   []Finding       `json:"findings"`
-	Suppressed []Finding       `json:"suppressed,omitempty"`
-	Counts     map[string]int  `json:"counts"`
-	Checked    int             `json:"rules_checked"`
-	NotChecked []string        `json:"not_checked,omitempty"`
-	Score      int             `json:"score"`
-	Controls   map[string]bool `json:"controls,omitempty"`
+	At         string         `json:"at"`
+	Findings   []Finding      `json:"findings"`
+	Suppressed []Finding      `json:"suppressed,omitempty"`
+	Counts     map[string]int `json:"counts"`
+	Checked    int            `json:"rules_checked"`
+	NotChecked []string       `json:"not_checked,omitempty"`
+	Score      int            `json:"score"`
+	// Skipped are the rules whose input was not supplied, so their silence
+	// is not a pass. A framework view reads this to say "not checked".
+	Skipped  []string        `json:"skipped,omitempty"`
+	Controls map[string]bool `json:"controls,omitempty"`
 }
 
 // Worst returns the highest severity present.
@@ -356,6 +392,9 @@ func Scan(s State, suppressions []Suppression) Report {
 			for _, c := range f.Controls {
 				rep.Controls[c] = true
 			}
+			if len(f.Refs) == 0 {
+				f.Refs = frameworks.Refs(f.Rule, f.Controls)
+			}
 			if _, quiet := silenced[f.ID()]; quiet {
 				rep.Suppressed = append(rep.Suppressed, f)
 				continue
@@ -389,6 +428,11 @@ func Scan(s State, suppressions []Suppression) Report {
 	// are fine", which is the failure mode of every scanner anyone has learned
 	// to distrust.
 	rep.NotChecked = missing(s)
+	for _, r := range rules {
+		if !supplied(s, inputFor(r.ID)) {
+			rep.Skipped = append(rep.Skipped, r.ID)
+		}
+	}
 
 	sort.SliceStable(rep.Findings, func(i, j int) bool {
 		a, b := rep.Findings[i], rep.Findings[j]
@@ -418,6 +462,10 @@ func missing(s State) []string {
 	}
 	if len(s.Files) == 0 {
 		out = append(out, "file permissions: nothing on disk was inspected")
+	}
+	if !s.AI.Checked {
+		out = append(out, "chatbots, agents and models: the AI and privacy "+
+			"checks were not run")
 	}
 	if _, ok := s.Extra["published_heads"]; !ok && len(s.Audit) > 0 {
 		out = append(out, "log transparency: whether any audit head has been "+
@@ -501,5 +549,119 @@ func RuleIndex() map[string]Rule {
 	for _, r := range rules {
 		out[r.ID] = r
 	}
+	return out
+}
+
+// inputFor names the part of the state a rule reads, for the ones that
+// read only one. A rule not listed reads what is always there.
+func inputFor(rule string) string {
+	switch {
+	case strings.HasPrefix(rule, "access."):
+		return "policy"
+	case strings.HasPrefix(rule, "token."):
+		return "tokens"
+	case rule == "audit.no-published-head" || rule == "audit.head-is-stale" ||
+		rule == "audit.writer-not-separated":
+		return "heads"
+	case strings.HasPrefix(rule, "audit."):
+		return "audit"
+	case strings.HasPrefix(rule, "ai.") || strings.HasPrefix(rule, "privacy."):
+		return "ai"
+	case rule == "content.untyped-pages":
+		return "types"
+	case rule == "expose.file-mode":
+		return "files"
+	}
+	return ""
+}
+
+func supplied(s State, input string) bool {
+	switch input {
+	case "policy":
+		return s.Policy != nil
+	case "tokens":
+		return s.Tokens != nil
+	case "audit":
+		return s.AuditRead
+	case "heads":
+		_, ok := s.Extra["published_heads"]
+		return ok
+	case "ai":
+		return s.AI.Checked
+	case "types":
+		return s.Types != nil
+	case "files":
+		return len(s.Files) > 0
+	}
+	return true
+}
+
+// RefStatus is one framework requirement as the last scan saw it.
+type RefStatus struct {
+	Ref frameworks.Ref `json:"ref"`
+	// State is "failing", "passing" or "not checked".
+	State string `json:"state"`
+	// Rules are the checks that bear on it, and Findings what they found.
+	Rules    []string  `json:"rules"`
+	Findings []Finding `json:"findings,omitempty"`
+}
+
+// ByFramework is a report read against one framework: every requirement
+// some check bears on, and what the checks said about it.
+//
+// Passing means every check bearing on it ran and found nothing. A
+// requirement no check bears on is not listed — it is not passing, it is
+// not claimed — and the screen that shows this says so.
+func ByFramework(rep Report, framework string) []RefStatus {
+	skipped := map[string]bool{}
+	for _, id := range rep.Skipped {
+		skipped[id] = true
+	}
+	byRef := map[frameworks.Ref]*RefStatus{}
+	var order []frameworks.Ref
+	for _, r := range rules {
+		for _, ref := range frameworks.Refs(r.ID, r.Controls) {
+			if ref.Framework != framework {
+				continue
+			}
+			st, ok := byRef[ref]
+			if !ok {
+				st = &RefStatus{Ref: ref}
+				byRef[ref] = st
+				order = append(order, ref)
+			}
+			st.Rules = append(st.Rules, r.ID)
+		}
+	}
+	for _, f := range rep.Findings {
+		for _, ref := range f.Refs {
+			if st, ok := byRef[ref]; ok {
+				st.Findings = append(st.Findings, f)
+			}
+		}
+	}
+	out := make([]RefStatus, 0, len(order))
+	for _, ref := range order {
+		st := byRef[ref]
+		switch {
+		case len(st.Findings) > 0:
+			st.State = "failing"
+		default:
+			st.State = "passing"
+			for _, id := range st.Rules {
+				if skipped[id] {
+					st.State = "not checked"
+				}
+			}
+		}
+		out = append(out, *st)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		rank := map[string]int{"failing": 0, "not checked": 1, "passing": 2}
+		if rank[out[i].State] != rank[out[j].State] {
+			return rank[out[i].State] < rank[out[j].State]
+		}
+		return out[i].Ref.ID < out[j].Ref.ID
+	})
 	return out
 }

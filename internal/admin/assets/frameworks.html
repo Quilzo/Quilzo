@@ -1,0 +1,26 @@
+{{template "head" .}}
+<p class="hint"><a href="/security">Security</a></p>
+<h1>Frameworks</h1>
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">The same checks as the Security screen, read against the
+  frameworks people ask about. A requirement is <strong>failing</strong> when a
+  check that bears on it found something, <strong>passing</strong> when every
+  check that bears on it ran and found nothing, and <strong>not checked</strong>
+  when one of them could not run.</p>
+<p class="notice">A requirement no check here bears on is not listed at all: it
+  is not claimed, which is different from passing. These checks are evidence
+  towards a framework, gathered from the running system; they are not an
+  auditor's opinion, and they cover what software can see, not your policies,
+  training or contracts.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Framework</th><th scope="col">Failing</th><th scope="col">Passing</th><th scope="col">Not checked</th><th scope="col">What it is</th></tr></thead>
+  <tbody>{{range .Rows}}<tr>
+    <th scope="row"><a href="/security/frameworks/{{.ID}}">{{.Name}}</a><br><span class="hint">{{.Version}}</span></th>
+    <td>{{if .Failing}}<span class="wf-word critical">{{.Failing}}</span>{{else}}0{{end}}</td>
+    <td>{{.Passing}}</td>
+    <td>{{if .Unchecked}}<span class="wf-word warning">{{.Unchecked}}</span>{{else}}0{{end}}</td>
+    <td><span class="hint">{{.About}}</span></td>
+  </tr>{{end}}</tbody></table></div>
+{{if .NotChecked}}<h2>Not checked in this scan</h2><ul>{{range .NotChecked}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{end}}
+{{template "foot" .}}

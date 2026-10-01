@@ -403,6 +403,19 @@ func assistantEval(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Recorded, so "when was this chatbot last measured" has an answer the
+	// posture checks can read. The counts, never the questions.
+	outcome := audit.Success
+	if r.Hallucinated > 0 {
+		outcome = audit.Failure
+	}
+	evalBy := resolveCaller(root, "")
+	record(root, audit.Record{Action: "assistant.evaluated",
+		Resource: "/ask/" + a.Name, Outcome: outcome, Principal: evalBy.Name,
+		Kind: evalBy.Kind, Verified: evalBy.Verified,
+		Detail: map[string]string{"assistant": a.Name,
+			"cases":        fmt.Sprint(r.Cases),
+			"hallucinated": fmt.Sprint(r.Hallucinated)}})
 	if w.JSON(r) {
 		if r.Hallucinated > 0 {
 			return fmt.Errorf("%d unanswerable question(s) answered", r.Hallucinated)
