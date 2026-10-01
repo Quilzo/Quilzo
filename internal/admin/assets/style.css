@@ -2011,3 +2011,13 @@ ol.thread .msg { padding: 0.7rem 1rem; border-radius: var(--shape-sm); border: 1
 ol.thread .msg.from-visitor { background: var(--primary-container); color: var(--on-primary-container); justify-self: start; }
 ol.thread .msg:not(.from-visitor) { justify-self: end; }
 ol.thread .who { display: block; font: var(--label-md); font-weight: 700; margin-bottom: 0.2rem; }
+
+/* The mark in its two colours: the loop in the interface's blue, the tick
+   in teal. Lighter tones in the dark theme, so both clear 3:1 against the
+   surface behind them, which is what a graphic needs (WCAG 1.4.11). */
+:root {
+  --mark-loop: light-dark(#0b57d0, #a8c7fa);
+  --mark-tick: light-dark(#00897b, #4fd1c5);
+}
+.mark .mark-loop { fill: var(--mark-loop); }
+.mark .mark-tick { fill: var(--mark-tick); }

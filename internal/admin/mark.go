@@ -36,9 +36,24 @@ package admin
 // Coordinates are absolute in a 24×24 box, so a consumer that only reads
 // the `d` attribute — an icon pipeline, an SVG favicon — gets the same
 // shape as the browser does.
-const MarkPath = "M15.04 18.59A8.60 8.60 0 1 1 19.08 8.06A1.60 1.60 0 0 1 16.07 9.15A5.40 5.40 0 1 0 13.54 15.77A1.60 1.60 0 0 1 15.04 18.59Z " +
-	"M12.73 12.27L16.03 15.57A1.60 1.60 0 0 1 13.77 17.83L10.47 14.53A1.60 1.60 0 0 1 12.73 12.27Z " +
-	"M13.72 15.62L20.22 8.52A1.60 1.60 0 0 1 22.58 10.68L16.08 17.78A1.60 1.60 0 0 1 13.72 15.62Z"
+const MarkPath = MarkLoop + " " + MarkTick
+
+// MarkLoop is the open ring, and MarkTick the tick that passes through its
+// gap. Two paths so they can be two colours: the loop in the interface's
+// blue and the tick in teal, which reads as "go" without being the green of
+// a success message.
+const (
+	MarkLoop = "M15.04 18.59A8.60 8.60 0 1 1 19.08 8.06A1.60 1.60 0 0 1 16.07 9.15A5.40 5.40 0 1 0 13.54 15.77A1.60 1.60 0 0 1 15.04 18.59Z"
+	MarkTick = "M12.73 12.27L16.03 15.57A1.60 1.60 0 0 1 13.77 17.83L10.47 14.53A1.60 1.60 0 0 1 12.73 12.27Z M13.72 15.62L20.22 8.52A1.60 1.60 0 0 1 22.58 10.68L16.08 17.78A1.60 1.60 0 0 1 13.72 15.62Z"
+)
+
+// The mark's colours, for the files that cannot take them from a
+// stylesheet: the favicon and the installed application's icon. The
+// stylesheet has the same pair, with lighter tones for the dark theme.
+const (
+	MarkLoopColour = "#0b57d0"
+	MarkTickColour = "#00897b"
+)
 
 // MarkSVG is the mark as a standalone document, for the favicon and the
 // installed icon.
@@ -49,9 +64,9 @@ const MarkPath = "M15.04 18.59A8.60 8.60 0 1 1 19.08 8.06A1.60 1.60 0 0 1 16.07 
 // the same accent as the interface they belong to.
 func MarkSVG(colour string) string {
 	if colour == "" {
-		colour = "#0842a0"
+		colour = MarkLoopColour
 	}
 	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">` +
-		`<path fill="` + colour + `" d="` + MarkPath +
-		`"/></svg>`
+		`<path fill="` + colour + `" d="` + MarkLoop + `"/>` +
+		`<path fill="` + MarkTickColour + `" d="` + MarkTick + `"/></svg>`
 }
