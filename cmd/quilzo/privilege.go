@@ -173,6 +173,9 @@ var commandNeeds = map[string]need{
 	"assistant list": {action: auth.ActView},
 	"assistant ask":  {action: auth.ActView},
 	"assistant eval": {action: auth.ActView},
+	// What a visitor said to a person is personal data, and answering it is
+	// speaking for the business. Edit-draft, like the chatbots themselves.
+	"inbox": {action: auth.ActEditDraft},
 	// Grant: a model route decides who receives what visitors typed.
 	"gateway": {action: auth.ActGrant},
 	// Declaring a decider is a publish: above its threshold, what it
@@ -525,22 +528,23 @@ var commandNeeds = map[string]need{
 	// Checking a manifest changes nothing, and the person most likely to ask
 	// is an auditor who has been given view and nothing else. Inheriting the
 	// parent's edit-draft would shut the check to exactly them.
-	"media verify":     {action: auth.ActView},
-	"media edit":       {action: auth.ActEditDraft},
-	"media generate":   {action: auth.ActEditDraft},
-	"media captions":   {action: auth.ActEditDraft},
-	"agent probe":      {action: auth.ActView},
-	"media remove":     {action: auth.ActEditDraft},
-	"media renditions": {action: auth.ActEditDraft},
-	"lang check":       {action: auth.ActView},
-	"locales check":    {action: auth.ActView},
-	"posture scan":     {action: auth.ActView},
-	"posture rules":    {action: auth.ActView},
-	"posture explain":  {action: auth.ActView},
-	"webhook list":     {action: auth.ActView},
-	"webhooks list":    {action: auth.ActView},
-	"oidc check":       {action: auth.ActView},
-	"logd status":      {action: auth.ActView},
+	"media verify":       {action: auth.ActView},
+	"media edit":         {action: auth.ActEditDraft},
+	"media generate":     {action: auth.ActEditDraft},
+	"media captions":     {action: auth.ActEditDraft},
+	"agent probe":        {action: auth.ActView},
+	"media remove":       {action: auth.ActEditDraft},
+	"media renditions":   {action: auth.ActEditDraft},
+	"lang check":         {action: auth.ActView},
+	"locales check":      {action: auth.ActView},
+	"posture scan":       {action: auth.ActView},
+	"posture rules":      {action: auth.ActView},
+	"posture explain":    {action: auth.ActView},
+	"posture frameworks": {action: auth.ActView},
+	"webhook list":       {action: auth.ActView},
+	"webhooks list":      {action: auth.ActView},
+	"oidc check":         {action: auth.ActView},
+	"logd status":        {action: auth.ActView},
 
 	"auditlog verify":      {action: auth.ActView},
 	"auditlog show":        {action: auth.ActView},

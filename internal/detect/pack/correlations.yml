@@ -59,3 +59,16 @@ correlation:
         - raw.person
     timespan: 24h
 level: critical
+---
+title: One address had many form submissions refused
+id: corr.form-spam
+correlation:
+    type: event_count
+    rules:
+        - quilzo.form-refused
+    group-by:
+        - actor.value
+    timespan: 10m
+    condition:
+        gte: 5
+level: medium

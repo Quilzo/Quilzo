@@ -1,0 +1,68 @@
+{
+  "id": "quilzo.audit-log-moved",
+  "title": "The audit log was moved",
+  "why": "moving the log is how a trail is cut in two",
+  "blind": "a log copied away and the original left in place",
+  "sources": [
+    "quilzo/audit"
+  ],
+  "severity": 4,
+  "when": {
+    "match": {
+      "field": "raw.action",
+      "op": "equals",
+      "values": [
+        "auditlog.dir"
+      ]
+    }
+  },
+  "technique": [
+    "T1070"
+  ],
+  "fixtures": [
+    {
+      "name": "log moved",
+      "match": true,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "auditlog.dir",
+        "raw": {
+          "action": "auditlog.dir",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human"
+        }
+      }
+    },
+    {
+      "name": "log exported",
+      "match": false,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "auditlog.export",
+        "raw": {
+          "action": "auditlog.export",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human"
+        }
+      }
+    }
+  ]
+}

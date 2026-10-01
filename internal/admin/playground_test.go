@@ -67,8 +67,8 @@ func TestTheNonceIsFreshPerResponse(t *testing.T) {
 	}
 }
 
-// Everything else in the admin keeps default-src 'none' with no script at all.
-// A page that can run script is a decision made once, for one page.
+// Everything else in the admin keeps default-src 'none', and the only script
+// it allows is the interface's own, by a nonce for that response.
 func TestTheRestOfTheAdminStillForbidsScriptEntirely(t *testing.T) {
 	s, tok := setup(t)
 	r := httptest.NewRequest("GET", "http://h/", nil)
@@ -77,8 +77,9 @@ func TestTheRestOfTheAdminStillForbidsScriptEntirely(t *testing.T) {
 	s.Handler().ServeHTTP(w, r)
 
 	csp := w.Header().Get("Content-Security-Policy")
-	if strings.Contains(csp, "script-src") {
-		t.Errorf("the main admin page now has a script-src: %s", csp)
+	if strings.Contains(csp, "unsafe-") || (strings.Contains(csp, "script-src") &&
+		!strings.Contains(csp, "script-src 'nonce-")) {
+		t.Errorf("the main admin page allows script beyond its own: %s", csp)
 	}
 	if !strings.Contains(csp, "default-src 'none'") {
 		t.Errorf("the main admin page lost default-src 'none': %s", csp)

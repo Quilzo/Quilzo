@@ -51,6 +51,12 @@ func TestTheManifestCarriesWhatMakesItInstallable(t *testing.T) {
 				field, got, want)
 		}
 	}
+	// Installed, it draws its own title bar, and falls back to an ordinary
+	// window where that is not possible.
+	if o, _ := doc["display_override"].([]any); len(o) != 2 ||
+		o[0] != "window-controls-overlay" || o[1] != "standalone" {
+		t.Errorf("display_override is %v", doc["display_override"])
+	}
 	if name, _ := doc["name"].(string); name == "" {
 		t.Error("no name, so the launcher entry has nothing to say")
 	}
@@ -105,7 +111,7 @@ func TestEverySurfaceDrawsTheSameMark(t *testing.T) {
 		{"/signin", "", "the sign-in page, which nobody signed in ever sees"},
 	} {
 		body := get(t, srv, page.path, page.token).Body.String()
-		if !strings.Contains(body, MarkPath) {
+		if !strings.Contains(body, MarkLoop) || !strings.Contains(body, MarkTail) {
 			t.Errorf("%s does not draw the mark from MarkPath, so it is a "+
 				"copy that will fall behind", page.what)
 		}
@@ -113,15 +119,18 @@ func TestEverySurfaceDrawsTheSameMark(t *testing.T) {
 
 	// And the file a browser fetches carries the same path.
 	w := get(t, srv, "/icon.svg", token)
-	if !strings.Contains(w.Body.String(), MarkPath) {
-		t.Error("/icon.svg draws something other than MarkPath")
+	if !strings.Contains(w.Body.String(), MarkLoop) || !strings.Contains(w.Body.String(), MarkTail) {
+		t.Error("/icon.svg draws something other than the mark")
 	}
-	// The centre of the ring is a hole rather than a white shape, which is what lets one mark
-	// work on the light theme, the dark theme and an operator's own accent.
-	// Without evenodd the subpaths fill solid and the ring closes up.
-	if !strings.Contains(w.Body.String(), "evenodd") {
-		t.Error("the mark is not drawn with fill-rule=evenodd, so the ring is " +
-			"filled in rather than knocked out and the shape is a blob")
+	// In its two colours: the tick is its own colour, not the loop's.
+	if !strings.Contains(w.Body.String(), `fill="`+MarkTailColour+`"`) {
+		t.Error("/icon.svg draws the tick in the loop's colour")
+	}
+	// Nonzero, not evenodd. The tick crosses the ring, and under evenodd
+	// every place two parts overlap would be cut out of the mark.
+	if strings.Contains(w.Body.String(), "evenodd") {
+		t.Error("the mark is drawn with fill-rule=evenodd, which cuts a hole " +
+			"wherever the tick crosses the ring")
 	}
 }
 
@@ -244,10 +253,12 @@ func TestTheEditorShowsThePageBesideTheForm(t *testing.T) {
 		t.Errorf("frame-ancestors is no longer 'none', so this interface can "+
 			"be framed by another origin:\n  %s", csp)
 	}
-	// Still no script, which is the claim the whole policy makes.
+	// No script but the interface's own, by nonce: nothing inline, nothing
+	// from anywhere else.
 	if !strings.Contains(csp, "default-src 'none'") ||
-		strings.Contains(csp, "script-src") {
-		t.Errorf("the policy grew a script directive:\n  %s", csp)
+		(strings.Contains(csp, "script-src") && !strings.Contains(csp, "script-src 'nonce-")) ||
+		strings.Contains(csp, "unsafe-") {
+		t.Errorf("the policy allows script beyond the interface's own:\n  %s", csp)
 	}
 }
 

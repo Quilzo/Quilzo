@@ -104,10 +104,47 @@ const (
 
 // skipField are page fields that are wiring rather than content. A layout
 // name or a listing reference retrieved as an answer would be nonsense.
+//
+// So is a page's furniture. A section page carries its arrangement — a
+// hero's style and surface, a section's tone and columns — its buttons and
+// the addresses they go to, and, on a page with a question box, the
+// questions it suggests asking. Read as knowledge, those were quoted back
+// as answers: asked "what happens when an agent wants to publish?", the
+// chatbot found the suggestion with exactly those words and answered with
+// the question.
 var skipField = map[string]bool{
 	"layout": true, "screen": true, "detail": true, "detail_key": true,
 	"listings": true, "listing": true, "template": true, "slug": true,
 	"id": true, "href": true, "url": true, "src": true, "image": true,
+	// Arrangement.
+	"style": true, "surface": true, "tone": true, "columns": true,
+	"flip": true, "align": true, "view": true, "shape": true,
+	"header_class": true, "og_type": true, "lang": true, "featured": true,
+	"state": true, "pct": true, "legend": true, "eyebrow": true, "chip": true,
+	"brand_mark": true, "breadcrumbs": true, "filters": true, "form": true,
+	"starts": true, "expires": true, "poster": true, "showcase": true,
+	// The colophon a layout repeats under every page. The same sentences
+	// on every page rank every page alike, and padded the answer from
+	// whichever page won with a copyright line.
+	"footer": true,
+	// Buttons, and what a question box offers to ask.
+	"cta_label": true, "secondary_label": true, "header_cta_label": true,
+	"button": true, "placeholder": true, "suggestions": true,
+	"suggestions_label": true, "assistant": true,
+}
+
+// wiring reports whether a field holds wiring rather than content, by its
+// name: the list above, and any link, picture or source set by its suffix.
+func wiring(k string) bool {
+	if skipField[k] {
+		return true
+	}
+	for _, suffix := range []string{"_href", "_image", "_srcset", "_url", "_tracks"} {
+		if strings.HasSuffix(k, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 // Chunk splits pages into passages.
@@ -138,6 +175,13 @@ func Chunk(pages map[string]any, allow func(page string) bool) []Passage {
 	}
 	return out
 }
+
+// headingKeys are the fields that name what an object inside a page is
+// about, in the order they are looked for.
+var headingKeys = []string{"q", "question", "title", "name", "heading"}
+
+// maxHeading is the longest value taken as a heading; longer, it is prose.
+const maxHeading = 160
 
 // shortField is how many words a field value may have before it is treated
 // as prose rather than as a labelled value.
@@ -176,14 +220,36 @@ func collect(v any, heading string, out *[]block, depth int) string {
 			}
 		}
 	case map[string]any:
+		// Inside a page, an object's own title — a section's, a card's, a
+		// step's, or an FAQ's question — is what its text is about, so it
+		// is the heading that text is filed under, and only for as long as
+		// the object lasts. Read as one more field, in alphabetical order,
+		// an FAQ's answer ("a") came before its question ("q") and a card's
+		// body before its title, so each passage held one item's answer and
+		// the next one's question, and the extractive answer to a question
+		// was the question.
+		before := heading
+		own := ""
+		if depth > 0 {
+			for _, k := range headingKeys {
+				if v, ok := t[k].(string); ok {
+					if line := oneLine(v); line != "" && len(line) <= maxHeading {
+						own = k
+						heading = line
+						break
+					}
+				}
+			}
+		}
 		keys := make([]string, 0, len(t))
 		for k := range t {
-			if skipField[k] || strings.HasPrefix(k, "_") || k == "title" && depth == 0 {
+			if k == own || wiring(k) || strings.HasPrefix(k, "_") || k == "title" && depth == 0 {
 				continue
 			}
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
+		start := len(*out)
 		for _, k := range keys {
 			// A short value means little without its field's name: a page's
 			// "updated: 2026-06-01" retrieved as the sentence "2026-06-01" is
@@ -199,6 +265,13 @@ func collect(v any, heading string, out *[]block, depth int) string {
 				}
 			}
 			heading = collect(t[k], heading, out, depth+1)
+		}
+		if own != "" {
+			// A title with nothing under it is still something the page says.
+			if len(*out) == start {
+				*out = append(*out, block{heading: before, text: heading})
+			}
+			return before
 		}
 	case []any:
 		for _, x := range t {

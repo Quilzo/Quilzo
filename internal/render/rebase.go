@@ -16,7 +16,7 @@ import (
 // Every link a Quilzo page carries is rooted: href="/shop", src="/media/…",
 // the stylesheet at /site.css, the faces under /fonts/. That is correct for a
 // site served at the root of a host and wrong for one served from a
-// subdirectory — a project page on GitHub Pages, a demo under /demo2, a site
+// subdirectory — a project page on GitHub Pages, a demo under /demo, a site
 // behind a reverse proxy that mounts it at a path. Rendered as-is and copied
 // into a subdirectory, every navigation link, every picture and the whole
 // design resolve one level too high: the pages are there and the site is

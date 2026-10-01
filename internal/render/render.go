@@ -44,6 +44,9 @@ import (
 type Sources struct {
 	// Name is the site's name.
 	Name string
+	// Icon is the address of the site's icon, for a layout that shows it
+	// beside the name. Empty when the site has none.
+	Icon string
 	// Menus is the navigation. Nil means the template sees an empty map rather
 	// than a missing key, so {% for item in menus.main %} renders nothing
 	// instead of failing.
@@ -97,7 +100,7 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 		// with no else cannot express — are added here so that every renderer
 		// sees the same page. See derive.go for what they are and why.
 		"page":  decoratePage(body, s.asks()),
-		"site":  map[string]any{"name": s.Name, "page": name},
+		"site":  s.site(name),
 		"menus": s.menus(name),
 		// When this page was rendered, for a form's timing check.
 		//
@@ -226,4 +229,22 @@ func Href(r menu.Rendered) string {
 		return "/"
 	}
 	return "/" + r.Target
+}
+
+// site is what a template knows about the site as a whole.
+func (s Sources) site(page string) map[string]any {
+	out := map[string]any{"name": s.Name, "page": page}
+	if s.Icon != "" {
+		out["icon"] = s.Icon
+		// The narrower copies, as every other picture gets: an icon drawn
+		// at 28 pixels should not cost a reader the 512-pixel file.
+		if s.SrcSet != nil {
+			if m := reAssetPath.FindStringSubmatch(s.Icon); m != nil {
+				if set := s.SrcSet(m[1]); set != "" {
+					out["icon_srcset"] = set
+				}
+			}
+		}
+	}
+	return out
 }

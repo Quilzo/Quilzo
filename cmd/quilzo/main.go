@@ -402,6 +402,8 @@ the assistant
   quilzo assistant ask NAME "question"     try it, with its sources and what was removed
   quilzo assistant eval NAME CASES.jsonl   measure it, including what it should refuse
   quilzo assistant list | remove NAME
+  quilzo inbox list | show ASSISTANT/ID     visitors who asked a chatbot for a person
+  quilzo inbox reply ASSISTANT/ID "text"    answer one, as yourself; inbox close ends it
   quilzo analytics [--days N]              views, visitors, referrers, conversions; no cookie
   quilzo experiment add NAME --page P --variant b=PAGE --goal G   an A/B test, no script or cookie
   quilzo experiment start|stop|remove NAME
@@ -499,6 +501,7 @@ security posture
   quilzo config unset KEY                  put one back to the default
   quilzo posture scan [--min SEV]          continuous misconfiguration check
   quilzo posture rules | explain RULE      what is checked, and why it matters
+  quilzo posture frameworks [ID]           FedRAMP, ISO 27001, SOC 2, GDPR, EU AI Act and more, read off the checks
   quilzo posture suppress ID --reason ...  accept a risk, for at most 90 days
 
 interface
@@ -783,6 +786,8 @@ func main() {
 		err = cmdFinding(root, cmdArgs)
 	case "assistant":
 		err = cmdAssistant(root, cmdArgs)
+	case "inbox":
+		err = cmdInbox(root, cmdArgs)
 	case "gateway":
 		err = cmdGateway(root, cmdArgs)
 	case "decide":

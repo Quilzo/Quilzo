@@ -134,6 +134,8 @@ type Server struct {
 	// because an empty list and no access look identical and mean opposite
 	// things.
 	Agents *Agents
+	// Inbox is the conversations the site's assistants handed to a person.
+	Inbox *Inbox
 	// Publishing is the deployment pipeline: environments, promotion and work
 	// queued for later.
 	Publishing *Publishing
@@ -734,6 +736,24 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	// the check on return is the one that matters either way.
 	data["Here"] = safeLocalPath(r.URL.Path, r.URL.RawQuery)
 
+	// The interface's one script, allowed by a nonce that is this response's
+	// alone. It adds what a browser cannot do on its own — the command
+	// palette, keyboard shortcuts — and every screen still works without it.
+	// A page that set its own policy (the passkey screens, which carry a
+	// script of their own) keeps it, and its nonce covers this script too.
+	h := w.Header()
+	if csp := h.Get("Content-Security-Policy"); !strings.Contains(csp, "script-src") {
+		if n, err := nonce(); err == nil {
+			if _, set := data["Nonce"]; !set {
+				data["Nonce"] = n
+			}
+			h.Set("Content-Security-Policy", csp+"; script-src 'nonce-"+n+"'")
+		}
+	}
+	if p, ok := data["Principal"].(principal); ok {
+		data["Initial"] = initialOf(p.Name)
+	}
+
 	// The documentation link for the screen being rendered, so the footer link
 	// means "help with this" rather than "help".
 	//
@@ -749,6 +769,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	data["DocsBase"] = DocsBase
 	// The mark, from the one place it is defined.
 	data["MarkPath"] = MarkPath
+	data["MarkLoop"], data["MarkTail"] = MarkLoop, MarkTail
 
 	// The navigation itself, filtered to what this person may use and sorted
 	// into the order they chose.
@@ -757,6 +778,12 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 		data["NavGroups"] = s.navigation(r, p, navKey)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// A status other than 200 is passed in rather than written by the
+	// handler first: once a status is written the headers are sent, and the
+	// policy above, which lets this page's script run, would be lost.
+	if st, ok := data["Status"].(int); ok && st != 0 {
+		w.WriteHeader(st)
+	}
 	if err := s.tpl.ExecuteTemplate(w, name, data); err != nil {
 		// The status is already sent by now, so this can only be logged, not
 		// turned into a clean error page.
@@ -825,6 +852,7 @@ func securityHeaders(next http.Handler) http.Handler {
 // preview of that page.
 func adminPolicy(frameAncestors string) string {
 	return "default-src 'none'; style-src 'self'; img-src 'self' data:; " +
+		"font-src 'self'; " +
 		"media-src 'self'; manifest-src 'self'; frame-src 'self'; " +
 		"form-action 'self'; frame-ancestors " + frameAncestors +
 		"; base-uri 'none'"
@@ -982,6 +1010,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/save", s.handleSave)
 	mux.HandleFunc("/page/delete", s.handlePageDelete)
 	mux.HandleFunc("/security", s.handleSecurity)
+	mux.HandleFunc("/security/frameworks", s.handleFrameworks)
+	mux.HandleFunc("/security/frameworks/", s.handleFramework)
 	mux.HandleFunc("/security/rules", s.handleRules)
 	mux.HandleFunc("/security/rule/", s.handleRule)
 	mux.HandleFunc("/security/scan", s.handleScanScreen)
@@ -1023,6 +1053,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/decisions/save", s.handleDeciderSave)
 	mux.HandleFunc("/decisions/remove", s.handleDeciderRemove)
 	mux.HandleFunc("/models/change", s.handleModelsChange)
+	mux.HandleFunc("/inbox", s.handleInbox)
+	mux.HandleFunc("/inbox/act", s.handleInboxAct)
+	mux.HandleFunc("/inbox/", s.handleConversation)
 	mux.HandleFunc("/assistants", s.handleAssistants)
 	mux.HandleFunc("/assistants/", s.handleAssistant)
 	mux.HandleFunc("/assistants/save", s.handleAssistantSave)
@@ -1171,6 +1204,9 @@ func (s *Server) Handler() http.Handler {
 	// answering for documentation it no longer has and make a dead external
 	// site look like a broken admin.
 	mux.HandleFunc("/style.css", s.handleCSS)
+	mux.HandleFunc("/admin.js", s.handleJS)
+	mux.HandleFunc("/fonts/quilzo-ui.woff2", s.handleFont)
+	mux.HandleFunc("/fonts/", s.handleSiteFont)
 	return securityHeaders(s.signedFlash(sameSiteOnly(limitBody(s.readOnlyTokens(mux)))))
 }
 
@@ -1409,6 +1445,31 @@ func (s *Server) handleCSS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = w.Write(b)
+}
+
+// handleFont serves the interface's typeface. See assets/fonts/README.md.
+// Immutable: a new version of the font is a new file name.
+func (s *Server) handleFont(w http.ResponseWriter, r *http.Request) {
+	b, err := assets.ReadFile("assets/fonts/quilzo-ui.woff2")
+	if err != nil {
+		http.Error(w, "missing font", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "font/woff2")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	_, _ = w.Write(b)
+}
+
+// handleJS serves the interface's one script. See assets/admin.js.
+func (s *Server) handleJS(w http.ResponseWriter, r *http.Request) {
+	b, err := assets.ReadFile("assets/admin.js")
+	if err != nil {
+		http.Error(w, "missing script", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	_, _ = w.Write(b)
 }
@@ -1996,9 +2057,9 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 
 	s.render(w, r, "security.html", map[string]any{
 		"Nav":   "security",
-		"Title": "Security posture", "Principal": p,
+		"Title": "Security", "Principal": p,
 		"Report": rep, "Controls": controls, "Band": band(rep.Score),
-		"Throttled": s.throttled(),
+		"Throttled": s.throttled(), "Ran": ranAgo(rep.At),
 	})
 }
 
@@ -3192,4 +3253,23 @@ func plural(n int) string {
 		return ""
 	}
 	return "s"
+}
+
+// initialOf is what the account button shows: the first letter of a name,
+// in capitals.
+func initialOf(name string) string {
+	for _, r := range name {
+		return strings.ToUpper(string(r))
+	}
+	return "?"
+}
+
+// ranAgo is when a scan ran, as a person says it: "just now", "5 min ago".
+// The report keeps the exact time; the screen does not need it.
+func ranAgo(at string) string {
+	t, err := time.Parse(time.RFC3339, at)
+	if err != nil {
+		return at
+	}
+	return agoText(time.Since(t))
 }

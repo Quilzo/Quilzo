@@ -57,6 +57,9 @@ type Design struct {
 	Layouts func() []string
 	// Fonts lists the typefaces served from this origin.
 	Fonts func() []string
+	// FontFile is one of those typefaces, by the name a stylesheet asks
+	// for, so the preview draws a page in the site's own type.
+	FontFile func(name string) ([]byte, bool)
 	// OwnStylesheet reports whether a hand-written site.css is being served, in
 	// which case none of the tokens are in effect and the screen has to say so
 	// rather than showing values nobody gets.
@@ -95,7 +98,7 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, "design.html", data)
 		return
 	}
-	th, problems := theme.New(overrides, nil)
+	th, problems := theme.New(overrides, s.siteFamilies())
 
 	type item struct {
 		Token      string
@@ -175,6 +178,20 @@ func (s *Server) designLayouts() []string {
 	return s.DesignSet.Layouts()
 }
 
+// siteFamilies are the typefaces this site serves, as the theme checks them.
+//
+// Checked against none, a token naming the site's own font was reported as
+// one it does not serve, and saving it from this screen was refused — while
+// `quilzo theme set` accepted the same value, because the terminal passed
+// the families and this did not.
+func (s *Server) siteFamilies() []theme.Family {
+	var out []theme.Family
+	for _, name := range s.designFonts() {
+		out = append(out, theme.Family{Name: name})
+	}
+	return out
+}
+
 func (s *Server) designFonts() []string {
 	if s.DesignSet == nil || s.DesignSet.Fonts == nil {
 		return nil
@@ -244,7 +261,7 @@ func (s *Server) handleDesignSave(w http.ResponseWriter, r *http.Request) {
 		next[token+".dark"] = dark
 	}
 
-	th, problems := theme.New(next, nil)
+	th, problems := theme.New(next, s.siteFamilies())
 	for _, pr := range problems {
 		if pr.Blocking {
 			s.designRedirect(w, r, "", pr.Detail)
@@ -368,4 +385,33 @@ func designGroupLabel(key string) string {
 		return "Breakpoints"
 	}
 	return key
+}
+
+// handleSiteFont serves the site's own typefaces to the preview.
+//
+// The preview renders a page with the site's stylesheet, and that
+// stylesheet names /fonts/FAMILY.woff2 — an address the published site
+// answers and this server did not, so every preview fell back to a system
+// face and showed a page in a typeface its readers never see. Looked up by
+// name in the set the site loaded, as the published site does, so there is
+// no path to traverse; and behind sign-in, like the preview that asks.
+func (s *Server) handleSiteFont(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireAuth(w, r); !ok {
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/fonts/")
+	if s.DesignSet == nil || s.DesignSet.FontFile == nil || name == "" ||
+		strings.Contains(name, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	body, found := s.DesignSet.FontFile(name)
+	if !found {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "font/woff2")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+	_, _ = w.Write(body)
 }

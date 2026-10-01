@@ -18,6 +18,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/site"
 )
 
@@ -651,5 +652,88 @@ func TestADeclinedWriteLeavesTheDraftAlone(t *testing.T) {
 	}
 	if _, there := draftPage(t, root, "welcome"); there || !done.Trace.Complete {
 		t.Fatal("a declined write was written")
+	}
+}
+
+// `agent run NAME --model "goal"` uses the model, as the help shows it.
+//
+// The flags were parsed from the front only, so with the name first --model
+// was taken as the goal and the run walked the manifest without a model —
+// a run that looked like it had worked and had asked nobody.
+func TestTheModelFlagWorksAfterTheAgentsName(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	asked := standInModel(t)
+	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", "")
+	for _, args := range [][]string{
+		{"tidy", "--model", "write a welcome page"},
+		{"--model", "tidy", "write a welcome page"},
+	} {
+		before := *asked
+		// Run with no identity, the agent is narrowed to reading, so the
+		// stand-in's write is refused; what matters here is that it was
+		// asked at all.
+		_ = agentCheckRun(root, args)
+		if *asked == before {
+			t.Errorf("%q ran without asking the model", args)
+		}
+	}
+	// A goal that was not quoted, or a flag after it, is refused rather
+	// than half-read.
+	for _, args := range [][]string{
+		{"tidy", "--model", "write", "a", "page"},
+		{"tidy", "write a page", "--model"},
+	} {
+		before := *asked
+		err := agentCheckRun(root, args)
+		if err == nil || !strings.Contains(err.Error(), "quote it") || *asked != before {
+			t.Errorf("%q: %v, model asked %d time(s)", args, err, *asked-before)
+		}
+	}
+}
+
+// A page an agent wrote says a model wrote it, and who approved it.
+//
+// The write was stored with no provenance, so the one writer certain to have
+// used a model left the page unmarked, and the publish gate refused it until
+// somebody recorded its origin by hand.
+func TestAnAgentsWriteIsMarkedAsModelWritten(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	standInModel(t)
+	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	id, err := runAgentOnce(root, "tidy", "write a welcome page", true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := loadAgentRun(root, id)
+	if _, err := continueAgentRun(context.Background(), root, id,
+		&agent.Verdict{N: rec.Trace.Waiting.N, Approve: true}, asAdmin("sam")); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := loadProvenance(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := idx.Get("welcome")
+	if !ok {
+		t.Fatal("the page the agent wrote has no provenance")
+	}
+	if got.SourceType != provenance.TrainedAlgorithmicMedia || got.Model != "stand-in" ||
+		got.Author != "sam" || got.ReviewedBy != "sam" ||
+		!strings.Contains(got.Note, "tidy") || got.Instruction != "write a welcome page" {
+		t.Errorf("the record is %+v", got)
+	}
+	// And it describes the bytes that were written, so the gate sees a mark
+	// rather than a gap.
+	s, _ := open(root)
+	ids, _ := site.PageIDsAt(s, site.RefDraft)
+	if got.ContentHash != ids["welcome"] {
+		t.Errorf("the record names %s and the page is %s", got.ContentHash, ids["welcome"])
 	}
 }

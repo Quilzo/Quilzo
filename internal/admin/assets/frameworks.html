@@ -1,0 +1,26 @@
+{{template "head" .}}
+<p class="hint"><a href="/security">Security</a></p>
+<h1>Frameworks</h1>
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">Your security results, grouped by the frameworks auditors and
+  customers ask about.</p>
+<ul class="legend">
+  <li><span class="wf-word critical">Failing</span> a check found a problem</li>
+  <li><span class="wf-word good">Passing</span> every check ran and found nothing</li>
+  <li><span class="wf-word warning">Not checked</span> a check couldn't run</li>
+</ul>
+<p class="notice">This is evidence from the running system, not a
+  certification. It doesn't cover your policies, training or contracts, and a
+  requirement no check covers isn't listed.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Framework</th><th scope="col">Failing</th><th scope="col">Passing</th><th scope="col">Not checked</th><th scope="col">What it is</th></tr></thead>
+  <tbody>{{range .Rows}}<tr>
+    <th scope="row"><a href="/security/frameworks/{{.ID}}">{{.Name}}</a><br><span class="hint">{{.Version}}</span></th>
+    <td>{{if .Failing}}<span class="wf-word critical">{{.Failing}}</span>{{else}}0{{end}}</td>
+    <td>{{.Passing}}</td>
+    <td>{{if .Unchecked}}<span class="wf-word warning">{{.Unchecked}}</span>{{else}}0{{end}}</td>
+    <td><span class="hint">{{.About}}</span></td>
+  </tr>{{end}}</tbody></table></div>
+{{if .NotChecked}}<h2>Not checked in this scan</h2><ul>{{range .NotChecked}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{end}}
+{{template "foot" .}}

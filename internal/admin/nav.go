@@ -87,6 +87,8 @@ var destinations = []destination{
 	// is the other side: chatbots the site offers its visitors, answering
 	// from what is published.
 	{"assistants", "Chatbots", "/assistants", "Content", "ai", auth.ActEditDraft},
+	// Next to the chatbots it is fed by: what a visitor asked a person.
+	{"inbox", "Inbox", "/inbox", "Content", "ai", auth.ActEditDraft},
 	{"decisions", "Decisions", "/decisions", "Content", "ai", auth.ActEditDraft},
 
 	// With Review rather than with Content: a note is part of agreeing that
@@ -232,6 +234,8 @@ type navGroup struct {
 type navItem struct {
 	destination
 	Current bool
+	// Icon is the path of the screen's Material Symbol. See icons.go.
+	Icon string
 }
 
 // navFor builds the navigation for one request.
@@ -258,6 +262,7 @@ func (s *Server) navigation(r *http.Request, p principal, current string) []navG
 		}
 		byGroup[d.Group] = append(byGroup[d.Group], navItem{
 			destination: d, Current: here,
+			Icon: iconFor(d.Key),
 		})
 	}
 	out := make([]navGroup, 0, len(groups))

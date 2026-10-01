@@ -8,15 +8,16 @@
 <link rel="stylesheet" href="/style.css">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#f8fafd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131314" media="(prefers-color-scheme: dark)">
+{{if .Nonce}}<script src="/admin.js" nonce="{{.Nonce}}" defer></script>{{end}}
 </head>
 <body{{if .SidebarHidden}} class="nav-hidden"{{end}}>
 <a class="skip" href="#main">Skip to main content</a>
 <header class="bar">
   <div class="bar-inner">
-    <a class="brand" href="/">{{if .BrandMark}}<span class="mark mark-initial" aria-hidden="true">{{.BrandMark}}</span>{{else}}<svg class="mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path fill-rule="evenodd" fill="currentColor" d="{{.MarkPath}}"/></svg>{{end}}<span>{{.Brand}}</span></a>
-    {{with .Principal}}<p class="who">Signed in as
-      <a href="/profile"><strong>{{.Name}}</strong></a> ({{.Role}})
-      — <a href="/signout">Sign out</a></p>{{end}}
+    <a class="brand" href="/">{{if .BrandMark}}<span class="mark mark-initial" aria-hidden="true">{{.BrandMark}}</span>{{else}}<svg class="mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path class="mark-loop" d="{{.MarkLoop}}"/><path class="mark-tail" d="{{.MarkTail}}"/></svg>{{end}}<span>{{.Brand}}</span></a>
+
     {{/*
       The search box, in the bar rather than on a screen you have to find
       first. A finder you have to navigate to does not help the person who
@@ -30,8 +31,10 @@
     */}}
     <form method="get" action="/find" class="findbar" role="search">
       <label class="visually-hidden" for="findq">Find a page, screen or setting</label>
-      <input type="search" id="findq" name="q" placeholder="Find…"
+      <input type="search" id="findq" name="q" placeholder="Search Quilzo"
              value="{{if eq .Nav "find"}}{{.Query}}{{end}}">
+      <button type="button" class="palette-open" data-palette hidden
+              title="Go to any screen"><kbd>Ctrl K</kbd><span class="visually-hidden">Go to any screen</span></button>
       <button type="submit" title="Find">
         <span class="visually-hidden">Find</span>
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -52,6 +55,26 @@
       </button>
       {{template "navtoggle" .}}
       {{template "themetoggle" .}}
+      {{with .Principal}}
+      {{/*
+        The account, as a round button with an initial, as every Google app
+        and Chrome itself show it. It replaced a sentence in the bar — "Signed
+        in as … (role) — Sign out" — which said the same three things and took
+        a third of the bar to do it. The popover needs no script: the browser
+        opens it, closes it on Escape or a click outside, and returns focus.
+      */}}
+      <button type="button" class="account" popovertarget="accountmenu"
+              title="{{.Name}} ({{.Role}})">
+        <span class="avatar" aria-hidden="true">{{$.Initial}}</span>
+        <span class="visually-hidden">Account: {{.Name}}, {{.Role}}</span>
+      </button>
+      <div id="accountmenu" class="menu" popover>
+        <p class="menu-who"><span class="avatar avatar-lg" aria-hidden="true">{{$.Initial}}</span>
+          <span><strong>{{.Name}}</strong><br><span class="hint">Signed in as {{.Role}}</span></span></p>
+        <a href="/profile">Your profile</a>
+        <a href="/signout">Sign out</a>
+      </div>
+      {{end}}
     </div>
   </div>
 </header>
@@ -282,7 +305,7 @@
     <summary><h2>{{.Name}}</h2></summary>
     <ul class="nav">
       {{range .Items}}
-      <li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>
+      <li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{if .Icon}}<svg class="navicon" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path d="{{.Icon}}"/></svg>{{end}}<span>{{.Label}}</span></a></li>
       {{end}}
     </ul>
   </details>

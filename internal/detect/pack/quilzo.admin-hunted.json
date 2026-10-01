@@ -1,0 +1,69 @@
+{
+  "id": "quilzo.admin-hunted",
+  "title": "Somebody looked for the admin on the public site",
+  "why": "the admin is a separate server; asking the public site for its addresses is looking for a way in",
+  "blind": "somebody who already knows where the admin is",
+  "sources": [
+    "quilzo/audit"
+  ],
+  "severity": 2,
+  "when": {
+    "match": {
+      "field": "raw.action",
+      "op": "equals",
+      "values": [
+        "site.admin-hunt"
+      ]
+    }
+  },
+  "technique": [
+    "T1595"
+  ],
+  "fixtures": [
+    {
+      "name": "looked for sign-in and the API",
+      "match": true,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 2,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "203.0.113.9"
+        },
+        "message": "site.admin-hunt",
+        "raw": {
+          "action": "site.admin-hunt",
+          "outcome": "denied",
+          "resource": "/",
+          "kind": "unknown",
+          "count": "3"
+        }
+      }
+    },
+    {
+      "name": "an ordinary page",
+      "match": false,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "203.0.113.9"
+        },
+        "message": "form.submit",
+        "raw": {
+          "action": "form.submit",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "unknown"
+        }
+      }
+    }
+  ]
+}

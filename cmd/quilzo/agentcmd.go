@@ -337,15 +337,23 @@ func agentCheck(root string) error {
 // choosing which word out of that vocabulary — which is where an injected page
 // gets its only opportunity.
 func agentCheckRun(root string, args []string) error {
+	// The name may come before the flags, as the help shows it. Parsed
+	// alone, `agent run NAME --model "goal"` stopped at NAME, so --model was
+	// taken for the goal and the run walked the manifest with no model.
+	pos, rest := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("agent run", flag.ContinueOnError)
 	withModel := fs.Bool("model", false,
 		"let a model choose the actions, instead of walking the manifest")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(rest); err != nil {
 		return err
 	}
-	args = fs.Args()
+	args = append(pos, fs.Args()...)
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo agent run NAME [\"what it should do\"]")
+		return fmt.Errorf("usage: quilzo agent run NAME [--model] [\"what it should do\"]")
+	}
+	if len(args) > 2 {
+		return fmt.Errorf("the goal is one argument, so quote it, and flags " +
+			"go before it: quilzo agent run NAME --model \"what it should do\"")
 	}
 	name := args[0]
 	goal := "check that this agent's manifest is enforceable"
@@ -736,6 +744,10 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				Author:  "agent/" + m.Name,
 				Gate:    pageGate(root),
 				Propose: proposeCommit(root, s),
+				Written: func(page string) {
+					markAgentWrite(root, s, page, m.Name, out.Model, goal,
+						caller, approvedWrite(from, page))
+				},
 			},
 			// The tool surface, which had no executor at all.
 			//

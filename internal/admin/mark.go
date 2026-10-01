@@ -7,27 +7,23 @@ package admin
 //
 // # What it is
 //
-// A Q drawn as a loop with something at its centre: a ring, a dot inside
-// it, and a short tail leaving at the lower right.
+// A Q in two parts: the loop in blue, and the tail in violet, drawn as a
+// separate stroke that crosses the loop's open gap. The loop is an agent
+// going round — decide, act, look, decide again — and the tail is the
+// pause before the act: the point where a person, or a declaration, stands
+// between the loop and what it would do. The two colours are what make the
+// two parts read as two.
 //
-// The ring is a run going round — decide, act, look, decide again. The dot
-// is what the loop goes round: the person an agent stops for, and the
-// declaration it cannot leave. The tail is what makes the ring a letter,
-// and it is drawn just clear of the ring so that it reads at sixteen
-// pixels as a Q and not as a magnifying glass with a thick handle.
+// It replaced a quill nib, from when this was a content management system
+// and nothing else, and then two Qs drawn as a single ring, the first too
+// close to a well-known company's registered mark.
 //
-// The mark it replaced was a quill nib, from when this was a content
-// management system and nothing else.
+// # Why separate paths, and why nonzero
 //
-// # Why one path and not several
-//
-// The hole in the ring is a hole, not a white shape. Drawn with
-// fill-rule="evenodd" in a single path, the ground shows through it — so
-// the mark works on the light theme, the dark theme and whatever accent an
-// operator has configured, without a second colour or a second copy for
-// dark mode. The dot is a third subpath inside the hole, and the same rule
-// turns it solid again. The tail does not touch the ring for the same
-// reason: where two subpaths overlap, that rule would cut a notch.
+// The loop with its two rounded ends is one path and the tail another, so
+// each can be its own colour. The tail is drawn after the loop and over it
+// where they cross; within each path every shape runs the same direction
+// and fills with the nonzero rule, so nothing is cut out where shapes meet.
 //
 // # Why it is in Go rather than in the template
 //
@@ -39,10 +35,21 @@ package admin
 // Coordinates are absolute in a 24×24 box, so a consumer that only reads
 // the `d` attribute — an icon pipeline, an SVG favicon — gets the same
 // shape as the browser does.
-const MarkPath = "M12 2.5A9.5 9.5 0 1 0 12 21.5A9.5 9.5 0 1 0 12 2.5Z " +
-	"M12 6.7A5.3 5.3 0 1 0 12 17.3A5.3 5.3 0 1 0 12 6.7Z " +
-	"M12 9.9A2.1 2.1 0 1 0 12 14.1A2.1 2.1 0 1 0 12 9.9Z " +
-	"M20.23 17.97L22.13 19.87A1.6 1.6 0 0 1 19.87 22.13L17.97 20.23Z"
+const MarkPath = MarkLoop + " " + MarkTail
+
+// MarkLoop is the open ring, and MarkTail the stroke that crosses its gap.
+const (
+	MarkLoop = "M16.34 17.89A9.00 9.00 0 1 1 19.14 7.43A1.70 1.70 0 0 1 15.99 8.70A5.60 5.60 0 1 0 14.25 15.21A1.70 1.70 0 0 1 16.34 17.89Z"
+	MarkTail = "M14.80 12.40L22.40 20.00A1.70 1.70 0 0 1 20.00 22.40L12.40 14.80A1.70 1.70 0 0 1 14.80 12.40Z"
+)
+
+// The mark's colours, for the files that cannot take them from a
+// stylesheet: the favicon and the installed application's icon. The
+// stylesheet has the same pair, with lighter tones for the dark theme.
+const (
+	MarkLoopColour = "#0b57d0"
+	MarkTailColour = "#7b4dff"
+)
 
 // MarkSVG is the mark as a standalone document, for the favicon and the
 // installed icon.
@@ -53,9 +60,9 @@ const MarkPath = "M12 2.5A9.5 9.5 0 1 0 12 21.5A9.5 9.5 0 1 0 12 2.5Z " +
 // the same accent as the interface they belong to.
 func MarkSVG(colour string) string {
 	if colour == "" {
-		colour = "#0842a0"
+		colour = MarkLoopColour
 	}
 	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">` +
-		`<path fill-rule="evenodd" fill="` + colour + `" d="` + MarkPath +
-		`"/></svg>`
+		`<path fill="` + colour + `" d="` + MarkLoop + `"/>` +
+		`<path fill="` + MarkTailColour + `" d="` + MarkTail + `"/></svg>`
 }

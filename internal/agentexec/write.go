@@ -96,6 +96,10 @@ type Writer struct {
 	// refused rather than quietly performed — a publish that cannot be
 	// reviewed is the one that most needs to be.
 	Propose func(commit, message string) error
+	// Written is told each page this run wrote, after it is stored, so the
+	// page's provenance can say a model wrote it. Nil means nobody records
+	// it, and the publish gate then refuses the page as unmarked.
+	Written func(page string)
 }
 
 // Perform is the agent.Perform for a session's write operations.
@@ -211,6 +215,9 @@ func (wr Writer) writePage(s *agent.Session, base string, a agent.Action) (strin
 		// re-reads and writes again is an agent that overwrites a person's
 		// edit on the second attempt instead of the first.
 		return "", "", err
+	}
+	if wr.Written != nil {
+		wr.Written(name)
 	}
 	return fmt.Sprintf("wrote %s in %s", name, shortID(cid)), cid, nil
 }

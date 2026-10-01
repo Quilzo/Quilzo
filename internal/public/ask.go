@@ -18,6 +18,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/handoff"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
@@ -59,6 +60,12 @@ type Assistants struct {
 	Limit *throttle.Limiter
 	// Audit records that a question was asked, never what.
 	Audit func(name, source string, answered bool)
+	// Handoff keeps conversations an assistant passed to a person. Nil means
+	// no assistant on this site can hand over, whatever it declares.
+	Handoff *handoff.Store
+	// HandoffEvent is told that a conversation was opened, added to or
+	// ended — which one and from where, never what was said.
+	HandoffEvent func(action, name, id, source string)
 
 	mu    sync.Mutex
 	cache map[string]cachedIndex
@@ -68,6 +75,14 @@ type cachedIndex struct {
 	key string
 	idx *assistant.Index
 }
+
+// Disclosure is what every conversation page says about who is answering.
+//
+// EU AI Act Article 50(1): somebody talking to an AI system is told so,
+// unless it is obvious. The built-in page says it under every answer; a
+// page an owner designs gets it as {{ ask.disclosure }}, and the posture
+// check ai.chatbot-undisclosed reports a published one that leaves it out.
+const Disclosure = "You are talking to an automated assistant, not a person."
 
 // askPageName is the published page an owner may design the conversation
 // with. Absent, a plain built-in page is served.
@@ -79,6 +94,7 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/ask/")
+	name, rest, _ := strings.Cut(name, "/")
 	set, err := st.Assistants.Set()
 	if err != nil {
 		http.Error(w, "this assistant is not available", http.StatusServiceUnavailable)
@@ -92,7 +108,21 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if rest == "knowledge.json" {
+		st.askKnowledge(w, r, a)
+		return
+	}
+	if rest != "" {
+		if !st.handoffRoute(w, r, a, rest) {
+			st.notFound(w, r)
+		}
+		return
+	}
+
 	view := askView{Assistant: a, Greeting: a.Greeting}
+	if _, ok := st.handoffStore(a); ok {
+		view.Handoff = handoffAction(a)
+	}
 	if view.Greeting == "" {
 		view.Greeting = "Ask a question about this site."
 	}
@@ -100,19 +130,20 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 	view.Embedded = r.URL.Query().Get("embed") == "1"
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
-	case http.MethodPost:
-		source := sourceOf(r)
-		if l := st.Assistants.Limit; l != nil {
-			if d := l.Check(throttle.Subject{Source: source}); !d.Allowed {
-				secs := int(d.RetryAfter.Seconds()) + 1
-				w.Header().Set("Retry-After", strconv.Itoa(secs))
-				view.Problem = "You have asked a lot of questions in a short " +
-					"time. Please wait a moment and try again."
-				st.renderAsk(w, r, view, http.StatusTooManyRequests)
+		if a.Static && r.URL.Query().Get("copy") == staticCopy {
+			st.renderAskStatic(w, view)
+			return
+		}
+		// A question in the address is answered, as site search answers
+		// one: the question box a page carries is a GET form, so the same
+		// form works on the live site and on a static copy.
+		if q := r.URL.Query().Get("q"); q != "" && r.Method == http.MethodGet {
+			view.Question = q
+			if !st.answer(w, r, a, &view) {
 				return
 			}
-			l.Spend(throttle.Subject{Source: source})
 		}
+	case http.MethodPost:
 		r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 		if err := r.ParseForm(); err != nil {
 			view.Problem = "That question could not be read."
@@ -122,33 +153,8 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		view.Question = r.PostFormValue("q")
 		view.Previous = r.PostFormValue("prev")
 		view.Embedded = r.PostFormValue("embed") == "1"
-		idx, ierr := st.assistantIndex(a)
-		if ierr != nil {
-			http.Error(w, "the site could not be read", http.StatusInternalServerError)
+		if !st.answer(w, r, a, &view) {
 			return
-		}
-		var m assistant.Model
-		if a.UseModel && st.Assistants.Model != nil {
-			m = st.Assistants.Model(a)
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-		defer cancel()
-		ans, aerr := assistant.RespondTo(ctx, a, idx, m, view.Question, view.Previous)
-		if aerr != nil {
-			view.Problem = aerr.Error()
-			st.renderAsk(w, r, view, http.StatusUnprocessableEntity)
-			return
-		}
-		if st.Assistants.Audit != nil {
-			st.Assistants.Audit(a.Name, source, !ans.Refused)
-		}
-		if !ans.Refused {
-			st.convert(r, "chatbot:"+a.Name)
-		}
-		view.Answer = &ans
-		view.Sources = st.citedSources(ans)
-		if ans.Proposed != nil {
-			view.Offer = st.offerFor(*ans.Proposed)
 		}
 	default:
 		w.Header().Set("Allow", "GET, POST")
@@ -156,6 +162,57 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st.renderAsk(w, r, view, http.StatusOK)
+}
+
+// answer puts the view's question to the assistant and fills in the answer.
+// False means a response has already been written.
+func (st *Site) answer(w http.ResponseWriter, r *http.Request,
+	a assistant.Assistant, view *askView) bool {
+
+	source := sourceOf(r)
+	if l := st.Assistants.Limit; l != nil {
+		if d := l.Check(throttle.Subject{Source: source}); !d.Allowed {
+			secs := int(d.RetryAfter.Seconds()) + 1
+			w.Header().Set("Retry-After", strconv.Itoa(secs))
+			view.Problem = "You have asked a lot of questions in a short " +
+				"time. Please wait a moment and try again."
+			st.renderAsk(w, r, *view, http.StatusTooManyRequests)
+			return false
+		}
+		l.Spend(throttle.Subject{Source: source})
+	}
+	if LooksLikeInjection(view.Question) {
+		st.signal(ChatbotInjection, r)
+	}
+	idx, ierr := st.assistantIndex(a)
+	if ierr != nil {
+		http.Error(w, "the site could not be read", http.StatusInternalServerError)
+		return false
+	}
+	var m assistant.Model
+	if a.UseModel && st.Assistants.Model != nil {
+		m = st.Assistants.Model(a)
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	ans, aerr := assistant.RespondTo(ctx, a, idx, m, view.Question, view.Previous)
+	if aerr != nil {
+		view.Problem = aerr.Error()
+		st.renderAsk(w, r, *view, http.StatusUnprocessableEntity)
+		return false
+	}
+	if st.Assistants.Audit != nil {
+		st.Assistants.Audit(a.Name, source, !ans.Refused)
+	}
+	if !ans.Refused {
+		st.convert(r, "chatbot:"+a.Name)
+	}
+	view.Answer = &ans
+	view.Sources = st.citedSources(ans)
+	if ans.Proposed != nil {
+		view.Offer = st.offerFor(*ans.Proposed)
+	}
+	return true
 }
 
 // assistantIndex is the assistant's knowledge at the published commit,
@@ -220,6 +277,9 @@ type askView struct {
 	Sources   []askSource
 	Offer     *askOffer
 	Problem   string
+	// Handoff is where the "talk to a person" form posts, when this
+	// assistant may hand over.
+	Handoff string
 }
 
 type askSource struct {
@@ -326,7 +386,10 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 	}
 	w.WriteHeader(status)
 	_ = askTemplate.Execute(w, map[string]any{
-		"V": v, "Honeypot": form.Honeypot, "StampField": form.StampField,
+		"Disclosure": Disclosure,
+		// Built from an id checked against the library; see icon.go.
+		"Icon": template.HTML(st.iconLink()),
+		"V":    v, "Honeypot": form.Honeypot, "StampField": form.StampField,
 	})
 }
 
@@ -342,6 +405,7 @@ func (st *Site) askThroughLayout(body any, hash string, r *http.Request, v askVi
 		"name": v.Assistant.Name, "title": v.Assistant.Title,
 		"greeting": v.Greeting, "question": v.Question, "problem": v.Problem,
 		"action": "/ask/" + v.Assistant.Name, "answered": v.Answer != nil,
+		"disclosure": Disclosure,
 	}
 	if v.Answer != nil {
 		data["answer"] = v.Answer.Text
@@ -374,7 +438,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 <title>{{.V.Assistant.Title}}</title>
 <link rel="stylesheet" href="/site.css">
 <link rel="stylesheet" href="/ask.css">
-</head>
+{{.Icon}}</head>
 <body class="qz-ask{{if .V.Embedded}} qz-embed{{end}}"><main>
 {{if .V.Embedded}}<p class="qz-embed-title">{{.V.Assistant.Title}}</p>{{else}}<h1>{{.V.Assistant.Title}}</h1>{{end}}
 {{if .V.Answer}}
@@ -415,6 +479,22 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 <p class="qz-greeting">{{.V.Greeting}}</p>
 {{end}}
 {{if .V.Problem}}<p class="qz-problem" role="alert">{{.V.Problem}}</p>{{end}}
+{{if and .V.Answer .V.Handoff}}
+<details class="qz-handoff"{{if .V.Answer.Refused}} open{{end}}>
+  <summary>Talk to a person instead</summary>
+  <form method="post" action="{{.V.Handoff}}">
+    <input type="hidden" name="q" value="{{.V.Question}}">
+    {{if .V.Embedded}}<input type="hidden" name="embed" value="1">{{end}}
+    <p><label for="handoff-message">What would you like to ask?</label><br>
+    <textarea id="handoff-message" name="message" rows="3" maxlength="2000" required>{{.V.Question}}</textarea></p>
+    <p class="qz-small">Sending this starts a conversation that somebody at
+      the business will read and answer. Unlike your questions to the
+      assistant, it is kept: for {{.V.Assistant.Keep}} days after it last
+      moves, then deleted. Please do not include passwords or card numbers.</p>
+    <p><button type="submit">Send to a person</button></p>
+  </form>
+</details>
+{{end}}
 <form method="post" action="/ask/{{.V.Assistant.Name}}" class="qz-ask-form">
   {{if .V.Answer}}<input type="hidden" name="prev" value="{{.V.Question}}">{{end}}
   {{if .V.Embedded}}<input type="hidden" name="embed" value="1">{{end}}
@@ -422,8 +502,8 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
   <textarea id="q" name="q" rows="2" maxlength="1000" required{{if not .V.Embedded}} autofocus{{end}}></textarea>
   <button type="submit">Ask</button>
 </form>
-<p class="qz-small">Answers come from this site's pages, and every sentence
-  links to where it came from. Nothing you ask is stored.</p>
+<p class="qz-small">{{.Disclosure}} Answers come from this site's pages, and
+  every sentence links to where it came from. Nothing you ask is stored.</p>
 </main></body></html>`))
 
 // askCSS is the built-in page's stylesheet, served at /ask.css. Small and
@@ -439,7 +519,7 @@ const askCSS = `.qz-ask main{max-width:42rem;margin:0 auto;padding:1.5rem 1rem 3
 .qz-offer{margin:1.2rem 0;padding:1rem 1.1rem;border-radius:12px;border:2px solid color-mix(in srgb,currentColor 30%,transparent)}
 .qz-offer input:not([type=checkbox]),.qz-offer textarea,.qz-offer select,.qz-ask-form textarea{width:100%;box-sizing:border-box;font:inherit;padding:.5rem .6rem;border-radius:8px;border:1px solid color-mix(in srgb,currentColor 35%,transparent)}
 .qz-ask-form{display:grid;gap:.5rem;margin-top:1.5rem}
-.qz-ask-form button,.qz-offer button,.qz-button{justify-self:start;font:inherit;font-weight:600;padding:.55rem 1.1rem;border-radius:999px;border:0;cursor:pointer;text-decoration:none;display:inline-block;background:CanvasText;color:Canvas}
+.qz-ask-form button,.qz-offer button,.qz-button{justify-self:start;font:inherit;font-weight:600;padding:.55rem 1.1rem;border-radius:999px;border:0;cursor:pointer;text-decoration:none;display:inline-block;background:var(--primary,CanvasText);color:var(--on-primary,Canvas)}
 .qz-hidden{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
 .qz-problem{padding:.7rem 1rem;border-radius:8px;border:1px solid}
 .qz-small{font-size:.85em;opacity:.75;margin-top:1.5rem}
@@ -447,6 +527,24 @@ const askCSS = `.qz-ask main{max-width:42rem;margin:0 auto;padding:1.5rem 1rem 3
 .qz-embed-title{font-weight:700;margin:0 0 .5rem}
 .qz-embed .qz-small{margin-top:.75rem}
 :focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.qz-handoff{margin:1.2rem 0;padding:.8rem 1.1rem;border-radius:12px;border:1px dashed color-mix(in srgb,currentColor 35%,transparent)}
+.qz-handoff summary{cursor:pointer;font-weight:600}
+.qz-handoff textarea{width:100%;box-sizing:border-box;font:inherit;padding:.5rem .6rem;border-radius:8px;border:1px solid color-mix(in srgb,currentColor 35%,transparent)}
+.qz-handoff button{font:inherit;font-weight:600;padding:.55rem 1.1rem;border-radius:999px;border:0;cursor:pointer;background:CanvasText;color:Canvas}
+.qz-thread{list-style:none;padding:0;margin:1rem 0;display:grid;gap:.6rem}
+.qz-msg{padding:.7rem 1rem;border-radius:12px;max-width:85%;border:1px solid color-mix(in srgb,currentColor 18%,transparent);white-space:pre-wrap;overflow-wrap:anywhere}
+.qz-msg.qz-visitor{justify-self:end;background:color-mix(in srgb,currentColor 7%,transparent)}
+.qz-who{display:block;font-size:.8em;font-weight:700;opacity:.75;margin-bottom:.2rem}
+.qz-actions{margin:.8rem 0}
+.qz-button-quiet{font:inherit;padding:.4rem .9rem;border-radius:999px;border:1px solid color-mix(in srgb,currentColor 35%,transparent);background:transparent;color:inherit;cursor:pointer;text-decoration:none;display:inline-block}
+.qz-end{margin-top:1.5rem}
+.qz-home{margin:0 0 .75rem;font-size:.9em}
+.qz-log{display:grid}
+.qz-log .qz-q-turn{justify-self:end;max-width:85%;background:color-mix(in srgb,currentColor 7%,transparent)}
+.qz-sources-title{font-size:1em;margin:.8rem 0 .2rem}
+.qz-status{font-size:.9em;opacity:.8;margin:.5rem 0}
+.qz-status:empty{display:none}
+.qz-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 `
 
 func (st *Site) askStylesheet(w http.ResponseWriter, r *http.Request) {

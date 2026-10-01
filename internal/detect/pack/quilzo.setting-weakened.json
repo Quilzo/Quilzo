@@ -1,0 +1,83 @@
+{
+  "id": "quilzo.setting-weakened",
+  "title": "A security setting was weakened",
+  "why": "weakening a setting needs a stated reason, so this is a decision somebody made, and worth a second look",
+  "blind": "a weakening made by editing the configuration file directly",
+  "sources": [
+    "quilzo/audit"
+  ],
+  "severity": 3,
+  "when": {
+    "all": [
+      {
+        "match": {
+          "field": "raw.action",
+          "op": "equals",
+          "values": [
+            "config.set"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "raw.accepted_risk",
+          "op": "exists"
+        }
+      }
+    ]
+  },
+  "technique": [
+    "T1562"
+  ],
+  "fixtures": [
+    {
+      "name": "weakened with a reason",
+      "match": true,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "config.set",
+        "raw": {
+          "action": "config.set",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human",
+          "setting": "admin.behind_tls_proxy",
+          "to": "false",
+          "accepted_risk": "yes"
+        }
+      }
+    },
+    {
+      "name": "an ordinary setting",
+      "match": false,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "config.set",
+        "raw": {
+          "action": "config.set",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human",
+          "setting": "site.name",
+          "to": "Shop"
+        }
+      }
+    }
+  ]
+}

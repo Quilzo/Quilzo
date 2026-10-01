@@ -170,7 +170,7 @@
      the same size, which is the Expressive hierarchy device: emphasis comes
      from weight and size rather than from colour, so it survives being read
      in monochrome. */
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font: "Quilzo UI", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --display-lg: 3.5625rem/1.12 var(--font);   /* 57 */
@@ -2003,3 +2003,255 @@ button.quiet:hover { background: var(--surface-container-high); }
 /* Something a person is asked to agree to is shown whole, on any screen:
    wrapped, never cut off at the edge. */
 pre.code.whole { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: visible; }
+
+/* A conversation handed over from a chatbot. */
+ol.thread { list-style: none; padding: 0; margin: 1rem 0; display: grid; gap: 0.6rem; max-width: 46rem; }
+ol.thread .msg { padding: 0.7rem 1rem; border-radius: var(--shape-sm); border: 1px solid var(--outline-variant);
+  background: var(--surface-container-low); white-space: pre-wrap; overflow-wrap: anywhere; max-width: 85%; }
+ol.thread .msg.from-visitor { background: var(--primary-container); color: var(--on-primary-container); justify-self: start; }
+ol.thread .msg:not(.from-visitor) { justify-self: end; }
+ol.thread .who { display: block; font: var(--label-md); font-weight: 700; margin-bottom: 0.2rem; }
+
+/* The mark in its two colours: the loop in the interface's blue, the tail
+   in violet. Lighter tones in the dark theme, so both clear 3:1 against the
+   surface behind them, which is what a graphic needs (WCAG 1.4.11). */
+/* The typeface: a Latin cut of Google Sans Flex, the face Google's own
+   apps are moving to, renamed and served from here (assets/fonts). One
+   file covers every weight from 300 to 700 and adjusts its letterforms to
+   the size it is set at. Characters outside it, and any language it does
+   not cover, fall back to the system's own interface font. "swap" so text
+   is never invisible while it loads. */
+@font-face {
+  font-family: "Quilzo UI";
+  src: url("/fonts/quilzo-ui.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+:root {
+  --mark-loop: light-dark(#0b57d0, #a8c7fa);
+  --mark-tail: light-dark(#7b4dff, #c8b6ff);
+}
+.mark .mark-loop { fill: var(--mark-loop); }
+.mark .mark-tail { fill: var(--mark-tail); }
+
+/* =========================================================================
+   The October 2026 refresh.
+
+   Brought in line with what Chrome's own pages became in the "WebUI
+   Refresh 2026": sentence case everywhere, regular-weight headings, content
+   in rounded tonal blocks rather than boxed in rules, the account as a round
+   button, and search as a pill. The aim is that an operator moving between
+   a Chrome tab and this one does not feel the change of program.
+
+   Written as one block after everything it adjusts, so the whole of the
+   change can be read, and reverted, in one place.
+   ========================================================================= */
+
+/* Type. Google's apps carry hierarchy in size, not weight: page titles are
+   regular, section titles medium. Bold headings were the loudest thing on
+   every screen. */
+h1 { font: var(--headline-md); font-weight: 400; letter-spacing: 0;
+     margin: 1.5rem 0 .75rem; }
+h2 { font: var(--title-lg); font-weight: 400; letter-spacing: 0; }
+h3 { font: var(--title-md); font-weight: 500; }
+.brand { font-weight: 500; letter-spacing: 0; }
+button, .btn { font-weight: 500; letter-spacing: .01em; }
+strong, b { font-weight: 600; }
+
+/* Sentence case. Capitals tracked out read as shouting and are slower to
+   read; Chrome dropped them from its pages, and so does this. */
+thead th, .navgroup > summary > h2, .wf-word, .chip, .sev, .badge,
+.fix > :first-child, .stats-row dt, table caption {
+  text-transform: none; letter-spacing: 0;
+}
+
+/* The bar: the page's own colour, no rule under it, the account at the
+   far right. */
+.bar { background: var(--surface); border-bottom: 0; padding: .5rem 1.25rem;
+       margin-bottom: .5rem; }
+.bar-inner { max-width: none; align-items: center; }
+.prefs { gap: .5rem; }
+
+/* Search as the omnibox is drawn: a full-radius field on a tinted fill,
+   with the shortcut written inside it. */
+.findbar { flex: 0 1 34rem; position: relative; }
+.findbar input { height: 48px; min-height: 48px; padding: 0 5.5rem 0 1.25rem;
+  border: 0; background: var(--surface-container-high); font: var(--body-lg); }
+.findbar input:focus-visible { outline: 2px solid var(--primary); outline-offset: 0;
+  background: var(--surface-container-lowest); }
+.findbar > button[type=submit] { display: none; }
+.palette-open { position: absolute; right: .4rem; top: 50%; translate: 0 -50%;
+  min-height: 36px; height: 36px; padding: 0 .6rem; border: 0;
+  background: transparent; color: var(--on-surface-variant); }
+.palette-open:hover { background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
+.palette-open kbd { font: var(--label-md); font-family: var(--font);
+  border: 1px solid var(--outline-variant); border-radius: var(--shape-xs);
+  padding: .05rem .35rem; }
+
+/* The account: a round initial, and a menu that opens under it. */
+.account { min-height: 40px; width: 40px; height: 40px; padding: 0;
+  border-radius: var(--shape-full); background: transparent; }
+.account:hover { background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
+.avatar { display: inline-grid; place-items: center; width: 32px; height: 32px;
+  border-radius: var(--shape-full); background: var(--primary); color: var(--on-primary);
+  font: var(--title-sm); font-weight: 500; }
+.avatar-lg { width: 40px; height: 40px; font: var(--title-md); flex: none; }
+.menu { margin: 0; inset: auto; top: 3.75rem; right: 1rem; position: fixed;
+  min-width: 16rem; padding: .5rem; border: 0; border-radius: var(--shape-lg);
+  background: var(--surface-container); color: var(--on-surface);
+  box-shadow: 0 2px 6px rgb(0 0 0 / .15), 0 8px 24px rgb(0 0 0 / .12); }
+.menu:popover-open { display: grid; gap: .15rem; }
+.menu a { display: flex; align-items: center; min-height: 40px; padding: 0 .9rem;
+  border-radius: var(--shape-full); color: var(--on-surface); text-decoration: none;
+  font: var(--label-lg); }
+.menu a:hover { background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
+.menu-who { display: flex; gap: .75rem; align-items: center; margin: .25rem .5rem .5rem;
+  padding-bottom: .75rem; border-bottom: 1px solid var(--outline-variant); }
+
+/* The navigation: group names in sentence case and medium weight, no rule
+   under each; the current screen a tinted pill, as in Chrome's settings. */
+.navgroup > summary { border-bottom: 0; padding: 0 .75rem; margin: .25rem 0 0; }
+.navgroup > summary > h2 { font: var(--title-sm); font-weight: 500;
+  color: var(--on-surface-variant); }
+.navgroup:has([aria-current="page"]) > summary { border-bottom: 0; }
+.sidenav .nav a, .navgroups .nav a { font-weight: 400; min-height: 40px; }
+.nav a[aria-current="page"] { font-weight: 500; background: var(--secondary-container);
+  color: var(--on-secondary-container); }
+
+/* Tables as a block: white on the tinted page, no outer rule, rows
+   separated by a hairline, a header that is a label and not a banner. */
+.table-wrap { border: 0; border-radius: var(--shape-lg-inc);
+  background: var(--surface-container-lowest); }
+thead th { font: var(--label-lg); font-weight: 500; background: transparent;
+  color: var(--on-surface-variant); border-bottom: 1px solid var(--outline-variant); }
+th, td { padding: .7rem 1rem; }
+tbody tr:hover { background: var(--surface-container); }
+td .danger, td button.danger { min-height: 36px; padding: 0 .9rem;
+  background: transparent; color: var(--error); }
+td .danger:hover, td button.danger:hover { background: var(--error-container);
+  color: var(--on-error-container); }
+
+/* Notices as tonal blocks, without the heavy bar down the left. */
+.notice { border: 0; border-radius: var(--shape-lg); padding: .85rem 1.1rem;
+  background: var(--surface-container); }
+.notice.ok, .notice.bad, .notice.warn { border: 0; }
+
+/* Chips: a rounded label in sentence case. */
+.wf-word { border-radius: var(--shape-sm); padding: .05rem .55rem; font-weight: 500; }
+
+/* A command to run is not a success: neutral, monospaced. */
+.fix code { background: var(--surface-container-high); color: var(--on-surface); }
+
+/* The command palette. */
+.palette { width: min(40rem, calc(100vw - 2rem)); margin: 12vh auto auto;
+  padding: .5rem; border: 0; border-radius: var(--shape-xl);
+  background: var(--surface-container-lowest); color: var(--on-surface);
+  box-shadow: 0 4px 12px rgb(0 0 0 / .18), 0 16px 48px rgb(0 0 0 / .18); }
+.palette::backdrop { background: var(--scrim); }
+.palette input { width: 100%; box-sizing: border-box; height: 52px; padding: 0 1rem;
+  border: 0; border-radius: var(--shape-lg); background: var(--surface-container-high);
+  color: var(--on-surface); font: var(--body-lg); }
+.palette input:focus-visible { outline: 2px solid var(--primary); outline-offset: 0; }
+.palette ul { list-style: none; margin: .5rem 0 0; padding: 0; max-height: 50vh;
+  overflow-y: auto; }
+.palette li { display: flex; justify-content: space-between; gap: 1rem;
+  align-items: center; min-height: 44px; padding: 0 1rem;
+  border-radius: var(--shape-md); cursor: pointer; }
+.palette li[aria-selected="true"] { background: var(--secondary-container);
+  color: var(--on-secondary-container); }
+.palette-name { font: var(--body-lg); }
+.palette-where { font: var(--body-sm); color: var(--on-surface-variant); }
+.palette li[aria-selected="true"] .palette-where { color: inherit; }
+.palette-hint { margin: .5rem 1rem .25rem; font: var(--body-sm);
+  color: var(--on-surface-variant); }
+
+/* Moving between screens is a cross-fade, as Chrome's own pages do, and
+   nothing at all for anybody who has asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition { navigation: auto; }
+  ::view-transition-old(root), ::view-transition-new(root) {
+    animation-duration: 160ms;
+  }
+}
+
+/* The last of the capitals: severity pills, field labels, contents
+   headings. Weight comes down with them, since the capitals were what the
+   heavy weight was compensating for. */
+.pill, .label, .toc h3, .agmap .head {
+  text-transform: none; letter-spacing: 0; font-weight: 500;
+}
+.agmap .head { font-weight: 600; }
+.palette-open kbd { white-space: nowrap; }
+.finding h3 .pill, .counts .pill { text-transform: capitalize; }
+.findbar .palette-open { width: auto; border: 0; background: transparent; }
+th[scope="row"] { font-weight: 500; }
+/* The phone menu as a list, as Chrome's own menus are, not a cloud of pills. */
+@media (max-width: 59.99rem) {
+  .sidenav .nav { flex-direction: column; align-items: stretch; gap: .1rem; }
+  .sidenav .nav a { width: 100%; box-sizing: border-box; }
+}
+
+/* The navigation's icons: Material Symbols, as Chrome's settings draw them,
+   20px beside the label. Filled with the text colour, so they follow the
+   theme and a forced-colours one. */
+.nav a { display: flex; align-items: center; gap: .85rem; }
+.navicon { width: 20px; height: 20px; flex: none; fill: currentColor; }
+@media (max-width: 59.99rem) {
+  .sidenav .nav a { justify-content: flex-start; }
+}
+@media (min-width: 60rem) {
+  .sidenav .nav a { display: flex; align-items: center; gap: .85rem;
+    padding: 0 .9rem; min-height: 40px; border-radius: var(--shape-full); }
+}
+
+/* A row's menu: the button a row ends with, and the list it opens beside
+   it. Anchored to the button where the browser can, and centred where it
+   cannot. */
+.rowmenu-open { min-height: 40px; width: 40px; height: 40px; padding: 0;
+  border-radius: var(--shape-full); background: transparent; color: var(--on-surface-variant); }
+.rowmenu-open:hover { background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
+.rowmenu { position: fixed; position-area: bottom span-left; top: auto; right: auto;
+  margin: .25rem 0 0; min-width: 13rem; }
+.menu button, .menu-danger { display: flex; align-items: center; justify-content: flex-start;
+  width: 100%; min-height: 40px; padding: 0 .9rem; border: 0; border-radius: var(--shape-full);
+  background: transparent; color: var(--on-surface); font: var(--label-lg); }
+.menu .menu-danger { color: var(--error); }
+.menu button:hover { background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
+.menu .menu-danger:hover { background: var(--error-container); color: var(--on-error-container); }
+.rowmenu { position-try-fallbacks: flip-block; }
+
+/* A short key to coloured words on the screen above a table. */
+.legend { list-style: none; padding: 0; margin: .5rem 0 1rem; display: flex;
+  flex-wrap: wrap; gap: .5rem 1.5rem; font: var(--body-md); color: var(--on-surface-variant); }
+.legend .wf-word { margin-right: .35rem; }
+
+/* Installed as an app, the bar becomes the window's title bar: the window's
+   own buttons sit over its far end, it can be dragged to move the window,
+   and everything in it that does something stays clickable. The titlebar
+   variables are the area the platform leaves free, so nothing of ours goes
+   under its buttons. */
+@media (display-mode: window-controls-overlay) {
+  .bar { -webkit-app-region: drag; app-region: drag; padding-top: .25rem; padding-bottom: .25rem; }
+  .bar-inner { min-height: env(titlebar-area-height, 40px);
+    padding-left: env(titlebar-area-x, 0px);
+    padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)); }
+  .bar a, .bar button, .bar input, .bar form, .bar [popover] {
+    -webkit-app-region: no-drag; app-region: no-drag; }
+}
+
+/* What an agent is asking to do, field by field: the name above, the text
+   below it as written, line breaks kept. */
+.ask-fields { margin: 0 0 12px; display: grid; gap: 8px; }
+.ask-fields > div {
+  background: var(--surface-container-lowest); border: 1px solid var(--outline-variant);
+  border-radius: 12px; padding: 10px 14px;
+}
+.ask-fields dt { font: 500 13px/1.4 var(--mono); color: var(--on-surface-variant); }
+.ask-fields dd { margin: 4px 0 0; font-weight: 400; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.ask-json summary { cursor: pointer; font-weight: 500; margin-bottom: 8px; }
+
+/* A run's steps: the long column is what it tried, so the controls beside
+   it keep their words on one line rather than wrapping into a circle. */
+.run-steps button, .run-steps summary, .run-steps thead th { white-space: nowrap; }
+.run-steps td:nth-child(2) code { overflow-wrap: anywhere; }

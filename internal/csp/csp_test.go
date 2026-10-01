@@ -185,3 +185,19 @@ func TestTheModeChoosesTheHeader(t *testing.T) {
 		}
 	}
 }
+
+// A link to another site does not widen the policy.
+//
+// Every value that was an http(s) URL was taken for an image, so a button
+// linking to a repository added the repository's host to img-src.
+func TestALinkIsNotAnImage(t *testing.T) {
+	s := Collect(map[string]any{"index": map[string]any{
+		"hero": map[string]any{"cta_href": "https://github.com/x/y",
+			"image": "https://images.example/hero.png"},
+		"sections": []any{map[string]any{"features": map[string]any{
+			"items": []any{map[string]any{"href": "https://docs.example/start"}}}}},
+	}})
+	if len(s.Img) != 1 || s.Img[0] != "images.example" {
+		t.Errorf("img-src would name %v; only the picture's host belongs there", s.Img)
+	}
+}

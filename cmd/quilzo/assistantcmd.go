@@ -74,6 +74,9 @@ func assistantList(root string) error {
 		if a.Public {
 			where = "/ask/" + a.Name
 		}
+		if a.Static {
+			where += ", and on static copies"
+		}
 		w.Human("%s%s%s  %s  %s(%s, %d action(s))%s\n", bold, a.Name, reset,
 			a.Title, dim, where, len(a.Actions), reset)
 	}
@@ -118,10 +121,13 @@ func assistantAdd(root string, args []string) error {
 	exclude := fs.String("exclude", "", "comma-separated page prefixes it may not read")
 	refusal := fs.String("refusal", "", "what it says when it does not know")
 	public := fs.Bool("public", false, "serve it on the site at /ask/NAME")
+	static := fs.Bool("static", false, "answer on static copies too, in the visitor's browser, from published pages only (needs --public)")
 	model := fs.Bool("model", false, "answer with the configured model (default: extractive only)")
 	passages := fs.Int("passages", 0, "passages retrieved per question (default 5)")
 	documents := fs.String("documents", "", "comma-separated media library ids it may read")
 	embed := fs.String("embed", "", "comma-separated sites that may embed it, like https://shop.example")
+	handoffOn := fs.Bool("handoff", false, "let a visitor ask for a person; the conversation goes to the inbox")
+	handoffDays := fs.Int("handoff-days", 0, "days a handed-over conversation is kept after it last moves (default 30, at most 90)")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
@@ -139,7 +145,8 @@ func assistantAdd(root string, args []string) error {
 	a := assistant.Assistant{
 		Name: pos[0], Title: *title, Greeting: *greeting, Instructions: instr,
 		Pages: splitList(*pages), Exclude: splitList(*exclude),
-		Refusal: *refusal, Public: *public, UseModel: *model, Passages: *passages,
+		Refusal: *refusal, Public: *public, Static: *static, UseModel: *model, Passages: *passages,
+		Handoff: *handoffOn, HandoffDays: *handoffDays,
 		Documents: splitList(*documents), Embed: splitList(*embed),
 	}
 	caller := resolveCaller(root, flagToken)
@@ -158,6 +165,9 @@ func assistantAdd(root string, args []string) error {
 	w.Human("%s%s%s declared\n", bold, a.Name, reset)
 	if a.Public {
 		w.Human("  %sserved at /ask/%s once the site is running%s\n", dim, a.Name, reset)
+		if a.Static {
+			w.Human("  %sstatic copies carry it, with the passages it answers from%s\n", dim, reset)
+		}
 	} else {
 		w.Human("  %snot public; try it with quilzo assistant ask %s \"...\"%s\n",
 			dim, a.Name, reset)
@@ -400,6 +410,19 @@ func assistantEval(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Recorded, so "when was this chatbot last measured" has an answer the
+	// posture checks can read. The counts, never the questions.
+	outcome := audit.Success
+	if r.Hallucinated > 0 {
+		outcome = audit.Failure
+	}
+	evalBy := resolveCaller(root, "")
+	record(root, audit.Record{Action: "assistant.evaluated",
+		Resource: "/ask/" + a.Name, Outcome: outcome, Principal: evalBy.Name,
+		Kind: evalBy.Kind, Verified: evalBy.Verified,
+		Detail: map[string]string{"assistant": a.Name,
+			"cases":        fmt.Sprint(r.Cases),
+			"hallucinated": fmt.Sprint(r.Hallucinated)}})
 	if w.JSON(r) {
 		if r.Hallucinated > 0 {
 			return fmt.Errorf("%d unanswerable question(s) answered", r.Hallucinated)

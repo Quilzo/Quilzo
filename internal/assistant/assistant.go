@@ -55,6 +55,31 @@ type Assistant struct {
 	// https://shop.example. Empty means it can be framed by nobody but this
 	// site, which is the safe default for a page that takes input.
 	Embed []string `json:"embed,omitempty"`
+	// Handoff lets a visitor ask for a person. The conversation that follows
+	// is the one thing about an assistant that is stored, from the moment
+	// the visitor chooses it, and it is answered from the admin's inbox.
+	Handoff bool `json:"handoff,omitempty"`
+	// HandoffDays is how long such a conversation is kept after it last
+	// moved. Zero is the default of thirty; at most ninety.
+	HandoffDays int `json:"handoff_days,omitempty"`
+	// Static lets a static copy of the site answer too: `ipfs write` and
+	// `export` carry the conversation page and the passages it answers
+	// from, and the visitor's browser does the answering. Published pages
+	// only, because the passages ship as a file anybody can download, and a
+	// document is knowledge the owner chose to quote from, not to publish.
+	// Extractive only, because a static host has no model to ask.
+	Static bool `json:"static,omitempty"`
+}
+
+// MaxHandoffDays is the longest a handed-off conversation may be kept.
+const MaxHandoffDays = 90
+
+// Keep is how long a handed-off conversation is kept after it last moved.
+func (a Assistant) Keep() int {
+	if a.HandoffDays <= 0 {
+		return 30
+	}
+	return a.HandoffDays
 }
 
 // ActionKind is a closed list of what an assistant can offer.
@@ -168,6 +193,15 @@ func (a Assistant) Validate() error {
 		if _, err := Origin(o); err != nil {
 			return err
 		}
+	}
+	if a.Static && !a.Public {
+		return fmt.Errorf("%s answers on a static copy but is not public; "+
+			"a static copy carries only what the live site serves", a.Name)
+	}
+	if a.HandoffDays < 0 || a.HandoffDays > MaxHandoffDays {
+		return fmt.Errorf("%s keeps conversations for %d days; between 1 and "+
+			"%d, or 0 for the default of thirty", a.Name, a.HandoffDays,
+			MaxHandoffDays)
 	}
 	if len(a.Actions) > MaxActions {
 		return fmt.Errorf("%s declares %d actions, over %d", a.Name,

@@ -94,12 +94,15 @@ func detectRun(root string, args []string) error {
 			rulesDir(root, *rulesAt), off)
 	}
 
-	// Read the store without creating it: a run against a site that has
-	// never collected anything is a mistake worth saying, not an empty
-	// result worth recording.
+	// A run against a site with nothing to read is a mistake worth saying,
+	// not an empty result worth recording. Its own audit log counts: since
+	// Quilzo watches itself, a site that has collected nothing from outside
+	// still has events, and the store is created to hold them.
 	if _, serr := os.Stat(spoolDir(root)); serr != nil {
-		return fmt.Errorf("no events have been stored in this site yet; " +
-			"add some with quilzo spool add")
+		if own, _ := audit.Read(auditPath(root)); len(own) == 0 {
+			return fmt.Errorf("no events have been stored in this site yet; " +
+				"add some with quilzo spool add")
+		}
 	}
 	sp, err := openSpool(root, spool.Options{})
 	if err != nil {
@@ -135,15 +138,19 @@ func detectRun(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// And what Quilzo itself recorded, so the quilzo.* rules can read it.
+	selfEvents, err := storeSelfEvents(root, sp, now)
+	if err != nil {
+		return err
+	}
 
 	var events, matches, opened, suppressed int
 	opened += agentNew
 	var through time.Time
-	err = sp.Range(from, time.Time{}, func(e telemetry.Event) error {
+	// What one event does: every rule that matches it, through the
+	// suppressions and rings, into the queue.
+	consider := func(e telemetry.Event) {
 		events++
-		if e.Received.After(through) {
-			through = e.Received
-		}
 		for _, r := range rules {
 			if !r.Matches(e) {
 				continue
@@ -183,6 +190,21 @@ func detectRun(root string, args []string) error {
 				opened++
 			}
 		}
+	}
+	// Quilzo's own records first, as they are copied: they are read here,
+	// once, and never by the pass below, so that their arrival time — now —
+	// does not move the cursor outside platforms' events are read by.
+	for _, e := range selfEvents {
+		consider(e)
+	}
+	err = sp.Range(from, time.Time{}, func(e telemetry.Event) error {
+		if e.Source == SelfSource {
+			return nil
+		}
+		if e.Received.After(through) {
+			through = e.Received
+		}
+		consider(e)
 		return nil
 	})
 	if err != nil {

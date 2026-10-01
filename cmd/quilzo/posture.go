@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"github.com/quilzo/quilzo/internal/logd"
 	"github.com/quilzo/quilzo/internal/oscal"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,7 +18,10 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/a11y"
+	"github.com/quilzo/quilzo/internal/agentwatch"
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/frameworks"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/provenance"
@@ -155,6 +160,7 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 	}
 	s.Content = observeContent(root, tplDir, st)
 	s.Agents = observeAgents(root, st, tplDir)
+	s.AI = observeAI(root, tplDir, s.Audit)
 	s.Upkeep = observeUpkeep(root, st)
 	return s
 }
@@ -320,9 +326,11 @@ func cmdPosture(root string, args []string) error {
 		return postureRules()
 	case "suppress":
 		return postureSuppress(root, args[1:])
+	case "frameworks":
+		return postureFrameworks(root, args[1:])
 	default:
-		return fmt.Errorf("unknown posture command %q; try scan, explain, rules "+
-			"or suppress", args[0])
+		return fmt.Errorf("unknown posture command %q; try scan, explain, "+
+			"rules, frameworks or suppress", args[0])
 	}
 }
 
@@ -615,4 +623,193 @@ func organisationOf(root string) string {
 		return org
 	}
 	return siteName(root)
+}
+
+// observeAI gathers what the AI and privacy checks need: the chatbots, when
+// each was last measured and whether its page says it is automated, where a
+// model is reached, and which agents the watchdog has flagged.
+func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
+	facts := posture.AIFacts{}
+	set, err := assistant.Load(assistantsPath(root))
+	if err != nil {
+		return facts
+	}
+	lastEval := map[string]time.Time{}
+	for _, e := range events {
+		if e.Action != "assistant.evaluated" {
+			continue
+		}
+		if at, perr := time.Parse(time.RFC3339Nano, e.At); perr == nil {
+			name := strings.TrimPrefix(e.Resource, "/ask/")
+			if at.After(lastEval[name]) {
+				lastEval[name] = at
+			}
+		}
+	}
+	disclosed := askPageDiscloses(root, tplDir)
+	for _, a := range set.Assistants {
+		facts.Chatbots = append(facts.Chatbots, posture.ChatbotFact{
+			Name: a.Name, Public: a.Public, UseModel: a.UseModel,
+			Disclosed: disclosed, LastEval: lastEval[a.Name]})
+	}
+	if agents, aerr := loadAgents(root); aerr == nil {
+		facts.Agents = len(agents.Agents)
+	}
+	facts.ModelHost, facts.ModelLocal = modelHostOf(root)
+	for _, r := range agentwatch.Flagged(agentwatch.Look(events, time.Now())) {
+		facts.Flagged = append(facts.Flagged, r.Principal)
+	}
+	facts.Checked = true
+	return facts
+}
+
+// askPageDiscloses reports whether the conversation page visitors see says
+// they are talking to an automated assistant. The built-in page always
+// does; an owner's published "ask" page does when its layout carries
+// {{ ask.disclosure }}.
+func askPageDiscloses(root, tplDir string) bool {
+	st, err := open(root)
+	if err != nil {
+		return true
+	}
+	pages, err := site.PagesAt(st, site.RefLive)
+	if err != nil {
+		return true
+	}
+	body, custom := pages["ask"]
+	if !custom {
+		return true
+	}
+	design, derr := loadDesign(tplDir)
+	if derr != nil || design == nil {
+		return false
+	}
+	_, src, lerr := design.Layouts.For(body)
+	if lerr != nil {
+		return false
+	}
+	return strings.Contains(strings.ReplaceAll(src, " ", ""), "ask.disclosure")
+}
+
+// modelHostOf is the host a model is reached on, and whether it is local:
+// the first gateway route that is not, or the configured endpoint.
+func modelHostOf(root string) (string, bool) {
+	var urls []string
+	if _, cfg, err := modelGateway(root); err == nil && cfg != nil {
+		for _, r := range cfg.Routes {
+			urls = append(urls, r.URL)
+		}
+	} else if base := os.Getenv("QUILZO_MODEL_URL"); base != "" {
+		urls = append(urls, base)
+	} else if os.Getenv("QUILZO_MODEL_KEY") != "" || os.Getenv("OLLAMA_API_KEY") != "" {
+		urls = append(urls, "https://ollama.com/v1")
+	}
+	first, local := "", true
+	for _, raw := range urls {
+		u, err := url.Parse(raw)
+		if err != nil || u.Host == "" {
+			continue
+		}
+		if first == "" {
+			first = u.Host
+		}
+		if !hostIsLocal(u.Hostname()) {
+			return u.Host, false
+		}
+	}
+	return first, local
+}
+
+// hostIsLocal is this machine or a private network: somewhere what is sent
+// does not leave the organisation running Quilzo.
+func hostIsLocal(host string) bool {
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
+}
+
+// postureFrameworks reads the posture against the frameworks: every one
+// with how many of its requirements are failing, passing and unchecked, or
+// one framework requirement by requirement.
+func postureFrameworks(root string, args []string) error {
+	fs := flag.NewFlagSet("posture frameworks", flag.ContinueOnError)
+	tplDir := fs.String("templates", "templates", "template directory")
+	pos, flags := leadingArgs(args, 1)
+	if err := fs.Parse(flags); err != nil {
+		return err
+	}
+	sup, _ := loadSuppressions(root)
+	rep := posture.Scan(Observe(root, *tplDir, posture.ServerFacts{}), sup)
+	if len(pos) == 0 {
+		if w.JSON(frameworkSummaries(rep)) {
+			return nil
+		}
+		for _, sm := range frameworkSummaries(rep) {
+			fmt.Printf("  %-18s %s%3d failing%s  %3d passing  %3d not checked  %s%s%s\n",
+				sm.ID, red, sm.Failing, reset, sm.Passing, sm.NotChecked,
+				dim, sm.Name, reset)
+		}
+		fmt.Printf("\n  %sa requirement no check bears on is not listed: not "+
+			"claimed, rather than passing. quilzo posture frameworks ID for one%s\n",
+			dim, reset)
+		return nil
+	}
+	fw, ok := frameworks.Get(pos[0])
+	if !ok {
+		var ids []string
+		for _, f := range frameworks.Catalogue {
+			ids = append(ids, f.ID)
+		}
+		return fmt.Errorf("no framework %q; one of %s", pos[0], strings.Join(ids, ", "))
+	}
+	view := posture.ByFramework(rep, fw.ID)
+	if w.JSON(view) {
+		return nil
+	}
+	fmt.Printf("%s%s%s  %s\n  %s%s%s\n\n", bold, fw.Name, reset, fw.Version, dim, fw.About, reset)
+	for _, st := range view {
+		colour := green
+		switch st.State {
+		case "failing":
+			colour = red
+		case "not checked":
+			colour = yellow
+		}
+		fmt.Printf("  %-14s %s%-11s%s %s\n", st.Ref.ID, colour, st.State, reset,
+			strings.Join(st.Rules, ", "))
+		for _, f := range st.Findings {
+			fmt.Printf("                 %s%s%s\n", dim, onOneLine(f.Detail), reset)
+		}
+	}
+	return nil
+}
+
+// frameworkSummary is one framework in a line.
+type frameworkSummary struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Failing    int    `json:"failing"`
+	Passing    int    `json:"passing"`
+	NotChecked int    `json:"not_checked"`
+}
+
+func frameworkSummaries(rep posture.Report) []frameworkSummary {
+	var out []frameworkSummary
+	for _, f := range frameworks.Catalogue {
+		sm := frameworkSummary{ID: f.ID, Name: f.Name}
+		for _, st := range posture.ByFramework(rep, f.ID) {
+			switch st.State {
+			case "failing":
+				sm.Failing++
+			case "passing":
+				sm.Passing++
+			default:
+				sm.NotChecked++
+			}
+		}
+		out = append(out, sm)
+	}
+	return out
 }

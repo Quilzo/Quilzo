@@ -1,0 +1,82 @@
+{
+  "id": "quilzo.form-refused",
+  "title": "A form submission was refused",
+  "why": "counted by corr.form-spam; one refused submission is a mistyped field",
+  "blind": "spam that passes the checks",
+  "sources": [
+    "quilzo/audit"
+  ],
+  "severity": 1,
+  "when": {
+    "all": [
+      {
+        "match": {
+          "field": "raw.action",
+          "op": "equals",
+          "values": [
+            "form.submit"
+          ]
+        }
+      },
+      {
+        "match": {
+          "field": "raw.outcome",
+          "op": "equals",
+          "values": [
+            "denied"
+          ]
+        }
+      }
+    ]
+  },
+  "technique": [
+    "T1499"
+  ],
+  "fixtures": [
+    {
+      "name": "refused",
+      "match": true,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 2,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "203.0.113.9"
+        },
+        "message": "form.submit",
+        "raw": {
+          "action": "form.submit",
+          "outcome": "denied",
+          "resource": "/",
+          "kind": "unknown"
+        }
+      }
+    },
+    {
+      "name": "accepted",
+      "match": false,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "203.0.113.9"
+        },
+        "message": "form.submit",
+        "raw": {
+          "action": "form.submit",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "unknown"
+        }
+      }
+    }
+  ],
+  "quiet": true
+}

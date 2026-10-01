@@ -169,6 +169,7 @@ func cmdServe(root string, args []string) error {
 		return &Caller{Name: by, Kind: audit.KindHuman, Verified: true,
 			Role: auth.RoleAdmin}
 	}
+	srv.Inbox = inboxHooks(root)
 	srv.Agents = &admin.Agents{
 		Load: func() (map[string]agent.Manifest, error) {
 			set, err := loadAgents(root)
@@ -564,7 +565,12 @@ func cmdServe(root string, args []string) error {
 	//
 	// And the estate's schedule, which does nothing until an administrator
 	// sets one with quilzo estate auto.
-	jobs := []upkeep.Job{estateJob(root), collectJob(root)}
+	jobs := []upkeep.Job{estateJob(root), collectJob(root),
+		// The posture, rescanned on the same schedule, so a check that
+		// starts failing is a finding in the queue rather than something
+		// waiting for somebody to open the Security screen.
+		postureJob(root, *tplDir, posture.ServerFacts{AdminAddr: *addr,
+			PublicAddr: *publicAddr, BehindProxy: *behindProxy})}
 	if job, ok := retentionJob(root); ok {
 		jobs = append(jobs, job)
 	}
@@ -648,6 +654,12 @@ func cmdServe(root string, args []string) error {
 		Save:    func(values map[string]string) error { return writeThemeFile(*tplDir, values) },
 		Layouts: func() []string { return design.Layouts.Names() },
 		Fonts:   func() []string { return design.Fonts.Names() },
+		FontFile: func(name string) ([]byte, bool) {
+			if design.Fonts == nil {
+				return nil, false
+			}
+			return design.Fonts.File(name)
+		},
 		OwnStylesheet: func() bool {
 			return fileExists(filepath.Join(*tplDir, "site.css"))
 		},
@@ -1086,11 +1098,18 @@ func retentionJob(root string) (upkeep.Job, bool) {
 	return upkeep.Job{
 		Name: "retention",
 		Do: func(now time.Time) (int, error) {
+			// Conversations handed to a person, which carry their own
+			// period from the assistant they came through.
+			gone, herr := handoffStore(root).Expire(handoffKeep(root), now)
+			if herr != nil {
+				return gone, herr
+			}
 			set, lerr := loadForms(root)
 			if lerr != nil || set == nil || len(set.Forms) == 0 {
-				return 0, nil
+				return gone, nil
 			}
-			return st.Expire(set, now)
+			n, err := st.Expire(set, now)
+			return n + gone, err
 		},
 	}, true
 }

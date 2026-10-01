@@ -255,13 +255,18 @@ func TestOnlyThePasskeyScreensPermitAScript(t *testing.T) {
 		}
 	}
 
-	// And nowhere else.
+	// Elsewhere, only the interface's own script, by a nonce of its own.
 	for _, path := range []string{"/", "/people", "/access", "/media"} {
 		w := get(t, srv, path, token)
 		csp := w.Header().Get("Content-Security-Policy")
 		if strings.Contains(csp, "script-src") &&
-			!strings.Contains(csp, "script-src 'none'") {
-			t.Errorf("%s permits a script: %s", path, csp)
+			!strings.Contains(csp, "script-src 'nonce-") {
+			t.Errorf("%s permits a script other than by nonce: %s", path, csp)
+		}
+		for _, forbidden := range []string{"unsafe-inline", "unsafe-eval", "*"} {
+			if strings.Contains(csp, forbidden) {
+				t.Errorf("%s permits %q: %s", path, forbidden, csp)
+			}
 		}
 	}
 }

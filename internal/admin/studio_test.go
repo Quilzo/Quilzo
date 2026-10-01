@@ -609,3 +609,29 @@ func TestOnlyAnAdministratorAnswersARun(t *testing.T) {
 		t.Fatalf("something was done: %v", *calls)
 	}
 }
+
+// What a person approves is shown as text they can read, and exactly.
+func TestAWaitingWriteIsShownFieldByField(t *testing.T) {
+	got := readableInput(map[string]any{"page": "changelog",
+		"fields": map[string]any{"title": "Changelog", "body": "One.\n\nTwo.", "draft": true}})
+	want := []inputField{{"page", "changelog"}, {"fields › body", "One.\n\nTwo."},
+		{"fields › draft", "true"}, {"fields › title", "Changelog"}}
+	if len(got) != len(want) {
+		t.Fatalf("got %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("field %d is %v, want %v", i, got[i], want[i])
+		}
+	}
+	// Anything it cannot show whole, it does not show at all: the JSON is
+	// then the only view, rather than a tidy one with a part missing.
+	for _, in := range []map[string]any{
+		{"page": "x", "fields": map[string]any{"list": []any{"a"}}},
+		{"page": map[string]any{"nested": "x"}},
+	} {
+		if f := readableInput(in); f != nil {
+			t.Errorf("%v was laid out as %v", in, f)
+		}
+	}
+}

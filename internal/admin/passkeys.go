@@ -291,6 +291,7 @@ func (s *Server) passkeyPolicy(w http.ResponseWriter, n string) {
 	// console error nobody would see. Found by a browser, not by a test.
 	w.Header().Set("Content-Security-Policy",
 		"default-src 'none'; style-src 'self'; img-src 'self' data:; "+
+			"font-src 'self'; "+
 			"script-src 'nonce-"+n+"'; connect-src 'self'; "+
 			"manifest-src 'self'; "+
 			"form-action 'self'; frame-ancestors 'none'; base-uri 'none'")

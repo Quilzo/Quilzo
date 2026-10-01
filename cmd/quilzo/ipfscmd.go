@@ -85,7 +85,7 @@ func ipfsWrite(root string, args []string) error {
 	tplDir := fs.String("templates", "templates", "where page.html lives")
 	dir := fs.String("o", "site", "write the rendered site here")
 	basePath := fs.String("base-path", "",
-		"serve the bundle from this subdirectory, e.g. /demo2")
+		"serve the bundle from this subdirectory, e.g. /demo")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func ipfsWrite(root string, args []string) error {
 	}
 	// Under a subdirectory, if that is where it will live.
 	//
-	// Every link a page carries is rooted, so a bundle copied into /demo2 has
+	// Every link a page carries is rooted, so a bundle copied into /demo has
 	// working pages and a broken site: the navigation, the pictures and the
 	// stylesheet all resolve one level too high. There was no option for it,
 	// and the alternative was a hand-written sed over the output.

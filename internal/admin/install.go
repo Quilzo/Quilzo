@@ -58,6 +58,11 @@ func (s *Server) installManifest(w http.ResponseWriter, r *http.Request) {
 		"start_url":  "/",
 		"scope":      "/",
 		"display":    "standalone",
+		// Installed, the app's own bar takes the place of the window's
+		// title bar, with the window's buttons drawn over its far end, as
+		// Chrome's own windows look. Where the platform cannot do that, the
+		// ordinary standalone window is used.
+		"display_override": []string{"window-controls-overlay", "standalone"},
 		// The operator's accent when they set one, and the built-in otherwise.
 		// Read through the same validated field the stylesheet uses rather
 		// than from configuration directly, so there is one answer to what

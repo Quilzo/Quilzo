@@ -1,22 +1,19 @@
 {{template "head" .}}
 <h1>Agents</h1>
-<p>What a model in this store is allowed to do, declared before it does
-anything. An agent holds the capabilities named here and no others — an
-instruction found in content it reads cannot widen them, because the list is
-fixed before the run rather than decided during it.</p>
-<p class="help"><a href="/agents/runs">Runs</a> shows what each run did,
-step by step. <a href="/security/agents">Agent activity</a> watches for one
-misbehaving.</p>
+<p class="lead">AI agents that work in this site. Each can do only what its
+declaration lists, and nothing it reads can give it more.</p>
+<p class="help"><a href="/agents/runs">Runs</a> shows what each one did, step
+by step. <a href="/security/agents">Agent activity</a> flags one that keeps
+trying what it isn't allowed to.</p>
 
 {{if .Unavailable}}
 <div class="notice warn"><p>{{.Unavailable}}</p></div>
 {{else if .Agents}}
-<h2>Declared here</h2>
-<p>Ordered by what they can reach, not alphabetically — the ones that act on
-their own are the ones worth reading first.</p>
+<h2>Your agents</h2>
+<p class="help">The ones that can do the most come first.</p>
 <div class="table-wrap">
 <table>
-  <caption>{{len .Agents}} agent(s)</caption>
+  <caption>{{len .Agents}} agent{{if ne (len .Agents) 1}}s{{end}}</caption>
   <thead><tr>
     <th scope="col">Agent</th><th scope="col">Kind</th>
     <th scope="col">Autonomy</th><th scope="col">Capabilities</th>
@@ -45,14 +42,12 @@ their own are the ones worth reading first.</p>
 </table>
 </div>
 {{else}}
-<div class="notice"><p>No agents are declared in this store.</p></div>
+<div class="notice"><p>No agents yet. <a href="/agents/new">Create one</a> from a starting point below.</p></div>
 {{end}}
 
-<h2>The archetypes</h2>
-<p>Each one is a starting declaration with its defaults set to the narrow
-answer. Start from the one nearest what you want and widen only what you
-need — that is the direction that fails safe.
-<a href="/agents/new">Declare an agent</a>, or pick a starting point below.</p>
+<h2>Start from a template</h2>
+<p>Each template starts with as little permission as it needs. Pick the
+closest one and add only what you need. Or <a href="/agents/new">start from scratch</a>.</p>
 
 <dl class="gates">
 {{range .Templates}}

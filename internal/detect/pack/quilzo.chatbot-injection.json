@@ -1,0 +1,69 @@
+{
+  "id": "quilzo.chatbot-injection",
+  "title": "Somebody tried to give a chatbot instructions",
+  "why": "a question carrying prompt-injection phrases is an attempt to make the chatbot do or say what it was not built for; it cannot widen what it does, but who tried is worth knowing",
+  "blind": "an attempt phrased in words the markers do not include",
+  "sources": [
+    "quilzo/audit"
+  ],
+  "severity": 2,
+  "when": {
+    "match": {
+      "field": "raw.action",
+      "op": "equals",
+      "values": [
+        "site.chatbot-injection"
+      ]
+    }
+  },
+  "technique": [
+    "T1059"
+  ],
+  "fixtures": [
+    {
+      "name": "ignore previous instructions",
+      "match": true,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 2,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "203.0.113.9"
+        },
+        "message": "site.chatbot-injection",
+        "raw": {
+          "action": "site.chatbot-injection",
+          "outcome": "denied",
+          "resource": "/",
+          "kind": "unknown",
+          "count": "1"
+        }
+      }
+    },
+    {
+      "name": "an ordinary question",
+      "match": false,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "203.0.113.9"
+        },
+        "message": "assistant.ask",
+        "raw": {
+          "action": "assistant.ask",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "unknown"
+        }
+      }
+    }
+  ]
+}

@@ -9,7 +9,9 @@
 {{if .Pending}}<section class="notice warn" aria-labelledby="asks">
   <h2 id="asks">It is asking before step {{.Pending.N}}</h2>
   <p>{{.R.Agent}} wants to use the {{.Pending.Kind}} <code>{{.Pending.What}}</code>{{if .Pending.Input}} with:{{else}}, with nothing given.{{end}}</p>
-  {{if .Pending.Input}}<pre class="code whole"><code>{{.Pending.Input}}</code></pre>{{end}}
+  {{if .Pending.Fields}}<dl class="ask-fields">{{range .Pending.Fields}}<div><dt>{{.Name}}</dt><dd>{{.Value}}</dd></div>{{end}}</dl>
+  <details class="ask-json"><summary>The exact call, as JSON</summary><pre class="code whole"><code>{{.Pending.Input}}</code></pre></details>
+  {{else if .Pending.Input}}<pre class="code whole"><code>{{.Pending.Input}}</code></pre>{{end}}
   <p class="hint">Asked {{.Asked}}. Nothing has been done or charged. If you agree, exactly this goes ahead, through the same limits as everything else it does; the model is not asked again.{{if .R.Trace.Tainted}} It had read stored content before asking, and content can carry instructions: read what it wants to do as if a stranger had asked.{{end}}</p>
   {{if .Expired}}<p><strong>This was asked too long ago to agree to.</strong> Decline it, or run the agent again.</p>{{end}}
   <form method="post" action="/agents/act">
@@ -38,7 +40,7 @@
   carry instructions.{{if .Provenance}} It read: {{.Provenance}}.{{end}}</p></div>{{end}}
 
 <h2>Step by step</h2>
-{{if .Steps}}<div class="table-wrap"><table>
+{{if .Steps}}<div class="table-wrap"><table class="run-steps">
   <thead><tr><th scope="col">#</th><th scope="col">It tried</th><th scope="col">Outcome</th><th scope="col">What came back</th>{{if .CanReplay}}<th scope="col"><span class="visually-hidden">Run again</span></th>{{end}}</tr></thead>
   <tbody>{{range .Steps}}<tr>
     <th scope="row">{{.N}}</th>

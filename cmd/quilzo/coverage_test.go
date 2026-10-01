@@ -478,6 +478,14 @@ var coverage = map[string]surfaces{
 		MCP: []string{"list_assistants", "ask_assistant", "declare_assistant"},
 	},
 
+	"inbox": {
+		GUI: "/inbox",
+		NoMCP: "these are conversations visitors asked to have with a " +
+			"person, and what they wrote is theirs; a model is given one " +
+			"only as a suggested reply that a person reads before anything " +
+			"is sent",
+	},
+
 	"personalise": {
 		GUI: "/personalise",
 		NoMCP: "a rule changes what visitors see on a page, which is a " +

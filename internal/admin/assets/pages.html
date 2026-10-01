@@ -13,8 +13,8 @@
 
 {{if and .CheckedOn .DueCount}}
 <p class="notice" role="status">
-  <strong>{{.DueCount}} page{{if ne .DueCount 1}}s{{end}}</strong> nobody has
-  confirmed recently. That blocks nothing — it is a question put to a person.
+  <strong>{{.DueCount}} page{{if ne .DueCount 1}}s{{end}}</strong> haven't been
+  checked recently. Nothing is blocked — it's a reminder to look them over.
 </p>
 {{end}}
 
@@ -32,7 +32,7 @@
 <input type="hidden" name="back" value="{{.Here}}">
 <div class="table-wrap">
 <table>
-  <caption>{{len .Names}} page(s) in the current draft</caption>
+  <caption>{{len .Names}} page{{if ne (len .Names) 1}}s{{end}} in the draft</caption>
   {{/*
     "Checked" is a column here rather than a screen of its own. The question
     it answers — when did anybody last confirm this is still true — is asked
@@ -51,7 +51,7 @@
       <td><input type="checkbox" name="page" value="{{.}}"
                  id="sel-{{.}}" aria-labelledby="name-{{.}}"></td>
       {{end}}
-      <th scope="row" id="name-{{.}}" class="depth-{{index $.Depth .}}">{{.}}</th>
+      <th scope="row" id="name-{{.}}" class="depth-{{index $.Depth .}}"><a href="/page/{{.}}">{{.}}</a></th>
       <td>{{if index $.Changed .}}<span class="tag tag-changed">changed</span>{{else}}<span class="tag">unchanged</span>{{end}}
         {{with index $.Windows .}}
           {{if eq . "expired"}}<span class="tag tag-bad">expired</span>
@@ -73,15 +73,25 @@
         {{if .Owner}}<span class="owner-of">{{.Owner}}</span>{{end}}
       {{end}}</td>
       {{end}}
+      {{/*
+        The row's actions in a menu, as a row in Gmail or Drive has them:
+        the name opens the page, and the rest is one button away rather
+        than three controls on every row. A popover, so it needs no script.
+
+        Removing uses a form of its own, outside the table, named by the
+        button's form attribute. It used to be a form inside this table's
+        own form, which browsers do not allow: the inner one was dropped
+        and the button submitted the bulk form with no action, so removing
+        a single page did nothing.
+      */}}
       <td class="actions">
-        <a href="/page/{{.}}">{{if $.CanEdit}}Edit{{else}}View{{end}} <span class="sr">{{.}}</span></a>
-        <a href="/preview/{{.}}">Preview <span class="sr">{{.}}</span></a>
-        {{if $.CanEdit}}
-        <form method="post" action="/page/delete" class="inline">
-          <input type="hidden" name="name" value="{{.}}">
-          <button type="submit" class="danger">Remove <span class="sr">{{.}} from the draft</span></button>
-        </form>
-        {{end}}
+        <button type="button" class="rowmenu-open" popovertarget="row-{{.}}"
+                title="More for {{.}}"><svg class="icon" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path d="M480-160q-33 0-56.5-23.5T400-240q0-33 23.5-56.5T480-320q33 0 56.5 23.5T560-240q0 33-23.5 56.5T480-160Zm0-240q-33 0-56.5-23.5T400-480q0-33 23.5-56.5T480-560q33 0 56.5 23.5T560-480q0 33-23.5 56.5T480-400Zm0-240q-33 0-56.5-23.5T400-720q0-33 23.5-56.5T480-800q33 0 56.5 23.5T560-720q0 33-23.5 56.5T480-640Z"/></svg><span class="visually-hidden">More for {{.}}</span></button>
+        <div id="row-{{.}}" class="menu rowmenu" popover>
+          <a href="/page/{{.}}">{{if $.CanEdit}}Edit{{else}}View{{end}}</a>
+          <a href="/preview/{{.}}">Preview</a>
+          {{if $.CanEdit}}<button type="submit" form="del-{{.}}" class="menu-danger">Remove from the draft</button>{{end}}
+        </div>
       </td>
     </tr>
   {{end}}
@@ -90,19 +100,19 @@
 </div>
 {{if .CanEdit}}
 <div class="bulkactions">
-  <button type="submit" name="checked" value="1">Mark selected as still right</button>
+  <button type="submit" name="checked" value="1">Mark selected as checked</button>
   <button type="submit" name="remove" value="1" class="danger">Remove selected…</button>
-  <span class="hint">The ellipsis is not decoration: removing asks again and
-    lists what would go.</span>
+  <span class="hint">You'll see what would be removed and confirm first.</span>
 </div>
 {{end}}
 </form>
+{{if .CanEdit}}{{range .Shown}}<form id="del-{{.}}" method="post" action="/page/delete" hidden><input type="hidden" name="name" value="{{.}}"></form>
+{{end}}{{end}}
 {{template "paging" .}}
 {{else}}
 <p>No pages yet. Open <a href="/page/index">index</a> to write the first one,
 or stage one from a file with <code>quilzo add</code>.</p>
 {{end}}
-<p class="hint">Removing a page takes it out of the draft and, once you publish,
-off the live site. Nothing is erased: the store keeps every commit, so an
-earlier version of the page is still there and still addressable.</p>
+<p class="hint">A removed page leaves the live site the next time you publish.
+Every earlier version is kept, so it can be brought back.</p>
 {{template "foot" .}}

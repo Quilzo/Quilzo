@@ -1,0 +1,68 @@
+{
+  "id": "quilzo.model-route-changed",
+  "title": "Where model calls go was changed",
+  "why": "the model route decides which provider receives what visitors and editors write",
+  "blind": "a change made through the provider's own console",
+  "sources": [
+    "quilzo/audit"
+  ],
+  "severity": 2,
+  "when": {
+    "match": {
+      "field": "raw.action",
+      "op": "prefix",
+      "values": [
+        "gateway.route"
+      ]
+    }
+  },
+  "technique": [
+    "T1565"
+  ],
+  "fixtures": [
+    {
+      "name": "a route added",
+      "match": true,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "gateway.route.add",
+        "raw": {
+          "action": "gateway.route.add",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human"
+        }
+      }
+    },
+    {
+      "name": "a budget set",
+      "match": false,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "gateway.budget",
+        "raw": {
+          "action": "gateway.budget",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human"
+        }
+      }
+    }
+  ]
+}

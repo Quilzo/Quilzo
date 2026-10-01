@@ -23,6 +23,8 @@ type Index struct {
 	// The TF-IDF leg, through internal/vector so a dense provider can
 	// replace it without this file changing.
 	vec *vector.Index
+	// heads are each passage's heading terms, for the third leg.
+	heads []map[string]bool
 }
 
 // BM25 parameters, at their textbook values. Tuned values exist for every
@@ -86,6 +88,11 @@ func NewIndex(ps []Passage) *Index {
 			n++
 		}
 		idx.terms = append(idx.terms, tf)
+		head := map[string]bool{}
+		for _, t := range tokens(p.Heading) {
+			head[t] = true
+		}
+		idx.heads = append(idx.heads, head)
 		idx.lens = append(idx.lens, float64(n))
 		total += float64(n)
 		for t := range tf {
@@ -122,9 +129,12 @@ type Hit struct {
 	// BM25Rank and VectorRank are 1-based, 0 when that ranker did not return
 	// it. Shown on the owner's test screen so a surprising answer can be
 	// traced to the ranker that produced it.
-	BM25Rank   int     `json:"bm25_rank,omitempty"`
-	VectorRank int     `json:"vector_rank,omitempty"`
-	Cosine     float64 `json:"cosine,omitempty"`
+	BM25Rank   int `json:"bm25_rank,omitempty"`
+	VectorRank int `json:"vector_rank,omitempty"`
+	// HeadingRank is 1-based among passages whose heading covers the whole
+	// question, 0 when its heading does not.
+	HeadingRank int     `json:"heading_rank,omitempty"`
+	Cosine      float64 `json:"cosine,omitempty"`
 	// Matched are the query's informative terms this passage contains.
 	Matched []string `json:"matched,omitempty"`
 }
@@ -208,6 +218,41 @@ func (idx *Index) Retrieve(question string, k int) []Hit {
 			h.Cosine = nb.Score
 			h.Score += 1 / float64(rrfK+r+1)
 		}
+	}
+
+	// The third leg: a passage whose heading asks or names everything the
+	// question does. An FAQ's question, a step's title, a section's name is
+	// what its passage is about, and a visitor asking that question almost
+	// word for word should get that passage — which the two rankers above,
+	// weighing every word of a long answer, could rank under a shorter
+	// passage that merely shared the words. Tighter headings first: one
+	// that is nothing but the question beats one that also says more.
+	var heads []int
+	for i, head := range idx.heads {
+		if len(head) == 0 {
+			continue
+		}
+		covered := true
+		for _, t := range q {
+			if !head[t] {
+				covered = false
+				break
+			}
+		}
+		if covered {
+			heads = append(heads, i)
+		}
+	}
+	sort.SliceStable(heads, func(a, b int) bool {
+		return len(idx.heads[heads[a]]) < len(idx.heads[heads[b]])
+	})
+	for r, i := range heads {
+		if r == depth {
+			break
+		}
+		h := get(i)
+		h.HeadingRank = r + 1
+		h.Score += 1 / float64(rrfK+r+1)
 	}
 
 	var out []Hit

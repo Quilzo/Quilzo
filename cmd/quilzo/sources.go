@@ -4,8 +4,11 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -22,6 +25,17 @@ func sourcesFor(root string, s *store.Store, commit, siteName string,
 	pages map[string]any) render.Sources {
 
 	src := render.Sources{Name: siteName, Pages: pages}
+	// The icon, so a layout showing it beside the name is judged and
+	// exported as it is served. Only an id the library holds as a picture.
+	if cfg, err := loadConfig(root); err == nil {
+		if id := strings.TrimSpace(cfg.Raw("site.icon")); id != "" {
+			if lib, lerr := openMedia(root); lerr == nil {
+				if f, _, gerr := lib.Get(id); gerr == nil && f.Kind == media.Image {
+					src.Icon = "/media/" + id
+				}
+			}
+		}
+	}
 
 	// What the asset library can be asked, wired here too.
 	//
