@@ -170,7 +170,7 @@
      the same size, which is the Expressive hierarchy device: emphasis comes
      from weight and size rather than from colour, so it survives being read
      in monochrome. */
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font: "Quilzo UI", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --display-lg: 3.5625rem/1.12 var(--font);   /* 57 */
@@ -2015,6 +2015,19 @@ ol.thread .who { display: block; font: var(--label-md); font-weight: 700; margin
 /* The mark in its two colours: the loop in the interface's blue, the tick
    in teal. Lighter tones in the dark theme, so both clear 3:1 against the
    surface behind them, which is what a graphic needs (WCAG 1.4.11). */
+/* The typeface: a Latin cut of Google Sans Flex, the face Google's own
+   apps are moving to, renamed and served from here (assets/fonts). One
+   file covers every weight from 300 to 700 and adjusts its letterforms to
+   the size it is set at. Characters outside it, and any language it does
+   not cover, fall back to the system's own interface font. "swap" so text
+   is never invisible while it loads. */
+@font-face {
+  font-family: "Quilzo UI";
+  src: url("/fonts/quilzo-ui.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
 :root {
   --mark-loop: light-dark(#0b57d0, #a8c7fa);
   --mark-tick: light-dark(#00897b, #4fd1c5);

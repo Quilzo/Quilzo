@@ -852,6 +852,7 @@ func securityHeaders(next http.Handler) http.Handler {
 // preview of that page.
 func adminPolicy(frameAncestors string) string {
 	return "default-src 'none'; style-src 'self'; img-src 'self' data:; " +
+		"font-src 'self'; " +
 		"media-src 'self'; manifest-src 'self'; frame-src 'self'; " +
 		"form-action 'self'; frame-ancestors " + frameAncestors +
 		"; base-uri 'none'"
@@ -1204,6 +1205,7 @@ func (s *Server) Handler() http.Handler {
 	// site look like a broken admin.
 	mux.HandleFunc("/style.css", s.handleCSS)
 	mux.HandleFunc("/admin.js", s.handleJS)
+	mux.HandleFunc("/fonts/quilzo-ui.woff2", s.handleFont)
 	return securityHeaders(s.signedFlash(sameSiteOnly(limitBody(s.readOnlyTokens(mux)))))
 }
 
@@ -1443,6 +1445,19 @@ func (s *Server) handleCSS(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = w.Write(b)
+}
+
+// handleFont serves the interface's typeface. See assets/fonts/README.md.
+// Immutable: a new version of the font is a new file name.
+func (s *Server) handleFont(w http.ResponseWriter, r *http.Request) {
+	b, err := assets.ReadFile("assets/fonts/quilzo-ui.woff2")
+	if err != nil {
+		http.Error(w, "missing font", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "font/woff2")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	_, _ = w.Write(b)
 }
 

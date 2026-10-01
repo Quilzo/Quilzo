@@ -4,12 +4,12 @@
 package admin
 
 import (
-	"regexp"
 	"github.com/quilzo/quilzo/internal/render"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"

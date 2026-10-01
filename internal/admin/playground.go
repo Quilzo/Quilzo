@@ -71,7 +71,7 @@ func (s *Server) playground(w http.ResponseWriter, r *http.Request) {
 	// default-src 'none' with no script at all.
 	w.Header().Set("Content-Security-Policy",
 		"default-src 'none'; style-src 'self' 'unsafe-inline'; "+
-			"img-src 'self' data:; connect-src 'self'; "+
+			"img-src 'self' data:; font-src 'self'; connect-src 'self'; "+
 			"script-src 'nonce-"+n+"'; form-action 'self'; "+
 			"frame-ancestors 'none'; base-uri 'none'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
