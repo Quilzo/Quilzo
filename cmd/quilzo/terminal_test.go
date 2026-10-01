@@ -4,6 +4,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -78,5 +79,21 @@ func TestAValuePrintedInsideALineStaysOnIt(t *testing.T) {
 	}
 	if onOneLine("an ordinary sentence, with a tab\there") != "an ordinary sentence, with a tab\there" {
 		t.Error("an ordinary value was changed")
+	}
+}
+
+// A rendered page written to a file is the page, byte for byte. Only a
+// person's terminal gets the control characters made visible.
+func TestARenderedPageIsWrittenExactlyWhenItIsNotForAPerson(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := "<p>a\x1b]0;owned\x07 page</p>\n"
+	writeRendered(f, page)
+	f.Close()
+	got, _ := os.ReadFile(f.Name())
+	if string(got) != page {
+		t.Errorf("written to a file the page became %q", got)
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"github.com/quilzo/quilzo/internal/egress"
 	"github.com/quilzo/quilzo/internal/ext"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -1716,8 +1717,24 @@ func cmdRender(root string, args []string) error {
 		fmt.Printf("wrote %s\n", onOneLine(*out))
 		return nil
 	}
-	fmt.Print(html)
+	writeRendered(os.Stdout, html)
 	return nil
+}
+
+// writeRendered prints a rendered page: exactly, when it is going to a file
+// or a pipe, and with control characters made visible when a person is
+// reading it in a terminal.
+//
+// The page is HTML, so the template engine has escaped everything that means
+// something to a browser. It has not escaped what means something to a
+// terminal, because a browser never sees one: an escape sequence in a page
+// somebody else wrote would otherwise run in the terminal of whoever
+// previewed it.
+func writeRendered(out *os.File, html string) {
+	if fi, err := out.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+		html = forTerminal(html)
+	}
+	_, _ = io.WriteString(out, html)
 }
 
 func cmdAudit(args []string) error {
@@ -1762,7 +1779,7 @@ func printA11y(reports []*a11y.Report) {
 		if len(r.Findings) == 0 {
 			continue
 		}
-		fmt.Printf("\n  %s%s%s\n", bold, r.Page, reset)
+		fmt.Printf("\n  %s%s%s\n", bold, onOneLine(r.Page), reset)
 		for _, f := range r.Findings {
 			colour := yellow
 			if f.Severity == a11y.Blocking {
