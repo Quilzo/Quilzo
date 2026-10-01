@@ -51,6 +51,12 @@ func TestTheManifestCarriesWhatMakesItInstallable(t *testing.T) {
 				field, got, want)
 		}
 	}
+	// Installed, it draws its own title bar, and falls back to an ordinary
+	// window where that is not possible.
+	if o, _ := doc["display_override"].([]any); len(o) != 2 ||
+		o[0] != "window-controls-overlay" || o[1] != "standalone" {
+		t.Errorf("display_override is %v", doc["display_override"])
+	}
 	if name, _ := doc["name"].(string); name == "" {
 		t.Error("no name, so the launcher entry has nothing to say")
 	}

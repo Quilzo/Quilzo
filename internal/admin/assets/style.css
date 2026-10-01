@@ -2225,3 +2225,17 @@ th[scope="row"] { font-weight: 500; }
 .legend { list-style: none; padding: 0; margin: .5rem 0 1rem; display: flex;
   flex-wrap: wrap; gap: .5rem 1.5rem; font: var(--body-md); color: var(--on-surface-variant); }
 .legend .wf-word { margin-right: .35rem; }
+
+/* Installed as an app, the bar becomes the window's title bar: the window's
+   own buttons sit over its far end, it can be dragged to move the window,
+   and everything in it that does something stays clickable. The titlebar
+   variables are the area the platform leaves free, so nothing of ours goes
+   under its buttons. */
+@media (display-mode: window-controls-overlay) {
+  .bar { -webkit-app-region: drag; app-region: drag; padding-top: .25rem; padding-bottom: .25rem; }
+  .bar-inner { min-height: env(titlebar-area-height, 40px);
+    padding-left: env(titlebar-area-x, 0px);
+    padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)); }
+  .bar a, .bar button, .bar input, .bar form, .bar [popover] {
+    -webkit-app-region: no-drag; app-region: no-drag; }
+}
