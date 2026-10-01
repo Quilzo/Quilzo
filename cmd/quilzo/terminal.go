@@ -58,7 +58,9 @@ func forTerminal(s string) string {
 // value start a line of its own, and a line of this program's output is
 // read as this program speaking.
 func onOneLine(s string) string {
+	// forTerminal first, because it keeps a newline on purpose; the line
+	// breaks are replaced last so that nothing after this can put one back.
+	s = forTerminal(s)
 	s = strings.ReplaceAll(s, "\r", " ")
-	s = strings.ReplaceAll(s, "\n", " ")
-	return forTerminal(s)
+	return strings.ReplaceAll(s, "\n", " ")
 }

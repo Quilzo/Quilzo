@@ -265,7 +265,7 @@ having fixed anything.
 
 ## `go/url-redirection-from-remote-source` — the note handlers
 
-**Not dismissed, and since changed in code.** Seven alerts by the end of
+**Fixed in code, and closed by the analyser** on 30 September 2026. Seven alerts by the end of
 September 2026 (#51–#56 and #58): the two note handlers, `/sidebar`, `/theme`,
 two in `checked.go` and one in `mediafocus.go`, all the same call.
 
@@ -364,8 +364,17 @@ in it starts a new line that reads as the program speaking, and an escape
 sequence can rewrite lines already printed. The excerpt beside it was already
 passed through `forTerminal`; the detail was not.
 
-All three now go through `onOneLine`, which replaces line breaks and then
-applies `forTerminal`. The first two could not have carried anything — one is
+All three now go through `onOneLine`, which applies `forTerminal` and then
+replaces line breaks. The order matters: the first version replaced the breaks
+first, and the analyser closed one alert and kept two, because `forTerminal`
+deliberately keeps a newline and so ran after the step that removed them.
+
+#38 was not the file name. It was the rendered page itself, printed by
+`quilzo preview`. That output is the page, so it cannot be put on one line; it
+now goes through `writeRendered`, which writes it exactly to a file or a pipe
+and makes control characters visible only when a person is reading it in a
+terminal. An escape sequence in a page somebody else wrote was otherwise able
+to act on the terminal of whoever previewed it. The first two could not have carried anything — one is
 a hash and the other is the operator's own argument — and are changed anyway,
 because a rule that every value printed inside a line is cleaned is easier to
 keep than a list of the ones that did not need it.
