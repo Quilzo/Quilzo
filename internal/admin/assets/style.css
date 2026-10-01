@@ -2021,3 +2021,160 @@ ol.thread .who { display: block; font: var(--label-md); font-weight: 700; margin
 }
 .mark .mark-loop { fill: var(--mark-loop); }
 .mark .mark-tick { fill: var(--mark-tick); }
+
+/* =========================================================================
+   The October 2026 refresh.
+
+   Brought in line with what Chrome's own pages became in the "WebUI
+   Refresh 2026": sentence case everywhere, regular-weight headings, content
+   in rounded tonal blocks rather than boxed in rules, the account as a round
+   button, and search as a pill. The aim is that an operator moving between
+   a Chrome tab and this one does not feel the change of program.
+
+   Written as one block after everything it adjusts, so the whole of the
+   change can be read, and reverted, in one place.
+   ========================================================================= */
+
+/* Type. Google's apps carry hierarchy in size, not weight: page titles are
+   regular, section titles medium. Bold headings were the loudest thing on
+   every screen. */
+h1 { font: var(--headline-md); font-weight: 400; letter-spacing: 0;
+     margin: 1.5rem 0 .75rem; }
+h2 { font: var(--title-lg); font-weight: 400; letter-spacing: 0; }
+h3 { font: var(--title-md); font-weight: 500; }
+.brand { font-weight: 500; letter-spacing: 0; }
+button, .btn { font-weight: 500; letter-spacing: .01em; }
+strong, b { font-weight: 600; }
+
+/* Sentence case. Capitals tracked out read as shouting and are slower to
+   read; Chrome dropped them from its pages, and so does this. */
+thead th, .navgroup > summary > h2, .wf-word, .chip, .sev, .badge,
+.fix > :first-child, .stats-row dt, table caption {
+  text-transform: none; letter-spacing: 0;
+}
+
+/* The bar: the page's own colour, no rule under it, the account at the
+   far right. */
+.bar { background: var(--surface); border-bottom: 0; padding: .5rem 1.25rem;
+       margin-bottom: .5rem; }
+.bar-inner { max-width: none; align-items: center; }
+.prefs { gap: .5rem; }
+
+/* Search as the omnibox is drawn: a full-radius field on a tinted fill,
+   with the shortcut written inside it. */
+.findbar { flex: 0 1 34rem; position: relative; }
+.findbar input { height: 48px; min-height: 48px; padding: 0 5.5rem 0 1.25rem;
+  border: 0; background: var(--surface-container-high); font: var(--body-lg); }
+.findbar input:focus-visible { outline: 2px solid var(--primary); outline-offset: 0;
+  background: var(--surface-container-lowest); }
+.findbar > button[type=submit] { display: none; }
+.palette-open { position: absolute; right: .4rem; top: 50%; translate: 0 -50%;
+  min-height: 36px; height: 36px; padding: 0 .6rem; border: 0;
+  background: transparent; color: var(--on-surface-variant); }
+.palette-open:hover { background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
+.palette-open kbd { font: var(--label-md); font-family: var(--font);
+  border: 1px solid var(--outline-variant); border-radius: var(--shape-xs);
+  padding: .05rem .35rem; }
+
+/* The account: a round initial, and a menu that opens under it. */
+.account { min-height: 40px; width: 40px; height: 40px; padding: 0;
+  border-radius: var(--shape-full); background: transparent; }
+.account:hover { background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
+.avatar { display: inline-grid; place-items: center; width: 32px; height: 32px;
+  border-radius: var(--shape-full); background: var(--primary); color: var(--on-primary);
+  font: var(--title-sm); font-weight: 500; }
+.avatar-lg { width: 40px; height: 40px; font: var(--title-md); flex: none; }
+.menu { margin: 0; inset: auto; top: 3.75rem; right: 1rem; position: fixed;
+  min-width: 16rem; padding: .5rem; border: 0; border-radius: var(--shape-lg);
+  background: var(--surface-container); color: var(--on-surface);
+  box-shadow: 0 2px 6px rgb(0 0 0 / .15), 0 8px 24px rgb(0 0 0 / .12); }
+.menu:popover-open { display: grid; gap: .15rem; }
+.menu a { display: flex; align-items: center; min-height: 40px; padding: 0 .9rem;
+  border-radius: var(--shape-full); color: var(--on-surface); text-decoration: none;
+  font: var(--label-lg); }
+.menu a:hover { background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
+.menu-who { display: flex; gap: .75rem; align-items: center; margin: .25rem .5rem .5rem;
+  padding-bottom: .75rem; border-bottom: 1px solid var(--outline-variant); }
+
+/* The navigation: group names in sentence case and medium weight, no rule
+   under each; the current screen a tinted pill, as in Chrome's settings. */
+.navgroup > summary { border-bottom: 0; padding: 0 .75rem; margin: .25rem 0 0; }
+.navgroup > summary > h2 { font: var(--title-sm); font-weight: 500;
+  color: var(--on-surface-variant); }
+.navgroup:has([aria-current="page"]) > summary { border-bottom: 0; }
+.sidenav .nav a, .navgroups .nav a { font-weight: 400; min-height: 40px; }
+.nav a[aria-current="page"] { font-weight: 500; background: var(--secondary-container);
+  color: var(--on-secondary-container); }
+
+/* Tables as a block: white on the tinted page, no outer rule, rows
+   separated by a hairline, a header that is a label and not a banner. */
+.table-wrap { border: 0; border-radius: var(--shape-lg-inc);
+  background: var(--surface-container-lowest); }
+thead th { font: var(--label-lg); font-weight: 500; background: transparent;
+  color: var(--on-surface-variant); border-bottom: 1px solid var(--outline-variant); }
+th, td { padding: .7rem 1rem; }
+tbody tr:hover { background: var(--surface-container); }
+td .danger, td button.danger { min-height: 36px; padding: 0 .9rem;
+  background: transparent; color: var(--error); }
+td .danger:hover, td button.danger:hover { background: var(--error-container);
+  color: var(--on-error-container); }
+
+/* Notices as tonal blocks, without the heavy bar down the left. */
+.notice { border: 0; border-radius: var(--shape-lg); padding: .85rem 1.1rem;
+  background: var(--surface-container); }
+.notice.ok, .notice.bad, .notice.warn { border: 0; }
+
+/* Chips: a rounded label in sentence case. */
+.wf-word { border-radius: var(--shape-sm); padding: .05rem .55rem; font-weight: 500; }
+
+/* A command to run is not a success: neutral, monospaced. */
+.fix code { background: var(--surface-container-high); color: var(--on-surface); }
+
+/* The command palette. */
+.palette { width: min(40rem, calc(100vw - 2rem)); margin: 12vh auto auto;
+  padding: .5rem; border: 0; border-radius: var(--shape-xl);
+  background: var(--surface-container-lowest); color: var(--on-surface);
+  box-shadow: 0 4px 12px rgb(0 0 0 / .18), 0 16px 48px rgb(0 0 0 / .18); }
+.palette::backdrop { background: var(--scrim); }
+.palette input { width: 100%; box-sizing: border-box; height: 52px; padding: 0 1rem;
+  border: 0; border-radius: var(--shape-lg); background: var(--surface-container-high);
+  color: var(--on-surface); font: var(--body-lg); }
+.palette input:focus-visible { outline: 2px solid var(--primary); outline-offset: 0; }
+.palette ul { list-style: none; margin: .5rem 0 0; padding: 0; max-height: 50vh;
+  overflow-y: auto; }
+.palette li { display: flex; justify-content: space-between; gap: 1rem;
+  align-items: center; min-height: 44px; padding: 0 1rem;
+  border-radius: var(--shape-md); cursor: pointer; }
+.palette li[aria-selected="true"] { background: var(--secondary-container);
+  color: var(--on-secondary-container); }
+.palette-name { font: var(--body-lg); }
+.palette-where { font: var(--body-sm); color: var(--on-surface-variant); }
+.palette li[aria-selected="true"] .palette-where { color: inherit; }
+.palette-hint { margin: .5rem 1rem .25rem; font: var(--body-sm);
+  color: var(--on-surface-variant); }
+
+/* Moving between screens is a cross-fade, as Chrome's own pages do, and
+   nothing at all for anybody who has asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition { navigation: auto; }
+  ::view-transition-old(root), ::view-transition-new(root) {
+    animation-duration: 160ms;
+  }
+}
+
+/* The last of the capitals: severity pills, field labels, contents
+   headings. Weight comes down with them, since the capitals were what the
+   heavy weight was compensating for. */
+.pill, .label, .toc h3, .agmap .head {
+  text-transform: none; letter-spacing: 0; font-weight: 500;
+}
+.agmap .head { font-weight: 600; }
+.palette-open kbd { white-space: nowrap; }
+.finding h3 .pill, .counts .pill { text-transform: capitalize; }
+.findbar .palette-open { width: auto; border: 0; background: transparent; }
+th[scope="row"] { font-weight: 500; }
+/* The phone menu as a list, as Chrome's own menus are, not a cloud of pills. */
+@media (max-width: 59.99rem) {
+  .sidenav .nav { flex-direction: column; align-items: stretch; gap: .1rem; }
+  .sidenav .nav a { width: 100%; box-sizing: border-box; }
+}

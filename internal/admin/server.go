@@ -736,6 +736,24 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	// the check on return is the one that matters either way.
 	data["Here"] = safeLocalPath(r.URL.Path, r.URL.RawQuery)
 
+	// The interface's one script, allowed by a nonce that is this response's
+	// alone. It adds what a browser cannot do on its own — the command
+	// palette, keyboard shortcuts — and every screen still works without it.
+	// A page that set its own policy (the passkey screens, which carry a
+	// script of their own) keeps it, and its nonce covers this script too.
+	h := w.Header()
+	if csp := h.Get("Content-Security-Policy"); !strings.Contains(csp, "script-src") {
+		if n, err := nonce(); err == nil {
+			if _, set := data["Nonce"]; !set {
+				data["Nonce"] = n
+			}
+			h.Set("Content-Security-Policy", csp+"; script-src 'nonce-"+n+"'")
+		}
+	}
+	if p, ok := data["Principal"].(principal); ok {
+		data["Initial"] = initialOf(p.Name)
+	}
+
 	// The documentation link for the screen being rendered, so the footer link
 	// means "help with this" rather than "help".
 	//
@@ -760,6 +778,12 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 		data["NavGroups"] = s.navigation(r, p, navKey)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// A status other than 200 is passed in rather than written by the
+	// handler first: once a status is written the headers are sent, and the
+	// policy above, which lets this page's script run, would be lost.
+	if st, ok := data["Status"].(int); ok && st != 0 {
+		w.WriteHeader(st)
+	}
 	if err := s.tpl.ExecuteTemplate(w, name, data); err != nil {
 		// The status is already sent by now, so this can only be logged, not
 		// turned into a clean error page.
@@ -1179,6 +1203,7 @@ func (s *Server) Handler() http.Handler {
 	// answering for documentation it no longer has and make a dead external
 	// site look like a broken admin.
 	mux.HandleFunc("/style.css", s.handleCSS)
+	mux.HandleFunc("/admin.js", s.handleJS)
 	return securityHeaders(s.signedFlash(sameSiteOnly(limitBody(s.readOnlyTokens(mux)))))
 }
 
@@ -1417,6 +1442,18 @@ func (s *Server) handleCSS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = w.Write(b)
+}
+
+// handleJS serves the interface's one script. See assets/admin.js.
+func (s *Server) handleJS(w http.ResponseWriter, r *http.Request) {
+	b, err := assets.ReadFile("assets/admin.js")
+	if err != nil {
+		http.Error(w, "missing script", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	_, _ = w.Write(b)
 }
@@ -3200,4 +3237,13 @@ func plural(n int) string {
 		return ""
 	}
 	return "s"
+}
+
+// initialOf is what the account button shows: the first letter of a name,
+// in capitals.
+func initialOf(name string) string {
+	for _, r := range name {
+		return strings.ToUpper(string(r))
+	}
+	return "?"
 }

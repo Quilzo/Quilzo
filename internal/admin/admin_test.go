@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"regexp"
 	"github.com/quilzo/quilzo/internal/render"
 	"net/http"
 	"net/http/httptest"
@@ -177,14 +178,23 @@ func TestSignInHasNoPuzzle(t *testing.T) {
 	}
 }
 
+// The admin's only script is its own file, by nonce. Since October 2026 the
+// interface carries one first-party script, for the command palette and
+// shortcuts; it is never inline and every screen works without it.
 func TestNoScriptAnywhere(t *testing.T) {
 	srv, token := setup(t)
+	tag := regexp.MustCompile(`(?i)<script\b[^>]*>`)
 	for _, path := range []string{
 		"/", "/page/index", "/review", "/access", "/provenance", "/history",
 	} {
 		body := get(t, srv, path, token).Body.String()
-		if strings.Contains(strings.ToLower(body), "<script") {
-			t.Errorf("%s contains a script tag; the admin works without scripting", path)
+		for _, s := range tag.FindAllString(body, -1) {
+			if !strings.Contains(s, `src="/admin.js"`) || !strings.Contains(s, `nonce="`) {
+				t.Errorf("%s carries a script other than its own: %s", path, s)
+			}
+		}
+		if strings.Contains(strings.ToLower(body), "<script>") {
+			t.Errorf("%s contains an inline script", path)
 		}
 		if strings.Contains(body, "onclick=") || strings.Contains(body, "onload=") {
 			t.Errorf("%s uses an inline event handler", path)

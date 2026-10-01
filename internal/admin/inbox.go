@@ -209,9 +209,8 @@ func (s *Server) handleInboxAct(w http.ResponseWriter, r *http.Request) {
 		text := r.FormValue("text")
 		if err := s.Inbox.Reply(c.Assistant, c.ID, p.Name, text); err != nil {
 			// What they wrote is given back, so a refusal does not lose it.
-			w.WriteHeader(http.StatusUnprocessableEntity)
 			s.showConversation(w, r, p, c, map[string]any{"Error": err.Error(),
-				"Draft": text})
+				"Draft": text, "Status": http.StatusUnprocessableEntity})
 			return
 		}
 		s.audit("handoff.reply", "/ask/"+c.Assistant,

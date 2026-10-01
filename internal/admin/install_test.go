@@ -247,10 +247,12 @@ func TestTheEditorShowsThePageBesideTheForm(t *testing.T) {
 		t.Errorf("frame-ancestors is no longer 'none', so this interface can "+
 			"be framed by another origin:\n  %s", csp)
 	}
-	// Still no script, which is the claim the whole policy makes.
+	// No script but the interface's own, by nonce: nothing inline, nothing
+	// from anywhere else.
 	if !strings.Contains(csp, "default-src 'none'") ||
-		strings.Contains(csp, "script-src") {
-		t.Errorf("the policy grew a script directive:\n  %s", csp)
+		(strings.Contains(csp, "script-src") && !strings.Contains(csp, "script-src 'nonce-")) ||
+		strings.Contains(csp, "unsafe-") {
+		t.Errorf("the policy allows script beyond the interface's own:\n  %s", csp)
 	}
 }
 

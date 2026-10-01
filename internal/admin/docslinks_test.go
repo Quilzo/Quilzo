@@ -170,6 +170,7 @@ var notADestination = map[string]string{
 	"/signin":    "reached when not signed in",
 	"/signout":   "a form target",
 	"/style.css": "a stylesheet",
+	"/admin.js":  "the interface's script, fetched by every page's head",
 	"/manifest.webmanifest": "the install manifest, linked from every page's " +
 		"head and opened by the browser rather than by a person",
 	"/icon.svg": "the mark, fetched as a favicon and as the installed " +

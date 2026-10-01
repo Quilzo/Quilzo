@@ -362,7 +362,9 @@ func newNonce() (string, error) {
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", err
 	}
-	return base64.RawStdEncoding.EncodeToString(b[:]), nil
+	// URL-safe, so the value is the same in the header and in the
+	// attribute, where html/template would escape a "+" or a "/".
+	return base64.RawURLEncoding.EncodeToString(b[:]), nil
 }
 
 var (
