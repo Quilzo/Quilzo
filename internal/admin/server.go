@@ -2052,10 +2052,10 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Reading the posture means reading the access policy, the token store and
-	// the audit log. That is administrator information, and gating it on
-	// ActManageAccess rather than ActView is the least-privilege reading: a
-	// list of exactly where the defences are thin is a target list.
-	if !s.can(w, r, p, auth.ActGrant, auth.AreaCompliance) {
+	// the audit log: a list of exactly where the defences are thin is a
+	// target list. It is a guarded area, so only an administrator over the
+	// site, or somebody granted the area itself, reaches it.
+	if !s.can(w, r, p, auth.ActView, auth.AreaCompliance) {
 		return
 	}
 	if s.Posture == nil {
@@ -2136,7 +2136,7 @@ func (s *Server) handleRules(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActGrant, auth.AreaCompliance) {
+	if !s.can(w, r, p, auth.ActView, auth.AreaCompliance) {
 		return
 	}
 	s.render(w, r, "rules.html", map[string]any{
@@ -2155,7 +2155,7 @@ func (s *Server) handleRule(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActGrant, auth.AreaCompliance) {
+	if !s.can(w, r, p, auth.ActView, auth.AreaCompliance) {
 		return
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/security/rule/")

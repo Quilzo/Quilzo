@@ -241,6 +241,10 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 			s.peopleBack(w, r, "That job cannot be granted like that: a job is never a deny.")
 			return
 		}
+		if job.Ends && expires == 0 {
+			s.peopleBack(w, r, "An "+job.Name+"'s access has to end by itself: choose the day in Until.")
+			return
+		}
 		bindings = nil
 		for _, jb := range job.Bindings {
 			b := base

@@ -107,8 +107,9 @@ var destinations = []destination{
 	{"decentralised", "Permanent web", "/decentralised", "Release", "ipfs", auth.ActView},
 
 	{"provenance", "Provenance", "/provenance", "Assurance", "provenance", auth.ActView},
-	{"security", "Security", "/security", "Assurance", "security", auth.ActGrant},
-	{"logs", "Log", "/logs", "Assurance", "logging", auth.ActGrant},
+	// Reading, on guarded areas: see auth's guardedAreas.
+	{"security", "Security", "/security", "Assurance", "security", auth.ActView},
+	{"logs", "Log", "/logs", "Assurance", "logging", auth.ActView},
 
 	// The working half of security: the queue, and the events it is raised
 	// from. Apart from Assurance, which is evidence that the system is right;
