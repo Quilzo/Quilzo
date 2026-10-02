@@ -347,3 +347,42 @@ func TestASignInsSignalsAreASet(t *testing.T) {
 		}
 	}
 }
+
+// The history says what happened to the sign-in, and when two rules hold
+// the same one, the second names the first rather than claiming it too.
+func TestTheHistorySaysWhichRuleHeldTheSignIn(t *testing.T) {
+	e, _ := engine(t)
+	for _, tpl := range []Rule{Templates[0], Templates[1]} {
+		tpl.Enabled = true
+		if _, err := e.Save(tpl, "boss"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ev := travelEvent("ada")
+	ev.Fields["risk"] = "high"
+	out, err := e.Handle(ev)
+	if err != nil || len(out.Runs) != 2 {
+		t.Fatalf("runs %+v, %v", out.Runs, err)
+	}
+	first, second := out.Runs[0].Steps[0], out.Runs[1].Steps[0]
+	if first.Said != "held this sign-in until it is confirmed" {
+		t.Errorf("the first rule said %q", first.Said)
+	}
+	if second.Said != "already held by "+out.Runs[0].Name {
+		t.Errorf("the second rule said %q", second.Said)
+	}
+}
+
+// The builder offers comparisons in OpOrder, so it must hold every one.
+func TestEveryComparisonIsOffered(t *testing.T) {
+	seen := map[string]bool{}
+	for _, op := range OpOrder {
+		if _, ok := Ops[op]; !ok || seen[op] {
+			t.Errorf("%q is in OpOrder twice or is not a comparison", op)
+		}
+		seen[op] = true
+	}
+	if len(seen) != len(Ops) || OpOrder[0] != "is" {
+		t.Errorf("OpOrder %v does not offer every one of %d comparisons, \"is\" first", OpOrder, len(Ops))
+	}
+}

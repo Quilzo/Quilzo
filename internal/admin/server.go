@@ -1582,7 +1582,12 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 			s.tooManyAttempts(w, r, tdec)
 			return principal{}, false
 		}
-		if s.Throttle != nil {
+		// Only a credential that was presented and refused is a failure.
+		// A request with none guessed nothing — and every browser makes one
+		// on the sign-in page, asking for /favicon.ico, which lands here.
+		// Counted, five colleagues signing in behind one office address
+		// were enough to throttle everybody there.
+		if s.Throttle != nil && !errors.Is(err, errNoCredential) {
 			d, alert := s.Throttle.Fail(sub)
 			if alert && s.OnAuthFailure != nil {
 				s.OnAuthFailure(sub.Source, d.Failures)

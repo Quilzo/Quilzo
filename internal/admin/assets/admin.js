@@ -4,7 +4,7 @@
 // because a browser that blocks it, a policy that forbids it, or a person who
 // disabled scripts should lose speed, not features.
 //
-// It does three things:
+// It does these things:
 //
 //   * a command palette, opened with Ctrl+K (⌘K on a Mac) or the button in
 //     the search box, which jumps to any screen in the navigation by typing
@@ -16,7 +16,8 @@
 //     it still works;
 //   * on the rail, pointing at a section opens its flyout after a moment
 //     and moving away closes it, as Gmail's does. Clicking, Enter and
-//     Escape work without the script; this only adds the pointer.
+//     Escape work without the script; this only adds the pointer;
+//   * a menu longer than the window opens scrolled to the current screen.
 //
 // The palette is a native <dialog> with the ARIA combobox pattern: the
 // input owns a listbox, arrow keys move the active option, Enter opens it,
@@ -302,6 +303,19 @@
     el.addEventListener("click", tipHide);
   });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") tipHide(); });
+
+  // The current screen's item, in view. A menu longer than the window
+  // scrolls inside itself, and a screen low in it — Automations, Sign-ins —
+  // opened with its own item below the fold. Only the menu moves, never the
+  // page, and only when the item is not already showing.
+  var navbox = document.querySelector(".sidenav > .navgroups");
+  var here = navbox && navbox.querySelector('a[aria-current="page"]');
+  if (here && navbox.scrollHeight > navbox.clientHeight) {
+    var nb = navbox.getBoundingClientRect(), hb = here.getBoundingClientRect();
+    if (hb.bottom > nb.bottom || hb.top < nb.top) {
+      navbox.scrollTop += hb.top - nb.top - (nb.height - hb.height) / 2;
+    }
+  }
 
   // The shortcut, shown where people look for search, in their platform's
   // spelling. Only once the script is running, since it is what makes it work.

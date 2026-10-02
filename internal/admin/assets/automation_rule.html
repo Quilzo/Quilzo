@@ -16,7 +16,7 @@
     <p class="hint">Every line must hold. Leave a line's field empty to leave it out. A field belongs to one kind of event; the rule is checked when you save.</p>
     {{range $i, $c := .Conds}}<div class="row auto-row">
       <label>Field <select name="field{{$i}}"><option value="">—</option>{{range $.Fields}}<option value="{{.Kind}}:{{.Name}}"{{if and (eq .Name $c.Field) (eq .Kind $.Rule.When)}} selected{{end}}>{{.Kind}}: {{.Name}}</option>{{end}}</select></label>
-      <label>Compare <select name="op{{$i}}">{{range $k, $v := $.Ops}}<option value="{{$k}}"{{if eq $k $c.Op}} selected{{end}}>{{$v}}</option>{{end}}</select></label>
+      <label>Compare <select name="op{{$i}}">{{range $.OpOrder}}<option value="{{.}}"{{if eq . $c.Op}} selected{{end}}>{{index $.Ops .}}</option>{{end}}</select></label>
       <label>Value <input name="value{{$i}}" value="{{$c.Value}}"></label>
     </div>{{end}}
   </fieldset>
@@ -31,9 +31,12 @@
   </fieldset>
 
   <fieldset><legend>How</legend>
-    {{range $k, $v := .Modes}}<label class="check"><input type="radio" name="mode" value="{{$k}}"{{if eq $k $.Rule.Mode}} checked{{end}}> {{$v}}</label>{{end}}
-    <div class="field"><label for="per_hour">At most this many times an hour (then it watches)</label>
-      <input id="per_hour" name="per_hour" type="number" min="0" value="{{.Rule.PerHour}}"></div>
+    <p><label><input type="radio" name="mode" value="watch"{{if eq .Rule.Mode "watch"}} checked{{end}}> <strong>Watch</strong> <span class="hint">record what it would have done, and do nothing</span></label></p>
+    <p><label><input type="radio" name="mode" value="ask"{{if eq .Rule.Mode "ask"}} checked{{end}}> <strong>Ask first</strong> <span class="hint">wait here for a person to approve</span></label></p>
+    <p><label><input type="radio" name="mode" value="act"{{if eq .Rule.Mode "act"}} checked{{end}}> <strong>Act</strong> <span class="hint">do it at once</span></label></p>
+    <div class="field"><label for="per_hour">At most this many times an hour</label>
+      <input id="per_hour" name="per_hour" type="number" min="1" inputmode="numeric" placeholder="{{.DefaultPerHour}}" value="{{if .Rule.PerHour}}{{.Rule.PerHour}}{{end}}" aria-describedby="per_hour_hint">
+      <p class="hint" id="per_hour_hint">Past it, the rule only watches until the hour is out, so one noisy source cannot act on everybody. {{.DefaultPerHour}} if left empty.</p></div>
   </fieldset>
   <button type="submit">Save</button>
 </form>{{end}}

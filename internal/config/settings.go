@@ -1005,6 +1005,29 @@ func (s Setting) Validate(v string) error {
 				}
 			}
 		}
+		if s.Key == "security.contact" {
+			// URIs, as RFC 9116 requires. A bare address was accepted and
+			// published as a Contact line no scanner can use, and the
+			// automations that mail the security team read only mailto:,
+			// so it also quietly told nobody.
+			for _, c := range strings.Split(v, ",") {
+				c = strings.TrimSpace(c)
+				if c == "" {
+					continue
+				}
+				scheme, rest, _ := strings.Cut(c, ":")
+				switch strings.ToLower(scheme) {
+				case "mailto", "https", "tel":
+				default:
+					return fmt.Errorf("%q is not a mailto:, https: or tel: "+
+						"URI; for an address, give mailto:%s", c, c)
+				}
+				if strings.TrimSpace(rest) == "" {
+					return fmt.Errorf("%q says how to reach somebody but "+
+						"not who", c)
+				}
+			}
+		}
 		if s.Key == "site.base_url" && v != "" {
 			// http or https, absolute, with a host. This is published in a
 			// sitemap and in robots.txt, so a value nobody can fetch is a

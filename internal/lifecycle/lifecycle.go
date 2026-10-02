@@ -268,7 +268,11 @@ func Words(d time.Duration) string {
 	if days < 0 {
 		return "not out yet"
 	}
-	years, months := days/365, (days%365)/30
+	// Whole months, counted from the total. Counting from the remainder of
+	// the year in thirty-day months said "4 years 12 months" for the last
+	// five days of every year.
+	total := days * 12 / 365
+	years, months := total/12, total%12
 	plural := func(n int, w string) string {
 		if n == 1 {
 			return fmt.Sprintf("1 %s", w)

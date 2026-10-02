@@ -451,7 +451,7 @@ func (s *Server) handleSignIns(w http.ResponseWriter, r *http.Request) {
 	for _, t := range s.Tokens.Snapshot() {
 		if t.StepUp != "" && !t.Revoked && (t.ExpiresAt == 0 || now.Unix() < t.ExpiresAt) {
 			waiting = append(waiting, waitingRow{Person: t.Principal, Session: t.ID, Reason: t.StepUp,
-				Since: time.Unix(t.CreatedAt, 0).Format("2 Jan 15:04")})
+				Since: time.Unix(t.CreatedAt, 0).UTC().Format("2 Jan 15:04")})
 		}
 	}
 	data["Waiting"] = waiting
@@ -718,7 +718,7 @@ func (s *Server) handleAutomationRule(w http.ResponseWriter, r *http.Request) {
 	copy(steps, rule.Then)
 	s.render(w, r, "automation_rule.html", map[string]any{
 		"Title": "Automation", "Nav": "automations", "Principal": p, "Rule": rule,
-		"Kinds": kinds, "KindNames": automate.KindNames, "Fields": fields, "Ops": automate.Ops,
+		"Kinds": kinds, "KindNames": automate.KindNames, "Fields": fields, "Ops": automate.Ops, "OpOrder": automate.OpOrder, "DefaultPerHour": automate.DefaultPerHour,
 		"Actions": acts, "Conds": conds, "Steps": steps, "Modes": automate.Modes,
 		"Error": r.URL.Query().Get("e"),
 	})

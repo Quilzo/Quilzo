@@ -6,13 +6,13 @@
 
 <h2>Waiting to confirm it is them</h2>
 <p class="hint">They see <a href="/signin/verify">Confirm it's you</a> until they prove it with a passkey or a code, or you let them in.</p>
-{{if .Waiting}}<div class="table-wrap"><table>
-  <thead><tr><th scope="col">Person</th><th scope="col">Why</th><th scope="col">Since</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
-  <tbody>{{range .Waiting}}<tr><th scope="row">{{.Person}}</th><td>{{.Reason}}</td><td>{{.Since}}</td>
-    <td class="row-actions"><form method="post" action="/security/signins/act"><input type="hidden" name="session" value="{{.Session}}">
-      <button type="submit" name="do" value="letin" class="btn-tonal">Let them in<span class="visually-hidden"> {{.Person}}</span></button>
-      <button type="submit" name="do" value="signout" class="btn-outlined">Sign them out<span class="visually-hidden"> {{.Person}}</span></button></form></td></tr>{{end}}</tbody>
-</table></div>{{else}}<p>Nobody is waiting.</p>{{end}}
+{{if .Waiting}}<ul class="auto-list">{{range .Waiting}}<li class="auto-card waiting">
+  <div class="auto-head"><span class="wf-band warning"><span class="wf-icon">{{icon "error"}}</span>Waiting</span><strong>{{.Person}}</strong><span class="hint">since {{.Since}}</span></div>
+  <p>{{.Reason}}</p>
+  <form method="post" action="/security/signins/act" class="actions"><input type="hidden" name="session" value="{{.Session}}">
+    <button type="submit" name="do" value="letin" class="btn-tonal">Let them in<span class="visually-hidden"> {{.Person}}</span></button>
+    <button type="submit" name="do" value="signout" class="btn-outlined">Sign them out<span class="visually-hidden"> {{.Person}}</span></button></form>
+</li>{{end}}</ul>{{else}}<p>Nobody is waiting.</p>{{end}}
 
 <h2>Recent</h2>
 {{if .NoHistory}}<p class="notice bad">{{.NoHistory}}</p>{{else if .Rows}}<div class="table-wrap"><table>

@@ -86,6 +86,9 @@ var Ops = map[string]string{
 	"at-least": "is at least", "at-most": "is at most", "contains": "contains",
 }
 
+// OpOrder is Ops in the order a person reads them, "is" first.
+var OpOrder = []string{"is", "is-not", "one-of", "not-one-of", "at-least", "at-most", "contains"}
+
 // Condition is one comparison.
 type Condition struct {
 	Field string `json:"field"`
@@ -596,7 +599,13 @@ func (e *Engine) Handle(ev Event) (Outcome, error) {
 				case mode == "ask":
 					sr.Said = "waiting for approval: " + a.Does
 				case a.Inline && ev.Kind == "signin":
-					sr.OK, sr.Said = true, a.Does
+					// What happened to this sign-in, not what the action
+					// does in general; and when several rules hold the same
+					// one, the history names the rule that held it first.
+					sr.OK, sr.Said = true, "held this sign-in until it is confirmed"
+					if len(out.Reasons) > 0 {
+						sr.Said = "already held by " + out.Reasons[0]
+					}
 					out.StepUp = true
 					out.Reasons = append(out.Reasons, r.Name)
 				case a.Run == nil:

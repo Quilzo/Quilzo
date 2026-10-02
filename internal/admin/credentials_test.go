@@ -118,3 +118,45 @@ func TestSigningOutDoesNotRevokeALongLivedToken(t *testing.T) {
 			"in with: %d", w.Code)
 	}
 }
+
+// Arriving without a credential is not a failed attempt.
+//
+// Every browser asks for /favicon.ico on the sign-in page, with nothing to
+// present, and that request went through requireAuth and was counted as a
+// failure. Five colleagues signing in from one office address throttled the
+// sixth. A refused credential still counts.
+func TestArrivingWithNothingIsNotAFailure(t *testing.T) {
+	srv, parent := setup(t)
+	srv.Throttle = throttle.New(throttle.Default())
+	from := "198.51.100.9:5555"
+	for i := 0; i < 40; i++ {
+		for _, path := range []string{"/favicon.ico", "/", "/icon.svg"} {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.RemoteAddr = from
+			srv.Handler().ServeHTTP(httptest.NewRecorder(), req)
+		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/signin", strings.NewReader("token="+parent))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.RemoteAddr = from
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if loc := unsigned(w.Header().Get("Location")); strings.Contains(loc, "throttled") {
+		t.Fatalf("a right token was throttled after requests that presented nothing: %s", loc)
+	}
+
+	// A wrong cookie is a guess, and is counted.
+	refused := false
+	for i := 0; i < 25 && !refused; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.AddCookie(&http.Cookie{Name: "quilzo_token", Value: "qz_definitelynotarealtoken"})
+		req.RemoteAddr = from
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		refused = w.Code == http.StatusTooManyRequests
+	}
+	if !refused {
+		t.Error("twenty-five wrong cookies were never throttled")
+	}
+}
