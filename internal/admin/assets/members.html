@@ -27,7 +27,7 @@
         {{if .Disabled}}<button type="submit" name="do" value="enable" class="quiet">Enable<span class="visually-hidden"> {{.Name}}</span></button>
         {{else}}<button type="submit" name="do" value="disable" class="quiet">Disable<span class="visually-hidden"> {{.Name}}</span></button>{{end}}
       </form>
-      <details class="inline-remove"><summary>Remove<span class="visually-hidden"> {{.Name}}</span></summary>
+      <details class="inline-remove"><summary>Remove<span class="visually-hidden"> {{.Name}}</span><span class="chev">{{icon "expand_more"}}</span></summary>
         <form method="post" action="/members/act">
           <input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="do" value="remove">
           <label for="confirm-{{.ID}}">Type <strong>remove</strong> to erase this account {{template "req"}}</label>

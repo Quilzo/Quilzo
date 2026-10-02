@@ -37,7 +37,7 @@
     <td>{{if .Enough}}{{.Quality}}{{else}}<span class="hint">{{.Quality}}</span>{{end}}</td>
     <td>{{if .Last}}{{.Last}}{{else}}<span class="hint">never</span>{{end}}</td>
   </tr>
-  <tr class="dt-more"><td colspan="6"><details><summary>Why, what it misses, and changing it</summary>
+  <tr class="dt-more"><td colspan="6"><details><summary>Why, what it misses, and changing it<span class="chev">{{icon "expand_more"}}</span></summary>
     {{if .Why}}<p><strong>Looks for:</strong> {{.Why}}</p>{{end}}
     {{if .Blind}}<p><strong>Does not catch:</strong> {{.Blind}}</p>{{else}}<p class="hint">Nobody has written down what this rule does not catch.</p>{{end}}
     <p class="hint">Reads {{range $i, $s := .Sources}}{{if $i}}, {{end}}{{$s}}{{end}}{{if .Technique}} · names {{range $i, $t := .Technique}}{{if $i}}, {{end}}{{$t}}{{end}}{{end}}{{if .S.NoisyEntity}} · most of its noise is about <code>{{.S.NoisyEntity}}</code> ({{.S.NoisyCount}}){{end}}</p>

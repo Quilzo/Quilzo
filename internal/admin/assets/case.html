@@ -39,7 +39,7 @@
     <td><span class="wf-word {{.Tone}}">{{.Word}}</span><br><span class="hint">{{.Detail}}</span></td>
     <td class="wf-score">{{if .Timed}}{{.DueText}}
       <svg class="wf-meter" viewBox="0 0 100 8" role="img" aria-label="{{.W}} percent of the time allowed has gone"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.W}}" height="8" rx="4"></rect></svg>{{else}}<span class="hint">{{if .Started}}no deadline{{else}}not running{{end}}</span>{{end}}</td>
-    <td>{{if and .Settle (not $.Closed)}}<details><summary>Settle</summary>
+    <td>{{if and .Settle (not $.Closed)}}<details><summary>Settle<span class="chev">{{icon "expand_more"}}</span></summary>
       <form method="post" action="/security/cases/act">
         <input type="hidden" name="id" value="{{$.I.ID}}"><input type="hidden" name="regime" value="{{.Regime}}">
         <p><label>How it was met, or why it does not apply <input type="text" name="text" required maxlength="500"></label></p>
@@ -81,7 +81,7 @@
     <th scope="row">{{.Title}}<br><span class="hint">{{.Why}}</span>{{if .Undo}}<br><span class="hint">To reverse: {{.Undo}}</span>{{end}}</th>
     <td><span class="wf-word {{.Tone}}">{{.Word}}</span>{{if .By}}<br><span class="hint">{{.By}}, {{.When}}</span>{{end}}{{if .Waits}}<br><span class="hint">after {{.Waits}}</span>{{end}}</td>
     <td>{{if .Note}}{{.Note}}{{end}}
-      {{if and (not $.Closed) (or .CanDo .CanUndo)}}<details><summary>{{if .CanUndo}}Reverse it{{else}}Record it{{end}}</summary>
+      {{if and (not $.Closed) (or .CanDo .CanUndo)}}<details><summary>{{if .CanUndo}}Reverse it{{else}}Record it{{end}}<span class="chev">{{icon "expand_more"}}</span></summary>
       <form method="post" action="/security/cases/act">
         <input type="hidden" name="do" value="step"><input type="hidden" name="id" value="{{$.I.ID}}"><input type="hidden" name="run" value="{{$run.ID}}"><input type="hidden" name="step" value="{{.ID}}">
         <p><label>{{if .CanUndo}}Why it is being reversed{{else if .Evidence}}What was seen{{else}}What was seen, or why it is skipped{{end}} <input type="text" name="text" maxlength="1000"{{if or .CanUndo .Evidence}} required{{end}}></label></p>
@@ -121,7 +121,7 @@
         <p><label>Why it is being undone <input type="text" name="text" required maxlength="300"></label></p>
         <p><button type="submit">Undo it</button></p></form>{{end}}</td>
   </tr>{{end}}</tbody></table></div>{{end}}
-{{range .Offers}}{{if .Targets}}<details class="wf-how"><summary>{{.Title}}</summary>
+{{range .Offers}}{{if .Targets}}<details class="wf-how"><summary>{{.Title}}<span class="chev">{{icon "expand_more"}}</span></summary>
   <p><strong>What it does:</strong> {{.Effect}}</p>
   <p><strong>Putting it back:</strong> {{.Reverts}}</p>
   <form method="post" action="/security/cases/act">

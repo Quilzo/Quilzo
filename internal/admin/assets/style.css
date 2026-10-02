@@ -149,6 +149,23 @@
   --outline: light-dark(var(--nvariant-50), var(--nvariant-60));
   --outline-variant: light-dark(var(--nvariant-80), var(--nvariant-30));
   --scrim: rgb(0 0 0 / 0.32);
+  --shadow: #000;
+  /* The rest of the M3 roles, so a component that names one finds it. */
+  --surface-dim: light-dark(#d3dbe5, #131314);
+  --surface-bright: light-dark(var(--white), #37393b);
+  --inverse-primary: light-dark(var(--primary-80), var(--primary-40));
+  --primary-fixed: var(--primary-90);
+  --primary-fixed-dim: var(--primary-80);
+  --on-primary-fixed: var(--primary-10);
+  --on-primary-fixed-variant: var(--primary-30);
+  --secondary-fixed: var(--secondary-90);
+  --secondary-fixed-dim: var(--secondary-80);
+  --on-secondary-fixed: var(--secondary-10);
+  --on-secondary-fixed-variant: var(--secondary-30);
+  --tertiary-fixed: var(--tertiary-90);
+  --tertiary-fixed-dim: var(--tertiary-80);
+  --on-tertiary-fixed: var(--tertiary-10);
+  --on-tertiary-fixed-variant: var(--tertiary-30);
 
   /* -- shape scale ----------------------------------------------------------
      The M3 corner radius steps, in full. `large-increased` and
@@ -199,20 +216,46 @@
      the Expressive part, low damping and a visible settle. Effect tokens
      animate colour and opacity at damping 1.0, because a colour that
      overshoots lands on a hue nobody chose. */
-  --spring-spatial-fast: linear(
-    0, 0.32 6%, 0.62 12%, 0.86 18%, 1.04 25%, 1.08 30%, 1.05 38%,
-    0.995 50%, 0.998 62%, 1);
-  --spring-spatial-default: linear(
-    0, 0.19 5%, 0.44 11%, 0.71 18%, 0.92 25%, 1.05 32%, 1.08 39%,
-    1.03 50%, 0.99 66%, 1);
-  --spring-spatial-slow: linear(
-    0, 0.12 6%, 0.31 13%, 0.55 21%, 0.78 30%, 0.95 39%, 1.05 48%,
-    1.04 60%, 0.998 80%, 1);
-  --spring-effects: cubic-bezier(0.2, 0, 0, 1);
+  /* The six Expressive springs, exactly: the damping ratio and stiffness
+     of androidx's ExpressiveMotionTokens (unit mass), simulated and sampled
+     at forty points, each with the time it takes to come within 0.1% of
+     rest. Generated, not drawn: the earlier curves were sketched to look
+     like springs. Spatial springs overshoot — fast by about 9% — and effect
+     springs never do. */
+  --motion-fast-spatial: linear(0, 0.029, 0.104, 0.209, 0.33, 0.456, 0.579, 0.693, 0.794, 0.88, 0.95, 1.005, 1.044, 1.071, 1.087, 1.094, 1.094, 1.089, 1.08, 1.069, 1.057, 1.045, 1.034, 1.024, 1.015, 1.008, 1.002, 0.997, 0.994, 0.992, 0.991, 0.991, 0.991, 0.992, 0.993, 0.994, 0.995, 0.996, 0.997, 0.998, 1);
+  --motion-fast-spatial-duration: 360ms;
+  --motion-default-spatial: linear(0, 0.02, 0.071, 0.143, 0.227, 0.316, 0.405, 0.491, 0.572, 0.646, 0.712, 0.769, 0.82, 0.862, 0.898, 0.927, 0.95, 0.969, 0.983, 0.994, 1.002, 1.008, 1.012, 1.014, 1.015, 1.015, 1.015, 1.014, 1.013, 1.011, 1.01, 1.009, 1.007, 1.006, 1.005, 1.004, 1.003, 1.003, 1.002, 1.001, 1);
+  --motion-default-spatial-duration: 430ms;
+  --motion-slow-spatial: linear(0, 0.02, 0.071, 0.143, 0.227, 0.316, 0.405, 0.491, 0.572, 0.646, 0.712, 0.77, 0.82, 0.862, 0.898, 0.927, 0.95, 0.969, 0.983, 0.994, 1.002, 1.008, 1.012, 1.014, 1.015, 1.015, 1.015, 1.014, 1.013, 1.011, 1.01, 1.009, 1.007, 1.006, 1.005, 1.004, 1.003, 1.003, 1.002, 1.001, 1);
+  --motion-slow-spatial-duration: 600ms;
+  --motion-fast-effects: linear(0, 0.023, 0.079, 0.153, 0.235, 0.32, 0.402, 0.479, 0.55, 0.614, 0.67, 0.72, 0.763, 0.8, 0.832, 0.859, 0.883, 0.902, 0.919, 0.932, 0.944, 0.954, 0.962, 0.969, 0.974, 0.979, 0.983, 0.986, 0.988, 0.99, 0.992, 0.994, 0.995, 0.996, 0.996, 0.997, 0.998, 0.998, 0.998, 0.999, 1);
+  --motion-fast-effects-duration: 150ms;
+  --motion-default-effects: linear(0, 0.023, 0.079, 0.153, 0.236, 0.32, 0.402, 0.479, 0.55, 0.614, 0.67, 0.72, 0.763, 0.8, 0.832, 0.86, 0.883, 0.902, 0.919, 0.933, 0.944, 0.954, 0.962, 0.969, 0.974, 0.979, 0.983, 0.986, 0.988, 0.99, 0.992, 0.994, 0.995, 0.996, 0.997, 0.997, 0.998, 0.998, 0.998, 0.999, 1);
+  --motion-default-effects-duration: 230ms;
+  --motion-slow-effects: linear(0, 0.023, 0.079, 0.153, 0.236, 0.32, 0.402, 0.479, 0.55, 0.614, 0.67, 0.72, 0.763, 0.8, 0.832, 0.86, 0.883, 0.902, 0.919, 0.933, 0.944, 0.954, 0.962, 0.969, 0.974, 0.979, 0.983, 0.986, 0.988, 0.99, 0.992, 0.994, 0.995, 0.996, 0.997, 0.997, 0.998, 0.998, 0.998, 0.999, 1);
+  --motion-slow-effects-duration: 330ms;
 
-  --dur-short: 150ms;
-  --dur-medium: 300ms;
-  --dur-long: 450ms;
+  /* The names the stylesheet used before, kept as the tokens they mean. */
+  --spring-spatial-fast: var(--motion-fast-spatial);
+  --spring-spatial-default: var(--motion-default-spatial);
+  --spring-spatial-slow: var(--motion-slow-spatial);
+  --spring-effects: var(--motion-fast-effects);
+  --dur-short: var(--motion-fast-effects-duration);
+  --dur-medium: var(--motion-default-spatial-duration);
+  --dur-long: var(--motion-slow-spatial-duration);
+
+  /* Elevation, the five M3 levels as shadows: a key light and an ambient
+     one, as Material Web draws them. M3 prefers a tonal surface to a
+     shadow, so these are for what floats: menus (2), dialogs (3). */
+  --elevation-1: 0 1px 2px 0 rgb(0 0 0 / .3), 0 1px 3px 1px rgb(0 0 0 / .15);
+  --elevation-2: 0 1px 2px 0 rgb(0 0 0 / .3), 0 2px 6px 2px rgb(0 0 0 / .15);
+  --elevation-3: 0 1px 3px 0 rgb(0 0 0 / .3), 0 4px 8px 3px rgb(0 0 0 / .15);
+  --elevation-4: 0 2px 3px 0 rgb(0 0 0 / .3), 0 6px 10px 4px rgb(0 0 0 / .15);
+  --elevation-5: 0 4px 4px 0 rgb(0 0 0 / .3), 0 8px 12px 6px rgb(0 0 0 / .15);
+
+  /* The emphasized half of the Expressive type scale: the same sizes one
+     weight heavier — regular to medium, medium to bold. */
+  --weight-regular: 400; --weight-medium: 500; --weight-bold: 700;
 
   /* State layer opacities, straight from the spec. Applied as a colour-mix
      against the role's own "on" colour so a hover looks correct on every
@@ -220,8 +263,13 @@
   --state-hover: 8%;
   --state-focus: 10%;
   --state-press: 10%;
+  --state-drag: 16%;
 
-  --focus-ring: light-dark(var(--primary-40), var(--primary-80));
+  /* The focus indicator as Material draws it: 3 pixels, 2 outside the
+     control, in the secondary colour. */
+  --focus-ring: var(--secondary);
+  --focus-width: 3px;
+  --focus-offset: 2px;
 }
 
 /* The three states of the appearance control, and the only place they are
@@ -255,7 +303,7 @@
 .brand .mark, .brand span { color: var(--brand, inherit); }
 .mark-initial {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; border-radius: var(--shape-s);
+  width: 22px; height: 22px; border-radius: var(--shape-sm);
   background: var(--brand, var(--primary)); color: var(--on-primary);
   font: var(--label-md); font-weight: 800; flex: none;
 }
@@ -309,10 +357,14 @@ code { font-family: var(--mono); font-size: 0.9em; overflow-wrap: anywhere; }
    swallowed by the component's own border. Nothing in this file sets
    `outline: none` — a removed focus ring is a keyboard user locked out. */
 :focus-visible {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: var(--shape-xs);
+  outline: var(--focus-width) solid var(--focus-ring);
+  outline-offset: var(--focus-offset);
 }
+/* The ring follows the control's own shape, as Material's does. It used to
+   set every focused element's corners to 4px, so a round button squared
+   off while it had focus; only a bare link, which has no shape of its own,
+   is given one. */
+a:not([class]):focus-visible { border-radius: var(--shape-xs); }
 
 /* Text for a screen reader and not for a screen.
  *
@@ -797,25 +849,25 @@ form.stack { margin: 0 0 1rem; }
 .row label.check { flex-direction: row; align-items: center; gap: .45rem;
   flex: 0 0 auto; padding-bottom: .55rem; }
 .row input[type=text], .row input:not([type]), .row select {
-  font: inherit; padding: .5rem .6rem; border-radius: var(--shape-s);
+  font: var(--body-lg); padding: 0 16px; min-height: 56px; border-radius: var(--shape-xs);
   border: 1px solid var(--outline); background: var(--surface);
   color: var(--on-surface); }
 .row option { background: var(--surface); color: var(--on-surface); }
 .row input:focus-visible, .row select:focus-visible,
 button:focus-visible, a:focus-visible {
-  outline: 2px solid var(--primary); outline-offset: 2px; }
+  outline: var(--focus-width) solid var(--focus-ring); outline-offset: var(--focus-offset); }
 button.danger { background: var(--surface-container-high);
   color: var(--error); border: 1px solid var(--outline-variant); }
 button.danger:hover { background: var(--error); color: var(--on-error); }
 td.right, th.right { text-align: right; }
 table caption { text-align: left; font-size: .8125rem; font-weight: 600;
   color: var(--on-surface-variant); padding: .5rem .75rem; }
-.notice { background: var(--surface-container-high); border-radius: var(--shape-m);
+.notice { background: var(--surface-container-high); border-radius: var(--shape-md);
   padding: .75rem 1rem; margin: 0 0 1rem; }
 
 /* -- audit log -------------------------------------------------------------- */
 
-.card { border: 1px solid var(--outline-variant); border-radius: var(--shape-m);
+.card { border: 1px solid var(--outline-variant); border-radius: var(--shape-md);
   padding: 1rem 1.15rem; margin: 0 0 1.25rem; background: var(--surface-container-low); }
 .card.ok { border-left: 4px solid var(--primary); }
 .card.bad { border-left: 4px solid var(--error); background: var(--error-container); }
@@ -1074,16 +1126,15 @@ tr.detail td { padding-top: 0; border-top: 0; }
   cursor: pointer; list-style: none; }
 .navgroup > summary::-webkit-details-marker { display: none; }
 .navgroup > summary:hover > h2 { color: var(--on-surface); }
-.navgroup > summary:focus-visible { outline: 2px solid var(--primary);
-  outline-offset: 2px; border-radius: var(--shape-s); }
+.navgroup > summary:focus-visible { border-radius: var(--shape-sm); }
 
 /* A marker drawn rather than borrowed, so it points the same way in every
    browser and follows the text colour in a forced-colours theme. */
-.navgroup > summary::after { content: ""; margin-left: auto; width: .5rem;
-  height: .5rem; border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor; transform: rotate(45deg);
-  transform-origin: center; opacity: .7; }
-.navgroup[open] > summary::after { transform: rotate(-135deg); }
+/* The chevron is Material's expand_more, turned over when the section is
+   open; it used to be two borders of a rotated square. */
+.chev { display: inline-flex; margin-left: auto; color: var(--on-surface-variant); }
+.chev .icon { width: 24px; height: 24px; transition: rotate var(--motion-default-effects-duration, .2s) var(--motion-default-effects, ease); }
+details[open] > summary > .chev .icon { rotate: 180deg; }
 
 /* The group holding the current screen is named twice over: it is the open one,
    and it carries the accent the current link carries. Without this the only
@@ -1253,19 +1304,19 @@ tr.detail td { padding-top: 0; border-top: 0; }
  * Side by side because the question is a comparison — is the face still in
  * frame — and stacked, on a narrow screen, because two 400-pixel pictures in a
  * row on a phone are two pictures nobody can see. */
-.beforeafter { display: grid; gap: var(--space-5); margin: 0 0 1.5rem;
+.beforeafter { display: grid; gap: 1.25rem; margin: 0 0 1.5rem;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); }
 .beforeafter figure { margin: 0; }
 .beforeafter img { display: block; width: 100%; height: auto;
   max-height: 22rem; object-fit: contain;
-  background: var(--surface-container-high); border-radius: var(--shape-s); }
+  background: var(--surface-container-high); border-radius: var(--shape-sm); }
 .beforeafter figcaption { font: var(--label-md); color: var(--on-surface-variant);
   margin-top: .4rem; }
 /* Where a picture would go before there is one to show. Sized like the
    pictures beside it, so pressing the button does not make the page jump. */
 .beforeafter .noshot { display: flex; align-items: center; justify-content: center;
   text-align: center; padding: 1.5rem; min-height: 12rem;
-  background: var(--surface-container-low); border-radius: var(--shape-s);
+  background: var(--surface-container-low); border-radius: var(--shape-sm);
   border: 1px dashed var(--outline-variant); }
 
 /* The shapes, as a row of choices rather than a dropdown: a ratio is the one
@@ -1275,7 +1326,7 @@ tr.detail td { padding-top: 0; border-top: 0; }
 .shapes legend { font-weight: 700; padding: 0; margin-bottom: .5rem; }
 .shape { display: inline-flex; align-items: center; gap: .4rem;
   margin: 0 .5rem .5rem 0; padding: .35rem .7rem;
-  border: 1px solid var(--outline-variant); border-radius: var(--shape-s);
+  border: 1px solid var(--outline-variant); border-radius: var(--shape-sm);
   background: var(--surface-container-low); cursor: pointer; }
 .shape:hover { border-color: var(--outline); }
 .shape:focus-within { outline: 2px solid var(--primary); outline-offset: 2px; }
@@ -1298,7 +1349,7 @@ tr.detail td { padding-top: 0; border-top: 0; }
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr)); }
 
 .pick { display: block; position: relative; cursor: pointer;
-  border: 1px solid var(--outline-variant); border-radius: var(--shape-s);
+  border: 1px solid var(--outline-variant); border-radius: var(--shape-sm);
   padding: .6rem; background: var(--surface-container-low); }
 .pick:hover { border-color: var(--outline); }
 /* The checked one is named by its border as well as by the radio, because a
@@ -1338,7 +1389,7 @@ tr.detail td { padding-top: 0; border-top: 0; }
 /* One result per row, and the reason it matched beside it rather than under
    it: a list where every entry is two lines is a list you cannot scan. */
 .findresults { list-style: none; margin: 0 0 1.5rem; padding: 0; }
-.findresults li { margin: 0; padding: .5rem .75rem; border-radius: var(--shape-s);
+.findresults li { margin: 0; padding: .5rem .75rem; border-radius: var(--shape-sm);
   display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: baseline; }
 .findresults li:nth-child(odd) { background: var(--surface-container-low); }
 .findresults li a { font-weight: 600; }
@@ -1357,11 +1408,12 @@ tr.detail td { padding-top: 0; border-top: 0; }
 body.nav-hidden > .sidenav { display: none; }
 
 /* Collapsed, a wide screen keeps a rail of the sections, as Gmail does,
-   rather than no navigation at all: 72 pixels, so each section's icon sits
-   under the menu control and the content gains everything else. */
+   rather than no navigation at all: 80 pixels, Material's narrow rail, so
+   each section's icon sits under the menu control and the content gains
+   everything else. */
 .rail { display: none; }
 @media (min-width: 60rem) {
-  body.nav-hidden:has(> .sidenav) { grid-template-columns: 72px 1fr;
+  body.nav-hidden:has(> .sidenav) { grid-template-columns: 80px 1fr;
     grid-template-areas: "bar bar" "rail main" "rail foot"; }
   body.nav-hidden > .rail { grid-area: rail; display: flex; flex-direction: column;
     align-items: center; gap: 4px; padding-top: 4px;
@@ -1403,7 +1455,7 @@ body.nav-hidden > .sidenav { display: none; }
      every section stays within reach. */
   .sidenav.one-section .navgroup:not([open]) { display: none; }
   .sidenav.one-section .navgroup > summary { pointer-events: none; border: 0; }
-  .sidenav.one-section .navgroup > summary::after { display: none; }
+  .sidenav.one-section .navgroup > summary > .chev { display: none; }
 }
 @media (forced-colors: active) {
   .railitem.here .railpill { outline: 2px solid CanvasText; }
@@ -1528,7 +1580,7 @@ pre.code code { background: none; padding: 0; }
   border: 1px solid var(--outline-variant); color: var(--on-surface);
   background: var(--surface-container-low); font-size: .875rem; }
 .row textarea { font: inherit; font-family: ui-monospace, monospace;
-  padding: .5rem .6rem; border-radius: var(--shape-s);
+  padding: .5rem .6rem; border-radius: var(--shape-sm);
   border: 1px solid var(--outline); background: var(--surface);
   color: var(--on-surface); width: 100%; }
 tr.weak th { border-left: 3px solid var(--error); padding-left: .6rem; }
@@ -1673,20 +1725,20 @@ td.actions > *:last-child, th.actions > *:last-child { margin-right: 0; }
 .editing {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--space-6, 1.5rem);
+  gap: 1.5rem;
   align-items: start;
 }
 @media (max-width: 62rem) {
   .editing { grid-template-columns: minmax(0, 1fr); }
   .editing .preview { order: -1; }
 }
-.editing .preview { position: sticky; top: var(--space-4, 1rem); }
+.editing .preview { position: sticky; top: 1rem; }
 .editing .preview h2 { margin-top: 0; }
 .editing iframe {
   width: 100%;
   height: min(70vh, 720px);
   border: 1px solid var(--outline-variant, #ccc);
-  border-radius: var(--radius-md, 12px);
+  border-radius: var(--shape-md);
   background: var(--surface, #fff);
 }
 
@@ -1703,25 +1755,19 @@ td.actions > *:last-child, th.actions > *:last-child { margin-right: 0; }
  * forced colours.
  */
 .settinggroup { margin: 0 0 .75rem; border: 1px solid var(--outline-variant);
-  border-radius: var(--shape-m); background: var(--surface-container-lowest); }
+  border-radius: var(--shape-md); background: var(--surface-container-lowest); }
 .settinggroup > summary { display: flex; align-items: center; gap: .6rem;
   flex-wrap: wrap; min-height: 40px; padding: .5rem .75rem; cursor: pointer;
-  list-style: none; border-radius: var(--shape-m); }
+  list-style: none; border-radius: var(--shape-md); }
 .settinggroup > summary::-webkit-details-marker { display: none; }
 .settinggroup > summary > h2 { margin: 0; font: var(--title-sm); }
 .settinggroup > summary:hover { background: var(--surface-container); }
-.settinggroup > summary:focus-visible { outline: 2px solid var(--primary);
-  outline-offset: 2px; }
-.settinggroup > summary::after { content: ""; margin-left: auto; width: .5rem;
-  height: .5rem; border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor; transform: rotate(45deg);
-  opacity: .7; }
-.settinggroup[open] > summary::after { transform: rotate(-135deg); }
+
 .settinggroup[open] > summary { border-bottom: 1px solid var(--outline-variant);
-  border-radius: var(--shape-m) var(--shape-m) 0 0; }
+  border-radius: var(--shape-md) var(--shape-md) 0 0; }
 /* A group that opened itself because something in it is weaker than its
    default says so on its edge, not only in the pill. */
-.settinggroup:has(.pill.warn) { border-color: var(--warn, var(--outline)); }
+.settinggroup:has(.pill.warn) { border-color: var(--warning); }
 
 /* A list of screens with a line each saying what they answer.
  *
@@ -1733,7 +1779,7 @@ td.actions > *:last-child, th.actions > *:last-child { margin-right: 0; }
 .subnav { list-style: none; margin: .5rem 0 1rem; padding: 0;
   display: grid; gap: .15rem; }
 .subnav li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem;
-  padding: .5rem .75rem; border-radius: var(--shape-s); min-height: 40px; }
+  padding: .5rem .75rem; border-radius: var(--shape-sm); min-height: 40px; }
 .subnav li:hover { background: var(--surface-container); }
 .subnav a { font-weight: 600; }
 
@@ -1936,15 +1982,11 @@ table.queue td:nth-child(5), table.queue td:nth-child(6) {
 .wf-band { display: inline-flex; align-items: center; gap: .3rem;
   padding: .1rem .55rem .1rem .4rem; border-radius: var(--shape-full);
   font: 500 .8125rem/1.5 var(--font); text-transform: capitalize; }
-.wf-icon::before { font-weight: 700; }
+
 .wf-band.good { background: var(--ok-container); color: var(--on-ok-container); }
-.wf-band.good .wf-icon::before { content: "✓"; }
 .wf-band.warning { background: var(--warning-container); color: var(--on-warning-container); }
-.wf-band.warning .wf-icon::before { content: "!"; }
 .wf-band.serious { background: var(--serious-container); color: var(--on-serious-container); }
-.wf-band.serious .wf-icon::before { content: "▲"; }
 .wf-band.critical { background: var(--error-container); color: var(--on-error-container); }
-.wf-band.critical .wf-icon::before { content: "✕"; }
 
 .wf-word { display: inline-block; padding: 0 .5rem; border-radius: var(--shape-xs);
   font: 500 .8125rem/1.6 var(--font); }
@@ -2333,3 +2375,172 @@ th[scope="row"] { font-weight: 500; }
 @media (forced-colors: active) {
   .findbar input { border: 1px solid CanvasText; }
 }
+
+/* The severity's symbol beside its word, 18px, in the word's colour. */
+.wf-icon { display: inline-flex; }
+.wf-icon .icon { width: 18px; height: 18px; }
+
+/* Icons inside text controls: paging, the account menu. */
+.paging a, .paging .paging-off { display: inline-flex; align-items: center; gap: 4px; }
+.paging .icon { width: 20px; height: 20px; }
+
+/* == Material 3 Expressive, to the specification =========================
+ *
+ * Every number below is a token Google generates for Material 3 — the
+ * component token files of androidx's Compose Material 3 (tokens v0_103),
+ * which are the specification as code — rather than a value that looks
+ * close. Where this departs from them it says so and why.
+ *
+ * Later in the file than the rules it refines, so it wins on order where
+ * specificity is equal, and each block names the component it is.
+ */
+
+/* Buttons: Small (40 high, 16 either side, LabelLarge) is the default;
+ * pressed, the round shape morphs to CornerSmall (8) on the fast spatial
+ * spring, so it gives a little as it settles. The 48px it used to be is
+ * between two sizes the specification has, and is neither. */
+button, .btn {
+  min-height: 40px; padding: 0 16px; gap: 8px;
+  font: var(--label-lg); font-weight: var(--weight-medium); letter-spacing: .00625rem;
+  transition: border-radius var(--motion-fast-spatial-duration) var(--motion-fast-spatial),
+              background-color var(--motion-fast-effects-duration) var(--motion-fast-effects),
+              color var(--motion-fast-effects-duration) var(--motion-fast-effects),
+              box-shadow var(--motion-fast-effects-duration) var(--motion-fast-effects);
+}
+button:active, .btn:active { border-radius: var(--shape-sm); }
+.btn-xs { min-height: 32px; padding: 0 12px; }
+.btn-md { min-height: 56px; padding: 0 24px; font: var(--title-md); font-weight: var(--weight-medium); }
+.btn-md:active { border-radius: var(--shape-md); }
+/* Outlined, as Expressive redrew it: the label in on-surface-variant and a
+   quieter outline-variant rule, not primary on outline. */
+.btn-outlined { color: var(--on-surface-variant); border-color: var(--outline-variant); }
+.btn-outlined:hover { background: color-mix(in srgb, var(--on-surface-variant) var(--state-hover), transparent); }
+.btn-text { padding: 0 12px; }
+/* Connected button group: 2 apart, inner corners CornerSmall (8). */
+.btn-group { gap: 2px; }
+.btn-group > button, .btn-group > .btn { border-radius: var(--shape-sm); }
+button:disabled, .btn[aria-disabled="true"] {
+  background: color-mix(in srgb, var(--on-surface) 10%, transparent);
+  color: color-mix(in srgb, var(--on-surface) 38%, transparent); cursor: not-allowed; }
+
+/* Icon buttons: the standard one has no container — 40 across, a 24 icon,
+ * a round state layer, the touch target made up by 4 of margin. The theme
+ * switch and the account were drawn as filled, outlined discs; the bar's
+ * controls are one family now. */
+.iconbutton, .themetoggle button, .account, .rowmenu-open {
+  width: 40px; height: 40px; min-height: 40px; padding: 0; margin: 4px;
+  border: 0; border-radius: var(--shape-full); background: transparent;
+  color: var(--on-surface-variant); }
+.iconbutton:hover, .themetoggle button:hover, .account:hover, .rowmenu-open:hover {
+  background: color-mix(in srgb, var(--on-surface-variant) var(--state-hover), transparent); }
+.iconbutton:active, .themetoggle button:active, .rowmenu-open:active {
+  background: color-mix(in srgb, var(--on-surface-variant) var(--state-press), transparent); }
+.iconbutton .icon, .themetoggle .icon, .rowmenu-open .icon { width: 24px; height: 24px; }
+.prefs { gap: 0; }
+
+/* The top app bar: 64 high, as the small app bar is, at every width. */
+.bar { padding-block: 4px; }
+.bar-inner { min-height: 56px; }
+@media (min-width: 60rem) {
+  /* The menu control's centre over the rail's: 16 + 4 + 20 = 40, the
+     middle of an 80-wide rail. */
+  .bar { padding-inline: 16px; }
+}
+
+/* The search bar: 56 high, full round, surface-container-high, the search
+ * symbol leading and the input in BodyLarge. The leading symbol is the
+ * submit button, so it does what it shows. */
+.findbar input { height: 56px; min-height: 56px; padding: 0 5.5rem 0 56px;
+  font: var(--body-lg); background: var(--surface-container-high); }
+.findbar > button[type=submit] { display: inline-flex; position: absolute; left: 4px; top: 50%;
+  translate: 0 -50%; width: 48px; height: 48px; min-height: 48px; padding: 0; margin: 0;
+  border: 0; border-radius: var(--shape-full); background: transparent; color: var(--on-surface); }
+.findbar > button[type=submit]:hover {
+  background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
+.findbar > button[type=submit] .icon { width: 24px; height: 24px; }
+
+/* The navigation rail, collapsed: the narrow width (80); each item a 56 x 32
+ * indicator over a LabelMedium label, 4 between them, 6 above and below. The
+ * current section's icon is filled, its indicator secondary-container and
+ * its label secondary. */
+.railitem { width: 80px; padding: 6px 0; gap: 4px; font: var(--label-md);
+  font-weight: var(--weight-medium); letter-spacing: .03125rem; }
+.railitem.here { color: var(--secondary); font-weight: var(--weight-medium); }
+.railpill .navicon { width: 24px; height: 24px; }
+
+/* The navigation, expanded: items 56 high with a 24 icon, 8 to the label in
+ * LabelLarge, 16 in from either side. The current one sits in a full-width
+ * secondary-container indicator, its icon filled. */
+.sidenav .nav a, .navgroups .nav a, .railfly .nav a {
+  min-height: 56px; padding: 0 16px; gap: 12px;
+  font: var(--label-lg); font-weight: var(--weight-medium); letter-spacing: .00625rem;
+  color: var(--on-surface-variant); }
+.sidenav .nav a[aria-current="page"], .navgroups .nav a[aria-current="page"] {
+  color: var(--on-secondary-container); }
+.navicon { width: 24px; height: 24px; }
+.navgroup > summary > h2 { font: var(--title-sm); font-weight: var(--weight-medium); }
+
+/* Opened from the rail it is the modal expanded rail: surface-container,
+ * CornerLarge, elevation 2. */
+@media (min-width: 60rem) {
+  body.nav-hidden > .sidenav[popover]:popover-open { box-shadow: var(--elevation-2); }
+}
+
+/* Menus, as Expressive's vertical menu: surface-container-low, CornerLarge,
+ * elevation 2, 4 of padding; items 44 high, BodyLarge, a 20 leading icon,
+ * 2 apart, CornerExtraSmall inside and CornerMedium at the ends. */
+.menu { padding: 4px; min-width: 14rem; border-radius: var(--shape-lg);
+  background: var(--surface-container-low); box-shadow: var(--elevation-2); }
+.menu:popover-open { gap: 2px; }
+.menu a, .menu button, .menu-danger { min-height: 44px; padding: 0 16px; gap: 12px;
+  border-radius: var(--shape-xs); font: var(--body-lg); letter-spacing: .03125rem; }
+.menu > a:first-of-type, .menu > :first-child button { border-start-start-radius: var(--shape-md); border-start-end-radius: var(--shape-md); }
+.menu > a:last-of-type, .menu > :last-child button { border-end-start-radius: var(--shape-md); border-end-end-radius: var(--shape-md); }
+.menu a .icon, .menu button .icon { width: 20px; height: 20px; color: var(--on-surface-variant); }
+
+/* The command palette is a dialog: surface-container-high, CornerExtraLarge,
+ * elevation 3. */
+.palette { background: var(--surface-container-high); box-shadow: var(--elevation-3); }
+.palette input { background: var(--surface-container-highest); }
+
+/* Text fields, outlined: 56 high, 16 in, CornerExtraSmall (4), a 1px
+ * outline that becomes 2px of primary with focus. M3's outlined field has
+ * no fill of its own. */
+input:where(:not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button]):not([type=reset]):not([type=hidden]):not([type=file])),
+select {
+  min-height: 56px; padding: 0 16px; border-radius: var(--shape-xs);
+  background: transparent; font: var(--body-lg); }
+textarea { padding: 16px; border-radius: var(--shape-xs); background: transparent; }
+input:hover, textarea:hover, select:hover { border-color: var(--on-surface); }
+/* The bar's search and the palette's input are search bars, not fields. */
+.findbar input, .palette input { border-radius: var(--shape-full); }
+.palette input { min-height: 56px; }
+/* Checkboxes and radios stay 24: M3 draws 18, and 24 is the target size this
+   interface holds itself to (WCAG 2.5.8 and the tests that measure it). */
+
+/* Chips and status labels: CornerSmall (8). A coloured one is a filled
+ * container and needs no outline; a neutral one keeps outline-variant. */
+.pill { border-radius: var(--shape-sm); font-weight: var(--weight-medium); letter-spacing: .03125rem; min-height: 24px; }
+.pill.critical, .pill.high, .pill.medium, .pill.ok { border-color: transparent; }
+.chips a { border-radius: var(--shape-sm); min-height: 32px; }
+.wf-band { border-radius: var(--shape-sm); }
+
+/* Cards: CornerMedium (12), outlined in outline-variant. */
+.card { border-radius: var(--shape-md); }
+
+/* Tooltips, plain: inverse-surface, CornerExtraSmall, BodySmall, after a
+ * moment of pointing or on focus. Drawn by the script from the control's
+ * title, and hidden from screen readers, which already hear the name. */
+.tooltip { position: fixed; margin: 0; inset: auto; padding: 4px 8px; border: 0;
+  border-radius: var(--shape-xs); background: var(--inverse-surface);
+  color: var(--inverse-on-surface); font: var(--body-sm); letter-spacing: .025rem;
+  max-width: 20rem; pointer-events: none; }
+
+/* Every disclosure carries Material's expand_more, turned over when open,
+   in place of the browser's triangle: one chevron across the interface. */
+summary { list-style: none; cursor: pointer; }
+summary::-webkit-details-marker { display: none; }
+summary > .chev { vertical-align: middle; margin-inline-start: 4px; }
+summary > .chev .icon { width: 20px; height: 20px; }
+.navgroup > summary > .chev .icon, .settinggroup > summary > .chev .icon { width: 24px; height: 24px; }
+.navgroup > summary > .chev, .settinggroup > summary > .chev { margin-inline-start: auto; }

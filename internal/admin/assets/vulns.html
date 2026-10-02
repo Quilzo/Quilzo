@@ -68,7 +68,7 @@
     <td>{{.Exposure}}</td><td>{{.Impact}}</td><td>{{.Because}}</td><td>{{.By}}<br><span class="hint">{{.When}}</span></td>
     <td><form method="post" action="/security/vulns/act"><input type="hidden" name="do" value="untag"><input type="hidden" name="match" value="{{.Match}}"><button type="submit" class="danger">Remove</button></form></td></tr>{{end}}</tbody>
 </table></div>{{end}}
-<details class="wf-how"><summary>Tag an asset, or a group of them</summary>
+<details class="wf-how"><summary>Tag an asset, or a group of them<span class="chev">{{icon "expand_more"}}</span></summary>
 <form method="post" action="/security/vulns/act">
   <input type="hidden" name="do" value="tag">
   <div class="grid2">
@@ -95,7 +95,7 @@
     {{with .TrendEnd}}<circle class="end" cx="{{.X}}" cy="{{.Y}}" r="4"></circle>
     <text class="val" x="{{.X}}" y="{{.Y}}" dx="10" dy="4">{{.Value}}</text>{{end}}
   </svg>
-  <details class="astable"><summary>Show as a table</summary>
+  <details class="astable"><summary>Show as a table<span class="chev">{{icon "expand_more"}}</span></summary>
     <table><thead><tr><th scope="col">Day</th><th scope="col">Open</th><th scope="col">Being exploited</th><th scope="col">Expected in 30 days</th><th scope="col">Accepted</th><th scope="col">Not affected</th></tr></thead>
     <tbody>{{range .History}}<tr><th scope="row">{{.Date}}</th><td>{{.Open}}</td><td>{{.Exploited}}</td><td>{{.Expected}}</td><td>{{.Accepted}}</td><td>{{.NotAffected}}</td></tr>{{end}}</tbody></table></details>
   {{end}}

@@ -46,27 +46,21 @@
     */}}
     <form method="get" action="/find" class="findbar" role="search">
       <label class="visually-hidden" for="findq">Find a page, screen or setting</label>
+      <button type="submit" title="Find">
+        <span class="visually-hidden">Find</span>
+        {{icon "search"}}
+      </button>
       <input type="search" id="findq" name="q" placeholder="Search Quilzo"
              value="{{if eq .Nav "find"}}{{.Query}}{{end}}">
       <button type="button" class="palette-open" data-palette hidden
               title="Go to any screen"><kbd>Ctrl K</kbd><span class="visually-hidden">Go to any screen</span></button>
-      <button type="submit" title="Find">
-        <span class="visually-hidden">Find</span>
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <circle cx="10.5" cy="10.5" r="6.4" fill="none" stroke="currentColor"
-                  stroke-width="1.8"/>
-          <path d="M15.2 15.2 20 20" fill="none" stroke="currentColor"
-                stroke-width="1.8" stroke-linecap="round"/>
-        </svg>
-      </button>
     </form>
     <div class="prefs">
       {{/* Where the search box has no room, the way to it: the Find screen,
            which has its own. */}}
       <a class="iconbutton findlink" href="/find" title="Search">
         <span class="visually-hidden">Search</span>
-        {{/* Material Icons "search", Apache-2.0. */}}
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14" fill="currentColor"/></svg>
+        {{icon "search"}}
       </a>
       {{template "themetoggle" .}}
       {{with .Principal}}
@@ -85,8 +79,8 @@
       <div id="accountmenu" class="menu" popover>
         <p class="menu-who"><span class="avatar avatar-lg" aria-hidden="true">{{$.Initial}}</span>
           <span><strong>{{.Name}}</strong><br><span class="hint">Signed in as {{.Role}}</span></span></p>
-        <a href="/profile">Your profile</a>
-        <a href="/signout">Sign out</a>
+        <a href="/profile">{{icon "account_circle"}}Your profile</a>
+        <a href="/signout">{{icon "logout"}}Sign out</a>
       </div>
       {{end}}
     </div>
@@ -116,8 +110,7 @@
 <div class="sidenav" id="sitenav" popover>
   <button type="button" class="menuclose iconbutton" popovertarget="sitenav" popovertargetaction="hide" title="Close menu">
     <span class="visually-hidden">Close menu</span>
-    {{/* Material Icons "close", Apache-2.0: Chromium's cr:close. */}}
-    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="currentColor"/></svg>
+    {{icon "close"}}
   </button>
   {{template "navlist" .}}
 </div>
@@ -205,12 +198,12 @@
 {{if .Paging.Needed}}
 <nav class="paging" aria-label="Pages of this list">
   {{if .Paging.HasPrev}}
-  <a rel="prev" href="{{.PagePath}}?from={{.Paging.Prev}}{{.Paging.Query}}">← Previous</a>
-  {{else}}<span class="paging-off">← Previous</span>{{end}}
+  <a rel="prev" href="{{.PagePath}}?from={{.Paging.Prev}}{{.Paging.Query}}">{{icon "chevron_left"}}Previous</a>
+  {{else}}<span class="paging-off">{{icon "chevron_left"}}Previous</span>{{end}}
   <span class="paging-at">{{.Paging.From}} to {{.Paging.To}} of {{.Paging.Total}}</span>
   {{if .Paging.HasNext}}
-  <a rel="next" href="{{.PagePath}}?from={{.Paging.Next}}{{.Paging.Query}}">Next →</a>
-  {{else}}<span class="paging-off">Next →</span>{{end}}
+  <a rel="next" href="{{.PagePath}}?from={{.Paging.Next}}{{.Paging.Query}}">Next{{icon "chevron_right"}}</a>
+  {{else}}<span class="paging-off">Next{{icon "chevron_right"}}</span>{{end}}
 </nav>
 {{end}}
 {{end}}
@@ -228,20 +221,14 @@
 </form>
 {{end}}
 
-{{/* Material Icons "menu", Apache-2.0: the glyph Chromium ships as cr:menu. */}}
-{{define "menuicon"}}<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z" fill="currentColor"/></svg>{{end}}
+{{/* Material Symbols "menu": the three lines Chrome's own pages put here. */}}
+{{define "menuicon"}}{{icon "menu"}}{{end}}
 
 {{/*
-  The sun that becomes a moon.
-
-  Inline SVG rather than an image file or a character: the content policy on
-  every admin response is `img-src 'self' data:`, so a remote icon set is not
-  an option and a data URI would be an unreadable blob in the markup. An inline
-  <svg> is part of the document, costs no request, inherits currentColor so it
-  follows the theme it is switching, and can be given a title nobody has to
-  guess at.
-
-  Three states, so the button says which one it is in rather than implying two.
+  The appearance: following the system, dark, or light, each drawn with its
+  Material Symbol (contrast, dark_mode, light_mode) from assets/icons, like
+  every other icon here. The button says which one it is in rather than
+  implying two.
 */}}
 {{define "themetoggle"}}
 <form method="post" action="/theme" class="themetoggle">
@@ -250,28 +237,7 @@
   <button type="submit" title="Currently {{.ThemeNow}}. Switch to {{.ThemeNextLabel}}.">
     <span class="visually-hidden">Appearance: currently {{.ThemeNow}}.
       Switch to {{.ThemeNextLabel}}.</span>
-    {{if eq .Theme "dark"}}
-    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"
-            fill="none" stroke="currentColor" stroke-width="1.8"
-            stroke-linejoin="round"/>
-    </svg>
-    {{else if eq .Theme "light"}}
-    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor"
-              stroke-width="1.8"/>
-      <g stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-        <path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4"/>
-        <path d="M5.2 5.2l1.7 1.7M17.1 17.1l1.7 1.7M18.8 5.2l-1.7 1.7M6.9 17.1l-1.7 1.7"/>
-      </g>
-    </svg>
-    {{else}}
-    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor"
-              stroke-width="1.8"/>
-      <path d="M12 3.6a8.4 8.4 0 0 0 0 16.8Z" fill="currentColor"/>
-    </svg>
-    {{end}}
+    {{if eq .Theme "dark"}}{{icon "dark_mode"}}{{else if eq .Theme "light"}}{{icon "light_mode"}}{{else}}{{icon "contrast"}}{{end}}
   </button>
 </form>
 {{end}}
@@ -316,7 +282,7 @@
 <nav class="navgroups" aria-label="Sections">
   {{range .NavGroups}}
   <details class="navgroup" data-section="{{.Slug}}"{{if .HasCurrent}} open{{end}}>
-    <summary><h2>{{.Name}}</h2></summary>
+    <summary><h2>{{.Name}}</h2><span class="chev">{{icon "expand_more"}}</span></summary>
     <ul class="nav">
       {{range .Items}}
       {{template "navitem" .}}
@@ -327,7 +293,7 @@
 </nav>
 {{end}}
 
-{{define "navitem"}}<li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{if .Icon}}<svg class="navicon" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path d="{{.Icon}}"/></svg>{{end}}<span>{{.Label}}</span></a></li>{{end}}
+{{define "navitem"}}<li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{if .Icon}}<svg class="navicon" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path d="{{if .Current}}{{.IconFilled}}{{else}}{{.Icon}}{{end}}"/></svg>{{end}}<span>{{.Label}}</span></a></li>{{end}}
 
 {{/*
   The rail: what the menu collapses to on a wide screen, as Gmail's does. One
@@ -349,7 +315,7 @@
 <div class="rail">
   {{range .NavGroups}}
   <button type="button" class="railitem{{if .HasCurrent}} here{{end}}" popovertarget="sitenav" popovertargetaction="show" data-section="{{.Slug}}">
-    <span class="railpill">{{if .Icon}}<svg class="navicon" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path d="{{.Icon}}"/></svg>{{end}}</span>
+    <span class="railpill">{{if .Icon}}<svg class="navicon" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path d="{{if .HasCurrent}}{{.IconFilled}}{{else}}{{.Icon}}{{end}}"/></svg>{{end}}</span>
     <span class="raillabel" aria-hidden="true">{{.Short}}</span><span class="visually-hidden">{{.Name}}</span>
   </button>
   {{end}}

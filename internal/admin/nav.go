@@ -238,15 +238,16 @@ type navGroup struct {
 	HasCurrent bool
 	// Slug names the section's flyout on the rail; Icon and Short are how
 	// the rail draws it. See icons.go.
-	Slug, Icon, Short string
+	Slug, Icon, IconFilled, Short string
 }
 
 // navItem is a rendered entry.
 type navItem struct {
 	destination
 	Current bool
-	// Icon is the path of the screen's Material Symbol. See icons.go.
-	Icon string
+	// Icon is the path of the screen's Material Symbol, and IconFilled the
+	// same symbol filled, drawn for the current screen. See icons.go.
+	Icon, IconFilled string
 }
 
 // navFor builds the navigation for one request.
@@ -273,7 +274,7 @@ func (s *Server) navigation(r *http.Request, p principal, current string) []navG
 		}
 		byGroup[d.Group] = append(byGroup[d.Group], navItem{
 			destination: d, Current: here,
-			Icon: iconFor(d.Key),
+			Icon: iconFor(d.Key), IconFilled: filledFor(d.Key),
 		})
 	}
 	out := make([]navGroup, 0, len(groups))
@@ -285,7 +286,7 @@ func (s *Server) navigation(r *http.Request, p principal, current string) []navG
 			}
 			out = append(out, navGroup{
 				Name: name, Items: items, HasCurrent: hasCurrent[name],
-				Slug: sectionSlug(name), Icon: sectionPath[name], Short: short,
+				Slug: sectionSlug(name), Icon: sectionPath[name], IconFilled: sectionFilled[name], Short: short,
 			})
 		}
 	}

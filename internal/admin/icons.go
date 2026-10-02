@@ -4,6 +4,8 @@
 package admin
 
 import (
+	"fmt"
+	"html/template"
 	"regexp"
 	"strings"
 )
@@ -58,6 +60,70 @@ var iconPath = func() map[string]string {
 // iconFor is the drawing for a screen, or empty when it has none.
 func iconFor(key string) string { return iconPath[key] }
 
+// filledFor is the screen's symbol filled, as Material draws the selected
+// destination in a navigation; the outline when there is no filled file.
+func filledFor(key string) string {
+	if p := readPath("assets/icons/" + key + ".fill.svg"); p != "" {
+		return p
+	}
+	return iconPath[key]
+}
+
+// pathData is what a Material Symbol's path may contain: drawing commands
+// and numbers. Checked at load, because an icon is written into the page as
+// markup, and a file that held anything else would be markup we never
+// wrote.
+var pathData = regexp.MustCompile(`^[MmLlHhVvCcSsQqTtAaZz0-9.,\- ]+$`)
+
+// readPath is the single path of an embedded icon file, or empty.
+func readPath(name string) string {
+	b, err := assets.ReadFile(name)
+	if err != nil {
+		return ""
+	}
+	m := regexp.MustCompile(`<path d="([^"]+)"`).FindSubmatch(b)
+	if m == nil {
+		return ""
+	}
+	p := strings.TrimSpace(string(m[1]))
+	if !pathData.MatchString(p) {
+		panic(fmt.Sprintf("%s: not a drawing: %.40q", name, p))
+	}
+	return p
+}
+
+// uiIcon is a control's icon — the menu, search, the theme, a chevron —
+// from the same Material Symbols, Rounded, as the navigation, kept in
+// assets/icons as ui-<name>.svg. Every icon the interface draws comes from
+// there: none is drawn by hand, so they are one family.
+//
+// An unknown name is an error rather than nothing, so a template that asks
+// for an icon that is not there fails its tests instead of drawing a gap.
+func uiIcon(name string) (template.HTML, error) {
+	p := readPath("assets/icons/ui-" + name + ".svg")
+	if p == "" {
+		return "", fmt.Errorf("no icon %q: fetch the Material Symbol into assets/icons/ui-%s.svg", name, name)
+	}
+	// #nosec G203 -- p is an embedded file's path data, checked above to be
+	// drawing commands and numbers only.
+	return template.HTML(`<svg class="icon" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true" focusable="false"><path d="` + p + `"/></svg>`), nil
+}
+
+// toneIcon is the symbol beside a severity word, so it is never colour
+// alone that says how bad something is.
+func toneIcon(tone string) string {
+	switch tone {
+	case "good":
+		return "check_circle"
+	case "warning":
+		return "error"
+	case "serious":
+		return "warning"
+	default:
+		return "dangerous"
+	}
+}
+
 // sectionSymbol is the Material Symbol for each section of the navigation,
 // drawn on the rail the menu collapses to. None is a screen's own symbol,
 // so a section never looks like one of its screens. The file is
@@ -70,14 +136,22 @@ var sectionSymbol = map[string]string{
 
 var sectionPath = func() map[string]string {
 	out := map[string]string{}
-	d := regexp.MustCompile(`<path d="([^"]+)"`)
 	for name := range sectionSymbol {
-		b, err := assets.ReadFile("assets/icons/section-" + sectionSlug(name) + ".svg")
-		if err != nil {
-			continue
+		if p := readPath("assets/icons/section-" + sectionSlug(name) + ".svg"); p != "" {
+			out[name] = p
 		}
-		if m := d.FindSubmatch(b); m != nil {
-			out[name] = strings.TrimSpace(string(m[1]))
+	}
+	return out
+}()
+
+// sectionFilled is each section's symbol filled, for the one being worked in.
+var sectionFilled = func() map[string]string {
+	out := map[string]string{}
+	for name := range sectionSymbol {
+		if p := readPath("assets/icons/section-" + sectionSlug(name) + ".fill.svg"); p != "" {
+			out[name] = p
+		} else {
+			out[name] = sectionPath[name]
 		}
 	}
 	return out

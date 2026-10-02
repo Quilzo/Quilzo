@@ -9,7 +9,7 @@
 {{with .Score}}
 <section class="wf-kpis" aria-label="Score">
   <p class="wf-hero"><span class="wf-hero-n">{{.Points}}</span>
-    <span class="wf-band {{$.Tone}}"><span class="wf-icon" aria-hidden="true"></span>{{.Band}}</span>
+    <span class="wf-band {{$.Tone}}"><span class="wf-icon">{{icon (toneicon $.Tone)}}</span>{{.Band}}</span>
     <span>out of 100{{if .Leaver}}; has left{{end}}</span></p>
   {{if .Vendor}}<p class="hint">{{range $tool, $v := .Vendor}}{{$tool}}'s own risk score: {{$v}}. {{end}}Shown for comparison, never mixed in.</p>{{end}}
 </section>

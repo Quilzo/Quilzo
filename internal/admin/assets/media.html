@@ -102,7 +102,7 @@ so this is the screen that answers that gate.</p>{{end}}
           the server wrote rather than sending an integer the server parses.
         */}}
         <details>
-          <summary class="hint">Crop from</summary>
+          <summary class="hint">Crop from<span class="chev">{{icon "expand_more"}}</span></summary>
           <form method="post" action="/media/focus">
             <input type="hidden" name="id" value="{{.ID}}">
             <input type="hidden" name="back" value="{{$.Here}}">
@@ -132,7 +132,7 @@ so this is the screen that answers that gate.</p>{{end}}
         {{if .Rights.Licence}}<div class="hint">{{.Rights.Licence}}{{if .Rights.Holder}} · {{.Rights.Holder}}{{end}}</div>{{end}}
         {{if $.CanWrite}}
         <details>
-          <summary class="hint">Record</summary>
+          <summary class="hint">Record<span class="chev">{{icon "expand_more"}}</span></summary>
           <form method="post" action="/media/rights">
             <input type="hidden" name="id" value="{{.ID}}">
             <p><label for="lic-{{.ID}}">What permits publishing this</label>
