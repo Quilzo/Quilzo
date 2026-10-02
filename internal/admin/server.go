@@ -142,6 +142,20 @@ type Server struct {
 	Boards *BoardsAdmin
 	// SCIM is provisioning from an identity provider. See scimadmin.go.
 	SCIM *SCIMAdmin
+	// SignInRisk judges each sign-in as it is made (see automations.go);
+	// Automations are the rules and their history; StepUpMail sends a
+	// person the code that proves a stepped-up session is theirs.
+	SignInRisk  func(SignInFacts) SignInVerdict
+	Automations *AutomationsAdmin
+	StepUpMail  func(to, code string) error
+	// SessionPlace says where a request comes from, for binding sessions;
+	// SessionMovedTo puts a session seen elsewhere to the rules; Reported
+	// is a person saying a sign-in was not them; SignInSignal raises one
+	// more signal about a person's sign-in, such as verification failing.
+	SessionPlace   func(addr, agent string) SessionContext
+	SessionMovedTo func(SessionMove) SignInVerdict
+	Reported       func(principal, session string)
+	SignInSignal   func(principal, kind, detail string)
 	// Publishing is the deployment pipeline: environments, promotion and work
 	// queued for later.
 	Publishing *Publishing
@@ -464,6 +478,10 @@ var errNoCredential = errors.New("no token")
 // principal is who the current request is acting as.
 type principal struct {
 	Name string
+	// StepUp is why this session must prove its person before anything
+	// else; empty when it need not. Bound is where it was issued to. See
+	// automations.go.
+	StepUp, Bound string
 	// Role is the role the *token* carries, which may be narrower than the one
 	// the policy grants Name. It was captured here and then used only to print
 	// "Signed in as … (role)" in the header — a decorative field that looked
@@ -506,12 +524,15 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 		return principal{}, errNoCredential
 	}
 	tok, err := s.Tokens.Authenticate(raw, time.Now())
-	if err != nil {
+	// A session waiting to prove its person is let this far, carrying why,
+	// and requireAuth sends it nowhere but "Confirm it's you".
+	if err != nil && !(errors.Is(err, auth.ErrStepUp) && tok != nil) {
 		return principal{}, err
 	}
 	return principal{
 		Name: tok.Principal, Role: tok.Role, Scope: tok.Resource,
-		Limits: tok.Scope, TokenID: tok.ID, Session: tok.IsSession()}, nil
+		Limits: tok.Scope, TokenID: tok.ID, Session: tok.IsSession(), StepUp: tok.StepUp,
+		Bound: tok.Bound}, nil
 }
 
 // linksTo is the references pointing at a page, in the current draft.
@@ -1068,6 +1089,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/models/change", s.handleModelsChange)
 	mux.HandleFunc("/inbox", s.handleInbox)
 	mux.HandleFunc("/members", s.handleMembers)
+	mux.HandleFunc("/signin/verify", s.handleStepUp)
+	mux.HandleFunc("/signin/verify/code", s.handleStepUpCode)
+	mux.HandleFunc("/signin/verify/check", s.handleStepUpCheck)
+	mux.HandleFunc("/signin/verify/report", s.handleStepUpReport)
+	mux.HandleFunc("/security/signins", s.handleSignIns)
+	mux.HandleFunc("/security/signins/act", s.handleSignInsAct)
+	mux.HandleFunc("/security/automations", s.handleAutomations)
+	mux.HandleFunc("/security/automations/rule", s.handleAutomationRule)
+	mux.HandleFunc("/security/automations/act", s.handleAutomationsAct)
 	mux.HandleFunc("/provisioning", s.handleProvisioning)
 	mux.HandleFunc("/provisioning/act", s.handleProvisioningAct)
 	mux.HandleFunc("/boards", s.handleBoards)
@@ -1345,6 +1375,12 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		"by": tok.Principal, "credential": tok.ID, "session": cookieTok.ID,
 		"how": "token",
 	})
+	stepUp, serr := s.signInCheck(r, tok.Principal, cookieTok.ID, "token", false)
+	if serr != nil {
+		signInAgain(w, r, "unchecked")
+		return
+	}
+	s.signInDone(r, cookieTok.ID)
 
 	// Secure over TLS, or where the deployment says something in front of it
 	// is terminating TLS. Not unconditionally: a Secure cookie is refused on a
@@ -1365,6 +1401,10 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		Secure:   r.TLS != nil || s.behindTLSProxy(),
 		MaxAge:   maxAge,
 	})
+	if stepUp {
+		http.Redirect(w, r, "/signin/verify", http.StatusSeeOther)
+		return
+	}
 	// Somebody signing in for the first time lands on the getting started
 	// screen instead of the page list.
 	//
@@ -1394,6 +1434,12 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 var signInReasons = map[string]string{
 	"format": "That is not a Quilzo token. They start with " +
 		auth.TokenPrefix + " — check the whole of it was pasted.",
+	"reported": "Thank you. That session is ended, and your security team " +
+		"will look at it. If your token or passkey may have been taken, tell " +
+		"them which.",
+	"unchecked": "This sign-in has to be confirmed, and that could not be " +
+		"recorded, so it was refused. Try again; if it keeps happening, an " +
+		"administrator can look at the audit log for session.stepup-unrecorded.",
 	"refused": "That token was not accepted. It may be mistyped, expired " +
 		"or revoked; an administrator can issue a new one with quilzo " +
 		"token issue.",
@@ -1536,7 +1582,12 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 			s.tooManyAttempts(w, r, tdec)
 			return principal{}, false
 		}
-		if s.Throttle != nil {
+		// Only a credential that was presented and refused is a failure.
+		// A request with none guessed nothing — and every browser makes one
+		// on the sign-in page, asking for /favicon.ico, which lands here.
+		// Counted, five colleagues signing in behind one office address
+		// were enough to throttle everybody there.
+		if s.Throttle != nil && !errors.Is(err, errNoCredential) {
 			d, alert := s.Throttle.Fail(sub)
 			if alert && s.OnAuthFailure != nil {
 				s.OnAuthFailure(sub.Source, d.Failures)
@@ -1558,6 +1609,22 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 	if s.Throttle != nil {
 		// The principal, not the address: see the note in the API middleware.
 		s.Throttle.Succeed(throttle.Subject{Principal: p.Name})
+	}
+	// A session used from somewhere other than where it was issued may be
+	// a stolen one; the rules decide, and may step it up there and then.
+	if p.Session && p.Bound != "" && p.StepUp == "" {
+		if reason := s.sessionMoved(r, p); reason != "" {
+			p.StepUp = reason
+		}
+	}
+	// A session waiting to prove its person goes nowhere else first.
+	if p.StepUp != "" && !stepUpOpen(r.URL.Path) {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			http.Redirect(w, r, "/signin/verify", http.StatusSeeOther)
+		} else {
+			http.Error(w, "confirm it is you first: /signin/verify", http.StatusForbidden)
+		}
+		return principal{}, false
 	}
 	return p, true
 }

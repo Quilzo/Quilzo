@@ -554,6 +554,14 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Proving a stepped-up session's person: the same person, by passkey,
+	// from a session marked as having to. That session is replaced by this
+	// one, which is not judged again — this sign-in is the proof.
+	var stepped *principal
+	if prev, err := s.authenticate(r); err == nil && prev.StepUp != "" && strings.EqualFold(prev.Name, cred.Principal) {
+		stepped = &prev
+	}
+
 	// A session token, exactly as the OIDC path mints one: the passkey
 	// authenticated, and everything after this is local. The role is what the
 	// policy already grants — a session, not a promotion.
@@ -572,13 +580,32 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 	if s.OnSignIn != nil {
 		s.OnSignIn(cred.Principal, tok.ID)
 	}
+	next := "/"
+	s.signInDone(r, tok.ID)
+	if stepped != nil {
+		_, _ = s.Tokens.Revoke(stepped.TokenID)
+		if s.SaveTokens != nil {
+			_ = s.SaveTokens(s.Tokens)
+		}
+		s.audit("session.stepup-passed", "/", map[string]string{"by": cred.Principal, "session": stepped.TokenID, "how": "passkey"})
+		_, _ = s.signInCheck(r, cred.Principal, tok.ID, "passkey", true)
+	} else {
+		up, serr := s.signInCheck(r, cred.Principal, tok.ID, "passkey", false)
+		if serr != nil {
+			writeJSONError(w, http.StatusServiceUnavailable, serr)
+			return
+		}
+		if up {
+			next = "/signin/verify"
+		}
+	}
 
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: secret, Path: "/",
 		HttpOnly: true, SameSite: http.SameSiteStrictMode,
 		Secure: r.TLS != nil || s.behindTLSProxy(), MaxAge: int(DefaultSessionTTL.Seconds()),
 	})
-	writeJSON(w, map[string]any{"ok": true, "next": "/"})
+	writeJSON(w, map[string]any{"ok": true, "next": next})
 }
 
 // handlePasskeyRemove deletes one of the caller's own keys.

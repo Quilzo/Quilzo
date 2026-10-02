@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/logd"
 	"github.com/quilzo/quilzo/internal/remind"
 	"github.com/quilzo/quilzo/internal/throttle"
+	"github.com/quilzo/quilzo/internal/travel"
 	"github.com/quilzo/quilzo/internal/webauthn"
 	"net/http"
 	"os"
@@ -173,6 +174,28 @@ func cmdServe(root string, args []string) error {
 	srv.Members = membersHooks(root)
 	srv.Boards = boardsHooks(root)
 	srv.SCIM = scimHooks(root)
+	// Sign-ins are judged as they are made, and the rules act on them.
+	srv.SignInRisk = signInRisk(root)
+	srv.SessionPlace, srv.SessionMovedTo, srv.Reported, srv.SignInSignal = sessionHooks(root)
+	srv.Automations = &admin.AutomationsAdmin{
+		Engine:  automationEngineAsync(root),
+		SignIns: (&travel.Store{Dir: signinsPath(root)}).Since,
+		Geo: func() string {
+			_, desc, err := cachedGeo(root)
+			if err != nil {
+				return err.Error()
+			}
+			return desc
+		},
+	}
+	if m, err := loadMailConfig(root); err == nil && m != nil {
+		srv.StepUpMail = func(to, code string) error {
+			return m.SendPlain(to, "Your Quilzo sign-in code: "+code,
+				"Somebody is signing in to Quilzo as you, and was asked to confirm it.\n\n"+
+					"The code is "+code+". It works once, for ten minutes.\n\n"+
+					"If this was not you, do not use it, and tell your security team.")
+		}
+	}
 	srv.Agents = &admin.Agents{
 		Load: func() (map[string]agent.Manifest, error) {
 			set, err := loadAgents(root)

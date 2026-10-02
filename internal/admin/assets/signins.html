@@ -1,0 +1,26 @@
+{{template "head" .}}
+<h1>Sign-ins</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+<p class="lead">Every sign-in to this admin in the last thirty days, where it appeared to come from, and the sessions waiting for their person to prove it is them. {{.Geo}}</p>
+
+<h2>Waiting to confirm it is them</h2>
+<p class="hint">They see <a href="/signin/verify">Confirm it's you</a> until they prove it with a passkey or a code, or you let them in.</p>
+{{if .Waiting}}<ul class="auto-list">{{range .Waiting}}<li class="auto-card waiting">
+  <div class="auto-head"><span class="wf-band warning"><span class="wf-icon">{{icon "error"}}</span>Waiting</span><strong>{{.Person}}</strong><span class="hint">since {{.Since}}</span></div>
+  <p>{{.Reason}}</p>
+  <form method="post" action="/security/signins/act" class="actions"><input type="hidden" name="session" value="{{.Session}}">
+    <button type="submit" name="do" value="letin" class="btn-tonal">Let them in<span class="visually-hidden"> {{.Person}}</span></button>
+    <button type="submit" name="do" value="signout" class="btn-outlined">Sign them out<span class="visually-hidden"> {{.Person}}</span></button></form>
+</li>{{end}}</ul>{{else}}<p>Nobody is waiting.</p>{{end}}
+
+<h2>Recent</h2>
+{{if .NoHistory}}<p class="notice bad">{{.NoHistory}}</p>{{else if .Rows}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Person</th><th scope="col">When</th><th scope="col">From</th><th scope="col">Device</th><th scope="col">Risk</th><th scope="col">Why</th></tr></thead>
+  <tbody>{{range .Rows}}<tr><th scope="row">{{.Person}}<br><span class="hint">{{.How}}</span></th><td>{{.When}}</td>
+    <td>{{.Place}}{{if eq .Network "vpn"}} <span class="wf-band unknown">VPN</span>{{end}}{{if eq .Network "office"}} <span class="wf-band good">office</span>{{end}}{{if .Provider}}<br><span class="hint">{{.Provider}}</span>{{end}}</td>
+    <td>{{if .Device}}{{.Device}}{{else}}<span class="hint">not said</span>{{end}}</td>
+    <td><span class="wf-band {{.RiskTone}}"><span class="wf-icon">{{icon (toneicon .RiskTone)}}</span>{{.Risk}}</span>{{if .Score}}<br><span class="hint">{{.Score}}</span>{{end}}</td>
+    <td>{{range .Signals}}<span class="chip-small">{{.}}</span> {{else}}<span class="hint">nothing unusual</span>{{end}}</td></tr>{{end}}</tbody>
+</table></div>{{else}}<p>No sign-ins yet.</p>{{end}}
+{{template "foot" .}}

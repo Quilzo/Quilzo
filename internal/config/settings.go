@@ -335,6 +335,19 @@ var settings = []Setting{
 			"strips what the client sent.",
 	},
 	{
+		Key: "admin.trusted_proxy", Kind: Bool, Default: "false",
+		Summary: "something in front of the admin appends the client's address",
+		Why: "Where a sign-in is judged to come from. Every sign-in is placed " +
+			"from its address, for the automations that step up a sign-in " +
+			"from somewhere unlikely, and behind a reverse proxy the " +
+			"connection's address is the proxy's for everybody.\n\n" +
+			"Off by default: X-Forwarded-For is a header anybody can write, " +
+			"and trusted with nothing in front it lets a sign-in say where it " +
+			"is. Set it only when the proxy appends the real address; the " +
+			"last address in the header is then the one used. The rate " +
+			"limits still key on the connection.",
+	},
+	{
 		Key: "admin.behind_tls_proxy", Kind: Bool, Default: "false",
 		Summary: "the admin is served over HTTPS by something in front of it",
 		Why: "Whether the session cookie is marked Secure. It was decided by " +
@@ -989,6 +1002,29 @@ func (s Setting) Validate(v string) error {
 						"%q is not an automated use this can express; the "+
 							"vocabulary is search, train, ai-summarize and "+
 							"none", use)
+				}
+			}
+		}
+		if s.Key == "security.contact" {
+			// URIs, as RFC 9116 requires. A bare address was accepted and
+			// published as a Contact line no scanner can use, and the
+			// automations that mail the security team read only mailto:,
+			// so it also quietly told nobody.
+			for _, c := range strings.Split(v, ",") {
+				c = strings.TrimSpace(c)
+				if c == "" {
+					continue
+				}
+				scheme, rest, _ := strings.Cut(c, ":")
+				switch strings.ToLower(scheme) {
+				case "mailto", "https", "tel":
+				default:
+					return fmt.Errorf("%q is not a mailto:, https: or tel: "+
+						"URI; for an address, give mailto:%s", c, c)
+				}
+				if strings.TrimSpace(rest) == "" {
+					return fmt.Errorf("%q says how to reach somebody but "+
+						"not who", c)
 				}
 			}
 		}

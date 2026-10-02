@@ -358,10 +358,12 @@ func buildAndRecord(root string, now time.Time, by string, kind audit.Kind,
 	}
 	s := summariseEstate(e, o)
 	reported := map[string]bool{}
+	var opened []finding.Finding
 	for _, f := range o.Findings {
 		reported[f.ID] = true
 		if _, isNew := reg.Record(f, now); isNew {
 			s.Opened++
+			opened = append(opened, f)
 		}
 	}
 	ran := map[string]bool{}
@@ -395,6 +397,11 @@ func buildAndRecord(root string, now time.Time, by string, kind audit.Kind,
 	if err := finding.Save(path, reg, cursors); err != nil {
 		return estateSummary{}, err
 	}
+	// What is new goes to the automations: findings, and machines' failed
+	// controls the first time each is seen. They take no lock on the
+	// register, so this one is still held, and released once, by the defer.
+	automateFindings(root, opened)
+	automateDevices(root, e, now)
 	if err := saveDay(root, estate.Summarise(e.Scores(now), now)); err != nil {
 		return estateSummary{}, err
 	}

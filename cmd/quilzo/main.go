@@ -451,6 +451,9 @@ access
   quilzo auth grant ... --until 2026-12-31 access that ends by itself
   quilzo scim status | token [--revoke]     provisioning from Okta, Entra and others
   quilzo scim map GROUP ROLE|JOB | unmap GROUP   what each of their groups means here
+  quilzo automate list | templates | add TEMPLATE | runs   rules: when this happens, do this
+  quilzo automate mode ID watch|ask|act | on ID | off ID | remove ID | approve RUN | decline RUN
+  quilzo geo status | help | network add PREFIX NAME --kind office|vpn ... | network remove PREFIX   where sign-ins come from
   quilzo auth deny WHO ROLE [--on PATH]    a deny wins wherever it sits
   quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
   quilzo standing list                     what a situation can hand somebody, and what it cannot
@@ -802,6 +805,10 @@ func main() {
 		err = cmdMember(root, cmdArgs)
 	case "scim":
 		err = cmdSCIM(root, cmdArgs)
+	case "automate":
+		err = cmdAutomate(root, cmdArgs)
+	case "geo":
+		err = cmdGeo(root, cmdArgs)
 	case "board":
 		err = cmdBoard(root, cmdArgs)
 	case "gateway":

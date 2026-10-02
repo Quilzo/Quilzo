@@ -4,6 +4,7 @@
 package lifecycle
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -70,5 +71,20 @@ func TestAgeAndHowFarBehindAreWorkedOut(t *testing.T) {
 func TestVersionsCompareByNumberNotByText(t *testing.T) {
 	if !older("15.6", "15.10") || older("15.10", "15.6") || older("15.6", "15.6") || !older("15", "15.0.1") {
 		t.Error("15.10 is after 15.6")
+	}
+}
+
+// A year's last days are not its twelfth month.
+func TestAnAgeNeverSaysTwelveMonths(t *testing.T) {
+	for days, want := range map[int]string{29: "29 days", 31: "1 month", 364: "11 months",
+		365: "1 year", 1824: "4 years 11 months", 1826: "5 years", 1100: "3 years"} {
+		if got := Words(time.Duration(days) * 24 * time.Hour); got != want {
+			t.Errorf("%d days is %q, want %q", days, got, want)
+		}
+	}
+	for days := 0; days < 20*365; days++ {
+		if got := Words(time.Duration(days) * 24 * time.Hour); strings.Contains(got, "12 month") {
+			t.Fatalf("%d days is %q", days, got)
+		}
 	}
 }

@@ -1,0 +1,53 @@
+{{/*
+  Confirm it's you: a session an automation judged unlike its person waits
+  here until they prove it. Its own document, like the sign-in page, because
+  nothing else in the interface is open to it yet.
+*/}}
+<!doctype html>
+<html lang="en"{{if .Theme}} data-theme="{{.Theme}}"{{end}}>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Confirm it's you — Quilzo</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body class="signin-page">
+<main id="main" class="signin">
+  <section class="signin-panel">
+    <p class="brand">{{template "lockup" .}}</p>
+    <h1>Confirm it's you</h1>
+    {{if .Clear}}<p class="lead">Signed in as <strong>{{.Who}}</strong>. There is nothing to confirm: this session has already shown it is yours.</p>
+    <p class="actions"><a class="btn" href="/">Carry on</a></p>{{else}}
+    <p class="lead">Signed in as <strong>{{.Who}}</strong>. Before anything else, this sign-in has to be shown to be yours.</p>
+    <p class="notice stepup" role="status">{{icon "info"}}<span>{{.Reason}}</span></p>
+    {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+    {{if .Passkey}}<div class="card">
+      <h2>Use your passkey</h2>
+      <p>The quickest way, and the one a stolen password cannot pass.</p>
+      <p class="actions"><a class="btn" href="/signin/passkey">Use my passkey</a></p>
+    </div>{{end}}
+    {{if .Mail}}<div class="card">
+      <h2>Get a code by email</h2>
+      {{if .Sent}}<p>A six-digit code has gone to your address. It works once, for ten minutes.</p>
+      <form method="post" action="/signin/verify/check" class="stack">
+        <label for="code">Code {{template "req"}}</label>
+        <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+        <button type="submit">Confirm</button>
+      </form>{{else}}<p>We will send a code to the address you sign in as.</p>
+      <form method="post" action="/signin/verify/code"><button type="submit" class="btn-tonal">Send me a code</button></form>{{end}}
+    </div>{{end}}
+    <div class="card">
+      <h2>Ask an administrator</h2>
+      <p>Another administrator can let you in from <em>Sign-ins</em>, once they are sure it is you. Nobody can do it for their own session.</p>
+    </div>
+    <div class="card notme">
+      <h2>This wasn't me</h2>
+      <p>If you did not just sign in, say so: this session ends now, and your security team is told.</p>
+      <form method="post" action="/signin/verify/report"><button type="submit" class="danger">This wasn't me</button></form>
+    </div>
+    <p class="help">Not now? <a href="/signout">Sign out</a>, and nothing this session started will continue.</p>{{end}}
+  </section>
+</main>
+</body>
+</html>
