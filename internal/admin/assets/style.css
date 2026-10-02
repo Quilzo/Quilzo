@@ -857,30 +857,22 @@ tr.detail td { padding-top: 0; border-top: 0; }
 .themetoggle button:hover { background: var(--surface-container-highest); }
 .icon { width: 20px; height: 20px; display: block; }
 
-/* The navigation toggle carries its name; the theme toggle does not.
+/* The menu control, drawn as Chrome draws cr-icon-button: round, no
+ * outline, a state layer on hover, at the far left of the bar.
  *
- * A sun that becomes a moon is a convention everybody reads. A rectangle with
- * a bar down one side is not, and it was the only thing marking the control
- * that hides the menu — so the control was there, worked, and could not be
- * found. The label is what makes it a button somebody sees rather than a
- * shape they have to hover.
- *
- * aria-hidden on the span, because the button already has a fuller sentence
- * for a screen reader. Announcing both would read the control twice and the
- * shorter one is the less useful of the two.
+ * It used to be a pill reading "Hide menu" at the far right, because a
+ * rectangle with a bar down one side was not a shape anybody read as the
+ * menu. Three lines are, and in the corner Chrome's own pages and every
+ * Google app keep them they need no word.
  */
-.navtoggle button { width: auto; gap: .4rem; padding: 0 .8rem;
-  border-radius: var(--shape-full); }
-.togglelabel { font: var(--label-md); white-space: nowrap; }
-
-/* Below the point where the menu becomes a block above the content, the label
-   goes and the button is round again. That is where the header has least room
-   and where the icon has most support: the menu is directly under it, so what
-   the button acts on is on screen beside it. */
-@media (max-width: 32rem) {
-  .navtoggle button { width: 40px; padding: 0; }
-  .togglelabel { display: none; }
-}
+.bar-start { display: flex; align-items: center; gap: .25rem; min-width: 0; }
+.iconbutton { display: inline-flex; align-items: center; justify-content: center;
+  flex: none; width: 48px; height: 48px; min-height: 48px; padding: 0;
+  border: 0; border-radius: var(--shape-full); background: transparent;
+  color: var(--on-surface-variant); cursor: pointer; }
+.iconbutton:hover {
+  background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
+.iconbutton .icon { width: 24px; height: 24px; }
 
 @media (min-width: 60rem) {
   /* Two columns, one scrollbar, and the menu stays where you can see it.
@@ -1358,9 +1350,6 @@ body.nav-hidden > .sidenav { display: none; }
     grid-template-areas: "bar" "main" "foot"; }
 }
 
-/* The control itself sits beside the theme toggle and borrows its shape, so
-   the two preferences in the bar look like one pair rather than two
-   unrelated buttons. */
 .navtoggle { margin: 0; }
 
 /* -- signing in --------------------------------------------------------------
@@ -1701,7 +1690,7 @@ td.actions > *:last-child, th.actions > *:last-child { margin-right: 0; }
 @media print {
   body { display: block; height: auto; }
   body > main { overflow: visible; min-height: 0; }
-  .sidenav, .prefs, .findbar, .skip { display: none; }
+  .sidenav, .prefs, .findbar, .skip, .menubutton, .navtoggle { display: none; }
   .bar { position: static; }
 }
 
@@ -1757,10 +1746,7 @@ table.queue td:nth-child(5), table.queue td:nth-child(6) {
 }
 @media (max-width: 59.99rem) {
   .navtoggle { display: none; }
-  .menubutton { display: inline-flex; align-items: center; gap: .4rem;
-    font: inherit; font-weight: 600; padding: .45rem .8rem; border-radius: 999px;
-    border: 1px solid var(--outline-variant); background: var(--surface-container-low);
-    color: var(--on-surface); cursor: pointer; }
+  .menubutton { display: inline-flex; }
   .sidenav[popover]:popover-open, body.nav-hidden > .sidenav[popover]:popover-open {
     display: block; position: fixed; inset: 0 auto 0 0; margin: 0;
     width: min(20rem, 88vw); height: 100dvh; max-height: none; overflow: auto;
@@ -1768,10 +1754,9 @@ table.queue td:nth-child(5), table.queue td:nth-child(6) {
     background: var(--surface-container-low); color: var(--on-surface);
     box-shadow: 0 0 2rem rgb(0 0 0 / .25); }
   .sidenav[popover]::backdrop { background: rgb(0 0 0 / .35); }
-  .sidenav[popover]:popover-open .menuclose { display: block; margin: 0 0 1rem auto;
-    font: inherit; padding: .4rem .8rem; border-radius: 8px;
-    border: 1px solid var(--outline-variant); background: transparent;
-    color: var(--on-surface); cursor: pointer; }
+  /* Where the three lines were, so the same place opens and closes it. */
+  .sidenav[popover]:popover-open .menuclose { display: inline-flex;
+    margin: -.5rem 0 .5rem .25rem; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .sidenav[popover]:popover-open { animation: menu-in .15s ease-out; }
@@ -2072,6 +2057,14 @@ thead th, .navgroup > summary > h2, .wf-word, .chip, .sev, .badge,
        margin-bottom: .5rem; }
 .bar-inner { max-width: none; align-items: center; }
 .prefs { gap: .5rem; }
+/* Three columns, the outer two equal, so the search is in the middle of the
+   window rather than wherever the name ended. The left edge is pulled in so
+   the menu control's centre sits over the sidebar's icons. */
+@media (min-width: 60rem) {
+  .bar { padding-inline: .75rem; }
+  .bar-inner { display: grid; grid-template-columns: 1fr minmax(0, 40rem) 1fr; }
+  .bar-inner > .prefs { justify-self: end; }
+}
 
 /* Search as the omnibox is drawn: a full-radius field on a tinted fill,
    with the shortcut written inside it. */

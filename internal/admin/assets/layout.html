@@ -16,7 +16,22 @@
 <a class="skip" href="#main">Skip to main content</a>
 <header class="bar">
   <div class="bar-inner">
+    {{/*
+      The menu control at the far left, before the name, where Chrome's own
+      pages (Settings, History) and every Google app keep it, over the column
+      it opens and closes. One button on a wide screen, where it hides and
+      shows the sidebar, and another on a narrow one, where it opens the
+      menu over the page; only one is ever displayed, and both are drawn as
+      Chromium draws its own, cr:menu.
+    */}}
+    <div class="bar-start">
+    <button type="button" class="menubutton iconbutton" popovertarget="sitenav" title="Main menu">
+      <span class="visually-hidden">Main menu</span>
+      {{template "menuicon"}}
+    </button>
+    {{template "navtoggle" .}}
     <a class="brand" href="/">{{if .BrandMark}}<span class="mark mark-initial" aria-hidden="true">{{.BrandMark}}</span><span>{{.Brand}}</span>{{else if eq .Brand "Quilzo"}}{{template "lockup" .}}{{else}}<svg class="mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path class="mark-loop" d="{{.MarkLoop}}"/><path class="mark-tail" d="{{.MarkTail}}"/></svg><span>{{.Brand}}</span>{{end}}</a>
+    </div>
 
     {{/*
       The search box, in the bar rather than on a screen you have to find
@@ -46,14 +61,6 @@
       </button>
     </form>
     <div class="prefs">
-      <button type="button" class="menubutton" popovertarget="sitenav">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor"
-                stroke-width="1.8" stroke-linecap="round"/>
-        </svg>
-        <span>Menu</span>
-      </button>
-      {{template "navtoggle" .}}
       {{template "themetoggle" .}}
       {{with .Principal}}
       {{/*
@@ -100,7 +107,11 @@
   the first screen of every page was menu.
 */}}
 <div class="sidenav" id="sitenav" popover>
-  <button type="button" class="menuclose" popovertarget="sitenav" popovertargetaction="hide">Close menu</button>
+  <button type="button" class="menuclose iconbutton" popovertarget="sitenav" popovertargetaction="hide" title="Close menu">
+    <span class="visually-hidden">Close menu</span>
+    {{/* Material Icons "close", Apache-2.0: Chromium's cr:close. */}}
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="currentColor"/></svg>
+  </button>
   {{template "navlist" .}}
 </div>
 
@@ -197,28 +208,20 @@
 {{end}}
 
 {{define "navtoggle"}}
-<form method="post" action="/sidebar" class="themetoggle navtoggle">
+<form method="post" action="/sidebar" class="navtoggle">
   <input type="hidden" name="to" value="{{if .SidebarHidden}}shown{{else}}hidden{{end}}">
   <input type="hidden" name="back" value="{{.Here}}">
-  <button type="submit" title="{{if .SidebarHidden}}Show{{else}}Hide{{end}} the navigation">
-    <span class="visually-hidden">Navigation is currently
-      {{if .SidebarHidden}}hidden. Show it.{{else}}showing. Hide it.{{end}}</span>
-    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <rect x="3.1" y="4.1" width="17.8" height="15.8" rx="2.4" fill="none"
-            stroke="currentColor" stroke-width="1.8"/>
-      {{if .SidebarHidden}}
-      <path d="M9 4.1v15.8" fill="none" stroke="currentColor" stroke-width="1.8"
-            stroke-dasharray="2.6 2.4"/>
-      {{else}}
-      <path d="M9 4.1v15.8" fill="none" stroke="currentColor" stroke-width="1.8"/>
-      <path d="M5.1 8.4h2.2M5.1 12h2.2M5.1 15.6h2.2" fill="none"
-            stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-      {{end}}
-    </svg>
-    <span class="togglelabel" aria-hidden="true">{{if .SidebarHidden}}Show{{else}}Hide{{end}} menu</span>
+  <button type="submit" class="iconbutton" aria-controls="sitenav"
+          aria-expanded="{{if .SidebarHidden}}false{{else}}true{{end}}"
+          title="{{if .SidebarHidden}}Show{{else}}Hide{{end}} the navigation">
+    <span class="visually-hidden">Main menu</span>
+    {{template "menuicon"}}
   </button>
 </form>
 {{end}}
+
+{{/* Material Icons "menu", Apache-2.0: the glyph Chromium ships as cr:menu. */}}
+{{define "menuicon"}}<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z" fill="currentColor"/></svg>{{end}}
 
 {{/*
   The sun that becomes a moon.

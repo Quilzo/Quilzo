@@ -856,9 +856,14 @@ func securityHeaders(next http.Handler) http.Handler {
 //
 // media-src 'self' because a preview of a page with a film on it is a
 // preview of that page.
+//
+// connect-src 'self' so the one script can send what a form would, without
+// loading the page again: the menu control hides the sidebar at once. It
+// reaches nothing a form could not, since form-action is 'self' already,
+// and no other origin.
 func adminPolicy(frameAncestors string) string {
 	return "default-src 'none'; style-src 'self'; img-src 'self' data:; " +
-		"font-src 'self'; " +
+		"font-src 'self'; connect-src 'self'; " +
 		"media-src 'self'; manifest-src 'self'; frame-src 'self'; " +
 		"form-action 'self'; frame-ancestors " + frameAncestors +
 		"; base-uri 'none'"

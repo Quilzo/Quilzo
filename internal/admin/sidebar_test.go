@@ -319,3 +319,35 @@ func TestOnlyAPlaceOnThisServerIsSomewhereToGoBackTo(t *testing.T) {
 		}
 	}
 }
+
+// The menu control comes first in the bar, before the name, as Chrome's own
+// pages put it, and says whether the menu it controls is open.
+func TestTheMenuControlLeadsTheBarAndSaysWhetherTheMenuIsOpen(t *testing.T) {
+	s, token := setup(t)
+	for _, c := range []struct{ cookie, expanded string }{{"", "true"}, {"hidden", "false"}} {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		if c.cookie != "" {
+			req.AddCookie(&http.Cookie{Name: SidebarCookie, Value: c.cookie})
+		}
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		body := rec.Body.String()
+		toggle, brand := strings.Index(body, `action="/sidebar"`), strings.Index(body, `class="brand"`)
+		if toggle < 0 || brand < 0 || toggle > brand {
+			t.Fatalf("the menu control is not before the name in the bar (%d, %d)", toggle, brand)
+		}
+		if !strings.Contains(body, `aria-controls="sitenav"`) ||
+			!strings.Contains(body, `aria-expanded="`+c.expanded+`"`) {
+			t.Errorf("with cookie %q the control does not say the menu is expanded=%s", c.cookie, c.expanded)
+		}
+	}
+}
+
+// The script may talk to this server and to nothing else.
+func TestTheScriptMayConnectOnlyToThisServer(t *testing.T) {
+	policy := adminPolicy("'none'")
+	if !strings.Contains(policy, "connect-src 'self';") {
+		t.Fatalf("connect-src is not exactly 'self': %s", policy)
+	}
+}

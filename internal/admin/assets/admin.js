@@ -4,12 +4,15 @@
 // because a browser that blocks it, a policy that forbids it, or a person who
 // disabled scripts should lose speed, not features.
 //
-// It does two things:
+// It does three things:
 //
 //   * a command palette, opened with Ctrl+K (⌘K on a Mac) or the button in
 //     the search box, which jumps to any screen in the navigation by typing
 //     part of its name, and offers to search for anything else;
-//   * "/" moves to the search box, as it does on most sites people use.
+//   * "/" moves to the search box, as it does on most sites people use;
+//   * the menu control hides and shows the sidebar at once, rather than by
+//     loading the page again. The form it submits is the same one, so the
+//     choice is kept the same way, and without the script it still works.
 //
 // The palette is a native <dialog> with the ARIA combobox pattern: the
 // input owns a listbox, arrow keys move the active option, Enter opens it,
@@ -169,6 +172,23 @@
       var find = document.getElementById("findq");
       if (find) { e.preventDefault(); find.focus(); }
     }
+  });
+
+  document.querySelectorAll("form.navtoggle").forEach(function (form) {
+    form.addEventListener("submit", function (e) {
+      if (!window.fetch) return;
+      e.preventDefault();
+      var to = form.elements.to, button = form.querySelector("button");
+      var hide = to.value === "hidden";
+      fetch(form.action, { method: "POST", body: new URLSearchParams(new FormData(form)),
+        credentials: "same-origin", redirect: "manual" }).then(function (r) {
+        if (r.type !== "opaqueredirect" && !r.ok) throw new Error(String(r.status));
+        document.body.classList.toggle("nav-hidden", hide);
+        to.value = hide ? "shown" : "hidden";
+        button.setAttribute("aria-expanded", hide ? "false" : "true");
+        button.title = (hide ? "Show" : "Hide") + " the navigation";
+      }).catch(function () { form.submit(); });
+    });
   });
 
   // The shortcut, shown where people look for search, in their platform's
