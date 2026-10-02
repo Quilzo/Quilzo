@@ -138,6 +138,8 @@ type Server struct {
 	Inbox *Inbox
 	// Members is the published site's accounts. See members.go.
 	Members *MembersAdmin
+	// Boards is what the site's members write. See boards.go.
+	Boards *BoardsAdmin
 	// Publishing is the deployment pipeline: environments, promotion and work
 	// queued for later.
 	Publishing *Publishing
@@ -1057,6 +1059,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/models/change", s.handleModelsChange)
 	mux.HandleFunc("/inbox", s.handleInbox)
 	mux.HandleFunc("/members", s.handleMembers)
+	mux.HandleFunc("/boards", s.handleBoards)
+	mux.HandleFunc("/boards/act", s.handleBoardsAct)
 	mux.HandleFunc("/members/act", s.handleMembersAct)
 	mux.HandleFunc("/inbox/act", s.handleInboxAct)
 	mux.HandleFunc("/inbox/", s.handleConversation)

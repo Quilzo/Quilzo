@@ -77,6 +77,10 @@ type Sources struct {
 	// page naming one gets no form data and its layout renders nothing, which
 	// is what every deployment did before the declaration was the only list.
 	Form func(name string) map[string]any
+	// Thread is what members wrote under a page on a board: its visible
+	// posts, its title, and whether it takes new ones. Nil means no posts
+	// are shown and no form is offered. See comments.go.
+	Thread func(board, page string) map[string]any
 	// Tracks answers what caption files a video has, in the shape a template
 	// walks. Nil means no captions anywhere, which is what every deployment
 	// had before they could be attached — and is why a video with none is a
@@ -154,6 +158,7 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 	if rest := placeListings(ctx["page"], arranged); len(rest) > 0 {
 		ctx[Feeds] = rest
 	}
+	placeComments(ctx["page"], name, s.Thread)
 	return ctx, nil
 }
 

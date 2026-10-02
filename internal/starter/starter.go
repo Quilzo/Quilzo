@@ -162,15 +162,15 @@ var templates = map[string]Template{
 		Summary: "A page assembled from sections you order yourself: hero, " +
 			"features, tabs, metrics, charts, split, gallery, carousel, video, " +
 			"steps, timeline, quote, quotes, logos, pricing, FAQ, table, " +
-			"listing, people, prose, notice, a question for a chatbot, call " +
-			"to action.",
+			"listing, people, prose, notice, a question for a chatbot, " +
+			"members' comments, call to action.",
 		Look: "Rounded, generous, a tinted hero. The shipped palette.",
 		Fields: []string{"title", "description", "hero", "sections", "footer",
 			"header_cta_label", "header_cta_href", "brand_mark", "breadcrumbs",
 			"share_image", "share_image_alt"},
 		Sample: map[string]any{
 			"title":       "Everything, in the order you choose",
-			"description": "One layout, twenty-three kinds of section, arranged by the content rather than the markup.",
+			"description": "One layout, twenty-four kinds of section, arranged by the content rather than the markup.",
 			"hero": map[string]any{
 				"eyebrow": "New", "style": "center", "surface": "surface-wash",
 				"lead":      "Sections are data. Reorder them, drop one, use the same kind twice — without touching a template.",
@@ -360,6 +360,10 @@ var templates = map[string]Template{
 						"A prose section is a list of paragraphs at a readable measure.",
 						"It is a list rather than one rich-text field because a starter that reached for raw would teach that on the first page anybody writes.",
 					},
+				}},
+				map[string]any{"comments": map[string]any{
+					"title": "Comments", "board": "comments",
+					"intro": "What members write under this page. A site with accounts on shows a form to add to it.",
 				}},
 				map[string]any{"ask": map[string]any{
 					"title": "Ask this site", "assistant": "help",

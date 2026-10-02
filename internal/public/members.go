@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/board"
 	"github.com/quilzo/quilzo/internal/member"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/webauthn"
@@ -552,11 +553,27 @@ func (st *Site) accountForm(w http.ResponseWriter, r *http.Request, action strin
 		m, _ = store.Get(m.ID)
 		// Shown in this response and never again, so not a redirect.
 		st.renderAccount(w, accountView{Member: m, SignedIn: true, Codes: codes}, http.StatusOK)
+	case "post/delete":
+		if !st.boardsOn() {
+			http.NotFound(w, r)
+			return
+		}
+		if err := st.Boards.Store.Remove(r.PostFormValue("id"), m.ID); err != nil {
+			st.renderAccount(w, accountView{Member: m, SignedIn: true,
+				Problem: "That post could not be deleted: it is not one of yours."}, http.StatusUnprocessableEntity)
+			return
+		}
+		back("post-deleted")
 	case "delete":
 		if strings.TrimSpace(strings.ToLower(r.PostFormValue("confirm"))) != "delete" {
 			st.renderAccount(w, accountView{Member: m, SignedIn: true,
 				Problem: "Type delete to confirm. Nothing was deleted."}, http.StatusUnprocessableEntity)
 			return
+		}
+		// What they wrote first, so a failure part-way leaves an account
+		// that can try again rather than posts nobody can delete.
+		if st.boardsOn() {
+			st.Boards.Store.RemoveAuthor(m.ID)
 		}
 		if err := store.Delete(m.ID); err != nil {
 			http.Error(w, "the account could not be deleted", http.StatusInternalServerError)
@@ -596,6 +613,12 @@ type accountView struct {
 	Site, Invite, Nonce, Message string
 	MemberPages                  []memberPage
 	Passkeys                     []passkeyRow
+	Posts                        []postRow
+}
+
+type postRow struct {
+	ID, Board, Href, Excerpt, When string
+	Waiting                        bool
 }
 
 type memberPage struct{ Title, Href string }
@@ -610,7 +633,9 @@ var doneMessages = map[string]string{
 	"renamed":         "Your name is changed.",
 	"passkey-added":   "The passkey is added.",
 	"passkey-removed": "The passkey is removed.",
-	"deleted":         "Your account is deleted, with its passkeys, recovery codes and sessions. Nothing about it is kept.",
+	"deleted":         "Your account is deleted, with its passkeys, recovery codes, sessions and posts. Nothing about it is kept.",
+	"post-held":       "Your post is waiting for a person to read it. It is listed below until then.",
+	"post-deleted":    "Your post is deleted.",
 }
 
 func (st *Site) renderAccount(w http.ResponseWriter, v accountView, status int) {
@@ -628,6 +653,31 @@ func (st *Site) renderAccount(w http.ResponseWriter, v accountView, status int) 
 				row.Used = time.Unix(c.LastUsed, 0).UTC().Format("2 January 2006")
 			}
 			v.Passkeys = append(v.Passkeys, row)
+		}
+		if st.boardsOn() {
+			titles := map[string]string{}
+			if set, err := st.Boards.Set(); err == nil {
+				for _, b := range set.Boards {
+					titles[b.Name] = b.Title
+				}
+			}
+			for _, p := range st.Boards.Store.ByAuthor(v.Member.ID) {
+				href := "/" + p.Thread
+				if p.Thread == st.indexName() {
+					href = "/"
+				}
+				ex := []rune(p.Body)
+				if len(ex) > 120 {
+					ex = append(ex[:120], '…')
+				}
+				title := titles[p.Board]
+				if title == "" {
+					title = p.Board
+				}
+				v.Posts = append(v.Posts, postRow{ID: p.ID, Board: title, Href: href,
+					Excerpt: string(ex), When: p.Created.Format("2 January 2006"),
+					Waiting: p.State == board.Held})
+			}
 		}
 	}
 	h := w.Header()
@@ -713,6 +763,11 @@ var accountTemplate = template.Must(template.New("account").Parse(`<!doctype htm
 {{if .V.MemberPages}}<section class="qz-turn" aria-labelledby="pages-h">
   <h2 id="pages-h">For members</h2>
   <ul>{{range .V.MemberPages}}<li><a href="{{.Href}}">{{.Title}}</a></li>{{end}}</ul>
+</section>{{end}}
+{{if .V.Posts}}<section class="qz-turn" aria-labelledby="posts-h">
+  <h2 id="posts-h">Your posts</h2>
+  <ul class="qz-keys">{{range .V.Posts}}<li><span><a href="{{.Href}}#comments">{{.Board}}</a>, {{.When}}{{if .Waiting}} <strong>waiting for a person</strong>{{end}}<br><span class="qz-small">{{.Excerpt}}</span></span>
+    <form method="post" action="/account/post/delete"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="qz-button-quiet">Delete<span class="qz-sr"> this post</span></button></form></li>{{end}}</ul>
 </section>{{end}}
 <section class="qz-turn" aria-labelledby="keys-h">
   <h2 id="keys-h">Your passkeys</h2>

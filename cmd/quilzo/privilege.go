@@ -179,6 +179,14 @@ var commandNeeds = map[string]need{
 	// Grant: who may have an account on the site, and whether they keep it,
 	// is an access decision, and the list is personal data.
 	"member": {action: auth.ActGrant},
+	// Publish: a board is a place on the site where people other than its
+	// staff put words. Moderating one is editing what the site shows.
+	"board":         {action: auth.ActPublish},
+	"board list":    {action: auth.ActEditDraft},
+	"board held":    {action: auth.ActEditDraft},
+	"board recent":  {action: auth.ActEditDraft},
+	"board approve": {action: auth.ActEditDraft},
+	"board delete":  {action: auth.ActEditDraft},
 	// Grant: a model route decides who receives what visitors typed.
 	"gateway": {action: auth.ActGrant},
 	// Declaring a decider is a publish: above its threshold, what it
