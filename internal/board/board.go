@@ -283,7 +283,11 @@ func (s *Store) Thread(board, thread, viewer string) []Post {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []Post
-	for _, p := range s.readDir(s.threadDir(board, thread)) {
+	dir, ok := s.threadDir(board, thread)
+	if !ok {
+		return nil
+	}
+	for _, p := range s.readDir(dir) {
 		if p.State == Visible || (viewer != "" && p.Author == viewer) {
 			out = append(out, p)
 		}
@@ -405,18 +409,23 @@ func randomID() string {
 	return hex.EncodeToString(b)
 }
 
-// threadDir is where a thread's posts live: the page name hashed, so no
-// part of a path comes from anything a request named.
-func (s *Store) threadDir(board, thread string) string {
+// threadDir is where a thread's posts live: the board's name, which must be
+// one a board can have, and the page name hashed. So no part of the path is
+// anything a request named: a caller passing a board name straight from an
+// address gets nothing back rather than a path somewhere else.
+func (s *Store) threadDir(board, thread string) (string, bool) {
+	if !reName.MatchString(board) {
+		return "", false
+	}
 	sum := sha256.Sum256([]byte(thread))
-	return filepath.Join(s.Dir, board, hex.EncodeToString(sum[:])[:32])
+	return filepath.Join(s.Dir, board, hex.EncodeToString(sum[:])[:32]), true
 }
 
 func (s *Store) write(p Post) error {
-	if !reName.MatchString(p.Board) || !reID.MatchString(p.ID) {
+	dir, ok := s.threadDir(p.Board, p.Thread)
+	if !ok || !reID.MatchString(p.ID) {
 		return fmt.Errorf("that post cannot be stored")
 	}
-	dir := s.threadDir(p.Board, p.Thread)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -444,7 +453,11 @@ func (s *Store) readDir(dir string) []Post {
 }
 
 func (s *Store) count(board, thread string) int {
-	entries, _ := os.ReadDir(s.threadDir(board, thread))
+	dir, ok := s.threadDir(board, thread)
+	if !ok {
+		return 0
+	}
+	entries, _ := os.ReadDir(dir)
 	return len(entries)
 }
 

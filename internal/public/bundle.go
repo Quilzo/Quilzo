@@ -206,6 +206,9 @@ func (st *Site) indexName() string {
 // served — which is the whole thing this file exists to prevent.
 func fetchSelf(h http.Handler, path string) ([]byte, int, error) {
 	req := httptest.NewRequest(http.MethodGet, path, nil)
+	// A static copy has no server behind it, so pages leave out what only
+	// works with one: live updates, for instance.
+	req.Header.Set(CopyHeader, "static")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	res := rec.Result()

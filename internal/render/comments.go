@@ -50,6 +50,9 @@ func placeComments(page any, name string, thread func(board, page string) map[st
 		open, _ := data["open"].(bool)
 		c["open"] = open
 		c["held"] = data["held"] == true
+		if data["live"] == true {
+			c["live"] = "/live/board/" + board + "/" + name
+		}
 		if _, has := c["title"]; !has {
 			if t, ok := data["title"].(string); ok {
 				c["title"] = t
