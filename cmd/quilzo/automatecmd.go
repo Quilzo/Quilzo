@@ -659,7 +659,12 @@ func cmdGeo(root string, args []string) error {
 		w.Human("  Sign-ins are placed from networks you name first, then a city database.\n"+
 			"  The database: download DB-IP's free IP to City Lite in MMDB form from\n"+
 			"  https://db-ip.com/db/download/ip-to-city-lite (CC BY 4.0), unpack it, and put it at\n"+
-			"  %s. It is never fetched by this program, and no lookup leaves the machine.\n", geoDBPath(root))
+			"  %s. It is never fetched by this program, and no lookup leaves the machine.\n\n"+
+			"  Optional, beside it:\n"+
+			"    %s  DB-IP's IP to ASN Lite (MMDB): names the network a sign-in came\n"+
+			"      from, so a new provider and a hosting provider can be told apart from home\n"+
+			"    %s  the Tor Project's bulk exit list, one address a line, from\n"+
+			"      https://check.torproject.org/torbulkexitlist; refresh it daily\n", geoDBPath(root), geoASNPath(root), geoTorPath(root))
 		return nil
 	case "network":
 		if len(args) < 3 {
