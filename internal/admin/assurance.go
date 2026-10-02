@@ -259,11 +259,21 @@ func (s *Server) handleAgentsScreen(w http.ResponseWriter, r *http.Request) {
 
 // assuranceReader is the shared preamble.
 //
-// Gated on ActGrant rather than ActView, for the reason the posture dashboard
-// is: a detailed list of where this system's defences are thin is a target
-// list, and the people who need it are the people who can already change it.
+// Reading, on a guarded area: a detailed list of where this system's
+// defences are thin is a target list, so a role over the site reaches it
+// only as administrator (see auth's guarded areas), and anybody else needs
+// a grant on the area itself — an auditor reads here and changes nothing.
+// What changes something, such as verifying the store, still asks for
+// administrator of the area.
 func (s *Server) assuranceReader(w http.ResponseWriter, r *http.Request) (principal, bool) {
-	return s.areaAdmin(w, r, auth.AreaCompliance)
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return principal{}, false
+	}
+	if !s.can(w, r, p, auth.ActView, auth.AreaCompliance) {
+		return principal{}, false
+	}
+	return p, true
 }
 
 // securityReader is assuranceReader for security operations: the findings,

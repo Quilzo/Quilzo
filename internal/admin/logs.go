@@ -65,10 +65,11 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Reading the audit log is an administrative act: it holds who did what,
-	// across everybody, and is the one record that is worth reading to plan an
-	// attack as well as to investigate one.
-	if !s.can(w, r, p, auth.ActGrant, auth.AreaLog) {
+	// The audit log holds who did what, across everybody, and is the one
+	// record that is worth reading to plan an attack as well as to
+	// investigate one. A guarded area: an administrator over the site, or
+	// somebody granted the log itself, such as an auditor, reads it.
+	if !s.can(w, r, p, auth.ActView, auth.AreaLog) {
 		return
 	}
 	if s.LoadAudit == nil {

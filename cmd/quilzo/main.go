@@ -446,7 +446,7 @@ access
   quilzo move OLD NEW [--dry-run]          a page and everything under it
   quilzo links [PAGE] [--from] [--broken]  what points at what
   quilzo auth grant WHO ROLE [--on PATH]   reader | author | publisher | admin
-  quilzo auth grant WHO JOB [--for 30d]    analyst | compliance | support: one area each
+  quilzo auth grant WHO JOB [--for 30d]    analyst | compliance | support | auditor (must end)
   quilzo auth grant ... --until 2026-12-31 access that ends by itself
   quilzo scim status | token [--revoke]     provisioning from Okta, Entra and others
   quilzo scim map GROUP ROLE|JOB | unmap GROUP   what each of their groups means here

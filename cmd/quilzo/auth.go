@@ -270,6 +270,9 @@ func authGrant(root string, args []string) error {
 		if *on != "/" || *deny {
 			return fmt.Errorf("%s is a job, which is its own areas: it takes no --on and cannot be a deny", job.Name)
 		}
+		if job.Ends && expires == 0 {
+			return fmt.Errorf("%s access ends by itself: give --for (30d, say) or --until a day", job.Name)
+		}
 		bindings = nil
 		for _, jb := range job.Bindings {
 			jb.Principal = rest[0]

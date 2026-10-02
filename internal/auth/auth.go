@@ -184,8 +184,8 @@ func (b Binding) Live(now time.Time) bool {
 // it, "/blog" for a section. These are parts of the admin instead, named
 // where no page can be (a page name cannot begin with @), and the screens,
 // commands and machine-interface tools of each area ask about its name. So
-// a role granted on "/" covers every area exactly as before, and a role
-// granted on one area covers that area and nothing else.
+// a role granted on "/" covers every area, and a role granted on one area
+// covers that area and nothing else — except for the guarded areas below.
 //
 // That is how a job is given without inventing rungs: a security analyst is
 // an administrator of /@security — the findings, cases and hunts — who can
@@ -206,6 +206,27 @@ const (
 	AreaBoards = "/@boards"
 )
 
+// guardedAreas are the areas a role over the site reaches only if it is
+// administrator: security operations, the posture and the audit log.
+//
+// What is in them is a list of where the defences are thin and a record of
+// who did what, across everybody, and the screens for them always asked for
+// an administrator. Some of their commands asked only to view, and a reader
+// over the whole site covered every area, so a content reviewer's token
+// could read the audit log from a terminal that the admin would not show
+// them. Somebody who should read one of these and change nothing — an
+// auditor — is granted reader on the area itself.
+var guardedAreas = []string{AreaSecurity, AreaCompliance, AreaLog}
+
+func guarded(target string) bool {
+	for _, a := range guardedAreas {
+		if covers(a, target) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsArea reports whether a resource names an area rather than content.
 func IsArea(resource string) bool {
 	return strings.HasPrefix(normalise(resource), "/@")
@@ -216,6 +237,10 @@ type Job struct {
 	Name     string
 	Summary  string
 	Bindings []Binding
+	// Ends says it is granted only for a time: an assessor is there for an
+	// assessment, and access nobody remembered to remove is the finding
+	// they would write.
+	Ends bool
 }
 
 // Jobs are the roles people ask for by what they do. Each is only the
@@ -228,6 +253,8 @@ var Jobs = []Job{
 		Bindings: []Binding{{Role: RoleAdmin, Resource: AreaCompliance}, {Role: RoleAdmin, Resource: AreaLog}}},
 	{Name: "support", Summary: "answer visitors in the inbox and moderate members' posts; nothing else",
 		Bindings: []Binding{{Role: RoleAuthor, Resource: AreaInbox}, {Role: RoleAuthor, Resource: AreaBoards}}},
+	{Name: "auditor", Summary: "read the posture, frameworks, evidence and the audit log, for a set time; change nothing",
+		Bindings: []Binding{{Role: RoleReader, Resource: AreaCompliance}, {Role: RoleReader, Resource: AreaLog}}, Ends: true},
 }
 
 // JobNamed finds a job by name.
@@ -362,6 +389,12 @@ func (p *Policy) Evaluate(principal string, action Action, resource string) Deci
 		if !covers(b.Resource, target) {
 			trail = append(trail, fmt.Sprintf(
 				"skip %s on %s — does not cover %s", b.Role, normalise(b.Resource), target))
+			continue
+		}
+		if b.Role != RoleAdmin && !IsArea(b.Resource) && guarded(target) {
+			trail = append(trail, fmt.Sprintf(
+				"skip %s on %s — only an administrator over the site reaches %s",
+				b.Role, normalise(b.Resource), target))
 			continue
 		}
 		trail = append(trail, fmt.Sprintf(

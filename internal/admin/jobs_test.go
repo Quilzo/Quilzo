@@ -56,6 +56,10 @@ func TestAJobOpensItsScreensAndNoOthers(t *testing.T) {
 			[]string{"/security", "/security/frameworks", "/logs"},
 			[]string{"/findings", "/security/cases", "/people", "/page/index", "/inbox"},
 			"/security"},
+		{"auditor",
+			[]string{"/security", "/security/frameworks", "/security/rules", "/security/integrity", "/security/inventory", "/security/scan", "/security/agents", "/security/running", "/logs"},
+			[]string{"/findings", "/security/hunt", "/people", "/access", "/page/index", "/inbox", "/boards", "/members"},
+			"/security"},
 		{"support",
 			[]string{"/inbox", "/boards"},
 			[]string{"/findings", "/security", "/logs", "/people", "/page/index", "/members"},
@@ -117,5 +121,42 @@ func TestThePeopleScreenGrantsAJobUntilADay(t *testing.T) {
 	postForm(t, srv, "/people/grant", token, "new_principal=old&role=reader&until=2020-01-01")
 	if srv.Policy.Evaluate("old", auth.ActView, "/").Allowed {
 		t.Error("a grant ending in the past was made")
+	}
+}
+
+// An auditor reads the evidence and changes none of it.
+func TestAnAuditorReadsEvidenceAndChangesNothing(t *testing.T) {
+	srv, token := asJob(t, "auditor")
+	body := get(t, srv, "/security/integrity", token).Body.String()
+	if strings.Contains(body, `action="/security/verify"`) {
+		t.Error("an auditor is offered verifying the store")
+	}
+	if w := postForm(t, srv, "/security/verify", token, ""); w.Code != http.StatusForbidden {
+		t.Errorf("an auditor verified the store: %d", w.Code)
+	}
+}
+
+// A reader over the whole site reads pages, not the audit log or the
+// posture: the guarded areas need administrator over the site.
+func TestAReaderOverTheSiteDoesNotReadTheLogOrThePosture(t *testing.T) {
+	srv, token := asRole(t, auth.RoleReader)
+	for _, path := range []string{"/logs", "/security", "/security/frameworks", "/security/integrity"} {
+		if w := get(t, srv, path, token); w.Code == http.StatusOK {
+			t.Errorf("a reader opened %s", path)
+		}
+	}
+}
+
+// An auditor's access has to end: the People screen will not grant it for ever.
+func TestTheAuditorJobIsOnlyGrantedUntilADay(t *testing.T) {
+	srv, token := setup(t)
+	postForm(t, srv, "/people/grant", token, "new_principal=assessor&role=job%3Aauditor")
+	if srv.Policy.Evaluate("assessor", auth.ActView, auth.AreaLog).Allowed {
+		t.Fatal("an auditor was granted with no end")
+	}
+	day := time.Now().AddDate(0, 0, 30).Format("2006-01-02")
+	postForm(t, srv, "/people/grant", token, "new_principal=assessor&role=job%3Aauditor&until="+day)
+	if !srv.Policy.Evaluate("assessor", auth.ActView, auth.AreaLog).Allowed {
+		t.Error("an auditor with an end day was not granted")
 	}
 }

@@ -566,7 +566,10 @@ var commandNeeds = map[string]need{
 	"auditlog head":        {action: auth.ActView},
 	"auditlog prove":       {action: auth.ActView},
 	"auditlog consistency": {action: auth.ActView},
-	"auditlog anchor":      {action: auth.ActView},
+	// Anchoring sends the log's digest to outside timestamp authorities and
+	// writes what they return: an act, not a read, so an auditor who may
+	// read the log may not do it.
+	"auditlog anchor": {action: auth.ActGrant},
 
 	// -- changing what the public sees
 	"publish": {action: auth.ActPublish},
