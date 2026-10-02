@@ -179,6 +179,9 @@ var commandNeeds = map[string]need{
 	// Grant: who may have an account on the site, and whether they keep it,
 	// is an access decision, and the list is personal data.
 	"member": {action: auth.ActGrant},
+	// Grant: provisioning decides who holds which role.
+	"scim":        {action: auth.ActGrant},
+	"scim status": {action: auth.ActGrant},
 	// Publish: a board is a place on the site where people other than its
 	// staff put words. Moderating one is editing what the site shows.
 	"board":         {action: auth.ActPublish},

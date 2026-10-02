@@ -140,6 +140,8 @@ type Server struct {
 	Members *MembersAdmin
 	// Boards is what the site's members write. See boards.go.
 	Boards *BoardsAdmin
+	// SCIM is provisioning from an identity provider. See scimadmin.go.
+	SCIM *SCIMAdmin
 	// Publishing is the deployment pipeline: environments, promotion and work
 	// queued for later.
 	Publishing *Publishing
@@ -1059,6 +1061,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/models/change", s.handleModelsChange)
 	mux.HandleFunc("/inbox", s.handleInbox)
 	mux.HandleFunc("/members", s.handleMembers)
+	mux.HandleFunc("/provisioning", s.handleProvisioning)
+	mux.HandleFunc("/provisioning/act", s.handleProvisioningAct)
 	mux.HandleFunc("/boards", s.handleBoards)
 	mux.HandleFunc("/boards/act", s.handleBoardsAct)
 	mux.HandleFunc("/members/act", s.handleMembersAct)
@@ -1205,6 +1209,11 @@ func (s *Server) Handler() http.Handler {
 	// them is a read.
 	if s.API != nil {
 		mux.Handle("/api/", s.API)
+	}
+	// The identity provider's provisioning endpoint. It authenticates with
+	// its own token, not a person's session; see internal/scim.
+	if s.SCIM != nil && s.SCIM.Handler != nil {
+		mux.Handle("/scim/v2/", s.SCIM.Handler)
 	}
 	// /docs and /docs/img/ used to be served from here. The manual is now
 	// published at DocsBase and the footer links straight to it — deliberately

@@ -1,0 +1,55 @@
+{{template "head" .}}
+<h1>Provisioning</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">Your identity provider — Okta, Microsoft Entra or another that speaks
+  SCIM 2.0 — keeps people here in step with its own. When it deactivates somebody,
+  their access here ends at once. It only places people in groups; what each group
+  means here is decided on this screen.</p>
+
+{{if .Token}}<section class="notice ok" aria-labelledby="tok-h">
+  <h2 id="tok-h">The provisioning token</h2>
+  <p>Give this to the identity provider as its bearer token, with this admin's address followed by <code>/scim/v2</code>. It is shown once, and replaces any earlier token.</p>
+  <p class="code-big"><code>{{.Token}}</code></p>
+</section>{{end}}
+
+<h2>Connection</h2>
+<p>{{if .TokenSet}}A token is set, so the identity provider can provision.{{else}}No token is set, so nothing can provision.{{end}}</p>
+<form method="post" action="/provisioning/act" class="actions">
+  <button type="submit" name="do" value="token">{{if .TokenSet}}Make a new token{{else}}Make a token{{end}}</button>
+  {{if .TokenSet}}<button type="submit" name="do" value="revoke" class="danger">Revoke the token</button>{{end}}
+</form>
+
+<h2>What each group means here</h2>
+{{if .Groups}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Group</th><th scope="col">Means</th><th scope="col">Members</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+  <tbody>{{range .Groups}}<tr>
+    <th scope="row">{{.Name}}</th>
+    <td>{{if .Means}}{{.Means}}{{else}}<span class="hint">nothing: not mapped</span>{{end}}</td>
+    <td>{{.Members}}</td>
+    <td>{{if .Means}}<form method="post" action="/provisioning/act"><input type="hidden" name="do" value="unmap"><input type="hidden" name="group" value="{{.Name}}">
+      <button type="submit" class="quiet">Unmap<span class="visually-hidden"> {{.Name}}</span></button></form>{{end}}</td>
+  </tr>{{end}}</tbody></table></div>{{else}}<p>No groups yet.</p>{{end}}
+<form method="post" action="/provisioning/act" class="card">
+  <input type="hidden" name="do" value="map">
+  <div class="field"><label for="group">Group, as the identity provider names it {{template "req"}}</label>
+    <input id="group" name="group" required></div>
+  <div class="field"><label for="to">Means</label>
+    <select id="to" name="to">
+      <optgroup label="A role over the whole site">{{range .Roles}}<option value="{{.}}">{{.}}</option>{{end}}</optgroup>
+      <optgroup label="A job">{{range .Jobs}}<option value="{{.Name}}">{{.Name}}: {{.Summary}}</option>{{end}}</optgroup>
+    </select></div>
+  <button type="submit">Save</button>
+</form>
+
+<h2>People provisioned</h2>
+{{if .Users}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Signs in as</th><th scope="col">State</th><th scope="col">Groups</th><th scope="col">Holds here</th></tr></thead>
+  <tbody>{{range .Users}}<tr>
+    <th scope="row">{{.Name}}</th>
+    <td>{{if .Active}}<span class="wf-word good">active</span>{{else}}<span class="wf-word warning">deactivated</span>{{end}}</td>
+    <td>{{.Groups}}</td><td>{{if .Holds}}{{.Holds}}{{else}}<span class="hint">nothing</span>{{end}}</td>
+  </tr>{{end}}</tbody></table></div>{{else}}<p>Nobody yet.</p>{{end}}
+{{end}}
+{{template "foot" .}}
