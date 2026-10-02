@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -126,4 +127,29 @@ func readStylesheet(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// Every token the stylesheet uses is one it defines. A var() naming nothing
+// is dropped by the browser without a word: --shape-s and --shape-m were
+// written fifteen times where --shape-sm and --shape-md were meant, and
+// every one of those corners was square.
+func TestEveryTokenUsedIsDefined(t *testing.T) {
+	b, err := assets.ReadFile("assets/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Comments describe old approaches by name; only rules count.
+	css := regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(string(b), "")
+	defined := map[string]bool{
+		// Set on the root element's style attribute by the brand colour.
+		"--brand": true,
+	}
+	for _, m := range regexp.MustCompile(`(--[\w-]+)\s*:`).FindAllStringSubmatch(css, -1) {
+		defined[m[1]] = true
+	}
+	for _, m := range regexp.MustCompile(`var\((--[\w-]+)`).FindAllStringSubmatch(css, -1) {
+		if !defined[m[1]] {
+			t.Errorf("%s is used and never defined", m[1])
+		}
+	}
 }

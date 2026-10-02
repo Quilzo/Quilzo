@@ -192,7 +192,8 @@
         document.body.classList.toggle("nav-hidden", hide);
         to.value = hide ? "shown" : "hidden";
         button.setAttribute("aria-expanded", hide ? "false" : "true");
-        button.title = (hide ? "Expand" : "Collapse") + " the menu";
+        var tip = (hide ? "Expand" : "Collapse") + " the menu";
+        if (button.dataset.tip) button.dataset.tip = tip; else button.title = tip;
       }).catch(function () { form.submit(); });
     });
   });
@@ -256,6 +257,49 @@
       }
     });
   }
+
+  // Plain tooltips, as Material draws them: a control's title shown after
+  // a moment of pointing, or at once on keyboard focus, below it (above
+  // when there is no room), gone on leaving or Escape. Taken from the
+  // title so the browser's own does not appear as well; screen readers
+  // already hear each control's name, so the tooltip is hidden from them.
+  var tooltip = null, tipping;
+  function tipShow(el) {
+    if (!tooltip) {
+      tooltip = document.createElement("div");
+      tooltip.className = "tooltip";
+      tooltip.setAttribute("popover", "manual");
+      tooltip.setAttribute("aria-hidden", "true");
+      document.body.appendChild(tooltip);
+    }
+    if (!tooltip.showPopover) return;
+    tooltip.textContent = el.dataset.tip;
+    if (!tooltip.matches(":popover-open")) tooltip.showPopover();
+    var r = el.getBoundingClientRect(), t = tooltip.getBoundingClientRect();
+    var left = Math.max(8, Math.min(r.left + r.width / 2 - t.width / 2, innerWidth - t.width - 8));
+    var top = r.bottom + 4;
+    if (top + t.height > innerHeight - 8) top = r.top - t.height - 4;
+    tooltip.style.left = left + "px";
+    tooltip.style.top = top + "px";
+  }
+  function tipHide() {
+    clearTimeout(tipping);
+    if (tooltip && tooltip.matches(":popover-open")) tooltip.hidePopover();
+  }
+  document.querySelectorAll("header.bar [title], .iconbutton[title], .rowmenu-open[title]").forEach(function (el) {
+    el.dataset.tip = el.title;
+    el.removeAttribute("title");
+    el.addEventListener("pointerenter", function (e) {
+      if (e.pointerType !== "mouse") return;
+      clearTimeout(tipping);
+      tipping = setTimeout(function () { tipShow(el); }, 500);
+    });
+    el.addEventListener("pointerleave", tipHide);
+    el.addEventListener("focus", function () { if (el.matches(":focus-visible")) tipShow(el); });
+    el.addEventListener("blur", tipHide);
+    el.addEventListener("click", tipHide);
+  });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") tipHide(); });
 
   // The shortcut, shown where people look for search, in their platform's
   // spelling. Only once the script is running, since it is what makes it work.

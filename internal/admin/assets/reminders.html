@@ -56,7 +56,7 @@
     <td><ul class="wf-list">{{range .Lines}}<li>{{.}}</li>{{end}}</ul></td></tr>{{end}}</tbody>
 </table></div>{{else}}<p>Nobody has anything due.</p>{{end}}
 
-{{if .Held}}<details class="wf-how"><summary>Held back ({{len .Held}})</summary>
+{{if .Held}}<details class="wf-how"><summary>Held back ({{len .Held}})<span class="chev">{{icon "expand_more"}}</span></summary>
   <ul>{{range .Held}}<li>{{.Name}}: {{.Why}}</li>{{end}}</ul></details>{{end}}
 
 <h2>Sent</h2>

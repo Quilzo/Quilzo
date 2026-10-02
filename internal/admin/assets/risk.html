@@ -26,7 +26,7 @@
       <td><span class="pill {{.Sev}}">{{.Sev}}</span></td><td>{{.Age}}</td><td>{{.Points}}</td>
       <td>{{if .Case}}<a href="/security/case/{{.Case}}"><code>{{.Case}}</code></a>{{else}}<span class="hint">none</span>{{end}}</td></tr>{{end}}</tbody>
   </table></div>
-  {{if .Offer}}<details class="wf-how"><summary>These look like one thing: declare an incident</summary>
+  {{if .Offer}}<details class="wf-how"><summary>These look like one thing: declare an incident<span class="chev">{{icon "expand_more"}}</span></summary>
   <form method="post" action="/security/cases/act">
     <input type="hidden" name="do" value="declare">
     {{range .Offer}}<input type="hidden" name="finding" value="{{.}}">{{end}}

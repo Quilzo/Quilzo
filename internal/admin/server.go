@@ -398,7 +398,9 @@ func (s *Server) refresh() {
 // exactly right and there is no surface to remove.
 func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Layouts) (*Server, error) {
 	t, err := template.New("").Funcs(template.FuncMap{
-		"pct": func(f float64) float64 { return f * 100 },
+		"icon":     uiIcon,
+		"toneicon": toneIcon,
+		"pct":      func(f float64) float64 { return f * 100 },
 		// deref reads a yes or no a tool may not have given; the template
 		// checks for nil before calling it.
 		"deref": func(b *bool) bool { return b != nil && *b },

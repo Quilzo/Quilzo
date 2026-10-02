@@ -73,7 +73,7 @@ func TestEverySectionHasItsOwnIcon(t *testing.T) {
 func TestTheRailShowsOnlyWhenTheWideMenuIsCollapsed(t *testing.T) {
 	css := stylesheet(t)
 	if !strings.Contains(css, ".rail { display: none; }") ||
-		!regexp.MustCompile(`@media \(min-width: 60rem\) \{\s*body\.nav-hidden:has\(> \.sidenav\) \{ grid-template-columns: 72px 1fr;[^}]*\}\s*body\.nav-hidden > \.rail \{ grid-area: rail; display: flex;`).MatchString(css) {
+		!regexp.MustCompile(`@media \(min-width: 60rem\) \{\s*body\.nav-hidden:has\(> \.sidenav\) \{ grid-template-columns: 80px 1fr;[^}]*\}\s*body\.nav-hidden > \.rail \{ grid-area: rail; display: flex;`).MatchString(css) {
 		t.Error("the rail is not hidden by default and shown only for a collapsed wide menu")
 	}
 }

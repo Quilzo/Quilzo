@@ -44,7 +44,7 @@
     in {{.Actions}} action{{if ne .Actions 1}}s{{end}}.
     {{range $kind, $n := .Counts}}<span class="pill">{{$kind}} × {{$n}}</span> {{end}}</p>
   <details>
-    <summary class="hint">The strikes, and where each one is in the log</summary>
+    <summary class="hint">The strikes, and where each one is in the log<span class="chev">{{icon "expand_more"}}</span></summary>
     <div class="table-wrap">
     <table>
       <thead><tr>
