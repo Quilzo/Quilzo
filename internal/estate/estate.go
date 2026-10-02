@@ -65,6 +65,9 @@ type Line map[string]string
 type Snapshot struct {
 	Source string    `json:"source"`
 	At     time.Time `json:"at"`
+	// Sample marks a made-up company's data (see Sample), so every screen
+	// that shows it can say so.
+	Sample bool `json:"sample,omitempty"`
 	// Endpoints says, for each endpoint read, what it produces, which
 	// endpoint it was read per record of, and whether it was read to the end.
 	Endpoints map[string]EndpointInfo `json:"endpoints"`

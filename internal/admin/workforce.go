@@ -72,6 +72,12 @@ func (s *Server) wfLoad(w http.ResponseWriter, r *http.Request, nav,
 		s.render(w, r, tpl, data)
 		return p, nil, estate.Outcome{}, nil, false
 	}
+	// A made-up company's data says so on every screen it is shown on.
+	for _, snap := range e.Sources {
+		if snap.Sample {
+			data["Sample"] = true
+		}
+	}
 	return p, e, o, data, true
 }
 
@@ -352,6 +358,7 @@ func (s *Server) handleWorkforce(w http.ResponseWriter, r *http.Request) {
 	data["Notes"] = e.Notes
 	data["Unplaced"] = e.Unplaced
 	data["Weights"] = estate.Weights
+	data["Compliance"] = summarise(e, time.Now().UTC())
 	s.render(w, r, "workforce.html", data)
 }
 
@@ -654,6 +661,7 @@ func (s *Server) handleWorkforceDevices(w http.ResponseWriter, r *http.Request) 
 	}
 	type row struct {
 		machineRow
+		deviceRow
 		In []bool
 	}
 	counts := map[string]int{}
@@ -665,6 +673,13 @@ func (s *Server) handleWorkforceDevices(w http.ResponseWriter, r *http.Request) 
 		for i, t := range tools {
 			in[i] = mr.Sources[t]
 			missing = missing || !in[i]
+		}
+		comp := complianceRow(estate.Comply(mr, now), now)
+		if comp.StatusTone != "good" && comp.StatusTone != "unknown" {
+			counts["violations"]++
+		}
+		if comp.SupportTone == "critical" {
+			counts["unsupported"]++
 		}
 		unowned := mr.Owner == nil
 		disputed := false
@@ -695,8 +710,16 @@ func (s *Server) handleWorkforceDevices(w http.ResponseWriter, r *http.Request) 
 			if !disputed {
 				continue
 			}
+		case "violations":
+			if comp.StatusTone == "good" || comp.StatusTone == "unknown" {
+				continue
+			}
+		case "unsupported":
+			if comp.SupportTone != "critical" {
+				continue
+			}
 		}
-		rows = append(rows, row{machineRow: base, In: in})
+		rows = append(rows, row{machineRow: base, deviceRow: comp, In: in})
 	}
 	type chip struct {
 		Label, Href string
@@ -705,7 +728,8 @@ func (s *Server) handleWorkforceDevices(w http.ResponseWriter, r *http.Request) 
 	}
 	var chips []chip
 	for _, c := range []struct{ key, label string }{
-		{"", "All"}, {"partial", "Missing from a tool"},
+		{"", "All"}, {"violations", "With violations"}, {"unsupported", "Unsupported OS"},
+		{"partial", "Missing from a tool"},
 		{"unowned", "In use, no owner"}, {"disputed", "Tools disagree"},
 	} {
 		href := "/workforce/devices"

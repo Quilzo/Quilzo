@@ -176,9 +176,11 @@ func cmdEstate(root string, args []string) error {
 		return cmdEstateSync(root, args[1:])
 	case "auto":
 		return cmdEstateAuto(root, args[1:])
+	case "sample":
+		return estateSample(root, args[1:])
 	default:
 		return fmt.Errorf("unknown estate command %q; try show, build, "+
-			"scores, sync or auto", args[0])
+			"scores, sync, auto or sample", args[0])
 	}
 }
 
@@ -522,5 +524,86 @@ func estateScores(root string, args []string) error {
 			w.Human("      %s  ?  %s unknown: %s%s\n", yellow, a, why, reset)
 		}
 	}
+	return nil
+}
+
+// estateSample writes, or with --remove deletes, a made-up company's tools
+// (see estate.Sample), so the workforce screens can be tried before any
+// tool is connected. It never touches a real tool's read: a source that
+// already holds one is refused, and --remove deletes only what is marked
+// as a sample.
+func estateSample(root string, args []string) error {
+	remove := len(args) > 0 && args[0] == "--remove"
+	if len(args) > 0 && !remove {
+		return fmt.Errorf("usage: quilzo estate sample [--remove]")
+	}
+	tools := estate.Sample(time.Now().UTC())
+	removed := 0
+	for _, t := range tools {
+		records, meta := snapshotPaths(root, t.Source)
+		var existing estate.Snapshot
+		b, err := os.ReadFile(meta)
+		switch {
+		case err == nil:
+			if jerr := json.Unmarshal(b, &existing); jerr != nil {
+				return fmt.Errorf("%s: %w", meta, jerr)
+			}
+		case !os.IsNotExist(err):
+			return err
+		}
+		if remove {
+			if err == nil && existing.Sample {
+				if rerr := os.Remove(records); rerr != nil && !os.IsNotExist(rerr) {
+					return rerr
+				}
+				if rerr := os.Remove(meta); rerr != nil {
+					return rerr
+				}
+				removed++
+			}
+			continue
+		}
+		if err == nil && !existing.Sample {
+			return fmt.Errorf("%s already holds a real read; the sample will not replace it", t.Source)
+		}
+		snap := estate.Snapshot{Source: t.Source, At: time.Now().UTC(), Sample: true,
+			Endpoints: map[string]estate.EndpointInfo{}}
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		for name, kind := range t.Endpoints {
+			info := estate.EndpointInfo{Produces: kind, Complete: true}
+			for _, l := range t.Lines {
+				if l["_endpoint"] == name {
+					info.Records++
+				}
+			}
+			snap.Endpoints[name] = info
+		}
+		for _, l := range t.Lines {
+			l["_source"] = t.Source
+			if err := enc.Encode(l); err != nil {
+				return err
+			}
+		}
+		if err := os.MkdirAll(toolsDir(root), 0o700); err != nil {
+			return err
+		}
+		if err := atomicfile.Write(records, buf.Bytes(), 0o600); err != nil {
+			return err
+		}
+		mb, err := json.MarshalIndent(snap, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := atomicfile.Write(meta, mb, 0o600); err != nil {
+			return err
+		}
+	}
+	if remove {
+		w.Human("removed %d sample tool(s)\n", removed)
+		return nil
+	}
+	w.Human("wrote a sample company, Northwind Labs, as %d tools; every screen that shows it says it is a sample\n", len(tools))
+	w.Human("  %sremove it with: quilzo estate sample --remove%s\n", dim, reset)
 	return nil
 }

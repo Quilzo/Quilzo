@@ -1889,6 +1889,10 @@ table.queue td:nth-child(5), table.queue td:nth-child(6) {
   --viz-serious: light-dark(#e8710a, #fcad70);
   --viz-critical: light-dark(#d93025, #f28b82);
   --viz-track: var(--surface-container-high);
+  /* "Not measured" in a status donut: a grey a full step from both green
+     and red in each theme (palette validator: ring neighbours pass for
+     colour-blind and full-colour vision). */
+  --viz-unknown: light-dark(#80868b, #5f6368);
   --viz-grid: var(--outline-variant);
   --serious-container: light-dark(#ffdbc8, #6b2c00);
   --on-serious-container: light-dark(#331200, #ffdbc8);
@@ -2544,3 +2548,78 @@ summary > .chev { vertical-align: middle; margin-inline-start: 4px; }
 summary > .chev .icon { width: 20px; height: 20px; }
 .navgroup > summary > .chev .icon, .settinggroup > summary > .chev .icon { width: 24px; height: 24px; }
 .navgroup > summary > .chev, .settinggroup > summary > .chev { margin-inline-start: auto; }
+
+/* == Devices and compliance ================================================ */
+
+/* Sample data says so, in the tertiary container, on every screen. */
+.notice.sample { display: flex; gap: 12px; align-items: flex-start;
+  background: var(--surface-container-high); color: var(--on-surface);
+  border-radius: var(--shape-lg); padding: 12px 16px; }
+.notice.sample .icon { width: 24px; height: 24px; flex: none; color: var(--primary); }
+
+/* The donut: a 20-wide ring, 2px of surface between parts, the total in the
+   middle; the legend beside it carries each part's icon, word and count. */
+.donut-fig { display: grid; grid-template-columns: minmax(140px, 180px) 1fr; gap: 24px; align-items: center; }
+.donut { width: 100%; max-width: 180px; height: auto; display: block; }
+.donut .track { fill: none; stroke: var(--viz-track); stroke-width: 20; }
+.donut .seg { fill: none; stroke-width: 20;
+  transition: stroke-width var(--motion-fast-spatial-duration) var(--motion-fast-spatial); }
+.donut .seg:hover { stroke-width: 26; }
+.donut .seg.good { stroke: var(--viz-good); }
+.donut .seg.warning { stroke: var(--viz-warning); }
+.donut .seg.serious { stroke: var(--viz-serious); }
+.donut .seg.critical { stroke: var(--viz-critical); }
+.donut .seg.unknown { stroke: var(--viz-unknown); }
+.donut-n { font: 400 36px/1 var(--font); fill: var(--on-surface); }
+.donut-unit { font: var(--label-md); fill: var(--on-surface-variant); }
+.donut-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.donut-legend li { display: grid; grid-template-columns: 24px 1fr auto 3.5rem; gap: 8px; align-items: center;
+  font: var(--body-md); color: var(--on-surface); }
+.donut-legend .dl-n { font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; text-align: right; }
+.donut-legend .dl-pct { color: var(--on-surface-variant); text-align: right; font-variant-numeric: tabular-nums; }
+/* The icon carries the status colour; the words stay in text colours. */
+.donut-legend li .icon, .wf-icon.good .icon { color: var(--viz-good); }
+.donut-legend li.good .icon { color: var(--viz-good); }
+.donut-legend li.warning .icon, .wf-icon.warning .icon { color: var(--viz-warning); }
+.donut-legend li.serious .icon, .wf-icon.serious .icon { color: var(--viz-serious); }
+.donut-legend li.critical .icon, .wf-icon.critical .icon { color: var(--viz-critical); }
+.donut-legend li.unknown .icon, .wf-icon.unknown .icon { color: var(--viz-unknown); }
+.donut-legend .icon { width: 20px; height: 20px; }
+@media (max-width: 40rem) { .donut-fig { grid-template-columns: 1fr; justify-items: center; } }
+.wf-band.unknown { background: var(--surface-container-high); color: var(--on-surface-variant); }
+
+/* A machine's violations, opened from its compliance chip. */
+.wf-violations > summary { display: inline-flex; align-items: center; gap: 4px; }
+.wf-violations ul { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; font: var(--body-sm); }
+.wf-violations li { display: grid; grid-template-columns: 18px 1fr; gap: 6px; align-items: start; }
+.wf-violations li .icon { width: 18px; height: 18px; }
+/* These chips carry words already in sentence case. */
+.wf-machines .wf-band, .wf-tests .wf-band { text-transform: none; }
+.wf-machines td, .wf-machines th { vertical-align: top; }
+@media (forced-colors: active) {
+  .donut .seg { stroke: CanvasText; }
+  .donut .seg.critical { stroke-dasharray: 6 3; }
+}
+.donut-legend .dl-label { min-width: 0; }
+.wf-tests td:nth-child(4) { font-variant-numeric: tabular-nums; }
+
+/* Two figures to a row, each wide enough for its legend. */
+.wf-donuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 28rem), 1fr)); gap: 24px 48px; margin: 0 0 1.5rem; }
+.wf-donuts > .wf-fig { margin: 0; padding: 20px 24px; border-radius: var(--shape-lg);
+  background: var(--surface-container-lowest); }
+
+/* A bar list: the control's words at full size, its count, and a bar
+   drawn to scale against the largest. One hue: the counts are compared,
+   and the icon carries how much the control matters. */
+.barlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.barlist li { display: grid; grid-template-columns: 20px 1fr auto; grid-template-areas: "icon label n" "bar bar bar";
+  column-gap: 8px; row-gap: 4px; align-items: center; font: var(--body-md); }
+.barlist .wf-icon { grid-area: icon; }
+.barlist .wf-icon .icon { width: 18px; height: 18px; }
+.barlist .bl-label { grid-area: label; }
+.barlist .bl-n { grid-area: n; font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; }
+.barlist .bl-bar { grid-area: bar; width: 100%; height: 8px; display: block; }
+.bl-track { fill: var(--viz-track); }
+.bl-fill { fill: var(--viz-series); }
+.wf-icon.low .icon { color: var(--on-surface-variant); }
+.wf-band.low { background: var(--surface-container-high); color: var(--on-surface-variant); }
