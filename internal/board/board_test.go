@@ -168,3 +168,17 @@ func TestAThreadNameCannotReachOutsideTheStore(t *testing.T) {
 		t.Errorf("the post was written at %s", path)
 	}
 }
+
+// A board name that is not one a board could have reaches no file.
+func TestABoardNameFromAnAddressReachesNoFile(t *testing.T) {
+	s := store(t)
+	s.Add(open, "index", "m1", "Ada", "hi")
+	for _, bad := range []string{"..", "../comments", "comments/../comments", "/etc", ""} {
+		if got := s.Thread(bad, "index", ""); len(got) != 0 {
+			t.Errorf("the board %q read %d posts", bad, len(got))
+		}
+		if v := s.Version(bad, "index"); v != s.Version("nothing", "index") {
+			t.Errorf("the board %q has a version of its own", bad)
+		}
+	}
+}
