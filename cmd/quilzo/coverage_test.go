@@ -492,6 +492,12 @@ var coverage = map[string]surfaces{
 			"is a judgement about somebody's words that a person makes",
 	},
 
+	"scim": {
+		GUI: "/provisioning",
+		NoMCP: "provisioning decides who holds which role, and its token " +
+			"is a credential; both are an administrator's to handle",
+	},
+
 	"member": {
 		GUI: "/members",
 		NoMCP: "who has an account on the site is personal data, and " +
