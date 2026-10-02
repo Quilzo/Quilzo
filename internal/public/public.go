@@ -227,6 +227,11 @@ type Site struct {
 	Members *Members
 	// Boards is what members may write under pages. See boards.go.
 	Boards *Boards
+
+	// Live update streams, counted per address and in all. See live.go.
+	liveMu sync.Mutex
+	liveBy map[string]int
+	liveN  int
 	// Icon is the media library id of the site's icon. Empty means none.
 	// See icon.go.
 	Icon string
@@ -308,6 +313,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/account/", st.account)
 	mux.HandleFunc("/account.js", st.accountScript)
 	mux.HandleFunc("/board/", st.post)
+	mux.HandleFunc("/live/board/", st.live)
 	mux.HandleFunc("/", st.page)
 	// The banner is innermost, so it wraps the handler's own output and
 	// nothing else: the headers and the crawl gate go outside it, where a
@@ -920,6 +926,13 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	}
 	tag = st.threadsTag(tag, name, commentsOn(body))
 	w.Header().Set("ETag", tag)
+	// Before the conditional answer, not after: a 304 replaces the policy a
+	// cache stored with the page, and one without this hash would stop the
+	// script the cached page carries.
+	live := st.liveOn(r, body)
+	if live {
+		allowScript(w.Header(), liveHash)
+	}
 	if forMembers {
 		// One member's request, never a shared cache's. no-store rather
 		// than private: a browser back button on a shared computer should
@@ -981,6 +994,9 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	}
 
 	html = st.injectHead(html, name, tree[served], body)
+	if live {
+		html = insertBeforeHead(html, liveScript())
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
 }

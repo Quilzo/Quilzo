@@ -546,7 +546,7 @@
       {% if s.comments.intro %}<p class="lead">{{ s.comments.intro }}</p>{% end %}
     </div>
     {% if s.comments.empty %}<p class="muted">Nothing here yet.</p>{% end %}
-    <ol class="posts" role="list">
+    <ol class="posts" role="list" id="posts-{{ s.comments.board }}"{% if s.comments.live %} data-live="{{ s.comments.live }}"{% end %}>
       {% for p in s.comments.posts %}
       <li class="post">
         <p class="post-by"><strong>{{ p.name }}</strong> <time datetime="{{ p.created }}">{{ p.created | date }}</time>{% if p.edited %} <span class="muted">edited</span>{% end %}</p>

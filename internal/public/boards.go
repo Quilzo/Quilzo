@@ -61,7 +61,8 @@ func (st *Site) threadData(name, page string) map[string]any {
 		posts = append(posts, row)
 	}
 	return map[string]any{"title": b.Title, "posts": posts,
-		"open": !b.Closed && st.membersOn(), "held": b.Moderation == "pre"}
+		"open": !b.Closed && st.membersOn(), "held": b.Moderation == "pre",
+		"live": true}
 }
 
 // commentsOn names the boards a page shows.

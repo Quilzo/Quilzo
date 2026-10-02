@@ -18,7 +18,7 @@ import (
 
 // A layout that prints a comments section's posts, so a test can see them.
 const boardLayout = `<html><head></head><body><h1>{{ page.title }}</h1>
-{% for s in page.sections %}{% if s.comments %}<ol>{% for p in s.comments.posts %}<li>{{ p.name }}: {{ p.body }}</li>{% end %}</ol>{% if s.comments.open %}<form action="/board/{{ s.comments.board }}">{% end %}{% end %}{% end %}
+{% for s in page.sections %}{% if s.comments %}<ol id="posts-{{ s.comments.board }}"{% if s.comments.live %} data-live="{{ s.comments.live }}"{% end %}>{% for p in s.comments.posts %}<li>{{ p.name }}: {{ p.body }}</li>{% end %}</ol>{% if s.comments.open %}<form action="/board/{{ s.comments.board }}">{% end %}{% end %}{% end %}
 </body></html>`
 
 func boardSite(t *testing.T, moderation string) (*Site, *member.Store, *board.Store) {
