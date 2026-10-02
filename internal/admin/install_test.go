@@ -289,13 +289,13 @@ func TestTheMarkIsTheQOfTheName(t *testing.T) {
 			!strings.Contains(body, `<span aria-hidden="true">uilzo</span>`) {
 			t.Errorf("%s does not set the mark as the Q of the name", page.path)
 		}
-		if strings.Contains(body, `</svg><span>Quilzo</span>`) {
+		if strings.Contains(body, `</svg><span class="brand-name">Quilzo</span>`) {
 			t.Errorf("%s still spells the name beside the mark", page.path)
 		}
 	}
 	srv.Brand = Brand{Name: "Acme"}
 	body := get(t, srv, "/", token).Body.String()
-	if !strings.Contains(body, "<span>Acme</span>") || strings.Contains(body, `aria-hidden="true">uilzo<`) {
+	if !strings.Contains(body, `<span class="brand-name">Acme</span>`) || strings.Contains(body, `aria-hidden="true">uilzo<`) {
 		t.Error("a renamed interface did not keep its own name whole")
 	}
 }
