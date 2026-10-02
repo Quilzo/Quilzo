@@ -492,6 +492,16 @@ var coverage = map[string]surfaces{
 			"is a judgement about somebody's words that a person makes",
 	},
 
+	"automate": {
+		GUI: "/security/automations",
+		NoMCP: "rules decide what is done to people's sessions and accounts; " +
+			"changing them, or approving what they wait for, is a person's job",
+	},
+	"geo": {
+		GUI: "/security/signins",
+		NoMCP: "where sign-ins are said to come from decides which of them are " +
+			"stepped up; a model must not be able to name a network an office",
+	},
 	"scim": {
 		GUI: "/provisioning",
 		NoMCP: "provisioning decides who holds which role, and its token " +

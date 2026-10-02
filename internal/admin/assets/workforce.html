@@ -88,6 +88,7 @@
 {{with .Compliance}}{{if .Machines}}
 <h2>Devices and compliance</h2>
 <p class="hint">Each machine against the controls an assessor asks of an endpoint, and its operating system against its release's support dates ({{.Fetched}}, from endoflife.date). What no tool reports is shown as not measured, never as passing. <a href="/workforce/devices">Every machine</a></p>
+{{if .Stale}}<p class="notice warn">{{.Stale}}</p>{{end}}
 <div class="wf-donuts">
   <figure class="wf-fig"><figcaption><h2>Compliance</h2><p class="hint">{{.Machines}} machines, every control measured and passed, or not.</p></figcaption>
     {{template "donut" .Compliance}}</figure>

@@ -2623,3 +2623,49 @@ summary > .chev .icon { width: 20px; height: 20px; }
 .bl-fill { fill: var(--viz-series); }
 .wf-icon.low .icon { color: var(--on-surface-variant); }
 .wf-band.low { background: var(--surface-container-high); color: var(--on-surface-variant); }
+
+/* == Automations ============================================================ */
+
+/* Rules as cards: a surface container, CornerLarge, the rule in words. */
+.auto-list { list-style: none; margin: 0 0 1.5rem; padding: 0; display: grid; gap: 12px; }
+.auto-list.templates { grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); }
+.auto-card { padding: 16px 20px; border-radius: var(--shape-lg); background: var(--surface-container-lowest); }
+.auto-card.off { opacity: .72; }
+.auto-card.waiting { background: var(--surface-container-low); outline: 1px solid var(--warning); }
+.auto-card > p { margin: 8px 0; }
+.auto-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font: var(--title-md); }
+.auto-controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 8px; }
+.auto-controls form { margin: 0; display: inline-flex; gap: 4px; align-items: center; }
+.auto-steps { margin: 4px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; font: var(--body-sm); }
+.auto-steps li { display: flex; gap: 6px; align-items: flex-start; }
+.auto-steps .icon { width: 16px; height: 16px; }
+.auto-history td { vertical-align: top; }
+.btn-tonal .icon, .btn .icon { width: 20px; height: 20px; }
+
+/* The mode is a connected button group, as Expressive draws one: 2 apart,
+   8 at the inner corners, round at the ends, the chosen one filled. */
+.seg { display: inline-flex; gap: 2px; }
+.seg button { border-radius: var(--shape-sm); background: var(--surface-container-high);
+  color: var(--on-surface-variant); min-height: 40px; padding: 0 16px; }
+.seg button:first-of-type { border-start-start-radius: var(--shape-full); border-end-start-radius: var(--shape-full); }
+.seg button:last-of-type { border-start-end-radius: var(--shape-full); border-end-end-radius: var(--shape-full); }
+.seg button.on { background: var(--secondary-container); color: var(--on-secondary-container); }
+.seg button:hover { background: color-mix(in srgb, var(--on-surface-variant) var(--state-hover), var(--surface-container-high)); }
+.seg button.on:hover { background: color-mix(in srgb, var(--on-secondary-container) var(--state-hover), var(--secondary-container)); }
+
+/* The builder. */
+.auto-builder fieldset { border: 0; border-radius: var(--shape-lg); background: var(--surface-container-lowest);
+  padding: 16px 20px; margin: 0 0 16px; }
+.auto-builder legend { font: var(--title-md); padding: 0; margin-bottom: 8px; float: left; width: 100%; }
+.auto-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 12px; margin: 0 0 12px; clear: both; }
+.auto-actions dt { font-weight: var(--weight-medium); margin-top: 8px; }
+.auto-actions dd { margin: 0; }
+.row-actions form { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+
+/* Confirm it's you. */
+.notice.stepup { display: flex; gap: 12px; align-items: flex-start; background: var(--surface-container-high);
+  color: var(--on-surface); border-radius: var(--shape-lg); padding: 12px 16px; }
+.notice.stepup .icon { width: 24px; height: 24px; flex: none; color: var(--primary); }
+.signin-panel .card.notme { border-color: var(--outline-variant); }
+.chip-small { display: inline-block; padding: 0 8px; margin: 0 2px 2px 0; border-radius: var(--shape-sm);
+  border: 1px solid var(--outline-variant); font: var(--label-md); color: var(--on-surface-variant); white-space: nowrap; }

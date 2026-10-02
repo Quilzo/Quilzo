@@ -287,6 +287,12 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	if s.OnSignIn != nil {
 		s.OnSignIn(principal, tok.ID)
 	}
+	stepUp, serr := s.signInCheck(r, principal, tok.ID, "sso", false)
+	if serr != nil {
+		s.refuseSignIn(w, r, serr.Error(), "")
+		return
+	}
+	s.signInDone(r, tok.ID)
 
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: secret, Path: "/",
@@ -298,6 +304,10 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		Secure: r.TLS != nil || s.behindTLSProxy(),
 		MaxAge: int(s.OIDC.ttl().Seconds()),
 	})
+	if stepUp {
+		http.Redirect(w, r, "/signin/verify", http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 

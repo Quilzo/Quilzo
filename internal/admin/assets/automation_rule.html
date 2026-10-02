@@ -1,0 +1,40 @@
+{{template "head" .}}
+<p class="wf-back"><a href="/security/automations">Automations</a></p>
+<h1>{{if .Rule.ID}}Change a rule{{else}}New rule{{end}}</h1>
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<form method="post" action="/security/automations/act" class="auto-builder">
+  <input type="hidden" name="do" value="save"><input type="hidden" name="id" value="{{.Rule.ID}}">
+  <div class="field"><label for="name">Name {{template "req"}}</label><input id="name" name="name" required value="{{.Rule.Name}}"></div>
+
+  <fieldset><legend>When</legend>
+    <div class="field"><label for="when">This happens</label>
+      <select id="when" name="when">{{range .Kinds}}<option value="{{.}}"{{if eq . $.Rule.When}} selected{{end}}>{{index $.KindNames .}}</option>{{end}}</select></div>
+  </fieldset>
+
+  <fieldset><legend>If</legend>
+    <p class="hint">Every line must hold. Leave a line's field empty to leave it out. A field belongs to one kind of event; the rule is checked when you save.</p>
+    {{range $i, $c := .Conds}}<div class="row auto-row">
+      <label>Field <select name="field{{$i}}"><option value="">—</option>{{range $.Fields}}<option value="{{.Kind}}:{{.Name}}"{{if and (eq .Name $c.Field) (eq .Kind $.Rule.When)}} selected{{end}}>{{.Kind}}: {{.Name}}</option>{{end}}</select></label>
+      <label>Compare <select name="op{{$i}}">{{range $k, $v := $.Ops}}<option value="{{$k}}"{{if eq $k $c.Op}} selected{{end}}>{{$v}}</option>{{end}}</select></label>
+      <label>Value <input name="value{{$i}}" value="{{$c.Value}}"></label>
+    </div>{{end}}
+  </fieldset>
+
+  <fieldset><legend>Then</legend>
+    {{range $i, $s := .Steps}}<div class="row auto-row">
+      <label>Do <select name="action{{$i}}"><option value="">—</option>{{range $.Actions}}<option value="{{.ID}}"{{if eq .ID $s.Action}} selected{{end}}>{{.Name}}</option>{{end}}</select></label>
+      <label>Tell <select name="to{{$i}}"><option value="">—</option><option value="security"{{if eq (index $s.With "to") "security"}} selected{{end}}>the security team</option><option value="person"{{if eq (index $s.With "to") "person"}} selected{{end}}>the person</option></select></label>
+    </div>{{end}}
+    <details class="wf-how"><summary>What each action does<span class="chev">{{icon "expand_more"}}</span></summary>
+      <dl class="auto-actions">{{range .Actions}}<dt>{{.Name}}</dt><dd>{{.Does}} <span class="hint">When: {{.Kinds}}. {{.Undo}}</span></dd>{{end}}</dl></details>
+  </fieldset>
+
+  <fieldset><legend>How</legend>
+    {{range $k, $v := .Modes}}<label class="check"><input type="radio" name="mode" value="{{$k}}"{{if eq $k $.Rule.Mode}} checked{{end}}> {{$v}}</label>{{end}}
+    <div class="field"><label for="per_hour">At most this many times an hour (then it watches)</label>
+      <input id="per_hour" name="per_hour" type="number" min="0" value="{{.Rule.PerHour}}"></div>
+  </fieldset>
+  <button type="submit">Save</button>
+</form>{{end}}
+{{template "foot" .}}

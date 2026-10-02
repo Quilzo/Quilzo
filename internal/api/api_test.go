@@ -763,3 +763,38 @@ func TestABearerTokenIsUnaffectedBySessionAuth(t *testing.T) {
 		t.Errorf("a bearer token was refused cross-site: %d", w.Code)
 	}
 }
+
+// A session waiting to prove its person reaches nothing through the API,
+// by cookie or as a bearer token: it was the way around "Confirm it's
+// you", because the API is mounted inside the admin and accepts the
+// session cookie there.
+func TestASteppedUpSessionReachesNothingThroughTheAPI(t *testing.T) {
+	s, _, _ := setup(t)
+	s.SessionAuth = true
+	secret, tok, err := s.Tokens.IssueSession("s", "reader", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := s.Handler()
+	call := func() (int, int) {
+		r := httptest.NewRequest("GET", "http://h/api/v1/pages", nil)
+		r.AddCookie(&http.Cookie{Name: "quilzo_token", Value: secret})
+		r.Header.Set("Sec-Fetch-Site", "same-origin")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		b := httptest.NewRequest("GET", "http://h/api/v1/pages", nil)
+		b.Header.Set("Authorization", "Bearer "+secret)
+		w2 := httptest.NewRecorder()
+		h.ServeHTTP(w2, b)
+		return w.Code, w2.Code
+	}
+	if c, b := call(); c != 200 || b != 200 {
+		t.Fatalf("before: cookie %d, bearer %d", c, b)
+	}
+	if err := s.Tokens.RequireStepUp(tok.ID, "Sydney, moments after London"); err != nil {
+		t.Fatal(err)
+	}
+	if c, b := call(); c != 401 || b != 401 {
+		t.Errorf("stepped up: cookie %d, bearer %d", c, b)
+	}
+}

@@ -224,6 +224,9 @@ type complianceSummary struct {
 	Tests                []complianceTest
 	TestsFailing         int
 	Fetched              string
+	// Stale says the release dates are old enough that new versions will
+	// be shown as unknown, and how to refresh them.
+	Stale string
 }
 
 // barItem is one row of a bar list: the words, the count, and the bar
@@ -241,6 +244,10 @@ type complianceTest struct {
 
 func summarise(e *estate.Estate, now time.Time) complianceSummary {
 	s := complianceSummary{Fetched: lifecycle.Fetched()}
+	if t, err := time.Parse("2006-01-02", s.Fetched); err == nil && now.Sub(t) > 180*24*time.Hour {
+		s.Stale = fmt.Sprintf("The release dates were taken %s ago, so versions released since are shown as unknown. "+
+			"Refresh them with go run ./scripts/genlifecycle.", lifecycle.Words(now.Sub(t)))
+	}
 	status := map[string]int{}
 	currency := map[lifecycle.Currency]int{}
 	failing := map[string]int{}

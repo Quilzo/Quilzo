@@ -179,6 +179,16 @@ var commandNeeds = map[string]need{
 	// Grant: who may have an account on the site, and whether they keep it,
 	// is an access decision, and the list is personal data.
 	"member": {action: auth.ActGrant},
+	// Automations act on people's sessions and accounts: the security
+	// area's administrators decide them; reading them is a view.
+	"automate":           {action: auth.ActGrant},
+	"automate list":      {action: auth.ActView},
+	"automate runs":      {action: auth.ActView},
+	"automate templates": {action: auth.ActView},
+	// Where sign-ins come from is the whole site's decision.
+	"geo":        {action: auth.ActGrant},
+	"geo status": {action: auth.ActView},
+	"geo help":   {action: auth.ActView},
 	// Grant: provisioning decides who holds which role.
 	"scim":        {action: auth.ActGrant},
 	"scim status": {action: auth.ActGrant},
@@ -1141,7 +1151,7 @@ var commandAreas = map[string]string{
 	"connect": auth.AreaSecurity, "estate": auth.AreaSecurity, "remind": auth.AreaSecurity,
 	"workforce": auth.AreaSecurity, "hunt": auth.AreaSecurity, "detect": auth.AreaSecurity,
 	"sigma": auth.AreaSecurity, "proving": auth.AreaSecurity, "correlate": auth.AreaSecurity,
-	"siem":    auth.AreaSecurity,
+	"siem": auth.AreaSecurity, "automate": auth.AreaSecurity,
 	"posture": auth.AreaCompliance, "compliance": auth.AreaCompliance,
 	"auditlog":   auth.AreaLog,
 	"inbox":      auth.AreaInbox,

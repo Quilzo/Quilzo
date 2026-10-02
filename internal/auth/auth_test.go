@@ -4,6 +4,7 @@
 package auth
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -451,4 +452,37 @@ func TestAnywhereFindsTheGrantADenyDoesNotReach(t *testing.T) {
 	if !p.Anywhere("bea", ActEditDraft) {
 		t.Error("a deny on /legal removed the site-wide grant everywhere else")
 	}
+}
+
+// A session waiting to prove its person authenticates nowhere: the error
+// says why, and only a caller that asks for it learns who it is.
+func TestASteppedUpSessionIsRefusedEverywhere(t *testing.T) {
+	ts := &TokenStore{}
+	secret, tok, err := ts.IssueSession("s", "ada", RoleAdmin, "/", time.Hour, RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ts.RequireStepUp(tok.ID, "Sydney, moments after London"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ts.Authenticate(secret, time.Now())
+	if !errors.Is(err, ErrStepUp) || got == nil || got.Principal != "ada" {
+		t.Fatalf("a stepped-up session authenticated: %v %v", got, err)
+	}
+	if err := ts.ClearStepUp(tok.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ts.Authenticate(secret, time.Now()); err != nil {
+		t.Errorf("once it proved its person it is still refused: %v", err)
+	}
+	// Only sessions can be stepped up; a token is not a sign-in.
+	plain, _, _ := ts.Issue("ci", "bot", RoleAuthor, "/", time.Hour, RoleAdmin)
+	for _, tk := range ts.Snapshot() {
+		if tk.Principal == "bot" {
+			if err := ts.RequireStepUp(tk.ID, "x"); err == nil {
+				t.Error("a token that is not a session was stepped up")
+			}
+		}
+	}
+	_ = plain
 }

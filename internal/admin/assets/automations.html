@@ -1,0 +1,53 @@
+{{template "head" .}}
+<h1>Automations</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">When something happens, do something about it — at once, or once a person agrees. A new rule watches first, so you can see what it would have done before it does anything.</p>
+<p class="actions"><a class="btn" href="/security/automations/rule">{{icon "add"}}New rule</a></p>
+
+{{if .Waiting}}<h2>Waiting for you</h2>
+<ul class="auto-list">{{range .Waiting}}<li class="auto-card waiting">
+  <div class="auto-head"><span class="wf-band warning"><span class="wf-icon">{{icon "error"}}</span>Waiting</span><strong>{{.Name}}</strong><span class="hint">{{.When}}</span></div>
+  <p>{{.Event.Summary}}</p>
+  <ul class="auto-steps">{{range .Steps}}<li>{{.Said}}</li>{{end}}</ul>
+  <form method="post" action="/security/automations/act" class="actions"><input type="hidden" name="id" value="{{.ID}}">
+    <button type="submit" name="do" value="approve">Approve</button>
+    <button type="submit" name="do" value="decline" class="btn-outlined">Decline</button></form>
+</li>{{end}}</ul>{{end}}
+
+<h2>Your rules</h2>
+{{if .Rules}}<ul class="auto-list">{{range .Rules}}<li class="auto-card{{if not .Enabled}} off{{end}}">
+  <div class="auto-head"><strong>{{.Name}}</strong>{{if not .Enabled}}<span class="wf-band unknown">Off</span>{{end}}</div>
+  <p>{{.Words}}</p>
+  {{if .Note}}<p class="hint">{{.Note}}</p>{{end}}
+  <p class="hint">{{if .Fired}}Fired {{.Fired}} time{{if ne .Fired 1}}s{{end}} this week{{else}}Not fired this week{{end}}{{if .Last}}; last {{.Last}}{{end}}.</p>
+  <div class="auto-controls">
+    <form method="post" action="/security/automations/act" class="seg" aria-label="Mode for {{.Name}}">
+      <input type="hidden" name="do" value="mode"><input type="hidden" name="id" value="{{.ID}}">
+      <button type="submit" name="mode" value="watch"{{if eq .Mode "watch"}} aria-pressed="true" class="on"{{else}} aria-pressed="false"{{end}}>Watch</button><button type="submit" name="mode" value="ask"{{if eq .Mode "ask"}} aria-pressed="true" class="on"{{else}} aria-pressed="false"{{end}}>Ask first</button><button type="submit" name="mode" value="act"{{if eq .Mode "act"}} aria-pressed="true" class="on"{{else}} aria-pressed="false"{{end}}>Act</button>
+    </form>
+    <form method="post" action="/security/automations/act"><input type="hidden" name="id" value="{{.ID}}">
+      {{if .Enabled}}<button type="submit" name="do" value="disable" class="btn-text">Turn off</button>{{else}}<button type="submit" name="do" value="enable" class="btn-text">Turn on</button>{{end}}
+      <a class="btn btn-text" href="/security/automations/rule?id={{.ID}}">Change</a>
+      <button type="submit" name="do" value="remove" class="btn-text">Remove<span class="visually-hidden"> {{.Name}}</span></button></form>
+  </div>
+</li>{{end}}</ul>{{else}}<p>No rules yet. Start from one below, or write your own.</p>{{end}}
+
+{{if .Templates}}<h2>Start from one of these</h2>
+<ul class="auto-list templates">{{range .Templates}}<li class="auto-card">
+  <div class="auto-head"><strong>{{.Name}}</strong><span class="wf-band {{if eq .Mode "act"}}good{{else if eq .Mode "ask"}}warning{{else}}unknown{{end}}">{{if eq .Mode "act"}}Acts{{else if eq .Mode "ask"}}Asks first{{else}}Watches{{end}}</span></div>
+  <p>{{.Words}}</p><p class="hint">{{.Note}}</p>
+  <form method="post" action="/security/automations/act"><input type="hidden" name="do" value="template"><input type="hidden" name="id" value="{{.ID}}">
+    <button type="submit" class="btn-tonal">{{icon "add"}}Add<span class="visually-hidden"> {{.Name}}</span></button></form>
+</li>{{end}}</ul>{{end}}
+
+<h2>What they did</h2>
+{{if .History}}<div class="table-wrap"><table class="auto-history">
+  <thead><tr><th scope="col">When</th><th scope="col">Rule</th><th scope="col">About</th><th scope="col">What happened</th><th scope="col">State</th></tr></thead>
+  <tbody>{{range .History}}<tr><td>{{.When}}</td><th scope="row">{{.Name}}</th><td>{{.Event.Summary}}</td>
+    <td><ul class="auto-steps">{{range .Steps}}<li><span class="wf-icon {{if .OK}}good{{else}}unknown{{end}}">{{if .OK}}{{icon "check_circle"}}{{else}}{{icon "help"}}{{end}}</span>{{.Name}}: {{.Said}}</li>{{end}}</ul></td>
+    <td><span class="wf-band {{.Tone}}">{{.State}}</span></td></tr>{{end}}</tbody>
+</table></div>{{else}}<p>Nothing yet.</p>{{end}}
+{{end}}
+{{template "foot" .}}

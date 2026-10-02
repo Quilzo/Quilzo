@@ -49,6 +49,7 @@ import (
 	"crypto/subtle"
 	"encoding/base32"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -641,6 +642,29 @@ type Token struct {
 	// the test for it built its session with Exchange, which is the one path
 	// that set a parent.
 	Session bool `json:"session,omitempty"`
+
+	// StepUp, when set, says why this session must prove its person before
+	// it may do anything else: an automation judged a sign-in, or something
+	// seen elsewhere, unlike them (internal/automate). Cleared when they do.
+	StepUp string `json:"step_up,omitempty"`
+
+	// Bound is the kind of device and the country a session was issued to,
+	// "Chrome on Windows|GB", so a session carried somewhere else — a
+	// cookie copied by malware — can be noticed (see BindSession).
+	Bound string `json:"bound,omitempty"`
+}
+
+// BindSession records where a session was issued to.
+func (ts *TokenStore) BindSession(id, bound string) error {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == id {
+			ts.Tokens[i].Bound = bound
+			return nil
+		}
+	}
+	return fmt.Errorf("no token %s", id)
 }
 
 // IsSession reports whether this is a short-lived sign-in credential rather
@@ -941,8 +965,19 @@ func (ts *TokenStore) Exchange(parentSecret string, role Role, resource string,
 func (ts *TokenStore) Authenticate(secret string, now time.Time) (*Token, error) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	return ts.authenticate(secret, now)
+	t, err := ts.authenticate(secret, now)
+	if err == nil && t.StepUp != "" {
+		// Refused everywhere, so a session waiting to prove its person
+		// cannot be carried to the API, the studio or a terminal as a
+		// bearer token. The token comes back with the error for the one
+		// caller that needs to say who is waiting: the admin's own page.
+		return t, ErrStepUp
+	}
+	return t, err
 }
+
+// ErrStepUp is a session that must prove its person before it is used.
+var ErrStepUp = errors.New("this session must confirm it is its person first: sign in to the admin")
 
 // authenticate is Authenticate with the lock already held, so that Exchange —
 // which authenticates the parent and then mints a child — does both under one
@@ -1014,6 +1049,52 @@ func (ts *TokenStore) Revoke(id string) (int, error) {
 		}
 	}
 	return sessions, nil
+}
+
+// RequireStepUp marks one session as having to prove its person again.
+func (ts *TokenStore) RequireStepUp(id, reason string) error {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == id {
+			if !ts.Tokens[i].IsSession() {
+				return fmt.Errorf("%s is not a session", id)
+			}
+			ts.Tokens[i].StepUp = reason
+			return nil
+		}
+	}
+	return fmt.Errorf("no token %s", id)
+}
+
+// RequireStepUpFor marks every live session a principal has, and says how
+// many, so that something seen elsewhere reaches the sessions already open.
+func (ts *TokenStore) RequireStepUpFor(principal, reason string, now time.Time) int {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	n := 0
+	for i := range ts.Tokens {
+		t := &ts.Tokens[i]
+		if strings.EqualFold(t.Principal, principal) && t.IsSession() && !t.Revoked &&
+			(t.ExpiresAt == 0 || now.Unix() < t.ExpiresAt) {
+			t.StepUp = reason
+			n++
+		}
+	}
+	return n
+}
+
+// ClearStepUp records that a session has proved its person.
+func (ts *TokenStore) ClearStepUp(id string) error {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == id {
+			ts.Tokens[i].StepUp = ""
+			return nil
+		}
+	}
+	return fmt.Errorf("no token %s", id)
 }
 
 // Stale lists tokens that have never been used or have not been used recently.
