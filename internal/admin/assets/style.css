@@ -873,6 +873,17 @@ tr.detail td { padding-top: 0; border-top: 0; }
 .iconbutton:hover {
   background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
 .iconbutton .icon { width: 24px; height: 24px; }
+.bar a.iconbutton { padding: 0; margin: 0; text-decoration: none; }
+.findlink { display: none; }
+@media (max-width: 59.99rem) { .findlink { display: inline-flex; } }
+
+/* The name keeps to one line, ending in an ellipsis when it has to; the
+   whole of it is in the link's title and its accessible name. A forty-letter
+   name was allowed to wrap, and became a column four lines tall that
+   overlapped the search box beside it. */
+.bar-start { flex: 1 1 auto; }
+.brand { min-width: 0; }
+.brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (min-width: 60rem) {
   /* Two columns, one scrollbar, and the menu stays where you can see it.
@@ -1227,7 +1238,7 @@ tr.detail td { padding-top: 0; border-top: 0; }
 /* Below the wide layout the bar has less room than it has content, and a
    search box squeezed to nothing is worse than one reached from its own
    screen — which the navigation still lists. */
-@media (max-width: 60rem) { .findbar { display: none; } }
+@media (max-width: 59.99rem) { .findbar { display: none; } }
 
 .findform { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-end;
   margin: 0 0 .5rem; }
@@ -2055,14 +2066,16 @@ thead th, .navgroup > summary > h2, .wf-word, .chip, .sev, .badge,
    far right. */
 .bar { background: var(--surface); border-bottom: 0; padding: .5rem 1.25rem;
        margin-bottom: .5rem; }
-.bar-inner { max-width: none; align-items: center; }
-.prefs { gap: .5rem; }
+.bar-inner { max-width: none; align-items: center; flex-wrap: nowrap; }
+.prefs { gap: .5rem; flex: none; }
 /* Three columns, the outer two equal, so the search is in the middle of the
    window rather than wherever the name ended. The left edge is pulled in so
    the menu control's centre sits over the sidebar's icons. */
 @media (min-width: 60rem) {
   .bar { padding-inline: .75rem; }
-  .bar-inner { display: grid; grid-template-columns: 1fr minmax(0, 40rem) 1fr; }
+  /* The sides never narrower than the sidebar, so a long name keeps room
+     beside the menu control and the search box gives way first. */
+  .bar-inner { display: grid; grid-template-columns: minmax(13rem, 1fr) minmax(0, 40rem) minmax(13rem, 1fr); }
   .bar-inner > .prefs { justify-self: end; }
 }
 
@@ -2265,3 +2278,9 @@ th[scope="row"] { font-weight: 500; }
 /* Boards: what members wrote, as text, one card each. */
 .post-queue { list-style: none; padding: 0; display: grid; gap: .75rem; }
 .post-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: .5rem 0; }
+
+/* Forced colours draw no fills, and the search box was a fill with no
+   border: the placeholder floated on the page with nothing around it. */
+@media (forced-colors: active) {
+  .findbar input { border: 1px solid CanvasText; }
+}
