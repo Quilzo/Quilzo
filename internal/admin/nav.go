@@ -236,6 +236,9 @@ type navGroup struct {
 	// remember. A stored open/closed state would be a preference that goes
 	// stale the moment you navigate somewhere else.
 	HasCurrent bool
+	// Slug names the section's flyout on the rail; Icon and Short are how
+	// the rail draws it. See icons.go.
+	Slug, Icon, Short string
 }
 
 // navItem is a rendered entry.
@@ -276,8 +279,13 @@ func (s *Server) navigation(r *http.Request, p principal, current string) []navG
 	out := make([]navGroup, 0, len(groups))
 	for _, name := range groups {
 		if items := byGroup[name]; len(items) > 0 {
+			short := sectionShort[name]
+			if short == "" {
+				short = name
+			}
 			out = append(out, navGroup{
 				Name: name, Items: items, HasCurrent: hasCurrent[name],
+				Slug: sectionSlug(name), Icon: sectionPath[name], Short: short,
 			})
 		}
 	}

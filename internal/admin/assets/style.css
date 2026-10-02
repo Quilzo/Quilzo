@@ -1356,9 +1356,58 @@ tr.detail td { padding-top: 0; border-top: 0; }
  */
 body.nav-hidden > .sidenav { display: none; }
 
+/* Collapsed, a wide screen keeps a rail of the sections, as Gmail does,
+   rather than no navigation at all: 72 pixels, so each section's icon sits
+   under the menu control and the content gains everything else. */
+.rail { display: none; }
 @media (min-width: 60rem) {
-  body.nav-hidden:has(> .sidenav) { grid-template-columns: 1fr;
-    grid-template-areas: "bar" "main" "foot"; }
+  body.nav-hidden:has(> .sidenav) { grid-template-columns: 72px 1fr;
+    grid-template-areas: "bar bar" "rail main" "rail foot"; }
+  body.nav-hidden > .rail { grid-area: rail; display: flex; flex-direction: column;
+    align-items: center; gap: 4px; padding-top: 4px;
+    position: sticky; top: 0; align-self: start; }
+}
+.railitem { display: flex; flex-direction: column; align-items: center; gap: 4px;
+  width: 72px; min-height: 0; height: auto; padding: 4px 0 8px; margin: 0;
+  border: 0; border-radius: var(--shape-md); background: transparent;
+  color: var(--on-surface-variant); font: var(--label-md); font-size: 12px;
+  line-height: 16px; letter-spacing: 0; cursor: pointer; }
+.railitem:hover, .railitem:active { background: transparent; border-radius: var(--shape-md); }
+.railpill { display: grid; place-items: center; width: 56px; height: 32px;
+  border-radius: var(--shape-full); }
+.railpill .navicon { width: 24px; height: 24px; fill: currentColor; }
+.raillabel { white-space: nowrap; }
+.railitem:hover .railpill, .railitem.open .railpill {
+  background: color-mix(in srgb, var(--on-surface) var(--state-hover), transparent); }
+.railitem.here { color: var(--on-surface); font-weight: 600; }
+.railitem.here .railpill { background: var(--secondary-container);
+  color: var(--on-secondary-container); }
+
+/* Opened from the rail, the menu is a panel beside the button that opened
+   it. The button is the popover's anchor, so where anchor positioning is
+   supported this needs no script; near the bottom of the window it opens
+   upward instead. The script places it where it is not supported. */
+@media (min-width: 60rem) {
+  body.nav-hidden > .sidenav[popover]:popover-open {
+    display: block; inset: auto; margin: 0 0 0 4px; padding: 8px;
+    width: 16rem; height: auto; max-height: calc(100dvh - 16px); overflow: auto;
+    border: 0; border-radius: var(--shape-lg); background: var(--surface-container);
+    color: var(--on-surface);
+    box-shadow: 0 4px 16px rgb(0 0 0 / .22), 0 1px 3px rgb(0 0 0 / .14);
+    position-area: right span-bottom; position-try-fallbacks: flip-block; }
+  body.nav-hidden > .sidenav[popover]:popover-open > .navgroups {
+    position: static; max-height: none; overflow: visible; }
+  /* Opened from a section on the rail, it is that section alone: its name
+     as a heading over its screens, covering no more of the page than it
+     needs to. The script sets this; without it the whole menu opens, so
+     every section stays within reach. */
+  .sidenav.one-section .navgroup:not([open]) { display: none; }
+  .sidenav.one-section .navgroup > summary { pointer-events: none; border: 0; }
+  .sidenav.one-section .navgroup > summary::after { display: none; }
+}
+@media (forced-colors: active) {
+  .railitem.here .railpill { outline: 2px solid CanvasText; }
+  body.nav-hidden > .sidenav[popover]:popover-open { border: 1px solid CanvasText; }
 }
 
 .navtoggle { margin: 0; }
@@ -1701,7 +1750,7 @@ td.actions > *:last-child, th.actions > *:last-child { margin-right: 0; }
 @media print {
   body { display: block; height: auto; }
   body > main { overflow: visible; min-height: 0; }
-  .sidenav, .prefs, .findbar, .skip, .menubutton, .navtoggle { display: none; }
+  .sidenav, .prefs, .findbar, .skip, .menubutton, .navtoggle, .rail { display: none !important; }
   .bar { position: static; }
 }
 

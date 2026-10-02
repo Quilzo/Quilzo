@@ -10,9 +10,13 @@
 //     the search box, which jumps to any screen in the navigation by typing
 //     part of its name, and offers to search for anything else;
 //   * "/" moves to the search box, as it does on most sites people use;
-//   * the menu control hides and shows the sidebar at once, rather than by
-//     loading the page again. The form it submits is the same one, so the
-//     choice is kept the same way, and without the script it still works.
+//   * the menu control collapses the menu to a rail and back at once,
+//     rather than by loading the page again. The form it submits is the
+//     same one, so the choice is kept the same way, and without the script
+//     it still works;
+//   * on the rail, pointing at a section opens its flyout after a moment
+//     and moving away closes it, as Gmail's does. Clicking, Enter and
+//     Escape work without the script; this only adds the pointer.
 //
 // The palette is a native <dialog> with the ARIA combobox pattern: the
 // input owns a listbox, arrow keys move the active option, Enter opens it,
@@ -180,16 +184,78 @@
       e.preventDefault();
       var to = form.elements.to, button = form.querySelector("button");
       var hide = to.value === "hidden";
+      var menu = document.getElementById("sitenav");
+      if (menu && menu.matches && menu.matches(":popover-open")) menu.hidePopover();
       fetch(form.action, { method: "POST", body: new URLSearchParams(new FormData(form)),
         credentials: "same-origin", redirect: "manual" }).then(function (r) {
         if (r.type !== "opaqueredirect" && !r.ok) throw new Error(String(r.status));
         document.body.classList.toggle("nav-hidden", hide);
         to.value = hide ? "shown" : "hidden";
         button.setAttribute("aria-expanded", hide ? "false" : "true");
-        button.title = (hide ? "Show" : "Hide") + " the navigation";
+        button.title = (hide ? "Expand" : "Collapse") + " the menu";
       }).catch(function () { form.submit(); });
     });
   });
+
+  // The rail opens the menu beside the button that was used, with that
+  // section open and the others closed, so the panel is that section.
+  var menu = document.getElementById("sitenav"), from = null;
+  function place(btn) {
+    var r = menu.getBoundingClientRect(), b = btn.getBoundingClientRect();
+    if (Math.abs(r.left - (b.right + 4)) <= 2 && r.top >= 0 && r.bottom <= innerHeight) return;
+    menu.style.positionArea = "none";
+    menu.style.left = (b.right + 4) + "px";
+    menu.style.top = Math.max(8, Math.min(b.top, innerHeight - r.height - 8)) + "px";
+  }
+  function section(btn) {
+    from = btn;
+    document.querySelectorAll(".railitem.open").forEach(function (o) { o.classList.remove("open"); });
+    btn.classList.add("open");
+    menu.querySelectorAll(".navgroup").forEach(function (g) {
+      g.open = g.getAttribute("data-section") === btn.getAttribute("data-section");
+      // Its heading is a heading here, not a control that would empty the panel.
+      g.querySelector("summary").tabIndex = -1;
+    });
+    menu.classList.add("one-section");
+  }
+  // While it is one section, its heading does not fold it away.
+  if (menu) menu.addEventListener("click", function (e) {
+    if (menu.classList.contains("one-section") && e.target.closest("summary")) e.preventDefault();
+  });
+  if (menu && menu.showPopover) {
+    var opening, closing;
+    var hovering = function (e) { return e.pointerType === "mouse" && document.body.classList.contains("nav-hidden"); };
+    document.querySelectorAll(".railitem").forEach(function (btn) {
+      btn.addEventListener("click", function () { section(btn); });
+      btn.addEventListener("pointerenter", function (e) {
+        if (!hovering(e)) return;
+        clearTimeout(closing);
+        opening = setTimeout(function () {
+          section(btn);
+          if (menu.matches(":popover-open")) { menu.style.left = menu.style.top = ""; menu.style.positionArea = ""; menu.hidePopover(); }
+          menu.showPopover({ source: btn });
+        }, 150);
+      });
+      btn.addEventListener("pointerleave", function (e) { if (hovering(e)) leave(); });
+    });
+    menu.addEventListener("pointerenter", function () { clearTimeout(closing); });
+    menu.addEventListener("pointerleave", function (e) { if (hovering(e)) leave(); });
+    function leave() {
+      clearTimeout(opening);
+      closing = setTimeout(function () {
+        if (menu.matches(":popover-open") && !menu.contains(document.activeElement)) menu.hidePopover();
+      }, 300);
+    }
+    menu.addEventListener("toggle", function (e) {
+      if (e.newState === "open" && from && document.body.classList.contains("nav-hidden")) place(from);
+      if (e.newState === "closed") {
+        menu.style.left = menu.style.top = ""; menu.style.positionArea = "";
+        menu.classList.remove("one-section");
+        menu.querySelectorAll(".navgroup > summary").forEach(function (s) { s.removeAttribute("tabindex"); });
+        document.querySelectorAll(".railitem.open").forEach(function (o) { o.classList.remove("open"); });
+      }
+    });
+  }
 
   // The shortcut, shown where people look for search, in their platform's
   // spelling. Only once the script is running, since it is what makes it work.

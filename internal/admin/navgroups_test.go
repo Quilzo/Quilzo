@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -32,7 +33,7 @@ func TestOnlyTheCurrentNavGroupIsOpen(t *testing.T) {
 				t.Fatalf("found %d navigation groups; the menu is not being "+
 					"rendered and this test proves nothing", groups)
 			}
-			if open := strings.Count(body, `<details class="navgroup" open>`); open != 1 {
+			if open := len(openGroup.FindAllString(body, -1)); open != 1 {
 				t.Errorf("%d of %d groups are open; exactly the one holding "+
 					"this screen should be", open, groups)
 			}
@@ -65,6 +66,9 @@ func TestCollapsingAGroupDoesNotDropItsEntries(t *testing.T) {
 	}
 }
 
+// openGroup is a group's opening tag when it is open, whatever else it carries.
+var openGroup = regexp.MustCompile(`<details class="navgroup"[^>]* open>`)
+
 // openGroupWithCurrent reports whether the open group holds the current entry.
 func openGroupWithCurrent(body string) bool {
 	for _, seg := range strings.Split(body, `<details class="navgroup"`)[1:] {
@@ -72,7 +76,7 @@ func openGroupWithCurrent(body string) bool {
 		if end < 0 {
 			continue
 		}
-		if !strings.HasPrefix(seg, " open>") {
+		if !openGroup.MatchString(`<details class="navgroup"` + seg[:strings.Index(seg, ">")+1]) {
 			continue
 		}
 		if strings.Contains(seg[:end], `aria-current="page"`) {

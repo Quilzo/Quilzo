@@ -121,6 +121,7 @@
   </button>
   {{template "navlist" .}}
 </div>
+{{if .NavGroups}}{{template "rail" .}}{{end}}
 
 <main id="main" tabindex="-1" class="shell">
 {{end}}
@@ -220,7 +221,7 @@
   <input type="hidden" name="back" value="{{.Here}}">
   <button type="submit" class="iconbutton" aria-controls="sitenav"
           aria-expanded="{{if .SidebarHidden}}false{{else}}true{{end}}"
-          title="{{if .SidebarHidden}}Show{{else}}Hide{{end}} the navigation">
+          title="{{if .SidebarHidden}}Expand{{else}}Collapse{{end}} the menu">
     <span class="visually-hidden">Main menu</span>
     {{template "menuicon"}}
   </button>
@@ -314,16 +315,45 @@
 {{define "navlist"}}
 <nav class="navgroups" aria-label="Sections">
   {{range .NavGroups}}
-  <details class="navgroup"{{if .HasCurrent}} open{{end}}>
+  <details class="navgroup" data-section="{{.Slug}}"{{if .HasCurrent}} open{{end}}>
     <summary><h2>{{.Name}}</h2></summary>
     <ul class="nav">
       {{range .Items}}
-      <li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{if .Icon}}<svg class="navicon" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path d="{{.Icon}}"/></svg>{{end}}<span>{{.Label}}</span></a></li>
+      {{template "navitem" .}}
       {{end}}
     </ul>
   </details>
   {{end}}
 </nav>
+{{end}}
+
+{{define "navitem"}}<li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{if .Icon}}<svg class="navicon" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path d="{{.Icon}}"/></svg>{{end}}<span>{{.Label}}</span></a></li>{{end}}
+
+{{/*
+  The rail: what the menu collapses to on a wide screen, as Gmail's does. One
+  button per section; each opens the menu itself over the page, beside the
+  rail, with that section open — so collapsing narrows the menu and hides
+  nothing.
+
+  It opens the one menu rather than a copy of it. The menu is a popover, so
+  the browser lifts it into the top layer, above everything on the page, and
+  nothing can cover it; it closes on Escape, a click elsewhere, or choosing
+  a screen, and covers the page only while it is open, as any menu does.
+  The one script adds opening it by pointing, and opening the section that
+  was pointed at; without the script a click opens it as it was.
+
+  Not a second <nav>: the navigation is rendered once (see the comment
+  above), and these buttons are a way into it, not another one.
+*/}}
+{{define "rail"}}
+<div class="rail">
+  {{range .NavGroups}}
+  <button type="button" class="railitem{{if .HasCurrent}} here{{end}}" popovertarget="sitenav" popovertargetaction="show" data-section="{{.Slug}}">
+    <span class="railpill">{{if .Icon}}<svg class="navicon" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path d="{{.Icon}}"/></svg>{{end}}</span>
+    <span class="raillabel" aria-hidden="true">{{.Short}}</span><span class="visually-hidden">{{.Name}}</span>
+  </button>
+  {{end}}
+</div>
 {{end}}
 
 {{define "foot"}}
