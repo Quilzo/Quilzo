@@ -286,9 +286,11 @@
     clearTimeout(tipping);
     if (tooltip && tooltip.matches(":popover-open")) tooltip.hidePopover();
   }
-  document.querySelectorAll("header.bar [title], .iconbutton[title], .rowmenu-open[title]").forEach(function (el) {
-    el.dataset.tip = el.title;
-    el.removeAttribute("title");
+  document.querySelectorAll("header.bar [title], .iconbutton[title], .rowmenu-open[title], svg [data-tip]").forEach(function (el) {
+    if (el.hasAttribute("title")) {
+      el.dataset.tip = el.getAttribute("title");
+      el.removeAttribute("title");
+    }
     el.addEventListener("pointerenter", function (e) {
       if (e.pointerType !== "mouse") return;
       clearTimeout(tipping);

@@ -1,3 +1,14 @@
+{{define "donut"}}<div class="donut-fig">
+<svg class="donut" viewBox="0 0 220 220" role="img" aria-label="{{.Label}}: {{range .Segs}}{{.Label}} {{.Count}}, {{end}}of {{.Total}}">
+  {{if not .Segs}}<circle class="track" cx="110" cy="110" r="72"></circle>{{end}}
+  {{range .Segs}}<path class="seg {{.Tone}}" d="{{.D}}" data-tip="{{.Tip}}"><title>{{.Tip}}</title></path>{{end}}
+  <text class="donut-n" x="110" y="116" text-anchor="middle">{{.Center}}</text>
+  <text class="donut-unit" x="110" y="140" text-anchor="middle">{{.Unit}}</text>
+</svg>
+<ul class="donut-legend">{{range .Segs}}<li class="{{.Tone}}"><span class="wf-icon">{{icon .Icon}}</span><span class="dl-label">{{.Label}}</span><span class="dl-n">{{.Count}}</span><span class="dl-pct">{{.Pct}}</span></li>{{end}}</ul>
+</div>
+<details class="astable"><summary>Show as a table<span class="chev">{{icon "expand_more"}}</span></summary>
+<table><tbody>{{range .Segs}}<tr><th scope="row">{{.Label}}</th><td>{{.Count}}</td><td>{{.Pct}}</td></tr>{{end}}</tbody></table></details>{{end}}
 {{define "wfbars"}}<svg class="wfbars" viewBox="0 0 600 {{.H}}" role="img" aria-label="{{.Label}}">
 <g transform="translate(120 0)">{{range .Bars}}<g class="bar {{.Tone}}"><title>{{.Title}}</title>
 <text class="lbl" x="-12" y="{{.TextY}}" text-anchor="end">{{.Label}}</text>
@@ -7,6 +18,7 @@
 <table><tbody>{{range .Bars}}<tr><th scope="row">{{.Label}}</th><td>{{.Value}}</td></tr>{{end}}</tbody></table></details>{{end}}
 {{template "head" .}}
 <h1>Workforce risk</h1>
+{{if .Sample}}<p class="notice sample" role="note">{{icon "info"}}<span><strong>Sample data.</strong> A made-up company, Northwind Labs, so these screens can be tried before any tool is connected. Remove it with <code>quilzo estate sample --remove</code>.</span></p>{{end}}
 {{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
@@ -72,6 +84,32 @@
     <tbody>{{range .History}}<tr><th scope="row">{{.Date}}</th><td>{{.Scored}}</td><td>{{.AtRisk}}</td><td>{{.Mean}}</td></tr>{{end}}</tbody></table></details>
   {{end}}
 </figure>
+
+{{with .Compliance}}{{if .Machines}}
+<h2>Devices and compliance</h2>
+<p class="hint">Each machine against the controls an assessor asks of an endpoint, and its operating system against its release's support dates ({{.Fetched}}, from endoflife.date). What no tool reports is shown as not measured, never as passing. <a href="/workforce/devices">Every machine</a></p>
+<div class="wf-donuts">
+  <figure class="wf-fig"><figcaption><h2>Compliance</h2><p class="hint">{{.Machines}} machines, every control measured and passed, or not.</p></figcaption>
+    {{template "donut" .Compliance}}</figure>
+  <figure class="wf-fig"><figcaption><h2>Operating system support</h2><p class="hint">Worked out from the version each tool reports.</p></figcaption>
+    {{template "donut" .Currency}}</figure>
+</div>
+<div class="wf-donuts">
+  <figure class="wf-fig"><figcaption><h2>Controls failing most</h2><p class="hint">Machines failing each control, with how much each matters.</p></figcaption>
+    <ul class="barlist">{{range .Failing}}<li title="{{.Title}}"><span class="wf-icon {{.Tone}}">{{icon (toneicon .Tone)}}</span><span class="bl-label">{{.Label}}</span><span class="bl-n">{{.Value}}</span>
+      <svg class="bl-bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="bl-track" width="100" height="8" rx="4"></rect><rect class="bl-fill" width="{{.Width}}" height="8" rx="4"></rect></svg></li>{{end}}</ul></figure>
+  <figure class="wf-fig"><figcaption><h2>Platforms</h2><p class="hint">Machines on each.</p></figcaption>
+    {{template "wfbars" .Platforms}}</figure>
+</div>
+{{if .Tests}}<h2>Your compliance tool's tests</h2>
+<p class="hint">As your compliance tool reports them: {{.TestsFailing}} failing.</p>
+<div class="table-wrap"><table class="wf-tests">
+  <thead><tr><th scope="col">Test</th><th scope="col">Area</th><th scope="col">Result</th><th scope="col">Failing items</th><th scope="col">From</th></tr></thead>
+  <tbody>{{range .Tests}}<tr><th scope="row">{{.Name}}</th><td>{{.Category}}</td>
+    <td>{{if .Passing}}{{if deref .Passing}}<span class="wf-band good"><span class="wf-icon">{{icon "check_circle"}}</span>Passing</span>{{else}}<span class="wf-band critical"><span class="wf-icon">{{icon "dangerous"}}</span>Failing</span>{{end}}{{else}}<span class="hint">not reported</span>{{end}}</td>
+    <td>{{if .Failing}}{{.Failing}}{{else}}<span class="hint">none</span>{{end}}</td><td>{{.Source}}</td></tr>{{end}}</tbody>
+</table></div>{{end}}
+{{end}}{{end}}
 
 <h2>By department</h2>
 <p class="hint">The share of each department with a reason in each area. The

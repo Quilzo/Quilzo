@@ -1,0 +1,915 @@
+{
+ "source": "https://endoflife.date",
+ "licence": "MIT",
+ "fetched": "2026-10-02",
+ "products": {
+  "android": [
+   {
+    "cycle": "17",
+    "label": "17 'Cinnamon Bun'",
+    "released": "2026-06-16"
+   },
+   {
+    "cycle": "16",
+    "label": "16 'Baklava'",
+    "released": "2025-06-10"
+   },
+   {
+    "cycle": "15",
+    "label": "15 'Vanilla Ice Cream'",
+    "released": "2024-09-03"
+   },
+   {
+    "cycle": "14",
+    "label": "14 'Upside Down Cake'",
+    "released": "2023-10-04"
+   },
+   {
+    "cycle": "13",
+    "label": "13 'Tiramisu'",
+    "released": "2022-08-15",
+    "eol": "2026-03-02"
+   },
+   {
+    "cycle": "12.1",
+    "label": "12.1 'Snow Cone v2' (aka 12L)",
+    "released": "2022-03-07",
+    "eol": "2025-03-03"
+   },
+   {
+    "cycle": "12",
+    "label": "12 'Snow Cone'",
+    "released": "2021-10-04",
+    "eol": "2025-03-03"
+   },
+   {
+    "cycle": "11",
+    "label": "11 'Red Velvet Cake'",
+    "released": "2020-09-08",
+    "eol": "2024-02-05"
+   },
+   {
+    "cycle": "10",
+    "label": "10 'Queen Cake'",
+    "released": "2019-09-03",
+    "eol": "2023-03-06"
+   },
+   {
+    "cycle": "9",
+    "label": "9 'Pie'",
+    "released": "2018-08-06",
+    "eol": "2022-01-01"
+   },
+   {
+    "cycle": "8.1",
+    "label": "8.1 'Oreo'",
+    "released": "2017-12-05",
+    "eol": "2021-01-10"
+   },
+   {
+    "cycle": "8.0",
+    "label": "8.0 'Oreo'",
+    "released": "2017-08-21",
+    "eol": "2021-01-01"
+   },
+   {
+    "cycle": "7.1",
+    "label": "7.1 'Nougat'",
+    "released": "2016-12-01",
+    "eol": "2019-10-01"
+   },
+   {
+    "cycle": "7.0",
+    "label": "7.0 'Nougat'",
+    "released": "2016-08-22",
+    "eol": "2019-10-01"
+   },
+   {
+    "cycle": "6.0",
+    "label": "6.0 'Marshmallow'",
+    "released": "2015-10-05",
+    "eol": "2018-08-01"
+   },
+   {
+    "cycle": "5.1",
+    "label": "5.1 'Lollipop'",
+    "released": "2015-03-01",
+    "eol": "2018-03-01"
+   },
+   {
+    "cycle": "5.0",
+    "label": "5.0 'Lollipop'",
+    "released": "2014-11-12",
+    "eol": "2018-03-01"
+   },
+   {
+    "cycle": "4.4w",
+    "label": "4.4W",
+    "released": "2014-03-31",
+    "eol": "2017-10-01"
+   },
+   {
+    "cycle": "4.4",
+    "label": "4.4 'KitKat'",
+    "released": "2013-10-31",
+    "eol": "2017-10-01"
+   },
+   {
+    "cycle": "4.3",
+    "label": "4.3 'Jelly Bean'",
+    "released": "2013-07-24"
+   },
+   {
+    "cycle": "4.2",
+    "label": "4.2 'Jelly Bean'",
+    "released": "2012-11-13"
+   },
+   {
+    "cycle": "4.1",
+    "label": "4.1 'Jelly Bean'",
+    "released": "2012-07-09"
+   },
+   {
+    "cycle": "4.0",
+    "label": "4.0 'Ice Cream Sandwich'",
+    "released": "2011-10-18"
+   },
+   {
+    "cycle": "3.2",
+    "label": "3.2 'Honeycomb'",
+    "released": "2011-07-15"
+   },
+   {
+    "cycle": "3.1",
+    "label": "3.1 'Honeycomb'",
+    "released": "2011-05-10"
+   },
+   {
+    "cycle": "3.0",
+    "label": "3.0 'Honeycomb'",
+    "released": "2011-02-22"
+   },
+   {
+    "cycle": "2.3",
+    "label": "2.3 'Gingerbread'",
+    "released": "2010-12-06"
+   },
+   {
+    "cycle": "2.2",
+    "label": "2.2 'Froyo'",
+    "released": "2010-05-20"
+   },
+   {
+    "cycle": "2.1",
+    "label": "2.1 'Eclair'",
+    "released": "2010-01-11"
+   },
+   {
+    "cycle": "2.0",
+    "label": "2.0 'Eclair'",
+    "released": "2009-10-26"
+   },
+   {
+    "cycle": "1.6",
+    "label": "1.6 'Donut'",
+    "released": "2009-09-15"
+   },
+   {
+    "cycle": "1.5",
+    "label": "1.5 'Cupcake'",
+    "released": "2009-04-27"
+   },
+   {
+    "cycle": "1.1",
+    "label": "1.1 'Petit Four'",
+    "released": "2009-02-09"
+   },
+   {
+    "cycle": "1.0",
+    "label": "1.0",
+    "released": "2008-09-23"
+   }
+  ],
+  "ios": [
+   {
+    "cycle": "27",
+    "label": "27",
+    "released": "2026-09-14",
+    "latest": "27.0.1",
+    "latest_date": "2026-09-28"
+   },
+   {
+    "cycle": "26",
+    "label": "26",
+    "released": "2025-09-15",
+    "latest": "26.7.1",
+    "latest_date": "2026-09-28"
+   },
+   {
+    "cycle": "18",
+    "label": "18",
+    "released": "2024-09-16",
+    "latest": "18.7.10",
+    "latest_date": "2026-08-17"
+   },
+   {
+    "cycle": "17",
+    "label": "17",
+    "released": "2023-09-18",
+    "eol": "2025-05-13",
+    "latest": "17.7.7",
+    "latest_date": "2025-05-13"
+   },
+   {
+    "cycle": "16",
+    "label": "16",
+    "released": "2022-09-12",
+    "latest": "16.7.16",
+    "latest_date": "2026-05-11"
+   },
+   {
+    "cycle": "15",
+    "label": "15",
+    "released": "2021-09-20",
+    "latest": "15.8.8",
+    "latest_date": "2026-05-11"
+   },
+   {
+    "cycle": "14",
+    "label": "14",
+    "released": "2020-09-16",
+    "eol": "2021-10-26",
+    "latest": "14.8.1",
+    "latest_date": "2021-10-26"
+   },
+   {
+    "cycle": "13",
+    "label": "13",
+    "released": "2019-09-19",
+    "eol": "2020-09-16",
+    "latest": "13.7",
+    "latest_date": "2020-09-01"
+   },
+   {
+    "cycle": "12",
+    "label": "12",
+    "released": "2018-09-17",
+    "eol": "2026-01-26",
+    "latest": "12.5.8",
+    "latest_date": "2026-01-26"
+   },
+   {
+    "cycle": "11",
+    "label": "11",
+    "released": "2017-09-19",
+    "eol": "2018-10-08",
+    "latest": "11.4.1",
+    "latest_date": "2018-07-09"
+   },
+   {
+    "cycle": "10",
+    "label": "10",
+    "released": "2016-09-13",
+    "eol": "2019-07-22",
+    "latest": "10.3.4",
+    "latest_date": "2019-07-22"
+   },
+   {
+    "cycle": "9",
+    "label": "9",
+    "released": "2015-09-16",
+    "eol": "2019-07-22",
+    "latest": "9.3.6",
+    "latest_date": "2019-07-22"
+   },
+   {
+    "cycle": "8",
+    "label": "8",
+    "released": "2014-09-17",
+    "eol": "2015-09-30",
+    "latest": "8.4.1",
+    "latest_date": "2015-08-13"
+   },
+   {
+    "cycle": "7",
+    "label": "7",
+    "released": "2013-09-18",
+    "eol": "2014-10-20",
+    "latest": "7.1.2",
+    "latest_date": "2014-06-30"
+   },
+   {
+    "cycle": "6",
+    "label": "6",
+    "released": "2012-09-19",
+    "eol": "2013-09-26",
+    "latest": "6.1.6",
+    "latest_date": "2014-02-21"
+   },
+   {
+    "cycle": "5",
+    "label": "5",
+    "released": "2011-10-12",
+    "eol": "2012-11-01",
+    "latest": "5.1.1",
+    "latest_date": "2012-05-07"
+   }
+  ],
+  "ipados": [
+   {
+    "cycle": "27",
+    "label": "27",
+    "released": "2026-09-14",
+    "latest": "27.0.1",
+    "latest_date": "2026-09-28"
+   },
+   {
+    "cycle": "26",
+    "label": "26",
+    "released": "2025-09-15",
+    "latest": "26.7.1",
+    "latest_date": "2026-09-28"
+   },
+   {
+    "cycle": "18",
+    "label": "18",
+    "released": "2024-09-16",
+    "latest": "18.7.10",
+    "latest_date": "2026-08-17"
+   },
+   {
+    "cycle": "17",
+    "label": "17",
+    "released": "2023-09-18",
+    "latest": "17.7.11",
+    "latest_date": "2026-05-11"
+   },
+   {
+    "cycle": "16",
+    "label": "16",
+    "released": "2022-10-24",
+    "latest": "16.7.16",
+    "latest_date": "2026-05-11"
+   },
+   {
+    "cycle": "15",
+    "label": "15",
+    "released": "2021-09-20",
+    "latest": "15.8.8",
+    "latest_date": "2026-05-11"
+   },
+   {
+    "cycle": "14",
+    "label": "14",
+    "released": "2020-09-16",
+    "eol": "2021-10-01",
+    "latest": "14.8.1",
+    "latest_date": "2021-10-26"
+   },
+   {
+    "cycle": "13",
+    "label": "13",
+    "released": "2019-09-24",
+    "eol": "2020-09-16",
+    "latest": "13.6",
+    "latest_date": "2020-07-15"
+   },
+   {
+    "cycle": "12",
+    "label": "12",
+    "released": "2018-09-17",
+    "eol": "2019-09-24",
+    "latest": "12.5.8",
+    "latest_date": "2026-01-26"
+   }
+  ],
+  "macos": [
+   {
+    "cycle": "27",
+    "label": "macOS 27 (Golden Gate)",
+    "released": "2026-09-14",
+    "latest": "27.0.1",
+    "latest_date": "2026-09-28"
+   },
+   {
+    "cycle": "26",
+    "label": "macOS 26 (Tahoe)",
+    "released": "2025-09-15",
+    "latest": "26.7.1",
+    "latest_date": "2026-09-28"
+   },
+   {
+    "cycle": "15",
+    "label": "macOS 15 (Sequoia)",
+    "released": "2024-09-16",
+    "latest": "15.8.1",
+    "latest_date": "2026-09-28"
+   },
+   {
+    "cycle": "14",
+    "label": "macOS 14 (Sonoma)",
+    "released": "2023-09-26",
+    "eol": "2026-09-14",
+    "latest": "14.8.9",
+    "latest_date": "2026-08-06"
+   },
+   {
+    "cycle": "13",
+    "label": "macOS 13 (Ventura)",
+    "released": "2022-10-24",
+    "eol": "2025-09-15",
+    "latest": "13.7.8",
+    "latest_date": "2025-08-20"
+   },
+   {
+    "cycle": "12",
+    "label": "macOS 12 (Monterey)",
+    "released": "2021-10-25",
+    "eol": "2024-09-16",
+    "latest": "12.7.6",
+    "latest_date": "2024-07-29"
+   },
+   {
+    "cycle": "11",
+    "label": "macOS 11 (Big Sur)",
+    "released": "2020-11-12",
+    "eol": "2026-02-02",
+    "latest": "11.7.11",
+    "latest_date": "2026-02-02"
+   },
+   {
+    "cycle": "10.15",
+    "label": "macOS 10.15 (Catalina)",
+    "released": "2019-10-07",
+    "eol": "2026-02-02",
+    "latest": "10.15.8",
+    "latest_date": "2026-02-02"
+   },
+   {
+    "cycle": "10.14",
+    "label": "macOS 10.14 (Mojave)",
+    "released": "2018-09-24",
+    "eol": "2021-10-25",
+    "latest": "10.14.6",
+    "latest_date": "2019-07-22"
+   },
+   {
+    "cycle": "10.13",
+    "label": "macOS 10.13 (High Sierra)",
+    "released": "2017-09-25",
+    "eol": "2020-12-01",
+    "latest": "10.13.6",
+    "latest_date": "2018-07-09"
+   },
+   {
+    "cycle": "10.12",
+    "label": "macOS 10.12 (Sierra)",
+    "released": "2016-09-20",
+    "eol": "2019-10-01",
+    "latest": "10.12.6",
+    "latest_date": "2017-07-19"
+   },
+   {
+    "cycle": "10.11",
+    "label": "OS X 10.11 (El Capitan)",
+    "released": "2015-09-30",
+    "eol": "2018-12-01",
+    "latest": "10.11.6",
+    "latest_date": "2016-07-18"
+   },
+   {
+    "cycle": "10.10",
+    "label": "OS X 10.10 (Yosemite)",
+    "released": "2014-10-16",
+    "eol": "2017-08-01",
+    "latest": "10.10.5",
+    "latest_date": "2015-08-13"
+   },
+   {
+    "cycle": "10.9",
+    "label": "OS X 10.9 (Mavericks)",
+    "released": "2013-10-22",
+    "eol": "2016-12-01",
+    "latest": "10.9.5",
+    "latest_date": "2014-09-17"
+   },
+   {
+    "cycle": "10.8",
+    "label": "OS X 10.8 (Mountain Lion)",
+    "released": "2012-07-25",
+    "eol": "2015-08-13",
+    "latest": "10.8.5",
+    "latest_date": "2013-09-12"
+   },
+   {
+    "cycle": "10.7",
+    "label": "Mac OS X 10.7 (Lion)",
+    "released": "2011-07-20",
+    "eol": "2012-10-04",
+    "latest": "10.7.5",
+    "latest_date": "2012-09-19"
+   },
+   {
+    "cycle": "10.6",
+    "label": "Mac OS X 10.6 (Snow Leopard)",
+    "released": "2009-08-28",
+    "eol": "2011-07-25",
+    "latest": "10.6.8",
+    "latest_date": "2011-07-25"
+   },
+   {
+    "cycle": "10.5",
+    "label": "Mac OS X 10.5 (Leopard)",
+    "released": "2007-10-26",
+    "eol": "2009-08-13",
+    "latest": "10.5.8",
+    "latest_date": "2009-08-13"
+   },
+   {
+    "cycle": "10.4",
+    "label": "Mac OS X 10.4 (Tiger)",
+    "released": "2005-04-29",
+    "eol": "2007-11-14",
+    "latest": "10.4.11",
+    "latest_date": "2007-11-14"
+   },
+   {
+    "cycle": "10.3",
+    "label": "Mac OS X 10.3 (Panther)",
+    "released": "2003-10-24",
+    "eol": "2005-04-15",
+    "latest": "10.3.9",
+    "latest_date": "2005-04-15"
+   },
+   {
+    "cycle": "10.2",
+    "label": "Mac OS X 10.2 (Jaguar)",
+    "released": "2002-08-24",
+    "eol": "2003-10-03",
+    "latest": "10.2.8",
+    "latest_date": "2003-10-03"
+   },
+   {
+    "cycle": "10.1",
+    "label": "Mac OS X 10.1 (Puma)",
+    "released": "2001-09-25",
+    "eol": "2002-06-06",
+    "latest": "10.1.5",
+    "latest_date": "2002-06-06"
+   },
+   {
+    "cycle": "10.0",
+    "label": "Mac OS X 10.0 (Cheetah)",
+    "released": "2001-03-24",
+    "eol": "2001-06-22",
+    "latest": "10.0.4",
+    "latest_date": "2001-06-22"
+   }
+  ],
+  "windows": [
+   {
+    "cycle": "11-26h2-e",
+    "label": "11 26H2 (E)",
+    "released": "2026-09-29",
+    "eol": "2029-10-09",
+    "latest": "10.0.26300"
+   },
+   {
+    "cycle": "11-26h2-w",
+    "label": "11 26H2 (W)",
+    "released": "2026-09-29",
+    "eol": "2028-10-10",
+    "latest": "10.0.26300"
+   },
+   {
+    "cycle": "11-26h1-e",
+    "label": "11 26H1 (E)",
+    "released": "2026-02-10",
+    "eol": "2029-03-13",
+    "latest": "10.0.28000"
+   },
+   {
+    "cycle": "11-26h1-w",
+    "label": "11 26H1 (W)",
+    "released": "2026-02-10",
+    "eol": "2028-03-14",
+    "latest": "10.0.28000"
+   },
+   {
+    "cycle": "11-25h2-e",
+    "label": "11 25H2 (E)",
+    "released": "2025-09-30",
+    "eol": "2028-10-10",
+    "latest": "10.0.26200"
+   },
+   {
+    "cycle": "11-25h2-w",
+    "label": "11 25H2 (W)",
+    "released": "2025-09-30",
+    "eol": "2027-10-12",
+    "latest": "10.0.26200"
+   },
+   {
+    "cycle": "11-24h2-iot-lts",
+    "label": "11 24H2 IoT (LTS)",
+    "released": "2024-10-01",
+    "eol": "2034-10-10",
+    "latest": "10.0.26100"
+   },
+   {
+    "cycle": "11-24h2-e-lts",
+    "label": "11 24H2 (E) (LTS)",
+    "released": "2024-10-01",
+    "eol": "2029-10-09",
+    "latest": "10.0.26100"
+   },
+   {
+    "cycle": "11-24h2-e",
+    "label": "11 24H2 (E)",
+    "released": "2024-10-01",
+    "eol": "2027-10-12",
+    "latest": "10.0.26100"
+   },
+   {
+    "cycle": "11-24h2-w",
+    "label": "11 24H2 (W)",
+    "released": "2024-10-01",
+    "eol": "2026-10-13",
+    "latest": "10.0.26100"
+   },
+   {
+    "cycle": "11-23h2-e",
+    "label": "11 23H2 (E)",
+    "released": "2023-10-31",
+    "eol": "2026-11-10",
+    "latest": "10.0.22631"
+   },
+   {
+    "cycle": "11-23h2-w",
+    "label": "11 23H2 (W)",
+    "released": "2023-10-31",
+    "eol": "2025-11-11",
+    "latest": "10.0.22631"
+   },
+   {
+    "cycle": "10-22h2",
+    "label": "10 22H2",
+    "released": "2022-10-18",
+    "eol": "2025-10-14",
+    "latest": "10.0.19045"
+   },
+   {
+    "cycle": "11-22h2-e",
+    "label": "11 22H2 (E)",
+    "released": "2022-09-20",
+    "eol": "2025-10-14",
+    "latest": "10.0.22621"
+   },
+   {
+    "cycle": "11-22h2-w",
+    "label": "11 22H2 (W)",
+    "released": "2022-09-20",
+    "eol": "2024-10-08",
+    "latest": "10.0.22621"
+   },
+   {
+    "cycle": "10-21h2-iot-lts",
+    "label": "10 21H2 IoT (LTS)",
+    "released": "2021-11-16",
+    "eol": "2032-01-13",
+    "latest": "10.0.19044"
+   },
+   {
+    "cycle": "10-21h2-e-lts",
+    "label": "10 21H2 (E) (LTS)",
+    "released": "2021-11-16",
+    "eol": "2027-01-12",
+    "latest": "10.0.19044"
+   },
+   {
+    "cycle": "10-21h2-e",
+    "label": "10 21H2 (E)",
+    "released": "2021-11-16",
+    "eol": "2024-06-11",
+    "latest": "10.0.19044"
+   },
+   {
+    "cycle": "10-21h2-w",
+    "label": "10 21H2 (W)",
+    "released": "2021-11-16",
+    "eol": "2023-06-13",
+    "latest": "10.0.19044"
+   },
+   {
+    "cycle": "11-21h2-e",
+    "label": "11 21H2 (E)",
+    "released": "2021-10-04",
+    "eol": "2024-10-08",
+    "latest": "10.0.22000"
+   },
+   {
+    "cycle": "11-21h2-w",
+    "label": "11 21H2 (W)",
+    "released": "2021-10-04",
+    "eol": "2023-10-10",
+    "latest": "10.0.22000"
+   },
+   {
+    "cycle": "10-21h1",
+    "label": "10 21H1",
+    "released": "2021-05-18",
+    "eol": "2022-12-13",
+    "latest": "10.0.19043"
+   },
+   {
+    "cycle": "10-20h2-e",
+    "label": "10 20H2 (E)",
+    "released": "2020-10-20",
+    "eol": "2023-05-09",
+    "latest": "10.0.19042"
+   },
+   {
+    "cycle": "10-20h2-w",
+    "label": "10 20H2 (W)",
+    "released": "2020-10-20",
+    "eol": "2022-05-10",
+    "latest": "10.0.19042"
+   },
+   {
+    "cycle": "10-2004",
+    "label": "10 2004",
+    "released": "2020-05-27",
+    "eol": "2021-12-14",
+    "latest": "10.0.19041"
+   },
+   {
+    "cycle": "10-1909-e",
+    "label": "10 1909 (E)",
+    "released": "2019-11-12",
+    "eol": "2022-05-10",
+    "latest": "10.0.18363"
+   },
+   {
+    "cycle": "10-1909-w",
+    "label": "10 1909 (W)",
+    "released": "2019-11-12",
+    "eol": "2021-05-11",
+    "latest": "10.0.18363"
+   },
+   {
+    "cycle": "10-1903",
+    "label": "10 1903",
+    "released": "2019-05-21",
+    "eol": "2020-12-08",
+    "latest": "10.0.18362"
+   },
+   {
+    "cycle": "10-1809-e-lts",
+    "label": "10 1809 (E) (LTS)",
+    "released": "2018-11-13",
+    "eol": "2029-01-09",
+    "latest": "10.0.17763"
+   },
+   {
+    "cycle": "10-1809-e",
+    "label": "10 1809 (E)",
+    "released": "2018-11-13",
+    "eol": "2021-05-11",
+    "latest": "10.0.17763"
+   },
+   {
+    "cycle": "10-1809-w",
+    "label": "10 1809 (W)",
+    "released": "2018-11-13",
+    "eol": "2020-11-10",
+    "latest": "10.0.17763"
+   },
+   {
+    "cycle": "10-1803-e",
+    "label": "10 1803 (E)",
+    "released": "2018-04-30",
+    "eol": "2021-05-11",
+    "latest": "10.0.17134"
+   },
+   {
+    "cycle": "10-1803-w",
+    "label": "10 1803 (W)",
+    "released": "2018-04-30",
+    "eol": "2019-11-12",
+    "latest": "10.0.17134"
+   },
+   {
+    "cycle": "10-1709-e",
+    "label": "10 1709 (E)",
+    "released": "2017-10-17",
+    "eol": "2020-10-13",
+    "latest": "10.0.16299"
+   },
+   {
+    "cycle": "10-1709-w",
+    "label": "10 1709 (W)",
+    "released": "2017-10-17",
+    "eol": "2019-04-09",
+    "latest": "10.0.16299"
+   },
+   {
+    "cycle": "10-1703-e",
+    "label": "10 1703 (E)",
+    "released": "2017-04-11",
+    "eol": "2019-10-08",
+    "latest": "10.0.15063"
+   },
+   {
+    "cycle": "10-1703-w",
+    "label": "10 1703 (W)",
+    "released": "2017-04-11",
+    "eol": "2018-10-09",
+    "latest": "10.0.15063"
+   },
+   {
+    "cycle": "10-1607-e-lts",
+    "label": "10 1607 (E) (LTS)",
+    "released": "2016-08-02",
+    "eol": "2026-10-13",
+    "latest": "10.0.14393"
+   },
+   {
+    "cycle": "10-1607-e",
+    "label": "10 1607 (E)",
+    "released": "2016-08-02",
+    "eol": "2019-04-09",
+    "latest": "10.0.14393"
+   },
+   {
+    "cycle": "10-1607-w",
+    "label": "10 1607 (W)",
+    "released": "2016-08-02",
+    "eol": "2018-04-10",
+    "latest": "10.0.14393"
+   },
+   {
+    "cycle": "10-1511",
+    "label": "10 1511",
+    "released": "2015-11-10",
+    "eol": "2017-10-10",
+    "latest": "10.0.10586"
+   },
+   {
+    "cycle": "10-1507-e-lts",
+    "label": "10 1507 (E) (LTS)",
+    "released": "2015-07-29",
+    "eol": "2025-10-14",
+    "latest": "10.0.10240"
+   },
+   {
+    "cycle": "10-1507",
+    "label": "10 1507",
+    "released": "2015-07-29",
+    "eol": "2017-05-09",
+    "latest": "10.0.10240"
+   },
+   {
+    "cycle": "10-1507-iot",
+    "label": "10 1507 IOT",
+    "released": "2015-04-29",
+    "eol": "2020-11-10",
+    "latest": "10.0.10240"
+   },
+   {
+    "cycle": "8.1",
+    "label": "8.1",
+    "released": "2013-11-13",
+    "eol": "2023-01-10",
+    "latest": "6.3.9600"
+   },
+   {
+    "cycle": "8",
+    "label": "8",
+    "released": "2012-10-30",
+    "eol": "2016-01-12",
+    "latest": "6.2.9200"
+   },
+   {
+    "cycle": "7-sp1",
+    "label": "7 SP1",
+    "released": "2011-02-22",
+    "eol": "2020-01-14",
+    "latest": "6.1.7601"
+   },
+   {
+    "cycle": "6-sp2",
+    "label": "Vista SP2",
+    "released": "2009-04-29",
+    "eol": "2017-04-11",
+    "latest": "6.0.6002"
+   },
+   {
+    "cycle": "5-sp3",
+    "label": "XP SP3",
+    "released": "2008-04-21",
+    "eol": "2014-04-08",
+    "latest": "5.1.2600"
+   }
+  ]
+ }
+}

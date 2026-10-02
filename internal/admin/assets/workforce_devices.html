@@ -1,6 +1,7 @@
 {{template "head" .}}
 <p class="wf-back"><a href="/workforce">Workforce risk</a></p>
 <h1>Machines</h1>
+{{if .Sample}}<p class="notice sample" role="note">{{icon "info"}}<span><strong>Sample data.</strong> A made-up company, Northwind Labs. Remove it with <code>quilzo estate sample --remove</code>.</span></p>{{end}}
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
 <p class="lead">Every machine, matched across tools by serial number. A serial
   a manufacturer ships unset, or one a tool gives to two machines, matches
@@ -9,15 +10,17 @@
   {{range .Chips}}<a href="{{.Href}}"{{if .On}} class="on" aria-current="true"{{end}}>{{.Label}}<span class="count">{{.Count}}</span></a>{{end}}
 </nav>
 {{if .Rows}}<div class="table-wrap"><table class="wf-machines">
-  <thead><tr><th scope="col">Machine</th><th scope="col">Serial</th><th scope="col">Owner</th><th scope="col">Last seen</th>
-    {{range .Tools}}<th scope="col">{{.}}</th>{{end}}
-    {{range (index .Rows 0).Posture}}<th scope="col">{{.Label}}</th>{{end}}</tr></thead>
-  <tbody>{{range .Rows}}<tr><th scope="row">{{.Name}}{{if .Class}} <span class="hint">{{.Class}}</span>{{end}}</th>
-    <td>{{if .Serial}}<code>{{.Serial}}</code>{{else}}<span class="hint">none usable</span>{{end}}</td>
+  <thead><tr><th scope="col">Machine</th><th scope="col">Owner</th><th scope="col">Operating system</th><th scope="col">Support</th><th scope="col">Compliance</th><th scope="col">Last seen</th><th scope="col">Known to</th></tr></thead>
+  <tbody>{{range .Rows}}<tr><th scope="row">{{.Name}}{{if .Class}} <span class="hint">{{.Class}}</span>{{end}}{{if .Serial}}<br><code class="hint">{{.Serial}}</code>{{end}}</th>
     <td>{{if .OwnerKey}}<a href="/workforce/person/{{.OwnerKey}}">{{.Owner}}</a>{{else if .Owner}}{{.Owner}}{{else}}<span class="hint">nobody</span>{{end}}</td>
+    <td>{{.OS}}{{if .Age}}<br><span class="hint" title="{{.AgeTitle}}">{{.Age}} old</span>{{end}}</td>
+    <td><span class="wf-band {{.SupportTone}}" title="{{.SupportTitle}}"><span class="wf-icon">{{icon (toneicon .SupportTone)}}</span>{{.Support}}</span></td>
+    <td>{{if .Violations}}<details class="wf-violations"><summary><span class="wf-band {{.StatusTone}}"><span class="wf-icon">{{icon (toneicon .StatusTone)}}</span>{{.Status}}</span><span class="chev">{{icon "expand_more"}}</span></summary>
+      <ul>{{range .Violations}}<li><span class="wf-icon {{.Tone}}">{{icon (toneicon .Tone)}}</span><span><strong>{{.Name}}</strong>: {{.Detail}}{{if .By}} <span class="hint">per {{.By}}</span>{{end}}</span></li>{{end}}</ul></details>
+      {{else}}<span class="wf-band {{.StatusTone}}"><span class="wf-icon">{{icon (toneicon .StatusTone)}}</span>{{.Status}}</span>{{end}}
+      {{if .Unknown}}<br><span class="hint">{{.Unknown}} not measured</span>{{end}}</td>
     <td>{{.Seen}}</td>
-    {{range .In}}<td>{{if .}}<span class="wf-word good">Yes</span>{{else}}<span class="wf-word unknown">No</span>{{end}}</td>{{end}}
-    {{range .Posture}}<td><span class="wf-word {{.Tone}}" title="{{.Title}}">{{.Word}}</span></td>{{end}}</tr>{{end}}</tbody>
+    <td>{{.Tools}}</td></tr>{{end}}</tbody>
 </table></div>{{else}}<p>No machine matches.</p>{{end}}
 {{end}}
 {{template "foot" .}}

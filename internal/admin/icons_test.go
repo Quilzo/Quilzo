@@ -65,7 +65,7 @@ func TestTheTypefaceTravelsWithItsLicenceAndNotUnderGooglesName(t *testing.T) {
 // they were a different family from everything beside them.
 func TestEveryIconIsAMaterialSymbolFromTheIconFiles(t *testing.T) {
 	names := regexp.MustCompile(`\{\{icon "([a-z_]+)"\}\}`)
-	toneNames := []string{toneIcon("good"), toneIcon("warning"), toneIcon("serious"), toneIcon("critical")}
+	toneNames := []string{toneIcon("good"), toneIcon("warning"), toneIcon("serious"), toneIcon("critical"), toneIcon("unknown"), toneIcon("low")}
 	entries, err := assets.ReadDir("assets")
 	if err != nil {
 		t.Fatal(err)

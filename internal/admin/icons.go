@@ -119,6 +119,10 @@ func toneIcon(tone string) string {
 		return "error"
 	case "serious":
 		return "warning"
+	case "unknown":
+		return "help"
+	case "low":
+		return "info"
 	default:
 		return "dangerous"
 	}
