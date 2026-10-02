@@ -53,7 +53,7 @@ func (s *Server) wfLoad(w http.ResponseWriter, r *http.Request, nav,
 	title, tpl string) (principal, *estate.Estate, estate.Outcome,
 	map[string]any, bool) {
 
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return principal{}, nil, estate.Outcome{}, nil, false
 	}
@@ -732,7 +732,7 @@ func (s *Server) handleWorkforceSync(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "use the button", http.StatusMethodNotAllowed)
 		return
 	}
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}

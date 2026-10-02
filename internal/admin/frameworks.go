@@ -30,7 +30,7 @@ func (s *Server) frameworksReady(w http.ResponseWriter, r *http.Request) (princi
 	if !ok {
 		return p, false
 	}
-	if !s.can(w, r, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActGrant, auth.AreaCompliance) {
 		return p, false
 	}
 	return p, true

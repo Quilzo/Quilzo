@@ -19,12 +19,19 @@
              placeholder="their name, or the subject their IdP sends">
     </label>
     <label>Role
-      <select name="role" aria-label="Role">{{range .Roles}}<option value="{{.}}">{{.}}</option>{{end}}</select>
+      <select name="role" aria-label="Role">
+        <optgroup label="Over the site, or part of it">{{range .Roles}}<option value="{{.}}">{{.}}</option>{{end}}</optgroup>
+        <optgroup label="A job, over its own areas">{{range .Jobs}}<option value="job:{{.Name}}">{{.Name}}: {{.Summary}}</option>{{end}}</optgroup>
+      </select>
     </label>
     <label>On
       <input name="resource" value="/" spellcheck="false" aria-label="Resource">
     </label>
+    <label>Until
+      <input name="until" type="date" aria-label="Until" aria-describedby="until-help">
+    </label>
   </div>
+  <p id="until-help" class="hint">Leave Until empty for access that lasts until it is removed. A job ignores On: it is its own areas.</p>
   <div class="row">
     <label class="check"><input type="checkbox" name="deny">
       deny instead of grant</label>
@@ -41,9 +48,10 @@
   as though it applies to somebody.
 </p>
 <p class="hint">
-  <strong>Only content they created</strong> is the contributor shape: the same
-  powers as the role, over a smaller set of pages. Reading is never restricted
-  by it &mdash; a team where people cannot see each other&rsquo;s drafts is not a team.
+  <strong>A job</strong> is the access a kind of work needs and nothing more:
+  an <em>analyst</em> works in security operations, <em>compliance</em> in the
+  posture and frameworks, <em>support</em> in the inbox and members&rsquo;
+  posts. None of them can grant access or open a page.
 </p>
 
 <h2>Everybody</h2>
@@ -78,6 +86,7 @@
         <code>{{.Resource}}</code>
         {{if .OwnOnly}} <span class="tag tag-warn">own-only: never enforced,
           ignored</span>{{end}}
+        {{if .Expires}}{{if .Live}}<div class="hint">until {{.Until}}</div>{{else}}<div class="hint"><span class="tag tag-bad">expired</span> {{.Until}}</div>{{end}}{{end}}
         {{if .Note}}<div class="hint">{{.Note}}</div>{{end}}
       </td>
       <td class="right">

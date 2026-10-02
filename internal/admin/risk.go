@@ -63,7 +63,7 @@ func playbookFor(parts []finding.Part) string {
 const MaxRiskRows = 100
 
 func (s *Server) handleRisk(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}

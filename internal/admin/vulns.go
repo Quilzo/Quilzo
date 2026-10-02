@@ -111,7 +111,7 @@ func liveOf(matched []vuln.Exposure) []vuln.Exposure {
 }
 
 func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}
@@ -389,7 +389,7 @@ func vulnTrend(hist []vuln.Tally) ([]wfPoint, string) {
 // handleVuln is one vulnerability: what is known, why it ranks where it
 // does, where it is, what has been decided, and the forms to decide.
 func (s *Server) handleVuln(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}
@@ -541,7 +541,7 @@ func (s *Server) handleVulnsAct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "use the form", http.StatusMethodNotAllowed)
 		return
 	}
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}

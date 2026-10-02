@@ -44,7 +44,7 @@ type IndicatorHits struct {
 const MaxIndicatorRows = 200
 
 func (s *Server) handleIndicators(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}
@@ -144,7 +144,7 @@ func (s *Server) handleIndicatorsAct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "use the form", http.StatusMethodNotAllowed)
 		return
 	}
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}

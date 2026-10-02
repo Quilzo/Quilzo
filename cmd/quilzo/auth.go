@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -216,6 +217,8 @@ func authGrant(root string, args []string) error {
 	// for — which is what it had been doing all along.
 	ownOnly := fs.Bool("own-only", false,
 		"withdrawn: it was never enforced (see the error it returns)")
+	until := fs.String("until", "", "the grant ends at the start of this day (YYYY-MM-DD)")
+	forDur := fs.String("for", "", "the grant ends after this long: 30d, 72h")
 	rest, flags := leadingArgs(args, 2)
 	if err := fs.Parse(flags); err != nil {
 		return err
@@ -252,16 +255,32 @@ func authGrant(root string, args []string) error {
 			"[--on /path]\n   or: quilzo auth deny <principal> <role> [--on /path]")
 	}
 
+	expires, err := grantExpiry(*until, *forDur, time.Now())
+	if err != nil {
+		return err
+	}
 	p, err := loadPolicy(root)
 	if err != nil {
 		return err
 	}
-	b := auth.Binding{
-		Principal: rest[0], Role: auth.Role(rest[1]), Resource: *on,
-		Deny: *deny, GrantedBy: grantedBy(root, *by), Note: *note,
+	// A job is the bindings it stands for, each on its own area. See
+	// auth.Jobs: granting one is granting exactly those.
+	bindings := []auth.Binding{{Principal: rest[0], Role: auth.Role(rest[1]), Resource: *on}}
+	if job, ok := auth.JobNamed(rest[1]); ok {
+		if *on != "/" || *deny {
+			return fmt.Errorf("%s is a job, which is its own areas: it takes no --on and cannot be a deny", job.Name)
+		}
+		bindings = nil
+		for _, jb := range job.Bindings {
+			jb.Principal = rest[0]
+			bindings = append(bindings, jb)
+		}
 	}
-	if err := p.Grant(b); err != nil {
-		return err
+	for _, b := range bindings {
+		b.Deny, b.GrantedBy, b.Note, b.Expires = *deny, grantedBy(root, *by), *note, expires
+		if err := p.Grant(b); err != nil {
+			return err
+		}
 	}
 	if err := saveJSON(policyPath(root), p); err != nil {
 		return err
@@ -284,10 +303,24 @@ func authGrant(root string, args []string) error {
 		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
 		Detail: map[string]string{
 			"subject": rest[0], "role": rest[1], "deny": fmt.Sprintf("%t", *deny),
+			"expires": expiryText(expires),
 		},
 	})
 
+	if job, ok := auth.JobNamed(rest[1]); ok {
+		fmt.Printf("%s %s to %s: %s\n", verb, job.Name, rest[0], job.Summary)
+		for _, b := range bindings {
+			fmt.Printf("  %s%s on %s%s\n", dim, b.Role, b.Resource, reset)
+		}
+		if expires != 0 {
+			fmt.Printf("  %suntil %s%s\n", dim, expiryText(expires), reset)
+		}
+		return nil
+	}
 	fmt.Printf("%s %s to %s on %s\n", verb, rest[1], rest[0], *on)
+	if expires != 0 {
+		fmt.Printf("  %suntil %s%s\n", dim, expiryText(expires), reset)
+	}
 	// Show the consequence immediately. A grant whose effect you have to work
 	// out later is one nobody checks.
 	fmt.Printf("  %s%s can now: ", dim, rest[0])
@@ -305,6 +338,48 @@ func authGrant(root string, args []string) error {
 	return nil
 }
 
+// grantExpiry turns --until or --for into a Unix time, or zero for never.
+func grantExpiry(until, forDur string, now time.Time) (int64, error) {
+	until, forDur = strings.TrimSpace(until), strings.TrimSpace(forDur)
+	switch {
+	case until != "" && forDur != "":
+		return 0, fmt.Errorf("give --until or --for, not both")
+	case until != "":
+		t, err := time.Parse("2006-01-02", until)
+		if err != nil {
+			return 0, fmt.Errorf("--until is a day, like 2026-12-31: %v", err)
+		}
+		if !t.After(now) {
+			return 0, fmt.Errorf("--until %s is not in the future", until)
+		}
+		return t.Unix(), nil
+	case forDur != "":
+		var d time.Duration
+		if n, ok := strings.CutSuffix(forDur, "d"); ok {
+			days, err := strconv.Atoi(n)
+			if err != nil || days <= 0 {
+				return 0, fmt.Errorf("--for %s is not a number of days", forDur)
+			}
+			d = time.Duration(days) * 24 * time.Hour
+		} else {
+			parsed, err := time.ParseDuration(forDur)
+			if err != nil || parsed <= 0 {
+				return 0, fmt.Errorf("--for is a length of time, like 30d or 72h")
+			}
+			d = parsed
+		}
+		return now.Add(d).Unix(), nil
+	}
+	return 0, nil
+}
+
+func expiryText(unix int64) string {
+	if unix == 0 {
+		return "never"
+	}
+	return time.Unix(unix, 0).UTC().Format("2 Jan 2006 15:04 UTC")
+}
+
 func authRevoke(root string, args []string) error {
 	fs := flag.NewFlagSet("revoke", flag.ContinueOnError)
 	on := fs.String("on", "/", "resource path the binding covered")
@@ -320,7 +395,14 @@ func authRevoke(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	n := p.Revoke(rest[0], auth.Role(rest[1]), *on)
+	var n int
+	if job, ok := auth.JobNamed(rest[1]); ok {
+		for _, jb := range job.Bindings {
+			n += p.Revoke(rest[0], jb.Role, jb.Resource)
+		}
+	} else {
+		n = p.Revoke(rest[0], auth.Role(rest[1]), *on)
+	}
 	if n == 0 {
 		return fmt.Errorf("no binding matched %s %s on %s", rest[0], rest[1], *on)
 	}
@@ -383,6 +465,13 @@ func authList(root string) error {
 		}
 		fmt.Printf("  %-18s %-10s %-16s %-14s %s",
 			b.Principal, b.Role, b.Resource, by, mark)
+		if b.Expires != 0 {
+			if b.Live(time.Now()) {
+				fmt.Printf("  %suntil %s%s", dim, expiryText(b.Expires), reset)
+			} else {
+				fmt.Printf("  %sexpired %s%s", red, expiryText(b.Expires), reset)
+			}
+		}
 		if b.Note != "" {
 			fmt.Printf("  %s%s%s", dim, b.Note, reset)
 		}

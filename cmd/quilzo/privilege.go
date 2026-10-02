@@ -1066,10 +1066,14 @@ func authoriseCommand(root, cmd string, args []string) error {
 	}
 
 	caller := resolveCaller(root, tokenFromArgs(args))
+	resources := commandResources(cmd, args)
+	if area, ok := commandArea(cmd, args); ok {
+		resources = []string{area}
+	}
 	// Every resource, not the first one. A command that writes two pages needs
 	// the authority for both, and stopping at the first would let a deny on
 	// the second page be worked around by naming a permitted page alongside it.
-	for _, resource := range commandResources(cmd, args) {
+	for _, resource := range resources {
 		if err := authorise(root, caller, n.action, resource); err != nil {
 			sub := cmd
 			if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -1115,6 +1119,42 @@ func bootstrapIssue(root, cmd string, args []string) bool {
 		}
 	}
 	return false
+}
+
+// commandAreas are the commands that work in an area of the admin rather
+// than on the site's content, and are asked about that area: see
+// auth.AreaSecurity. A whole-site role covers every area, so nothing here
+// changes what anybody granted on "/" may run; it is what lets somebody
+// granted one area run that area's commands and nothing else. A subcommand
+// is looked up before its command, so "board held" can be moderation while
+// "board add", opening a board, stays a whole-site publish.
+var commandAreas = map[string]string{
+	"finding": auth.AreaSecurity, "incident": auth.AreaSecurity, "intel": auth.AreaSecurity,
+	"vuln": auth.AreaSecurity, "analyst": auth.AreaSecurity, "action": auth.AreaSecurity,
+	"identity": auth.AreaSecurity, "collect": auth.AreaSecurity, "source": auth.AreaSecurity,
+	"connect": auth.AreaSecurity, "estate": auth.AreaSecurity, "remind": auth.AreaSecurity,
+	"workforce": auth.AreaSecurity, "hunt": auth.AreaSecurity, "detect": auth.AreaSecurity,
+	"sigma": auth.AreaSecurity, "proving": auth.AreaSecurity, "correlate": auth.AreaSecurity,
+	"siem":    auth.AreaSecurity,
+	"posture": auth.AreaCompliance, "compliance": auth.AreaCompliance,
+	"auditlog":   auth.AreaLog,
+	"inbox":      auth.AreaInbox,
+	"board list": auth.AreaBoards, "board held": auth.AreaBoards, "board recent": auth.AreaBoards,
+	"board approve": auth.AreaBoards, "board delete": auth.AreaBoards,
+}
+
+// commandArea is the area a command works in, if it works in one.
+func commandArea(cmd string, args []string) (string, bool) {
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		if a, ok := commandAreas[cmd+" "+args[0]]; ok {
+			return a, true
+		}
+		if cmd == "board" {
+			return "", false
+		}
+	}
+	a, ok := commandAreas[cmd]
+	return a, ok
 }
 
 func lookupNeed(cmd string, args []string) (need, bool) {

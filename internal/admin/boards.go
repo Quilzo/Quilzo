@@ -50,7 +50,7 @@ func (s *Server) handleBoards(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	if !s.can(w, r, p, auth.ActEditDraft, auth.AreaBoards) {
 		return
 	}
 	data := map[string]any{"Title": "Boards", "Nav": "boards", "Principal": p,
@@ -85,7 +85,7 @@ func (s *Server) handleBoardsAct(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	if !s.can(w, r, p, auth.ActEditDraft, auth.AreaBoards) {
 		return
 	}
 	if p.Limits.ReadOnly {

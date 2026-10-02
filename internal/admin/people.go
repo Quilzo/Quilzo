@@ -34,10 +34,26 @@ import (
 // credential, and when did they last use it", which is a slightly different
 // question and the only one the design can answer truthfully.
 
+// bindingView is a binding as the screen shows it, with whether it is still
+// in force worked out, because a template cannot ask a method about now.
+type bindingView struct {
+	auth.Binding
+	Live  bool
+	Until string
+}
+
+func viewBinding(b auth.Binding) bindingView {
+	v := bindingView{Binding: b, Live: b.Live(time.Now())}
+	if b.Expires != 0 {
+		v.Until = time.Unix(b.Expires, 0).UTC().Format("2 Jan 2006")
+	}
+	return v
+}
+
 // person is one principal and everything known about them.
 type person struct {
 	Name     string
-	Bindings []auth.Binding
+	Bindings []bindingView
 	// Roles is the effective set, deduplicated, for the summary column.
 	Roles []string
 	// Sessions are their usable credentials.
@@ -86,7 +102,7 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 			who = &person{Name: b.Principal, IsSelf: b.Principal == p.Name}
 			byName[b.Principal] = who
 		}
-		who.Bindings = append(who.Bindings, b)
+		who.Bindings = append(who.Bindings, viewBinding(b))
 	}
 
 	// Somebody holding a token but named in no binding still has to appear.
@@ -173,7 +189,7 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 
 	s.render(w, r, "people.html", map[string]any{
 		"Nav": "people", "Title": "People", "Principal": p, "People": people,
-		"Roles": auth.Roles, "ActiveWithin": activeWithin.String(),
+		"Roles": auth.Roles, "Jobs": auth.Jobs, "ActiveWithin": activeWithin.String(),
 		"Known": names, "Message": r.URL.Query().Get("m"),
 		"Error": r.URL.Query().Get("e"),
 	})
@@ -197,7 +213,16 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 	if on == "" {
 		on = "/"
 	}
-	b := auth.Binding{
+	var expires int64
+	if u := strings.TrimSpace(r.FormValue("until")); u != "" {
+		t, err := time.Parse("2006-01-02", u)
+		if err != nil || !t.After(time.Now()) {
+			s.peopleBack(w, r, "Until has to be a day in the future.")
+			return
+		}
+		expires = t.Unix()
+	}
+	base := auth.Binding{
 		Principal: who, Role: role, Resource: on,
 		Deny: r.FormValue("deny") == "on",
 		// own_only is not read from the form any more. The checkbox said
@@ -206,10 +231,29 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 		// now returns. A form field that cannot be honoured is not read.
 		GrantedBy: p.Name,
 		Note:      strings.TrimSpace(r.FormValue("note")),
+		Expires:   expires,
 	}
-	if err := s.Policy.Grant(b); err != nil {
-		s.peopleBack(w, r, err.Error())
-		return
+	bindings := []auth.Binding{base}
+	// A job is the bindings it stands for, each on its own area.
+	if name, isJob := strings.CutPrefix(string(role), "job:"); isJob {
+		job, ok := auth.JobNamed(name)
+		if !ok || base.Deny {
+			s.peopleBack(w, r, "That job cannot be granted like that: a job is never a deny.")
+			return
+		}
+		bindings = nil
+		for _, jb := range job.Bindings {
+			b := base
+			b.Role, b.Resource = jb.Role, jb.Resource
+			bindings = append(bindings, b)
+		}
+		role, on = auth.Role(job.Name), "its areas"
+	}
+	for _, b := range bindings {
+		if err := s.Policy.Grant(b); err != nil {
+			s.peopleBack(w, r, err.Error())
+			return
+		}
 	}
 	if err := s.save(); err != nil {
 		s.peopleBack(w, r, err.Error())

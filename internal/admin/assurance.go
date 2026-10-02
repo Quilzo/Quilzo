@@ -179,7 +179,7 @@ func (s *Server) handleIntegrityScreen(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{
 		"Nav": "security", "Title": "Integrity", "Principal": p,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
-		"CanRun": s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed,
+		"CanRun": s.Policy.Evaluate(p.Name, auth.ActGrant, auth.AreaCompliance).Allowed,
 	}
 	if s.Assurance != nil && s.Assurance.Vault != nil {
 		encrypted, active, keys := s.Assurance.Vault()
@@ -208,7 +208,7 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActGrant, auth.AreaCompliance) {
 		return
 	}
 	if s.Assurance == nil || s.Assurance.Verify == nil {
@@ -263,11 +263,23 @@ func (s *Server) handleAgentsScreen(w http.ResponseWriter, r *http.Request) {
 // is: a detailed list of where this system's defences are thin is a target
 // list, and the people who need it are the people who can already change it.
 func (s *Server) assuranceReader(w http.ResponseWriter, r *http.Request) (principal, bool) {
+	return s.areaAdmin(w, r, auth.AreaCompliance)
+}
+
+// securityReader is assuranceReader for security operations: the findings,
+// events, hunting and cases an analyst works in.
+func (s *Server) securityReader(w http.ResponseWriter, r *http.Request) (principal, bool) {
+	return s.areaAdmin(w, r, auth.AreaSecurity)
+}
+
+// areaAdmin admits an administrator of an area: of the whole site, which
+// covers every area, or of that area alone. See auth.AreaSecurity.
+func (s *Server) areaAdmin(w http.ResponseWriter, r *http.Request, area string) (principal, bool) {
 	p, ok := s.requireAuth(w, r)
 	if !ok {
 		return principal{}, false
 	}
-	if !s.can(w, r, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActGrant, area) {
 		return principal{}, false
 	}
 	return p, true
