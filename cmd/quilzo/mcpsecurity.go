@@ -56,7 +56,7 @@ func registerSecurityOps(srv *mcp.Server, root string, caller *Caller) {
 		Keywords: []string{"findings", "alerts", "queue", "triage", "security",
 			"incidents", "vulnerabilities"},
 	}, func(a map[string]any) (any, error) {
-		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+		if err := authorise(root, caller, auth.ActGrant, auth.AreaSecurity); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 		state, _ := a["state"].(string)
@@ -104,7 +104,7 @@ func registerSecurityOps(srv *mcp.Server, root string, caller *Caller) {
 		Keywords: []string{"detections", "rules", "precision", "tuning",
 			"false positives", "suppressions", "noise"},
 	}, func(a map[string]any) (any, error) {
-		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+		if err := authorise(root, caller, auth.ActGrant, auth.AreaSecurity); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 		t, err := loadTuning(root, "", time.Now().UTC())
@@ -143,7 +143,7 @@ func registerSecurityOps(srv *mcp.Server, root string, caller *Caller) {
 		Keywords: []string{"incident", "breach", "notification", "deadline",
 			"gdpr", "nis2", "dora", "case"},
 	}, func(a map[string]any) (any, error) {
-		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+		if err := authorise(root, caller, auth.ActGrant, auth.AreaSecurity); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 		all, err := listIncidents(root)
@@ -236,7 +236,7 @@ func registerSecurityOps(srv *mcp.Server, root string, caller *Caller) {
 		Keywords: []string{"vulnerabilities", "cve", "upgrade", "patch",
 			"remediation", "epss", "kev"},
 	}, func(a map[string]any) (any, error) {
-		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+		if err := authorise(root, caller, auth.ActGrant, auth.AreaSecurity); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 		now := time.Now().UTC()
@@ -270,7 +270,7 @@ func registerSecurityOps(srv *mcp.Server, root string, caller *Caller) {
 		Args:     map[string]string{"id": "the finding id from list_findings"},
 		Keywords: []string{"finding", "evidence", "alert", "investigate"},
 	}, func(a map[string]any) (any, error) {
-		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+		if err := authorise(root, caller, auth.ActGrant, auth.AreaSecurity); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 		id, _ := a["id"].(string)
@@ -326,7 +326,7 @@ func registerSecurityOps(srv *mcp.Server, root string, caller *Caller) {
 		Keywords: []string{"triage", "verdict", "false positive", "propose",
 			"recommend", "decision"},
 	}, func(a map[string]any) (any, error) {
-		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+		if err := authorise(root, caller, auth.ActGrant, auth.AreaSecurity); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 		id, _ := a["id"].(string)

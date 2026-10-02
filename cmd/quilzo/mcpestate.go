@@ -35,7 +35,7 @@ func registerEstateOps(srv *mcp.Server, root string, caller *Caller) {
 		Keywords: []string{"workforce", "risk", "estate", "training",
 			"phishing", "devices", "compliance", "people"},
 	}, func(a map[string]any) (any, error) {
-		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+		if err := authorise(root, caller, auth.ActGrant, auth.AreaSecurity); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 		now := time.Now().UTC()

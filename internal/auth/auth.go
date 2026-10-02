@@ -163,10 +163,81 @@ type Binding struct {
 	// path, and it stacks with a token's type and locale scope. A new rung
 	// would have composed with nothing and would have needed a decision about
 	// where it sits relative to every existing one.
-	OwnOnly   bool   `json:"own_only,omitempty"`
+	OwnOnly bool `json:"own_only,omitempty"`
+	// Expires ends the binding at this Unix time. Zero is never. For a
+	// contractor, an auditor, or cover while somebody is away: access that
+	// ends by itself is access nobody has to remember to remove.
+	Expires   int64  `json:"expires,omitempty"`
 	GrantedBy string `json:"granted_by,omitempty"`
 	GrantedAt int64  `json:"granted_at,omitempty"`
 	Note      string `json:"note,omitempty"`
+}
+
+// Live reports whether a binding is in force at a moment.
+func (b Binding) Live(now time.Time) bool {
+	return b.Expires == 0 || now.Unix() < b.Expires
+}
+
+// Areas of the admin that are not content.
+//
+// A binding's resource has always been a part of the site — "/" for all of
+// it, "/blog" for a section. These are parts of the admin instead, named
+// where no page can be (a page name cannot begin with @), and the screens,
+// commands and machine-interface tools of each area ask about its name. So
+// a role granted on "/" covers every area exactly as before, and a role
+// granted on one area covers that area and nothing else.
+//
+// That is how a job is given without inventing rungs: a security analyst is
+// an administrator of /@security — the findings, cases and hunts — who can
+// grant nobody anything, because granting is asked about "/", and who
+// cannot open a page, because pages are asked about their own names.
+const (
+	// AreaSecurity is security operations: findings, events, hunting,
+	// detections, cases, indicators, vulnerabilities, workforce risk.
+	AreaSecurity = "/@security"
+	// AreaCompliance is assurance: the security posture, frameworks,
+	// integrity, inventory and the evidence an assessor asks for.
+	AreaCompliance = "/@compliance"
+	// AreaLog is the audit log.
+	AreaLog = "/@log"
+	// AreaInbox is the conversations visitors asked to have with a person.
+	AreaInbox = "/@inbox"
+	// AreaBoards is moderating what a site's members write.
+	AreaBoards = "/@boards"
+)
+
+// IsArea reports whether a resource names an area rather than content.
+func IsArea(resource string) bool {
+	return strings.HasPrefix(normalise(resource), "/@")
+}
+
+// Job is a named set of grants for a kind of work.
+type Job struct {
+	Name     string
+	Summary  string
+	Bindings []Binding
+}
+
+// Jobs are the roles people ask for by what they do. Each is only the
+// bindings it lists: granting one is granting those, and the policy holds
+// nothing but bindings, so what a job allows is always readable in full.
+var Jobs = []Job{
+	{Name: "analyst", Summary: "security operations and the audit log; nothing else",
+		Bindings: []Binding{{Role: RoleAdmin, Resource: AreaSecurity}, {Role: RoleAdmin, Resource: AreaLog}}},
+	{Name: "compliance", Summary: "the security posture, frameworks and evidence, and the audit log",
+		Bindings: []Binding{{Role: RoleAdmin, Resource: AreaCompliance}, {Role: RoleAdmin, Resource: AreaLog}}},
+	{Name: "support", Summary: "answer visitors in the inbox and moderate members' posts; nothing else",
+		Bindings: []Binding{{Role: RoleAuthor, Resource: AreaInbox}, {Role: RoleAuthor, Resource: AreaBoards}}},
+}
+
+// JobNamed finds a job by name.
+func JobNamed(name string) (Job, bool) {
+	for _, j := range Jobs {
+		if j.Name == name {
+			return j, true
+		}
+	}
+	return Job{}, false
 }
 
 // Policy is the whole access model: an ordered list of bindings.
@@ -247,6 +318,7 @@ func (p *Policy) Evaluate(principal string, action Action, resource string) Deci
 	}
 
 	target := normalise(resource)
+	now := time.Now()
 	var trail []string
 	var best Role
 	var bestBinding *Binding
@@ -255,7 +327,7 @@ func (p *Policy) Evaluate(principal string, action Action, resource string) Deci
 	// to add bindings in.
 	for i := range p.Bindings {
 		b := &p.Bindings[i]
-		if b.Principal != principal || !b.Deny || !covers(b.Resource, target) {
+		if b.Principal != principal || !b.Deny || !covers(b.Resource, target) || !b.Live(now) {
 			continue
 		}
 		// A deny of role R blocks every action needing R *or more*. Denying
@@ -280,6 +352,11 @@ func (p *Policy) Evaluate(principal string, action Action, resource string) Deci
 	for i := range p.Bindings {
 		b := &p.Bindings[i]
 		if b.Principal != principal || b.Deny {
+			continue
+		}
+		if !b.Live(now) {
+			trail = append(trail, fmt.Sprintf(
+				"skip %s on %s — expired", b.Role, normalise(b.Resource)))
 			continue
 		}
 		if !covers(b.Resource, target) {
@@ -343,7 +420,9 @@ func (p *Policy) Anywhere(principal string, action Action) bool {
 	p.mu.RLock()
 	scopes := make([]string, 0, len(p.Bindings))
 	for i := range p.Bindings {
-		if b := &p.Bindings[i]; b.Principal == principal && !b.Deny {
+		// Content only: an area is not somewhere in the site, and an
+		// analyst's grant on /@security must not open the Pages list.
+		if b := &p.Bindings[i]; b.Principal == principal && !b.Deny && !IsArea(b.Resource) {
 			scopes = append(scopes, b.Resource)
 		}
 	}

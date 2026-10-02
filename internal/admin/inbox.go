@@ -46,7 +46,7 @@ func (s *Server) inboxReady(w http.ResponseWriter, r *http.Request) (principal, 
 	if !ok {
 		return principal{}, false
 	}
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	if !s.can(w, r, p, auth.ActEditDraft, auth.AreaInbox) {
 		return principal{}, false
 	}
 	// What a visitor said is theirs. It is not kept by the browser.

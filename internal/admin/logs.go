@@ -68,7 +68,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	// Reading the audit log is an administrative act: it holds who did what,
 	// across everybody, and is the one record that is worth reading to plan an
 	// attack as well as to investigate one.
-	if !s.can(w, r, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActGrant, auth.AreaLog) {
 		return
 	}
 	if s.LoadAudit == nil {

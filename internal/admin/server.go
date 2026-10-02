@@ -1586,6 +1586,15 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Somebody whose work is one area — an analyst, a support person — has
+	// no pages to read, and the front door is their first screen, not a
+	// refusal.
+	if s.Policy != nil && !s.Policy.Anywhere(p.Name, auth.ActView) {
+		if to := landing(visibleTo(s, p)); to != "" {
+			http.Redirect(w, r, to, http.StatusSeeOther)
+			return
+		}
+	}
 	// Whether they may read anything, not whether they may read everything.
 	// This screen asked the second question, so an author granted author on
 	// /blog was refused the front door of the interface.
@@ -2037,7 +2046,7 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 	// the audit log. That is administrator information, and gating it on
 	// ActManageAccess rather than ActView is the least-privilege reading: a
 	// list of exactly where the defences are thin is a target list.
-	if !s.can(w, r, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActGrant, auth.AreaCompliance) {
 		return
 	}
 	if s.Posture == nil {
@@ -2118,7 +2127,7 @@ func (s *Server) handleRules(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActGrant, auth.AreaCompliance) {
 		return
 	}
 	s.render(w, r, "rules.html", map[string]any{
@@ -2137,7 +2146,7 @@ func (s *Server) handleRule(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActGrant, auth.AreaCompliance) {
 		return
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/security/rule/")
@@ -3280,4 +3289,21 @@ func ranAgo(at string) string {
 		return at
 	}
 	return agoText(time.Since(t))
+}
+
+// landing is where somebody with no pages to read starts: their first
+// screen, passing over the audit log, which is evidence to consult rather
+// than where a day's work begins.
+func landing(ds []destination) string {
+	for _, d := range ds {
+		if d.Key != "logs" && d.Path != "/" {
+			return d.Path
+		}
+	}
+	for _, d := range ds {
+		if d.Path != "/" {
+			return d.Path
+		}
+	}
+	return ""
 }

@@ -446,6 +446,8 @@ access
   quilzo move OLD NEW [--dry-run]          a page and everything under it
   quilzo links [PAGE] [--from] [--broken]  what points at what
   quilzo auth grant WHO ROLE [--on PATH]   reader | author | publisher | admin
+  quilzo auth grant WHO JOB [--for 30d]    analyst | compliance | support: one area each
+  quilzo auth grant ... --until 2026-12-31 access that ends by itself
   quilzo auth deny WHO ROLE [--on PATH]    a deny wins wherever it sits
   quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
   quilzo standing list                     what a situation can hand somebody, and what it cannot

@@ -101,7 +101,7 @@ func (x who) did(e telemetry.Event) string {
 }
 
 func (s *Server) handleEntity(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}

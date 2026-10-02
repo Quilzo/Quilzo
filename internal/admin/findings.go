@@ -143,7 +143,7 @@ type facet struct {
 }
 
 func (s *Server) handleFindings(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}
@@ -319,7 +319,7 @@ func kindLabel(k finding.Kind) string {
 // handleFinding shows one finding: why it is here, its evidence, what has
 // been decided, and the form for deciding.
 func (s *Server) handleFinding(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}
@@ -434,7 +434,7 @@ func (s *Server) handleFindingDecide(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "a decision is made with a POST", http.StatusMethodNotAllowed)
 		return
 	}
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}

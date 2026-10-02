@@ -56,7 +56,7 @@ var huntOps = []detect.Op{detect.Equals, detect.Contains, detect.Prefix,
 	detect.Suffix}
 
 func (s *Server) handleHunt(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}

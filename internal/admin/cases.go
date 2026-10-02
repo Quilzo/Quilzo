@@ -143,7 +143,7 @@ func stateTone(s incident.State) string {
 }
 
 func (s *Server) handleCases(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}
@@ -241,7 +241,7 @@ func (s *Server) handleCases(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCase(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}
@@ -463,7 +463,7 @@ func (s *Server) handleCasesAct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "use the form", http.StatusMethodNotAllowed)
 		return
 	}
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}

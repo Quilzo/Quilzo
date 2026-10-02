@@ -92,7 +92,7 @@ type sender struct {
 }
 
 func (s *Server) handleEventsScreen(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assuranceReader(w, r)
+	p, ok := s.securityReader(w, r)
 	if !ok {
 		return
 	}

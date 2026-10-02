@@ -251,7 +251,7 @@ type navItem struct {
 func (s *Server) navigation(r *http.Request, p principal, current string) []navGroup {
 	allowed := make([]destination, 0, len(destinations))
 	for _, d := range destinations {
-		if s.Policy != nil && !s.Policy.Evaluate(p.Name, d.Needs, "/").Allowed {
+		if s.Policy != nil && !s.Policy.Evaluate(p.Name, d.Needs, d.resource()).Allowed {
 			continue
 		}
 		allowed = append(allowed, d)
@@ -439,11 +439,31 @@ func groupOf(key string) string {
 	return ""
 }
 
+// screenAreas are the screens that belong to an area of the admin rather
+// than to the site's content, and are shown to whoever holds that area. See
+// auth.AreaSecurity: a whole-site role covers them all, so nothing changes
+// for anybody granted on "/".
+var screenAreas = map[string]string{
+	"findings": auth.AreaSecurity, "risk": auth.AreaSecurity, "cases": auth.AreaSecurity,
+	"events": auth.AreaSecurity, "hunt": auth.AreaSecurity, "detections": auth.AreaSecurity,
+	"indicators": auth.AreaSecurity, "vulns": auth.AreaSecurity, "workforce": auth.AreaSecurity,
+	"security": auth.AreaCompliance, "logs": auth.AreaLog,
+	"inbox": auth.AreaInbox, "boards": auth.AreaBoards,
+}
+
+// resource is what a screen's entry is checked against.
+func (d destination) resource() string {
+	if a, ok := screenAreas[d.Key]; ok {
+		return a
+	}
+	return "/"
+}
+
 // visibleTo is the destinations a principal may use.
 func visibleTo(s *Server, p principal) []destination {
 	out := make([]destination, 0, len(destinations))
 	for _, d := range destinations {
-		if s.Policy != nil && !s.Policy.Evaluate(p.Name, d.Needs, "/").Allowed {
+		if s.Policy != nil && !s.Policy.Evaluate(p.Name, d.Needs, d.resource()).Allowed {
 			continue
 		}
 		out = append(out, d)
