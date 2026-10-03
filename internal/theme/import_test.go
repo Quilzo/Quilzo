@@ -256,6 +256,9 @@ func TestAThemeSurvivesBeingExportedAndReadBack(t *testing.T) {
 
 	mapping := map[string]string{}
 	for _, tok := range Tokens() {
+		if tok.Kind == Choice {
+			continue // a style is not a design token, and is not exported
+		}
 		mapping[tok.Name] = "light." + tok.Group + "." + tok.Name
 		if tok.Kind == Colour {
 			mapping[tok.Name+".dark"] = "dark." + tok.Group + "." + tok.Name
@@ -269,6 +272,9 @@ func TestAThemeSurvivesBeingExportedAndReadBack(t *testing.T) {
 	}
 
 	for _, tok := range Tokens() {
+		if tok.Kind == Choice {
+			continue
+		}
 		for _, scheme := range []struct {
 			key  string
 			dark bool
@@ -342,6 +348,14 @@ func TestSuggestNamesEverySettableKey(t *testing.T) {
 		seen[m.Key] = true
 	}
 	for _, tok := range Tokens() {
+		if tok.Kind == Choice {
+			// A style is set with theme set; a token file has no such thing
+			// to map from, so it is not suggested as an import key.
+			if seen[tok.Name] {
+				t.Fatalf("%s is offered as an import key and no file carries it", tok.Name)
+			}
+			continue
+		}
 		if !seen[tok.Name] {
 			t.Fatalf("%s cannot be found from the suggested list", tok.Name)
 		}

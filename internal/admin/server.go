@@ -1151,6 +1151,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/sections/edit", s.handleSectionEdit)
 	mux.HandleFunc("/sections/fields", s.handleSectionFields)
 	mux.HandleFunc("/design/save", s.handleDesignSave)
+	mux.HandleFunc("/design/generate", s.handleDesignGenerate)
 	mux.HandleFunc("/design/install", s.handleDesignInstall)
 	mux.HandleFunc("/transfer", s.handleTransfer)
 	mux.HandleFunc("/transfer/export", s.handleExport)

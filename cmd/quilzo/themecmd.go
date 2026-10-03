@@ -57,9 +57,15 @@ func cmdTheme(root string, args []string) error {
 		return themeImport(root, args[1:])
 	case "export":
 		return themeExport(args[1:])
+	case "styles":
+		for _, st := range theme.Styles {
+			w.Human("  %s%-11s%s %s\n", bold, st, reset, theme.StyleWords[st])
+		}
+		w.Human("\n  quilzo theme set style NAME; quilzo theme set motion subtle|expressive|none\n")
+		return nil
 	default:
 		return fmt.Errorf("unknown theme command %q; try show, tokens, set, "+
-			"unset, check, fonts, css, apply, generate, import or export",
+			"unset, check, fonts, css, apply, generate, import, export or styles",
 			args[0])
 	}
 }
@@ -527,14 +533,18 @@ func themeGenerate(root string, args []string) error {
 	fs, dir := dirFlag("generate", flags)
 	replace := fs.Bool("replace", false,
 		"discard the current colours rather than refusing")
+	scheme := fs.String("scheme", "tonal",
+		"how colourful: tonal, vibrant, expressive, neutral or monochrome")
+	contrast := fs.String("contrast", "standard",
+		"standard (WCAG AA), medium (6:1 text) or high (7:1 text, AAA)")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo theme generate <colour> [--replace]")
+		return fmt.Errorf("usage: quilzo theme generate <colour> [--scheme S] [--contrast C] [--replace]")
 	}
 
-	generated, err := theme.Generate(pos[0])
+	generated, err := theme.GenerateWith(pos[0], theme.Options{Scheme: *scheme, Contrast: *contrast})
 	if err != nil {
 		return err
 	}

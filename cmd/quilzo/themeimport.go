@@ -488,6 +488,8 @@ func themeExport(args []string) error {
 	fs, dir := dirFlag("export", args)
 	out := fs.String("out", "",
 		"write here rather than to standard output")
+	tailwind := fs.Bool("tailwind", false,
+		"write a Tailwind CSS v4 @theme stylesheet instead of design tokens")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -506,6 +508,9 @@ func themeExport(args []string) error {
 		}
 	}
 	b := theme.Export(th)
+	if *tailwind {
+		b = []byte(theme.Tailwind(th))
+	}
 	if *out == "" {
 		_, werr := os.Stdout.Write(b)
 		return werr

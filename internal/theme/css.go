@@ -106,6 +106,11 @@ func (t *Theme) fontFaces(b *strings.Builder) {
 // writeTokens emits every token for the light scheme, colours included.
 func (t *Theme) writeTokens(b *strings.Builder, dark bool) {
 	for _, tok := range tokens {
+		if tok.Kind == Choice {
+			// A style is not a value the stylesheet reads; it decides which
+			// rules are in it (see Preset).
+			continue
+		}
 		fmt.Fprintf(b, "  --%s: %s;\n", tok.Name, t.cssValue(tok, dark))
 	}
 }

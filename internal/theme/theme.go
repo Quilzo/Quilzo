@@ -67,6 +67,8 @@ const (
 	// FontStack names one of the built-in stacks, or a self-hosted family the
 	// site actually serves.
 	FontStack Kind = "font"
+	// Choice is one of a closed list of words: a style, a motion setting.
+	Choice Kind = "choice"
 )
 
 // Token is one thing an operator may change.
@@ -203,6 +205,10 @@ var tokens = []Token{
 	{"density", Ratio, "1", "", "multiplies every gap and pad: 0.85 is compact, 1.15 is airy", "shape"},
 	{"page-width", Length, "64rem", "", "the widest the content column gets", "shape"},
 	{"border", Length, "1px", "", "hairline thickness; 0 removes every card and table border", "shape"},
+
+	// -- style ----------------------------------------------------------------
+	{"style", Choice, "classic", "", "the overall look: classic, expressive, glass, editorial, bold, soft or business; it sets corners, density and type, and never colour", "style"},
+	{"motion", Choice, "subtle", "", "how much moves: subtle, expressive or none; reduced motion is honoured whatever is chosen", "style"},
 }
 
 // stacks are the built-in font stacks.
@@ -288,6 +294,8 @@ type Theme struct {
 	// families are the self-hosted faces this site serves, by family name.
 	// A font token may name one of these or one of the built-in stacks.
 	families []Family
+	// fromStyle are the tokens whose values the style supplied.
+	fromStyle []string
 }
 
 // Family is a self-hosted typeface the site serves from its own origin.
@@ -398,6 +406,7 @@ func New(overrides map[string]string, families []Family) (*Theme, []Finding) {
 			}
 		}
 	}
+	t.applyStyle()
 	return t, problems
 }
 
@@ -423,6 +432,10 @@ func (t *Theme) validate(tok Token, value string) error {
 		}
 		if n <= 0 {
 			return fmt.Errorf("%s has to be greater than zero", tok.Name)
+		}
+	case Choice:
+		if !choiceOK(tok.Name, value) {
+			return fmt.Errorf("%q is not a %s; one of %s", value, tok.Name, choiceList(tok.Name))
 		}
 	case FontStack:
 		if _, built := stacks[value]; built {

@@ -125,6 +125,9 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 	var groups []group
 	index := map[string]int{}
 	for _, tok := range theme.Tokens() {
+		if tok.Kind == theme.Choice {
+			continue // chosen in the Look section, not typed into a table
+		}
 		light, setLight := th.Value(tok.Name, false)
 		dark, setDark := th.Value(tok.Name, true)
 		it := item{
@@ -158,6 +161,30 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	type choice struct {
+		Name, Label, Words string
+		On                 bool
+	}
+	var styles, motions, schemes, levels []choice
+	for _, st := range theme.Styles {
+		styles = append(styles, choice{Name: st, Label: strings.ToUpper(st[:1]) + st[1:], Words: theme.StyleWords[st], On: th.Style() == st})
+	}
+	motionWords := map[string]string{"subtle": "Short, gentle transitions.", "expressive": "Springy, bouncy motion, as Material 3 Expressive.", "none": "Nothing moves."}
+	for _, m := range theme.Motions {
+		motions = append(motions, choice{Name: m, Label: strings.ToUpper(m[:1]) + m[1:], Words: motionWords[m], On: th.Motion() == m})
+	}
+	schemeWords := map[string]string{"tonal": "Calm containers and related accents.", "vibrant": "Fuller colour, accents close to the seed.",
+		"expressive": "Accents far round the colour wheel.", "neutral": "Barely tinted.", "monochrome": "Greys only."}
+	for i, sc := range theme.Schemes {
+		schemes = append(schemes, choice{Name: sc, Label: strings.ToUpper(sc[:1]) + sc[1:], Words: schemeWords[sc], On: i == 0})
+	}
+	levelWords := map[string]string{"standard": "WCAG AA, which publishing requires.", "medium": "Text at 6:1.", "high": "Text at 7:1, WCAG AAA."}
+	for i, l := range theme.ContrastLevels {
+		levels = append(levels, choice{Name: l, Label: strings.ToUpper(l[:1]) + l[1:], Words: levelWords[l], On: i == 0})
+	}
+	data["Styles"], data["Motions"], data["Schemes"], data["Levels"] = styles, motions, schemes, levels
+	seed, _ := th.Value("primary", false)
+	data["Seed"] = seed
 	data["Groups"] = groups
 	data["Blocking"] = blocking
 	data["Advisory"] = advisory
@@ -283,6 +310,61 @@ func (s *Server) handleDesignSave(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditPub(p, "theme.set", "/", map[string]string{"setting": token})
 	s.designRedirect(w, r, token+" saved", "")
+}
+
+// handleDesignGenerate replaces the palette with one built from a colour,
+// a scheme and a contrast level. Every colour it writes is chosen against
+// the pairs the gate checks, so it cannot produce an unpublishable theme.
+func (s *Server) handleDesignGenerate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "post only", http.StatusMethodNotAllowed)
+		return
+	}
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+		return
+	}
+	if s.DesignSet == nil || s.DesignSet.Save == nil {
+		s.designRedirect(w, r, "", "the design is not writable in this build")
+		return
+	}
+	seed := strings.TrimSpace(r.FormValue("seed"))
+	generated, err := theme.GenerateWith(seed, theme.Options{Scheme: r.FormValue("scheme"), Contrast: r.FormValue("contrast")})
+	if err != nil {
+		s.designRedirect(w, r, "", err.Error())
+		return
+	}
+	overrides, err := s.DesignSet.Tokens()
+	if err != nil {
+		s.designRedirect(w, r, "", err.Error())
+		return
+	}
+	next := map[string]string{}
+	for k, v := range overrides {
+		// The colours are replaced whole: a generated palette with last
+		// month's hand-set link colour left in it is not the palette chosen.
+		if tok, ok := theme.Lookup(baseToken(k)); ok && tok.Kind == theme.Colour {
+			continue
+		}
+		next[k] = v
+	}
+	for k, v := range generated {
+		next[k] = v
+	}
+	th, problems := theme.New(next, s.siteFamilies())
+	if theme.Blocks(problems) || theme.Blocks(th.Check()) {
+		s.designRedirect(w, r, "", "the generated palette did not pass the checks; nothing was changed")
+		return
+	}
+	if err := s.DesignSet.Save(next); err != nil {
+		s.designRedirect(w, r, "", err.Error())
+		return
+	}
+	s.auditPub(p, "theme.generate", "/", map[string]string{"seed": seed, "scheme": r.FormValue("scheme"), "contrast": r.FormValue("contrast")})
+	s.designRedirect(w, r, "A new palette from "+seed+" is in place", "")
 }
 
 // handleDesignInstall writes a starter's markup and its palette.

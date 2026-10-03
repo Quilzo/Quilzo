@@ -131,6 +131,7 @@ templates and design
   quilzo theme generate COLOUR             a whole palette from one colour
   quilzo theme set TOKEN VALUE             change one, refused if unreadable
   quilzo theme check | fonts | css         contrast, typefaces, generated CSS
+  quilzo theme styles                      the looks: classic, expressive, glass, editorial, bold, soft, business
   quilzo theme apply STARTER               take a starter's palette, keep your layout
   quilzo theme import FILE --list          what a design token file holds
   quilzo theme import FILE --set T=PATH    fill this site's tokens from it
@@ -1358,6 +1359,13 @@ func cmdPublish(root string, args []string) error {
 	target := ""
 	if len(args) > 0 {
 		target = args[0]
+	}
+	// Nothing drafted is said as that, before any gate runs: a gate asked
+	// to examine no commit answered "not an object id", which sent a first
+	// publish off looking for a broken image.
+	if target == "" && s.GetRef(site.RefDraft) == "" {
+		return fmt.Errorf("there is nothing to publish: no page has been " +
+			"drafted yet. quilzo add NAME FILE drafts one")
 	}
 	// Every check about the content, run here and by every other surface.
 	//

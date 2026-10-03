@@ -137,7 +137,9 @@ func Stylesheet(th *theme.Theme) string {
 	// Tokens, then components, then the arrangement rules generated from this
 	// site's breakpoints — last, so they win, and separate because a container
 	// query cannot read a custom property.
-	return th.CSS() + "\n" + Components() + th.Responsive()
+	// The style's layer sits between: after the components it adjusts,
+	// before the arrangement that has to win over both.
+	return th.CSS() + "\n" + Components() + th.Preset() + th.Responsive()
 }
 
 // CSS is the default stylesheet: the shipped palette and the components.
