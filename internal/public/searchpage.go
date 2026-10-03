@@ -93,6 +93,9 @@ func (st *Site) searchPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx["search"] = st.searchData(query, pages)
+	if ans := st.searchAnswer(r, query); ans != nil {
+		ctx["answer"] = ans
+	}
 
 	_, layout, lerr := st.Layouts.For(body)
 	if lerr != nil {

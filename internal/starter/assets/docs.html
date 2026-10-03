@@ -63,7 +63,16 @@
             <button class="btn" type="submit">Search</button>
           </div>
         </form>
-        {% if search.empty %}<p class="muted">Nothing matched “{{ search.query }}”.</p>{% end %}
+        {% if answer %}
+    <section class="answer" aria-labelledby="answer-head">
+      <p class="chip" id="answer-head">Answer from {{ answer.title }}</p>
+      {% for a in answer.sentences %}<p>{{ a.text }}{% for c in a.cites %} <sup><a href="{{ c.href }}">[{{ c.n }}]</a></sup>{% end %}</p>{% end %}
+      <ol class="answer-sources">{% for src in answer.sources %}<li value="{{ src.n }}"><a href="{{ src.href }}">{{ src.title }}</a></li>{% end %}</ol>
+      <p class="muted"><a href="{{ answer.more }}">Ask a follow-up</a>. Every sentence links to the page it came from.</p>
+    </section>
+    {% end %}
+
+    {% if search.empty %}<p class="muted">Nothing matched “{{ search.query }}”.</p>{% end %}
         {% if search.count %}
         <ul class="results" role="list">
           {% for r in search.results %}
