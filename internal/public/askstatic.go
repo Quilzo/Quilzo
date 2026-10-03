@@ -184,8 +184,17 @@ func allowScript(h http.Header, source string) {
 		if cur == "" {
 			continue
 		}
-		if reScriptSrc.MatchString(cur) {
-			cur = reScriptSrc.ReplaceAllString(cur, script)
+		// A page with two of this site's scripts allows both: a hash added
+		// to a list of hashes joins it, where one added to anything else
+		// replaces it, so 'self' or 'none' never survives beside a hash.
+		if m := reScriptSrc.FindString(cur); m != "" {
+			if strings.Contains(m, "'sha256-") {
+				if !strings.Contains(m, source) {
+					cur = reScriptSrc.ReplaceAllString(cur, m+" "+source)
+				}
+			} else {
+				cur = reScriptSrc.ReplaceAllString(cur, script)
+			}
 		} else {
 			cur += "; " + script
 		}

@@ -126,6 +126,16 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data["EmbedList"] = strings.Join(a.Embed, "\n")
+	// The launcher's settings with their defaults, so the form shows what
+	// a new one would be as well as what an existing one is.
+	l := assistant.Launcher{}
+	if a.Launcher != nil {
+		l = *a.Launcher
+	}
+	data["L"] = l.Normalised()
+	data["LPages"] = strings.Join(l.Pages, ", ")
+	data["LNudgePages"] = strings.Join(l.NudgePages, ", ")
+	data["LSuggestions"] = strings.Join(l.Suggestions, "\n")
 	if s.Assistants.Forms != nil {
 		if names, ferr := s.Assistants.Forms(); ferr == nil {
 			data["FormNames"] = names
@@ -204,6 +214,21 @@ func (s *Server) handleAssistantSave(w http.ResponseWriter, r *http.Request) {
 			a.Handoff = r.FormValue("handoff") == "1"
 			days, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("handoff_days")))
 			a.HandoffDays = days
+			a.Launcher = nil
+			if r.FormValue("launcher") == "1" {
+				var qs []string
+				for _, line := range strings.Split(r.FormValue("suggestions"), "\n") {
+					if line = strings.TrimSpace(line); line != "" {
+						qs = append(qs, line)
+					}
+				}
+				after, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("nudge_after")))
+				a.Launcher = &assistant.Launcher{Style: r.FormValue("launcher_style"), Side: r.FormValue("launcher_side"),
+					Label: strings.TrimSpace(r.FormValue("launcher_label")), Panel: r.FormValue("panel"),
+					Pages: splitCSV(r.FormValue("launcher_pages")), Suggestions: qs,
+					Nudge: strings.TrimSpace(r.FormValue("nudge")), NudgeAfter: after,
+					NudgePages: splitCSV(r.FormValue("nudge_pages"))}
+			}
 		} else {
 			a.Title = strings.TrimSpace(r.FormValue("title"))
 		}

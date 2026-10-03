@@ -125,6 +125,41 @@
       or <code>quilzo ipfs write</code>. The copy answers in the visitor's
       browser, without a model, from published pages only — the passages are
       published with it as a file anyone can download. Needs Public.</p></div>
+  <fieldset><legend>On the site's pages</legend>
+    <div class="field"><label><input type="checkbox" name="launcher" value="1"{{if .A.Launcher}} checked{{end}} aria-describedby="launcher-help">
+      Show a button that opens it beside the page</label>
+      <p id="launcher-help" class="help">In a corner of every page, or of the pages below. With scripts off it is a link to the
+        conversation, so it works for everybody. Needs Public, and a site shows one.</p></div>
+    <fieldset><legend>Button</legend>
+      <p><label><input type="radio" name="launcher_style" value="bubble"{{if eq .L.Style "bubble"}} checked{{end}}> <strong>Round</strong> <span class="help">an icon on its own</span></label></p>
+      <p><label><input type="radio" name="launcher_style" value="pill"{{if eq .L.Style "pill"}} checked{{end}}> <strong>With a label</strong> <span class="help">an icon and a word, easier to understand</span></label></p>
+      <p><label><input type="radio" name="launcher_style" value="tab"{{if eq .L.Style "tab"}} checked{{end}}> <strong>Tab</strong> <span class="help">on the edge of the window, out of the content's way</span></label></p>
+    </fieldset>
+    <fieldset><legend>Side</legend>
+      <p><label><input type="radio" name="launcher_side" value="right"{{if eq .L.Side "right"}} checked{{end}}> Right</label></p>
+      <p><label><input type="radio" name="launcher_side" value="left"{{if eq .L.Side "left"}} checked{{end}}> Left</label></p>
+    </fieldset>
+    <fieldset><legend>Opens as</legend>
+      <p><label><input type="radio" name="panel" value="float"{{if eq .L.Panel "float"}} checked{{end}}> <strong>A panel over the corner</strong> <span class="help">for most sites</span></label></p>
+      <p><label><input type="radio" name="panel" value="side"{{if eq .L.Panel "side"}} checked{{end}}> <strong>A panel beside the page</strong> <span class="help">the page moves over to make room; for documentation and portals</span></label></p>
+    </fieldset>
+    <div class="field"><label for="launcher_label">What the button says</label>
+      <input id="launcher_label" name="launcher_label" maxlength="24" value="{{.L.Label}}"></div>
+    <div class="field"><label for="launcher_pages">Only on pages under</label>
+      <input id="launcher_pages" name="launcher_pages" value="{{.LPages}}" placeholder="/docs, /pricing" aria-describedby="launcher-pages-help">
+      <p id="launcher-pages-help" class="help">Comma-separated. Empty is every page.</p></div>
+    <div class="field"><label for="suggestions">Questions to offer before the first one</label>
+      <textarea id="suggestions" name="suggestions" rows="3" aria-describedby="suggestions-help">{{.LSuggestions}}</textarea>
+      <p id="suggestions-help" class="help">One per line, up to four. Each is a link that asks it.</p></div>
+    <div class="field"><label for="nudge">A nudge beside the button</label>
+      <input id="nudge" name="nudge" maxlength="120" value="{{if .A.Launcher}}{{.A.Launcher.Nudge}}{{end}}" placeholder="Questions about pricing? Ask here." aria-describedby="nudge-help">
+      <p id="nudge-help" class="help">Off unless you write one. Shown once a visit, beside the button and never over the page,
+        not again for a month once dismissed, and on a phone only after the first screen has been scrolled past.</p></div>
+    <div class="field"><label for="nudge_after">Seconds on a page before the nudge</label>
+      <input id="nudge_after" name="nudge_after" type="number" min="5" max="600" value="{{.L.NudgeAfter}}"></div>
+    <div class="field"><label for="nudge_pages">Nudge only on pages under</label>
+      <input id="nudge_pages" name="nudge_pages" value="{{.LNudgePages}}" placeholder="/pricing"></div>
+  </fieldset>
   <button type="submit">Save</button>
 </form>
 

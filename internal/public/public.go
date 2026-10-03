@@ -307,6 +307,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/form/", st.submit)
 	mux.HandleFunc("/ask/", st.ask)
 	mux.HandleFunc("/ask.css", st.askStylesheet)
+	mux.HandleFunc("/agent.css", st.agentStylesheet)
 	mux.HandleFunc("/ask-live.js", st.askLiveScript)
 	mux.HandleFunc("/share", st.handleShare)
 	mux.HandleFunc("/account", st.account)
@@ -925,6 +926,12 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		tag = `"` + renderTag(tree[served], st.dataTree(), names, args) + `"`
 	}
 	tag = st.threadsTag(tag, name, commentsOn(body))
+	// The site's assistant, when it has a button on this page. In the tag
+	// too: a page whose button changed is not the one a cache holds.
+	launcher, launch := st.launcherFor(r, r.URL.Path)
+	if launch {
+		tag = strings.TrimSuffix(tag, `"`) + "-" + launcherTag(launcher, r.URL.Path) + `"`
+	}
 	w.Header().Set("ETag", tag)
 	// Before the conditional answer, not after: a 304 replaces the policy a
 	// cache stored with the page, and one without this hash would stop the
@@ -932,6 +939,10 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	live := st.liveOn(r, body)
 	if live {
 		allowScript(w.Header(), liveHash)
+	}
+	if launch {
+		allowScript(w.Header(), agentHash)
+		allowFrameSelf(w.Header())
 	}
 	if forMembers {
 		// One member's request, never a shared cache's. no-store rather
@@ -996,6 +1007,10 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	html = st.injectHead(html, name, tree[served], body)
 	if live {
 		html = insertBeforeHead(html, liveScript())
+	}
+	if launch {
+		html = insertBeforeHead(html, `<link rel="stylesheet" href="/agent.css">`)
+		html = insertBeforeBodyEnd(html, launcherMarkup(launcher, r.URL.Path))
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))

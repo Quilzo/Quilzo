@@ -69,6 +69,136 @@ type Assistant struct {
 	// document is knowledge the owner chose to quote from, not to publish.
 	// Extractive only, because a static host has no model to ask.
 	Static bool `json:"static,omitempty"`
+	// Launcher puts the assistant on the site's pages: a button in a corner
+	// that opens it in a panel, without leaving the page. Nil is no launcher.
+	Launcher *Launcher `json:"launcher,omitempty"`
+}
+
+// Launcher is how an assistant appears on the site's pages.
+//
+// Without a script the button is a link to the conversation page, so it
+// works for everybody; with one, the conversation opens beside the page.
+type Launcher struct {
+	// Style is "bubble" (a round button), "pill" (a button with a label) or
+	// "tab" (a tab on the edge of the window).
+	Style string `json:"style,omitempty"`
+	// Side is "right" or "left".
+	Side string `json:"side,omitempty"`
+	// Label is what a pill or a tab says. Default "Ask".
+	Label string `json:"label,omitempty"`
+	// Panel is "float", over the corner of the page, or "side", docked
+	// beside it with the page moved over to make room.
+	Panel string `json:"panel,omitempty"`
+	// Pages limits the launcher to pages under these prefixes.
+	Pages []string `json:"pages,omitempty"`
+	// Suggestions are questions offered before the first one is asked.
+	Suggestions []string `json:"suggestions,omitempty"`
+	// Nudge is a short line shown beside the button after a while, once a
+	// visit, until the visitor dismisses it. Empty is no nudge, which is
+	// the default: an interruption has to be chosen.
+	Nudge string `json:"nudge,omitempty"`
+	// NudgeAfter is how many seconds a page is open before the nudge
+	// shows. Default 20.
+	NudgeAfter int `json:"nudge_after,omitempty"`
+	// NudgePages limits the nudge to pages under these prefixes.
+	NudgePages []string `json:"nudge_pages,omitempty"`
+}
+
+// Limits on a launcher.
+const (
+	MaxSuggestions   = 4
+	MaxSuggestionLen = 80
+	MaxNudgeLen      = 120
+	MaxLauncherLabel = 24
+)
+
+// Normalised is the launcher with its defaults filled in.
+func (l Launcher) Normalised() Launcher {
+	if l.Style == "" {
+		l.Style = "bubble"
+	}
+	if l.Side == "" {
+		l.Side = "right"
+	}
+	if l.Panel == "" {
+		l.Panel = "float"
+	}
+	if strings.TrimSpace(l.Label) == "" {
+		l.Label = "Ask"
+	}
+	if l.NudgeAfter == 0 {
+		l.NudgeAfter = 20
+	}
+	return l
+}
+
+// On reports whether the launcher appears on the page at path.
+func (l Launcher) On(path string) bool { return underAny(path, l.Pages) }
+
+// NudgeOn reports whether the nudge may show on the page at path.
+func (l Launcher) NudgeOn(path string) bool {
+	if strings.TrimSpace(l.Nudge) == "" || !l.On(path) {
+		return false
+	}
+	return underAny(path, l.NudgePages)
+}
+
+func underAny(path string, prefixes []string) bool {
+	if len(prefixes) == 0 {
+		return true
+	}
+	for _, p := range prefixes {
+		if path == p || strings.HasPrefix(path, strings.TrimSuffix(p, "/")+"/") || p == "/" {
+			return true
+		}
+	}
+	return false
+}
+
+func (l Launcher) validate(name string, public bool) error {
+	if !public {
+		return fmt.Errorf("%s has a launcher but is not public; the launcher opens what the site serves", name)
+	}
+	switch l.Style {
+	case "", "bubble", "pill", "tab":
+	default:
+		return fmt.Errorf("%s's launcher style %q is not bubble, pill or tab", name, l.Style)
+	}
+	switch l.Side {
+	case "", "right", "left":
+	default:
+		return fmt.Errorf("%s's launcher side %q is not right or left", name, l.Side)
+	}
+	switch l.Panel {
+	case "", "float", "side":
+	default:
+		return fmt.Errorf("%s's panel %q is not float or side", name, l.Panel)
+	}
+	if len([]rune(l.Label)) > MaxLauncherLabel {
+		return fmt.Errorf("%s's launcher label is over %d characters", name, MaxLauncherLabel)
+	}
+	if len(l.Suggestions) > MaxSuggestions {
+		return fmt.Errorf("%s offers %d suggestions, over %d", name, len(l.Suggestions), MaxSuggestions)
+	}
+	for _, q := range l.Suggestions {
+		if strings.TrimSpace(q) == "" || len([]rune(q)) > MaxSuggestionLen {
+			return fmt.Errorf("%s's suggestion %q is empty or over %d characters", name, q, MaxSuggestionLen)
+		}
+	}
+	if len([]rune(l.Nudge)) > MaxNudgeLen {
+		return fmt.Errorf("%s's nudge is over %d characters; a nudge is a line, not a message", name, MaxNudgeLen)
+	}
+	if l.NudgeAfter != 0 && (l.NudgeAfter < 5 || l.NudgeAfter > 600) {
+		return fmt.Errorf("%s's nudge waits %d seconds; between 5 and 600, so it never arrives with the page", name, l.NudgeAfter)
+	}
+	for _, list := range [][]string{l.Pages, l.NudgePages} {
+		for _, p := range list {
+			if !strings.HasPrefix(p, "/") || strings.ContainsAny(p, "?#\\") || strings.Contains(p, "..") {
+				return fmt.Errorf("%q is not a page prefix: it starts with / and names a path", p)
+			}
+		}
+	}
+	return nil
 }
 
 // MaxHandoffDays is the longest a handed-off conversation may be kept.
@@ -203,6 +333,11 @@ func (a Assistant) Validate() error {
 			"%d, or 0 for the default of thirty", a.Name, a.HandoffDays,
 			MaxHandoffDays)
 	}
+	if a.Launcher != nil {
+		if err := a.Launcher.validate(a.Name, a.Public); err != nil {
+			return err
+		}
+	}
 	if len(a.Actions) > MaxActions {
 		return fmt.Errorf("%s declares %d actions, over %d", a.Name,
 			len(a.Actions), MaxActions)
@@ -335,10 +470,29 @@ func (s *Set) Get(name string) (Assistant, bool) {
 	return Assistant{}, false
 }
 
+// Launcher is the assistant that appears on the site's pages: the one
+// public assistant with a launcher. A site has at most one, so two buttons
+// never compete for the same corner.
+func (s *Set) Launcher() (Assistant, bool) {
+	for _, a := range s.Assistants {
+		if a.Public && a.Launcher != nil {
+			return a, true
+		}
+	}
+	return Assistant{}, false
+}
+
 // Put adds or replaces one, after validating it.
 func (s *Set) Put(a Assistant) error {
 	if err := a.Validate(); err != nil {
 		return err
+	}
+	if a.Launcher != nil {
+		for _, other := range s.Assistants {
+			if other.Name != a.Name && other.Launcher != nil {
+				return fmt.Errorf("%s already has the launcher; a site shows one, so take it off %s first", other.Name, other.Name)
+			}
+		}
 	}
 	for i := range s.Assistants {
 		if s.Assistants[i].Name == a.Name {
