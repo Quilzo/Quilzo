@@ -26,11 +26,11 @@ func actions(rec *recorder) map[string]Action {
 		}
 	}
 	return map[string]Action{
-		"step-up":             {ID: "step-up", Name: "Step up", Does: "make them prove it", Kinds: []string{"signin"}, Inline: true},
-		"notify":              {ID: "notify", Name: "Tell somebody", Does: "send a message", Kinds: []string{"signin", "finding", "device", "person"}, Params: []Param{{Name: "to", Choices: []string{"security", "person"}}}, Run: run("notify")},
-		"end-sessions":        {ID: "end-sessions", Name: "End sessions", Does: "sign them out", Kinds: []string{"signin", "finding", "person"}, Run: run("end-sessions")},
+		"step-up":             {ID: "step-up", Name: "Step up", Does: "make them prove it", Kinds: []string{"signin", "signal"}, Inline: true},
+		"notify":              {ID: "notify", Name: "Tell somebody", Does: "send a message", Kinds: []string{"signin", "finding", "device", "person", "signal"}, Params: []Param{{Name: "to", Choices: []string{"security", "person"}}}, Run: run("notify")},
+		"end-sessions":        {ID: "end-sessions", Name: "End sessions", Does: "sign them out", Kinds: []string{"signin", "finding", "person", "signal"}, Run: run("end-sessions")},
 		"broken":              {ID: "broken", Name: "Broken", Does: "fail", Kinds: []string{"finding"}, Run: run("broken")},
-		"open-case":           {ID: "open-case", Name: "Open a case", Does: "open one", Kinds: []string{"finding", "person"}, Run: run("open-case")},
+		"open-case":           {ID: "open-case", Name: "Open a case", Does: "open one", Kinds: []string{"finding", "person", "signal"}, Run: run("open-case")},
 		"okta-suspend-user":   {ID: "okta-suspend-user", Name: "Suspend in Okta", Does: "suspend", Kinds: []string{"finding"}, Run: run("okta-suspend-user")},
 		"okta-clear-sessions": {ID: "okta-clear-sessions", Name: "Clear Okta sessions", Does: "clear", Kinds: []string{"finding", "signin"}, Run: run("okta-clear-sessions")},
 	}

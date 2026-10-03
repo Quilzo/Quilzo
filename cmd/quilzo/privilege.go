@@ -185,6 +185,13 @@ var commandNeeds = map[string]need{
 	"automate list":      {action: auth.ActView},
 	"automate runs":      {action: auth.ActView},
 	"automate templates": {action: auth.ActView},
+	// Feeds bring in what other systems say, and what they say reaches
+	// the automations. Adding one is the whole site's decision (the
+	// command asks for it again); reading them is a view.
+	"inbound":        {action: auth.ActGrant},
+	"inbound list":   {action: auth.ActView},
+	"inbound status": {action: auth.ActView},
+	"inbound help":   {action: auth.ActView},
 	// Where sign-ins come from is the whole site's decision.
 	"geo":        {action: auth.ActGrant},
 	"geo status": {action: auth.ActView},
@@ -1151,7 +1158,7 @@ var commandAreas = map[string]string{
 	"connect": auth.AreaSecurity, "estate": auth.AreaSecurity, "remind": auth.AreaSecurity,
 	"workforce": auth.AreaSecurity, "hunt": auth.AreaSecurity, "detect": auth.AreaSecurity,
 	"sigma": auth.AreaSecurity, "proving": auth.AreaSecurity, "correlate": auth.AreaSecurity,
-	"siem": auth.AreaSecurity, "automate": auth.AreaSecurity,
+	"siem": auth.AreaSecurity, "automate": auth.AreaSecurity, "inbound": auth.AreaSecurity,
 	"posture": auth.AreaCompliance, "compliance": auth.AreaCompliance,
 	"auditlog":   auth.AreaLog,
 	"inbox":      auth.AreaInbox,

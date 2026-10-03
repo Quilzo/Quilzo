@@ -128,6 +128,7 @@ var destinations = []destination{
 	// What happens next, and who signed in from where.
 	{"automations", "Automations", "/security/automations", "Security operations", "automations", auth.ActGrant},
 	{"signins", "Sign-ins", "/security/signins", "Security operations", "automations", auth.ActGrant},
+	{"feeds", "Feeds", "/security/feeds", "Security operations", "feeds", auth.ActGrant},
 
 	{"agents", "Agents", "/agents", "Administration", "agents", auth.ActGrant},
 	{"people", "People", "/people", "Administration", "users", auth.ActGrant},
@@ -190,7 +191,7 @@ var docSections = map[string]bool{
 	"listings": true, "forms": true, "media": true, "languages": true,
 	"ai": true, "publishing": true, "environments": true, "history": true,
 	"transfer": true, "ipfs": true, "provenance": true, "security": true, "detection": true,
-	"members": true, "provisioning": true, "automations": true,
+	"members": true, "provisioning": true, "automations": true, "feeds": true,
 	"vulnerabilities": true, "cases": true,
 	"logging": true, "users": true, "auth": true, "integrations": true,
 	"settings": true, "api": true, "profile": true, "start": true,
@@ -462,7 +463,7 @@ var screenAreas = map[string]string{
 	"findings": auth.AreaSecurity, "risk": auth.AreaSecurity, "cases": auth.AreaSecurity,
 	"events": auth.AreaSecurity, "hunt": auth.AreaSecurity, "detections": auth.AreaSecurity,
 	"indicators": auth.AreaSecurity, "vulns": auth.AreaSecurity, "workforce": auth.AreaSecurity,
-	"automations": auth.AreaSecurity, "signins": auth.AreaSecurity,
+	"automations": auth.AreaSecurity, "signins": auth.AreaSecurity, "feeds": auth.AreaSecurity,
 	"security": auth.AreaCompliance, "logs": auth.AreaLog,
 	"inbox": auth.AreaInbox, "boards": auth.AreaBoards,
 }

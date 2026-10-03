@@ -2629,7 +2629,11 @@ summary > .chev .icon { width: 20px; height: 20px; }
 /* Rules as cards: a surface container, CornerLarge, the rule in words. */
 .auto-list { list-style: none; margin: 0 0 1.5rem; padding: 0; display: grid; gap: 12px; }
 .auto-list.templates { grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); }
-.auto-card { padding: 16px 20px; border-radius: var(--shape-lg); background: var(--surface-container-lowest); }
+.auto-card { padding: 16px 20px; border-radius: var(--shape-lg); background: var(--surface-container-lowest);
+  /* A grid item: without this a wide table inside widens the card, and the
+     page with it, instead of scrolling in its own wrap. */
+  min-width: 0; }
+.auto-card code { overflow-wrap: anywhere; }
 .auto-card.off { opacity: .72; }
 .auto-card.waiting { background: var(--surface-container-low); outline: 1px solid var(--warning); }
 .auto-card > p { margin: 8px 0; }
@@ -2669,3 +2673,9 @@ summary > .chev .icon { width: 20px; height: 20px; }
 .signin-panel .card.notme { border-color: var(--outline-variant); }
 .chip-small { display: inline-block; padding: 0 8px; margin: 0 2px 2px 0; border-radius: var(--shape-sm);
   border: 1px solid var(--outline-variant); font: var(--label-md); color: var(--on-surface-variant); white-space: nowrap; }
+
+/* Feeds: the address and secret shown once, selectable whole. */
+.feed-secret { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); gap: 6px 12px; margin: 8px 0; align-items: baseline; }
+.feed-secret dt { font-weight: 600; }
+.feed-secret dd { margin: 0; overflow-wrap: anywhere; }
+.feed-secret code { user-select: all; }

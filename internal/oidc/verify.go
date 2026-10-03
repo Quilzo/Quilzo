@@ -212,14 +212,56 @@ func (v *Verifier) Verify(token, nonce string) (*Claims, error) {
 			"checking it comes back is the same as not sending one")
 	}
 
+	rawPayload, err := verifyJWS(token, v.Algorithms, v.Keys, v.Issuer, "an ID token",
+		func(typ string) bool { return typ == "" || strings.EqualFold(typ, "JWT") })
+	if err != nil {
+		return nil, err
+	}
+
+	var c Claims
+	if err := json.Unmarshal(rawPayload, &c); err != nil {
+		return nil, fmt.Errorf("the payload is not JSON: %w", err)
+	}
+	_ = json.Unmarshal(rawPayload, &c.Raw)
+
+	if err := v.checkClaims(&c, nonce); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// VerifyJWS checks a compact JWS — the signature over its first two segments
+// exactly as received, under an algorithm from the agreed list and a key the
+// key source names — and returns the payload. It is the part of Verify that
+// is not about ID tokens, for tokens that are signed the same way and mean
+// something else: the security event tokens of OpenID Shared Signals.
+//
+// typ judges the header's typ; the caller says what its kind of token is
+// called. Everything Verify refuses about the header and the algorithm, this
+// refuses too, because it is the same code.
+func VerifyJWS(token string, agreed []Algorithm, keys KeySource, issuer, what string,
+	typ func(string) bool) ([]byte, error) {
+
+	if len(agreed) == 0 {
+		return nil, fmt.Errorf("no signing algorithm is agreed with %s", issuer)
+	}
+	if keys == nil || typ == nil {
+		return nil, fmt.Errorf("the verifier has no keys or no type check")
+	}
+	return verifyJWS(token, agreed, keys, issuer, what, typ)
+}
+
+func verifyJWS(token string, agreed []Algorithm, keys KeySource, issuer, what string,
+	typ func(string) bool) ([]byte, error) {
+
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
 		if len(parts) == 5 {
 			return nil, fmt.Errorf("this is an encrypted JWT (five segments), " +
-				"not a signed one. Encrypted ID tokens are not accepted")
+				"not a signed one. Encrypted tokens are not accepted")
 		}
-		return nil, fmt.Errorf("an ID token has three segments, this has %d",
-			len(parts))
+		return nil, fmt.Errorf("%s has three segments, this has %d",
+			what, len(parts))
 	}
 
 	rawHeader, err := decodeSegment(parts[0])
@@ -243,23 +285,23 @@ func (v *Verifier) Verify(token, nonce string) (*Claims, error) {
 				"of them. A crit header that is ignored is the extension "+
 				"mechanism working exactly backwards", h.Crit)
 	}
-	if h.Typ != "" && !strings.EqualFold(h.Typ, "JWT") {
-		return nil, fmt.Errorf("unexpected token type %q", h.Typ)
+	if !typ(h.Typ) {
+		return nil, fmt.Errorf("unexpected token type %q for %s", h.Typ, what)
 	}
 
 	// The algorithm is checked against the agreed list, never taken from the
 	// token as an instruction. This is the check that stops alg:none and the
 	// HMAC-with-the-public-key forgery.
 	alg := Algorithm(h.Alg)
-	if !v.agreed(alg) {
+	if !agreedOn(agreed, alg) {
 		return nil, fmt.Errorf(
 			"this token is signed with %q, which is not one of the algorithms "+
 				"agreed with %s (%s). The algorithm a token names is a claim by "+
 				"whoever made it, not an instruction",
-			h.Alg, v.Issuer, algList(v.Algorithms))
+			h.Alg, issuer, algList(agreed))
 	}
 
-	key, err := v.Keys.Key(h.Kid)
+	key, err := keys.Key(h.Kid)
 	if err != nil {
 		return nil, fmt.Errorf("no key for kid %q: %w", h.Kid, err)
 	}
@@ -280,23 +322,16 @@ func (v *Verifier) Verify(token, nonce string) (*Claims, error) {
 	if err != nil {
 		return nil, fmt.Errorf("the payload is not valid base64url: %w", err)
 	}
-	var c Claims
-	if err := json.Unmarshal(rawPayload, &c); err != nil {
-		return nil, fmt.Errorf("the payload is not JSON: %w", err)
-	}
-	_ = json.Unmarshal(rawPayload, &c.Raw)
-
-	if err := v.checkClaims(&c, nonce); err != nil {
-		return nil, err
-	}
-	return &c, nil
+	return rawPayload, nil
 }
 
-func (v *Verifier) agreed(a Algorithm) bool {
+func (v *Verifier) agreed(a Algorithm) bool { return agreedOn(v.Algorithms, a) }
+
+func agreedOn(list []Algorithm, a Algorithm) bool {
 	if !supported[a] {
 		return false
 	}
-	for _, ok := range v.Algorithms {
+	for _, ok := range list {
 		if ok == a {
 			return true
 		}

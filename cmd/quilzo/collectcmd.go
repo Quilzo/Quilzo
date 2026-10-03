@@ -21,6 +21,7 @@ import (
 	"github.com/quilzo/quilzo/internal/connector"
 	"github.com/quilzo/quilzo/internal/source"
 	"github.com/quilzo/quilzo/internal/spool"
+	"github.com/quilzo/quilzo/internal/telemetry"
 	"github.com/quilzo/quilzo/internal/upkeep"
 )
 
@@ -328,11 +329,26 @@ func digestOf(doc any) string {
 func storeRecords(sp *spool.Spool, s source.Source, docs []any,
 	st *collectStatus, aliases map[string]alias, now time.Time) error {
 
+	for _, e := range mapRecords(s, docs, st, aliases, now) {
+		if _, err := sp.Append(e); err != nil {
+			return err
+		}
+		st.Stored++
+	}
+	return nil
+}
+
+// mapRecords is storeRecords without the store: the events that are new and
+// map, with st's counts and remembered digests brought up to date.
+func mapRecords(s source.Source, docs []any, st *collectStatus,
+	aliases map[string]alias, now time.Time) []telemetry.Event {
+
 	seen := map[string]bool{}
 	for _, d := range st.Seen {
 		seen[d] = true
 	}
 	missing := map[string]int{}
+	var out []telemetry.Event
 	for _, doc := range docs {
 		st.Records++
 		d := digestOf(doc)
@@ -357,12 +373,9 @@ func storeRecords(sp *spool.Spool, s source.Source, docs []any,
 			missing["(not a usable event)"]++
 			continue
 		}
-		if _, err := sp.Append(e); err != nil {
-			return err
-		}
+		out = append(out, e)
 		seen[d] = true
 		st.Seen = append(st.Seen, d)
-		st.Stored++
 	}
 	if len(st.Seen) > maxSeen {
 		st.Seen = st.Seen[len(st.Seen)-maxSeen:]
@@ -372,7 +385,7 @@ func storeRecords(sp *spool.Spool, s source.Source, docs []any,
 			st.Field = f
 		}
 	}
-	return nil
+	return out
 }
 
 // firstRead is how far back a source is read the first time.
@@ -481,8 +494,11 @@ func collectOne(root string, c collectable, sp *spool.Spool,
 }
 
 // collectAll reads every source, or the ones named.
+//
+// sp is the event store to write to; nil opens one for the call. The server
+// passes the one it shares between everything that writes there.
 func collectAll(root string, names []string, caller *Caller,
-	now time.Time) ([]collectStatus, []string, error) {
+	now time.Time, sp *spool.Spool) ([]collectStatus, []string, error) {
 
 	todo, unmapped, err := collectables(root)
 	if err != nil {
@@ -514,11 +530,14 @@ func collectAll(root string, names []string, caller *Caller,
 	if err != nil {
 		return nil, unmapped, err
 	}
-	sp, err := openSpool(root, spool.Options{})
-	if err != nil {
-		return nil, unmapped, err
+	if sp == nil {
+		own, err := openSpool(root, spool.Options{})
+		if err != nil {
+			return nil, unmapped, err
+		}
+		defer own.Close()
+		sp = own
 	}
-	defer sp.Close()
 	aliases, err := loadAliases(root)
 	if err != nil {
 		return nil, unmapped, err
@@ -586,7 +605,7 @@ func cmdCollect(root string, args []string) error {
 		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 			return err
 		}
-		sts, unmapped, err := collectAll(root, args[1:], caller, time.Now().UTC())
+		sts, unmapped, err := collectAll(root, args[1:], caller, time.Now().UTC(), nil)
 		if err != nil {
 			return err
 		}
@@ -832,13 +851,21 @@ func collectJob(root string) upkeep.Job {
 			if !last.IsZero() && now.Sub(last) < s.Every {
 				return 0, nil
 			}
-			sts, _, err := collectAll(root, nil, &Caller{
-				Name: "collect-schedule:" + s.By, Kind: audit.KindService,
-				Verified: true}, now.UTC())
 			stored := 0
-			for _, st := range sts {
-				stored += st.Stored
-			}
+			err = withSpool(root, func(sp *spool.Spool) error {
+				sts, _, cerr := collectAll(root, nil, &Caller{
+					Name: "collect-schedule:" + s.By, Kind: audit.KindService,
+					Verified: true}, now.UTC(), sp)
+				for _, st := range sts {
+					stored += st.Stored
+				}
+				// What was collected is read by the rules now, not when
+				// somebody next remembers to run them.
+				if stored > 0 {
+					detectInServer(root, sp)
+				}
+				return cerr
+			})
 			return stored, err
 		},
 	}

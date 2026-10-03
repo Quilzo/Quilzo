@@ -190,7 +190,7 @@ func automationActions(root string) map[string]automate.Action {
 		"step-up": {ID: "step-up", Name: "Make them prove it is them",
 			Does:   "the sign-in gets no session until its person confirms it with a passkey or a code, or an administrator lets them in; for anything else, every session they have open does the same",
 			Undo:   "Undone by the person confirming it is them.",
-			Kinds:  []string{"signin", "finding", "person"},
+			Kinds:  []string{"signin", "finding", "person", "signal"},
 			Inline: true,
 			Access: true,
 			Run: func(ev automate.Event, _ map[string]string) (string, error) {
@@ -205,7 +205,7 @@ func automationActions(root string) map[string]automate.Action {
 		"end-sessions": {ID: "end-sessions", Name: "Sign them out of Quilzo",
 			Does:   "ends every session and token they hold here",
 			Undo:   "Undone by signing in again; a token has to be issued afresh.",
-			Kinds:  []string{"signin", "finding", "person"},
+			Kinds:  []string{"signin", "finding", "person", "signal"},
 			Access: true,
 			Run: func(ev automate.Event, _ map[string]string) (string, error) {
 				n, err := ownSessions(ev.Subject, func(ts tokenStoreLike) int {
@@ -227,7 +227,7 @@ func automationActions(root string) map[string]automate.Action {
 		"notify": {ID: "notify", Name: "Tell somebody",
 			Does:   "sends an email to the security team (security.contact) or to the person it is about",
 			Undo:   "A message cannot be unsent.",
-			Kinds:  []string{"signin", "finding", "device", "person"},
+			Kinds:  []string{"signin", "finding", "device", "person", "signal"},
 			Params: []automate.Param{{Name: "to", Choices: []string{"security", "person"}}},
 			Run: func(ev automate.Event, with map[string]string) (string, error) {
 				to := securityAddress(root)
@@ -251,10 +251,11 @@ func automationActions(root string) map[string]automate.Action {
 		"open-case": {ID: "open-case", Name: "Open a case",
 			Does:  "opens an incident with what happened, linked to the finding when there is one",
 			Undo:  "A case is closed, not deleted.",
-			Kinds: []string{"signin", "finding", "device", "person"},
+			Kinds: []string{"signin", "finding", "device", "person", "signal"},
 			Run: func(ev automate.Event, _ map[string]string) (string, error) {
 				grade := incident.Sev3
-				if s := ev.Fields["severity"]; s == "critical" || s == "high" || ev.Fields["signal"] == "impossible-travel" {
+				if s := ev.Fields["severity"]; s == "critical" || s == "high" || ev.Fields["signal"] == "impossible-travel" ||
+					ev.Fields["current_level"] == "high" {
 					grade = incident.Sev2
 				}
 				var findings []string
@@ -281,7 +282,7 @@ func automationActions(root string) map[string]automate.Action {
 		ext := ext
 		acts[ext.id] = automate.Action{ID: ext.id, Name: ext.name, Does: ext.does,
 			Undo:   "Nothing is sent until a second person approves it in the case, and it can be undone there.",
-			Kinds:  []string{"finding"},
+			Kinds:  []string{"finding", "signal"},
 			Access: true,
 			Run: func(ev automate.Event, _ map[string]string) (string, error) {
 				return requestFromRule(root, ev, ext.id)
@@ -296,16 +297,20 @@ type tokenStoreLike = *auth.TokenStore
 // requestFromRule opens a case for the finding and asks for the action in
 // it, as a person would; approving it stays a person's job.
 func requestFromRule(root string, ev automate.Event, name string) (string, error) {
-	id := ev.Fields["finding"]
-	if id == "" {
-		return "", errors.New("this can only be asked for about a finding")
+	// About a finding, the case carries it; about another system's
+	// report, the case carries the report in its title.
+	var findings []string
+	if id := ev.Fields["finding"]; id != "" {
+		findings = []string{id}
+	} else if ev.Kind != "signal" {
+		return "", errors.New("this can only be asked for about a finding or another system's report")
 	}
 	if _, err := findAction(root, name); err != nil {
 		return "", fmt.Errorf("%s is not installed (quilzo action add %s): %w", name, name, err)
 	}
 	caller := &Caller{Name: automateBy, Kind: audit.KindService, Verified: true}
 	now := time.Now().UTC()
-	i, err := declareIncident(root, caller, ev.Summary, incident.Sev2, nil, []string{id}, now)
+	i, err := declareIncident(root, caller, ev.Summary, incident.Sev2, nil, findings, now)
 	if err != nil {
 		return "", err
 	}

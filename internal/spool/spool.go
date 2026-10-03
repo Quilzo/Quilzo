@@ -281,6 +281,14 @@ func bucket(d time.Duration) int {
 
 // ensure opens or rolls the segment that an arrival at t belongs in.
 func (s *Spool) ensure(at time.Time) error {
+	if s.open == nil {
+		if s.resume(at) {
+			return nil
+		}
+		if err := s.sealReleased(); err != nil {
+			return err
+		}
+	}
 	if s.open != nil {
 		seg := s.idx.Segments[s.cur]
 		sameDay := seg.First.UTC().Format("20060102") ==
@@ -329,6 +337,74 @@ func (s *Spool) Seal() error {
 
 // Close seals and releases the spool.
 func (s *Spool) Close() error { return s.Seal() }
+
+// Release lets go of the open segment without sealing it, for a writer that
+// appends a few events at a time — events pushed by another system as they
+// happen — and must not leave a sealed segment behind for every few. The
+// next Open appends to the same segment, until the day or the size rolls it
+// and it is sealed like any other.
+func (s *Spool) Release() error {
+	if s.open == nil {
+		return nil
+	}
+	if err := s.open.Sync(); err != nil {
+		return err
+	}
+	err := s.open.Close()
+	s.open, s.cur = nil, -1
+	if err != nil {
+		return err
+	}
+	return s.save()
+}
+
+// sealReleased digests a released segment the next arrival cannot go in, as
+// rolling would have. One whose file disagrees with the index is left
+// unsealed: sealing it would vouch for bytes nobody here wrote.
+func (s *Spool) sealReleased() error {
+	n := len(s.idx.Segments)
+	if n == 0 || s.idx.Segments[n-1].Digest != "" {
+		return nil
+	}
+	path := filepath.Join(s.dir, s.idx.Segments[n-1].Name)
+	st, err := os.Stat(path)
+	if err != nil || st.Size() != s.idx.Segments[n-1].Bytes {
+		return nil
+	}
+	digest, err := digestOf(path)
+	if err != nil {
+		return err
+	}
+	s.idx.Segments[n-1].Digest = digest
+	return nil
+}
+
+// resume reopens the last segment when it was released rather than sealed
+// and an arrival at t still belongs in it.
+func (s *Spool) resume(at time.Time) bool {
+	n := len(s.idx.Segments)
+	if n == 0 {
+		return false
+	}
+	seg := s.idx.Segments[n-1]
+	if seg.Digest != "" || seg.Bytes >= s.opt.SegmentBytes ||
+		seg.First.UTC().Format("20060102") != at.UTC().Format("20060102") {
+		return false
+	}
+	path := filepath.Join(s.dir, seg.Name)
+	st, err := os.Stat(path)
+	// The file must be what the index says it is: a segment somebody
+	// truncated or replaced is not one to add to.
+	if err != nil || st.Size() != seg.Bytes {
+		return false
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return false
+	}
+	s.open, s.cur = f, n-1
+	return true
+}
 
 func digestOf(path string) (string, error) {
 	f, err := os.Open(path)

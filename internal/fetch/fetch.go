@@ -605,6 +605,60 @@ func (c *Client) PostWithHeaders(ctx context.Context, raw string, body []byte,
 		ContentType: resp.Header.Get("Content-Type")}, nil
 }
 
+// Do makes one request with any method and reports the status rather than
+// judging it, for APIs whose answers are 201, 202 and 204 as often as 200:
+// stream management under OpenID Shared Signals, for one. The address rules,
+// limits and refusal to follow redirects are those of every other call here;
+// a redirect is returned as its status, never followed with the body and
+// headers on board.
+func (c *Client) Do(ctx context.Context, method, raw string, body []byte,
+	headers map[string]string) (*Result, error) {
+
+	lim := c.Limits.withDefaults()
+	u, err := ValidateURL(raw)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, lim.Timeout)
+	defer cancel()
+
+	client, err := c.httpClient(lim)
+	if err != nil {
+		return nil, err
+	}
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	var rd io.Reader
+	if body != nil {
+		rd = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), rd)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	req.Header.Set("User-Agent", c.UserAgent)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, unwrapDialError(err)
+	}
+	defer resp.Body.Close()
+	out, err := io.ReadAll(io.LimitReader(resp.Body, lim.MaxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	res := &Result{URL: raw, FinalURL: u.String(), Status: resp.StatusCode,
+		Body: out, ContentType: resp.Header.Get("Content-Type")}
+	if int64(len(out)) > lim.MaxBytes {
+		res.Body, res.Truncated = out[:lim.MaxBytes], true
+	}
+	return res, nil
+}
+
 // PostSigned sends a body with caller-supplied headers, through the same
 // connect-time address check as everything else here.
 //

@@ -1,0 +1,72 @@
+{{template "head" .}}
+<h1>Feeds</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+<p class="lead">Events other systems push here the moment they happen. Each delivery proves where it came from, is stored with the events you collect, and is read by the rules at once. When it says something a rule can act on, it reaches the <a href="/security/automations">automations</a> as "another system reports something".</p>
+
+{{if .Added}}
+<div class="notice ok" role="status">
+  <p><strong>{{.Added}} is ready.</strong> Give the sender this address{{if .Shown}} and the secret below. The secret is shown now and never again{{end}}.</p>
+  <dl class="feed-secret">
+    <dt>Address</dt><dd><code>{{.AddedURL}}</code></dd>
+    {{range .Shown}}<dt>{{.Label}}</dt><dd><code>{{.Value}}</code></dd>{{end}}
+  </dl>
+  {{if eq .AddedKind "okta"}}<p>In Okta: Workflow, Event Hooks, Create. Paste the address, put the secret in the Authorization header, choose the events, and verify: this answers Okta's check.</p>{{end}}
+  {{if eq .AddedKind "ssf"}}<p>Ask the transmitter for the stream with <code>quilzo inbound connect {{.Added}} --client-id ID</code>, with the client's secret in <code>QUILZO_CONNECT_SECRET</code>. Or make the stream in the transmitter's own console with the address and this Authorization header.</p>{{end}}
+  <p><a href="/security/feeds">Back to feeds</a></p>
+</div>
+{{else}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{end}}
+
+<h2>Your feeds</h2>
+{{if .Feeds}}<ul class="auto-list">{{range .Feeds}}<li class="auto-card{{if .Off}} off{{end}}">
+  <div class="auto-head"><strong>{{.Name}}</strong><span class="chip-small">{{.KindWords}}</span>
+    {{if .Off}}<span class="wf-band unknown"><span class="wf-icon">{{icon (toneicon "unknown")}}</span>Off</span>
+    {{else if .Error}}<span class="wf-band bad"><span class="wf-icon">{{icon (toneicon "bad")}}</span>Failing</span>
+    {{else if .Last}}<span class="wf-band good"><span class="wf-icon">{{icon (toneicon "good")}}</span>Receiving</span>
+    {{else}}<span class="wf-band warning"><span class="wf-icon">{{icon (toneicon "warning")}}</span>Waiting</span>{{end}}</div>
+  <p><code>{{$.Base}}{{.Path}}</code></p>
+  {{if .Issuer}}<p class="hint">From {{.Issuer}}{{if .Stream}}; stream {{.Stream}}{{end}}{{if .Status}}, {{.Status}}{{end}}; {{if .Verified}}verified {{.Verified}}{{else}}not verified yet{{end}}.</p>{{end}}
+  {{if .Mapping}}<p class="hint">Records go through the {{.Mapping}} mapping.</p>{{end}}
+  <p class="hint">{{.Deliveries}} deliver{{if eq .Deliveries 1}}y{{else}}ies{{end}}{{if .Last}}, last {{.Last}}{{end}}: {{.Stored}} events stored, {{.Known}} already held, {{.Missed}} did not map; {{.Signals}} signal{{if ne .Signals 1}}s{{end}}.</p>
+  {{if .Field}}<p class="notice warn">Records are not mapping. The field most often missing is <code>{{.Field}}</code>: the sender may have renamed it.</p>{{end}}
+  {{if .Refused}}<p class="hint">{{.Refused}} refused, last {{.LastRefused}}: {{.Why}}</p>{{end}}
+  {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+  {{if .Recent}}<div class="table-wrap"><table>
+    <caption class="visually-hidden">Recent signals from {{.Name}}</caption>
+    <thead><tr><th scope="col">When</th><th scope="col">Signal</th><th scope="col">About</th><th scope="col">Weight</th><th scope="col">Why</th></tr></thead>
+    <tbody>{{range .Recent}}<tr><td>{{.At}}</td><th scope="row">{{.Words}}</th><td>{{.Person}}</td>
+      <td><span class="wf-band {{.Tone}}"><span class="wf-icon">{{icon (toneicon .Tone)}}</span>{{.Severity}}</span></td>
+      <td>{{if .Reason}}<code>{{.Reason}}</code>{{else}}<span class="hint">not said</span>{{end}}</td></tr>{{end}}</tbody>
+  </table></div>{{end}}
+  {{if $.SiteAdmin}}<div class="auto-controls"><form method="post" action="/security/feeds/act"><input type="hidden" name="name" value="{{.Name}}">
+    {{if .Off}}<button type="submit" name="do" value="on" class="btn-text">Turn on<span class="visually-hidden"> {{.Name}}</span></button>{{else}}<button type="submit" name="do" value="off" class="btn-text">Turn off<span class="visually-hidden"> {{.Name}}</span></button>{{end}}
+    <button type="submit" name="do" value="remove" class="btn-text">Remove<span class="visually-hidden"> {{.Name}}</span></button></form></div>{{end}}
+</li>{{end}}</ul>{{else}}<p>No feeds yet. Until there is one, what other systems know reaches this site only when it is collected on the schedule.</p>{{end}}
+
+{{if .SiteAdmin}}
+<h2>Add a feed</h2>
+<form method="post" action="/security/feeds/act" class="auto-builder">
+  <input type="hidden" name="do" value="add">
+  <fieldset><legend>What sends it</legend>
+    <p><label><input type="radio" name="kind" value="okta" checked> <strong>Okta event hook</strong> <span class="hint">sign-ins, lifecycle, sessions and risk as they happen, with a secret Okta sends</span></label></p>
+    <p><label><input type="radio" name="kind" value="ssf"> <strong>Shared signals</strong> <span class="hint">OpenID SSF from Okta, Google, Jamf and other transmitters, every event signed</span></label></p>
+    <p><label><input type="radio" name="kind" value="webhook"> <strong>Signed webhook</strong> <span class="hint">anything that signs the Standard Webhooks way, read through one of your mappings</span></label></p>
+    <p><label><input type="radio" name="kind" value="github"> <strong>GitHub webhook</strong> <span class="hint">signed with X-Hub-Signature-256, read through one of your mappings</span></label></p>
+  </fieldset>
+  <div class="field"><label for="feed-name">Name {{template "req"}}</label>
+    <input id="feed-name" name="name" required pattern="[a-z0-9][a-z0-9\-]{1,39}" aria-describedby="feed-name-hint">
+    <p class="hint" id="feed-name-hint">Lowercase letters, digits and hyphens. It becomes the end of the address.</p></div>
+  <div class="field"><label for="feed-mapping">Mapping, for a webhook</label>
+    <select id="feed-mapping" name="mapping"><option value="">—</option>{{range .Mappings}}<option value="{{.}}">{{.}}</option>{{end}}</select></div>
+  <div class="field"><label for="feed-issuer">Transmitter, for shared signals</label>
+    <input id="feed-issuer" name="issuer" type="url" placeholder="https://acme.okta.com" aria-describedby="feed-issuer-hint">
+    <p class="hint" id="feed-issuer-hint">Its configuration is read from the address now, and its signing keys from what that names.</p></div>
+  <div class="field"><label for="feed-alias">Whose ids its people have, for shared signals</label>
+    <input id="feed-alias" name="alias" placeholder="okta" aria-describedby="feed-alias-hint">
+    <p class="hint" id="feed-alias-hint">A person the transmitter names only by its own id is matched through the identity links collecting has learned.</p></div>
+  <button type="submit">{{icon "add"}}Add feed</button>
+</form>
+{{else}}<p class="hint">Adding or changing a feed takes an administrator of the whole site: what a feed says reaches the automations.</p>{{end}}
+{{end}}
+{{template "foot" .}}

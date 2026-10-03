@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -52,22 +53,107 @@ func detectRun(root string, args []string) error {
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
 		return err
 	}
-
-	loaded, err := rulesIn(rulesDir(root, *rulesAt))
+	if err := noEventsYet(root); err != nil {
+		return err
+	}
+	sp, err := openSpool(root, spool.Options{})
 	if err != nil {
 		return err
+	}
+	defer sp.Close()
+	sum, err := detectPass(root, *rulesAt, *since, caller, sp)
+	if err != nil {
+		return err
+	}
+	// What the run raised goes to the automations, as the estate's
+	// findings do: a rule about a critical finding must not depend on
+	// which part of the program found it.
+	automateFindings(root, sum.New)
+
+	if w.JSON(map[string]any{
+		"rules": sum.Rules, "events": sum.Events, "matches": sum.Matches,
+		"opened": sum.Opened, "findings": sum.Findings, "through": sum.Through,
+		"suppressed": sum.Suppressed, "off": sum.Off,
+		"correlations": sum.Corr.Rules, "correlated": sum.Corr.Hits,
+		"correlation_dropped": sum.Corr.Dropped,
+		"indicators":          sum.Indicators, "indicator_hits": sum.IntelHit,
+	}) {
+		return nil
+	}
+	w.Human("%s%d rule(s) over %d new event(s): %d match(es), %d new "+
+		"finding(s)%s\n", bold, sum.Rules, sum.Events, sum.Matches, sum.Opened, reset)
+	if sum.Suppressed > 0 || sum.Off > 0 {
+		w.Human("  %s%d match(es) hidden by suppressions; %d rule(s) switched "+
+			"off%s\n", dim, sum.Suppressed, sum.Off, reset)
+	}
+	if sum.Corr.Rules > 0 {
+		w.Human("  %s%d correlation(s): %d window(s) met their condition%s\n",
+			dim, sum.Corr.Rules, sum.Corr.Hits, reset)
+		if sum.Corr.Dropped > 0 {
+			w.Human("  %s%d event(s) could not be placed in a group, or were "+
+				"past the cap on groups; that correlation has lost cover%s\n",
+				yellow, sum.Corr.Dropped, reset)
+		}
+	}
+	if sum.Indicators > 0 {
+		w.Human("  %s%d indicator(s): %d event(s) carried one%s\n", dim,
+			sum.Indicators, sum.IntelHit, reset)
+	}
+	if sum.Events == 0 {
+		w.Human("  %snothing arrived since the last run%s\n", dim, reset)
+	} else {
+		w.Human("  %sthe register holds %d finding(s); read them with "+
+			"quilzo finding list%s\n", dim, sum.Findings, reset)
+	}
+	return nil
+}
+
+// noEventsYet refuses a run against a site with nothing to read: a mistake
+// worth saying, not an empty result worth recording. Its own audit log
+// counts: since Quilzo watches itself, a site that has collected nothing from
+// outside still has events, and the store is created to hold them.
+func noEventsYet(root string) error {
+	if _, serr := os.Stat(spoolDir(root)); serr != nil {
+		if own, _ := audit.Read(auditPath(root)); len(own) == 0 {
+			return fmt.Errorf("no events have been stored in this site yet; " +
+				"add some with quilzo spool add")
+		}
+	}
+	return nil
+}
+
+// detectSummary is what one pass of the rules did.
+type detectSummary struct {
+	Rules, Events, Matches, Opened, Suppressed, Off int
+	Corr                                            correlationRun
+	Indicators, IntelHit, Findings                  int
+	Through                                         time.Time
+	// New are the findings this pass opened, from any of its parts.
+	New []finding.Finding
+}
+
+// errNoRules is a pass with nothing to ask.
+var errNoRules = errors.New("no rules to run")
+
+// detectPass runs the rules over what arrived since the last pass: the
+// command's body, and what the server runs the moment events are pushed to
+// it or collected on a schedule.
+func detectPass(root, rulesAt string, since time.Duration, caller *Caller, sp *spool.Spool) (*detectSummary, error) {
+	loaded, err := rulesIn(rulesDir(root, rulesAt))
+	if err != nil {
+		return nil, err
 	}
 	rings, err := loadRings(root)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	sups, err := loadDetectSuppressions(root)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	hits, err := loadHits(root)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var rules []detect.Rule
 	off := 0
@@ -75,7 +161,7 @@ func detectRun(root string, args []string) error {
 		if verr := r.Validate(); verr != nil {
 			// Refused, not skipped. A run that silently dropped a rule looks
 			// clean because nothing was asked.
-			return fmt.Errorf("%s cannot be run: %w", r.ID, verr)
+			return nil, fmt.Errorf("%s cannot be run: %w", r.ID, verr)
 		}
 		if rings[r.ID].Ring == detect.Off {
 			// Switched off on the record, with a reason. Counted, so the
@@ -85,63 +171,51 @@ func detectRun(root string, args []string) error {
 		}
 		rules = append(rules, r)
 	}
-	if err := quietRulesAreCounted(rulesDir(root, *rulesAt), rules); err != nil {
-		return err
+	if err := quietRulesAreCounted(rulesDir(root, rulesAt), rules); err != nil {
+		return nil, err
 	}
 	if len(rules) == 0 {
-		return fmt.Errorf("no rules to run in %s (%d switched off), so a "+
+		return nil, fmt.Errorf("%w in %s (%d switched off), so a "+
 			"run would find nothing and report that as a quiet estate",
-			rulesDir(root, *rulesAt), off)
+			errNoRules, rulesDir(root, rulesAt), off)
 	}
-
-	// A run against a site with nothing to read is a mistake worth saying,
-	// not an empty result worth recording. Its own audit log counts: since
-	// Quilzo watches itself, a site that has collected nothing from outside
-	// still has events, and the store is created to hold them.
-	if _, serr := os.Stat(spoolDir(root)); serr != nil {
-		if own, _ := audit.Read(auditPath(root)); len(own) == 0 {
-			return fmt.Errorf("no events have been stored in this site yet; " +
-				"add some with quilzo spool add")
-		}
-	}
-	sp, err := openSpool(root, spool.Options{})
-	if err != nil {
-		return err
-	}
-	defer sp.Close()
 
 	path := findingsPath(root)
 	unlock, err := finding.Lock(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer unlock()
 
 	reg, cursors, err := finding.Load(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	now := time.Now().UTC()
+	before := map[string]bool{}
+	for _, f := range reg.All(now) {
+		before[f.ID] = true
+	}
 	from := cursors[detectCursor]
 	switch {
 	case !from.IsZero():
 		// Range is [from, to): the event at exactly the cursor was counted
 		// last time.
 		from = from.Add(time.Nanosecond)
-	case *since > 0:
-		from = now.Add(-*since)
+	case since > 0:
+		from = now.Add(-since)
 	}
 
 	// What the agents have done since the last run goes into the store
 	// first, so the rules below read it like any other source.
 	agentEvents, agentNew, err := storeAgentEvents(root, sp, reg, now)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// And what Quilzo itself recorded, so the quilzo.* rules can read it.
 	selfEvents, err := storeSelfEvents(root, sp, now)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var events, matches, opened, suppressed int
@@ -208,38 +282,38 @@ func detectRun(root string, args []string) error {
 		return nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !through.IsZero() {
 		cursors[detectCursor] = through
 	}
 	// Correlations: the detections about several events. Over every rule
 	// that is not switched off, whether or not it raises on its own.
-	corr, err := runCorrelations(root, sp, rulesDir(root, *rulesAt), rules,
+	corr, err := runCorrelations(root, sp, rulesDir(root, rulesAt), rules,
 		rings, sups, reg, cursors, now)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	opened += corr.Opened
 	// Indicators: each new event against everything still believed.
 	held, err := loadIndicators(root)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var intelHit, intelOpened int
 	if held.Len() > 0 {
 		_, intelHit, intelOpened, err = intelCatchUp(sp, held, reg, cursors, now)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		opened += intelOpened
 	}
 	if err := finding.Save(path, reg, cursors); err != nil {
-		return err
+		return nil, err
 	}
 	if suppressed > 0 {
 		if err := saveJSONFile(hitsPath(root), hits); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	record(root, audit.Record{
@@ -256,43 +330,15 @@ func detectRun(root string, args []string) error {
 			"indicator_hits": strconv.Itoa(intelHit),
 		},
 	})
-
-	if w.JSON(map[string]any{
-		"rules": len(rules), "events": events, "matches": matches,
-		"opened": opened, "findings": reg.Len(), "through": through,
-		"suppressed": suppressed, "off": off,
-		"correlations": corr.Rules, "correlated": corr.Hits,
-		"correlation_dropped": corr.Dropped,
-		"indicators":          held.Len(), "indicator_hits": intelHit,
-	}) {
-		return nil
-	}
-	w.Human("%s%d rule(s) over %d new event(s): %d match(es), %d new "+
-		"finding(s)%s\n", bold, len(rules), events, matches, opened, reset)
-	if suppressed > 0 || off > 0 {
-		w.Human("  %s%d match(es) hidden by suppressions; %d rule(s) switched "+
-			"off%s\n", dim, suppressed, off, reset)
-	}
-	if corr.Rules > 0 {
-		w.Human("  %s%d correlation(s): %d window(s) met their condition%s\n",
-			dim, corr.Rules, corr.Hits, reset)
-		if corr.Dropped > 0 {
-			w.Human("  %s%d event(s) could not be placed in a group, or were "+
-				"past the cap on groups; that correlation has lost cover%s\n",
-				yellow, corr.Dropped, reset)
+	sum := &detectSummary{Rules: len(rules), Events: events, Matches: matches,
+		Opened: opened, Suppressed: suppressed, Off: off, Corr: corr,
+		Indicators: held.Len(), IntelHit: intelHit, Findings: reg.Len(), Through: through}
+	for _, f := range reg.All(now) {
+		if !before[f.ID] && f.State == finding.Open {
+			sum.New = append(sum.New, f)
 		}
 	}
-	if held.Len() > 0 {
-		w.Human("  %s%d indicator(s): %d event(s) carried one%s\n", dim,
-			held.Len(), intelHit, reset)
-	}
-	if events == 0 {
-		w.Human("  %snothing arrived since the last run%s\n", dim, reset)
-	} else {
-		w.Human("  %sthe register holds %d finding(s); read them with "+
-			"quilzo finding list%s\n", dim, reg.Len(), reset)
-	}
-	return nil
+	return sum, nil
 }
 
 // findingsCapability is the finding register for the admin: the same queue

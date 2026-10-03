@@ -142,6 +142,11 @@ type Server struct {
 	Boards *BoardsAdmin
 	// SCIM is provisioning from an identity provider. See scimadmin.go.
 	SCIM *SCIMAdmin
+	// Inbound answers /feeds/NAME: events other systems push here, each
+	// proving where it came from rather than holding a session.
+	Inbound http.Handler
+	// Feeds is the Feeds screen. See feeds.go.
+	Feeds *FeedsAdmin
 	// SignInRisk judges each sign-in as it is made (see automations.go);
 	// Automations are the rules and their history; StepUpMail sends a
 	// person the code that proves a stepped-up session is theirs.
@@ -1097,6 +1102,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/signins/act", s.handleSignInsAct)
 	mux.HandleFunc("/security/automations", s.handleAutomations)
 	mux.HandleFunc("/security/automations/rule", s.handleAutomationRule)
+	mux.HandleFunc("/security/feeds", s.handleFeeds)
+	mux.HandleFunc("/security/feeds/act", s.handleFeedsAct)
 	mux.HandleFunc("/security/automations/act", s.handleAutomationsAct)
 	mux.HandleFunc("/provisioning", s.handleProvisioning)
 	mux.HandleFunc("/provisioning/act", s.handleProvisioningAct)
@@ -1251,6 +1258,9 @@ func (s *Server) Handler() http.Handler {
 	// its own token, not a person's session; see internal/scim.
 	if s.SCIM != nil && s.SCIM.Handler != nil {
 		mux.Handle("/scim/v2/", s.SCIM.Handler)
+	}
+	if s.Inbound != nil {
+		mux.Handle("/feeds/", s.Inbound)
 	}
 	// /docs and /docs/img/ used to be served from here. The manual is now
 	// published at DocsBase and the footer links straight to it — deliberately
