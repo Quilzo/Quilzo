@@ -100,6 +100,13 @@ func TestTheSkeletonHasEveryKeyAndRefusesToClobber(t *testing.T) {
 		t.Fatalf("the skeleton is not valid JSON: %v", err)
 	}
 	for _, tok := range theme.Tokens() {
+		if tok.Kind == theme.Choice {
+			// A style is not something a token file carries.
+			if _, ok := pairs[tok.Name]; ok {
+				t.Fatalf("%s is in the skeleton, and no token file has it", tok.Name)
+			}
+			continue
+		}
 		if _, ok := pairs[tok.Name]; !ok {
 			t.Fatalf("%s is not in the skeleton", tok.Name)
 		}

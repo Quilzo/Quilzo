@@ -239,6 +239,11 @@ func writeGroups(b *strings.Builder, t *Theme, dark bool) {
 	var order []string
 	byGroup := map[string][]Token{}
 	for _, tok := range tokens {
+		if tok.Kind == Choice {
+			// A style is a decision about this program's components, not a
+			// design token another tool could use; it stays in theme.json.
+			continue
+		}
 		if _, seen := byGroup[tok.Group]; !seen {
 			order = append(order, tok.Group)
 		}
@@ -350,6 +355,9 @@ func trimF(f float64) string {
 func Suggest() []Mapped {
 	out := make([]Mapped, 0, len(tokens)*2)
 	for _, tok := range tokens {
+		if tok.Kind == Choice {
+			continue
+		}
 		out = append(out, Mapped{Key: tok.Name})
 		if tok.Kind == Colour {
 			out = append(out, Mapped{Key: tok.Name + ".dark"})

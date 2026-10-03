@@ -2679,3 +2679,26 @@ summary > .chev .icon { width: 20px; height: 20px; }
 .feed-secret dt { font-weight: 600; }
 .feed-secret dd { margin: 0; overflow-wrap: anywhere; }
 .feed-secret code { user-select: all; }
+
+/* Design: the styles, each shown as a card shape and a button shape drawn the
+   way that style draws them, in the admin's own tokens. */
+.design-look { margin: 0 0 24px; display: grid; gap: 12px; }
+.style-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr)); gap: 12px; }
+.style-card { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "r swatch" "r name" "r words"; gap: 4px 12px;
+  padding: 12px 16px; border-radius: var(--shape-lg); background: var(--surface-container-low); cursor: pointer; min-width: 0; }
+.style-card > input { grid-area: r; align-self: start; margin-top: 4px; }
+.style-card > strong { grid-area: name; }
+.style-card > .hint { grid-area: words; }
+.style-card.on { outline: 2px solid var(--primary); }
+.style-swatch { grid-area: swatch; display: flex; gap: 8px; align-items: center; height: 44px; }
+.style-swatch i { width: 64px; height: 40px; background: var(--surface-container-high); border: 1px solid var(--outline-variant); border-radius: 12px; }
+.style-swatch b { width: 40px; height: 20px; background: var(--primary); border-radius: 999px; }
+.style-expressive i { border-radius: 20px; border-color: transparent; background: var(--secondary-container); } .style-expressive b { height: 24px; }
+.style-glass i { background: color-mix(in srgb, var(--surface-container-high) 55%, transparent); border-color: color-mix(in srgb, var(--outline-variant) 60%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--on-surface) 10%, transparent); }
+.style-editorial i { background: transparent; border: 0; border-top: 1px solid var(--outline); border-radius: 0; } .style-editorial b { border-radius: 3px; }
+.style-bold i { border: 2px solid var(--on-surface); border-radius: 0; box-shadow: 3px 3px 0 var(--on-surface); } .style-bold b { border-radius: 0; box-shadow: 2px 2px 0 var(--on-surface); }
+.style-soft i { border-color: transparent; border-radius: 18px; box-shadow: 0 6px 16px color-mix(in srgb, var(--on-surface) 12%, transparent); }
+.style-business i { border-radius: 4px; box-shadow: 0 1px 2px color-mix(in srgb, var(--on-surface) 12%, transparent); } .style-business b { border-radius: 4px; }
+.icon-preview { grid-area: swatch; display: flex; gap: 10px; align-items: center; height: 36px; color: var(--primary); }
+.icon-preview .icon { width: 24px; height: 24px; fill: currentColor; }

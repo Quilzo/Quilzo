@@ -217,6 +217,8 @@ type Site struct {
 	// trial token, sent while WebMCP is not yet on by default.
 	ToolsOff   bool
 	ToolsTrial string
+	// IconStyle is how the icons a page names are drawn, from the theme.
+	IconStyle string
 	// Share is where the operating system's share sheet delivers, or nil.
 	//
 	// The one deep OS integration this product can offer without client
@@ -1483,7 +1485,7 @@ func (st *Site) formData(name string) map[string]any {
 }
 
 func (st *Site) sources() render.Sources {
-	src := render.Sources{Name: st.Name, Listings: st.Listings,
+	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Listings: st.Listings,
 		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster,
 		Form: st.formData, Thread: st.threadData}
 	if _, ok := st.iconFile(); ok {

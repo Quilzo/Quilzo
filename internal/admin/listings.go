@@ -5,6 +5,7 @@ package admin
 
 import (
 	"fmt"
+	"github.com/quilzo/quilzo/internal/theme"
 	"net/http"
 	"net/url"
 	"sort"
@@ -340,11 +341,25 @@ func (s *Server) resolverAt(commit string) *listing.Resolver {
 // answer differently.
 func (s *Server) sources(commit string, pages map[string]any) render.Sources {
 	src := render.Sources{Name: s.SiteName, Pages: pages,
-		Listings: s.resolverAt(commit)}
+		Listings: s.resolverAt(commit), IconStyle: s.iconStyle()}
 	if s.Structure != nil && s.Structure.Menus != nil {
 		if set, err := s.Structure.Menus(); err == nil {
 			src.Menus = set
 		}
 	}
 	return src
+}
+
+// iconStyle is how the preview draws icons: the theme's choice, as the site
+// draws them.
+func (s *Server) iconStyle() string {
+	if s.DesignSet == nil || s.DesignSet.Tokens == nil {
+		return ""
+	}
+	tokens, err := s.DesignSet.Tokens()
+	if err != nil {
+		return ""
+	}
+	th, _ := theme.New(tokens, s.siteFamilies())
+	return th.IconStyle()
 }

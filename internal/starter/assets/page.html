@@ -134,6 +134,7 @@
     <div class="grid grid-{{ s.features.columns | default:3 }}">
       {% for f in s.features.items %}
       <div class="card {{ f.tone }}">
+        {% if f.icon_svg %}<span class="card-icon">{{ f.icon_svg }}</span>{% end %}
         {% if f.chip %}<p class="chip">{{ f.chip }}</p>{% end %}
         <h3>{% if f.href %}<a class="card-link" href="{{ f.href }}">{{ f.title }}</a>{% end %}{% if f.unlinked %}{{ f.title }}{% end %}</h3>
         {% if f.body %}<p>{{ f.body }}</p>{% end %}

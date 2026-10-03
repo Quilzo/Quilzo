@@ -65,9 +65,9 @@ var kinds = []Kind{
 		Stub: map[string]any{
 			"title": "What you get", "columns": "3",
 			"items": []any{
-				map[string]any{"title": "First thing", "body": "Say what it is and why it matters."},
-				map[string]any{"title": "Second thing", "body": "Two sentences is usually enough."},
-				map[string]any{"title": "Third thing", "body": "Three cards read better than four."},
+				map[string]any{"icon": "bolt", "title": "First thing", "body": "Say what it is and why it matters."},
+				map[string]any{"icon": "shield", "title": "Second thing", "body": "Two sentences is usually enough."},
+				map[string]any{"icon": "schedule", "title": "Third thing", "body": "Three cards read better than four."},
 			},
 		},
 	},

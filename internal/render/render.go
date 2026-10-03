@@ -45,6 +45,9 @@ import (
 type Sources struct {
 	// Name is the site's name.
 	Name string
+	// IconStyle is how the icons a page names are drawn: one of
+	// internal/icons' styles, from the theme.
+	IconStyle string
 	// Icon is the address of the site's icon, for a layout that shows it
 	// beside the name. Empty when the site has none.
 	Icon string
@@ -164,7 +167,7 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 
 // asks bundles what the decorator may ask the library.
 func (s Sources) asks() asks {
-	return asks{srcSet: s.SrcSet, tracks: s.Tracks, poster: s.Poster}
+	return asks{srcSet: s.SrcSet, tracks: s.Tracks, poster: s.Poster, iconStyle: s.IconStyle}
 }
 
 func (s Sources) now() time.Time {

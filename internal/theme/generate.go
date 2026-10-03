@@ -47,6 +47,79 @@ import (
 // palette rather than as the default grey with a colour bolted on; the
 // secondary and tertiary sit at fixed angles from it.
 func Generate(seed string) (map[string]string, error) {
+	return GenerateWith(seed, Options{})
+}
+
+// Options shape a generated palette beyond its seed.
+type Options struct {
+	// Scheme is how colourful the palette is around the seed: "tonal" (the
+	// default: calm containers, related accents), "vibrant" (fuller
+	// containers, near accents), "expressive" (accents far round the
+	// wheel), "neutral" (barely tinted) or "monochrome" (no hue at all).
+	Scheme string
+	// Contrast is "standard" (the WCAG AA ratios the gate requires),
+	// "medium" (6:1 for text) or "high" (7:1 for text, AAA). Every level
+	// still passes the gate; higher ones pass it by more.
+	Contrast string
+}
+
+// Schemes and ContrastLevels list the options, for a screen and a command.
+var (
+	Schemes        = []string{"tonal", "vibrant", "expressive", "neutral", "monochrome"}
+	ContrastLevels = []string{"standard", "medium", "high"}
+)
+
+type schemeParams struct {
+	container, neutral, accent, text float64 // saturation multipliers
+	secondary, tertiary              float64 // hue offsets from the seed
+	mono                             bool
+}
+
+func paramsFor(scheme string) (schemeParams, error) {
+	switch scheme {
+	case "", "tonal":
+		return schemeParams{container: 0.55, neutral: 1, accent: 1, text: 1, secondary: 40, tertiary: 200}, nil
+	case "vibrant":
+		return schemeParams{container: 0.9, neutral: 1.6, accent: 1.25, text: 1.1, secondary: 30, tertiary: 60}, nil
+	case "expressive":
+		return schemeParams{container: 0.75, neutral: 1.3, accent: 1.15, text: 1, secondary: 120, tertiary: 240}, nil
+	case "neutral":
+		return schemeParams{container: 0.22, neutral: 0.5, accent: 0.45, text: 0.6, secondary: 20, tertiary: 180}, nil
+	case "monochrome":
+		return schemeParams{mono: true}, nil
+	}
+	return schemeParams{}, fmt.Errorf("%q is not a scheme; one of %s", scheme, strings.Join(Schemes, ", "))
+}
+
+// contrastNeed raises a pair's ratio to the level asked for.
+func contrastNeed(min float64, level string) (float64, error) {
+	text := min >= 4.5
+	switch level {
+	case "", "standard":
+		return min, nil
+	case "medium":
+		if text {
+			return math.Max(min, 6), nil
+		}
+		return math.Max(min, 3.5), nil
+	case "high":
+		if text {
+			return math.Max(min, 7), nil
+		}
+		return math.Max(min, 4.5), nil
+	}
+	return 0, fmt.Errorf("%q is not a contrast level; one of %s", level, strings.Join(ContrastLevels, ", "))
+}
+
+// GenerateWith is Generate with a scheme and a contrast level.
+func GenerateWith(seed string, opt Options) (map[string]string, error) {
+	sp, err := paramsFor(opt.Scheme)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := contrastNeed(4.5, opt.Contrast); err != nil {
+		return nil, err
+	}
 	h, s, _, ok := toHSL(seed)
 	if !ok {
 		return nil, fmt.Errorf(
@@ -57,6 +130,12 @@ func Generate(seed string) (map[string]string, error) {
 	// somebody who asks for grey has asked for something coherent.
 	if s < 0.05 {
 		s = 0.05
+	}
+	sat := func(v float64) float64 {
+		if sp.mono {
+			return 0
+		}
+		return clamp01(v)
 	}
 
 	out := map[string]string{}
@@ -74,19 +153,19 @@ func Generate(seed string) (map[string]string, error) {
 			"surface-container-high":   pick(dark, 0.900, 0.155),
 		}
 		for name, l := range surfaces {
-			out[name+"."+scheme] = fromHSL(h, neutralChroma(s), l)
+			out[name+"."+scheme] = fromHSL(h, sat(neutralChroma(s)*sp.neutral), l)
 		}
 
 		// The tonal roles. A container is a wash of its role's hue that the
 		// role's own text sits on.
 		roles := map[string]float64{
 			"primary":   h,
-			"secondary": math.Mod(h+40, 360),
-			"tertiary":  math.Mod(h+200, 360),
+			"secondary": math.Mod(h+sp.secondary, 360),
+			"tertiary":  math.Mod(h+sp.tertiary, 360),
 		}
 		containerL := pick(dark, 0.885, 0.215)
 		for role, hue := range roles {
-			out[role+"-container."+scheme] = fromHSL(hue, s*0.55, containerL)
+			out[role+"-container."+scheme] = fromHSL(hue, sat(s*sp.container), containerL)
 		}
 
 		// The gradient stops, which are backgrounds like any other.
@@ -97,8 +176,8 @@ func Generate(seed string) (map[string]string, error) {
 		// gradient produced text at 3.89:1 on it. The two stops sit at the
 		// container's own lightness so the text chosen for the container is
 		// the text that works on the gradient.
-		out["gradient-from."+scheme] = fromHSL(h, s*0.55, containerL)
-		out["gradient-to."+scheme] = fromHSL(roles["secondary"], s*0.55,
+		out["gradient-from."+scheme] = fromHSL(h, sat(s*sp.container), containerL)
+		out["gradient-to."+scheme] = fromHSL(roles["secondary"], sat(s*sp.container),
 			containerL)
 
 		// Every foreground, chosen to satisfy the pairs it appears in.
@@ -145,8 +224,14 @@ func Generate(seed string) (map[string]string, error) {
 				if !ready(name, produced, generates, scheme) {
 					continue
 				}
-				hue, sat := fg[name].hue, fg[name].sat
+				hue := fg[name].hue
+				fsat := fg[name].sat * sp.text
+				if fg[name].sat >= 0.6 {
+					fsat = fg[name].sat * sp.accent
+				}
+				fsat = sat(fsat)
 				need, against := requirementsFor(name, out, scheme)
+				need, _ = contrastNeed(need, opt.Contrast)
 				if len(against) == 0 {
 					// Every pair this token appears in is measured against a
 					// colour the generator does not produce. Nothing to
@@ -155,7 +240,7 @@ func Generate(seed string) (map[string]string, error) {
 					progress = true
 					continue
 				}
-				value, found := searchLightness(hue, sat, need, against, dark)
+				value, found := searchLightness(hue, fsat, need, against, dark)
 				if !found {
 					return nil, fmt.Errorf(
 						"no lightness of hue %.0f satisfies %.1f:1 against "+

@@ -595,6 +595,8 @@ type fieldView struct {
 	At   int
 	// Suggest says this field offers the screen's datalist of listing names.
 	Suggest bool
+	// Icon says this field names an icon, and offers the set's names.
+	Icon bool
 }
 
 // viewsOf decorates the editable fields for the screen.
@@ -610,6 +612,7 @@ func viewsOf(fields []section.Editable, page string, at int, suggest bool) []fie
 		// The listing section's name field is the one value on any section
 		// that has to match something declared elsewhere. See listingNames.
 		v.Suggest = suggest && f.Path == "name"
+		v.Icon = f.Path == "icon" || strings.HasSuffix(f.Path, ".icon")
 		out = append(out, v)
 	}
 	return out
