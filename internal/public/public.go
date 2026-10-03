@@ -212,6 +212,11 @@ type Site struct {
 	// Forms is the one write capability this server has: append a submission,
 	// to a store that is not the content store. Nil means /form/ 404s.
 	Forms *Forms
+	// ToolsOff stops marking the site's forms as tools for visitors'
+	// browser agents (WebMCP); see webmcp.go. ToolsTrial is Chrome's origin
+	// trial token, sent while WebMCP is not yet on by default.
+	ToolsOff   bool
+	ToolsTrial string
 	// Share is where the operating system's share sheet delivers, or nil.
 	//
 	// The one deep OS integration this product can offer without client
@@ -1012,6 +1017,8 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		html = insertBeforeHead(html, `<link rel="stylesheet" href="/agent.css">`)
 		html = insertBeforeBodyEnd(html, launcherMarkup(launcher, r.URL.Path))
 	}
+	html = st.annotateTools(html)
+	st.originTrial(w.Header())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
 }

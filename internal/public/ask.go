@@ -399,6 +399,7 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
 	allowFraming(h, v.Assistant.Embed, v.Panel)
+	st.originTrial(h)
 
 	pages, hashes, err := st.pages()
 	if err == nil {
@@ -416,6 +417,7 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 		// Built from an id checked against the library; see icon.go.
 		"Icon": template.HTML(st.iconLink()),
 		"V":    v, "Honeypot": form.Honeypot, "StampField": form.StampField,
+		"Tools": !st.ToolsOff,
 	})
 }
 
@@ -452,7 +454,7 @@ func (st *Site) askThroughLayout(body any, hash string, r *http.Request, v askVi
 	if rerr != nil {
 		return "", false
 	}
-	return st.injectHead(html, askPageName, hash, body), true
+	return st.annotateTools(st.injectHead(html, askPageName, hash, body)), true
 }
 
 // askTemplate is the built-in conversation page. html/template, so every
@@ -522,11 +524,11 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
   </form>
 </details>
 {{end}}
-<form method="post" action="/ask/{{.V.Assistant.Name}}" class="qz-ask-form">
+<form method="post" action="/ask/{{.V.Assistant.Name}}" class="qz-ask-form"{{if and .Tools (not .V.Embedded)}} toolname="ask-{{.V.Assistant.Name}}" tooldescription="{{.V.Assistant.Title}}: answers a question from this site's published pages only, and every sentence links to the page it came from." toolautosubmit{{end}}>
   {{if .V.Answer}}<input type="hidden" name="prev" value="{{.V.Question}}">{{end}}
   {{if .V.Embedded}}<input type="hidden" name="embed" value="{{.V.EmbedValue}}">{{end}}
   <label for="q">{{if .V.Answer}}Ask another question{{else}}Your question{{end}}</label>
-  <textarea id="q" name="q" rows="2" maxlength="1000" required{{if not .V.Embedded}} autofocus{{end}}></textarea>
+  <textarea id="q" name="q" rows="2" maxlength="1000" required{{if not .V.Embedded}} autofocus{{end}}{{if and .Tools (not .V.Embedded)}} toolparamdescription="The question, in plain words."{{end}}></textarea>
   <button type="submit">Ask</button>
 </form>
 <p class="qz-small">{{.Disclosure}} Answers come from this site's pages, and

@@ -231,6 +231,26 @@ var settings = []Setting{
 
 	// -- the public site ------------------------------------------------------
 	{
+		Key: "site.webmcp", Kind: Bool, Default: "true",
+		Summary: "mark the site's search, chatbots and forms as tools a visitor's browser agent can use",
+		Why: "WebMCP: attributes on the forms the site already has, saying what " +
+			"each does and what each field means, so an agent acting for a " +
+			"visitor uses the form instead of guessing from the page. Search " +
+			"and chatbots may be run by the agent; a form that sends anything " +
+			"is filled in by it and submitted by the visitor; forms with a " +
+			"sensitive field, and account forms, are not offered. Browsers " +
+			"that do not know the attributes ignore them.",
+	},
+	{
+		Key: "site.webmcp_trial", Kind: Text, Default: "",
+		Summary: "Chrome's WebMCP origin trial token, until WebMCP is on by default",
+		Why: "Chrome runs WebMCP in an origin trial from Chrome 149. Register " +
+			"this site's origin at developer.chrome.com/origintrials and " +
+			"paste the token here; it is sent as an Origin-Trial header on " +
+			"the site's pages. Empty sends nothing, and the attributes still " +
+			"work wherever WebMCP is switched on.",
+	},
+	{
 		Key: "site.csp.mode", Kind: Text, Default: "enforce",
 		Summary:  "enforce | report-only | off",
 		Controls: []string{"SC-18"},
@@ -1025,6 +1045,18 @@ func (s Setting) Validate(v string) error {
 				if strings.TrimSpace(rest) == "" {
 					return fmt.Errorf("%q says how to reach somebody but "+
 						"not who", c)
+				}
+			}
+		}
+		if s.Key == "site.webmcp_trial" && v != "" {
+			// Sent as a response header: only a token's own characters, so
+			// nothing set here can end the header or start another.
+			if len(v) > 2048 {
+				return fmt.Errorf("the token is %d characters; an origin trial token is a few hundred", len(v))
+			}
+			for _, c := range v {
+				if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '+' || c == '/' || c == '=') {
+					return fmt.Errorf("an origin trial token is base64; %q is not", c)
 				}
 			}
 		}

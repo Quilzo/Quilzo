@@ -285,6 +285,8 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 		st.Members = siteMembers(root, cfg, st.BaseURL)
 		st.Boards = siteBoards(root)
 		st.IconInitial = cfg.Bool("site.icon_initial")
+		st.ToolsOff = !cfg.Bool("site.webmcp")
+		st.ToolsTrial = strings.TrimSpace(cfg.Raw("site.webmcp_trial"))
 		// The deployment's classification scheme, when it has one. Refused
 		// rather than ignored if it does not parse: a banner that silently
 		// failed to apply is the exact outcome marking exists to prevent.

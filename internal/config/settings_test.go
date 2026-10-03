@@ -3,7 +3,10 @@
 
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // A crawl term is checked when it is set, not when the server starts.
 //
@@ -53,5 +56,23 @@ func TestASecurityContactIsAURI(t *testing.T) {
 		if err := s.Validate(good); err != nil {
 			t.Errorf("%q was refused: %v", good, err)
 		}
+	}
+}
+
+// The origin trial token is sent as a response header, so nothing but a
+// token's own characters may be set: a line break would start a header of
+// whoever set it's choosing.
+func TestAnOriginTrialTokenCannotCarryAHeader(t *testing.T) {
+	s, ok := Lookup("site.webmcp_trial")
+	if !ok {
+		t.Fatal("site.webmcp_trial is not a setting")
+	}
+	for _, bad := range []string{"abc\r\nSet-Cookie: x=1", "abc def", "abc;", strings.Repeat("a", 2049)} {
+		if err := s.Validate(bad); err == nil {
+			t.Errorf("%q was accepted", bad)
+		}
+	}
+	if err := s.Validate("AqZ1abcDEF+/="); err != nil {
+		t.Errorf("a token was refused: %v", err)
 	}
 }
