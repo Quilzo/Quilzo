@@ -453,6 +453,8 @@ access
   quilzo scim map GROUP ROLE|JOB | unmap GROUP   what each of their groups means here
   quilzo automate list | templates | add TEMPLATE | runs   rules: when this happens, do this
   quilzo automate mode ID watch|ask|act | on ID | off ID | remove ID | approve RUN | decline RUN
+  quilzo inbound list | add okta|webhook|ssf NAME | connect NAME | verify NAME | status NAME   events pushed here as they happen
+  quilzo inbound rotate NAME | on NAME | off NAME | remove NAME | help
   quilzo geo status | help | network add PREFIX NAME --kind office|vpn ... | network remove PREFIX   where sign-ins come from
   quilzo auth deny WHO ROLE [--on PATH]    a deny wins wherever it sits
   quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
@@ -809,6 +811,8 @@ func main() {
 		err = cmdAutomate(root, cmdArgs)
 	case "geo":
 		err = cmdGeo(root, cmdArgs)
+	case "inbound":
+		err = cmdInbound(root, cmdArgs)
 	case "board":
 		err = cmdBoard(root, cmdArgs)
 	case "gateway":

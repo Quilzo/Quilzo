@@ -611,3 +611,54 @@ func TestAPlanThatEmptiesTheSpoolSaysSoInWords(t *testing.T) {
 			p.Why())
 	}
 }
+
+// A writer that releases rather than closes leaves one growing segment, not
+// a sealed one for every few events; the day still rolls and seals it, and a
+// segment whose file is not what the index says is never added to.
+func TestAReleasedSegmentIsResumed(t *testing.T) {
+	c := &clock{at: base}
+	_, dir := openAt(t, c, Options{})
+	for i := range 5 {
+		s, err := Open(dir, Options{Now: c.now})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Append(event(base, c.at, fmt.Sprint("push ", i))); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Release(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, _ := Open(dir, Options{Now: c.now})
+	segs := s.Segments()
+	if len(segs) != 1 || segs[0].Events != 5 || segs[0].Digest != "" {
+		t.Fatalf("five released pushes made %+v", segs)
+	}
+	var n int
+	if err := s.Range(time.Time{}, time.Time{}, func(telemetry.Event) error { n++; return nil }); err != nil || n != 5 {
+		t.Errorf("read back %d events, %v", n, err)
+	}
+	// The next day starts a new segment and seals the old one.
+	c.at = base.Add(24 * time.Hour)
+	if _, err := s.Append(event(c.at, c.at, "tomorrow")); err != nil {
+		t.Fatal(err)
+	}
+	if segs := s.Segments(); len(segs) != 2 || segs[0].Digest == "" {
+		t.Errorf("the day did not roll and seal: %+v", segs)
+	}
+	_ = s.Release()
+
+	// Somebody appends to the released file behind the index's back.
+	f, _ := os.OpenFile(filepath.Join(dir, s.Segments()[1].Name), os.O_WRONLY|os.O_APPEND, 0o600)
+	_, _ = f.WriteString("{}\n")
+	_ = f.Close()
+	again, _ := Open(dir, Options{Now: c.now})
+	if _, err := again.Append(event(c.at, c.at, "after")); err != nil {
+		t.Fatal(err)
+	}
+	if segs := again.Segments(); len(segs) != 3 {
+		t.Errorf("a segment whose size disagrees with the index was resumed: %d segments", len(segs))
+	}
+	_ = again.Close()
+}

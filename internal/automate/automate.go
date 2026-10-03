@@ -72,12 +72,15 @@ var Kinds = map[string][]string{
 	"finding": {"source", "severity", "kind", "title", "issuer"},
 	"device":  {"control", "severity", "os", "support", "owner"},
 	"person":  {"band", "department", "reason"},
+	"signal": {"type", "severity", "source", "issuer", "current_level", "previous_level", "change_type",
+		"credential_type", "current_status", "principal", "initiator", "reason"},
 }
 
 // KindNames are the kinds in words.
 var KindNames = map[string]string{
 	"signin": "Somebody signs in", "finding": "A finding is raised",
 	"device": "A machine fails a control", "person": "Something is said about a person",
+	"signal": "Another system reports something",
 }
 
 // Ops are the comparisons a condition may make.
@@ -155,7 +158,7 @@ var severities = map[string]float64{"none": 0, "info": 1, "low": 2, "medium": 3,
 
 func rank(field, v string) (float64, error) {
 	v = strings.ToLower(strings.TrimSpace(v))
-	if field == "severity" || field == "band" || field == "risk" {
+	if field == "severity" || field == "band" || field == "risk" || field == "current_level" || field == "previous_level" {
 		if n, ok := severities[v]; ok {
 			return n, nil
 		}
@@ -252,7 +255,7 @@ func (r Rule) Validate(actions map[string]Action) error {
 	}
 	fields, ok := Kinds[r.When]
 	if !ok {
-		return fmt.Errorf("%q is not something that happens; try signin, finding, device or person", r.When)
+		return fmt.Errorf("%q is not something that happens; try signin, finding, device, person or signal", r.When)
 	}
 	for _, c := range r.If {
 		known := false

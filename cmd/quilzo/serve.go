@@ -174,6 +174,13 @@ func cmdServe(root string, args []string) error {
 	srv.Members = membersHooks(root)
 	srv.Boards = boardsHooks(root)
 	srv.SCIM = scimHooks(root)
+	// Events other systems push, the moment they happen.
+	inb := newInboundServer(root)
+	srv.Inbound = inb
+	srv.Feeds = feedsHooks(root, inb)
+	inboundCtx, stopInbound := context.WithCancel(context.Background())
+	defer stopInbound()
+	go inb.run(inboundCtx)
 	// Sign-ins are judged as they are made, and the rules act on them.
 	srv.SignInRisk = signInRisk(root)
 	srv.SessionPlace, srv.SessionMovedTo, srv.Reported, srv.SignInSignal = sessionHooks(root)

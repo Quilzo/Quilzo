@@ -497,6 +497,11 @@ var coverage = map[string]surfaces{
 		NoMCP: "rules decide what is done to people's sessions and accounts; " +
 			"changing them, or approving what they wait for, is a person's job",
 	},
+	"inbound": {
+		GUI: "/security/feeds",
+		NoMCP: "a feed decides whose word reaches the automations; adding one, " +
+			"or handing a transmitter a stream, is a person's decision",
+	},
 	"geo": {
 		GUI: "/security/signins",
 		NoMCP: "where sign-ins are said to come from decides which of them are " +

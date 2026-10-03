@@ -272,6 +272,53 @@ func loadSecrets(root string) (map[string]string, error) {
 	return out, nil
 }
 
+// storeSecret keeps a credential: sealed under the store's keyring when it
+// has one, so the file alone gives nobody the value.
+func storeSecret(root, name, value string) (sealed bool, err error) {
+	if err := os.MkdirAll(connectDir(root), 0o700); err != nil {
+		return false, err
+	}
+
+	var f sealedSecrets
+	if b, err := os.ReadFile(secretsPath(root)); err == nil {
+		if uerr := json.Unmarshal(b, &f); uerr != nil {
+			return false, uerr
+		}
+	}
+	kr, err := loadKeyring(root)
+	if err != nil {
+		return false, err
+	}
+	if kr != nil {
+		s, serr := kr.Seal([]byte(value), []byte("connect/"+name))
+		if serr != nil {
+			return false, serr
+		}
+		raw, merr := vault.Marshal(s)
+		if merr != nil {
+			return false, merr
+		}
+		if f.Sealed == nil {
+			f.Sealed = map[string]json.RawMessage{}
+		}
+		f.Sealed[name] = raw
+		delete(f.Plain, name)
+	} else {
+		if f.Plain == nil {
+			f.Plain = map[string]string{}
+		}
+		f.Plain[name] = value
+	}
+	b, err := json.MarshalIndent(f, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	if err := atomicfile.Write(secretsPath(root), b, 0o600); err != nil {
+		return false, err
+	}
+	return kr != nil, nil
+}
+
 func connectSecret(root string, args []string) error {
 	pos, _ := leadingArgs(args, 1)
 	if len(pos) != 1 {
@@ -295,45 +342,8 @@ func connectSecret(root string, args []string) error {
 	if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(connectDir(root), 0o700); err != nil {
-		return err
-	}
-
-	var f sealedSecrets
-	if b, err := os.ReadFile(secretsPath(root)); err == nil {
-		if uerr := json.Unmarshal(b, &f); uerr != nil {
-			return uerr
-		}
-	}
-	kr, err := loadKeyring(root)
+	sealed, err := storeSecret(root, name, value)
 	if err != nil {
-		return err
-	}
-	if kr != nil {
-		s, serr := kr.Seal([]byte(value), []byte("connect/"+name))
-		if serr != nil {
-			return serr
-		}
-		raw, merr := vault.Marshal(s)
-		if merr != nil {
-			return merr
-		}
-		if f.Sealed == nil {
-			f.Sealed = map[string]json.RawMessage{}
-		}
-		f.Sealed[name] = raw
-		delete(f.Plain, name)
-	} else {
-		if f.Plain == nil {
-			f.Plain = map[string]string{}
-		}
-		f.Plain[name] = value
-	}
-	b, err := json.MarshalIndent(f, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := atomicfile.Write(secretsPath(root), b, 0o600); err != nil {
 		return err
 	}
 	// The name, never the value. The audit package refuses a detail key that
@@ -342,13 +352,13 @@ func connectSecret(root string, args []string) error {
 		Action: "connect.secret", Resource: "/connect/" + name,
 		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
 		Verified: caller.Kind != audit.KindUnknown,
-		Detail:   map[string]string{"name": name, "sealed": fmt.Sprint(kr != nil)},
+		Detail:   map[string]string{"name": name, "sealed": fmt.Sprint(sealed)},
 	})
-	if w.JSON(map[string]any{"name": name, "sealed": kr != nil}) {
+	if w.JSON(map[string]any{"name": name, "sealed": sealed}) {
 		return nil
 	}
 	w.Human("%s%s%s stored\n", bold, name, reset)
-	if kr == nil {
+	if !sealed {
 		w.Human("  %skept in plain text: this store has no keyring. "+
 			"quilzo vault enable seals it%s\n", yellow, reset)
 	} else {

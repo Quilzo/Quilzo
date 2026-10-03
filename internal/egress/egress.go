@@ -157,6 +157,15 @@ var Purposes = []Purpose{
 			"exported by hand",
 	},
 	{
+		Name: "signals",
+		What: "reading the keys another system signs its security events " +
+			"with, and asking it to start, check or stop the stream it " +
+			"sends them on (OpenID Shared Signals)",
+		Without: "shared signals cannot be verified, so every one is " +
+			"refused. Okta event hooks and signed webhooks still arrive: " +
+			"they need no connection from here",
+	},
+	{
 		Name: "import",
 		What: "fetching a page or an image the operator asked to import",
 		Without: "importing by URL is refused. Importing from a file is not " +

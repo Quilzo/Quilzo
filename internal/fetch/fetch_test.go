@@ -6,6 +6,7 @@ package fetch
 import (
 	"context"
 	"net"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -290,6 +291,27 @@ func TestPostFormRefusesTheSameURLsAsGet(t *testing.T) {
 		"https://127.0.0.1/token",
 	} {
 		if _, err := c.PostForm(context.Background(), raw, url.Values{}, "", ""); err == nil {
+			t.Errorf("%s was accepted", raw)
+		}
+	}
+}
+
+// Do is held to the same address rules as every other call: resolved to an
+// internal address, refused at connect time; an unusable URL, refused before.
+func TestDoIsSubjectToTheSameAddressCheck(t *testing.T) {
+	c := New()
+	c.Resolver = func(ctx context.Context, host string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("169.254.169.254")}, nil
+	}
+	for _, m := range []string{http.MethodGet, http.MethodPost, http.MethodDelete} {
+		_, err := c.Do(context.Background(), m, "https://transmitter.example/ssf/streams",
+			[]byte(`{}`), map[string]string{"Authorization": "Bearer x"})
+		if err == nil || !strings.Contains(err.Error(), "refusing") {
+			t.Errorf("%s to an internal address: %v", m, err)
+		}
+	}
+	for _, raw := range []string{"http://transmitter.example/x", "https://127.0.0.1/x", "https://u:p@transmitter.example/x"} {
+		if _, err := c.Do(context.Background(), http.MethodPost, raw, nil, nil); err == nil {
 			t.Errorf("%s was accepted", raw)
 		}
 	}

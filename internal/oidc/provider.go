@@ -52,7 +52,33 @@ type Provider struct {
 	mu       sync.RWMutex
 	keys     map[string]crypto.PublicKey
 	fetched  time.Time
+	tried    time.Time        // the last fetch attempted, successful or not
 	singular crypto.PublicKey // the only key, when there is exactly one
+
+	// get fetches the key set when set, in place of the fetcher: a key set
+	// made by NewKeySet is read through whatever its caller reads with.
+	get func(ctx context.Context, url string) ([]byte, error)
+}
+
+// MinRefresh is the least time between two fetches of a key set.
+//
+// A token naming a key id the set does not hold is how a rotation looks, and
+// earns a fetch. It is also something anybody can send: an endpoint that
+// takes tokens from the internet would otherwise fetch the provider's keys
+// once for every made-up key id it was shown, and point that at the provider.
+const MinRefresh = 30 * time.Second
+
+// NewKeySet is a provider's signing keys with none of the rest of its
+// metadata, for verifying tokens that are not ID tokens. get reads the key
+// set's URL, which has already passed the same address rules as any fetch.
+func NewKeySet(jwksURI string, get func(ctx context.Context, url string) ([]byte, error)) (*Provider, error) {
+	if _, err := fetch.ValidateURL(jwksURI); err != nil {
+		return nil, fmt.Errorf("the key set URL is not usable: %w", err)
+	}
+	if get == nil {
+		return nil, fmt.Errorf("a key set needs a way to read its URL")
+	}
+	return &Provider{Discovery: Discovery{JWKSURI: jwksURI}, TTL: DefaultTTL, get: get}, nil
 }
 
 // DefaultTTL is how long a key set is cached.
@@ -197,6 +223,19 @@ func (p *Provider) Key(kid string) (crypto.PublicKey, error) {
 		// unknown kids turn this into a request amplifier.
 	}
 
+	p.mu.RLock()
+	recent := !p.tried.IsZero() && time.Since(p.tried) < MinRefresh
+	p.mu.RUnlock()
+	if recent {
+		// Fetched moments ago: a key that was not there then is not there
+		// now, and asking again is what a stream of invented key ids wants.
+		p.mu.RLock()
+		defer p.mu.RUnlock()
+		if p.keys == nil {
+			return nil, fmt.Errorf("the key set could not be read moments ago; it is not asked for again before %s", MinRefresh)
+		}
+		return pick(kid, p.keys[kid], p.keys[kid] != nil, p.singular, len(p.keys))
+	}
 	if err := p.refresh(context.Background()); err != nil {
 		return nil, err
 	}
@@ -237,14 +276,27 @@ func (p *Provider) ttl() time.Duration {
 
 // refresh fetches the key set.
 func (p *Provider) refresh(ctx context.Context) error {
-	res, err := p.fetcher.Get(ctx, p.Discovery.JWKSURI)
-	if err != nil {
-		return fmt.Errorf("cannot read the key set: %w", err)
+	p.mu.Lock()
+	p.tried = time.Now()
+	p.mu.Unlock()
+	var body []byte
+	if p.get != nil {
+		b, err := p.get(ctx, p.Discovery.JWKSURI)
+		if err != nil {
+			return fmt.Errorf("cannot read the key set: %w", err)
+		}
+		body = b
+	} else {
+		res, err := p.fetcher.Get(ctx, p.Discovery.JWKSURI)
+		if err != nil {
+			return fmt.Errorf("cannot read the key set: %w", err)
+		}
+		body = res.Body
 	}
 	var set struct {
 		Keys []jwk `json:"keys"`
 	}
-	if err := json.Unmarshal(res.Body, &set); err != nil {
+	if err := json.Unmarshal(body, &set); err != nil {
 		return fmt.Errorf("the key set is not JSON: %w", err)
 	}
 	if len(set.Keys) == 0 {
