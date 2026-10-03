@@ -209,6 +209,7 @@ var tokens = []Token{
 	// -- style ----------------------------------------------------------------
 	{"style", Choice, "classic", "", "the overall look: classic, expressive, glass, editorial, bold, soft or business; it sets corners, density and type, and never colour", "style"},
 	{"motion", Choice, "subtle", "", "how much moves: subtle, expressive or none; reduced motion is honoured whatever is chosen", "style"},
+	{"icons", Choice, "rounded", "", "how every icon is drawn: rounded, outlined or sharp, each plain or filled", "style"},
 }
 
 // stacks are the built-in font stacks.

@@ -57,6 +57,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/icons"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"html/template"
 	"io"
@@ -417,9 +418,10 @@ func (s *Server) refresh() {
 // exactly right and there is no surface to remove.
 func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Layouts) (*Server, error) {
 	t, err := template.New("").Funcs(template.FuncMap{
-		"icon":     uiIcon,
-		"toneicon": toneIcon,
-		"pct":      func(f float64) float64 { return f * 100 },
+		"icon":      uiIcon,
+		"toneicon":  toneIcon,
+		"iconNames": icons.Names,
+		"pct":       func(f float64) float64 { return f * 100 },
 		// deref reads a yes or no a tool may not have given; the template
 		// checks for nil before calling it.
 		"deref": func(b *bool) bool { return b != nil && *b },

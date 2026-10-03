@@ -37,6 +37,9 @@ func TestNothingReachesTheNetworkOutsideThisPackage(t *testing.T) {
 			"dialler, which the test below checks too",
 		"internal/logd/logd.go": "dials a unix socket, which does not leave " +
 			"the host and is not egress",
+		"scripts/genicons/main.go": "a maintainer runs it by hand to " +
+			"refresh the icon set from Google's Material Symbols; the " +
+			"program never fetches an icon",
 		"scripts/genlifecycle/main.go": "a maintainer runs it by hand to " +
 			"refresh the embedded release dates; it is not part of the " +
 			"program, and nothing the program does runs it",

@@ -22,6 +22,10 @@
   a suggestion rather than a constraint, so a name typed before the listing
   exists still saves.
 */}}
+{{/* The icons a page may name, for any field called icon. */}}
+<datalist id="icon-names">
+  {{range iconNames}}<option value="{{.}}"></option>{{end}}
+</datalist>
 {{if .ListingNames}}
 <datalist id="listing-names">
   {{range .ListingNames}}<option value="{{.}}"></option>{{end}}
@@ -183,9 +187,10 @@
   {{else}}
   <input id="f-{{.Path}}" name="v.{{.Path}}" value="{{.Value}}"
     {{if .Number}}inputmode="numeric"{{end}}
-    {{if .Suggest}}list="listing-names"{{end}}
+    {{if .Suggest}}list="listing-names"{{end}}{{if .Icon}}list="icon-names" aria-describedby="h-{{.Path}}"{{end}}
     spellcheck="false">
   {{end}}
+  {{if .Icon}}<span class="hint" id="h-{{.Path}}">A name from the site's icon set, such as bolt, shield or schedule; drawn in the theme's icon style. Empty for none.</span>{{end}}
   {{if .Media}}
   <span class="filefield">
     {{if .Asset}}

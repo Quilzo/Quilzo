@@ -5,6 +5,8 @@ package theme
 
 import (
 	"sort"
+
+	"github.com/quilzo/quilzo/internal/icons"
 	"strings"
 )
 
@@ -264,6 +266,8 @@ func choiceOK(name, v string) bool {
 	case "motion":
 		_, ok := motionCSS[v]
 		return ok
+	case "icons":
+		return icons.Valid(v)
 	}
 	return false
 }
@@ -274,6 +278,18 @@ func choiceList(name string) string {
 		return strings.Join(Styles, ", ")
 	case "motion":
 		return strings.Join(Motions, ", ")
+	case "icons":
+		return strings.Join(icons.Styles, ", ")
 	}
 	return ""
+}
+
+// IconStyle is how the site's icons are drawn.
+func (t *Theme) IconStyle() string {
+	if t != nil {
+		if v, ok := t.light["icons"]; ok && icons.Valid(v) {
+			return v
+		}
+	}
+	return icons.DefaultStyle
 }

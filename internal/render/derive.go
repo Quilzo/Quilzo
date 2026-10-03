@@ -4,6 +4,8 @@
 package render
 
 import (
+	"github.com/quilzo/quilzo/internal/icons"
+	"github.com/quilzo/quilzo/internal/tmpl"
 	"regexp"
 	"sort"
 	"strings"
@@ -93,6 +95,8 @@ type asks struct {
 	srcSet func(string) string
 	tracks func(string) []any
 	poster func(string) string
+	// iconStyle draws every "icon" a page names; see deriveIcon.
+	iconStyle string
 }
 
 // maxDeriveDepth bounds the walk. Content is nested by authors and by importers,
@@ -121,6 +125,7 @@ func decorate(v any, depth int, ask asks) any {
 		deriveSrcSets(out, ask.srcSet)
 		deriveTracks(out, ask.tracks)
 		derivePoster(out, ask.poster)
+		deriveIcon(out, ask.iconStyle)
 		return out
 	case []any:
 		out := make([]any, len(t))
@@ -435,3 +440,16 @@ func (s Sources) detailRoutes() map[string]detailRoute {
 
 // Feeds is the context key the ordered arrangement lands under.
 const Feeds = "feeds"
+
+// deriveIcon draws an item's icon. Content names one — "icon": "bolt" — and
+// the item gains icon_svg, the drawing in the style the site's theme chose.
+// A name outside the set draws nothing. The drawing is Markup, made by
+// internal/icons from path data alone, so a layout writes it where markup
+// belongs and nowhere else.
+func deriveIcon(m map[string]any, style string) {
+	name, ok := m["icon"].(string)
+	if !ok || !icons.Has(name) {
+		return
+	}
+	setIfAbsent(m, "icon_svg", tmpl.Markup(icons.SVG(name, style)))
+}

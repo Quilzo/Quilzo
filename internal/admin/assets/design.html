@@ -66,6 +66,21 @@
   <button type="submit">Use this motion</button>
 </form>
 
+<form method="post" action="/design/save" class="design-look">
+  <input type="hidden" name="token" value="icons">
+  <fieldset><legend>Icons</legend>
+    <div class="style-grid">
+    {{range .IconChoices}}<label class="style-card{{if .On}} on{{end}}">
+      <input type="radio" name="light" value="{{.Name}}"{{if .On}} checked{{end}}>
+      <span class="icon-preview" aria-hidden="true">{{.Preview}}</span>
+      <strong>{{.Label}}</strong>
+    </label>{{end}}
+    </div>
+    <p class="hint">Every icon a page names — on a feature card, for instance — is drawn this way.</p>
+  </fieldset>
+  <button type="submit">Use these icons</button>
+</form>
+
 <h2>A palette from one colour</h2>
 <p class="hint">Every colour is chosen against the contrast pairs publishing checks, so the result always passes. The palette
   replaces the colours set now; layouts, type and shape are untouched.</p>

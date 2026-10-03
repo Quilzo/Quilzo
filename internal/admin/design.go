@@ -4,6 +4,8 @@
 package admin
 
 import (
+	"github.com/quilzo/quilzo/internal/icons"
+	"html/template"
 	"net/http"
 	"net/url"
 	"sort"
@@ -183,6 +185,23 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 		levels = append(levels, choice{Name: l, Label: strings.ToUpper(l[:1]) + l[1:], Words: levelWords[l], On: i == 0})
 	}
 	data["Styles"], data["Motions"], data["Schemes"], data["Levels"] = styles, motions, schemes, levels
+	type iconChoice struct {
+		Name, Label string
+		Preview     template.HTML
+		On          bool
+	}
+	var iconChoices []iconChoice
+	for _, st := range icons.Styles {
+		var b strings.Builder
+		for _, n := range []string{"bolt", "shield", "schedule", "favorite"} {
+			b.WriteString(icons.SVG(n, st))
+		}
+		label := strings.ToUpper(st[:1]) + strings.ReplaceAll(st[1:], "-", ", ")
+		// Path data from the generated set only: see internal/icons.
+		iconChoices = append(iconChoices, iconChoice{Name: st, Label: label,
+			Preview: template.HTML(b.String()), On: th.IconStyle() == st})
+	}
+	data["IconChoices"] = iconChoices
 	seed, _ := th.Value("primary", false)
 	data["Seed"] = seed
 	data["Groups"] = groups

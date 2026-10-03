@@ -1280,6 +1280,7 @@ func checkAccessibility(root string, s *store.Store, commitID, tplDir string) ([
 	// name was not supplied blocks a publish, and a genuine failure inside a
 	// menu is never seen.
 	src := sourcesFor(root, s, commitID, siteName(root), pages)
+	src.IconStyle = design.Theme.IconStyle()
 	rendered := map[string]string{}
 	var extra []*a11y.Report
 

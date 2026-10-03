@@ -75,6 +75,7 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	st := public.New(s, design.Layouts)
 	st.Fonts = design.Fonts
 	st.Stylesheet = design.Stylesheet
+	st.IconStyle = design.Theme.IconStyle()
 	// Where each picture is cropped from, appended to the stylesheet the site
 	// already serves.
 	//

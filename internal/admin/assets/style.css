@@ -2700,3 +2700,5 @@ summary > .chev .icon { width: 20px; height: 20px; }
 .style-bold i { border: 2px solid var(--on-surface); border-radius: 0; box-shadow: 3px 3px 0 var(--on-surface); } .style-bold b { border-radius: 0; box-shadow: 2px 2px 0 var(--on-surface); }
 .style-soft i { border-color: transparent; border-radius: 18px; box-shadow: 0 6px 16px color-mix(in srgb, var(--on-surface) 12%, transparent); }
 .style-business i { border-radius: 4px; box-shadow: 0 1px 2px color-mix(in srgb, var(--on-surface) 12%, transparent); } .style-business b { border-radius: 4px; }
+.icon-preview { grid-area: swatch; display: flex; gap: 10px; align-items: center; height: 36px; color: var(--primary); }
+.icon-preview .icon { width: 24px; height: 24px; fill: currentColor; }
