@@ -92,8 +92,7 @@ func (st *Site) annotateTools(page string) string {
 			continue
 		}
 		b.WriteString(rest[:end-1])
-		b.WriteString(` toolname="` + html.EscapeString(spec.name) + `" tooldescription="` +
-			html.EscapeString(spec.description) + `"`)
+		b.WriteString(` toolname=` + quoteAttr(spec.name) + ` tooldescription=` + quoteAttr(spec.description))
 		if spec.auto {
 			b.WriteString(` toolautosubmit`)
 		}
@@ -175,6 +174,14 @@ func (st *Site) toolFor(attrs map[string]string, body string, forms *form.Set) (
 	return toolSpec{}, false
 }
 
+// quoteAttr is a value as a double-quoted attribute. Escaped for HTML, and
+// the double quote replaced by name as well, so it is plain to anybody
+// reading this — and to a checker — that nothing a form's owner wrote can
+// end the attribute it sits in.
+func quoteAttr(v string) string {
+	return `"` + strings.ReplaceAll(html.EscapeString(v), `"`, "&#34;") + `"`
+}
+
 func validAssistantName(s string) bool {
 	if s == "" || len(s) > 64 {
 		return false
@@ -234,7 +241,7 @@ func annotateParams(body string, params map[string]string, trap string) string {
 			cut = end - 2
 		}
 		b.WriteString(rest[:cut])
-		b.WriteString(` toolparamdescription="` + html.EscapeString(d) + `"`)
+		b.WriteString(` toolparamdescription=` + quoteAttr(d))
 		b.WriteString(rest[cut:end])
 		rest = rest[end:]
 	}
