@@ -691,8 +691,13 @@ fieldset label { display: inline; font-weight: 600; }
   border: 1px solid var(--outline-variant);
   background: var(--surface-container-high); color: var(--on-surface-variant);
 }
-.pill.critical, .pill.high { background: var(--error-container);
-                             color: var(--on-error-container); border-color: var(--error); }
+.pill.critical { background: var(--error-container);
+                 color: var(--on-error-container); border-color: var(--error); }
+/* High is its own step, orange, between critical's red and medium's
+   yellow: when the two shared a colour, a queue of highs read as a queue
+   of emergencies, and the one critical among them did not stand out. */
+.pill.high { background: var(--serious-container);
+             color: var(--on-serious-container); border-color: var(--viz-serious); }
 .pill.medium { background: var(--warning-container); color: var(--on-warning-container);
                border-color: var(--warning); }
 .pill.ok     { background: var(--ok-container); color: var(--on-ok-container);
@@ -785,7 +790,8 @@ dd { margin: 0.25rem 0 0; }
   transition: border-radius var(--dur-medium) var(--spring-spatial-default);
 }
 .finding:hover, .rule:hover { border-radius: var(--shape-xl); }
-.finding.critical, .finding.high { border-left-color: var(--error); }
+.finding.critical { border-left-color: var(--error); }
+.finding.high { border-left-color: var(--viz-serious); }
 .finding.medium { border-left-color: var(--warning); }
 .finding.low, .finding.info { border-left-color: var(--outline); }
 .finding h3, .rule h2 { margin: 0 0 0.6rem; display: flex; flex-wrap: wrap;
@@ -2284,7 +2290,6 @@ td .danger:hover, td button.danger:hover { background: var(--error-container);
 }
 .agmap .head { font-weight: 600; }
 .palette-open kbd { white-space: nowrap; }
-.finding h3 .pill, .counts .pill { text-transform: capitalize; }
 .findbar .palette-open { width: auto; border: 0; background: transparent; }
 th[scope="row"] { font-weight: 500; }
 /* The phone menu as a list, as Chrome's own menus are, not a cloud of pills. */
@@ -2702,3 +2707,31 @@ summary > .chev .icon { width: 20px; height: 20px; }
 .style-business i { border-radius: 4px; box-shadow: 0 1px 2px color-mix(in srgb, var(--on-surface) 12%, transparent); } .style-business b { border-radius: 4px; }
 .icon-preview { grid-area: swatch; display: flex; gap: 10px; align-items: center; height: 36px; color: var(--primary); }
 .icon-preview .icon { width: 24px; height: 24px; fill: currentColor; }
+
+/* Review, 3 October: what a pass over every screen at 1280 and 390 wide,
+   light and dark, found. */
+/* A title made from an event can carry an unbroken identifier
+   (user.account.report_suspicious_activity_by_enduser), which pushed a
+   case page 309px past a phone's edge. */
+h1, h2, h3 { overflow-wrap: anywhere; }
+/* A field in a table cell gives way to the column rather than widening it
+   past the card. */
+td form.inline input:not([type=checkbox]):not([type=hidden]) { min-width: 0; width: 100%; max-width: 16rem; flex: 1 1 8rem; }
+/* A button beside a 56px field sits on the field's centre line, not on its
+   label's margin. */
+.wf-filters label { margin: 0; }
+.wf-filters > button, form.inline:has(label > input:not([type=hidden]), label > select) > button { margin-block-end: 8px; }
+/* The style and icon pickers are grids of cards; the 28rem every other
+   fieldset keeps to made them one long column. */
+.design-look fieldset { max-width: none; }
+/* Percentages of different widths no longer push their bars out of line. */
+.wf-points { display: inline-block; min-width: 3.5ch; text-align: end; }
+.row > .row-full { flex: 1 1 100%; }
+/* Every screen's column is the same width. With auto margins a grid item
+   shrinks to its content, so a screen of short cards (Security) sat
+   narrower and further right than one with a wide table (Findings), and
+   the heading jumped 126px between them. */
+body:has(> .sidenav) > main { width: 100%; }
+/* A notice can name a file by its whole path; it wraps rather than
+   pushing the page wider. */
+.notice { overflow-wrap: anywhere; }

@@ -3,13 +3,13 @@
 
 <p class="lead">
   {{.Filename}}, read as {{.Source}}.
-  {{if .Written}}<strong>{{len .Report.Pages}} page(s) were written into the
+  {{if .Written}}<strong>{{plural (len .Report.Pages) "page was" "pages were"}} written into the
   draft.</strong>{{else}}Nothing has been written.{{end}}
 </p>
 
 {{if .Report.Skipped}}
 <div class="card bad">
-  <p><strong>{{len .Report.Skipped}} thing(s) were not imported.</strong>
+  <p><strong>{{plural (len .Report.Skipped) "thing was" "things were"}} not imported.</strong>
     This is the half worth reading: an importer that quietly drops half an
     export is worse than one that refuses, because the loss is found months
     later by a reader.</p>
@@ -24,7 +24,7 @@
 </div>
 {{end}}
 
-<h2>{{len .Report.Pages}} page(s)</h2>
+<h2>{{plural (len .Report.Pages) "page" "pages"}}</h2>
 <div class="table-wrap">
 <table>
   <thead><tr>
@@ -44,7 +44,7 @@
 </div>
 
 {{if .Report.Redirects}}
-<h2>{{len .Report.Redirects}} redirect(s)</h2>
+<h2>{{plural (len .Report.Redirects) "redirect" "redirects"}}</h2>
 <p class="hint">
   Every URL the content had in the old system, pointing at its new path. This
   is the artefact that decides whether a migration keeps its search rankings.
@@ -62,7 +62,7 @@
 {{end}}
 
 {{if .Report.Media}}
-<h2>{{len .Report.Media}} media reference(s)</h2>
+<h2>{{plural (len .Report.Media) "media reference" "media references"}}</h2>
 <p class="hint">
   Collected and deliberately not fetched. Following a URL during an import turns
   a file somebody sent you into a request from inside your network to a host

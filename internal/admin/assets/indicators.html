@@ -20,7 +20,7 @@
     <th scope="row"><code>{{.Value}}</code><br><span class="hint">{{.Kind}}{{if .Note}} · {{.Note}}{{end}}</span></th>
     <td>{{.Sources}}</td>
     <td>{{.UntilText}}{{if .Lapsed}} <span class="wf-word critical">lapsed</span>{{else}}<br><span class="hint">{{.Left}}</span>{{end}}</td>
-    <td>{{if .H.Findings}}<strong>{{.H.Findings}}</strong> finding(s), last {{.LastHit}}
+    <td>{{if .H.Findings}}<strong>{{plural .H.Findings "finding" "findings"}}</strong>, last {{.LastHit}}
       {{if .H.Real}}<br><span class="wf-word serious">{{.H.Real}} real</span>{{end}}{{if .H.False}}<br><span class="wf-word warning">{{.H.False}} ruled false</span>{{end}}{{else}}<span class="hint">nothing</span>{{end}}</td>
     <td><form method="post" action="/security/indicators/act"><input type="hidden" name="do" value="remove"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="danger">Remove</button></form></td>
   </tr>{{end}}</tbody></table></div>

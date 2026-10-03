@@ -346,7 +346,7 @@ func (s *Server) handleSessionRevoke(w http.ResponseWriter, r *http.Request) {
 		// The cascade is the point and is worth saying: revoking a token that
 		// sessions were minted from has to invalidate them too, or revocation
 		// does not revoke.
-		msg = fmt.Sprintf("revoked, along with %d session(s) minted from it", n-1)
+		msg = "revoked, along with " + countOf(n-1, "session", "sessions") + " minted from it"
 	}
 	s.peopleBack(w, r, msg)
 }

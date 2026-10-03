@@ -7,7 +7,7 @@
 <p class="chips">
   {{if .A.Public}}<span class="chip">public at <code>/ask/{{.A.Name}}</code></span>{{else}}<span class="chip">testing only — not on the site</span>{{end}}
   <span class="chip">{{if .A.UseModel}}model answers, verified{{else}}quotes only{{end}}</span>
-  <span class="chip">{{len .A.Actions}} action(s)</span>
+  <span class="chip">{{plural (len .A.Actions) "action" "actions"}}</span>
 </p>
 
 <h2 id="try">Try it</h2>
@@ -21,7 +21,7 @@
   <ul>{{range .DocWarnings}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
 {{with .Ans}}
 <div class="card">
-  <p class="hint">{{.Mode}} answer from {{$.Passages}} passage(s) this chatbot may read{{if .Note}} · {{.Note}}{{end}}</p>
+  <p class="hint">{{.Mode}} answer from {{plural $.Passages "passage" "passages"}} this chatbot may read{{if .Note}} · {{.Note}}{{end}}</p>
   {{if .Refused}}<p><strong>Says it does not know:</strong> {{.Text}}</p>
   {{else}}{{range .Kept}}<p>{{.Text}}{{range .Cites}} <sup>[{{.}}]</sup>{{end}}</p>{{end}}{{end}}
   {{with .Proposed}}<p class="notice">Offers: <strong>{{.Action.Name}}</strong> — {{.Action.Description}}{{range $k, $v := .Args}} · <code>{{$k}}</code> = {{$v}}{{end}}</p>{{end}}

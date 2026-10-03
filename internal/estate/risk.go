@@ -181,7 +181,7 @@ func (e *Estate) Scores(now time.Time) []Score {
 		}
 
 		if leaver {
-			add(AreaLifecycle, Weights.LeaverWithDevice, strings.Join(no, ","),
+			add(AreaLifecycle, Weights.LeaverWithDevice, strings.Join(no, ", "),
 				"has left according to %s and a device of theirs still "+
 					"checks in", strings.Join(no, " and "))
 		}
@@ -295,7 +295,7 @@ func (e *Estate) Scores(now time.Time) []Score {
 			s.Unknown[AreaDevice] = "no device tool was read"
 		} else if live == 0 && !leaver {
 			add(AreaDevice, Weights.NoDevice, strings.Join(e.With(KindDevice),
-				","), "has no device any tool can see, so its state is unknown")
+				", "), "has no device any tool can see, so its state is unknown")
 		} else {
 			var worst []Factor
 			worstPts := -1
@@ -410,8 +410,8 @@ func machineFactors(m *Machine, cov map[string]map[string]bool) []Factor {
 		if r.Prohibited != nil && *r.Prohibited > 0 {
 			out = append(out, Factor{Area: AreaDevice,
 				Points: Weights.Prohibited, Source: r.ID.Issuer,
-				What: fmt.Sprintf("%s runs %d prohibited application(s)",
-					name, *r.Prohibited)})
+				What: fmt.Sprintf("%s runs %d prohibited application%s",
+					name, *r.Prohibited, map[bool]string{true: "", false: "s"}[*r.Prohibited == 1])})
 			break
 		}
 	}

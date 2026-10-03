@@ -14,7 +14,7 @@
 
 {{if .Own}}
 <div class="card bad">
-  <p><strong>{{.Dir}}/site.css exists, so it is served exactly as written.</strong></p>
+  <p><strong><code>{{.Dir}}/site.css</code> exists, so it is served exactly as written.</strong></p>
   <p>None of the values below are in effect, and the contrast check does not
     cover what readers get. Delete that file to use the generated stylesheet, or
     keep editing it by hand.</p>
@@ -23,7 +23,7 @@
 
 {{if .Blocking}}
 <div class="card bad">
-  <p><strong>{{len .Blocking}} contrast failure(s).</strong> The publish gate
+  <p><strong>{{plural (len .Blocking) "contrast failure" "contrast failures"}}.</strong> The publish gate
     refuses these, in the same way it refuses an image with no alternative
     text.</p>
   <ul>
@@ -36,7 +36,7 @@
 
 {{if .Problems}}
 <div class="card bad">
-  <p><strong>{{len .Problems}} value(s) could not be used.</strong></p>
+  <p><strong>{{plural (len .Problems) "value" "values"}} could not be used.</strong></p>
   <ul>{{range .Problems}}<li>{{.Detail}}</li>{{end}}</ul>
 </div>
 {{end}}

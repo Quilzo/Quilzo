@@ -227,8 +227,8 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	s.auditPub(p, "store.verify", "/", map[string]string{
 		"objects": fmt.Sprint(objects), "took": took.String()})
 	s.verifyRedirect(w, r, fmt.Sprintf(
-		"%d object(s) re-hashed in %s, and every one matched the name it is "+
-			"stored under.", objects, took), "")
+		"%s re-hashed in %s, and every one matched the name it is "+
+			"stored under.", countOf(objects, "object", "objects"), took), "")
 }
 
 func (s *Server) handleAgentsScreen(w http.ResponseWriter, r *http.Request) {

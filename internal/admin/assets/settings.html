@@ -6,7 +6,7 @@
 
 {{if .Weakened}}
 <div class="card bad">
-  <p><strong>{{len .Weakened}} setting(s) are running weaker than the default.</strong></p>
+  <p><strong>{{plural (len .Weakened) "setting is" "settings are"}} running weaker than the default.</strong></p>
   <ul>
   {{range .Weakened}}
     <li><code>{{.Setting.Key}}</code> = {{.Value}} &mdash; {{.Why}}

@@ -100,7 +100,7 @@ func TestAnIncidentWithNoDecisionShowsADecisionWaitingAndNotNothingDue(t *testin
 	if strings.Contains(body, "<script>alert(1)") {
 		t.Error("the title reached the page as markup")
 	}
-	for _, want := range []string{"2 decision(s) nobody has made",
+	for _, want := range []string{"2 decisions nobody has made",
 		"no clock yet", "Nobody is commanding this", "GDPR Article 33",
 		"NIS2 early warning", "Record it, as of now"} {
 		if !strings.Contains(body, want) {
@@ -121,7 +121,7 @@ func TestAnIncidentWithNoDecisionShowsADecisionWaitingAndNotNothingDue(t *testin
 		t.Fatalf("decide: %s", loc)
 	}
 	body = get(t, srv, "/security/case/"+id, token).Body.String()
-	for _, want := range []string{">running<", "1 decision(s) nobody has made",
+	for _, want := range []string{">running<", "1 decision nobody has made",
 		"access logs show two downloads", "percent of the time allowed"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("after deciding, the page lacks %q", want)

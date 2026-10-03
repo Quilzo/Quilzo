@@ -19,7 +19,7 @@ import (
 func TestNoAdminPageIsCached(t *testing.T) {
 	srv, token := fullyWired(t)
 	// The two that are meant to be cached, and say for how long.
-	cached := map[string]bool{"/style.css": true, "/admin.js": true,
+	cached := map[string]bool{"/style.css": true, "/admin.js": true, "/brand.css": true,
 		"/fonts/quilzo-ui.woff2": true}
 	for path := range servedRoutes(t) {
 		if strings.HasSuffix(path, "/") || strings.Contains(path, "{") {

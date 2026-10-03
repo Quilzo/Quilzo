@@ -10,7 +10,7 @@ of schema validators, and content does not need them.</p>
 
 {{if .Orphans}}
 <div class="card bad">
-  <p><strong>{{len .Orphans}} page(s) are bound to a type that no longer exists.</strong>
+  <p><strong>{{plural (len .Orphans) "page is" "pages are"}} bound to a type that no longer exists.</strong>
     Validation fails closed on that, so those pages cannot be written until the
     type is recreated or the binding removed.</p>
   <ul>{{range .Orphans}}<li><code>{{.}}</code></li>{{end}}
@@ -90,7 +90,7 @@ of schema validators, and content does not need them.</p>
 
 {{if $row.Failing}}
 <div class="card bad">
-  <p><strong>{{len $row.Failing}} page(s) bound to this do not satisfy it.</strong>
+  <p><strong>{{plural (len $row.Failing) "page" "pages"}} bound to this do not satisfy it.</strong>
     The next write to each will be refused until they do.</p>
   <ul>
   {{range $row.Failing}}
@@ -186,7 +186,7 @@ of schema validators, and content does not need them.</p>
 {{if .Unbound}}
 <h2>Pages with no type</h2>
 <p class="hint">
-  {{len .Unbound}} page(s) may contain anything. That is a legitimate state and
+  {{plural (len .Unbound) "page" "pages"}} may contain anything. That is a legitimate state and
   it is also the state a site is in when nobody has decided yet, so it is
   counted rather than left implicit.
 </p>

@@ -108,8 +108,11 @@ func TestTheBrandReachesTheInterface(t *testing.T) {
 	srv.Brand = Brand{Name: `Acme & Co <script>`, Colour: "#0b6fa4", Mark: "A"}
 
 	body := get(t, srv, "/", token).Body.String()
-	if !strings.Contains(body, "--brand: #0b6fa4") {
-		t.Error("the accent did not reach the root element")
+	// Through the stylesheet, which the policy allows; a style attribute
+	// carrying it passed this test for months and was refused by the browser.
+	if !strings.Contains(body, `href="/brand.css"`) ||
+		!strings.Contains(get(t, srv, "/brand.css", "").Body.String(), "--brand: #0b6fa4") {
+		t.Error("the accent did not reach the page")
 	}
 	if strings.Contains(body, "<script>") {
 		t.Fatal("the brand name reached the page unescaped")
@@ -151,5 +154,34 @@ func TestAMaliciousBrandColourNeverReachesThePage(t *testing.T) {
 		if strings.Contains(body, "--brand:") {
 			t.Errorf("the colour %q was emitted as a brand declaration", bad)
 		}
+	}
+}
+
+// The colour reaches the page through a stylesheet the policy allows. In a
+// style attribute it was refused by style-src 'self' and never shown.
+func TestTheBrandColourIsAStylesheetThePolicyAllows(t *testing.T) {
+	srv, token := setup(t)
+	srv.Brand = Brand{Colour: "#0b6fa4"}
+	page := get(t, srv, "/", token)
+	body := page.Body.String()
+	if strings.Contains(body, `style="--brand`) {
+		t.Error("the colour is still in a style attribute, which the policy refuses")
+	}
+	if !strings.Contains(body, `href="/brand.css"`) {
+		t.Error("the page does not link the brand stylesheet")
+	}
+	if p := page.Header().Get("Content-Security-Policy"); !strings.Contains(p, "style-src 'self'") {
+		t.Fatalf("policy changed: %s", p)
+	}
+	css := get(t, srv, "/brand.css", "").Body.String()
+	if !strings.Contains(css, "--brand: #0b6fa4") {
+		t.Errorf("brand.css is %q", css)
+	}
+	srv.Brand = Brand{Colour: "#fff; position:fixed"}
+	if css := get(t, srv, "/brand.css", "").Body.String(); strings.TrimSpace(css) != "" {
+		t.Errorf("an invalid colour reached the stylesheet: %q", css)
+	}
+	if strings.Contains(get(t, srv, "/", token).Body.String(), `href="/brand.css"`) {
+		t.Error("the stylesheet is linked with no colour to give")
 	}
 }

@@ -216,8 +216,8 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 		for _, pg := range rep.Pages {
 			pages[pg.Name] = pg.Fields
 		}
-		if err := s.Transfer.Save(pages, fmt.Sprintf("import %d page(s) from %s",
-			len(rep.Pages), src), p.Name, base); err != nil {
+		if err := s.Transfer.Save(pages, fmt.Sprintf("import %s from %s",
+			countOf(len(rep.Pages), "page", "pages"), src), p.Name, base); err != nil {
 			s.transferRedirect(w, r, "", err.Error())
 			return
 		}

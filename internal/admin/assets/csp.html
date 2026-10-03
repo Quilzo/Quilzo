@@ -3,7 +3,7 @@
 
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
 
-<p class="lead">Derived from {{.Pages}} published page(s). This is what the site
+<p class="lead">Derived from {{plural .Pages "published page" "published pages"}}. This is what the site
 serves; it is not a template somebody filled in.</p>
 
 <div class="card">
@@ -26,8 +26,8 @@ serves; it is not a template somebody filled in.</p>
 
 {{if .Widened}}
 <div class="card warn">
-  <p><strong>This policy is wider than the default in {{len .Widened}}
-    place(s).</strong> Named here because the header alone does not say which
+  <p><strong>This policy is wider than the default in
+    {{plural (len .Widened) "place" "places"}}.</strong> Named here because the header alone does not say which
     of its allowances were forced.</p>
   <ul>{{range .Widened}}<li><code>{{.}}</code></li>{{end}}</ul>
 </div>

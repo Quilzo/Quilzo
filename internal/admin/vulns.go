@@ -133,7 +133,7 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 
 	tiles := []wfTile{
 		{Label: "Open vulnerabilities", Value: fmt.Sprint(tally.Vulnerabilities),
-			Note: fmt.Sprintf("in %d place(s)", tally.Exposures)},
+			Note: "in " + countOf(tally.Exposures, "place", "places")},
 		{Label: "Being exploited", Value: fmt.Sprint(tally.Exploited),
 			Note: "somebody has said so, by name"},
 		{Label: "Expected in 30 days", Value: fmt.Sprintf("%.1f", tally.Expected),
@@ -286,8 +286,7 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 		d.What, d.Tone = decisionWord(a)
 		if !a.Until.IsZero() {
 			d.Until = a.Until.Format("2 Jan 2006")
-			d.Left = fmt.Sprintf("%d day(s) left",
-				int(a.Until.Sub(now).Hours()/24)+1)
+			d.Left = countOf(int(a.Until.Sub(now).Hours()/24)+1, "day", "days") + " left"
 		}
 		byKey[k] = d
 		order = append(order, k)
@@ -308,8 +307,8 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 	// one covers are beside it.
 	tiles[3].Value = fmt.Sprint(len(decidedRows))
 	if decided > 0 {
-		tiles[3].Note = fmt.Sprintf("covering %d place(s), each with a "+
-			"reason and a name", decided)
+		tiles[3].Note = "covering " + countOf(decided, "place", "places") +
+			", each with a reason and a name"
 	}
 	data["Tiles"] = tiles
 

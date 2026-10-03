@@ -5,11 +5,11 @@
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
 
 <p class="lead">
-  {{if .Undeclared}}<p class="notice">{{.Undeclared}} image(s) have no rights
+  {{if .Undeclared}}<p class="notice">{{plural .Undeclared "image has" "images have"}} no rights
 recorded. Publishing reports them, and an expired one stops a publication —
 so this is the screen that answers that gate.</p>{{end}}
 
-{{len .Files}} file(s), {{.Total}} bytes. Every accepted format is decoded
+{{plural (len .Files) "file" "files"}}, {{.Total}} bytes. Every accepted format is decoded
   rather than sniffed — magic bytes are bypassable with a polyglot, so a file
   has to actually parse before it is stored.
 </p>

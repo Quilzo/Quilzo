@@ -13,7 +13,7 @@
 {{if .Rows}}<div class="table-wrap"><table class="wf-people">
   <thead><tr><th scope="col">Incident</th><th scope="col">Grade</th><th scope="col">State</th><th scope="col">Commander</th><th scope="col">Next deadline</th><th scope="col">Declared</th></tr></thead>
   <tbody>{{range .Rows}}<tr>
-    <th scope="row"><a href="{{.Href}}">{{.Title}}</a><br><code>{{.ID}}</code>{{if .Findings}} <span class="hint">{{.Findings}} finding(s)</span>{{end}}</th>
+    <th scope="row"><a href="{{.Href}}">{{.Title}}</a><br><code>{{.ID}}</code>{{if .Findings}} <span class="hint">{{plural .Findings "finding" "findings"}}</span>{{end}}</th>
     <td><span class="wf-word {{.GradeTone}}">{{.Grade}}</span></td>
     <td><span class="wf-word {{.StateTone}}">{{.State}}</span></td>
     <td>{{if .Commander}}{{.Commander}}{{else}}<span class="hint">nobody</span>{{end}}</td>

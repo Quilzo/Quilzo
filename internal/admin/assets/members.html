@@ -20,7 +20,7 @@
   <thead><tr><th scope="col">Name</th><th scope="col">Joined</th><th scope="col">Last seen</th><th scope="col">Passkeys</th><th scope="col">Signed in on</th><th scope="col">State</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
   <tbody>{{range .Rows}}<tr>
     <th scope="row">{{.Name}}<br><span class="hint mono">{{.ID}}</span></th>
-    <td>{{.Joined}}</td><td>{{.Seen}}</td><td>{{.Passkeys}}</td><td>{{.Sessions}} browser(s)</td>
+    <td>{{.Joined}}</td><td>{{.Seen}}</td><td>{{.Passkeys}}</td><td>{{plural .Sessions "browser" "browsers"}}</td>
     <td>{{if .Disabled}}<span class="wf-word warning">disabled</span>{{else}}<span class="wf-word good">active</span>{{end}}</td>
     <td><form method="post" action="/members/act" class="inline">
         <input type="hidden" name="id" value="{{.ID}}">

@@ -149,8 +149,8 @@ func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.pubRedirect(w, r, fmt.Sprintf(
-		"%s → %s, %d change(s). The same objects, not a copy.",
-		prom.From, prom.To, len(prom.Changes)), "")
+		"%s → %s, %s. The same objects, not a copy.",
+		prom.From, prom.To, countOf(len(prom.Changes), "change", "changes")), "")
 }
 
 // handleEnvSave adds an environment.

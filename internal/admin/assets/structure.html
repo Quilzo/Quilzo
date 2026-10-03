@@ -53,7 +53,7 @@
       {{if $t.Label}}<div class="hint">{{$t.Label}}</div>{{end}}</th>
     <td class="hint">{{$t.Description}}</td>
     <td class="hint">{{range $i, $s := $t.Synonyms}}{{if $i}}, {{end}}{{$s}}{{end}}</td>
-    <td>{{if $t.Count}}{{$t.Count}} item(s){{else}}<span class="hint">nothing</span>{{end}}</td>
+    <td>{{if $t.Count}}{{plural $t.Count "item" "items"}}{{else}}<span class="hint">nothing</span>{{end}}</td>
     {{if $.CanWrite}}
     <td>
       <form method="post" action="/structure/term/remove" class="inline">

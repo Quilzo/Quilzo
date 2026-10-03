@@ -63,7 +63,7 @@
         kind, so it puts nothing on the page. It is either a kind that was
         removed or a typo.</div>{{end}}
     </td>
-    <td>{{if .Items}}{{.Items}} item(s){{else}}<span class="hint">—</span>{{end}}</td>
+    <td>{{if .Items}}{{plural .Items "item" "items"}}{{else}}<span class="hint">—</span>{{end}}</td>
     <td><a href="/sections/fields?page={{$page}}&amp;at={{.Index}}">Edit</a></td>
     <td>
       {{if not .First}}

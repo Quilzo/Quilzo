@@ -3,13 +3,13 @@
 
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
 
-<p class="lead">{{.Count}} event(s) in {{.Segments}} segment(s),
-{{.Bytes}} byte(s).</p>
+<p class="lead">{{plural .Count "event" "events"}} in {{plural .Segments "segment" "segments"}},
+{{plural .Bytes "byte" "bytes"}}.</p>
 
 {{if .Note}}<p class="notice warn">{{.Note}}</p>{{end}}
 {{if .Skipped}}<p class="notice warn">The sources and recent events below are
 read from arrivals since {{.From.Format "2006-01-02 15:04"}} UTC. The
-{{.Skipped}} older segment(s) were not read on this page load, so a source
+{{plural .Skipped "older segment was" "older segments were"}} not read on this page load, so a source
 that went quiet before then is not listed here — ask the store directly with
 <code>quilzo spool</code> for anything older.</p>{{end}}
 
@@ -78,7 +78,7 @@ seeing and a list sorted by volume buries it under whatever is loudest.</p>
     <th scope="row"><code>{{.Source}}</code></th>
     <td>{{.Count}}</td>
     <td>{{.Failed}}</td>
-    <td>{{if .Ahead}}{{.Ahead}} event(s) dated after they arrived{{else}}—{{end}}</td>
+    <td>{{if .Ahead}}{{plural .Ahead "event" "events"}} dated after they arrived{{else}}—{{end}}</td>
     <td>{{.Quiet}} ago<div class="hint">{{.Newest.Format "2006-01-02 15:04"}}</div></td>
   </tr>
   {{end}}

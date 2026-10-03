@@ -95,8 +95,7 @@ func (s *Server) handleIndicators(w http.ResponseWriter, r *http.Request) {
 		rw := row{Indicator: i, Sources: strings.Join(i.Sources, ", "),
 			UntilText: i.Until.Format("2 Jan 2006"), Lapsed: !i.Live(now), H: h}
 		if !rw.Lapsed {
-			rw.Left = fmt.Sprintf("%d day(s) left",
-				int(i.Until.Sub(now).Hours()/24)+1)
+			rw.Left = countOf(int(i.Until.Sub(now).Hours()/24)+1, "day", "days") + " left"
 		}
 		if h.Findings > 0 {
 			rw.LastHit = agoText(now.Sub(h.Last))
@@ -178,8 +177,9 @@ func (s *Server) handleIndicatorsAct(w http.ResponseWriter, r *http.Request) {
 		case hits == 0:
 			back("Added. Nothing already stored carries it.", nil)
 		default:
-			back(fmt.Sprintf("Added. %d stored event(s) carry it: %d new "+
-				"finding(s) are in the queue.", hits, opened), nil)
+			back(fmt.Sprintf("Added. %s it: %s in the queue.",
+				countOf(hits, "stored event carries", "stored events carry"),
+				countOf(opened, "new finding is", "new findings are")), nil)
 		}
 	case "remove":
 		back("Removed. What it already found stays in the queue.",

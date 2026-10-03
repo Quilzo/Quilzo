@@ -15,7 +15,7 @@
   nothing here will ever say a notification is due. That is a statement that
   none of the obligations apply to this organisation, and it was made when
   the incident was declared.</p>{{else}}
-{{if .Waiting}}<p class="notice warn"><strong>{{.Waiting}} decision(s) nobody has made.</strong>
+{{if .Waiting}}<p class="notice warn"><strong>{{plural .Waiting "decision" "decisions"}} nobody has made.</strong>
   Nothing being due and nobody having decided look the same, and are not.</p>{{end}}
 <div class="table-wrap"><table>
   <thead><tr><th scope="col">Decision</th><th scope="col">What it means</th><th scope="col">Starts</th><th scope="col">Made</th></tr></thead>
@@ -137,7 +137,7 @@
   <thead><tr><th scope="col">Finding</th><th scope="col">Severity</th><th scope="col">State</th>{{if not .Closed}}<th scope="col"><span class="visually-hidden">Remove</span></th>{{end}}</tr></thead>
   <tbody>{{range .Findings}}<tr>
     <th scope="row">{{if .Gone}}<code>{{.ID}}</code> <span class="hint">no longer in the register</span>{{else}}<a href="/findings/{{.ID}}">{{.Title}}</a>{{end}}</th>
-    <td>{{if .Sev}}<span class="pill {{.Sev}}">{{.Sev}}</span>{{end}}</td><td>{{.State}}</td>
+    <td>{{if .Sev}}<span class="pill {{.Sev}}">{{sentence .Sev}}</span>{{end}}</td><td>{{.State}}</td>
     {{if not $.Closed}}<td><form method="post" action="/security/cases/act"><input type="hidden" name="do" value="unlink"><input type="hidden" name="id" value="{{$.I.ID}}"><input type="hidden" name="finding" value="{{.ID}}"><button type="submit" class="danger">Remove</button></form></td>{{end}}
   </tr>{{end}}</tbody></table></div>{{else}}<p>No finding is part of this.</p>{{end}}
 {{if not .Closed}}<form class="inline" method="post" action="/security/cases/act">

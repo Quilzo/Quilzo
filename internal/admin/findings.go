@@ -91,6 +91,16 @@ var stateWords = map[finding.State]string{
 	finding.Stale:         "Stale — stopped being reported, cause unknown",
 }
 
+// stateWord is a state's short name for a filter: the words before the
+// dash, "False positive" rather than "false-positive".
+func stateWord(st finding.State) string {
+	if w, ok := stateWords[st]; ok {
+		name, _, _ := strings.Cut(w, " — ")
+		return name
+	}
+	return string(st)
+}
+
 // findingRow is one finding as the queue shows it.
 type findingRow struct {
 	finding.Finding
@@ -262,7 +272,7 @@ func (s *Server) handleFindings(w http.ResponseWriter, r *http.Request) {
 		if byState[string(st)] == 0 && state != string(st) {
 			continue
 		}
-		states = append(states, facet{Label: string(st),
+		states = append(states, facet{Label: stateWord(st),
 			Href: link(string(kind), string(st), sev), Count: byState[string(st)],
 			On: state == string(st)})
 	}

@@ -5,7 +5,7 @@
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 
 <p class="chips">
-  <span class="pill {{.F.Sev}}">{{.F.Sev}}</span>
+  <span class="pill {{.F.Sev}}">{{sentence .F.Sev}}</span>
   <span class="chip">{{.F.Kind}}</span>
   <span class="chip">{{.F.State}}{{if .F.Expired}} — lapsed{{end}}</span>
 </p>
@@ -24,7 +24,7 @@
 <dl class="kv">
   <dt>About</dt><dd>{{if .F.Entity.Zero}}<span class="dim">no entity</span>{{else}}<a href="/security/entity/{{.F.Entity.String}}"><code>{{.F.Entity.String}}</code></a>{{end}}</dd>
   <dt>Raised by</dt><dd><code>{{.F.Source}}</code></dd>
-  <dt>Seen</dt><dd>{{.F.Seen}} time(s), {{.Span}}</dd>
+  <dt>Seen</dt><dd>{{plural .F.Seen "time" "times"}}, {{.Span}}</dd>
   <dt>Why it ranks here</dt><dd>{{.F.Why}}</dd>
   <dt>Owner</dt><dd>{{if .F.Owner}}{{.F.Owner}}{{else}}nobody{{end}}</dd>
   {{if .F.Technique}}<dt>ATT&amp;CK</dt><dd>{{range $i, $t := .F.Technique}}{{if $i}}, {{end}}<code>{{$t}}</code>{{end}}</dd>{{end}}

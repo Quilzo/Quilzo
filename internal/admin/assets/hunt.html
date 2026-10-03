@@ -30,7 +30,7 @@
   <button type="submit">Hunt</button>
 </form>
 
-<p class="hint">{{.Scanned}} event(s) read{{if .Filtered}}, {{.Matched}} matching{{end}}{{if .Absent}}; {{.Absent}} do not carry <code>{{.Field}}</code>{{end}}.
+<p class="hint">{{plural .Scanned "event" "events"}} read{{if .Filtered}}, {{.Matched}} matching{{end}}{{if .Absent}}; {{.Absent}} do not carry <code>{{.Field}}</code>{{end}}.
   {{if .Short}}<strong>Not the whole period:</strong> only what arrived since {{.Short.Format "2 Jan 15:04 UTC"}} was read, so a value shown as rare may be common before that.{{end}}</p>
 {{if .TooMany}}<p class="notice warn"><code>{{.Field}}</code> has more distinct
   values than can be stacked. It is close to unique per event, and rarest
@@ -59,7 +59,7 @@
       <svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.W}}" height="8" rx="4"></rect></svg></td>
     <td>{{.Share}}</td><td>{{.Actors}}</td><td>{{.First}}</td><td>{{.Last}}</td></tr>{{end}}</tbody>
 </table></div>
-<p class="hint">{{.Distinct}} distinct value(s){{if .More}}; the {{.More}} most common are not shown{{end}}.</p>
+<p class="hint">{{plural .Distinct "distinct value" "distinct values"}}{{if .More}}; the {{.More}} most common are not shown{{end}}.</p>
 {{else}}<p>No event in the period carries that field.</p>{{end}}
 {{else}}
 <h2>What these events carry</h2>

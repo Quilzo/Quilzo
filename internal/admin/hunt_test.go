@@ -65,7 +65,7 @@ func TestAHuntPutsTheRareValueFirst(t *testing.T) {
 		t.Errorf("the address seen once is not above the one seen a hundred "+
 			"times (at %d and %d)", odd, usual)
 	}
-	if !strings.Contains(body, "101 event(s) read") {
+	if !strings.Contains(body, "101 events read") {
 		t.Error("the page does not say how much it read")
 	}
 	// With no field chosen it says what the events carry, not nothing.
@@ -114,12 +114,12 @@ func TestAHuntsConditionNarrowsWhatIsStacked(t *testing.T) {
 	q := url.Values{"field": {"actor.value"}, "hours": {"24"},
 		"where": {"ip"}, "op": {"prefix"}, "is": {"203.0."}}
 	body := get(t, srv, "/security/hunt?"+q.Encode(), token).Body.String()
-	if !strings.Contains(body, "101 event(s) read, 1 matching") {
+	if !strings.Contains(body, "101 events read, 1 matching") {
 		t.Error("the condition did not narrow the hunt to the one event")
 	}
 	// An hour back holds the odd sign-in and few of the usual ones.
 	hour := get(t, srv, "/security/hunt?field=ip&hours=1", token).Body.String()
-	if strings.Contains(hour, "101 event(s) read") {
+	if strings.Contains(hour, "101 events read") {
 		t.Error("the period was not applied")
 	}
 }
@@ -147,7 +147,7 @@ func TestWithoutAStoreTheHuntSaysSo(t *testing.T) {
 	srv, token := setup(t)
 	body := get(t, srv, "/security/hunt", token).Body.String()
 	if !strings.Contains(body, "without a telemetry") ||
-		strings.Contains(body, "0 event(s) read") {
+		strings.Contains(body, "0 events read") {
 		t.Error("an unwired store was shown as an empty one")
 	}
 }

@@ -4,7 +4,7 @@
 
 {{range .Rules}}
 <article class="rule">
-  <h2 id="{{.ID}}"><span class="pill {{.Severity}}">{{.Severity}}</span> {{.Title}}</h2>
+  <h2 id="{{.ID}}"><span class="pill {{.Severity}}">{{sentence .Severity}}</span> {{.Title}}</h2>
   <p class="meta"><code>{{.ID}}</code>{{if .Controls}} · NIST {{range .Controls}}{{.}} {{end}}{{end}}{{if .OWASP}} · {{.OWASP}}{{end}}</p>
   <p>{{.Why}}</p>
 </article>

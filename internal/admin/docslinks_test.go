@@ -170,6 +170,7 @@ var notADestination = map[string]string{
 	"/signin":                "reached when not signed in",
 	"/signout":               "a form target",
 	"/style.css":             "a stylesheet",
+	"/brand.css":             "the operator's accent colour, as a stylesheet",
 	"/admin.js":              "the interface's script, fetched by every page's head",
 	"/fonts/quilzo-ui.woff2": "the interface's typeface, fetched by the stylesheet",
 	"/manifest.webmanifest": "the install manifest, linked from every page's " +

@@ -101,8 +101,8 @@ the failure rather than a run with a caveat.</p>
 
 {{if .Noise}}
 <h2>What the live detections cost</h2>
-<p class="lead">{{printf "%.1f" .Noise.PerDay}} alert(s) a day from
-{{.Noise.Rules}} live rule(s){{if .Noise.Worst}}, the loudest being
+<p class="lead">{{printf "%.1f" .Noise.PerDay}} alerts a day from
+{{plural .Noise.Rules "live rule" "live rules"}}{{if .Noise.Worst}}, the loudest being
 &ldquo;{{.Noise.Worst}}&rdquo; at {{printf "%.1f" .Noise.WorstAt}}{{end}}.</p>
 <p>The number a detection estate is actually judged by, and the one nobody
 computes, because it usually lives across as many dashboards as there are

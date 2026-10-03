@@ -341,7 +341,7 @@ func (s *Server) handleAssistAccept(w http.ResponseWriter, r *http.Request) {
 
 	modelName := r.FormValue("model")
 	if err := s.Assist.Save(pages, fmt.Sprintf(
-		"accept %d page(s) proposed by %s", len(accepted), modelName),
+		"accept %s proposed by %s", countOf(len(accepted), "page", "pages"), modelName),
 		p.Name, base); err != nil {
 		s.assistRedirect(w, r, "", err.Error())
 		return

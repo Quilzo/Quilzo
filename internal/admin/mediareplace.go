@@ -112,9 +112,9 @@ func (s *Server) handleMediaReplace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mediaRedirect(w, r, fmt.Sprintf(
-		"%s now supersedes %s, in %d place(s) in the draft. The commit this "+
+		"%s now supersedes %s, in %s in the draft. The commit this "+
 			"moved from is still stored, so History undoes it.",
-		next.Name, old.Name, changed), "")
+		next.Name, old.Name, countOf(changed, "place", "places")), "")
 }
 
 // checkReplacement refuses a substitution that cannot mean what it looks like.
