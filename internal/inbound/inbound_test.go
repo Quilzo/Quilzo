@@ -137,6 +137,18 @@ func TestOktaIsAnsweredAndRead(t *testing.T) {
 	if _, ok := OktaChallenge(httptest.NewRequest(http.MethodGet, "/", nil)); ok {
 		t.Error("a request without the challenge was answered")
 	}
+	// Echoed into JSON, so nothing that could end the string is echoed.
+	for _, bad := range []string{`a"}`, `a\u0022`, "a b", "<script>"} {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("X-Okta-Verification-Challenge", bad)
+		if b, ok := OktaChallenge(r); ok {
+			t.Errorf("%q was echoed as %s", bad, b)
+		}
+	}
+	r.Header.Set("X-Okta-Verification-Challenge", "B8QJkQlz5FAERhDA_q1q-N7j0Q7a3D9H+/=")
+	if b, ok := OktaChallenge(r); !ok || !json.Valid(b) {
+		t.Errorf("a base64 challenge: %s %v", b, ok)
+	}
 	d, err := ParseOkta([]byte(`{"eventType":"com.okta.event_hook","eventId":"e1","data":{"events":[{"uuid":"u1","eventType":"user.session.start"}]}}`))
 	if err != nil || len(d.Data.Events) != 1 || d.EventID != "e1" {
 		t.Errorf("%+v %v", d, err)

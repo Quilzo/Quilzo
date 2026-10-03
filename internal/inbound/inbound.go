@@ -275,13 +275,22 @@ func (s *Seen) First(id string, now time.Time) bool {
 
 // OktaChallenge is the one-time verification Okta makes when a hook is
 // added: the value of the challenge header, echoed back as JSON.
+//
+// The challenge is a token: letters, digits and the characters of base64.
+// Anything else is refused rather than escaped, so what is echoed into the
+// JSON can never close the string it sits in.
 func OktaChallenge(r *http.Request) ([]byte, bool) {
 	v := r.Header.Get("X-Okta-Verification-Challenge")
 	if v == "" || len(v) > 256 {
 		return nil, false
 	}
-	b, _ := json.Marshal(map[string]string{"verification": v})
-	return b, true
+	for _, c := range v {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' ||
+			c == '-' || c == '_' || c == '+' || c == '/' || c == '=' || c == '.') {
+			return nil, false
+		}
+	}
+	return []byte(`{"verification":"` + v + `"}`), true
 }
 
 // OktaDelivery is an event hook's body.
