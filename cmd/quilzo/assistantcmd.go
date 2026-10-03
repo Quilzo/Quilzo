@@ -128,6 +128,16 @@ func assistantAdd(root string, args []string) error {
 	embed := fs.String("embed", "", "comma-separated sites that may embed it, like https://shop.example")
 	handoffOn := fs.Bool("handoff", false, "let a visitor ask for a person; the conversation goes to the inbox")
 	handoffDays := fs.Int("handoff-days", 0, "days a handed-over conversation is kept after it last moves (default 30, at most 90)")
+	launcher := fs.Bool("launcher", false, "put it on the site's pages: a button in a corner that opens it beside the page (needs --public)")
+	lStyle := fs.String("launcher-style", "", "bubble, pill or tab (default bubble)")
+	lSide := fs.String("launcher-side", "", "right or left (default right)")
+	lLabel := fs.String("launcher-label", "", "what a pill or tab says (default Ask)")
+	lPanel := fs.String("panel", "", "float, over the corner, or side, docked beside the page (default float)")
+	lPages := fs.String("launcher-pages", "", "comma-separated page prefixes it appears on (default: every page)")
+	suggest := fs.String("suggest", "", "questions offered before the first, separated by |")
+	nudge := fs.String("nudge", "", "a short line shown beside the button once a visit (default: none)")
+	nudgeAfter := fs.Int("nudge-after", 0, "seconds on a page before the nudge (default 20)")
+	nudgePages := fs.String("nudge-pages", "", "comma-separated page prefixes the nudge may show on")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
@@ -149,6 +159,17 @@ func assistantAdd(root string, args []string) error {
 		Handoff: *handoffOn, HandoffDays: *handoffDays,
 		Documents: splitList(*documents), Embed: splitList(*embed),
 	}
+	if *launcher {
+		var qs []string
+		for _, q := range strings.Split(*suggest, "|") {
+			if q = strings.TrimSpace(q); q != "" {
+				qs = append(qs, q)
+			}
+		}
+		a.Launcher = &assistant.Launcher{Style: *lStyle, Side: *lSide, Label: *lLabel, Panel: *lPanel,
+			Pages: splitList(*lPages), Suggestions: qs, Nudge: *nudge, NudgeAfter: *nudgeAfter,
+			NudgePages: splitList(*nudgePages)}
+	}
 	caller := resolveCaller(root, flagToken)
 	err := saveAssistant(root, caller, "declare", a.Name, func(s *assistant.Set) error {
 		if old, ok := s.Get(a.Name); ok {
@@ -167,6 +188,9 @@ func assistantAdd(root string, args []string) error {
 		w.Human("  %sserved at /ask/%s once the site is running%s\n", dim, a.Name, reset)
 		if a.Static {
 			w.Human("  %sstatic copies carry it, with the passages it answers from%s\n", dim, reset)
+		}
+		if a.Launcher != nil {
+			w.Human("  %sits button is on the site's pages%s\n", dim, reset)
 		}
 	} else {
 		w.Human("  %snot public; try it with quilzo assistant ask %s \"...\"%s\n",

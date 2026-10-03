@@ -112,8 +112,8 @@ func (st *Site) handoffOpen(w http.ResponseWriter, r *http.Request, a assistant.
 		st.Assistants.HandoffEvent("handoff.open", a.Name, id, sourceOf(r))
 	}
 	to := "/ask/" + a.Name + "/c/" + secret
-	if r.PostFormValue("embed") == "1" {
-		to += "?embed=1"
+	if e, panel := embedMode(r.PostFormValue("embed")); e {
+		to += "?embed=" + map[bool]string{true: "panel", false: "1"}[panel]
 	}
 	http.Redirect(w, r, to, http.StatusSeeOther)
 }
@@ -125,6 +125,7 @@ type conversationView struct {
 	Messages  []handoff.Message
 	Closed    bool
 	Embedded  bool
+	Panel     bool
 	Problem   string
 	Days      int
 	Count     int
@@ -160,8 +161,8 @@ func (st *Site) handoffConversation(w http.ResponseWriter, r *http.Request,
 	h.Set("X-Content-Type-Options", "nosniff")
 
 	self := "/ask/" + a.Name + "/c/" + secret
-	embedded := r.URL.Query().Get("embed") == "1"
-	view := conversationView{Assistant: a, Self: self, Embedded: embedded,
+	embedded, panel := embedMode(r.URL.Query().Get("embed"))
+	view := conversationView{Assistant: a, Self: self, Embedded: embedded, Panel: panel,
 		Days: a.Keep()}
 
 	switch r.Method {
@@ -180,10 +181,10 @@ func (st *Site) handoffConversation(w http.ResponseWriter, r *http.Request,
 			http.Error(w, "that could not be read", http.StatusBadRequest)
 			return
 		}
-		embedded = r.PostFormValue("embed") == "1"
+		embedded, panel = embedMode(r.PostFormValue("embed"))
 		back := self
 		if embedded {
-			back += "?embed=1"
+			back += "?embed=" + map[bool]string{true: "panel", false: "1"}[panel]
 		}
 		if r.PostFormValue("end") != "" {
 			if err := store.Close(a.Name, id, "", time.Now()); err != nil {
@@ -215,9 +216,9 @@ func (st *Site) handoffConversation(w http.ResponseWriter, r *http.Request,
 		c = c2
 	}
 	view.Messages, view.Closed, view.Count = c.Messages, c.Closed, len(c.Messages)
-	view.Embedded = embedded
+	view.Embedded, view.Panel = embedded, panel
 	h.Set("Content-Type", "text/html; charset=utf-8")
-	allowFraming(h, a.Embed)
+	allowFraming(h, a.Embed, view.Panel)
 	if n, err := newNonce(); err == nil {
 		view.Nonce = n
 		allowLiveScript(h, n)
@@ -279,14 +280,14 @@ var conversationTemplate = template.Must(template.New("conversation").Parse(`<!d
 <p class="qz-waiting qz-small" data-waiting>Somebody will reply here. You can leave this page and come back to it.</p>
 {{if .Problem}}<p class="qz-problem" role="alert">{{.Problem}}</p>{{end}}
 <form method="post" action="{{.Self}}" class="qz-ask-form">
-  {{if .Embedded}}<input type="hidden" name="embed" value="1">{{end}}
+  {{if .Embedded}}<input type="hidden" name="embed" value="{{if .Panel}}panel{{else}}1{{end}}">{{end}}
   <label for="message">Add to the conversation</label>
   <textarea id="message" name="message" rows="3" maxlength="2000" required></textarea>
   <button type="submit">Send</button>
 </form>
-<p class="qz-actions"><a class="qz-button-quiet" href="{{.Self}}{{if .Embedded}}?embed=1{{end}}">Check for a reply</a></p>
+<p class="qz-actions"><a class="qz-button-quiet" href="{{.Self}}{{if .Embedded}}?embed={{if .Panel}}panel{{else}}1{{end}}{{end}}">Check for a reply</a></p>
 <form method="post" action="{{.Self}}" class="qz-end">
-  {{if .Embedded}}<input type="hidden" name="embed" value="1">{{end}}
+  {{if .Embedded}}<input type="hidden" name="embed" value="{{if .Panel}}panel{{else}}1{{end}}">{{end}}
   <button type="submit" name="end" value="1" class="qz-button-quiet">End this conversation</button>
 </form>
 {{end}}

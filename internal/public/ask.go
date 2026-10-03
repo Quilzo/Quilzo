@@ -127,7 +127,10 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		view.Greeting = "Ask a question about this site."
 	}
 
-	view.Embedded = r.URL.Query().Get("embed") == "1"
+	view.Embedded, view.Panel = embedMode(r.URL.Query().Get("embed"))
+	if a.Launcher != nil {
+		view.Suggestions = a.Launcher.Suggestions
+	}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
 		if a.Static && r.URL.Query().Get("copy") == staticCopy {
@@ -152,7 +155,7 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		}
 		view.Question = r.PostFormValue("q")
 		view.Previous = r.PostFormValue("prev")
-		view.Embedded = r.PostFormValue("embed") == "1"
+		view.Embedded, view.Panel = embedMode(r.PostFormValue("embed"))
 		if !st.answer(w, r, a, &view) {
 			return
 		}
@@ -273,13 +276,36 @@ type askView struct {
 	Question  string
 	Previous  string
 	Embedded  bool
-	Answer    *assistant.Answer
-	Sources   []askSource
-	Offer     *askOffer
-	Problem   string
+	// Panel is the conversation opened beside a page of this site by its
+	// launcher: framed by this site only, and its links go to the page.
+	Panel bool
+	// Suggestions are questions offered before the first is asked.
+	Suggestions []string
+	Answer      *assistant.Answer
+	Sources     []askSource
+	Offer       *askOffer
+	Problem     string
 	// Handoff is where the "talk to a person" form posts, when this
 	// assistant may hand over.
 	Handoff string
+}
+
+// EmbedValue is how the page was framed, carried on its forms: "panel" for
+// the launcher's, "1" for another site's, nothing for neither.
+func (v askView) EmbedValue() string {
+	switch {
+	case v.Panel:
+		return "panel"
+	case v.Embedded:
+		return "1"
+	}
+	return ""
+}
+
+// embedMode reads the embed parameter: framed at all, and framed as the
+// launcher's panel.
+func embedMode(v string) (embedded, panel bool) {
+	return v == "1" || v == "panel", v == "panel"
 }
 
 type askSource struct {
@@ -372,7 +398,7 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 	// Never cached: an answer is to one person's question.
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
-	allowFraming(h, v.Assistant.Embed)
+	allowFraming(h, v.Assistant.Embed, v.Panel)
 
 	pages, hashes, err := st.pages()
 	if err == nil {
@@ -440,7 +466,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 <link rel="stylesheet" href="/ask.css">
 {{.Icon}}</head>
 <body class="qz-ask{{if .V.Embedded}} qz-embed{{end}}"><main>
-{{if .V.Embedded}}<p class="qz-embed-title">{{.V.Assistant.Title}}</p>{{else}}<h1>{{.V.Assistant.Title}}</h1>{{end}}
+{{if .V.Panel}}<h1 class="qz-sr">{{.V.Assistant.Title}}</h1>{{else if .V.Embedded}}<p class="qz-embed-title">{{.V.Assistant.Title}}</p>{{else}}<h1>{{.V.Assistant.Title}}</h1>{{end}}
 {{if .V.Answer}}
 <section class="qz-turn" aria-label="Your question">
   <p class="qz-q">{{.V.Question}}</p>
@@ -450,12 +476,12 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
   {{else}}{{range .V.Answer.Kept}}<p>{{.Text}}{{range .Cites}} <sup><a href="#src-{{.}}">[{{.}}]</a></sup>{{end}}</p>{{end}}{{end}}
   {{if .V.Sources}}
   <h2>Sources</h2>
-  <ol class="qz-sources">{{range .V.Sources}}<li id="src-{{.N}}" value="{{.N}}"><a href="{{.Href}}"{{if $.V.Embedded}} target="_blank" rel="noopener"{{end}}>{{.Title}}</a></li>{{end}}</ol>
+  <ol class="qz-sources">{{range .V.Sources}}<li id="src-{{.N}}" value="{{.N}}"><a href="{{.Href}}"{{if $.V.Panel}} target="_top"{{else if $.V.Embedded}} target="_blank" rel="noopener"{{end}}>{{.Title}}</a></li>{{end}}</ol>
   {{end}}
 </section>
 {{with .V.Offer}}
 <section class="qz-offer" aria-label="Something I can help with">
-  {{if eq .Kind "link"}}<p><a class="qz-button" href="{{.Href}}"{{if $.V.Embedded}} target="_blank" rel="noopener"{{end}}>{{.Label}}</a></p>
+  {{if eq .Kind "link"}}<p><a class="qz-button" href="{{.Href}}"{{if $.V.Panel}} target="_top"{{else if $.V.Embedded}} target="_blank" rel="noopener"{{end}}>{{.Label}}</a></p>
   {{else}}
   <h2>{{.Label}}</h2>
   <p>I have filled in what I could. Check it, change anything that is
@@ -477,6 +503,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 {{end}}
 {{else}}
 <p class="qz-greeting">{{.V.Greeting}}</p>
+{{if .V.Suggestions}}<ul class="qz-suggest" aria-label="Questions you could ask">{{range .V.Suggestions}}<li><a href="/ask/{{$.V.Assistant.Name}}?q={{.}}{{if $.V.EmbedValue}}&amp;embed={{$.V.EmbedValue}}{{end}}">{{.}}</a></li>{{end}}</ul>{{end}}
 {{end}}
 {{if .V.Problem}}<p class="qz-problem" role="alert">{{.V.Problem}}</p>{{end}}
 {{if and .V.Answer .V.Handoff}}
@@ -484,7 +511,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
   <summary>Talk to a person instead</summary>
   <form method="post" action="{{.V.Handoff}}">
     <input type="hidden" name="q" value="{{.V.Question}}">
-    {{if .V.Embedded}}<input type="hidden" name="embed" value="1">{{end}}
+    {{if .V.Embedded}}<input type="hidden" name="embed" value="{{.V.EmbedValue}}">{{end}}
     <p><label for="handoff-message">What would you like to ask?</label><br>
     <textarea id="handoff-message" name="message" rows="3" maxlength="2000" required>{{.V.Question}}</textarea></p>
     <p class="qz-small">Sending this starts a conversation that somebody at
@@ -497,7 +524,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 {{end}}
 <form method="post" action="/ask/{{.V.Assistant.Name}}" class="qz-ask-form">
   {{if .V.Answer}}<input type="hidden" name="prev" value="{{.V.Question}}">{{end}}
-  {{if .V.Embedded}}<input type="hidden" name="embed" value="1">{{end}}
+  {{if .V.Embedded}}<input type="hidden" name="embed" value="{{.V.EmbedValue}}">{{end}}
   <label for="q">{{if .V.Answer}}Ask another question{{else}}Your question{{end}}</label>
   <textarea id="q" name="q" rows="2" maxlength="1000" required{{if not .V.Embedded}} autofocus{{end}}></textarea>
   <button type="submit">Ask</button>
@@ -525,6 +552,10 @@ const askCSS = `.qz-ask main{max-width:42rem;margin:0 auto;padding:1.5rem 1rem 3
 .qz-small{font-size:.85em;opacity:.75;margin-top:1.5rem}
 .qz-embed main{padding:.75rem .75rem 1rem;max-width:none}
 .qz-embed-title{font-weight:700;margin:0 0 .5rem}
+.qz-embed h2{font-size:1rem;margin:1rem 0 .5rem}
+.qz-suggest{list-style:none;margin:.75rem 0 1rem;padding:0;display:flex;flex-direction:column;gap:.5rem}
+.qz-suggest a{display:block;padding:.6rem .9rem;border-radius:var(--radius-lg,16px);border:1px solid var(--outline-variant,#c4c7c5);text-decoration:none;color:inherit}
+.qz-suggest a:hover{background:color-mix(in srgb,currentColor 6%,transparent)}
 .qz-embed .qz-small{margin-top:.75rem}
 :focus-visible{outline:2px solid currentColor;outline-offset:2px}
 .qz-handoff{margin:1.2rem 0;padding:.8rem 1.1rem;border-radius:12px;border:1px dashed color-mix(in srgb,currentColor 35%,transparent)}
@@ -570,17 +601,19 @@ func (st *Site) askStylesheet(w http.ResponseWriter, r *http.Request) {
 // assistant.Origin when they were declared, so none can carry a wildcard or
 // end the directive early — and they are checked again here, because a
 // declaration file can be edited by hand.
-func allowFraming(h http.Header, origins []string) {
+func allowFraming(h http.Header, origins []string, self bool) {
 	var ok []string
 	for _, o := range origins {
 		if n, err := assistant.Origin(o); err == nil {
 			ok = append(ok, n)
 		}
 	}
-	if len(ok) == 0 {
+	// The launcher's panel is this site framing itself, and needs no
+	// declared origin; anything else needs one.
+	if len(ok) == 0 && !self {
 		return
 	}
-	value := "frame-ancestors 'self' " + strings.Join(ok, " ")
+	value := strings.TrimSpace("frame-ancestors 'self' " + strings.Join(ok, " "))
 	for _, name := range []string{"Content-Security-Policy",
 		"Content-Security-Policy-Report-Only"} {
 		cur := h.Get(name)
