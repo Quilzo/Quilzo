@@ -106,8 +106,10 @@ func (st *Site) searchPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	html = st.injectHead(html, searchPageName, hashes[searchPageName], body)
+	html = st.annotateTools(html)
 
 	h := w.Header()
+	st.originTrial(h)
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	// No caching, for the reason the JSON route gives: a results page cached by
 	// a proxy is a results page served to somebody who searched for something
