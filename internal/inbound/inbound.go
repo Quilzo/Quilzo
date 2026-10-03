@@ -38,6 +38,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"strconv"
 	"strings"
@@ -290,7 +291,9 @@ func OktaChallenge(r *http.Request) ([]byte, bool) {
 			return nil, false
 		}
 	}
-	return []byte(`{"verification":"` + v + `"}`), true
+	// Escaping changes none of those characters; it is here so that a
+	// later edit to the check above cannot turn the echo into markup.
+	return []byte(`{"verification":"` + html.EscapeString(v) + `"}`), true
 }
 
 // OktaDelivery is an event hook's body.
