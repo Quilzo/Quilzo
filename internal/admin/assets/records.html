@@ -24,7 +24,7 @@ which is what an application holds rather than what a page does.</p>
   <label class="check"><button type="submit">Search</button></label>
 </form>
 
-<p class="hint">{{.Total}} record(s) in {{.Selected}}</p>
+<p class="hint">{{plural .Total "record" "records"}} in {{.Selected}}</p>
 
 {{if .Records}}
 <div class="table-wrap">
@@ -74,7 +74,7 @@ which is what an application holds rather than what a page does.</p>
     </label>
   </div>
   <div class="row">
-    <label style="flex:1 1 100%">Fields
+    <label class="row-full">Fields
       <textarea name="fields" rows="{{if .Blank}}14{{else}}6{{end}}"
         spellcheck="false" aria-label="Fields"
         placeholder='{"hostname": "laptop-14", "encrypted": true}'>{{.Blank}}</textarea>

@@ -4,11 +4,11 @@
 <section class="card {{if .Allowed}}ok{{else}}warn{{end}}">
   <h2>Approval</h2>
   {{if not .Proposed}}
-  <p>This store requires <strong>{{.Need}}</strong> approval(s) before anything
+  <p>This store requires <strong>{{plural .Need "approval" "approvals"}}</strong> before anything
     is published, and nothing has been offered for review yet.</p>
   {{else}}
   <p>
-    <strong>{{.Have}} of {{.Need}}</strong> approval(s), on the content
+    <strong>{{.Have}} of {{plural .Need "approval" "approvals"}}</strong>, on the content
     proposed by <strong>{{.Author}}</strong>{{if .AuthorKind}}
     ({{.AuthorKind}}){{end}}.
     {{if not .Matches}}<span class="bad">The draft has moved since — these
@@ -31,7 +31,7 @@
   {{end}}
   {{if .Stale}}
   <p class="hint">
-    {{len .Stale}} earlier approval(s) no longer count, because the content
+    {{plural (len .Stale) "earlier approval" "earlier approvals"}} no longer count, because the content
     changed after they were given. An approval names the exact bytes it agreed
     to, so nothing had to detect the change.
   </p>
@@ -60,7 +60,7 @@
 {{with .Approval}}{{if and .Configured (not .Proposed)}}{{end}}{{end}}
 {{if .Expired}}
 <div class="card bad">
-  <p><strong>{{len .Expired}} page(s) are already past the date they stop
+  <p><strong>{{plural (len .Expired) "page is" "pages are"}} already past the date they stop
     being public.</strong> Publishing would put up content nobody can see.</p>
   <ul>{{range .Expired}}<li>{{.}}</li>{{end}}</ul>
 </div>
@@ -85,7 +85,7 @@
 {{if .Changes}}
 <div class="table-wrap">
 <table>
-  <caption>{{len .Changes}} change(s) between live and draft</caption>
+  <caption>{{plural (len .Changes) "change" "changes"}} between live and draft</caption>
   <thead><tr><th scope="col">Page</th><th scope="col">Change</th></tr></thead>
   <tbody>
   {{range .Changes}}<tr><th scope="row">{{.Path}}</th><td>{{.Kind}}</td></tr>{{end}}
@@ -99,7 +99,7 @@
   {{if eq .Blocking 0}}
     <p class="notice ok" role="status">No blocking failures.</p>
   {{else}}
-    <p class="notice bad" role="alert">{{.Blocking}} blocking failure(s). This content is unusable for someone.</p>
+    <p class="notice bad" role="alert">{{plural .Blocking "blocking failure" "blocking failures"}}. This content is unusable for someone.</p>
   {{end}}
   {{range .Reports}}
     {{if .Findings}}
@@ -127,7 +127,7 @@
 {{if .Unmarked}}
 <h2>Provenance</h2>
 <p class="notice bad" role="alert">
-  {{len .Unmarked}} page(s) have no usable provenance:
+  {{plural (len .Unmarked) "page has" "pages have"}} no usable provenance:
   {{range .Unmarked}}<code>{{.}}</code> {{end}}
 </p>
 <p><a href="/provenance">Record it</a> — Article 50 requires AI-generated

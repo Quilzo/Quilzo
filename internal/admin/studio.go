@@ -200,15 +200,17 @@ func drawAgent(m agent.Manifest) agentMap {
 	case m.HumanApproval:
 		person = "a person approves before anything it did is public"
 	}
-	out.Says = fmt.Sprintf("%s reads %d source(s) and may do %d thing(s), "+
-		"%d of which write; %s.", m.Name, len(reads), len(does), writes, person)
+	out.Says = fmt.Sprintf("%s reads %s and may do %s, "+
+		"%d of which write; %s.", m.Name, countOf(len(reads), "source", "sources"),
+		countOf(len(does), "thing", "things"), writes, person)
 	if asked > 0 {
 		if m.Autonomy != agent.AutonomyPropose && !m.HumanApproval {
 			person = "the rest goes ahead without one"
 		}
-		out.Says = fmt.Sprintf("%s reads %d source(s) and may do %d thing(s), "+
+		out.Says = fmt.Sprintf("%s reads %s and may do %s, "+
 			"%d of which write. It stops and asks a person before %d of "+
-			"them; %s.", m.Name, len(reads), len(does), writes, asked, person)
+			"them; %s.", m.Name, countOf(len(reads), "source", "sources"),
+			countOf(len(does), "thing", "things"), writes, asked, person)
 	}
 	return out
 }

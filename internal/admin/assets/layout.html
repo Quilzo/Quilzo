@@ -1,11 +1,12 @@
 {{define "head"}}<!doctype html>
-<html lang="en"{{if .Theme}} data-theme="{{.Theme}}"{{end}}{{if .BrandStyle}} style="{{.BrandStyle}}"{{end}}>
+<html lang="en"{{if .Theme}} data-theme="{{.Theme}}"{{end}}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>{{.Title}} — {{.Brand}}</title>
 <link rel="stylesheet" href="/style.css">
+{{if .BrandStyle}}<link rel="stylesheet" href="/brand.css">{{end}}
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#f8fafd" media="(prefers-color-scheme: light)">

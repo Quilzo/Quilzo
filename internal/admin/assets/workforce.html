@@ -12,7 +12,7 @@
 {{define "wfbars"}}<svg class="wfbars" viewBox="0 0 600 {{.H}}" role="img" aria-label="{{.Label}}">
 <g transform="translate(120 0)">{{range .Bars}}<g class="bar {{.Tone}}"><title>{{.Title}}</title>
 <text class="lbl" x="-12" y="{{.TextY}}" text-anchor="end">{{.Label}}</text>
-{{if .Href}}<a href="{{.Href}}">{{end}}<rect class="hit" x="0" y="{{.Y}}" width="440" height="{{.H}}"></rect>{{if .D}}<path d="{{.D}}"></path>{{end}}{{if .Href}}</a>{{end}}
+{{if .Href}}<a href="{{.Href}}" aria-label="{{.Title}}">{{end}}<rect class="hit" x="0" y="{{.Y}}" width="440" height="{{.H}}"></rect>{{if .D}}<path d="{{.D}}"></path>{{end}}{{if .Href}}</a>{{end}}
 <text class="val" x="{{.TextX}}" y="{{.TextY}}">{{.Value}}</text></g>{{end}}</g></svg>
 <details class="astable"><summary>Show as a table<span class="chev">{{icon "expand_more"}}</span></summary>
 <table><tbody>{{range .Bars}}<tr><th scope="row">{{.Label}}</th><td>{{.Value}}</td></tr>{{end}}</tbody></table></details>{{end}}
@@ -133,7 +133,7 @@
       <svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect>{{if .Meter}}<rect class="fill {{.Tone}}" width="{{.Meter}}" height="8" rx="4"></rect>{{end}}</svg>
       <span class="wf-points">{{.Points}}</span></td>
     <td>{{if .Top}}{{.Top}}{{else}}<span class="hint">nothing found</span>{{end}}</td>
-    <td>{{len .Factors}}{{if .Unknown}}, {{len .Unknown}} area(s) unknown{{end}}</td>
+    <td>{{len .Factors}}{{if .Unknown}}, {{plural (len .Unknown) "area" "areas"}} unknown{{end}}</td>
   </tr>{{end}}</tbody>
 </table></div>{{else}}<p>Nobody matches.</p>{{end}}
 
@@ -149,7 +149,7 @@
 {{with .Unplaced}}{{if or .Training .Phishing .Software .Vulns .Posture}}<p class="hint warn">Not
   attached to anybody or anything: {{.Training}} training, {{.Phishing}}
   phishing, {{.Software}} software, {{.Vulns}} vulnerability and {{.Posture}}
-  posture record(s).</p>{{end}}{{end}}
+  posture records.</p>{{end}}{{end}}
 {{range .Notes}}<p class="hint">{{.}}</p>{{end}}
 
 <details class="wf-how"><summary>How a score is made<span class="chev">{{icon "expand_more"}}</span></summary>

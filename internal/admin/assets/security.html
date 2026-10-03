@@ -7,7 +7,7 @@
   <p class="score {{.Band}}"><strong>{{.Report.Score}}</strong><span class="outof">/100</span></p>
   <p class="score-note">
     {{if .Report.Findings}}
-      {{range $sev, $n := .Report.Counts}}{{if $n}}<span class="pill {{$sev}}">{{$n}} {{$sev}}</span> {{end}}{{end}}
+      {{range $sev := severities}}{{with index $.Report.Counts $sev}}<span class="pill {{$sev}}">{{.}} {{$sev}}</span> {{end}}{{end}}
     {{else}}
       <span class="pill ok">No findings</span>
     {{end}}
@@ -77,7 +77,7 @@
 <p class="help">Most serious first.</p>
 {{range .Report.Findings}}
 <article class="finding {{.Severity}}">
-  <h3><span class="pill {{.Severity}}">{{.Severity}}</span> {{.Title}}</h3>
+  <h3><span class="pill {{.Severity}}">{{sentence .Severity}}</span> {{.Title}}</h3>
   <p>{{.Detail}}</p>
   {{if .Fix}}<p class="fix"><span class="label">Fix</span> <code>{{.Fix}}</code></p>{{end}}
   <p class="meta">

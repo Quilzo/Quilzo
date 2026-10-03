@@ -23,7 +23,7 @@
   <div class="table-wrap"><table>
     <thead><tr><th scope="col">Finding</th><th scope="col">Severity</th><th scope="col">Last seen</th><th scope="col">Points</th><th scope="col">Incident</th></tr></thead>
     <tbody>{{range .Parts}}<tr><th scope="row"><a href="/findings/{{.ID}}">{{.Title}}</a><br><span class="hint">{{.Source}}</span></th>
-      <td><span class="pill {{.Sev}}">{{.Sev}}</span></td><td>{{.Age}}</td><td>{{.Points}}</td>
+      <td><span class="pill {{.Sev}}">{{sentence .Sev}}</span></td><td>{{.Age}}</td><td>{{.Points}}</td>
       <td>{{if .Case}}<a href="/security/case/{{.Case}}"><code>{{.Case}}</code></a>{{else}}<span class="hint">none</span>{{end}}</td></tr>{{end}}</tbody>
   </table></div>
   {{if .Offer}}<details class="wf-how"><summary>These look like one thing: declare an incident<span class="chev">{{icon "expand_more"}}</span></summary>
@@ -34,7 +34,7 @@
     <p><label>Grade <select name="grade"><option value="sev2">sev2</option><option value="sev3" selected>sev3</option><option value="sev1">sev1</option><option value="sev4">sev4</option></select></label></p>
     {{if .Playbook}}<p><label><input type="checkbox" name="playbook" value="{{.Playbook}}" checked> Propose the playbook that fits the rules behind these: <strong>{{.PlaybookTitle}}</strong></label></p>{{end}}
     <p class="hint">Offered because there are several, from more than one
-      rule. It gathers the {{len .Offer}} finding(s) no incident has yet,
+      rule. It gathers the {{plural (len .Offer) "finding" "findings"}} no incident has yet,
       under the obligations set as this organisation's. Nothing is declared
       until you do it, and a playbook proposed here still needs approving.</p>
     <p><button type="submit">Declare the incident</button></p>

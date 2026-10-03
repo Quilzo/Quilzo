@@ -267,7 +267,7 @@ func TestAReachResultIsShownAsGroundsAndNotAsAVerdict(t *testing.T) {
 	body := get(t, srv, "/security/vuln/CVE-2026-1001", token).Body.String()
 	whole(t, body)
 	for _, want := range []string{"not named in its source",
-		"its dependencies were not read", "In 1 open place(s)",
+		"its dependencies were not read", "In 1 open place the",
 		"which was not checked"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the page lacks %q", want)
@@ -278,7 +278,7 @@ func TestAReachResultIsShownAsGroundsAndNotAsAVerdict(t *testing.T) {
 	}
 	used := get(t, srv, "/security/vuln/CVE-2026-1003", token).Body.String()
 	if !strings.Contains(used, "leftpad.Pad") || !strings.Contains(used, "main.go") ||
-		strings.Contains(used, "open place(s) the asset") {
+		(strings.Contains(used, "open place the asset") || strings.Contains(used, "open places the asset")) {
 		t.Error("a symbol the source uses is not shown as used, or was " +
 			"offered as grounds for dismissal")
 	}
@@ -332,7 +332,7 @@ func TestWithoutATableNoDecisionIsOfferedAndWithOneAMissingInputIsARange(t *test
 	body = get(t, srv, "/security/vulns", token).Body.String()
 	whole(t, body)
 	for _, want := range []string{`<th scope="col">SSVC</th>`, "depends on",
-		"2 asset(s) have no tag", "mdm:LAPTOP-1"} {
+		"2 assets have no tag", "mdm:LAPTOP-1"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the page lacks %q", want)
 		}
@@ -357,9 +357,9 @@ func TestWithoutATableNoDecisionIsOfferedAndWithOneAMissingInputIsARange(t *test
 		t.Fatalf("tag: %s", loc)
 	}
 	body = get(t, srv, "/security/vulns", token).Body.String()
-	if strings.Contains(body, "asset(s) have no tag") ||
+	if strings.Contains(body, "have no tag") ||
 		!strings.Contains(body, "staff laptops travel") ||
-		!strings.Contains(body, "2 asset(s)") {
+		!strings.Contains(body, "2 assets") {
 		t.Error("the tag is not shown, or the assets still read as untagged")
 	}
 	one := get(t, srv, "/security/vuln/CVE-2026-1002", token).Body.String()

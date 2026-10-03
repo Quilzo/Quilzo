@@ -3,8 +3,8 @@
 
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
 
-<p class="lead">{{.Scanned}} file(s) and field(s) scanned, {{len .Findings}}
-finding(s).</p>
+<p class="lead">{{.Scanned}} files and fields scanned,
+{{plural (len .Findings) "finding" "findings"}}.</p>
 
 {{if not .Findings}}
 <p>Nothing matched. That is not the same as being safe: these are patterns

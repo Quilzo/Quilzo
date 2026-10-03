@@ -25,7 +25,7 @@
 </form>
 
 {{if .Proposal}}
-<h2>Proposed: {{len .Names}} page(s)</h2>
+<h2>Proposed: {{plural (len .Names) "page" "pages"}}</h2>
 {{if .Retried}}<p class="hint">Asked again, with the findings from the last
   attempt.</p>{{end}}
 {{if .Proposal.Notes}}<p>{{.Proposal.Notes}}</p>{{end}}

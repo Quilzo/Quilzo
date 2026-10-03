@@ -398,9 +398,14 @@ func Plan(people []Person, ledger []Sent, c Config, now time.Time) (
 	every := time.Duration(c.EveryDays) * 24 * time.Hour
 	for _, p := range people {
 		if t, ok := last[p.Key]; ok && now.Sub(t) < every {
+			ago := "today"
+			if d := int(now.Sub(t).Hours() / 24); d == 1 {
+				ago = "yesterday"
+			} else if d > 1 {
+				ago = fmt.Sprintf("%d days ago", d)
+			}
 			held = append(held, Held{Name: p.Name, Why: fmt.Sprintf(
-				"reminded %d day(s) ago; next after %d", int(now.Sub(t).Hours()/24),
-				c.EveryDays)})
+				"reminded %s; next after %d", ago, c.EveryDays)})
 			continue
 		}
 		var keys []string

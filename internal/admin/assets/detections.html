@@ -24,7 +24,7 @@
 {{if .Rows}}<div class="table-wrap"><table class="wf-people dt-rules">
   <thead><tr><th scope="col">Rule</th><th scope="col">Ring</th><th scope="col">Raised</th><th scope="col">Verdicts</th><th scope="col">How good</th><th scope="col">Last fired</th></tr></thead>
   <tbody>{{range .Rows}}<tr>
-    <th scope="row">{{.Title}}<br><code>{{.ID}}</code> <span class="pill {{.Severity}}">{{.Severity}}</span></th>
+    <th scope="row">{{.Title}}<br><code>{{.ID}}</code> <span class="pill {{.Severity}}">{{sentence .Severity}}</span></th>
     <td><span class="wf-word {{.RingTone}}">{{.S.Ring}}</span></td>
     <td>{{if .S.Findings}}{{.S.Findings}} <span class="hint">({{.S.Fired}} times)</span>{{else}}<span class="hint">never</span>{{end}}{{if .S.Suppressed}}<br><span class="hint">{{.S.Suppressed}} hidden</span>{{end}}</td>
     <td>{{if .S.Findings}}<svg class="dt-bar" viewBox="0 0 200 10" role="img" aria-label="{{.S.Real}} real, {{.S.False}} false, {{.S.Benign}} benign, {{.S.Undecided}} undecided">

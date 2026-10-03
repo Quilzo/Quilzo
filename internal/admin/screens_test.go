@@ -173,6 +173,7 @@ var notAScreen = map[string]string{
 	"/auth/callback":         "receives one, and is never opened directly",
 	"/signout":               "clears the cookie and redirects; there is nothing to render",
 	"/style.css":             "is a stylesheet",
+	"/brand.css":             "is a stylesheet",
 	"/admin.js":              "is the interface's script",
 	"/fonts/quilzo-ui.woff2": "is the interface's typeface",
 	"/icon.svg":              "an image, not a screen",

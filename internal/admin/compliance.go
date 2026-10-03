@@ -166,7 +166,7 @@ func complianceRow(c estate.Compliance, now time.Time) deviceRow {
 		r.Age = lifecycle.Words(a.Age)
 		r.AgeTitle = fmt.Sprintf("%s came out on %s", a.Cycle.Label, a.Cycle.Released)
 		if a.Newer > 0 {
-			r.AgeTitle += fmt.Sprintf("; %d newer release(s) since", a.Newer)
+			r.AgeTitle += "; " + countOf(a.Newer, "newer release", "newer releases") + " since"
 		}
 	}
 	switch a.Currency {

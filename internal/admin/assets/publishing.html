@@ -31,7 +31,7 @@ what production serves is the bytes that were checked — not a copy of them.</p
       {{else if $e.Ahead}}<span class="ok">ahead of the step before it, which
         holds nothing</span>
       {{else if $e.Same}}<span class="ok">up to date</span>
-      {{else}}<span class="warn">{{$e.Pending}} change(s) waiting</span>{{end}}
+      {{else}}<span class="warn">{{plural $e.Pending "change" "changes"}} waiting</span>{{end}}
     </td>
     {{if $.CanPromote}}
     <td>

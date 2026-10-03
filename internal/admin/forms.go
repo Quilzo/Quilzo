@@ -329,7 +329,7 @@ func (s *Server) handleFormPurge(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditPub(p, "form.purge", "/"+name,
 		map[string]string{"removed": strconv.Itoa(n)})
-	s.formRedirect(w, r, fmt.Sprintf("removed %d submission(s)", n), "")
+	s.formRedirect(w, r, "removed "+countOf(n, "submission", "submissions"), "")
 }
 
 // handleFormExport writes submissions as CSV.
@@ -451,7 +451,7 @@ func (s *Server) handleFormExpire(w http.ResponseWriter, r *http.Request) {
 	s.auditPub(p, "form.expire", "/", map[string]string{
 		"removed": strconv.Itoa(n)})
 	s.formRedirect(w, r, fmt.Sprintf(
-		"%d submission(s) were past their retention period and are gone", n), "")
+		"%s past their retention period and gone", countOf(n, "submission was", "submissions were")), "")
 }
 
 func (s *Server) formWriter(w http.ResponseWriter, r *http.Request,

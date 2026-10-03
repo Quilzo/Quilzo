@@ -171,7 +171,7 @@ func TestAFastClockDoesNotHideAStoppedSource(t *testing.T) {
 		t.Fatal("the stopped source with a fast clock was listed after the " +
 			"one still sending")
 	}
-	if !strings.Contains(body, "1 event(s) dated after they arrived") {
+	if !strings.Contains(body, "1 event dated after they arrived") {
 		t.Fatal("a clock running ahead was not reported")
 	}
 }
@@ -251,7 +251,7 @@ func TestAPageLoadReadsABoundedAmount(t *testing.T) {
 		t.Fatalf("the page did not say it stopped short:\n%s", body)
 	}
 	// The totals still describe the whole store.
-	if !strings.Contains(body, "3 event(s)") {
+	if !strings.Contains(body, "3 events") {
 		t.Fatal("the count stopped describing the whole store")
 	}
 }

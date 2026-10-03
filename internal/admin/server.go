@@ -66,10 +66,13 @@ import (
 	"net/http"
 	"net/url"
 	stdpath "path"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -422,6 +425,21 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 		"toneicon":  toneIcon,
 		"iconNames": icons.Names,
 		"pct":       func(f float64) float64 { return f * 100 },
+		// sentence capitalises the first letter, for a word stored in
+		// lower case and shown on its own: a severity, a state.
+		"sentence": func(v any) string {
+			s := fmt.Sprint(v)
+			if s == "" {
+				return s
+			}
+			r, n := utf8.DecodeRuneInString(s)
+			return string(unicode.ToUpper(r)) + s[n:]
+		},
+		// severities is the order severities are listed in: worst first,
+		// whatever order a map would range them in.
+		"severities": func() []string { return []string{"critical", "high", "medium", "low", "info"} },
+		// plural is a count with its noun: "1 advisory", "8 advisories".
+		"plural": countOf,
 		// deref reads a yes or no a tool may not have given; the template
 		// checks for nil before calling it.
 		"deref": func(b *bool) bool { return b != nil && *b },
@@ -470,6 +488,25 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 	}
 	return &Server{Store: s, Policy: p, Tokens: ts, Layouts: layouts,
 		Records: collection.NewCache(), tpl: t, flashKey: newFlashKey()}, nil
+}
+
+// countOf is a count with its noun, for a template whose count may be any
+// integer type: "1 advisory", "8 advisories", "0 pages".
+func countOf(n any, one, many string) string {
+	v := reflect.ValueOf(n)
+	var i int64
+	switch v.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		i = v.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		i = int64(v.Uint())
+	default:
+		return fmt.Sprint(n) + " " + many
+	}
+	if i == 1 {
+		return "1 " + one
+	}
+	return strconv.FormatInt(i, 10) + " " + many
 }
 
 // errNoCredential means nothing was presented, as distinct from something
@@ -1271,6 +1308,7 @@ func (s *Server) Handler() http.Handler {
 	// answering for documentation it no longer has and make a dead external
 	// site look like a broken admin.
 	mux.HandleFunc("/style.css", s.handleCSS)
+	mux.HandleFunc("/brand.css", s.handleBrandCSS)
 	mux.HandleFunc("/admin.js", s.handleJS)
 	mux.HandleFunc("/fonts/quilzo-ui.woff2", s.handleFont)
 	mux.HandleFunc("/fonts/", s.handleSiteFont)
@@ -1530,6 +1568,20 @@ func (s *Server) handleCSS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	_, _ = w.Write(b)
+}
+
+// handleBrandCSS serves the operator's accent as a stylesheet.
+//
+// It used to travel in a style attribute on the root element, which the
+// admin's own policy (style-src 'self', no 'unsafe-inline') refuses: the
+// colour was validated, stored and never shown. A stylesheet from this
+// origin is what the policy allows, and Style still re-checks the value.
+func (s *Server) handleBrandCSS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	if css := s.Brand.Style(); css != "" {
+		_, _ = io.WriteString(w, ":root { "+string(css)+"; }\n")
+	}
 }
 
 // handleFont serves the interface's typeface. See assets/fonts/README.md.

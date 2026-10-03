@@ -161,6 +161,7 @@ func playgroundHTML(nonce, who, theme string, routes []Route) string {
 <meta name="color-scheme" content="light dark">
 <title>API playground</title>
 <link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
 <style>
   /* Native controls follow the theme. Without this the select's dropdown is
      drawn with the OS light palette and inherits a light text colour, which

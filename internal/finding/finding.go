@@ -401,7 +401,11 @@ func Rank(in []Finding, now time.Time) []Finding {
 func (f Finding) Why(now time.Time) string {
 	parts := []string{fmt.Sprintf("severity %d", f.Severity)}
 	if d := int(f.Age(now).Hours() / 24); d > 0 {
-		parts = append(parts, fmt.Sprintf("open %d day(s)", d))
+		unit := "days"
+		if d == 1 {
+			unit = "day"
+		}
+		parts = append(parts, fmt.Sprintf("open %d %s", d, unit))
 	}
 	if f.Seen > 1 {
 		parts = append(parts, fmt.Sprintf("seen %d times", f.Seen))

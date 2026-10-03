@@ -18,7 +18,7 @@
   <p class="label">This site's identifier</p>
   <p><code>{{.Root}}</code></p>
   <p class="hint">
-    {{len .Files}} file(s), {{.Total}} bytes, {{.Blocks}} block(s). Computed
+    {{plural (len .Files) "file" "files"}}, {{.Total}} bytes, {{plural .Blocks "block" "blocks"}}. Computed
     here, from your bytes, before anything is uploaded anywhere.
   </p>
 </div>

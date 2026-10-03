@@ -19,7 +19,7 @@
 
 <dl class="stats-row">{{range .Tiles}}<div{{if .Tone}} class="{{.Tone}}"{{end}}><dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{if .Note}}<dd class="wf-note">{{.Note}}</dd>{{end}}</div>{{end}}</dl>
 {{if .Concentration}}<p><strong>{{.Concentration}}</strong></p>{{end}}
-<p class="hint">{{.AdvisoryCount}} advisory(ies), loaded {{.AdvisoriesAge}}, against {{.ComponentCount}} installed component(s), loaded {{.InventoryAge}}.</p>
+<p class="hint">{{plural .AdvisoryCount "advisory" "advisories"}}, loaded {{.AdvisoriesAge}}, against {{plural .ComponentCount "installed component" "installed components"}}, loaded {{.InventoryAge}}.</p>
 
 <h2>What to change</h2>
 {{if .Upgrades}}<div class="table-wrap"><table class="wf-people">
@@ -36,7 +36,7 @@
   </tr>{{end}}</tbody></table></div>
 <p class="hint">"Move to" is the lowest version that clears everything listed
   beside it, checked against every advisory loaded, not only the open ones.
-  Risk removed is that change's share of the expected exploitation.{{if .MoreUpgrades}} {{.MoreUpgrades}} more package(s) are not shown; <code>quilzo vuln plan --top 500</code> lists them.{{end}}</p>
+  Risk removed is that change's share of the expected exploitation.{{if .MoreUpgrades}} {{plural .MoreUpgrades "more package is" "more packages are"}} not shown; <code>quilzo vuln plan --top 500</code> lists them.{{end}}</p>
 {{else}}<p>Nothing is open.</p>{{end}}
 
 <h2>The queue</h2>
@@ -61,10 +61,10 @@
 <p class="hint">An SSVC decision needs two things no feed knows: how exposed
   a machine is, and what is lost if it is compromised. Where neither is
   recorded the decision is given as a range, not as a guess.</p>
-{{if .Untagged}}<p class="notice warn"><strong>{{.Untagged}} asset(s) have no tag.</strong> For example {{.UntaggedExample}}.</p>{{end}}
+{{if .Untagged}}<p class="notice warn"><strong>{{plural .Untagged "asset has" "assets have"}} no tag.</strong> For example {{.UntaggedExample}}.</p>{{end}}
 {{if .Tags}}<div class="table-wrap"><table>
   <thead><tr><th scope="col">Assets</th><th scope="col">Exposure</th><th scope="col">If it is lost</th><th scope="col">Why</th><th scope="col">By</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
-  <tbody>{{range .Tags}}<tr><th scope="row"><code>{{.Match}}</code><br><span class="hint">{{.Count}} asset(s)</span></th>
+  <tbody>{{range .Tags}}<tr><th scope="row"><code>{{.Match}}</code><br><span class="hint">{{plural .Count "asset" "assets"}}</span></th>
     <td>{{.Exposure}}</td><td>{{.Impact}}</td><td>{{.Because}}</td><td>{{.By}}<br><span class="hint">{{.When}}</span></td>
     <td><form method="post" action="/security/vulns/act"><input type="hidden" name="do" value="untag"><input type="hidden" name="match" value="{{.Match}}"><button type="submit" class="danger">Remove</button></form></td></tr>{{end}}</tbody>
 </table></div>{{end}}
@@ -105,7 +105,7 @@
 {{if .Decided}}<div class="table-wrap"><table>
   <thead><tr><th scope="col">Vulnerability</th><th scope="col">In</th><th scope="col">Decision</th><th scope="col">Why</th><th scope="col">By</th><th scope="col">Comes back</th></tr></thead>
   <tbody>{{range .Decided}}<tr><th scope="row"><a href="{{.Href}}">{{.ID}}</a></th>
-    <td><code>{{.Component}}</code><br><span class="hint">{{.Places}} place(s)</span></td>
+    <td><code>{{.Component}}</code><br><span class="hint">{{plural .Places "place" "places"}}</span></td>
     <td><span class="wf-word {{.Tone}}">{{.What}}</span></td><td>{{.Because}}</td>
     <td>{{.By}}{{if .Owner}}<br><span class="hint">owner: {{.Owner}}</span>{{end}}</td>
     <td>{{if .Until}}{{.Until}}<br><span class="hint">{{.Left}}</span>{{else}}<span class="hint">does not</span>{{end}}</td></tr>{{end}}</tbody>

@@ -313,7 +313,7 @@ func (s *Server) bulkRemove(w http.ResponseWriter, r *http.Request,
 		"by": p.Name, "pages": strings.Join(names, " "),
 	})
 	s.pagesBack(w, r, fmt.Sprintf(
-		"%d page(s) are out of the draft. They are still in every commit that "+
+		"%s out of the draft. They are still in every commit that "+
 			"had them, and publishing takes them off the live site.",
-		len(names)), "")
+		countOf(len(names), "page is", "pages are")), "")
 }

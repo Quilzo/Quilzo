@@ -18,7 +18,7 @@
 <div class="table-wrap"><table><tbody>
   <tr><th scope="row">About</th><td>{{.Campaigns}}</td></tr>
   <tr><th scope="row">Sent by</th><td>{{.Channels}}</td></tr>
-  <tr><th scope="row">At most</th><td>once every {{.Config.EveryDays}} day(s) to each person</td></tr>
+  <tr><th scope="row">At most</th><td>once every {{plural .Config.EveryDays "day" "days"}} to each person</td></tr>
   <tr><th scope="row">Only during</th><td>{{.Window}}{{if not .InHours}} <span class="hint">— outside it now</span>{{end}}</td></tr>
   <tr><th scope="row">Manager told</th><td>{{if .Config.EscalateAfter}}after {{.Config.EscalateAfter}} reminders over {{.Config.EscalateDays}} days, never about phishing{{else}}never{{end}}</td></tr>
   <tr><th scope="row">Signed</th><td>{{.Config.Signature}}</td></tr>

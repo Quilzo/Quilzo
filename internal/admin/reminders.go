@@ -156,7 +156,7 @@ func (s *Server) handleRemindersAct(w http.ResponseWriter, r *http.Request) {
 			back("", err.Error())
 			return
 		}
-		msg := fmt.Sprintf("%d reminder(s) sent.", sent)
+		msg := countOf(sent, "reminder", "reminders") + " sent."
 		if failed > 0 {
 			msg += fmt.Sprintf(" %d could not be sent; the list below says why.",
 				failed)
