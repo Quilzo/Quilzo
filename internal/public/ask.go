@@ -212,6 +212,8 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 	}
 	view.Answer = &ans
 	view.Sources = st.citedSources(ans)
+	view.Cards = st.cardsFor(view.Sources, ans)
+	view.FollowUps = followUps(a, view.Question, &ans, view.Sources)
 	if ans.Proposed != nil {
 		view.Offer = st.offerFor(*ans.Proposed)
 	}
@@ -281,10 +283,14 @@ type askView struct {
 	Panel bool
 	// Suggestions are questions offered before the first is asked.
 	Suggestions []string
-	Answer      *assistant.Answer
-	Sources     []askSource
-	Offer       *askOffer
-	Problem     string
+	// Cards are the cited pages with more to show than a title, and
+	// FollowUps the next questions worth asking. See askrich.go.
+	Cards     []askCard
+	FollowUps []string
+	Answer    *assistant.Answer
+	Sources   []askSource
+	Offer     *askOffer
+	Problem   string
 	// Handoff is where the "talk to a person" form posts, when this
 	// assistant may hand over.
 	Handoff string
@@ -444,6 +450,17 @@ func (st *Site) askThroughLayout(body any, hash string, r *http.Request, v askVi
 				"title": s.Title, "href": s.Href})
 		}
 		data["sources"] = srcs
+		var cards []any
+		for _, c := range v.Cards {
+			cards = append(cards, map[string]any{"title": c.Title, "href": c.Href,
+				"image": c.Image, "summary": c.Summary, "meta": c.Meta})
+		}
+		data["cards"] = cards
+		var fu []any
+		for _, q := range v.FollowUps {
+			fu = append(fu, q)
+		}
+		data["followups"] = fu
 	}
 	ctx["ask"] = data
 	_, layout, lerr := st.Layouts.For(body)
@@ -476,6 +493,14 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 <section class="qz-turn qz-a{{if .V.Answer.Refused}} qz-refused{{end}}" aria-live="polite" aria-label="Answer">
   {{if .V.Answer.Refused}}<p>{{.V.Answer.Text}}</p>
   {{else}}{{range .V.Answer.Kept}}<p>{{.Text}}{{range .Cites}} <sup><a href="#src-{{.}}">[{{.}}]</a></sup>{{end}}</p>{{end}}{{end}}
+  {{if .V.Cards}}
+  <ul class="qz-cards" aria-label="Pages this answer draws on">{{range .V.Cards}}<li class="qz-card">
+    {{if .Image}}<img src="{{.Image}}" alt="" loading="lazy" decoding="async">{{end}}
+    <a href="{{.Href}}"{{if $.V.Panel}} target="_top"{{else if $.V.Embedded}} target="_blank" rel="noopener"{{end}}>{{.Title}}</a>
+    {{if .Meta}}<p class="qz-card-meta">{{.Meta}}</p>{{end}}
+    {{if .Summary}}<p class="qz-small">{{.Summary}}</p>{{end}}
+  </li>{{end}}</ul>
+  {{end}}
   {{if .V.Sources}}
   <h2>Sources</h2>
   <ol class="qz-sources">{{range .V.Sources}}<li id="src-{{.N}}" value="{{.N}}"><a href="{{.Href}}"{{if $.V.Panel}} target="_top"{{else if $.V.Embedded}} target="_blank" rel="noopener"{{end}}>{{.Title}}</a></li>{{end}}</ol>
@@ -507,6 +532,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 <p class="qz-greeting">{{.V.Greeting}}</p>
 {{if .V.Suggestions}}<ul class="qz-suggest" aria-label="Questions you could ask">{{range .V.Suggestions}}<li><a href="/ask/{{$.V.Assistant.Name}}?q={{.}}{{if $.V.EmbedValue}}&amp;embed={{$.V.EmbedValue}}{{end}}">{{.}}</a></li>{{end}}</ul>{{end}}
 {{end}}
+{{if and .V.Answer .V.FollowUps}}<ul class="qz-suggest" aria-label="You could also ask">{{range .V.FollowUps}}<li><a href="/ask/{{$.V.Assistant.Name}}?q={{.}}{{if $.V.EmbedValue}}&amp;embed={{$.V.EmbedValue}}{{end}}">{{.}}</a></li>{{end}}</ul>{{end}}
 {{if .V.Problem}}<p class="qz-problem" role="alert">{{.V.Problem}}</p>{{end}}
 {{if and .V.Answer .V.Handoff}}
 <details class="qz-handoff"{{if .V.Answer.Refused}} open{{end}}>
@@ -555,6 +581,10 @@ const askCSS = `.qz-ask main{max-width:42rem;margin:0 auto;padding:1.5rem 1rem 3
 .qz-embed main{padding:.75rem .75rem 1rem;max-width:none}
 .qz-embed-title{font-weight:700;margin:0 0 .5rem}
 .qz-embed h2{font-size:1rem;margin:1rem 0 .5rem}
+.qz-cards{list-style:none;margin:1rem 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,11rem),1fr));gap:.75rem}
+.qz-card{display:flex;flex-direction:column;gap:.35rem;padding:.75rem;border-radius:var(--radius-lg,16px);border:1px solid var(--outline-variant,#c4c7c5);min-width:0}
+.qz-card img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-md,8px);max-width:100%}
+.qz-card a{font-weight:700}.qz-card p{margin:0}.qz-card-meta{font-weight:600}
 .qz-suggest{list-style:none;margin:.75rem 0 1rem;padding:0;display:flex;flex-direction:column;gap:.5rem}
 .qz-suggest a{display:block;padding:.6rem .9rem;border-radius:var(--radius-lg,16px);border:1px solid var(--outline-variant,#c4c7c5);text-decoration:none;color:inherit}
 .qz-suggest a:hover{background:color-mix(in srgb,currentColor 6%,transparent)}

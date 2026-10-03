@@ -931,3 +931,12 @@ figure { margin: 0; }
     animation: none !important;
   }
 }
+
+/* -- an answer above the search results ------------------------------------ */
+.answer { background: var(--surface-container-low); border: var(--border) solid var(--outline-variant);
+  border-radius: var(--radius-lg); padding: var(--space-5); margin-block: var(--space-4) var(--space-5);
+  display: flex; flex-direction: column; gap: var(--space-2); max-width: var(--measure); }
+.answer > .chip { align-self: start; }
+.answer p { margin: 0; }
+.answer sup a { text-decoration: none; }
+.answer-sources { margin: 0; padding-inline-start: 1.4em; font-size: var(--text-sm); }
