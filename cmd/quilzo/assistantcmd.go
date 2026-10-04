@@ -127,6 +127,8 @@ func assistantAdd(root string, args []string) error {
 	documents := fs.String("documents", "", "comma-separated media library ids it may read")
 	embed := fs.String("embed", "", "comma-separated sites that may embed it, like https://shop.example")
 	handoffOn := fs.Bool("handoff", false, "let a visitor ask for a person; the conversation goes to the inbox")
+	voice := fs.Bool("voice", false, "let visitors speak and listen, recognised and read on their own device")
+	translate := fs.Bool("translate", false, "answer in the visitor's language, translated on their own device")
 	handoffDays := fs.Int("handoff-days", 0, "days a handed-over conversation is kept after it last moves (default 30, at most 90)")
 	launcher := fs.Bool("launcher", false, "put it on the site's pages: a button in a corner that opens it beside the page (needs --public)")
 	lStyle := fs.String("launcher-style", "", "bubble, pill or tab (default bubble)")
@@ -156,7 +158,7 @@ func assistantAdd(root string, args []string) error {
 		Name: pos[0], Title: *title, Greeting: *greeting, Instructions: instr,
 		Pages: splitList(*pages), Exclude: splitList(*exclude),
 		Refusal: *refusal, Public: *public, Static: *static, UseModel: *model, Passages: *passages,
-		Handoff: *handoffOn, HandoffDays: *handoffDays,
+		Handoff: *handoffOn, HandoffDays: *handoffDays, Voice: *voice, Translate: *translate,
 		Documents: splitList(*documents), Embed: splitList(*embed),
 	}
 	if *launcher {

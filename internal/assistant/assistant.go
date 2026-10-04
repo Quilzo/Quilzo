@@ -69,6 +69,18 @@ type Assistant struct {
 	// document is knowledge the owner chose to quote from, not to publish.
 	// Extractive only, because a static host has no model to ask.
 	Static bool `json:"static,omitempty"`
+	// Voice lets a visitor ask by speaking and hear the answer read out,
+	// both on their own device: the microphone is offered only where the
+	// browser recognises speech on the device, and only local voices read.
+	// Nothing a visitor says reaches this server or anybody else's; what
+	// arrives is the question as text, as if typed.
+	Voice bool `json:"voice,omitempty"`
+	// Translate answers in the visitor's language: their browser translates
+	// the question into the site's language and the answer back, on the
+	// device, and says so. The answer is still the site's own, checked
+	// against its pages in the site's language; the translation is shown as
+	// one, with the original a click away.
+	Translate bool `json:"translate,omitempty"`
 	// Launcher puts the assistant on the site's pages: a button in a corner
 	// that opens it in a panel, without leaving the page. Nil is no launcher.
 	Launcher *Launcher `json:"launcher,omitempty"`

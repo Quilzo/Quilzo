@@ -57,3 +57,16 @@ func SVG(name, style string) string {
 	return `<svg class="icon" viewBox="0 -960 960 960" width="24" height="24" aria-hidden="true" focusable="false"><path d="` +
 		p[style] + `"/></svg>`
 }
+
+// Path is the icon's path data in a style, or "" when the name is not in
+// the set: for a script that draws the icon itself.
+func Path(name, style string) string {
+	p, ok := paths[name]
+	if !ok {
+		return ""
+	}
+	if !Valid(style) {
+		style = DefaultStyle
+	}
+	return p[style]
+}

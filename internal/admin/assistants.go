@@ -212,6 +212,8 @@ func (s *Server) handleAssistantSave(w http.ResponseWriter, r *http.Request) {
 			}
 			a.Embed = origins
 			a.Handoff = r.FormValue("handoff") == "1"
+			a.Voice = r.FormValue("voice") == "1"
+			a.Translate = r.FormValue("translate") == "1"
 			days, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("handoff_days")))
 			a.HandoffDays = days
 			a.Launcher = nil

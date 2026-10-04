@@ -406,6 +406,9 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 	h.Set("X-Content-Type-Options", "nosniff")
 	allowFraming(h, v.Assistant.Embed, v.Panel)
 	st.originTrial(h)
+	if wantsVoice(v.Assistant) {
+		allowScript(h, askVoiceHash)
+	}
 
 	pages, hashes, err := st.pages()
 	if err == nil {
@@ -423,7 +426,7 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 		// Built from an id checked against the library; see icon.go.
 		"Icon": template.HTML(st.iconLink()),
 		"V":    v, "Honeypot": form.Honeypot, "StampField": form.StampField,
-		"Tools": !st.ToolsOff,
+		"Tools": !st.ToolsOff, "Voice": st.voiceHTML(v.Assistant), "Lang": st.siteLang(),
 	})
 }
 
@@ -471,14 +474,22 @@ func (st *Site) askThroughLayout(body any, hash string, r *http.Request, v askVi
 	if rerr != nil {
 		return "", false
 	}
-	return st.annotateTools(st.injectHead(html, askPageName, hash, body)), true
+	out := st.annotateTools(st.injectHead(html, askPageName, hash, body))
+	if snippet := st.voiceSnippet(v.Assistant); snippet != "" {
+		if i := strings.LastIndex(out, "</body>"); i >= 0 {
+			out = out[:i] + snippet + out[i:]
+		} else {
+			out += snippet
+		}
+	}
+	return out, true
 }
 
 // askTemplate is the built-in conversation page. html/template, so every
 // value — the question, the answer, a page title, a pre-filled field — is
 // escaped for where it lands.
 var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+<html lang="{{.Lang}}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.V.Assistant.Title}}</title>
 <link rel="stylesheet" href="/site.css">
@@ -559,7 +570,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 </form>
 <p class="qz-small">{{.Disclosure}} Answers come from this site's pages, and
   every sentence links to where it came from. Nothing you ask is stored.</p>
-</main></body></html>`))
+</main>{{.Voice}}</body></html>`))
 
 // askCSS is the built-in page's stylesheet, served at /ask.css. Small and
 // inheriting from the site's own, so an assistant looks like the site it is
@@ -617,6 +628,18 @@ const askCSS = `.qz-ask main{max-width:42rem;margin:0 auto;padding:1.5rem 1rem 3
 .qz-notice{padding:.7rem 1rem;border-radius:8px;background:color-mix(in srgb,currentColor 7%,transparent)}
 .qz-danger{border-color:color-mix(in srgb,#b3261e 45%,transparent)}
 .qz-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.qz-ask-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+.qz-voice-btn{display:inline-flex;align-items:center;gap:.4rem;font:inherit;font-weight:600;padding:.45rem .95rem;border-radius:999px;border:1px solid color-mix(in srgb,currentColor 35%,transparent);background:transparent;color:inherit;cursor:pointer;min-height:2.5rem}
+.qz-voice-btn[aria-pressed=true]{background:color-mix(in srgb,currentColor 12%,transparent)}
+.qz-icon{width:1.25em;height:1.25em;fill:currentColor;flex:none}
+.qz-read,.qz-tr-offer{margin:.25rem 0 .5rem}
+.qz-speaking{background:color-mix(in srgb,currentColor 8%,transparent);border-radius:6px;box-shadow:0 0 0 4px color-mix(in srgb,currentColor 8%,transparent)}
+.qz-link{border:0;padding:0;min-height:0;background:none;text-decoration:underline;color:inherit;font:inherit;cursor:pointer}
+.qz-tr-note{margin:0 0 .5rem}
+.qz-voice-note{margin-top:0}
+.qz-voice-status{margin-top:.5rem}.qz-voice-status:empty{display:none}
+@media (prefers-reduced-motion:no-preference){.qz-mic[aria-pressed=true] .qz-icon{animation:qz-listen 1.2s ease-in-out infinite}}
+@keyframes qz-listen{50%{opacity:.35}}
 `
 
 func (st *Site) askStylesheet(w http.ResponseWriter, r *http.Request) {

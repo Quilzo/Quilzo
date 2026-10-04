@@ -32,13 +32,13 @@ var names = []string{
 	"description", "devices", "directions_car", "done_all", "download", "eco", "edit", "encrypted",
 	"favorite", "fingerprint", "fitness_center", "flight", "folder", "forum", "groups", "handshake",
 	"health_and_safety", "history", "home", "image", "insights", "inventory_2", "key", "language",
-	"lightbulb", "local_cafe", "local_shipping", "location_on", "lock", "mail", "map", "menu_book",
+	"lightbulb", "local_cafe", "local_shipping", "location_on", "lock", "mail", "map", "menu_book", "mic",
 	"music_note", "notifications", "open_in_new", "palette", "payments", "person", "pets",
 	"photo_camera", "psychology", "public", "receipt_long", "recycling", "redeem", "restaurant",
 	"rocket_launch", "savings", "schedule", "school", "science", "search", "security", "sell",
-	"settings", "shield", "shopping_cart", "smart_toy", "speed", "star", "storefront", "sunny",
+	"settings", "shield", "shopping_cart", "smart_toy", "speed", "star", "stop_circle", "storefront", "sunny",
 	"support_agent", "sync", "terminal", "thumb_up", "translate", "trending_up", "tune",
-	"verified", "videocam", "visibility", "water_drop", "wifi", "workspace_premium",
+	"verified", "videocam", "visibility", "volume_up", "water_drop", "wifi", "workspace_premium",
 }
 
 var styles = []struct{ key, dir, suffix string }{
