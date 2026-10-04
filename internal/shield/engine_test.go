@@ -37,7 +37,8 @@ func newRig(t *testing.T, pbs ...Playbook) *rig {
 		Record: func(action string, d map[string]string) {
 			r.records = append(r.records, action+" "+d["playbook"]+" "+d["mode"])
 		},
-		Now: func() time.Time { return r.clock },
+		Now:         func() time.Time { return r.clock },
+		CanLockdown: func() bool { return true },
 	}
 	return r
 }
@@ -133,11 +134,14 @@ func TestStagesEscalateWithinADayAndThenStartAgain(t *testing.T) {
 	if s := cross(); s.Stage != 1 {
 		t.Fatalf("first: stage %d", s.Stage)
 	}
-	if s := cross(); s.Stage != 2 || !strings.Contains(s.Did[0], "for 24 hours") {
+	if s := cross(); s.Stage != 2 || !strings.Contains(s.Did[0], "for 4 hours") {
 		t.Fatalf("second: stage %d %q", s.Stage, s.Did)
 	}
-	if s := cross(); s.Stage != 2 {
-		t.Fatalf("third stays at the last: stage %d", s.Stage)
+	if s := cross(); s.Stage != 3 || !strings.Contains(s.Did[0], "for 24 hours") {
+		t.Fatalf("third: stage %d %q", s.Stage, s.Did)
+	}
+	if s := cross(); s.Stage != 3 {
+		t.Fatalf("fourth stays at the last: stage %d", s.Stage)
 	}
 	r.clock = r.clock.Add(25 * time.Hour)
 	if s := cross(); s.Stage != 1 {
@@ -194,8 +198,10 @@ func TestTheHourlyLimitStopsAFloodOfSpoofedSignals(t *testing.T) {
 	if after := len(r.state(t).Responses); after != before || len(r.records) != 3 {
 		t.Fatalf("wrote %d more responses, %d records", after-before, len(r.records))
 	}
-	if len(r.notified) != 2 {
-		t.Fatalf("notified %d times", len(r.notified))
+	// The two the playbook asked for, and the limit itself: a playbook
+	// that has gone quiet is something a person must know.
+	if len(r.notified) != 3 || r.notified[2].Mode != "limited" {
+		t.Fatalf("notified %d times: %+v", len(r.notified), r.notified)
 	}
 	r.clock = r.clock.Add(61 * time.Minute)
 	if got := r.see("chatbot-injection", "203.0.113.4", ""); got[0].Mode != "act" {
@@ -312,22 +318,29 @@ func TestStepsThatCannotBeDoneSaySo(t *testing.T) {
 }
 
 func TestThisMachineAndTrustedNetworksAreNotBlockedByPlaybooks(t *testing.T) {
-	decoy := Builtins()[7]
-	if decoy.Name != "decoy-touched" {
-		t.Fatal(decoy.Name)
+	var decoy, lock Playbook
+	for _, pb := range Builtins() {
+		switch pb.Name {
+		case "decoy-touched":
+			decoy = pb
+		case "decoy-lockdown":
+			lock = pb
+		}
 	}
-	r := newRig(t, decoy)
+	lock.Mode = "act"
+	r := newRig(t, decoy, lock)
 	Trust(r.Root, "198.51.100.0/24", true, t0)
 	r.Guard.Refresh()
-	for _, a := range []string{"127.0.0.1", "198.51.100.7"} {
+	for _, a := range []string{"127.0.0.1", "10.1.2.3", "100.64.0.9", "fd00::1", "198.51.100.7"} {
 		got := r.see("decoy", a, "")
-		if len(got) != 1 || !strings.HasPrefix(got[0].Did[0], "did not block") {
+		if len(got) != 2 || !strings.HasPrefix(got[0].Did[0], "did not block") {
 			t.Fatalf("%s: %+v", a, got)
 		}
 		// Somebody inside with a stolen token still locks the admin.
-		if !strings.HasPrefix(got[0].Did[1], "locked the admin") || !strings.HasPrefix(got[0].Did[2], "froze publishing") {
-			t.Fatalf("%s: %q", a, got[0].Did)
+		if !strings.HasPrefix(got[1].Did[0], "locked the admin") {
+			t.Fatalf("%s: %q", a, got[1].Did)
 		}
+		r.clock = r.clock.Add(Cooldown)
 	}
 	for _, p := range r.state(t).Protections {
 		if p.Kind == Block {
@@ -336,25 +349,30 @@ func TestThisMachineAndTrustedNetworksAreNotBlockedByPlaybooks(t *testing.T) {
 	}
 }
 
-func TestEngineMemoryIsBounded(t *testing.T) {
+func TestEngineMemoryIsBoundedAndForgetsTheOldestFirst(t *testing.T) {
 	pb := injection()
 	r := newRig(t, pb)
-	r.Engine.counts = map[string][]time.Time{}
-	r.Engine.stages = map[string][]time.Time{}
-	r.Engine.hourly = map[string][]time.Time{}
+	r.see("chatbot-injection", "203.0.113.9", "help") // one real key, touched now
+	r.Engine.mu.Lock()
 	for i := 0; i <= maxKeys; i++ {
-		r.Engine.counts[fmt.Sprint(i)] = []time.Time{t0.Add(-48 * time.Hour)}
+		k := fmt.Sprint("old|", i)
+		r.Engine.counts[k] = []hit{{at: t0.Add(-48 * time.Hour)}}
+		r.Engine.touch[k] = t0.Add(-48*time.Hour + time.Duration(i))
 	}
-	r.see("chatbot-injection", "203.0.113.9", "help")
-	if n := len(r.Engine.counts); n != 1 {
-		t.Fatalf("old counts kept: %d", n)
+	r.Engine.mu.Unlock()
+	r.see("chatbot-injection", "203.0.113.10", "help")
+	r.Engine.mu.Lock()
+	defer r.Engine.mu.Unlock()
+	if n := len(r.Engine.touch); n > maxKeys*9/10+2 {
+		t.Fatalf("not swept: %d", n)
 	}
-	for i := 0; i <= maxKeys; i++ {
-		r.Engine.counts[fmt.Sprint(i)] = []time.Time{r.clock}
+	// What was touched lately survives; a flood of other keys does not
+	// wipe it.
+	if _, ok := r.Engine.counts["chatbot-injection|"+audit.Pseudonym(testKey, "203.0.113.9")]; !ok {
+		t.Fatal("a live key was forgotten for the flood")
 	}
-	r.see("chatbot-injection", "203.0.113.9", "help")
-	if n := len(r.Engine.counts); n > 1 {
-		t.Fatalf("fresh counts past the bound kept: %d", n)
+	if _, ok := r.Engine.touch["old|0"]; ok {
+		t.Fatal("the oldest key was kept")
 	}
 }
 
@@ -394,7 +412,14 @@ func TestDryRunAppliesAndWritesNothing(t *testing.T) {
 		signals = append(signals, Signal{Name: "chatbot-injection", Handle: handle, At: t0.Add(time.Duration(6-i) * time.Minute)})
 	}
 	signals = append(signals, Signal{Name: "admin-hunt", Handle: handle, At: t0})
+	// After 2h, when the block it would have made has ended, the source
+	// comes back.
+	for i := 0; i < 3; i++ {
+		signals = append(signals, Signal{Name: "chatbot-injection", Handle: handle, At: t0.Add(2*time.Hour + time.Duration(i)*time.Minute)})
+	}
 	got := DryRun(pb, signals)
+	// The four after the first crossing came while the source would have
+	// been blocked, so could not have arrived.
 	if len(got) != 2 || got[0].Stage != 1 || got[1].Stage != 2 || got[0].Key != handle {
 		t.Fatalf("%+v", got)
 	}

@@ -224,8 +224,13 @@ func TestAnUnreadableShieldIsAnError(t *testing.T) {
 	if _, _, err := Apply(root, ok(Freeze, ""), t0); err == nil {
 		t.Fatal("a broken file was overwritten")
 	}
-	if _, frozen := Frozen(root, t0); frozen {
-		t.Fatal("a broken file froze publishing")
+	// What is contained stays contained: an unreadable record may be
+	// holding a freeze or a paused agent.
+	if p, frozen := Frozen(root, t0); !frozen || p.Reason != Unreadable {
+		t.Fatalf("a broken file let publishing through: %+v", p)
+	}
+	if p, paused := Find(root, Agent, "triage", t0); !paused || p.Reason != Unreadable {
+		t.Fatalf("a broken file let a paused agent run: %+v", p)
 	}
 }
 
