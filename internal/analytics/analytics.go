@@ -39,6 +39,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/clientip"
 	"net"
 	"net/http"
 	"net/url"
@@ -161,10 +162,7 @@ func (c *Counter) roll() {
 
 // visitor is the day's hash for a request.
 func (c *Counter) visitor(r *http.Request) uint64 {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
+	host := clientip.AddrFrom(r)
 	h := sha256.New()
 	h.Write(c.salt)
 	h.Write([]byte(host))
@@ -435,10 +433,7 @@ func (c *Counter) Bucket(r *http.Request, key string, weights []int) int {
 	c.roll()
 	salt := c.salt
 	c.mu.Unlock()
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
+	host := clientip.AddrFrom(r)
 	h := sha256.New()
 	h.Write(salt)
 	h.Write([]byte(host))

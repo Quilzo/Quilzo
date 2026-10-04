@@ -70,20 +70,6 @@ type Federation struct {
 	Announced       func() string
 	RecordAnnounced func(commit string) error
 
-	// ClientAddr is the address a request came from, as the deployment can
-	// actually tell it.
-	//
-	// Nil means RemoteAddr, which is right when this process is the thing
-	// being connected to and wrong behind a reverse proxy — where it is the
-	// proxy's address for every server on the fediverse, so one chatty
-	// instance fills the inbox's single bucket and the rest are refused.
-	//
-	// Supplied rather than decided here, because whether a forwarded header
-	// can be believed is a fact about the deployment and not about this
-	// package. Believing one with nothing in front lets every caller pick
-	// their own bucket, which is a rate limit switched off.
-	ClientAddr func(r *http.Request) string
-
 	// Blocked reports whether an actor or its host is refused.
 	//
 	// Nil means nothing is blocked, which is where this started and is not a
@@ -666,15 +652,10 @@ func (st *Site) noteBlocked(actor, kind string) {
 	st.Federation.OnBlocked(actor, kind)
 }
 
-// clientAddr is the address to count a request against.
-func (st *Site) clientAddr(r *http.Request) string {
-	if st.Federation != nil && st.Federation.ClientAddr != nil {
-		if addr := st.Federation.ClientAddr(r); addr != "" {
-			return addr
-		}
-	}
-	return sourceOf(r)
-}
+// clientAddr is the address to count a request against: the client the
+// edge decided, which behind a named proxy is the remote instance and not
+// the proxy (internal/clientip).
+func (st *Site) clientAddr(r *http.Request) string { return sourceOf(r) }
 
 // signingHost is the host of the key a request claims to be signed with.
 //

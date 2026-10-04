@@ -5,6 +5,7 @@ package scim
 
 import (
 	"encoding/json"
+	"github.com/quilzo/quilzo/internal/clientip"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -60,12 +61,7 @@ func fail(w http.ResponseWriter, code int, scimType, detail string) {
 	reply(w, code, body)
 }
 
-func source(r *http.Request) string {
-	if i := strings.LastIndexByte(r.RemoteAddr, ':'); i > 0 {
-		return r.RemoteAddr[:i]
-	}
-	return r.RemoteAddr
-}
+func source(r *http.Request) string { return clientip.SourceFrom(r) }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	subj := throttle.Subject{Source: source(r)}

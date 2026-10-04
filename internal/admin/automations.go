@@ -9,8 +9,8 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/clientip"
 	"math/big"
-	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -77,24 +77,10 @@ type AutomationsAdmin struct {
 	Geo func() string
 }
 
-// clientAddr is the address a sign-in came from, for placing it. The
-// connection's address, unless admin.trusted_proxy says something in front
-// appends the client's to X-Forwarded-For, which anybody can otherwise
-// write. Only where a sign-in is judged to be uses this; the rate limits
-// key on the connection.
-func (s *Server) clientAddr(r *http.Request) string {
-	if s.Settings != nil && s.Settings.Load != nil {
-		if cfg, err := s.Settings.Load(); err == nil && cfg != nil && cfg.Bool("admin.trusted_proxy") {
-			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-				parts := strings.Split(xff, ",")
-				if ip := net.ParseIP(strings.TrimSpace(parts[len(parts)-1])); ip != nil {
-					return ip.String()
-				}
-			}
-		}
-	}
-	return sourceOf(r)
-}
+// clientAddr is the address a sign-in came from, for placing it: the
+// client the edge decided (internal/clientip), which believes a forwarded
+// address only from a proxy the deployment named.
+func (s *Server) clientAddr(r *http.Request) string { return clientip.AddrFrom(r) }
 
 // signInCheck puts a new session's sign-in to the automations, and marks
 // the session when they say it must prove its person. It says whether it

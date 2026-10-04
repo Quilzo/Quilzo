@@ -7,10 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/vector"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -355,13 +355,7 @@ func retryAfter(w http.ResponseWriter, d throttle.Decision) {
 // sourceOf is the address an attempt came from. RemoteAddr only: a forwarded
 // header is set by whatever is in front, and a throttle keyed on a value the
 // client controls is one the client switches off by varying it.
-func sourceOf(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
-}
+func sourceOf(r *http.Request) string { return clientip.SourceFrom(r) }
 
 func (s *Server) authenticate(r *http.Request) (*auth.Token, error) {
 	raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
