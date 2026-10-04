@@ -26,8 +26,8 @@
 //     and the command line on the machine never goes through any of this,
 //     so `quilzo shield lift --all` there is the way out of anything.
 //   - The admin's sign-in pages and the shield's own screen cannot be
-//     shielded, and lockdown never refuses a passkey, single sign-on or the
-//     break-glass token.
+//     shielded, and lockdown never refuses a passkey or single sign-on, or
+//     a token made after it began.
 //   - A bounded number are active at once, so a flood of spoofed signals
 //     cannot grow the list without limit.
 //
@@ -398,15 +398,4 @@ func Trust(root, network string, add bool, now time.Time) error {
 
 // Frozen reports whether publishing is frozen, read straight from the
 // store: for the one place that publishes, which has no guard of its own.
-func Frozen(root string, now time.Time) (Protection, bool) {
-	st, err := Load(root)
-	if err != nil {
-		return Protection{}, false
-	}
-	for _, p := range st.Active(now) {
-		if p.Kind == Freeze {
-			return p, true
-		}
-	}
-	return Protection{}, false
-}
+func Frozen(root string, now time.Time) (Protection, bool) { return Find(root, Freeze, "", now) }

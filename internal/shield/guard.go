@@ -86,6 +86,20 @@ func (g *Guard) Handle(addr string) string {
 	return audit.Pseudonym(g.Key, addr)
 }
 
+// handles are the handles an address may have in the audit log. The public
+// site has recorded an IPv6 source in brackets, as the connection names it,
+// and the admin without; a block taken from either log's handle holds.
+func (g *Guard) handles(a netip.Addr) []string {
+	if len(g.Key) == 0 {
+		return []string{}
+	}
+	out := []string{g.Handle(a.String())}
+	if a.Is6() {
+		out = append(out, g.Handle("["+a.String()+"]"))
+	}
+	return out
+}
+
 // trusted reports addresses that are never blocked: this machine and the
 // declared networks.
 func trusted(st *State, a netip.Addr) bool {
@@ -115,7 +129,7 @@ func (g *Guard) Blocked(addr, where string, now time.Time) (Protection, bool) {
 	if trusted(st, a) {
 		return Protection{}, false
 	}
-	handle := ""
+	var handles []string
 	asn := ""
 	for _, p := range st.Protections {
 		if p.Kind != Block || !p.ActiveAt(now) || (p.Where != All && p.Where != where) {
@@ -124,11 +138,13 @@ func (g *Guard) Blocked(addr, where string, now time.Time) (Protection, bool) {
 		kind, value, _ := strings.Cut(p.Target, ":")
 		switch kind {
 		case "source":
-			if handle == "" {
-				handle = g.Handle(a.String())
+			if handles == nil {
+				handles = g.handles(a)
 			}
-			if handle != "" && handle == value {
-				return p, true
+			for _, h := range handles {
+				if h == value {
+					return p, true
+				}
 			}
 		case "net":
 			if pfx, err := netip.ParsePrefix(value); err == nil && pfx.Contains(a) {

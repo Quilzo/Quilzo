@@ -486,3 +486,29 @@ func TestASteppedUpSessionIsRefusedEverywhere(t *testing.T) {
 	}
 	_ = plain
 }
+
+func TestUnknownTellsAGuessFromALateCredential(t *testing.T) {
+	ts := &TokenStore{}
+	now := time.Now()
+	secret, tok, err := ts.Issue("t", "dana", RoleAdmin, "", time.Hour, RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ts.Authenticate("qz_"+strings.Repeat("a", 52), now)
+	if !Unknown(err) || err.Error() != "no such token" {
+		t.Fatalf("a guess: %v", err)
+	}
+	if _, err = ts.Authenticate("hunter2", now); !Unknown(err) || err.Error() != "that is not a quilzo token (they start with qz_)" {
+		t.Fatalf("not a token: %v", err)
+	}
+	if _, err = ts.Authenticate(secret, time.Now().Add(2*time.Hour)); err == nil || Unknown(err) {
+		t.Fatalf("expired: %v", err)
+	}
+	ts.Revoke(tok.ID)
+	if _, err = ts.Authenticate(secret, now); err == nil || Unknown(err) {
+		t.Fatalf("revoked: %v", err)
+	}
+	if Unknown(nil) {
+		t.Fatal("no error is unknown")
+	}
+}
