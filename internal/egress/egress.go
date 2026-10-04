@@ -166,6 +166,14 @@ var Purposes = []Purpose{
 			"they need no connection from here",
 	},
 	{
+		Name: "sso",
+		What: "reading a SAML identity provider's metadata, when an " +
+			"administrator gives its address instead of the file",
+		Without: "metadata is pasted or given as a file instead. Signing in " +
+			"never fetches anything: the trusted certificates are stored " +
+			"when a person confirms them",
+	},
+	{
 		Name: "import",
 		What: "fetching a page or an image the operator asked to import",
 		Without: "importing by URL is refused. Importing from a file is not " +

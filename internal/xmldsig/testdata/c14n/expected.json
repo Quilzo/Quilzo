@@ -1,0 +1,2318 @@
+[
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [],
+  "inclusive": [],
+  "c14n": "<saml2p:Response xmlns:saml2p=\"urn:oasis:names:tc:SAML:2.0:protocol\" Destination=\"https://quilzo.example/saml/okta/acs\" ID=\"id1\" InResponseTo=\"_req1\" IssueInstant=\"2026-10-03T12:00:00.000Z\" Version=\"2.0\">\n  <saml2:Issuer xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>\n  <saml2p:Status><saml2p:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></saml2p:StatusCode></saml2p:Status>\n  <saml2:Assertion xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"id2\" IssueInstant=\"2026-10-03T12:00:00.000Z\" Version=\"2.0\">\n    <saml2:Issuer Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>\n    <saml2:Subject><saml2:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID></saml2:Subject>\n    <saml2:AttributeStatement>\n      <saml2:Attribute Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>\n    </saml2:AttributeStatement>\n  </saml2:Assertion>\n</saml2p:Response>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<saml2p:Response xmlns:saml2p=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" Destination=\"https://quilzo.example/saml/okta/acs\" ID=\"id1\" InResponseTo=\"_req1\" IssueInstant=\"2026-10-03T12:00:00.000Z\" Version=\"2.0\">\n  <saml2:Issuer xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>\n  <saml2p:Status><saml2p:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></saml2p:StatusCode></saml2p:Status>\n  <saml2:Assertion xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"id2\" IssueInstant=\"2026-10-03T12:00:00.000Z\" Version=\"2.0\">\n    <saml2:Issuer Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>\n    <saml2:Subject><saml2:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID></saml2:Subject>\n    <saml2:AttributeStatement>\n      <saml2:Attribute Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>\n    </saml2:AttributeStatement>\n  </saml2:Assertion>\n</saml2p:Response>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<saml2p:Response xmlns:saml2p=\"urn:oasis:names:tc:SAML:2.0:protocol\" Destination=\"https://quilzo.example/saml/okta/acs\" ID=\"id1\" InResponseTo=\"_req1\" IssueInstant=\"2026-10-03T12:00:00.000Z\" Version=\"2.0\">\n  <saml2:Issuer xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>\n  <saml2p:Status><saml2p:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></saml2p:StatusCode></saml2p:Status>\n  <saml2:Assertion xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"id2\" IssueInstant=\"2026-10-03T12:00:00.000Z\" Version=\"2.0\">\n    <saml2:Issuer Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>\n    <saml2:Subject><saml2:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID></saml2:Subject>\n    <saml2:AttributeStatement>\n      <saml2:Attribute Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>\n    </saml2:AttributeStatement>\n  </saml2:Assertion>\n</saml2p:Response>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<saml2p:Response xmlns:saml2p=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" Destination=\"https://quilzo.example/saml/okta/acs\" ID=\"id1\" InResponseTo=\"_req1\" IssueInstant=\"2026-10-03T12:00:00.000Z\" Version=\"2.0\">\n  <saml2:Issuer xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>\n  <saml2p:Status><saml2p:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></saml2p:StatusCode></saml2p:Status>\n  <saml2:Assertion xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"id2\" IssueInstant=\"2026-10-03T12:00:00.000Z\" Version=\"2.0\">\n    <saml2:Issuer Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>\n    <saml2:Subject><saml2:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID></saml2:Subject>\n    <saml2:AttributeStatement>\n      <saml2:Attribute Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>\n    </saml2:AttributeStatement>\n  </saml2:Assertion>\n</saml2p:Response>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<saml2:Issuer xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<saml2:Issuer xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<saml2:Issuer xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<saml2:Issuer xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [],
+  "c14n": "<saml2p:Status xmlns:saml2p=\"urn:oasis:names:tc:SAML:2.0:protocol\"><saml2p:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></saml2p:StatusCode></saml2p:Status>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<saml2p:Status xmlns:saml2p=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><saml2p:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></saml2p:StatusCode></saml2p:Status>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<saml2p:Status xmlns:saml2p=\"urn:oasis:names:tc:SAML:2.0:protocol\"><saml2p:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></saml2p:StatusCode></saml2p:Status>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<saml2p:Status xmlns:saml2p=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><saml2p:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></saml2p:StatusCode></saml2p:Status>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   1,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<saml2p:StatusCode xmlns:saml2p=\"urn:oasis:names:tc:SAML:2.0:protocol\" Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></saml2p:StatusCode>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   1,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<saml2p:StatusCode xmlns:saml2p=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></saml2p:StatusCode>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   1,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<saml2p:StatusCode xmlns:saml2p=\"urn:oasis:names:tc:SAML:2.0:protocol\" Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></saml2p:StatusCode>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   1,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<saml2p:StatusCode xmlns:saml2p=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></saml2p:StatusCode>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2
+  ],
+  "inclusive": [],
+  "c14n": "<saml2:Assertion xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"id2\" IssueInstant=\"2026-10-03T12:00:00.000Z\" Version=\"2.0\">\n    <saml2:Issuer Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>\n    <saml2:Subject><saml2:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID></saml2:Subject>\n    <saml2:AttributeStatement>\n      <saml2:Attribute Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>\n    </saml2:AttributeStatement>\n  </saml2:Assertion>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<saml2:Assertion xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" ID=\"id2\" IssueInstant=\"2026-10-03T12:00:00.000Z\" Version=\"2.0\">\n    <saml2:Issuer Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>\n    <saml2:Subject><saml2:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID></saml2:Subject>\n    <saml2:AttributeStatement>\n      <saml2:Attribute Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>\n    </saml2:AttributeStatement>\n  </saml2:Assertion>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<saml2:Assertion xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"id2\" IssueInstant=\"2026-10-03T12:00:00.000Z\" Version=\"2.0\">\n    <saml2:Issuer Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>\n    <saml2:Subject><saml2:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID></saml2:Subject>\n    <saml2:AttributeStatement>\n      <saml2:Attribute Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>\n    </saml2:AttributeStatement>\n  </saml2:Assertion>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<saml2:Assertion xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" ID=\"id2\" IssueInstant=\"2026-10-03T12:00:00.000Z\" Version=\"2.0\">\n    <saml2:Issuer Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>\n    <saml2:Subject><saml2:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID></saml2:Subject>\n    <saml2:AttributeStatement>\n      <saml2:Attribute Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>\n    </saml2:AttributeStatement>\n  </saml2:Assertion>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<saml2:Issuer xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<saml2:Issuer xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<saml2:Issuer xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<saml2:Issuer xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">http://www.okta.com/exk1</saml2:Issuer>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   1
+  ],
+  "inclusive": [],
+  "c14n": "<saml2:Subject xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\"><saml2:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID></saml2:Subject>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   1
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<saml2:Subject xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><saml2:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID></saml2:Subject>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   1
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<saml2:Subject xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\"><saml2:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID></saml2:Subject>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   1
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<saml2:Subject xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><saml2:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID></saml2:Subject>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   1,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<saml2:NameID xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   1,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<saml2:NameID xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   1,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<saml2:NameID xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   1,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<saml2:NameID xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">hana.sato@northwind.example</saml2:NameID>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   2
+  ],
+  "inclusive": [],
+  "c14n": "<saml2:AttributeStatement xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\">\n      <saml2:Attribute Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>\n    </saml2:AttributeStatement>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   2
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<saml2:AttributeStatement xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">\n      <saml2:Attribute Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>\n    </saml2:AttributeStatement>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   2
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<saml2:AttributeStatement xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\">\n      <saml2:Attribute Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>\n    </saml2:AttributeStatement>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   2
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<saml2:AttributeStatement xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">\n      <saml2:Attribute Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>\n    </saml2:AttributeStatement>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   2,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<saml2:Attribute xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   2,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<saml2:Attribute xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   2,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<saml2:Attribute xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   2,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<saml2:Attribute xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" Name=\"groups\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified\">\n        <saml2:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>\n      </saml2:Attribute>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   2,
+   0,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<saml2:AttributeValue xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   2,
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<saml2:AttributeValue xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   2,
+   0,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<saml2:AttributeValue xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>"
+ },
+ {
+  "file": "01-saml-prefixed.xml",
+  "path": [
+   2,
+   2,
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<saml2:AttributeValue xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">Security &amp; Risk</saml2:AttributeValue>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [],
+  "inclusive": [],
+  "c14n": "<samlp:Response xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" Destination=\"https://quilzo.example/saml/entra/acs\" ID=\"_r1\" InResponseTo=\"_req2\" IssueInstant=\"2026-10-03T12:00:00.123Z\" Version=\"2.0\"><Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">https://sts.windows.net/9b1c0d2e/</Issuer><samlp:Status><samlp:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></samlp:StatusCode></samlp:Status><Assertion xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"_a1\" IssueInstant=\"2026-10-03T12:00:00.123Z\" Version=\"2.0\"><Issuer>https://sts.windows.net/9b1c0d2e/</Issuer><Subject><NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID><SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation></Subject><AttributeStatement><Attribute Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute></AttributeStatement></Assertion></samlp:Response>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<samlp:Response xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" Destination=\"https://quilzo.example/saml/entra/acs\" ID=\"_r1\" InResponseTo=\"_req2\" IssueInstant=\"2026-10-03T12:00:00.123Z\" Version=\"2.0\"><Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">https://sts.windows.net/9b1c0d2e/</Issuer><samlp:Status><samlp:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></samlp:StatusCode></samlp:Status><Assertion xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"_a1\" IssueInstant=\"2026-10-03T12:00:00.123Z\" Version=\"2.0\"><Issuer>https://sts.windows.net/9b1c0d2e/</Issuer><Subject><NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID><SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation></Subject><AttributeStatement><Attribute Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute></AttributeStatement></Assertion></samlp:Response>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<samlp:Response xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" Destination=\"https://quilzo.example/saml/entra/acs\" ID=\"_r1\" InResponseTo=\"_req2\" IssueInstant=\"2026-10-03T12:00:00.123Z\" Version=\"2.0\"><Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">https://sts.windows.net/9b1c0d2e/</Issuer><samlp:Status><samlp:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></samlp:StatusCode></samlp:Status><Assertion xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"_a1\" IssueInstant=\"2026-10-03T12:00:00.123Z\" Version=\"2.0\"><Issuer>https://sts.windows.net/9b1c0d2e/</Issuer><Subject><NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID><SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation></Subject><AttributeStatement><Attribute Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute></AttributeStatement></Assertion></samlp:Response>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<samlp:Response xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" Destination=\"https://quilzo.example/saml/entra/acs\" ID=\"_r1\" InResponseTo=\"_req2\" IssueInstant=\"2026-10-03T12:00:00.123Z\" Version=\"2.0\"><Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">https://sts.windows.net/9b1c0d2e/</Issuer><samlp:Status><samlp:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></samlp:StatusCode></samlp:Status><Assertion xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"_a1\" IssueInstant=\"2026-10-03T12:00:00.123Z\" Version=\"2.0\"><Issuer>https://sts.windows.net/9b1c0d2e/</Issuer><Subject><NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID><SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation></Subject><AttributeStatement><Attribute Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute></AttributeStatement></Assertion></samlp:Response>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">https://sts.windows.net/9b1c0d2e/</Issuer>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">https://sts.windows.net/9b1c0d2e/</Issuer>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">https://sts.windows.net/9b1c0d2e/</Issuer>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">https://sts.windows.net/9b1c0d2e/</Issuer>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [],
+  "c14n": "<samlp:Status xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\"><samlp:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></samlp:StatusCode></samlp:Status>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<samlp:Status xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\"><samlp:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></samlp:StatusCode></samlp:Status>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<samlp:Status xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\"><samlp:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></samlp:StatusCode></samlp:Status>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<samlp:Status xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\"><samlp:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></samlp:StatusCode></samlp:Status>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   1,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<samlp:StatusCode xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></samlp:StatusCode>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   1,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<samlp:StatusCode xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></samlp:StatusCode>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   1,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<samlp:StatusCode xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></samlp:StatusCode>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   1,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<samlp:StatusCode xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"></samlp:StatusCode>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2
+  ],
+  "inclusive": [],
+  "c14n": "<Assertion xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"_a1\" IssueInstant=\"2026-10-03T12:00:00.123Z\" Version=\"2.0\"><Issuer>https://sts.windows.net/9b1c0d2e/</Issuer><Subject><NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID><SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation></Subject><AttributeStatement><Attribute Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute></AttributeStatement></Assertion>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<Assertion xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"_a1\" IssueInstant=\"2026-10-03T12:00:00.123Z\" Version=\"2.0\"><Issuer>https://sts.windows.net/9b1c0d2e/</Issuer><Subject><NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID><SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation></Subject><AttributeStatement><Attribute Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute></AttributeStatement></Assertion>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<Assertion xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"_a1\" IssueInstant=\"2026-10-03T12:00:00.123Z\" Version=\"2.0\"><Issuer>https://sts.windows.net/9b1c0d2e/</Issuer><Subject><NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID><SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation></Subject><AttributeStatement><Attribute Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute></AttributeStatement></Assertion>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<Assertion xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"_a1\" IssueInstant=\"2026-10-03T12:00:00.123Z\" Version=\"2.0\"><Issuer>https://sts.windows.net/9b1c0d2e/</Issuer><Subject><NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID><SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation></Subject><AttributeStatement><Attribute Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute></AttributeStatement></Assertion>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">https://sts.windows.net/9b1c0d2e/</Issuer>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">https://sts.windows.net/9b1c0d2e/</Issuer>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">https://sts.windows.net/9b1c0d2e/</Issuer>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">https://sts.windows.net/9b1c0d2e/</Issuer>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1
+  ],
+  "inclusive": [],
+  "c14n": "<Subject xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\"><NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID><SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation></Subject>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<Subject xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\"><NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID><SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation></Subject>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<Subject xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\"><NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID><SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation></Subject>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<Subject xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\"><NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID><SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation></Subject>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<NameID xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<NameID xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<NameID xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<NameID xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">sam.rivera@northwind.example</NameID>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1,
+   1
+  ],
+  "inclusive": [],
+  "c14n": "<SubjectConfirmation xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1,
+   1
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<SubjectConfirmation xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1,
+   1
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<SubjectConfirmation xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1,
+   1
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<SubjectConfirmation xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData></SubjectConfirmation>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1,
+   1,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<SubjectConfirmationData xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1,
+   1,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<SubjectConfirmationData xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1,
+   1,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<SubjectConfirmationData xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   1,
+   1,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<SubjectConfirmationData xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" InResponseTo=\"_req2\" NotOnOrAfter=\"2026-10-03T12:05:00.123Z\" Recipient=\"https://quilzo.example/saml/entra/acs\"></SubjectConfirmationData>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   2
+  ],
+  "inclusive": [],
+  "c14n": "<AttributeStatement xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\"><Attribute Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute></AttributeStatement>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   2
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<AttributeStatement xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\"><Attribute Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute></AttributeStatement>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   2
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<AttributeStatement xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\"><Attribute Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute></AttributeStatement>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   2
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<AttributeStatement xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\"><Attribute Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute></AttributeStatement>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   2,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<Attribute xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   2,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<Attribute xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   2,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<Attribute xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   2,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<Attribute xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Name=\"http://schemas.microsoft.com/claims/authnmethodsreferences\"><AttributeValue>http://schemas.microsoft.com/claims/multipleauthn</AttributeValue></Attribute>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   2,
+   0,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<AttributeValue xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">http://schemas.microsoft.com/claims/multipleauthn</AttributeValue>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   2,
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<AttributeValue xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">http://schemas.microsoft.com/claims/multipleauthn</AttributeValue>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   2,
+   0,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<AttributeValue xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">http://schemas.microsoft.com/claims/multipleauthn</AttributeValue>"
+ },
+ {
+  "file": "02-entra-default.xml",
+  "path": [
+   2,
+   2,
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<AttributeValue xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">http://schemas.microsoft.com/claims/multipleauthn</AttributeValue>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [],
+  "inclusive": [],
+  "c14n": "<a xmlns=\"urn:x:a\"><b xmlns=\"\"><c xmlns:p=\"urn:x:p\" p:k=\"1\"></c><p:d xmlns:p=\"urn:x:p\"></p:d></b><e></e></a>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<a xmlns=\"urn:x:a\"><b xmlns=\"\"><c xmlns:p=\"urn:x:p\" p:k=\"1\"></c><p:d xmlns:p=\"urn:x:p\"></p:d></b><e></e></a>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<a xmlns=\"urn:x:a\"><b xmlns=\"\"><c xmlns:p=\"urn:x:p\" p:k=\"1\"></c><p:d xmlns:p=\"urn:x:p\"></p:d></b><e></e></a>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<a xmlns=\"urn:x:a\" xmlns:p=\"urn:x:p\"><b xmlns=\"\"><c p:k=\"1\"></c><p:d></p:d></b><e></e></a>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<b><c xmlns:p=\"urn:x:p\" p:k=\"1\"></c><p:d xmlns:p=\"urn:x:p\"></p:d></b>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<b><c xmlns:p=\"urn:x:p\" p:k=\"1\"></c><p:d xmlns:p=\"urn:x:p\"></p:d></b>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<b><c xmlns:p=\"urn:x:p\" p:k=\"1\"></c><p:d xmlns:p=\"urn:x:p\"></p:d></b>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<b xmlns:p=\"urn:x:p\"><c p:k=\"1\"></c><p:d></p:d></b>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<c xmlns:p=\"urn:x:p\" p:k=\"1\"></c>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<c xmlns:p=\"urn:x:p\" p:k=\"1\"></c>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<c xmlns:p=\"urn:x:p\" p:k=\"1\"></c>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<c xmlns:p=\"urn:x:p\" p:k=\"1\"></c>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   0,
+   1
+  ],
+  "inclusive": [],
+  "c14n": "<p:d xmlns:p=\"urn:x:p\"></p:d>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   0,
+   1
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<p:d xmlns:p=\"urn:x:p\"></p:d>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   0,
+   1
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<p:d xmlns:p=\"urn:x:p\"></p:d>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   0,
+   1
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<p:d xmlns:p=\"urn:x:p\"></p:d>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [],
+  "c14n": "<e xmlns=\"urn:x:a\"></e>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<e xmlns=\"urn:x:a\"></e>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<e xmlns=\"urn:x:a\"></e>"
+ },
+ {
+  "file": "03-undeclare.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<e xmlns=\"urn:x:a\" xmlns:p=\"urn:x:p\"></e>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [],
+  "inclusive": [],
+  "c14n": "<p:a xmlns:p=\"urn:one\"><p:b xmlns:p=\"urn:two\"><p:c xmlns:p=\"urn:one\"></p:c></p:b><p:b></p:b></p:a>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<p:a xmlns:p=\"urn:one\"><p:b xmlns:p=\"urn:two\"><p:c xmlns:p=\"urn:one\"></p:c></p:b><p:b></p:b></p:a>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<p:a xmlns:p=\"urn:one\"><p:b xmlns:p=\"urn:two\"><p:c xmlns:p=\"urn:one\"></p:c></p:b><p:b></p:b></p:a>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<p:a xmlns:p=\"urn:one\"><p:b xmlns:p=\"urn:two\"><p:c xmlns:p=\"urn:one\"></p:c></p:b><p:b></p:b></p:a>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<p:b xmlns:p=\"urn:two\"><p:c xmlns:p=\"urn:one\"></p:c></p:b>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<p:b xmlns:p=\"urn:two\"><p:c xmlns:p=\"urn:one\"></p:c></p:b>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<p:b xmlns:p=\"urn:two\"><p:c xmlns:p=\"urn:one\"></p:c></p:b>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<p:b xmlns:p=\"urn:two\"><p:c xmlns:p=\"urn:one\"></p:c></p:b>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<p:c xmlns:p=\"urn:one\"></p:c>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<p:c xmlns:p=\"urn:one\"></p:c>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<p:c xmlns:p=\"urn:one\"></p:c>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<p:c xmlns:p=\"urn:one\"></p:c>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [],
+  "c14n": "<p:b xmlns:p=\"urn:one\"></p:b>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<p:b xmlns:p=\"urn:one\"></p:b>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<p:b xmlns:p=\"urn:one\"></p:b>"
+ },
+ {
+  "file": "04-rebind.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<p:b xmlns:p=\"urn:one\"></p:b>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [],
+  "inclusive": [],
+  "c14n": "<r><s><t><q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v></t></s></r>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<r><s><t><q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v></t></s></r>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<r><s><t><q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v></t></s></r>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<r><s><t><q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v></t></s></r>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<s><t><q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v></t></s>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<s><t><q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v></t></s>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<s><t><q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v></t></s>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<s><t><q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v></t></s>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<t><q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v></t>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<t><q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v></t>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<t><q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v></t>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<t><q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v></t>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [
+   0,
+   0,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [
+   0,
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [
+   0,
+   0,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v>"
+ },
+ {
+  "file": "05-deep-and-unused.xml",
+  "path": [
+   0,
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<q:v xmlns:q=\"urn:q\" xmlns:z=\"urn:z\" a=\"1\" q:b=\"3\" z:w=\"2\"></q:v>"
+ },
+ {
+  "file": "06-attr-order.xml",
+  "path": [],
+  "inclusive": [],
+  "c14n": "<e xmlns:a=\"urn:a\" xmlns:b=\"urn:b\" m=\"5\" y0=\"4\" z=\"1\" a:w=\"7\" a:x=\"2\" b:c=\"6\" b:y=\"3\"></e>"
+ },
+ {
+  "file": "06-attr-order.xml",
+  "path": [],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<e xmlns:a=\"urn:a\" xmlns:b=\"urn:b\" m=\"5\" y0=\"4\" z=\"1\" a:w=\"7\" a:x=\"2\" b:c=\"6\" b:y=\"3\"></e>"
+ },
+ {
+  "file": "06-attr-order.xml",
+  "path": [],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<e xmlns:a=\"urn:a\" xmlns:b=\"urn:b\" m=\"5\" y0=\"4\" z=\"1\" a:w=\"7\" a:x=\"2\" b:c=\"6\" b:y=\"3\"></e>"
+ },
+ {
+  "file": "06-attr-order.xml",
+  "path": [],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<e xmlns:a=\"urn:a\" xmlns:b=\"urn:b\" m=\"5\" y0=\"4\" z=\"1\" a:w=\"7\" a:x=\"2\" b:c=\"6\" b:y=\"3\"></e>"
+ },
+ {
+  "file": "07-escapes.xml",
+  "path": [],
+  "inclusive": [],
+  "c14n": "<e a=\"tab&#x9;nl&#xA;cr&#xD;q&quot;lt&lt;amp&amp;gt>\" b=\"single &quot;double&quot;\" c=\"literal tab and newline\">text &amp; &lt;tag&gt; cr&#xD; nl\n quote \" apos ' gt &gt;</e>"
+ },
+ {
+  "file": "07-escapes.xml",
+  "path": [],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<e a=\"tab&#x9;nl&#xA;cr&#xD;q&quot;lt&lt;amp&amp;gt>\" b=\"single &quot;double&quot;\" c=\"literal tab and newline\">text &amp; &lt;tag&gt; cr&#xD; nl\n quote \" apos ' gt &gt;</e>"
+ },
+ {
+  "file": "07-escapes.xml",
+  "path": [],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<e a=\"tab&#x9;nl&#xA;cr&#xD;q&quot;lt&lt;amp&amp;gt>\" b=\"single &quot;double&quot;\" c=\"literal tab and newline\">text &amp; &lt;tag&gt; cr&#xD; nl\n quote \" apos ' gt &gt;</e>"
+ },
+ {
+  "file": "07-escapes.xml",
+  "path": [],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<e a=\"tab&#x9;nl&#xA;cr&#xD;q&quot;lt&lt;amp&amp;gt>\" b=\"single &quot;double&quot;\" c=\"literal tab and newline\">text &amp; &lt;tag&gt; cr&#xD; nl\n quote \" apos ' gt &gt;</e>"
+ },
+ {
+  "file": "08-unicode-text.xml",
+  "path": [],
+  "inclusive": [],
+  "c14n": "<n xml:lang=\"ja\">Zoë 名前 🔒 ©</n>"
+ },
+ {
+  "file": "08-unicode-text.xml",
+  "path": [],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<n xml:lang=\"ja\">Zoë 名前 🔒 ©</n>"
+ },
+ {
+  "file": "08-unicode-text.xml",
+  "path": [],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<n xml:lang=\"ja\">Zoë 名前 🔒 ©</n>"
+ },
+ {
+  "file": "08-unicode-text.xml",
+  "path": [],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<n xml:lang=\"ja\">Zoë 名前 🔒 ©</n>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [],
+  "inclusive": [],
+  "c14n": "<a xmlns=\"urn:d\"><x:b xmlns:x=\"urn:x\"><c></c><x:d><e></e></x:d></x:b></a>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<a xmlns=\"urn:d\"><x:b xmlns:x=\"urn:x\"><c></c><x:d><e></e></x:d></x:b></a>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<a xmlns=\"urn:d\"><x:b xmlns:x=\"urn:x\"><c></c><x:d><e></e></x:d></x:b></a>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<a xmlns=\"urn:d\"><x:b xmlns:x=\"urn:x\"><c></c><x:d><e></e></x:d></x:b></a>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<x:b xmlns:x=\"urn:x\"><c xmlns=\"urn:d\"></c><x:d><e xmlns=\"urn:d\"></e></x:d></x:b>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<x:b xmlns:x=\"urn:x\"><c xmlns=\"urn:d\"></c><x:d><e xmlns=\"urn:d\"></e></x:d></x:b>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<x:b xmlns:x=\"urn:x\"><c xmlns=\"urn:d\"></c><x:d><e xmlns=\"urn:d\"></e></x:d></x:b>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<x:b xmlns:x=\"urn:x\"><c xmlns=\"urn:d\"></c><x:d><e xmlns=\"urn:d\"></e></x:d></x:b>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<c xmlns=\"urn:d\"></c>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<c xmlns=\"urn:d\"></c>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<c xmlns=\"urn:d\"></c>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<c xmlns=\"urn:d\"></c>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0,
+   1
+  ],
+  "inclusive": [],
+  "c14n": "<x:d xmlns:x=\"urn:x\"><e xmlns=\"urn:d\"></e></x:d>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0,
+   1
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<x:d xmlns:x=\"urn:x\"><e xmlns=\"urn:d\"></e></x:d>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0,
+   1
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<x:d xmlns:x=\"urn:x\"><e xmlns=\"urn:d\"></e></x:d>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0,
+   1
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<x:d xmlns:x=\"urn:x\"><e xmlns=\"urn:d\"></e></x:d>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0,
+   1,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<e xmlns=\"urn:d\"></e>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0,
+   1,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<e xmlns=\"urn:d\"></e>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0,
+   1,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<e xmlns=\"urn:d\"></e>"
+ },
+ {
+  "file": "09-default-then-prefixed.xml",
+  "path": [
+   0,
+   1,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<e xmlns=\"urn:d\"></e>"
+ },
+ {
+  "file": "10-redundant.xml",
+  "path": [],
+  "inclusive": [],
+  "c14n": "<p:a xmlns:p=\"urn:p\"><p:b><p:c xmlns:q=\"urn:q\" q:x=\"1\"></p:c></p:b></p:a>"
+ },
+ {
+  "file": "10-redundant.xml",
+  "path": [],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<p:a xmlns:p=\"urn:p\"><p:b><p:c xmlns:q=\"urn:q\" q:x=\"1\"></p:c></p:b></p:a>"
+ },
+ {
+  "file": "10-redundant.xml",
+  "path": [],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<p:a xmlns:p=\"urn:p\"><p:b><p:c xmlns:q=\"urn:q\" q:x=\"1\"></p:c></p:b></p:a>"
+ },
+ {
+  "file": "10-redundant.xml",
+  "path": [],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<p:a xmlns:p=\"urn:p\"><p:b><p:c xmlns:q=\"urn:q\" q:x=\"1\"></p:c></p:b></p:a>"
+ },
+ {
+  "file": "10-redundant.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<p:b xmlns:p=\"urn:p\"><p:c xmlns:q=\"urn:q\" q:x=\"1\"></p:c></p:b>"
+ },
+ {
+  "file": "10-redundant.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<p:b xmlns:p=\"urn:p\"><p:c xmlns:q=\"urn:q\" q:x=\"1\"></p:c></p:b>"
+ },
+ {
+  "file": "10-redundant.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<p:b xmlns:p=\"urn:p\"><p:c xmlns:q=\"urn:q\" q:x=\"1\"></p:c></p:b>"
+ },
+ {
+  "file": "10-redundant.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<p:b xmlns:p=\"urn:p\"><p:c xmlns:q=\"urn:q\" q:x=\"1\"></p:c></p:b>"
+ },
+ {
+  "file": "10-redundant.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<p:c xmlns:p=\"urn:p\" xmlns:q=\"urn:q\" q:x=\"1\"></p:c>"
+ },
+ {
+  "file": "10-redundant.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<p:c xmlns:p=\"urn:p\" xmlns:q=\"urn:q\" q:x=\"1\"></p:c>"
+ },
+ {
+  "file": "10-redundant.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<p:c xmlns:p=\"urn:p\" xmlns:q=\"urn:q\" q:x=\"1\"></p:c>"
+ },
+ {
+  "file": "10-redundant.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<p:c xmlns:p=\"urn:p\" xmlns:q=\"urn:q\" q:x=\"1\"></p:c>"
+ },
+ {
+  "file": "11-inclusive.xml",
+  "path": [],
+  "inclusive": [],
+  "c14n": "<root xmlns=\"urn:dflt\"><v xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">x</v><w>y</w></root>"
+ },
+ {
+  "file": "11-inclusive.xml",
+  "path": [],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<root xmlns=\"urn:dflt\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><v xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">x</v><w>y</w></root>"
+ },
+ {
+  "file": "11-inclusive.xml",
+  "path": [],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<root xmlns=\"urn:dflt\"><v xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">x</v><w>y</w></root>"
+ },
+ {
+  "file": "11-inclusive.xml",
+  "path": [],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<root xmlns=\"urn:dflt\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><v xsi:type=\"xs:string\">x</v><w>y</w></root>"
+ },
+ {
+  "file": "11-inclusive.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<v xmlns=\"urn:dflt\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">x</v>"
+ },
+ {
+  "file": "11-inclusive.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<v xmlns=\"urn:dflt\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">x</v>"
+ },
+ {
+  "file": "11-inclusive.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<v xmlns=\"urn:dflt\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">x</v>"
+ },
+ {
+  "file": "11-inclusive.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<v xmlns=\"urn:dflt\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">x</v>"
+ },
+ {
+  "file": "11-inclusive.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [],
+  "c14n": "<w xmlns=\"urn:dflt\">y</w>"
+ },
+ {
+  "file": "11-inclusive.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<w xmlns=\"urn:dflt\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">y</w>"
+ },
+ {
+  "file": "11-inclusive.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<w xmlns=\"urn:dflt\">y</w>"
+ },
+ {
+  "file": "11-inclusive.xml",
+  "path": [
+   1
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<w xmlns=\"urn:dflt\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">y</w>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [],
+  "inclusive": [],
+  "c14n": "<a xmlns=\"urn:d\"><p:b xmlns:p=\"urn:p\"><c xmlns=\"\"><p:e></p:e><f></f></c></p:b></a>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<a xmlns=\"urn:d\"><p:b xmlns:p=\"urn:p\"><c xmlns=\"\"><p:e></p:e><f></f></c></p:b></a>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<a xmlns=\"urn:d\"><p:b xmlns:p=\"urn:p\"><c xmlns=\"\"><p:e></p:e><f></f></c></p:b></a>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<a xmlns=\"urn:d\" xmlns:p=\"urn:p\"><p:b><c xmlns=\"\"><p:e></p:e><f></f></c></p:b></a>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<p:b xmlns:p=\"urn:p\"><c><p:e></p:e><f></f></c></p:b>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<p:b xmlns:p=\"urn:p\"><c><p:e></p:e><f></f></c></p:b>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<p:b xmlns:p=\"urn:p\"><c><p:e></p:e><f></f></c></p:b>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<p:b xmlns:p=\"urn:p\"><c><p:e></p:e><f></f></c></p:b>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<c><p:e xmlns:p=\"urn:p\"></p:e><f></f></c>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<c><p:e xmlns:p=\"urn:p\"></p:e><f></f></c>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<c><p:e xmlns:p=\"urn:p\"></p:e><f></f></c>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<c xmlns:p=\"urn:p\"><p:e></p:e><f></f></c>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0,
+   0,
+   0
+  ],
+  "inclusive": [],
+  "c14n": "<p:e xmlns:p=\"urn:p\"></p:e>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0,
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<p:e xmlns:p=\"urn:p\"></p:e>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0,
+   0,
+   0
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<p:e xmlns:p=\"urn:p\"></p:e>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0,
+   0,
+   0
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<p:e xmlns:p=\"urn:p\"></p:e>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0,
+   0,
+   1
+  ],
+  "inclusive": [],
+  "c14n": "<f></f>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0,
+   0,
+   1
+  ],
+  "inclusive": [
+   "xs"
+  ],
+  "c14n": "<f></f>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0,
+   0,
+   1
+  ],
+  "inclusive": [
+   "#default"
+  ],
+  "c14n": "<f></f>"
+ },
+ {
+  "file": "12-empty-default-prefixed-child.xml",
+  "path": [
+   0,
+   0,
+   1
+  ],
+  "inclusive": [
+   "xs",
+   "xsi",
+   "p"
+  ],
+  "c14n": "<f xmlns:p=\"urn:p\"></f>"
+ }
+]

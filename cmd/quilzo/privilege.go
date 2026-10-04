@@ -606,6 +606,7 @@ var commandNeeds = map[string]need{
 	"auth":  {action: auth.ActGrant},
 	"token": {action: auth.ActToken},
 	"oidc":  {action: auth.ActGrant},
+	"saml":  {action: auth.ActGrant},
 	"vault": {action: auth.ActToken},
 
 	// Suppressing a posture rule is accepting a risk on the organisation's

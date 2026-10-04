@@ -561,6 +561,13 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 	if prev, err := s.authenticate(r); err == nil && prev.StepUp != "" && strings.EqualFold(prev.Name, cred.Principal) {
 		stepped = &prev
 	}
+	// Single sign-on required is the front door only: a passkey that proves
+	// the person behind a held session is still how step-up is passed.
+	if stepped == nil && s.ssoRequired(cred.Principal) != "" {
+		writeJSONError(w, http.StatusForbidden, fmt.Errorf(
+			"your organisation requires signing in through %s", s.ssoRequired(cred.Principal)))
+		return
+	}
 
 	// A session token, exactly as the OIDC path mints one: the passkey
 	// authenticated, and everything after this is local. The role is what the

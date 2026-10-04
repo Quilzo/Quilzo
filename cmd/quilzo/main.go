@@ -441,6 +441,9 @@ access
   quilzo oidc configure --provider microsoft --tenant T   sign in with Microsoft Entra
   quilzo oidc status                       whether an IdP is configured, and which
   quilzo oidc check                        talk to the provider, report what it offers
+  quilzo saml add NAME --metadata F --url U --preset okta   sign in with a SAML IdP
+  quilzo saml add ... --fingerprint SHA256  trust its key, once you have checked it
+  quilzo saml list | show NAME | metadata NAME | presets | remove NAME
   quilzo network                           what this may connect to, and whether
   quilzo marking                           the classification scheme, if any
   quilzo transfer record DIR --approved-by WHO   paperwork for carrying an export
@@ -756,6 +759,8 @@ func main() {
 		err = cmdAnchor(root, cmdArgs)
 	case "oidc":
 		err = cmdOIDC(root, cmdArgs)
+	case "saml":
+		err = cmdSAML(root, cmdArgs)
 	case "vault":
 		err = cmdVault(root, cmdArgs)
 	case "lock", "locks":

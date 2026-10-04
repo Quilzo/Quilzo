@@ -3,25 +3,21 @@
 
 // Package oidc authenticates people against an identity provider.
 //
-// # Why this and not SAML
+// # Beside SAML
 //
-// SAML is what enterprise buyers ask for, and implementing it in Go is a bad
-// idea for a specific reason: Go's encoding/xml does not preserve semantics
-// across a parse and re-serialise. That lets a crafted document present one
-// thing to signature verification and a different thing to data extraction —
-// XML Signature Wrapping — and both major Go SAML libraries shipped variants of
-// it. The irony is exact: the loose tokenizer that makes encoding/xml immune to
-// XXE, which this project relies on elsewhere, is what makes the wrapping
-// possible.
+// For a long time this package's comment argued against SAML: Go's
+// encoding/xml does not preserve a document across a parse and a
+// re-serialise, so a crafted response could show one thing to signature
+// verification and another to data extraction, and both major Go SAML
+// libraries shipped that bug. SAML is now here (internal/saml), on a reader
+// written for it (internal/xmldsig) that never uses encoding/xml and hands
+// back only the bytes a signature covered, read again.
 //
-// An OIDC ID token is a JWT: three base64url segments, and the signature covers
-// the first two *as received*. There is no canonicalisation step, so there is no
+// The contrast still holds and is why OIDC is the simpler of the two. An ID
+// token is a JWT: three base64url segments, and the signature covers the
+// first two as received. There is no canonicalisation step, so there is no
 // gap between what was verified and what is read. Nothing here ever
 // re-serialises a token before checking it.
-//
-// SAML is still reachable — through an identity provider that speaks both, which
-// is how most organisations already run it. That moves the XML parsing to
-// software whose full-time job it is.
 //
 // # The algorithm allow-list is the whole ballgame
 //

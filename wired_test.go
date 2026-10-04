@@ -82,6 +82,11 @@ func importGraph(t *testing.T) (imported map[string]bool, pkgs map[string]bool) 
 
 	for _, root := range []string{"internal", "cmd"} {
 		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			// testdata is outside the build, as the go command treats it: a
+			// tool kept there to regenerate fixtures is not a package.
+			if err == nil && d.IsDir() && d.Name() == "testdata" {
+				return filepath.SkipDir
+			}
 			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
 				return err
 			}
