@@ -188,6 +188,17 @@ sharing a screen
   quilzo sarif read results.sarif          import any scanner's findings, and what it left out
   quilzo sca scan --bom sbom.json --osv db.json   which dependencies you can actually fix
   quilzo correlate demo                    detections about several events, and when a window closes
+  quilzo shield status | list [--all]      what Quilzo is doing to protect itself, its playbooks, and what ended
+  quilzo shield lift ID|all [--mistake]    end a protection now; the way out of anything the shield does
+  quilzo shield block p_…|CIDR|AS64500 --where site --for 1h --reason "…"   block by hand
+  quilzo shield feature chatbot:help|forms|api|… [--level limited] --for 1h --reason "…"
+  quilzo shield lockdown|freeze --for 6h --reason "…"   admin to passkeys and SSO; no publishing
+  quilzo shield pause AGENT --for 24h --reason "…"   an agent does not run
+  quilzo shield playbook mode NAME act|watch|off --why "…"   proposed; a second administrator approves
+  quilzo shield dry-run [NAME] [--days 30] what the playbooks would have done over the history
+  quilzo shield hold --why "…" | release --why "…"   every playbook to watching, and back
+  quilzo shield decoy add --where "CI variable"   plant a token that opens nothing and tells on its holder
+  quilzo shield trust add CIDR | judge ID mistake|right | repair
   quilzo incident declare --title T --grade sev2 [--finding ID]   open one, under the regimes set
   quilzo incident list | show ID           what is open, and each one's clocks and record
   quilzo incident decide ID aware --because "…"   the decision that starts a clock
@@ -908,6 +919,8 @@ func main() {
 		err = cmdCorrelate(cmdArgs)
 	case "incident":
 		err = cmdIncident(root, cmdArgs)
+	case "shield":
+		err = cmdShield(root, cmdArgs)
 	case "feed":
 		err = cmdFeed(cmdArgs)
 	case "source":
@@ -1360,6 +1373,14 @@ func cmdPublish(root string, args []string) error {
 	if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
 		record(root, caller.auditRecord("publish", "/", audit.Denied,
 			map[string]string{"reason": "authorisation"}))
+		return err
+	}
+	// The shield froze publishing. Here too, so a scheduled publish or a
+	// script does not go round it; `quilzo rollback` still works, and
+	// `quilzo shield lift` ends the freeze.
+	if err := refuseWhileFrozen(root); err != nil {
+		record(root, caller.auditRecord("publish", "/", audit.Denied,
+			map[string]string{"reason": "frozen"}))
 		return err
 	}
 

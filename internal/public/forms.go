@@ -4,6 +4,7 @@
 package public
 
 import (
+	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/clientip"
 	"net/http"
@@ -112,6 +113,10 @@ func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if _, until, off := st.shielded("form:" + f.Name); off {
+		st.resting(w, r, "This form", until)
+		return
+	}
 
 	source := sourceOf(r)
 	if st.Forms.Limit != nil {
@@ -162,6 +167,9 @@ func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if st.Forms.Audit != nil {
 			st.Forms.Audit(name, source, false)
+		}
+		if errors.Is(err, form.ErrSpam) {
+			st.signal(FormSpam, f.Name, r)
 		}
 		st.formResult(w, r, f, err.Error())
 		return

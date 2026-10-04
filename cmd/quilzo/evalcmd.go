@@ -24,6 +24,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/evals"
+	"github.com/quilzo/quilzo/internal/shield"
 )
 
 // Evaluations: test sets kept beside the agents, run k times, with
@@ -260,6 +261,12 @@ func runEvaluation(root, name string, k int, withModel bool, caller *Caller) (ev
 		"agent": name, "cases": fmt.Sprint(rep.Cases), "k": fmt.Sprint(rep.K),
 		"reliable": fmt.Sprint(rep.Reliable), "planted": fmt.Sprint(rep.Planted),
 		"hijacked": fmt.Sprint(rep.Hijacked), "model": rep.Model, "verdict": rep.Verdict()}))
+	// An agent that followed a planted instruction is the shield's to act
+	// on, as its playbook says: by default it is paused until somebody
+	// narrows what it may do.
+	if rep.Hijacked > 0 {
+		newShieldHost(root).engine.Observe(shield.Signal{Name: "agent-hijacked", Subject: name})
+	}
 	return rep, nil
 }
 

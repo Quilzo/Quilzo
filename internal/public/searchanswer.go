@@ -79,8 +79,14 @@ func (st *Site) searchAnswer(r *http.Request, query string) map[string]any {
 	if !ok {
 		return nil
 	}
+	if _, _, off := st.shielded("search-answers"); off {
+		return nil // the results are still there
+	}
+	if level, _, on := st.shielded("chatbot:" + a.Name); on && level != "limited" {
+		return nil
+	}
 	if LooksLikeInjection(query) {
-		st.signal(ChatbotInjection, r)
+		st.signal(ChatbotInjection, a.Name, r)
 		return nil
 	}
 	source := sourceOf(r)
@@ -95,7 +101,7 @@ func (st *Site) searchAnswer(r *http.Request, query string) map[string]any {
 		return nil
 	}
 	var m assistant.Model
-	if a.UseModel && st.Assistants.Model != nil {
+	if _, _, limited := st.shielded("chatbot:" + a.Name); a.UseModel && st.Assistants.Model != nil && !limited {
 		m = st.Assistants.Model(a)
 	}
 	// Shorter than the conversation page allows: the results are waiting

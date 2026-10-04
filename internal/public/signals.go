@@ -4,7 +4,9 @@
 package public
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +43,9 @@ const (
 	AdminHunt         = "admin-hunt"
 	ConversationGuess = "conversation-guess"
 	ChatbotInjection  = "chatbot-injection"
+	// FormSpam is a form refusing a submission as spam: the honeypot
+	// filled, or answered faster than a person can read.
+	FormSpam = "form-spam"
 )
 
 // adminPaths are the admin server's and API's own addresses, which the
@@ -96,8 +101,10 @@ type SignalWatch struct {
 	// A kind not listed is recorded at the first.
 	After  map[string]int
 	Window time.Duration
-	// Report is told the kind, the source and how many it sent.
-	Report func(kind, source string, n int)
+	// Report is told the kind, the source, how many it sent and how many
+	// different things they were about (up to 16), so a history can tell
+	// one admin address asked for again and again from several.
+	Report func(kind, source string, n, distinct int)
 
 	mu   sync.Mutex
 	seen map[string]*signalCount
@@ -107,11 +114,12 @@ type SignalWatch struct {
 type signalCount struct {
 	first    time.Time
 	n        int
+	about    map[string]bool
 	reported bool
 }
 
 // Saw counts one signal.
-func (sw *SignalWatch) Saw(kind, source string) {
+func (sw *SignalWatch) Saw(kind, source, subject string) {
 	if sw == nil || sw.Report == nil {
 		return
 	}
@@ -143,19 +151,73 @@ func (sw *SignalWatch) Saw(kind, source string) {
 		sw.seen[key] = c
 	}
 	c.n++
+	if c.about == nil {
+		c.about = map[string]bool{}
+	}
+	if len(c.about) < 16 {
+		c.about[subject] = true
+	}
 	report := c.n >= after && !c.reported
 	if report {
 		c.reported = true
 	}
-	n := c.n
+	n, distinct := c.n, len(c.about)
 	sw.mu.Unlock()
 	if report {
-		sw.Report(kind, source, n)
+		sw.Report(kind, source, n, distinct)
 	}
 }
 
-func (st *Site) signal(kind string, r *http.Request) {
+// signal is one sighting: recorded once per window, and told to the shield
+// every time. subject is what it was about: the chatbot or form by name, or
+// for admin-hunt the address asked for, so asking for one address again
+// and again can be told from looking for several.
+func (st *Site) signal(kind, subject string, r *http.Request) {
 	if st.Signals != nil {
-		st.Signals.Saw(kind, sourceOf(r))
+		st.Signals.Saw(kind, sourceOf(r), subject)
 	}
+	if st.OnSignal != nil {
+		st.OnSignal(kind, subject, r)
+	}
+}
+
+// huntedPath is an admin address asked for, as a subject: its first two
+// segments, lower case, so /security/x and /security/y are one address and
+// a path cannot be made long to fill memory.
+func huntedPath(path string) string {
+	p := strings.ToLower(path)
+	parts := strings.SplitN(strings.TrimPrefix(p, "/"), "/", 3)
+	if len(parts) > 2 {
+		parts = parts[:2]
+	}
+	out := "/" + strings.Join(parts, "/")
+	if len(out) > 64 {
+		out = out[:64]
+	}
+	return out
+}
+
+// shielded reports whether the shield has turned a feature down.
+func (st *Site) shielded(target string) (level string, until time.Time, on bool) {
+	if st.Shield == nil {
+		return "", time.Time{}, false
+	}
+	return st.Shield(target)
+}
+
+// resting answers a request for something the shield has turned off for a
+// while: plainly, with when to come back, and nothing about why.
+func (st *Site) resting(w http.ResponseWriter, r *http.Request, what string, until time.Time) {
+	h := w.Header()
+	if secs := int(time.Until(until).Seconds()) + 1; secs > 0 {
+		h.Set("Retry-After", strconv.Itoa(secs))
+	}
+	h.Set("Cache-Control", "no-store")
+	h.Set("Content-Type", "text/plain; charset=utf-8")
+	h.Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	if r.Method == http.MethodHead {
+		return
+	}
+	fmt.Fprintf(w, "%s is not available for a while. Please try again later.\n", what)
 }

@@ -104,6 +104,10 @@ func (st *Site) post(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if _, until, off := st.shielded("boards"); off {
+		st.resting(w, r, "Posting", until)
+		return
+	}
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		http.Error(w, "use POST", http.StatusMethodNotAllowed)

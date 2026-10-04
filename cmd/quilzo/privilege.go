@@ -182,6 +182,14 @@ var commandNeeds = map[string]need{
 	"member": {action: auth.ActGrant},
 	// Automations act on people's sessions and accounts: the security
 	// area's administrators decide them; reading them is a view.
+	// The shield changes what Quilzo does on its own, and who it lets in:
+	// the whole site's administrators decide it; reading it, and trying a
+	// playbook against the history, is a view in the security area.
+	"shield":             {action: auth.ActGrant},
+	"shield status":      {action: auth.ActView},
+	"shield list":        {action: auth.ActView},
+	"shield dry-run":     {action: auth.ActView},
+	"shield playbook":    {action: auth.ActGrant},
 	"automate":           {action: auth.ActGrant},
 	"automate list":      {action: auth.ActView},
 	"automate runs":      {action: auth.ActView},
@@ -1161,6 +1169,7 @@ var commandAreas = map[string]string{
 	"workforce": auth.AreaSecurity, "hunt": auth.AreaSecurity, "detect": auth.AreaSecurity,
 	"sigma": auth.AreaSecurity, "proving": auth.AreaSecurity, "correlate": auth.AreaSecurity,
 	"siem": auth.AreaSecurity, "automate": auth.AreaSecurity, "inbound": auth.AreaSecurity,
+	"shield status": auth.AreaSecurity, "shield list": auth.AreaSecurity, "shield dry-run": auth.AreaSecurity,
 	"posture": auth.AreaCompliance, "compliance": auth.AreaCompliance,
 	"auditlog":   auth.AreaLog,
 	"inbox":      auth.AreaInbox,

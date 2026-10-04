@@ -103,7 +103,17 @@ type Site struct {
 	// serves content.
 	// Signals counts what only somebody going after this Quilzo does: see
 	// signals.go. Nil counts nothing.
-	Signals  *SignalWatch
+	Signals *SignalWatch
+	// OnSignal is told every such signal as it is seen, with what it was
+	// about (the chatbot, the form, the address asked for), for the
+	// shield's playbooks to count (internal/shield). Signals above records
+	// it once per window; this is every one. Nil tells nobody.
+	OnSignal func(kind, subject string, r *http.Request)
+	// Shield reports whether the shield has turned a feature down:
+	// "chatbot:NAME", "form:NAME", "boards", "signup", "search-answers",
+	// "uploads". The level is "off" or "limited" (a chatbot that quotes
+	// pages and asks no model). Nil means never.
+	Shield   func(target string) (level string, until time.Time, on bool)
 	CSP      func() (string, bool)
 	CSPValue func() string
 	// Speculate is how eagerly a browser may fetch the next page: off,

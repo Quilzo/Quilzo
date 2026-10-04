@@ -360,6 +360,24 @@ type Server struct {
 	// OnSignIn records an authentication. Separate from the handler so the
 	// audit log stays the host's concern.
 	OnSignIn func(principal, tokenID string)
+	// OnBadToken is told every credential a request presented that did not
+	// authenticate, and why: the shield checks it against its decoys and
+	// counts a secret never issued here as a guess (internal/shield). Nil
+	// tells nobody.
+	OnBadToken func(r *http.Request, presented string, err error)
+	// OnStrongSignIn is told of a sign-in by passkey or single sign-on that
+	// nothing held back, so the shield never blocks its source from the
+	// admin. Nil tells nobody.
+	OnStrongSignIn func(r *http.Request, principal string)
+	// Shield reports whether the shield has turned one of the admin's
+	// features off: "uploads", "import", "feeds", "scim". Nil means never.
+	Shield func(target string) (until time.Time, on bool)
+	// Frozen says why publishing is refused for now, if it is: the shield
+	// froze it. Rolling back is never refused. Nil means never.
+	Frozen func() error
+	// ShieldAdmin is what the Shield screen needs. Nil shows it as not
+	// available in this build.
+	ShieldAdmin *ShieldAdmin
 
 	// ContentGates is every check about the content being published, run
 	// before the ones that can be waived.
@@ -586,6 +604,9 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 	// A session waiting to prove its person is let this far, carrying why,
 	// and requireAuth sends it nowhere but "Confirm it's you".
 	if err != nil && !(errors.Is(err, auth.ErrStepUp) && tok != nil) {
+		if s.OnBadToken != nil {
+			s.OnBadToken(r, raw, err)
+		}
 		return principal{}, err
 	}
 	return principal{
@@ -1162,6 +1183,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/signins", s.handleSignIns)
 	mux.HandleFunc("/security/signins/act", s.handleSignInsAct)
 	mux.HandleFunc("/security/automations", s.handleAutomations)
+	mux.HandleFunc("/security/shield", s.handleShield)
+	mux.HandleFunc("/security/shield/act", s.handleShieldAct)
 	mux.HandleFunc("/security/automations/rule", s.handleAutomationRule)
 	mux.HandleFunc("/security/feeds", s.handleFeeds)
 	mux.HandleFunc("/security/feeds/act", s.handleFeedsAct)
@@ -1327,10 +1350,10 @@ func (s *Server) Handler() http.Handler {
 	// The identity provider's provisioning endpoint. It authenticates with
 	// its own token, not a person's session; see internal/scim.
 	if s.SCIM != nil && s.SCIM.Handler != nil {
-		mux.Handle("/scim/v2/", s.SCIM.Handler)
+		mux.Handle("/scim/v2/", s.shieldable("scim", s.SCIM.Handler))
 	}
 	if s.Inbound != nil {
-		mux.Handle("/feeds/", s.Inbound)
+		mux.Handle("/feeds/", s.shieldable("feeds", s.Inbound))
 	}
 	// /docs and /docs/img/ used to be served from here. The manual is now
 	// published at DocsBase and the footer links straight to it — deliberately
@@ -1394,6 +1417,16 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	raw := strings.TrimSpace(r.FormValue("token"))
 	tok, err := s.Tokens.Authenticate(raw, time.Now())
 	if err != nil {
+		if s.OnBadToken != nil && raw != "" {
+			s.OnBadToken(r, raw, err)
+		}
+		// A real credential refused because the admin is locked down is not
+		// a failed guess, and counting it would throttle an office of people
+		// holding tokens made the day before.
+		if errors.Is(err, auth.ErrLockedDown) {
+			signInAgain(w, r, "lockdown")
+			return
+		}
 		if s.Throttle != nil {
 			d, alert := s.Throttle.Fail(sub)
 			if alert && s.OnAuthFailure != nil {
@@ -1444,6 +1477,10 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		secret, sess, xerr := s.Tokens.Exchange(raw, auth.RoleNone, "",
 			DefaultSessionTTL, time.Now())
 		if xerr != nil {
+			if errors.Is(xerr, auth.ErrLockedDown) {
+				signInAgain(w, r, "lockdown")
+				return
+			}
 			signInAgain(w, r, "refused")
 			return
 		}
@@ -1538,6 +1575,10 @@ var signInReasons = map[string]string{
 		"account. Use your organisation's button above.",
 	"nosso": "No organisation sign-in is set up for that address. Sign in " +
 		"with a token or a passkey instead, or ask an administrator.",
+	"lockdown": "For a while the admin accepts only passkeys and your " +
+		"organisation's sign-in, and tokens made before that are refused. " +
+		"Sign in with a passkey or your organisation's button, or ask an " +
+		"administrator.",
 }
 
 // signInAgain sends the browser back to the form with a reason code.
@@ -1696,7 +1737,7 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 		// on the sign-in page, asking for /favicon.ico, which lands here.
 		// Counted, five colleagues signing in behind one office address
 		// were enough to throttle everybody there.
-		if s.Throttle != nil && !errors.Is(err, errNoCredential) {
+		if s.Throttle != nil && !errors.Is(err, errNoCredential) && !errors.Is(err, auth.ErrLockedDown) {
 			d, alert := s.Throttle.Fail(sub)
 			if alert && s.OnAuthFailure != nil {
 				s.OnAuthFailure(sub.Source, d.Failures)
@@ -2617,6 +2658,16 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	if !s.can(w, r, p, auth.ActPublish, "/") {
 		return
 	}
+	if s.Frozen != nil {
+		if ferr := s.Frozen(); ferr != nil {
+			s.audit("publish", "/", map[string]string{"outcome": "refused", "by": p.Name, "reason": ferr.Error()})
+			w.WriteHeader(http.StatusConflict)
+			s.render(w, r, "review.html", map[string]any{
+				"Nav": "review", "Title": "Review", "Principal": p,
+				"CanPublish": false, "Error": ferr.Error()})
+			return
+		}
+	}
 
 	draft := s.Store.GetRef(site.RefDraft)
 
@@ -3492,4 +3543,35 @@ func landing(ds []destination) string {
 		}
 	}
 	return ""
+}
+
+// shieldedOff refuses a request for a feature the shield has turned off,
+// with when to try again; true means a response has been written.
+func (s *Server) shieldedOff(w http.ResponseWriter, target string) bool {
+	if s.Shield == nil {
+		return false
+	}
+	until, on := s.Shield(target)
+	if !on {
+		return false
+	}
+	if secs := int(time.Until(until).Seconds()) + 1; secs > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(secs))
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	http.Error(w, "this is turned off for a while by the shield; an administrator can lift it on the Shield screen",
+		http.StatusServiceUnavailable)
+	return true
+}
+
+// shieldable is a handler that answers 503, with when to try again, while
+// the shield has its feature off: a sender that retries (an identity
+// provider, a webhook) delivers later instead of being lost.
+func (s *Server) shieldable(target string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.shieldedOff(w, target) {
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

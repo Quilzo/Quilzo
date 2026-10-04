@@ -265,6 +265,9 @@ func envPromote(root string, args []string) error {
 		return err
 	}
 	caller := resolveCaller(root, "")
+	if err := refuseWhileFrozen(root); err != nil {
+		return err
+	}
 
 	p, err := site.Promote(s, e, rest[0], rest[1], skip)
 	if err != nil {

@@ -182,6 +182,13 @@ uses them under the same limits.
   second person must approve. Each action shows the exact request first.
 - **Prioritise vulnerabilities** by exploitation and exposure rather than by
   severity alone, with reachability, SSVC and VEX.
+- **Protect itself** with the Shield: playbooks decided beforehand block a
+  source, turn a public feature down, lock the admin to passkeys and single
+  sign-on, freeze publishing or pause an agent the moment an attack shows, and
+  every protection ends by itself within a day. Nothing on the inside is
+  blocked, an administrator's own address keeps the admin, a playbook change
+  takes two administrators, and a dry run over the log shows what one would
+  have done first. `quilzo shield`.
 
 ### A content platform underneath
 

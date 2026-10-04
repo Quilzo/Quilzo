@@ -126,6 +126,8 @@ var destinations = []destination{
 	// only: a person's score is a file on an employee.
 	{"workforce", "Workforce risk", "/workforce", "Security operations", "workforce", auth.ActGrant},
 	// What happens next, and who signed in from where.
+	// What Quilzo is doing to protect itself, and the playbooks deciding it.
+	{"shield", "Shield", "/security/shield", "Security operations", "shield", auth.ActGrant},
 	{"automations", "Automations", "/security/automations", "Security operations", "automations", auth.ActGrant},
 	{"signins", "Sign-ins", "/security/signins", "Security operations", "automations", auth.ActGrant},
 	{"feeds", "Feeds", "/security/feeds", "Security operations", "feeds", auth.ActGrant},
@@ -194,7 +196,7 @@ var docSections = map[string]bool{
 	"listings": true, "forms": true, "media": true, "languages": true,
 	"ai": true, "publishing": true, "environments": true, "history": true,
 	"transfer": true, "ipfs": true, "provenance": true, "security": true, "detection": true,
-	"members": true, "provisioning": true, "sso": true, "automations": true, "feeds": true,
+	"members": true, "provisioning": true, "sso": true, "automations": true, "feeds": true, "shield": true,
 	"vulnerabilities": true, "cases": true,
 	"logging": true, "users": true, "auth": true, "integrations": true,
 	"settings": true, "api": true, "profile": true, "start": true,
@@ -467,6 +469,7 @@ var screenAreas = map[string]string{
 	"events": auth.AreaSecurity, "hunt": auth.AreaSecurity, "detections": auth.AreaSecurity,
 	"indicators": auth.AreaSecurity, "vulns": auth.AreaSecurity, "workforce": auth.AreaSecurity,
 	"automations": auth.AreaSecurity, "signins": auth.AreaSecurity, "feeds": auth.AreaSecurity,
+	"shield":   auth.AreaSecurity,
 	"security": auth.AreaCompliance, "logs": auth.AreaLog,
 	"inbox": auth.AreaInbox, "boards": auth.AreaBoards,
 }

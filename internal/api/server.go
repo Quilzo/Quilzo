@@ -85,6 +85,13 @@ type Server struct {
 	// OnWrite records a successful write, so the audit trail does not have a
 	// hole shaped like the API.
 	OnWrite func(principal, page, commit string)
+	// OnBadToken is told every credential presented that did not
+	// authenticate, and why, for the shield's decoys and guess counting
+	// (internal/shield). Nil tells nobody.
+	OnBadToken func(r *http.Request, presented string, err error)
+	// Shield reports whether the shield has turned the content API off for
+	// a while. Nil means never.
+	Shield func() (until time.Time, on bool)
 
 	limiter *limiter
 }
@@ -164,6 +171,18 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			})
 			return
 		}
+		if s.Shield != nil {
+			if until, off := s.Shield(); off {
+				if secs := int(time.Until(until).Seconds()) + 1; secs > 0 {
+					w.Header().Set("Retry-After", strconv.Itoa(secs))
+				}
+				writeError(w, http.StatusServiceUnavailable, Error{
+					Error: "the content API is turned off for a while",
+					Fix:   "retry after the time in the Retry-After header",
+				})
+				return
+			}
+		}
 
 		// Failed-authentication throttling, separate from the per-token rate
 		// limit below. That one bounds what an authenticated client may do;
@@ -224,7 +243,8 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 				})
 				return
 			}
-			if s.Throttle != nil {
+			// A real credential refused during a lockdown is not a guess.
+			if s.Throttle != nil && !errors.Is(err, auth.ErrLockedDown) {
 				d, alert := s.Throttle.Fail(authSub)
 				if alert && s.OnAuthFailure != nil {
 					s.OnAuthFailure(authSub.Source, d.Failures)
@@ -388,7 +408,11 @@ func (s *Server) authenticate(r *http.Request) (*auth.Token, error) {
 	if s.Tokens == nil {
 		return nil, fmt.Errorf("no token store")
 	}
-	return s.Tokens.Authenticate(strings.TrimSpace(raw), s.now())
+	tok, err := s.Tokens.Authenticate(strings.TrimSpace(raw), s.now())
+	if err != nil && s.OnBadToken != nil && !errors.Is(err, auth.ErrStepUp) {
+		s.OnBadToken(r, strings.TrimSpace(raw), err)
+	}
+	return tok, err
 }
 
 // may checks a permission for the authenticated caller.

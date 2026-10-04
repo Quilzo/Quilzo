@@ -164,10 +164,10 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	st.Signals = &public.SignalWatch{Window: 10 * time.Minute,
 		After: map[string]int{public.AdminHunt: 3, public.ConversationGuess: 5,
 			public.ChatbotInjection: 1},
-		Report: func(kind, source string, n int) {
+		Report: func(kind, source string, n, distinct int) {
 			record(root, audit.Record{Action: "site." + kind, Resource: "/",
 				Outcome: audit.Denied, Principal: source, Kind: audit.KindUnknown,
-				Detail: map[string]string{"count": fmt.Sprint(n)}})
+				Detail: map[string]string{"count": fmt.Sprint(n), "distinct": fmt.Sprint(distinct)}})
 		}}
 	st.Assistants = &public.Assistants{
 		Set:     func() (*assistant.Set, error) { return assistant.Load(assistantsPath(root)) },

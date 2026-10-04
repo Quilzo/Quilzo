@@ -141,6 +141,9 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	if !s.can(w, r, p, auth.ActEditDraft, "/") {
 		return
 	}
+	if s.shieldedOff(w, "uploads") {
+		return
+	}
 	if s.Media == nil {
 		s.unwired(w, r, p, "Media", "the media library")
 		return

@@ -222,6 +222,13 @@ var coverage = map[string]surfaces{
 	},
 
 	// Who has to be told about an incident, and what starts the clock.
+	// What Quilzo is doing to protect itself.
+	"shield": {GUI: "/security/shield", MCP: []string{"shield_status"},
+		Why: "an agent reads what is in force and what the playbooks did; " +
+			"lifting, blocking, holding and every playbook change are a " +
+			"person's, so a page an agent reads cannot steer what Quilzo " +
+			"refuses or lets in",
+	},
 	"incident": {GUI: "/security/cases", MCP: []string{"incident_status"},
 		Why: "an agent reads which clocks are running and which nobody " +
 			"has started; the decisions that start them are a person's",
@@ -1107,6 +1114,16 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 			NoMCP: "a disclosure is the marking a regulator asks for, and an " +
 				"agent that could clear one could quietly unmark " +
 				"model-generated media — the same line drawn for licences",
+		},
+		"shield playbook .remove": {
+			// A playbook added here is removed from the Shield screen, where
+			// it was added, and the removal is a proposal like any other
+			// change to what Quilzo does on its own.
+			GUI: "/security/shield",
+			MCP: nil,
+			NoMCP: "a playbook acts without asking anybody; an agent that could " +
+				"remove one could take away a protection the administrators " +
+				"put in place, which is the line drawn for access",
 		},
 		"rights set.clear": {
 			// The media screen records rights now, and clearing is the button
