@@ -20,6 +20,7 @@ import (
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/search"
+	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/vector"
@@ -107,6 +108,12 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			// operation is open until somebody notices.
 			return fmt.Errorf("%q declares no role, so it cannot be "+
 				"authorised: %v", op.Name, err)
+		}
+		// The shield turned the machine interface off: whatever drives it
+		// (an agent, a model) waits until a person lifts that.
+		if p, off := shield.Find(root, shield.Feature, "mcp", time.Now()); off && (p.Level == shield.Off || p.Reason == shield.Unreadable) {
+			return fmt.Errorf("the machine interface is turned off until about %s: %s",
+				p.Until.UTC().Format("15:04 UTC"), p.Reason)
 		}
 		return authorise(root, caller, action, "/")
 	}
@@ -423,6 +430,9 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			}
 		}
 
+		if ferr := refuseWhileFrozen(root); ferr != nil {
+			return nil, &mcp.Refusal{Reason: ferr.Error()}
+		}
 		pub, err := site.Publish(s, "")
 		if err != nil {
 			return nil, err

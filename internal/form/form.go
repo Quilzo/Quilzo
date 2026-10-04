@@ -340,6 +340,11 @@ func AcceptShare(f *Form, values map[string]string, source string,
 	return accept(f, values, source, now, false)
 }
 
+// ErrSpam is a submission refused as a script's: the honeypot filled, the
+// timing stamp missing, or the form answered faster than a person can read
+// it. The sender is told only that it was not accepted, as before.
+var ErrSpam = errors.New("this submission was not accepted")
+
 func accept(f *Form, values map[string]string, source string,
 	now time.Time, human bool) (Submission, error) {
 
@@ -355,7 +360,7 @@ func accept(f *Form, values map[string]string, source string,
 	// page this server rendered. A share from the operating system did not,
 	// so AcceptShare skips them — see the note there for what replaces them.
 	if human && strings.TrimSpace(values[Honeypot]) != "" {
-		return Submission{}, fmt.Errorf("this submission was not accepted")
+		return Submission{}, ErrSpam
 	}
 
 	// The timing check. A person cannot read a form and answer it in under two
@@ -366,11 +371,11 @@ func accept(f *Form, values map[string]string, source string,
 		started, err := strconv.ParseInt(
 			strings.TrimSpace(values[StampField]), 10, 64)
 		if err != nil {
-			return Submission{}, fmt.Errorf("this submission was not accepted")
+			return Submission{}, ErrSpam
 		}
 		elapsed := now.Unix() - started
 		if elapsed < MinFillSeconds {
-			return Submission{}, fmt.Errorf("this submission was not accepted")
+			return Submission{}, ErrSpam
 		}
 		// And a stamp from the far past is a replayed form, or a page that sat
 		// open for a week and is answering questions that may have changed.

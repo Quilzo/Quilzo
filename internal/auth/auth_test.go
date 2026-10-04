@@ -512,3 +512,60 @@ func TestUnknownTellsAGuessFromALateCredential(t *testing.T) {
 		t.Fatal("no error is unknown")
 	}
 }
+
+func TestALockdownRefusesWhatWasMadeBeforeItEvenAsANewSession(t *testing.T) {
+	ts := &TokenStore{}
+	old, _, err := ts.Issue("laptop", "dana", RoleAdmin, "", 30*24*time.Hour, RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	began := time.Now().Add(time.Second).Unix()
+	locked := func(issued int64, vouched bool) error {
+		if !vouched && issued < began {
+			return ErrLockedDown
+		}
+		return nil
+	}
+	// A session exchanged before the lockdown, from the old token.
+	sessSecret, _, err := ts.Exchange(old, RoleNone, "", time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	passkey, _, err := ts.IssueSession("passkey:dana", "dana", RoleAdmin, "/", time.Hour, RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts.Admit = locked
+	if _, err := ts.Authenticate(old, time.Now()); !errors.Is(err, ErrLockedDown) {
+		t.Fatalf("the old token: %v", err)
+	}
+	if _, err := ts.Authenticate(sessSecret, time.Now()); !errors.Is(err, ErrLockedDown) {
+		t.Fatalf("its session: %v", err)
+	}
+	// Exchanging it now cannot launder it into a session made after.
+	if _, _, err := ts.Exchange(old, RoleNone, "", time.Hour, time.Now()); !errors.Is(err, ErrLockedDown) {
+		t.Fatalf("exchanged during the lockdown: %v", err)
+	}
+	if _, err := ts.Authenticate(passkey, time.Now()); err != nil {
+		t.Fatalf("a passkey session was refused: %v", err)
+	}
+	ts.Admit = nil
+	fresh, _, err := ts.Issue("after", "dana", RoleAdmin, "", time.Hour, RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts.Admit = func(issued int64, vouched bool) error {
+		if !vouched && issued < began-10 {
+			return ErrLockedDown
+		}
+		return nil
+	}
+	if _, err := ts.Authenticate(fresh, time.Now()); err != nil {
+		t.Fatalf("a token made since: %v", err)
+	}
+	// Refusals are not guesses.
+	ts.Admit = locked
+	if _, err := ts.Authenticate(old, time.Now()); Unknown(err) {
+		t.Fatal("a locked-out credential counted as a guess")
+	}
+}

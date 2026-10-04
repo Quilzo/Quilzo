@@ -28,6 +28,7 @@ import (
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/search"
 	"github.com/quilzo/quilzo/internal/seo"
+	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/upkeep"
 )
@@ -243,6 +244,12 @@ func cmdSite(root string, args []string) error {
 		fmt.Fprintf(os.Stderr, "analytics are off: %v\n", cerr)
 	}
 
+	// The shield: every signal the site sees is told to its playbooks, and
+	// a feature it has turned down is turned down here (internal/shield).
+	sh := newShieldHost(root)
+	st.OnSignal = sh.signal
+	st.Shield = sh.feature
+
 	handler := st.Handler()
 
 	// The API shares the listener but not the routing. Mounted here rather than
@@ -260,8 +267,10 @@ func cmdSite(root string, args []string) error {
 			return cerr
 		}
 		apiSrv := &api.Server{
-			Store: s, Policy: pol, Tokens: toks,
-			Writable: *apiWritable,
+			Store: s, Policy: pol, Tokens: sh.gate(toks),
+			OnBadToken: sh.badToken,
+			Shield:     func() (time.Time, bool) { return sh.off("api") },
+			Writable:   *apiWritable,
 			Limits: api.Limits{
 				PerMinute: cfg.Int("api.rate.per_minute"),
 				Burst:     cfg.Int("api.rate.burst"),
@@ -328,7 +337,9 @@ func cmdSite(root string, args []string) error {
 
 	// Who each request came from is decided once, at the edge, for the
 	// site, the API and everything else on this listener (internal/clientip).
-	handler = clientip.Middleware(proxies(root, "site.trusted_proxy"), handler)
+	// Then the shield's guard, so a blocked source reaches nothing.
+	handler = clientip.Middleware(proxies(root, "site.trusted_proxy"),
+		sh.guard.Wrap(shield.Site, handler))
 
 	srv := &http.Server{Addr: *addr, Handler: handler}
 

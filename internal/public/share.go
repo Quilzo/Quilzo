@@ -137,6 +137,12 @@ func (st *Site) handleShare(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/"+st.Share.Form, http.StatusSeeOther)
 		return
 	}
+	for _, target := range []string{"form:" + st.Share.Form, "uploads"} {
+		if _, until, off := st.shielded(target); off {
+			st.resting(w, r, "Sharing to this site", until)
+			return
+		}
+	}
 	// Bounded before parsing. A share sheet sends what the user picked, and an
 	// unauthenticated multipart body with no ceiling is a way to fill a disk.
 	r.Body = http.MaxBytesReader(w, r.Body, maxShareBytes)

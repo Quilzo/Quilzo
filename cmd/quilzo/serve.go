@@ -53,6 +53,7 @@ import (
 	"github.com/quilzo/quilzo/internal/saml"
 	"github.com/quilzo/quilzo/internal/schedule"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/taxonomy"
 	"github.com/quilzo/quilzo/internal/upkeep"
@@ -90,6 +91,11 @@ func cmdServe(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// The shield, for this process: the guard every request passes, the
+	// engine every signal is told to, and the lockdown on every token store
+	// this server loads (internal/shield).
+	sh := newShieldHost(root)
+	sh.gate(toks)
 
 	// The whole design, loaded the way the public server loads it. A preview
 	// built from a different loader is a preview of a different site, which is
@@ -811,6 +817,14 @@ func cmdServe(root string, args []string) error {
 	srv.Brand = brand
 
 	srv.ReloadTokens = tokenReloader(root, toks)
+	srv.OnBadToken = sh.badToken
+	srv.OnStrongSignIn = sh.vouch
+	srv.Shield = sh.off
+	srv.Frozen = sh.frozen
+	srv.ShieldAdmin = &admin.ShieldAdmin{Root: root,
+		OnlyAdmin: func(name string) bool { return onlyAdministrator(root, name) },
+		History:   func(days int) ([]shield.Signal, error) { return history(root, days, time.Now()) },
+		Changed:   sh.guard.Refresh}
 
 	// The audit log, read-only. This process cannot write it where the writer
 	// has been separated out, so there is no edit path to withhold.
@@ -870,6 +884,8 @@ func cmdServe(root string, args []string) error {
 		// until an admin request happened to reload the store.
 		Throttle:     srv.Throttle,
 		ReloadTokens: srv.ReloadTokens,
+		OnBadToken:   sh.badToken,
+		Shield:       func() (time.Time, bool) { return sh.off("api") },
 		// The same cache the admin uses. One process, one decoded copy of a
 		// collection — two would be the same memory spent twice and two
 		// chances for one of them to be built wrong.
@@ -1151,7 +1167,7 @@ func cmdServe(root string, args []string) error {
 		if err != nil {
 			return nil, nil, err
 		}
-		return pol, toks, nil
+		return pol, sh.gate(toks), nil
 	}
 
 	// Loopback by default. An editing interface that binds every interface the
@@ -1160,8 +1176,12 @@ func cmdServe(root string, args []string) error {
 	//
 	// Who each request came from is decided once, here, for everything
 	// behind: limits, placing a sign-in, the audit log (internal/clientip).
+	//
+	// Then the shield's guard, before anything else sees the request: a
+	// blocked source is refused at the door.
 	httpSrv := &http.Server{Addr: *addr,
-		Handler: clientip.Middleware(proxies(root, "admin.trusted_proxy"), srv.Handler())}
+		Handler: clientip.Middleware(proxies(root, "admin.trusted_proxy"),
+			sh.guard.Wrap(shield.Admin, srv.Handler()))}
 
 	fmt.Printf("admin on http://%s\n", *addr)
 	// Both commands. A token names the role it may act up to; a binding is

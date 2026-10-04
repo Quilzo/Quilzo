@@ -156,6 +156,9 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 	if !s.can(w, r, p, auth.ActEditDraft, "/") {
 		return
 	}
+	if s.shieldedOff(w, "import") {
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, MaxImport)
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		s.transferRedirect(w, r, "", fmt.Sprintf(

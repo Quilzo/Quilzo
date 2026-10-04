@@ -4,6 +4,7 @@
 package public
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,7 +21,7 @@ func watching(st *Site, clock *time.Time) *[]heardSignal {
 	heard := &[]heardSignal{}
 	st.Signals = &SignalWatch{Window: 10 * time.Minute,
 		After: map[string]int{AdminHunt: 3, ConversationGuess: 5, ChatbotInjection: 1},
-		Report: func(kind, source string, n int) {
+		Report: func(kind, source string, n, _ int) {
 			*heard = append(*heard, heardSignal{kind, source})
 		},
 		now: func() time.Time { return *clock }}
@@ -111,20 +112,30 @@ func TestAnInjectionAttemptAtAChatbotIsNoticedAndAnsweredAsUsual(t *testing.T) {
 
 func TestASignalIsRecordedOncePerWindow(t *testing.T) {
 	clock := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
-	var n int
+	var n, distinct int
 	sw := &SignalWatch{Window: 10 * time.Minute, After: map[string]int{AdminHunt: 3},
-		Report: func(string, string, int) { n++ }, now: func() time.Time { return clock }}
+		Report: func(_ string, _ string, _ int, d int) { n++; distinct = d }, now: func() time.Time { return clock }}
 	for i := 0; i < 1000; i++ {
-		sw.Saw(AdminHunt, "203.0.113.9")
+		sw.Saw(AdminHunt, "203.0.113.9", "/signin")
 	}
-	if n != 1 {
-		t.Fatalf("a thousand requests were %d log lines", n)
+	if n != 1 || distinct != 1 {
+		t.Fatalf("a thousand requests were %d log lines, %d addresses", n, distinct)
 	}
 	clock = clock.Add(11 * time.Minute)
-	for i := 0; i < 3; i++ {
-		sw.Saw(AdminHunt, "203.0.113.9")
+	for i, p := range []string{"/signin", "/security", "/tokens"} {
+		sw.Saw(AdminHunt, "203.0.113.9", p)
+		_ = i
 	}
-	if n != 2 {
-		t.Errorf("the next window was not recorded (%d)", n)
+	if n != 2 || distinct != 3 {
+		t.Errorf("the next window was not recorded (%d) or its addresses miscounted (%d)", n, distinct)
+	}
+	// What a window remembers about is bounded.
+	wide := &SignalWatch{Window: 10 * time.Minute, After: map[string]int{AdminHunt: 100},
+		Report: func(_ string, _ string, _ int, d int) { distinct = d }, now: func() time.Time { return clock }}
+	for i := 0; i < 100; i++ {
+		wide.Saw(AdminHunt, "203.0.113.9", fmt.Sprint("/x", i))
+	}
+	if distinct != 16 {
+		t.Errorf("distinct %d", distinct)
 	}
 }

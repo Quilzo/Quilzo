@@ -278,6 +278,10 @@ func (st *Site) signupStart(w http.ResponseWriter, r *http.Request) {
 	if st.limited(w, r) {
 		return
 	}
+	if _, until, off := st.shielded("signup"); off {
+		st.resting(w, r, "Making an account", until)
+		return
+	}
 	var in struct{ Name, Invite string }
 	if !readJSON(w, r, &in) {
 		return
@@ -315,6 +319,10 @@ type registrationIn struct {
 }
 
 func (st *Site) signupFinish(w http.ResponseWriter, r *http.Request) {
+	if _, until, off := st.shielded("signup"); off {
+		st.resting(w, r, "Making an account", until)
+		return
+	}
 	var in registrationIn
 	if !readJSON(w, r, &in) {
 		return

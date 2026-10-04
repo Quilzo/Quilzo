@@ -129,6 +129,14 @@ func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request) {
 	// recorded.
 	skip := r.FormValue("skip") != ""
 
+	if s.Frozen != nil {
+		if ferr := s.Frozen(); ferr != nil {
+			s.auditPub(p, "env.promote", "/", map[string]string{
+				"from": from, "to": to, "outcome": "denied", "reason": ferr.Error()})
+			s.pubRedirect(w, r, "", ferr.Error())
+			return
+		}
+	}
 	prom, err := site.Promote(s.Store, envs, from, to, skip)
 	if err != nil {
 		s.auditPub(p, "env.promote", "/", map[string]string{

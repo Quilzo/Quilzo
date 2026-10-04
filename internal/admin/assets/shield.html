@@ -1,0 +1,159 @@
+{{template "head" .}}
+<h1>Shield</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Planted}}
+<div class="notice ok" role="status">
+  <p><strong>Decoy {{.Planted.ID}} is ready</strong> for {{.Planted.Note}}. Copy it now: it is shown this once.</p>
+  <dl class="feed-secret"><dt>Decoy token</dt><dd><code>{{.Planted.Secret}}</code></dd></dl>
+  <p>It opens nothing. Anybody who presents it is shut out everywhere for a day, and a case is opened saying where it was planted.</p>
+  <p><a href="/security/shield">Back to the shield</a></p>
+</div>
+{{else if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
+{{else if .Broken}}<p class="notice bad" role="alert">The shield's record cannot be read, so what it holds stays in force: {{.Broken}}. On the machine, <code>quilzo shield repair</code> sets it aside.</p>
+{{else}}
+<p class="lead">Quilzo protecting itself: blocking a source, turning a public feature down, locking the admin to passkeys and single sign-on, freezing publishing, pausing an agent. Playbooks decide these beforehand and act at once; each protection ends by itself, within a day when a playbook set it, and any of them can be lifted here.</p>
+
+<div class="shield-status">
+  {{if .Held}}<span class="wf-band warning"><span class="wf-icon">{{icon "error"}}</span>Held to watching</span>
+  {{else if .Active}}<span class="wf-band warning"><span class="wf-icon">{{icon "error"}}</span>{{len .Active}} in force</span>
+  {{else}}<span class="wf-band good"><span class="wf-icon">{{icon "check_circle"}}</span>Nothing in force</span>{{end}}
+  <span class="hint">{{len .Playbooks}} playbooks · {{if .Vouched}}{{.Vouched}} source{{if ne .Vouched 1}}s{{end}} an administrator signed in from strongly · {{end}}{{len .Decoys}} decoy{{if ne (len .Decoys) 1}}s{{end}} planted</span>
+</div>
+
+{{if .Held}}<div class="notice warn" role="status">
+  <p><strong>Every playbook is watching, not acting,</strong> since {{.Held.At}}: {{.Held.By}} held them because “{{.Held.Reason}}”. They still say what they would have done.</p>
+  {{if $.SiteAdmin}}{{if .ReleaseWaiting}}<p>Letting them act again is waiting for a second administrator, below.</p>{{else}}
+  <form method="post" action="/security/shield/act" class="auto-controls"><input type="hidden" name="do" value="release">
+    <label for="release-why" class="visually-hidden">Why they can act again {{template "req"}}</label>
+    <input id="release-why" name="why" required maxlength="300" placeholder="Why they can act again">
+    <button type="submit" class="btn-tonal">Propose letting them act</button></form>{{end}}{{end}}
+</div>{{end}}
+
+<h2>In force</h2>
+{{if .Active}}<ul class="auto-list">{{range .Active}}<li class="auto-card">
+  <div class="auto-head"><strong>{{.What}}</strong><span class="chip-small">{{.Who}}</span></div>
+  <p>{{.Reason}}</p>
+  <p class="hint">Since {{.Started}}; ends {{.Ends}}. <code>{{.ID}}</code></p>
+  {{if $.SiteAdmin}}<form method="post" action="/security/shield/act" class="auto-controls"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="do" value="lift">
+    <button type="submit" class="btn-tonal">Lift<span class="visually-hidden"> {{.What}}</span></button>
+    {{if .Auto}}<button type="submit" name="mistake" value="1" class="btn-text">Lift: it was a mistake<span class="visually-hidden"> ({{.What}})</span></button>{{end}}</form>{{end}}
+</li>{{end}}</ul>{{else}}<p>Nothing. When a playbook acts, what it did appears here with the button that undoes it.</p>{{end}}
+
+{{if .Pending}}<h2>Waiting for a second administrator</h2>
+<ul class="auto-list">{{range .Pending}}<li class="auto-card waiting">
+  <div class="auto-head"><span class="wf-band warning"><span class="wf-icon">{{icon "error"}}</span>Waiting</span><strong>{{.What}}</strong></div>
+  <p>“{{.Why}}”, proposed by {{.By}} on {{.When}}.</p>
+  {{if $.SiteAdmin}}<form method="post" action="/security/shield/act" class="auto-controls"><input type="hidden" name="id" value="{{.ID}}">
+    {{if .Mine}}<span class="hint">Somebody else approves it.</span><button type="submit" name="do" value="withdraw" class="btn-text">Withdraw</button>
+    {{else}}<button type="submit" name="do" value="approve">Approve</button><button type="submit" name="do" value="decline" class="btn-outlined">Decline</button>{{end}}</form>{{end}}
+</li>{{end}}</ul>{{end}}
+
+<h2>Playbooks</h2>
+<p class="hint">Changing what a playbook does is proposed by one administrator and approved by another, because it acts without asking anybody. Try one on the history first: it shows what it would have done, and to whom.</p>
+{{if .Problems}}<ul class="notice bad">{{range .Problems}}<li>Not run: {{.}}</li>{{end}}</ul>{{end}}
+{{if .BookBroken}}<p class="notice bad" role="alert">The playbook file cannot be read ({{.BookBroken}}), so Quilzo's own playbooks run, watching only.</p>{{end}}
+<ul class="auto-list">{{range .Playbooks}}<li class="auto-card{{if eq .Mode "off"}} off{{end}}">
+  <div class="auto-head"><strong>{{.Title}}</strong>
+    <span class="wf-band {{if eq .Mode "act"}}good{{else if eq .Mode "watch"}}unknown{{else}}low{{end}}">{{if eq .Mode "act"}}Acts{{else if eq .Mode "watch"}}Watches{{else}}Off{{end}}</span>
+    {{if not .Builtin}}<span class="chip-small">Added here</span>{{end}}</div>
+  <p>{{.Trigger}}</p>
+  <ul class="auto-steps">{{range .Stages}}<li>{{.}}</li>{{end}}</ul>
+  {{if .Why}}<p class="hint">{{.Why}}</p>{{end}}
+  <p class="hint">{{.Precision}}</p>
+  <div class="auto-controls">
+    <a class="btn btn-text" href="/security/shield?try={{.Name}}#try">Try on the last 30 days<span class="visually-hidden">: {{.Title}}</span></a>
+    {{if $.SiteAdmin}}{{if .Waiting}}<span class="hint">A change to it is waiting above.</span>{{else}}
+    <form method="post" action="/security/shield/act" aria-label="Change what {{.Title}} does">
+      <input type="hidden" name="do" value="mode"><input type="hidden" name="name" value="{{.Name}}">
+      <label for="why-{{.Name}}" class="visually-hidden">Why change {{.Title}} {{template "req"}}</label>
+      <input id="why-{{.Name}}" name="why" required maxlength="300" placeholder="Why">
+      <span class="seg">
+        <button type="submit" name="mode" value="watch"{{if eq .Mode "watch"}} aria-pressed="true" class="on" disabled{{else}} aria-pressed="false"{{end}}>Watch</button><button type="submit" name="mode" value="act"{{if eq .Mode "act"}} aria-pressed="true" class="on" disabled{{else}} aria-pressed="false"{{end}}>Act</button><button type="submit" name="mode" value="off"{{if eq .Mode "off"}} aria-pressed="true" class="on" disabled{{else}} aria-pressed="false"{{end}}>Off</button>
+      </span></form>{{end}}{{end}}
+  </div>
+</li>{{end}}</ul>
+<p><a class="btn btn-text" href="/security/shield?try=all#try">Try every playbook on the last 30 days</a></p>
+
+{{if .TryError}}<p class="notice bad" id="try">The history could not be read: {{.TryError}}</p>{{end}}
+{{if .Try}}<section id="try" aria-labelledby="try-h"><h2 id="try-h">What they would have done</h2>
+  <p class="hint">Over the last {{.Try.Days}} days: {{.Try.Signals}} signals in the log. The log keeps each source once per ten minutes, with a count, so this is close to what the playbooks would have seen, not the same. Nothing was applied.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Playbook</th><th scope="col">Would have</th><th scope="col">For example</th></tr></thead>
+    <tbody>{{range .Try.Runs}}<tr><th scope="row">{{.Playbook}}</th>
+      <td>{{if .Incomplete}}<span class="wf-band unknown">Not tried</span> {{.Incomplete}}{{else}}{{.Summary}}{{if .Collateral}} <span class="wf-band warning"><span class="wf-icon">{{icon "error"}}</span>Would have hit an administrator</span>{{end}}{{end}}</td>
+      <td>{{if .Examples}}<ul class="auto-steps">{{range .Examples}}<li>{{.}}</li>{{end}}</ul>{{else}}<span class="hint">—</span>{{end}}</td></tr>{{end}}</tbody>
+  </table></div></section>{{end}}
+
+<h2>Recently</h2>
+{{if .Responses}}<div class="table-wrap"><table class="auto-history">
+  <caption class="visually-hidden">What the playbooks did, most recent first</caption>
+  <thead><tr><th scope="col">When</th><th scope="col">Playbook</th><th scope="col">Stage</th><th scope="col">Did</th></tr></thead>
+  <tbody>{{range .Responses}}<tr><td>{{.When}}</td><th scope="row">{{.Playbook}}</th><td>{{.Stage}}</td>
+    <td>{{if ne .Mode "act"}}<span class="wf-band {{.Tone}}">{{if eq .Mode "held"}}Held{{else if eq .Mode "limited"}}At its limit{{else}}Watching{{end}}</span> {{end}}{{.Did}}</td></tr>{{end}}</tbody>
+</table></div>{{else}}<p>The playbooks have not responded to anything yet.</p>{{end}}
+
+{{if .Ended}}<h3>Ended</h3>
+<p class="hint">Saying whether a playbook's protection was right or a mistake is how its precision is counted.</p>
+<div class="table-wrap"><table class="auto-history">
+  <thead><tr><th scope="col">What</th><th scope="col">Set by</th><th scope="col">State</th><th scope="col">Was it right?</th></tr></thead>
+  <tbody>{{range .Ended}}<tr><th scope="row">{{.What}}<br><span class="hint">{{.Reason}}</span></th><td>{{.Who}}</td>
+    <td><span class="wf-band {{.Tone}}">{{.State}}</span></td>
+    <td>{{if and $.SiteAdmin .Judgeable}}<form method="post" action="/security/shield/act" class="row-actions"><input type="hidden" name="do" value="judge"><input type="hidden" name="id" value="{{.ID}}">
+      <button type="submit" name="verdict" value="right" class="btn-text">Right</button><button type="submit" name="verdict" value="mistake" class="btn-text">A mistake</button></form>{{else}}<span class="hint">—</span>{{end}}</td></tr>{{end}}</tbody>
+</table></div>{{end}}
+
+{{if .SiteAdmin}}
+<h2>Protect by hand</h2>
+<form method="post" action="/security/shield/act" class="auto-builder">
+  <input type="hidden" name="do" value="apply">
+  <fieldset><legend>What to do</legend>
+    <p><label><input type="radio" name="kind" value="block" checked> <strong>Block</strong> <span class="hint">a source by its handle in the log (p_…), a network (203.0.113.0/24) or a provider (AS64500)</span></label></p>
+    <p><label><input type="radio" name="kind" value="feature"> <strong>Turn a feature off</strong> <span class="hint">or limit a chatbot to quoting pages</span></label></p>
+    <p><label><input type="radio" name="kind" value="lockdown"> <strong>Lock the admin down</strong> <span class="hint">passkeys and single sign-on only; tokens made before are refused</span></label></p>
+    <p><label><input type="radio" name="kind" value="freeze"> <strong>Freeze publishing</strong> <span class="hint">rolling back still works</span></label></p>
+    <p><label><input type="radio" name="kind" value="pause"> <strong>Pause an agent</strong></label></p>
+  </fieldset>
+  <div class="auto-row">
+    <div class="field"><label for="shield-target">Source, network, provider, feature or agent</label>
+      <input id="shield-target" name="target" list="shield-features" aria-describedby="shield-target-hint">
+      <datalist id="shield-features">{{range .Features}}<option value="{{.Key}}">{{.Words}}</option>{{end}}<option value="chatbot:NAME">one chatbot</option><option value="form:NAME">one form</option></datalist>
+      <p class="hint" id="shield-target-hint">Not needed to lock down or freeze.</p></div>
+    <div class="field"><label for="shield-where">Where, for a block</label>
+      <select id="shield-where" name="where"><option value="all">The admin and the site</option><option value="site">The site</option><option value="admin">The admin</option></select></div>
+    <div class="field"><label for="shield-level">How far, for a feature</label>
+      <select id="shield-level" name="level"><option value="off">Off</option><option value="limited">A chatbot quotes pages only</option></select></div>
+    <div class="field"><label for="shield-for">For</label>
+      <select id="shield-for" name="for"><option value="1h">An hour</option><option value="4h">4 hours</option><option value="24h">A day</option><option value="168h">A week</option></select></div>
+  </div>
+  <div class="field"><label for="shield-reason">Why {{template "req"}}</label>
+    <input id="shield-reason" name="reason" required maxlength="300"></div>
+  <button type="submit">Apply</button>
+</form>
+
+<h2>Never blocked</h2>
+<p>Anything on the inside — this machine, private networks, carrier-grade NAT — is never blocked, and neither is anything passing only through a proxy you named. Add the networks your people work from{{if .Trusted}}:{{else}}.{{end}}</p>
+{{if .Trusted}}<ul class="auto-list">{{range .Trusted}}<li class="auto-card"><div class="auto-head"><code>{{.}}</code>
+  <form method="post" action="/security/shield/act"><input type="hidden" name="do" value="trust-remove"><input type="hidden" name="network" value="{{.}}">
+    <button type="submit" class="btn-text">Remove<span class="visually-hidden"> {{.}}</span></button></form></div></li>{{end}}</ul>{{end}}
+<form method="post" action="/security/shield/act" class="auto-controls"><input type="hidden" name="do" value="trust-add">
+  <label for="trust-net">Network {{template "req"}}</label><input id="trust-net" name="network" required placeholder="198.51.100.0/24">
+  <button type="submit" class="btn-tonal">{{icon "add"}}Add</button></form>
+
+<h2>Decoys</h2>
+<p>A decoy looks exactly like an access token and opens nothing. Plant one where a real one could leak — a wiki page, a CI variable, an old laptop's settings — and whoever presents it is shut out, with a case saying where it came from.</p>
+{{if .Decoys}}<ul class="auto-list">{{range .Decoys}}<li class="auto-card"><div class="auto-head"><strong>{{.Note}}</strong><span class="hint">{{.ID}}, planted {{.At}} by {{.By}}</span>
+  <form method="post" action="/security/shield/act"><input type="hidden" name="do" value="decoy-remove"><input type="hidden" name="id" value="{{.ID}}">
+    <button type="submit" class="btn-text">Remove<span class="visually-hidden"> {{.Note}}</span></button></form></div></li>{{end}}</ul>{{end}}
+<form method="post" action="/security/shield/act" class="auto-controls"><input type="hidden" name="do" value="decoy-add">
+  <label for="decoy-where">Where it will be planted {{template "req"}}</label><input id="decoy-where" name="where" required maxlength="200" placeholder="The deploy job's variables">
+  <button type="submit" class="btn-tonal">{{icon "add"}}Plant a decoy</button></form>
+
+{{if not .Held}}<h2>Stop the playbooks acting</h2>
+<p>Holds every playbook to watching at once, while somebody works out why one acted. One administrator can do it; letting them act again takes a second.</p>
+<form method="post" action="/security/shield/act" class="auto-controls"><input type="hidden" name="do" value="hold">
+  <label for="hold-why" class="visually-hidden">Why {{template "req"}}</label><input id="hold-why" name="why" required maxlength="300" placeholder="Why">
+  <button type="submit" class="btn-outlined">Hold every playbook</button></form>{{end}}
+{{else}}<p class="hint">Changing the shield takes an administrator of the whole site: it decides who gets in and what Quilzo does on its own.</p>{{end}}
+{{end}}
+{{template "foot" .}}

@@ -93,6 +93,17 @@ func (s *Server) clientAddr(r *http.Request) string { return clientip.AddrFrom(r
 // decide at all is theirs to report: an unreadable rules file lets sign-ins
 // through and says so loudly, rather than locking every administrator out.)
 func (s *Server) signInCheck(r *http.Request, name, sessionID, how string, verifying bool) (bool, error) {
+	up, err := s.signInRisk(r, name, sessionID, how, verifying)
+	// A passkey or single sign-on nothing held back is an administrator
+	// where they are: the shield never blocks that source from the admin.
+	if err == nil && !up && (how == "passkey" || how == "sso") && s.OnStrongSignIn != nil {
+		s.OnStrongSignIn(r, name)
+	}
+	return up, err
+}
+
+// signInRisk puts a sign-in to the automations' risk rules.
+func (s *Server) signInRisk(r *http.Request, name, sessionID, how string, verifying bool) (bool, error) {
 	if s.SignInRisk == nil {
 		return false, nil
 	}

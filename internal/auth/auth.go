@@ -725,7 +725,21 @@ type TokenStore struct {
 	// of what it authorised.
 	mu     sync.Mutex
 	Tokens []Token `json:"tokens"`
+
+	// Admit, when set, is asked about every credential that authenticates,
+	// including one presented to be exchanged for a session. The shield's
+	// lockdown sets it (internal/shield): it is given when the credential's
+	// own long-lived token was made — the parent's, for a session exchanged
+	// from one, so a stolen token cannot be laundered into a fresh session —
+	// and whether a passkey or single sign-on vouched for it. A store
+	// loaded for the command line on the machine has none: that is the way
+	// out of a lockdown, not a way in.
+	Admit func(issued int64, vouched bool) error `json:"-"`
 }
+
+// ErrLockedDown is a credential refused because the admin is accepting
+// only passkeys, single sign-on and tokens made since, for a while.
+var ErrLockedDown = errors.New("for a while the admin accepts only passkeys, single sign-on and tokens made since then")
 
 // Issue mints a token and returns the secret exactly once.
 //
@@ -1022,6 +1036,21 @@ func (ts *TokenStore) authenticate(secret string, now time.Time) (*Token, error)
 	}
 	if ok, why := found.Usable(now); !ok {
 		return nil, fmt.Errorf("%s", why)
+	}
+	if ts.Admit != nil {
+		issued := found.CreatedAt
+		if found.Parent != "" {
+			// A parent that is gone made nothing anybody can vouch for.
+			issued = 0
+			for i := range ts.Tokens {
+				if ts.Tokens[i].ID == found.Parent {
+					issued = ts.Tokens[i].CreatedAt
+				}
+			}
+		}
+		if err := ts.Admit(issued, found.Session); err != nil {
+			return nil, err
+		}
 	}
 	found.LastUsed = now.Unix()
 

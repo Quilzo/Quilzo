@@ -107,6 +107,10 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		st.notFound(w, r)
 		return
 	}
+	if level, until, on := st.shielded("chatbot:" + a.Name); on && level != "limited" {
+		st.resting(w, r, "This assistant", until)
+		return
+	}
 
 	if rest == "knowledge.json" {
 		st.askKnowledge(w, r, a)
@@ -185,7 +189,7 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 		l.Spend(throttle.Subject{Source: source})
 	}
 	if LooksLikeInjection(view.Question) {
-		st.signal(ChatbotInjection, r)
+		st.signal(ChatbotInjection, a.Name, r)
 	}
 	idx, ierr := st.assistantIndex(a)
 	if ierr != nil {
@@ -193,7 +197,9 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 		return false
 	}
 	var m assistant.Model
-	if a.UseModel && st.Assistants.Model != nil {
+	// Limited by the shield: it quotes pages and asks no model, which takes
+	// away what injection is after and what it costs.
+	if _, _, limited := st.shielded("chatbot:" + a.Name); a.UseModel && st.Assistants.Model != nil && !limited {
 		m = st.Assistants.Model(a)
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)

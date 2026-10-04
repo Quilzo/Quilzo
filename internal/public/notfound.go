@@ -23,7 +23,7 @@ import (
 // cannot see.
 func (st *Site) notFound(w http.ResponseWriter, r *http.Request) {
 	if IsAdminPath(r.URL.Path) {
-		st.signal(AdminHunt, r)
+		st.signal(AdminHunt, huntedPath(r.URL.Path), r)
 	}
 	name := st.Name
 	if strings.TrimSpace(name) == "" {
