@@ -120,13 +120,18 @@ func randomToken(n int) (string, error) {
 
 // samlCookie is where the browser's half of the binding lives. __Host- and
 // SameSite=None over TLS, because the response arrives as a cross-site
-// POST; on a loopback deployment without TLS, a plain Lax cookie, which a
+// POST; on a loopback deployment without TLS, a Lax cookie, which a
 // provider on the same machine is same-site to.
-func (s *Server) samlCookie(r *http.Request) (name string, secure bool, same http.SameSite) {
+//
+// Secure either way. SAML is set up only for an https address or a
+// loopback one (Config.Validate), and browsers treat loopback as a secure
+// context, so unlike the token cookie there is no deployment this would
+// lock out.
+func (s *Server) samlCookie(r *http.Request) (name string, same http.SameSite) {
 	if r.TLS != nil || s.behindTLSProxy() {
-		return "__Host-quilzo_saml", true, http.SameSiteNoneMode
+		return "__Host-quilzo_saml", http.SameSiteNoneMode
 	}
-	return "quilzo_saml", false, http.SameSiteLaxMode
+	return "quilzo_saml", http.SameSiteLaxMode
 }
 
 // handleSAMLStart sends the browser to the identity provider.
@@ -186,9 +191,9 @@ func (s *Server) handleSAMLStart(w http.ResponseWriter, r *http.Request) {
 		binding: sha256.Sum256([]byte(secret)), created: now}
 	st.mu.Unlock()
 
-	cn, secure, same := s.samlCookie(r)
+	cn, same := s.samlCookie(r)
 	http.SetCookie(w, &http.Cookie{Name: cn, Value: secret, Path: "/", HttpOnly: true,
-		Secure: secure, SameSite: same, MaxAge: int(samlPendingTTL.Seconds())})
+		Secure: true, SameSite: same, MaxAge: int(samlPendingTTL.Seconds())})
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
@@ -240,10 +245,10 @@ func (s *Server) samlACS(w http.ResponseWriter, r *http.Request, cfg *saml.Confi
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	cn, secure, same := s.samlCookie(r)
+	cn, same := s.samlCookie(r)
 	clear := func() {
 		http.SetCookie(w, &http.Cookie{Name: cn, Value: "", Path: "/", HttpOnly: true,
-			Secure: secure, SameSite: same, MaxAge: -1})
+			Secure: true, SameSite: same, MaxAge: -1})
 	}
 	restart := func() {
 		clear()
@@ -374,7 +379,9 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, ho
 		// Lax for the same reason as OIDC: the browser arrives here from
 		// the identity provider, and Strict would drop the cookie on the
 		// way in. Lax still keeps it off other sites' POSTs.
-		SameSite: http.SameSiteLaxMode, Secure: r.TLS != nil || s.behindTLSProxy(),
+		// Secure always: single sign-on only runs on https or loopback,
+		// which browsers treat as secure.
+		SameSite: http.SameSiteLaxMode, Secure: true,
 		MaxAge: int(ttl.Seconds()),
 	})
 	if stepUp {
