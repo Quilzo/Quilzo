@@ -47,6 +47,11 @@ type Record struct {
 	From string `json:"from,omitempty"`
 	// Answers are what people decided about the actions it stopped at.
 	Answers []Answer `json:"answers,omitempty"`
+	// Eval names the evaluation this run was made for, and Plant the
+	// instruction planted in what it read. An evaluation's runs write
+	// nothing, call no tool and start no other agent; see internal/evals.
+	Eval  string `json:"eval,omitempty"`
+	Plant string `json:"plant,omitempty"`
 }
 
 // Answer is one person's decision on one pending action, kept.

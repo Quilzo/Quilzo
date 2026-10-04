@@ -647,11 +647,38 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		// Fields is the input as a person reads it, when every value in
 		// it is plain: each name with its text, line breaks kept.
 		Fields []inputField
+		// Took is how long the step took, and Bar its share of the
+		// slowest, for the timeline.
+		Took string
+		Bar  int
 	}
 	var steps []stepRow
+	prev := rec.Started
+	var slowest time.Duration
+	var took []time.Duration
 	for _, st := range rec.Trace.Steps {
+		d := time.Duration(0)
+		if !st.At.IsZero() && !prev.IsZero() && st.At.After(prev) {
+			d = st.At.Sub(prev)
+		}
+		if !st.At.IsZero() {
+			prev = st.At
+		}
+		took = append(took, d)
+		if d > slowest {
+			slowest = d
+		}
+	}
+	for i, st := range rec.Trace.Steps {
 		sr := stepRow{N: st.N, Allowed: st.Allowed, Why: st.Why,
 			Result: st.Result, Err: st.Err, Redirected: st.Redirected}
+		sr.Took = took[i].Round(time.Millisecond).String()
+		if slowest > 0 {
+			sr.Bar = int(100*took[i]/slowest + 0)
+			if sr.Bar < 2 {
+				sr.Bar = 2
+			}
+		}
 		switch {
 		case st.Action.Op != "":
 			sr.What, sr.Kind = st.Action.Op, "capability"
@@ -679,6 +706,9 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 	}
 	data["Steps"] = steps
 	data["State"] = rec.OutcomeAt(now)
+	if s.Evals != nil && rec.Eval == "" && rec.Trace.Waiting == nil && rec.OutcomeAt(now) != agent.Running {
+		data["Keep"] = keepData(rec)
+	}
 	row.Outcome = rec.OutcomeAt(now)
 	if tone, ok := map[string]string{"waiting": "warning", "running": "info",
 		"interrupted": "serious"}[row.Outcome]; ok {

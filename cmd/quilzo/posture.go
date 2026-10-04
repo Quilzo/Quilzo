@@ -672,6 +672,17 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 	}
 	if agents, aerr := loadAgents(root); aerr == nil {
 		facts.Agents = len(agents.Agents)
+		for name := range agents.Agents {
+			f := posture.AgentEvalFact{Name: name}
+			if cases, cerr := loadEvalCases(root, name); cerr == nil {
+				f.Cases = len(cases)
+			}
+			if reps, rerr := evalReports(root, name, 1); rerr == nil && len(reps) > 0 {
+				f.At, f.Hijacked = reps[0].At, reps[0].Hijacked
+			}
+			facts.Evals = append(facts.Evals, f)
+		}
+		sort.Slice(facts.Evals, func(i, j int) bool { return facts.Evals[i].Name < facts.Evals[j].Name })
 	}
 	facts.ModelHost, facts.ModelLocal = modelHostOf(root)
 	for _, r := range agentwatch.Flagged(agentwatch.Look(events, time.Now())) {

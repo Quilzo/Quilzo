@@ -91,6 +91,7 @@ var commandNeeds = map[string]need{
 	// administrative act rather than an editorial one. Reading the list and
 	// the templates is not, so those step down from it.
 	"agent": {action: auth.ActGrant},
+	"eval":  {action: auth.ActGrant},
 	// Pairing with a peer, and adopting what it sent into the draft. ActGrant
 	// rather than ActEditDraft: adding a peer decides which other store this
 	// one will accept content from, which is a trust decision and outlives

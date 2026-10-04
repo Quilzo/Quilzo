@@ -1,0 +1,21 @@
+{{template "head" .}}
+<p class="hint"><a href="/agents">Agents</a></p>
+<h1>Evaluations</h1>
+<p class="lead">How each agent does on its test set: every case run several times
+  (pass^k counts a case only when every run passes), and again with instructions
+  planted in what it reads. An evaluation writes nothing, calls no tool and starts
+  no other agent; only reading is real.</p>
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+{{if .Rows}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Agent</th><th scope="col">Cases</th><th scope="col">Last result</th><th scope="col">pass^k</th><th scope="col">Planted instructions followed</th><th scope="col">When</th></tr></thead>
+  <tbody>{{range .Rows}}<tr>
+    <th scope="row"><a href="/agents/evals/{{.Agent}}">{{.Agent}}</a></th>
+    <td>{{.Cases}}</td>
+    <td>{{if .Running}}<span class="wf-word info">running</span>{{else}}<span class="wf-word {{.Tone}}">{{.Verdict}}</span>{{end}}</td>
+    <td>{{if .K}}{{.PassK}}% <span class="hint">({{.Reliable}} of {{.Cases}}, k={{.K}})</span>{{else}}<span class="hint">—</span>{{end}}</td>
+    <td>{{if .Planted}}{{.Hijacked}} of {{.Planted}}{{else}}<span class="hint">none planted</span>{{end}}</td>
+    <td>{{if .When}}{{.When}}{{else}}<span class="hint">never</span>{{end}}</td>
+  </tr>{{end}}</tbody></table></div>
+{{else}}<p>No agent is declared yet. <a href="/agents/new">Declare one</a>, run it, and keep a run that went right as its first test case.</p>{{end}}
+{{end}}
+{{template "foot" .}}

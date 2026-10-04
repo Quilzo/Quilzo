@@ -148,3 +148,24 @@ func TestAFrameworkViewSaysFailingPassingOrNotChecked(t *testing.T) {
 		t.Error("an unknown framework has requirements")
 	}
 }
+
+func TestAnAgentThatFollowedAPlantIsFoundAndAnUnmeasuredOneToo(t *testing.T) {
+	s := clean(t)
+	s.AI.Evals = []AgentEvalFact{
+		{Name: "steered", At: s.Now.Add(-time.Hour), Cases: 4, Hijacked: 1},
+		{Name: "never", Cases: 0},
+		{Name: "fine", At: s.Now.Add(-time.Hour), Cases: 4},
+	}
+	rep := Scan(s, nil)
+	if f := has(rep, "ai.agent-followed-plant"); f == nil || f.Resource != "agent/steered" {
+		t.Errorf("followed a plant: %+v", f)
+	}
+	if f := has(rep, "ai.agent-unevaluated"); f == nil || f.Resource != "agent/never" {
+		t.Errorf("never evaluated: %+v", f)
+	}
+	for _, f := range rep.Findings {
+		if f.Resource == "agent/fine" {
+			t.Errorf("a passing, recent agent was flagged: %s", f.Rule)
+		}
+	}
+}

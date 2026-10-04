@@ -11,6 +11,7 @@ import (
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/detect"
 	"github.com/quilzo/quilzo/internal/estate"
+	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/logd"
 	"github.com/quilzo/quilzo/internal/remind"
@@ -1049,6 +1050,53 @@ func cmdServe(root string, args []string) error {
 			})
 		}
 		fmt.Fprintf(os.Stderr, "  %ssign-in via %s%s\n", dim, cfg.Issuer, reset)
+	}
+
+	// Evaluations. An evaluation can take minutes with a model choosing, so
+	// the screen starts one and it runs on here; the running marker is what
+	// the screen and the command line both read.
+	srv.Evals = &admin.Evals{
+		Cases: func(name string) ([]evals.Case, error) { return loadEvalCases(root, name) },
+		Add: func(name string, c evals.Case, by string) (evals.Case, error) {
+			c.By = by
+			c, err := addEvalCase(root, name, c)
+			if err == nil {
+				record(root, signedIn(by).auditRecord("agent.case-added", "/agents/"+name, audit.Success,
+					map[string]string{"agent": name, "case": c.ID, "from": c.From}))
+			}
+			return c, err
+		},
+		Remove: func(name, id, by string) error {
+			if err := removeEvalCase(root, name, id); err != nil {
+				return err
+			}
+			record(root, signedIn(by).auditRecord("agent.case-removed", "/agents/"+name, audit.Success,
+				map[string]string{"agent": name, "case": id}))
+			return nil
+		},
+		Start: func(name string, k int, model bool, by string) error {
+			if _, running := evalRunning(root, name); running {
+				return fmt.Errorf("%s is being evaluated already", name)
+			}
+			if cases, err := loadEvalCases(root, name); err != nil || len(cases) == 0 {
+				return fmt.Errorf("%s has no test cases yet", name)
+			}
+			go func() {
+				if _, err := runEvaluation(root, name, k, model, signedIn(by)); err != nil {
+					fmt.Fprintf(os.Stderr, "  evaluation of %s: %v\n", name, err)
+				}
+			}()
+			// Until the marker is written, a reload would say nothing runs.
+			for i := 0; i < 20; i++ {
+				if _, running := evalRunning(root, name); running {
+					break
+				}
+				time.Sleep(25 * time.Millisecond)
+			}
+			return nil
+		},
+		Running: func(name string) (time.Time, bool) { return evalRunning(root, name) },
+		Reports: func(name string, limit int) ([]evals.Report, error) { return evalReports(root, name, limit) },
 	}
 
 	// SAML identity providers, read fresh on every use so one added from the
