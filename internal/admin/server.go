@@ -439,7 +439,7 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 		"signedOutIcon": func() template.URL {
 			return template.URL("data:image/svg+xml," + url.PathEscape(MarkSVG("#0842a0")))
 		},
-		"pct":       func(f float64) float64 { return f * 100 },
+		"pct": func(f float64) float64 { return f * 100 },
 		// sentence capitalises the first letter, for a word stored in
 		// lower case and shown on its own: a severity, a state.
 		"sentence": func(v any) string {

@@ -103,11 +103,11 @@ type evalRunDot struct {
 }
 
 type evalResultRow struct {
-	ID, Goal          string
-	Runs, Planted     []evalRunDot
-	Reliable, Hijack  bool
-	ReliableWord      string
-	ReliableTone      string
+	ID, Goal         string
+	Runs, Planted    []evalRunDot
+	Reliable, Hijack bool
+	ReliableWord     string
+	ReliableTone     string
 }
 
 func (s *Server) renderEval(w http.ResponseWriter, r *http.Request, p principal, name string) {
