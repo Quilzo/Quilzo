@@ -309,7 +309,14 @@ func (l *Log) pseudonym(id string) string {
 	if len(l.key) == 0 {
 		return id
 	}
-	m := hmac.New(sha256.New, l.key)
+	return Pseudonym(l.key, id)
+}
+
+// Pseudonym is the handle an identifier has in a log kept with this key:
+// the one derivation, for anything that must match the log without holding
+// identities itself (internal/shield blocks a source by its handle).
+func Pseudonym(key []byte, id string) string {
+	m := hmac.New(sha256.New, key)
 	m.Write([]byte(id))
 	// Truncated to 16 bytes: still far beyond collision risk at any plausible
 	// number of principals, and short enough to read in a terminal.
