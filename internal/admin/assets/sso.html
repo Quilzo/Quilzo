@@ -1,0 +1,105 @@
+{{template "head" .}}
+<h1>Single sign-on</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+<p class="lead">People sign in through your organisation's identity provider: Okta,
+  Microsoft Entra ID, Google Workspace or any other that speaks SAML 2.0 or OpenID
+  Connect. The provider proves who somebody is; what they may do here is still
+  decided on <a href="/access">Access</a> and <a href="/provisioning">Provisioning</a>.</p>
+
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+
+{{with .Preview}}
+<section class="notice warn" aria-labelledby="confirm-h">
+  <h2 id="confirm-h">Check the certificate before trusting it</h2>
+  <p>The metadata for <strong>{{.Name}}</strong> says it comes from <code>{{.Entity}}</code>
+    and signs people in at <code>{{.SSO}}</code>. Whoever holds the key below can sign
+    anybody in as anybody, so compare its fingerprint with the one your identity
+    provider's admin console shows, and type it back to confirm.</p>
+  <ul class="fp-list">{{range .Fingerprints}}<li><code>{{.}}</code></li>{{end}}</ul>
+  {{if .WantsSigned}}<p>The metadata asks for signed requests. Quilzo sends unsigned ones,
+    so turn that requirement off for this application at the provider. Every response is
+    still checked against the request this browser made, which a signature would add nothing to.</p>{{end}}
+  <form method="post" action="/sso/act" class="card">
+    <input type="hidden" name="do" value="add">
+    {{range $k, $v := .Form}}{{if and (ne $k "fingerprint") (ne $k "do")}}{{range $v}}<input type="hidden" name="{{$k}}" value="{{.}}">{{end}}{{end}}{{end}}
+    <div class="field"><label for="fp">Fingerprint you checked {{template "req"}}</label>
+      <input id="fp" name="fingerprint" required autocomplete="off" spellcheck="false"></div>
+    <button type="submit">Trust it and save</button>
+  </form>
+</section>
+{{end}}
+
+<h2>SAML identity providers</h2>
+{{if .Providers}}{{range .Providers}}
+<section class="card sso-card" aria-labelledby="p-{{.Name}}">
+  <h3 id="p-{{.Name}}">{{if .Label}}{{.Label}}{{else}}{{.Name}}{{end}} <span class="hint">{{.Name}}</span></h3>
+  {{if .Problem}}<p class="notice bad">This provider cannot sign anybody in: {{.Problem}}</p>{{end}}
+  <dl class="kv">
+    <dt>Its entity ID</dt><dd><code>{{.EntityID}}</code></dd>
+    <dt>Signs in at</dt><dd><code>{{.SSOURL}}</code></dd>
+    <dt>Domains</dt><dd>{{if .Domains}}{{range $i, $d := .Domains}}{{if $i}}, {{end}}{{$d}}{{end}}{{if .Required}}; people in them must sign in this way{{end}}{{else}}<span class="hint">none: anybody it vouches for and the access policy names</span>{{end}}</dd>
+    <dt>Becomes</dt><dd>{{if .Principal}}{{.Principal}}{{else}}the NameID{{end}}</dd>
+    <dt>Second factor</dt><dd>{{if .RequireMFA}}required{{else}}<span class="hint">not required here; the provider may still ask</span>{{end}}</dd>
+  </dl>
+  <h4>Give these to {{if .Label}}{{.Label}}{{else}}the provider{{end}}</h4>
+  <dl class="kv">
+    <dt>Entity ID (audience)</dt><dd><code>{{.SP}}</code></dd>
+    <dt>Assertion consumer service (ACS) URL</dt><dd><code>{{.ACS}}</code></dd>
+    <dt>Or its metadata</dt><dd><a href="{{.Metadata}}">{{.Metadata}}</a></dd>
+  </dl>
+  <h4>Trusted signing certificates</h4>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Name</th><th scope="col">SHA-256 fingerprint</th><th scope="col">Expires</th></tr></thead>
+    <tbody>{{range .CertRows}}<tr><th scope="row">{{.Subject}}</th><td><code class="fp">{{.Fingerprint}}</code></td>
+      <td>{{if .Soon}}<span class="wf-word warning">{{.Expires}}</span>{{else}}{{.Expires}}{{end}}</td></tr>{{end}}</tbody>
+  </table></div>
+  <form method="post" action="/sso/act" class="actions">
+    <input type="hidden" name="do" value="remove"><input type="hidden" name="name" value="{{.Name}}">
+    <button type="submit" class="danger">Remove<span class="visually-hidden"> {{.Name}}</span></button>
+  </form>
+</section>
+{{end}}{{else}}<p>None yet.</p>{{end}}
+
+<h2>Add one</h2>
+<form method="post" action="/sso/act" class="card">
+  <input type="hidden" name="do" value="add">
+  <div class="field"><label for="preset">Identity provider</label>
+    <select id="preset" name="preset" aria-describedby="where">
+      {{range .Presets}}<option value="{{.Key}}">{{.Label}}</option>{{end}}
+      <option value="">Another SAML 2.0 provider</option>
+    </select>
+    <details id="where" class="help astable"><summary>Where to set Quilzo up in each<span class="chev">{{icon "expand_more"}}</span></summary>
+      <ul class="where-list">{{range .Presets}}<li><strong>{{.Label}}</strong>: {{.Where}}</li>{{end}}</ul></details></div>
+  <div class="field"><label for="sname">Name here {{template "req"}}</label>
+    <input id="sname" name="name" required pattern="[a-z][a-z0-9\-]{0,39}" aria-describedby="sname-help">
+    <p id="sname-help" class="help">Lower case, used in its addresses: <code>/saml/NAME/acs</code>.</p></div>
+  <div class="field"><label for="surl">This admin's address, as the provider reaches it {{template "req"}}</label>
+    <input id="surl" name="url" type="url" required placeholder="https://admin.example.com"></div>
+  <div class="field"><label for="smeta">The provider's metadata</label>
+    <textarea id="smeta" name="metadata" rows="6" spellcheck="false" aria-describedby="smeta-help"></textarea>
+    <p id="smeta-help" class="help">Paste the XML, or give its address below instead.</p></div>
+  <div class="field"><label for="smetaurl">Or the metadata's address</label>
+    <input id="smetaurl" name="metadata_url" type="url" placeholder="https://…/metadata"></div>
+  <div class="field"><label for="sdomains">Your organisation's domains</label>
+    <input id="sdomains" name="domains" placeholder="northwind.example" aria-describedby="sdomains-help">
+    <p id="sdomains-help" class="help">Sign-in names must be in one, and a work address in one
+      is sent here from the sign-in page.</p></div>
+  <div class="field"><label for="sprincipal">Who they become here</label>
+    <input id="sprincipal" name="principal" placeholder="nameid" aria-describedby="sprincipal-help">
+    <p id="sprincipal-help" class="help"><code>nameid</code>, or <code>attribute:email</code> to use an attribute.</p></div>
+  <fieldset><legend>Rules</legend>
+    <p><label><input type="checkbox" name="mfa"> Require a second factor, as the provider reports it</label></p>
+    <p><label><input type="checkbox" name="required"> People in these domains must sign in this way</label></p>
+    <div class="field"><label for="sglass">Who may still use a token or passkey (break glass)</label>
+      <input id="sglass" name="break_glass" placeholder="admin@northwind.example"></div>
+    <p><label><input type="checkbox" name="replace"> Replace a provider with this name</label></p>
+  </fieldset>
+  <button type="submit">Read the metadata</button>
+</form>
+
+<h2>OpenID Connect</h2>
+<p>{{if .OIDC}}Signing in with {{if .OIDCLabel}}{{.OIDCLabel}}{{else}}your organisation's provider{{end}} is set up{{with .OIDCDomains}}, for {{.}}{{end}}.{{else}}Not set up.{{end}}
+  It is configured with <code>quilzo oidc configure</code>; see <a href="/integrations">Integrations</a>.</p>
+{{end}}
+{{template "foot" .}}

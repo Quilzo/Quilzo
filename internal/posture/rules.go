@@ -281,6 +281,57 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "sso.cert-expiring",
+		Title:    "An identity provider's signing certificate is about to expire",
+		Severity: Medium,
+		Controls: []string{"IA-5(2)", "SC-17"},
+		OWASP:    "A07:2025 Authentication Failures",
+		Why: "When the provider starts signing with its next key, every " +
+			"sign-in through it is refused until the new certificate is " +
+			"trusted here. Trusting the next one before the old one ends " +
+			"makes the change invisible to the people signing in.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, p := range s.SSO.Providers {
+				for _, end := range p.Expires {
+					if end.After(s.Now.Add(30 * 24 * time.Hour)) {
+						continue
+					}
+					when := "expires " + end.UTC().Format("2 Jan 2006")
+					if !end.After(s.Now) {
+						when = "expired " + end.UTC().Format("2 Jan 2006")
+					}
+					out = append(out, Finding{Resource: "saml/" + p.Name,
+						Detail: "a certificate trusted for " + p.Name + " " + when,
+						Fix: "quilzo saml add " + p.Name + " --metadata NEW-METADATA --url ... " +
+							"--replace --fingerprint NEW  # once the provider publishes its next key"})
+				}
+			}
+			return out
+		},
+	},
+	{
+		ID:       "sso.unusable",
+		Title:    "An identity provider is set up and cannot sign anybody in",
+		Severity: Medium,
+		Controls: []string{"IA-2", "IA-5(2)"},
+		OWASP:    "A07:2025 Authentication Failures",
+		Why: "Its button is on the sign-in page and every sign-in through it " +
+			"fails, so people fall back to tokens: the single sign-on the " +
+			"organisation relies on is quietly not in force.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, p := range s.SSO.Providers {
+				if p.Problem != "" {
+					out = append(out, Finding{Resource: "saml/" + p.Name,
+						Detail: p.Name + ": " + p.Problem,
+						Fix:    "quilzo saml show " + p.Name + "  # then add it again with --replace"})
+				}
+			}
+			return out
+		},
+	},
+	{
 		ID:       "token.admin-role",
 		Title:    "An API token carries administrator rights",
 		Severity: Critical,

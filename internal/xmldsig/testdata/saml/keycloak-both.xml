@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" Destination="https://quilzo.example/saml/keycloak/acs" ID="_r05c0ffeekeycloakboth" InResponseTo="_4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c" IssueInstant="2026-10-03T12:00:00.123Z" Version="2.0">
+  <saml:Issuer>https://id.northwind.example/realms/staff</saml:Issuer><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><ds:Reference URI="#_r05c0ffeekeycloakboth"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>wKONrkXmQkitxqUxBQp31V9tIQ0McWSTmGcMK7UgGSY=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>GYxpiSyQx6lYwGWXqGxkqSfiGBHcyGfnu7Go5FtmDSwyuv2uMmLljxTTu8OEV03KxC53HX0GthE0&#13;
+Si2VPMwaehEKX+sounDQdr8aec7zYO1Ul3u4tZrsdEw4bod3Wv2IHiDAVOb5BvVW9kTTuCtOHqOl&#13;
+uD3QIltDyr+arYexsX7B05+clkGjmWobFZ4jdRgqWXNtvYcC1aKe2LOOWS/GWQqQAUMMUyDoV48O&#13;
+zX1QZDqNpyMklqtxe0ujnh9d8HQlbFTgG1gS9fqSDLM5aisuBbp+uTkY5NAiXtm6ss4S/fSXgQYx&#13;
+BZxqqQql/pXiKKo6+7bNj4viz0f2FU5LGyhc+g==</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIDMTCCAhmgAwIBAgIUV0eWo0ndXYxcS5JP90m0RlRfbHwwDQYJKoZIhvcNAQELBQAwKDEmMCQG&#13;
+A1UEAwwdVGVzdCBJZFAgcnNhIChub3QgYSByZWFsIGtleSkwHhcNMjYxMDAzMTcxMTM2WhcNMzYw&#13;
+OTMwMTcxMTM2WjAoMSYwJAYDVQQDDB1UZXN0IElkUCByc2EgKG5vdCBhIHJlYWwga2V5KTCCASIw&#13;
+DQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKrpxfFtfLRrUEdh2ke6IN6RNDZ5kBiQdr4x86px&#13;
+Es/6FinhcC5KXk72GBBGJfwjuXBOgXiazrEomtHHEFD/sdOLJ+wvGvoZr8XK8DLyYKE+AuEOQmX7&#13;
+J/IcEX5WViV/0DfSGMlS+vs6M+OfagljrLFXflLJwFRmPcJSg24MW1fuOF7551Zl34Czu9qFWVZQ&#13;
+A8D1Ibeii4XsVLp6ZzuNyvJkFOaUGKlRpU4VEQWW9rq7nkApj1pVt9ssDjZs47kYv/Gb5+Y3pebX&#13;
+i9EsT1fcEMS8P1Gc1Hfs/aNKyWuhf23u8Jjq04kwawD8hXpUrFpWjgaN3cKzSD3t6oUzHolxaSEC&#13;
+AwEAAaNTMFEwHQYDVR0OBBYEFMgrfzPiBDXflEl/3CvG1zXA/aVDMB8GA1UdIwQYMBaAFMgrfzPi&#13;
+BDXflEl/3CvG1zXA/aVDMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAFGGRxPU&#13;
+e6nJWDjyo9WPpgQtODrHTEXni2zHSBjB2neXWR2u5fnBvgOllTwzdaczRfwW4qr5LGHNjp8q7hVq&#13;
+tNC0f5MtUYUgDNyYOoXEJUov4bLi2bqlCFfHDyuoDXL9rOUXxbK8hSaVAuVGiz8b+dXvwKzparq1&#13;
+9ngA7PErpKKjw2Qk6bElBQ8zGgu7YH1QN6/Q784DALXgoOLmB48keH5AAbzsC/57t+tzIYfhqDxN&#13;
+5pzeR9RXtauh/17UovA54vx3pz5VlC8pWKZBAVS9HSP2QYUzbrI66emP77HjmfxvdVTPzd+yNpZ0&#13;
+i5/WoPdN4NIehKSCqkWawZmmdM4O1ag=</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature>
+  <samlp:Status>
+    <samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/>
+  </samlp:Status>
+  <saml:Assertion ID="_a05c0ffeekeycloakboth" IssueInstant="2026-10-03T12:00:00.123Z" Version="2.0">
+    <saml:Issuer>https://id.northwind.example/realms/staff</saml:Issuer><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><ds:Reference URI="#_a05c0ffeekeycloakboth"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>9PyqMSSXYqaeg6jsz9+xU2RZtWPzmuudd5f2b0kvx70=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>ZkKAgItB97P6oENF1in/oxh35KyhjtYiJxAt0of30wqc2556Cai8+rRkqL/BKa9n9GG+58kcr71l&#13;
+hOXrQUQs0R8p0QLkzTkyowDExcbhNurqDYYafDXNPqa4AMPJ9RhH4PzUGcvaS+rv+FrnHeBj7VPl&#13;
+KStq4v9w024Ej9tuL9T+srMy7I9VFLLCnn4/rpjBzrzlGkstnk9sh80WGA5usTvPuOBe8fTtTtw5&#13;
+aJ2L7yHAySV0PSbDO6kC1Kog0yiHUvNjj6TgLjSdfjTaX2niQf7y8nj11O5OgN2DZ3g0bayW5jWG&#13;
+8n4oUOpE73bxIifEIZFRhz9hZCnnImBY0oHz6Q==</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIDMTCCAhmgAwIBAgIUV0eWo0ndXYxcS5JP90m0RlRfbHwwDQYJKoZIhvcNAQELBQAwKDEmMCQG&#13;
+A1UEAwwdVGVzdCBJZFAgcnNhIChub3QgYSByZWFsIGtleSkwHhcNMjYxMDAzMTcxMTM2WhcNMzYw&#13;
+OTMwMTcxMTM2WjAoMSYwJAYDVQQDDB1UZXN0IElkUCByc2EgKG5vdCBhIHJlYWwga2V5KTCCASIw&#13;
+DQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKrpxfFtfLRrUEdh2ke6IN6RNDZ5kBiQdr4x86px&#13;
+Es/6FinhcC5KXk72GBBGJfwjuXBOgXiazrEomtHHEFD/sdOLJ+wvGvoZr8XK8DLyYKE+AuEOQmX7&#13;
+J/IcEX5WViV/0DfSGMlS+vs6M+OfagljrLFXflLJwFRmPcJSg24MW1fuOF7551Zl34Czu9qFWVZQ&#13;
+A8D1Ibeii4XsVLp6ZzuNyvJkFOaUGKlRpU4VEQWW9rq7nkApj1pVt9ssDjZs47kYv/Gb5+Y3pebX&#13;
+i9EsT1fcEMS8P1Gc1Hfs/aNKyWuhf23u8Jjq04kwawD8hXpUrFpWjgaN3cKzSD3t6oUzHolxaSEC&#13;
+AwEAAaNTMFEwHQYDVR0OBBYEFMgrfzPiBDXflEl/3CvG1zXA/aVDMB8GA1UdIwQYMBaAFMgrfzPi&#13;
+BDXflEl/3CvG1zXA/aVDMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAFGGRxPU&#13;
+e6nJWDjyo9WPpgQtODrHTEXni2zHSBjB2neXWR2u5fnBvgOllTwzdaczRfwW4qr5LGHNjp8q7hVq&#13;
+tNC0f5MtUYUgDNyYOoXEJUov4bLi2bqlCFfHDyuoDXL9rOUXxbK8hSaVAuVGiz8b+dXvwKzparq1&#13;
+9ngA7PErpKKjw2Qk6bElBQ8zGgu7YH1QN6/Q784DALXgoOLmB48keH5AAbzsC/57t+tzIYfhqDxN&#13;
+5pzeR9RXtauh/17UovA54vx3pz5VlC8pWKZBAVS9HSP2QYUzbrI66emP77HjmfxvdVTPzd+yNpZ0&#13;
+i5/WoPdN4NIehKSCqkWawZmmdM4O1ag=</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature>
+    <saml:Subject>
+      <saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">dana.reyes@northwind.example</saml:NameID>
+      <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
+        <saml:SubjectConfirmationData InResponseTo="_4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c" NotOnOrAfter="2026-10-03T12:05:00.123Z" Recipient="https://quilzo.example/saml/keycloak/acs"/>
+      </saml:SubjectConfirmation>
+    </saml:Subject>
+    <saml:Conditions NotBefore="2026-10-03T11:55:00.123Z" NotOnOrAfter="2026-10-03T12:05:00.123Z">
+      <saml:AudienceRestriction>
+        <saml:Audience>https://quilzo.example/saml/keycloak</saml:Audience>
+      </saml:AudienceRestriction>
+    </saml:Conditions>
+    <saml:AuthnStatement AuthnInstant="2026-10-03T11:59:58.000Z" SessionIndex="s1" SessionNotOnOrAfter="2026-10-03T20:00:00.000Z">
+      <saml:AuthnContext>
+        <saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:unspecified</saml:AuthnContextClassRef>
+      </saml:AuthnContext>
+    </saml:AuthnStatement>
+    <saml:AttributeStatement>
+      <saml:Attribute FriendlyName="Role" Name="Role" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:basic">
+        <saml:AttributeValue xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="xs:string">analyst</saml:AttributeValue>
+      </saml:Attribute>
+    </saml:AttributeStatement>
+  </saml:Assertion>
+</samlp:Response>

@@ -212,12 +212,7 @@ func oidcStatus(root string) error {
 		w.Human("no identity provider is configured\n")
 		w.Human("  %squilzo oidc configure --issuer ... --client-id ...%s\n",
 			dim, reset)
-		w.Human("\n  %sSAML is not implemented, deliberately. Go's encoding/xml "+
-			"does not\n  preserve semantics across a parse and re-serialise, "+
-			"which is how XML\n  Signature Wrapping gets in — both major Go SAML "+
-			"libraries shipped it.\n  Point a provider that speaks both at this "+
-			"instead; that moves the XML\n  parsing to software whose full-time "+
-			"job it is.%s\n", dim, reset)
+		w.Human("\n  %sSAML identity providers are set up with quilzo saml add.%s\n", dim, reset)
 		return nil
 	}
 	if w.JSON(map[string]any{

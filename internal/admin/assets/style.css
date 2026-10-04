@@ -1512,10 +1512,12 @@ body.nav-hidden > .sidenav { display: none; }
 .signin-aside > h2 + * + h2, .signin-aside > h2 ~ h2 { margin-top: 1.75rem; }
 
 /* A rule with a word in it, for "or". Drawn with borders rather than a
-   pseudo-element image so it inherits the theme and needs no asset. */
-.rule { display: flex; align-items: center; gap: .75rem; margin: 1.5rem 0;
+   pseudo-element image so it inherits the theme and needs no asset. Its own
+   class: it was .rule, which is also a detection rule's card, so on the
+   sign-in screen each "or" was drawn as a bordered card with an accent bar. */
+.or-divider { display: flex; align-items: center; gap: .75rem; margin: 1.5rem 0;
         color: var(--on-surface-variant); font: var(--label-lg); }
-.rule::before, .rule::after {
+.or-divider::before, .or-divider::after {
   content: ""; flex: 1 1 auto; height: 1px; background: var(--outline-variant);
 }
 
@@ -2735,3 +2737,27 @@ body:has(> .sidenav) > main { width: 100%; }
 /* A notice can name a file by its whole path; it wraps rather than
    pushing the page wider. */
 .notice { overflow-wrap: anywhere; }
+
+/* Single sign-on: values to copy whole, and the sign-in page's buttons. */
+.sso-card { margin: 0 0 16px; }
+.sso-card h3 { margin-top: 0; }
+.sso-card h4 { margin: 20px 0 8px; font: var(--title-md); font-weight: 500; }
+/* Label and value side by side, on one baseline. The global dt carries a
+   top margin for stacked lists, which in a grid pushed each label a line
+   below its value. */
+.kv { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); gap: 8px 20px;
+      margin: 8px 0; align-items: baseline; }
+.kv dt { margin: 0; font-weight: 500; }
+.kv dd { margin: 0; overflow-wrap: anywhere; font: var(--body-md); }
+.kv code { font-size: .875rem; }
+.where-list { margin: 6px 0 0; padding-left: 1.2rem; }
+.kv code, code.fp { user-select: all; }
+.fp-list { padding-left: 1.2rem; }
+.sso-discover { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; }
+.sso-discover .field { flex: 1 1 14rem; margin: 0; }
+.sso-discover > button { margin-block-end: 8px; }
+.sso-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 40rem) { .kv { grid-template-columns: minmax(0, 1fr); } .kv dd { margin-bottom: 8px; } }
+/* A tonal button: one of several equal choices, quieter than the filled
+   primary action. */
+.btn.tonal { background: var(--secondary-container); color: var(--on-secondary-container); }

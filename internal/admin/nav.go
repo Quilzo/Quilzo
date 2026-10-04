@@ -136,6 +136,9 @@ var destinations = []destination{
 	{"members", "Members", "/members", "Administration", "members", auth.ActGrant},
 	// Beside People: the same people, kept in step by the identity provider.
 	{"provisioning", "Provisioning", "/provisioning", "Administration", "provisioning", auth.ActGrant},
+	// Beside Provisioning: the identity provider that keeps people in step
+	// is usually the one they sign in through.
+	{"sso", "Single sign-on", "/sso", "Administration", "sso", auth.ActGrant},
 	{"access", "Access", "/access", "Administration", "auth", auth.ActGrant},
 	// View, not grant: everybody manages their own passkeys, and a screen that
 	// only administrators could open would be a second factor only
@@ -191,7 +194,7 @@ var docSections = map[string]bool{
 	"listings": true, "forms": true, "media": true, "languages": true,
 	"ai": true, "publishing": true, "environments": true, "history": true,
 	"transfer": true, "ipfs": true, "provenance": true, "security": true, "detection": true,
-	"members": true, "provisioning": true, "automations": true, "feeds": true,
+	"members": true, "provisioning": true, "sso": true, "automations": true, "feeds": true,
 	"vulnerabilities": true, "cases": true,
 	"logging": true, "users": true, "auth": true, "integrations": true,
 	"settings": true, "api": true, "profile": true, "start": true,

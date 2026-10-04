@@ -243,6 +243,20 @@ type ChatbotFact struct {
 
 // AIFacts are the chatbots, agents and models, for the AI and privacy
 // checks.
+// SSOFacts is single sign-on as set up: each SAML identity provider's
+// trusted certificates, and whether its configuration can be used.
+type SSOFacts struct {
+	Checked   bool          `json:"checked"`
+	Providers []SSOProvider `json:"providers,omitempty"`
+}
+
+// SSOProvider is one SAML identity provider.
+type SSOProvider struct {
+	Name    string      `json:"name"`
+	Expires []time.Time `json:"expires,omitempty"`
+	Problem string      `json:"problem,omitempty"`
+}
+
 type AIFacts struct {
 	Checked  bool          `json:"checked"`
 	Chatbots []ChatbotFact `json:"chatbots,omitempty"`
@@ -278,6 +292,7 @@ type State struct {
 	Agents    AgentFacts        `json:"agents"`
 	Ext       ExtFacts          `json:"ext"`
 	AI        AIFacts           `json:"ai"`
+	SSO       SSOFacts          `json:"sso"`
 	Now       time.Time         `json:"-"`
 	Extra     map[string]string `json:"extra,omitempty"`
 }

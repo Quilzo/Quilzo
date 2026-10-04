@@ -659,6 +659,7 @@ var coverage = map[string]surfaces{
 	"auth":     {GUI: "/people", NoMCP: "grants roles. Nothing that decides who may do what belongs on this surface"},
 	"token":    {GUI: "/people", NoMCP: "mints credentials, for the same reason"},
 	"oidc":     {GUI: "/integrations", NoMCP: "points sign-in at an identity provider; changing it changes who can become an administrator"},
+	"saml":     {GUI: "/sso", NoMCP: "trusts an identity provider's key, and whoever holds that key can sign anybody in as anybody; that is a person's decision, made by checking a fingerprint"},
 	"ext":      {GUI: "/integrations", NoMCP: "registers a process this store executes. Arbitrary code execution, reached by asking"},
 	"webhook":  {GUI: "/integrations", NoMCP: "adds an outbound destination for content, which is exfiltration with a configuration screen"},
 	"vault":    {GUI: "/security/integrity", NoMCP: "handles key material"},

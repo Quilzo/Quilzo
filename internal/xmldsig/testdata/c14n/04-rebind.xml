@@ -1,0 +1,1 @@
+<p:a xmlns:p="urn:one"><p:b xmlns:p="urn:two"><p:c xmlns:p="urn:one"/></p:b><p:b/></p:a>

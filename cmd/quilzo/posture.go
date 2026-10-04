@@ -55,6 +55,24 @@ type suppressionFile struct {
 func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 	s := posture.State{Now: time.Now(), Server: srv}
 
+	// Single sign-on: what each SAML provider's trust ends, and whether its
+	// configuration still holds together.
+	if all, err := loadSAML(root); err == nil {
+		s.SSO.Checked = true
+		for _, c := range all {
+			p := posture.SSOProvider{Name: c.Name}
+			if err := c.Validate(); err != nil {
+				p.Problem = err.Error()
+			}
+			if certs, err := c.Certificates(); err == nil {
+				for _, cert := range certs {
+					p.Expires = append(p.Expires, cert.NotAfter)
+				}
+			}
+			s.SSO.Providers = append(s.SSO.Providers, p)
+		}
+	}
+
 	// Extensions, and whether anything confines them.
 	//
 	// Checked is set whichever way the answer comes out, because the scanner

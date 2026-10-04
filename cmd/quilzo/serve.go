@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/admin"
@@ -47,6 +48,7 @@ import (
 	"github.com/quilzo/quilzo/internal/oidc"
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/provenance"
+	"github.com/quilzo/quilzo/internal/saml"
 	"github.com/quilzo/quilzo/internal/schedule"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
@@ -1047,6 +1049,37 @@ func cmdServe(root string, args []string) error {
 			})
 		}
 		fmt.Fprintf(os.Stderr, "  %ssign-in via %s%s\n", dim, cfg.Issuer, reset)
+	}
+
+	// SAML identity providers, read fresh on every use so one added from the
+	// command line applies at once. Changes from the screen are recorded
+	// here, under the person who made them.
+	srv.SAML = &admin.SAMLAdmin{
+		Providers: func() ([]saml.Config, error) { return loadSAML(root) },
+		Fetch:     samlFetch,
+		Save: func(c saml.Config) error {
+			if err := saveSAML(root, c); err != nil {
+				return err
+			}
+			record(root, audit.Record{Action: "saml.add", Resource: "/", Outcome: audit.Success,
+				Principal: c.AddedBy, Kind: audit.KindHuman, Verified: true,
+				Detail: map[string]string{"provider": c.Name, "entity": c.EntityID,
+					"certs": fmt.Sprint(len(c.Certs)), "domains": strings.Join(c.Domains, ","),
+					"required": fmt.Sprint(c.Required), "mfa": fmt.Sprint(c.RequireMFA)}})
+			return nil
+		},
+		Remove: func(name, by string) error {
+			if err := removeSAML(root, name); err != nil {
+				return err
+			}
+			record(root, audit.Record{Action: "saml.remove", Resource: "/", Outcome: audit.Success,
+				Principal: by, Kind: audit.KindHuman, Verified: true,
+				Detail: map[string]string{"provider": name}})
+			return nil
+		},
+	}
+	if srv.SaveTokens == nil {
+		srv.SaveTokens = func(ts *auth.TokenStore) error { return saveJSON(tokensPath(root), ts) }
 	}
 
 	// The same content gates `quilzo publish` runs, built here because this is

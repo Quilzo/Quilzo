@@ -19,6 +19,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>Sign in — Quilzo</title>
+{{with .Continue}}<meta http-equiv="refresh" content="0;url={{.Href}}">{{end}}
 <link rel="stylesheet" href="/style.css">
 </head>
 <body class="signin-page">
@@ -29,8 +30,22 @@
     <h1>Sign in</h1>
 
     {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+    {{with .Continue}}<p class="notice ok" role="status">Taking you to {{.Label}}…
+      <a href="{{.Href}}">Continue to {{.Label}}</a> if nothing happens.</p>{{end}}
     {{if .Hint}}<p class="help">{{.Hint}}</p>{{end}}
 
+    {{if .SSO}}
+    <div class="card">
+      <h2>Continue with your organisation</h2>
+      <form method="post" action="/signin/sso" class="sso-discover">
+        <div class="field"><label for="work-email">Work email {{template "req"}}</label>
+          <input id="work-email" name="email" type="email" autocomplete="username" required autofocus></div>
+        <button type="submit">Continue</button>
+      </form>
+      <p class="actions sso-buttons">{{range .SSO}}<a class="btn tonal" href="{{.Href}}">Sign in with {{.Label}}</a> {{end}}</p>
+    </div>
+    {{if not .OIDC}}<p class="or-divider"><span>or</span></p>{{end}}
+    {{end}}
     {{if .OIDC}}
     <div class="card">
       <h2>{{if .OIDCLabel}}Sign in with {{.OIDCLabel}}{{else}}Continue with your organisation{{end}}</h2>
@@ -41,14 +56,14 @@
       is decided by this site’s access policy, which an administrator
       maintains — so an account with the provider is not by itself access to
       this site.</p>
-    <p class="rule"><span>or</span></p>
+    <p class="or-divider"><span>or</span></p>
     {{end}}
 
     <form method="post" action="/signin">
       <div class="field">
         <label for="tok">API token {{template "req"}}</label>
         <input id="tok" name="token" type="password"
-               autocomplete="current-password" autofocus
+               autocomplete="current-password"{{if not .SSO}} autofocus{{end}}
                aria-describedby="tok-help" required
                placeholder="qz_…">
         <p id="tok-help" class="help">Create one with
@@ -61,7 +76,7 @@
       <button type="submit">Sign in</button>
     </form>
 
-    <p class="rule"><span>or</span></p>
+    <p class="or-divider"><span>or</span></p>
     <p class="help"><a href="/signin/passkey">Sign in with a passkey</a> if you
       have registered one. It cannot be read off a screen or sent to somebody
       by mistake, and your browser will not offer it to any site but this

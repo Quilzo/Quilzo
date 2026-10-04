@@ -36,7 +36,7 @@ var iconSymbol = map[string]string{
 	"risk": "warning", "cases": "cases", "events": "list_alt",
 	"hunt": "travel_explore", "detections": "radar", "indicators": "fingerprint",
 	"vulns": "bug_report", "workforce": "groups", "automations": "bolt", "signins": "login", "feeds": "sensors", "agents": "robot_2",
-	"people": "person", "members": "group", "boards": "forum", "provisioning": "sync", "access": "key", "passkeys": "passkey",
+	"people": "person", "members": "group", "boards": "forum", "provisioning": "sync", "sso": "badge", "access": "key", "passkeys": "passkey",
 	"integrations": "extension", "models": "memory", "settings": "settings",
 	"find": "search", "start": "rocket_launch", "playground": "api",
 	"profile": "account_circle",

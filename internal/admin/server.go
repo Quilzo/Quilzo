@@ -333,6 +333,11 @@ type Server struct {
 	// declared fields rather than whatever keys the page happens to have.
 	TypeFor func(page string) (schema.Type, bool)
 
+	// SAML is single sign-on through SAML identity providers; nil when the
+	// build was started without it. See samlauth.go.
+	SAML      *SAMLAdmin
+	samlState samlState
+
 	// OIDC, when an identity provider is configured. Nil means the only way in
 	// is a token, which is the default and is a complete configuration.
 	OIDC *OIDC
@@ -990,6 +995,13 @@ func sameSiteOnly(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// The one cross-site POST accepted: an identity provider's page
+		// posting a SAML response. It changes nothing unless a signed
+		// assertion answers a request this browser made; see samlauth.go.
+		if isSAMLACS(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 
 		// Sec-Fetch-Site is authoritative when the browser sends it.
 		//
@@ -1271,6 +1283,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/signin/passkey/challenge", s.handlePasskeySignInChallenge)
 	mux.HandleFunc("/signin/passkey/verify", s.handlePasskeyVerify)
 	mux.HandleFunc("/signin/oidc", s.handleOIDCStart)
+	mux.HandleFunc("/signin/saml/", s.handleSAMLStart)
+	mux.HandleFunc("/signin/sso", s.handleSSODiscover)
+	mux.HandleFunc("/saml/", s.handleSAML)
+	mux.HandleFunc("/sso", s.handleSSO)
+	mux.HandleFunc("/sso/act", s.handleSSOAct)
 	mux.HandleFunc("/auth/callback", s.handleOIDCCallback)
 	mux.HandleFunc("/signout", s.handleSignOut)
 	mux.HandleFunc("/agents", s.handleAgents)
@@ -1400,6 +1417,15 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	// bounds the first and lets signing out revoke the second. A pasted
 	// session is already short-lived and cannot be exchanged again, so it is
 	// used as it is.
+	// An organisation that requires single sign-on gets it: a pasted token
+	// is the one way round the identity provider's MFA and offboarding.
+	// The API still takes tokens; this is the browser's front door.
+	if s.ssoRequired(tok.Principal) != "" {
+		s.audit("session.refused", "/", map[string]string{"by": tok.Principal,
+			"credential": tok.ID, "why": "single sign-on is required"})
+		signInAgain(w, r, "sso")
+		return
+	}
 	cookie, cookieTok := raw, *tok
 	if !tok.IsSession() {
 		secret, sess, xerr := s.Tokens.Exchange(raw, auth.RoleNone, "",
@@ -1494,6 +1520,11 @@ var signInReasons = map[string]string{
 	"refused": "That token was not accepted. It may be mistyped, expired " +
 		"or revoked; an administrator can issue a new one with quilzo " +
 		"token issue.",
+	"sso": "Your organisation requires signing in through its identity " +
+		"provider, so a token or a passkey is not accepted here for your " +
+		"account. Use your organisation's button above.",
+	"nosso": "No organisation sign-in is set up for that address. Sign in " +
+		"with a token or a passkey instead, or ask an administrator.",
 }
 
 // signInAgain sends the browser back to the form with a reason code.
@@ -1510,7 +1541,7 @@ func signInAgain(w http.ResponseWriter, r *http.Request, why string) {
 // is the one worth a 429.
 func (s *Server) signInForm(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{"Title": "Sign in", "OIDC": s.OIDC != nil,
-		"OIDCLabel": s.oidcLabel()}
+		"OIDCLabel": s.oidcLabel(), "SSO": s.ssoChoices()}
 	if msg, ok := signInReasons[r.URL.Query().Get("e")]; ok {
 		data["Error"] = msg
 	}
@@ -1664,7 +1695,7 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 		}
 		w.WriteHeader(http.StatusUnauthorized)
 		data := map[string]any{"Title": "Sign in", "OIDC": s.OIDC != nil,
-			"OIDCLabel": s.oidcLabel()}
+			"OIDCLabel": s.oidcLabel(), "SSO": s.ssoChoices()}
 		if !errors.Is(err, errNoCredential) {
 			data["Error"] = err.Error()
 		}

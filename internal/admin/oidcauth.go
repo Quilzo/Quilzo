@@ -260,6 +260,10 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// which for a public provider is everybody — becomes a user of this system.
 	// The access policy is the list of who may work here, and it is maintained
 	// deliberately.
+	if s.suspended(principal) {
+		s.refuseSignIn(w, r, principal+" is suspended here: the identity provider deactivated or removed them.", "")
+		return
+	}
 	if !s.knownPrincipal(principal) {
 		s.refuseSignIn(w, r,
 			fmt.Sprintf("%s signed in successfully, but is not in the access "+
@@ -324,7 +328,7 @@ func (s *Server) refuseSignIn(w http.ResponseWriter, r *http.Request, reason, hi
 	w.WriteHeader(http.StatusForbidden)
 	s.render(w, r, "signin.html", map[string]any{
 		"Title": "Sign in", "Error": reason, "Hint": hint,
-		"OIDC": s.OIDC != nil, "OIDCLabel": s.oidcLabel(),
+		"OIDC": s.OIDC != nil, "OIDCLabel": s.oidcLabel(), "SSO": s.ssoChoices(),
 	})
 }
 

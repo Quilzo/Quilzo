@@ -1,0 +1,158 @@
+[
+ {
+  "name": "okta-both",
+  "idp": "okta",
+  "key": "rsa",
+  "signature": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+  "digest": "http://www.w3.org/2001/04/xmlenc#sha256",
+  "signed": [
+   "assertion",
+   "response"
+  ],
+  "response_id": "_r00c0ffeeoktaboth",
+  "assertion_id": "_a00c0ffeeoktaboth",
+  "request_id": "_4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c",
+  "now": "2026-10-03T12:00:00.123Z"
+ },
+ {
+  "name": "okta-assertion",
+  "idp": "okta",
+  "key": "rsa",
+  "signature": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+  "digest": "http://www.w3.org/2001/04/xmlenc#sha256",
+  "signed": [
+   "assertion"
+  ],
+  "response_id": "_r01c0ffeeoktaassertion",
+  "assertion_id": "_a01c0ffeeoktaassertion",
+  "request_id": "_4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c",
+  "now": "2026-10-03T12:00:00.123Z"
+ },
+ {
+  "name": "entra-assertion",
+  "idp": "entra",
+  "key": "rsa",
+  "signature": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+  "digest": "http://www.w3.org/2001/04/xmlenc#sha256",
+  "signed": [
+   "assertion"
+  ],
+  "response_id": "_r02c0ffeeentraassertion",
+  "assertion_id": "_a02c0ffeeentraassertion",
+  "request_id": "_4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c",
+  "now": "2026-10-03T12:00:00.123Z"
+ },
+ {
+  "name": "entra-response",
+  "idp": "entra",
+  "key": "rsa",
+  "signature": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+  "digest": "http://www.w3.org/2001/04/xmlenc#sha256",
+  "signed": [
+   "response"
+  ],
+  "response_id": "_r03c0ffeeentraresponse",
+  "assertion_id": "_a03c0ffeeentraresponse",
+  "request_id": "_4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c",
+  "now": "2026-10-03T12:00:00.123Z"
+ },
+ {
+  "name": "keycloak-response",
+  "idp": "keycloak",
+  "key": "rsa",
+  "signature": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+  "digest": "http://www.w3.org/2001/04/xmlenc#sha256",
+  "signed": [
+   "response"
+  ],
+  "response_id": "_r04c0ffeekeycloakresponse",
+  "assertion_id": "_a04c0ffeekeycloakresponse",
+  "request_id": "_4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c",
+  "now": "2026-10-03T12:00:00.123Z"
+ },
+ {
+  "name": "keycloak-both",
+  "idp": "keycloak",
+  "key": "rsa",
+  "signature": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+  "digest": "http://www.w3.org/2001/04/xmlenc#sha256",
+  "signed": [
+   "assertion",
+   "response"
+  ],
+  "response_id": "_r05c0ffeekeycloakboth",
+  "assertion_id": "_a05c0ffeekeycloakboth",
+  "request_id": "_4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c",
+  "now": "2026-10-03T12:00:00.123Z"
+ },
+ {
+  "name": "google-response",
+  "idp": "google",
+  "key": "rsa",
+  "signature": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+  "digest": "http://www.w3.org/2001/04/xmlenc#sha256",
+  "signed": [
+   "response"
+  ],
+  "response_id": "_r06c0ffeegoogleresponse",
+  "assertion_id": "_a06c0ffeegoogleresponse",
+  "request_id": "_4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c",
+  "now": "2026-10-03T12:00:00.123Z"
+ },
+ {
+  "name": "okta-ecdsa",
+  "idp": "okta",
+  "key": "ec",
+  "signature": "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256",
+  "digest": "http://www.w3.org/2001/04/xmlenc#sha256",
+  "signed": [
+   "assertion"
+  ],
+  "response_id": "_r07c0ffeeoktaecdsa",
+  "assertion_id": "_a07c0ffeeoktaecdsa",
+  "request_id": "_4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c",
+  "now": "2026-10-03T12:00:00.123Z"
+ },
+ {
+  "name": "entra-sha512",
+  "idp": "entra",
+  "key": "rsa",
+  "signature": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512",
+  "digest": "http://www.w3.org/2001/04/xmlenc#sha512",
+  "signed": [
+   "assertion"
+  ],
+  "response_id": "_r08c0ffeeentrasha512",
+  "assertion_id": "_a08c0ffeeentrasha512",
+  "request_id": "_4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c",
+  "now": "2026-10-03T12:00:00.123Z"
+ },
+ {
+  "name": "okta-weak",
+  "idp": "okta",
+  "key": "rsa1024",
+  "signature": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+  "digest": "http://www.w3.org/2001/04/xmlenc#sha256",
+  "signed": [
+   "assertion"
+  ],
+  "response_id": "_r09c0ffeeoktaweak",
+  "assertion_id": "_a09c0ffeeoktaweak",
+  "request_id": "_4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c",
+  "now": "2026-10-03T12:00:00.123Z"
+ },
+ {
+  "name": "okta-other-key",
+  "idp": "okta",
+  "key": "rsa-other",
+  "signature": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+  "digest": "http://www.w3.org/2001/04/xmlenc#sha256",
+  "signed": [
+   "assertion"
+  ],
+  "response_id": "_r10c0ffeeoktaotherkey",
+  "assertion_id": "_a10c0ffeeoktaotherkey",
+  "request_id": "_4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c",
+  "now": "2026-10-03T12:00:00.123Z"
+ }
+]
