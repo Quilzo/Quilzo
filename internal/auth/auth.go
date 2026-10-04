@@ -976,6 +976,27 @@ func (ts *TokenStore) Authenticate(secret string, now time.Time) (*Token, error)
 	return t, err
 }
 
+// errUnknown marks a secret that is no credential this store ever issued:
+// a guess, a forgery or a decoy, as against one that expired or was
+// revoked, which is somebody's real credential used late.
+var errUnknown = errors.New("not issued here")
+
+var errNoSuchToken = fmt.Errorf("no such token%w", silent{errUnknown})
+
+// silent wraps an error for errors.Is without adding to the message, so
+// what a caller is told stays exactly what it was.
+type silent struct{ error }
+
+func (silent) Error() string { return "" }
+
+func (s silent) Unwrap() error { return s.error }
+
+// Unknown reports whether Authenticate refused a secret because it was never
+// issued here, rather than because it expired or was revoked. The shield
+// counts the first: guessing is an attack, and a script holding a token that
+// ran out is not.
+func Unknown(err error) bool { return errors.Is(err, errUnknown) }
+
 // ErrStepUp is a session that must prove its person before it is used.
 var ErrStepUp = errors.New("this session must confirm it is its person first: sign in to the admin")
 
@@ -984,7 +1005,7 @@ var ErrStepUp = errors.New("this session must confirm it is its person first: si
 // lock rather than deadlocking on a re-entrant call.
 func (ts *TokenStore) authenticate(secret string, now time.Time) (*Token, error) {
 	if !strings.HasPrefix(secret, TokenPrefix) {
-		return nil, fmt.Errorf("that is not a quilzo token (they start with %s)", TokenPrefix)
+		return nil, fmt.Errorf("that is not a quilzo token (they start with %s)%w", TokenPrefix, silent{errUnknown})
 	}
 	want := []byte(hashToken(secret))
 
@@ -997,7 +1018,7 @@ func (ts *TokenStore) authenticate(secret string, now time.Time) (*Token, error)
 		}
 	}
 	if found == nil {
-		return nil, fmt.Errorf("no such token")
+		return nil, errNoSuchToken
 	}
 	if ok, why := found.Usable(now); !ok {
 		return nil, fmt.Errorf("%s", why)
