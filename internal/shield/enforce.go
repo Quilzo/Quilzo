@@ -5,40 +5,30 @@ package shield
 
 import (
 	"fmt"
-	"net"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/clientip"
 )
 
 // Wrap refuses requests from blocked sources before anything else sees
-// them. client is the requester's address as the deployment knows it (the
-// one a trusted proxy forwards); nil means the connection's.
-func (g *Guard) Wrap(where string, client func(*http.Request) string, next http.Handler) http.Handler {
+// them. The client is the one the edge decided (internal/clientip), so it
+// sits behind clientip.Middleware. A request whose client could not be told,
+// or that came from inside, is never refused here: blocking the unknown is
+// blocking whoever shares the proxy.
+func (g *Guard) Wrap(where string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		addr := ""
-		if client != nil {
-			addr = client(r)
-		}
-		if addr == "" {
-			addr = Connection(r)
-		}
-		now := time.Now()
-		if p, blocked := g.Blocked(addr, where, now); blocked {
-			Refuse(w, p, now)
-			return
+		c := clientip.FromRequest(r)
+		if c.Known() && !c.Internal {
+			now := time.Now()
+			if p, blocked := g.Blocked(c.Addr.String(), where, now); blocked {
+				Refuse(w, p, now)
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-// Connection is the address a request's connection came from.
-func Connection(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }
 
 // Refuse answers a blocked request: plainly, with when to try again, and
@@ -50,18 +40,38 @@ func Refuse(w http.ResponseWriter, p Protection, now time.Time) {
 	h.Set("Content-Type", "text/plain; charset=utf-8")
 	h.Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusForbidden)
-	fmt.Fprintf(w, "Requests from your address are refused until %s.\n"+
+	// The time is rounded up to the next five minutes: an honest visitor
+	// needs to know when, and a prober does not need it to the second.
+	fmt.Fprintf(w, "Requests from your address are refused until about %s.\n"+
 		"If this is a mistake, the people who run this site can lift it.\n",
-		p.Until.UTC().Format("15:04 UTC on 2 January"))
+		roundUp(p.Until, 5*time.Minute).UTC().Format("15:04 UTC on 2 January"))
 }
+
+func roundUp(t time.Time, d time.Duration) time.Time {
+	r := t.Truncate(d)
+	if r.Before(t) {
+		r = r.Add(d)
+	}
+	return r
+}
+
+// Unreadable is the reason given when the shield's own record cannot be
+// read: what is contained stays contained until somebody repairs it.
+const Unreadable = "the shield's record cannot be read; `quilzo shield repair` sets it aside"
 
 // Find is a protection of one kind on one target in force, read straight
 // from the store: for the places that act rarely and have no guard of
 // their own, such as publishing and starting an agent.
+//
+// It fails closed. A record that cannot be read may be holding a freeze or
+// a paused agent, and carrying on as though it were empty is the direction
+// that silently undoes a containment; so an unreadable record is answered
+// as a protection in force, which says what to do about it.
 func Find(root, kind, target string, now time.Time) (Protection, bool) {
 	st, err := Load(root)
 	if err != nil {
-		return Protection{}, false
+		return Protection{Kind: kind, Target: target, Reason: Unreadable, By: "shield",
+			At: now, Until: now.Add(time.Hour)}, true
 	}
 	for _, p := range st.Active(now) {
 		if p.Kind == kind && p.Target == target {

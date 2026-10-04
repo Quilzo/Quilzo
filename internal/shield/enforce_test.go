@@ -5,6 +5,7 @@ package shield
 
 import (
 	"net/http"
+	"net/netip"
 	"net/http/httptest"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/clientip"
 )
 
 func TestWrapRefusesBlockedSourcesFirst(t *testing.T) {
@@ -22,7 +24,11 @@ func TestWrapRefusesBlockedSourcesFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	reached := 0
-	h := g.Wrap(Site, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reached++ }))
+	proxy := &clientip.Resolver{Proxies: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}}
+	edge := func(h http.Handler) http.Handler {
+		return clientip.Middleware(func() *clientip.Resolver { return proxy }, h)
+	}
+	h := edge(g.Wrap(Site, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reached++ })))
 	get := func(remote string, xff string, h http.Handler) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("GET", "/", nil)
 		r.RemoteAddr = remote
@@ -46,17 +52,41 @@ func TestWrapRefusesBlockedSourcesFirst(t *testing.T) {
 	if w := get("203.0.113.10:4000", "", h); w.Code != http.StatusOK || reached != 1 {
 		t.Fatal("another source was refused")
 	}
-	// Behind a proxy, the address the deployment trusts is the one judged.
-	proxied := g.Wrap(Site, func(r *http.Request) string { return r.Header.Get("X-Forwarded-For") },
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reached++ }))
-	if w := get("127.0.0.1:4000", "203.0.113.9", proxied); w.Code != http.StatusForbidden {
+	// Behind a named proxy, the address it forwards is the one judged.
+	if w := get("10.0.0.2:4000", "203.0.113.9", h); w.Code != http.StatusForbidden {
 		t.Fatal("the forwarded address was not judged")
 	}
-	if w := get("127.0.0.1:4000", "", proxied); w.Code != http.StatusOK {
-		t.Fatal("no forwarded address: the proxy itself was refused")
+	// A request from inside, or whose client cannot be told, is not
+	// refused: refusing it is refusing whoever shares the proxy.
+	if w := get("10.0.0.2:4000", "", h); w.Code != http.StatusOK {
+		t.Fatal("the proxy itself was refused")
+	}
+	if w := get("10.0.0.2:4000", "garbage", h); w.Code != http.StatusOK {
+		t.Fatal("an unknown client was refused")
+	}
+	// A caller who is not the proxy cannot name somebody else, or escape.
+	if w := get("203.0.113.9:4000", "198.51.100.1", h); w.Code != http.StatusForbidden {
+		t.Fatal("a blocked source escaped by writing a header")
+	}
+	// A request from a named proxy itself (a CDN's health check), even one
+	// on a network somebody blocked, is from inside, and passes.
+	cdn := &clientip.Resolver{Proxies: []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")}}
+	b := ok(Block, "net:192.0.2.0/24")
+	b.Until, b.Where = time.Now().Add(time.Hour), Site
+	if _, _, err := Apply(g.Root, b, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	g.Refresh()
+	viaCDN := clientip.Middleware(func() *clientip.Resolver { return cdn },
+		g.Wrap(Site, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})))
+	if w := get("192.0.2.10:443", "", viaCDN); w.Code != http.StatusOK {
+		t.Fatal("the proxy's own request was refused")
+	}
+	if w := get("192.0.2.10:443", "203.0.113.9", viaCDN); w.Code != http.StatusForbidden {
+		t.Fatal("a blocked client came through the proxy")
 	}
 	// The admin is a different surface.
-	if w := get("203.0.113.9:4000", "", g.Wrap(Admin, nil, http.NotFoundHandler())); w.Code != http.StatusNotFound {
+	if w := get("203.0.113.9:4000", "", edge(g.Wrap(Admin, http.NotFoundHandler()))); w.Code != http.StatusNotFound {
 		t.Fatal("a site block reached the admin")
 	}
 }

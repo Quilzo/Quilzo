@@ -40,6 +40,38 @@ var Signals = map[string]string{
 	"agent-hijacked":     "an agent followed an instruction planted in what it read",
 }
 
+// Trait is how far a signal can be trusted, in CrowdSec's terms: Confidence
+// 0-3 is how seldom it is raised by somebody innocent; Spoofable 0-3 is how
+// easily somebody can raise it in another's name. A block needs a signal
+// nobody can raise for somebody else, and a block on the first sighting
+// needs one that is seldom innocent.
+type Trait struct {
+	Confidence int
+	Spoofable  int
+}
+
+// Traits are the signals' traits. Every source-keyed signal here is raised
+// on a connection the server itself accepted, so it cannot be raised in
+// another's name: Spoofable 0.
+var Traits = map[string]Trait{
+	// Already a count: raised when a source crosses the sign-in throttle's
+	// alerting threshold.
+	"signin-failures": {Confidence: 2},
+	// Three distinct admin addresses is somebody looking; one is somebody
+	// on the wrong host, which the trigger's Distinct is for.
+	"admin-hunt": {Confidence: 2},
+	// A conversation's address carries a secret nobody types by accident;
+	// a stale or cut-off link is the innocent case.
+	"conversation-guess": {Confidence: 2},
+	// Phrase matching: people quote these things innocently too.
+	"chatbot-injection": {Confidence: 1},
+	"form-spam":         {Confidence: 2},
+	// Nothing legitimate uses a decoy.
+	"decoy": {Confidence: 3},
+	// Measured by the evaluation's planted instruction.
+	"agent-hijacked": {Confidence: 3},
+}
+
 // Per says what a trigger counts by.
 var Per = map[string]string{
 	"source":   "one source",
@@ -85,6 +117,10 @@ type Trigger struct {
 	Per    string   `json:"per"`
 	Count  int      `json:"count"`
 	Within Duration `json:"within"`
+	// Distinct counts different subjects (admin addresses asked for,
+	// chatbots tried) rather than every signal, so asking for one address
+	// again and again is one.
+	Distinct bool `json:"distinct,omitempty"`
 }
 
 // Step is one thing a stage does.
@@ -151,6 +187,20 @@ func (p Playbook) Validate() error {
 	}
 	if len(p.Stages) == 0 || len(p.Stages) > 5 {
 		return errors.New("a playbook has one to five stages")
+	}
+	tr := Traits[p.On.Signal]
+	for i, st := range p.Stages {
+		for _, step := range st.Do {
+			if !strings.HasPrefix(step.Action, "block-") {
+				continue
+			}
+			if tr.Spoofable > 0 {
+				return fmt.Errorf("stage %d: %s can be raised in somebody else's name, so it may notify or turn a feature down, never block", i+1, p.On.Signal)
+			}
+			if p.On.Count == 1 && tr.Confidence < 2 {
+				return fmt.Errorf("stage %d: %s is raised by innocent people too; a block needs more than one", i+1, p.On.Signal)
+			}
+		}
 	}
 	if p.PerHour < 0 || p.PerHour > 1000 {
 		return errors.New("at most 1000 stages an hour")
@@ -227,10 +277,11 @@ func Builtins() []Playbook {
 	h := func(d time.Duration) Duration { return Duration(d) }
 	return []Playbook{
 		{Name: "signin-attack", Title: "Repeated failed sign-ins from one source", Mode: "act", Builtin: true,
-			Why: "Guessing tokens or replaying stolen ones. The throttle slows it; this stops it, and stops it everywhere if it comes back.",
+			Why: "Guessing tokens or replaying stolen ones. The throttle slows it; this stops it on the admin, for longer each time it comes back, and everywhere on the third.",
 			On:  Trigger{Signal: "signin-failures", Per: "source", Count: 1, Within: h(time.Hour)},
 			Stages: []Stage{
 				{Do: []Step{{Action: "block-source", Where: Admin, For: h(time.Hour)}}},
+				{Do: []Step{{Action: "block-source", Where: Admin, For: h(4 * time.Hour)}}},
 				{Do: []Step{{Action: "block-source", Where: All, For: h(24 * time.Hour)}, {Action: "notify"}}},
 			}},
 		{Name: "signin-attack-spread", Title: "Failed sign-ins spread across one provider", Mode: "watch", Builtin: true,
@@ -241,16 +292,18 @@ func Builtins() []Playbook {
 				{Do: []Step{{Action: "lockdown", For: h(6 * time.Hour)}, {Action: "open-case"}}},
 			}},
 		{Name: "admin-hunting", Title: "Looking for the admin on the public site", Mode: "act", Builtin: true,
-			Why: "The admin is not on the public site; asking for its addresses is reconnaissance.",
-			On:  Trigger{Signal: "admin-hunt", Per: "source", Count: 1, Within: h(time.Hour)},
+			Why: "The admin is not on the public site; asking for three of its addresses is reconnaissance. Somebody typing the wrong host asks for one. Blocks stay on the site: the admin is only closed to somebody who also fails to sign in.",
+			On:  Trigger{Signal: "admin-hunt", Per: "source", Count: 3, Within: h(10 * time.Minute), Distinct: true},
 			Stages: []Stage{
 				{Do: []Step{{Action: "block-source", Where: Site, For: h(time.Hour)}}},
-				{Do: []Step{{Action: "block-source", Where: All, For: h(24 * time.Hour)}}},
+				{Do: []Step{{Action: "block-source", Where: Site, For: h(4 * time.Hour)}}},
+				{Do: []Step{{Action: "block-source", Where: Site, For: h(24 * time.Hour)}}},
 			}},
 		{Name: "conversation-guessing", Title: "Guessing chatbot conversations", Mode: "act", Builtin: true,
-			Why: "Trying to read another visitor's conversation with the business.",
-			On:  Trigger{Signal: "conversation-guess", Per: "source", Count: 1, Within: h(time.Hour)},
+			Why: "Trying to read another visitor's conversation with the business. One wrong address is a stale link; three is guessing.",
+			On:  Trigger{Signal: "conversation-guess", Per: "source", Count: 3, Within: h(time.Hour)},
 			Stages: []Stage{
+				{Do: []Step{{Action: "block-source", Where: Site, For: h(time.Hour)}}},
 				{Do: []Step{{Action: "block-source", Where: Site, For: h(6 * time.Hour)}}},
 			}},
 		{Name: "chatbot-injection", Title: "Prompt injection against a chatbot", Mode: "act", Builtin: true,
@@ -258,6 +311,7 @@ func Builtins() []Playbook {
 			On:  Trigger{Signal: "chatbot-injection", Per: "source", Count: 3, Within: h(10 * time.Minute)},
 			Stages: []Stage{
 				{Do: []Step{{Action: "block-source", Where: Site, For: h(time.Hour)}}},
+				{Do: []Step{{Action: "block-source", Where: Site, For: h(4 * time.Hour)}}},
 				{Do: []Step{{Action: "block-source", Where: Site, For: h(24 * time.Hour)}}},
 			}},
 		{Name: "chatbot-flood", Title: "Injection attempts against a chatbot from everywhere", Mode: "watch", Builtin: true,
@@ -273,11 +327,17 @@ func Builtins() []Playbook {
 				{Do: []Step{{Action: "shield-feature", Feature: "subject", Level: Off, For: h(30 * time.Minute)}, {Action: "notify"}}},
 			}},
 		{Name: "decoy-touched", Title: "A decoy was touched", Mode: "act", Builtin: true,
-			Why: "Nothing legitimate uses a decoy, so this is somebody with a stolen copy or somebody exploring: assume the worst until a person looks.",
+			Why: "Nothing legitimate uses a decoy, so this is somebody with a stolen copy or somebody exploring: they are shut out everywhere, and a person is told where the leak was.",
 			On:  Trigger{Signal: "decoy", Per: "source", Count: 1, Within: h(time.Hour)},
 			Stages: []Stage{
-				{Do: []Step{{Action: "block-source", Where: All, For: h(24 * time.Hour)}, {Action: "lockdown", For: h(24 * time.Hour)},
-					{Action: "freeze", For: h(6 * time.Hour)}, {Action: "notify"}, {Action: "open-case"}}},
+				{Do: []Step{{Action: "block-source", Where: All, For: h(24 * time.Hour)}, {Action: "notify"}, {Action: "open-case"}}},
+			}},
+		{Name: "decoy-lockdown", Title: "A decoy was touched: lock the admin down", Mode: "watch", Builtin: true,
+			Why: "Whoever has the decoy may have the real secrets kept beside it. Locking the admin to passkeys and single sign-on refuses every token made before, which stops integrations too; so it watches until two administrators decide it should act.",
+			On:  Trigger{Signal: "decoy", Per: "any", Count: 1, Within: h(time.Hour)},
+			Stages: []Stage{
+				{Do: []Step{{Action: "lockdown", For: h(6 * time.Hour)}, {Action: "notify"}}},
+				{Do: []Step{{Action: "lockdown", For: h(24 * time.Hour)}, {Action: "freeze", For: h(6 * time.Hour)}, {Action: "notify"}}},
 			}},
 		{Name: "agent-steered", Title: "An agent followed a planted instruction", Mode: "act", Builtin: true,
 			Why: "Text it reads can steer it; it does not run until somebody narrows what it may do.",

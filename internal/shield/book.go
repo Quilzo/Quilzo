@@ -40,11 +40,13 @@ type Book struct {
 	Decided   []Proposal `json:"decided,omitempty"`
 }
 
-// Proposal is one change to one playbook.
+// Proposal is one change to one playbook, or letting every playbook act
+// again after they were held to watching.
 type Proposal struct {
 	ID       string    `json:"id"`
 	Playbook Playbook  `json:"playbook"`
 	Remove   bool      `json:"remove,omitempty"`
+	Release  bool      `json:"release,omitempty"`
 	Why      string    `json:"why"`
 	By       string    `json:"by"`
 	At       time.Time `json:"at"`
@@ -239,7 +241,13 @@ func Decide(root, id, by string, approve, onlyAdmin bool, now time.Time) (Propos
 			p.Outcome = "declined"
 			if approve {
 				p.Outcome, p.Alone = "approved", p.By == by
-				bk.apply(p)
+				if p.Release {
+					if err := release(root, now); err != nil {
+						return err
+					}
+				} else {
+					bk.apply(p)
+				}
 			}
 			bk.Pending = append(bk.Pending[:i], bk.Pending[i+1:]...)
 			bk.Decided = append(bk.Decided, p)
@@ -249,6 +257,61 @@ func Decide(root, id, by string, approve, onlyAdmin bool, now time.Time) (Propos
 		return fmt.Errorf("no change %s is waiting", id)
 	})
 	return out, err
+}
+
+// ProposeRelease asks for every playbook to act again after they were held
+// to watching. Holding them takes one person; letting them act takes two,
+// as any change to what Quilzo does on its own does.
+func ProposeRelease(root, why, by string, now time.Time) (Proposal, error) {
+	if why == "" || len(why) > 300 {
+		return Proposal{}, errors.New("say why, in at most 300 characters")
+	}
+	st, err := Load(root)
+	if err != nil {
+		return Proposal{}, err
+	}
+	if st.Watching == nil {
+		return Proposal{}, errors.New("the playbooks are not being held")
+	}
+	p := Proposal{ID: newID(), Release: true, Why: why, By: by, At: now}
+	err = changeBook(root, func(bk *Book) error {
+		for _, q := range bk.Pending {
+			if q.Release {
+				return fmt.Errorf("letting the playbooks act again is already waiting (%s)", q.ID)
+			}
+		}
+		if len(bk.Pending) >= maxPending {
+			return fmt.Errorf("%d changes are waiting already", maxPending)
+		}
+		bk.Pending = append(bk.Pending, p)
+		return nil
+	})
+	return p, err
+}
+
+// ReleaseOnMachine lets every playbook act again, from the command line on
+// the machine, and keeps it in the history like any other change.
+func ReleaseOnMachine(root, why, by string, now time.Time) (Proposal, error) {
+	if err := release(root, now); err != nil {
+		return Proposal{}, err
+	}
+	p := Proposal{ID: newID(), Release: true, Why: why, By: by, At: now,
+		Outcome: "applied on the machine", DecidedBy: by, Decided: now}
+	err := changeBook(root, func(bk *Book) error {
+		var keep []Proposal
+		for _, q := range bk.Pending {
+			if q.Release {
+				q.Outcome, q.DecidedBy, q.Decided = "replaced on the machine", by, now
+				bk.Decided = append(bk.Decided, q)
+				continue
+			}
+			keep = append(keep, q)
+		}
+		bk.Pending = keep
+		bk.Decided = append(bk.Decided, p)
+		return nil
+	})
+	return p, err
 }
 
 // Withdraw takes back a waiting change; only its proposer may.
@@ -313,8 +376,10 @@ func SetOnMachine(root string, pb Playbook, remove bool, why, by string, now tim
 
 // Library is the playbooks in force as a server reads them on each
 // signal: from the file at most once a second, and again only when it
-// changed. One that cannot be read leaves what was last read in force, or
-// Quilzo's own if nothing was.
+// changed. One that cannot be read leaves what was last read in force; if
+// nothing was, Quilzo's own run watching only, because the file may hold
+// two administrators' decision to turn one off, and acting regardless would
+// undo it.
 type Library struct {
 	Root string
 
@@ -352,10 +417,22 @@ func (l *Library) Get() []Playbook {
 	bk, err := LoadBook(l.Root)
 	if err != nil {
 		if l.list == nil {
-			l.list = Builtins()
+			l.list = Watching(Builtins())
 		}
 		return l.list
 	}
 	l.list, l.read = bk.InForce(), fi
 	return l.list
+}
+
+// Watching is playbooks with every one that acts set to watch.
+func Watching(pbs []Playbook) []Playbook {
+	out := make([]Playbook, len(pbs))
+	for i, pb := range pbs {
+		if pb.Mode == "act" {
+			pb.Mode = "watch"
+		}
+		out[i] = pb
+	}
+	return out
 }

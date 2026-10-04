@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/clientip"
 )
 
 // Guard is the shield as a server consults it on every request: read from
@@ -86,24 +87,28 @@ func (g *Guard) Handle(addr string) string {
 	return audit.Pseudonym(g.Key, addr)
 }
 
-// handles are the handles an address may have in the audit log. The public
-// site has recorded an IPv6 source in brackets, as the connection names it,
-// and the admin without; a block taken from either log's handle holds.
-func (g *Guard) handles(a netip.Addr) []string {
-	if len(g.Key) == 0 {
+// Handles are the handles an address may have in the audit log: its
+// source (one IPv4 address, or an IPv6 /64; clientip.Source), which is what
+// is recorded now, and for IPv6 the single address with and without
+// brackets, which older entries hold, so a block taken from any of them
+// holds.
+func (g *Guard) Handles(a netip.Addr) []string {
+	if len(g.Key) == 0 || !a.IsValid() {
 		return []string{}
 	}
-	out := []string{g.Handle(a.String())}
+	a = a.Unmap()
+	out := []string{g.Handle(clientip.Source(a))}
 	if a.Is6() {
-		out = append(out, g.Handle("["+a.String()+"]"))
+		out = append(out, g.Handle(a.String()), g.Handle("["+a.String()+"]"))
 	}
 	return out
 }
 
-// trusted reports addresses that are never blocked: this machine and the
-// declared networks.
+// trusted reports addresses that are never blocked: anything on the inside
+// (this machine, private networks, carrier-grade NAT) and the declared
+// networks.
 func trusted(st *State, a netip.Addr) bool {
-	if a.IsLoopback() {
+	if clientip.Local(a) {
 		return true
 	}
 	for _, t := range st.Trusted {
@@ -139,7 +144,7 @@ func (g *Guard) Blocked(addr, where string, now time.Time) (Protection, bool) {
 		switch kind {
 		case "source":
 			if handles == nil {
-				handles = g.handles(a)
+				handles = g.Handles(a)
 			}
 			for _, h := range handles {
 				if h == value {

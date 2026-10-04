@@ -20,11 +20,19 @@
 // # The guardrails, enforced here rather than trusted to whoever asks
 //
 //   - Every protection ends: automatically applied ones within MaxAuto
-//     (24 hours), ones a person sets within MaxManual (seven days).
-//   - Loopback and the networks the operator declared trusted are never
-//     blocked, so the machine itself and the office are always a way in;
-//     and the command line on the machine never goes through any of this,
-//     so `quilzo shield lift --all` there is the way out of anything.
+//     (24 hours) of when they began, ones a person sets within MaxManual
+//     (seven days). An attack that outlasts a protection meets a new one,
+//     with its own start, from the playbook's next stage; nothing is
+//     quietly renewed past its limit.
+//   - Addresses on the inside (loopback, private networks, carrier-grade
+//     NAT; clientip.Local) and the networks the operator declared trusted
+//     are never blocked, so the machine, the office and the proxy in front
+//     are always a way in; and the command line on the machine never goes
+//     through any of this, so `quilzo shield lift --all` there is the way
+//     out of anything.
+//   - A source an administrator signed in from with a passkey or single
+//     sign-on in the last thirty days is not blocked from the admin by a
+//     playbook: that is the security contact's call, and they are told.
 //   - The admin's sign-in pages and the shield's own screen cannot be
 //     shielded, and lockdown never refuses a passkey or single sign-on, or
 //     a token made after it began.
@@ -55,6 +63,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/clientip"
 )
 
 // Kinds of protection.
@@ -124,11 +133,38 @@ type Protection struct {
 	// Playbook and Stage name what applied it, when one did.
 	Playbook string `json:"playbook,omitempty"`
 	Stage    int    `json:"stage,omitempty"`
+	// ReplacedBy is the protection that took over from this one: a person
+	// setting the same thing, or a playbook needing it past this one's
+	// limit.
+	ReplacedBy string `json:"replaced_by,omitempty"`
+	// Verdict is a person's judgement of it afterwards, Mistake or Right,
+	// which is what a playbook's precision is counted from.
+	Verdict   string `json:"verdict,omitempty"`
+	VerdictBy string `json:"verdict_by,omitempty"`
 }
 
-// ActiveAt reports whether it is in force.
+// Verdicts on a protection.
+const (
+	Mistake = "mistake"
+	Right   = "right"
+)
+
+// limit is the longest a protection of this sort may last.
+func (p Protection) limit() time.Duration {
+	if p.Auto {
+		return MaxAuto
+	}
+	return MaxManual
+}
+
+// ActiveAt reports whether it is in force. A record that says it lasts
+// longer than any protection may (written by hand, by an older version or
+// by a bug) ends when it would have had to.
 func (p Protection) ActiveAt(now time.Time) bool {
-	return p.Lifted.IsZero() && now.Before(p.Until)
+	if !p.Lifted.IsZero() || !now.Before(p.Until) {
+		return false
+	}
+	return p.At.IsZero() || !now.After(p.At.Add(p.limit()+time.Minute))
 }
 
 // State is everything the shield holds.
@@ -143,6 +179,47 @@ type State struct {
 	Responses []Response `json:"responses,omitempty"`
 	// Decoys are planted credentials, by hash.
 	Decoys []Decoy `json:"decoys,omitempty"`
+	// Vouched are sources an administrator signed in from with a passkey
+	// or single sign-on, by handle, most recent last.
+	Vouched []Vouched `json:"vouched,omitempty"`
+	// Watching, when set, holds every playbook to watching: one
+	// administrator may set it, because it is the safe direction; letting
+	// them act again takes a second (Book).
+	Watching *Hold `json:"watching,omitempty"`
+}
+
+// Vouched is a source somebody signed in from strongly.
+type Vouched struct {
+	Handle string    `json:"handle"`
+	At     time.Time `json:"at"`
+}
+
+// Hold is every playbook held to watching, and who did it.
+type Hold struct {
+	By     string    `json:"by"`
+	At     time.Time `json:"at"`
+	Reason string    `json:"reason"`
+}
+
+// VouchFor is how long a strong sign-in keeps its source from being
+// blocked from the admin by a playbook.
+const VouchFor = 30 * 24 * time.Hour
+
+const maxVouched = 1000
+
+// IsVouched reports whether a source handle signed in strongly lately.
+func (s *State) IsVouched(handles []string, now time.Time) bool {
+	for _, v := range s.Vouched {
+		if now.Sub(v.At) > VouchFor {
+			continue
+		}
+		for _, h := range handles {
+			if h != "" && v.Handle == h {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Active are the protections in force.
@@ -202,6 +279,16 @@ func Change(root string, now time.Time, fn func(*State) error) error {
 	if len(st.Ended) > maxKept {
 		st.Ended = st.Ended[len(st.Ended)-maxKept:]
 	}
+	var vouched []Vouched
+	for _, v := range st.Vouched {
+		if now.Sub(v.At) <= VouchFor {
+			vouched = append(vouched, v)
+		}
+	}
+	if len(vouched) > maxVouched {
+		vouched = vouched[len(vouched)-maxVouched:]
+	}
+	st.Vouched = vouched
 	b, err := json.MarshalIndent(st, "", " ")
 	if err != nil {
 		return err
@@ -278,8 +365,10 @@ func (p Protection) Validate(now time.Time) error {
 			if (pfx.Addr().Is4() && pfx.Bits() < 16) || (pfx.Addr().Is6() && pfx.Bits() < 48) {
 				return errors.New("a network wider than /16 (or /48) is blocked by its provider instead")
 			}
-			if pfx.Contains(netip.MustParseAddr("127.0.0.1")) || pfx.Contains(netip.IPv6Loopback()) {
-				return errors.New("this machine is never blocked")
+			for _, in := range clientip.Inside() {
+				if pfx.Overlaps(in) {
+					return fmt.Errorf("%s is on the inside (%s): this machine, its network and the proxy in front are never blocked", pfx, in)
+				}
 			}
 		case "asn":
 			if n, err := strconv.ParseUint(value, 10, 32); err != nil || n == 0 {
@@ -334,20 +423,38 @@ func Apply(root string, p Protection, now time.Time) (Protection, bool, error) {
 				}
 			}
 		}
+		replaces := -1
 		for i := range st.Protections {
 			q := &st.Protections[i]
-			if q.Kind == p.Kind && q.Target == p.Target && q.Where == p.Where && q.Level == p.Level {
-				if p.Until.After(q.Until) {
-					q.Until = p.Until
+			if q.Kind != p.Kind || q.Target != p.Target || q.Where != p.Where || q.Level != p.Level {
+				continue
+			}
+			if !p.Until.After(q.Until) {
+				out = *q // already covered
+				return nil
+			}
+			// Lengthened in place only within the record's own limit, and
+			// only by the same sort of author: a person's protection is a
+			// person's, and an automatic one cannot be renewed past a day.
+			if q.Auto == p.Auto && !p.Until.After(q.At.Add(q.limit())) {
+				q.Until = p.Until
+				if p.Stage > q.Stage {
+					q.Stage, q.Reason, q.Playbook, q.By = p.Stage, p.Reason, p.Playbook, p.By
 				}
 				out = *q
 				return nil
 			}
+			replaces = i
+			break
 		}
-		if len(st.Protections) >= MaxActive {
+		if replaces < 0 && len(st.Protections) >= MaxActive {
 			return fmt.Errorf("%d protections are already in force; that is the limit", MaxActive)
 		}
 		p.ID, p.At, fresh = newID(), now, true
+		if replaces >= 0 {
+			q := &st.Protections[replaces]
+			q.Until, q.ReplacedBy = now, p.ID
+		}
 		st.Protections = append(st.Protections, p)
 		out = p
 		return nil
@@ -372,6 +479,78 @@ func Lift(root, id, by string, now time.Time) ([]Protection, error) {
 		return nil
 	})
 	return lifted, err
+}
+
+// Judge records a person's verdict on a protection, in force or ended: a
+// Mistake (it should not have been applied) or Right. It is what each
+// playbook's precision is counted from.
+func Judge(root, id, verdict, by string, now time.Time) (Protection, error) {
+	if verdict != Mistake && verdict != Right {
+		return Protection{}, errors.New("a protection was a mistake, or right")
+	}
+	var out Protection
+	err := Change(root, now, func(st *State) error {
+		for _, list := range [][]Protection{st.Protections, st.Ended} {
+			for i := range list {
+				if list[i].ID == id {
+					list[i].Verdict, list[i].VerdictBy = verdict, by
+					out = list[i]
+					return nil
+				}
+			}
+		}
+		return fmt.Errorf("there is no protection %s", id)
+	})
+	return out, err
+}
+
+// Vouch records that an administrator signed in from these source handles
+// with a passkey or single sign-on.
+func Vouch(root string, handles []string, now time.Time) error {
+	return Change(root, now, func(st *State) error {
+		for _, h := range handles {
+			if !reHandle.MatchString(h) {
+				continue
+			}
+			kept := st.Vouched[:0]
+			for _, v := range st.Vouched {
+				if v.Handle != h {
+					kept = append(kept, v)
+				}
+			}
+			st.Vouched = append(kept, Vouched{Handle: h, At: now})
+		}
+		return nil
+	})
+}
+
+// HoldAll holds every playbook to watching, at once and by one person: the
+// way to stop the shield acting while somebody works out why it did.
+func HoldAll(root, by, reason string, now time.Time) error {
+	reason = strings.TrimSpace(reason)
+	if reason == "" || len(reason) > 300 {
+		return errors.New("say why, in at most 300 characters")
+	}
+	return Change(root, now, func(st *State) error {
+		if st.Watching != nil {
+			return fmt.Errorf("every playbook has been watching since %s, held by %s",
+				st.Watching.At.UTC().Format("2 Jan 15:04 UTC"), st.Watching.By)
+		}
+		st.Watching = &Hold{By: by, At: now, Reason: reason}
+		return nil
+	})
+}
+
+// release lets the playbooks act again; a second person approves it
+// (Book), or the machine does it (ReleaseOnMachine).
+func release(root string, now time.Time) error {
+	return Change(root, now, func(st *State) error {
+		if st.Watching == nil {
+			return errors.New("the playbooks are not being held")
+		}
+		st.Watching = nil
+		return nil
+	})
 }
 
 // Trust adds or removes a network that is never blocked.

@@ -210,7 +210,15 @@ func TestTheLibraryFollowsTheFile(t *testing.T) {
 		t.Fatal("a broken file replaced what was in force")
 	}
 	fresh := &Library{Root: root}
-	if !reflect.DeepEqual(fresh.Get(), Builtins()) {
-		t.Fatal("a broken file with nothing read before is not the shipped playbooks")
+	// Quilzo's own, watching only: the file may hold two administrators'
+	// decision to turn one off.
+	got := fresh.Get()
+	if !reflect.DeepEqual(got, Watching(Builtins())) {
+		t.Fatal("a broken file with nothing read before is not the shipped playbooks, watching")
+	}
+	for _, pb := range got {
+		if pb.Mode == "act" {
+			t.Fatalf("%s acts from a broken file", pb.Name)
+		}
 	}
 }
