@@ -54,6 +54,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/clientip"
 	"net/http"
 	"strings"
 	"time"
@@ -277,9 +278,4 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request) {
 // The remote address rather than a header. An X-Forwarded-For somebody else
 // sets is a counter somebody else resets, and this server is meant to be on
 // loopback where there is no proxy to believe.
-func sourceOf(r *http.Request) string {
-	if i := strings.LastIndex(r.RemoteAddr, ":"); i > 0 {
-		return r.RemoteAddr[:i]
-	}
-	return r.RemoteAddr
-}
+func sourceOf(r *http.Request) string { return clientip.SourceFrom(r) }

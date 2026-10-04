@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"github.com/quilzo/quilzo/internal/clientip"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -335,37 +336,61 @@ var settings = []Setting{
 	},
 	{
 		Key: "site.trusted_proxy", Kind: Bool, Default: "false",
-		Summary: "something in front of this forwards the client's address",
-		Why: "Whether the inbox's rate limit can tell one remote instance " +
-			"from another.\n\n" +
-			"The limit is keyed on the connecting address, which is right " +
-			"when this process is the thing being connected to. Behind a " +
-			"reverse proxy it is the proxy's address for every server on the " +
-			"fediverse, so one chatty instance fills the single bucket and " +
-			"every other one is refused. A shared limit is not a limit on " +
-			"anybody in particular.\n\n" +
-			"Off by default, and a setting rather than a guess, because the " +
-			"header that answers it is X-Forwarded-For and anybody can write " +
-			"one. Trusting it with nothing in front means every caller " +
-			"chooses their own bucket, which is a rate limit turned off. The " +
-			"deployment says once, deliberately, what it is -- the same " +
-			"argument admin.behind_tls_proxy makes below, for the same " +
-			"reason.\n\n" +
-			"Set this only when the proxy appends the real address and " +
-			"strips what the client sent.",
+		Summary: "the public site is behind a proxy on this machine or a private network",
+		Why: "Who a visitor is, for every limit, the audit log and the " +
+			"shield. Behind a reverse proxy the connection is the proxy's for " +
+			"everybody, so a limit keyed on it is one bucket for the whole " +
+			"internet and a block of it blocks the site.\n\n" +
+			"With this on and network.trusted_proxies empty, a forwarded " +
+			"address is believed from a connection on the inside -- " +
+			"loopback, a private network, carrier-grade NAT -- which is " +
+			"where a reverse proxy usually is and where nobody on the " +
+			"internet can connect from. Name the proxies in " +
+			"network.trusted_proxies instead to believe only them.\n\n" +
+			"Off by default, because X-Forwarded-For is a header anybody can " +
+			"write: believed from anybody, it lets every caller choose their " +
+			"own address, which is every limit and every block switched off.",
 	},
 	{
 		Key: "admin.trusted_proxy", Kind: Bool, Default: "false",
-		Summary: "something in front of the admin appends the client's address",
-		Why: "Where a sign-in is judged to come from. Every sign-in is placed " +
-			"from its address, for the automations that step up a sign-in " +
-			"from somewhere unlikely, and behind a reverse proxy the " +
-			"connection's address is the proxy's for everybody.\n\n" +
-			"Off by default: X-Forwarded-For is a header anybody can write, " +
-			"and trusted with nothing in front it lets a sign-in say where it " +
-			"is. Set it only when the proxy appends the real address; the " +
-			"last address in the header is then the one used. The rate " +
-			"limits still key on the connection.",
+		Summary: "the admin is behind a proxy on this machine or a private network",
+		Why: "Who is signing in, and from where: for the rate limits, for " +
+			"placing a sign-in, and for the shield. Behind a reverse proxy " +
+			"the connection is the proxy's for everybody.\n\n" +
+			"With this on and network.trusted_proxies empty, a forwarded " +
+			"address is believed from a connection on the inside (loopback, " +
+			"a private network); name the proxies in network.trusted_proxies " +
+			"to believe only them. Off by default: X-Forwarded-For is a " +
+			"header anybody can write, and believed from anybody it lets a " +
+			"sign-in say where it is.",
+	},
+	{
+		Key: "network.trusted_proxies", Kind: List, Default: "",
+		Summary: "the proxies whose forwarded addresses are believed, as ranges or addresses",
+		Why: "The one rule for who a request came from, on the admin and the " +
+			"public site alike. A forwarded address is believed only when the " +
+			"connection comes from one of these; the header is then read from " +
+			"the right, past the proxies, and the first address that is not a " +
+			"proxy is the client. Anything unreadable before that point is " +
+			"an unknown client, never a guess.\n\n" +
+			"Name what is actually in front: 10.0.0.5, or 10.0.0.0/8 for a " +
+			"cluster, or a CDN's published ranges. Empty means no proxy, " +
+			"unless site.trusted_proxy or admin.trusted_proxy says it is on " +
+			"the inside.",
+		Weaker: func(v string) (bool, string) {
+			for _, p := range strings.Split(v, ",") {
+				pfx, err := clientip.ParseProxy(strings.TrimSpace(p))
+				if err != nil {
+					continue
+				}
+				if (pfx.Addr().Is4() && pfx.Bits() < 8) || (pfx.Addr().Is6() && pfx.Bits() < 16) {
+					return true, pfx.String() + " is most of the internet: almost anybody " +
+						"can then write their own address into a forwarded header"
+				}
+			}
+			return false, ""
+		},
+		Controls: []string{"SC-7", "AU-3", "AC-7"},
 	},
 	{
 		Key: "admin.behind_tls_proxy", Kind: Bool, Default: "false",
@@ -1090,6 +1115,11 @@ func (s Setting) Validate(v string) error {
 			if strings.ContainsAny(p, " \t\r\n;'\"") {
 				return fmt.Errorf("%q contains a character that cannot appear "+
 					"in a list entry", p)
+			}
+		}
+		if s.Key == "network.trusted_proxies" && strings.TrimSpace(v) != "" {
+			if _, err := clientip.ParseProxies(strings.Split(v, ",")); err != nil {
+				return err
 			}
 		}
 	}

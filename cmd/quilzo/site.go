@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/analytics"
+	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/experiment"
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/personalise"
@@ -324,6 +325,10 @@ func cmdSite(root string, args []string) error {
 				"through the same content-type gate as the CLI%s\n", dim, reset)
 		}
 	}
+
+	// Who each request came from is decided once, at the edge, for the
+	// site, the API and everything else on this listener (internal/clientip).
+	handler = clientip.Middleware(proxies(root, "site.trusted_proxy"), handler)
 
 	srv := &http.Server{Addr: *addr, Handler: handler}
 

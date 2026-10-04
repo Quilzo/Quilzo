@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/api"
+	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/detect"
 	"github.com/quilzo/quilzo/internal/estate"
@@ -1156,7 +1157,11 @@ func cmdServe(root string, args []string) error {
 	// Loopback by default. An editing interface that binds every interface the
 	// moment someone runs it is how a development server ends up on the
 	// internet, and the fix has to be a decision rather than a default.
-	httpSrv := &http.Server{Addr: *addr, Handler: srv.Handler()}
+	//
+	// Who each request came from is decided once, here, for everything
+	// behind: limits, placing a sign-in, the audit log (internal/clientip).
+	httpSrv := &http.Server{Addr: *addr,
+		Handler: clientip.Middleware(proxies(root, "admin.trusted_proxy"), srv.Handler())}
 
 	fmt.Printf("admin on http://%s\n", *addr)
 	// Both commands. A token names the role it may act up to; a binding is

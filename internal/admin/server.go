@@ -57,12 +57,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/icons"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"html/template"
 	"io"
 	"math"
-	"net"
 	"net/http"
 	"net/url"
 	stdpath "path"
@@ -1761,13 +1761,7 @@ func (s *Server) tooManyAttempts(w http.ResponseWriter, r *http.Request, d throt
 // throttle keyed on a value the client controls is a throttle the client
 // switches off by varying it. An operator running behind a proxy wants the
 // proxy to do this — it is the thing that can see the real address.
-func sourceOf(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
-}
+func sourceOf(r *http.Request) string { return clientip.SourceFrom(r) }
 
 func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {

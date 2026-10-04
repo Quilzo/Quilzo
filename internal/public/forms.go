@@ -5,6 +5,7 @@ package public
 
 import (
 	"fmt"
+	"github.com/quilzo/quilzo/internal/clientip"
 	"net/http"
 	"strings"
 	"time"
@@ -230,9 +231,4 @@ var formReplacer = strings.NewReplacer(
 // RemoteAddr only. A forwarded header is set by whatever is in front, and a
 // rate limit keyed on a value the client controls is a limit the client turns
 // off by varying it. An operator behind a proxy wants the proxy doing this.
-func sourceOf(r *http.Request) string {
-	if i := strings.LastIndexByte(r.RemoteAddr, ':'); i > 0 {
-		return r.RemoteAddr[:i]
-	}
-	return r.RemoteAddr
-}
+func sourceOf(r *http.Request) string { return clientip.SourceFrom(r) }
