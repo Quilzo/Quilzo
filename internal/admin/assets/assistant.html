@@ -114,6 +114,18 @@
       question to somebody here. It arrives in the <a href="/inbox">Inbox</a>
       and is kept, which nothing else a visitor asks is. They are told so,
       and for how long, before they send.</p></div>
+  <div class="field"><label><input type="checkbox" name="voice" value="1"{{if .A.Voice}} checked{{end}} aria-describedby="voice-help">
+    Let visitors speak and listen</label>
+    <p id="voice-help" class="help">A microphone button, offered only where the
+      visitor's browser recognises speech on their own device, and a button that
+      reads the answer aloud with the device's own voices. Nothing they say leaves
+      their device; what arrives here is the question as text.</p></div>
+  <div class="field"><label><input type="checkbox" name="translate" value="1"{{if .A.Translate}} checked{{end}} aria-describedby="translate-help">
+    Answer in the visitor's language</label>
+    <p id="translate-help" class="help">Where the browser can translate on the
+      device, a question in another language is translated into the site's, and
+      the answer back, marked as a translation with the original a click away.
+      The answer is still checked against your pages.</p></div>
   <div class="field"><label for="handoff_days">Keep those conversations for (days)</label>
     <input id="handoff_days" name="handoff_days" type="number" min="0" max="90" value="{{.A.HandoffDays}}" aria-describedby="handoff-days-help">
     <p id="handoff-days-help" class="help">After it last moves. 0 means thirty; ninety at most.</p></div>
