@@ -5,8 +5,8 @@ package shield
 
 import (
 	"net/http"
-	"net/netip"
 	"net/http/httptest"
+	"net/netip"
 	"strconv"
 	"strings"
 	"testing"
