@@ -493,6 +493,9 @@ agents and integrations
   quilzo agent list | show NAME | check     what is declared, and whether it still validates
   quilzo agent run NAME                    a model chooses, inside the manifest
   quilzo agent runs [NAME] | trace RUN     the runs that are kept, and one step by step
+  quilzo eval keep RUN-ID [--finishes --uses a,b --avoids c]   a kept run as a test case
+  quilzo eval run AGENT [--k 3] [--model]   every case k times, and with instructions planted
+  quilzo eval cases AGENT | show AGENT | add AGENT --goal G ... | remove AGENT CASE
   quilzo agent approve RUN STEP            let the action a run is waiting on go ahead
   quilzo agent decline RUN STEP            refuse it; the run carries on without
   quilzo agent resume RUN                  continue a run that was cut off
@@ -761,6 +764,8 @@ func main() {
 		err = cmdOIDC(root, cmdArgs)
 	case "saml":
 		err = cmdSAML(root, cmdArgs)
+	case "eval":
+		err = cmdEval(root, cmdArgs)
 	case "vault":
 		err = cmdVault(root, cmdArgs)
 	case "lock", "locks":

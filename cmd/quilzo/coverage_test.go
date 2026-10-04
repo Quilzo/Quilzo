@@ -611,6 +611,7 @@ var coverage = map[string]surfaces{
 			"reconnaissance this surface should not answer"},
 	"compliance": {GUI: "/security/inventory", MCP: []string{"inventory"}},
 	"agents":     {GUI: "/security/agents", MCP: []string{"agent_activity"}},
+	"eval":       {GUI: "/agents/evals", MCP: []string{"eval_results"}},
 	"agent": {GUI: "/agents",
 		NoMCP: "declares what a model may do. An agent that can write an " +
 			"agent manifest can write itself a wider one, which turns every " +

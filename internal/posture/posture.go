@@ -241,8 +241,6 @@ type ChatbotFact struct {
 	LastEval time.Time `json:"last_eval,omitempty"`
 }
 
-// AIFacts are the chatbots, agents and models, for the AI and privacy
-// checks.
 // SSOFacts is single sign-on as set up: each SAML identity provider's
 // trusted certificates, and whether its configuration can be used.
 type SSOFacts struct {
@@ -257,6 +255,18 @@ type SSOProvider struct {
 	Problem string      `json:"problem,omitempty"`
 }
 
+// AgentEvalFact is an agent's last evaluation, for the agent checks.
+type AgentEvalFact struct {
+	Name string `json:"name"`
+	// At is when it was last evaluated, zero for never; Hijacked how many
+	// of its cases followed an instruction planted in what they read.
+	At       time.Time `json:"at,omitempty"`
+	Cases    int       `json:"cases"`
+	Hijacked int       `json:"hijacked"`
+}
+
+// AIFacts are the chatbots, agents and models, for the AI and privacy
+// checks.
 type AIFacts struct {
 	Checked  bool          `json:"checked"`
 	Chatbots []ChatbotFact `json:"chatbots,omitempty"`
@@ -268,6 +278,8 @@ type AIFacts struct {
 	// watchdog reports as not accepting refusals.
 	Agents  int      `json:"agents"`
 	Flagged []string `json:"flagged,omitempty"`
+	// Evals is each declared agent's last evaluation.
+	Evals []AgentEvalFact `json:"evals,omitempty"`
 }
 
 type State struct {

@@ -77,6 +77,54 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "ai.agent-followed-plant",
+		Title:    "An agent followed an instruction planted in what it read",
+		Severity: High,
+		Controls: []string{"SI-10", "CA-7"},
+		OWASP:    "LLM01:2025 Prompt Injection",
+		Why: "Its last evaluation planted instructions in pages and results it " +
+			"read, and on at least one case it did what they said. Anybody who " +
+			"can put text where it reads can steer it the same way, within " +
+			"whatever its declaration allows.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, a := range s.AI.Evals {
+				if a.Hijacked > 0 {
+					out = append(out, Finding{Resource: "agent/" + a.Name,
+						Detail: fmt.Sprintf("%s followed a planted instruction on %d of its cases", a.Name, a.Hijacked),
+						Fix: "narrow what it may do (quilzo agent show " + a.Name + "), make the writes " +
+							"ask first, then quilzo eval run " + a.Name + " --model"})
+				}
+			}
+			return out
+		},
+	},
+	{
+		ID:       "ai.agent-unevaluated",
+		Title:    "An agent has no evaluation, or none recently",
+		Severity: Low,
+		Controls: []string{"CA-7"},
+		Why: "Nobody knows how often it does the task it is declared for, or " +
+			"whether text it reads can steer it. A test set kept from its own " +
+			"runs answers both in minutes.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, a := range s.AI.Evals {
+				switch {
+				case a.At.IsZero():
+					fix := "keep a good run as a case: quilzo eval keep RUN-ID, then quilzo eval run " + a.Name
+					out = append(out, Finding{Resource: "agent/" + a.Name,
+						Detail: a.Name + " has never been evaluated", Fix: fix})
+				case s.Now.Sub(a.At) > 90*24*time.Hour:
+					out = append(out, Finding{Resource: "agent/" + a.Name,
+						Detail: fmt.Sprintf("%s was last evaluated %s ago", a.Name, roughly(s.Now.Sub(a.At))),
+						Fix:    "quilzo eval run " + a.Name})
+				}
+			}
+			return out
+		},
+	},
+	{
 		ID:       "ai.agent-flagged",
 		Title:    "An agent keeps trying what it was refused",
 		Severity: High,

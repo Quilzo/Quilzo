@@ -333,6 +333,9 @@ type Server struct {
 	// declared fields rather than whatever keys the page happens to have.
 	TypeFor func(page string) (schema.Type, bool)
 
+	// Evals is agents' test sets and evaluations; see evals.go.
+	Evals *Evals
+
 	// SAML is single sign-on through SAML identity providers; nil when the
 	// build was started without it. See samlauth.go.
 	SAML      *SAMLAdmin
@@ -429,6 +432,13 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 		"icon":      uiIcon,
 		"toneicon":  toneIcon,
 		"iconNames": icons.Names,
+		// signedOutIcon is the mark in the built-in colours, inline, for the
+		// pages somebody sees before signing in: /icon.svg carries the
+		// operator's colour and is served only to the signed in, so without
+		// this the browser asks for /favicon.ico and is told 401.
+		"signedOutIcon": func() template.URL {
+			return template.URL("data:image/svg+xml," + url.PathEscape(MarkSVG("#0842a0")))
+		},
 		"pct":       func(f float64) float64 { return f * 100 },
 		// sentence capitalises the first letter, for a word stored in
 		// lower case and shown on its own: a severity, a state.
@@ -1296,6 +1306,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/agents/act", s.handleAgentsAct)
 	mux.HandleFunc("/agents/runs", s.handleAgentRuns)
 	mux.HandleFunc("/agents/run/", s.handleAgentRun)
+	mux.HandleFunc("/agents/evals", s.handleEvals)
+	mux.HandleFunc("/agents/evals/", s.handleEvals)
+	mux.HandleFunc("/agents/evals/act", s.handleEvalsAct)
 	mux.HandleFunc("/manifest.webmanifest", s.installManifest)
 	mux.HandleFunc("/icon.svg", s.icon)
 	mux.HandleFunc("/start", s.handleStart)

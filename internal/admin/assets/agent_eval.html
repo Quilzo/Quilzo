@@ -1,0 +1,76 @@
+{{template "head" .}}
+<p class="hint"><a href="/agents/evals">Evaluations</a> · <a href="/agents/edit/{{.Agent}}">{{.Agent}}</a> · <a href="/agents/runs?agent={{.Agent}}">its runs</a></p>
+<h1>Evaluation of {{.Agent}}</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{end}}
+{{if .RunningSince}}<p class="notice" role="status">Running since {{.RunningSince}}. This page reloads every few seconds until it ends.</p>{{end}}
+
+{{with .Latest}}
+<dl class="stats-row">
+  <div><dt>Result</dt><dd><span class="wf-word {{$.Summary.Tone}}">{{.Verdict}}</span></dd><dd class="wf-note">{{.At.Format "2 Jan 2006 15:04"}}, by {{.By}}</dd></div>
+  <div><dt>pass^{{.K}}</dt><dd>{{.Reliable}} of {{.Cases}}</dd><dd class="wf-note">cases where all {{.K}} runs passed</dd></div>
+  <div{{if .Hijacked}} class="critical"{{end}}><dt>Planted</dt><dd>{{if .Planted}}{{.Hijacked}} of {{.Planted}}{{else}}—{{end}}</dd><dd class="wf-note">{{if .Planted}}cases that followed an instruction planted in what they read{{else}}nothing planted: the declaration was walked, with no model to steer{{end}}</dd></div>
+  <div><dt>Took</dt><dd>{{.Took}}</dd><dd class="wf-note">{{if .Model}}{{.Model}} choosing{{else}}no model{{end}}</dd></div>
+</dl>
+{{end}}
+
+{{if .Results}}<h2>Case by case</h2>
+<div class="table-wrap"><table class="eval-results">
+  <thead><tr><th scope="col">Case</th><th scope="col">Runs</th><th scope="col">With a planted instruction</th></tr></thead>
+  <tbody>{{range .Results}}<tr>
+    <th scope="row">{{.Goal}}<br><code class="hint">{{.ID}}</code></th>
+    <td><span class="wf-word {{.ReliableTone}}">{{.ReliableWord}}</span>
+      <ul class="eval-runs">{{range .Runs}}<li><a href="/agents/run/{{.Run}}">{{.Run}}</a> <span class="wf-word {{.Tone}}">{{.Word}}</span>{{if .Why}} <span class="hint">{{.Why}}</span>{{end}}</li>{{end}}</ul></td>
+    <td>{{if .Planted}}<ul class="eval-runs">{{range .Planted}}<li>{{if .Run}}<a href="/agents/run/{{.Run}}">{{.Run}}</a> {{end}}<span class="wf-word {{.Tone}}">{{.Word}}</span>{{if .Why}} <span class="hint">{{.Why}}</span>{{end}}</li>{{end}}</ul>{{else}}<span class="hint">—</span>{{end}}</td>
+  </tr>{{end}}</tbody></table></div>{{end}}
+
+<h2>Run the evaluation</h2>
+<form method="post" action="/agents/evals/act" class="card eval-run">
+  <input type="hidden" name="do" value="run"><input type="hidden" name="agent" value="{{.Agent}}">
+  <div class="field"><label for="k">Runs of each case (k)</label>
+    <select id="k" name="k"><option value="1">1</option><option value="3" selected>3</option><option value="5">5</option><option value="10">10</option></select></div>
+  <p><label><input type="checkbox" name="model"> Let the configured model choose, and plant instructions</label></p>
+  <p class="help">Without a model the declaration is walked, which costs nothing and checks what it can reach. With one, every run is charged to the agent's model budget.</p>
+  <button type="submit"{{if .RunningSince}} disabled aria-disabled="true"{{end}}>Run it</button>
+</form>
+
+<h2>Test cases</h2>
+{{if .Cases}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Goal</th><th scope="col">A good run</th><th scope="col">From</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+  <tbody>{{range .Cases}}<tr>
+    <th scope="row">{{.Goal}}<br><code class="hint">{{.ID}}</code></th>
+    <td>{{.Says}}</td>
+    <td>{{if .From}}<a href="/agents/run/{{.From}}">{{.From}}</a>{{else}}<span class="hint">written</span>{{end}}</td>
+    <td><form method="post" action="/agents/evals/act"><input type="hidden" name="do" value="remove"><input type="hidden" name="agent" value="{{$.Agent}}"><input type="hidden" name="case" value="{{.ID}}">
+      <button type="submit" class="quiet">Remove<span class="visually-hidden"> {{.ID}}</span></button></form></td>
+  </tr>{{end}}</tbody></table></div>
+{{else}}<p>No cases yet. The quickest way to make one is from a run: open <a href="/agents/runs?agent={{.Agent}}">a run</a> that went right and keep it as a test case.</p>{{end}}
+
+<details class="astable"><summary>Write a case<span class="chev">{{icon "expand_more"}}</span></summary>
+<form method="post" action="/agents/evals/act" class="card">
+  <input type="hidden" name="do" value="add"><input type="hidden" name="agent" value="{{.Agent}}">
+  <div class="field"><label for="goal">Goal {{template "req"}}</label><textarea id="goal" name="goal" rows="2" required maxlength="2000"></textarea></div>
+  {{template "expectfields" .Blank}}
+  <button type="submit">Add the case</button>
+</form></details>
+
+{{if .History}}<h2>Evaluations so far</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">When</th><th scope="col">Result</th><th scope="col">pass^k</th><th scope="col">Planted followed</th></tr></thead>
+  <tbody>{{range .History}}<tr><th scope="row">{{.At.Format "2 Jan 2006 15:04"}}</th><td>{{.Verdict}}</td><td>{{.Reliable}} of {{.Cases}} (k={{.K}})</td><td>{{if .Planted}}{{.Hijacked}} of {{.Planted}}{{else}}—{{end}}</td></tr>{{end}}</tbody>
+</table></div>{{end}}
+{{template "foot" .}}
+
+{{define "expectfields"}}
+  <fieldset><legend>A good run</legend>
+    <p><label><input type="checkbox" name="finishes"{{if .Finishes}} checked{{end}}> finishes with an answer</label></p>
+    {{if .Used}}<p class="hint">Uses</p>{{range .Used}}<p><label><input type="checkbox" name="uses" value="{{.}}" checked> uses <code>{{.}}</code></label></p>{{end}}{{end}}
+    {{if .Avoided}}<p class="hint">Never tries</p>{{range .Avoided}}<p><label><input type="checkbox" name="avoids" value="{{.}}" checked> never tries <code>{{.}}</code></label></p>{{end}}{{end}}
+    <div class="field"><label for="asks-{{.Key}}">Stops to ask a person before</label><input id="asks-{{.Key}}" name="asks_before" value="{{.AsksBefore}}" placeholder="write_page"></div>
+    <div class="field"><label for="has-{{.Key}}">The answer says</label><input id="has-{{.Key}}" name="answer_has" placeholder="returns | 30 days" aria-describedby="has-help-{{.Key}}">
+      <p id="has-help-{{.Key}}" class="help">Phrases separated by |, each one required.</p></div>
+    <div class="field"><label for="steps-{{.Key}}">At most this many steps</label><input id="steps-{{.Key}}" name="max_steps" type="number" min="1" max="200"></div>
+    <p><label><input type="checkbox" name="no_refusals"{{if .NoRefusals}} checked{{end}}> nothing it tries is refused</label></p>
+  </fieldset>
+{{end}}

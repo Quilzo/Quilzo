@@ -31,6 +31,22 @@ func agentRunsDir(root string) string {
 	return filepath.Join(agentsDir(root), "runs")
 }
 
+// agentEvalRunsDir keeps evaluations' runs apart, so the hundreds one
+// evaluation makes cannot push the runs people made out of the history.
+func agentEvalRunsDir(root string) string {
+	return filepath.Join(agentsDir(root), "evalruns")
+}
+
+// MaxAgentEvalRuns is how many evaluation runs are kept.
+const MaxAgentEvalRuns = 2000
+
+func runDirFor(root string, rec agent.Record) string {
+	if rec.Eval != "" {
+		return agentEvalRunsDir(root)
+	}
+	return agentRunsDir(root)
+}
+
 func newAgentRunID(started time.Time) (string, error) {
 	var raw [4]byte
 	if _, err := rand.Read(raw[:]); err != nil {
@@ -50,11 +66,11 @@ func writeAgentRun(root string, rec agent.Record) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(agentRunsDir(root), 0o700); err != nil {
+	dir := runDirFor(root, rec)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	return atomicfile.Write(filepath.Join(agentRunsDir(root), rec.ID+".json"),
-		b, 0o600)
+	return atomicfile.Write(filepath.Join(dir, rec.ID+".json"), b, 0o600)
 }
 
 // holdAgentRun claims a run for one process at a time.
@@ -121,9 +137,13 @@ func (k *keptRun) finish(out agentOutcome) error {
 		rec.Goal = k.rec.Goal
 	}
 	rec.From, rec.Answers = k.rec.From, k.rec.Answers
+	rec.Eval, rec.Plant = k.rec.Eval, k.rec.Plant
 	k.rec = rec
 	if err := writeAgentRun(k.root, rec); err != nil {
 		return err
+	}
+	if rec.Eval != "" {
+		return pruneRunsIn(agentEvalRunsDir(k.root), MaxAgentEvalRuns)
 	}
 	return pruneAgentRuns(k.root)
 }
@@ -263,7 +283,11 @@ func replayAgentRun(ctx context.Context, root, id string, n int,
 // pruneAgentRuns removes the oldest runs past the limit. Names sort by day
 // and then arbitrarily within it, which is near enough for a limit.
 func pruneAgentRuns(root string) error {
-	entries, err := os.ReadDir(agentRunsDir(root))
+	return pruneRunsIn(agentRunsDir(root), MaxAgentRuns)
+}
+
+func pruneRunsIn(dir string, max int) error {
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
 	}
@@ -274,7 +298,7 @@ func pruneAgentRuns(root string) error {
 			names = append(names, e.Name())
 		}
 	}
-	if len(names) <= MaxAgentRuns {
+	if len(names) <= max {
 		return nil
 	}
 	type aged struct {
@@ -283,15 +307,15 @@ func pruneAgentRuns(root string) error {
 	}
 	var all []aged
 	for _, n := range names {
-		fi, err := os.Stat(filepath.Join(agentRunsDir(root), n))
+		fi, err := os.Stat(filepath.Join(dir, n))
 		if err != nil {
 			continue
 		}
 		all = append(all, aged{n, fi.ModTime()})
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].at.Before(all[j].at) })
-	for _, a := range all[:len(all)-MaxAgentRuns] {
-		if err := os.Remove(filepath.Join(agentRunsDir(root), a.name)); err != nil {
+	for _, a := range all[:len(all)-max] {
+		if err := os.Remove(filepath.Join(dir, a.name)); err != nil {
 			return err
 		}
 	}
@@ -304,6 +328,9 @@ func loadAgentRun(root, id string) (agent.Record, error) {
 		return rec, fmt.Errorf("%q is not a run", id)
 	}
 	b, err := readBounded(filepath.Join(agentRunsDir(root), id+".json"), 16<<20)
+	if os.IsNotExist(err) {
+		b, err = readBounded(filepath.Join(agentEvalRunsDir(root), id+".json"), 16<<20)
+	}
 	if os.IsNotExist(err) {
 		return rec, fmt.Errorf("there is no run %s", id)
 	}

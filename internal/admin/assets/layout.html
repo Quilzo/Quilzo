@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
+{{with .Refresh}}<meta http-equiv="refresh" content="{{.}}">{{end}}
 <title>{{.Title}} — {{.Brand}}</title>
 <link rel="stylesheet" href="/style.css">
 {{if .BrandStyle}}<link rel="stylesheet" href="/brand.css">{{end}}

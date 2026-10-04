@@ -589,6 +589,8 @@ type agentResume struct {
 	Verdict *agent.Verdict
 	// Checkpoint is handed the trace after every step.
 	Checkpoint func(agent.Trace)
+	// Eval makes the run an evaluation's: see evalcmd.go.
+	Eval *evalMode
 }
 
 func executeAgentFrom(ctx context.Context, root, name, goal string,
@@ -803,6 +805,9 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	// A run here can be held for a person and continued: every run made
 	// through this function is kept, which is what makes that possible.
 	runner.Pause, runner.Checkpoint = true, from.Checkpoint
+	if from.Eval != nil {
+		runner.Perform, runner.Record = from.Eval.perform(runner.Perform), func(agent.Receipt) {}
+	}
 
 	started := time.Now()
 	var trace agent.Trace
@@ -832,7 +837,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	// Fail-soft and loud. A collector that is down must not fail a run that
 	// otherwise worked, and a trace that silently vanished is worse than one
 	// that says it could not be sent.
-	if exp := tracerFor(root); exp != nil {
+	if exp := tracerFor(root); exp != nil && from.Eval == nil {
 		spans, terr := otlp.FromTrace(trace, rc, m, started)
 		if terr == nil {
 			terr = exp.Export(context.Background(), spans)
