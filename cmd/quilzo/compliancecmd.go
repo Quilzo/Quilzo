@@ -33,8 +33,10 @@ func cmdCompliance(root string, args []string) error {
 		return complianceACR(root, args[1:])
 	case "summary":
 		return complianceSummary(root)
+	case "site":
+		return complianceSite(root, args[1:])
 	default:
-		return fmt.Errorf("unknown compliance command %q; try sbom, crypto, "+
+		return fmt.Errorf("unknown compliance command %q; try site, sbom, crypto, "+
 			"controls, accessibility or summary", args[0])
 	}
 }
@@ -242,15 +244,16 @@ func complianceACR(root string, args []string) error {
 
 	w.Human("%sAccessibility conformance%s  %d page(s) scanned\n",
 		bold, reset, acr.Pages)
-	w.Human("\n  %-9s %-19s %s\n", "CRITERION", "RESULT", "CHECKED BY")
+	w.Human("  %s%s%s\n", dim, acr.Standard, reset)
+	w.Human("\n  %-9s %-11s %-19s %s\n", "WCAG", "EN 301 549", "RESULT", "CHECKED BY")
 	for _, c := range acr.Evaluated {
 		checks := strings.Join(c.Checks, "; ")
 		if checks == "" {
 			checks = "—"
 		}
-		w.Human("  %-9s %-19s %s\n", c.Number, c.Result, truncate(checks, 44))
+		w.Human("  %-9s %-11s %-19s %s\n", c.Number, c.Clause, c.Result, truncate(checks, 40))
 		if c.Remarks != "" {
-			w.Human("            %s%s%s\n", dim, c.Remarks, reset)
+			w.Human("                        %s%s%s\n", dim, c.Remarks, reset)
 		}
 	}
 

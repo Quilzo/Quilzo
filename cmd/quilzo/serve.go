@@ -56,6 +56,7 @@ import (
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/sitereport"
 	"github.com/quilzo/quilzo/internal/taxonomy"
 	"github.com/quilzo/quilzo/internal/upkeep"
 	"github.com/quilzo/quilzo/internal/vuln"
@@ -610,6 +611,7 @@ func cmdServe(root string, args []string) error {
 			return agentwatch.Look(events, time.Now()), nil
 		},
 		Evidence: func() ([]admin.Evidence, error) { return evidenceRows(root) },
+		Site:     func() (sitereport.Report, error) { return buildSiteReport(root, *tplDir, time.Now()) },
 	}
 	// Retention. A form declares how long its submissions are kept and, until
 	// this, nothing removed them: the ceiling was a sentence in a policy and

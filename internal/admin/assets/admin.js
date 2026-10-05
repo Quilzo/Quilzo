@@ -287,6 +287,22 @@
     clearTimeout(tipping);
     if (tooltip && tooltip.matches(":popover-open")) tooltip.hidePopover();
   }
+  // Copy buttons: hidden until the clipboard can be written (it needs a
+  // secure context), so without it the text is still there to select.
+  document.querySelectorAll("button[data-copy]").forEach(function (btn) {
+    var src = document.getElementById(btn.getAttribute("data-copy"));
+    var said = document.getElementById(btn.getAttribute("data-copied") || "");
+    if (!src || !navigator.clipboard || !window.isSecureContext) return;
+    btn.hidden = false;
+    btn.addEventListener("click", function () {
+      navigator.clipboard.writeText(src.value || src.textContent).then(function () {
+        if (said) said.textContent = "Copied.";
+      }, function () {
+        if (said) said.textContent = "Could not copy; select the text instead.";
+      });
+    });
+  });
+
   document.querySelectorAll("header.bar [title], .iconbutton[title], .rowmenu-open[title], svg [data-tip]").forEach(function (el) {
     if (el.hasAttribute("title")) {
       el.dataset.tip = el.getAttribute("title");

@@ -481,6 +481,42 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			len(unmarked), strings.Join(unmarked, ", ")), nil
 	})
 
+	// What the law asks of the published site, read-only. Admin, as the
+	// inventory is: it names the forms and where personal data sits.
+	srv.Register(mcp.Operation{
+		Name: "site_report", NeedsRole: "admin",
+		Summary: "what the law asks of the published site and where it stands: " +
+			"accessibility, the statement, forms, personal data, AI disclosure and marking, browser protections",
+		Detail: "Read-only. A duty marked clear means the checks found nothing, not that the duty is met. " +
+			"Pass statement=true for the draft accessibility statement as Markdown.",
+		Args:     map[string]string{"statement": "true for only the draft accessibility statement"},
+		Keywords: []string{"compliance", "accessibility", "statement", "gdpr", "ai act", "eaa", "headers", "privacy", "site"},
+	}, func(a map[string]any) (any, error) {
+		rep, err := buildSiteReport(root, tplDir, time.Now())
+		if err != nil {
+			return nil, err
+		}
+		if want, _ := a["statement"].(bool); want {
+			return rep.Statement.Markdown(), nil
+		}
+		var b strings.Builder
+		for _, d := range rep.Duties {
+			fmt.Fprintf(&b, "%s %s (%s): %s", d.State, d.Title, d.Law, d.Says)
+			if d.Fix != "" {
+				fmt.Fprintf(&b, " Fix: %s", d.Fix)
+			}
+			b.WriteString("\n")
+		}
+		for _, h := range rep.Headers {
+			fmt.Fprintf(&b, "header %s %s: %s\n", h.Name, h.Grade, h.Why)
+		}
+		for _, it := range rep.PersonalData {
+			fmt.Fprintf(&b, "personal data on %s: %s\n", it.Page, it.Detail)
+		}
+		b.WriteString(rep.Caveat)
+		return b.String(), nil
+	})
+
 	// Records, types, media, the pipeline and the read-only assurance
 	// operations. In another file because this one was already the length where
 	// somebody adding an operation stops reading the gates at the top.

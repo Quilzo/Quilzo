@@ -378,3 +378,28 @@ func TestAFormSaysWhyItCollectsAndOnWhatBasis(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// What the person is told carries the purpose, the basis and the period the
+// sweep enforces, after the notice as it was written.
+func TestThePersonIsToldWhyOnWhatBasisAndForHowLong(t *testing.T) {
+	f := Form{Name: "enquiry", Notice: "We reply within two days.",
+		Purpose: "To answer your question.", Basis: "contract", RetentionDays: 30}
+	got := f.Told()
+	for _, want := range []string{"We reply within two days.", "What your answers are for: To answer your question.",
+		"the need to do what you asked for (GDPR Article 6(1)(b))", "for 30 days, then delete them."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("told %q; missing %q", got, want)
+		}
+	}
+	two := Form{Name: "y", Notice: "N.", RetentionDays: 730}
+	if y := two.Told(); !strings.HasSuffix(y, "for 2 years, then delete them.") {
+		t.Errorf("two years: %q", y)
+	}
+	if strings.Contains(got, "..") {
+		t.Errorf("doubled full stop: %q", got)
+	}
+	bare := Form{Name: "x", Notice: "N."}
+	if got := bare.Told(); got != "N. We keep your answers for 90 days, then delete them." {
+		t.Errorf("a form with no purpose or basis: %q", got)
+	}
+}
