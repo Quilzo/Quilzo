@@ -380,7 +380,7 @@ func (e *Engine) respond(d crossing, s Signal, now time.Time, st *State) Respons
 // words, the protection it applied, and whether a person must be told.
 func (e *Engine) step(pb Playbook, stage int, step Step, mode, key string, addr netip.Addr, s Signal, now time.Time, st *State) (string, string, bool) {
 	p := Protection{Auto: true, By: "playbook:" + pb.Name, Playbook: pb.Name, Stage: stage + 1,
-		Reason: fmt.Sprintf("%s (stage %d): %s", pb.Title, stage+1, Signals[s.Name]),
+		Reason: fmt.Sprintf("%s (stage %d)", pb.Title, stage+1),
 		At:     now, Until: now.Add(time.Duration(step.For)), Where: step.Where}
 	note := ""
 	if strings.HasPrefix(step.Action, "block-") {

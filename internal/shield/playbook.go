@@ -40,6 +40,18 @@ var Signals = map[string]string{
 	"agent-hijacked":     "an agent followed an instruction planted in what it read",
 }
 
+// Counted is what a trigger counts of each signal, singular and plural, for
+// saying a playbook in words: "5 guessed tokens from one source".
+var Counted = map[string][2]string{
+	"signin-failures":    {"guessed token", "guessed tokens"},
+	"admin-hunt":         {"admin address asked for on the public site", "admin addresses asked for on the public site"},
+	"conversation-guess": {"wrong chatbot-conversation address", "wrong chatbot-conversation addresses"},
+	"chatbot-injection":  {"prompt-injection attempt", "prompt-injection attempts"},
+	"form-spam":          {"spam submission", "spam submissions"},
+	"decoy":              {"decoy presented", "decoys presented"},
+	"agent-hijacked":     {"planted instruction followed", "planted instructions followed"},
+}
+
 // Trait is how far a signal can be trusted, in CrowdSec's terms: Confidence
 // 0-3 is how seldom it is raised by somebody innocent; Spoofable 0-3 is how
 // easily somebody can raise it in another's name. A block needs a signal
