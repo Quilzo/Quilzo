@@ -216,5 +216,9 @@ func (g *Guard) AgentPaused(name string, now time.Time) (Protection, bool) {
 	return g.only(Agent, name, now)
 }
 
+// State is the record as this guard last read it, for a host that needs
+// more than one answer from it.
+func (g *Guard) State(now time.Time) *State { return g.state(now) }
+
 // Active is everything in force, for a screen.
 func (g *Guard) Active(now time.Time) []Protection { return g.state(now).Active(now) }
