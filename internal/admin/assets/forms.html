@@ -161,6 +161,12 @@ not that the number is fresh.</p>
              placeholder="what happens to what they send">
       <span class="hint">Required when the form is created. A form collecting
         personal data has to say what happens to it.</span></p>
+    <p><label for="f-purpose">What the answers are for</label>
+      <input id="f-purpose" name="purpose" maxlength="500" placeholder="to reply to the enquiry">
+      <span class="hint">The purpose GDPR limits them to, in a sentence.</span></p>
+    <p><label for="f-basis">Lawful basis</label>
+      <select id="f-basis" name="basis"><option value="">—</option>{{range $k, $v := .Bases}}<option value="{{$k}}">{{$k}}: {{$v}}</option>{{end}}</select>
+      <span class="hint">Consent needs a required box to tick.</span></p>
     <p><label for="f-ret">Kept for, in days</label>
       <input id="f-ret" name="retention" inputmode="numeric" placeholder="90">
       <span class="hint">At most {{.MaxRetention}}.</span></p>

@@ -117,8 +117,8 @@ func (s *Server) handleForms(w http.ResponseWriter, r *http.Request) {
 		"Embed": embed,
 		"Kinds": []form.Kind{form.Line, form.Para, form.Email, form.Number,
 			form.Choice, form.Agree},
-		"MaxRetention": form.MaxRetentionDays,
-		"Message":      r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
+		"MaxRetention": form.MaxRetentionDays, "Bases": form.Bases,
+		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"CanErase": s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed,
 	})
 }
@@ -211,6 +211,8 @@ func (s *Server) handleFormSave(w http.ResponseWriter, r *http.Request) {
 			Name: name, Label: strings.TrimSpace(r.FormValue("label")),
 			Intro:         strings.TrimSpace(r.FormValue("intro")),
 			Notice:        strings.TrimSpace(r.FormValue("notice")),
+			Purpose:       strings.TrimSpace(r.FormValue("purpose")),
+			Basis:         strings.TrimSpace(r.FormValue("basis")),
 			RetentionDays: days,
 			// The same field the branch below builds, and from the same
 			// function.
@@ -231,6 +233,20 @@ func (s *Server) handleFormSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f, _ = set.Get(name)
+	} else if purpose, basis := strings.TrimSpace(r.FormValue("purpose")), strings.TrimSpace(r.FormValue("basis")); (purpose != "" || basis != "") && strings.TrimSpace(r.FormValue("field")) == "" {
+		// Why it collects, and on what basis, said for a form that did not.
+		was := *f
+		if purpose != "" {
+			f.Purpose = purpose
+		}
+		if basis != "" {
+			f.Basis = basis
+		}
+		if err := f.Validate(); err != nil {
+			*f = was
+			s.formRedirect(w, r, "", err.Error())
+			return
+		}
 	} else if fname := strings.TrimSpace(r.FormValue("field")); fname != "" {
 		fl := formFieldFromRequest(r)
 		replaced := false

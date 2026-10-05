@@ -5,10 +5,14 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"sort"
+	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/codescan"
 	"github.com/quilzo/quilzo/internal/gate"
+	"github.com/quilzo/quilzo/internal/pii"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/site"
@@ -146,6 +150,58 @@ func contentGates(root string, s *store.Store, ref string) gate.Set {
 					})
 				}
 				return blocking, nil, nil
+			},
+		},
+
+		// Personal data and credentials, before they are public: a published
+		// page is copied, cached and archived within the hour, and nothing in
+		// this program can take it back. A card number or a credential
+		// blocks, because there is no page that should carry one; an IBAN, an
+		// email address or a telephone number is advisory, because a
+		// donation page, a contact page and an invoice page carry their own
+		// on purpose, and the advice is for the page pasted from a support
+		// ticket. The credential rules are internal/codescan's, so the gate
+		// and `quilzo scan` agree about what a key looks like.
+		{
+			Name: "personal data",
+			Refusal: func(n int) string {
+				return fmt.Sprintf("%d field(s) carry a card number or a "+
+					"credential.\n  A published page cannot be taken back: "+
+					"remove it, and if it was a credential, rotate it", n)
+			},
+			Run: func() (blocking, advisory []gate.Finding, err error) {
+				pages, perr := pagesAt()
+				if perr != nil {
+					return nil, nil, perr
+				}
+				own := ownDomains(root)
+				for _, name := range sortedNames(pages) {
+					var inputs []codescan.Input
+					for _, f := range contentStrings(pages[name]) {
+						for _, h := range pii.Scan(f.text, own) {
+							found := gate.Finding{Page: name, Detail: f.path + ": " + h.Shown}
+							if h.Kind.Blocking() {
+								blocking = append(blocking, found)
+							} else {
+								advisory = append(advisory, found)
+							}
+						}
+						inputs = append(inputs, codescan.Input{Name: f.path, Kind: codescan.Content,
+							Body: f.key + " = " + documentedKeys.Replace(f.text)})
+					}
+					for _, c := range codescan.Scan(inputs) {
+						if !strings.HasPrefix(c.Rule, "secret.") {
+							continue
+						}
+						found := gate.Finding{Page: name, Detail: c.Where + ": " + c.Detail}
+						if c.Severity == codescan.Critical {
+							blocking = append(blocking, found)
+						} else {
+							advisory = append(advisory, found)
+						}
+					}
+				}
+				return blocking, advisory, nil
 			},
 		},
 
@@ -306,4 +362,25 @@ func sortedNames(pages map[string]any) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// documentedKeys are the credentials cloud documentation prints as examples,
+// which are nobody's and which a page about the cloud quotes.
+var documentedKeys = strings.NewReplacer(
+	"AKIAIOSFODNN7EXAMPLE", "",
+	"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "",
+)
+
+// ownDomains is the site's own address, whose email addresses a contact page
+// is meant to show.
+func ownDomains(root string) []string {
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return nil
+	}
+	u, err := url.Parse(strings.TrimSpace(cfg.Raw("site.base_url")))
+	if err != nil || u.Hostname() == "" {
+		return nil
+	}
+	return []string{strings.TrimPrefix(u.Hostname(), "www.")}
 }

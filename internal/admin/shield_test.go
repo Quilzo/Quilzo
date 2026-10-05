@@ -200,3 +200,25 @@ func TestTheAdminNamesWhereViolationsGoAndTakesThemWithoutACookie(t *testing.T) 
 		t.Fatalf("%d %+v", rec.Code, got)
 	}
 }
+
+// A palette below 4.5:1 is refused by the browser's publish as by the
+// command line's; before, `theme set --force` said the gate would refuse it
+// and the browser published it.
+func TestPublishingFromTheBrowserChecksTheThemesContrast(t *testing.T) {
+	srv, _ := setup(t)
+	designFake(srv, map[string]string{"on-surface": "#bbbbbb", "surface": "#ffffff"})
+	got := srv.themeBlockers()
+	if len(got) == 0 {
+		t.Fatal("light grey text on white passed")
+	}
+	designFake(srv, map[string]string{})
+	if got := srv.themeBlockers(); len(got) != 0 {
+		t.Fatalf("the shipped palette was refused: %+v", got)
+	}
+	srv.DesignSet.OwnStylesheet = func() bool { return true }
+	designFake(srv, map[string]string{"on-surface": "#bbbbbb"})
+	srv.DesignSet.OwnStylesheet = func() bool { return true }
+	if got := srv.themeBlockers(); len(got) != 0 {
+		t.Fatal("a hand-written stylesheet was judged by tokens it does not use")
+	}
+}

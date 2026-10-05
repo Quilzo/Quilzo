@@ -721,6 +721,28 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "privacy.form-basis-missing",
+		Title:    "A form does not say what its answers are for, or on what basis",
+		Severity: Medium,
+		Controls: []string{"PT-2", "PT-3", "PT-5"},
+		OWASP:    "",
+		Why: "Personal data is collected for a stated purpose and on a lawful " +
+			"basis, and the person is told both before they send it. A form " +
+			"that says neither leaves its owner unable to show either, which " +
+			"is the first thing a data protection authority asks.",
+		Check: func(s State) []Finding {
+			if len(s.Content.FormsWithoutBasis) == 0 {
+				return nil
+			}
+			n := len(s.Content.FormsWithoutBasis)
+			return []Finding{{
+				Detail: fmt.Sprintf("%d open %s no purpose or lawful basis: %s", n,
+					plural(n, "form gives", "forms give"), strings.Join(s.Content.FormsWithoutBasis, ", ")),
+				Fix: "say both on the Forms screen",
+			}}
+		},
+	},
+	{
 		ID:       "publish.schedule-overdue",
 		Title:    "A scheduled publish has not fired",
 		Severity: Medium,
@@ -758,6 +780,13 @@ var rules = []Rule{
 			"an override, a direct ref move, or a path that does not run the " +
 			"check.",
 		Check: func(s State) []Finding {
+			if s.Content.A11yUnchecked != "" {
+				return []Finding{{
+					Detail: "live content could not be checked for accessibility, so nobody knows whether it passes: " +
+						s.Content.A11yUnchecked,
+					Fix: "quilzo a11y --ref live",
+				}}
+			}
 			if s.Content.BlockingA11y == 0 {
 				return nil
 			}

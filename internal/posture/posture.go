@@ -163,13 +163,18 @@ type ServerFacts struct {
 
 // ContentFacts are the properties of what is published.
 type ContentFacts struct {
-	LivePages       []string `json:"live_pages"`
-	UnmarkedPages   []string `json:"unmarked_pages"`
-	StalePages      []string `json:"stale_pages"`
-	RawTemplates    []string `json:"raw_templates"`
-	BlockingA11y    int      `json:"blocking_a11y"`
-	PublishedAt     int64    `json:"published_at,omitempty"`
-	LastTimestamped int64    `json:"last_timestamped,omitempty"`
+	LivePages     []string `json:"live_pages"`
+	UnmarkedPages []string `json:"unmarked_pages"`
+	StalePages    []string `json:"stale_pages"`
+	RawTemplates  []string `json:"raw_templates"`
+	BlockingA11y  int      `json:"blocking_a11y"`
+	// A11yUnchecked says why live content could not be checked at all.
+	A11yUnchecked string `json:"a11y_unchecked,omitempty"`
+	// FormsWithoutBasis are forms that do not say what their answers are
+	// for, or on what lawful basis they are collected.
+	FormsWithoutBasis []string `json:"forms_without_basis,omitempty"`
+	PublishedAt       int64    `json:"published_at,omitempty"`
+	LastTimestamped   int64    `json:"last_timestamped,omitempty"`
 }
 
 // UpkeepFacts are the things that were supposed to happen because time passed.
