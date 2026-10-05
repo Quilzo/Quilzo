@@ -751,7 +751,19 @@ type TokenStore struct {
 	// and whether a passkey or single sign-on vouched for it. A store
 	// loaded for the command line on the machine has none: that is the way
 	// out of a lockdown, not a way in.
-	Admit func(issued int64, vouched bool) error `json:"-"`
+	Admit func(c Credential) error `json:"-"`
+}
+
+// Credential is what Admit is told about one presented credential.
+type Credential struct {
+	// ID is the credential's own id; Parent the long-lived token it was
+	// exchanged from, if it was.
+	ID, Parent string
+	// Issued is when the long-lived token behind it was made: the parent's
+	// for an exchanged session.
+	Issued int64
+	// Vouched says a passkey or single sign-on minted it.
+	Vouched bool
 }
 
 // Ended is a pruned session's fingerprint.
@@ -1098,7 +1110,7 @@ func (ts *TokenStore) authenticate(secret string, now time.Time) (*Token, error)
 				}
 			}
 		}
-		if err := ts.Admit(issued, found.Session); err != nil {
+		if err := ts.Admit(Credential{ID: found.ID, Parent: found.Parent, Issued: issued, Vouched: found.Session}); err != nil {
 			return nil, err
 		}
 	}

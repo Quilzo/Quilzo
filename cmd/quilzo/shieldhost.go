@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/automate"
 	"github.com/quilzo/quilzo/internal/clientip"
+	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/shield"
 )
 
@@ -147,6 +148,24 @@ func (h *shieldHost) signal(name, subject string, r *http.Request) {
 	h.engine.Observe(s)
 }
 
+// violation is a page's policy violation a visitor's browser reported: a
+// signal about the page, counted by how many different networks report it,
+// never a reason to refuse whoever sent it.
+func (h *shieldHost) violation(v public.Violation, r *http.Request) {
+	c := clientip.FromRequest(r)
+	by := ""
+	if c.Known() {
+		bits := 24
+		if c.Addr.Is6() {
+			bits = 48
+		}
+		if pfx, err := c.Addr.Prefix(bits); err == nil {
+			by = h.guard.Handle(pfx.String())
+		}
+	}
+	h.engine.Observe(shield.Signal{Name: "page-violation", Subject: v.Group(), By: by, Where: h.where})
+}
+
 // badToken is a credential that did not authenticate: a decoy is a decoy,
 // whatever else; a secret shaped like a token that was never issued here is
 // a guess. One that expired or was revoked is somebody's real credential
@@ -166,12 +185,20 @@ func (h *shieldHost) badToken(r *http.Request, presented string, err error) {
 	}
 }
 
-// admit is the lockdown, as the token stores the servers load ask it.
-func (h *shieldHost) admit(issued int64, vouched bool) error {
+// admit is the lockdown and the suspended tokens, as the token stores the
+// servers load ask them.
+func (h *shieldHost) admit(c auth.Credential) error {
 	now := time.Now()
-	p, on := h.guard.Lockdown(now)
-	if on && shield.LockedOut(p, issued, vouched) {
+	if p, on := h.guard.Lockdown(now); on && shield.LockedOut(p, c.Issued, c.Vouched) {
 		return fmt.Errorf("%w (until about %s)", auth.ErrLockedDown, p.Until.UTC().Format("15:04 UTC"))
+	}
+	for _, id := range []string{c.ID, c.Parent} {
+		if id == "" {
+			continue
+		}
+		if p, on := h.guard.Suspended(id, now); on {
+			return fmt.Errorf("this token is suspended until about %s; an administrator can lift it", p.Until.UTC().Format("15:04 UTC"))
+		}
 	}
 	return nil
 }

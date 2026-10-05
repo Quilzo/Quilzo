@@ -82,6 +82,7 @@ import (
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/provenance"
+	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
@@ -378,6 +379,11 @@ type Server struct {
 	// ShieldAdmin is what the Shield screen needs. Nil shows it as not
 	// available in this build.
 	ShieldAdmin *ShieldAdmin
+	// Reports receives the admin pages' policy violations, which browsers
+	// post to public.ReportsPath; nil names no endpoint. On this origin a
+	// violation is a script the admin does not run: an extension reading
+	// it, or something injected.
+	Reports http.Handler
 
 	// ContentGates is every check about the content being published, run
 	// before the ones that can be waived.
@@ -1019,10 +1025,32 @@ const uploadPath = "/media/upload"
 // is sent by current browsers and states the relationship directly, and `Origin`
 // covers the rest. A request that says it came from elsewhere is refused for any
 // method that changes something.
+// reporting names where the browser reports what the policy refused.
+func (s *Server) reporting(next http.Handler) http.Handler {
+	if s.Reports == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		if csp := h.Get("Content-Security-Policy"); csp != "" {
+			h.Set("Content-Security-Policy", public.WithReporting(csp))
+			h.Set("Reporting-Endpoints", `csp="`+public.ReportsPath+`"`)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func sameSiteOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost && r.Method != http.MethodPut &&
 			r.Method != http.MethodDelete {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// A browser's violation report changes nothing and is read without
+		// a cookie; reports are often sent without Sec-Fetch-Site the way a
+		// page's own requests are.
+		if r.URL.Path == public.ReportsPath {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -1365,7 +1393,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin.js", s.handleJS)
 	mux.HandleFunc("/fonts/quilzo-ui.woff2", s.handleFont)
 	mux.HandleFunc("/fonts/", s.handleSiteFont)
-	return securityHeaders(s.signedFlash(sameSiteOnly(limitBody(s.readOnlyTokens(mux)))))
+	if s.Reports != nil {
+		mux.Handle(public.ReportsPath, s.Reports)
+	}
+	return securityHeaders(s.reporting(s.signedFlash(sameSiteOnly(limitBody(s.readOnlyTokens(mux))))))
 }
 
 // handleSignIn exchanges a pasted token for a session cookie.

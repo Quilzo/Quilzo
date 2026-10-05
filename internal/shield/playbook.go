@@ -39,6 +39,9 @@ var Signals = map[string]string{
 	"decoy":              "a decoy was touched: a decoy token was tried, or a decoy address asked for",
 	"agent-hijacked":     "an agent followed an instruction planted in what it read",
 	"foreign-probe":      "the public site asked for software it does not run: WordPress, .env, .git",
+	"model-spend":        "a caller of the models spent its daily budget",
+	"route-trouble":      "a model provider refused a route: its spend cap reached, or its key wrong or revoked",
+	"page-violation":     "visitors' browsers reported a page loading something its policy does not allow",
 }
 
 // Counted is what a trigger counts of each signal, singular and plural, for
@@ -52,6 +55,9 @@ var Counted = map[string][2]string{
 	"decoy":              {"decoy presented", "decoys presented"},
 	"agent-hijacked":     {"planted instruction followed", "planted instructions followed"},
 	"foreign-probe":      {"probe for software this site does not run", "probes for software this site does not run"},
+	"model-spend":        {"spent budget", "spent budgets"},
+	"route-trouble":      {"refusal by a model provider", "refusals by a model provider"},
+	"page-violation":     {"network reporting one violation", "networks reporting one violation"},
 }
 
 // Trait is how far a signal can be trusted, in CrowdSec's terms: Confidence
@@ -87,6 +93,12 @@ var Traits = map[string]Trait{
 	// Addresses no Quilzo site can serve (wp-login.php, .env, .git): no
 	// visitor of this site asks for them, scanners do.
 	"foreign-probe": {Confidence: 2},
+	// Measured here, by the gateway's own ledger and the provider's own
+	// answer.
+	"model-spend":   {Confidence: 3},
+	"route-trouble": {Confidence: 3},
+	// Anybody can post a report, from anywhere, about anything.
+	"page-violation": {Confidence: 0, Spoofable: 3},
 }
 
 // Per says what a trigger counts by.
@@ -107,6 +119,7 @@ var Actions = map[string]string{
 	"lockdown":       "admin sign-in by passkey or single sign-on only",
 	"freeze":         "stop publishing",
 	"pause-agent":    "stop the agent running",
+	"cut-route":      "stop using a model route",
 	"notify":         "tell the security contact",
 	"open-case":      "open a case for a person to follow",
 }
@@ -277,8 +290,12 @@ func (s Step) validate(on Trigger) error {
 			return errors.New("only a chatbot can be limited to quoting pages")
 		}
 	case "pause-agent":
-		if on.Signal != "agent-hijacked" {
+		if on.Signal != "agent-hijacked" && on.Signal != "model-spend" {
 			return errors.New("an agent is paused on an agent's signal")
+		}
+	case "cut-route":
+		if on.Signal != "route-trouble" {
+			return errors.New("a route is cut on a route's signal")
 		}
 	default:
 		if s.Feature != "" || s.Level != "" {
@@ -366,6 +383,26 @@ func Builtins() []Playbook {
 			Stages: []Stage{
 				{Do: []Step{{Action: "lockdown", For: h(6 * time.Hour)}, {Action: "notify"}}},
 				{Do: []Step{{Action: "lockdown", For: h(24 * time.Hour)}, {Action: "freeze", For: h(6 * time.Hour)}, {Action: "notify"}}},
+			}},
+		{Name: "model-budget-spent", Title: "A caller spent its model budget", Mode: "act", Builtin: true,
+			Why: "The gateway already refuses the calls past a budget, so a chatbot quotes its pages instead; somebody should know, and an agent that spends its budget again the same day is doing something it should not.",
+			On:  Trigger{Signal: "model-spend", Per: "subject", Count: 1, Within: h(time.Hour)},
+			Stages: []Stage{
+				{Do: []Step{{Action: "notify"}}},
+				{Do: []Step{{Action: "pause-agent", For: h(24 * time.Hour)}, {Action: "notify"}, {Action: "open-case"}}},
+			}},
+		{Name: "model-route-refused", Title: "A model provider refused a route", Mode: "act", Builtin: true,
+			Why: "A spent cap or a revoked key does not come back in a minute, which is all the gateway's own rest is for: the route is left alone for six hours, the next route answers meanwhile, and somebody is told to look.",
+			On:  Trigger{Signal: "route-trouble", Per: "subject", Count: 1, Within: h(time.Hour)},
+			Stages: []Stage{
+				{Do: []Step{{Action: "cut-route", For: h(6 * time.Hour)}, {Action: "notify"}}},
+			}},
+		{Name: "page-tampering", Title: "Pages loading what their policy refuses", Mode: "act", Builtin: true,
+			Why: "Five different networks reporting the same thing on the same page within an hour is rarely five extensions: it is often a tag or a dependency that changed. A report can be forged by anybody, so this only tells a person; it never refuses anybody.",
+			On:  Trigger{Signal: "page-violation", Per: "subject", Count: 5, Within: h(time.Hour), Distinct: true},
+			Stages: []Stage{
+				{Do: []Step{{Action: "notify"}}},
+				{Do: []Step{{Action: "notify"}, {Action: "open-case"}}},
 			}},
 		{Name: "agent-steered", Title: "An agent followed a planted instruction", Mode: "act", Builtin: true,
 			Why: "Text it reads can steer it; it does not run until somebody narrows what it may do.",

@@ -35,7 +35,7 @@ func cmdShield(root string, args []string) error {
 		return shieldStatus(root)
 	case "list":
 		return shieldList(root, args[1:])
-	case "block", "slow", "feature", "lockdown", "freeze", "pause":
+	case "block", "slow", "feature", "lockdown", "freeze", "pause", "cut", "suspend", "quarantine":
 		return shieldApply(root, args[0], args[1:])
 	case "lift":
 		return shieldLift(root, args[1:])
@@ -56,7 +56,7 @@ func cmdShield(root string, args []string) error {
 	case "repair":
 		return shieldRepair(root)
 	default:
-		return fmt.Errorf("unknown shield command %q; try status, list, block, slow, feature, "+
+		return fmt.Errorf("unknown shield command %q; try status, list, block, slow, feature, cut, suspend, quarantine, "+
 			"lockdown, freeze, pause, lift, judge, trust, decoy, playbook, hold, "+
 			"release, dry-run or repair", args[0])
 	}
@@ -265,6 +265,12 @@ func shieldApply(root, kind string, args []string) error {
 		p.Kind = shield.Freeze
 	case "pause":
 		p.Kind, p.Target = shield.Agent, target
+	case "cut":
+		p.Kind, p.Target = shield.Route, target
+	case "suspend":
+		p.Kind, p.Target = shield.Token, target
+	case "quarantine":
+		p.Kind, p.Target, p.Level = shield.Feature, "upload:"+target, shield.Off
 	}
 	applied, fresh, err := shield.Apply(root, p, now)
 	if err != nil {

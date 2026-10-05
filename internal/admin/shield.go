@@ -570,6 +570,12 @@ func shieldFromForm(r *http.Request, by string, now time.Time) (shield.Protectio
 		x.Kind = shield.Freeze
 	case "pause":
 		x.Kind, x.Target = shield.Agent, target
+	case "cut":
+		x.Kind, x.Target = shield.Route, target
+	case "suspend":
+		x.Kind, x.Target = shield.Token, target
+	case "quarantine":
+		x.Kind, x.Target, x.Level = shield.Feature, "upload:"+target, shield.Off
 	default:
 		return x, fmt.Errorf("choose what to do")
 	}

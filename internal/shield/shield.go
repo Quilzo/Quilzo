@@ -73,6 +73,8 @@ const (
 	Lockdown = "lockdown" // admin sign-in by passkey or single sign-on only
 	Freeze   = "freeze"   // no publishing
 	Agent    = "agent"    // an agent does not run
+	Route    = "route"    // a model route is not used
+	Token    = "token"    // one credential, and its sessions, refused
 )
 
 // Where a block applies.
@@ -113,6 +115,7 @@ var Features = map[string]string{
 	"uploads":        "media uploads",
 	"import":         "importing content",
 	"feeds":          "deliveries from other systems",
+	"upload":         "one uploaded file, by its id: quarantined, answered as if it were not there",
 }
 
 // Protection is one thing the shield is doing.
@@ -307,8 +310,10 @@ func newID() string {
 }
 
 var (
-	reHandle = regexp.MustCompile(`^p_[0-9a-f]{32}$`)
-	reName   = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+	reHandle  = regexp.MustCompile(`^p_[0-9a-f]{32}$`)
+	reName    = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+	reMediaID = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	reTokenID = regexp.MustCompile(`^[0-9a-f]{8,64}$`)
 )
 
 // Validate checks a protection before it is applied, whoever asked.
@@ -367,10 +372,14 @@ func (p Protection) Validate(now time.Time) error {
 		if _, ok := Features[name]; !ok {
 			return fmt.Errorf("%q is not a feature the shield can turn down", name)
 		}
-		if (name == "chatbot" || name == "form") != (one != "") {
-			return errors.New("a chatbot or form is named; the others are not")
+		if (name == "chatbot" || name == "form" || name == "upload") != (one != "") {
+			return errors.New("a chatbot, form or upload is named; the others are not")
 		}
-		if one != "" && !reName.MatchString(one) {
+		if name == "upload" {
+			if !reMediaID.MatchString(one) {
+				return fmt.Errorf("%q is not an upload's id", one)
+			}
+		} else if one != "" && !reName.MatchString(one) {
 			return fmt.Errorf("%q is not a name", one)
 		}
 		if p.Level != Off && !(p.Level == Limited && (name == "chatbot" || name == "chatbots")) {
@@ -383,6 +392,14 @@ func (p Protection) Validate(now time.Time) error {
 	case Agent:
 		if !reName.MatchString(p.Target) {
 			return fmt.Errorf("%q is not an agent", p.Target)
+		}
+	case Route:
+		if !reName.MatchString(p.Target) {
+			return fmt.Errorf("%q is not a model route", p.Target)
+		}
+	case Token:
+		if !reTokenID.MatchString(p.Target) {
+			return fmt.Errorf("%q is not a token's id", p.Target)
 		}
 	default:
 		return fmt.Errorf("%q is not a kind of protection", p.Kind)

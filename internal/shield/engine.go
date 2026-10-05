@@ -39,6 +39,9 @@ type Signal struct {
 	Unverified bool
 	// Where is the surface it came from, Admin or Site, when known.
 	Where string
+	// By is who raised it, as a network's handle, for a trigger that counts
+	// one subject's signals by how many different places sent them.
+	By string
 }
 
 // Response is what a playbook did, or would have done, about a signal.
@@ -275,7 +278,14 @@ func (e *Engine) cross(pbs []Playbook, s Signal, now time.Time, st *State) []cro
 			}
 			delete(e.quiet, ck)
 		}
-		hs := append(pruneHits(e.counts[ck], s.At.Add(-time.Duration(pb.On.Within))), hit{s.At, s.Subject})
+		// What is counted as different: the subject for a source's trigger
+		// (three different admin addresses), who sent it for a subject's
+		// (five different networks reporting one violation).
+		what := s.Subject
+		if pb.On.Per == "subject" {
+			what = s.By
+		}
+		hs := append(pruneHits(e.counts[ck], s.At.Add(-time.Duration(pb.On.Within))), hit{s.At, what})
 		if len(hs) > pb.On.Count*4+16 {
 			hs = hs[len(hs)-(pb.On.Count*4+16):]
 		}
@@ -321,7 +331,10 @@ func (e *Engine) cross(pbs []Playbook, s Signal, now time.Time, st *State) []cro
 		case mode == "act" && st.Watching != nil:
 			mode = "held"
 		}
-		e.quiet[ck] = s.At.Add(Cooldown)
+		// Rest at least the trigger's own window: a count-one trigger on
+		// something that keeps happening (a spent budget, a refused route)
+		// would otherwise go round its stages every five minutes.
+		e.quiet[ck] = s.At.Add(max(Cooldown, time.Duration(pb.On.Within)))
 		due = append(due, crossing{pb, key, ck, addr, stage, mode})
 	}
 	return due
@@ -497,7 +510,16 @@ func (e *Engine) step(pb Playbook, stage int, step Step, mode, key string, addr 
 	case "freeze":
 		p.Kind = Freeze
 	case "pause-agent":
-		p.Kind, p.Target = Agent, s.Subject
+		name, isAgent := strings.CutPrefix(s.Subject, "agent:")
+		if s.Name == "agent-hijacked" {
+			name, isAgent = s.Subject, true
+		}
+		if !isAgent {
+			return "nothing to pause: " + s.Subject + " is not an agent", "", false
+		}
+		p.Kind, p.Target = Agent, name
+	case "cut-route":
+		p.Kind, p.Target = Route, s.Subject
 	case "notify":
 		if mode != "act" {
 			return "would have told the security contact", "", false
@@ -559,6 +581,9 @@ func describe(p Protection) string {
 		if p.Level == Limited {
 			return fmt.Sprintf("limited %s to quoting pages %s", p.Target, until)
 		}
+		if id, ok := strings.CutPrefix(p.Target, "upload:"); ok {
+			return fmt.Sprintf("quarantined the upload %s %s", id[:min(12, len(id))], until)
+		}
 		return fmt.Sprintf("turned off %s %s", p.Target, until)
 	case Lockdown:
 		return "locked the admin to passkeys and single sign-on " + until
@@ -566,6 +591,10 @@ func describe(p Protection) string {
 		return "froze publishing " + until
 	case Agent:
 		return "paused the agent " + p.Target + " " + until
+	case Route:
+		return "cut the model route " + p.Target + " " + until
+	case Token:
+		return "suspended the token " + p.Target + " and its sessions " + until
 	}
 	return p.Kind
 }

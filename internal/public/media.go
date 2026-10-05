@@ -109,6 +109,13 @@ func (st *Site) mediaFile(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// Quarantined by the shield: answered as if it were not there, which
+	// is what it will be if the quarantine was right.
+	if _, _, on := st.shielded("upload:" + id); on {
+		w.Header().Set("Cache-Control", "no-store")
+		http.NotFound(w, r)
+		return
+	}
 	// Which question to ask depends on whether this is a picture. See
 	// MediaStream: a picture is signed and small, a recording is neither.
 	f, err := st.stat(id)

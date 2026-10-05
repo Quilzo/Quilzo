@@ -21,6 +21,11 @@ type Run struct {
 	Examples   []string `json:"examples,omitempty"`
 }
 
+// inHistory are the signals the audit log keeps closely enough to try a
+// playbook against.
+var inHistory = map[string]bool{"signin-failures": true, "admin-hunt": true, "conversation-guess": true,
+	"chatbot-injection": true, "form-spam": true, "foreign-probe": true, "decoy": true, "agent-hijacked": true}
+
 // Try is what each playbook would have done over a history of signals:
 // how often, at which stage, how many of the sources it would have blocked
 // an administrator signed in from strongly, and, where the history cannot
@@ -38,6 +43,9 @@ func Try(pbs []Playbook, sigs []Signal, st *State, now time.Time) []Run {
 		}
 		if pb.On.Signal == "form-spam" || pb.On.Signal == "chatbot-injection" && pb.On.Per == "subject" {
 			run.Incomplete = "the log does not say which form or chatbot these signals were about"
+		}
+		if !inHistory[pb.On.Signal] {
+			run.Incomplete = "the log does not keep these signals one by one, so there is nothing to try it on"
 		}
 		rs := DryRun(pb, sigs)
 		run.Responses = len(rs)

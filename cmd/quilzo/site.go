@@ -250,6 +250,7 @@ func cmdSite(root string, args []string) error {
 	sh.where = shield.Site
 	st.OnSignal = sh.signal
 	st.Shield = sh.feature
+	st.OnViolation = sh.violation
 
 	handler := st.Handler()
 

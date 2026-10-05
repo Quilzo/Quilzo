@@ -211,3 +211,33 @@ func TestADryRunSeesWhatTheEngineWouldHave(t *testing.T) {
 		t.Fatalf("the dry run said %+v; the live engine would have acted once", runs[0])
 	}
 }
+
+func TestASuspendedTokenAndItsSessionsAreRefusedUntilLifted(t *testing.T) {
+	root := shieldRoot(t)
+	ts := &auth.TokenStore{}
+	secret, tok, err := ts.Issue("ci", "deploy-bot", auth.RoleAdmin, "", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, _, err := ts.Exchange(secret, auth.RoleNone, "", time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _, err := shield.Apply(root, shield.Protection{Kind: shield.Token, Target: tok.ID, Reason: "leaked in a log",
+		By: "dana", Until: time.Now().Add(time.Hour)}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := newShieldHost(root)
+	h.gate(ts)
+	for _, s := range []string{secret, sess} {
+		if _, err := ts.Authenticate(s, time.Now()); err == nil || !strings.Contains(err.Error(), "suspended") {
+			t.Fatalf("a suspended credential: %v", err)
+		}
+	}
+	shield.Lift(root, p.ID, "dana", time.Now())
+	h.guard.Refresh()
+	if _, err := ts.Authenticate(secret, time.Now()); err != nil {
+		t.Fatalf("lifted, still refused: %v", err)
+	}
+}

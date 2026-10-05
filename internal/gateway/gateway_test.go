@@ -194,3 +194,52 @@ func TestSummaryIsByCaller(t *testing.T) {
 		t.Fatalf("%+v", sum)
 	}
 }
+
+type refusing struct{ err error }
+
+func (r refusing) Name() string { return "refusing" }
+func (r refusing) Complete(context.Context, string, string) (string, error) {
+	return "", r.err
+}
+
+func TestTheShieldCutsARouteAndHearsWhatItShould(t *testing.T) {
+	local := &fake{name: "local"}
+	hosted := &fake{name: "hosted"}
+	g, _, _ := rig(t, two, map[string]*fake{"hosted": hosted, "local": local})
+	g.Cut = func(route string) bool { return route == "hosted" }
+	var told []string
+	g.OnTrouble = func(kind, subject string) { told = append(told, kind+" "+subject) }
+	if out, err := g.For("assist").Complete(context.Background(), "s", "u"); err != nil || out != "answer from local" || hosted.calls != 0 {
+		t.Fatalf("a cut route was used: %q %v", out, err)
+	}
+	// A budget spent is told, once per refused call.
+	b := Config{Routes: two.Routes, Budgets: []Budget{{Consumer: "agent:triage", PerMinute: 1}}}
+	g2, _, _ := rig(t, b, map[string]*fake{"hosted": hosted, "local": local})
+	g2.OnTrouble = g.OnTrouble
+	g2.For("agent:triage").Complete(context.Background(), "s", "u")
+	if _, err := g2.For("agent:triage").Complete(context.Background(), "s", "u"); !errors.Is(err, ErrBudget) {
+		t.Fatal(err)
+	}
+	if len(told) != 1 || told[0] != "spent agent:triage" {
+		t.Fatalf("told %v", told)
+	}
+}
+
+func TestOnlyAProvidersSpendCapOrKeyIsTrouble(t *testing.T) {
+	cases := map[string]string{
+		`model returned 401: {"error":"invalid api key"}`:                                  "route-auth",
+		`model returned 429: {"error":{"code":"organization_spend_limit_exceeded"}}`:       "route-spent",
+		`model returned 400: {"error":"You have reached your specified API usage limits"}`: "route-spent",
+		`model returned 429: {"error":"rate limited, retry after 3s"}`:                     "",
+		`model returned 503: overloaded`:                                                   "",
+		`dial tcp: connection refused`:                                                     "",
+	}
+	for msg, want := range cases {
+		if got := Trouble(errors.New(msg)); got != want {
+			t.Errorf("%s: %q, want %q", msg, got, want)
+		}
+	}
+	if Trouble(nil) != "" {
+		t.Fatal("no error is trouble")
+	}
+}

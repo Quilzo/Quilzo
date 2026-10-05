@@ -109,6 +109,10 @@ type Site struct {
 	// shield's playbooks to count (internal/shield). Signals above records
 	// it once per window; this is every one. Nil tells nobody.
 	OnSignal func(kind, subject string, r *http.Request)
+	// OnViolation is told each policy violation a visitor's browser
+	// reports (reports.go), for the shield to count. Nil turns reporting
+	// off: no endpoint is named and none answers.
+	OnViolation func(v Violation, r *http.Request)
 	// Shield reports whether the shield has turned a feature down:
 	// "chatbot:NAME", "form:NAME", "boards", "signup", "search-answers",
 	// "uploads". The level is "off" or "limited" (a chatbot that quotes
@@ -320,6 +324,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc(SpeculationPath, st.speculationRules)
 	mux.HandleFunc("/llms.txt", st.llms)
 	mux.HandleFunc("/media/", st.mediaFile)
+	mux.HandleFunc(ReportsPath, st.reportsHandler)
 	mux.HandleFunc("/favicon.ico", st.favicon)
 	mux.HandleFunc("/form/", st.submit)
 	mux.HandleFunc("/ask/", st.ask)
@@ -769,6 +774,10 @@ func (st *Site) securityHeaders(next http.Handler) http.Handler {
 			}
 		}
 		if name != "" {
+			if st.OnViolation != nil {
+				value = withReporting(value)
+				h.Set("Reporting-Endpoints", `csp="`+ReportsPath+`"`)
+			}
 			h.Set(name, value)
 		}
 

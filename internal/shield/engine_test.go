@@ -343,7 +343,7 @@ func TestThisMachineAndTrustedNetworksAreNotBlockedByPlaybooks(t *testing.T) {
 		if !strings.HasPrefix(got[1].Did[0], "locked the admin") {
 			t.Fatalf("%s: %q", a, got[1].Did)
 		}
-		r.clock = r.clock.Add(Cooldown)
+		r.clock = r.clock.Add(time.Hour + time.Minute) // past the rest after a stage
 	}
 	for _, p := range r.state(t).Protections {
 		if p.Kind == Block {

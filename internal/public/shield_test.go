@@ -6,6 +6,7 @@ package public
 import (
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/media"
 )
 
 type told struct{ kind, subject, source string }
@@ -169,5 +171,69 @@ func TestProbingForSoftwareTheSiteDoesNotRunIsTold(t *testing.T) {
 		{ForeignProbe, "/.git/config", "198.51.100.9"}}
 	if fmt.Sprint(*heard) != fmt.Sprint(want) {
 		t.Fatalf("told %v", *heard)
+	}
+}
+
+func TestAQuarantinedUploadIsNotThere(t *testing.T) {
+	f, body := fixtureImage(t)
+	st := &Site{Media: func(id string) (media.File, []byte, error) {
+		if id != f.ID {
+			return media.File{}, nil, http.ErrMissingFile
+		}
+		return f, body, nil
+	}}
+	ask := func() *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/media/"+f.ID, nil))
+		return w
+	}
+	if w := ask(); w.Code != http.StatusOK {
+		t.Fatalf("before: %d", w.Code)
+	}
+	shielding(st, map[string]string{"upload:" + f.ID: "off"})
+	if w := ask(); w.Code != http.StatusNotFound || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("a quarantined upload: %d %v", w.Code, w.Header())
+	}
+}
+
+func TestBrowsersReportViolationsAndOnlyThePagesOwnAreKept(t *testing.T) {
+	st := published(t, map[string]any{"index": map[string]any{"title": "Home"}})
+	var got []Violation
+	st.OnViolation = func(v Violation, r *http.Request) { got = append(got, v) }
+	// The headers name the endpoint both ways.
+	w := get(st, "/", nil)
+	if w.Header().Get("Reporting-Endpoints") != `csp="/.quilzo/reports"` ||
+		!strings.Contains(w.Header().Get("Content-Security-Policy"), "report-to csp") ||
+		!strings.Contains(w.Header().Get("Content-Security-Policy"), "report-uri /.quilzo/reports") {
+		t.Fatalf("headers %v", w.Header())
+	}
+	post := func(ct, body string) int {
+		req := httptest.NewRequest(http.MethodPost, "http://shop.example/.quilzo/reports", strings.NewReader(body))
+		req.Header.Set("Content-Type", ct)
+		rec := httptest.NewRecorder()
+		st.Handler().ServeHTTP(rec, req)
+		return rec.Code
+	}
+	// Chromium's Reporting API.
+	if c := post("application/reports+json", `[{"type":"csp-violation","url":"https://shop.example/checkout","body":{"documentURL":"https://shop.example/checkout","blockedURL":"https://evil.example/skim.js","effectiveDirective":"script-src-elem","disposition":"enforce"}},
+		{"type":"csp-violation","body":{"documentURL":"https://shop.example/","blockedURL":"chrome-extension://abc/x.js","effectiveDirective":"script-src-elem"}},
+		{"type":"csp-violation","body":{"documentURL":"https://other.example/","blockedURL":"https://x.example/a.js","effectiveDirective":"script-src-elem"}},
+		{"type":"deprecation","body":{}}]`); c != http.StatusNoContent {
+		t.Fatalf("answered %d", c)
+	}
+	// report-uri's older shape.
+	post("application/csp-report", `{"csp-report":{"document-uri":"https://shop.example/about","blocked-uri":"inline","violated-directive":"script-src 'none'"}}`)
+	want := []Violation{{"script-src-elem", "https://evil.example", "/checkout", true}, {"script-src", "inline", "/about", true}}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("kept %+v", got)
+	}
+	// Whatever arrives, the answer is 204, and nothing else is read.
+	for _, ct := range []string{"text/plain", "application/json"} {
+		if c := post(ct, "anything"); c != http.StatusNoContent {
+			t.Fatalf("%s: %d", ct, c)
+		}
+	}
+	if c := post("application/reports+json", strings.Repeat("x", maxReportBody+10)); c != http.StatusNoContent || len(got) != 2 {
+		t.Fatal("a large body was read")
 	}
 }
