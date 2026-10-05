@@ -4,6 +4,7 @@
 package shield
 
 import (
+	"fmt"
 	"net/netip"
 	"os"
 	"strings"
@@ -135,7 +136,7 @@ func TestAStrongSignInKeepsItsSourceOnTheAdmin(t *testing.T) {
 		t.Fatal("an administrator's own address was blocked from the admin")
 	}
 	// The second stage blocks the site only.
-	r.clock = r.clock.Add(Cooldown)
+	r.clock = r.clock.Add(time.Hour + time.Minute) // past the rest after a stage
 	got = r.see("signin-failures", "203.0.113.9", "")
 	if !strings.Contains(got[0].Did[0], "on the site") || !strings.Contains(got[0].Did[0], "not the admin") {
 		t.Fatalf("%+v", got)
@@ -224,7 +225,7 @@ func TestAPersonLiftingABlockTakesItsStageBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.Guard.Refresh()
-	r.clock = r.clock.Add(Cooldown)
+	r.clock = r.clock.Add(time.Hour + time.Minute) // past the rest after a stage
 	for i := 0; i < 3; i++ {
 		got = r.see("chatbot-injection", "203.0.113.9", "help")
 	}
@@ -246,7 +247,7 @@ func TestAfterAStageTheSourceIsNotCountedForAWhile(t *testing.T) {
 			t.Fatalf("a second stage within the cooldown: %+v", got)
 		}
 	}
-	r.clock = r.clock.Add(Cooldown)
+	r.clock = r.clock.Add(time.Hour + time.Minute) // past the rest after a stage
 	var got []Response
 	for i := 0; i < 3; i++ {
 		got = r.see("chatbot-injection", "203.0.113.9", "help")
@@ -434,7 +435,7 @@ func TestAHoldDoesNotSkipStagesWhenItIsReleased(t *testing.T) {
 		for i := 0; i < 3; i++ {
 			got = r.see("chatbot-injection", "203.0.113.9", "help")
 		}
-		r.clock = r.clock.Add(Cooldown + time.Minute)
+		r.clock = r.clock.Add(time.Hour + time.Minute)
 		return got[0]
 	}
 	// Held, it says what it would have done, escalating as it would have.
@@ -507,5 +508,110 @@ func TestRepairKeepsWhatStillReadsWhole(t *testing.T) {
 	}
 	if _, err := LoadBook(root); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestASpentBudgetTellsSomebodyThenPausesTheAgent(t *testing.T) {
+	var pb Playbook
+	for _, x := range Builtins() {
+		if x.Name == "model-budget-spent" {
+			pb = x
+		}
+	}
+	r := newRig(t, pb)
+	if got := r.Observe(Signal{Name: "model-spend", Subject: "agent:triage", At: r.clock}); len(got) != 1 || len(r.notified) != 1 {
+		t.Fatalf("%+v", got)
+	}
+	// It keeps being refused: one stage an hour, not one a call.
+	if got := r.Observe(Signal{Name: "model-spend", Subject: "agent:triage", At: r.clock.Add(time.Minute)}); len(got) != 0 {
+		t.Fatalf("again at once: %+v", got)
+	}
+	r.clock = r.clock.Add(2 * time.Hour)
+	got := r.Observe(Signal{Name: "model-spend", Subject: "agent:triage", At: r.clock})
+	if len(got) != 1 || got[0].Stage != 2 || !strings.HasPrefix(got[0].Did[0], "paused the agent triage") {
+		t.Fatalf("%+v", got)
+	}
+	// A chatbot has nothing to pause; the gateway already quotes pages.
+	r.clock = r.clock.Add(2 * time.Hour)
+	r.Observe(Signal{Name: "model-spend", Subject: "chatbot:help", At: r.clock})
+	r.clock = r.clock.Add(2 * time.Hour)
+	if got := r.Observe(Signal{Name: "model-spend", Subject: "chatbot:help", At: r.clock}); !strings.HasPrefix(got[0].Did[0], "nothing to pause") {
+		t.Fatalf("%+v", got)
+	}
+	// A refused route is cut.
+	var route Playbook
+	for _, x := range Builtins() {
+		if x.Name == "model-route-refused" {
+			route = x
+		}
+	}
+	r2 := newRig(t, route)
+	if got := r2.Observe(Signal{Name: "route-trouble", Subject: "hosted", At: r2.clock}); !strings.HasPrefix(got[0].Did[0], "cut the model route hosted for 6 hours") {
+		t.Fatalf("%+v", got)
+	}
+	if _, on := Find(r2.Root, Route, "hosted", r2.clock); !on {
+		t.Fatal("not cut")
+	}
+}
+
+func TestRoutesTokensAndUploadsAreNamedExactly(t *testing.T) {
+	good := []Protection{ok(Route, "hosted"), ok(Token, "0a1b2c3d4e5f"), ok(Feature, "upload:"+strings.Repeat("a", 64))}
+	for _, p := range good {
+		if err := p.Validate(t0); err != nil {
+			t.Errorf("%s %s: %v", p.Kind, p.Target, err)
+		}
+	}
+	bad := []Protection{ok(Route, "Hosted Route"), ok(Token, "../x"), ok(Feature, "upload:../../etc"), ok(Feature, "upload")}
+	for _, p := range bad {
+		if err := p.Validate(t0); err == nil {
+			t.Errorf("%s %q was accepted", p.Kind, p.Target)
+		}
+	}
+	g := guard(t)
+	put(t, g, ok(Token, "0a1b2c3d4e5f"))
+	if _, on := g.Suspended("0a1b2c3d4e5f", t0); !on {
+		t.Fatal("not suspended")
+	}
+	if _, on := g.Suspended("ffffffffffff", t0); on {
+		t.Fatal("another token was suspended")
+	}
+}
+
+func TestAViolationIsToldWhenManyNetworksReportItAndNeverBlocks(t *testing.T) {
+	var pb Playbook
+	for _, x := range Builtins() {
+		if x.Name == "page-tampering" {
+			pb = x
+		}
+	}
+	if err := pb.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	r := newRig(t, pb)
+	group := "script-src-elem https://evil.example /checkout"
+	// One network reporting it ten times is one network.
+	for i := 0; i < 10; i++ {
+		if got := r.Observe(Signal{Name: "page-violation", Subject: group, By: "net-1", Source: "203.0.113.9", At: r.clock}); len(got) != 0 {
+			t.Fatalf("one network: %+v", got)
+		}
+	}
+	var got []Response
+	for i := 2; i <= 5; i++ {
+		got = r.Observe(Signal{Name: "page-violation", Subject: group, By: fmt.Sprint("net-", i), Source: "203.0.113.9", At: r.clock})
+	}
+	if len(got) != 1 || len(r.notified) != 1 {
+		t.Fatalf("%+v", got)
+	}
+	if st := r.state(t); len(st.Protections) != 0 {
+		t.Fatal("a report blocked somebody")
+	}
+	// And no playbook may make a report block, slow, lock down or freeze.
+	for _, step := range []Step{{Action: "block-source", Where: Site, For: Duration(time.Hour)}, {Action: "lockdown", For: Duration(time.Hour)}} {
+		x := pb
+		x.On.Per = "source"
+		x.Stages = []Stage{{Do: []Step{step}}}
+		if err := x.Validate(); err == nil {
+			t.Fatalf("a report may %s", step.Action)
+		}
 	}
 }

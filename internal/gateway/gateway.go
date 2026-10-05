@@ -206,6 +206,15 @@ type Gateway struct {
 	ledger *Ledger
 	now    func() time.Time
 
+	// Cut reports a route the shield has cut, which is skipped as a route
+	// resting after failures is (internal/shield). Nil cuts nothing.
+	Cut func(route string) bool
+	// OnTrouble is told what the shield should know: a caller that spent
+	// its budget ("spent", with the consumer), and a route the provider
+	// refused for its spend cap or its key ("route-spent", "route-auth",
+	// with the route). Nil tells nobody.
+	OnTrouble func(kind, subject string)
+
 	mu      sync.Mutex
 	models  map[string]Model
 	fails   map[string]int
@@ -287,6 +296,9 @@ func (g *Gateway) complete(ctx context.Context, consumer, system, user string) (
 	in := len(system) + len(user)
 	if err := g.admit(consumer, in); err != nil {
 		g.ledger.record(Usage{At: g.now(), Consumer: consumer, In: in, Outcome: "over-budget"})
+		if g.OnTrouble != nil {
+			g.OnTrouble("spent", consumer)
+		}
 		return "", err
 	}
 	if len(g.cfg.Routes) == 0 {
@@ -301,6 +313,10 @@ func (g *Gateway) complete(ctx context.Context, consumer, system, user string) (
 			errs = append(errs, r.Name+": resting after repeated failures")
 			continue
 		}
+		if g.Cut != nil && g.Cut(r.Name) {
+			errs = append(errs, r.Name+": cut by the shield")
+			continue
+		}
 		m, err := g.model(r)
 		if err != nil {
 			errs = append(errs, r.Name+": "+err.Error())
@@ -310,6 +326,9 @@ func (g *Gateway) complete(ctx context.Context, consumer, system, user string) (
 		out, err := m.Complete(ctx, system, user)
 		took := g.now().Sub(start)
 		if err != nil {
+			if kind := Trouble(err); kind != "" && g.OnTrouble != nil {
+				g.OnTrouble(kind, r.Name)
+			}
 			g.failed(r.Name)
 			g.ledger.record(Usage{At: start, Consumer: consumer, Route: r.Name,
 				Model: r.Model, In: in, Millis: took.Milliseconds(), Outcome: "failed"})
@@ -511,4 +530,28 @@ func (l *Ledger) Summary(cfg Config, now time.Time) []Spend {
 		return out[i].Consumer < out[j].Consumer
 	})
 	return out
+}
+
+// Trouble says whether a provider's refusal is one a person must hear of:
+// "route-auth" for a key that is wrong or revoked, "route-spent" for an
+// account that has reached its spend cap or run out of credit. Anything
+// else, an outage or a slow answer, is the ordinary failure the cooldown
+// is for.
+func Trouble(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "returned 401"), strings.Contains(msg, "returned 403"):
+		return "route-auth"
+	case strings.Contains(msg, "returned 429"), strings.Contains(msg, "returned 400"), strings.Contains(msg, "returned 402"):
+		for _, w := range []string{"spend_limit", "spend limit", "usage limit", "usage_limit", "credit_balance", "credit balance",
+			"insufficient_quota", "billing", "quota exceeded"} {
+			if strings.Contains(msg, w) {
+				return "route-spent"
+			}
+		}
+	}
+	return ""
 }

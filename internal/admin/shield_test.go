@@ -5,12 +5,14 @@ package admin
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/shield"
 )
 
@@ -176,5 +178,25 @@ func TestALockdownNobodyCanGetPastIsRefusedOnTheScreen(t *testing.T) {
 	postForm(t, srv, "/security/shield/act", token, "do=apply&kind=lockdown&for=1h&reason=x")
 	if st, _ := shield.Load(root); len(st.Protections) != 1 {
 		t.Fatal("not locked down when somebody can get past it")
+	}
+}
+
+func TestTheAdminNamesWhereViolationsGoAndTakesThemWithoutACookie(t *testing.T) {
+	srv, token := setup(t)
+	var got []public.Violation
+	srv.Reports = public.ReportsHandler(func(v public.Violation, r *http.Request) { got = append(got, v) })
+	w := get(t, srv, "/security/shield", token)
+	if w.Header().Get("Reporting-Endpoints") == "" || !strings.Contains(w.Header().Get("Content-Security-Policy"), "report-to csp") {
+		t.Fatalf("headers %v", w.Header())
+	}
+	// A report arrives with no credential and no Sec-Fetch-Site, as
+	// browsers send them; it is taken, and answered 204.
+	req := httptest.NewRequest(http.MethodPost, "http://admin.example/.quilzo/reports",
+		strings.NewReader(`{"csp-report":{"document-uri":"http://admin.example/pages","blocked-uri":"https://evil.example/x.js","effective-directive":"script-src-elem"}}`))
+	req.Header.Set("Content-Type", "application/csp-report")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent || len(got) != 1 || got[0].Blocked != "https://evil.example" {
+		t.Fatalf("%d %+v", rec.Code, got)
 	}
 }

@@ -520,8 +520,8 @@ func TestALockdownRefusesWhatWasMadeBeforeItEvenAsANewSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	began := time.Now().Add(time.Second).Unix()
-	locked := func(issued int64, vouched bool) error {
-		if !vouched && issued < began {
+	locked := func(c Credential) error {
+		if !c.Vouched && c.Issued < began {
 			return ErrLockedDown
 		}
 		return nil
@@ -554,8 +554,8 @@ func TestALockdownRefusesWhatWasMadeBeforeItEvenAsANewSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ts.Admit = func(issued int64, vouched bool) error {
-		if !vouched && issued < began-10 {
+	ts.Admit = func(c Credential) error {
+		if !c.Vouched && c.Issued < began-10 {
 			return ErrLockedDown
 		}
 		return nil

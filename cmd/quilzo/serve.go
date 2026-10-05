@@ -50,6 +50,7 @@ import (
 	"github.com/quilzo/quilzo/internal/oidc"
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/provenance"
+	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/saml"
 	"github.com/quilzo/quilzo/internal/schedule"
 	"github.com/quilzo/quilzo/internal/schema"
@@ -822,6 +823,7 @@ func cmdServe(root string, args []string) error {
 	srv.OnStrongSignIn = sh.vouch
 	srv.Shield = sh.off
 	srv.Frozen = sh.frozen
+	srv.Reports = public.ReportsHandler(sh.violation)
 	srv.ShieldAdmin = &admin.ShieldAdmin{Root: root,
 		OnlyAdmin:   func(name string) bool { return onlyAdministrator(root, name) },
 		History:     func(days int) ([]shield.Signal, error) { return history(root, days, time.Now()) },

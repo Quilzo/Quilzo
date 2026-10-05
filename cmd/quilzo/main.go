@@ -194,6 +194,7 @@ sharing a screen
   quilzo shield feature chatbot:help|forms|api|… [--level limited] --for 1h --reason "…"
   quilzo shield lockdown|freeze --for 6h --reason "…"   admin to passkeys and SSO; no publishing
   quilzo shield pause AGENT --for 24h --reason "…"   an agent does not run
+  quilzo shield cut ROUTE | suspend TOKEN-ID | quarantine MEDIA-ID --for 6h --reason "…"   a model route, one credential, one upload
   quilzo shield playbook mode NAME act|watch|off --why "…"   proposed; a second administrator approves
   quilzo shield dry-run [NAME] [--days 30] what the playbooks would have done over the history
   quilzo shield hold --why "…" | release --why "…"   every playbook to watching, and back

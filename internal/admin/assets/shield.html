@@ -116,12 +116,15 @@
     <p><label><input type="radio" name="kind" value="lockdown"> <strong>Lock the admin down</strong> <span class="hint">passkeys and single sign-on only; tokens made before are refused</span></label></p>
     <p><label><input type="radio" name="kind" value="freeze"> <strong>Freeze publishing</strong> <span class="hint">rolling back still works</span></label></p>
     <p><label><input type="radio" name="kind" value="pause"> <strong>Pause an agent</strong></label></p>
+    <p><label><input type="radio" name="kind" value="cut"> <strong>Cut a model route</strong> <span class="hint">the gateway uses the next route meanwhile</span></label></p>
+    <p><label><input type="radio" name="kind" value="suspend"> <strong>Suspend one token</strong> <span class="hint">by its id; its sessions too, and undone by lifting rather than by issuing a new one</span></label></p>
+    <p><label><input type="radio" name="kind" value="quarantine"> <strong>Quarantine an upload</strong> <span class="hint">by its id; the site answers as if it were not there</span></label></p>
   </fieldset>
   <div class="auto-row">
     <div class="field"><label for="shield-target">Target</label>
       <input id="shield-target" name="target" list="shield-features" aria-describedby="shield-target-hint">
       <datalist id="shield-features">{{range .Features}}<option value="{{.Key}}">{{.Words}}</option>{{end}}<option value="chatbot:NAME">one chatbot</option><option value="form:NAME">one form</option></datalist>
-      <p class="hint" id="shield-target-hint">A handle from the log (p_…), a network, a provider (AS…), a feature or an agent. Not needed to lock down or freeze.</p></div>
+      <p class="hint" id="shield-target-hint">A handle from the log (p_…), a network, a provider (AS…), a feature, an agent, a model route, a token's id or an upload's id. Not needed to lock down or freeze.</p></div>
     <div class="field"><label for="shield-where">Where, for a block</label>
       <select id="shield-where" name="where"><option value="all">The admin and the site</option><option value="site">The site</option><option value="admin">The admin</option></select></div>
     <div class="field"><label for="shield-level">How far, for a feature</label>

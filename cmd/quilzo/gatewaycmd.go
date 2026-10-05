@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/gateway"
+	"github.com/quilzo/quilzo/internal/shield"
 )
 
 // Model routes, budgets and the usage ledger, from the command line and for
@@ -71,6 +72,20 @@ func modelGateway(root string) (*gateway.Gateway, *gateway.Config, error) {
 		}
 		return assist.NewHTTPModelAt(r.URL, key, r.Model)
 	}, ledger)
+	// The shield: a route it cut is not used, and what the gateway sees
+	// that a person must know (a spent budget, a provider refusing a route
+	// for its cap or its key) reaches its playbooks.
+	gw.Cut = func(route string) bool {
+		p, on := shield.Find(root, shield.Route, route, time.Now())
+		return on && p.Reason != shield.Unreadable
+	}
+	gw.OnTrouble = func(kind, subject string) {
+		name := "route-trouble"
+		if kind == "spent" {
+			name = "model-spend"
+		}
+		newShieldHost(root).engine.Observe(shield.Signal{Name: name, Subject: subject})
+	}
 	gateways[root] = &gatewayEntry{mod: fi.ModTime(), gw: gw, cfg: cfg}
 	return gw, cfg, nil
 }

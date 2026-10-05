@@ -273,6 +273,12 @@ func (g *Guard) Lockdown(now time.Time) (Protection, bool) { return g.only(Lockd
 // Frozen reports whether publishing is frozen.
 func (g *Guard) Frozen(now time.Time) (Protection, bool) { return g.only(Freeze, "", now) }
 
+// Suspended reports a token, or the token a session was exchanged from,
+// that the shield has suspended.
+func (g *Guard) Suspended(id string, now time.Time) (Protection, bool) {
+	return g.only(Token, id, now)
+}
+
 // AgentPaused reports whether an agent is paused.
 func (g *Guard) AgentPaused(name string, now time.Time) (Protection, bool) {
 	return g.only(Agent, name, now)
