@@ -182,6 +182,37 @@ func TestTheSBOMIsValidCycloneDX(t *testing.T) {
 	if parsed["bomFormat"] != "CycloneDX" {
 		t.Errorf("format is %v", parsed["bomFormat"])
 	}
+	// CycloneDX 1.6's shapes: a licence is an object or an expression, a
+	// supplier an organisation, tools an object, and no field it does not
+	// define.
+	meta := parsed["metadata"].(map[string]any)
+	if _, ok := meta["tools"].(map[string]any); !ok {
+		t.Error("tools is not an object")
+	}
+	self := meta["component"].(map[string]any)
+	lic := self["licenses"].([]any)[0].(map[string]any)
+	if lic["expression"] != Licence {
+		t.Errorf("the program's licence is %v", lic)
+	}
+	for _, c := range parsed["components"].([]any) {
+		m := c.(map[string]any)
+		if _, bad := m["direct"]; bad {
+			t.Error("a field CycloneDX does not define")
+		}
+		for _, l := range m["licenses"].([]any) {
+			if _, ok := l.(map[string]any); !ok {
+				t.Errorf("a licence that is not an object: %v", l)
+			}
+		}
+		if sup, ok := m["supplier"]; ok {
+			if _, ok := sup.(map[string]any); !ok {
+				t.Errorf("a supplier that is not an organisation: %v", sup)
+			}
+		}
+	}
+	if !strings.HasPrefix(parsed["serialNumber"].(string), "urn:uuid:") {
+		t.Error("no serial number")
+	}
 }
 
 // The toolchain is the largest thing in this product by volume and the one an
@@ -194,15 +225,17 @@ func TestTheToolchainIsAComponent(t *testing.T) {
 	}
 	var found bool
 	for _, c := range s.Components {
-		if c.Name == "go" {
+		if c.Name == "stdlib" {
 			found = true
-			if c.Version == "" {
-				t.Error("the toolchain has no version")
+			// Named as the Go vulnerability database names it, or no feed
+			// ever matches it and a self-scan is silently clean.
+			if c.Version == "" || !strings.HasPrefix(c.PURL, "pkg:golang/stdlib@1.") || strings.Contains(c.PURL, "@go") {
+				t.Errorf("the standard library is %s %s", c.PURL, c.Version)
 			}
 		}
 	}
 	if !found {
-		t.Error("the Go toolchain is not in the bill of materials")
+		t.Error("the Go standard library is not in the bill of materials")
 	}
 }
 

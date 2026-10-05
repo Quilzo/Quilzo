@@ -185,6 +185,13 @@ var commandNeeds = map[string]need{
 	// The shield changes what Quilzo does on its own, and who it lets in:
 	// the whole site's administrators decide it; reading it, and trying a
 	// playbook against the history, is a view in the security area.
+	// Quilzo's own flaws and binary: reading them is a view in the
+	// compliance area; replacing the database they are judged by is the
+	// whole site's administrators'.
+	"self":               {action: auth.ActGrant},
+	"self check":         {action: auth.ActView},
+	"self verify":        {action: auth.ActView},
+	"self vex":           {action: auth.ActView},
 	"shield":             {action: auth.ActGrant},
 	"shield status":      {action: auth.ActView},
 	"shield list":        {action: auth.ActView},
@@ -1170,7 +1177,8 @@ var commandAreas = map[string]string{
 	"sigma": auth.AreaSecurity, "proving": auth.AreaSecurity, "correlate": auth.AreaSecurity,
 	"siem": auth.AreaSecurity, "automate": auth.AreaSecurity, "inbound": auth.AreaSecurity,
 	"shield status": auth.AreaSecurity, "shield list": auth.AreaSecurity, "shield dry-run": auth.AreaSecurity,
-	"posture": auth.AreaCompliance, "compliance": auth.AreaCompliance,
+	"posture": auth.AreaCompliance, "compliance": auth.AreaCompliance, "self check": auth.AreaCompliance,
+	"self verify": auth.AreaCompliance, "self vex": auth.AreaCompliance,
 	"auditlog":   auth.AreaLog,
 	"inbox":      auth.AreaInbox,
 	"board list": auth.AreaBoards, "board held": auth.AreaBoards, "board recent": auth.AreaBoards,

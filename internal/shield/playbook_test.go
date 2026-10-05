@@ -26,6 +26,14 @@ func TestBuiltinsAreValidAndDistinct(t *testing.T) {
 				wide := s.Action == "block-provider" || s.Action == "block-network" ||
 					(s.Action == "shield-feature" && pb.On.Per != "source") ||
 					(s.Action == "lockdown" && pb.On.Signal != "decoy")
+				// The one decided exception: a flaw attackers are using,
+				// in this build, that only one feature reaches. Turning that
+				// feature off at once is what the self-defence plan was
+				// approved to do (2026-10-04); waiting for two people is
+				// waiting until afterwards.
+				if pb.Name == "self-exposure" {
+					wide = false
+				}
 				if wide && pb.Mode == "act" {
 					t.Errorf("%s acts on %s from the start", pb.Name, s.Action)
 				}

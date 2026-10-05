@@ -3,6 +3,26 @@
 
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{end}}
 
+<h2>Known flaws in this build</h2>
+{{if .Self}}{{with .Self}}
+<p class="lead">Built with {{.Report.Go}}, checked against the Go vulnerability database of {{.Report.Database.Format "2 January 2006"}} ({{.Snapshot}}), {{.Report.Records}} standard-library advisories. This program has no other dependencies, so these are all the flaws that could reach it.</p>
+{{if .Stale}}<p class="notice warn">The database is more than a month old. On the machine, <code>quilzo self update vulndb.zip</code> reads a newer one; nothing is fetched by itself.</p>{{end}}
+{{if .Unread}}<p class="notice warn">What is linked into this binary could not be read ({{.Unread}}), so no flaw is cleared for not being in it.</p>{{end}}
+{{if .Report.Findings}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Advisory</th><th scope="col">What</th><th scope="col">Here</th><th scope="col">Fixed in</th></tr></thead>
+  <tbody>{{range .Report.Findings}}<tr>
+    <th scope="row"><a href="https://pkg.go.dev/vuln/{{.ID}}" rel="noreferrer">{{.ID}}</a>{{if .Exploited}}<div><span class="wf-band as-written critical">Exploited</span></div>{{end}}</th>
+    <td>{{.Summary}}{{if .Linked}}<div class="hint">In this binary: {{range $i, $l := .Linked}}{{if $i}}, {{end}}<code>{{$l}}</code>{{end}}</div>{{end}}</td>
+    <td><span class="wf-band as-written {{if eq .Decision "clear"}}good{{else if eq .Decision "contain"}}critical{{else}}warning{{end}}">{{if eq .Decision "clear"}}Not reachable{{else if eq .Decision "contain"}}Contained{{else}}Upgrade Go{{end}}</span><div class="hint">{{.Why}}</div></td>
+    <td>{{if .Fixed}}Go {{.Fixed}}{{else}}<span class="hint">not yet</span>{{end}}</td>
+  </tr>{{end}}</tbody>
+</table></div>
+{{else}}<p><span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>None</span> No known flaw in the standard library concerns {{.Report.Go}}.</p>{{end}}
+<h3>The binary</h3>
+<p>{{if .Binary.Suspicious}}<span class="wf-band as-written critical"><span class="wf-icon">{{icon "error"}}</span>Not itself</span>{{else}}<span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Itself</span>{{end}} {{sentence .Binary.Says}}.</p>
+<p class="hint">SHA-256 <code>{{.Binary.SHA256}}</code>, version {{.Binary.Version}}. <code>quilzo self vex</code> writes an OpenVEX statement for each advisory above.</p>
+{{end}}{{else}}<p class="hint">{{.SelfUnavailable}}</p>{{end}}
+
 <h2>Cryptography</h2>
 <p class="lead">{{.Posture}}</p>
 
@@ -46,15 +66,14 @@
 <table>
   <thead><tr>
     <th scope="col">Component</th><th scope="col">Version</th>
-    <th scope="col">Licence</th><th scope="col">Direct</th>
+    <th scope="col">Licence</th>
   </tr></thead>
   <tbody>
   {{range .SBOM.Components}}
   <tr>
     <th scope="row">{{.Name}}<div class="hint">{{.PURL}}</div></th>
     <td>{{.Version}}</td>
-    <td class="hint">{{range $i, $l := .Licenses}}{{if $i}}, {{end}}{{$l}}{{end}}</td>
-    <td>{{if .Direct}}yes{{else}}<span class="hint">transitive</span>{{end}}</td>
+    <td class="hint">{{range $i, $l := .LicenseNames}}{{if $i}}, {{end}}{{$l}}{{end}}</td>
   </tr>
   {{end}}
   </tbody>

@@ -498,8 +498,11 @@ func (e *Engine) step(pb Playbook, stage int, step Step, mode, key string, addr 
 	case "shield-feature":
 		target := step.Feature
 		if target == "subject" {
-			kind := map[string]string{"chatbot-injection": "chatbot", "form-spam": "form"}[s.Name]
-			target = kind + ":" + s.Subject
+			if kind, ok := map[string]string{"chatbot-injection": "chatbot", "form-spam": "form"}[s.Name]; ok {
+				target = kind + ":" + s.Subject
+			} else {
+				target = s.Subject // a feature by its own name
+			}
 		}
 		p.Kind, p.Target, p.Level = Feature, target, step.Level
 	case "lockdown":

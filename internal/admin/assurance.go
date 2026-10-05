@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/codescan"
 	"github.com/quilzo/quilzo/internal/compliance"
 	"github.com/quilzo/quilzo/internal/csp"
+	"github.com/quilzo/quilzo/internal/selfvuln"
 )
 
 // The evidence, in the interface.
@@ -49,6 +50,9 @@ type Assurance struct {
 	CSP func() (header, value string, sources csp.Sources, pages int, err error)
 	// SBOM is the bill of materials and the crypto inventory.
 	SBOM func() (*compliance.SBOM, error)
+	// Self is the last self-check: known flaws in this build, and whether
+	// the binary is itself (internal/selfvuln).
+	Self func() (SelfCheck, error)
 	// Verify re-hashes every object in the store.
 	Verify func() (objects int, err error)
 	// Vault reports encryption at rest.
@@ -59,6 +63,16 @@ type Assurance struct {
 	// the two answer the same question — can somebody else check when this was
 	// published — and a screen with one table is easier to read than two.
 	Evidence func() ([]Evidence, error)
+}
+
+// SelfCheck is a self-check, for the screen.
+type SelfCheck struct {
+	Report   selfvuln.Report
+	Binary   selfvuln.Verdict
+	Snapshot string
+	Unread   string
+	// Stale says the database is more than a month old.
+	Stale bool
 }
 
 // Evidence is one timestamp or anchor, flattened for display.
@@ -166,6 +180,13 @@ func (s *Server) handleComplianceScreen(w http.ResponseWriter, r *http.Request) 
 			data["ThirdParty"] = compliance.ThirdParty(sb)
 		} else {
 			data["Unavailable"] = err.Error()
+		}
+	}
+	if s.Assurance != nil && s.Assurance.Self != nil {
+		if sc, err := s.Assurance.Self(); err == nil {
+			data["Self"] = sc
+		} else {
+			data["SelfUnavailable"] = "Not checked yet: the admin checks this build every hour, or run quilzo self check."
 		}
 	}
 	s.render(w, r, "compliance.html", data)
