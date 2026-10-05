@@ -18,6 +18,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/compliance"
 	"github.com/quilzo/quilzo/internal/egress"
 	"github.com/quilzo/quilzo/internal/ext"
 	"io"
@@ -189,6 +190,8 @@ sharing a screen
   quilzo sca scan --bom sbom.json --osv db.json   which dependencies you can actually fix
   quilzo correlate demo                    detections about several events, and when a window closes
   quilzo shield status | list [--all]      what Quilzo is doing to protect itself, its playbooks, and what ended
+  quilzo self check | verify | vex         known flaws in this build, decided by what is linked; is the binary itself
+  quilzo self update vulndb.zip            a newer Go vulnerability database, read offline
   quilzo shield lift ID|all [--mistake]    end a protection now; the way out of anything the shield does
   quilzo shield block|slow p_…|CIDR|AS64500 --where site --for 1h --reason "…"   refuse, or give a small budget
   quilzo shield feature chatbot:help|forms|api|… [--level limited] --for 1h --reason "…"
@@ -597,6 +600,7 @@ than on the wording, which is free to improve.
 }
 
 func main() {
+	compliance.Version = version
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(2)
@@ -922,6 +926,8 @@ func main() {
 		err = cmdIncident(root, cmdArgs)
 	case "shield":
 		err = cmdShield(root, cmdArgs)
+	case "self":
+		err = cmdSelf(root, cmdArgs)
 	case "feed":
 		err = cmdFeed(cmdArgs)
 	case "source":

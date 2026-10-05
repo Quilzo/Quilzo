@@ -222,6 +222,8 @@ var coverage = map[string]surfaces{
 	},
 
 	// Who has to be told about an incident, and what starts the clock.
+	// Quilzo's own flaws, and whether the binary is itself.
+	"self": {GUI: "/security/inventory", MCP: []string{"inventory"}},
 	// What Quilzo is doing to protect itself.
 	"shield": {GUI: "/security/shield", MCP: []string{"shield_status"},
 		Why: "an agent reads what is in force and what the playbooks did; " +

@@ -42,6 +42,10 @@ var Signals = map[string]string{
 	"model-spend":        "a caller of the models spent its daily budget",
 	"route-trouble":      "a model provider refused a route: its spend cap reached, or its key wrong or revoked",
 	"page-violation":     "visitors' browsers reported a page loading something its policy does not allow",
+	"self-exposure":      "a flaw known to be exploited is in this build, reachable only through one feature",
+	"self-flaw":          "a flaw in the Go this build was made with reaches it",
+	"binary-changed":     "the running binary is not the one it says it is",
+	"setting-reverted":   "a setting weakened by hand, with no reason recorded, was put back",
 }
 
 // Counted is what a trigger counts of each signal, singular and plural, for
@@ -58,6 +62,10 @@ var Counted = map[string][2]string{
 	"model-spend":        {"spent budget", "spent budgets"},
 	"route-trouble":      {"refusal by a model provider", "refusals by a model provider"},
 	"page-violation":     {"network reporting one violation", "networks reporting one violation"},
+	"self-exposure":      {"exploited flaw in a feature", "exploited flaws in a feature"},
+	"self-flaw":          {"flaw in this build", "flaws in this build"},
+	"binary-changed":     {"change to the binary", "changes to the binary"},
+	"setting-reverted":   {"setting put back", "settings put back"},
 }
 
 // Trait is how far a signal can be trusted, in CrowdSec's terms: Confidence
@@ -99,6 +107,11 @@ var Traits = map[string]Trait{
 	"route-trouble": {Confidence: 3},
 	// Anybody can post a report, from anywhere, about anything.
 	"page-violation": {Confidence: 0, Spoofable: 3},
+	// Read from this binary and the Go vulnerability database, here.
+	"self-exposure":    {Confidence: 3},
+	"self-flaw":        {Confidence: 3},
+	"binary-changed":   {Confidence: 3},
+	"setting-reverted": {Confidence: 3},
 }
 
 // Per says what a trigger counts by.
@@ -277,8 +290,8 @@ func (s Step) validate(on Trigger) error {
 	case "shield-feature":
 		f := s.Feature
 		if f == "subject" {
-			if on.Signal != "chatbot-injection" && on.Signal != "form-spam" {
-				return errors.New("only a chatbot's or a form's signal has a subject to shield")
+			if on.Signal != "chatbot-injection" && on.Signal != "form-spam" && on.Signal != "self-exposure" {
+				return errors.New("only a chatbot's, a form's or an exposed feature's signal has a subject to shield")
 			}
 		} else if _, ok := Features[f]; !ok || f == "chatbot" || f == "form" {
 			return fmt.Errorf("%q is not a feature to shield", f)
@@ -402,6 +415,31 @@ func Builtins() []Playbook {
 			On:  Trigger{Signal: "page-violation", Per: "subject", Count: 5, Within: h(time.Hour), Distinct: true},
 			Stages: []Stage{
 				{Do: []Step{{Action: "notify"}}},
+				{Do: []Step{{Action: "notify"}, {Action: "open-case"}}},
+			}},
+		{Name: "self-exposure", Title: "An exploited flaw in this build, in one feature", Mode: "act", Builtin: true,
+			Why: "The flaw is in Go's standard library, attackers are using it, and only this feature reaches it: turning the feature off for a day turns the flaw off until Go is upgraded. Anything wider is a person's decision.",
+			On:  Trigger{Signal: "self-exposure", Per: "subject", Count: 1, Within: h(24 * time.Hour)},
+			Stages: []Stage{
+				{Do: []Step{{Action: "shield-feature", Feature: "subject", Level: Off, For: h(24 * time.Hour)}, {Action: "notify"}, {Action: "open-case"}}},
+			}},
+		{Name: "self-flaw", Title: "A flaw in this build", Mode: "act", Builtin: true,
+			Why: "A flaw in the Go this was built with reaches it and cannot be contained by turning something off: somebody upgrades Go, and is reminded each day until they do.",
+			On:  Trigger{Signal: "self-flaw", Per: "subject", Count: 1, Within: h(24 * time.Hour)},
+			Stages: []Stage{
+				{Do: []Step{{Action: "notify"}, {Action: "open-case"}}},
+				{Do: []Step{{Action: "notify"}}},
+			}},
+		{Name: "binary-changed", Title: "The binary is not the one it says it is", Mode: "act", Builtin: true,
+			Why: "Replaced on disk while running, rebuilt with the same version, or not one of the release's checksums: an upgrade waiting for a restart, or somebody else's binary. A person looks.",
+			On:  Trigger{Signal: "binary-changed", Per: "any", Count: 1, Within: h(24 * time.Hour)},
+			Stages: []Stage{
+				{Do: []Step{{Action: "notify"}, {Action: "open-case"}}},
+			}},
+		{Name: "setting-reverted", Title: "A setting weakened by hand was put back", Mode: "act", Builtin: true,
+			Why: "A weaker setting with no reason recorded is an accident or an intruder's edit, and the program cannot tell which: it is put back, and whoever meant it is told how to set it again with a reason.",
+			On:  Trigger{Signal: "setting-reverted", Per: "subject", Count: 1, Within: h(time.Hour)},
+			Stages: []Stage{
 				{Do: []Step{{Action: "notify"}, {Action: "open-case"}}},
 			}},
 		{Name: "agent-steered", Title: "An agent followed a planted instruction", Mode: "act", Builtin: true,

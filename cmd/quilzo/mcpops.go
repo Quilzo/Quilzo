@@ -539,15 +539,24 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 
 	srv.Register(mcp.Operation{
 		Name: "inventory", NeedsRole: "admin",
-		Summary: "the bill of materials and the cryptographic algorithms in use",
+		Summary: "the bill of materials, the cryptographic algorithms in use, " +
+			"and the known flaws in this build",
 		Keywords: []string{"sbom", "compliance", "dependencies", "crypto",
-			"licences", "quantum"},
+			"licences", "quantum", "vulnerabilities", "go", "self"},
 	}, func(map[string]any) (any, error) {
 		sb, err := compliance.Generate(time.Now())
 		if err != nil {
 			return nil, err
 		}
 		var b strings.Builder
+		if rep, err := loadSelfReport(root); err == nil {
+			fmt.Fprintf(&b, "this build: %s, against the Go vulnerability database of %s; %d of %d advisories concern it\n",
+				rep.Go, rep.Database.Format("2006-01-02"), len(rep.Findings), rep.Records)
+			for _, f := range rep.Findings {
+				fmt.Fprintf(&b, "%s %s: %s (%s)\n", f.Decision, f.ID, f.Summary, f.Why)
+			}
+			fmt.Fprintf(&b, "the binary: %s\n", rep.Binary.Says)
+		}
 		fmt.Fprintf(&b, "%s %s, %d component(s), %d not this project\n",
 			sb.Format, sb.SpecVersion, len(sb.Components),
 			len(compliance.ThirdParty(sb)))
