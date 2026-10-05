@@ -142,7 +142,7 @@ func (s *Server) shieldData(data map[string]any, p principal, try, daysParam str
 			}
 			lead := "First"
 			if i > 0 {
-				lead = fmt.Sprintf("If it comes back within a day (%s)", ordinal(i+1))
+				lead = ordinal(i + 1)
 			}
 			v.Stages = append(v.Stages, lead+": "+strings.Join(steps, "; ")+".")
 		}
@@ -201,8 +201,10 @@ func (s *Server) shieldData(data map[string]any, p principal, try, daysParam str
 	}
 }
 
+// ordinal is how a stage after the first is introduced: each counts from
+// the same source, or thing, coming back within a day.
 func ordinal(n int) string {
-	return map[int]string{2: "second time", 3: "third time", 4: "fourth time", 5: "fifth time"}[n]
+	return map[int]string{2: "Again within a day", 3: "A third time", 4: "A fourth time", 5: "A fifth time"}[n]
 }
 
 func shieldView(x shield.Protection, now time.Time) shieldProtection {
@@ -239,22 +241,23 @@ func sentenceCase(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// shieldTrigger is a playbook's trigger in words.
+// shieldTrigger is a playbook's trigger in words: "When 5 guessed tokens
+// come from one source within an hour."
 func shieldTrigger(pb shield.Playbook) string {
-	what := shield.Signals[pb.On.Signal]
-	if what == "" {
-		what = pb.On.Signal
+	nouns, ok := shield.Counted[pb.On.Signal]
+	if !ok {
+		nouns = [2]string{pb.On.Signal, pb.On.Signal}
 	}
 	per := map[string]string{"source": "from one source", "provider": "from one provider's network",
 		"subject": "about one chatbot, form or agent", "any": "from anywhere"}[pb.On.Per]
-	n := "once"
-	if pb.On.Count > 1 {
-		n = fmt.Sprintf("%d times", pb.On.Count)
-		if pb.On.Distinct {
-			n = fmt.Sprintf("about %d different things", pb.On.Count)
-		}
+	what := "One " + nouns[0]
+	switch {
+	case pb.On.Count > 1 && pb.On.Distinct:
+		what = fmt.Sprintf("%d different %s", pb.On.Count, nouns[1])
+	case pb.On.Count > 1:
+		what = fmt.Sprintf("%d %s", pb.On.Count, nouns[1])
 	}
-	return fmt.Sprintf("When %s, %s %s within %s.", what, n, per, roughDuration(time.Duration(pb.On.Within)))
+	return fmt.Sprintf("%s %s within %s.", what, per, roughDuration(time.Duration(pb.On.Within)))
 }
 
 func roughDuration(d time.Duration) string {
@@ -390,9 +393,9 @@ func (s *Server) handleShieldAct(w http.ResponseWriter, r *http.Request) {
 			audit("lifted", map[string]string{"id": x.ID, "what": shield.Describe(x), "verdict": verdict})
 		}
 		changed()
-		msg := fmt.Sprintf("Lifted %d.", len(lifted))
+		msg := fmt.Sprintf("Lifted %d protections.", len(lifted))
 		if len(lifted) == 1 {
-			msg = sentenceCase(strings.Replace(shield.Describe(lifted[0]), "blocked", "unblocked", 1)) + ": lifted."
+			msg = "Lifted the protection that " + shield.Describe(lifted[0]) + "."
 		}
 		if verdict != "" {
 			msg += " Counted as a mistake against its playbook."

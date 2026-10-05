@@ -388,3 +388,11 @@ func TestOneMistypedTokenBlocksNobody(t *testing.T) {
 		t.Fatalf("the fifth: %+v", got)
 	}
 }
+
+func TestEverySignalSaysWhatItCounts(t *testing.T) {
+	for name := range Signals {
+		if c, ok := Counted[name]; !ok || c[0] == "" || c[1] == "" {
+			t.Errorf("%s says nothing about what it counts", name)
+		}
+	}
+}

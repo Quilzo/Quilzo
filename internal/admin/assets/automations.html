@@ -36,7 +36,7 @@
 
 {{if .Templates}}<h2>Start from one of these</h2>
 <ul class="auto-list templates">{{range .Templates}}<li class="auto-card">
-  <div class="auto-head"><strong>{{.Name}}</strong><span class="wf-band {{if eq .Mode "act"}}good{{else if eq .Mode "ask"}}warning{{else}}unknown{{end}}">{{if eq .Mode "act"}}Acts{{else if eq .Mode "ask"}}Asks first{{else}}Watches{{end}}</span></div>
+  <div class="auto-head"><strong>{{.Name}}</strong><span class="wf-band as-written {{if eq .Mode "act"}}good{{else if eq .Mode "ask"}}warning{{else}}unknown{{end}}">{{if eq .Mode "act"}}Acts{{else if eq .Mode "ask"}}Asks first{{else}}Watches{{end}}</span></div>
   <p>{{.Words}}</p><p class="hint">{{.Note}}</p>
   <form method="post" action="/security/automations/act"><input type="hidden" name="do" value="template"><input type="hidden" name="id" value="{{.ID}}">
     <button type="submit" class="btn-tonal">{{icon "add"}}Add<span class="visually-hidden"> {{.Name}}</span></button></form>

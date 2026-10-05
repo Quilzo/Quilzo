@@ -2772,3 +2772,14 @@ body:has(> .sidenav) > main { width: 100%; }
 
 /* Shield: where things stand, in one line above everything else. */
 .shield-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 16px; }
+/* A band whose words are already set the way they are read ("Asks first",
+   "Held to watching") is not capitalised word by word. */
+.wf-band.as-written { text-transform: none; }
+/* What a playbook does, one tap away, so ten of them fit a screen. */
+.shield-more { margin: 4px 0 8px; }
+.shield-more > summary { cursor: pointer; color: var(--primary); font: var(--label-lg, 500 .875rem/1.4 var(--font)); width: fit-content; }
+.shield-more[open] > summary { margin-bottom: 4px; }
+/* A verdict is two words side by side, not two lines. */
+.shield-judge { display: inline-flex; flex-wrap: nowrap; gap: 4px; margin: 0; }
+/* An address or a sentence, not the width of the page. */
+.shield-inline input:not([type=hidden]) { max-width: 24rem; }
