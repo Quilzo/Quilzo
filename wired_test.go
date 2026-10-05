@@ -70,7 +70,11 @@ func TestEveryPackageIsReachedBySomething(t *testing.T) {
 // A registry rather than a rule, the same shape as cmd/quilzo's coverage
 // table: a pattern that excuses one package excuses the next one of that
 // shape, including the one that was an oversight.
-var notImported = map[string]string{}
+var notImported = map[string]string{
+	"internal/selfvuln/gen": "a release tool, run with go run: it writes the Go vulnerability " +
+		"database snapshot and the feature map internal/selfvuln embeds, and a " +
+		"test there fails when the embedded map no longer matches the source",
+}
 
 // importGraph returns which packages are imported from outside themselves, and
 // every package in the tree.

@@ -585,7 +585,15 @@ func cmdServe(root string, args []string) error {
 			name, _ := pol.Header()
 			return name, pol.Build(), pol.Sources, len(pages), nil
 		},
-		SBOM:   func() (*compliance.SBOM, error) { return compliance.Generate(time.Now()) },
+		SBOM: func() (*compliance.SBOM, error) { return compliance.Generate(time.Now()) },
+		Self: func() (admin.SelfCheck, error) {
+			rep, err := loadSelfReport(root)
+			if err != nil {
+				return admin.SelfCheck{}, err
+			}
+			return admin.SelfCheck{Report: rep.Report, Binary: rep.Binary, Snapshot: rep.Snapshot, Unread: rep.Unread,
+				Stale: time.Since(rep.Database) > 30*24*time.Hour}, nil
+		},
 		Verify: func() (int, error) { return s.Verify() },
 		Vault: func() (bool, string, []string) {
 			kr, err := loadKeyring(root)
@@ -619,6 +627,9 @@ func cmdServe(root string, args []string) error {
 	if job, ok := retentionJob(root); ok {
 		jobs = append(jobs, job)
 	}
+	// This binary against the Go vulnerability database, hourly, told to
+	// the shield; and whether the binary is still itself.
+	jobs = append(jobs, selfJob(root))
 	upkeepCtx, stopUpkeep := context.WithCancel(context.Background())
 	defer stopUpkeep()
 	go upkeep.Run(upkeepCtx, upkeep.Every, func(j upkeep.Job, n int, err error) {

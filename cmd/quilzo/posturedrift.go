@@ -4,7 +4,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/shield"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -119,13 +124,80 @@ func bearsOn(refs []string) string {
 	return ". Bears on " + strings.Join(refs, ", ")
 }
 
-// postureJob runs the drift check on the server's schedule.
+// postureJob runs the drift check on the server's schedule: first putting
+// back what was weakened by hand, then scanning.
 func postureJob(root, tplDir string, facts posture.ServerFacts) upkeep.Job {
 	return upkeep.Job{
 		Name: "posture",
 		Do: func(now time.Time) (int, error) {
+			reverted, _ := revertDrift(root, now)
 			opened, _, err := postureDrift(root, Observe(root, tplDir, facts), now)
-			return opened, err
+			return opened + len(reverted), err
 		},
 	}
+}
+
+// Reverted is a setting put back to its default because it had been
+// weakened by hand.
+type Reverted struct {
+	Key   string    `json:"key"`
+	Was   string    `json:"was"`
+	At    time.Time `json:"at"`
+	Why   string    `json:"why"`
+	Again string    `json:"again"`
+}
+
+func revertedPath(root string) string { return filepath.Join(root, "self", "reverted.json") }
+
+// revertDrift puts back every setting running weaker than its default with
+// no recorded reason: one somebody edited into the file rather than set
+// with --accept-risk, which the program cannot tell from an attacker's
+// edit. What it was is kept, and the security contact is told how to have
+// it again properly; a weaker setting with a reason is a decision and is
+// left alone.
+func revertDrift(root string, now time.Time) ([]Reverted, error) {
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return nil, err
+	}
+	var out []Reverted
+	for _, e := range cfg.Weakened() {
+		// A reason was recorded: a decision, even a lapsed one, which the
+		// posture reports for a person to renew or undo.
+		if e.Accepted != nil {
+			continue
+		}
+		if err := cfg.Unset(e.Setting.Key); err != nil {
+			continue
+		}
+		out = append(out, Reverted{Key: e.Setting.Key, Was: e.Value, At: now, Why: e.Why,
+			Again: fmt.Sprintf("quilzo config set %s %s --accept-risk \"why this is right here\"", e.Setting.Key, e.Value)})
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	if err := saveConfig(root, cfg); err != nil {
+		return nil, err
+	}
+	var kept []Reverted
+	if b, err := os.ReadFile(revertedPath(root)); err == nil {
+		_ = json.Unmarshal(b, &kept)
+	}
+	kept = append(kept, out...)
+	if len(kept) > 200 {
+		kept = kept[len(kept)-200:]
+	}
+	if err := os.MkdirAll(filepath.Dir(revertedPath(root)), 0o700); err == nil {
+		if b, err := json.MarshalIndent(kept, "", " "); err == nil {
+			_ = atomicfile.Write(revertedPath(root), b, 0o600)
+		}
+	}
+	sh := newShieldHost(root)
+	for _, r := range out {
+		record(root, audit.Record{Action: "config.reverted", Resource: "/settings", Outcome: audit.Success,
+			Principal: "quilzo", Kind: audit.KindService, Verified: true,
+			Detail: map[string]string{"setting": r.Key, "was": r.Was, "why": r.Why}})
+		sh.engine.Observe(shield.Signal{Name: "setting-reverted", Subject: r.Key})
+	}
+	return out, nil
 }

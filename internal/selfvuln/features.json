@@ -1,0 +1,441 @@
+{
+ "packages": {
+  "archive/tar": [
+   "*"
+  ],
+  "archive/zip": [
+   "*"
+  ],
+  "bufio": [
+   "*",
+   "chatbots"
+  ],
+  "bytes": [
+   "*",
+   "chatbots",
+   "import",
+   "uploads"
+  ],
+  "compress/flate": [
+   "*"
+  ],
+  "compress/gzip": [
+   "*"
+  ],
+  "compress/zlib": [
+   "chatbots"
+  ],
+  "context": [
+   "*",
+   "chatbots",
+   "feeds",
+   "search-answers",
+   "uploads"
+  ],
+  "crypto": [
+   "*"
+  ],
+  "crypto/aes": [
+   "*"
+  ],
+  "crypto/cipher": [
+   "*"
+  ],
+  "crypto/ecdsa": [
+   "*"
+  ],
+  "crypto/ed25519": [
+   "*"
+  ],
+  "crypto/elliptic": [
+   "*"
+  ],
+  "crypto/hkdf": [
+   "*"
+  ],
+  "crypto/hmac": [
+   "*",
+   "feeds"
+  ],
+  "crypto/hpke": [
+   "*"
+  ],
+  "crypto/mldsa": [
+   "*"
+  ],
+  "crypto/rand": [
+   "*",
+   "boards",
+   "chatbots",
+   "feeds",
+   "forms",
+   "scim",
+   "signup"
+  ],
+  "crypto/rsa": [
+   "*"
+  ],
+  "crypto/sha256": [
+   "*",
+   "boards",
+   "chatbots",
+   "feeds",
+   "signup",
+   "uploads"
+  ],
+  "crypto/sha512": [
+   "*"
+  ],
+  "crypto/subtle": [
+   "*",
+   "feeds"
+  ],
+  "crypto/tls": [
+   "*"
+  ],
+  "crypto/x509": [
+   "*"
+  ],
+  "crypto/x509/pkix": [
+   "*"
+  ],
+  "debug/elf": [
+   "*"
+  ],
+  "debug/gosym": [
+   "*"
+  ],
+  "debug/macho": [
+   "*"
+  ],
+  "embed": [
+   "*",
+   "chatbots",
+   "signup"
+  ],
+  "encoding/asn1": [
+   "*"
+  ],
+  "encoding/base32": [
+   "*",
+   "signup"
+  ],
+  "encoding/base64": [
+   "*",
+   "api",
+   "chatbots",
+   "feeds",
+   "signup"
+  ],
+  "encoding/binary": [
+   "*",
+   "uploads"
+  ],
+  "encoding/csv": [
+   "*"
+  ],
+  "encoding/hex": [
+   "*",
+   "boards",
+   "chatbots",
+   "feeds",
+   "forms",
+   "scim",
+   "signup",
+   "uploads"
+  ],
+  "encoding/json": [
+   "*",
+   "api",
+   "boards",
+   "chatbots",
+   "feeds",
+   "forms",
+   "import",
+   "mcp",
+   "scim",
+   "signup",
+   "uploads"
+  ],
+  "encoding/pem": [
+   "*"
+  ],
+  "encoding/xml": [
+   "*",
+   "import"
+  ],
+  "errors": [
+   "*",
+   "api",
+   "boards",
+   "chatbots",
+   "feeds",
+   "forms",
+   "scim",
+   "signup"
+  ],
+  "flag": [
+   "*"
+  ],
+  "fmt": [
+   "*",
+   "api",
+   "boards",
+   "chatbots",
+   "feeds",
+   "forms",
+   "import",
+   "mcp",
+   "scim",
+   "signup",
+   "uploads"
+  ],
+  "go/ast": [
+   "*"
+  ],
+  "go/format": [
+   "*"
+  ],
+  "go/parser": [
+   "*"
+  ],
+  "go/token": [
+   "*"
+  ],
+  "hash": [
+   "*"
+  ],
+  "hash/crc32": [
+   "*"
+  ],
+  "hash/fnv": [
+   "*"
+  ],
+  "html": [
+   "*",
+   "chatbots",
+   "feeds",
+   "forms",
+   "import"
+  ],
+  "html/template": [
+   "*",
+   "chatbots",
+   "signup"
+  ],
+  "image": [
+   "*",
+   "uploads"
+  ],
+  "image/color": [
+   "*",
+   "uploads"
+  ],
+  "image/gif": [
+   "uploads"
+  ],
+  "image/jpeg": [
+   "uploads"
+  ],
+  "image/png": [
+   "*",
+   "uploads"
+  ],
+  "io": [
+   "*",
+   "api",
+   "chatbots",
+   "import",
+   "uploads"
+  ],
+  "io/fs": [
+   "*",
+   "uploads"
+  ],
+  "math": [
+   "*",
+   "chatbots"
+  ],
+  "math/big": [
+   "*"
+  ],
+  "math/bits": [
+   "*"
+  ],
+  "math/rand": [
+   "*"
+  ],
+  "math/rand/v2": [
+   "*"
+  ],
+  "mime": [
+   "*"
+  ],
+  "net": [
+   "*"
+  ],
+  "net/http": [
+   "*",
+   "api",
+   "boards",
+   "chatbots",
+   "feeds",
+   "forms",
+   "import",
+   "scim",
+   "search-answers",
+   "signup",
+   "uploads"
+  ],
+  "net/http/httptest": [
+   "*"
+  ],
+  "net/netip": [
+   "*"
+  ],
+  "net/smtp": [
+   "*"
+  ],
+  "net/url": [
+   "*",
+   "api",
+   "boards",
+   "chatbots",
+   "feeds",
+   "import",
+   "search-answers",
+   "uploads"
+  ],
+  "os": [
+   "*",
+   "boards",
+   "chatbots",
+   "forms",
+   "scim",
+   "signup",
+   "uploads"
+  ],
+  "os/exec": [
+   "*",
+   "uploads"
+  ],
+  "os/signal": [
+   "*"
+  ],
+  "path": [
+   "*",
+   "api"
+  ],
+  "path/filepath": [
+   "*",
+   "boards",
+   "chatbots",
+   "forms",
+   "signup",
+   "uploads"
+  ],
+  "reflect": [
+   "*"
+  ],
+  "regexp": [
+   "*",
+   "boards",
+   "chatbots",
+   "forms",
+   "scim",
+   "signup",
+   "uploads"
+  ],
+  "runtime": [
+   "*"
+  ],
+  "runtime/debug": [
+   "*"
+  ],
+  "slices": [
+   "chatbots"
+  ],
+  "sort": [
+   "*",
+   "api",
+   "boards",
+   "chatbots",
+   "forms",
+   "import",
+   "mcp",
+   "scim",
+   "signup",
+   "uploads"
+  ],
+  "strconv": [
+   "*",
+   "api",
+   "chatbots",
+   "feeds",
+   "forms",
+   "scim",
+   "uploads"
+  ],
+  "strings": [
+   "*",
+   "api",
+   "boards",
+   "chatbots",
+   "feeds",
+   "forms",
+   "import",
+   "mcp",
+   "scim",
+   "search-answers",
+   "signup",
+   "uploads"
+  ],
+  "sync": [
+   "*",
+   "api",
+   "boards",
+   "chatbots",
+   "feeds",
+   "scim",
+   "signup",
+   "uploads"
+  ],
+  "sync/atomic": [
+   "*"
+  ],
+  "syscall": [
+   "*"
+  ],
+  "time": [
+   "*",
+   "api",
+   "boards",
+   "chatbots",
+   "feeds",
+   "forms",
+   "import",
+   "scim",
+   "search-answers",
+   "signup",
+   "uploads"
+  ],
+  "time/tzdata": [
+   "*"
+  ],
+  "unicode": [
+   "*",
+   "boards",
+   "chatbots",
+   "signup"
+  ],
+  "unicode/utf8": [
+   "*",
+   "boards",
+   "signup",
+   "uploads"
+  ],
+  "unsafe": [
+   "*"
+  ]
+ }
+}
