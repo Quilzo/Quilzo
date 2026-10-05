@@ -596,6 +596,17 @@ const tokenBytes = 32
 
 var tokenEnc = base32.StdEncoding.WithPadding(base32.NoPadding)
 
+// NewSecret is a fresh token secret. The shield's decoys are made with it
+// too, so the only thing that tells a decoy from a real token is trying it,
+// and a change to the format moves both at once.
+func NewSecret() (string, error) {
+	raw := make([]byte, tokenBytes)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("cannot generate a token: %w", err)
+	}
+	return TokenPrefix + strings.ToLower(tokenEnc.EncodeToString(raw)), nil
+}
+
 // Token is a stored credential. The secret itself is not in this struct and is
 // never written anywhere.
 //
@@ -840,11 +851,10 @@ func (ts *TokenStore) issue(name, principal string, role Role,
 				"around to rotating")
 	}
 
-	raw := make([]byte, tokenBytes)
-	if _, err := rand.Read(raw); err != nil {
-		return "", Token{}, fmt.Errorf("cannot generate a token: %w", err)
+	secret, err = NewSecret()
+	if err != nil {
+		return "", Token{}, err
 	}
-	secret = TokenPrefix + strings.ToLower(tokenEnc.EncodeToString(raw))
 
 	idRaw := make([]byte, 6)
 	if _, err := rand.Read(idRaw); err != nil {

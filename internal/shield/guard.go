@@ -136,9 +136,27 @@ func (g *Guard) Blocked(addr, where string, now time.Time) (Protection, bool) {
 	}
 	var handles []string
 	asn := ""
+	vouched := -1 // not looked up yet
 	for _, p := range st.Protections {
 		if p.Kind != Block || !p.ActiveAt(now) || (p.Where != All && p.Where != where) {
 			continue
+		}
+		// An administrator who signed in strongly from here keeps the
+		// admin whatever a playbook blocked, a network or a provider
+		// included; only a person can block them from it.
+		if p.Auto && where == Admin {
+			if vouched < 0 {
+				if handles == nil {
+					handles = g.Handles(a)
+				}
+				vouched = 0
+				if st.IsVouched(handles, now) {
+					vouched = 1
+				}
+			}
+			if vouched == 1 {
+				continue
+			}
 		}
 		kind, value, _ := strings.Cut(p.Target, ":")
 		switch kind {

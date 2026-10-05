@@ -4,9 +4,13 @@
 package shield
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
+	"hash/fnv"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/clientip"
@@ -23,7 +27,7 @@ func (g *Guard) Wrap(where string, next http.Handler) http.Handler {
 		if c.Known() && !c.Internal {
 			now := time.Now()
 			if p, blocked := g.Blocked(c.Addr.String(), where, now); blocked {
-				Refuse(w, p, now)
+				Refuse(w, r, p, now)
 				return
 			}
 		}
@@ -31,21 +35,87 @@ func (g *Guard) Wrap(where string, next http.Handler) http.Handler {
 	})
 }
 
-// Refuse answers a blocked request: plainly, with when to try again, and
-// without why, which is the one thing a blocked prober would want to know.
-func Refuse(w http.ResponseWriter, p Protection, now time.Time) {
+// Refuse answers a blocked request: at once, with when to come back and a
+// reference a person can quote to have it lifted, and without why, which
+// is the one thing a blocked prober would want to know.
+//
+// 429 rather than 403, as Cloudflare and Google's crawlers read them: this
+// is temporary, and a crawler told 403 for a day drops the page, where one
+// told 429 comes back. The body is small and needs nothing else (HTML for a
+// browser, problem+json for a program, text for the rest), and the
+// connection is closed, so a refused client holds nothing open.
+func Refuse(w http.ResponseWriter, r *http.Request, p Protection, now time.Time) {
+	back := roundUp(p.Until, 5*time.Minute)
+	secs := int(back.Sub(now)/time.Second) + 1
+	// A little later than the rounded time and never earlier, different
+	// for each protection, so a crowd told the same minute does not all
+	// come back in it.
+	secs += jitter(p.ID, secs)
 	h := w.Header()
-	h.Set("Retry-After", strconv.Itoa(int(p.Until.Sub(now).Seconds())+1))
+	h.Set("Retry-After", strconv.Itoa(secs))
 	h.Set("Cache-Control", "no-store")
-	h.Set("Content-Type", "text/plain; charset=utf-8")
+	h.Set("Connection", "close")
 	h.Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(http.StatusForbidden)
-	// The time is rounded up to the next five minutes: an honest visitor
-	// needs to know when, and a prober does not need it to the second.
-	fmt.Fprintf(w, "Requests from your address are refused until about %s.\n"+
-		"If this is a mistake, the people who run this site can lift it.\n",
-		roundUp(p.Until, 5*time.Minute).UTC().Format("15:04 UTC on 2 January"))
+	when := back.UTC().Format("15:04 UTC on 2 January")
+	switch {
+	case wantsJSON(r):
+		h.Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprintf(w, `{"type":"https://quilzo.github.io/#shield","title":"Requests from this address are refused for now","status":429,"detail":"Try again after %s.","reference":%q}`+"\n",
+			when, p.ID)
+	case wantsHTML(r):
+		h.Set("Content-Type", "text/html; charset=utf-8")
+		h.Set("Content-Security-Policy", refusalCSP)
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprintf(w, refusalPage, when, p.ID)
+	default:
+		h.Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprintf(w, "Requests from your address are refused until about %s.\n"+
+			"If this is a mistake, the people who run this site can lift it: quote %s.\n", when, p.ID)
+	}
 }
+
+// jitter is up to a tenth more, at most two minutes, from the
+// protection's id: the same answer every time it is asked.
+func jitter(id string, secs int) int {
+	h := fnv.New32a()
+	h.Write([]byte(id))
+	span := min(secs/10, 120)
+	if span < 1 {
+		return 0
+	}
+	return int(h.Sum32() % uint32(span+1))
+}
+
+func wantsJSON(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	p := r.URL.Path
+	if strings.HasPrefix(p, "/api/") || p == "/mcp" || strings.HasPrefix(p, "/mcp/") || strings.HasPrefix(p, "/scim/") || strings.HasPrefix(p, "/feeds/") {
+		return true
+	}
+	a := r.Header.Get("Accept")
+	return strings.Contains(a, "application/json") || strings.Contains(a, "+json")
+}
+
+func wantsHTML(r *http.Request) bool {
+	return r != nil && strings.Contains(r.Header.Get("Accept"), "text/html")
+}
+
+// refusalStyle is the page's only style, allowed by its hash and nothing
+// else: the refusal loads no font, no script and no picture.
+const refusalStyle = `body{margin:0;min-height:100vh;display:grid;place-items:center;font:16px/1.5 system-ui,sans-serif;background:#f8f9fc;color:#1f1f1f}main{max-width:32rem;margin:24px;padding:24px 28px;border-radius:24px;background:#fff}h1{font-size:1.375rem;font-weight:400;margin:0 0 8px}p{margin:8px 0}code{font:14px ui-monospace,monospace}@media(prefers-color-scheme:dark){body{background:#131314;color:#e3e3e3}main{background:#1e1f20}}`
+
+var refusalCSP = func() string {
+	sum := sha256.Sum256([]byte(refusalStyle))
+	return "default-src 'none'; style-src 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+}()
+
+var refusalPage = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Not now</title><style>` +
+	refusalStyle + `</style></head><body><main><h1>Not right now</h1><p>Requests from your address are refused until about %s.</p><p>If this is a mistake, the people who run this site can lift it. Quote <code>%s</code>.</p></main></body></html>
+`
 
 func roundUp(t time.Time, d time.Duration) time.Time {
 	r := t.Truncate(d)

@@ -28,7 +28,7 @@
 //     NAT; clientip.Local) and the networks the operator declared trusted
 //     are never blocked, so the machine, the office and the proxy in front
 //     are always a way in; and the command line on the machine never goes
-//     through any of this, so `quilzo shield lift --all` there is the way
+//     through any of this, so `quilzo shield lift all` there is the way
 //     out of anything.
 //   - A source an administrator signed in from with a passkey or single
 //     sign-on in the last thirty days is not blocked from the admin by a

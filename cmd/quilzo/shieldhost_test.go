@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/clientip"
+	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/shield"
 )
 
@@ -117,5 +118,67 @@ func TestTheLockdownGatesTheServersStoresAndNotTheMachines(t *testing.T) {
 	ts.Admit = nil // the command line on the machine loads its own, ungated
 	if _, err := ts.Authenticate(old, time.Now()); err != nil {
 		t.Fatalf("the machine was locked out: %v", err)
+	}
+}
+
+func TestAPausedAgentIsRefusedAndStillEvaluated(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	admin := asAdmin("dana")
+	if err := declareAgent(root, writer("styler"), true, admin); err != nil {
+		t.Fatal(err)
+	}
+	p := shield.Protection{Kind: shield.Agent, Target: "styler", Reason: "followed a planted instruction",
+		By: "dana", Until: time.Now().Add(time.Hour)}
+	if _, _, err := shield.Apply(root, p, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executeAgentFrom(t.Context(), root, "styler", "tidy", false, admin, nil); err == nil ||
+		!strings.Contains(err.Error(), "paused") {
+		t.Fatalf("a paused agent ran: %v", err)
+	}
+	if _, err := addEvalCase(root, "styler", evals.Case{Goal: "tidy the pages",
+		Expect: evals.Expect{Uses: []string{"list_pages"}}}); err != nil {
+		t.Fatal(err)
+	}
+	// Re-testing it is how anybody knows the pause can be lifted.
+	if rep, err := runEvaluation(root, "styler", 1, false, admin); err != nil || rep.Cases != 1 {
+		t.Fatalf("a paused agent could not be evaluated: %+v %v", rep, err)
+	}
+}
+
+func TestOnlyAnAdministratorsPasskeyMakesALockdownSafe(t *testing.T) {
+	root := t.TempDir()
+	if canSignInStrongly(root) {
+		t.Fatal("nobody can get in, and a lockdown was called safe")
+	}
+	// Single sign-on alone: the identity provider can be down.
+	if err := saveJSON(oidcPath(root), map[string]any{"issuer": "https://idp.example", "client_id": "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if canSignInStrongly(root) {
+		t.Fatal("single sign-on alone was taken as a way in")
+	}
+	pol := &auth.Policy{}
+	if err := pol.Grant(auth.Binding{Principal: "dana", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(policyPath(root), pol); err != nil {
+		t.Fatal(err)
+	}
+	pk := map[string]any{"credentials": []map[string]any{{"id": "AQID", "public_key": "AQID", "algorithm": -7,
+		"principal": "eve", "label": "k", "created_at": 1, "relying_party": "x"}}}
+	if err := saveJSON(passkeysPath(root), pk); err != nil {
+		t.Fatal(err)
+	}
+	if canSignInStrongly(root) {
+		t.Fatal("a passkey of somebody who is not an administrator was taken as a way in")
+	}
+	pk["credentials"].([]map[string]any)[0]["principal"] = "dana"
+	if err := saveJSON(passkeysPath(root), pk); err != nil {
+		t.Fatal(err)
+	}
+	if !canSignInStrongly(root) {
+		t.Fatal("an administrator's passkey was not taken as a way in")
 	}
 }
