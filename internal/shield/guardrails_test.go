@@ -396,3 +396,31 @@ func TestEverySignalSaysWhatItCounts(t *testing.T) {
 		}
 	}
 }
+
+func TestAnAdministratorsAddressKeepsTheAdminWhateverAPlaybookBlocked(t *testing.T) {
+	g := guard(t)
+	if err := Vouch(g.Root, g.Handles(mustAddr("203.0.113.9")), t0); err != nil {
+		t.Fatal(err)
+	}
+	auto := ok(Block, "net:203.0.113.0/24")
+	auto.Auto, auto.Playbook = true, "x"
+	put(t, g, auto)
+	g.Refresh()
+	if _, blocked := g.Blocked("203.0.113.9", Admin, t0); blocked {
+		t.Fatal("a playbook's network block shut an administrator out of the admin")
+	}
+	if _, blocked := g.Blocked("203.0.113.9", Site, t0); !blocked {
+		t.Fatal("the site is not covered by the exemption")
+	}
+	if _, blocked := g.Blocked("203.0.113.10", Admin, t0); !blocked {
+		t.Fatal("the rest of the network got the administrator's exemption")
+	}
+	// A person's block is a person's decision.
+	g2 := guard(t)
+	Vouch(g2.Root, g2.Handles(mustAddr("203.0.113.9")), t0)
+	put(t, g2, ok(Block, "net:203.0.113.0/24"))
+	g2.Refresh()
+	if _, blocked := g2.Blocked("203.0.113.9", Admin, t0); !blocked {
+		t.Fatal("a person's block did not hold")
+	}
+}

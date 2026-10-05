@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/shield"
 )
 
 // "Forgot password" for a system with no passwords.
@@ -71,14 +72,25 @@ func cmdRecover(root string, args []string) error {
 		return err
 	}
 
-	// Usable means: not revoked, not expired, and carrying admin.
+	// Usable means: not revoked, not expired, carrying admin, and not
+	// refused by a lockdown in force, which would refuse it at the admin
+	// however alive it is here.
 	usable := 0
 	now := time.Now()
+	lock, locked := shield.Find(root, shield.Lockdown, "", now)
 	for i := range toks.Tokens {
 		t := &toks.Tokens[i]
-		if ok, _ := t.Usable(now); ok && t.Role == auth.RoleAdmin {
-			usable++
+		if ok, _ := t.Usable(now); !ok || t.Role != auth.RoleAdmin {
+			continue
 		}
+		if locked && shield.LockedOut(lock, t.CreatedAt, t.Session) {
+			continue
+		}
+		usable++
+	}
+	if locked && usable == 0 {
+		fmt.Fprintf(os.Stderr, "the admin is locked down until about %s; lifting it is quicker than this:\n"+
+			"    quilzo shield lift %s\n", lock.Until.UTC().Format("15:04 UTC"), lock.ID)
 	}
 
 	if usable > 0 {

@@ -4,15 +4,15 @@
 package shield
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base32"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // Decoys: credentials nothing legitimate uses.
@@ -39,8 +39,6 @@ type Decoy struct {
 // maxDecoys bounds the list.
 const maxDecoys = 100
 
-var decoyEnc = base32.StdEncoding.WithPadding(base32.NoPadding)
-
 func decoyHash(secret string) string {
 	sum := sha256.Sum256([]byte(secret))
 	return hex.EncodeToString(sum[:])
@@ -54,13 +52,12 @@ func AddDecoy(root, note, by string, now time.Time) (string, Decoy, error) {
 	if note == "" || len(note) > 200 || strings.ContainsAny(note, "\r\n") {
 		return "", Decoy{}, errors.New("say where it will be planted, on one line of at most 200 characters")
 	}
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
+	secret, err := auth.NewSecret()
+	if err != nil {
 		return "", Decoy{}, err
 	}
-	secret := "qz_" + strings.ToLower(decoyEnc.EncodeToString(raw))
 	d := Decoy{ID: newID(), Hash: decoyHash(secret), Note: note, By: by, At: now}
-	err := Change(root, now, func(st *State) error {
+	err = Change(root, now, func(st *State) error {
 		if len(st.Decoys) >= maxDecoys {
 			return fmt.Errorf("%d decoys are planted already; remove one first", maxDecoys)
 		}
@@ -92,7 +89,7 @@ func RemoveDecoy(root, id string, now time.Time) error {
 func (g *Guard) Decoy(secret string, now time.Time) (Decoy, bool) {
 	st := g.state(now)
 	secret = strings.TrimSpace(secret)
-	if len(st.Decoys) == 0 || !strings.HasPrefix(secret, "qz_") {
+	if len(st.Decoys) == 0 || !strings.HasPrefix(secret, auth.TokenPrefix) {
 		return Decoy{}, false
 	}
 	want := []byte(decoyHash(secret))

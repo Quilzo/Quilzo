@@ -112,14 +112,11 @@ func sentence(s string) string {
 }
 
 // canSignInStrongly reports whether some administrator could still sign in
-// during a lockdown: one with a passkey, or single sign-on set up at all.
+// during a lockdown: one of the whole site's administrators with a passkey.
+// Single sign-on alone does not count: the identity provider can be down,
+// or be what the attack is about, and a lockdown that leaves only it leaves
+// nothing.
 func canSignInStrongly(root string) bool {
-	if c, err := loadOIDC(root); err == nil && c != nil {
-		return true
-	}
-	if cs, err := loadSAML(root); err == nil && len(cs) > 0 {
-		return true
-	}
 	pk := &admin.Passkeys{}
 	if err := loadJSON(passkeysPath(root), pk); err != nil {
 		return false

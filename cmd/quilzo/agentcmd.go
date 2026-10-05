@@ -609,9 +609,14 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		return out, fmt.Errorf("no agent called %q; `quilzo agent list`", name)
 	}
 	// Paused by the shield: an evaluation or a playbook found something
-	// steering it, and it does not run until a person lifts that.
-	if err := refuseIfPaused(root, name); err != nil {
-		return out, err
+	// steering it, and it does not run until a person lifts that. An
+	// evaluation still runs it, because it writes nothing, calls no tool and
+	// starts no other agent, and re-testing is how somebody knows the pause
+	// can be lifted.
+	if from.Eval == nil {
+		if err := refuseIfPaused(root, name); err != nil {
+			return out, err
+		}
 	}
 	// Re-validated against this build before it runs. A manifest that was
 	// written when an operation existed and no longer does describes a

@@ -283,9 +283,13 @@ func shieldApply(root, kind string, args []string) error {
 func shieldLift(root string, args []string) error {
 	fs := flag.NewFlagSet("shield lift", flag.ContinueOnError)
 	mistake := fs.Bool("mistake", false, "it should not have been applied: counts against its playbook")
+	all := fs.Bool("all", false, "every protection in force")
 	pos, err := parseAnywhere(fs, args)
 	if err != nil {
 		return err
+	}
+	if len(pos) == 0 && *all {
+		pos = []string{"all"}
 	}
 	if len(pos) != 1 {
 		return errors.New("usage: quilzo shield lift ID|all [--mistake]")
