@@ -353,3 +353,28 @@ func TestDeletingSomethingThatIsNotThereStillSaysSo(t *testing.T) {
 		t.Errorf("the error does not say what was wrong: %v", err)
 	}
 }
+
+func TestAFormSaysWhyItCollectsAndOnWhatBasis(t *testing.T) {
+	base := Form{Name: "contact", Notice: "Kept 90 days.", Fields: []Field{{Name: "email", Label: "Email", Kind: Email, Required: true}}}
+	if base.Lawful() {
+		t.Fatal("lawful with neither said")
+	}
+	f := base
+	f.Purpose, f.Basis = "to reply to the enquiry", "legitimate-interests"
+	if err := f.Validate(); err != nil || !f.Lawful() {
+		t.Fatalf("%v", err)
+	}
+	f.Basis = "because we can"
+	if err := f.Validate(); err == nil {
+		t.Fatal("a basis Article 6 does not have")
+	}
+	// Consent is a box the person ticks, not something the form assumes.
+	f.Basis = "consent"
+	if err := f.Validate(); err == nil {
+		t.Fatal("consent with no box to tick")
+	}
+	f.Fields = append(f.Fields, Field{Name: "agree", Label: "I agree to be contacted", Kind: Agree, Required: true})
+	if err := f.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -137,5 +137,9 @@ func (st *Site) searchAnswer(r *http.Request, query string) map[string]any {
 	return map[string]any{
 		"title": a.Title, "assistant": a.Name, "sentences": sentences, "sources": sources,
 		"more": "/ask/" + url.PathEscape(a.Name) + "?q=" + url.QueryEscape(query),
+		// EU AI Act Article 50(1): an answer an automated system wrote says
+		// so where it is shown; a search layout puts {{ answer.disclosure }}
+		// beside it, and the posture checks that it does.
+		"disclosure": Disclosure,
 	}
 }

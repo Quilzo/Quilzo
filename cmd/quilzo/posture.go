@@ -235,6 +235,14 @@ func observeUpkeep(root string, st *store.Store) posture.UpkeepFacts {
 
 func observeContent(root, tplDir string, st *store.Store) posture.ContentFacts {
 	var c posture.ContentFacts
+	if set, err := loadForms(root); err == nil && set != nil {
+		for _, f := range set.Forms {
+			if !f.Closed && !f.Lawful() {
+				c.FormsWithoutBasis = append(c.FormsWithoutBasis, f.Name)
+			}
+		}
+		sort.Strings(c.FormsWithoutBasis)
+	}
 
 	live := st.GetRef(site.RefLive)
 	if live == "" {
@@ -289,6 +297,10 @@ func observeContent(root, tplDir string, st *store.Store) posture.ContentFacts {
 		// this asks whether anything got past it.
 		if reports, err := checkAccessibility(root, st, live, tplDir); err == nil {
 			c.BlockingA11y = a11y.BlockingCount(reports)
+		} else {
+			// Not run is not passing: a live site this cannot render is
+			// one whose accessibility nobody knows.
+			c.A11yUnchecked = err.Error()
 		}
 	}
 
@@ -692,32 +704,46 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 	return facts
 }
 
-// askPageDiscloses reports whether the conversation page visitors see says
-// they are talking to an automated assistant. The built-in page always
-// does; an owner's published "ask" page does when its layout carries
-// {{ ask.disclosure }}.
+// askPageDiscloses reports whether the pages visitors see answers on say
+// they come from an automated assistant. The built-in pages always do; an
+// owner's published "ask" page does when its layout carries
+// {{ ask.disclosure }}, and an owner's "search" page, which shows AI answers
+// too, when its layout carries {{ answer.disclosure }}.
+//
+// What cannot be read is not disclosed: a store or a layout this cannot
+// read is a check that did not run, and reporting it as passing is the
+// direction that hides a breach of Article 50.
 func askPageDiscloses(root, tplDir string) bool {
 	st, err := open(root)
 	if err != nil {
-		return true
+		return false
 	}
 	pages, err := site.PagesAt(st, site.RefLive)
 	if err != nil {
-		return true
+		return false
+	}
+	if body, custom := pages["search"]; custom && !layoutCarries(tplDir, body, "answer.disclosure") {
+		return false
 	}
 	body, custom := pages["ask"]
 	if !custom {
 		return true
 	}
+	return layoutCarries(tplDir, body, "ask.disclosure")
+}
+
+// layoutCarries reports whether the layout a page uses mentions a variable.
+func layoutCarries(tplDir string, body any, variable string) bool {
 	design, derr := loadDesign(tplDir)
 	if derr != nil || design == nil {
 		return false
 	}
-	_, src, lerr := design.Layouts.For(body)
+	page, _ := body.(map[string]any)
+	_, src, lerr := design.Layouts.For(page)
 	if lerr != nil {
 		return false
 	}
-	return strings.Contains(strings.ReplaceAll(src, " ", ""), "ask.disclosure")
+	return strings.Contains(strings.ReplaceAll(src, " ", ""), variable)
 }
 
 // modelHostOf is the host a model is reached on, and whether it is local:

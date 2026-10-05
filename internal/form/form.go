@@ -172,7 +172,27 @@ type Form struct {
 	// Closed stops accepting submissions without deleting the form or what it
 	// already gathered.
 	Closed bool `json:"closed,omitempty"`
+	// Purpose is what the answers are used for, in a sentence: the purpose
+	// GDPR Article 5(1)(b) limits them to and Article 13(1)(c) says the
+	// person must be told.
+	Purpose string `json:"purpose,omitempty"`
+	// Basis is the lawful basis for processing them, one of Article 6(1)'s
+	// six (Bases). Consent needs a box the person ticks.
+	Basis string `json:"basis,omitempty"`
 }
+
+// Bases are GDPR Article 6(1)'s lawful bases, as a form names one.
+var Bases = map[string]string{
+	"consent":              "the person agreed, by ticking a box (Art 6(1)(a))",
+	"contract":             "to do what they asked for, or to enter a contract with them (Art 6(1)(b))",
+	"legal-obligation":     "a law requires it (Art 6(1)(c))",
+	"vital-interests":      "to protect somebody's life (Art 6(1)(d))",
+	"public-task":          "a task in the public interest or official authority (Art 6(1)(e))",
+	"legitimate-interests": "a legitimate interest that the person's rights do not override (Art 6(1)(f))",
+}
+
+// Lawful reports whether a form says why it collects and on what basis.
+func (f *Form) Lawful() bool { return strings.TrimSpace(f.Purpose) != "" && f.Basis != "" }
 
 // Set is every form a site has.
 type Set struct {
@@ -223,6 +243,27 @@ func (f *Form) Validate() error {
 	}
 	if len(f.Fields) == 0 {
 		return fmt.Errorf("%q asks nothing", f.Name)
+	}
+	if f.Basis != "" {
+		if _, ok := Bases[f.Basis]; !ok {
+			return fmt.Errorf("%q is not a lawful basis; one of consent, contract, legal-obligation, "+
+				"vital-interests, public-task, legitimate-interests", f.Basis)
+		}
+		if f.Basis == "consent" {
+			agreed := false
+			for _, fl := range f.Fields {
+				if fl.Kind == Agree && fl.Required {
+					agreed = true
+				}
+			}
+			if !agreed {
+				return fmt.Errorf("%q rests on consent and has no required box to tick: consent is "+
+					"something the person gives, not something the form assumes", f.Name)
+			}
+		}
+	}
+	if len(f.Purpose) > 500 {
+		return fmt.Errorf("%q's purpose is over 500 characters; say it in a sentence", f.Name)
 	}
 	if len(f.Fields) > MaxFields {
 		return fmt.Errorf("%q has %d fields; the limit is %d",

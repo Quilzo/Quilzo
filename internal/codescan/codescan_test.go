@@ -52,6 +52,8 @@ func TestItFindsCredentials(t *testing.T) {
 		{"secret.quilzo-token", "token: qz_6zukocv7ecidrejjyojgsdn7ekl3w2v3qph3ef6ylsm6usaqbtdq"},
 		{"secret.cloud-key", "aws: AKIAIOSFODNN7EXAMPLE"},
 		{"secret.cloud-key", "gh: ghp_16CharsAndThenSomeMoreCharacters1234"},
+		{"secret.cloud-key", "openai: sk-proj-Ab3_kL9-mN2pQ7rS1tU4vW8xY0zA5bC6dE"},
+		{"secret.cloud-key", "anthropic: sk-ant-api03-Zx9_Yw8-Vu7tS6rQ5pO4nM3lK2jI1hG0f"},
 		{"secret.connection-string", "postgres://admin:hunter2ButLonger@db.internal/app"},
 		{"secret.assignment", `api_key = "9f8Xq2LmR7vT4wZ1pK6nD3sB5yH0jC8e"`},
 	} {

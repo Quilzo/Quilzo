@@ -129,7 +129,7 @@ var rules = []Rule{
 		// The formats that are genuinely recognisable. A prefix and a length
 		// is a real signal; "looks random" is not, and the rules below are
 		// where that distinction is enforced.
-		Pattern:  regexp.MustCompile(`\b(AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9]{32,}|glpat-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35})\b`),
+		Pattern:  regexp.MustCompile(`\b(AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk-(?:proj|svcacct|admin|ant-api\d\d|ant-admin\d\d)-[A-Za-z0-9_-]{32,}|sk-[A-Za-z0-9]{32,}|glpat-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35})\b`),
 		Controls: []string{"IA-5"},
 		OWASP:    "A05:2025 Security Misconfiguration",
 		Detail:   "a credential for a third-party service",
