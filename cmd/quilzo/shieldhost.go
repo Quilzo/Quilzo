@@ -58,8 +58,14 @@ func newShieldHost(root string) *shieldHost {
 			if !ok {
 				return
 			}
+			title := r.Playbook
+			for _, pb := range lib.Get() {
+				if pb.Name == r.Playbook {
+					title = pb.Title
+				}
+			}
 			ev := automate.Event{Kind: "signal", Subject: "shield:" + r.Playbook, At: r.At,
-				Summary: shieldSummary(r, s),
+				Summary: shieldSummary(title, r, s, g.State(r.At)),
 				Fields:  map[string]string{"signal": s.Name, "playbook": r.Playbook, "severity": "high"}}
 			out, err := act.Run(ev, map[string]string{"to": "security"})
 			detail := map[string]string{"playbook": r.Playbook, "step": id, "did": out}
@@ -82,14 +88,27 @@ func newShieldHost(root string) *shieldHost {
 	return h
 }
 
-// shieldSummary is a response in a sentence, for a message and a case.
-func shieldSummary(r shield.Response, s shield.Signal) string {
-	what := shield.Signals[s.Name]
-	if what == "" {
-		what = s.Name
+// shieldSummary is a response in a sentence or two, for a message and a
+// case: what happened, what the shield did, and for a decoy where it was
+// planted, which is where the leak is.
+func shieldSummary(title string, r shield.Response, s shield.Signal, st *shield.State) string {
+	out := fmt.Sprintf("Shield: %s (stage %d). %s.", title, r.Stage, sentence(strings.Join(r.Did, "; ")))
+	if s.Name == "decoy" && st != nil {
+		for _, d := range st.Decoys {
+			if d.ID == s.Subject {
+				out += fmt.Sprintf(" The decoy was the one planted in %s on %s: whoever presented it has a copy of what was kept there.",
+					d.Note, d.At.UTC().Format("2 January 2006"))
+			}
+		}
 	}
-	return fmt.Sprintf("The shield's playbook %s (stage %d) responded to %s: %s.",
-		r.Playbook, r.Stage, what, strings.Join(r.Did, "; "))
+	return out
+}
+
+func sentence(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // canSignInStrongly reports whether some administrator could still sign in
