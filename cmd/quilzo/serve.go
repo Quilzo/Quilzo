@@ -822,9 +822,10 @@ func cmdServe(root string, args []string) error {
 	srv.Shield = sh.off
 	srv.Frozen = sh.frozen
 	srv.ShieldAdmin = &admin.ShieldAdmin{Root: root,
-		OnlyAdmin: func(name string) bool { return onlyAdministrator(root, name) },
-		History:   func(days int) ([]shield.Signal, error) { return history(root, days, time.Now()) },
-		Changed:   sh.guard.Refresh}
+		OnlyAdmin:   func(name string) bool { return onlyAdministrator(root, name) },
+		History:     func(days int) ([]shield.Signal, error) { return history(root, days, time.Now()) },
+		Changed:     sh.guard.Refresh,
+		CanLockdown: func() bool { return canSignInStrongly(root) }}
 
 	// The audit log, read-only. This process cannot write it where the writer
 	// has been separated out, so there is no edit path to withhold.

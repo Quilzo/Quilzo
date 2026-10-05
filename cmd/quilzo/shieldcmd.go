@@ -253,6 +253,10 @@ func shieldApply(root, kind string, args []string) error {
 		p.Kind, p.Target, p.Level = shield.Feature, target, *level
 	case "lockdown":
 		p.Kind = shield.Lockdown
+		if !canSignInStrongly(root) {
+			w.Human("%sNobody here has a passkey or single sign-on: until this is lifted, the admin refuses every "+
+				"token made before it, yours included. This command line still works.%s\n", yellow, reset)
+		}
 	case "freeze":
 		p.Kind = shield.Freeze
 	case "pause":

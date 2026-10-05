@@ -164,3 +164,17 @@ func TestTryingAPlaybookOnTheHistoryAppliesNothing(t *testing.T) {
 		t.Fatal("a dry run applied something")
 	}
 }
+
+func TestALockdownNobodyCanGetPastIsRefusedOnTheScreen(t *testing.T) {
+	srv, token := setup(t)
+	root, _ := wireShield(t, srv)
+	postForm(t, srv, "/security/shield/act", token, "do=apply&kind=lockdown&for=1h&reason=x")
+	if st, _ := shield.Load(root); len(st.Protections) != 0 {
+		t.Fatal("locked everybody out from the screen")
+	}
+	srv.ShieldAdmin.CanLockdown = func() bool { return true }
+	postForm(t, srv, "/security/shield/act", token, "do=apply&kind=lockdown&for=1h&reason=x")
+	if st, _ := shield.Load(root); len(st.Protections) != 1 {
+		t.Fatal("not locked down when somebody can get past it")
+	}
+}
