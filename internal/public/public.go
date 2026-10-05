@@ -1512,7 +1512,7 @@ func (st *Site) formData(name string) map[string]any {
 		}
 		fields = append(fields, out)
 	}
-	return render.FormOf(f.Name, f.Label, f.Intro, f.Notice, "", fields)
+	return render.FormOf(f.Name, f.Label, f.Intro, f.Told(), "", fields)
 }
 
 func (st *Site) sources() render.Sources {

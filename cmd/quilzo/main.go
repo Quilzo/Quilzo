@@ -500,6 +500,8 @@ compliance evidence
   quilzo compliance crypto                 every algorithm, and its post-quantum
                                             status, checked against the source
   quilzo compliance controls               NIST 800-53 coverage, from the rules
+  quilzo compliance site [--statement]     what the law asks of the published site,
+                                            and a draft accessibility statement
   quilzo compliance acr                    an accessibility conformance report
 
 agents and integrations

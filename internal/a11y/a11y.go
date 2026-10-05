@@ -142,6 +142,16 @@ var (
 		"colour contrast in a hand-written site.css, which is served as the " +
 			"operator wrote it and is not a stylesheet this program generated",
 		"keyboard operability of scripted widgets",
+		// New in WCAG 2.2, and so in EN 301 549 V4.1.1. Each is about how
+		// a page behaves in a browser — what covers what, how big a thing
+		// is to press, what a process asks twice — and none is in the
+		// markup a parser reads.
+		"a focused control is not hidden behind sticky content (2.4.11)",
+		"anything done by dragging can be done with a single pointer (2.5.7)",
+		"targets are at least 24 by 24 CSS pixels, or spaced as if they were (2.5.8)",
+		"help is found in the same place on every page that offers it (3.2.6)",
+		"a process does not ask for what the person already entered (3.3.7)",
+		"signing in needs no memory or puzzle test, or offers another way (3.3.8)",
 		"reading order and whether headings describe their sections",
 		"anything requiring judgement about meaning",
 	}

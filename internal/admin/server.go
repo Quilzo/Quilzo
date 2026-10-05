@@ -1167,6 +1167,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/scan", s.handleScanScreen)
 	mux.HandleFunc("/security/policy", s.handleCSPScreen)
 	mux.HandleFunc("/security/inventory", s.handleComplianceScreen)
+	mux.HandleFunc("/security/site", s.handleSiteReport)
 	mux.HandleFunc("/security/integrity", s.handleIntegrityScreen)
 	mux.HandleFunc("/security/verify", s.handleVerify)
 	mux.HandleFunc("/security/agents", s.handleAgentsScreen)

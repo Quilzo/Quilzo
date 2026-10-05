@@ -96,7 +96,7 @@ func resolveCaller(root, explicitToken string) *Caller {
 		}
 	}
 
-	secret, _ := findToken(explicitToken)
+	secret, from := findToken(explicitToken)
 	if secret == "" {
 		return unverified("no token was presented")
 	}
@@ -108,7 +108,16 @@ func resolveCaller(root, explicitToken string) *Caller {
 	if err != nil {
 		// A bad token is worse than none: somebody tried. It is still not an
 		// identity, so it is still unverified, and the reason says what happened.
-		return unverified(fmt.Sprintf("the token was rejected: %v", err))
+		//
+		// Named by where it came from: the file is read before the
+		// environment, so somebody who set QUILZO_TOKEN and still has an old
+		// file is told which one was tried, instead of hunting for why a
+		// token they just issued is "no such token".
+		why := fmt.Sprintf("the token from %s was rejected: %v", from, err)
+		if from == tokenFile() && strings.TrimSpace(os.Getenv("QUILZO_TOKEN")) != "" {
+			why += "; QUILZO_TOKEN is set too, and the file is read first"
+		}
+		return unverified(why)
 	}
 
 	// Using a token records that it was used, which is what makes `token stale`

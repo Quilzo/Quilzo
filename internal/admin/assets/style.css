@@ -2783,3 +2783,22 @@ body:has(> .sidenav) > main { width: 100%; }
 .shield-judge { display: inline-flex; flex-wrap: nowrap; gap: 4px; margin: 0; }
 /* An address or a sentence, not the width of the page. */
 .shield-inline input:not([type=hidden]) { max-width: 24rem; }
+
+/* The site report. The law each duty comes from is quieter than the duty. */
+.duty-law { display: block; margin-top: 2px; font-size: .8125rem; color: var(--on-surface-variant); }
+.duty-more { margin: 8px 0 16px; }
+.duty-more > summary { cursor: pointer; color: var(--primary); width: fit-content; }
+.duty-more ul { margin: 8px 0; }
+/* The draft statement reads as the page it will become: a sheet, not a card. */
+.statement { max-width: 44rem; padding: 20px 24px; margin: 12px 0 16px; border-radius: var(--shape-lg);
+  background: var(--surface-container-lowest); outline: 1px solid var(--outline-variant); }
+.statement h3 { margin-top: 0; }
+.statement h4 { margin: 20px 0 4px; }
+.statement p, .statement li { line-height: 1.6; }
+/* What a person still has to write, impossible to miss and not alarming. */
+mark.fill { background: var(--tertiary-container); color: var(--on-tertiary-container);
+  border-radius: 4px; padding: 0 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.statement-md { width: 100%; max-width: 44rem; font-family: var(--mono); font-size: .8125rem; }
+/* A band in a table cell is a label: one line, and the table scrolls if
+   it must, rather than "Not / known" stacked in a narrow column. */
+td > .wf-band { white-space: nowrap; }

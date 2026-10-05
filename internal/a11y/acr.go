@@ -60,6 +60,9 @@ const (
 type Criterion struct {
 	// Number is the WCAG success criterion, e.g. "1.1.1".
 	Number string `json:"number"`
+	// Clause is EN 301 549's requirement for it on a web page: clause 9
+	// carries WCAG's numbering, so 1.1.1 is 9.1.1.1.
+	Clause string `json:"en_301_549"`
 	// Checks are the rules this program runs for it, in its own words.
 	Checks []string `json:"checks"`
 	// Result is what the scan found.
@@ -74,6 +77,8 @@ type ACR struct {
 	// Pages is how many were scanned. A report over nothing is a report
 	// about nothing, and the number is what says which this is.
 	Pages int `json:"pages"`
+	// Standard is what the rows are reported against.
+	Standard string `json:"standard"`
 	// Evaluated is every criterion this program checks, with its result.
 	Evaluated []Criterion `json:"evaluated"`
 	// NotEvaluated is what it cannot check, in the terms it uses elsewhere.
@@ -83,6 +88,18 @@ type ACR struct {
 	// rather it were shorter.
 	Caveat string `json:"caveat"`
 }
+
+// standard names what the rows are measured against, and the one fact about
+// the European standard a buyer will ask: which version the law cites.
+// ETSI published EN 301 549 V4.1.1, on WCAG 2.2, on 2 September 2026; until
+// the Official Journal cites it, the harmonised standard is V3.2.1, on WCAG
+// 2.1. Every criterion this program evaluates is in both, which a test
+// keeps true.
+const standard = "WCAG 2.2 level AA; EN 301 549 V4.1.1 clause 9 (web pages), " +
+	"which ETSI published on 2 September 2026. Until the Official Journal of " +
+	"the EU cites V4.1.1, the harmonised standard under the European " +
+	"Accessibility Act is V3.2.1, on WCAG 2.1; every criterion evaluated here " +
+	"is in both."
 
 // caveat is the paragraph that keeps this honest.
 const caveat = "This report covers the success criteria this program " +
@@ -102,7 +119,7 @@ const caveat = "This report covers the success criteria this program " +
 // without anybody remembering to add it, and a check removed stops being
 // claimed.
 func BuildACR(reports []*Report) ACR {
-	out := ACR{Pages: len(reports), Caveat: caveat}
+	out := ACR{Pages: len(reports), Standard: standard, Caveat: caveat}
 	if len(reports) == 0 {
 		return out
 	}
@@ -147,7 +164,7 @@ func BuildACR(reports []*Report) ACR {
 	})
 
 	for _, n := range numbers {
-		c := Criterion{Number: n, Checks: checksFor[n], Result: Supports}
+		c := Criterion{Number: n, Clause: "9." + n, Checks: checksFor[n], Result: Supports}
 		if pages := failures[n]; len(pages) > 0 {
 			c.Result = PartiallySupports
 			c.Remarks = fmt.Sprintf("%d finding(s) on: %s",
