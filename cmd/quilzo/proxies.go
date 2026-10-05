@@ -51,7 +51,7 @@ func resolverFrom(cfg *config.Config, inside string) *clientip.Resolver {
 		return &clientip.Resolver{}
 	}
 	if len(ps) == 0 && cfg.Bool(inside) {
-		ps = clientip.Inside()
+		return &clientip.Resolver{Proxies: clientip.Inside(), Assumed: true}
 	}
 	return &clientip.Resolver{Proxies: ps}
 }

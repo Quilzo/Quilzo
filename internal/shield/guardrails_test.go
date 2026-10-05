@@ -354,11 +354,11 @@ func TestAnUnreadableRecordIsSetAsideByRepair(t *testing.T) {
 		t.Fatal("repaired nothing")
 	}
 	os.WriteFile(Path(root), []byte("{"), 0o600)
-	aside, err := Repair(root, t0)
+	rep, err := Repair(root, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(aside); string(b) != "{" {
+	if b, _ := os.ReadFile(rep.Aside); string(b) != "{" {
 		t.Fatal("what it held was not kept")
 	}
 	if _, err := Load(root); err != nil {
@@ -422,5 +422,90 @@ func TestAnAdministratorsAddressKeepsTheAdminWhateverAPlaybookBlocked(t *testing
 	g2.Refresh()
 	if _, blocked := g2.Blocked("203.0.113.9", Admin, t0); !blocked {
 		t.Fatal("a person's block did not hold")
+	}
+}
+
+func TestAHoldDoesNotSkipStagesWhenItIsReleased(t *testing.T) {
+	r := newRig(t, injection())
+	HoldAll(r.Root, "dana", "looking at a mistake", r.clock)
+	r.Guard.Refresh()
+	cross := func() Response {
+		var got []Response
+		for i := 0; i < 3; i++ {
+			got = r.see("chatbot-injection", "203.0.113.9", "help")
+		}
+		r.clock = r.clock.Add(Cooldown + time.Minute)
+		return got[0]
+	}
+	// Held, it says what it would have done, escalating as it would have.
+	if a, b := cross(), cross(); a.Mode != "held" || b.Stage != 2 {
+		t.Fatalf("held: %+v %+v", a, b)
+	}
+	if _, err := ReleaseOnMachine(r.Root, "fixed", "dana", r.clock); err != nil {
+		t.Fatal(err)
+	}
+	r.Guard.Refresh()
+	if got := cross(); got.Mode != "act" || got.Stage != 1 {
+		t.Fatalf("the first action after the hold was stage %d", got.Stage)
+	}
+}
+
+func TestAnUnverifiedSourceIsCountedAndNotBlocked(t *testing.T) {
+	r := newRig(t, injection())
+	var got []Response
+	for i := 0; i < 3; i++ {
+		got = r.Observe(Signal{Name: "chatbot-injection", Source: "104.16.1.1", Unverified: true, At: r.clock})
+	}
+	if len(got) != 1 || !strings.Contains(got[0].Did[0], "not named in network.trusted_proxies") || !got[0].Tell {
+		t.Fatalf("%+v", got)
+	}
+	if _, blocked := r.Guard.Blocked("104.16.1.1", Site, r.clock); blocked {
+		t.Fatal("an unnamed proxy was blocked as one visitor")
+	}
+	if len(r.notified) != 1 {
+		t.Fatal("nobody was told")
+	}
+}
+
+func TestWatchingSaysWhatItWouldHaveDoneAndDidNot(t *testing.T) {
+	pb := injection()
+	pb.Mode = "watch"
+	pb.Stages[0].Do = append(pb.Stages[0].Do, Step{Action: "notify"}, Step{Action: "open-case"})
+	r := newRig(t, pb)
+	var got []Response
+	for i := 0; i < 3; i++ {
+		got = r.see("chatbot-injection", "203.0.113.9", "help")
+	}
+	if got[0].Did[1] != "would have told the security contact" || got[0].Did[2] != "would have opened a case" {
+		t.Fatalf("%q", got[0].Did)
+	}
+	if len(r.notified) != 0 || len(r.cases) != 0 {
+		t.Fatal("watching told somebody")
+	}
+}
+
+func TestRepairKeepsWhatStillReadsWhole(t *testing.T) {
+	root := t.TempDir()
+	// The protections are damaged; the rest reads.
+	os.WriteFile(Path(root), []byte(`{"protections": [{"id": 5}], "trusted": ["198.51.100.0/24"],
+		"vouched": [{"handle": "`+handle+`", "at": "2026-10-04T12:00:00Z"}], "decoys": [{"id": "sh-1", "hash": "x", "note": "CI"}]}`), 0o600)
+	rep, err := Repair(root, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := Load(root)
+	if err != nil || len(st.Trusted) != 1 || len(st.Vouched) != 1 || len(st.Decoys) != 1 || len(st.Protections) != 0 {
+		t.Fatalf("%+v %v", st, err)
+	}
+	if len(rep.Kept) != 3 || !strings.Contains(strings.Join(rep.Lost, ","), "protections") {
+		t.Fatalf("%+v", rep)
+	}
+	// A playbook file nobody can read is set aside too.
+	os.WriteFile(BookPath(root), []byte("{"), 0o600)
+	if _, err := RepairBook(root, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadBook(root); err != nil {
+		t.Fatal(err)
 	}
 }

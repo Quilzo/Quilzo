@@ -22,8 +22,11 @@ import (
 // the path is already in their address bar — showing it back adds nothing they
 // cannot see.
 func (st *Site) notFound(w http.ResponseWriter, r *http.Request) {
-	if IsAdminPath(r.URL.Path) {
+	switch {
+	case IsAdminPath(r.URL.Path):
 		st.signal(AdminHunt, huntedPath(r.URL.Path), r)
+	case IsForeignProbe(r.URL.Path):
+		st.signal(ForeignProbe, huntedPath(r.URL.Path), r)
 	}
 	name := st.Name
 	if strings.TrimSpace(name) == "" {

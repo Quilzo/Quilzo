@@ -60,8 +60,9 @@ func TestLookingForTheAdminOnThePublicSiteIsNoticed(t *testing.T) {
 	for _, p := range []string{"/", "/settings-guide", "/abuot", "/contcat"} {
 		from(st, http.MethodGet, p, "198.51.100.4", nil)
 	}
-	if len(*heard) != 1 || (*heard)[0] != (heardSignal{AdminHunt, "203.0.113.9"}) {
-		t.Fatalf("heard %v; one hunter, once", *heard)
+	// Four asked for, threshold three: two lines, both the hunter's.
+	if len(*heard) != 2 || (*heard)[0] != (heardSignal{AdminHunt, "203.0.113.9"}) || (*heard)[1] != (*heard)[0] {
+		t.Fatalf("heard %v; one hunter", *heard)
 	}
 	for _, p := range []string{"/", "/about", "/ask/help", "/settings-guide", "/feed.xml"} {
 		if IsAdminPath(p) {
@@ -118,15 +119,17 @@ func TestASignalIsRecordedOncePerWindow(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		sw.Saw(AdminHunt, "203.0.113.9", "/signin")
 	}
-	if n != 1 || distinct != 1 {
+	// The first eight past the threshold (3..10), then 16, 32 ... 512.
+	if n != 8+6 || distinct != 1 {
 		t.Fatalf("a thousand requests were %d log lines, %d addresses", n, distinct)
 	}
 	clock = clock.Add(11 * time.Minute)
+	n = 0
 	for i, p := range []string{"/signin", "/security", "/tokens"} {
 		sw.Saw(AdminHunt, "203.0.113.9", p)
 		_ = i
 	}
-	if n != 2 || distinct != 3 {
+	if n != 1 || distinct != 3 {
 		t.Errorf("the next window was not recorded (%d) or its addresses miscounted (%d)", n, distinct)
 	}
 	// What a window remembers about is bounded.

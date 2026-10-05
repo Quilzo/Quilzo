@@ -30,8 +30,49 @@ type Guard struct {
 
 	mu      sync.Mutex
 	st      *State
+	ix      *index
 	read    os.FileInfo
 	checked time.Time
+
+	slow limiter
+}
+
+// index is the protections that refuse or slow a request, by what they
+// match: a request costs a few map lookups, not a pass over every
+// protection, however many are in force.
+type index struct {
+	src  map[string][]int
+	net  map[int]map[netip.Prefix][]int
+	asn  map[string][]int
+	bits []int
+}
+
+func compile(st *State) *index {
+	ix := &index{src: map[string][]int{}, net: map[int]map[netip.Prefix][]int{}, asn: map[string][]int{}}
+	for i, p := range st.Protections {
+		if p.Kind != Block && p.Kind != Slow {
+			continue
+		}
+		kind, value, _ := strings.Cut(p.Target, ":")
+		switch kind {
+		case "source":
+			ix.src[value] = append(ix.src[value], i)
+		case "net":
+			pfx, err := netip.ParsePrefix(value)
+			if err != nil {
+				continue
+			}
+			pfx = pfx.Masked()
+			if ix.net[pfx.Bits()] == nil {
+				ix.net[pfx.Bits()] = map[netip.Prefix][]int{}
+				ix.bits = append(ix.bits, pfx.Bits())
+			}
+			ix.net[pfx.Bits()][pfx] = append(ix.net[pfx.Bits()][pfx], i)
+		case "asn":
+			ix.asn[value] = append(ix.asn[value], i)
+		}
+	}
+	return ix
 }
 
 // changed reports whether a file is not the one last read. The time alone
@@ -51,7 +92,7 @@ func (g *Guard) state(now time.Time) *State {
 	g.checked = now
 	fi, err := os.Stat(Path(g.Root))
 	if err != nil {
-		g.st, g.read = &State{}, nil
+		g.st, g.ix, g.read = &State{}, compile(&State{}), nil
 		return g.st
 	}
 	if g.st != nil && !changed(fi, g.read) {
@@ -63,12 +104,23 @@ func (g *Guard) state(now time.Time) *State {
 		// every request because of it would be the attack. It keeps what
 		// it last read, and the posture check reports the file.
 		if g.st == nil {
-			g.st = &State{}
+			g.st, g.ix = &State{}, compile(&State{})
 		}
 		return g.st
 	}
-	g.st, g.read = st, fi
+	g.st, g.ix, g.read = st, compile(st), fi
 	return g.st
+}
+
+// snapshot is the state and its index, read together.
+func (g *Guard) snapshot(now time.Time) (*State, *index) {
+	st := g.state(now)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.ix == nil || g.st != st {
+		g.ix = compile(st)
+	}
+	return st, g.ix
 }
 
 // Refresh makes the next lookup read the file, for a process that just
@@ -122,7 +174,16 @@ func trusted(st *State, a netip.Addr) bool {
 // Blocked reports the block, if any, on a request from addr to where
 // (Admin or Site).
 func (g *Guard) Blocked(addr, where string, now time.Time) (Protection, bool) {
-	st := g.state(now)
+	return g.match(Block, addr, where, now)
+}
+
+// Slowed reports the slowing, if any, on a request from addr to where.
+func (g *Guard) Slowed(addr, where string, now time.Time) (Protection, bool) {
+	return g.match(Slow, addr, where, now)
+}
+
+func (g *Guard) match(kind, addr, where string, now time.Time) (Protection, bool) {
+	st, ix := g.snapshot(now)
 	if len(st.Protections) == 0 {
 		return Protection{}, false
 	}
@@ -134,23 +195,35 @@ func (g *Guard) Blocked(addr, where string, now time.Time) (Protection, bool) {
 	if trusted(st, a) {
 		return Protection{}, false
 	}
-	var handles []string
-	asn := ""
+	var cands []int
+	if len(ix.src) > 0 {
+		for _, h := range g.Handles(a) {
+			cands = append(cands, ix.src[h]...)
+		}
+	}
+	for _, bits := range ix.bits {
+		if pfx, err := a.Prefix(bits); err == nil {
+			cands = append(cands, ix.net[bits][pfx]...)
+		}
+	}
+	if len(ix.asn) > 0 && g.ASN != nil {
+		if n, ok := g.ASN(a); ok {
+			cands = append(cands, ix.asn[strconv.FormatUint(uint64(n), 10)]...)
+		}
+	}
 	vouched := -1 // not looked up yet
-	for _, p := range st.Protections {
-		if p.Kind != Block || !p.ActiveAt(now) || (p.Where != All && p.Where != where) {
+	for _, i := range cands {
+		p := st.Protections[i]
+		if p.Kind != kind || !p.ActiveAt(now) || (p.Where != All && p.Where != where) {
 			continue
 		}
 		// An administrator who signed in strongly from here keeps the
-		// admin whatever a playbook blocked, a network or a provider
-		// included; only a person can block them from it.
+		// admin whatever a playbook did, to a network or a provider as
+		// well as the source; only a person can keep them out of it.
 		if p.Auto && where == Admin {
 			if vouched < 0 {
-				if handles == nil {
-					handles = g.Handles(a)
-				}
 				vouched = 0
-				if st.IsVouched(handles, now) {
+				if st.IsVouched(g.Handles(a), now) {
 					vouched = 1
 				}
 			}
@@ -158,36 +231,7 @@ func (g *Guard) Blocked(addr, where string, now time.Time) (Protection, bool) {
 				continue
 			}
 		}
-		kind, value, _ := strings.Cut(p.Target, ":")
-		switch kind {
-		case "source":
-			if handles == nil {
-				handles = g.Handles(a)
-			}
-			for _, h := range handles {
-				if h == value {
-					return p, true
-				}
-			}
-		case "net":
-			if pfx, err := netip.ParsePrefix(value); err == nil && pfx.Contains(a) {
-				return p, true
-			}
-		case "asn":
-			if g.ASN == nil {
-				continue
-			}
-			if asn == "" {
-				if n, ok := g.ASN(a); ok {
-					asn = strconv.FormatUint(uint64(n), 10)
-				} else {
-					asn = "-"
-				}
-			}
-			if asn == value {
-				return p, true
-			}
-		}
+		return p, true
 	}
 	return Protection{}, false
 }

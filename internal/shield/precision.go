@@ -4,11 +4,14 @@
 package shield
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
 	"sort"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/atomicfile"
 )
 
 // MinVerdicts is how many judged protections a playbook needs before its
@@ -90,16 +93,70 @@ func wilson(k, n int) (low, high float64) {
 	return math.Max(0, (centre-margin)/denom), math.Min(1, (centre+margin)/denom)
 }
 
-// Repair sets an unreadable record aside, so the shield starts again
-// empty: what it held is kept beside it for a person to read. A readable
+// Repaired is what a repair kept and what it could not.
+type Repaired struct {
+	Aside string `json:"aside"`
+	// Kept are the parts of the record still read whole: trusted networks,
+	// vouched sources, planted decoys, a hold.
+	Kept []string `json:"kept,omitempty"`
+	// Lost are the parts that could not be read; protections are always
+	// among them, because one read in part is not one to enforce.
+	Lost []string `json:"lost,omitempty"`
+}
+
+// Repair sets an unreadable record aside and starts again with what of it
+// can still be read whole: the networks never to block, the administrators
+// vouched for, the decoys planted and a hold, which are what keep the
+// office in, the people who run this in, and a leak findable. Protections
+// in force are not kept: a record read in part is not one to enforce, and
+// the person repairing it applies again what still matters. A readable
 // record is left alone.
-func Repair(root string, now time.Time) (string, error) {
+func Repair(root string, now time.Time) (Repaired, error) {
 	if _, err := Load(root); err == nil {
-		return "", fmt.Errorf("%s reads; there is nothing to repair", Path(root))
+		return Repaired{}, fmt.Errorf("%s reads; there is nothing to repair", Path(root))
 	}
-	aside := Path(root) + ".unreadable-" + now.UTC().Format("20060102T150405Z")
-	if err := os.Rename(Path(root), aside); err != nil {
-		return "", err
+	raw, err := os.ReadFile(Path(root))
+	if err != nil {
+		return Repaired{}, err
 	}
-	return aside, nil
+	out := Repaired{Aside: Path(root) + ".unreadable-" + now.UTC().Format("20060102T150405Z")}
+	fresh := &State{}
+	var parts map[string]json.RawMessage
+	if json.Unmarshal(raw, &parts) == nil {
+		salvage := func(key, what string, into any) {
+			if b, ok := parts[key]; ok {
+				if json.Unmarshal(b, into) == nil {
+					out.Kept = append(out.Kept, what)
+				} else {
+					out.Lost = append(out.Lost, what)
+				}
+			}
+		}
+		salvage("trusted", "trusted networks", &fresh.Trusted)
+		salvage("vouched", "vouched sources", &fresh.Vouched)
+		salvage("decoys", "planted decoys", &fresh.Decoys)
+		salvage("watching", "the hold on every playbook", &fresh.Watching)
+	} else {
+		out.Lost = append(out.Lost, "trusted networks, vouched sources and planted decoys, if there were any")
+	}
+	out.Lost = append(out.Lost, "the protections that were in force")
+	if err := os.Rename(Path(root), out.Aside); err != nil {
+		return Repaired{}, err
+	}
+	b, err := json.MarshalIndent(fresh, "", " ")
+	if err != nil {
+		return out, err
+	}
+	return out, atomicfile.Write(Path(root), b, 0o600)
+}
+
+// RepairBook sets an unreadable playbook file aside, so Quilzo's own
+// playbooks run as they ship and a change can be made again. A readable
+// one is left alone.
+func RepairBook(root string, now time.Time) (string, error) {
+	if _, err := LoadBook(root); err == nil {
+		return "", fmt.Errorf("%s reads; there is nothing to repair", BookPath(root))
+	}
+	aside := BookPath(root) + ".unreadable-" + now.UTC().Format("20060102T150405Z")
+	return aside, os.Rename(BookPath(root), aside)
 }

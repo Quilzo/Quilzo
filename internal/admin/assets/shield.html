@@ -10,7 +10,7 @@
   <p><a href="/security/shield">Back to the shield</a></p>
 </div>
 {{else if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
-{{else if .Broken}}<p class="notice bad" role="alert">The shield's record cannot be read, so what it holds stays in force: {{.Broken}}. On the machine, <code>quilzo shield repair</code> sets it aside.</p>
+{{else if .Broken}}<p class="notice bad" role="alert">The shield's record cannot be read, so what it holds stays in force: {{.Broken}}. On the machine, <code>quilzo shield repair</code> sets it aside and keeps the trusted networks, vouched sources and decoys it can still read.</p>
 {{else}}
 <p class="lead">Quilzo protecting itself: blocking a source, turning a public feature down, locking the admin to passkeys and single sign-on, freezing publishing, pausing an agent. Playbooks decide these beforehand and act at once; each protection ends by itself, within a day when a playbook set it, and any of them can be lifted here.</p>
 
@@ -111,6 +111,7 @@
   <input type="hidden" name="do" value="apply">
   <fieldset><legend>What to do</legend>
     <p><label><input type="radio" name="kind" value="block" checked> <strong>Block</strong> <span class="hint">a source by its handle in the log (p_…), a network (203.0.113.0/24) or a provider (AS64500)</span></label></p>
+    <p><label><input type="radio" name="kind" value="slow"> <strong>Slow</strong> <span class="hint">give a source, network or provider a small budget (twenty requests at once, then one a second) and refuse what is past it</span></label></p>
     <p><label><input type="radio" name="kind" value="feature"> <strong>Turn a feature off</strong> <span class="hint">or limit a chatbot to quoting pages</span></label></p>
     <p><label><input type="radio" name="kind" value="lockdown"> <strong>Lock the admin down</strong> <span class="hint">passkeys and single sign-on only; tokens made before are refused</span></label></p>
     <p><label><input type="radio" name="kind" value="freeze"> <strong>Freeze publishing</strong> <span class="hint">rolling back still works</span></label></p>

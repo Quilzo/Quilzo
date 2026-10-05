@@ -296,24 +296,9 @@ func Change(root string, now time.Time, fn func(*State) error) error {
 	return atomicfile.Write(Path(root), b, 0o600)
 }
 
-func lock(path string) (func(), error) {
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if err == nil {
-			f.Close()
-			return func() { os.Remove(path) }, nil
-		}
-		if fi, serr := os.Stat(path); serr == nil && time.Since(fi.ModTime()) > 30*time.Second {
-			os.Remove(path) // left by a process that died
-			continue
-		}
-		if time.Now().After(deadline) {
-			return nil, errors.New("the shield is being changed by another process")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-}
+// lock is an exclusive lock held by an open descriptor, which the kernel
+// releases when its process ends (atomicfile.Lock): nothing to go stale.
+func lock(path string) (func(), error) { return atomicfile.Lock(path) }
 
 func newID() string {
 	b := make([]byte, 4)
@@ -345,9 +330,9 @@ func (p Protection) Validate(now time.Time) error {
 		return errors.New("a protection says who or what applied it")
 	}
 	switch p.Kind {
-	case Block:
+	case Block, Slow:
 		if p.Where != Admin && p.Where != Site && p.Where != All {
-			return errors.New("a block is on the admin, the site, or both")
+			return errors.New("a block or a slowing is on the admin, the site, or both")
 		}
 		kind, value, _ := strings.Cut(p.Target, ":")
 		switch kind {

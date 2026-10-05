@@ -111,7 +111,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		}
 		// The shield turned the machine interface off: whatever drives it
 		// (an agent, a model) waits until a person lifts that.
-		if p, off := shield.Find(root, shield.Feature, "mcp", time.Now()); off && (p.Level == shield.Off || p.Reason == shield.Unreadable) {
+		if p, off := shield.Find(root, shield.Feature, "mcp", time.Now()); off && p.Level == shield.Off {
 			return fmt.Errorf("the machine interface is turned off until about %s: %s",
 				p.Until.UTC().Format("15:04 UTC"), p.Reason)
 		}

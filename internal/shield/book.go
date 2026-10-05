@@ -292,8 +292,13 @@ func ProposeRelease(root, why, by string, now time.Time) (Proposal, error) {
 // ReleaseOnMachine lets every playbook act again, from the command line on
 // the machine, and keeps it in the history like any other change.
 func ReleaseOnMachine(root, why, by string, now time.Time) (Proposal, error) {
-	if err := release(root, now); err != nil {
+	// Recorded first and released second: a release that happened is never
+	// reported as one that failed because its history could not be
+	// written afterwards.
+	if st, err := Load(root); err != nil {
 		return Proposal{}, err
+	} else if st.Watching == nil {
+		return Proposal{}, errors.New("the playbooks are not being held")
 	}
 	p := Proposal{ID: newID(), Release: true, Why: why, By: by, At: now,
 		Outcome: "applied on the machine", DecidedBy: by, Decided: now}
@@ -311,7 +316,10 @@ func ReleaseOnMachine(root, why, by string, now time.Time) (Proposal, error) {
 		bk.Decided = append(bk.Decided, p)
 		return nil
 	})
-	return p, err
+	if err != nil {
+		return Proposal{}, err
+	}
+	return p, release(root, now)
 }
 
 // Withdraw takes back a waiting change; only its proposer may.

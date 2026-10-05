@@ -247,6 +247,7 @@ func cmdSite(root string, args []string) error {
 	// The shield: every signal the site sees is told to its playbooks, and
 	// a feature it has turned down is turned down here (internal/shield).
 	sh := newShieldHost(root)
+	sh.where = shield.Site
 	st.OnSignal = sh.signal
 	st.Shield = sh.feature
 

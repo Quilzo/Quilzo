@@ -737,6 +737,12 @@ type TokenStore struct {
 	mu     sync.Mutex
 	Tokens []Token `json:"tokens"`
 
+	// Ended are the sessions pruned lately, by a short fingerprint of their
+	// hash: enough to say "that session ended" to a script still using one
+	// a day later, rather than "no such token", which the shield counts as
+	// a guess; never enough to sign in with.
+	Ended []Ended `json:"ended,omitempty"`
+
 	// Admit, when set, is asked about every credential that authenticates,
 	// including one presented to be exchanged for a session. The shield's
 	// lockdown sets it (internal/shield): it is given when the credential's
@@ -747,6 +753,18 @@ type TokenStore struct {
 	// out of a lockdown, not a way in.
 	Admit func(issued int64, vouched bool) error `json:"-"`
 }
+
+// Ended is a pruned session's fingerprint.
+type Ended struct {
+	Print string `json:"print"`
+	At    int64  `json:"at"`
+}
+
+const (
+	maxEnded   = 4096
+	keepEnded  = 30 * 24 * time.Hour
+	endedPrint = 16 // hex characters: 8 bytes of the hash
+)
 
 // ErrLockedDown is a credential refused because the admin is accepting
 // only passkeys, single sign-on and tokens made since, for a while.
@@ -811,10 +829,23 @@ func (ts *TokenStore) pruneSessions(now time.Time) {
 	kept := ts.Tokens[:0]
 	for _, t := range ts.Tokens {
 		if t.IsSession() && t.ExpiresAt < cutoff {
+			if len(t.Hash) >= endedPrint {
+				ts.Ended = append(ts.Ended, Ended{Print: t.Hash[:endedPrint], At: now.Unix()})
+			}
 			continue
 		}
 		kept = append(kept, t)
 	}
+	recent := ts.Ended[:0]
+	for _, e := range ts.Ended {
+		if now.Sub(time.Unix(e.At, 0)) <= keepEnded {
+			recent = append(recent, e)
+		}
+	}
+	if len(recent) > maxEnded {
+		recent = recent[len(recent)-maxEnded:]
+	}
+	ts.Ended = recent
 	// Zero the tail so the removed tokens' hashes are not left reachable in
 	// the backing array.
 	for i := len(kept); i < len(ts.Tokens); i++ {
@@ -1007,6 +1038,8 @@ var errUnknown = errors.New("not issued here")
 
 var errNoSuchToken = fmt.Errorf("no such token%w", silent{errUnknown})
 
+var errSessionEnded = errors.New("that session has ended; sign in again")
+
 // silent wraps an error for errors.Is without adding to the message, so
 // what a caller is told stays exactly what it was.
 type silent struct{ error }
@@ -1042,6 +1075,13 @@ func (ts *TokenStore) authenticate(secret string, now time.Time) (*Token, error)
 		}
 	}
 	if found == nil {
+		// A session pruned lately is somebody's real credential used late,
+		// not a guess, and is told so.
+		for _, e := range ts.Ended {
+			if len(want) >= endedPrint && e.Print == string(want[:endedPrint]) {
+				return nil, errSessionEnded
+			}
+		}
 		return nil, errNoSuchToken
 	}
 	if ok, why := found.Usable(now); !ok {

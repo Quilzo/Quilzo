@@ -46,7 +46,41 @@ const (
 	// FormSpam is a form refusing a submission as spam: the honeypot
 	// filled, or answered faster than a person can read.
 	FormSpam = "form-spam"
+	// ForeignProbe is the site asked for software it does not run.
+	ForeignProbe = "foreign-probe"
 )
+
+// IsForeignProbe reports a request for an address no Quilzo site can
+// serve, which only a scanner asks for: PHP, WordPress's own files,
+// secrets and version control left in a web root, other servers' status
+// pages. A site moved from WordPress keeps its uploads' addresses, so those
+// are not counted.
+func IsForeignProbe(path string) bool {
+	p := strings.ToLower(path)
+	if strings.HasPrefix(p, "/wp-content/uploads/") {
+		return false
+	}
+	if strings.HasSuffix(p, ".php") || strings.Contains(p, ".php/") {
+		return true
+	}
+	// A file whose name starts with a dot is never a page: .env,
+	// .env.production, .git/config.
+	for _, pre := range []string{"/.env", "/.git", "/.aws", "/.ssh", "/.svn", "/.hg", "/.ds_store", "/.htaccess", "/.htpasswd"} {
+		if strings.HasPrefix(p, pre) {
+			return true
+		}
+	}
+	// Anything else by whole segments, as admin paths are, so a page
+	// called /actuators-guide is somebody's page.
+	for _, base := range []string{"/wp-admin", "/wp-includes", "/wp-content", "/wp-json", "/phpmyadmin", "/pma",
+		"/cgi-bin", "/actuator", "/server-status", "/server-info", "/vendor/phpunit", "/solr", "/jenkins",
+		"/manager/html", "/boaform", "/hnap1"} {
+		if p == base || strings.HasPrefix(p, base+"/") {
+			return true
+		}
+	}
+	return false
+}
 
 // adminPaths are the admin server's and API's own addresses, which the
 // public site never serves.
@@ -73,13 +107,17 @@ func IsAdminPath(path string) bool {
 
 // injectionMarkers are phrases prompt-injection attempts use. Matching one
 // is not proof; it is somebody worth knowing about.
+//
+// Only phrases that are about the chatbot's own instructions: "developer
+// mode", "jailbreak", "system prompt" and "you are now" are what people
+// ask a phone shop's or an AI vendor's chatbot about every day, and three
+// questions in ten minutes would have slowed an office.
 var injectionMarkers = []string{
 	"ignore previous instructions", "ignore all previous", "ignore the above",
 	"ignore your instructions", "disregard previous", "disregard all prior",
 	"disregard your instructions", "reveal your instructions",
-	"print your instructions", "show your system prompt", "system prompt",
-	"you are now", "developer mode", "jailbreak", "<|im_start|>", "[inst]",
-	"begin untrusted content", "### instruction",
+	"print your instructions", "show your system prompt", "reveal your system prompt",
+	"<|im_start|>", "[inst]", "begin untrusted content", "### instruction",
 }
 
 // LooksLikeInjection reports whether a question carries a prompt-injection
@@ -94,8 +132,9 @@ func LooksLikeInjection(q string) bool {
 	return false
 }
 
-// SignalWatch counts signals per kind and source, and reports a source the
-// first time it reaches its kind's threshold within a window.
+// SignalWatch counts signals per kind and source, and reports a source once
+// it reaches its kind's threshold within a window: the first eight past it,
+// and then at every doubling, each with the window's running count.
 type SignalWatch struct {
 	// After is how many of each kind from one source are worth recording.
 	// A kind not listed is recorded at the first.
@@ -157,7 +196,12 @@ func (sw *SignalWatch) Saw(kind, source, subject string) {
 	if len(c.about) < 16 {
 		c.about[subject] = true
 	}
-	report := c.n >= after && !c.reported
+	// From the threshold on, each of the first eight is recorded and then
+	// every doubling, with the running count: a script sending a thousand
+	// is about a dozen lines, and a history read back sees what the shield
+	// saw closely enough to try a playbook against it.
+	past := c.n - after
+	report := past >= 0 && (past < 8 || c.n&(c.n-1) == 0)
 	if report {
 		c.reported = true
 	}

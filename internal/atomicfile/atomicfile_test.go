@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // A reader must never see half a file.
@@ -143,5 +144,32 @@ func TestAFailedWriteLeavesThePreviousFile(t *testing.T) {
 		if strings.HasPrefix(e.Name(), ".") {
 			t.Errorf("a temporary file was left behind: %s", e.Name())
 		}
+	}
+}
+
+func TestALockIsHeldByOneAtATimeAndFreedByItsHolder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x.lock")
+	unlock, err := Lock(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan bool, 1)
+	go func() {
+		u, err := Lock(path)
+		if err == nil {
+			got <- true
+			u()
+		}
+	}()
+	select {
+	case <-got:
+		t.Fatal("a second holder took a lock that was held")
+	case <-time.After(150 * time.Millisecond):
+	}
+	unlock()
+	select {
+	case <-got:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the lock was not freed")
 	}
 }
