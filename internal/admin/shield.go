@@ -37,6 +37,10 @@ type ShieldAdmin struct {
 	History func(days int) ([]shield.Signal, error)
 	// Changed tells this process's guard to read the record now.
 	Changed func()
+	// CanLockdown reports whether some administrator could still sign in
+	// during a lockdown, with a passkey or single sign-on. Nil means it
+	// cannot be told, and a lockdown is not set from the screen.
+	CanLockdown func() bool
 }
 
 // shieldProtection is one protection, for the screen.
@@ -467,6 +471,13 @@ func (s *Server) handleShieldAct(w http.ResponseWriter, r *http.Request) {
 		x, err := shieldFromForm(r, p.Name, now)
 		if err != nil {
 			back("e", err.Error())
+			return
+		}
+		// A lockdown nobody can get past locks everybody out of the admin,
+		// the person setting it first. The machine's command line still
+		// can, for somebody who means it.
+		if x.Kind == shield.Lockdown && (s.ShieldAdmin.CanLockdown == nil || !s.ShieldAdmin.CanLockdown()) {
+			back("e", "Nobody here has a passkey or single sign-on, so a lockdown would lock everybody out of the admin, you included. Add a passkey on your profile first; on the machine, quilzo shield lockdown still works.")
 			return
 		}
 		applied, _, err := shield.Apply(root, x, now)
