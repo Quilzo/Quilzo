@@ -54,9 +54,9 @@ type Trait struct {
 // on a connection the server itself accepted, so it cannot be raised in
 // another's name: Spoofable 0.
 var Traits = map[string]Trait{
-	// Already a count: raised when a source crosses the sign-in throttle's
-	// alerting threshold.
-	"signin-failures": {Confidence: 2},
+	// A secret shaped like a token that was never issued here: one is a
+	// typo, five in an hour is somebody guessing.
+	"signin-failures": {Confidence: 1},
 	// Three distinct admin addresses is somebody looking; one is somebody
 	// on the wrong host, which the trigger's Distinct is for.
 	"admin-hunt": {Confidence: 2},
@@ -277,8 +277,8 @@ func Builtins() []Playbook {
 	h := func(d time.Duration) Duration { return Duration(d) }
 	return []Playbook{
 		{Name: "signin-attack", Title: "Repeated failed sign-ins from one source", Mode: "act", Builtin: true,
-			Why: "Guessing tokens or replaying stolen ones. The throttle slows it; this stops it on the admin, for longer each time it comes back, and everywhere on the third.",
-			On:  Trigger{Signal: "signin-failures", Per: "source", Count: 1, Within: h(time.Hour)},
+			Why: "Guessing tokens: five secrets never issued here within an hour, which is where ASVS asks for a reaction. A token mistyped once, or one that expired, is not counted. The throttle slows it; this stops it on the admin, for longer each time it comes back, and everywhere on the third.",
+			On:  Trigger{Signal: "signin-failures", Per: "source", Count: 5, Within: h(time.Hour)},
 			Stages: []Stage{
 				{Do: []Step{{Action: "block-source", Where: Admin, For: h(time.Hour)}}},
 				{Do: []Step{{Action: "block-source", Where: Admin, For: h(4 * time.Hour)}}},
@@ -286,7 +286,7 @@ func Builtins() []Playbook {
 			}},
 		{Name: "signin-attack-spread", Title: "Failed sign-ins spread across one provider", Mode: "watch", Builtin: true,
 			Why: "Credential stuffing from many addresses at one hosting provider, each staying under the per-source limit.",
-			On:  Trigger{Signal: "signin-failures", Per: "provider", Count: 5, Within: h(time.Hour)},
+			On:  Trigger{Signal: "signin-failures", Per: "provider", Count: 25, Within: h(time.Hour)},
 			Stages: []Stage{
 				{Do: []Step{{Action: "block-provider", Where: Admin, For: h(time.Hour)}, {Action: "notify"}}},
 				{Do: []Step{{Action: "lockdown", For: h(6 * time.Hour)}, {Action: "open-case"}}},

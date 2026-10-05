@@ -114,6 +114,7 @@ func TestAStrongSignInKeepsItsSourceOnTheAdmin(t *testing.T) {
 			signin = pb
 		}
 	}
+	signin.On.Count = 1 // one signal per stage, to keep the test short
 	signin.Stages = []Stage{
 		{Do: []Step{{Action: "block-source", Where: Admin, For: Duration(time.Hour)}}},
 		{Do: []Step{{Action: "block-source", Where: All, For: Duration(time.Hour)}}},
@@ -369,3 +370,21 @@ func TestAnUnreadableRecordIsSetAsideByRepair(t *testing.T) {
 }
 
 func mustAddr(s string) netip.Addr { return netip.MustParseAddr(s) }
+
+func TestOneMistypedTokenBlocksNobody(t *testing.T) {
+	var signin Playbook
+	for _, pb := range Builtins() {
+		if pb.Name == "signin-attack" {
+			signin = pb
+		}
+	}
+	r := newRig(t, signin)
+	for i := 0; i < 4; i++ {
+		if got := r.see("signin-failures", "203.0.113.9", ""); len(got) != 0 {
+			t.Fatalf("blocked after %d wrong tokens: %+v", i+1, got)
+		}
+	}
+	if got := r.see("signin-failures", "203.0.113.9", ""); len(got) != 1 || !strings.HasPrefix(got[0].Did[0], "blocked the source on the admin") {
+		t.Fatalf("the fifth: %+v", got)
+	}
+}
