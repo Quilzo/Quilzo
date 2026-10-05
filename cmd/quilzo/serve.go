@@ -95,6 +95,7 @@ func cmdServe(root string, args []string) error {
 	// engine every signal is told to, and the lockdown on every token store
 	// this server loads (internal/shield).
 	sh := newShieldHost(root)
+	sh.where = shield.Admin
 	sh.gate(toks)
 
 	// The whole design, loaded the way the public server loads it. A preview

@@ -190,7 +190,7 @@ sharing a screen
   quilzo correlate demo                    detections about several events, and when a window closes
   quilzo shield status | list [--all]      what Quilzo is doing to protect itself, its playbooks, and what ended
   quilzo shield lift ID|all [--mistake]    end a protection now; the way out of anything the shield does
-  quilzo shield block p_…|CIDR|AS64500 --where site --for 1h --reason "…"   block by hand
+  quilzo shield block|slow p_…|CIDR|AS64500 --where site --for 1h --reason "…"   refuse, or give a small budget
   quilzo shield feature chatbot:help|forms|api|… [--level limited] --for 1h --reason "…"
   quilzo shield lockdown|freeze --for 6h --reason "…"   admin to passkeys and SSO; no publishing
   quilzo shield pause AGENT --for 24h --reason "…"   an agent does not run

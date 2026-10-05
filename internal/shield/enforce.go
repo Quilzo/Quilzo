@@ -30,6 +30,18 @@ func (g *Guard) Wrap(where string, next http.Handler) http.Handler {
 				Refuse(w, r, p, now)
 				return
 			}
+			if p, slowed := g.Slowed(c.Addr.String(), where, now); slowed {
+				if speculative(r) {
+					w.Header().Set("Retry-After", "60")
+					w.Header().Set("Cache-Control", "no-store")
+					http.Error(w, "not now", http.StatusServiceUnavailable)
+					return
+				}
+				if ok, wait := g.slow.allow(p.ID+"|"+clientip.Source(c.Addr), costOf(r), now); !ok {
+					RefuseSlow(w, r, wait)
+					return
+				}
+			}
 		}
 		next.ServeHTTP(w, r)
 	})

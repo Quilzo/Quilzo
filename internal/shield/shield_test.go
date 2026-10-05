@@ -241,7 +241,9 @@ func TestTheFileIsPrivate(t *testing.T) {
 	if err != nil || fi.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %v %v", fi.Mode(), err)
 	}
-	if _, err := os.Stat(Path(root) + ".lock"); !os.IsNotExist(err) {
-		t.Fatal("the lock was left behind")
+	// The lock is held by a descriptor, not by the file existing: what is
+	// left is empty and private.
+	if fi, err := os.Stat(Path(root) + ".lock"); err != nil || fi.Size() != 0 || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("the lock file: %v %v", fi, err)
 	}
 }

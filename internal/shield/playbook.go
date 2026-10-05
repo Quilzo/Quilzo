@@ -38,6 +38,7 @@ var Signals = map[string]string{
 	"form-spam":          "a form refusing submissions as spam",
 	"decoy":              "a decoy was touched: a decoy token was tried, or a decoy address asked for",
 	"agent-hijacked":     "an agent followed an instruction planted in what it read",
+	"foreign-probe":      "the public site asked for software it does not run: WordPress, .env, .git",
 }
 
 // Counted is what a trigger counts of each signal, singular and plural, for
@@ -50,6 +51,7 @@ var Counted = map[string][2]string{
 	"form-spam":          {"spam submission", "spam submissions"},
 	"decoy":              {"decoy presented", "decoys presented"},
 	"agent-hijacked":     {"planted instruction followed", "planted instructions followed"},
+	"foreign-probe":      {"probe for software this site does not run", "probes for software this site does not run"},
 }
 
 // Trait is how far a signal can be trusted, in CrowdSec's terms: Confidence
@@ -82,6 +84,9 @@ var Traits = map[string]Trait{
 	"decoy": {Confidence: 3},
 	// Measured by the evaluation's planted instruction.
 	"agent-hijacked": {Confidence: 3},
+	// Addresses no Quilzo site can serve (wp-login.php, .env, .git): no
+	// visitor of this site asks for them, scanners do.
+	"foreign-probe": {Confidence: 2},
 }
 
 // Per says what a trigger counts by.
@@ -94,6 +99,7 @@ var Per = map[string]string{
 
 // Actions are what a playbook's steps may do.
 var Actions = map[string]string{
+	"slow-source":    "give the source a small budget, refusing what is past it",
 	"block-source":   "refuse the source",
 	"block-network":  "refuse the source's network (/24, or /48)",
 	"block-provider": "refuse the source's provider",
@@ -203,13 +209,15 @@ func (p Playbook) Validate() error {
 	tr := Traits[p.On.Signal]
 	for i, st := range p.Stages {
 		for _, step := range st.Do {
-			if !strings.HasPrefix(step.Action, "block-") {
-				continue
-			}
-			if tr.Spoofable > 0 {
-				return fmt.Errorf("stage %d: %s can be raised in somebody else's name, so it may notify or turn a feature down, never block", i+1, p.On.Signal)
-			}
-			if p.On.Count == 1 && tr.Confidence < 2 {
+			block := strings.HasPrefix(step.Action, "block-")
+			slow := strings.HasPrefix(step.Action, "slow-")
+			wide := step.Action == "shield-feature" || step.Action == "freeze" || step.Action == "lockdown" || step.Action == "pause-agent"
+			switch {
+			case (block || slow) && tr.Spoofable > 0:
+				return fmt.Errorf("stage %d: %s can be raised in somebody else's name, so it may notify or open a case, never block or slow", i+1, p.On.Signal)
+			case wide && tr.Spoofable >= 2:
+				return fmt.Errorf("stage %d: %s is easily raised in somebody else's name, so it may notify or open a case, not %s", i+1, p.On.Signal, step.Action)
+			case block && p.On.Count == 1 && tr.Confidence < 2:
 				return fmt.Errorf("stage %d: %s is raised by innocent people too; a block needs more than one", i+1, p.On.Signal)
 			}
 		}
@@ -241,7 +249,7 @@ func (s Step) validate(on Trigger) error {
 	if !timed && s.For != 0 {
 		return fmt.Errorf("%s has no duration", s.Action)
 	}
-	needsSource := s.Action == "block-source" || s.Action == "block-network" || s.Action == "block-provider"
+	needsSource := s.Action == "block-source" || s.Action == "block-network" || s.Action == "block-provider" || s.Action == "slow-source"
 	if needsSource {
 		if on.Per == "subject" {
 			return errors.New("a block needs a source, and this playbook counts by subject")
@@ -307,7 +315,7 @@ func Builtins() []Playbook {
 			Why: "The admin is not on the public site; asking for three of its addresses is reconnaissance. Somebody typing the wrong host asks for one. Blocks stay on the site: the admin is only closed to somebody who also fails to sign in.",
 			On:  Trigger{Signal: "admin-hunt", Per: "source", Count: 3, Within: h(10 * time.Minute), Distinct: true},
 			Stages: []Stage{
-				{Do: []Step{{Action: "block-source", Where: Site, For: h(time.Hour)}}},
+				{Do: []Step{{Action: "slow-source", Where: Site, For: h(time.Hour)}}},
 				{Do: []Step{{Action: "block-source", Where: Site, For: h(4 * time.Hour)}}},
 				{Do: []Step{{Action: "block-source", Where: Site, For: h(24 * time.Hour)}}},
 			}},
@@ -315,14 +323,14 @@ func Builtins() []Playbook {
 			Why: "Trying to read another visitor's conversation with the business. One wrong address is a stale link; three is guessing.",
 			On:  Trigger{Signal: "conversation-guess", Per: "source", Count: 3, Within: h(time.Hour)},
 			Stages: []Stage{
-				{Do: []Step{{Action: "block-source", Where: Site, For: h(time.Hour)}}},
+				{Do: []Step{{Action: "slow-source", Where: Site, For: h(time.Hour)}}},
 				{Do: []Step{{Action: "block-source", Where: Site, For: h(6 * time.Hour)}}},
 			}},
 		{Name: "chatbot-injection", Title: "Prompt injection against a chatbot", Mode: "act", Builtin: true,
 			Why: "The chatbot cannot be widened by what a visitor writes; somebody trying again and again is still somebody to stop.",
 			On:  Trigger{Signal: "chatbot-injection", Per: "source", Count: 3, Within: h(10 * time.Minute)},
 			Stages: []Stage{
-				{Do: []Step{{Action: "block-source", Where: Site, For: h(time.Hour)}}},
+				{Do: []Step{{Action: "slow-source", Where: Site, For: h(time.Hour)}}},
 				{Do: []Step{{Action: "block-source", Where: Site, For: h(4 * time.Hour)}}},
 				{Do: []Step{{Action: "block-source", Where: Site, For: h(24 * time.Hour)}}},
 			}},
@@ -337,6 +345,14 @@ func Builtins() []Playbook {
 			On:  Trigger{Signal: "form-spam", Per: "subject", Count: 100, Within: h(10 * time.Minute)},
 			Stages: []Stage{
 				{Do: []Step{{Action: "shield-feature", Feature: "subject", Level: Off, For: h(30 * time.Minute)}, {Action: "notify"}}},
+			}},
+		{Name: "foreign-probing", Title: "Probing for software this site does not run", Mode: "act", Builtin: true,
+			Why: "A Quilzo site has no wp-login.php, .env or .git: asking for three such addresses is a scanner looking for a way in, which nothing on this site will give it.",
+			On:  Trigger{Signal: "foreign-probe", Per: "source", Count: 3, Within: h(10 * time.Minute), Distinct: true},
+			Stages: []Stage{
+				{Do: []Step{{Action: "block-source", Where: Site, For: h(time.Hour)}}},
+				{Do: []Step{{Action: "block-source", Where: Site, For: h(4 * time.Hour)}}},
+				{Do: []Step{{Action: "block-source", Where: Site, For: h(24 * time.Hour)}}},
 			}},
 		{Name: "decoy-touched", Title: "A decoy was touched", Mode: "act", Builtin: true,
 			Why: "Nothing legitimate uses a decoy, so this is somebody with a stolen copy or somebody exploring: they are shut out everywhere, and a person is told where the leak was.",

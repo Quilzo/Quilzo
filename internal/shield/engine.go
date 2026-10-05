@@ -32,6 +32,13 @@ type Signal struct {
 	// Subject is the chatbot, form, agent or address the signal is about.
 	Subject string
 	At      time.Time
+	// Unverified says the source's address cannot be trusted enough to
+	// block it: it came forwarded by a proxy nobody named, or from one only
+	// assumed to be a proxy (clientip.Client.Unverified). It is counted,
+	// and a person is told; it is not blocked or slowed.
+	Unverified bool
+	// Where is the surface it came from, Admin or Site, when known.
+	Where string
 }
 
 // Response is what a playbook did, or would have done, about a signal.
@@ -74,6 +81,10 @@ type Engine struct {
 	mu     sync.Mutex
 	counts map[string][]hit
 	stages map[string][]mark
+	// sim are the stages watching and held playbooks would have reached:
+	// what they say they would have done escalates as it would have, and
+	// never counts toward what an acting one does.
+	sim    map[string][]mark
 	quiet  map[string]time.Time
 	hourly map[string][]time.Time
 	touch  map[string]time.Time
@@ -192,10 +203,20 @@ func (e *Engine) sweep() {
 	for k, t := range e.touch {
 		all = append(all, kt{k, t})
 	}
-	sort.Slice(all, func(i, j int) bool { return all[i].t.Before(all[j].t) })
+	// Keys that only count are what a flood of sources makes cheaply, so
+	// they go first, oldest first; a key carrying a stage somebody earned
+	// goes only when there is nothing else left to forget.
+	sort.Slice(all, func(i, j int) bool {
+		mi, mj := len(e.stages[all[i].k]) > 0, len(e.stages[all[j].k]) > 0
+		if mi != mj {
+			return !mi
+		}
+		return all[i].t.Before(all[j].t)
+	})
 	for _, x := range all[:len(all)-maxKeys*9/10] {
 		delete(e.counts, x.k)
 		delete(e.stages, x.k)
+		delete(e.sim, x.k)
 		delete(e.quiet, x.k)
 		delete(e.touch, x.k)
 	}
@@ -232,6 +253,7 @@ func (e *Engine) cross(pbs []Playbook, s Signal, now time.Time, st *State) []cro
 	defer e.mu.Unlock()
 	if e.counts == nil {
 		e.counts, e.stages, e.hourly = map[string][]hit{}, map[string][]mark{}, map[string][]time.Time{}
+		e.sim = map[string][]mark{}
 		e.quiet, e.touch = map[string]time.Time{}, map[string]time.Time{}
 	}
 	e.sweep()
@@ -266,13 +288,18 @@ func (e *Engine) cross(pbs []Playbook, s Signal, now time.Time, st *State) []cro
 			continue
 		}
 		delete(e.counts, ck) // the next stage needs the count again
+		acting := pb.Mode == "act" && st.Watching == nil
+		book := e.stages
+		if !acting {
+			book = e.sim
+		}
 		var marks []mark
-		for _, m := range e.stages[ck] {
+		for _, m := range book[ck] {
 			if m.at.After(s.At.Add(-Escalate)) && !liftedEarly(st, m.ids) {
 				marks = append(marks, m)
 			}
 		}
-		e.stages[ck] = marks
+		book[ck] = marks
 		stage := min(len(marks), len(pb.Stages)-1)
 		// The hourly limit, watching or acting: past it, the playbook says
 		// so once and is then quiet until the hour has moved on, so a flood
@@ -314,10 +341,18 @@ func (e *Engine) Observe(s Signal) []Response {
 	var out []Response
 	for _, d := range e.cross(e.Playbooks(), s, now, st) {
 		r := e.respond(d, s, now, st)
-		// The stage is remembered only once it has been answered, with what
-		// it applied, so a person lifting that can take it back.
+		// A stage is remembered only when it acted, with what it applied,
+		// so a person lifting that can take it back. Watching, being held
+		// or reaching the hourly limit applies nothing and moves nothing on:
+		// otherwise the first real action after a hold would be the last
+		// stage.
 		e.mu.Lock()
-		e.stages[d.ck] = append(e.stages[d.ck], mark{at: s.At, ids: r.Applied})
+		switch d.mode {
+		case "act":
+			e.stages[d.ck] = append(e.stages[d.ck], mark{at: s.At, ids: r.Applied})
+		case "watch", "held":
+			e.sim[d.ck] = append(e.sim[d.ck], mark{at: s.At})
+		}
 		e.mu.Unlock()
 		told := false
 		if d.mode == "act" {
@@ -383,9 +418,12 @@ func (e *Engine) step(pb Playbook, stage int, step Step, mode, key string, addr 
 		Reason: fmt.Sprintf("%s (stage %d)", pb.Title, stage+1),
 		At:     now, Until: now.Add(time.Duration(step.For)), Where: step.Where}
 	note := ""
-	if strings.HasPrefix(step.Action, "block-") {
+	if strings.HasPrefix(step.Action, "block-") || strings.HasPrefix(step.Action, "slow-") {
 		if addr.IsValid() && trusted(st, addr) {
-			return "did not block: the source is on the inside or on a trusted network", "", false
+			return "did not block or slow: the source is on the inside or on a trusted network", "", false
+		}
+		if s.Unverified {
+			return "did not block or slow: its address came through a proxy that is not named in network.trusted_proxies, so it may be everybody's", "", true
 		}
 		// Never lock out somebody who runs this place: a source an
 		// administrator signed in from strongly keeps the admin.
@@ -410,6 +448,18 @@ func (e *Engine) step(pb Playbook, stage int, step Step, mode, key string, addr 
 			return "could not block the source: its address is not known", "", false
 		}
 		p.Kind, p.Target = Block, "source:"+handle
+	case "slow-source":
+		handle := key
+		if pb.On.Per != "source" {
+			handle = s.Handle
+			if handle == "" && addr.IsValid() && e.Guard != nil {
+				handle = e.Guard.Handle(clientip.Source(addr))
+			}
+		}
+		if handle == "" {
+			return "could not slow the source: its address is not known", "", false
+		}
+		p.Kind, p.Target = Slow, "source:"+handle
 	case "block-network":
 		if !addr.IsValid() {
 			if mode != "act" {
@@ -449,8 +499,14 @@ func (e *Engine) step(pb Playbook, stage int, step Step, mode, key string, addr 
 	case "pause-agent":
 		p.Kind, p.Target = Agent, s.Subject
 	case "notify":
+		if mode != "act" {
+			return "would have told the security contact", "", false
+		}
 		return "told the security contact", "", false
 	case "open-case":
+		if mode != "act" {
+			return "would have opened a case", "", false
+		}
 		return "opened a case", "", false
 	default:
 		return "nothing: " + step.Action + " is not an action", "", false
@@ -495,6 +551,10 @@ func describe(p Protection) string {
 		kind, value, _ := strings.Cut(p.Target, ":")
 		what := map[string]string{"source": "the source", "net": "the network " + value, "asn": "provider AS" + value}[kind]
 		return fmt.Sprintf("blocked %s on %s %s", what, map[string]string{Admin: "the admin", Site: "the site", All: "the admin and the site"}[p.Where], until)
+	case Slow:
+		kind, value, _ := strings.Cut(p.Target, ":")
+		what := map[string]string{"source": "the source", "net": "the network " + value, "asn": "provider AS" + value}[kind]
+		return fmt.Sprintf("slowed %s on %s %s", what, map[string]string{Admin: "the admin", Site: "the site", All: "the admin and the site"}[p.Where], until)
 	case Feature:
 		if p.Level == Limited {
 			return fmt.Sprintf("limited %s to quoting pages %s", p.Target, until)
@@ -545,9 +605,12 @@ func DryRun(pb Playbook, signals []Signal) []Response {
 		}
 		for _, d := range e.cross([]Playbook{pb}, s, s.At, st) {
 			r := e.respond(d, s, s.At, st)
-			e.stages[d.ck] = append(e.stages[d.ck], mark{at: s.At})
+			e.sim[d.ck] = append(e.sim[d.ck], mark{at: s.At})
 			for _, step := range pb.Stages[d.stage].Do {
-				if step.Action == "block-source" && s.Handle != "" {
+				// Only a block that would have been applied, on the surface the
+				// signal came from, stops what that source sends next.
+				covers := step.Where == All || s.Where == "" || step.Where == s.Where
+				if step.Action == "block-source" && s.Handle != "" && covers && d.mode != "limited" {
 					if u := s.At.Add(time.Duration(step.For)); u.After(blocked[s.Handle]) {
 						blocked[s.Handle] = u
 					}

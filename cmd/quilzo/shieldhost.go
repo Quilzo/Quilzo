@@ -31,6 +31,8 @@ type shieldHost struct {
 	root   string
 	guard  *shield.Guard
 	engine *shield.Engine
+	// where is the surface this process serves, for the signals it raises.
+	where string
 }
 
 func newShieldHost(root string) *shieldHost {
@@ -133,11 +135,13 @@ func canSignInStrongly(root string) bool {
 	return false
 }
 
-// signal tells the engine something a request did.
+// signal tells the engine something a request did. A request that only
+// passed through named proxies has no source to count; one whose address
+// cannot be trusted enough to block is counted and marked so.
 func (h *shieldHost) signal(name, subject string, r *http.Request) {
 	c := clientip.FromRequest(r)
-	s := shield.Signal{Name: name, Subject: subject}
-	if c.Known() {
+	s := shield.Signal{Name: name, Subject: subject, Unverified: c.Unverified, Where: h.where}
+	if c.Known() && !c.Internal {
 		s.Source = c.Addr.String()
 	}
 	h.engine.Observe(s)
@@ -181,10 +185,15 @@ func (h *shieldHost) gate(ts *auth.TokenStore) *auth.TokenStore {
 }
 
 // vouch records that an administrator signed in strongly from where this
-// request came from.
+// request came from. Only an administrator of the whole site: an author's
+// passkey does not make an address one the shield keeps on the admin.
 func (h *shieldHost) vouch(r *http.Request, principal string) {
 	c := clientip.FromRequest(r)
-	if !c.Known() {
+	if !c.Known() || c.Unverified {
+		return
+	}
+	pol, err := loadPolicy(h.root)
+	if err != nil || !pol.Evaluate(principal, auth.ActGrant, "/").Allowed {
 		return
 	}
 	if err := shield.Vouch(h.root, h.guard.Handles(c.Addr), time.Now()); err == nil {

@@ -91,7 +91,7 @@ func TestWhatDoesNotParseIsUnknownNotGuessed(t *testing.T) {
 		{"203.0.113.9, example.com"},
 		{"203.0.113.9, 203.0.113.10:http"},
 		{"203.0.113.9,"},
-		{strings.Repeat("1", maxHeader+1)},
+		{"203.0.113.9, " + strings.Repeat("1", maxEntry+1)},
 	} {
 		c := from(r, "10.0.0.2:80", xff...)
 		if c.Known() || c.Via != Forwarded || c.Internal {
@@ -239,4 +239,45 @@ func TestTheEdgeDecidesOnceForEverythingBehindIt(t *testing.T) {
 			t.Fatalf("%+v", c)
 		}
 	})).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+}
+
+func TestPaddingTheHeaderCannotHideTheClient(t *testing.T) {
+	// The proxy appends the real address after whatever the client wrote,
+	// however much that is.
+	r := resolver(t, "10.0.0.0/8")
+	for _, junk := range []string{strings.Repeat("a", 5000), strings.Repeat("1.1.1.1,", 2000), strings.Repeat(",", 9000)} {
+		c := from(r, "10.0.0.2:80", junk+", 203.0.113.9")
+		if c.Addr.String() != "203.0.113.9" {
+			t.Fatalf("padding hid the client: %+v", c)
+		}
+	}
+	// And as a separate line, the way HAProxy appends.
+	if c := from(r, "10.0.0.2:80", strings.Repeat("x", 9000), "203.0.113.9"); c.Addr.String() != "203.0.113.9" {
+		t.Fatalf("%+v", c)
+	}
+}
+
+func TestAForwardedAddressTheShieldCannotTrustIsMarked(t *testing.T) {
+	// An unnamed peer that forwards: a CDN edge, or somebody writing a header.
+	none := resolver(t)
+	for _, h := range []string{"X-Forwarded-For", "Forwarded", "CF-Connecting-IP", "True-Client-IP"} {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.RemoteAddr = "104.16.1.1:443"
+		req.Header.Set(h, "203.0.113.9")
+		if c := none.From(req); !c.Unverified || c.Addr.String() != "104.16.1.1" {
+			t.Errorf("%s: %+v", h, c)
+		}
+	}
+	if c := from(none, "104.16.1.1:443"); c.Unverified {
+		t.Fatal("a plain connection was marked")
+	}
+	// Proxies assumed from "on the inside", not named.
+	assumed := &Resolver{Proxies: Inside(), Assumed: true}
+	if c := from(assumed, "10.0.0.2:80", "203.0.113.9"); !c.Unverified || c.Addr.String() != "203.0.113.9" {
+		t.Fatalf("assumed: %+v", c)
+	}
+	named := resolver(t, "10.0.0.2")
+	if c := from(named, "10.0.0.2:80", "203.0.113.9"); c.Unverified {
+		t.Fatalf("named: %+v", c)
+	}
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/shield"
 )
 
@@ -34,7 +35,7 @@ func cmdShield(root string, args []string) error {
 		return shieldStatus(root)
 	case "list":
 		return shieldList(root, args[1:])
-	case "block", "feature", "lockdown", "freeze", "pause":
+	case "block", "slow", "feature", "lockdown", "freeze", "pause":
 		return shieldApply(root, args[0], args[1:])
 	case "lift":
 		return shieldLift(root, args[1:])
@@ -55,7 +56,7 @@ func cmdShield(root string, args []string) error {
 	case "repair":
 		return shieldRepair(root)
 	default:
-		return fmt.Errorf("unknown shield command %q; try status, list, block, feature, "+
+		return fmt.Errorf("unknown shield command %q; try status, list, block, slow, feature, "+
 			"lockdown, freeze, pause, lift, judge, trust, decoy, playbook, hold, "+
 			"release, dry-run or repair", args[0])
 	}
@@ -237,8 +238,11 @@ func shieldApply(root, kind string, args []string) error {
 	p := shield.Protection{Reason: *reason, By: by, Until: now.Add(*dur)}
 	target := strings.TrimSpace(strings.Join(pos, " "))
 	switch kind {
-	case "block":
+	case "block", "slow":
 		p.Kind, p.Where = shield.Block, *where
+		if kind == "slow" {
+			p.Kind = shield.Slow
+		}
 		switch {
 		case strings.HasPrefix(target, "p_"):
 			p.Target = "source:" + target
@@ -562,13 +566,15 @@ func onlyAdministrator(root, by string) bool {
 	if err != nil {
 		return false
 	}
+	// Whoever the policy would let administer the whole site now: a
+	// binding that has ended, or one a deny outranks, is nobody.
 	admins := map[string]bool{}
 	for _, b := range pol.Bindings {
-		if b.Role == "admin" && (b.Resource == "/" || b.Resource == "") && !b.Deny {
-			admins[strings.ToLower(b.Principal)] = true
+		if !b.Deny && b.Role == auth.RoleAdmin && pol.Evaluate(b.Principal, auth.ActGrant, "/").Allowed {
+			admins[b.Principal] = true
 		}
 	}
-	return len(admins) <= 1 && (len(admins) == 0 || admins[strings.ToLower(by)])
+	return len(admins) == 0 || (len(admins) == 1 && admins[by])
 }
 
 func shieldHold(root string, args []string) error {
@@ -616,25 +622,49 @@ func shieldRelease(root string, args []string) error {
 
 func shieldRepair(root string) error {
 	c, _ := shieldBy(root)
-	aside, err := shield.Repair(root, time.Now())
-	if err != nil {
-		return err
+	now := time.Now()
+	did := false
+	if rep, err := shield.Repair(root, now); err == nil {
+		did = true
+		shieldAudit(root, c, "shield.repaired", audit.Success, map[string]string{"set_aside": rep.Aside,
+			"kept": strings.Join(rep.Kept, "; "), "lost": strings.Join(rep.Lost, "; ")})
+		w.Human("%sset aside%s the unreadable record as %s\n", green, reset, rep.Aside)
+		if len(rep.Kept) > 0 {
+			w.Human("  kept: %s\n", strings.Join(rep.Kept, ", "))
+		}
+		w.Human("  %slost: %s. Apply again what still matters; the old record is beside the new one to read.%s\n",
+			yellow, strings.Join(rep.Lost, ", "), reset)
 	}
-	shieldAudit(root, c, "shield.repaired", audit.Success, map[string]string{"set_aside": aside})
-	w.Human("%sset aside%s the unreadable record as %s; the shield starts again empty\n", green, reset, aside)
+	if aside, err := shield.RepairBook(root, now); err == nil {
+		did = true
+		shieldAudit(root, c, "shield.playbooks-repaired", audit.Success, map[string]string{"set_aside": aside})
+		w.Human("%sset aside%s the unreadable playbook file as %s; Quilzo's own playbooks run as they ship.\n"+
+			"  %sA playbook turned off or changed there is back as it ships until it is changed again.%s\n",
+			green, reset, aside, yellow, reset)
+	}
+	if !did {
+		return errors.New("both the shield's record and its playbooks read; there is nothing to repair")
+	}
 	return nil
 }
 
 // history is the signals the audit log holds, over the last days, for a
-// dry run. The site records each source's signals once per ten minutes,
-// with how many and about how many different things, so this is close to
-// what the engine saw rather than the same: the run says so.
+// dry run. The site records a source's signals within a ten-minute window
+// with a running count (the first eight past the threshold, then every
+// doubling), so each record stands for the signals since the one before it
+// in the same window; past eight that is close to what the engine saw
+// rather than the same, and the run says so.
 func history(root string, days int, now time.Time) ([]shield.Signal, error) {
 	evs, err := audit.Read(auditPath(root))
 	if err != nil {
 		return nil, err
 	}
 	since := now.Add(-time.Duration(days) * 24 * time.Hour)
+	type window struct {
+		start          time.Time
+		count, subject int
+	}
+	open := map[string]*window{}
 	var out []shield.Signal
 	for _, e := range evs {
 		at, err := time.Parse(time.RFC3339, e.At)
@@ -643,13 +673,16 @@ func history(root string, days int, now time.Time) ([]shield.Signal, error) {
 		}
 		n, _ := strconv.Atoi(e.Detail["count"])
 		distinct, _ := strconv.Atoi(e.Detail["distinct"])
-		name := ""
+		name, where := "", shield.Site
 		switch e.Action {
-		case "site.admin-hunt", "site.conversation-guess", "site.chatbot-injection", "site.form-spam":
+		case "site.admin-hunt", "site.conversation-guess", "site.chatbot-injection", "site.form-spam", "site.foreign-probe":
 			name = strings.TrimPrefix(e.Action, "site.")
 		case "auth.failures":
 			name = "signin-failures"
 			n, _ = strconv.Atoi(e.Detail["failures"])
+			if e.Detail["surface"] == "admin" {
+				where = shield.Admin
+			}
 		case "shield.decoy-touched":
 			name, n = "decoy", 1
 		case "agent.evaluated":
@@ -663,16 +696,25 @@ func history(root string, days int, now time.Time) ([]shield.Signal, error) {
 		if n < 1 {
 			n = 1
 		}
-		if n > 1000 {
-			n = 1000
-		}
 		if distinct < 1 {
 			distinct = 1
 		}
-		for i := 0; i < n; i++ {
-			out = append(out, shield.Signal{Name: name, Handle: e.Principal,
-				Subject: fmt.Sprint("history-", i%distinct), At: at})
+		// What this record adds to its window.
+		key := name + "|" + e.Principal
+		wdw := open[key]
+		if wdw == nil || at.Sub(wdw.start) > 10*time.Minute || n <= wdw.count {
+			wdw = &window{start: at}
+			open[key] = wdw
 		}
+		add := min(n-wdw.count, 1000)
+		for i := 0; i < add; i++ {
+			subject := fmt.Sprint("history-", wdw.subject%distinct)
+			if wdw.subject < distinct {
+				wdw.subject++
+			}
+			out = append(out, shield.Signal{Name: name, Handle: e.Principal, Subject: subject, At: at, Where: where})
+		}
+		wdw.count = n
 	}
 	return out, nil
 }

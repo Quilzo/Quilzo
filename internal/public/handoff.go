@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"html/template"
 	"net/http"
 	"net/url"
@@ -148,6 +149,12 @@ func (st *Site) handoffConversation(w http.ResponseWriter, r *http.Request,
 	id := handoff.IDFor(secret)
 	c, err := store.Get(a.Name, id)
 	if err != nil {
+		// Only a conversation that is not there is a guess; one that could
+		// not be read is this server's trouble, not the visitor's doing.
+		if !errors.Is(err, handoff.ErrNotFound) {
+			http.Error(w, "this conversation could not be read just now", http.StatusServiceUnavailable)
+			return
+		}
 		st.signal(ConversationGuess, a.Name, r)
 		st.notFound(w, r)
 		return

@@ -277,6 +277,8 @@ func shieldStepWords(st shield.Step) string {
 	where := map[string]string{shield.Admin: "the admin", shield.Site: "the site", shield.All: "the admin and the site"}[st.Where]
 	dur := roughDuration(time.Duration(st.For))
 	switch st.Action {
+	case "slow-source":
+		return "slow the source on " + where + " for " + dur
 	case "block-source":
 		return "block the source from " + where + " for " + dur
 	case "block-network":
@@ -542,8 +544,11 @@ func shieldFromForm(r *http.Request, by string, now time.Time) (shield.Protectio
 	x := shield.Protection{By: by, Reason: strings.TrimSpace(r.FormValue("reason")), Until: now.Add(dur)}
 	target := strings.TrimSpace(r.FormValue("target"))
 	switch r.FormValue("kind") {
-	case "block":
+	case "block", "slow":
 		x.Kind, x.Where = shield.Block, r.FormValue("where")
+		if r.FormValue("kind") == "slow" {
+			x.Kind = shield.Slow
+		}
 		switch {
 		case strings.HasPrefix(target, "p_"):
 			x.Target = "source:" + target

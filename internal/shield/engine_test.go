@@ -56,9 +56,12 @@ func (r *rig) state(t *testing.T) *State {
 	return st
 }
 
+// injection is the shipped chatbot-injection playbook with a block at
+// every stage, a fixture that does not move when the shipped ladder does.
 func injection() Playbook {
 	for _, pb := range Builtins() {
 		if pb.Name == "chatbot-injection" {
+			pb.Stages[0] = Stage{Do: []Step{{Action: "block-source", Where: Site, For: Duration(time.Hour)}}}
 			return pb
 		}
 	}

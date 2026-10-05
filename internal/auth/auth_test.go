@@ -569,3 +569,32 @@ func TestALockdownRefusesWhatWasMadeBeforeItEvenAsANewSession(t *testing.T) {
 		t.Fatal("a locked-out credential counted as a guess")
 	}
 }
+
+func TestASessionEndedLongAgoIsStillNotAGuess(t *testing.T) {
+	ts := &TokenStore{}
+	parent, _, err := ts.Issue("laptop", "dana", RoleAdmin, "", 30*24*time.Hour, RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, _, err := ts.Exchange(parent, RoleNone, "", 15*time.Minute, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two days on, the session is pruned when anything is issued.
+	later := time.Now().Add(48 * time.Hour)
+	ts.pruneSessions(later)
+	_, err = ts.Authenticate(sess, later)
+	if err == nil || Unknown(err) || !strings.Contains(err.Error(), "ended") {
+		t.Fatalf("a pruned session: %v", err)
+	}
+	for _, e := range ts.Ended {
+		if len(e.Print) != endedPrint {
+			t.Fatal("more than a fingerprint was kept")
+		}
+	}
+	// A month after that, it is forgotten.
+	ts.pruneSessions(later.Add(31 * 24 * time.Hour))
+	if _, err := ts.Authenticate(sess, later.Add(31*24*time.Hour)); !Unknown(err) {
+		t.Fatalf("remembered forever: %v", err)
+	}
+}

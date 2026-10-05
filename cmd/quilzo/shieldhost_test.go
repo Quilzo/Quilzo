@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -180,5 +181,33 @@ func TestOnlyAnAdministratorsPasskeyMakesALockdownSafe(t *testing.T) {
 	}
 	if !canSignInStrongly(root) {
 		t.Fatal("an administrator's passkey was not taken as a way in")
+	}
+}
+
+func TestADryRunSeesWhatTheEngineWouldHave(t *testing.T) {
+	root := shieldRoot(t)
+	// One source sends three injection attempts in five minutes: the site
+	// records each (threshold one), with the window's running count.
+	for n := 1; n <= 3; n++ {
+		record(root, audit.Record{Action: "site.chatbot-injection", Resource: "/", Outcome: audit.Denied,
+			Principal: "203.0.113.9", Kind: audit.KindUnknown,
+			Detail: map[string]string{"count": strconv.Itoa(n), "distinct": "1"}})
+	}
+	sigs, err := history(root, 30, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sigs) != 3 {
+		t.Fatalf("%d signals from three records with running counts", len(sigs))
+	}
+	var pb shield.Playbook
+	for _, x := range shield.Builtins() {
+		if x.Name == "chatbot-injection" {
+			pb = x
+		}
+	}
+	runs := shield.Try([]shield.Playbook{pb}, sigs, &shield.State{}, time.Now())
+	if runs[0].Responses != 1 {
+		t.Fatalf("the dry run said %+v; the live engine would have acted once", runs[0])
 	}
 }

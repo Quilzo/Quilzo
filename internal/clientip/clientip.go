@@ -49,8 +49,8 @@ const (
 
 // Limits on what a request may make this read.
 const (
-	maxHeader = 4096
-	maxHops   = 16
+	maxEntry = 64
+	maxHops  = 16
 )
 
 // Client is who a request came from.
@@ -64,6 +64,12 @@ type Client struct {
 	// Internal marks a request every hop of which was a named proxy: one
 	// from inside, which nothing should block.
 	Internal bool
+	// Unverified marks a client the shield must not act on by its address
+	// alone: a connection carrying a forwarded address from a peer that
+	// was not named as a proxy (it may be a CDN edge everybody shares), or
+	// an address forwarded by a proxy only assumed to be one because it is
+	// on the inside (any machine there could have written it).
+	Unverified bool
 }
 
 // Known reports whether the client's address could be told.
@@ -78,7 +84,14 @@ type Resolver struct {
 	// Proxies are the peers whose forwarded addresses are believed. Empty
 	// means none: the connection is the client.
 	Proxies []netip.Prefix
+	// Assumed says Proxies were not named but taken to be anything on the
+	// inside, so a forwarded address is believed for limits and placing,
+	// and is Unverified for the shield.
+	Assumed bool
 }
+
+// forwardingHeaders are the headers a proxy or CDN puts its client in.
+var forwardingHeaders = []string{"X-Forwarded-For", "Forwarded", "X-Real-Ip", "Cf-Connecting-Ip", "True-Client-Ip", "Fastly-Client-Ip"}
 
 // trusted reports whether an address is one of the named proxies.
 func (r *Resolver) trusted(a netip.Addr) bool {
@@ -98,6 +111,19 @@ func (r *Resolver) From(req *http.Request) Client {
 	peer, _ := Parse(req.RemoteAddr)
 	c := Client{Addr: peer, Peer: peer, Via: Connection}
 	if !peer.IsValid() || !r.trusted(peer) {
+		// The connection is the client. If it brought a forwarded address
+		// anyway, it is either a proxy nobody named (a CDN edge, shared by
+		// everybody behind it) or somebody writing their own header; the
+		// first must not be blocked as one visitor, so the shield is told
+		// not to act on it alone.
+		if peer.IsValid() {
+			for _, h := range forwardingHeaders {
+				if req.Header.Get(h) != "" {
+					c.Unverified = true
+					break
+				}
+			}
+		}
 		return c
 	}
 	lines := req.Header.Values("X-Forwarded-For")
@@ -107,26 +133,38 @@ func (r *Resolver) From(req *http.Request) Client {
 		c.Internal = true
 		return c
 	}
-	joined := strings.Join(lines, ",")
-	c.Via, c.Addr = Forwarded, netip.Addr{}
-	if len(joined) > maxHeader {
-		return c
-	}
-	entries := strings.Split(joined, ",")
+	c.Via, c.Addr, c.Unverified = Forwarded, netip.Addr{}, r.Assumed
+	// Walked from the right, entry by entry, never more than maxHops of
+	// them: whatever the client wrote to the left, however long, is never
+	// read, so it cannot decide whether the proxy's own entry is.
 	var last netip.Addr
-	for i, hops := len(entries)-1, 0; i >= 0; i, hops = i-1, hops+1 {
-		if hops == maxHops {
-			return c
+	hops := 0
+	for li := len(lines) - 1; li >= 0; li-- {
+		line := lines[li]
+		for {
+			if hops == maxHops {
+				return c
+			}
+			cut := strings.LastIndexByte(line, ',')
+			entry := line[cut+1:]
+			if len(entry) > maxEntry {
+				return c
+			}
+			a, ok := Parse(strings.TrimSpace(entry))
+			if !ok {
+				return c
+			}
+			hops++
+			if !r.trusted(a) {
+				c.Addr = a
+				return c
+			}
+			last = a
+			if cut < 0 {
+				break
+			}
+			line = line[:cut]
 		}
-		a, ok := Parse(strings.TrimSpace(entries[i]))
-		if !ok {
-			return c
-		}
-		if !r.trusted(a) {
-			c.Addr = a
-			return c
-		}
-		last = a
 	}
 	c.Addr, c.Internal = last, true
 	return c

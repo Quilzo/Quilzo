@@ -57,8 +57,9 @@ func TestEverySignalReachesTheShieldWithWhatItWasAbout(t *testing.T) {
 	if fmt.Sprint(*heard) != fmt.Sprint(want) {
 		t.Fatalf("told the shield\n%v\nwant\n%v", *heard, want)
 	}
-	// The log still has each once per window.
-	if len(*logged) != 2 {
+	// The log has them from the threshold on, a line each for the first
+	// few: three injections (threshold one) and two hunts (threshold three).
+	if len(*logged) != 5 {
 		t.Fatalf("logged %v", *logged)
 	}
 	if got := huntedPath("/" + strings.Repeat("a", 200) + "/b/c/d"); len(got) != 64 {
@@ -144,4 +145,29 @@ func getReq(target string) *http.Request {
 	r, _ := http.NewRequest(http.MethodGet, target, nil)
 	r.RemoteAddr = "198.51.100.4:1"
 	return r
+}
+
+func TestProbingForSoftwareTheSiteDoesNotRunIsTold(t *testing.T) {
+	for _, p := range []string{"/wp-login.php", "/xmlrpc.php", "/wp-admin/", "/.env", "/.env.production", "/.git/config",
+		"/phpmyadmin/index.php", "/cgi-bin/x", "/actuator/health", "/index.php/x", "/WP-ADMIN"} {
+		if !IsForeignProbe(p) {
+			t.Errorf("%s is a probe", p)
+		}
+	}
+	for _, p := range []string{"/", "/about", "/wp-content/uploads/2019/01/cat.jpg", "/environment", "/github",
+		"/actuators-guide", "/feed.xml", "/ask/help", "/.well-known/security.txt"} {
+		if IsForeignProbe(p) {
+			t.Errorf("%s is not a probe", p)
+		}
+	}
+	st := published(t, map[string]any{"index": map[string]any{"title": "Home"}})
+	heard := tellingTheShield(st)
+	for _, p := range []string{"/wp-login.php", "/.env", "/.git/config", "/about-us"} {
+		from(st, http.MethodGet, p, "198.51.100.9", nil)
+	}
+	want := []told{{ForeignProbe, "/wp-login.php", "198.51.100.9"}, {ForeignProbe, "/.env", "198.51.100.9"},
+		{ForeignProbe, "/.git/config", "198.51.100.9"}}
+	if fmt.Sprint(*heard) != fmt.Sprint(want) {
+		t.Fatalf("told %v", *heard)
+	}
 }
