@@ -744,6 +744,10 @@ func (st *Site) searchVisible(q string, visible map[string]any, n int) []search.
 	return out
 }
 
+// PermissionsPolicy is what a published page may ask the browser for.
+const PermissionsPolicy = "camera=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), " +
+	"bluetooth=(), display-capture=(), microphone=(self)"
+
 // securityHeaders for a public site.
 //
 // The CSP is nearly as strict as the admin's, with one difference: the service
@@ -783,6 +787,14 @@ func (st *Site) securityHeaders(next http.Handler) http.Handler {
 
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		// What a page may ask the browser for. The microphone stays for
+		// this site's own pages, where a chatbot listens on the device
+		// (askvoice); everything else no page here uses is switched off,
+		// so nothing injected into one could ask for it either.
+		h.Set("Permissions-Policy", PermissionsPolicy)
+		// A window this site opens, or that opens it, shares no handle
+		// with the other: no window.opener for a page elsewhere to steer.
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 		st.setSpeculationHeader(w)
 
 		// Vary, whenever this site has more than one language.

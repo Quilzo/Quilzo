@@ -237,3 +237,14 @@ func TestBrowsersReportViolationsAndOnlyThePagesOwnAreKept(t *testing.T) {
 		t.Fatal("a large body was read")
 	}
 }
+
+func TestAnAIAnswerInSearchCarriesItsDisclosure(t *testing.T) {
+	st, _ := askSite(t, shopBot)
+	a := st.searchAnswer(getReq("/search?q=x"), "can I return opened ink?")
+	if a == nil {
+		t.Skip("no answer to look at")
+	}
+	if a["disclosure"] != Disclosure {
+		t.Fatalf("an AI answer without Article 50's disclosure: %v", a)
+	}
+}

@@ -87,6 +87,7 @@ import (
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
+	"github.com/quilzo/quilzo/internal/theme"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
@@ -2655,6 +2656,11 @@ func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
 				"Layouts available: %s", layout,
 				strings.Join(s.Layouts.Names(), ", "))))
 	}
+	// The theme's contrast, as `quilzo publish` checks it. This path did
+	// not: a palette saved below 4.5:1 with `quilzo theme set --force`,
+	// which says the publish gate will refuse it, went live from the
+	// browser.
+	extra = append(extra, s.themeBlockers()...)
 
 	for name, body := range pages {
 		ctx, cerr := src.For(name, body, nil)
@@ -3605,4 +3611,28 @@ func (s *Server) shieldable(target string, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// themeBlockers are the theme's blocking contrast failures, as reports: the
+// same arithmetic the command line's publish gate runs, skipped only for a
+// hand-written stylesheet this program cannot read.
+func (s *Server) themeBlockers() []*a11y.Report {
+	if s.DesignSet == nil || s.DesignSet.Tokens == nil {
+		return nil
+	}
+	if s.DesignSet.OwnStylesheet != nil && s.DesignSet.OwnStylesheet() {
+		return nil
+	}
+	overrides, err := s.DesignSet.Tokens()
+	if err != nil {
+		return []*a11y.Report{a11y.Blocker("theme", "theme-unreadable", "", "the theme could not be read, so its contrast could not be checked: "+err.Error())}
+	}
+	th, _ := theme.New(overrides, s.siteFamilies())
+	var out []*a11y.Report
+	for _, f := range th.Check() {
+		if f.Blocking {
+			out = append(out, a11y.Blocker("theme", "theme-contrast", f.Criterion, f.Detail))
+		}
+	}
+	return out
 }

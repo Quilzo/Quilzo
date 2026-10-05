@@ -770,3 +770,27 @@ func TestAnEmptyLogAfterAPublishIsReported(t *testing.T) {
 		t.Error("a log that was not read is reported as an empty log")
 	}
 }
+
+// Not run is not passing: live content that could not be rendered to check
+// is reported, not counted as no failures.
+func TestAnAccessibilityCheckThatCouldNotRunIsAFinding(t *testing.T) {
+	r := ruleByID(t, "content.accessibility-blocking")
+	if got := r.Check(State{Content: ContentFacts{A11yUnchecked: "no layouts"}}); len(got) != 1 ||
+		!strings.Contains(got[0].Detail, "could not be checked") {
+		t.Fatalf("%+v", got)
+	}
+	if got := r.Check(State{Content: ContentFacts{}}); len(got) != 0 {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestAFormWithoutAPurposeOrBasisIsAFinding(t *testing.T) {
+	r := ruleByID(t, "privacy.form-basis-missing")
+	if got := r.Check(State{Content: ContentFacts{FormsWithoutBasis: []string{"contact", "newsletter"}}}); len(got) != 1 ||
+		!strings.Contains(got[0].Detail, "2 open forms give no purpose") {
+		t.Fatalf("%+v", got)
+	}
+	if got := r.Check(State{}); len(got) != 0 {
+		t.Fatal(got)
+	}
+}
