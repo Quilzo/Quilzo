@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/compliance"
 	"github.com/quilzo/quilzo/internal/csp"
 	"github.com/quilzo/quilzo/internal/selfvuln"
+	"github.com/quilzo/quilzo/internal/sitereport"
 )
 
 // The evidence, in the interface.
@@ -59,6 +60,9 @@ type Assurance struct {
 	Vault func() (encrypted bool, active string, keys []string)
 	// Agents summarises what non-human principals have been doing.
 	Agents func() ([]agentwatch.Report, error)
+	// Site is what the law asks of the published site and where it stands
+	// (internal/sitereport).
+	Site func() (sitereport.Report, error)
 	// Evidence lists timestamps and blockchain anchors as flat rows, because
 	// the two answer the same question — can somebody else check when this was
 	// published — and a screen with one table is easier to read than two.
@@ -190,6 +194,80 @@ func (s *Server) handleComplianceScreen(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	s.render(w, r, "compliance.html", data)
+}
+
+// handleSiteReport is the site report: each duty the law places on the
+// published site, the conformance table, the forms, what is on the pages,
+// the browser protections, and a draft accessibility statement.
+func (s *Server) handleSiteReport(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.assuranceReader(w, r)
+	if !ok {
+		return
+	}
+	data := map[string]any{"Nav": "security", "Title": "Site report", "Principal": p}
+	switch {
+	case s.Assurance == nil || s.Assurance.Site == nil:
+		data["Unavailable"] = "This build cannot read the published site."
+	default:
+		rep, err := s.Assurance.Site()
+		if err != nil {
+			data["Unavailable"] = err.Error()
+			break
+		}
+		data["Report"], data["Worst"] = rep, sitereport.Worst(rep.Duties)
+		data["Markdown"] = rep.Statement.Markdown()
+		var sections []statementSection
+		for _, sec := range rep.Statement.Sections {
+			out := statementSection{Heading: sec.Heading}
+			for _, para := range sec.Paragraphs {
+				out.Paragraphs = append(out.Paragraphs, toFill(para))
+			}
+			for _, item := range sec.List {
+				out.List = append(out.List, toFill(item))
+			}
+			sections = append(sections, out)
+		}
+		data["Statement"] = sections
+	}
+	s.render(w, r, "sitereport.html", data)
+}
+
+// statementSection is a section of the draft statement, with the parts a
+// person has to write marked.
+type statementSection struct {
+	Heading    string
+	Paragraphs [][]piece
+	List       [][]piece
+}
+
+// piece is a run of text, Fill when it is a [part to fill in].
+type piece struct {
+	Text string
+	Fill bool
+}
+
+// toFill splits text at its square brackets.
+func toFill(text string) []piece {
+	var out []piece
+	for text != "" {
+		open := strings.IndexByte(text, '[')
+		if open < 0 {
+			break
+		}
+		close := strings.IndexByte(text[open:], ']')
+		if close < 0 {
+			break
+		}
+		if open > 0 {
+			out = append(out, piece{Text: text[:open]})
+		}
+		out = append(out, piece{Text: text[open : open+close+1], Fill: true})
+		text = text[open+close+1:]
+	}
+	if text != "" {
+		out = append(out, piece{Text: text})
+	}
+	return out
 }
 
 func (s *Server) handleIntegrityScreen(w http.ResponseWriter, r *http.Request) {

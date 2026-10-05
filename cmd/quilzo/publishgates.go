@@ -174,33 +174,7 @@ func contentGates(root string, s *store.Store, ref string) gate.Set {
 				if perr != nil {
 					return nil, nil, perr
 				}
-				own := ownDomains(root)
-				for _, name := range sortedNames(pages) {
-					var inputs []codescan.Input
-					for _, f := range contentStrings(pages[name]) {
-						for _, h := range pii.Scan(f.text, own) {
-							found := gate.Finding{Page: name, Detail: f.path + ": " + h.Shown}
-							if h.Kind.Blocking() {
-								blocking = append(blocking, found)
-							} else {
-								advisory = append(advisory, found)
-							}
-						}
-						inputs = append(inputs, codescan.Input{Name: f.path, Kind: codescan.Content,
-							Body: f.key + " = " + documentedKeys.Replace(f.text)})
-					}
-					for _, c := range codescan.Scan(inputs) {
-						if !strings.HasPrefix(c.Rule, "secret.") {
-							continue
-						}
-						found := gate.Finding{Page: name, Detail: c.Where + ": " + c.Detail}
-						if c.Severity == codescan.Critical {
-							blocking = append(blocking, found)
-						} else {
-							advisory = append(advisory, found)
-						}
-					}
-				}
+				blocking, advisory = personalDataIn(root, pages)
 				return blocking, advisory, nil
 			},
 		},
@@ -362,6 +336,39 @@ func sortedNames(pages map[string]any) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// personalDataIn is what the personal-data gate finds on a set of pages,
+// shared with the site report so the two cannot disagree.
+func personalDataIn(root string, pages map[string]any) (blocking, advisory []gate.Finding) {
+	own := ownDomains(root)
+	for _, name := range sortedNames(pages) {
+		var inputs []codescan.Input
+		for _, f := range contentStrings(pages[name]) {
+			for _, h := range pii.Scan(f.text, own) {
+				found := gate.Finding{Page: name, Detail: f.path + ": " + h.Shown}
+				if h.Kind.Blocking() {
+					blocking = append(blocking, found)
+				} else {
+					advisory = append(advisory, found)
+				}
+			}
+			inputs = append(inputs, codescan.Input{Name: f.path, Kind: codescan.Content,
+				Body: f.key + " = " + documentedKeys.Replace(f.text)})
+		}
+		for _, c := range codescan.Scan(inputs) {
+			if !strings.HasPrefix(c.Rule, "secret.") {
+				continue
+			}
+			found := gate.Finding{Page: name, Detail: c.Where + ": " + c.Detail}
+			if c.Severity == codescan.Critical {
+				blocking = append(blocking, found)
+			} else {
+				advisory = append(advisory, found)
+			}
+		}
+	}
+	return blocking, advisory
 }
 
 // documentedKeys are the credentials cloud documentation prints as examples,

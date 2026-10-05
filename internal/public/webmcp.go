@@ -166,8 +166,8 @@ func (st *Site) toolFor(attrs map[string]string, body string, forms *form.Set) (
 			label = f.Name
 		}
 		desc := label + ". Sends what is filled in to the business; the visitor reviews it and submits it themselves."
-		if f.Notice != "" {
-			desc += " " + f.Notice
+		if t := f.Told(); t != "" {
+			desc += " " + t
 		}
 		return toolSpec{name: "form-" + name, description: desc, params: params, trap: form.Honeypot}, true
 	}

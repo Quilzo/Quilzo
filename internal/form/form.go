@@ -194,6 +194,47 @@ var Bases = map[string]string{
 // Lawful reports whether a form says why it collects and on what basis.
 func (f *Form) Lawful() bool { return strings.TrimSpace(f.Purpose) != "" && f.Basis != "" }
 
+// told is each basis as the person filling in the form reads it.
+var told = map[string]string{
+	"consent":              "your agreement, which you can withdraw at any time (GDPR Article 6(1)(a))",
+	"contract":             "the need to do what you asked for (GDPR Article 6(1)(b))",
+	"legal-obligation":     "a legal obligation (GDPR Article 6(1)(c))",
+	"vital-interests":      "the need to protect someone's life (GDPR Article 6(1)(d))",
+	"public-task":          "a task carried out in the public interest (GDPR Article 6(1)(e))",
+	"legitimate-interests": "our legitimate interests (GDPR Article 6(1)(f))",
+}
+
+// inWords is a retention period as a person says it.
+func inWords(days int) string {
+	switch {
+	case days == 1:
+		return "a day"
+	case days == 365:
+		return "a year"
+	case days%365 == 0:
+		return fmt.Sprintf("%d years", days/365)
+	}
+	return fmt.Sprintf("%d days", days)
+}
+
+// Told is everything the person is told before they send the form: the
+// notice as written, then what the answers are for, the lawful basis, and
+// how long they are kept. GDPR Article 13 asks for these at the moment of
+// collection, so they are put where every layout already prints the
+// notice rather than in a field a layout would have to learn about. The
+// period is the one the sweep enforces (Expire), so the promise is kept.
+func (f *Form) Told() string {
+	parts := []string{strings.TrimSpace(f.Notice)}
+	if p := strings.TrimSpace(f.Purpose); p != "" {
+		parts = append(parts, "What your answers are for: "+strings.TrimRight(p, ". ")+".")
+	}
+	if b, ok := told[f.Basis]; ok {
+		parts = append(parts, "We rely on "+b+".")
+	}
+	parts = append(parts, "We keep your answers for "+inWords(int(f.Retention().Hours()/24))+", then delete them.")
+	return strings.TrimSpace(strings.Join(parts, " "))
+}
+
 // Set is every form a site has.
 type Set struct {
 	Forms []Form `json:"forms"`

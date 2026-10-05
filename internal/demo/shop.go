@@ -753,9 +753,11 @@ func (s *Site) addForms() {
 		{
 			Name: "wholesale", Label: "Wholesale enquiry",
 			Notice: "Wholesale enquiries reach the two people who run " +
-				"Marginalia and nobody else. We keep them for a year so we " +
-				"can pick up a conversation that paused, then they are " +
-				"deleted automatically.",
+				"Marginalia and nobody else. A year is long enough to pick " +
+				"up a conversation that paused.",
+			Purpose: "To answer your enquiry and, if you become a stockist, " +
+				"to set up your account",
+			Basis:         "contract",
 			RetentionDays: 365,
 			Fields: []form.Field{
 				{Name: "shop", Label: "Shop name", Kind: form.Line, Required: true},
@@ -770,13 +772,16 @@ func (s *Site) addForms() {
 		},
 		{
 			Name: "restock", Label: "Tell me when it is back",
-			Notice: "We use this address once, to tell you the thing you " +
-				"asked about is available, and then we delete it. It is not " +
-				"a mailing list and you are not subscribed to anything.",
+			Notice: "It is not a mailing list and you are not subscribed " +
+				"to anything.",
+			Purpose: "To email you once, when the product you asked about " +
+				"is available again",
+			Basis:         "consent",
 			RetentionDays: 180,
 			Fields: []form.Field{
 				{Name: "sku", Label: "Which product", Kind: form.Line, Required: true},
 				{Name: "email", Label: "Email", Kind: form.Email, Required: true},
+				{Name: "agree", Label: "Email me once when it is back", Kind: form.Agree, Required: true},
 			},
 		},
 	}

@@ -32,6 +32,7 @@ import (
 	"github.com/quilzo/quilzo/internal/schedule"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/sitereport"
 	"github.com/quilzo/quilzo/internal/taxonomy"
 	"github.com/quilzo/quilzo/internal/webhook"
 )
@@ -334,6 +335,21 @@ func fullyWired(t *testing.T) (*Server, string) {
 				Counts: map[string]int{"repeated-refusal": 2}, Flagged: false,
 				Summary: "two refusals in forty actions",
 			}}, nil
+		},
+		Site: func() (sitereport.Report, error) {
+			h := http.Header{}
+			h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; frame-ancestors 'none'")
+			h.Set("X-Content-Type-Options", "nosniff")
+			return sitereport.Build(sitereport.Input{Site: "Acme", At: time.Now(), Live: strings.Repeat("a", 64),
+				ACR: a11y.ACR{Pages: 2, Standard: "WCAG 2.2 level AA", NotEvaluated: []string{"reading order"},
+					Evaluated: []a11y.Criterion{{Number: "1.1.1", Clause: "9.1.1.1", Result: a11y.PartiallySupports,
+						Checks: []string{"images have alternative text (1.1.1)"}, Remarks: "1 finding(s) on: about"}}},
+				Forms: []sitereport.Form{{Name: "contact", Purpose: "To reply", Basis: "contract", RetentionDays: 90, Lawful: true},
+					{Name: "jobs", RetentionDays: 365, Sensitive: []string{"cv"}}},
+				PersonalData: []sitereport.Item{{Page: "refund", Detail: "a card number ending 6467", Blocking: true},
+					{Page: "contact", Detail: "the email address j…@gmail.com"}},
+				Headers: sitereport.GradeHeaders(h, sitereport.Served{Address: "https://acme.test"}),
+			}), nil
 		},
 		Evidence: func() ([]Evidence, error) {
 			return []Evidence{{

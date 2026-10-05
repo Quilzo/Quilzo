@@ -1,0 +1,99 @@
+{{template "head" .}}
+<h1>Site report</h1>
+{{if .Unavailable}}<p class="notice bad">{{sentence .Unavailable}}.</p>
+{{else}}{{with .Report}}
+<p class="lead">What the law asks of {{if .Site}}{{.Site}}{{else}}this site{{end}} as it is published now, and where it stands. Each duty is read by the check that already owns it, so this page and the publish gates cannot disagree.</p>
+
+<div class="shield-status">
+  {{if eq $.Worst "attention"}}<span class="wf-band as-written serious"><span class="wf-icon">{{icon "warning"}}</span>Needs attention</span>
+  {{else if eq $.Worst "unknown"}}<span class="wf-band as-written unknown"><span class="wf-icon">{{icon "help"}}</span>Not everything could be checked</span>
+  {{else if eq $.Worst "review"}}<span class="wf-band as-written warning"><span class="wf-icon">{{icon "error"}}</span>Worth a look</span>
+  {{else}}<span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Nothing found</span>{{end}}
+  <span class="hint">Checked {{.At.Format "2 January 2006, 15:04"}} · published version <code>{{printf "%.12s" .Live}}</code></span>
+</div>
+
+<h2>Duties</h2>
+<ul class="auto-list">{{range .Duties}}<li class="auto-card">
+  <div class="auto-head"><strong>{{.Title}}</strong>
+    {{if eq .State "attention"}}<span class="wf-band as-written serious"><span class="wf-icon">{{icon "warning"}}</span>Needs attention</span>
+    {{else if eq .State "review"}}<span class="wf-band as-written warning"><span class="wf-icon">{{icon "error"}}</span>Worth a look</span>
+    {{else if eq .State "unknown"}}<span class="wf-band as-written unknown"><span class="wf-icon">{{icon "help"}}</span>Not checked</span>
+    {{else}}<span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Nothing found</span>{{end}}</div>
+  <p>{{.Says}}</p>
+  {{if .Fix}}<p class="hint">{{.Fix}}</p>{{end}}
+  <p class="hint">{{.Asks}} <span class="duty-law">{{.Law}}</span></p>
+</li>{{end}}</ul>
+
+<h2 id="accessibility">Accessibility, criterion by criterion</h2>
+{{with .Accessibility}}
+<p>{{.Standard}}</p>
+{{if .Evaluated}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">WCAG</th><th scope="col">EN 301 549</th><th scope="col">Result</th><th scope="col">Checked by</th></tr></thead>
+  <tbody>{{range .Evaluated}}<tr>
+    <th scope="row">{{.Number}}</th>
+    <td>{{.Clause}}</td>
+    <td>{{if eq .Result "Supports"}}<span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Supports</span>{{else}}<span class="wf-band as-written serious"><span class="wf-icon">{{icon "warning"}}</span>{{.Result}}</span>{{end}}{{if .Remarks}}<div class="hint">{{.Remarks}}</div>{{end}}</td>
+    <td class="hint">{{range $i, $c := .Checks}}{{if $i}}; {{end}}{{$c}}{{end}}</td>
+  </tr>{{end}}</tbody>
+</table></div>{{end}}
+<details class="duty-more"><summary>{{len .NotEvaluated}} things a person has to check<span class="chev">{{icon "expand_more"}}</span></summary>
+  <ul>{{range .NotEvaluated}}<li>{{.}}</li>{{end}}</ul>
+  <p class="hint">{{.Caveat}}</p>
+</details>
+{{end}}
+
+<h2 id="statement">Accessibility statement</h2>
+<p>A draft written from this report, in the shape of the European Commission's model statement. What this report knows is filled in; <mark class="fill">highlighted</mark> parts are for you to write, and the compliance status is yours to decide whenever the checks found nothing.</p>
+<article class="statement" aria-label="Draft accessibility statement">
+  <h3>{{.Statement.Title}}</h3>
+  {{range $.Statement}}{{if .Heading}}<h4>{{.Heading}}</h4>{{end}}
+  {{range .Paragraphs}}<p>{{range .}}{{if .Fill}}<mark class="fill">{{.Text}}</mark>{{else}}{{.Text}}{{end}}{{end}}</p>{{end}}
+  {{if .List}}<ul>{{range .List}}<li>{{range .}}{{if .Fill}}<mark class="fill">{{.Text}}</mark>{{else}}{{.Text}}{{end}}{{end}}</li>{{end}}</ul>{{end}}
+  {{end}}
+</article>
+<label for="statement-md">As Markdown, to paste into a page called <code>accessibility</code></label>
+<textarea id="statement-md" class="statement-md" readonly rows="10">{{$.Markdown}}</textarea>
+<p class="auto-controls"><button type="button" class="btn-tonal" data-copy="statement-md" data-copied="statement-copied" hidden>Copy as Markdown</button>
+  <span id="statement-copied" class="hint" role="status"></span></p>
+
+<h2 id="forms">Forms</h2>
+{{if .Forms}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Form</th><th scope="col">What the answers are for</th><th scope="col">Lawful basis</th><th scope="col">Kept for</th></tr></thead>
+  <tbody>{{range .Forms}}<tr>
+    <th scope="row">{{if .Label}}{{.Label}}{{else}}{{.Name}}{{end}}{{if .Closed}} <span class="chip-small">Closed</span>{{end}}
+      {{if .Sensitive}}<div class="hint">Kept out of listings: {{range $i, $f := .Sensitive}}{{if $i}}, {{end}}{{$f}}{{end}}</div>{{end}}</th>
+    <td>{{if .Purpose}}{{.Purpose}}{{else}}<span class="wf-band as-written serious"><span class="wf-icon">{{icon "warning"}}</span>Not said</span>{{end}}</td>
+    <td>{{if .Basis}}{{.Basis}}{{else}}<span class="wf-band as-written serious"><span class="wf-icon">{{icon "warning"}}</span>Not said</span>{{end}}</td>
+    <td>{{.RetentionDays}} days</td>
+  </tr>{{end}}</tbody>
+</table></div>
+<p class="hint">Each form shows the person its purpose, basis and period beside its notice. Change them on <a href="/forms">Forms</a>.</p>
+{{else}}<p>This site has no forms.</p>{{end}}
+
+<h2 id="personal-data">Personal data on published pages</h2>
+{{if .PersonalData}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Page</th><th scope="col">What</th><th scope="col"></th></tr></thead>
+  <tbody>{{range .PersonalData}}<tr>
+    <th scope="row"><a href="/page/{{.Page}}">{{.Page}}</a></th>
+    <td>{{.Detail}}</td>
+    <td>{{if .Blocking}}<span class="wf-band as-written critical"><span class="wf-icon">{{icon "dangerous"}}</span>Remove</span>{{else}}<span class="wf-band as-written warning"><span class="wf-icon">{{icon "error"}}</span>Look</span>{{end}}</td>
+  </tr>{{end}}</tbody>
+</table></div>
+<p class="hint">Only the end of each is shown, so this page is not the leak. The same check stops a draft carrying a card number or a credential from being published.</p>
+{{else}}<p>Nothing: no card number, credential, bank account, email address or telephone number on a published page, other than this site's own.</p>{{end}}
+
+<h2 id="headers">Browser protections</h2>
+{{if .Headers}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Protection</th><th scope="col">Here</th><th scope="col">What it means</th></tr></thead>
+  <tbody>{{range .Headers}}<tr>
+    <th scope="row">{{.Name}}{{if .Value}}<div class="hint"><code>{{.Value}}</code></div>{{end}}</th>
+    <td>{{if eq .Grade "good"}}<span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Good</span>{{else if eq .Grade "weak"}}<span class="wf-band as-written warning"><span class="wf-icon">{{icon "error"}}</span>Weak</span>{{else if eq .Grade "missing"}}<span class="wf-band as-written serious"><span class="wf-icon">{{icon "warning"}}</span>Missing</span>{{else if eq .Grade "elsewhere"}}<span class="wf-band as-written unknown"><span class="wf-icon">{{icon "help"}}</span>At the proxy</span>{{else}}<span class="wf-band as-written unknown"><span class="wf-icon">{{icon "help"}}</span>Not known</span>{{end}}</td>
+    <td>{{.Why}}</td>
+  </tr>{{end}}</tbody>
+</table></div>
+<p class="hint">Read from a page the site served just now, built as <code>quilzo site</code> builds it. A proxy in front may add or remove some.</p>
+{{end}}
+
+<p class="hint">{{.Caveat}} On the machine: <code>quilzo compliance site</code>, and <code>--statement</code> for the draft alone.</p>
+{{end}}{{end}}
+{{template "foot" .}}
