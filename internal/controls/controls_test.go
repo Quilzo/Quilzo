@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/odp"
@@ -111,6 +112,45 @@ func TestThePledgeIsAnsweredGoalByGoal(t *testing.T) {
 		}
 		if g.Standing != Met && !strings.Contains(strings.ToLower(g.Position), "not") {
 			t.Errorf("goal %d is %s and its position does not say what is not done", g.N, g.Standing)
+		}
+	}
+}
+
+// The plan is held to the baseline the owner chose, splits each control
+// between Quilzo and the organisation, and marks partial what the scan
+// says is failing.
+func TestThePlanSplitsEachControlAndShowsWhatFails(t *testing.T) {
+	if _, err := SystemSecurityPlan(SSPInput{Impact: "severe"}); err == nil {
+		t.Fatal("an impact level that is not FIPS 199")
+	}
+	plan, err := SystemSecurityPlan(SSPInput{Impact: "moderate", SystemID: "x", At: time.Now(),
+		Failing: map[string][]string{"ac-7": {"policy.unmet: auth.throttle.after = 9"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := plan.SystemSecurityPlan
+	if !strings.HasSuffix(body.ImportProfile.Href, "MODERATE-baseline_profile.json") ||
+		body.SystemCharacteristics.SecuritySensitivityLevel != "fips-199-moderate" {
+		t.Fatalf("not held to the moderate baseline: %+v", body.ImportProfile)
+	}
+	for _, r := range body.ControlImplementation.ImplementedRequirements {
+		im, _ := Lookup(r.ControlID)
+		var quilzo, org bool
+		for _, b := range r.ByComponents {
+			if b.ResponsibleRoles[0].RoleID == "provider" {
+				quilzo = true
+				if r.ControlID == "ac-7" && b.ImplementationStatus.State != "partial" {
+					t.Error("AC-7 is failing and shown as implemented")
+				}
+				if r.ControlID == "ac-3" && b.ImplementationStatus.State != "implemented" {
+					t.Error("AC-3 passes and is not shown as implemented")
+				}
+			} else {
+				org = true
+			}
+		}
+		if quilzo != (im.Responsibility != Customer) || org != (im.Customer != "") {
+			t.Errorf("%s is %s and its parts are quilzo=%v organisation=%v", r.ControlID, im.Responsibility, quilzo, org)
 		}
 	}
 }

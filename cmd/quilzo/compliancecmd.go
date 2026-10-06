@@ -5,15 +5,18 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/controls"
 	"github.com/quilzo/quilzo/internal/odp"
+	"github.com/quilzo/quilzo/internal/oscal"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -46,8 +49,10 @@ func cmdCompliance(root string, args []string) error {
 		return complianceComponent(root, args[1:])
 	case "pledge":
 		return compliancePledge()
+	case "ssp":
+		return complianceSSP(root, args[1:])
 	default:
-		return fmt.Errorf("unknown compliance command %q; try site, implementation, component, pledge, "+
+		return fmt.Errorf("unknown compliance command %q; try site, implementation, component, ssp, pledge, "+
 			"sbom, crypto, controls, accessibility or summary", args[0])
 	}
 }
@@ -394,4 +399,80 @@ func compliancePledge() error {
 		w.Human("  %s%d. %s%s  %s%s%s\n     %s\n\n", bold, g.N, g.Title, reset, colour[g.Standing], g.Standing, reset, g.Position)
 	}
 	return nil
+}
+
+// systemID is this deployment's identifier in its security plan, made once
+// and kept, so every revision of the plan names the same system.
+func systemID(root string) (string, error) {
+	path := filepath.Join(root, "self", "system-id")
+	if b, err := os.ReadFile(path); err == nil {
+		if id := strings.TrimSpace(string(b)); id != "" {
+			return id, nil
+		}
+	}
+	id, err := oscal.NewUUID()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", err
+	}
+	return id, atomicfile.Write(path, []byte(id+"\n"), 0o600)
+}
+
+// failingByControl is, by control in OSCAL form, what the posture scan
+// reports against it now.
+func failingByControl(root, tplDir string) map[string][]string {
+	rep := posture.Scan(Observe(root, tplDir, posture.ServerFacts{}), nil)
+	out := map[string][]string{}
+	for _, f := range rep.Findings {
+		for _, c := range f.Controls {
+			id := oscal.ControlID(c)
+			out[id] = append(out[id], f.Rule+": "+f.Detail)
+		}
+	}
+	return out
+}
+
+// complianceSSP drafts the system security plan.
+func complianceSSP(root string, args []string) error {
+	fs := flag.NewFlagSet("compliance ssp", flag.ContinueOnError)
+	impact := fs.String("impact", "", "the system's FIPS 199 level: low, moderate or high (required)")
+	out := fs.String("o", "", "write to this file instead of standard output")
+	tplDir := fs.String("templates", "templates", "where the layouts live")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *impact == "" {
+		return errors.New("say the system's impact level: quilzo compliance ssp --impact low|moderate|high " +
+			"(FIPS 199; it chooses the NIST baseline the plan is held to)")
+	}
+	id, err := systemID(root)
+	if err != nil {
+		return err
+	}
+	pol, err := odp.Load(paramsPath(root))
+	if err != nil {
+		return err
+	}
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return err
+	}
+	plan, err := controls.SystemSecurityPlan(controls.SSPInput{Impact: strings.ToLower(*impact), SystemID: id,
+		SystemName: siteName(root), Organisation: organisationOf(root), Version: version, At: time.Now(),
+		Params: odp.SetParameters(pol, cfg), Failing: failingByControl(root, *tplDir)})
+	if err != nil {
+		return err
+	}
+	body, err := json.MarshalIndent(plan, "", "  ")
+	if err != nil {
+		return err
+	}
+	body = append(body, '\n')
+	if *out != "" {
+		return atomicfile.Write(*out, body, 0o644)
+	}
+	_, err = os.Stdout.Write(body)
+	return err
 }

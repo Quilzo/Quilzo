@@ -5,16 +5,19 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/api"
 	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/controls"
 	"github.com/quilzo/quilzo/internal/detect"
 	"github.com/quilzo/quilzo/internal/estate"
 	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/logd"
+	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/remind"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/travel"
@@ -838,6 +841,27 @@ func cmdServe(root string, args []string) error {
 	srv.Frozen = sh.frozen
 	srv.Reports = public.ReportsHandler(sh.violation)
 	srv.Version = version
+	srv.DraftSSP = func(impact string) ([]byte, error) {
+		id, err := systemID(root)
+		if err != nil {
+			return nil, err
+		}
+		pol, err := odp.Load(paramsPath(root))
+		if err != nil {
+			return nil, err
+		}
+		cfg, err := loadConfig(root)
+		if err != nil {
+			return nil, err
+		}
+		plan, err := controls.SystemSecurityPlan(controls.SSPInput{Impact: impact, SystemID: id,
+			SystemName: siteName(root), Organisation: organisationOf(root), Version: version, At: time.Now(),
+			Params: odp.SetParameters(pol, cfg), Failing: failingByControl(root, *tplDir)})
+		if err != nil {
+			return nil, err
+		}
+		return json.MarshalIndent(plan, "", "  ")
+	}
 	srv.Parameters = &admin.Parameters{Path: paramsPath(root), Organisation: organisationOf(root),
 		OnlyAdmin: func(name string) bool { return onlyAdministrator(root, name) }}
 	srv.ShieldAdmin = &admin.ShieldAdmin{Root: root,
