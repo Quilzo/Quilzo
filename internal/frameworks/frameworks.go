@@ -51,7 +51,7 @@ type Framework struct {
 
 // Catalogue is every framework, in the order a list shows them.
 var Catalogue = []Framework{
-	{ID: "nist-800-53", Name: "NIST SP 800-53", Version: "Rev. 5", Kind: Security,
+	{ID: "nist-800-53", Name: "NIST SP 800-53", Version: "Rev. 5, release 5.2.0", Kind: Security,
 		About: "The US federal catalogue of security and privacy controls; " +
 			"the checks here are written against it.",
 		URL: "https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final"},
