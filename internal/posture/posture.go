@@ -282,6 +282,17 @@ type SSOProvider struct {
 	Problem string      `json:"problem,omitempty"`
 }
 
+// InterfaceFacts is the agent interface as set up: whether it answers, and
+// which apps may connect to it on people's behalf.
+type InterfaceFacts struct {
+	Checked bool `json:"checked"`
+	On      bool `json:"on"`
+	// Hosts are the hosts apps may connect from; "*" is any.
+	Hosts []string `json:"hosts,omitempty"`
+	// Admin are the connections in force given administrator scope.
+	Admin []string `json:"admin,omitempty"`
+}
+
 // AgentEvalFact is an agent's last evaluation, for the agent checks.
 type AgentEvalFact struct {
 	Name string `json:"name"`
@@ -334,6 +345,7 @@ type State struct {
 	Ext        ExtFacts          `json:"ext"`
 	AI         AIFacts           `json:"ai"`
 	SSO        SSOFacts          `json:"sso"`
+	Interface  InterfaceFacts    `json:"interface"`
 	Now        time.Time         `json:"-"`
 	Extra      map[string]string `json:"extra,omitempty"`
 }

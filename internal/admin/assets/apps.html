@@ -1,0 +1,129 @@
+{{/*
+  Apps connected to the agent interface on somebody's behalf.
+
+  Everybody sees their own and can disconnect them; an administrator sees
+  everybody's, decides which apps may connect at all, and registers apps
+  that cannot publish a metadata document of their own.
+*/}}
+{{template "head" .}}
+<h1>Connected apps</h1>
+
+<p class="lead">Apps and agents that use Quilzo's agent interface as somebody.
+  Each acts with the person's access and no more, and everything it does is in
+  the log under their name.</p>
+
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+{{if .On}}
+<div class="card">
+  <p>The agent interface is on at <code>{{.Endpoint}}</code>. Give this address
+    to an app that speaks MCP{{if .OAuth}}; it will send you here to agree{{end}}.</p>
+  {{if not .OAuth}}<p class="hint">Apps cannot sign in by themselves until the
+    admin's own address is set: <code>quilzo config set admin.base_url https://…</code>.
+    Until then only Quilzo's own tokens work here.</p>{{end}}
+</div>
+{{else}}
+<p class="notice">The agent interface is off. An administrator turns it on with
+  <code>quilzo config set mcp.remote true</code>.</p>
+{{end}}
+
+<h2>{{if .Admin}}Everybody's{{else}}Yours{{end}}</h2>
+{{if .Apps}}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">App</th>{{if .Admin}}<th scope="col">For</th>{{end}}
+    <th scope="col">May</th><th scope="col">Connected</th><th scope="col">Last used</th>
+    <th scope="col">Asks again</th><th scope="col"></th>
+  </tr></thead>
+  <tbody>
+  {{range .Apps}}
+  <tr>
+    <th scope="row">{{.ClientName}}<div class="hint"><code>{{.Client}}</code></div></th>
+    {{if $.Admin}}<td>{{.Principal}}</td>{{end}}
+    <td>{{range .Scopes}}<span class="tag">{{.}}</span> {{end}}</td>
+    <td>{{when .Created.Unix}}</td>
+    <td>{{if .LastUsed.IsZero}}never{{else}}{{ago .LastUsed.Unix}}{{end}}</td>
+    <td>{{when .Expires.Unix}}</td>
+    <td>
+      <form method="post" action="/apps/act">
+        <input type="hidden" name="action" value="disconnect">
+        <input type="hidden" name="grant" value="{{.ID}}">
+        <button type="submit" class="btn-tonal">Disconnect</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p>No apps are connected{{if not .Admin}} as you{{end}}.</p>
+{{end}}
+
+{{if .Admin}}
+<h2>Which apps may connect</h2>
+<p>An app identifies itself by a document it publishes at an address of its
+  own. Only apps published from these hosts can ask anybody here to connect.
+  Removing a host ends every connection from it.</p>
+{{if .Hosts}}
+<ul>
+  {{range .Hosts}}
+  <li><code>{{.}}</code>
+    <form method="post" action="/apps/act" class="inline">
+      <input type="hidden" name="action" value="remove-host">
+      <input type="hidden" name="host" value="{{.}}">
+      <button type="submit" class="btn-tonal">Remove</button>
+    </form></li>
+  {{end}}
+</ul>
+{{else}}
+<p class="hint">None yet, so no app can connect by itself.</p>
+{{end}}
+<form method="post" action="/apps/act">
+  <input type="hidden" name="action" value="allow-host">
+  <div class="field"><label for="host">Host {{template "req"}}</label>
+    <input id="host" name="host" required placeholder="claude.ai" autocomplete="off"></div>
+  <p class="actions"><button type="submit">Allow apps from this host</button></p>
+</form>
+
+<h2>Registered here</h2>
+<p>For an app that cannot publish a document of its own: it is given a
+  <code>client_id</code> to use instead.</p>
+{{if .Registered}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">App</th><th scope="col">client_id</th><th scope="col">Returns to</th><th scope="col">Added</th><th scope="col"></th></tr></thead>
+  <tbody>
+  {{range .Registered}}
+  <tr>
+    <th scope="row">{{.Name}}</th>
+    <td><code>{{.ID}}</code></td>
+    <td>{{range .RedirectURIs}}<code>{{.}}</code> {{end}}</td>
+    <td>{{.AddedBy}}, {{when .Added.Unix}}</td>
+    <td>
+      <form method="post" action="/apps/act">
+        <input type="hidden" name="action" value="unregister">
+        <input type="hidden" name="client" value="{{.ID}}">
+        <button type="submit" class="btn-tonal">Remove</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+<form method="post" action="/apps/act">
+  <input type="hidden" name="action" value="register">
+  <div class="field"><label for="app-name">Name {{template "req"}}</label>
+    <input id="app-name" name="name" required maxlength="100"></div>
+  <div class="field"><label for="app-redirects">Return addresses {{template "req"}}</label>
+    <input id="app-redirects" name="redirects" required placeholder="http://127.0.0.1/callback">
+    <p class="hint">Separated by spaces. https, or http to this computer; a port on
+      127.0.0.1 or localhost may change each time.</p></div>
+  <p class="actions"><button type="submit">Register</button></p>
+</form>
+{{end}}
+{{template "foot" .}}

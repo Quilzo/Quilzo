@@ -609,3 +609,51 @@ func records(t *testing.T, body string) []map[string]any {
 	}
 	return out
 }
+
+// A call through the agent interface exports as what it was: a read or a
+// write of a named operation, by an app acting for a person.
+func TestAgentInterfaceCallsExportAsReadsAndWrites(t *testing.T) {
+	events := log(t, nil,
+		audit.Record{Action: "mcp.call", Resource: "/mcp", Outcome: audit.Success, Principal: "app:qzc_1",
+			Kind: audit.KindAI, Model: "qzc_1", Verified: true,
+			Detail: map[string]string{"tool": "quilzo_read", "operation": "list_pages", "on_behalf_of": "dana"}},
+		audit.Record{Action: "mcp.call", Resource: "/mcp", Outcome: audit.Denied, Principal: "app:qzc_1",
+			Kind: audit.KindAI, Model: "qzc_1", Verified: true,
+			Detail: map[string]string{"tool": "quilzo_write", "operation": "write_page", "on_behalf_of": "dana"}},
+		audit.Record{Action: "oauth.disconnected", Resource: "/mcp", Outcome: audit.Success, Principal: "dana",
+			Kind: audit.KindHuman, Verified: true},
+	)
+	res, err := Export(OCSF, events, Options{Reveal: true}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(res.Body), "\n")
+	var recs []map[string]any
+	for _, l := range lines {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(l), &m); err != nil {
+			t.Fatal(err)
+		}
+		recs = append(recs, m)
+	}
+	if len(recs) != 3 {
+		t.Fatalf("%d records", len(recs))
+	}
+	want := []struct {
+		activity float64
+		op       string
+	}{{2, "list_pages"}, {3, "write_page"}, {4, "oauth.disconnected"}}
+	for i, w := range want {
+		api := recs[i]["api"].(map[string]any)
+		if recs[i]["activity_id"] != w.activity || api["operation"] != w.op || recs[i]["class_uid"] != float64(6003) {
+			t.Errorf("record %d: activity %v op %v", i, recs[i]["activity_id"], api["operation"])
+		}
+	}
+	actor := recs[0]["actor"].(map[string]any)
+	if actor["app_name"] != "qzc_1" {
+		t.Errorf("the app is not the actor's application: %v", actor)
+	}
+	if _, ok := recs[2]["actor"].(map[string]any)["app_name"]; ok {
+		t.Error("a person's record names an application")
+	}
+}

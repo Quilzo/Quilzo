@@ -383,10 +383,7 @@ func renderOCSF(events []audit.Event, opt Options, env Envelope) (string, error)
 					// cryptographically intact and substantively false.
 				},
 			},
-			"api": map[string]any{
-				"operation": e.Action,
-				"service":   map[string]any{"name": opt.Product},
-			},
+			"api": apiOf(e, opt),
 			"resources": []any{map[string]any{
 				"uid": e.Resource, "type": "content",
 			}},
@@ -401,6 +398,9 @@ func renderOCSF(events []audit.Event, opt Options, env Envelope) (string, error)
 		}
 		if e.Model != "" {
 			rec["unmapped"].(map[string]any)["model"] = e.Model
+			// The app or model acting, for an AI actor: what OCSF calls
+			// the application the activity came through.
+			rec["actor"].(map[string]any)["app_name"] = e.Model
 		}
 		for k, v := range e.Detail {
 			rec["unmapped"].(map[string]any)["detail_"+k] = v
@@ -414,6 +414,23 @@ func renderOCSF(events []audit.Event, opt Options, env Envelope) (string, error)
 		b.WriteByte('\n')
 	}
 	return b.String(), nil
+}
+
+// apiOf is the API object: for a call through the agent interface, the
+// operation it called and the tool it went through, as a gateway would
+// record them.
+func apiOf(e audit.Event, opt Options) map[string]any {
+	api := map[string]any{"operation": e.Action, "service": map[string]any{"name": opt.Product}}
+	if e.Action == "mcp.call" {
+		if op := e.Detail["operation"]; op != "" {
+			api["operation"] = op
+		}
+		api["service"] = map[string]any{"name": opt.Product + " agent interface"}
+		if tool := e.Detail["tool"]; tool != "" {
+			api["request"] = map[string]any{"uid": e.Hash[:16], "flags": []string{"tool:" + tool}}
+		}
+	}
+	return api
 }
 
 func classFor(e audit.Event) int {
@@ -433,6 +450,21 @@ func categoryFor(e audit.Event) int {
 
 // activityFor maps to OCSF API Activity: 1 Create, 2 Read, 3 Update, 4 Delete.
 func activityFor(e audit.Event) int {
+	// A call through the agent interface is a read unless it went through
+	// the write tool: an agent's reading is most of what it does, and an
+	// export that called every one an update would bury the writes.
+	if e.Action == "mcp.call" {
+		if e.Detail["tool"] == "quilzo_write" {
+			return 3
+		}
+		return 2
+	}
+	switch e.Action {
+	case "oauth.consent", "oauth.connected", "oauth.allow-host", "oauth.app-registered":
+		return 1
+	case "oauth.disconnected", "oauth.disallow-host", "oauth.remove-host", "oauth.app-removed", "oauth.refresh-reused":
+		return 4
+	}
 	switch {
 	case strings.Contains(e.Action, "delete"), strings.Contains(e.Action, "revoke"),
 		strings.Contains(e.Action, "rollback"):

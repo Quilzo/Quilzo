@@ -836,6 +836,9 @@ func cmdServe(root string, args []string) error {
 	srv.Brand = brand
 
 	srv.ReloadTokens = tokenReloader(root, toks)
+	// The agent interface at /mcp, and the OAuth server apps connect
+	// through. Off until mcp.remote is set. See agentinterface.go.
+	wireInterface(root, s, srv, sh, *tplDir)
 	srv.OnBadToken = sh.badToken
 	srv.OnStrongSignIn = sh.vouch
 	srv.Shield = sh.off

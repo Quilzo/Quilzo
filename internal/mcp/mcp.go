@@ -82,6 +82,9 @@ type Error struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    any    `json:"data,omitempty"`
+	// cause is what the error came from, for a transport that answers some
+	// refusals in its own terms (a scope too small is an HTTP 403).
+	cause error
 }
 
 // JSON-RPC error codes, plus the one that matters for an agent: a refusal is not
@@ -100,6 +103,9 @@ type Tool struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	InputSchema map[string]any `json:"inputSchema"`
+	// Annotations are hints for the client: which tools only read. A hint,
+	// never a control; the control is the role each operation needs.
+	Annotations map[string]any `json:"annotations,omitempty"`
 }
 
 // Operation is something the server can do, described only when asked.
@@ -192,23 +198,27 @@ func (s *Server) tools() []Tool {
 				},
 				"required": []string{"query"},
 			},
+			Annotations: map[string]any{"readOnlyHint": true, "openWorldHint": false},
 		},
 		{
 			Name:        "quilzo_read",
 			Description: "Read content or state. Use quilzo_find to learn the operations.",
 			InputSchema: opSchema("a read operation name from quilzo_find"),
+			Annotations: map[string]any{"readOnlyHint": true, "openWorldHint": false},
 		},
 		{
 			Name: "quilzo_write",
 			Description: "Change a draft. Never publishes. Content written here is " +
 				"recorded as AI-generated.",
 			InputSchema: opSchema("a write operation name from quilzo_find"),
+			Annotations: map[string]any{"readOnlyHint": false, "destructiveHint": false, "openWorldHint": false},
 		},
 		{
 			Name: "quilzo_check",
 			Description: "Run the checks that gate publishing: accessibility and " +
 				"content provenance.",
 			InputSchema: opSchema("a check operation name from quilzo_find"),
+			Annotations: map[string]any{"readOnlyHint": true, "openWorldHint": false},
 		},
 	}
 }
@@ -285,14 +295,10 @@ func (s *Server) Handle(req Request) *Response {
 
 	switch req.Method {
 	case "initialize":
-		resp.Result = map[string]any{
-			"protocolVersion": Protocol,
-			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": s.Name, "version": s.Version},
-			"instructions": "Call quilzo_find first to discover operations. " +
-				"Writes go to a draft and never publish. Content you write is " +
-				"recorded as AI-generated, which the EU AI Act requires.",
-		}
+		resp.Result = s.initialize(Protocol)
+
+	case "server/discover":
+		resp.Result = s.discover()
 
 	case "notifications/initialized", "ping":
 		resp.Result = map[string]any{}
@@ -308,6 +314,44 @@ func (s *Server) Handle(req Request) *Response {
 			Message: fmt.Sprintf("no method %q", req.Method)}
 	}
 	return resp
+}
+
+const instructions = "Call quilzo_find first to discover operations. " +
+	"Writes go to a draft and never publish. Content you write is " +
+	"recorded as AI-generated, which the EU AI Act requires."
+
+// initialize answers a legacy client's handshake.
+func (s *Server) initialize(version string) map[string]any {
+	return map[string]any{
+		"protocolVersion": version,
+		"capabilities":    map[string]any{"tools": map[string]any{}},
+		"serverInfo":      map[string]any{"name": s.Name, "version": s.Version},
+		"instructions":    instructions,
+	}
+}
+
+// discover is server/discover: the revisions, what is offered, and who.
+func (s *Server) discover() map[string]any {
+	res := s.complete(map[string]any{
+		"supportedVersions": Supported(),
+		"capabilities":      map[string]any{"tools": map[string]any{}},
+		"instructions":      instructions,
+	})
+	res["ttlMs"] = 3600000
+	res["cacheScope"] = "public"
+	return res
+}
+
+// complete marks a result as final and names the server, as 2026-07-28
+// results do.
+func (s *Server) complete(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m)+2)
+	for k, v := range m {
+		out[k] = v
+	}
+	out["resultType"] = "complete"
+	out["_meta"] = map[string]any{metaServer: map[string]any{"name": s.Name, "version": s.Version}}
+	return out
 }
 
 type callParams struct {
@@ -366,7 +410,7 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	}
 	if err := s.Authorise(op); err != nil {
 		return nil, &Error{Code: CodeRefused, Message: err.Error(),
-			Data: map[string]any{"refused": true, "retryable": false}}
+			Data: map[string]any{"refused": true, "retryable": false}, cause: err}
 	}
 
 	args, _ := p.Arguments["arguments"].(map[string]any)

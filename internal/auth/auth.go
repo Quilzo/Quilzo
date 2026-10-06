@@ -659,6 +659,17 @@ type Token struct {
 	// seen elsewhere, unlike them (internal/automate). Cleared when they do.
 	StepUp string `json:"step_up,omitempty"`
 
+	// Audience, when set, is the one resource this token may be presented
+	// to: an access token an app was given through OAuth for the agent
+	// interface (internal/oauthas). Every other surface refuses it, so what
+	// an AI app holds to call the interface is not also a way into the
+	// admin, the API or a terminal.
+	Audience string `json:"audience,omitempty"`
+	// Client is the app it was issued to and Grant the person's consent it
+	// came from; revoking the grant revokes every token issued under it.
+	Client string `json:"client,omitempty"`
+	Grant  string `json:"grant,omitempty"`
+
 	// Bound is the kind of device and the country a session was issued to,
 	// "Chrome on Windows|GB", so a session carried somewhere else — a
 	// cookie copied by malware — can be noticed (see BindSession).
@@ -833,14 +844,15 @@ func (ts *TokenStore) IssueSession(name, principal string, role Role,
 // actually has to last.
 const SessionRetention = 24 * time.Hour
 
-// pruneSessions removes sessions that ended more than SessionRetention ago.
-// Only sessions: a long-lived token is somebody's credential and is removed
-// by revoking it on purpose, never by a sweep. Called with the lock held.
+// pruneSessions removes sessions, and apps' access tokens, that ended more
+// than SessionRetention ago. Only those: a long-lived token is somebody's
+// credential and is removed by revoking it on purpose, never by a sweep.
+// Called with the lock held.
 func (ts *TokenStore) pruneSessions(now time.Time) {
 	cutoff := now.Add(-SessionRetention).Unix()
 	kept := ts.Tokens[:0]
 	for _, t := range ts.Tokens {
-		if t.IsSession() && t.ExpiresAt < cutoff {
+		if (t.IsSession() || t.Grant != "") && t.ExpiresAt < cutoff {
 			if len(t.Hash) >= endedPrint {
 				ts.Ended = append(ts.Ended, Ended{Print: t.Hash[:endedPrint], At: now.Unix()})
 			}
@@ -940,6 +952,9 @@ func (ts *TokenStore) Exchange(parentSecret string, role Role, resource string,
 	defer ts.mu.Unlock()
 
 	parent, err := ts.authenticate(parentSecret, now)
+	if err == nil && parent.Audience != "" {
+		err = audienceError(parent.Audience)
+	}
 	if err != nil {
 		return "", Token{}, err
 	}
@@ -1030,9 +1045,19 @@ func (ts *TokenStore) Exchange(parentSecret string, role Role, resource string,
 // patience — and the whole point of storing hashes is that the store is not
 // enough to authenticate with.
 func (ts *TokenStore) Authenticate(secret string, now time.Time) (*Token, error) {
+	return ts.AuthenticateFor(secret, "", now)
+}
+
+// AuthenticateFor is Authenticate at one resource: a token bound to an
+// audience is accepted only where that audience is the resource asked
+// about, and refused everywhere else, including by Authenticate.
+func (ts *TokenStore) AuthenticateFor(secret, resource string, now time.Time) (*Token, error) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	t, err := ts.authenticate(secret, now)
+	if err == nil && t.Audience != "" && (resource == "" || t.Audience != resource) {
+		return nil, audienceError(t.Audience)
+	}
 	if err == nil && t.StepUp != "" {
 		// Refused everywhere, so a session waiting to prove its person
 		// cannot be carried to the API, the studio or a terminal as a
@@ -1041,6 +1066,69 @@ func (ts *TokenStore) Authenticate(secret string, now time.Time) (*Token, error)
 		return t, ErrStepUp
 	}
 	return t, err
+}
+
+// ErrAudience is a token presented somewhere other than the one resource it
+// was issued for.
+var ErrAudience = errors.New("this token was issued for one resource only")
+
+func audienceError(aud string) error {
+	return fmt.Errorf("%w (%s) and is not accepted here", ErrAudience, aud)
+}
+
+// IssueForGrant mints an access token for an app a person consented to,
+// bound to one resource. Not a session: signing out of the browser does not
+// disconnect the app; revoking the grant does.
+func (ts *TokenStore) IssueForGrant(principal string, role Role, scope Scope,
+	client, grant, audience string, ttl time.Duration, now time.Time) (string, Token, error) {
+	if client == "" || grant == "" || audience == "" {
+		return "", Token{}, errors.New("an app's token names its app, its grant and its audience")
+	}
+	if ttl <= 0 || ttl > MaxSessionTTL {
+		return "", Token{}, fmt.Errorf("an app's access token lasts more than nothing and at most %s", MaxSessionTTL)
+	}
+	if err := scope.Validate(); err != nil {
+		return "", Token{}, err
+	}
+	if !role.Valid() {
+		return "", Token{}, fmt.Errorf("%q is not a role", role)
+	}
+	secret, err := NewSecret()
+	if err != nil {
+		return "", Token{}, err
+	}
+	idRaw := make([]byte, 6)
+	if _, err := rand.Read(idRaw); err != nil {
+		return "", Token{}, fmt.Errorf("cannot generate a token id: %w", err)
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	t := Token{
+		ID: hex.EncodeToString(idRaw), Name: "app " + client, Hash: hashToken(secret),
+		Principal: principal, Role: role, Resource: "/", Scope: scope,
+		CreatedAt: now.Unix(), ExpiresAt: now.Add(ttl).Unix(),
+		Audience: audience, Client: client, Grant: grant,
+	}
+	ts.pruneSessions(now)
+	ts.Tokens = append(ts.Tokens, t)
+	return secret, t, nil
+}
+
+// RevokeGrant revokes every token issued under one grant, and says how many.
+func (ts *TokenStore) RevokeGrant(grant string) int {
+	if grant == "" {
+		return 0
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	n := 0
+	for i := range ts.Tokens {
+		if ts.Tokens[i].Grant == grant && !ts.Tokens[i].Revoked {
+			ts.Tokens[i].Revoked = true
+			n++
+		}
+	}
+	return n
 }
 
 // errUnknown marks a secret that is no credential this store ever issued:

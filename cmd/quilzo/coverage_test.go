@@ -225,6 +225,11 @@ var coverage = map[string]surfaces{
 	// Quilzo's own flaws, and whether the binary is itself.
 	"self": {GUI: "/security/inventory", MCP: []string{"inventory"}},
 	// What Quilzo is doing to protect itself.
+	"apps": {GUI: "/apps",
+		NoMCP: "which apps may act as people through the agent interface, and " +
+			"ending a connection, are a person's decisions: an app connected " +
+			"through the interface must not be able to let in others or keep " +
+			"itself connected"},
 	"shield": {GUI: "/security/shield", MCP: []string{"shield_status"},
 		Why: "an agent reads what is in force and what the playbooks did; " +
 			"lifting, blocking, holding and every playbook change are a " +

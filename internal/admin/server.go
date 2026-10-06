@@ -393,6 +393,9 @@ type Server struct {
 	// ShieldAdmin is what the Shield screen needs. Nil shows it as not
 	// available in this build.
 	ShieldAdmin *ShieldAdmin
+	// Interface is the agent interface at /mcp, with the OAuth server apps
+	// connect through. Nil serves neither. See agentinterface.go.
+	Interface *AgentInterface
 	// Reports receives the admin pages' policy violations, which browsers
 	// post to public.ReportsPath; nil names no endpoint. On this origin a
 	// violation is a script the admin does not run: an extension reading
@@ -678,8 +681,7 @@ func (s *Server) can(w http.ResponseWriter, r *http.Request, p principal,
 	// anybody an admin, because Evaluate was asked about the person and never
 	// about the credential.
 	if err := auth.CheckCredential(p.Role, p.Scope, p.Limits, act, resource); err != nil {
-		w.WriteHeader(http.StatusForbidden)
-		s.render(w, r, "message.html", map[string]any{
+		s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden,
 			"Title": "Not permitted", "Principal": p,
 			"Heading": "This credential cannot do that",
 			"Body":    err.Error(),
@@ -691,8 +693,7 @@ func (s *Server) can(w http.ResponseWriter, r *http.Request, p principal,
 	if d.Allowed {
 		return true
 	}
-	w.WriteHeader(http.StatusForbidden)
-	s.render(w, r, "message.html", map[string]any{
+	s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden,
 		"Title": "Not permitted", "Principal": p,
 		"Heading": "You cannot do that here",
 		"Body":    d.Reason,
@@ -798,8 +799,7 @@ func pageResource(page string) string {
 func (s *Server) renderTypeFailures(w http.ResponseWriter, r *http.Request,
 	p principal, page string, failures []schema.Failure) {
 
-	w.WriteHeader(http.StatusUnprocessableEntity)
-	s.render(w, r, "message.html", map[string]any{
+	s.render(w, r, "message.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 		"Title": "Not saved", "Principal": p,
 		"Heading":  "This does not match its content type",
 		"Page":     page,
@@ -815,8 +815,7 @@ func (s *Server) renderTypeFailures(w http.ResponseWriter, r *http.Request,
 func (s *Server) renderConflict(w http.ResponseWriter, r *http.Request, p principal, page string,
 	c *site.Conflict) {
 
-	w.WriteHeader(http.StatusConflict)
-	s.render(w, r, "conflict.html", map[string]any{
+	s.render(w, r, "conflict.html", map[string]any{"Status": http.StatusConflict,
 		"Nav": "pages", "Title": "Not saved", "Principal": p,
 		"Page": page, "Conflict": c,
 		// Whether the other change touched this page decides whether the
@@ -1152,6 +1151,15 @@ func (s *Server) readOnlyTokens(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// The agent interface and the OAuth endpoints read their own bearer
+		// tokens and refuse a read-only one's writes themselves; reading
+		// through the interface is a POST, and refusing every POST would
+		// refuse a read-only token's reads.
+		switch r.URL.Path {
+		case "/mcp", "/oauth/token", "/oauth/revoke":
+			next.ServeHTTP(w, r)
+			return
+		}
 		// An unauthenticated request is not this middleware's problem: the
 		// handler will refuse it, and answering here would tell an anonymous
 		// caller which routes exist.
@@ -1160,8 +1168,7 @@ func (s *Server) readOnlyTokens(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		w.WriteHeader(http.StatusForbidden)
-		s.render(w, r, "message.html", map[string]any{
+		s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden,
 			"Title": "Not permitted", "Principal": p,
 			"Heading": "This credential cannot change anything",
 			"Body": "This token was issued read-only, so it refuses every " +
@@ -1388,6 +1395,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/agents/evals", s.handleEvals)
 	mux.HandleFunc("/agents/evals/", s.handleEvals)
 	mux.HandleFunc("/agents/evals/act", s.handleEvalsAct)
+	// The agent interface, and how apps connect to it. See agentinterface.go.
+	mux.HandleFunc("/mcp", s.handleMCP)
+	mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleResourceMetadata)
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", s.handleResourceMetadata)
+	mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleServerMetadata)
+	mux.HandleFunc("/oauth/authorize", s.handleAuthorize)
+	mux.HandleFunc("/oauth/token", s.handleOAuthToken)
+	mux.HandleFunc("/oauth/revoke", s.handleOAuthRevoke)
+	mux.HandleFunc("/apps", s.handleApps)
+	mux.HandleFunc("/apps/act", s.handleAppsAct)
 	mux.HandleFunc("/manifest.webmanifest", s.installManifest)
 	mux.HandleFunc("/icon.svg", s.icon)
 	mux.HandleFunc("/start", s.handleStart)
@@ -1670,7 +1687,7 @@ func (s *Server) signInForm(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Retry-After", strconv.Itoa(secs))
 			data["Title"] = "Too many attempts"
 			data["Error"] = "Too many attempts from this address. " + d.Why
-			w.WriteHeader(http.StatusTooManyRequests)
+			data["Status"] = http.StatusTooManyRequests
 		}
 	}
 	s.render(w, r, "signin.html", data)
@@ -1841,6 +1858,15 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 		}
 		return principal{}, false
 	}
+	// Signed in on the way to agreeing to an app: the first page they are
+	// shown afterwards, whichever it is, sends them back to that request,
+	// which asks them again. See agentinterface.go.
+	if r.Method == http.MethodGet && r.URL.Path != "/oauth/authorize" {
+		if next := s.takeNext(w, r); next != "" {
+			http.Redirect(w, r, next, http.StatusSeeOther)
+			return principal{}, false
+		}
+	}
 	return p, true
 }
 
@@ -1855,8 +1881,7 @@ func (s *Server) tooManyAttempts(w http.ResponseWriter, r *http.Request, d throt
 		secs = 1
 	}
 	w.Header().Set("Retry-After", strconv.Itoa(secs))
-	w.WriteHeader(http.StatusTooManyRequests)
-	s.render(w, r, "signin.html", map[string]any{
+	s.render(w, r, "signin.html", map[string]any{"Status": http.StatusTooManyRequests,
 		"Title": "Too many attempts", "Error": d.Why,
 	})
 }
@@ -2731,8 +2756,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	if s.Frozen != nil {
 		if ferr := s.Frozen(); ferr != nil {
 			s.audit("publish", "/", map[string]string{"outcome": "refused", "by": p.Name, "reason": ferr.Error()})
-			w.WriteHeader(http.StatusConflict)
-			s.render(w, r, "review.html", map[string]any{
+			s.render(w, r, "review.html", map[string]any{"Status": http.StatusConflict,
 				"Nav": "review", "Title": "Review", "Principal": p,
 				"CanPublish": false, "Error": ferr.Error()})
 			return
@@ -2760,8 +2784,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	}
 	refused, advisory, gerr := s.ContentGates(draft)
 	if gerr != nil {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.render(w, r, "message.html", map[string]any{
+		s.render(w, r, "message.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Title": "Not published", "Principal": p,
 			"Heading": "A check could not run", "Body": gerr.Error(),
 		})
@@ -2776,8 +2799,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 			"gate": refused.Check.Name,
 			"how":  strconv.Itoa(len(refused.Findings)),
 		})
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.render(w, r, "message.html", map[string]any{
+		s.render(w, r, "message.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Title": "Not published", "Principal": p,
 			"Heading": refused.Check.Refusal(len(refused.Findings)),
 			"Details": details,
@@ -2790,8 +2812,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		// Refused, not waived. An override is for a judgement call about a
 		// finding somebody has read; there is no finding here, because the
 		// check did not run.
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.render(w, r, "message.html", map[string]any{
+		s.render(w, r, "message.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Title": "Not published", "Principal": p,
 			"Heading": "The accessibility check could not run",
 			"Body": "Publishing would claim a check that did not happen: " +
@@ -2813,8 +2834,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		// Refused, not waived, and for the same reason the accessibility error
 		// above is: the reason box is for a judgement call about something
 		// somebody has read, and there is nothing here to read.
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.render(w, r, "message.html", map[string]any{
+		s.render(w, r, "message.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Title": "Not published", "Principal": p,
 			"Heading": "The provenance check could not run",
 			"Body": "Publishing would claim a check that did not happen: " +
@@ -2836,8 +2856,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		waived = append(waived, "unmarked-ai")
 	}
 	if len(unmarked) > 0 && reason == "" {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.render(w, r, "review.html", map[string]any{
+		s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Nav":   "review",
 			"Title": "Review", "Principal": p, "Reports": reports,
 			"Blocking": blocking, "Unmarked": unmarked, "CanPublish": true,
@@ -2858,8 +2877,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// prevent, so accepting a reason here would be offering a button that
 	// switches the control off.
 	if blocked := s.blockedByApproval(p, draft); blocked != "" {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.render(w, r, "review.html", map[string]any{
+		s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Nav": "review", "Title": "Review", "Principal": p,
 			"Reports": reports, "Blocking": blocking, "CanPublish": true,
 			"Approval": s.approvalFor(p, draft),
@@ -2879,8 +2897,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		waived = append(waived, "expired-pages")
 	}
 	if len(stale) > 0 && reason == "" {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.render(w, r, "review.html", map[string]any{
+		s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Nav": "review", "Title": "Review", "Principal": p,
 			"Reports": reports, "Blocking": blocking, "CanPublish": true,
 			"Expired": stale,
@@ -2912,8 +2929,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// cannot disagree about what publishes.
 	if s.CheckReferences != nil {
 		if failures := s.CheckReferences(site.PagesOf(s.Store, draft)); len(failures) > 0 {
-			w.WriteHeader(http.StatusUnprocessableEntity)
-			s.render(w, r, "review.html", map[string]any{
+			s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 				"Nav": "review", "Title": "Review", "Principal": p,
 				"Reports": reports, "Blocking": blocking, "CanPublish": true,
 				"TypeFailures": failures,
@@ -2934,8 +2950,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 			for _, f := range failures {
 				names = append(names, f.Page)
 			}
-			w.WriteHeader(http.StatusUnprocessableEntity)
-			s.render(w, r, "review.html", map[string]any{
+			s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 				"Nav": "review", "Title": "Review", "Principal": p,
 				"Reports": reports, "Blocking": blocking, "CanPublish": true,
 				"TypeFailures": failures,
@@ -2962,8 +2977,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		waived = append(waived, "broken-links")
 	}
 	if len(broken) > 0 && reason == "" {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.render(w, r, "review.html", map[string]any{
+		s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Nav": "review", "Title": "Review", "Principal": p,
 			"Reports": reports, "Blocking": blocking, "CanPublish": true,
 			"BrokenLinks": broken,
@@ -2982,8 +2996,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		waived = append(waived, "accessibility")
 	}
 	if blocking > 0 && reason == "" {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.render(w, r, "review.html", map[string]any{
+		s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Nav":   "review",
 			"Title": "Review", "Principal": p, "Reports": reports,
 			"Blocking":   blocking,
@@ -3002,8 +3015,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// already does that; this one was reaching the store first and reporting
 	// whatever came back.
 	if draft == "" {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.render(w, r, "review.html", map[string]any{
+		s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Nav":   "review",
 			"Title": "Review", "Principal": p, "Reports": reports,
 			"Blocking": blocking, "CanPublish": true,
@@ -3264,8 +3276,7 @@ func (s *Server) handleProvenanceSet(w http.ResponseWriter, r *http.Request) {
 		ReviewedBy: strings.TrimSpace(r.FormValue("reviewed_by")),
 	}
 	if err := idx.Set(page, rec); err != nil {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.render(w, r, "message.html", map[string]any{
+		s.render(w, r, "message.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Title": "Not recorded", "Principal": p,
 			"Heading": "That provenance could not be recorded", "Body": err.Error(),
 		})

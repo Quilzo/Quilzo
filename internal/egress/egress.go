@@ -174,6 +174,14 @@ var Purposes = []Purpose{
 			"when a person confirms them",
 	},
 	{
+		Name: "apps",
+		What: "reading the short document an AI app publishes about itself " +
+			"(its name, and where sign-in may send a person back to) when " +
+			"somebody connects it to the agent interface",
+		Without: "apps cannot identify themselves by address, so only apps an " +
+			"administrator registered on the Connected apps screen can connect",
+	},
+	{
 		Name: "import",
 		What: "fetching a page or an image the operator asked to import",
 		Without: "importing by URL is refused. Importing from a file is not " +
