@@ -23,6 +23,7 @@ import (
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/csp"
 	"github.com/quilzo/quilzo/internal/ext"
+	"github.com/quilzo/quilzo/internal/fedramp"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/listing"
@@ -323,6 +324,9 @@ func fullyWired(t *testing.T) (*Server, string) {
 		return err
 	}); err != nil {
 		t.Fatal(err)
+	}
+	srv.KSI = func() (fedramp.Source, []fedramp.Result, error) {
+		return fedramp.Assess(map[string][]string{"au-2": {"audit.empty: the log is empty"}})
 	}
 	srv.Parameters = &Parameters{Path: paramsPath, Organisation: "Acme",
 		OnlyAdmin: func(string) bool { return false }}

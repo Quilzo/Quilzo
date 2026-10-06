@@ -4,6 +4,7 @@
 
 <div class="shield-status">
   <span class="hint">{{.Total}} controls · <a href="/security/controls?who=quilzo">Quilzo's {{.Quilzo}}</a> · <a href="/security/controls?who=shared">shared {{.Shared}}</a> · <a href="/security/controls?who=customer">the customer's {{.Customer}}</a>{{if .Who}} · <a href="/security/controls">all</a>{{end}}</span>
+  <span class="hint"><a href="/security/controls/ksi">FedRAMP 20x indicators</a> — what Quilzo shows for each.</span>
   <span class="hint"><a href="/security/controls/component">Download as an OSCAL component definition</a> — import it into your governance tool's system security plan.</span>
 </div>
 <form method="get" action="/security/controls/ssp" class="auto-controls">
