@@ -122,6 +122,14 @@ var commandNeeds = map[string]need{
 	// attributed to the caller, and an entry somebody could create without
 	// being able to change anything would be a way to write the log.
 	"agent run": {action: auth.ActEditDraft},
+	// Renewing is its sponsor's or an administrator's; the command checks
+	// which, because the table cannot know who the sponsor is.
+	"agent renew": {action: auth.ActEditDraft},
+	// A run's records from the audit log, with their proofs: what reading
+	// the log needs.
+	"agent receipt": {action: auth.ActView},
+	// Checking a receipt reads only the file and keys it is given.
+	"agent verify-receipt": {why: "checks a file against public keys; it reads nothing in the store"},
 	// Writing the signing key and reading the follower list are both
 	// administrative: the key is the credential that speaks for the whole site
 	// to everybody following it, and the follower list names people who read
@@ -1188,9 +1196,12 @@ var commandAreas = map[string]string{
 	"posture": auth.AreaCompliance, "compliance": auth.AreaCompliance, "self check": auth.AreaCompliance,
 	"policy show": auth.AreaCompliance, "policy params": auth.AreaCompliance, "policy export": auth.AreaCompliance,
 	"self verify": auth.AreaCompliance, "self vex": auth.AreaCompliance,
-	"auditlog":   auth.AreaLog,
-	"inbox":      auth.AreaInbox,
-	"board list": auth.AreaBoards, "board held": auth.AreaBoards, "board recent": auth.AreaBoards,
+	"auditlog": auth.AreaLog,
+	// A receipt is records from the log, with their proofs: read where the
+	// log is read.
+	"agent receipt": auth.AreaLog,
+	"inbox":         auth.AreaInbox,
+	"board list":    auth.AreaBoards, "board held": auth.AreaBoards, "board recent": auth.AreaBoards,
 	"board approve": auth.AreaBoards, "board delete": auth.AreaBoards,
 }
 

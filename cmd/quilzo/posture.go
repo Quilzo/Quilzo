@@ -725,7 +725,14 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 				f.At, f.Hijacked = reps[0].At, reps[0].Hijacked
 			}
 			facts.Evals = append(facts.Evals, f)
+			idf := posture.AgentIdentityFact{Name: name}
+			if id := agents.identityOf(name); id != nil {
+				idf.Sponsor, idf.Expires = id.Sponsor, id.Expires
+				idf.SponsorActive = sponsorActive(root, id.Sponsor)
+			}
+			facts.Identities = append(facts.Identities, idf)
 		}
+		sort.Slice(facts.Identities, func(i, j int) bool { return facts.Identities[i].Name < facts.Identities[j].Name })
 		sort.Slice(facts.Evals, func(i, j int) bool { return facts.Evals[i].Name < facts.Evals[j].Name })
 	}
 	facts.ModelHost, facts.ModelLocal = modelHostOf(root)

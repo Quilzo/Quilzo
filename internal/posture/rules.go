@@ -100,6 +100,70 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "agent.no-sponsor",
+		Title:    "An agent nobody answers for",
+		Severity: High,
+		Controls: []string{"AC-2"},
+		Why: "When it misbehaves there is nobody to ask, and when the person who " +
+			"set it up leaves it carries on as if they had not. An agent with a " +
+			"sponsor stops when they can no longer act here.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, a := range s.AI.Identities {
+				if a.Sponsor == "" {
+					out = append(out, Finding{Resource: "agent/" + a.Name,
+						Detail: a.Name + " has no sponsor",
+						Fix:    "quilzo agent sponsor " + a.Name + " PERSON"})
+				}
+			}
+			return out
+		},
+	},
+	{
+		ID:       "agent.sponsor-gone",
+		Title:    "An agent's sponsor can no longer act here",
+		Severity: High,
+		Controls: []string{"AC-2", "AC-2(3)"},
+		Why: "The agent has stopped running, which is what it should do; " +
+			"whatever relied on it is now waiting for somebody to take it on " +
+			"or withdraw it.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, a := range s.AI.Identities {
+				if a.Sponsor != "" && !a.SponsorActive {
+					out = append(out, Finding{Resource: "agent/" + a.Name,
+						Detail: a.Name + "'s sponsor, " + a.Sponsor + ", can no longer act here",
+						Fix:    "quilzo agent sponsor " + a.Name + " PERSON  # or withdraw it"})
+				}
+			}
+			return out
+		},
+	},
+	{
+		ID:       "agent.identity-ending",
+		Title:    "An agent's identity has ended, or ends within two weeks",
+		Severity: Medium,
+		Controls: []string{"AC-2(3)"},
+		Why: "It stops running when it ends. Renewing it is the moment " +
+			"somebody decides whether it is still needed.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, a := range s.AI.Identities {
+				if a.Expires.IsZero() || a.Expires.After(s.Now.Add(14*24*time.Hour)) {
+					continue
+				}
+				when := "ends " + a.Expires.UTC().Format("2 Jan 2006")
+				if !a.Expires.After(s.Now) {
+					when = "ended " + a.Expires.UTC().Format("2 Jan 2006")
+				}
+				out = append(out, Finding{Resource: "agent/" + a.Name,
+					Detail: a.Name + "'s identity " + when,
+					Fix:    "quilzo agent renew " + a.Name + "  # its sponsor, or an administrator"})
+			}
+			return out
+		},
+	},
+	{
 		ID:       "ai.agent-unevaluated",
 		Title:    "An agent has no evaluation, or none recently",
 		Severity: Low,

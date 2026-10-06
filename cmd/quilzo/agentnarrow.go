@@ -9,6 +9,7 @@ import (
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
+	"strings"
 )
 
 // Bounding an agent by whoever started it.
@@ -115,6 +116,11 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 	// been dropped on the floor once already.
 	if c.Limits.ReadOnly {
 		b.Retrieval.Ref = site.RefLive
+	}
+	// A caller confined to part of the site confines the agent to it: a
+	// token issued --on /docs, or an agent granted a role on /docs only.
+	if sc := strings.Trim(c.Scope, "/"); sc != "" {
+		b.Retrieval.Path = "/" + sc
 	}
 	return b
 }

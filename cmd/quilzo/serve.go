@@ -221,6 +221,14 @@ func cmdServe(root string, args []string) error {
 		}
 	}
 	srv.Agents = &admin.Agents{
+		Identities: func() (map[string]agent.Identity, error) {
+			set, err := loadAgents(root)
+			if err != nil {
+				return nil, err
+			}
+			return set.Identities, nil
+		},
+		SponsorActive: func(sponsor string) bool { return sponsorActive(root, sponsor) },
 		Load: func() (map[string]agent.Manifest, error) {
 			set, err := loadAgents(root)
 			if err != nil {
