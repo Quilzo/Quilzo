@@ -58,6 +58,7 @@ import (
 	"fmt"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/clientip"
+	"github.com/quilzo/quilzo/internal/fedramp"
 	"github.com/quilzo/quilzo/internal/icons"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"html/template"
@@ -129,6 +130,9 @@ type Server struct {
 	// DraftSSP drafts the system security plan at an impact level, from
 	// the same code as quilzo compliance ssp.
 	DraftSSP func(impact string) ([]byte, error)
+	// KSI is Quilzo's evidence against FedRAMP 20x's Key Security
+	// Indicators, as from quilzo compliance ksi.
+	KSI func() (fedramp.Source, []fedramp.Result, error)
 	// idle is when each browser session was last used (idle.go).
 	idle idleClock
 	// Types gives the admin the site's content types, so what an application
@@ -1189,6 +1193,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/controls", s.handleControls)
 	mux.HandleFunc("/security/controls/component", s.handleControlsComponent)
 	mux.HandleFunc("/security/controls/ssp", s.handleControlsSSP)
+	mux.HandleFunc("/security/controls/ksi", s.handleControlsKSI)
 	mux.HandleFunc("/security/integrity", s.handleIntegrityScreen)
 	mux.HandleFunc("/security/verify", s.handleVerify)
 	mux.HandleFunc("/security/agents", s.handleAgentsScreen)

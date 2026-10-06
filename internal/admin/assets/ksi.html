@@ -1,0 +1,26 @@
+{{template "head" .}}
+<h1>FedRAMP 20x indicators</h1>
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
+{{else}}
+<p class="lead">FedRAMP 20x asks a cloud provider to show, persistently and by machine, how it operates. Quilzo is one component of the service being authorised, so it cannot meet an indicator; for each one this says which of the related SP 800-53 controls Quilzo implements, whether its checks on them pass now, and where Quilzo has nothing to show and your own process does.</p>
+<div class="shield-status">
+  <span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Contributes to {{.Contributes}}</span>
+  {{if .Failing}}<span class="wf-band as-written serious"><span class="wf-icon">{{icon "warning"}}</span>Failing on {{.Failing}}</span>{{end}}
+  <span class="wf-band as-written unknown"><span class="wf-icon">{{icon "help"}}</span>Yours alone: {{.Elsewhere}}</span>
+  <span class="hint">{{.Source.Title}}, version {{.Source.Version}} · <a href="/security/controls/ksi?format=json">Download as JSON</a> · <a href="/security/controls">Controls</a></span>
+</div>
+{{range .Themes}}
+<h2>{{.Name}}</h2>
+<ul class="auto-list">{{range .Items}}<li class="auto-card">
+  <div class="auto-head"><strong>{{.ID}}</strong> <span>{{.Name}}</span>
+    {{if eq (print .Standing) "contributes"}}<span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Quilzo contributes</span>
+    {{else if eq (print .Standing) "failing"}}<span class="wf-band as-written serious"><span class="wf-icon">{{icon "warning"}}</span>A check is failing</span>
+    {{else}}<span class="wf-band as-written unknown"><span class="wf-icon">{{icon "help"}}</span>Your process</span>{{end}}
+    {{if .OptionalFor}}<span class="chip-small">Optional at class {{range $i, $c := .OptionalFor}}{{if $i}}, {{end}}{{$c}}{{end}}</span>{{end}}</div>
+  <p class="hint">{{.Statement}}</p>
+  {{if .Evidence}}<p><span class="param-k">Quilzo's part</span> {{range $i, $e := .Evidence}}{{if $i}}, {{end}}<a href="/security/controls#{{$e.Control}}">{{$e.Control}}</a>{{if $e.Failing}} (failing){{end}}{{end}}</p>{{end}}
+</li>{{end}}</ul>
+{{end}}
+<p class="hint">On the machine: <code>quilzo compliance ksi</code>, and <code>-o ksi.json</code> for the evidence control by control.</p>
+{{end}}
+{{template "foot" .}}

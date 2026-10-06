@@ -11,6 +11,7 @@ import (
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/controls"
+	"github.com/quilzo/quilzo/internal/fedramp"
 	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/oscal"
 	"github.com/quilzo/quilzo/internal/site"
@@ -51,8 +52,10 @@ func cmdCompliance(root string, args []string) error {
 		return compliancePledge()
 	case "ssp":
 		return complianceSSP(root, args[1:])
+	case "ksi":
+		return complianceKSI(root, args[1:])
 	default:
-		return fmt.Errorf("unknown compliance command %q; try site, implementation, component, ssp, pledge, "+
+		return fmt.Errorf("unknown compliance command %q; try site, implementation, component, ssp, ksi, pledge, "+
 			"sbom, crypto, controls, accessibility or summary", args[0])
 	}
 }
@@ -475,4 +478,69 @@ func complianceSSP(root string, args []string) error {
 	}
 	_, err = os.Stdout.Write(body)
 	return err
+}
+
+// ksiReport is Quilzo's evidence against FedRAMP 20x's Key Security
+// Indicators, as written out and as served.
+type ksiReport struct {
+	Source     fedramp.Source   `json:"fedramp_rules"`
+	Generated  string           `json:"generated"`
+	System     string           `json:"system"`
+	Note       string           `json:"note"`
+	Indicators []fedramp.Result `json:"indicators"`
+}
+
+func buildKSI(root, tplDir string) (ksiReport, error) {
+	src, res, err := fedramp.Assess(failingByControl(root, tplDir))
+	if err != nil {
+		return ksiReport{}, err
+	}
+	return ksiReport{Source: src, Generated: time.Now().UTC().Format(time.RFC3339), System: siteName(root),
+		Note: "Quilzo is one component of the service being authorised and cannot meet an indicator. For each, " +
+			"this says which related SP 800-53 controls Quilzo implements, whether its checks on them pass now, " +
+			"and where it has nothing to show and the provider's own process does.",
+		Indicators: res}, nil
+}
+
+// complianceKSI prints Quilzo's evidence against the FedRAMP 20x Key
+// Security Indicators, or writes it as JSON.
+func complianceKSI(root string, args []string) error {
+	fs := flag.NewFlagSet("compliance ksi", flag.ContinueOnError)
+	out := fs.String("o", "", "write the JSON to this file")
+	tplDir := fs.String("templates", "templates", "where the layouts live")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	rep, err := buildKSI(root, *tplDir)
+	if err != nil {
+		return err
+	}
+	if *out != "" {
+		body, err := json.MarshalIndent(rep, "", "  ")
+		if err != nil {
+			return err
+		}
+		return atomicfile.Write(*out, append(body, '\n'), 0o644)
+	}
+	if w.JSON(rep) {
+		return nil
+	}
+	n := map[fedramp.Standing]int{}
+	for _, r := range rep.Indicators {
+		n[r.Standing]++
+	}
+	w.Human("%sFedRAMP 20x Key Security Indicators%s  %s, version %s\n", bold, reset, rep.Source.Title, rep.Source.Version)
+	w.Human("  Quilzo contributes to %d, %d with a check failing now, and has nothing to show for %d\n\n",
+		n[fedramp.Contributes], n[fedramp.Failing], n[fedramp.Elsewhere])
+	colour := map[fedramp.Standing]string{fedramp.Contributes: green, fedramp.Failing: red, fedramp.Elsewhere: dim}
+	theme := ""
+	for _, r := range rep.Indicators {
+		if r.Theme != theme {
+			theme = r.Theme
+			w.Human("  %s%s%s\n", bold, r.ThemeName, reset)
+		}
+		w.Human("    %-12s %s%-11s%s %s\n", r.ID, colour[r.Standing], r.Standing, reset, r.Name)
+	}
+	w.Human("\n  %s%s%s\n  %squilzo compliance ksi -o ksi.json   the evidence, control by control%s\n", dim, rep.Note, reset, dim, reset)
+	return nil
 }

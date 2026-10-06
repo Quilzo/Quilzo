@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/detect"
 	"github.com/quilzo/quilzo/internal/estate"
 	"github.com/quilzo/quilzo/internal/evals"
+	"github.com/quilzo/quilzo/internal/fedramp"
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/logd"
 	"github.com/quilzo/quilzo/internal/odp"
@@ -841,6 +842,9 @@ func cmdServe(root string, args []string) error {
 	srv.Frozen = sh.frozen
 	srv.Reports = public.ReportsHandler(sh.violation)
 	srv.Version = version
+	srv.KSI = func() (fedramp.Source, []fedramp.Result, error) {
+		return fedramp.Assess(failingByControl(root, *tplDir))
+	}
 	srv.DraftSSP = func(impact string) ([]byte, error) {
 		id, err := systemID(root)
 		if err != nil {

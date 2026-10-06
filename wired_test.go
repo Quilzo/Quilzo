@@ -74,6 +74,8 @@ var notImported = map[string]string{
 	"internal/selfvuln/gen": "a release tool, run with go run: it writes the Go vulnerability " +
 		"database snapshot and the feature map internal/selfvuln embeds, and a " +
 		"test there fails when the embedded map no longer matches the source",
+	"internal/fedramp/gen": "a release tool, run with go run: it writes the FedRAMP Key Security " +
+		"Indicators internal/fedramp embeds, from FedRAMP's consolidated rules",
 }
 
 // importGraph returns which packages are imported from outside themselves, and

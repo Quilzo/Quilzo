@@ -506,6 +506,7 @@ compliance evidence
   quilzo compliance component [-o FILE]    the same as an OSCAL component definition, for a governance tool
   quilzo compliance pledge                 where Quilzo stands on each goal of CISA's Secure by Design pledge
   quilzo compliance ssp --impact moderate  a draft OSCAL system security plan for this deployment
+  quilzo compliance ksi [-o FILE]          what Quilzo shows for each FedRAMP 20x Key Security Indicator
   quilzo compliance acr                    an accessibility conformance report
   quilzo policy show | params              the organisation's NIST parameters, declared and in effect
   quilzo policy propose ac-12_odp="8 hours" --reason "…"   a change, approved by a second administrator
