@@ -41,10 +41,19 @@ package mcpclient
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/fetch"
@@ -68,13 +77,49 @@ type Client struct {
 	// somebody's API anonymously and reporting their 401 as a tool failure.
 	Secrets func(name string) (string, error)
 
+	// Changed is told when a pinned tool's definition is not the one a
+	// person approved, so the shield can hear about it.
+	Changed func(in agent.Integration, tool, pinned, now string)
+
+	// Now is a clock for the definitions' cache.
+	Now func() time.Time
+
+	// Do performs one POST; nil is Fetch's, with every address check. A
+	// test hands the server in directly.
+	Do func(ctx context.Context, url string, body []byte, headers map[string]string) (*fetch.Result, error)
+
 	id atomic.Int64
+
+	mu       sync.Mutex
+	sessions map[string]*session
+	defs     map[string]cachedDefs
 }
+
+// session is a legacy server's: the revision agreed in its handshake, and
+// the session it assigned, if it assigned one.
+type session struct{ version, id string }
+
+type cachedDefs struct {
+	tools []Tool
+	until time.Time
+}
+
+// The revisions this speaks: the stateless one first, and the handshake
+// revisions for a server that has not moved yet.
+const (
+	Modern = "2026-07-28"
+	Legacy = "2025-11-25"
+)
+
+var legacyAccepted = map[string]bool{"2025-11-25": true, "2025-06-18": true, "2025-03-26": true}
+
+// definitionsFor is how long a server's tool definitions are kept.
+const definitionsFor = 5 * time.Minute
 
 // rpc is a JSON-RPC 2.0 request.
 type rpc struct {
 	Version string `json:"jsonrpc"`
-	ID      int64  `json:"id"`
+	ID      int64  `json:"id,omitempty"`
 	Method  string `json:"method"`
 	Params  any    `json:"params,omitempty"`
 }
@@ -82,25 +127,81 @@ type rpc struct {
 // reply is what comes back.
 type reply struct {
 	Version string          `json:"jsonrpc"`
-	ID      int64           `json:"id"`
+	ID      json.RawMessage `json:"id"`
 	Result  json.RawMessage `json:"result,omitempty"`
 	Error   *rpcError       `json:"error,omitempty"`
 }
 
 type rpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
 }
 
 // Tool is one tool as the far side describes it.
 type Tool struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	InputSchema json.RawMessage `json:"inputSchema,omitempty"`
 	// Allowed is whether this install may call it. Reported rather than
 	// filtered out, so `quilzo integrations tools` shows an operator what a
 	// server offers and which of it they have agreed to — the difference is
 	// the thing worth looking at.
 	Allowed bool `json:"allowed"`
+	// Definition is the SHA-256 of the definition as given, which is what a
+	// pin records; Pinned is the pin, when there is one.
+	Definition string `json:"definition"`
+	Pinned     string `json:"pinned,omitempty"`
+}
+
+// Matches reports whether a pinned tool is still the tool that was pinned.
+func (t Tool) Matches() bool { return t.Pinned != "" && t.Pinned == t.Definition }
+
+// Args are the names a tool takes, from its input schema: names only, and
+// only ones that look like names. What the server says each one means is
+// never shown to a model; a description is text the far side wrote.
+func (t Tool) Args() []string {
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	_ = json.Unmarshal(t.InputSchema, &schema)
+	var out []string
+	for k := range schema.Properties {
+		if reArg.MatchString(k) {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	if len(out) > 32 {
+		out = out[:32]
+	}
+	return out
+}
+
+var reArg = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{0,63}$`)
+
+// definitionOf is the SHA-256 of a tool's definition, over its name,
+// description and input schema re-encoded with sorted keys, so the same
+// definition sent with its keys in another order is the same definition.
+func definitionOf(t Tool) string {
+	var schema any
+	if len(t.InputSchema) > 0 {
+		_ = json.Unmarshal(t.InputSchema, &schema)
+	}
+	b, _ := json.Marshal(struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		InputSchema any    `json:"inputSchema"`
+	}{t.Name, t.Description, schema})
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+func (c *Client) now() time.Time {
+	if c.Now != nil {
+		return c.Now()
+	}
+	return time.Now()
 }
 
 // Call runs one tool on one integration.
@@ -114,6 +215,11 @@ func (c *Client) Call(ctx context.Context, in agent.Integration, tool string,
 	if err := c.permits(in, tool); err != nil {
 		return "", err
 	}
+	if pin := in.Pins[tool]; pin != "" {
+		if err := c.checkPin(ctx, in, tool, pin); err != nil {
+			return "", err
+		}
+	}
 	raw, err := c.send(ctx, in, "tools/call", map[string]any{
 		"name": tool, "arguments": args,
 	})
@@ -121,6 +227,53 @@ func (c *Client) Call(ctx context.Context, in agent.Integration, tool string,
 		return "", err
 	}
 	return renderContent(raw), nil
+}
+
+// checkPin refuses a tool whose definition is not the one approved.
+func (c *Client) checkPin(ctx context.Context, in agent.Integration, tool, pin string) error {
+	tools, err := c.Definitions(ctx, in)
+	if err != nil {
+		return err
+	}
+	for _, t := range tools {
+		if t.Name != tool {
+			continue
+		}
+		if t.Definition == pin {
+			return nil
+		}
+		if c.Changed != nil {
+			c.Changed(in, tool, pin, t.Definition)
+		}
+		return fmt.Errorf("%s has changed what %q is since a person approved it "+
+			"(approved %s, now %s). Nothing is called until somebody looks: "+
+			"quilzo integrations tools %s, then quilzo integrations pin %s",
+			in.Name, tool, pin[:12], t.Definition[:12], in.Name, in.Name)
+	}
+	return fmt.Errorf("%s no longer offers %q, which was approved", in.Name, tool)
+}
+
+// Definitions are a server's tools with their definitions' digests and
+// this install's pins, kept for a few minutes.
+func (c *Client) Definitions(ctx context.Context, in agent.Integration) ([]Tool, error) {
+	key := in.Name + "|" + in.Endpoint
+	c.mu.Lock()
+	if d, ok := c.defs[key]; ok && c.now().Before(d.until) {
+		c.mu.Unlock()
+		return d.tools, nil
+	}
+	c.mu.Unlock()
+	tools, err := c.Tools(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	if c.defs == nil {
+		c.defs = map[string]cachedDefs{}
+	}
+	c.defs[key] = cachedDefs{tools: tools, until: c.now().Add(definitionsFor)}
+	c.mu.Unlock()
+	return tools, nil
 }
 
 // Tools asks a server what it offers, and marks what this install may call.
@@ -139,6 +292,13 @@ func (c *Client) Tools(ctx context.Context, in agent.Integration) ([]Tool, error
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, fmt.Errorf("%s answered tools/list with something this "+
 			"cannot read: %w", in.Name, err)
+	}
+	if len(out.Tools) > 1000 {
+		return nil, fmt.Errorf("%s offers %d tools; that is not a server anybody reviewed", in.Name, len(out.Tools))
+	}
+	for i := range out.Tools {
+		out.Tools[i].Definition = definitionOf(out.Tools[i])
+		out.Tools[i].Pinned = in.Pins[out.Tools[i].Name]
 	}
 	return markAllowed(out.Tools, in.Uses), nil
 }
@@ -184,24 +344,170 @@ func (c *Client) permits(in agent.Integration, tool string) error {
 		in.Name, clamp(tool, 60), in.Endpoint, strings.Join(in.Uses, ", "))
 }
 
-// send performs one JSON-RPC call.
+// send performs one JSON-RPC call: as 2026-07-28 first, statelessly; and,
+// when the server answers like one that predates it, through the handshake
+// the earlier revisions use, remembered for that server afterwards.
 func (c *Client) send(ctx context.Context, in agent.Integration, method string,
-	params any) (json.RawMessage, error) {
+	params map[string]any) (json.RawMessage, error) {
 
-	body, err := json.Marshal(rpc{
-		Version: "2.0", ID: c.id.Add(1), Method: method, Params: params,
-	})
+	key := in.Name + "|" + in.Endpoint
+	c.mu.Lock()
+	sess := c.sessions[key]
+	c.mu.Unlock()
+	if sess == nil {
+		raw, res, err := c.exchange(ctx, in, method, params, Modern, "")
+		if err == nil {
+			return raw, nil
+		}
+		if !legacyServer(res) {
+			return nil, err
+		}
+		if sess, err = c.handshake(ctx, in); err != nil {
+			return nil, err
+		}
+		c.remember(key, sess)
+	}
+	raw, res, err := c.exchange(ctx, in, method, params, sess.version, sess.id)
+	if err != nil && res != nil && res.Status == 404 && sess.id != "" {
+		// The server ended the session; a legacy client starts another.
+		if sess, err = c.handshake(ctx, in); err != nil {
+			return nil, err
+		}
+		c.remember(key, sess)
+		raw, _, err = c.exchange(ctx, in, method, params, sess.version, sess.id)
+	}
+	return raw, err
+}
+
+func (c *Client) remember(key string, s *session) {
+	c.mu.Lock()
+	if c.sessions == nil {
+		c.sessions = map[string]*session{}
+	}
+	c.sessions[key] = s
+	c.mu.Unlock()
+}
+
+// legacyServer reads a refused modern request the way the revision says
+// to: a 400, 404 or 405 whose body is not one of the modern errors comes
+// from a server that wants a handshake first.
+func legacyServer(res *fetch.Result) bool {
+	if res == nil {
+		return false
+	}
+	switch res.Status {
+	case 400, 404, 405:
+	default:
+		return false
+	}
+	var r reply
+	if json.Unmarshal(res.Body, &r) == nil && r.Error != nil {
+		switch r.Error.Code {
+		case -32022:
+			// A modern server that does not take this revision: the
+			// handshake revisions, if it names one of them.
+			var d struct {
+				Supported []string `json:"supported"`
+			}
+			_ = json.Unmarshal(r.Error.Data, &d)
+			for _, v := range d.Supported {
+				if legacyAccepted[v] {
+					return true
+				}
+			}
+			return false
+		case -32020, -32021:
+			return false
+		case -32601:
+			return res.Status != 404
+		}
+	}
+	return true
+}
+
+// handshake opens a legacy session: initialize, then initialized.
+func (c *Client) handshake(ctx context.Context, in agent.Integration) (*session, error) {
+	raw, res, err := c.post(ctx, in, rpc{Version: "2.0", ID: c.id.Add(1), Method: "initialize",
+		Params: map[string]any{"protocolVersion": Legacy, "capabilities": map[string]any{},
+			"clientInfo": map[string]any{"name": "quilzo", "version": "1"}}}, "", "", "initialize", "")
 	if err != nil {
 		return nil, err
 	}
+	var init struct {
+		ProtocolVersion string `json:"protocolVersion"`
+	}
+	if err := json.Unmarshal(raw, &init); err != nil || !legacyAccepted[init.ProtocolVersion] {
+		return nil, fmt.Errorf("%s offered protocol %q, which this does not speak", in.Name, clamp(init.ProtocolVersion, 40))
+	}
+	s := &session{version: init.ProtocolVersion}
+	if res != nil && res.Header != nil {
+		id := res.Header.Get("Mcp-Session-Id")
+		if len(id) > 256 || !visibleASCII(id) {
+			return nil, fmt.Errorf("%s assigned a session id this cannot send back", in.Name)
+		}
+		s.id = id
+	}
+	// The notification is answered 202 with nothing; an error here means a
+	// server that will refuse what follows anyway, so it is not fatal.
+	_, _, _ = c.post(ctx, in, rpc{Version: "2.0", Method: "notifications/initialized"}, s.version, s.id, "notifications/initialized", "")
+	return s, nil
+}
 
+func visibleASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x21 || s[i] > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
+// exchange sends one request in a revision, and reads its answer.
+func (c *Client) exchange(ctx context.Context, in agent.Integration, method string,
+	params map[string]any, version, sessionID string) (json.RawMessage, *fetch.Result, error) {
+
+	p := make(map[string]any, len(params)+1)
+	for k, v := range params {
+		p[k] = v
+	}
+	if version == Modern {
+		p["_meta"] = map[string]any{
+			"io.modelcontextprotocol/protocolVersion":    Modern,
+			"io.modelcontextprotocol/clientInfo":         map[string]any{"name": "quilzo", "version": "1"},
+			"io.modelcontextprotocol/clientCapabilities": map[string]any{},
+		}
+	}
+	name := ""
+	if method == "tools/call" {
+		name, _ = params["name"].(string)
+	}
+	return c.post(ctx, in, rpc{Version: "2.0", ID: c.id.Add(1), Method: method, Params: p},
+		version, sessionID, method, name)
+}
+
+// post sends one message and reads one answer.
+func (c *Client) post(ctx context.Context, in agent.Integration, msg rpc, version, sessionID, method, name string) (json.RawMessage, *fetch.Result, error) {
+	body, err := json.Marshal(msg)
+	if err != nil {
+		return nil, nil, err
+	}
 	headers := map[string]string{
 		"Content-Type": "application/json",
-		"Accept":       "application/json",
+		"Accept":       "application/json, text/event-stream",
+	}
+	if version != "" {
+		headers["MCP-Protocol-Version"] = version
+		headers["Mcp-Method"] = method
+		if name != "" {
+			headers["Mcp-Name"] = headerValue(name)
+		}
+	}
+	if sessionID != "" {
+		headers["Mcp-Session-Id"] = sessionID
 	}
 	if in.Secret != "" {
 		if c.Secrets == nil {
-			return nil, fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"%s authenticates with the secret %q and this process has no "+
 					"vault to read it from. Calling anonymously would report "+
 					"their 401 as a tool that does not work",
@@ -209,48 +515,121 @@ func (c *Client) send(ctx context.Context, in agent.Integration, method string,
 		}
 		v, serr := c.Secrets(in.Secret)
 		if serr != nil {
-			return nil, fmt.Errorf("%s: reading the secret %q: %w",
+			return nil, nil, fmt.Errorf("%s: reading the secret %q: %w",
 				in.Name, in.Secret, serr)
 		}
 		headers["Authorization"] = "Bearer " + v
 	}
 
-	client := c.Fetch
-	if client == nil {
-		client = fetch.New()
+	do := c.Do
+	if do == nil {
+		client := c.Fetch
+		if client == nil {
+			client = fetch.New()
+		}
+		do = func(ctx context.Context, url string, body []byte, headers map[string]string) (*fetch.Result, error) {
+			return client.Do(ctx, "POST", url, body, headers)
+		}
 	}
 	// https, always. An MCP call carries a credential and whatever the tool
 	// was given; over plain HTTP both are on the wire. The endpoint is a
 	// hostname by declaration — Integration.Validate refuses a URL — so the
 	// scheme is this package's to choose and there is one right answer.
 	url := "https://" + in.Endpoint
-	res, err := client.PostWithHeaders(ctx, url, body, headers)
+	res, err := do(ctx, url, body, headers)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", in.Name, err)
+		return nil, nil, fmt.Errorf("%s: %w", in.Name, err)
 	}
-	if res.Status != 0 && (res.Status < 200 || res.Status > 299) {
-		return nil, fmt.Errorf("%s answered %d", in.Name, res.Status)
+	if msg.ID == 0 {
+		// A notification: no answer to read.
+		return nil, res, nil
 	}
-	if int64(len(res.Body)) > MaxResult {
-		return nil, fmt.Errorf(
-			"%s answered %d bytes and the limit is %d; a tool result goes "+
+	if res.Status < 200 || res.Status > 299 {
+		return nil, res, fmt.Errorf("%s answered %d", in.Name, res.Status)
+	}
+	if res.Truncated || int64(len(res.Body)) > MaxResult {
+		return nil, res, fmt.Errorf(
+			"%s answered more than %d bytes; a tool result goes "+
 				"into a model's context and onto somebody's bill",
-			in.Name, len(res.Body), MaxResult)
+			in.Name, MaxResult)
 	}
-
+	data := res.Body
+	if strings.HasPrefix(strings.ToLower(res.ContentType), "text/event-stream") {
+		if data, err = answerInStream(res.Body, msg.ID); err != nil {
+			return nil, res, fmt.Errorf("%s: %w", in.Name, err)
+		}
+	}
 	var r reply
-	if err := json.Unmarshal(res.Body, &r); err != nil {
-		return nil, fmt.Errorf(
+	if err := json.Unmarshal(data, &r); err != nil {
+		return nil, res, fmt.Errorf(
 			"%s did not answer with JSON-RPC this can read: %w", in.Name, err)
 	}
+	if string(r.ID) != strconv.FormatInt(msg.ID, 10) {
+		return nil, res, fmt.Errorf("%s answered another request than the one asked", in.Name)
+	}
 	if r.Error != nil {
-		return nil, fmt.Errorf("%s refused: %s (code %d)",
+		return nil, res, fmt.Errorf("%s refused: %s (code %d)",
 			in.Name, clamp(r.Error.Message, 300), r.Error.Code)
 	}
 	if len(r.Result) == 0 {
-		return nil, fmt.Errorf("%s answered with no result", in.Name)
+		return nil, res, fmt.Errorf("%s answered with no result", in.Name)
 	}
-	return r.Result, nil
+	return r.Result, res, nil
+}
+
+// answerInStream finds the response to request id in a server-sent event
+// stream: the notifications before it are skipped, and nothing after it
+// is read.
+func answerInStream(stream []byte, id int64) ([]byte, error) {
+	want := strconv.FormatInt(id, 10)
+	var data strings.Builder
+	flush := func() []byte {
+		defer data.Reset()
+		if data.Len() == 0 {
+			return nil
+		}
+		var probe struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		b := []byte(data.String())
+		if json.Unmarshal(b, &probe) == nil && probe.Method == "" && string(probe.ID) == want {
+			return b
+		}
+		return nil
+	}
+	for _, line := range strings.Split(strings.ReplaceAll(string(stream), "\r\n", "\n"), "\n") {
+		switch {
+		case line == "":
+			if b := flush(); b != nil {
+				return b, nil
+			}
+		case strings.HasPrefix(line, "data:"):
+			if data.Len() > 0 {
+				data.WriteByte('\n')
+			}
+			data.WriteString(strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " "))
+		}
+	}
+	if b := flush(); b != nil {
+		return b, nil
+	}
+	return nil, errors.New("the stream ended without an answer to the request")
+}
+
+// headerValue is a value for Mcp-Name: as it is when it is plain visible
+// ASCII, and in the revision's Base64 form otherwise.
+func headerValue(v string) string {
+	plain := v != "" && strings.TrimSpace(v) == v && !(strings.HasPrefix(v, "=?base64?") && strings.HasSuffix(v, "?="))
+	for i := 0; i < len(v) && plain; i++ {
+		if v[i] < 0x20 || v[i] > 0x7e {
+			plain = false
+		}
+	}
+	if plain {
+		return v
+	}
+	return "=?base64?" + base64.StdEncoding.EncodeToString([]byte(v)) + "?="
 }
 
 // renderContent turns an MCP tool result into text for a model.

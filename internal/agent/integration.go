@@ -81,6 +81,8 @@ func (k IntegrationKind) Valid() bool {
 }
 
 // reDigest is a sha256 hex digest, the way an object id is checked.
+var rePin = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
 var reDigest = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
 // Integration is one external system this install may reach.
@@ -126,6 +128,14 @@ type Integration struct {
 	// Secret names the credential in the vault. Never the value: this is
 	// stored in a content-addressed object, and an object cannot be deleted.
 	Secret string `json:"secret,omitempty"`
+
+	// Pins are the tool definitions a person approved, by the SHA-256 of
+	// each definition (name, description, input schema) as the server gave
+	// it on that day. A tool whose definition has changed since is refused
+	// until somebody looks again: the server can redefine a tool after the
+	// day it was trusted, and a name staying the same is not the tool
+	// staying the same. Only a pinned tool can be chosen by a model.
+	Pins map[string]string `json:"pins,omitempty"`
 }
 
 // Validate refuses an integration that cannot mean what it appears to.
@@ -201,6 +211,14 @@ func (in *Integration) Validate() error {
 			return fmt.Errorf("%s lists %q twice", in.Name, u)
 		}
 		seen[u] = true
+	}
+	for tool, pin := range in.Pins {
+		if !seen[tool] {
+			return fmt.Errorf("%s pins %q, which it does not use", in.Name, tool)
+		}
+		if !rePin.MatchString(pin) {
+			return fmt.Errorf("%s pins %q with %q, which is not a SHA-256", in.Name, tool, pin)
+		}
 	}
 
 	// Only the kind something calls.

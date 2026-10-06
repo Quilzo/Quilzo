@@ -4,12 +4,14 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/agentmodel"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 )
@@ -172,4 +174,41 @@ func agentIdentityCmd(root, verb string, args []string) error {
 	}
 	fmt.Printf("%s is answered for by %s until %s\n", name, id.Sponsor, id.Expires.UTC().Format("2 January 2006"))
 	return nil
+}
+
+// modelChoices are the tools and delegates a model may choose in a run:
+// the manifest's tools whose definition a person pinned and the server
+// still gives as pinned, and the manifest's delegates, each described by
+// what the operator wrote about it.
+func modelChoices(ctx context.Context, root string, m agent.Manifest, set *agentSet) ([]agentmodel.ToolChoice, []agentmodel.DelegateChoice) {
+	var tools []agentmodel.ToolChoice
+	if len(m.Tools) > 0 {
+		if installed, err := loadIntegrations(root); err == nil && installed != nil {
+			client := newMCPClient(root)
+			for _, t := range m.Tools {
+				in, err := installed.Resolve(t.Name)
+				if err != nil || in.Pins[t.Name] == "" {
+					continue
+				}
+				tctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+				defs, err := client.Definitions(tctx, in)
+				cancel()
+				if err != nil {
+					continue
+				}
+				for _, d := range defs {
+					if d.Name == t.Name && d.Allowed && d.Matches() {
+						tools = append(tools, agentmodel.ToolChoice{Name: t.Name, Purpose: t.Purpose, Args: d.Args()})
+					}
+				}
+			}
+		}
+	}
+	var delegates []agentmodel.DelegateChoice
+	for _, name := range m.Delegates {
+		if d, ok := set.Agents[name]; ok {
+			delegates = append(delegates, agentmodel.DelegateChoice{Name: name, Purpose: d.Purpose})
+		}
+	}
+	return tools, delegates
 }
