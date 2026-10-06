@@ -70,7 +70,6 @@ func TestEveryActionOfARunIsOneRecord(t *testing.T) {
 	}
 }
 
-
 func TestAReceiptVerifiesAndTamperingShows(t *testing.T) {
 	root, id := keptRunOf(t)
 	rf, err := buildReceipt(root, id, time.Now())
