@@ -85,3 +85,49 @@ func TestPinsAreOnlyForToolsInUse(t *testing.T) {
 		t.Fatal("a pin that is not a digest")
 	}
 }
+
+func TestARunsModelSpendingIsCapped(t *testing.T) {
+	m := Manifest{Name: "spender", Kind: KindRetrieval, Purpose: "p", Capabilities: []string{"list_pages"},
+		Autonomy: AutonomyPropose, Budget: Budget{Steps: 10, Tools: 1, Duration: Duration(time.Minute), Tokens: 1000, Money: "0.01"}}
+	if err := m.Validate(map[string]bool{"list_pages": true}); err != nil {
+		t.Fatal(err)
+	}
+	s := NewSession(m, nil)
+	if err := s.Authorize("list_pages"); err != nil {
+		t.Fatal(err)
+	}
+	s.Tokens(600)
+	s.Charge(4000)
+	if err := s.Authorize("list_pages"); err != nil {
+		t.Fatalf("under both caps: %v", err)
+	}
+	s.Tokens(400)
+	if err := s.Authorize("list_pages"); err == nil || !strings.Contains(err.Error(), "tokens") {
+		t.Fatalf("past the token cap: %v", err)
+	}
+	m.Budget.Tokens = 0
+	s = NewSession(m, nil)
+	s.Charge(10000)
+	if err := s.Authorize("list_pages"); err == nil || !strings.Contains(err.Error(), "0.01") {
+		t.Fatalf("past the money cap: %v", err)
+	}
+	for _, bad := range []string{"-1", "1.0000001", "ten"} {
+		m.Budget.Money = bad
+		if m.Validate(map[string]bool{"list_pages": true}) == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	// Narrowing keeps the smaller cap, and a cap over none.
+	a, b := Budget{Money: "0.50", Tokens: 0}, Budget{Money: "", Tokens: 200}
+	if lessMoney(a, b) != "0.50" || lessMoney(b, a) != "0.50" || lessMoney(Budget{Money: "2"}, Budget{Money: "1.5"}) != "1.5" ||
+		minSet(0, 200) != 200 || minSet(100, 200) != 100 || lessMoney(Budget{}, Budget{}) != "" {
+		t.Fatal("narrowing a budget")
+	}
+	// A delegate's spending is its parent's.
+	parent, child := NewSession(m, nil), NewSession(m, nil)
+	child.Charge(1234)
+	parent.Fold(child)
+	if parent.Cost() != 1234 {
+		t.Fatalf("folded cost %d", parent.Cost())
+	}
+}

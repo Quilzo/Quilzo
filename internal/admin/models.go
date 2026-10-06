@@ -53,6 +53,10 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data["Cfg"], data["Health"], data["Spend"] = cfg, health, spend
+	data["Currency"] = ""
+	if cfg != nil {
+		data["Currency"] = cfg.Currency
+	}
 	s.render(w, r, "models.html", data)
 }
 
@@ -101,9 +105,11 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 		switch op {
 		case "route-add":
 			kept = append(kept, gateway.Route{Name: name,
-				URL:    strings.TrimSpace(r.FormValue("url")),
-				Model:  strings.TrimSpace(r.FormValue("model")),
-				KeyEnv: strings.TrimSpace(r.FormValue("key_env"))})
+				URL:      strings.TrimSpace(r.FormValue("url")),
+				Model:    strings.TrimSpace(r.FormValue("model")),
+				KeyEnv:   strings.TrimSpace(r.FormValue("key_env")),
+				PriceIn:  strings.TrimSpace(r.FormValue("price_in")),
+				PriceOut: strings.TrimSpace(r.FormValue("price_out"))})
 		case "route-first":
 			if found == nil {
 				back("e", "there is no route called "+name)
@@ -127,9 +133,14 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 		if op == "budget" {
 			pm, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("per_minute")))
 			pd, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("chars_per_day")))
-			kept = append(kept, gateway.Budget{Consumer: name, PerMinute: pm, CharsPerDay: pd})
+			tk, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("tokens_per_day")))
+			kept = append(kept, gateway.Budget{Consumer: name, PerMinute: pm, CharsPerDay: pd, TokensPerDay: tk,
+				MoneyPerDay:   strings.TrimSpace(r.FormValue("money_per_day")),
+				MoneyPerMonth: strings.TrimSpace(r.FormValue("money_per_month"))})
 		}
 		cfg.Budgets = kept
+	case "currency":
+		cfg.Currency = strings.ToUpper(strings.TrimSpace(r.FormValue("currency")))
 	default:
 		back("e", "that is not a change this screen makes")
 		return

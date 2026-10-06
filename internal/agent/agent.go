@@ -53,7 +53,9 @@ package agent
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -237,6 +239,31 @@ type Budget struct {
 	Steps    int      `json:"steps"`
 	Tools    int      `json:"tool_calls"`
 	Duration Duration `json:"duration"`
+	// Tokens and Money bound what one run may spend on models: tokens as
+	// the providers report them, money at the gateway's prices in its
+	// currency ("0.50"). Zero and empty leave only the gateway's daily and
+	// monthly budgets, which an agent shares with everything else it is
+	// charged against.
+	Tokens int    `json:"tokens,omitempty"`
+	Money  string `json:"money,omitempty"`
+}
+
+var reAmount = regexp.MustCompile(`^[0-9]{1,10}(\.[0-9]{1,6})?$`)
+
+// MoneyMicros is the run's money cap in millionths of the currency, zero
+// for none.
+func (b Budget) MoneyMicros() (int64, error) {
+	if b.Money == "" {
+		return 0, nil
+	}
+	if !reAmount.MatchString(b.Money) {
+		return 0, fmt.Errorf("%q is not an amount like 0.50", b.Money)
+	}
+	whole, frac, _ := strings.Cut(b.Money, ".")
+	frac += strings.Repeat("0", 6-len(frac))
+	w, _ := strconv.ParseInt(whole, 10, 64)
+	f, _ := strconv.ParseInt(frac, 10, 64)
+	return w*1_000_000 + f, nil
 }
 
 // Manifest is the whole declaration.
@@ -415,6 +442,12 @@ func (m *Manifest) Validate(known map[string]bool) error {
 				"talked into, and a goal-seeking one in a loop is the ordinary "+
 				"way that happens", m.Name)
 	}
+	if m.Budget.Tokens < 0 {
+		return fmt.Errorf("%s's token budget is negative", m.Name)
+	}
+	if _, err := m.Budget.MoneyMicros(); err != nil {
+		return fmt.Errorf("%s's money budget: %w", m.Name, err)
+	}
 
 	if len(m.Delegates) > 0 && m.Kind != KindSupervisor {
 		return fmt.Errorf(
@@ -464,6 +497,8 @@ func (m Manifest) Narrow(by Manifest) Manifest {
 		Steps:    minInt(m.Budget.Steps, by.Budget.Steps),
 		Tools:    minInt(m.Budget.Tools, by.Budget.Tools),
 		Duration: Duration(minInt64(int64(m.Budget.Duration), int64(by.Budget.Duration))),
+		Tokens:   minSet(m.Budget.Tokens, by.Budget.Tokens),
+		Money:    lessMoney(m.Budget, by.Budget),
 	}
 
 	// Memory: a delegate may not remember what its parent does not.
@@ -632,6 +667,39 @@ func inSubtree(p, root string) bool {
 
 // pathNothing is a subtree no page is in, for two restrictions that diverge.
 const pathNothing = "\x00none"
+
+// minSet is the smaller of two limits where zero is none.
+func minSet(a, b int) int {
+	switch {
+	case a == 0:
+		return b
+	case b == 0:
+		return a
+	}
+	return minInt(a, b)
+}
+
+// lessMoney is the smaller of two money limits, either of which may be
+// none. A limit that does not parse counts as none here; Validate refuses it.
+func lessMoney(a, b Budget) string {
+	am, aerr := a.MoneyMicros()
+	bm, berr := b.MoneyMicros()
+	if aerr != nil {
+		am = 0
+	}
+	if berr != nil {
+		bm = 0
+	}
+	switch {
+	case am == 0 && bm == 0:
+		return ""
+	case am == 0:
+		return b.Money
+	case bm == 0, am <= bm:
+		return a.Money
+	}
+	return b.Money
+}
 
 func minInt(a, b int) int {
 	if a < b {
