@@ -6,6 +6,12 @@
   <span class="hint">{{.Total}} controls · <a href="/security/controls?who=quilzo">Quilzo's {{.Quilzo}}</a> · <a href="/security/controls?who=shared">shared {{.Shared}}</a> · <a href="/security/controls?who=customer">the customer's {{.Customer}}</a>{{if .Who}} · <a href="/security/controls">all</a>{{end}}</span>
   <span class="hint"><a href="/security/controls/component">Download as an OSCAL component definition</a> — import it into your governance tool's system security plan.</span>
 </div>
+<form method="get" action="/security/controls/ssp" class="auto-controls">
+  <label for="ssp-impact">Draft a system security plan at</label>
+  <select id="ssp-impact" name="impact"><option value="low">Low impact</option><option value="moderate" selected>Moderate impact</option><option value="high">High impact</option></select>
+  <button type="submit" class="btn-tonal">Download the draft</button>
+  <span class="hint">OSCAL, held to NIST's baseline for that level; Quilzo's part of each control written, yours named for you to describe, and any control the posture scan reports failing marked partial.</span>
+</form>
 
 {{range .Families}}
 <h2 id="{{.Code}}">{{.Code}}</h2>
