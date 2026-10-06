@@ -277,7 +277,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// The provider authenticated; everything after this is local.
 	secret, tok, err := s.Tokens.IssueSession(
 		"oidc:"+principal, principal, s.roleFor(principal), "/",
-		s.OIDC.ttl(), auth.RoleAdmin)
+		s.oidcTTL(), auth.RoleAdmin)
 	if err != nil {
 		s.refuseSignIn(w, r, "the session could not be created: "+err.Error(), "")
 		return
@@ -306,13 +306,22 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		// the cookie so the person lands signed out. Lax still blocks the
 		// cross-site POSTs that CSRF needs.
 		Secure: r.TLS != nil || s.behindTLSProxy(),
-		MaxAge: int(s.OIDC.ttl().Seconds()),
+		MaxAge: int(s.oidcTTL().Seconds()),
 	})
 	if stepUp {
 		http.Redirect(w, r, "/signin/verify", http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// oidcTTL is the provider's own session length or session.max, whichever
+// is shorter: the organisation's limit is never extended by a provider.
+func (s *Server) oidcTTL() time.Duration {
+	if d, max := s.OIDC.ttl(), s.sessionMax(); d < max {
+		return d
+	}
+	return s.sessionMax()
 }
 
 func (o *OIDC) ttl() time.Duration {

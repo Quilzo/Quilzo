@@ -963,6 +963,64 @@ var rules = []Rule{
 	},
 
 	{
+		ID:       "policy.unreadable",
+		Title:    "The organisation's policy cannot be read",
+		Severity: High,
+		Controls: []string{"CM-6", "CM-3"},
+		OWASP:    "A02:2025 Security Misconfiguration",
+		Why: "The declared NIST parameters are the floor under the settings " +
+			"they govern. A policy nobody can read is still in force — every " +
+			"setting it governs refuses changes — but nobody can say what it " +
+			"requires, and upkeep cannot hold the settings to it.",
+		Check: func(s State) []Finding {
+			if s.Parameters.Unreadable == "" {
+				return nil
+			}
+			return []Finding{{Detail: "parameters.json: " + s.Parameters.Unreadable,
+				Fix: "restore parameters.json from a backup; quilzo policy show says when it reads again"}}
+		},
+	},
+	{
+		ID:       "policy.unmet",
+		Title:    "A setting is below the organisation's policy",
+		Severity: High,
+		Controls: []string{"CM-6", "AC-7", "AC-12", "AC-2(5)", "IA-5"},
+		OWASP:    "A02:2025 Security Misconfiguration",
+		Why: "A declared parameter is what an assessor checks this deployment " +
+			"against. Nothing here can set a value below it, so a setting " +
+			"under it was written into the file by hand or set before the " +
+			"policy was declared; upkeep raises it, and until then the " +
+			"deployment does not do what the organisation says it does.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, g := range s.Parameters.Unmet {
+				out = append(out, Finding{Resource: g.Setting,
+					Detail: fmt.Sprintf("%s = %s, below %s, which the organisation declared as %q",
+						g.Setting, g.Value, g.Param, g.Declared),
+					Fix: "quilzo policy show  # upkeep raises it within the hour"})
+			}
+			return out
+		},
+	},
+	{
+		ID:       "policy.approved-alone",
+		Title:    "A policy value was approved by the administrator who proposed it",
+		Severity: Medium,
+		Controls: []string{"AC-5", "CM-3"},
+		Why: "Changing the organisation's policy takes two administrators. A " +
+			"deployment with one may adopt its own proposal, and that is " +
+			"allowed rather than locking the policy forever — but it is one " +
+			"person's decision, and stays reported until a second " +
+			"administrator exists and declares it again.",
+		Check: func(s State) []Finding {
+			if len(s.Parameters.Alone) == 0 {
+				return nil
+			}
+			return []Finding{{Detail: "declared by one administrator alone: " + strings.Join(s.Parameters.Alone, ", "),
+				Fix: "grant a second administrator, and have them approve the same values again"}}
+		},
+	},
+	{
 		ID:       "config.weakened",
 		Title:    "A setting is running weaker than its default",
 		Severity: Medium,

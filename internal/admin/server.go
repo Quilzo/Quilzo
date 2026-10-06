@@ -122,6 +122,10 @@ type Server struct {
 
 	// Settings gives the admin the store's configuration.
 	Settings *Settings
+	// Parameters is the organisation's policy (parameters.go).
+	Parameters *Parameters
+	// idle is when each browser session was last used (idle.go).
+	idle idleClock
 	// Types gives the admin the site's content types, so what an application
 	// stores can be declared from the interface rather than only from a
 	// terminal. Nil means the screen says so rather than showing none.
@@ -868,6 +872,11 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	}
 	if p, ok := data["Principal"].(principal); ok {
 		data["Initial"] = initialOf(p.Name)
+		// The page tells the server somebody is there, and warns before
+		// the end, only where the end applies (idle.go).
+		if idle := s.sessionIdle(); idle > 0 && p.Session && fromBrowser(r) {
+			data["IdleSeconds"] = int(idle.Seconds())
+		}
 	}
 
 	// The documentation link for the screen being rendered, so the footer link
@@ -1168,6 +1177,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/policy", s.handleCSPScreen)
 	mux.HandleFunc("/security/inventory", s.handleComplianceScreen)
 	mux.HandleFunc("/security/site", s.handleSiteReport)
+	mux.HandleFunc("/session/alive", s.handleAlive)
+	mux.HandleFunc("/security/parameters", s.handleParameters)
+	mux.HandleFunc("/security/parameters/act", s.handleParametersAct)
+	mux.HandleFunc("/security/parameters/export", s.handleParametersExport)
 	mux.HandleFunc("/security/integrity", s.handleIntegrityScreen)
 	mux.HandleFunc("/security/verify", s.handleVerify)
 	mux.HandleFunc("/security/agents", s.handleAgentsScreen)
@@ -1508,7 +1521,7 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	cookie, cookieTok := raw, *tok
 	if !tok.IsSession() {
 		secret, sess, xerr := s.Tokens.Exchange(raw, auth.RoleNone, "",
-			DefaultSessionTTL, time.Now())
+			s.sessionMax(), time.Now())
 		if xerr != nil {
 			if errors.Is(xerr, auth.ErrLockedDown) {
 				signInAgain(w, r, "lockdown")
@@ -1608,6 +1621,8 @@ var signInReasons = map[string]string{
 		"account. Use your organisation's button above.",
 	"nosso": "No organisation sign-in is set up for that address. Sign in " +
 		"with a token or a passkey instead, or ask an administrator.",
+	"idle": "You were signed out because nobody had used the admin for a " +
+		"while, as your organisation requires. Sign in again to carry on.",
 	"lockdown": "For a while the admin accepts only passkeys and your " +
 		"organisation's sign-in, and tokens made before that are refused. " +
 		"Sign in with a passkey or your organisation's button, or ask an " +
@@ -1792,6 +1807,10 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 	if s.Throttle != nil {
 		// The principal, not the address: see the note in the API middleware.
 		s.Throttle.Succeed(throttle.Subject{Principal: p.Name})
+	}
+	// A browser session nobody has used for session.idle ends here.
+	if s.idleOver(w, r, p) {
+		return principal{}, false
 	}
 	// A session used from somewhere other than where it was issued may be
 	// a stolen one; the rules decide, and may step it up there and then.

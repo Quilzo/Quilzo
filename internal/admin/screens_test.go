@@ -29,6 +29,7 @@ import (
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
 	"github.com/quilzo/quilzo/internal/menu"
+	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/schedule"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
@@ -171,14 +172,16 @@ func TestEveryScreenSurvivesWithNothingWiredIn(t *testing.T) {
 var notAScreen = map[string]string{
 	"/signin/oidc": "starts an authorisation redirect, and answers 404 when " +
 		"no identity provider is configured",
-	"/auth/callback":         "receives one, and is never opened directly",
-	"/signout":               "clears the cookie and redirects; there is nothing to render",
-	"/style.css":             "is a stylesheet",
-	"/brand.css":             "is a stylesheet",
-	"/admin.js":              "is the interface's script",
-	"/fonts/quilzo-ui.woff2": "is the interface's typeface",
-	"/icon.svg":              "an image, not a screen",
-	"/preview.css":           "the editing panel's stylesheet, fetched by a preview opened in a tab. A stylesheet is not a screen, and the policy on these responses is style-src 'self', so it cannot be inline",
+	"/auth/callback":              "receives one, and is never opened directly",
+	"/signout":                    "clears the cookie and redirects; there is nothing to render",
+	"/session/alive":              "is posted to by admin.js and answers 204",
+	"/security/parameters/export": "is a download of OSCAL JSON",
+	"/style.css":                  "is a stylesheet",
+	"/brand.css":                  "is a stylesheet",
+	"/admin.js":                   "is the interface's script",
+	"/fonts/quilzo-ui.woff2":      "is the interface's typeface",
+	"/icon.svg":                   "an image, not a screen",
+	"/preview.css":                "the editing panel's stylesheet, fetched by a preview opened in a tab. A stylesheet is not a screen, and the policy on these responses is style-src 'self', so it cannot be inline",
 	"/site.css": "the site's own stylesheet, fetched by the framed preview. " +
 		"404 when no template directory was given, which is the honest " +
 		"answer for a store that renders elsewhere",
@@ -309,6 +312,23 @@ func fullyWired(t *testing.T) (*Server, string) {
 		m.Name = "answers"
 		return map[string]agent.Manifest{"answers": m}, nil
 	}}
+	// The organisation's policy, with a value declared and one waiting.
+	paramsPath := filepath.Join(t.TempDir(), "parameters.json")
+	if err := odp.Update(paramsPath, func(pol *odp.Policy) error {
+		pol.Declared = append(pol.Declared, odp.Declared{Param: "ac-12_odp", Value: "8 hours",
+			By: "dana", ApprovedBy: "lee", At: time.Now()})
+		_, err := pol.Propose([]odp.Change{{Param: "ac-07_odp.01", Value: "3"}}, "audit finding", "dana", "", time.Now())
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	srv.Parameters = &Parameters{Path: paramsPath, Organisation: "Acme",
+		OnlyAdmin: func(string) bool { return false }}
+	if srv.Settings == nil {
+		cfg := config.New()
+		srv.Settings = &Settings{Load: func() (*config.Config, error) { return cfg, nil },
+			Save: func(*config.Config) error { return nil }}
+	}
 	srv.Assurance = &Assurance{
 		Scan: func() (int, []codescan.Finding, error) {
 			return 12, []codescan.Finding{{

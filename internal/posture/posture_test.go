@@ -65,6 +65,7 @@ func clean(t *testing.T) State {
 		Extra: map[string]string{
 			"published_heads": "2", "published_head_size": "20",
 		},
+		Parameters: ParameterFacts{Checked: true},
 		// A local model and one public chatbot that says what it is and was
 		// measured last week.
 		AI: AIFacts{Checked: true, ModelHost: "127.0.0.1:11434", ModelLocal: true,
@@ -792,5 +793,31 @@ func TestAFormWithoutAPurposeOrBasisIsAFinding(t *testing.T) {
 	}
 	if got := r.Check(State{}); len(got) != 0 {
 		t.Fatal(got)
+	}
+}
+
+// The organisation's policy: unreadable, unmet, and adopted by one person.
+func TestThePolicyIsCheckedAgainstTheSettings(t *testing.T) {
+	st := clean(t)
+	if n := ruleByID(t, "policy.unmet").Check(st); len(n) != 0 {
+		t.Fatalf("a met policy: %+v", n)
+	}
+	st.Parameters.Unmet = []ParameterGap{{Param: "ac-12_odp", Setting: "session.max", Value: "8h", Declared: "4 hours"}}
+	f := ruleByID(t, "policy.unmet").Check(st)
+	if len(f) != 1 || !strings.Contains(f[0].Detail, "session.max = 8h, below ac-12_odp") {
+		t.Fatalf("%+v", f)
+	}
+	st.Parameters.Unreadable = "not json"
+	if f := ruleByID(t, "policy.unreadable").Check(st); len(f) != 1 {
+		t.Fatal("an unreadable policy is not a finding")
+	}
+	st.Parameters.Alone = []string{"ac-07_odp.01"}
+	if f := ruleByID(t, "policy.approved-alone").Check(st); len(f) != 1 || !strings.Contains(f[0].Detail, "ac-07_odp.01") {
+		t.Fatalf("%+v", f)
+	}
+	unseen := clean(t)
+	unseen.Parameters.Checked = false
+	if rep := Scan(unseen, nil); !strings.Contains(strings.Join(rep.NotChecked, "|"), "organisation policy") {
+		t.Fatalf("not looking at the policy is not said: %v", rep.NotChecked)
 	}
 }

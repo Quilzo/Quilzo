@@ -188,10 +188,16 @@ var commandNeeds = map[string]need{
 	// Quilzo's own flaws and binary: reading them is a view in the
 	// compliance area; replacing the database they are judged by is the
 	// whole site's administrators'.
-	"self":               {action: auth.ActGrant},
-	"self check":         {action: auth.ActView},
-	"self verify":        {action: auth.ActView},
-	"self vex":           {action: auth.ActView},
+	"self":        {action: auth.ActGrant},
+	"self check":  {action: auth.ActView},
+	"self verify": {action: auth.ActView},
+	"self vex":    {action: auth.ActView},
+	// The organisation's policy: what its administrators decide, by two of
+	// them; reading it and exporting it is a view in the compliance area.
+	"policy":             {action: auth.ActGrant},
+	"policy show":        {action: auth.ActView},
+	"policy params":      {action: auth.ActView},
+	"policy export":      {action: auth.ActView},
 	"shield":             {action: auth.ActGrant},
 	"shield status":      {action: auth.ActView},
 	"shield list":        {action: auth.ActView},
@@ -1178,6 +1184,7 @@ var commandAreas = map[string]string{
 	"siem": auth.AreaSecurity, "automate": auth.AreaSecurity, "inbound": auth.AreaSecurity,
 	"shield status": auth.AreaSecurity, "shield list": auth.AreaSecurity, "shield dry-run": auth.AreaSecurity,
 	"posture": auth.AreaCompliance, "compliance": auth.AreaCompliance, "self check": auth.AreaCompliance,
+	"policy show": auth.AreaCompliance, "policy params": auth.AreaCompliance, "policy export": auth.AreaCompliance,
 	"self verify": auth.AreaCompliance, "self vex": auth.AreaCompliance,
 	"auditlog":   auth.AreaLog,
 	"inbox":      auth.AreaInbox,

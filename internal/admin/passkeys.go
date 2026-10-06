@@ -573,7 +573,7 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 	// authenticated, and everything after this is local. The role is what the
 	// policy already grants — a session, not a promotion.
 	secret, tok, err := s.Tokens.IssueSession("passkey:"+cred.Principal, cred.Principal,
-		s.roleFor(cred.Principal), "/", DefaultSessionTTL, auth.RoleAdmin)
+		s.roleFor(cred.Principal), "/", s.sessionMax(), auth.RoleAdmin)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err)
 		return
@@ -610,7 +610,7 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: secret, Path: "/",
 		HttpOnly: true, SameSite: http.SameSiteStrictMode,
-		Secure: r.TLS != nil || s.behindTLSProxy(), MaxAge: int(DefaultSessionTTL.Seconds()),
+		Secure: r.TLS != nil || s.behindTLSProxy(), MaxAge: int(s.sessionMax().Seconds()),
 	})
 	writeJSON(w, map[string]any{"ok": true, "next": next})
 }

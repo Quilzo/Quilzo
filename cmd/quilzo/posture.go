@@ -22,6 +22,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/frameworks"
+	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/provenance"
@@ -157,6 +158,22 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 			fact.Mode = uint32(info.Mode().Perm())
 		}
 		s.Files = append(s.Files, fact)
+	}
+
+	// The organisation's policy, and every setting below it.
+	if pol, err := odp.Load(paramsPath(root)); err != nil {
+		s.Parameters = posture.ParameterFacts{Checked: true, Unreadable: err.Error()}
+	} else if cfg, err := loadConfig(root); err == nil {
+		s.Parameters.Checked = true
+		for _, u := range cfg.Unmet() {
+			s.Parameters.Unmet = append(s.Parameters.Unmet, posture.ParameterGap{Param: u.Floor.Param,
+				Setting: u.Key, Value: u.Value, Declared: inline(u.Floor.Declared)})
+		}
+		for _, d := range pol.Declared {
+			if d.Alone {
+				s.Parameters.Alone = append(s.Parameters.Alone, d.Param)
+			}
+		}
 	}
 
 	if cfg, err := loadConfig(root); err == nil {

@@ -2802,3 +2802,17 @@ mark.fill { background: var(--tertiary-container); color: var(--on-tertiary-cont
 /* A band in a table cell is a label: one line, and the table scrolls if
    it must, rather than "Not / known" stacked in a narrow column. */
 td > .wf-band { white-space: nowrap; }
+
+/* A minute before an idle session ends: one question, one answer. */
+dialog.idle-warn { max-width: 26rem; padding: 24px; border: 0; border-radius: var(--shape-xl, 28px);
+  background: var(--surface-container-high); color: var(--on-surface); }
+dialog.idle-warn::backdrop { background: color-mix(in srgb, var(--scrim, #000) 32%, transparent); }
+dialog.idle-warn h2 { margin: 0 0 8px; }
+dialog.idle-warn p { margin: 0 0 20px; }
+
+/* The organisation's policy: a label before each value, and a form that
+   stacks rather than spreading across the card. */
+.param-k { display: inline-block; min-width: 5.5rem; font: 500 .8125rem/1.5 var(--font); color: var(--on-surface-variant); }
+.param-form { display: grid; gap: 6px; max-width: 32rem; margin-top: 8px; }
+.param-form fieldset { border: 0; padding: 0; margin: 0 0 4px; display: grid; gap: 6px; }
+.param-form legend { font-weight: 500; margin-bottom: 4px; }
