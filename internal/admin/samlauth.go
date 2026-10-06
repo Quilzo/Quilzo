@@ -315,7 +315,7 @@ func (s *Server) samlACS(w http.ResponseWriter, r *http.Request, cfg *saml.Confi
 			"Sign in at " + label(cfg) + " with your second factor and try again.")
 		return
 	}
-	s.finishSSO(w, r, principal, "saml:"+cfg.Name, saml.SessionTTL(a, DefaultSessionTTL, now),
+	s.finishSSO(w, r, principal, "saml:"+cfg.Name, saml.SessionTTL(a, s.sessionMax(), now),
 		map[string]string{"provider": cfg.Name, "issuer": a.Issuer, "assertion": a.ID,
 			"context": a.AuthnContext}, clear)
 }

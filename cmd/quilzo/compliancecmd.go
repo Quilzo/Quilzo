@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/compliance"
+	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/posture"
 )
 
@@ -133,23 +134,46 @@ func complianceControls() error {
 			seen[c] = append(seen[c], r.ID)
 		}
 	}
-	if w.JSON(seen) {
+	// And the settings that are a control's implementation: what the
+	// organisation sets, and its policy can hold (internal/odp).
+	setBy := map[string][]string{}
+	for _, st := range config.All() {
+		for _, c := range st.Controls {
+			setBy[c] = append(setBy[c], st.Key)
+		}
+	}
+	if w.JSON(map[string]any{"checked_by": seen, "set_by": setBy}) {
 		return nil
 	}
 
-	var ids []string
+	all := map[string]bool{}
 	for c := range seen {
+		all[c] = true
+	}
+	for c := range setBy {
+		all[c] = true
+	}
+	var ids []string
+	for c := range all {
 		ids = append(ids, c)
 	}
 	sort.Strings(ids)
 
-	w.Human("%s%d NIST SP 800-53 control(s) with an automated check%s\n\n",
-		bold, len(ids), reset)
+	w.Human("%s%d NIST SP 800-53 control(s) with an automated check, %d set by a setting%s\n\n",
+		bold, len(seen), len(setBy), reset)
 	for _, c := range ids {
-		w.Human("  %-12s %s%s%s\n", c, dim, strings.Join(seen[c], ", "), reset)
+		if rules := seen[c]; len(rules) > 0 {
+			w.Human("  %-12s checked by %s%s%s\n", c, dim, strings.Join(rules, ", "), reset)
+		} else {
+			w.Human("  %-12s %snot checked automatically%s\n", c, dim, reset)
+		}
+		if keys := setBy[c]; len(keys) > 0 {
+			w.Human("  %-12s set by     %s%s%s\n", "", dim, strings.Join(keys, ", "), reset)
+		}
 	}
-	w.Human("\n  %sgenerated from the rules, so a control listed here is one "+
-		"something\n  actually checks — not one somebody intended to cover%s\n",
+	w.Human("\n  %sgenerated from the rules and the settings, so a control listed here is one "+
+		"something\n  actually checks or sets — not one somebody intended to cover. "+
+		"quilzo policy shows the organisation's values%s\n",
 		dim, reset)
 	return nil
 }

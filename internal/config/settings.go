@@ -31,6 +31,7 @@ var settings = []Setting{
 	{
 		Key: "auth.throttle", Kind: Bool, Default: "true",
 		Summary:  "slow down repeated authentication failures",
+		Params:   []string{"ac-07_odp.03"},
 		Controls: []string{"IA-5", "AC-7"},
 		OWASP:    "A07:2025 Authentication Failures",
 		Why: "NIST SP 800-63B-4 says a verifier SHALL rate-limit failed " +
@@ -43,6 +44,7 @@ var settings = []Setting{
 	{
 		Key: "auth.throttle.after", Kind: Int, Default: "5",
 		Summary:  "failures before delays begin",
+		Params:   []string{"ac-07_odp.01"},
 		Controls: []string{"AC-7"},
 		Why: "ASVS 5.0 asks that more than five failures in an hour on one " +
 			"account triggers a reaction. Five is that number. Raising it " +
@@ -54,6 +56,7 @@ var settings = []Setting{
 	{
 		Key: "auth.throttle.ceiling", Kind: Int, Default: "100",
 		Summary:  "failures per hour after which nothing is accepted",
+		Params:   []string{"ac-07_odp.05"},
 		Controls: []string{"AC-7", "IA-5"},
 		Why: "ASVS 5.0 puts the ceiling at 100 failed attempts per hour on a " +
 			"single account. Past this the account stops answering for the " +
@@ -64,6 +67,7 @@ var settings = []Setting{
 	{
 		Key: "auth.throttle.base", Kind: Duration, Default: "1s",
 		Summary: "the first delay, doubling with each further failure",
+		Params:  []string{"ac-07_odp.05"},
 		Why: "The delay doubles: 1s, 2s, 4s, and so on to the maximum. A " +
 			"person who mistyped waits a second; a script trying a dictionary " +
 			"is stopped by the same rule without anybody deciding it is an " +
@@ -74,6 +78,7 @@ var settings = []Setting{
 	{
 		Key: "auth.throttle.max", Kind: Duration, Default: "15m",
 		Summary:  "the longest a soft lockout lasts",
+		Params:   []string{"ac-07_odp.05"},
 		Controls: []string{"AC-7"},
 		Why: "The delay stops doubling here. This is deliberately not very " +
 			"long, because the delay is a cost imposed on whoever is failing " +
@@ -85,6 +90,7 @@ var settings = []Setting{
 	{
 		Key: "auth.lockout.hard", Kind: Bool, Default: "false",
 		Summary:  "lock an account outright instead of slowing it down",
+		Params:   []string{"ac-07_odp.03"},
 		Controls: []string{"AC-7"},
 		OWASP:    "A07:2025 Authentication Failures",
 		Why: "Off by default, and this is a considered choice rather than a " +
@@ -102,6 +108,7 @@ var settings = []Setting{
 	{
 		Key: "auth.lockout.alert", Kind: Int, Default: "5",
 		Summary:  "failures in an hour that raise an audit alert",
+		Params:   []string{"ac-07_odp.03"},
 		Controls: []string{"AU-6", "SI-4"},
 		Why: "ASVS 5.0: more than five failures per hour on one account " +
 			"should trigger some reaction. Here the reaction is an audit " +
@@ -141,6 +148,7 @@ var settings = []Setting{
 	{
 		Key: "token.ttl.max", Kind: Duration, Default: "8760h",
 		Summary:  "the longest life any token may be issued with",
+		Params:   []string{"ia-05_odp.01"},
 		Controls: []string{"IA-5(1)"},
 		Why: "A ceiling on --ttl, so a long-lived credential is a decision " +
 			"somebody made against a limit rather than a number typed once.",
@@ -155,6 +163,30 @@ var settings = []Setting{
 			"short-lived without anybody remembering to pass --ttl.",
 		Weaker: atMostDur(24*time.Hour, "an API token living %s is a long-"+
 			"lived credential in a config file somewhere"),
+	},
+
+	// -- admin sessions ---------------------------------------------------------
+	{
+		Key: "session.max", Kind: Duration, Default: "8h",
+		Summary:  "the longest a sign-in to the admin lasts before signing in again",
+		Controls: []string{"AC-12", "IA-11"},
+		Params:   []string{"ac-12_odp"},
+		Why: "Eight hours: a working day. Whatever signed somebody in — a token, a " +
+			"passkey, single sign-on — the session it starts ends after this, and " +
+			"signing out or revoking the credential ends it sooner. At most twelve " +
+			"hours, the ceiling on any session this program issues.",
+		Weaker: atMostDur(8*time.Hour, "a sign-in lasting %s outlives a working day, "+
+			"so a browser left open overnight is still signed in in the morning"),
+	},
+	{
+		Key: "session.idle", Kind: Duration, Default: "0s",
+		Summary:  "sign out of the admin after this long with nobody using the page; 0 never",
+		Controls: []string{"AC-2(5)", "AC-11", "AC-12"},
+		Params:   []string{"ac-02.05_odp"},
+		Why: "Off unless the organisation asks for it, because a person writing a long " +
+			"page sends nothing while they type. When it is on, the page reports that " +
+			"somebody is typing, scrolling or clicking, warns a minute before signing " +
+			"out, and keeps them signed in if they answer. At least five minutes.",
 	},
 
 	// -- the HTTP API ---------------------------------------------------------
@@ -997,6 +1029,13 @@ func (s Setting) Validate(v string) error {
 		}
 		if d < 0 {
 			return fmt.Errorf("%s is negative", d)
+		}
+		if s.Key == "session.max" && (d < 5*time.Minute || d > 12*time.Hour) {
+			return fmt.Errorf("a sign-in lasts between 5m and 12h; %s is outside that", d)
+		}
+		if s.Key == "session.idle" && d != 0 && d < 5*time.Minute {
+			return fmt.Errorf("signing out after %s idle would interrupt people reading a page; "+
+				"give at least 5m, or 0 for never", d)
 		}
 	case Bool:
 		if _, err := strconv.ParseBool(v); err != nil {

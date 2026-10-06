@@ -4,8 +4,10 @@
 package admin
 
 import (
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/config"
@@ -155,6 +157,16 @@ func (s *Server) handleSettingSave(w http.ResponseWriter, r *http.Request) {
 		// The acceptance path is surfaced rather than flattened into "invalid".
 		// A refusal that does not say a reason would make this work is a
 		// refusal somebody reads as "you cannot", which is not what it means.
+		var below *config.ErrBelowPolicy
+		if errors.As(err, &below) {
+			if below.Floor.Broken != "" {
+				s.settingsBack(w, r, key+" is held by the organisation's policy, which cannot be read, so it is not changed until the policy is repaired")
+				return
+			}
+			s.settingsBack(w, r, key+" = "+value+" is below the organisation's policy: "+below.Floor.Param+
+				" is "+below.Floor.Declared+". It may be stricter, never weaker; changing the policy is on the Organisation policy screen and takes two administrators")
+			return
+		}
 		var need *config.ErrNeedsAcceptance
 		if asAcceptance(err, &need) {
 			s.settingsBack(w, r, need.Why+
@@ -237,6 +249,30 @@ func (s *Server) behindTLSProxy() bool {
 		return false
 	}
 	return cfg.Bool("admin.behind_tls_proxy")
+}
+
+// sessionMax is how long a sign-in to the admin lasts (session.max), and
+// DefaultSessionTTL when the server was started without the configuration.
+func (s *Server) sessionMax() time.Duration {
+	if s.Settings != nil && s.Settings.Load != nil {
+		if cfg, err := s.Settings.Load(); err == nil && cfg != nil {
+			if d := cfg.Dur("session.max"); d > 0 {
+				return d
+			}
+		}
+	}
+	return DefaultSessionTTL
+}
+
+// sessionIdle is how long the admin may go unused before a session ends
+// (session.idle); zero is never.
+func (s *Server) sessionIdle() time.Duration {
+	if s.Settings != nil && s.Settings.Load != nil {
+		if cfg, err := s.Settings.Load(); err == nil && cfg != nil {
+			return cfg.Dur("session.idle")
+		}
+	}
+	return 0
 }
 
 // settingGroupLabel names a settings group in words.

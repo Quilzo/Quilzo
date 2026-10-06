@@ -66,6 +66,7 @@ func TestEveryScreenIsReachableFromSomewhere(t *testing.T) {
 		"/passkeys/register":        "passkeys.html posts what the authenticator made",
 		"/signin/passkey/challenge": "passkeysignin.html asks for a sign-in challenge",
 		"/signin/passkey/verify":    "passkeysignin.html posts the assertion",
+		"/session/alive":            "admin.js says somebody is using the page, where session.idle is set",
 	}
 	for path := range byScript {
 		if !served[path] {

@@ -287,6 +287,58 @@
     clearTimeout(tipping);
     if (tooltip && tooltip.matches(":popover-open")) tooltip.hidePopover();
   }
+  // Signing out a session nobody is using (session.idle). The server
+  // decides; the page tells it somebody is here — a key, a click, a
+  // scroll — at most every half minute, and warns a minute before the end
+  // so a person who is reading can stay.
+  (function () {
+    var meta = document.querySelector('meta[name="quilzo-idle"]');
+    var idle = meta ? parseInt(meta.content, 10) * 1000 : 0;
+    if (!(idle > 0)) return;
+    var told = Date.now(), used = told, warning = null;
+    function out() { location.href = "/signin?e=idle"; }
+    function tell() {
+      told = Date.now();
+      fetch("/session/alive", { method: "POST", credentials: "same-origin", cache: "no-store" })
+        .then(function (r) { if (r.status === 401) out(); }, function () {});
+      if (warning) { warning.close(); warning.remove(); warning = null; }
+    }
+    function use() {
+      used = Date.now();
+      if (used - told > 30000) tell();
+    }
+    ["keydown", "pointerdown", "wheel", "touchstart", "input"].forEach(function (ev) {
+      document.addEventListener(ev, use, { passive: true, capture: true });
+    });
+    function warn() {
+      warning = document.createElement("dialog");
+      warning.className = "idle-warn";
+      warning.setAttribute("aria-labelledby", "idle-warn-title");
+      var h = document.createElement("h2");
+      h.id = "idle-warn-title";
+      h.textContent = "Still there?";
+      var p = document.createElement("p");
+      p.textContent = "Nobody has used the admin for a while, so in a minute you will be signed out, as your organisation requires.";
+      var stay = document.createElement("button");
+      stay.type = "button";
+      stay.textContent = "Stay signed in";
+      stay.addEventListener("click", tell);
+      warning.append(h, p, stay);
+      document.body.append(warning);
+      warning.showModal();
+      stay.focus();
+    }
+    setInterval(function () {
+      var now = Date.now(), left = idle - (now - told);
+      // Use the throttle held back is told before it could matter.
+      if (used > told && (now - told > 30000 || left <= 60000)) { tell(); return; }
+      // Past the end, and a moment more, the server signs the session out
+      // on the next request and says why; reloading makes that request.
+      if (left <= -2000) { location.reload(); return; }
+      if (left <= 60000 && !warning) warn();
+    }, 5000);
+  })();
+
   // Copy buttons: hidden until the clipboard can be written (it needs a
   // secure context), so without it the text is still there to select.
   document.querySelectorAll("button[data-copy]").forEach(function (btn) {

@@ -231,6 +231,11 @@ var coverage = map[string]surfaces{
 			"person's, so a page an agent reads cannot steer what Quilzo " +
 			"refuses or lets in",
 	},
+	"policy": {GUI: "/security/parameters", MCP: []string{"policy_status"},
+		Why: "an agent reads which parameters are declared and whether each " +
+			"is met; proposing and approving them is two administrators', " +
+			"never a model's, because the policy is the floor under the controls",
+	},
 	"incident": {GUI: "/security/cases", MCP: []string{"incident_status"},
 		Why: "an agent reads which clocks are running and which nobody " +
 			"has started; the decisions that start them are a person's",
