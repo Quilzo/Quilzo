@@ -4,6 +4,13 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -119,4 +126,63 @@ func outcomeOf(rc agent.Receipt) audit.Outcome {
 	// run was cancelled, the budget went. A failure, which is a thing that
 	// happened to the agent rather than something it did.
 	return audit.Failure
+}
+
+// actionRecord is one action of a run, for the log: what the agent did or
+// was refused, in which run and at which step, for whom. The action's input
+// is not kept, only its digest: what a page said or a person typed is not
+// the log's to hold, and whoever has the input can show it is the one the
+// agent acted on.
+func actionRecord(caller *Caller, m agent.Manifest, model assist.Model, run string, st agent.Step) audit.Record {
+	d := map[string]string{"agent": m.Name, "step": strconv.Itoa(st.N)}
+	if run != "" {
+		d["run"] = run
+	}
+	switch {
+	case st.Action.Tool != "":
+		d["tool"] = st.Action.Tool
+	case st.Action.Delegate != "":
+		d["delegate"] = st.Action.Delegate
+	case st.Action.Op != "":
+		d["op"] = st.Action.Op
+	default:
+		d["op"] = "done"
+	}
+	if len(st.Action.Input) > 0 {
+		if b, err := json.Marshal(st.Action.Input); err == nil {
+			sum := sha256.Sum256(b)
+			d["input_sha256"] = hex.EncodeToString(sum[:])
+		}
+	}
+	outcome := audit.Success
+	switch {
+	case !st.Allowed:
+		outcome, d["why"] = audit.Denied, clip(st.Why, 300)
+	case st.Err != "":
+		outcome, d["error"] = audit.Failure, clip(st.Err, 300)
+	}
+	if st.Redirected != "" {
+		d["redirected"] = clip(st.Redirected, 200)
+	}
+	r := actorRecord(caller, "agent.action", outcome, m, model, d)
+	// The page acted on, when the action names one: the resource of the
+	// record, so a page's history shows the agents that touched it.
+	for _, k := range []string{"name", "page"} {
+		if v, ok := st.Action.Input[k].(string); ok && v != "" && !strings.ContainsAny(v, " \t\r\n") {
+			r.Resource = "/" + strings.TrimPrefix(v, "/")
+			break
+		}
+	}
+	return r
+}
+
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	s = s[:n]
+	for len(s) > 0 && !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s + "…"
 }

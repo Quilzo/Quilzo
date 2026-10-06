@@ -613,13 +613,21 @@ func longerPath(a, b string) string {
 		return b
 	case b == "":
 		return a
-	case strings.HasPrefix(b, a):
+	case inSubtree(b, a):
 		return b
-	case strings.HasPrefix(a, b):
+	case inSubtree(a, b):
 		return a
 	default:
 		return pathNothing
 	}
+}
+
+// inSubtree reports whether path p is in the subtree at root, by whole
+// segments: /blog/post is in /blog, and /blogger is not.
+func inSubtree(p, root string) bool {
+	r := strings.ToLower(strings.Trim(root, "/"))
+	q := strings.ToLower(strings.Trim(p, "/"))
+	return r == "" || q == r || strings.HasPrefix(q, r+"/")
 }
 
 // pathNothing is a subtree no page is in, for two restrictions that diverge.

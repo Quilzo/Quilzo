@@ -521,6 +521,10 @@ agents and integrations
   quilzo agent templates                    the agent archetypes, and when to use each
   quilzo agent new NAME --kind KIND         declare what an agent may do
   quilzo agent list | show NAME | check     what is declared, and whether it still validates
+  quilzo agent sponsor NAME PERSON         who answers for it; it stops running when they can no longer act here
+  quilzo agent renew NAME [--for 2160h]    another stretch before it has to be renewed
+  quilzo agent receipt RUN [-o FILE]       every action of a run from the log, with proofs and a signed head
+  quilzo agent verify-receipt FILE [--keys head.pub.json]   check one anywhere, against keys you were given
   quilzo agent run NAME                    a model chooses, inside the manifest
   quilzo agent runs [NAME] | trace RUN     the runs that are kept, and one step by step
   quilzo eval keep RUN-ID [--finishes --uses a,b --avoids c]   a kept run as a test case

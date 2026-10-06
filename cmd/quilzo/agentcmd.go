@@ -37,6 +37,9 @@ func agentsPath(root string) string { return filepath.Join(root, "agents.json") 
 // agentSet is what is stored: manifests by name.
 type agentSet struct {
 	Agents map[string]agent.Manifest `json:"agents"`
+	// Identities are who answers for each agent, and until when it may run.
+	// See internal/agent/identity.go.
+	Identities map[string]agent.Identity `json:"identities,omitempty"`
 }
 
 func loadAgents(root string) (*agentSet, error) {
@@ -47,7 +50,19 @@ func loadAgents(root string) (*agentSet, error) {
 	if set.Agents == nil {
 		set.Agents = map[string]agent.Manifest{}
 	}
+	if set.Identities == nil {
+		set.Identities = map[string]agent.Identity{}
+	}
 	return set, nil
+}
+
+// identityOf is an agent's identity, or nil for one declared before
+// identities existed.
+func (set *agentSet) identityOf(name string) *agent.Identity {
+	if id, ok := set.Identities[name]; ok {
+		return &id
+	}
+	return nil
 }
 
 // knownCapabilities is the operation set a manifest is validated against.
@@ -98,6 +113,12 @@ func cmdAgent(root string, args []string) error {
 		return agentResumeCmd(root, args[1:])
 	case "replay":
 		return agentReplay(root, args[1:])
+	case "sponsor", "renew":
+		return agentIdentityCmd(root, args[0], args[1:])
+	case "receipt":
+		return agentReceipt(root, args[1:])
+	case "verify-receipt":
+		return agentVerifyReceipt(root, args[1:])
 	default:
 		return agentUsage()
 	}
@@ -108,6 +129,10 @@ func agentUsage() error {
 
   templates              the archetypes, and when to reach for each
   new NAME --kind KIND   declare one from a template
+  sponsor NAME PERSON    who answers for it; it stops when they can no longer act here
+  renew NAME [--for D]   another stretch before it has to be renewed (90 days unless said)
+  receipt RUN [-o FILE]  what a run did, from the log, with proofs anybody can check
+  verify-receipt FILE    check a receipt against the public keys you were given
   list                   what is declared here
   show NAME              one manifest in full
   check                  re-validate every manifest against this build
@@ -589,6 +614,8 @@ type agentResume struct {
 	Verdict *agent.Verdict
 	// Checkpoint is handed the trace after every step.
 	Checkpoint func(agent.Trace)
+	// RunID names the kept run, for the record each action leaves.
+	RunID string
 	// Eval makes the run an evaluation's: see evalcmd.go.
 	Eval *evalMode
 }
@@ -617,6 +644,14 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		if err := refuseIfPaused(root, name); err != nil {
 			return out, err
 		}
+		// Somebody answers for it, and that person can still act here.
+		// Evaluations run regardless: they change nothing, and are how a
+		// new sponsor finds out what they are taking on.
+		if id := set.identityOf(name); id != nil {
+			if err := id.MayRun(sponsorActive(root, id.Sponsor), time.Now()); err != nil {
+				return out, fmt.Errorf("%s does not run: %w", name, err)
+			}
+		}
 	}
 	// Re-validated against this build before it runs. A manifest that was
 	// written when an operation existed and no longer does describes a
@@ -639,6 +674,13 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	// arrangement that put the content-type gate in the CLI and not in the
 	// API. See agentnarrow.go.
 	m = narrowedBy(m, caller)
+	// And by its own standing, when the access policy gives it one: an
+	// agent granted reader on /docs reads /docs, whoever starts it.
+	if own, err := agentGrants(root, name); err != nil {
+		return out, err
+	} else if own != nil {
+		m = narrowedBy(m, own)
+	}
 	if len(m.Capabilities) == 0 {
 		return out, fmt.Errorf(
 			"%s holds nothing once bounded by this token: the manifest and "+
@@ -807,16 +849,43 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 			// watchdog that exists to notice one misbehaving reads the log
 			// filtered to model actors, and every run here was recorded as a
 			// human — so it could not see a single one. See agentactor.go.
+			detail := rc.Detail()
+			if from.RunID != "" {
+				detail["run"] = from.RunID
+			}
 			record(root, actorRecord(caller, "agent.run", outcomeOf(rc), m,
-				delegateModel, rc.Detail()))
+				delegateModel, detail))
 		},
 	}
 
 	// A run here can be held for a person and continued: every run made
 	// through this function is kept, which is what makes that possible.
 	runner.Pause, runner.Checkpoint = true, from.Checkpoint
+	// Every action into the log as it happens, allowed or refused: one
+	// record each, which an auditor can be handed with its proof (quilzo
+	// agent receipt). As each step ends rather than when the run does, so a
+	// run cut off half way still left a record of what it did; and once
+	// more when it ends, for the step no checkpoint follows.
+	recorded := 0
+	if from.Prior != nil {
+		recorded = len(from.Prior.Trace.Steps)
+	}
+	recordSteps := func(t agent.Trace) {
+		for ; recorded < len(t.Steps); recorded++ {
+			record(root, actionRecord(caller, m, delegateModel, from.RunID, t.Steps[recorded]))
+		}
+	}
 	if from.Eval != nil {
 		runner.Perform, runner.Record = from.Eval.perform(runner.Perform), func(agent.Receipt) {}
+		recordSteps = func(agent.Trace) {}
+	} else {
+		keep := runner.Checkpoint
+		runner.Checkpoint = func(t agent.Trace) {
+			recordSteps(t)
+			if keep != nil {
+				keep(t)
+			}
+		}
 	}
 
 	started := time.Now()
@@ -834,6 +903,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	} else {
 		trace, runErr = runner.Run(ctx, sess, goal)
 	}
+	recordSteps(trace)
 	rc := trace.Receipt(sess)
 	out.Manifest, out.Trace, out.Receipt, out.Started = m, trace, rc, started
 
