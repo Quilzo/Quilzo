@@ -623,9 +623,11 @@ var rules = []Rule{
 		Controls: []string{"SI-7", "PM-30"},
 		OWASP:    "",
 		Why: "EU AI Act Article 50 requires machine-readable marking of " +
-			"AI-generated content, in force since 2 August 2026, with penalties " +
-			"up to €15M or 3% of turnover. Absence must never read as a claim: " +
-			"an unmarked page is unknown, not human-written.",
+			"AI-generated content from 2 August 2026, with penalties up to " +
+			"€15M or 3% of turnover; a system already on the market before " +
+			"then has until 2 December 2026 (the Digital Omnibus, Regulation " +
+			"(EU) 2026/1744). Absence must never read as a claim: an unmarked " +
+			"page is unknown, not human-written.",
 		Check: func(s State) []Finding {
 			n := len(s.Content.UnmarkedPages)
 			if n == 0 {
