@@ -33,3 +33,34 @@ func TestTheAgentInterfaceChecks(t *testing.T) {
 		t.Fatalf("admin connection not flagged: %+v", f)
 	}
 }
+
+func TestTheAgentIdentityChecks(t *testing.T) {
+	now := time.Now()
+	s := State{Now: now, AI: AIFacts{Checked: true, Identities: []AgentIdentityFact{
+		{Name: "fine", Sponsor: "dana", SponsorActive: true, Expires: now.Add(60 * 24 * time.Hour)},
+		{Name: "orphan"},
+		{Name: "left", Sponsor: "sam", Expires: now.Add(60 * 24 * time.Hour)},
+		{Name: "ending", Sponsor: "dana", SponsorActive: true, Expires: now.Add(3 * 24 * time.Hour)},
+		{Name: "ended", Sponsor: "dana", SponsorActive: true, Expires: now.Add(-time.Hour)},
+	}}}
+	got := map[string][]string{}
+	for _, f := range Scan(s, nil).Findings {
+		got[f.Rule] = append(got[f.Rule], f.Resource)
+	}
+	want := map[string]string{"agent.no-sponsor": "agent/orphan", "agent.sponsor-gone": "agent/left"}
+	for rule, res := range want {
+		if len(got[rule]) != 1 || got[rule][0] != res {
+			t.Errorf("%s: %v", rule, got[rule])
+		}
+	}
+	if e := got["agent.identity-ending"]; len(e) != 2 {
+		t.Errorf("identity-ending: %v", e)
+	}
+	for _, rule := range []string{"agent.no-sponsor", "agent.sponsor-gone", "agent.identity-ending"} {
+		for _, r := range got[rule] {
+			if r == "agent/fine" {
+				t.Errorf("%s flagged a fine agent", rule)
+			}
+		}
+	}
+}

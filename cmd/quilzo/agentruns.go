@@ -167,7 +167,7 @@ func runAgentKept(ctx context.Context, root, name, goal string, withModel bool,
 		}
 	}
 	out, runErr := executeAgentFrom(ctx, root, name, goal, withModel, caller,
-		&agentResume{Checkpoint: k.checkpoint})
+		&agentResume{Checkpoint: k.checkpoint, RunID: k.rec.ID})
 	if out.Manifest.Name == "" {
 		// It never started. Nothing was checkpointed either.
 		return "", out, runErr
@@ -213,7 +213,7 @@ func continueAgentRun(ctx context.Context, root, id string, v *agent.Verdict,
 	}
 	out, runErr := executeAgentFrom(ctx, root, prior.Agent, prior.Goal,
 		prior.Model != "", caller,
-		&agentResume{Prior: &prior, Verdict: v, Checkpoint: k.checkpoint})
+		&agentResume{Prior: &prior, Verdict: v, Checkpoint: k.checkpoint, RunID: k.rec.ID})
 	if out.Manifest.Name == "" {
 		return none, runErr
 	}
@@ -270,7 +270,7 @@ func replayAgentRun(ctx context.Context, root, id string, n int,
 		From: fmt.Sprintf("%s@%d", id, n)}}
 	out, runErr := executeAgentFrom(ctx, root, prior.Agent, prior.Goal,
 		prior.Model != "", caller,
-		&agentResume{Prior: &from, Checkpoint: k.checkpoint})
+		&agentResume{Prior: &from, Checkpoint: k.checkpoint, RunID: k.rec.ID})
 	if out.Manifest.Name == "" {
 		return "", runErr
 	}
@@ -408,6 +408,15 @@ func declareAgent(root string, m agent.Manifest, isNew bool, caller *Caller) err
 		}
 	}
 	set.Agents[m.Name] = m
+	// A new agent is answered for by whoever declared it, until somebody
+	// names another sponsor.
+	if _, has := set.Identities[m.Name]; isNew && !has {
+		id, err := agent.NewIdentity(caller.Name, caller.Name, 0, time.Now())
+		if err != nil {
+			return err
+		}
+		set.Identities[m.Name] = id
+	}
 	if err := saveJSON(agentsPath(root), set); err != nil {
 		return err
 	}
@@ -442,6 +451,7 @@ func withdrawAgent(root, name string, caller *Caller) error {
 		}
 	}
 	delete(set.Agents, name)
+	delete(set.Identities, name)
 	if err := saveJSON(agentsPath(root), set); err != nil {
 		return err
 	}

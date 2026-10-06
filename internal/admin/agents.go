@@ -5,6 +5,7 @@ package admin
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -26,6 +27,11 @@ import (
 // where the manifests live, and the CLI is what owns that file.
 type Agents struct {
 	Load func() (map[string]agent.Manifest, error)
+	// Identities is who answers for each agent, and until when; nil shows
+	// nothing about it. SponsorActive says whether a sponsor can still act
+	// here.
+	Identities    func() (map[string]agent.Identity, error)
+	SponsorActive func(sponsor string) bool
 	// Known is every capability the machine interface offers, which is
 	// what a declaration is validated against.
 	Known func() []string
@@ -58,6 +64,11 @@ type agentRow struct {
 	Retain       string
 	Tools        []agent.Tool
 	Approval     bool
+	// Sponsor is who answers for it, Ends when it stops, and Standing a
+	// word for the screen: ok, ending, ended, orphaned or unsponsored.
+	Sponsor  string
+	Ends     time.Time
+	Standing string
 }
 
 func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
@@ -88,6 +99,11 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var ids map[string]agent.Identity
+	if s.Agents.Identities != nil {
+		ids, _ = s.Agents.Identities()
+	}
+	now := time.Now()
 	var rows []agentRow
 	for name, m := range declared {
 		row := agentRow{
@@ -103,6 +119,22 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 		if m.Memory.Any() {
 			row.Memory = memoryTiers(m.Memory)
 			row.Retain = m.Memory.Retain.String()
+		}
+		if s.Agents.Identities != nil {
+			row.Standing = "unsponsored"
+			if id, ok := ids[name]; ok && id.Sponsor != "" {
+				row.Sponsor, row.Ends = id.Sponsor, id.Expires
+				switch {
+				case id.Expired(now):
+					row.Standing = "ended"
+				case s.Agents.SponsorActive != nil && !s.Agents.SponsorActive(id.Sponsor):
+					row.Standing = "orphaned"
+				case id.Expires.Before(now.Add(14 * 24 * time.Hour)):
+					row.Standing = "ending"
+				default:
+					row.Standing = "ok"
+				}
+			}
 		}
 		rows = append(rows, row)
 	}

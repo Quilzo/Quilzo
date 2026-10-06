@@ -318,6 +318,17 @@ type AIFacts struct {
 	Flagged []string `json:"flagged,omitempty"`
 	// Evals is each declared agent's last evaluation.
 	Evals []AgentEvalFact `json:"evals,omitempty"`
+	// Identities is who answers for each declared agent.
+	Identities []AgentIdentityFact `json:"identities,omitempty"`
+}
+
+// AgentIdentityFact is who answers for an agent, and until when.
+type AgentIdentityFact struct {
+	Name    string    `json:"name"`
+	Sponsor string    `json:"sponsor,omitempty"`
+	Expires time.Time `json:"expires,omitzero"`
+	// SponsorActive says the sponsor can still act here.
+	SponsorActive bool `json:"sponsor_active"`
 }
 
 type State struct {
