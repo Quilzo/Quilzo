@@ -13,7 +13,7 @@
     <th scope="row">{{.Ref.ID}}</th>
     <td><span class="wf-word {{if eq .State "failing"}}critical{{else if eq .State "passing"}}good{{else}}warning{{end}}">{{.State}}</span></td>
     <td>{{range .Findings}}<p><strong>{{.Title}}</strong><br>{{.Detail}}{{if .Fix}}<br><span class="hint">Fix: <code>{{.Fix}}</code></span>{{end}}</p>{{end}}
-      <span class="hint">{{range $i, $r := .Rules}}{{if $i}}, {{end}}<code>{{$r}}</code>{{end}}</span></td>
+      <span class="hint">{{range $i, $r := .Rules}}{{if $i}}, {{end}}<a href="/security/rule/{{$r}}"><code>{{$r}}</code></a>{{end}}</span></td>
   </tr>{{end}}</tbody></table></div>
 {{else}}<p>No check covers this framework yet.</p>{{end}}
 <p class="hint">Requirements not listed aren't covered by any check. What's

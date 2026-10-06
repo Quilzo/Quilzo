@@ -623,7 +623,7 @@ var coverage = map[string]surfaces{
 			"isolated network is built on, and a model that could read it " +
 			"could tell you which purpose is still permitted — a shape of " +
 			"reconnaissance this surface should not answer"},
-	"compliance": {GUI: "/security/inventory", MCP: []string{"inventory", "site_report"}},
+	"compliance": {GUI: "/security/inventory", MCP: []string{"inventory", "site_report", "control_implementation"}},
 	"agents":     {GUI: "/security/agents", MCP: []string{"agent_activity"}},
 	"eval":       {GUI: "/agents/evals", MCP: []string{"eval_results"}},
 	"agent": {GUI: "/agents",

@@ -65,7 +65,17 @@ type Import struct {
 
 // Modify carries the parameter values.
 type Modify struct {
-	SetParameters []SetParameter `json:"set-parameters"`
+	SetParameters []ParameterSetting `json:"set-parameters"`
+}
+
+// ParameterSetting is a profile's setting of a parameter. Not SetParameter:
+// a profile's schema allows usage and no remarks, an implementation's the
+// other way round, and a document with the wrong one fails validation.
+type ParameterSetting struct {
+	ParamID string   `json:"param-id"`
+	Props   []Prop   `json:"props,omitempty"`
+	Usage   string   `json:"usage,omitempty"`
+	Values  []string `json:"values,omitempty"`
 }
 
 // ParameterProfile is a profile that sets parameters of the 800-53
@@ -85,8 +95,18 @@ func ParameterProfile(title, version string, at time.Time, params []SetParameter
 				"deployment does now; fixed is the program's own behaviour.",
 		},
 		Imports: []Import{{Href: CatalogHref, IncludeAll: &struct{}{}}},
-		Modify:  &Modify{SetParameters: params},
+		Modify:  &Modify{SetParameters: settings(params)},
 	}}, nil
+}
+
+// settings turns implementation set-parameters into a profile's settings,
+// their remarks becoming the usage a profile carries.
+func settings(in []SetParameter) []ParameterSetting {
+	out := make([]ParameterSetting, 0, len(in))
+	for _, p := range in {
+		out = append(out, ParameterSetting{ParamID: p.ParamID, Props: p.Props, Usage: p.Remarks, Values: p.Values})
+	}
+	return out
 }
 
 // ReadSetParameters finds the parameter values in an OSCAL document: a
