@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/assist"
 )
 
 func supervisor(t *testing.T) *agent.Session {
@@ -77,5 +78,30 @@ func TestWithoutChoicesTheVocabularyIsTheCapabilities(t *testing.T) {
 	_, err, system := choose(t, `{"op":"tool:create_issue","input":{}}`, d)
 	if err == nil || strings.Contains(system, "tool:") || strings.Contains(system, "delegate:") {
 		t.Fatalf("a tool nobody offered: %v\n%s", err, system)
+	}
+}
+
+type costedModel struct{ fakeModel }
+
+func (c *costedModel) CompleteCosted(ctx context.Context, s, u string) (string, assist.Usage, int64, error) {
+	out, err := c.Complete(ctx, s, u)
+	return out, assist.Usage{In: 300, Out: 50, Reported: true}, 4200, err
+}
+
+func TestWhatEachCallCostReachesTheRun(t *testing.T) {
+	s := session(t, "list_pages")
+	m := &costedModel{fakeModel{reply: `{"op":"list_pages"}`}}
+	if _, err := (Decider{Model: m, Session: s, Tokens: s.Tokens, Charge: s.Charge}).Decide()(context.Background(), "g", nil); err != nil {
+		t.Fatal(err)
+	}
+	if s.TokensUsed() != 350 || s.Cost() != 4200 {
+		t.Fatalf("tokens %d cost %d", s.TokensUsed(), s.Cost())
+	}
+	// A model that reports nothing costs nothing it can be charged for.
+	plain := &fakeModel{reply: `{"op":"list_pages"}`}
+	s2 := session(t, "list_pages")
+	(Decider{Model: plain, Session: s2, Tokens: s2.Tokens, Charge: s2.Charge}).Decide()(context.Background(), "g", nil)
+	if s2.TokensUsed() != 0 || s2.Cost() != 0 {
+		t.Fatal("charged for a call nobody priced")
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agentmodel"
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/otlp"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/store"
@@ -396,6 +397,9 @@ func agentCheckRun(root string, args []string) error {
 		fmt.Printf("  %sdeciding with %s; the manifest is still the only "+
 			"vocabulary%s\n", dim, out.Model, reset)
 	}
+	if out.Earned != "" {
+		fmt.Printf("  %s%s%s\n", yellow, out.Earned, reset)
+	}
 	if out.TraceError != "" {
 		fmt.Printf("  %straces not sent: %s%s\n", dim, out.TraceError, reset)
 	}
@@ -576,18 +580,23 @@ type agentOutcome struct {
 	Model string
 	// TraceError is why the run's trace did not reach a collector.
 	TraceError string
+	// Earned says why a model drove it below its declared autonomy, when it
+	// did.
+	Earned string
 }
 
 // agentRunModel is the model an agent's run asks: through the gateway when
 // one is declared, so the run is budgeted and recorded like every other
 // caller, and the one configured endpoint otherwise.
-func agentRunModel(root, name string) (assist.Model, string) {
+func agentRunModel(root, name string, payers ...string) (assist.Model, string) {
 	gw, _, err := modelGateway(root)
 	if err != nil {
 		return nil, "the model gateway could not be read: " + err.Error()
 	}
 	if gw != nil {
-		return gw.For("agent:" + name), ""
+		// Charged to the agent, and to whoever started the run, each
+		// against its own budget.
+		return gw.For("agent:"+name, payers...), ""
 	}
 	m, err := assist.NewHTTPModel()
 	if err != nil {
@@ -681,7 +690,24 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	} else if own != nil {
 		m = narrowedBy(m, own)
 	}
+	// A model drives it only as far as its evaluations have shown it can be
+	// trusted. An evaluation itself runs at the declared autonomy, because
+	// that is what it measures, and changes nothing either way.
+	if withModel && from.Eval == nil && mustConfig(root).Bool("agents.earned_autonomy") {
+		var latest *evals.Report
+		if reps, err := evalReports(root, name, 1); err == nil && len(reps) > 0 {
+			latest = &reps[0]
+		}
+		if earned, why := evals.Earned(latest, time.Now()); !m.Autonomy.AtMost(earned) {
+			out.Earned = fmt.Sprintf("a model drives %s at %s rather than %s: %s", name, earned, m.Autonomy, why)
+			m.Autonomy = earned
+			m.Capabilities = mayCall(m.Capabilities, earned)
+		}
+	}
 	if len(m.Capabilities) == 0 {
+		if out.Earned != "" {
+			return out, fmt.Errorf("%s holds nothing it may do yet: %s (quilzo eval run %s)", name, out.Earned, name)
+		}
 		return out, fmt.Errorf(
 			"%s holds nothing once bounded by this token: the manifest and "+
 				"the token you are using have no capability in common", name)
@@ -753,7 +779,11 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		return a, nil
 	}
 	if withModel {
-		model, why := agentRunModel(root, name)
+		var payers []string
+		if caller != nil && caller.Verified && !strings.HasPrefix(caller.Name, agent.PrincipalPrefix) {
+			payers = append(payers, "person:"+caller.Name)
+		}
+		model, why := agentRunModel(root, name, payers...)
 		if model == nil {
 			return out, fmt.Errorf(
 				"letting a model choose needs a model configured: %s\n"+
@@ -772,6 +802,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 			// Reported by the provider, not measured here. Fed to the session
 			// so the budget counts what the run actually cost.
 			Tokens:    sess.Tokens,
+			Charge:    sess.Charge,
 			Tools:     tools,
 			Delegates: delegates,
 		}.Decide()
@@ -855,6 +886,9 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 			detail := rc.Detail()
 			if from.RunID != "" {
 				detail["run"] = from.RunID
+			}
+			if out.Earned != "" {
+				detail["earned"] = out.Earned
 			}
 			record(root, actorRecord(caller, "agent.run", outcomeOf(rc), m,
 				delegateModel, detail))

@@ -444,8 +444,9 @@ the assistant
   quilzo decide eval NAME CASES.jsonl      how much it decides alone, and how often rightly
   quilzo decide list | remove NAME
   quilzo gateway status                    model routes, and what each caller spent today
-  quilzo gateway route add|remove NAME     where model calls go, in fallback order
-  quilzo gateway budget CALLER             calls a minute, characters a day
+  quilzo gateway route add|remove NAME     where model calls go, in fallback order, and what a million tokens cost there
+  quilzo gateway budget CALLER             calls a minute, characters or tokens a day, money a day or a month
+  quilzo gateway currency USD              the currency prices and money budgets are in
   quilzo fediverse init                    a signing key, so the site can federate
   quilzo fediverse status | followers      whether it federates, and who follows
   quilzo fediverse block HOST              refuse an instance, and drop its follows

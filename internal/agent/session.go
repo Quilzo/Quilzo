@@ -90,6 +90,9 @@ type Session struct {
 	steps    int
 	toolUses int
 	tokens   int
+	// cost is what the run's model calls cost, in millionths of the
+	// gateway's currency, as the gateway priced them.
+	cost int64
 
 	// refusals is every refusal this session made, for the audit record. Kept
 	// rather than only counted: "the agent was refused 12 times" is a number,
@@ -154,8 +157,36 @@ func (s *Session) spend(op string) error {
 				"going is usually a loop, and often the injection working",
 			s.manifest.Budget.Steps))
 	}
+	if b := s.manifest.Budget.Tokens; b > 0 && s.tokens >= b {
+		return s.refuse(op, fmt.Sprintf("the run has used %d tokens and its budget is %d", s.tokens, b))
+	}
+	if b, _ := s.manifest.Budget.MoneyMicros(); b > 0 && s.cost >= b {
+		return s.refuse(op, fmt.Sprintf("the run has spent %s and its budget is %s", microsString(s.cost), s.manifest.Budget.Money))
+	}
 	s.steps++
 	return nil
+}
+
+func microsString(m int64) string {
+	return fmt.Sprintf("%d.%06d", m/1_000_000, m%1_000_000)
+}
+
+// Charge records what a model call cost, in millionths of the gateway's
+// currency, against the run's money budget.
+func (s *Session) Charge(micros int64) {
+	if micros <= 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cost += micros
+}
+
+// Cost is what the run's model calls have cost so far.
+func (s *Session) Cost() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cost
 }
 
 // Authorize is the chokepoint. Every operation an agent performs passes here
@@ -864,6 +895,7 @@ func (s *Session) Fold(child *Session) {
 	}
 	steps, tools, _ := child.Spent()
 	tokens := child.TokensUsed()
+	cost := child.Cost()
 	tainted := child.Tainted()
 	refusals := child.Refusals()
 
@@ -876,6 +908,7 @@ func (s *Session) Fold(child *Session) {
 	s.steps += steps
 	s.toolUses += tools
 	s.tokens += tokens
+	s.cost += cost
 	if tainted {
 		s.tainted = true
 	}

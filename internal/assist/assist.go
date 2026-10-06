@@ -485,7 +485,35 @@ func NewHTTPModelAt(base, key, model string) (*HTTPModel, error) {
 	}, nil
 }
 
+// Usage is what one completion used, as the provider reported it.
+type Usage struct {
+	In, Out int
+	// Reported is false when the provider said nothing, and the counts are
+	// estimated from the length of the text.
+	Reported bool
+}
+
+// Estimate is a usage worked out from text alone: about four characters to
+// a token, rounded up, which is what providers' own guides give for
+// English and an overstatement for most other text.
+func Estimate(in, out string) Usage {
+	return Usage{In: (len(in) + 3) / 4, Out: (len(out) + 3) / 4}
+}
+
+// Metered is a model that says what each completion used.
+type Metered interface {
+	CompleteMetered(ctx context.Context, system, user string) (string, Usage, error)
+}
+
 func (h *HTTPModel) Complete(ctx context.Context, system, user string) (string, error) {
+	out, _, err := h.CompleteMetered(ctx, system, user)
+	return out, err
+}
+
+// CompleteMetered is Complete, with what the provider says it used: the
+// usage block every OpenAI-compatible server returns, or an estimate when
+// it returns none.
+func (h *HTTPModel) CompleteMetered(ctx context.Context, system, user string) (string, Usage, error) {
 	payload := map[string]any{
 		"model": h.Model,
 		"messages": []map[string]string{
@@ -499,13 +527,13 @@ func (h *HTTPModel) Complete(ctx context.Context, system, user string) (string, 
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", err
+		return "", Usage{}, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		h.BaseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return "", Usage{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	// Omitted rather than sent empty. "Bearer " with nothing after it is a
@@ -518,7 +546,7 @@ func (h *HTTPModel) Complete(ctx context.Context, system, user string) (string, 
 
 	resp, err := h.Client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("model request failed: %w", err)
+		return "", Usage{}, fmt.Errorf("model request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -529,7 +557,7 @@ func (h *HTTPModel) Complete(ctx context.Context, system, user string) (string, 
 		if len(snippet) > 300 {
 			snippet = snippet[:300]
 		}
-		return "", fmt.Errorf("model returned %d: %s", resp.StatusCode, snippet)
+		return "", Usage{}, fmt.Errorf("model returned %d: %s", resp.StatusCode, snippet)
 	}
 
 	var out struct {
@@ -538,12 +566,22 @@ func (h *HTTPModel) Complete(ctx context.Context, system, user string) (string, 
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage *struct {
+			Prompt     int `json:"prompt_tokens"`
+			Completion int `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", fmt.Errorf("cannot read the model's reply: %w", err)
+		return "", Usage{}, fmt.Errorf("cannot read the model's reply: %w", err)
 	}
 	if len(out.Choices) == 0 {
-		return "", fmt.Errorf("the model returned no choices")
+		return "", Usage{}, fmt.Errorf("the model returned no choices")
 	}
-	return out.Choices[0].Message.Content, nil
+	text := out.Choices[0].Message.Content
+	u := Estimate(system+user, text)
+	if out.Usage != nil && out.Usage.Prompt >= 0 && out.Usage.Completion >= 0 &&
+		(out.Usage.Prompt > 0 || out.Usage.Completion > 0) {
+		u = Usage{In: out.Usage.Prompt, Out: out.Usage.Completion, Reported: true}
+	}
+	return text, u, nil
 }

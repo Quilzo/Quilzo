@@ -437,6 +437,21 @@ var settings = []Setting{
 			"no path.",
 	},
 	{
+		Key: "agents.earned_autonomy", Kind: Bool, Default: "true",
+		Summary:  "a model-driven agent acts at what its evaluations earned",
+		Controls: []string{"AC-6", "CA-7"},
+		Why: "A manifest says the most an agent may do; whether a model driving " +
+			"it should be trusted that far is what its evaluations measure. On, " +
+			"a run where a model chooses acts at the lower of the two: proposing " +
+			"until an evaluation with planted instructions shows it does the task " +
+			"every time and is not steered, drafting after that, publishing (with " +
+			"a person approving) after a larger one, and back to proposing the " +
+			"moment it follows a planted instruction. Off, the manifest alone " +
+			"decides, which is the locked-down-or-fully-trusted choice agents are " +
+			"abandoned over.",
+		Weaker: offIsWeaker("a model drives an agent at the autonomy its manifest declares, whatever its evaluations show"),
+	},
+	{
 		Key: "mcp.remote", Kind: Bool, Default: "false",
 		Summary:  "serve the agent interface (MCP) at /mcp on the admin",
 		Controls: []string{"AC-17", "AC-3"},
