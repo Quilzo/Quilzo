@@ -334,8 +334,7 @@ func (o *OIDC) ttl() time.Duration {
 // refuseSignIn renders a failure without leaking whether the principal exists
 // beyond what the person already knows about themselves.
 func (s *Server) refuseSignIn(w http.ResponseWriter, r *http.Request, reason, hint string) {
-	w.WriteHeader(http.StatusForbidden)
-	s.render(w, r, "signin.html", map[string]any{
+	s.render(w, r, "signin.html", map[string]any{"Status": http.StatusForbidden,
 		"Title": "Sign in", "Error": reason, "Hint": hint,
 		"OIDC": s.OIDC != nil, "OIDCLabel": s.oidcLabel(), "SSO": s.ssoChoices(),
 	})

@@ -189,6 +189,10 @@ sharing a screen
   quilzo sarif read results.sarif          import any scanner's findings, and what it left out
   quilzo sca scan --bom sbom.json --osv db.json   which dependencies you can actually fix
   quilzo correlate demo                    detections about several events, and when a window closes
+  quilzo apps list                         apps connected to the agent interface, and what may connect
+  quilzo apps allow|disallow HOST          let apps published from HOST ask people to connect; disallow ends theirs
+  quilzo apps register NAME --redirect URI an app that cannot publish its own metadata; prints its client_id
+  quilzo apps unregister ID | disconnect ID   remove a registered app, or end one connection
   quilzo shield status | list [--all]      what Quilzo is doing to protect itself, its playbooks, and what ended
   quilzo self check | verify | vex         known flaws in this build, decided by what is linked; is the binary itself
   quilzo self update vulndb.zip            a newer Go vulnerability database, read offline
@@ -937,6 +941,8 @@ func main() {
 		err = cmdIncident(root, cmdArgs)
 	case "shield":
 		err = cmdShield(root, cmdArgs)
+	case "apps":
+		err = cmdApps(root, cmdArgs)
 	case "self":
 		err = cmdSelf(root, cmdArgs)
 	case "policy":

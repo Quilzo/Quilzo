@@ -425,6 +425,35 @@ var settings = []Setting{
 		Controls: []string{"SC-7", "AU-3", "AC-7"},
 	},
 	{
+		Key: "admin.base_url", Kind: Text, Default: "",
+		Summary: "where people and programs reach the admin, e.g. https://admin.example.com",
+		Why: "The agent interface's address, and the name of the authorization " +
+			"server apps connect through. An app finds where to send somebody " +
+			"to sign in from metadata that names this address, and every token " +
+			"it is given is bound to it, so it has to be the address the app " +
+			"actually reaches: taken from each request's Host header instead, " +
+			"anybody could have the metadata name an address of their choosing. " +
+			"https, or http to this machine for trying it out; an origin with " +
+			"no path.",
+	},
+	{
+		Key: "mcp.remote", Kind: Bool, Default: "false",
+		Summary:  "serve the agent interface (MCP) at /mcp on the admin",
+		Controls: []string{"AC-17", "AC-3"},
+		Why: "The agent interface is how agents and AI apps, wherever they run, " +
+			"read and change what Quilzo holds: the same operations, gates and " +
+			"audit log as the command line, reached over HTTP with a bearer " +
+			"token. Off by default because a door reached from outside is a " +
+			"decision. On, it takes Quilzo's own tokens, and, once admin.base_url " +
+			"is set, tokens apps get through OAuth with a person's consent.",
+		Weaker: func(v string) (bool, string) {
+			if b, err := strconv.ParseBool(v); err == nil && b {
+				return true, "the agent interface answers at /mcp; every call still needs a token and is checked and recorded"
+			}
+			return false, ""
+		},
+	},
+	{
 		Key: "admin.behind_tls_proxy", Kind: Bool, Default: "false",
 		Summary: "the admin is served over HTTPS by something in front of it",
 		Why: "Whether the session cookie is marked Secure. It was decided by " +
@@ -1122,6 +1151,20 @@ func (s Setting) Validate(v string) error {
 				if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '+' || c == '/' || c == '=') {
 					return fmt.Errorf("an origin trial token is base64; %q is not", c)
 				}
+			}
+		}
+		if s.Key == "admin.base_url" && v != "" {
+			u, err := url.Parse(v)
+			local := err == nil && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1")
+			switch {
+			case err != nil || u.Host == "" || u.User != nil:
+				return fmt.Errorf("%q is not an address like https://admin.example.com", v)
+			case u.Path != "" || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(v, "/"):
+				return fmt.Errorf("%q has more than a scheme and a host; give the origin only", v)
+			case u.Scheme != "https" && !(u.Scheme == "http" && local):
+				return fmt.Errorf("%q is not https; OAuth needs https except on this machine", v)
+			case strings.ToLower(v) != v:
+				return fmt.Errorf("%q has capitals; give it in lower case, as apps compare it exactly", v)
 			}
 		}
 		if s.Key == "site.base_url" && v != "" {

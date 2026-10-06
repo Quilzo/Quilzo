@@ -598,3 +598,96 @@ func TestASessionEndedLongAgoIsStillNotAGuess(t *testing.T) {
 		t.Fatalf("remembered forever: %v", err)
 	}
 }
+
+// An app's token works at the one resource it was issued for, and nowhere
+// else: not at the admin, the API or a terminal, and not as a way to mint
+// a session that would work there.
+func TestAnAudienceBoundTokenWorksOnlyAtItsResource(t *testing.T) {
+	ts := &TokenStore{}
+	now := time.Now()
+	const mcp = "https://admin.example.org/mcp"
+	secret, tok, err := ts.IssueForGrant("dana", RoleAuthor, Scope{}, "https://app.example/c.json", "gr_1", mcp, time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok.Session || tok.Audience != mcp || tok.Grant != "gr_1" || tok.Name != "app https://app.example/c.json" {
+		t.Fatalf("%+v", tok)
+	}
+	if got, err := ts.AuthenticateFor(secret, mcp, now); err != nil || got.Principal != "dana" || got.Role != RoleAuthor {
+		t.Fatalf("at its resource: %v", err)
+	}
+	for _, resource := range []string{"", "https://admin.example.org/api", "https://other.example/mcp"} {
+		if _, err := ts.AuthenticateFor(secret, resource, now); !errors.Is(err, ErrAudience) {
+			t.Errorf("at %q: %v", resource, err)
+		}
+	}
+	if _, err := ts.Authenticate(secret, now); !errors.Is(err, ErrAudience) || Unknown(err) {
+		t.Fatalf("Authenticate: %v", err)
+	}
+	if _, _, err := ts.Exchange(secret, RoleReader, "/", time.Minute, now); !errors.Is(err, ErrAudience) {
+		t.Fatalf("exchanged for a session: %v", err)
+	}
+	// An ordinary token is accepted at the resource too: Quilzo issued it
+	// for Quilzo.
+	plain, _, _ := ts.Issue("cli", "dana", RoleAdmin, "/", time.Hour, RoleAdmin)
+	if _, err := ts.AuthenticateFor(plain, mcp, now); err != nil {
+		t.Fatalf("an ordinary token at the interface: %v", err)
+	}
+	// Revoking the grant revokes what was issued under it, and only that.
+	other, _, _ := ts.IssueForGrant("dana", RoleReader, Scope{}, "c2", "gr_2", mcp, time.Hour, now)
+	if n := ts.RevokeGrant("gr_1"); n != 1 {
+		t.Fatalf("revoked %d", n)
+	}
+	if _, err := ts.AuthenticateFor(secret, mcp, now); err == nil {
+		t.Fatal("a revoked grant's token worked")
+	}
+	if _, err := ts.AuthenticateFor(other, mcp, now); err != nil {
+		t.Fatalf("another grant's token: %v", err)
+	}
+	if ts.RevokeGrant("") != 0 {
+		t.Fatal("an empty grant id revoked something")
+	}
+}
+
+func TestAppTokensAreBoundedAndSweptAway(t *testing.T) {
+	ts := &TokenStore{}
+	now := time.Now()
+	for name, issue := range map[string]func() error{
+		"no client": func() error {
+			_, _, err := ts.IssueForGrant("d", RoleReader, Scope{}, "", "g", "r", time.Hour, now)
+			return err
+		},
+		"no grant": func() error {
+			_, _, err := ts.IssueForGrant("d", RoleReader, Scope{}, "c", "", "r", time.Hour, now)
+			return err
+		},
+		"no audience": func() error {
+			_, _, err := ts.IssueForGrant("d", RoleReader, Scope{}, "c", "g", "", time.Hour, now)
+			return err
+		},
+		"too long": func() error {
+			_, _, err := ts.IssueForGrant("d", RoleReader, Scope{}, "c", "g", "r", MaxSessionTTL+time.Minute, now)
+			return err
+		},
+		"no role": func() error {
+			_, _, err := ts.IssueForGrant("d", RoleNone, Scope{}, "c", "g", "r", time.Hour, now)
+			return err
+		},
+	} {
+		if issue() == nil {
+			t.Errorf("%s: issued", name)
+		}
+	}
+	old := now.Add(-3 * 24 * time.Hour)
+	ts.IssueForGrant("d", RoleReader, Scope{}, "c", "g", "r", time.Hour, old)
+	ts.IssueForGrant("d", RoleReader, Scope{}, "c", "g", "r", time.Hour, now)
+	n := 0
+	for _, tk := range ts.Snapshot() {
+		if tk.Grant == "g" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("an app's token long expired was kept: %d", n)
+	}
+}

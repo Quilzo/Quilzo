@@ -24,6 +24,16 @@ import (
 //
 // Not everything available — everything that changes a decision. An attribute
 // nobody filters on is a byte on somebody's bill and a column in their backend.
+//
+// # In OpenTelemetry's words as well as Quilzo's
+//
+// A run is an invoke_agent span and each step an execute_tool span, with the
+// gen_ai.* attributes of OpenTelemetry's GenAI semantic conventions, so a
+// backend that knows agents from any other vendor reads Quilzo's the same
+// way: the agent's name, the tool each step called, the error that ended
+// it. The conventions are still marked as in development, so the quilzo.*
+// attributes stay beside them, and a dashboard built on either keeps
+// working when the other changes.
 
 // FromTrace renders one agent run as a parent span with a child per step.
 //
@@ -63,11 +73,21 @@ func FromTrace(t agent.Trace, r agent.Receipt, m agent.Manifest,
 		if i+1 < len(t.Steps) && !t.Steps[i+1].At.IsZero() {
 			stop = t.Steps[i+1].At
 		}
+		// What the step called: one of Quilzo's own operations, or a tool
+		// on another system an integration reaches.
+		tool, toolType := st.Action.Op, "function"
+		if st.Action.Tool != "" {
+			tool, toolType = st.Action.Tool, "extension"
+		}
 		s := Span{
 			TraceID: traceID, SpanID: id, ParentID: rootID,
-			Name: "agent.step", Kind: KindInternal,
+			Name: "execute_tool " + tool, Kind: KindInternal,
 			Start: at, End: stop,
 			Attrs: []Attr{
+				String("gen_ai.operation.name", "execute_tool"),
+				String("gen_ai.tool.name", tool),
+				String("gen_ai.tool.type", toolType),
+				String("gen_ai.tool.call.id", fmt.Sprintf("%s-%d", rootID, st.N)),
 				Int("quilzo.step.n", int64(st.N)),
 				String("quilzo.step.op", st.Action.Op),
 			},
@@ -86,6 +106,7 @@ func FromTrace(t agent.Trace, r agent.Receipt, m agent.Manifest,
 		case st.Err != "":
 			s.StatusCode = StatusError
 			s.StatusMsg = st.Err
+			s.Attrs = append(s.Attrs, String("error.type", "tool_error"))
 		default:
 			s.StatusCode = StatusOK
 		}
@@ -97,9 +118,13 @@ func FromTrace(t agent.Trace, r agent.Receipt, m agent.Manifest,
 
 	root := Span{
 		TraceID: traceID, SpanID: rootID,
-		Name: "agent.run", Kind: KindInternal,
+		Name: "invoke_agent " + m.Name, Kind: KindInternal,
 		Start: start, End: end,
 		Attrs: []Attr{
+			String("gen_ai.operation.name", "invoke_agent"),
+			String("gen_ai.agent.name", m.Name),
+			String("gen_ai.agent.id", "quilzo/agent/"+m.Name),
+			String("gen_ai.provider.name", "quilzo"),
 			String("quilzo.agent", m.Name),
 			String("quilzo.agent.kind", string(m.Kind)),
 			String("quilzo.agent.autonomy", string(m.Autonomy)),
@@ -132,6 +157,7 @@ func FromTrace(t agent.Trace, r agent.Receipt, m agent.Manifest,
 		root.StatusMsg = fmt.Sprintf("%d refused", r.Refused)
 	} else if r.Failed > 0 {
 		root.StatusCode = StatusError
+		root.Attrs = append(root.Attrs, String("error.type", "tool_error"))
 	} else {
 		root.StatusCode = StatusOK
 	}

@@ -146,6 +146,9 @@ var destinations = []destination{
 	// only administrators could open would be a second factor only
 	// administrators could have.
 	{"passkeys", "Passkeys", "/passkeys", "Administration", "auth", auth.ActView},
+	// View, for the same reason: everybody sees and disconnects the apps
+	// they connected to the agent interface.
+	{"apps", "Connected apps", "/apps", "Administration", "agent-interface", auth.ActView},
 	{"integrations", "Integrations", "/integrations", "Administration", "integrations", auth.ActGrant},
 	// Beside Integrations: both decide what this program talks to, and a
 	// model route decides who receives what visitors typed.
@@ -200,7 +203,7 @@ var docSections = map[string]bool{
 	"vulnerabilities": true, "cases": true,
 	"logging": true, "users": true, "auth": true, "integrations": true,
 	"settings": true, "api": true, "profile": true, "start": true,
-	"agents": true, "design": true, "workforce": true,
+	"agents": true, "design": true, "workforce": true, "agent-interface": true,
 
 	// Sections no screen owns, because they explain a concept or a surface
 	// rather than a destination. Named individually so that one quietly
@@ -550,6 +553,7 @@ func Screens() []find.Destination {
 		"access": {"permission", "role", "grant", "token", "authorisation",
 			"authorization"},
 		"passkeys":     {"passkey", "webauthn", "2fa", "security key", "login"},
+		"apps":         {"oauth", "mcp", "connected", "assistant", "claude", "chatgpt", "copilot", "agent interface"},
 		"integrations": {"webhook", "siem", "extension"},
 		"settings":     {"configuration", "config", "option", "preference"},
 		"start":        {"help", "documentation", "docs", "guide", "getting started"},

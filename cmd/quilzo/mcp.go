@@ -109,6 +109,11 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			return fmt.Errorf("%q declares no role, so it cannot be "+
 				"authorised: %v", op.Name, err)
 		}
+		if caller.Remote {
+			if err := remoteRefusal(root, caller, auth.Role(op.NeedsRole)); err != nil {
+				return err
+			}
+		}
 		// The shield turned the machine interface off: whatever drives it
 		// (an agent, a model) waits until a person lifts that.
 		if p, off := shield.Find(root, shield.Feature, "mcp", time.Now()); off && p.Level == shield.Off {

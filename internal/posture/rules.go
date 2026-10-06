@@ -380,6 +380,50 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "mcp.any-app",
+		Title:    "Any app, published anywhere, may ask people to connect it",
+		Severity: High,
+		Controls: []string{"AC-17", "AC-3"},
+		OWASP:    "A01:2025 Broken Access Control",
+		Why: "An app chooses its own name, so a page that asks somebody to let " +
+			"\"their assistant\" act as them is the consent-phishing attack " +
+			"OAuth is known for. Naming the hosts the organisation's apps come " +
+			"from leaves only those able to ask.",
+		Check: func(s State) []Finding {
+			if !s.Interface.On {
+				return nil
+			}
+			for _, h := range s.Interface.Hosts {
+				if h == "*" {
+					return []Finding{{Resource: "mcp/apps",
+						Detail: "apps from any host may ask anybody here to connect them",
+						Fix:    "quilzo apps disallow '*'  # then quilzo apps allow HOST for each app the organisation uses"}}
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID:       "mcp.admin-app",
+		Title:    "An app acts as an administrator through the agent interface",
+		Severity: Medium,
+		Controls: []string{"AC-6", "AC-6(5)"},
+		OWASP:    "A01:2025 Broken Access Control",
+		Why: "It holds what the person who connected it holds: the reports " +
+			"that map where the defences are thin. An app that reads or " +
+			"drafts needs read or write, and is one prompt injection away " +
+			"from whatever it holds.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, c := range s.Interface.Admin {
+				out = append(out, Finding{Resource: "mcp/" + c,
+					Detail: c + " was given administrator scope",
+					Fix:    "disconnect it on Connected apps (quilzo apps disconnect ID) and connect it again with less"})
+			}
+			return out
+		},
+	},
+	{
 		ID:       "token.admin-role",
 		Title:    "An API token carries administrator rights",
 		Severity: Critical,

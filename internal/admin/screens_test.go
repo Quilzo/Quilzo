@@ -192,6 +192,17 @@ var notAScreen = map[string]string{
 		"interface as a desktop application; there is no page to render",
 	"/decentralised/bundle": "sends a tar.gz of the rendered site, not a page; " +
 		"it redirects with an explanation when there is nothing published",
+	"/mcp": "is the agent interface: JSON-RPC posted by programs with a " +
+		"bearer token, 404 while the interface is off",
+	"/.well-known/oauth-protected-resource":     "is JSON for programs (RFC 9728), 404 until the interface and the admin's address are set",
+	"/.well-known/oauth-protected-resource/mcp": "is JSON for programs (RFC 9728), 404 until the interface and the admin's address are set",
+	"/.well-known/oauth-authorization-server":   "is JSON for programs (RFC 8414), 404 until the interface and the admin's address are set",
+	"/oauth/token":  "is posted to by an app's program, never opened",
+	"/oauth/revoke": "is posted to by an app's program, never opened",
+	"/oauth/authorize": "is where an app sends a person with its request in the " +
+		"query; opened with none it says the request cannot be used, and it " +
+		"is 404 while the interface is off. agentinterface_test.go opens it " +
+		"with real requests",
 	"/media/edit/preview": "derives a picture from a recipe in the query and " +
 		"sends the bytes. It is the <img> on the editing screen, not a page, " +
 		"and with no recipe there is nothing to derive",

@@ -325,3 +325,46 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// A run reads as an agent in OpenTelemetry's own words, so a backend that
+// knows agents from any vendor reads Quilzo's the same way.
+func TestARunSpeaksTheGenAIConventions(t *testing.T) {
+	now := time.Unix(1787000000, 0)
+	tr := agent.Trace{Agent: "support", Steps: []agent.Step{
+		{N: 1, Action: agent.Action{Op: "read_page"}, Allowed: true, At: now},
+		{N: 2, Action: agent.Action{Op: "call_tool", Tool: "github.search"}, Allowed: true, Err: "timed out", At: now.Add(time.Second)},
+	}}
+	m := agent.Manifest{Name: "support", Kind: agent.KindRetrieval, Autonomy: agent.AutonomyPropose,
+		Budget: agent.Budget{Steps: 8, Tools: 2, Duration: agent.Duration(time.Minute)}}
+	spans, err := FromTrace(tr, agent.Receipt{Did: 1, Failed: 1}, m, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attrs := func(s Span) map[string]string {
+		out := map[string]string{}
+		for _, a := range s.Attrs {
+			if a.Str != "" {
+				out[a.Key] = a.Str
+			}
+		}
+		return out
+	}
+	root := attrs(spans[0])
+	if spans[0].Name != "invoke_agent support" || root["gen_ai.operation.name"] != "invoke_agent" ||
+		root["gen_ai.agent.name"] != "support" || root["gen_ai.provider.name"] == "" || root["error.type"] == "" {
+		t.Fatalf("root %q %v", spans[0].Name, root)
+	}
+	if root["quilzo.agent"] != "support" {
+		t.Fatal("the quilzo attributes went")
+	}
+	own, other := attrs(spans[1]), attrs(spans[2])
+	if spans[1].Name != "execute_tool read_page" || own["gen_ai.tool.name"] != "read_page" || own["gen_ai.tool.type"] != "function" {
+		t.Fatalf("own operation %q %v", spans[1].Name, own)
+	}
+	if spans[2].Name != "execute_tool github.search" || other["gen_ai.tool.type"] != "extension" || other["error.type"] != "tool_error" {
+		t.Fatalf("outside tool %q %v", spans[2].Name, other)
+	}
+	if own["gen_ai.tool.call.id"] == other["gen_ai.tool.call.id"] {
+		t.Fatal("two calls share an id")
+	}
+}

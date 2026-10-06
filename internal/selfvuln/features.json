@@ -14,6 +14,7 @@
    "*",
    "chatbots",
    "import",
+   "mcp",
    "uploads"
   ],
   "compress/flate": [
@@ -125,6 +126,7 @@
    "api",
    "chatbots",
    "feeds",
+   "mcp",
    "signup"
   ],
   "encoding/binary": [
@@ -171,6 +173,7 @@
    "chatbots",
    "feeds",
    "forms",
+   "mcp",
    "scim",
    "signup"
   ],
@@ -246,6 +249,7 @@
    "api",
    "chatbots",
    "import",
+   "mcp",
    "uploads"
   ],
   "io/fs": [
@@ -282,6 +286,7 @@
    "feeds",
    "forms",
    "import",
+   "mcp",
    "scim",
    "search-answers",
    "signup",
@@ -431,6 +436,7 @@
   "unicode/utf8": [
    "*",
    "boards",
+   "mcp",
    "signup",
    "uploads"
   ],
