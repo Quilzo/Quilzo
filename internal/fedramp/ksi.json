@@ -1,0 +1,810 @@
+{
+ "indicators": [
+  {
+   "id": "KSI-CED-RAT",
+   "theme": "KSI-CED",
+   "theme_name": "Cybersecurity Education",
+   "name": "Reviewing All Training",
+   "statement": "The effectiveness of relevant cybersecurity education and training is persistently reviewed, including at least general training for all employees, role-specific training for employees in high risk roles, training for development and engineering staff on secure software delivery, and training for staff involved with incident response or disaster recovery.",
+   "controls": [
+    "at-2",
+    "at-2.2",
+    "at-2.3",
+    "at-3",
+    "at-3.5",
+    "at-4",
+    "cp-3",
+    "ir-2",
+    "ir-2.3",
+    "ps-6",
+    "sr-11.1"
+   ]
+  },
+  {
+   "id": "KSI-CMT-LMC",
+   "theme": "KSI-CMT",
+   "theme_name": "Change Management",
+   "name": "Logging Changes",
+   "statement": "Modifications to the cloud service offering are logged and monitored.",
+   "controls": [
+    "au-2",
+    "cm-3",
+    "cm-3.2",
+    "cm-4.2",
+    "cm-6",
+    "cm-8.3",
+    "ma-2"
+   ]
+  },
+  {
+   "id": "KSI-CMT-RMV",
+   "theme": "KSI-CMT",
+   "theme_name": "Change Management",
+   "name": "Redeploying vs Modifying",
+   "statement": "Changes to machine-based information resources are executed through the redeployment of version controlled resources rather than direct modification wherever reasonable.",
+   "controls": [
+    "cm-2",
+    "cm-3",
+    "cm-5",
+    "cm-6",
+    "cm-7",
+    "cm-8.1",
+    "si-3"
+   ]
+  },
+  {
+   "id": "KSI-CMT-RVP",
+   "theme": "KSI-CMT",
+   "theme_name": "Change Management",
+   "name": "Reviewing Change Procedures",
+   "statement": "The effectiveness of documented change management procedures is persistently reviewed.",
+   "controls": [
+    "cm-3",
+    "cm-3.2",
+    "cm-3.4",
+    "cm-5",
+    "cm-7.1",
+    "cm-9"
+   ]
+  },
+  {
+   "id": "KSI-CMT-VTD",
+   "theme": "KSI-CMT",
+   "theme_name": "Change Management",
+   "name": "Validating Throughout Deployment",
+   "statement": "Persistent testing and validation of changes throughout deployment is automated.",
+   "controls": [
+    "cm-3",
+    "cm-3.2",
+    "cm-4.2",
+    "si-2"
+   ]
+  },
+  {
+   "id": "KSI-CNA-DFP",
+   "theme": "KSI-CNA",
+   "theme_name": "Cloud Native Architecture",
+   "name": "Defining Functionality and Privileges",
+   "statement": "The functionality and privileges for infrastructure and services are strictly defined.",
+   "controls": [
+    "cm-2",
+    "si-3"
+   ]
+  },
+  {
+   "id": "KSI-CNA-EIS",
+   "theme": "KSI-CNA",
+   "theme_name": "Cloud Native Architecture",
+   "name": "Enforcing Intended State",
+   "statement": "Automated services are used to persistently assess the security of all machine-based information resources and automatically enforce their intended operational state.",
+   "controls": [
+    "ca-2.1",
+    "ca-7.1"
+   ],
+   "optional_for": [
+    "b"
+   ]
+  },
+  {
+   "id": "KSI-CNA-IBP",
+   "theme": "KSI-CNA",
+   "theme_name": "Cloud Native Architecture",
+   "name": "Implementing Best Practices",
+   "statement": "The use and configuration of third-party machine-based information resources is persistently compared against the original provider's best practices and guidance.",
+   "controls": [
+    "ac-17.3",
+    "cm-2",
+    "pl-10"
+   ]
+  },
+  {
+   "id": "KSI-CNA-MAT",
+   "theme": "KSI-CNA",
+   "theme_name": "Cloud Native Architecture",
+   "name": "Minimizing Attack Surface",
+   "statement": "Machine-based information resources are persistently reviewed to ensure they have a minimal attack surface and that lateral movement is minimized if compromised.",
+   "controls": [
+    "ac-17.3",
+    "ac-18.1",
+    "ac-18.3",
+    "ac-20.1",
+    "ca-9",
+    "sc-10",
+    "sc-7.3",
+    "sc-7.4",
+    "sc-7.5",
+    "sc-7.8",
+    "sc-8",
+    "si-10",
+    "si-11",
+    "si-16"
+   ]
+  },
+  {
+   "id": "KSI-CNA-OFA",
+   "theme": "KSI-CNA",
+   "theme_name": "Cloud Native Architecture",
+   "name": "Optimizing for Availability",
+   "statement": "Machine-based information resources are persistently reviewed to ensure they are appropriately optimized for high availability and rapid recovery.",
+   "controls": null
+  },
+  {
+   "id": "KSI-CNA-RNT",
+   "theme": "KSI-CNA",
+   "theme_name": "Cloud Native Architecture",
+   "name": "Restricting Network Traffic",
+   "statement": "Machine-based information resources are persistently reviewed to ensure they are appropriately configured to limit inbound and outbound network traffic.",
+   "controls": [
+    "ac-17.3",
+    "ca-9",
+    "cm-7.1",
+    "sc-7.5",
+    "si-8"
+   ]
+  },
+  {
+   "id": "KSI-CNA-RVP",
+   "theme": "KSI-CNA",
+   "theme_name": "Cloud Native Architecture",
+   "name": "Reviewing Protections",
+   "statement": "The effectiveness of protection against denial of service attacks and other unwanted activity for machine-based information resources is persistently reviewed.",
+   "controls": [
+    "sc-5",
+    "si-8",
+    "si-8.2"
+   ]
+  },
+  {
+   "id": "KSI-CNA-ULN",
+   "theme": "KSI-CNA",
+   "theme_name": "Cloud Native Architecture",
+   "name": "Using Logical Networking",
+   "statement": "Logical networking and related capabilities are used and persistently reviewed to enforce traffic flow controls.",
+   "controls": [
+    "ac-12",
+    "ac-17.3",
+    "ca-9",
+    "sc-10",
+    "sc-4",
+    "sc-7",
+    "sc-7.7",
+    "sc-8"
+   ]
+  },
+  {
+   "id": "KSI-IAM-AAM",
+   "theme": "KSI-IAM",
+   "theme_name": "Identity and Access Management",
+   "name": "Automating Account Management",
+   "statement": "The lifecycle and privileges of all accounts, roles, and groups are securely managed using automation.",
+   "controls": [
+    "ac-2.13",
+    "ac-2.2",
+    "ac-2.3",
+    "ac-6.7",
+    "ia-12",
+    "ia-12.2",
+    "ia-12.3",
+    "ia-12.5",
+    "ia-4.4"
+   ]
+  },
+  {
+   "id": "KSI-IAM-APM",
+   "theme": "KSI-IAM",
+   "theme_name": "Identity and Access Management",
+   "name": "Adopting Passwordless Methods",
+   "statement": "Secure passwordless methods are used for user authentication and authorization when feasible, otherwise strong passwords with phishing-resistant MFA is used.",
+   "controls": [
+    "ac-2",
+    "ac-3",
+    "ia-2",
+    "ia-2.1",
+    "ia-2.2",
+    "ia-2.8",
+    "ia-5",
+    "ia-5.1",
+    "ia-5.2",
+    "ia-5.6",
+    "ia-6",
+    "ia-8",
+    "sc-23"
+   ]
+  },
+  {
+   "id": "KSI-IAM-ELP",
+   "theme": "KSI-IAM",
+   "theme_name": "Identity and Access Management",
+   "name": "Ensuring Least Privilege",
+   "statement": "Identity and access management measures are used and persistently reviewed to ensure each user or device can only access the resources they need.",
+   "controls": [
+    "ac-12",
+    "ac-14",
+    "ac-17",
+    "ac-17.1",
+    "ac-17.2",
+    "ac-17.3",
+    "ac-2.5",
+    "ac-2.6",
+    "ac-20",
+    "ac-20.1",
+    "ac-3",
+    "ac-4",
+    "ac-6",
+    "cm-2.7",
+    "cm-9",
+    "ia-11",
+    "ia-2",
+    "ia-3",
+    "ia-4",
+    "ia-4.4",
+    "ia-5.2",
+    "ia-5.6",
+    "ps-2",
+    "ps-3",
+    "ps-4",
+    "ps-5",
+    "ps-6",
+    "sc-20",
+    "sc-21",
+    "sc-22",
+    "sc-23",
+    "sc-39",
+    "sc-4",
+    "si-3"
+   ]
+  },
+  {
+   "id": "KSI-IAM-JIT",
+   "theme": "KSI-IAM",
+   "theme_name": "Identity and Access Management",
+   "name": "Authorizing Just-in-Time",
+   "statement": "A least-privileged, role and attribute-based, and just-in-time security authorization model is used and persistently reviewed for all user and non-user accounts and services.",
+   "controls": [
+    "ac-17",
+    "ac-2",
+    "ac-2.1",
+    "ac-2.2",
+    "ac-2.3",
+    "ac-2.4",
+    "ac-2.6",
+    "ac-20.1",
+    "ac-3",
+    "ac-4",
+    "ac-5",
+    "ac-6",
+    "ac-6.1",
+    "ac-6.10",
+    "ac-6.2",
+    "ac-6.5",
+    "ac-6.7",
+    "ac-6.9",
+    "ac-7",
+    "au-9.4",
+    "cm-5",
+    "cm-7",
+    "cm-7.2",
+    "cm-7.5",
+    "cm-9",
+    "ia-4",
+    "ia-4.4",
+    "ia-7",
+    "ps-2",
+    "ps-3",
+    "ps-4",
+    "ps-5",
+    "ps-6",
+    "ps-9",
+    "ra-5.5",
+    "sc-2",
+    "sc-23",
+    "sc-39"
+   ]
+  },
+  {
+   "id": "KSI-IAM-SNU",
+   "theme": "KSI-IAM",
+   "theme_name": "Identity and Access Management",
+   "name": "Securing Non-User Authentication",
+   "statement": "Appropriately secure authentication methods are used and persistently reviewed for non-user accounts and services.",
+   "controls": [
+    "ac-2",
+    "ac-2.2",
+    "ac-4",
+    "ac-6.5",
+    "ia-3",
+    "ia-5.2",
+    "ra-5.5"
+   ]
+  },
+  {
+   "id": "KSI-IAM-SUS",
+   "theme": "KSI-IAM",
+   "theme_name": "Identity and Access Management",
+   "name": "Responding to Suspicious Activity",
+   "statement": "Accounts with privileged access are disabled or otherwise secured in response to suspicious activity.",
+   "controls": [
+    "ac-2",
+    "ac-2.1",
+    "ac-2.13",
+    "ac-2.3",
+    "ac-7",
+    "ps-4",
+    "ps-8"
+   ]
+  },
+  {
+   "id": "KSI-INR-AAR",
+   "theme": "KSI-INR",
+   "theme_name": "Incident Response",
+   "name": "Generating After Action Reports",
+   "statement": "Incident after action reports are generated and lessons learned are persistently incorporated.",
+   "controls": [
+    "ir-3",
+    "ir-4",
+    "ir-4.1",
+    "ir-8"
+   ]
+  },
+  {
+   "id": "KSI-INR-RIR",
+   "theme": "KSI-INR",
+   "theme_name": "Incident Response",
+   "name": "Reviewing Incident Response Procedures",
+   "statement": "The effectiveness of documented incident response procedures is persistently reviewed.",
+   "controls": [
+    "ir-4",
+    "ir-4.1",
+    "ir-6",
+    "ir-6.1",
+    "ir-6.3",
+    "ir-7",
+    "ir-7.1",
+    "ir-8",
+    "ir-8.1",
+    "si-4.5"
+   ]
+  },
+  {
+   "id": "KSI-INR-RPI",
+   "theme": "KSI-INR",
+   "theme_name": "Incident Response",
+   "name": "Reviewing Past Incidents",
+   "statement": "Past incidents are persistently reviewed for patterns or vulnerabilities that were not previously apparent or identified.",
+   "controls": [
+    "ir-3",
+    "ir-4",
+    "ir-4.1",
+    "ir-5",
+    "ir-8"
+   ]
+  },
+  {
+   "id": "KSI-MLA-ALA",
+   "theme": "KSI-MLA",
+   "theme_name": "Monitoring, Logging, and Auditing",
+   "name": "Authorizing Log Access",
+   "statement": "A least-privileged, role and attribute-based, and just-in-time access authorization model is used and persistently reviewed for access to log data based on organizationally defined data sensitivity.",
+   "controls": [
+    "si-11"
+   ],
+   "optional_for": [
+    "b"
+   ]
+  },
+  {
+   "id": "KSI-MLA-EVC",
+   "theme": "KSI-MLA",
+   "theme_name": "Monitoring, Logging, and Auditing",
+   "name": "Evaluating Configurations",
+   "statement": "The configuration of machine-based information resources, especially infrastructure as code, is persistently evaluated and tested.",
+   "controls": [
+    "ca-7",
+    "cm-2",
+    "cm-6",
+    "si-7.7"
+   ]
+  },
+  {
+   "id": "KSI-MLA-LET",
+   "theme": "KSI-MLA",
+   "theme_name": "Monitoring, Logging, and Auditing",
+   "name": "Logging Event Types",
+   "statement": "A list of information resources and event types that will be logged, monitored, and audited is maintained and persistently reviewed to ensure these activities occur.",
+   "controls": [
+    "ac-17.1",
+    "ac-2.4",
+    "ac-20.1",
+    "ac-6.9",
+    "au-12",
+    "au-2",
+    "au-7.1",
+    "si-4.4",
+    "si-4.5",
+    "si-7.7"
+   ]
+  },
+  {
+   "id": "KSI-MLA-OSM",
+   "theme": "KSI-MLA",
+   "theme_name": "Monitoring, Logging, and Auditing",
+   "name": "Operating SIEM Capability",
+   "statement": "A Security Information and Event Management (SIEM) or similar system(s) is used and persistently reviewed for centralized, tamper-resistant logging of events, activities, and changes.",
+   "controls": [
+    "ac-17.1",
+    "ac-20.1",
+    "au-11",
+    "au-2",
+    "au-3",
+    "au-3.1",
+    "au-4",
+    "au-5",
+    "au-6.1",
+    "au-6.3",
+    "au-7",
+    "au-7.1",
+    "au-8",
+    "au-9",
+    "ir-4.1",
+    "si-4.2",
+    "si-4.4",
+    "si-7.7"
+   ]
+  },
+  {
+   "id": "KSI-MLA-RVL",
+   "theme": "KSI-MLA",
+   "theme_name": "Monitoring, Logging, and Auditing",
+   "name": "Reviewing Logs",
+   "statement": "Logs are persistently reviewed and audited.",
+   "controls": [
+    "ac-2.4",
+    "ac-6.9",
+    "au-2",
+    "au-6",
+    "au-6.1",
+    "si-4",
+    "si-4.4"
+   ]
+  },
+  {
+   "id": "KSI-PIY-GIV",
+   "theme": "KSI-PIY",
+   "theme_name": "Policy and Inventory",
+   "name": "Generating Inventories",
+   "statement": "Authoritative sources are used to automatically generate real-time inventories of all information resources when needed.",
+   "controls": [
+    "cm-12",
+    "cm-12.1",
+    "cm-2.2",
+    "cm-7.5",
+    "cm-8",
+    "cm-8.1",
+    "cp-2.8"
+   ]
+  },
+  {
+   "id": "KSI-PIY-RES",
+   "theme": "KSI-PIY",
+   "theme_name": "Policy and Inventory",
+   "name": "Reviewing Executive Support",
+   "statement": "Executive support for achieving the provider's security goals is persistently reviewed and demonstrated.",
+   "controls": null
+  },
+  {
+   "id": "KSI-PIY-RIS",
+   "theme": "KSI-PIY",
+   "theme_name": "Policy and Inventory",
+   "name": "Reviewing Investments in Security",
+   "statement": "The effectiveness of the provider's investments in achieving security goals is persistently reviewed.",
+   "controls": [
+    "ac-5",
+    "ca-2",
+    "cp-2.1",
+    "cp-4.1",
+    "ir-3.2",
+    "pm-3",
+    "sa-2",
+    "sa-3",
+    "sr-2.1"
+   ]
+  },
+  {
+   "id": "KSI-PIY-RSD",
+   "theme": "KSI-PIY",
+   "theme_name": "Policy and Inventory",
+   "name": "Reviewing Security in the SDLC",
+   "statement": "The effectiveness of building security and privacy considerations into the Software Development Lifecycle and aligning with CISA Secure By Design principles is persistently reviewed.",
+   "controls": [
+    "ac-5",
+    "au-3.3",
+    "cm-3.4",
+    "pl-8",
+    "pm-7",
+    "sa-3",
+    "sa-8",
+    "sc-18",
+    "sc-4",
+    "si-10",
+    "si-11",
+    "si-16"
+   ]
+  },
+  {
+   "id": "KSI-PIY-RVD",
+   "theme": "KSI-PIY",
+   "theme_name": "Policy and Inventory",
+   "name": "Reviewing Vulnerability Disclosures",
+   "statement": "The effectiveness of the provider's vulnerability disclosure program is persistently reviewed.",
+   "controls": [
+    "ra-5.11"
+   ]
+  },
+  {
+   "id": "KSI-RPL-ABO",
+   "theme": "KSI-RPL",
+   "theme_name": "Recovery Planning",
+   "name": "Aligning Backups with Objectives",
+   "statement": "The alignment of machine-based information resource backups with defined recovery objectives is persistently reviewed.",
+   "controls": [
+    "cm-2.3",
+    "cp-10",
+    "cp-10.2",
+    "cp-6",
+    "cp-9",
+    "si-12"
+   ]
+  },
+  {
+   "id": "KSI-RPL-ARP",
+   "theme": "KSI-RPL",
+   "theme_name": "Recovery Planning",
+   "name": "Aligning Recovery Plan",
+   "statement": "The alignment of recovery plans with defined recovery objectives is persistently reviewed.",
+   "controls": [
+    "cp-10",
+    "cp-10.2",
+    "cp-2",
+    "cp-2.1",
+    "cp-2.3",
+    "cp-4.1",
+    "cp-6",
+    "cp-6.1",
+    "cp-6.3",
+    "cp-7",
+    "cp-7.1",
+    "cp-7.2",
+    "cp-7.3",
+    "cp-8",
+    "cp-8.1",
+    "cp-8.2"
+   ]
+  },
+  {
+   "id": "KSI-RPL-RRO",
+   "theme": "KSI-RPL",
+   "theme_name": "Recovery Planning",
+   "name": "Reviewing Recovery Objectives",
+   "statement": "The desired Recovery Time Objectives (RTO) and Recovery Point Objectives (RPO) are defined and persistently reviewed for alignment with the provider's business needs and capabilities.",
+   "controls": [
+    "cp-10",
+    "cp-2.3"
+   ]
+  },
+  {
+   "id": "KSI-RPL-TRC",
+   "theme": "KSI-RPL",
+   "theme_name": "Recovery Planning",
+   "name": "Testing Recovery Capabilities",
+   "statement": "The capability to recover from incidents and contingencies aligned with defined recovery objectives is persistently tested.",
+   "controls": [
+    "cp-10",
+    "cp-2.1",
+    "cp-2.3",
+    "cp-4",
+    "cp-4.1",
+    "cp-6",
+    "cp-6.1",
+    "cp-9.1",
+    "ir-3",
+    "ir-3.2"
+   ]
+  },
+  {
+   "id": "KSI-SCR-MIT",
+   "theme": "KSI-SCR",
+   "theme_name": "Supply Chain Risk",
+   "name": "Mitigating Supply Chain Risk",
+   "statement": "Persistently identify, review, and mitigate potential supply chain risks.",
+   "controls": [
+    "ac-20",
+    "ca-7.4",
+    "ra-3.1",
+    "sa-10",
+    "sa-11",
+    "sa-15.3",
+    "sa-22",
+    "sa-9",
+    "sc-18",
+    "si-7.1",
+    "sr-5",
+    "sr-6"
+   ]
+  },
+  {
+   "id": "KSI-SCR-MON",
+   "theme": "KSI-SCR",
+   "theme_name": "Supply Chain Risk",
+   "name": "Monitoring Supply Chain Risk",
+   "statement": "Third party software information resources are automatically monitored for upstream vulnerabilities using mechanisms that may include contractual notification requirements or active monitoring services.",
+   "controls": [
+    "ac-20",
+    "ca-3",
+    "ir-6.3",
+    "ps-7",
+    "ra-5",
+    "sa-9",
+    "si-5",
+    "sr-5",
+    "sr-6",
+    "sr-8"
+   ]
+  },
+  {
+   "id": "KSI-SVC-ACM",
+   "theme": "KSI-SVC",
+   "theme_name": "Service Configuration",
+   "name": "Automating Configuration Management",
+   "statement": "The configuration of machine-based information resources is managed using automation and persistently reviewed for drift.",
+   "controls": [
+    "ac-2.4",
+    "cm-2",
+    "cm-2.2",
+    "cm-2.3",
+    "cm-6",
+    "cm-7.1",
+    "pl-10",
+    "pl-9",
+    "sa-5",
+    "si-5",
+    "sr-10"
+   ]
+  },
+  {
+   "id": "KSI-SVC-ASM",
+   "theme": "KSI-SVC",
+   "theme_name": "Service Configuration",
+   "name": "Automating Secret Management",
+   "statement": "Management, protection, and regular rotation of digital keys, certificates, and other secrets is automated and persistently reviewed.",
+   "controls": [
+    "ac-17.2",
+    "ia-5.2",
+    "ia-5.6",
+    "sc-12",
+    "sc-17"
+   ]
+  },
+  {
+   "id": "KSI-SVC-EIS",
+   "theme": "KSI-SVC",
+   "theme_name": "Service Configuration",
+   "name": "Evaluating and Improving Security",
+   "statement": "Information resources are persistently evaluated for opportunities to improve security and those improvements are persistently made.",
+   "controls": [
+    "cm-12.1",
+    "cm-7.1",
+    "ma-2",
+    "pl-8",
+    "sc-39",
+    "sc-7",
+    "si-2.2",
+    "si-4",
+    "sr-10"
+   ]
+  },
+  {
+   "id": "KSI-SVC-PRR",
+   "theme": "KSI-SVC",
+   "theme_name": "Service Configuration",
+   "name": "Preventing Residual Risk",
+   "statement": "Plans, procedures, and the state of information resources are persistently reviewed after making changes to limit and remove unwanted residual elements that would likely negatively affect the confidentiality, integrity, or availability of federal customer data.",
+   "controls": [
+    "sc-4"
+   ],
+   "optional_for": [
+    "b"
+   ]
+  },
+  {
+   "id": "KSI-SVC-RUD",
+   "theme": "KSI-SVC",
+   "theme_name": "Service Configuration",
+   "name": "Removing Unwanted Data",
+   "statement": "Unwanted federal customer data is removed promptly when requested by an agency in alignment with customer agreements, including from backups if appropriate; this typically applies when a customer spills information or when a customer seeks to remove information from a service due to a change in usage.",
+   "controls": [
+    "si-12.3",
+    "si-18.4"
+   ],
+   "optional_for": [
+    "b"
+   ]
+  },
+  {
+   "id": "KSI-SVC-SIN",
+   "theme": "KSI-SVC",
+   "theme_name": "Service Configuration",
+   "name": "Securing Information",
+   "statement": "Information is encrypted or otherwise secured from unwanted access or modification.",
+   "controls": [
+    "ac-1",
+    "ac-17.2",
+    "cp-9.8",
+    "sc-13",
+    "sc-20",
+    "sc-21",
+    "sc-22",
+    "sc-23",
+    "sc-28",
+    "sc-28.1",
+    "sc-8",
+    "sc-8.1"
+   ]
+  },
+  {
+   "id": "KSI-SVC-VCM",
+   "theme": "KSI-SVC",
+   "theme_name": "Service Configuration",
+   "name": "Validating Communications",
+   "statement": "The authenticity and integrity of communications between machine-based information resources is persistently validated using automation.",
+   "controls": [
+    "sc-23",
+    "si-7.1"
+   ],
+   "optional_for": [
+    "b"
+   ]
+  },
+  {
+   "id": "KSI-SVC-VRI",
+   "theme": "KSI-SVC",
+   "theme_name": "Service Configuration",
+   "name": "Validating Resource Integrity",
+   "statement": "Use cryptographic methods to validate the integrity of machine-based information resources.",
+   "controls": [
+    "cm-2.2",
+    "cm-8.3",
+    "sc-13",
+    "sc-23",
+    "si-7",
+    "si-7.1",
+    "sr-10"
+   ]
+  }
+ ],
+ "source": {
+  "last_updated": "2026-10-05",
+  "title": "FedRAMP Consolidated Rules for 2026",
+  "url": "https://github.com/FedRAMP/rules",
+  "version": "2026.10.05.01"
+ }
+}

@@ -5,6 +5,7 @@ package admin
 
 import (
 	"encoding/json"
+	"github.com/quilzo/quilzo/internal/fedramp"
 	"net/http"
 	"strings"
 	"time"
@@ -94,4 +95,50 @@ func (s *Server) handleControlsSSP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="system-security-plan.`+impact+`.json"`)
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(body)
+}
+
+// handleControlsKSI is the FedRAMP 20x indicators: a screen, or JSON with
+// ?format=json.
+func (s *Server) handleControlsKSI(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.assuranceReader(w, r)
+	if !ok {
+		return
+	}
+	data := map[string]any{"Title": "FedRAMP 20x indicators", "Nav": "security", "Principal": p}
+	if s.KSI == nil {
+		data["Unavailable"] = "This server cannot relate Quilzo to the FedRAMP indicators."
+		s.render(w, r, "ksi.html", data)
+		return
+	}
+	src, res, err := s.KSI()
+	if err != nil {
+		data["Unavailable"] = err.Error()
+		s.render(w, r, "ksi.html", data)
+		return
+	}
+	if r.URL.Query().Get("format") == "json" {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", `attachment; filename="quilzo.fedramp-ksi.json"`)
+		w.Header().Set("Cache-Control", "no-store")
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(map[string]any{"fedramp_rules": src, "generated": time.Now().UTC().Format(time.RFC3339), "indicators": res})
+		return
+	}
+	n := map[fedramp.Standing]int{}
+	type theme struct {
+		ID, Name string
+		Items    []fedramp.Result
+	}
+	var themes []theme
+	for _, r := range res {
+		n[r.Standing]++
+		if len(themes) == 0 || themes[len(themes)-1].ID != r.Theme {
+			themes = append(themes, theme{ID: r.Theme, Name: r.ThemeName})
+		}
+		themes[len(themes)-1].Items = append(themes[len(themes)-1].Items, r)
+	}
+	data["Source"], data["Themes"] = src, themes
+	data["Contributes"], data["Failing"], data["Elsewhere"] = n[fedramp.Contributes], n[fedramp.Failing], n[fedramp.Elsewhere]
+	s.render(w, r, "ksi.html", data)
 }
