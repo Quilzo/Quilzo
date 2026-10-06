@@ -167,6 +167,9 @@ func (r Receipt) Detail() map[string]string {
 	// measurement and is an absence.
 	if r.Spend.Metered {
 		d["tokens"] = strconv.Itoa(r.Spend.Tokens)
+		if r.Spend.Cost > 0 {
+			d["cost"] = microsString(r.Spend.Cost)
+		}
 	}
 	if r.Stopped != "" {
 		d["stopped"] = r.Stopped

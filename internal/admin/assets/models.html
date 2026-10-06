@@ -18,6 +18,7 @@
 <div class="table-wrap">
 <table>
   <thead><tr><th scope="col">Route</th><th scope="col">Model</th><th scope="col">Key</th>
+    <th scope="col">A million tokens</th>
     <th scope="col">State</th><th scope="col"><span class="visually-hidden">Change</span></th></tr></thead>
   <tbody>
   {{range $i, $h := .Health}}
@@ -25,6 +26,7 @@
     <th scope="row">{{$h.Route.Name}}<div class="hint mono">{{$h.Route.URL}}</div></th>
     <td><code>{{$h.Route.Model}}</code></td>
     <td>{{if $h.Route.KeyEnv}}<code>${{$h.Route.KeyEnv}}</code>{{if not $h.KeySet}} <span class="tag tag-bad">not set</span>{{end}}{{else}}<span class="hint">none — this network only</span>{{end}}</td>
+    <td>{{if or $h.Route.PriceIn $h.Route.PriceOut}}{{or $h.Route.PriceIn "0"}} in, {{or $h.Route.PriceOut "0"}} out{{with $.Cfg}} {{.Currency}}{{end}}{{else}}<span class="hint">free</span>{{end}}</td>
     <td>{{if $h.Resting}}<span class="tag tag-warn">resting</span>{{else}}<span class="tag tag-ok">ready</span>{{end}}</td>
     <td><div class="btn-group">
       {{if $i}}<form method="post" action="/models/change"><input type="hidden" name="op" value="route-first"><input type="hidden" name="name" value="{{$h.Route.Name}}"><button class="btn-text" type="submit">Try first</button></form>{{end}}
@@ -47,6 +49,11 @@
     <p id="rurl-help" class="help">Any endpoint speaking the OpenAI chat protocol: Ollama, vLLM, LM Studio, llama.cpp, or a hosted provider.</p></div>
   <div class="field"><label for="rmodel">Model {{template "req"}}</label>
     <input id="rmodel" name="model" required placeholder="gpt-oss:20b"></div>
+  <div class="field"><label for="rpin">Price of a million input tokens</label>
+    <input id="rpin" name="price_in" inputmode="decimal" pattern="[0-9]{1,10}(\.[0-9]{1,6})?" placeholder="0.15" aria-describedby="rprice-help"></div>
+  <div class="field"><label for="rpout">Price of a million output tokens</label>
+    <input id="rpout" name="price_out" inputmode="decimal" pattern="[0-9]{1,10}(\.[0-9]{1,6})?" placeholder="0.60" aria-describedby="rprice-help">
+    <p id="rprice-help" class="help">In the currency set below, from the provider's price list. Empty for a model that costs nothing per call.</p></div>
   <div class="field"><label for="rkey">Key variable</label>
     <input id="rkey" name="key_env" pattern="[A-Z_][A-Z0-9_]{0,63}" placeholder="HOSTED_MODEL_KEY" aria-describedby="rkey-help">
     <p id="rkey-help" class="help">The name of the environment variable holding the key — never the key itself. Leave empty for a model on this network.</p></div>
@@ -57,7 +64,8 @@
 {{if not .Spend}}<p>Nothing has called a model today.</p>{{else}}
 <div class="table-wrap">
 <table>
-  <thead><tr><th scope="col">Caller</th><th scope="col">Used</th><th scope="col">Calls</th>
+  <thead><tr><th scope="col">Caller</th><th scope="col">Used</th><th scope="col">Tokens</th>
+    <th scope="col">Spent</th><th scope="col">Calls</th>
     <th scope="col">Failed</th><th scope="col">Refused</th></tr></thead>
   <tbody>
   {{range .Spend}}
@@ -65,6 +73,9 @@
     <th scope="row"><code>{{.Consumer}}</code></th>
     <td>{{if .Budget}}<meter min="0" max="{{.Budget}}" value="{{.Chars}}" low="{{.Budget}}" high="{{.Budget}}" optimum="0" aria-label="{{.Chars}} of {{.Budget}} characters">{{.Chars}} of {{.Budget}}</meter>
       <div class="hint">{{.Chars}} of {{.Budget}} characters</div>{{else}}{{.Chars}} characters<div class="hint">no daily limit</div>{{end}}</td>
+    <td>{{.Tokens}}{{if .TokensBudget}}<div class="hint">of {{.TokensBudget}}</div>{{end}}</td>
+    <td>{{if $.Currency}}{{.Cost}} {{$.Currency}}{{if .DayBudget}}<div class="hint">of {{.DayBudget}} today</div>{{end}}
+      <div class="hint">{{.Month}} this month{{if .MonthBudget}} of {{.MonthBudget}}{{end}}</div>{{else}}<span class="hint">no prices set</span>{{end}}</td>
     <td>{{.Calls}}</td><td>{{.Failed}}</td>
     <td>{{if .Refused}}<span class="tag tag-warn">{{.Refused}}</span>{{else}}0{{end}}</td>
   </tr>
@@ -81,12 +92,15 @@
 {{with .Cfg}}{{if .Budgets}}
 <div class="table-wrap">
 <table>
-  <thead><tr><th scope="col">Caller</th><th scope="col">Per minute</th><th scope="col">Characters a day</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+  <thead><tr><th scope="col">Caller</th><th scope="col">Per minute</th><th scope="col">Characters a day</th>
+    <th scope="col">Tokens a day</th><th scope="col">Money</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
   <tbody>
   {{range .Budgets}}
   <tr><th scope="row"><code>{{.Consumer}}</code></th>
     <td>{{if .PerMinute}}{{.PerMinute}}{{else}}unlimited{{end}}</td>
     <td>{{if .CharsPerDay}}{{.CharsPerDay}}{{else}}unlimited{{end}}</td>
+    <td>{{if .TokensPerDay}}{{.TokensPerDay}}{{else}}unlimited{{end}}</td>
+    <td>{{if .MoneyPerDay}}{{.MoneyPerDay}} a day{{end}}{{if and .MoneyPerDay .MoneyPerMonth}}, {{end}}{{if .MoneyPerMonth}}{{.MoneyPerMonth}} a month{{end}}{{if not (or .MoneyPerDay .MoneyPerMonth)}}unlimited{{end}}</td>
     <td><form method="post" action="/models/change"><input type="hidden" name="op" value="budget-remove"><input type="hidden" name="name" value="{{.Consumer}}"><button class="btn-text" type="submit">Remove</button></form></td></tr>
   {{end}}
   </tbody>
@@ -97,13 +111,28 @@
   <input type="hidden" name="op" value="budget">
   <div class="field"><label for="bwho">Caller {{template "req"}}</label>
     <input id="bwho" name="name" required placeholder="chatbot:help" aria-describedby="bwho-help">
-    <p id="bwho-help" class="help"><code>chatbot:NAME</code>, <code>assist</code>, <code>agent:NAME</code>, or <code>*</code>.</p></div>
+    <p id="bwho-help" class="help"><code>chatbot:NAME</code>, <code>assist</code>, <code>agent:NAME</code>, <code>person:NAME</code> (everything their agents run), or <code>*</code>.</p></div>
   <div class="field"><label for="bpm">Calls per minute</label>
     <input id="bpm" name="per_minute" type="number" min="0" value="0"></div>
   <div class="field"><label for="bpd">Characters per day</label>
     <input id="bpd" name="chars_per_day" type="number" min="0" value="0" aria-describedby="bpd-help">
     <p id="bpd-help" class="help">Prompt and reply together; about four characters to a token. 0 is unlimited.</p></div>
+  <div class="field"><label for="btk">Tokens per day</label>
+    <input id="btk" name="tokens_per_day" type="number" min="0" value="0"></div>
+  <div class="field"><label for="bmd">Money per day</label>
+    <input id="bmd" name="money_per_day" inputmode="decimal" pattern="[0-9]{1,10}(\.[0-9]{1,6})?" placeholder="5.00" aria-describedby="bmoney-help"></div>
+  <div class="field"><label for="bmm">Money per month</label>
+    <input id="bmm" name="money_per_month" inputmode="decimal" pattern="[0-9]{1,10}(\.[0-9]{1,6})?" placeholder="100" aria-describedby="bmoney-help">
+    <p id="bmoney-help" class="help">At the routes' prices. A caller over its limit is refused its next call, and a chatbot answers from its pages instead.</p></div>
   <button type="submit">Save budget</button>
+</form>
+
+<form method="post" action="/models/change" class="card">
+  <input type="hidden" name="op" value="currency">
+  <div class="field"><label for="cur">Currency</label>
+    <input id="cur" name="currency" pattern="[A-Za-z]{3}" maxlength="3" value="{{with .Cfg}}{{.Currency}}{{end}}" placeholder="USD" aria-describedby="cur-help">
+    <p id="cur-help" class="help">The ISO code prices and money budgets are in, the one the invoice is in.</p></div>
+  <button type="submit">Save currency</button>
 </form>
 {{end}}
 {{template "foot" .}}

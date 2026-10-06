@@ -18,6 +18,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -545,6 +546,22 @@ func TestARunIsKeptAfterEveryStepAndSaysItIsStillGoing(t *testing.T) {
 
 // standInModel answers as a model that wants to write one page and then
 // says it is finished. It counts how often it was asked.
+// declaredAutonomy has a store's model-driven agents act at the autonomy
+// their manifests declare, for tests about something other than earning it.
+func declaredAutonomy(t *testing.T, root string) {
+	t.Helper()
+	cfg, err := loadConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Set("agents.earned_autonomy", "false", "a test about approving writes, not about earning them", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConfig(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func standInModel(t *testing.T) *int {
 	t.Helper()
 	asked := 0
@@ -588,6 +605,7 @@ func TestAModelsWriteWaitsForAPersonAndThenIsExactlyWhatWasShown(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
 	asked := standInModel(t)
+	declaredAutonomy(t, root)
 	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
@@ -637,6 +655,7 @@ func TestADeclinedWriteLeavesTheDraftAlone(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
 	standInModel(t)
+	declaredAutonomy(t, root)
 	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
@@ -664,6 +683,7 @@ func TestTheModelFlagWorksAfterTheAgentsName(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
 	asked := standInModel(t)
+	declaredAutonomy(t, root)
 	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
@@ -704,6 +724,7 @@ func TestAnAgentsWriteIsMarkedAsModelWritten(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
 	standInModel(t)
+	declaredAutonomy(t, root)
 	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
@@ -735,5 +756,45 @@ func TestAnAgentsWriteIsMarkedAsModelWritten(t *testing.T) {
 	ids, _ := site.PageIDsAt(s, site.RefDraft)
 	if got.ContentHash != ids["welcome"] {
 		t.Errorf("the record names %s and the page is %s", got.ContentHash, ids["welcome"])
+	}
+}
+
+// A model drives an agent only as far as its evaluations have earned: with
+// none, its writes are not offered, and the run says why.
+func TestAModelDrivesOnlyAsFarAsEvaluationsEarned(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	standInModel(t)
+	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	out, _ := executeAgentFrom(context.Background(), root, "tidy", "write a welcome page", true, asAdmin("dana"), nil)
+	if !strings.Contains(out.Earned, "never been evaluated") || out.Manifest.Autonomy != agent.AutonomyPropose {
+		t.Fatalf("earned %q, autonomy %s", out.Earned, out.Manifest.Autonomy)
+	}
+	for _, c := range out.Manifest.Capabilities {
+		if c == "write_page" {
+			t.Fatal("an unevaluated model was offered a write")
+		}
+	}
+	if _, ok := draftPage(t, root, "welcome"); ok {
+		t.Fatal("an unevaluated model wrote")
+	}
+	// Walking the manifest decides nothing, and is not held back.
+	walk, _ := executeAgentFrom(context.Background(), root, "tidy", "", false, asAdmin("dana"), nil)
+	if walk.Earned != "" || walk.Manifest.Autonomy != agent.AutonomyDraft {
+		t.Fatalf("a walk was capped: %q %s", walk.Earned, walk.Manifest.Autonomy)
+	}
+	// A clean evaluation earns drafting.
+	rep := evals.Report{Agent: "tidy", At: time.Now(), Model: "stand-in", K: 3, Cases: 3, Reliable: 3, Planted: 3}
+	if err := os.MkdirAll(filepath.Join(root, "evals", "results", "tidy"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveEvalReport(root, rep); err != nil {
+		t.Fatal(err)
+	}
+	out, _ = executeAgentFrom(context.Background(), root, "tidy", "write a welcome page", true, asAdmin("dana"), nil)
+	if out.Earned != "" || out.Manifest.Autonomy != agent.AutonomyDraft {
+		t.Fatalf("an earned draft was still capped: %q %s", out.Earned, out.Manifest.Autonomy)
 	}
 }

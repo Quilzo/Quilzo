@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -101,8 +102,17 @@ func cmdGateway(root string, args []string) error {
 		return gatewayRoute(root, args[1:])
 	case "budget":
 		return gatewayBudget(root, args[1:])
+	case "currency":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: quilzo gateway currency USD")
+		}
+		code := strings.ToUpper(strings.TrimSpace(args[1]))
+		return changeGateway(root, "currency", code, func(c *gateway.Config) error {
+			c.Currency = code
+			return c.Validate()
+		})
 	default:
-		return fmt.Errorf("unknown gateway command %q; try status, route or budget", args[0])
+		return fmt.Errorf("unknown gateway command %q; try status, route, budget or currency", args[0])
 	}
 }
 
@@ -148,6 +158,18 @@ func gatewayStatus(root string) error {
 		}
 		w.Human("  %s  %d characters %s, %d call(s), %d failed, %d refused\n",
 			s.Consumer, s.Chars, limit, s.Calls, s.Failed, s.Refused)
+		money := ""
+		if cfg.Currency != "" {
+			money = fmt.Sprintf(", %s %s today", s.Cost, cfg.Currency)
+			if s.DayBudget > 0 {
+				money += fmt.Sprintf(" of %s", s.DayBudget)
+			}
+			money += fmt.Sprintf(", %s this month", s.Month)
+			if s.MonthBudget > 0 {
+				money += fmt.Sprintf(" of %s", s.MonthBudget)
+			}
+		}
+		w.Human("    %s%d tokens%s%s\n", dim, s.Tokens, money, reset)
 	}
 	return nil
 }
@@ -191,6 +213,8 @@ func gatewayRoute(root string, args []string) error {
 	u := fs.String("url", "", "an OpenAI-compatible base URL")
 	model := fs.String("model", "", "the model name at that endpoint")
 	keyEnv := fs.String("key-env", "", "the environment variable holding the key (never the key)")
+	priceIn := fs.String("price-in", "", "what a million input tokens cost here, like 0.15")
+	priceOut := fs.String("price-out", "", "what a million output tokens cost here, like 0.60")
 	first := fs.Bool("first", false, "try this route before the others")
 	if err := fs.Parse(args[2:]); err != nil {
 		return err
@@ -209,7 +233,7 @@ func gatewayRoute(root string, args []string) error {
 			c.Routes = kept
 			return nil
 		}
-		r := gateway.Route{Name: name, URL: *u, Model: *model, KeyEnv: *keyEnv}
+		r := gateway.Route{Name: name, URL: *u, Model: *model, KeyEnv: *keyEnv, PriceIn: *priceIn, PriceOut: *priceOut}
 		if *first {
 			c.Routes = append([]gateway.Route{r}, kept...)
 		} else {
@@ -224,13 +248,17 @@ func gatewayBudget(root string, args []string) error {
 	fs := flag.NewFlagSet("budget", flag.ContinueOnError)
 	perMinute := fs.Int("per-minute", 0, "calls per minute (0 is unlimited)")
 	perDay := fs.Int("chars-per-day", 0, "characters per day, prompt and reply (0 is unlimited)")
+	tokens := fs.Int("tokens-per-day", 0, "tokens per day, as providers report them (0 is unlimited)")
+	moneyDay := fs.String("money-per-day", "", "spending a day, in the gateway's currency, like 5.00")
+	moneyMonth := fs.String("money-per-month", "", "spending a calendar month, in the gateway's currency")
 	drop := fs.Bool("remove", false, "remove this caller's budget")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo gateway budget CALLER --per-minute N --chars-per-day N\n" +
-			"  CALLER is chatbot:NAME, assist, agent:NAME, or * for everybody else")
+		return fmt.Errorf("usage: quilzo gateway budget CALLER [--per-minute N] [--chars-per-day N]\n" +
+			"         [--tokens-per-day N] [--money-per-day 5.00] [--money-per-month 100]\n" +
+			"  CALLER is chatbot:NAME, assist, agent:NAME, person:NAME, or * for everybody else")
 	}
 	who := pos[0]
 	return changeGateway(root, "budget", who, func(c *gateway.Config) error {
@@ -242,7 +270,7 @@ func gatewayBudget(root string, args []string) error {
 		}
 		if !*drop {
 			kept = append(kept, gateway.Budget{Consumer: who, PerMinute: *perMinute,
-				CharsPerDay: *perDay})
+				CharsPerDay: *perDay, TokensPerDay: *tokens, MoneyPerDay: *moneyDay, MoneyPerMonth: *moneyMonth})
 		}
 		c.Budgets = kept
 		return c.Validate()

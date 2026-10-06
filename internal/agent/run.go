@@ -154,6 +154,9 @@ type Spend struct {
 	// charging for work it has no record of.
 	Tokens  int
 	Metered bool
+	// Cost is what the model calls cost at the gateway's prices, in
+	// millionths of its currency; zero when nothing was priced.
+	Cost int64
 }
 
 // Refused returns the steps that were refused.
@@ -416,7 +419,7 @@ func spendOf(s *Session) Spend {
 	tokens := s.TokensUsed()
 	return Spend{
 		Steps: steps, Tools: tools, Elapsed: elapsed,
-		Tokens: tokens, Metered: tokens > 0,
+		Tokens: tokens, Metered: tokens > 0, Cost: s.Cost(),
 	}
 }
 

@@ -95,6 +95,9 @@ type Decider struct {
 	// not measured — this package has never counted a token and says so where
 	// the number is recorded.
 	Tokens func(int)
+	// Charge, when set, is told what each call cost at the gateway's
+	// prices, in millionths of its currency.
+	Charge func(int64)
 
 	// Tools are the agent's tools on other systems the model may choose:
 	// only ones the manifest declares and whose definition a person pinned,
@@ -151,7 +154,7 @@ func (d Decider) Decide() agent.Decide {
 			return agent.Action{Say: "this agent holds no capabilities"}, nil
 		}
 
-		raw, err := d.Model.Complete(ctx, v.prompt(), userPrompt(goal, seen))
+		raw, err := d.complete(ctx, v.prompt(), userPrompt(goal, seen))
 		if err != nil {
 			return agent.Action{}, fmt.Errorf("the model could not be reached: %w", err)
 		}
@@ -167,6 +170,34 @@ func (d Decider) Decide() agent.Decide {
 					"size is not one", len(raw), MaxAnswer)
 		}
 		return v.parse(raw)
+	}
+}
+
+// complete asks the model, and tells the session what the call used and
+// cost when the model says.
+func (d Decider) complete(ctx context.Context, system, user string) (string, error) {
+	type costed interface {
+		CompleteCosted(ctx context.Context, system, user string) (string, assist.Usage, int64, error)
+	}
+	switch m := d.Model.(type) {
+	case costed:
+		out, u, cost, err := m.CompleteCosted(ctx, system, user)
+		d.report(u, cost)
+		return out, err
+	case assist.Metered:
+		out, u, err := m.CompleteMetered(ctx, system, user)
+		d.report(u, 0)
+		return out, err
+	}
+	return d.Model.Complete(ctx, system, user)
+}
+
+func (d Decider) report(u assist.Usage, cost int64) {
+	if d.Tokens != nil {
+		d.Tokens(u.In + u.Out)
+	}
+	if d.Charge != nil {
+		d.Charge(cost)
 	}
 }
 
