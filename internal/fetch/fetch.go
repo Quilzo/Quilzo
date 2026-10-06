@@ -99,6 +99,9 @@ type Result struct {
 	// returning a partial file, because a truncated PDF that validates is worse
 	// than a refused one.
 	Truncated bool
+	// Header is the response's headers, from Do: a protocol that carries
+	// state in a header (an MCP server's session) needs to read it.
+	Header http.Header
 }
 
 // blocked lists the address ranges a fetch may never reach.
@@ -652,7 +655,7 @@ func (c *Client) Do(ctx context.Context, method, raw string, body []byte,
 		return nil, err
 	}
 	res := &Result{URL: raw, FinalURL: u.String(), Status: resp.StatusCode,
-		Body: out, ContentType: resp.Header.Get("Content-Type")}
+		Body: out, ContentType: resp.Header.Get("Content-Type"), Header: resp.Header}
 	if int64(len(out)) > lim.MaxBytes {
 		res.Body, res.Truncated = out[:lim.MaxBytes], true
 	}

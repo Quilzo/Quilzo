@@ -68,3 +68,20 @@ func TestSubtreesAreWholeSegments(t *testing.T) {
 		}
 	}
 }
+
+func TestPinsAreOnlyForToolsInUse(t *testing.T) {
+	in := Integration{Name: "tracker", Kind: IntegrationMCP, Purpose: "issues", Endpoint: "tracker.example",
+		Uses: []string{"create_issue"}, Pins: map[string]string{"create_issue": strings.Repeat("a", 64)}}
+	if err := in.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	in.Pins["delete_project"] = strings.Repeat("b", 64)
+	if err := in.Validate(); err == nil {
+		t.Fatal("a pin for a tool not in use")
+	}
+	delete(in.Pins, "delete_project")
+	in.Pins["create_issue"] = "sha256:abc"
+	if err := in.Validate(); err == nil {
+		t.Fatal("a pin that is not a digest")
+	}
+}

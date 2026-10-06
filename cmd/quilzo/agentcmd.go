@@ -765,12 +765,15 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		// and children walking their manifests would be a pipeline where the
 		// stages that do the work cannot choose anything.
 		delegateModel = model
+		tools, delegates := modelChoices(ctx, root, m, set)
 		decide = agentmodel.Decider{
 			Model:   model,
 			Session: sess,
 			// Reported by the provider, not measured here. Fed to the session
 			// so the budget counts what the run actually cost.
-			Tokens: sess.Tokens,
+			Tokens:    sess.Tokens,
+			Tools:     tools,
+			Delegates: delegates,
 		}.Decide()
 	}
 
