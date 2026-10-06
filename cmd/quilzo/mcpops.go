@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/codescan"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/compliance"
+	"github.com/quilzo/quilzo/internal/controls"
 	"github.com/quilzo/quilzo/internal/export"
 	"github.com/quilzo/quilzo/internal/find"
 	"github.com/quilzo/quilzo/internal/i18n"
@@ -564,6 +565,38 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		fmt.Fprintf(&b, "%s\n", compliance.Posture())
 		for _, alg := range compliance.Inventory() {
 			fmt.Fprintf(&b, "%s %s %s\n", alg.Name, alg.Purpose, alg.Quantum)
+		}
+		return strings.TrimSpace(b.String()), nil
+	})
+
+	srv.Register(mcp.Operation{
+		Name: "control_implementation", NeedsRole: "reader",
+		Summary: "how Quilzo implements a NIST SP 800-53 control and who does the rest; " +
+			"with no control, the list of all of them",
+		Detail:   "Read-only. The statements are the software's own and public in its source; a reader may see them.",
+		Args:     map[string]string{"control": "a control id such as AC-7 or ac-2.5; omit for the list"},
+		Keywords: []string{"control", "800-53", "implementation", "ssp", "responsibility", "shared", "oscal", "nist"},
+	}, func(a map[string]any) (any, error) {
+		if id, _ := a["control"].(string); strings.TrimSpace(id) != "" {
+			im, ok := controls.Lookup(id)
+			if !ok {
+				return nil, fmt.Errorf("no statement for %s", id)
+			}
+			out := fmt.Sprintf("%s %s (%s): %s", im.Control, im.Title, im.Responsibility, im.Statement)
+			if im.Customer != "" {
+				out += " The customer's part: " + im.Customer
+			}
+			if len(im.Rules) > 0 {
+				out += " Checked by: " + strings.Join(im.Rules, ", ") + "."
+			}
+			if len(im.Settings) > 0 {
+				out += " Set by: " + strings.Join(im.Settings, ", ") + "."
+			}
+			return out, nil
+		}
+		var b strings.Builder
+		for _, im := range controls.All() {
+			fmt.Fprintf(&b, "%s %s: %s\n", im.Control, im.Responsibility, im.Title)
 		}
 		return strings.TrimSpace(b.String()), nil
 	})

@@ -4,9 +4,13 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/a11y"
+	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/controls"
+	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"os"
@@ -36,9 +40,13 @@ func cmdCompliance(root string, args []string) error {
 		return complianceSummary(root)
 	case "site":
 		return complianceSite(root, args[1:])
+	case "implementation":
+		return complianceImplementation(args[1:])
+	case "component":
+		return complianceComponent(root, args[1:])
 	default:
-		return fmt.Errorf("unknown compliance command %q; try site, sbom, crypto, "+
-			"controls, accessibility or summary", args[0])
+		return fmt.Errorf("unknown compliance command %q; try site, implementation, component, "+
+			"sbom, crypto, controls, accessibility or summary", args[0])
 	}
 }
 
@@ -289,4 +297,85 @@ func complianceACR(root string, args []string) error {
 	w.Human("\n  %sas JSON, for a procurement pack:%s\n", dim, reset)
 	w.Human("    quilzo --json compliance accessibility\n")
 	return nil
+}
+
+// complianceImplementation prints how Quilzo implements each control, or
+// one control in full (internal/controls).
+func complianceImplementation(args []string) error {
+	all := controls.All()
+	if len(args) == 1 {
+		im, ok := controls.Lookup(args[0])
+		if !ok {
+			return fmt.Errorf("no statement for %s; quilzo compliance implementation lists the %d there are", args[0], len(all))
+		}
+		if w.JSON(im) {
+			return nil
+		}
+		w.Human("%s%s%s  %s  %s\n\n  %s\n", bold, im.Control, reset, im.Title, responsibilityWords(im.Responsibility), im.Statement)
+		if im.Customer != "" {
+			w.Human("\n  %sthe customer's part:%s %s\n", bold, reset, im.Customer)
+		}
+		for _, l := range []struct {
+			name string
+			vs   []string
+		}{{"checked by", im.Rules}, {"set by", im.Settings}, {"parameters", im.Params}, {"where", im.Where}} {
+			if len(l.vs) > 0 {
+				w.Human("  %s%-11s%s %s\n", dim, l.name, reset, strings.Join(l.vs, ", "))
+			}
+		}
+		return nil
+	}
+	if w.JSON(all) {
+		return nil
+	}
+	n := controls.Count(all)
+	w.Human("%s%d NIST SP 800-53 controls%s: Quilzo %d, shared %d, the customer's %d\n\n", bold, len(all), reset,
+		n[controls.Quilzo], n[controls.Shared], n[controls.Customer])
+	for _, im := range all {
+		w.Human("  %-10s %-9s %s%s%s\n", im.Control, im.Responsibility, dim, im.Title, reset)
+	}
+	w.Human("\n  %squilzo compliance implementation AC-7   one control in full%s\n", dim, reset)
+	w.Human("  %squilzo compliance component            all of it as an OSCAL component definition%s\n", dim, reset)
+	return nil
+}
+
+func responsibilityWords(r controls.Responsibility) string {
+	switch r {
+	case controls.Quilzo:
+		return "Quilzo implements it"
+	case controls.Shared:
+		return "shared: Quilzo provides it, the customer runs it"
+	}
+	return "the customer's"
+}
+
+// complianceComponent writes the OSCAL component definition.
+func complianceComponent(root string, args []string) error {
+	fs := flag.NewFlagSet("compliance component", flag.ContinueOnError)
+	out := fs.String("o", "", "write to this file instead of standard output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	pol, err := odp.Load(paramsPath(root))
+	if err != nil {
+		return err
+	}
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return err
+	}
+	cd, err := controls.ComponentDefinition(version, odp.SetParameters(pol, cfg), time.Now())
+	if err != nil {
+		return err
+	}
+	body, err := json.MarshalIndent(cd, "", "  ")
+	if err != nil {
+		return err
+	}
+	body = append(body, '\n')
+	if *out != "" {
+		return atomicfile.Write(*out, body, 0o644)
+	}
+	_, err = os.Stdout.Write(body)
+	return err
 }

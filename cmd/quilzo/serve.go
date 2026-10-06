@@ -837,6 +837,7 @@ func cmdServe(root string, args []string) error {
 	srv.Shield = sh.off
 	srv.Frozen = sh.frozen
 	srv.Reports = public.ReportsHandler(sh.violation)
+	srv.Version = version
 	srv.Parameters = &admin.Parameters{Path: paramsPath(root), Organisation: organisationOf(root),
 		OnlyAdmin: func(name string) bool { return onlyAdministrator(root, name) }}
 	srv.ShieldAdmin = &admin.ShieldAdmin{Root: root,
