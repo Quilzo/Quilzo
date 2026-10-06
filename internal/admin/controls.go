@@ -74,3 +74,24 @@ func (s *Server) handleControlsComponent(w http.ResponseWriter, r *http.Request)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(cd)
 }
+
+// handleControlsSSP is the draft system security plan, to download.
+func (s *Server) handleControlsSSP(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.assuranceReader(w, r); !ok {
+		return
+	}
+	impact := r.URL.Query().Get("impact")
+	if s.DraftSSP == nil {
+		http.Error(w, "this server cannot draft a security plan", http.StatusServiceUnavailable)
+		return
+	}
+	body, err := s.DraftSSP(impact)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="system-security-plan.`+impact+`.json"`)
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(body)
+}
