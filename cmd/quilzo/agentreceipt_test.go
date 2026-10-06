@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
 )
 
@@ -138,5 +140,22 @@ func TestAReceiptVerifiesAndTamperingShows(t *testing.T) {
 	}
 	if _, err := buildReceipt(root, "run-20260101-00000000", time.Now()); err == nil {
 		t.Fatal("a receipt for a run the log does not hold")
+	}
+}
+
+func TestARefusedActionIsRecordedAsRefused(t *testing.T) {
+	m := asker("tidy")
+	r := actionRecord(asAdmin("dana"), m, nil, "run-20261006-00000001",
+		agent.Step{N: 3, Action: agent.Action{Op: "publish", Input: map[string]any{"page": "about"}}, Why: "this agent does not publish"})
+	if r.Outcome != audit.Denied || r.Detail["why"] != "this agent does not publish" || r.Detail["step"] != "3" ||
+		r.Resource != "/about" || r.Detail["input_sha256"] == "" || r.Detail["run"] != "run-20261006-00000001" {
+		t.Fatalf("%+v", r)
+	}
+	failed := actionRecord(asAdmin("dana"), m, nil, "", agent.Step{N: 1, Allowed: true, Action: agent.Action{Tool: "x"}, Err: "timed out"})
+	if failed.Outcome != audit.Failure || failed.Detail["tool"] != "x" {
+		t.Fatalf("%+v", failed)
+	}
+	if long := clip(strings.Repeat("é", 400), 301); !utf8.ValidString(long) {
+		t.Fatal("clipping split a character")
 	}
 }

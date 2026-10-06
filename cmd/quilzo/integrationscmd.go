@@ -5,8 +5,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/fetch"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,9 +60,11 @@ func cmdIntegrations(root string, args []string) error {
 		return integrationsTools(root, args[1:])
 	case "call":
 		return integrationsCall(root, args[1:])
+	case "pin":
+		return integrationsPin(root, args[1:])
 	default:
 		return fmt.Errorf(
-			"unknown integrations command %q; try list, tools or call", args[0])
+			"unknown integrations command %q; try list, tools, pin or call", args[0])
 	}
 }
 
@@ -124,7 +128,16 @@ func integrationsTools(root string, args []string) error {
 		} else {
 			unreviewed++
 		}
-		fmt.Printf("%s%-28s%s %s%s%s\n", bold, t.Name, reset, colour, mark, reset)
+		pin := ""
+		switch {
+		case t.Pinned == "" && t.Allowed:
+			pin = yellow + "  not pinned: a model cannot choose it" + reset
+		case t.Pinned != "" && !t.Matches():
+			pin = red + "  CHANGED since it was pinned: refused until pinned again" + reset
+		case t.Pinned != "":
+			pin = green + "  pinned" + reset
+		}
+		fmt.Printf("%s%-28s%s %s%s%s%s\n", bold, t.Name, reset, colour, mark, reset, pin)
 		if t.Description != "" {
 			fmt.Printf("  %s%s%s\n", dim, wrapIndent(t.Description, 62, 2), reset)
 		}
@@ -204,13 +217,107 @@ func oneIntegration(root, name string) (agent.Integration, error) {
 		"no integration called %q; `quilzo integrations list`", name)
 }
 
+// mcpTransport stands in for the network in tests; nil is the network,
+// with every address check fetch makes.
+var mcpTransport func(ctx context.Context, url string, body []byte, headers map[string]string) (*fetch.Result, error)
+
 // newMCPClient builds the client, with the vault if there is one.
 func newMCPClient(root string) *mcpclient.Client {
 	return &mcpclient.Client{
+		Do: mcpTransport,
 		Secrets: func(name string) (string, error) {
 			return readSecret(root, name)
 		},
+		// A pinned tool redefined by its server is refused, and recorded:
+		// it is what a server that was trusted turning on its users looks
+		// like.
+		Changed: func(in agent.Integration, tool, pinned, now string) {
+			record(root, audit.Record{Action: "integration.tool-changed", Resource: "/integrations/" + in.Name,
+				Outcome: audit.Denied, Principal: "quilzo", Kind: audit.KindService, Verified: true,
+				Detail: map[string]string{"integration": in.Name, "tool": tool, "pinned": pinned, "now": now}})
+		},
 	}
+}
+
+// integrationsPin records the definitions a person has read and approves:
+// every tool the install uses, or the ones named.
+func integrationsPin(root string, args []string) error {
+	if len(args) < 1 {
+		return errors.New("quilzo integrations pin NAME [TOOL...]")
+	}
+	set, err := loadIntegrations(root)
+	if err != nil {
+		return err
+	}
+	idx := -1
+	for i, in := range set.Declared {
+		if in.Name == args[0] {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("no integration called %q; `quilzo integrations list`", args[0])
+	}
+	in := set.Declared[idx]
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	tools, err := newMCPClient(root).Tools(ctx, in)
+	if err != nil {
+		return err
+	}
+	want := map[string]bool{}
+	for _, t := range args[1:] {
+		want[t] = true
+	}
+	if in.Pins == nil {
+		in.Pins = map[string]string{}
+	}
+	caller := resolveCaller(root, flagToken)
+	pinned := 0
+	for _, t := range tools {
+		if !t.Allowed || (len(want) > 0 && !want[t.Name]) {
+			continue
+		}
+		delete(want, t.Name)
+		// Shown in full: this is what is being approved, and a model that
+		// chooses it is choosing what this says.
+		fmt.Printf("%s%s%s  %s\n", bold, t.Name, reset, t.Definition[:16])
+		if t.Description != "" {
+			fmt.Printf("  %s\n", wrapIndent(t.Description, 70, 2))
+		}
+		if len(t.InputSchema) > 0 {
+			fmt.Printf("  %sinput: %s%s\n", dim, clampString(string(t.InputSchema), 400), reset)
+		}
+		if old := in.Pins[t.Name]; old != t.Definition {
+			in.Pins[t.Name] = t.Definition
+			pinned++
+			_ = recordE(root, caller.auditRecord("integration.pinned", "/integrations/"+in.Name, audit.Success,
+				map[string]string{"integration": in.Name, "tool": t.Name, "definition": t.Definition, "was": old}))
+		}
+	}
+	for t := range want {
+		return fmt.Errorf("%s does not use %q, or the server no longer offers it", in.Name, t)
+	}
+	if pinned == 0 {
+		fmt.Printf("\n  %snothing changed: every definition was already pinned as it is%s\n", dim, reset)
+		return nil
+	}
+	set.Declared[idx] = in
+	if err := set.Validate(); err != nil {
+		return err
+	}
+	if err := saveJSON(integrationsPath(root), set); err != nil {
+		return err
+	}
+	fmt.Printf("\npinned %d definition(s) of %s; a change by the server is refused until pinned again\n", pinned, in.Name)
+	return nil
+}
+
+func clampString(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 // readSecret resolves a credential name to its value, from the environment.

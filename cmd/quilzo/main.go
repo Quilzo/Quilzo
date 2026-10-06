@@ -539,6 +539,7 @@ agents and integrations
   quilzo agents                            what models have been doing, and
                                             which are not accepting refusals
   quilzo integrations list|tools|call      outside systems this install may reach
+  quilzo integrations pin NAME [TOOL...]   approve what a tool is; a server's change to it is refused until pinned again
   quilzo rights [REF]                      image licences: expired, lapsing, undeclared
   quilzo brand init                        claim rules: what needs substantiating
   quilzo brand list | check                what this shop may not say unbacked
