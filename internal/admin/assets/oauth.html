@@ -1,0 +1,80 @@
+{{/*
+  An app asking to use Quilzo as the person reading this.
+
+  What the app says about itself is labelled as its own claim: its name is
+  whatever its metadata document says. What is not its claim is shown as
+  fact: where its identity is published (the host of its client_id) and
+  where agreeing sends the person (the host of its redirect address). A
+  convincing name on an app published somewhere unexpected is the phishing
+  this page exists to make visible.
+*/}}
+{{template "head" .}}
+{{if eq .Mode "consent"}}
+<h1>Connect {{.App.Name}}?</h1>
+<div class="card">
+  <p><strong>{{.App.Name}}</strong> <span class="hint">(what the app calls itself)</span>
+    wants to use Quilzo's agent interface as you, <strong>{{.Principal.Name}}</strong>.</p>
+  <dl>
+    {{if .Publisher}}<dt>Published by</dt><dd><code>{{.Publisher}}</code></dd>
+    {{else}}<dt>Registered</dt><dd>by {{.App.AddedBy}} on this Quilzo</dd>{{end}}
+    <dt>Sends you back to</dt><dd><code>{{.Returns}}</code></dd>
+    <dt>Reaches</dt><dd><code>{{.Resource}}</code></dd>
+  </dl>
+  {{if .Local}}
+  <p class="notice warn">This returns to a program on your own computer. Only agree
+    if you started connecting an app on this computer just now; any program
+    here could be waiting at that address.</p>
+  {{end}}
+</div>
+<form method="post" action="/oauth/authorize">
+  <input type="hidden" name="request" value="{{.Request}}">
+  <fieldset>
+    <legend>It may</legend>
+    {{range .Choices}}
+    <div class="field check">
+      {{if .Offered}}
+      <input type="checkbox" id="scope-{{.Name}}" name="scope" value="{{.Name}}" checked>
+      <label for="scope-{{.Name}}">{{.What}} <code class="hint">{{.Name}}</code></label>
+      {{else}}
+      <input type="checkbox" id="scope-{{.Name}}" disabled>
+      <label for="scope-{{.Name}}" class="dim">{{.What}} <code class="hint">{{.Name}}</code>
+        — not offered: you cannot do this yourself</label>
+      {{end}}
+    </div>
+    {{end}}
+  </fieldset>
+  <p class="hint">Everything it does is checked against what you may do at the
+    moment it does it, and recorded under your name. You can disconnect it at
+    any time under <a href="/apps">Connected apps</a>.</p>
+  <p class="actions">
+    <button type="submit" name="decision" value="allow">Allow</button>
+    <button type="submit" name="decision" value="deny" class="btn-tonal">Decline</button>
+  </p>
+</form>
+{{else if eq .Mode "onward"}}
+<h1>Connect an app</h1>
+<p class="notice ok" role="status">Returning you to <code>{{.Host}}</code>…
+  <a href="{{.Onward}}">Continue</a> if nothing happens.</p>
+{{else if eq .Mode "notallowed"}}
+<h1>This app cannot connect yet</h1>
+<p>Apps published from <code>{{.Host}}</code> are not on this organisation's list
+  of apps that may connect.</p>
+{{if .CanAllow}}
+<form method="post" action="/apps/act">
+  <input type="hidden" name="action" value="allow-host">
+  <input type="hidden" name="host" value="{{.Host}}">
+  <input type="hidden" name="return" value="{{.Return}}">
+  <p>As an administrator you can allow them. Every person still decides for
+    themselves whether to connect one.</p>
+  <p class="actions"><button type="submit">Allow apps from {{.Host}}</button></p>
+</form>
+{{else}}
+<p>Ask an administrator to allow apps from <code>{{.Host}}</code> on the
+  Connected apps screen.</p>
+{{end}}
+{{else}}
+<h1>This app's request cannot be used</h1>
+<p class="notice bad" role="alert">{{.Why}}</p>
+<p>Nothing was given to the app. Start again from the app.</p>
+{{end}}
+{{template "foot" .}}

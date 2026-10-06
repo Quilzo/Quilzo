@@ -169,6 +169,7 @@ var notADestination = map[string]string{
 	"/sidebar":               "a preference toggle",
 	"/signin":                "reached when not signed in",
 	"/signout":               "a form target",
+	"/mcp":                   "the agent interface, posted to by programs; Connected apps says where it is",
 	"/style.css":             "a stylesheet",
 	"/brand.css":             "the operator's accent colour, as a stylesheet",
 	"/admin.js":              "the interface's script, fetched by every page's head",

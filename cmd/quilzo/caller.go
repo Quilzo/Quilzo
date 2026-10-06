@@ -51,6 +51,11 @@ type Caller struct {
 	Verified bool
 	// Why explains an unverified caller, for the message a refusal prints.
 	Why string
+	// Remote marks a caller at the agent interface over HTTP, and Grant the
+	// app consent its token came from, when it came from one. See
+	// agentinterface.go.
+	Remote bool
+	Grant  string
 }
 
 // tokenFile is preferred over the environment.

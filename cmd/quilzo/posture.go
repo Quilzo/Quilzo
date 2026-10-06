@@ -21,7 +21,9 @@ import (
 	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/frameworks"
+	"github.com/quilzo/quilzo/internal/oauthas"
 	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/posture"
@@ -71,6 +73,23 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 				}
 			}
 			s.SSO.Providers = append(s.SSO.Providers, p)
+		}
+	}
+
+	// The agent interface: whether it answers, which apps may connect, and
+	// which connections hold administrator scope.
+	{
+		cfg := mustConfig(root)
+		st := &oauthas.Store{Dir: oauthDir(root)}
+		if _, hosts, err := st.Clients(); err == nil {
+			s.Interface.Checked, s.Interface.On, s.Interface.Hosts = true, cfg.Bool("mcp.remote"), hosts
+		}
+		if grants, err := st.Grants(); err == nil {
+			for _, g := range grants {
+				if g.Live(s.Now) && oauthas.RoleFor(g.Scopes) == auth.RoleAdmin {
+					s.Interface.Admin = append(s.Interface.Admin, g.ID+" ("+g.ClientName+" for "+g.Principal+")")
+				}
+			}
 		}
 	}
 

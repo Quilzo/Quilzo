@@ -194,11 +194,13 @@ var commandNeeds = map[string]need{
 	"self vex":    {action: auth.ActView},
 	// The organisation's policy: what its administrators decide, by two of
 	// them; reading it and exporting it is a view in the compliance area.
-	"policy":             {action: auth.ActGrant},
-	"policy show":        {action: auth.ActView},
-	"policy params":      {action: auth.ActView},
-	"policy export":      {action: auth.ActView},
-	"shield":             {action: auth.ActGrant},
+	"policy":        {action: auth.ActGrant},
+	"policy show":   {action: auth.ActView},
+	"policy params": {action: auth.ActView},
+	"policy export": {action: auth.ActView},
+	"shield":        {action: auth.ActGrant},
+	// What may act as people through the agent interface, and ending it.
+	"apps":               {action: auth.ActGrant},
 	"shield status":      {action: auth.ActView},
 	"shield list":        {action: auth.ActView},
 	"shield dry-run":     {action: auth.ActView},

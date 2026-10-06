@@ -528,8 +528,7 @@ func (s *Server) typeRedirect(w http.ResponseWriter, r *http.Request, msg, errMs
 func (s *Server) unwired(w http.ResponseWriter, r *http.Request, p principal,
 	title, what string) {
 
-	w.WriteHeader(http.StatusServiceUnavailable)
-	s.render(w, r, "message.html", map[string]any{
+	s.render(w, r, "message.html", map[string]any{"Status": http.StatusServiceUnavailable,
 		"Title": title, "Principal": p,
 		"Heading": "This build has no access to " + what,
 		"Body": "The server was started without wiring " + what + " in, so " +
