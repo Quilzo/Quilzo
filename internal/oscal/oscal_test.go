@@ -189,7 +189,7 @@ func TestReviewedControlsListsOnlyWhatTheRulesCover(t *testing.T) {
 	real := map[string]bool{}
 	for _, r := range rules {
 		for _, c := range r.Controls {
-			real[strings.ToLower(c)] = true
+			real[ControlID(c)] = true
 		}
 	}
 	listed := doc.AssessmentResults.Results[0].
@@ -279,4 +279,13 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// Control ids are OSCAL's tokens: an enhancement after a dot.
+func TestControlIDsAreTheCataloguesTokens(t *testing.T) {
+	for in, want := range map[string]string{"AC-2(3)": "ac-2.3", "AU-9(4)": "au-9.4", "ac-02": "ac-2", "SC-8(1)": "sc-8.1", "SI-7": "si-7"} {
+		if got := ControlID(in); got != want {
+			t.Errorf("%s: %s, want %s", in, got, want)
+		}
+	}
 }

@@ -1,0 +1,26 @@
+{{template "head" .}}
+<h1>Controls</h1>
+<p class="lead">How Quilzo implements each NIST SP 800-53 control it has anything to do with, and who does the rest. Each statement says what the software does, written beside the code and joined to the rules that check it and the settings that hold it. A shared control is only as implemented as the customer's part.</p>
+
+<div class="shield-status">
+  <span class="hint">{{.Total}} controls · <a href="/security/controls?who=quilzo">Quilzo's {{.Quilzo}}</a> · <a href="/security/controls?who=shared">shared {{.Shared}}</a> · <a href="/security/controls?who=customer">the customer's {{.Customer}}</a>{{if .Who}} · <a href="/security/controls">all</a>{{end}}</span>
+  <span class="hint"><a href="/security/controls/component">Download as an OSCAL component definition</a> — import it into your governance tool's system security plan.</span>
+</div>
+
+{{range .Families}}
+<h2 id="{{.Code}}">{{.Code}}</h2>
+<ul class="auto-list">{{range .Items}}<li class="auto-card" id="{{.Control}}">
+  <div class="auto-head"><strong>{{.Control}}</strong> <span>{{.Title}}</span>
+    {{if eq (print .Responsibility) "quilzo"}}<span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Quilzo</span>
+    {{else if eq (print .Responsibility) "shared"}}<span class="wf-band as-written warning"><span class="wf-icon">{{icon "error"}}</span>Shared</span>
+    {{else}}<span class="wf-band as-written unknown"><span class="wf-icon">{{icon "help"}}</span>The customer's</span>{{end}}</div>
+  <p>{{.Statement}}</p>
+  {{if .Customer}}<p><span class="param-k">Your part</span> {{.Customer}}</p>{{end}}
+  {{if .Rules}}<p class="hint"><span class="param-k">Checked by</span> {{range $i, $r := .Rules}}{{if $i}}, {{end}}<a href="/security/rule/{{$r}}"><code>{{$r}}</code></a>{{end}}</p>{{end}}
+  {{if .Settings}}<p class="hint"><span class="param-k">Set by</span> {{range $i, $k := .Settings}}{{if $i}}, {{end}}<code>{{$k}}</code>{{end}} — <a href="/settings">Settings</a></p>{{end}}
+  {{if .Params}}<p class="hint"><span class="param-k">Parameters</span> {{range $i, $k := .Params}}{{if $i}}, {{end}}<code>{{$k}}</code>{{end}} — <a href="/security/parameters">Organisation policy</a></p>{{end}}
+</li>{{end}}</ul>
+{{end}}
+
+<p class="hint">On the machine: <code>quilzo compliance implementation AC-7</code>, <code>quilzo compliance component -o quilzo.json</code>.</p>
+{{template "foot" .}}

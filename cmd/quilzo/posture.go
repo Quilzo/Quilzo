@@ -423,11 +423,7 @@ func postureScan(root string, args []string) error {
 		if terr != nil {
 			at = time.Now()
 		}
-		doc, oerr := oscal.From(shown, posture.RuleIndex(), at, oscal.Options{
-			System:       siteName(root),
-			Organisation: organisationOf(root),
-			Version:      version,
-		})
+		doc, oerr := assessmentResults(root, rep, at)
 		if oerr != nil {
 			return oerr
 		}
@@ -884,4 +880,20 @@ func frameworkSummaries(rep posture.Report) []frameworkSummary {
 		out = append(out, sm)
 	}
 	return out
+}
+
+// assessmentResults is a scan as OSCAL assessment results: every finding,
+// and only the rules that ran. --min is for reading — a document that
+// dropped a finding below it would list that rule's controls as reviewed
+// and clean — and a rule whose input was never supplied reviewed nothing.
+func assessmentResults(root string, rep posture.Report, at time.Time) (oscal.Results, error) {
+	ran := posture.RuleIndex()
+	for _, id := range rep.Skipped {
+		delete(ran, id)
+	}
+	return oscal.From(rep.Findings, ran, at, oscal.Options{
+		System:       siteName(root),
+		Organisation: organisationOf(root),
+		Version:      version,
+	})
 }

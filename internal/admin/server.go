@@ -124,6 +124,8 @@ type Server struct {
 	Settings *Settings
 	// Parameters is the organisation's policy (parameters.go).
 	Parameters *Parameters
+	// Version is the build's version, for documents the admin exports.
+	Version string
 	// idle is when each browser session was last used (idle.go).
 	idle idleClock
 	// Types gives the admin the site's content types, so what an application
@@ -1181,6 +1183,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/parameters", s.handleParameters)
 	mux.HandleFunc("/security/parameters/act", s.handleParametersAct)
 	mux.HandleFunc("/security/parameters/export", s.handleParametersExport)
+	mux.HandleFunc("/security/controls", s.handleControls)
+	mux.HandleFunc("/security/controls/component", s.handleControlsComponent)
 	mux.HandleFunc("/security/integrity", s.handleIntegrityScreen)
 	mux.HandleFunc("/security/verify", s.handleVerify)
 	mux.HandleFunc("/security/agents", s.handleAgentsScreen)

@@ -251,7 +251,7 @@ func From(findings []posture.Finding, rules map[string]posture.Rule,
 	}
 	controls := make([]ControlRef, 0, len(seen))
 	for c := range seen {
-		controls = append(controls, ControlRef{ControlID: strings.ToLower(c)})
+		controls = append(controls, ControlRef{ControlID: ControlID(c)})
 	}
 	sort.Slice(controls, func(i, j int) bool {
 		return controls[i].ControlID < controls[j].ControlID
@@ -318,7 +318,7 @@ func From(findings []posture.Finding, rules map[string]posture.Rule,
 				Description: f.Detail,
 				Target: FindingTarget{
 					Type:     "objective-id",
-					TargetID: strings.ToLower(control),
+					TargetID: ControlID(control),
 					// OSCAL has two states and no third. A finding exists
 					// because a check failed, so it is not-satisfied; a check
 					// that passed produces no finding and therefore no claim.
@@ -331,6 +331,29 @@ func From(findings []posture.Finding, rules map[string]posture.Rule,
 
 	body.Results = []Result{res}
 	return Results{AssessmentResults: body}, nil
+}
+
+// ControlID is a control as OSCAL identifies it: lower case, an
+// enhancement after a dot, no leading zeros — AC-2(3) is ac-2.3. The
+// catalogue's ids are tokens, and "ac-2(3)" is not one: a document carrying
+// it fails validation and matches nothing in the catalogue.
+func ControlID(c string) string {
+	c = strings.ToLower(strings.TrimSpace(c))
+	c = strings.ReplaceAll(c, "(", ".")
+	c = strings.ReplaceAll(c, ")", "")
+	fam, rest, ok := strings.Cut(c, "-")
+	if !ok {
+		return c
+	}
+	parts := strings.Split(rest, ".")
+	for i, p := range parts {
+		if t := strings.TrimLeft(p, "0"); t != "" {
+			parts[i] = t
+		} else {
+			parts[i] = "0"
+		}
+	}
+	return fam + "-" + strings.Join(parts, ".")
 }
 
 // newUUID makes a version-4 UUID.

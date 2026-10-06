@@ -187,6 +187,8 @@ func TestEveryPackageWithASituationalRoleIsRegistered(t *testing.T) {
 			"rather than authority over anything",
 		"vendor":  "a tier is a classification, not a power",
 		"posture": "a severity is not a role",
+		"oscal": "a role in an OSCAL document names who is responsible " +
+			"for a control in that document; it confers nothing here",
 	}
 	var missing []string
 	err := filepath.WalkDir("..", func(path string, d os.DirEntry,
