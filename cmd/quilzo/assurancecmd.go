@@ -60,6 +60,25 @@ func cmdAssurance(root string, args []string) error {
 }
 
 func loadControls(root string) ([]assurance.Control, error) {
+	declared, err := loadDeclaredControls(root)
+	if err != nil {
+		return nil, err
+	}
+	// Quilzo's own controls, built in, unless the organisation declared a
+	// control by the same name (recordSelfEvidence gathers their evidence).
+	have := map[string]bool{}
+	for _, c := range declared {
+		have[c.ID] = true
+	}
+	for _, c := range selfControls() {
+		if !have[c.ID] {
+			declared = append(declared, c)
+		}
+	}
+	return declared, nil
+}
+
+func loadDeclaredControls(root string) ([]assurance.Control, error) {
 	var out []assurance.Control
 	b, err := os.ReadFile(controlsPath(root))
 	if os.IsNotExist(err) {

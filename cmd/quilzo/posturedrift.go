@@ -133,8 +133,11 @@ func postureJob(root, tplDir string, facts posture.ServerFacts) upkeep.Job {
 		Do: func(now time.Time) (int, error) {
 			reverted, _ := revertDrift(root, now)
 			raised, _ := enforcePolicy(root, "quilzo")
-			opened, _, err := postureDrift(root, Observe(root, tplDir, facts), now)
-			return opened + len(reverted) + len(raised), err
+			state := Observe(root, tplDir, facts)
+			opened, _, err := postureDrift(root, state, now)
+			// And the evidence that Quilzo's own controls operated.
+			evidenced, _ := recordSelfEvidence(root, posture.Scan(state, nil), now)
+			return opened + len(reverted) + len(raised) + evidenced, err
 		},
 	}
 }
