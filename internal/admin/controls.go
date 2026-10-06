@@ -46,7 +46,7 @@ func (s *Server) handleControls(w http.ResponseWriter, r *http.Request) {
 	n := controls.Count(all)
 	s.render(w, r, "controls.html", map[string]any{"Title": "Controls", "Nav": "security", "Principal": p,
 		"Families": fams, "Total": len(all), "Quilzo": n[controls.Quilzo], "Shared": n[controls.Shared],
-		"Customer": n[controls.Customer], "Who": want})
+		"Customer": n[controls.Customer], "Who": want, "Pledge": controls.Pledge, "PledgeURL": controls.PledgeURL})
 }
 
 // handleControlsComponent is the component definition, to download.

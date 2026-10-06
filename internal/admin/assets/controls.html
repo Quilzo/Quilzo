@@ -22,5 +22,16 @@
 </li>{{end}}</ul>
 {{end}}
 
-<p class="hint">On the machine: <code>quilzo compliance implementation AC-7</code>, <code>quilzo compliance component -o quilzo.json</code>.</p>
+<h2 id="secure-by-design">Secure by Design</h2>
+<p>Where Quilzo stands on each goal of <a href="{{.PledgeURL}}" rel="noreferrer">CISA's Secure by Design pledge</a>, with what is not done said as plainly as what is.</p>
+<ul class="auto-list">{{range .Pledge}}<li class="auto-card">
+  <div class="auto-head"><strong>{{.N}}. {{.Title}}</strong>
+    {{if eq (print .Standing) "met"}}<span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Met</span>
+    {{else if eq (print .Standing) "partly"}}<span class="wf-band as-written warning"><span class="wf-icon">{{icon "error"}}</span>Partly</span>
+    {{else}}<span class="wf-band as-written serious"><span class="wf-icon">{{icon "warning"}}</span>Not yet</span>{{end}}</div>
+  <p class="hint">{{.Asks}}</p>
+  <p>{{.Position}}</p>
+</li>{{end}}</ul>
+
+<p class="hint">On the machine: <code>quilzo compliance implementation AC-7</code>, <code>quilzo compliance component -o quilzo.json</code>, <code>quilzo compliance pledge</code>.</p>
 {{template "foot" .}}

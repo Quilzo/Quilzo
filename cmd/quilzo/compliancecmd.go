@@ -44,8 +44,10 @@ func cmdCompliance(root string, args []string) error {
 		return complianceImplementation(args[1:])
 	case "component":
 		return complianceComponent(root, args[1:])
+	case "pledge":
+		return compliancePledge()
 	default:
-		return fmt.Errorf("unknown compliance command %q; try site, implementation, component, "+
+		return fmt.Errorf("unknown compliance command %q; try site, implementation, component, pledge, "+
 			"sbom, crypto, controls, accessibility or summary", args[0])
 	}
 }
@@ -378,4 +380,18 @@ func complianceComponent(root string, args []string) error {
 	}
 	_, err = os.Stdout.Write(body)
 	return err
+}
+
+// compliancePledge prints where Quilzo stands on each goal of CISA's Secure
+// by Design pledge.
+func compliancePledge() error {
+	if w.JSON(controls.Pledge) {
+		return nil
+	}
+	w.Human("%sCISA Secure by Design pledge%s  %s\n\n", bold, reset, controls.PledgeURL)
+	colour := map[controls.Standing]string{controls.Met: green, controls.Partly: yellow, controls.NotYet: red}
+	for _, g := range controls.Pledge {
+		w.Human("  %s%d. %s%s  %s%s%s\n     %s\n\n", bold, g.N, g.Title, reset, colour[g.Standing], g.Standing, reset, g.Position)
+	}
+	return nil
 }
