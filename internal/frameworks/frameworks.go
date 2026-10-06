@@ -90,8 +90,9 @@ var Catalogue = []Framework{
 		URL:   "https://cppa.ca.gov/regulations/"},
 	{ID: "eu-ai-act", Name: "EU AI Act", Version: "Regulation (EU) 2024/1689", Kind: AI,
 		About: "The EU's law on AI systems. The transparency duties in " +
-			"Article 50 apply from 2 August 2026; most high-risk duties " +
-			"were deferred.",
+			"Article 50 apply from 2 August 2026; the Digital Omnibus " +
+			"(Regulation (EU) 2026/1744) moved most high-risk duties to " +
+			"2 December 2027.",
 		URL: "https://eur-lex.europa.eu/eli/reg/2024/1689/oj"},
 	{ID: "nist-ai-rmf", Name: "NIST AI RMF", Version: "1.0, with the AI 600-1 profile", Kind: AI,
 		About: "NIST's voluntary framework for managing AI risk: Govern, Map, " +
