@@ -504,6 +504,7 @@ compliance evidence
                                             and a draft accessibility statement
   quilzo compliance implementation [AC-7]  how Quilzo implements each NIST control, and who does the rest
   quilzo compliance component [-o FILE]    the same as an OSCAL component definition, for a governance tool
+  quilzo compliance pledge                 where Quilzo stands on each goal of CISA's Secure by Design pledge
   quilzo compliance acr                    an accessibility conformance report
   quilzo policy show | params              the organisation's NIST parameters, declared and in effect
   quilzo policy propose ac-12_odp="8 hours" --reason "…"   a change, approved by a second administrator

@@ -93,3 +93,24 @@ func TestControlsAreFoundAndOrderedAsTheCatalogueWritesThem(t *testing.T) {
 		t.Fatal("order")
 	}
 }
+
+// The pledge is seven goals in CISA's order, each with a position that
+// says what is not done where something is not.
+func TestThePledgeIsAnsweredGoalByGoal(t *testing.T) {
+	if len(Pledge) != 7 {
+		t.Fatalf("%d goals", len(Pledge))
+	}
+	for i, g := range Pledge {
+		if g.N != i+1 || g.Title == "" || g.Asks == "" || len(g.Position) < 60 {
+			t.Errorf("goal %d is incomplete", i+1)
+		}
+		switch g.Standing {
+		case Met, Partly, NotYet:
+		default:
+			t.Errorf("goal %d has no standing", g.N)
+		}
+		if g.Standing != Met && !strings.Contains(strings.ToLower(g.Position), "not") {
+			t.Errorf("goal %d is %s and its position does not say what is not done", g.N, g.Standing)
+		}
+	}
+}
