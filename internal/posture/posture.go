@@ -124,6 +124,28 @@ func (f Finding) ID() string {
 //
 // A fact rather than a path, because the scanner does not open files. The
 // caller stats them and reports; the rule reasons about what it was told.
+// ParameterFacts is the organisation's policy — its NIST organisation-
+// defined parameters (internal/odp) — and how the deployment stands
+// against it.
+type ParameterFacts struct {
+	Checked bool `json:"checked"`
+	// Unreadable says why the policy could not be read.
+	Unreadable string `json:"unreadable,omitempty"`
+	// Unmet are settings below a declared value.
+	Unmet []ParameterGap `json:"unmet,omitempty"`
+	// Alone are parameters declared by one administrator, the deployment
+	// having no second.
+	Alone []string `json:"alone,omitempty"`
+}
+
+// ParameterGap is one setting below the policy.
+type ParameterGap struct {
+	Param    string `json:"param"`
+	Setting  string `json:"setting"`
+	Value    string `json:"value"`
+	Declared string `json:"declared"`
+}
+
 // WeakenedSetting is a configuration value running below its default.
 type WeakenedSetting struct {
 	Key      string `json:"key"`
@@ -303,15 +325,17 @@ type State struct {
 	AuditRead bool              `json:"-"`
 	Files     []FileFact        `json:"files"`
 	Weakened  []WeakenedSetting `json:"weakened,omitempty"`
-	Server    ServerFacts       `json:"server"`
-	Content   ContentFacts      `json:"content"`
-	Upkeep    UpkeepFacts       `json:"upkeep"`
-	Agents    AgentFacts        `json:"agents"`
-	Ext       ExtFacts          `json:"ext"`
-	AI        AIFacts           `json:"ai"`
-	SSO       SSOFacts          `json:"sso"`
-	Now       time.Time         `json:"-"`
-	Extra     map[string]string `json:"extra,omitempty"`
+	// Parameters is the organisation's policy and how it is met.
+	Parameters ParameterFacts    `json:"parameters"`
+	Server     ServerFacts       `json:"server"`
+	Content    ContentFacts      `json:"content"`
+	Upkeep     UpkeepFacts       `json:"upkeep"`
+	Agents     AgentFacts        `json:"agents"`
+	Ext        ExtFacts          `json:"ext"`
+	AI         AIFacts           `json:"ai"`
+	SSO        SSOFacts          `json:"sso"`
+	Now        time.Time         `json:"-"`
+	Extra      map[string]string `json:"extra,omitempty"`
 }
 
 // Rule is one check.
@@ -498,6 +522,10 @@ func missing(s State) []string {
 	if !s.AI.Checked {
 		out = append(out, "chatbots, agents and models: the AI and privacy "+
 			"checks were not run")
+	}
+	if !s.Parameters.Checked {
+		out = append(out, "organisation policy: whether the settings meet the "+
+			"declared NIST parameters was not checked")
 	}
 	if _, ok := s.Extra["published_heads"]; !ok && len(s.Audit) > 0 {
 		out = append(out, "log transparency: whether any audit head has been "+

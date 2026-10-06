@@ -503,6 +503,10 @@ compliance evidence
   quilzo compliance site [--statement]     what the law asks of the published site,
                                             and a draft accessibility statement
   quilzo compliance acr                    an accessibility conformance report
+  quilzo policy show | params              the organisation's NIST parameters, declared and in effect
+  quilzo policy propose ac-12_odp="8 hours" --reason "…"   a change, approved by a second administrator
+  quilzo policy approve | decline | withdraw ID
+  quilzo policy import ssp.json --reason "…" | export   OSCAL in (profile, SSP, component), OSCAL out
 
 agents and integrations
   quilzo agent templates                    the agent archetypes, and when to use each
@@ -930,6 +934,8 @@ func main() {
 		err = cmdShield(root, cmdArgs)
 	case "self":
 		err = cmdSelf(root, cmdArgs)
+	case "policy":
+		err = cmdPolicy(root, cmdArgs)
 	case "feed":
 		err = cmdFeed(cmdArgs)
 	case "source":

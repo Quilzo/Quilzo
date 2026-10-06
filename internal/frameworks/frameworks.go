@@ -216,6 +216,8 @@ var fromRule = map[string][]Ref{
 	"expose.cleartext":              {{"gdpr", "Art. 32(1)(a)"}, {"ccpa", "§ 1798.100(e)"}},
 	"expose.admin-public":           {{"gdpr", "Art. 32"}},
 	"config.weakened":               {{"gdpr", "Art. 32"}, {"gdpr", "Art. 25"}},
+	"policy.unmet":                  {{"gdpr", "Art. 32"}, {"gdpr", "Art. 25"}},
+	"policy.unreadable":             {{"gdpr", "Art. 32"}},
 	"content.retention-unenforced":  {{"gdpr", "Art. 5(1)(e)"}, {"ccpa", "§ 1798.100(a)(3)"}},
 	"privacy.form-basis-missing":    {{"gdpr", "Art. 6"}, {"gdpr", "Art. 13"}, {"gdpr", "Art. 5(1)(b)"}, {"ccpa", "§ 1798.100(b)"}},
 	"content.unmarked-ai":           {{"eu-ai-act", "Art. 50(2)"}, {"iso-42001", "A.8.2"}},

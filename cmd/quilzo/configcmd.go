@@ -29,7 +29,7 @@ func configPath(root string) string { return filepath.Join(root, "config.json") 
 func loadConfig(root string) (*config.Config, error) {
 	body, err := os.ReadFile(configPath(root))
 	if os.IsNotExist(err) {
-		return config.New(), nil
+		return config.New().WithFloors(floorsFor(root)), nil
 	}
 	if err != nil {
 		return nil, err
@@ -38,7 +38,9 @@ func loadConfig(root string) (*config.Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", configPath(root), err)
 	}
-	return c, nil
+	// The organisation's policy stands under the settings it governs, on
+	// every surface that changes one, because every one loads through here.
+	return c.WithFloors(floorsFor(root)), nil
 }
 
 func saveConfig(root string, c *config.Config) error {

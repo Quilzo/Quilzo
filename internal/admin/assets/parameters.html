@@ -1,0 +1,65 @@
+{{template "head" .}}
+<h1>Organisation policy</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
+{{else if .Broken}}<p class="notice bad" role="alert">The policy cannot be read ({{.Broken}}), so every setting it governs refuses changes until it can. On the machine, restore <code>parameters.json</code> from a backup.</p>
+{{else}}
+<p class="lead">Your organisation's security policy, written as NIST SP 800-53 organisation-defined parameters — the values an assessor checks every system against. A declared value is a floor under the setting it governs: that setting may be made stricter by any administrator, and weaker only by changing the policy, which takes two.</p>
+
+<div class="shield-status">
+  {{if .Unmet}}<span class="wf-band as-written serious"><span class="wf-icon">{{icon "warning"}}</span>{{plural .Unmet "value not met" "values not met"}}</span>
+  {{else if .Declared}}<span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Every declared value met</span>
+  {{else}}<span class="wf-band as-written unknown"><span class="wf-icon">{{icon "help"}}</span>Nothing declared yet</span>{{end}}
+  <span class="hint">{{plural .Declared "parameter declared" "parameters declared"}} · {{plural (len .Pending) "proposal waiting" "proposals waiting"}} · <a href="/security/parameters/export">Download as OSCAL</a></span>
+</div>
+{{if .Unmet}}<p class="notice warn">A setting below a declared value was set before the value was declared, or written into the configuration by hand. Upkeep raises it within the hour, and the posture scan reports it until then.</p>{{end}}
+
+{{if .Pending}}<h2>Waiting for a second administrator</h2>
+<ul class="auto-list">{{range .Pending}}<li class="auto-card waiting">
+  <div class="auto-head"><span class="wf-band as-written warning"><span class="wf-icon">{{icon "error"}}</span>Waiting</span><strong>{{range $i, $l := .Lines}}{{if $i}}; {{end}}{{$l}}{{end}}</strong></div>
+  <p>“{{.Reason}}”, proposed by {{.By}}{{if .Source}} from an {{.Source}}{{end}}. Lapses {{.Expires}} if nobody decides.</p>
+  {{if $.CanChange}}<form method="post" action="/security/parameters/act" class="auto-controls"><input type="hidden" name="id" value="{{.ID}}">
+    {{if and .Mine (not $.Alone)}}<span class="hint">Another administrator approves it.</span><button type="submit" name="do" value="withdraw" class="btn-text">Withdraw</button>
+    {{else}}<button type="submit" name="do" value="approve">Approve{{if .Mine}} alone{{end}}</button><button type="submit" name="do" value="decline" class="btn-outlined">Decline</button>{{end}}</form>
+  {{if and .Mine $.Alone}}<p class="hint">You are the only administrator, so you may approve your own proposal; the policy will say it was approved alone until a second administrator approves it again.</p>{{end}}{{end}}
+</li>{{end}}</ul>{{end}}
+
+<h2>Parameters</h2>
+<ul class="auto-list">{{range .Rows}}<li class="auto-card">
+  <div class="auto-head"><strong><code>{{.ID}}</code></strong><span class="chip-small">{{.Control}}</span>
+    {{if .Declared}}{{if .Met}}<span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Declared, met</span>{{else}}<span class="wf-band as-written serious"><span class="wf-icon">{{icon "warning"}}</span>Declared, not met</span>{{end}}
+    {{else if eq (print .How) "described"}}<span class="wf-band as-written low"><span class="wf-icon">{{icon "info"}}</span>Described here</span>
+    {{else}}<span class="wf-band as-written unknown"><span class="wf-icon">{{icon "help"}}</span>Not declared</span>{{end}}</div>
+  <p>{{sentence .Label}}: {{.Means}}.</p>
+  {{with .Declared}}<p><span class="param-k">Declared</span> {{.Value}} <span class="hint">— proposed by {{.By}}, approved{{if .Alone}} alone{{end}} by {{.ApprovedBy}}, {{.At.Format "2 January 2006"}}</span></p>{{end}}
+  <p><span class="param-k">Here</span> {{.Plain}}</p>
+  {{if and $.CanChange (ne (print .How) "described")}}
+  <details class="duty-more"><summary>{{if .Declared}}Propose a different value{{else}}Declare a value{{end}}<span class="chev">{{icon "expand_more"}}</span></summary>
+    <form method="post" action="/security/parameters/act" class="param-form">
+      <input type="hidden" name="do" value="propose"><input type="hidden" name="param" value="{{.ID}}">
+      {{if .Choices}}<fieldset><legend>What happens past the limit</legend>
+        {{range $i, $c := .Choices}}<label><input type="checkbox" name="choice" value="{{$c.Value}}"{{if $c.Checked}} checked{{end}}> {{$c.Words}}</label>{{end}}
+      </fieldset>
+      {{else}}<label for="v-{{.ID}}">Value {{template "req"}}</label>
+      <input id="v-{{.ID}}" name="value" required maxlength="200" placeholder="{{if eq (print .Kind) "number"}}5{{else}}15 minutes, 8 hours, 90 days, P1Y{{end}}">{{end}}
+      <label for="r-{{.ID}}">Why {{template "req"}}</label>
+      <input id="r-{{.ID}}" name="reason" required maxlength="500" placeholder="The audit finding, the policy section, the decision">
+      <div class="auto-controls"><button type="submit" class="btn-tonal">Propose</button>
+        {{if .Declared}}<button type="submit" name="remove" value="1" class="btn-text">Propose taking it away</button>{{end}}</div>
+    </form>
+  </details>{{end}}
+</li>{{end}}</ul>
+
+<h2>From your governance tool</h2>
+<p>A profile, a system security plan or a component definition in OSCAL JSON: the parameters this program can keep are proposed together for a second administrator; any it cannot keep are named; the rest are about your people, processes and other systems, and are left to them.</p>
+{{if .CanChange}}<form method="post" action="/security/parameters/act" enctype="multipart/form-data" class="param-form">
+  <input type="hidden" name="do" value="import">
+  <label for="import-file">OSCAL JSON file {{template "req"}}</label><input id="import-file" type="file" name="file" accept="application/json,.json" required>
+  <label for="import-why">Why {{template "req"}}</label><input id="import-why" name="reason" required maxlength="500" placeholder="For example: the 2026 system security plan">
+  <div class="auto-controls"><button type="submit" class="btn-tonal">Read and propose</button></div>
+</form>{{else}}<p class="hint">Proposing and approving take an administrator of the whole site.</p>{{end}}
+
+<p class="hint">On the machine: <code>quilzo policy</code>, <code>quilzo policy propose ac-12_odp="8 hours" --reason "…"</code>, <code>quilzo policy import ssp.json</code>, <code>quilzo policy export</code>.</p>
+{{end}}
+{{template "foot" .}}

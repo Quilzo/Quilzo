@@ -125,14 +125,16 @@ func bearsOn(refs []string) string {
 }
 
 // postureJob runs the drift check on the server's schedule: first putting
-// back what was weakened by hand, then scanning.
+// back what was weakened by hand, then raising whatever sits below the
+// organisation's policy, then scanning.
 func postureJob(root, tplDir string, facts posture.ServerFacts) upkeep.Job {
 	return upkeep.Job{
 		Name: "posture",
 		Do: func(now time.Time) (int, error) {
 			reverted, _ := revertDrift(root, now)
+			raised, _ := enforcePolicy(root, "quilzo")
 			opened, _, err := postureDrift(root, Observe(root, tplDir, facts), now)
-			return opened + len(reverted), err
+			return opened + len(reverted) + len(raised), err
 		},
 	}
 }

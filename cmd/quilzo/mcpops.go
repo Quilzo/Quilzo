@@ -23,6 +23,7 @@ import (
 	"github.com/quilzo/quilzo/internal/ipfs"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -563,6 +564,39 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		fmt.Fprintf(&b, "%s\n", compliance.Posture())
 		for _, alg := range compliance.Inventory() {
 			fmt.Fprintf(&b, "%s %s %s\n", alg.Name, alg.Purpose, alg.Quantum)
+		}
+		return strings.TrimSpace(b.String()), nil
+	})
+
+	srv.Register(mcp.Operation{
+		Name: "policy_status", NeedsRole: "admin",
+		Summary: "the organisation's NIST organisation-defined parameters: which are declared, " +
+			"what the deployment does, whether each is met, and what is waiting for approval",
+		Detail: "Read-only. Proposing and approving a value takes two administrators, on the " +
+			"Organisation policy screen or with quilzo policy; neither is offered here.",
+		Keywords: []string{"policy", "parameters", "odp", "nist", "800-53", "oscal", "session", "lockout", "compliance"},
+	}, func(map[string]any) (any, error) {
+		pol, err := odp.Load(paramsPath(root))
+		if err != nil {
+			return nil, err
+		}
+		cfg, err := loadConfig(root)
+		if err != nil {
+			return nil, err
+		}
+		var b strings.Builder
+		for _, r := range policyRows(pol, cfg) {
+			state := "not declared"
+			if r.Declared != nil {
+				state = "declared " + inline(r.Declared.Value) + ", met"
+				if !r.Met {
+					state = "declared " + inline(r.Declared.Value) + ", NOT met"
+				}
+			}
+			fmt.Fprintf(&b, "%s (%s, %s): %s; here: %s\n", r.ID, r.Control, r.Label, state, inline(r.Effective))
+		}
+		for _, p := range pol.Pending(time.Now()) {
+			fmt.Fprintf(&b, "waiting %s by %s: %s\n", p.ID, p.By, changesText(p.Changes))
 		}
 		return strings.TrimSpace(b.String()), nil
 	})
