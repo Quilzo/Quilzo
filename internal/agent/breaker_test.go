@@ -152,3 +152,59 @@ func TestTheBreakerNeedsAllThree(t *testing.T) {
 		t.Fatal("reading another page counted as sending it out")
 	}
 }
+
+// A customer's details looked up in one system are not posted to another
+// because a page said so.
+func TestPersonalDataOffAToolDoesNotLeaveWithoutAPerson(t *testing.T) {
+	m := leaker("live")
+	m.Tools = append(m.Tools, Tool{Name: "lookup", Host: "crm.example", Purpose: "find the customer"})
+	run := func(returned string, own []string) Trace {
+		s := NewSession(m, nil)
+		r := Runner{
+			Decide: script(Action{Tool: "lookup"}, Action{Tool: "file_issue"}, Action{Say: "done"}),
+			Perform: func(_ context.Context, a Action) (string, error) {
+				if a.Tool == "lookup" {
+					return returned, nil
+				}
+				return "filed", nil
+			},
+			OwnDomains: own,
+			Pause:      true,
+		}
+		tr, _ := r.Run(context.Background(), s, "g")
+		return tr
+	}
+	tr := run("Dana Ortiz, dana.ortiz@fastmail.com, +44 20 7946 0958", nil)
+	if tr.Waiting == nil || tr.Waiting.Action.Tool != "file_issue" ||
+		!strings.Contains(tr.Waiting.Why, "personal data (email, phone) returned by lookup") {
+		t.Fatalf("not held: %+v", tr.Waiting)
+	}
+	// The organisation's own address, and nothing personal, are ordinary.
+	for _, ok := range []struct {
+		said string
+		own  []string
+	}{{"write to support@northwind.com", []string{"northwind.com"}}, {"the order shipped on Monday", nil}} {
+		if tr := run(ok.said, ok.own); tr.Waiting != nil || !tr.Complete {
+			t.Fatalf("%q held: %+v", ok.said, tr.Waiting)
+		}
+	}
+}
+
+// What a delegate read in private comes back with what it hands back.
+func TestADelegateHandsBackWhatItHeldInPrivate(t *testing.T) {
+	parent := NewSession(leaker("live"), nil)
+	if err := parent.Retrieve("live", "index", "", ""); err != nil { // tainted, nothing private
+		t.Fatal(err)
+	}
+	child := NewSession(leaker("draft"), nil)
+	if err := child.Retrieve("draft", "pricing", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, breaks := parent.Breaks(Action{Tool: "file_issue"}); breaks {
+		t.Fatal("the supervisor broke before the hand-back")
+	}
+	parent.Fold(child)
+	if why, breaks := parent.Breaks(Action{Tool: "file_issue"}); !breaks || !strings.Contains(why, "through leaker") {
+		t.Fatalf("the supervisor does not hold what the delegate read: %q", why)
+	}
+}

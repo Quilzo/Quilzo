@@ -69,6 +69,44 @@ const (
 // Kinds is every kind.
 var Kinds = map[string]bool{Episodic: true, Semantic: true, Procedural: true}
 
+// Tiers say how far what was learnt can be trusted, from what the run had
+// read when it learnt it: nothing but what the person said; only what is
+// published, which somebody reviewed; or something nobody here reviewed, a
+// draft, a tool's answer or another agent's.
+const (
+	TierPerson     = "person"
+	TierPublished  = "published"
+	TierUnreviewed = "unreviewed"
+)
+
+// TierRetain is the longest each tier is kept, whatever an agent declares:
+// what a tool returned is not kept for a season because an agent would
+// like it to be.
+var TierRetain = map[string]time.Duration{
+	TierPerson:     MaxRetain,
+	TierPublished:  MaxRetain,
+	TierUnreviewed: 30 * 24 * time.Hour,
+}
+
+// tierRank orders the tiers by trust; an entry from before tiers is the
+// least trusted.
+var tierRank = map[string]int{TierPerson: 3, TierPublished: 2, TierUnreviewed: 1}
+
+// TierWords is each tier as a person reads it.
+var TierWords = map[string]string{
+	TierPerson:     "from what the person said",
+	TierPublished:  "after reading published pages",
+	TierUnreviewed: "after reading what nobody here reviewed",
+}
+
+// keepFor is retain, no longer than the tier allows.
+func keepFor(tier string, retain time.Duration) time.Duration {
+	if most, ok := TierRetain[tier]; ok && retain > most {
+		return most
+	}
+	return retain
+}
+
 // Bounds.
 const (
 	MaxText       = 2000 // characters in one entry
@@ -87,6 +125,10 @@ type Entry struct {
 	About string `json:"about,omitempty"`
 	Kind  string `json:"kind"`
 	Text  string `json:"text"`
+	// Tier is how far it can be trusted: see TierPerson.
+	Tier string `json:"tier,omitempty"`
+	// Edited is when the person it is about last rewrote it.
+	Edited time.Time `json:"edited,omitzero"`
 	// Run and Step are where it was learnt, and By who started that run.
 	Run  string `json:"run"`
 	Step int    `json:"step,omitempty"`
@@ -191,9 +233,11 @@ func (s *Store) Remember(e Entry, retain time.Duration, now time.Time) (Entry, e
 		return Entry{}, errors.New("what an agent remembers from a run is about the person who started it")
 	case retain <= 0 || retain > MaxRetain:
 		return Entry{}, fmt.Errorf("memory is kept for a declared time, at most %d days", int(MaxRetain.Hours()/24))
+	case e.Tier != "" && tierRank[e.Tier] == 0:
+		return Entry{}, fmt.Errorf("%q is not a tier: person, published or unreviewed", e.Tier)
 	}
 	expires := func(held bool) time.Time {
-		keep := retain
+		keep := keepFor(e.Tier, retain)
 		if held && keep > HeldFor {
 			keep = HeldFor
 		}
@@ -213,6 +257,10 @@ func (s *Store) Remember(e Entry, retain time.Duration, now time.Time) (Entry, e
 			if !old.Held || e.Held {
 				e.Held, e.Confirmed, e.ConfirmedBy = old.Held, old.Confirmed, old.ConfirmedBy
 			}
+			if tierRank[old.Tier] > tierRank[e.Tier] {
+				e.Tier = old.Tier
+			}
+			e.Edited = old.Edited
 			e.ID, e.Expires = old.ID, expires(e.Held)
 			f.Entries[i] = e
 			return e, s.save(e.Agent, f)
@@ -404,7 +452,27 @@ func (s *Store) Confirm(id, by string, now time.Time, retain time.Duration) (Ent
 		}
 		e.Held, e.Confirmed, e.ConfirmedBy = false, now.UTC(), by
 		if retain > 0 && retain <= MaxRetain {
-			e.Expires = e.Created.Add(retain)
+			e.Expires = e.Created.Add(keepFor(e.Tier, retain))
+		}
+		return true, nil
+	})
+}
+
+// Edit rewrites what is remembered, as the person it is about says it.
+// What they wrote is theirs: trusted as what a person said, not held, and
+// kept no longer than it was.
+func (s *Store) Edit(id, text, by string, now time.Time) (Entry, error) {
+	text = strings.TrimSpace(plaintext.Clean(text))
+	switch {
+	case text == "":
+		return Entry{}, errors.New("nothing to remember; delete it instead")
+	case utf8.RuneCountInString(text) > MaxText:
+		return Entry{}, fmt.Errorf("a memory is at most %d characters", MaxText)
+	}
+	return s.change(id, func(e *Entry) (bool, error) {
+		e.Text, e.Digest, e.Tier, e.Edited = text, digest(text), TierPerson, now.UTC()
+		if e.Held {
+			e.Held, e.Confirmed, e.ConfirmedBy = false, now.UTC(), by
 		}
 		return true, nil
 	})

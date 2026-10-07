@@ -48,6 +48,7 @@ var Signals = map[string]string{
 	"setting-reverted":   "a setting weakened by hand, with no reason recorded, was put back",
 	"agent-misbehaving":  "an agent or a connected app kept trying what it was refused",
 	"tool-changed":       "a tool server changed what a tool is after a person approved it",
+	"secret-in-prompt":   "a credential was in a prompt on its way to a model, and was taken out",
 }
 
 // Counted is what a trigger counts of each signal, singular and plural, for
@@ -70,6 +71,7 @@ var Counted = map[string][2]string{
 	"setting-reverted":   {"setting put back", "settings put back"},
 	"agent-misbehaving":  {"agent or app flagged for what it kept trying", "agents or apps flagged for what they kept trying"},
 	"tool-changed":       {"approved tool redefined", "approved tools redefined"},
+	"secret-in-prompt":   {"credential caught in a prompt", "credentials caught in prompts"},
 }
 
 // Trait is how far a signal can be trusted, in CrowdSec's terms: Confidence
@@ -121,6 +123,9 @@ var Traits = map[string]Trait{
 	"agent-misbehaving": {Confidence: 2},
 	// The server's own answer, compared here with what a person approved.
 	"tool-changed": {Confidence: 3},
+	// The secret scanner's own shapes, which are seldom anything else; but
+	// anybody can type one into a public chatbot.
+	"secret-in-prompt": {Confidence: 3, Spoofable: 2},
 }
 
 // Per says what a trigger counts by.
@@ -418,6 +423,13 @@ func Builtins() []Playbook {
 			On:  Trigger{Signal: "route-trouble", Per: "subject", Count: 1, Within: h(time.Hour)},
 			Stages: []Stage{
 				{Do: []Step{{Action: "cut-route", For: h(6 * time.Hour)}, {Action: "notify"}}},
+			}},
+		{Name: "secret-in-prompt", Title: "A credential was in a prompt", Mode: "act", Builtin: true,
+			Why: "The gateway took it out, so no model received it. But a key that reached a prompt was pasted somewhere it should not have been, or an agent read it from somewhere it should not be: somebody looks, and rotates it if it was real.",
+			On:  Trigger{Signal: "secret-in-prompt", Per: "subject", Count: 1, Within: h(24 * time.Hour)},
+			Stages: []Stage{
+				{Do: []Step{{Action: "notify"}, {Action: "open-case"}}},
+				{Do: []Step{{Action: "notify"}}},
 			}},
 		{Name: "page-tampering", Title: "Pages loading what their policy refuses", Mode: "act", Builtin: true,
 			Why: "Five different networks reporting the same thing on the same page within an hour is rarely five extensions: it is often a tag or a dependency that changed. A report can be forged by anybody, so this only tells a person; it never refuses anybody.",

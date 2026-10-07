@@ -534,7 +534,9 @@ agents and integrations
   quilzo agent could NAME [--model|--program] [--as P] OP [PAGE] | tool:T | host:H   could a run do it, and why
   quilzo memory list [--agent A] [--held]  what agents remember about you (anybody, for an administrator)
   quilzo memory confirm|delete ID          let a held memory be recalled, or remove one
+  quilzo memory edit ID TEXT               rewrite what is remembered about you, as you say it
   quilzo memory forget [--about P]         every agent forgets you (or P, for an administrator)
+  quilzo memory receipt [--about P] [-o F] what was forgotten, deleted or rewritten about you, proved
   quilzo agent program NAME [--backend B] [--read DIR] [--env K=V] -- COMMAND   what its program is
   quilzo agent runs [NAME] | trace RUN     the runs that are kept, and one step by step
   quilzo eval keep RUN-ID [--finishes --uses a,b --avoids c]   a kept run as a test case

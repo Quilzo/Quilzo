@@ -1395,6 +1395,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/apps/receipt", s.handleAppsReceipt)
 	mux.HandleFunc("/memory", s.handleMemory)
 	mux.HandleFunc("/memory/act", s.handleMemoryAct)
+	mux.HandleFunc("/memory/receipt", s.handleMemoryReceipt)
 	mux.HandleFunc("/manifest.webmanifest", s.installManifest)
 	mux.HandleFunc("/icon.svg", s.icon)
 	mux.HandleFunc("/start", s.handleStart)

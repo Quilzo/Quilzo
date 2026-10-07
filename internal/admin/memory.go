@@ -16,10 +16,23 @@ import (
 // internal/memory.
 type MemoryAdmin struct {
 	Store *memory.Store
-	// Confirm, Delete and Forget change it, recorded by the host.
+	// Confirm, Delete, Edit and Forget change it, recorded by the host.
 	Confirm func(id, by string) error
 	Delete  func(id, by string) error
+	Edit    func(id, text, by string) error
 	Forget  func(about, by string) (int, error)
+	// Receipt is every record of what was forgotten, deleted or rewritten
+	// about somebody, each proved against a signed head of the log; nil
+	// when there is none.
+	Receipt func(about string) ([]byte, error)
+}
+
+// mayEdit says who rewrites a memory: the person it is about, or, for an
+// agent's own procedures, an administrator. Nobody rewrites what an agent
+// remembers about somebody else: that would be putting words in their
+// mouth.
+func mayEdit(e memory.Entry, who string, admin bool) bool {
+	return (e.About != "" && e.About == who) || (e.About == "" && admin)
 }
 
 // handleMemory shows what agents remember: about you, or, for an
@@ -58,7 +71,46 @@ func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data["Held"], data["Kept"] = held, kept
+	data["Me"], data["Tiers"] = p.Name, memory.TierWords
+	if id := r.URL.Query().Get("edit"); id != "" {
+		if e, err := s.Memory.Store.Get(id); err == nil && mayEdit(e, p.Name, admin) {
+			data["Editing"] = e
+		}
+	}
 	s.render(w, r, "memory.html", data)
+}
+
+// handleMemoryReceipt is the receipt of what was forgotten, deleted or
+// rewritten about you, or, for an administrator, about somebody.
+func (s *Server) handleMemoryReceipt(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if s.Memory == nil || s.Memory.Receipt == nil {
+		http.Redirect(w, r, "/memory?e="+url.QueryEscape("nothing here keeps agents' memory, so nothing was forgotten"), http.StatusSeeOther)
+		return
+	}
+	about := p.Name
+	if a := r.URL.Query().Get("about"); a != "" && a != p.Name {
+		if !s.policyAdmin(p.Name, p.Role, p.Scope, p.Limits) {
+			http.Error(w, "a receipt about somebody else is an administrator's", http.StatusForbidden)
+			return
+		}
+		about = a
+	}
+	body, err := s.Memory.Receipt(about)
+	if err != nil || body == nil {
+		msg := "nothing has been forgotten, deleted or rewritten about " + about + " yet"
+		if err != nil {
+			msg = err.Error()
+		}
+		http.Redirect(w, r, "/memory?e="+url.QueryEscape(msg), http.StatusSeeOther)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="quilzo-memory-receipt.json"`)
+	_, _ = w.Write(body)
 }
 
 // policyAdmin says somebody administers the whole site, with a credential
@@ -103,6 +155,17 @@ func (s *Server) handleMemoryAct(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		back("m", said)
+	case "edit":
+		e, err := s.Memory.Store.Get(r.FormValue("id"))
+		if err != nil || !mayEdit(e, p.Name, admin) {
+			back("e", "no memory of yours has that id")
+			return
+		}
+		if err := s.Memory.Edit(e.ID, r.FormValue("text"), p.Name); err != nil {
+			back("e", err.Error())
+			return
+		}
+		back("m", "rewritten: it is recalled as you wrote it")
 	case "forget":
 		about := p.Name
 		if a := r.FormValue("about"); a != "" && a != p.Name {

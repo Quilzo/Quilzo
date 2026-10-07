@@ -43,11 +43,15 @@ type agentReceiptFile struct {
 	Agent  string `json:"agent,omitempty"`
 	// Connection and App, for an app's receipt: the connection's id and
 	// the app it is.
-	Connection string           `json:"connection,omitempty"`
-	App        string           `json:"app,omitempty"`
-	Made       time.Time        `json:"made"`
-	Entries    []receiptEntry   `json:"entries"`
-	Head       audit.SignedHead `json:"head"`
+	Connection string `json:"connection,omitempty"`
+	App        string `json:"app,omitempty"`
+	// Subject, for a memory receipt: the person it is about, by the handle
+	// the log knows them by; Person is their name, for them.
+	Subject string           `json:"subject,omitempty"`
+	Person  string           `json:"person,omitempty"`
+	Made    time.Time        `json:"made"`
+	Entries []receiptEntry   `json:"entries"`
+	Head    audit.SignedHead `json:"head"`
 	// Keys are the signing keys' public halves, as this store publishes
 	// them. Checking against these proves only that the file agrees with
 	// itself; checking against keys from somewhere else proves more.
@@ -194,6 +198,7 @@ type receiptCheck struct {
 	Agent      string   `json:"agent,omitempty"`
 	Connection string   `json:"connection,omitempty"`
 	App        string   `json:"app,omitempty"`
+	Subject    string   `json:"subject,omitempty"`
 	Records    int      `json:"records"`
 	Steps      []int    `json:"steps"`
 	Missing    []int    `json:"missing,omitempty"`
@@ -205,10 +210,11 @@ type receiptCheck struct {
 // checkReceipt verifies every record's inclusion and the head's signature.
 // keys nil means the receipt's own.
 func checkReceipt(rf *agentReceiptFile, keys *publishedKeys) receiptCheck {
-	c := receiptCheck{Run: rf.Run, Agent: rf.Agent, Connection: rf.Connection, App: rf.App,
+	c := receiptCheck{Run: rf.Run, Agent: rf.Agent, Connection: rf.Connection, App: rf.App, Subject: nonEmpty(rf.Person, rf.Subject),
 		Records: len(rf.Entries), KeyID: rf.Head.KeyID}
-	if rf.Format != receiptFormat && rf.Format != appReceiptFormat {
-		c.Problems = append(c.Problems, fmt.Sprintf("this is a %q file, not a %s or a %s", rf.Format, receiptFormat, appReceiptFormat))
+	if rf.Format != receiptFormat && rf.Format != appReceiptFormat && rf.Format != memoryReceiptFormat {
+		c.Problems = append(c.Problems, fmt.Sprintf("this is a %q file, not a %s, a %s or a %s", rf.Format,
+			receiptFormat, appReceiptFormat, memoryReceiptFormat))
 		return c
 	}
 	if keys == nil {
@@ -236,6 +242,8 @@ func checkReceipt(rf *agentReceiptFile, keys *publishedKeys) receiptCheck {
 			c.Problems = append(c.Problems, fmt.Sprintf("record %d is not a call through %s", e.Entry.Seq, rf.Connection))
 		case rf.Format == receiptFormat && e.Entry.Detail["run"] != rf.Run:
 			c.Problems = append(c.Problems, fmt.Sprintf("record %d belongs to another run", e.Entry.Seq))
+		case rf.Format == memoryReceiptFormat && (!memoryReceiptAction[e.Entry.Action] || e.Entry.Detail["subject"] != rf.Subject):
+			c.Problems = append(c.Problems, fmt.Sprintf("record %d is not about %s's memory", e.Entry.Seq, rf.Subject))
 		}
 		if err := audit.VerifyInclusion(e.Entry, e.Index, e.Proof, rf.Head.Head); err != nil {
 			c.Problems = append(c.Problems, fmt.Sprintf("record %d is not proved to be in the log: %v", e.Entry.Seq, err))
@@ -302,6 +310,8 @@ func agentVerifyReceipt(root string, args []string) error {
 	}
 	if c.Connection != "" {
 		w.Human("%sverified%s  %s by %s through connection %s\n", bold, reset, count(c.Records, "call"), c.App, c.Connection)
+	} else if c.Subject != "" {
+		w.Human("%sverified%s  %s of memory about %s forgotten, deleted or rewritten\n", bold, reset, count(c.Records, "record"), c.Subject)
 	} else {
 		w.Human("%sverified%s  %d records of run %s by %s, steps %v\n", bold, reset, c.Records, c.Run, c.Agent, c.Steps)
 	}

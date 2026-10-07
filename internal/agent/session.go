@@ -108,6 +108,8 @@ type Session struct {
 	// MaxPrivate.
 	private     []string
 	privateMore int
+	// recalled and remembered are the memory the run used and kept, by id.
+	recalled, remembered []string
 	// sources is what the taint came from, and reads is how many there were
 	// including any past MaxSources that are counted and not named. See
 	// provenance.go: a person asked to approve a tainted run was told that it
@@ -916,6 +918,7 @@ func (s *Session) Fold(child *Session) {
 
 	sources := child.Sources()
 	reads := child.Reads()
+	private := child.Private()
 	name := child.Manifest().Name
 
 	s.mu.Lock()
@@ -941,6 +944,12 @@ func (s *Session) Fold(child *Session) {
 	s.reads += reads
 	// And the ones the child could not name, which stay unnamed here.
 	s.omitted += child.Omitted()
+	// What it read in private, too: a delegate that read a draft and
+	// handed it back has put the draft in its supervisor's hands, and the
+	// supervisor's next call out is the one the breaker is for.
+	for _, p := range private {
+		s.notePrivate(p + " (through " + name + ")")
+	}
 }
 
 func delegateList(names []string) string {

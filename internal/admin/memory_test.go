@@ -26,9 +26,16 @@ func memoryRig(t *testing.T) (*Server, string, string, *memory.Store) {
 	srv.Memory = &MemoryAdmin{Store: st,
 		Confirm: func(id, by string) error { _, err := st.Confirm(id, by, time.Now(), time.Hour); return err },
 		Delete:  func(id, by string) error { _, err := st.Delete(id); return err },
+		Edit:    func(id, text, by string) error { _, err := st.Edit(id, text, by, time.Now()); return err },
 		Forget: func(about, by string) (int, error) {
 			gone, err := st.Forget(about)
 			return len(gone), err
+		},
+		Receipt: func(about string) ([]byte, error) {
+			if about == "rae" {
+				return []byte(`{"format":"quilzo-memory-receipt/1","person":"rae"}`), nil
+			}
+			return nil, nil
 		}}
 	return srv, editor, rae, st
 }
@@ -94,5 +101,59 @@ func TestEverybodySeesAndRemovesWhatAgentsRememberAboutThemOnly(t *testing.T) {
 	}
 	if _, err := st.Get(other.ID); err == nil {
 		t.Fatal("the administrator could not delete it")
+	}
+}
+
+// Rae rewrites what is remembered about her; nobody rewrites what is
+// remembered about somebody else, an administrator included, and an
+// administrator rewrites an agent's own procedures.
+func TestAPersonRewritesWhatIsRememberedAboutThemOnly(t *testing.T) {
+	srv, editor, rae, st := memoryRig(t)
+	now := time.Now()
+	mine, _ := st.Remember(memory.Entry{Agent: "help", About: "rae", Kind: memory.Semantic, Text: "Rae prefers French",
+		Run: "r", By: "rae", Tier: memory.TierUnreviewed}, time.Hour, now)
+	other, _ := st.Remember(memory.Entry{Agent: "help", About: "sam", Kind: memory.Semantic, Text: "Sam is on wholesale", Run: "r", By: "sam"}, time.Hour, now)
+	proc, _ := st.Remember(memory.Entry{Agent: "help", Kind: memory.Procedural, Text: "Refunds over 100 go to finance", Run: "r", By: "sam"}, time.Hour, now)
+
+	page := memoryDo(srv, "GET", "/memory", rae, nil).Body.String()
+	if !strings.Contains(page, "after reading what nobody here reviewed") || !strings.Contains(page, "/memory?edit="+mine.ID) {
+		t.Fatalf("rae's page shows no tier or no edit: %s", page)
+	}
+	if form := memoryDo(srv, "GET", "/memory?edit="+mine.ID, rae, nil).Body.String(); !strings.Contains(form, ">Rae prefers French</textarea>") {
+		t.Fatal("the edit form is not shown")
+	}
+	if form := memoryDo(srv, "GET", "/memory?edit="+other.ID, rae, nil).Body.String(); strings.Contains(form, "wholesale</textarea>") {
+		t.Fatal("rae was offered sam's memory to rewrite")
+	}
+	memoryDo(srv, "POST", "/memory/act", rae, url.Values{"op": {"edit"}, "id": {mine.ID}, "text": {"Rae prefers Spanish"}})
+	if e, _ := st.Get(mine.ID); e.Text != "Rae prefers Spanish" || e.Tier != memory.TierPerson {
+		t.Fatalf("not rewritten: %+v", e)
+	}
+	for _, who := range []string{rae, editor} {
+		memoryDo(srv, "POST", "/memory/act", who, url.Values{"op": {"edit"}, "id": {other.ID}, "text": {"Sam left"}})
+	}
+	if e, _ := st.Get(other.ID); e.Text != "Sam is on wholesale" {
+		t.Fatalf("sam's memory was rewritten: %q", e.Text)
+	}
+	memoryDo(srv, "POST", "/memory/act", rae, url.Values{"op": {"edit"}, "id": {proc.ID}, "text": {"Refunds go anywhere"}})
+	if e, _ := st.Get(proc.ID); e.Text != "Refunds over 100 go to finance" {
+		t.Fatal("an author rewrote an agent's procedure")
+	}
+	memoryDo(srv, "POST", "/memory/act", editor, url.Values{"op": {"edit"}, "id": {proc.ID}, "text": {"Refunds over 200 go to finance"}})
+	if e, _ := st.Get(proc.ID); e.Text != "Refunds over 200 go to finance" {
+		t.Fatal("an administrator could not rewrite a procedure")
+	}
+	// The receipt: your own, as a file; somebody else's is an administrator's.
+	w := memoryDo(srv, "GET", "/memory/receipt", rae, nil)
+	if w.Code != http.StatusOK || !strings.Contains(w.Header().Get("Content-Disposition"), "attachment") ||
+		!strings.Contains(w.Body.String(), "quilzo-memory-receipt/1") {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	if w := memoryDo(srv, "GET", "/memory/receipt?about=sam", rae, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("rae fetched sam's receipt: %d", w.Code)
+	}
+	if w := memoryDo(srv, "GET", "/memory/receipt?about=sam", editor, nil); w.Code != http.StatusSeeOther ||
+		!strings.Contains(w.Header().Get("Location"), "nothing+has+been+forgotten") {
+		t.Fatalf("an empty receipt: %d %s", w.Code, w.Header().Get("Location"))
 	}
 }

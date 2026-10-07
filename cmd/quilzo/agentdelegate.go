@@ -80,7 +80,8 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 
 	caller := resolveCaller(d.root, "")
 	runner := agent.Runner{
-		Decide: decide,
+		Decide:     decide,
+		OwnDomains: ownDomains(d.root),
 		Perform: agentexec.Dispatch(
 			agentexec.Reader{
 				Store:  d.store,
