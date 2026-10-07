@@ -137,6 +137,7 @@ var commandNeeds = map[string]need{
 	// the log needs.
 	"agent receipt":  {action: auth.ActView},
 	"agent backends": {action: auth.ActView},
+	"agent could":    {action: auth.ActView},
 	// Each memory is checked against whom it is about; seeing your own needs
 	// only that you are somebody here.
 	"memory":        {action: auth.ActView},

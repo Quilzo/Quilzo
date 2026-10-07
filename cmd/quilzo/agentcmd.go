@@ -122,6 +122,8 @@ func cmdAgent(root string, args []string) error {
 		return agentIdentityCmd(root, args[0], args[1:])
 	case "backends":
 		return agentBackends(root)
+	case "could":
+		return agentCould(root, args[1:])
 	case "program":
 		return agentProgramCmd(root, args[1:])
 	case "receipt":
@@ -668,6 +670,133 @@ type agentResume struct {
 	Program bool
 }
 
+// narrowing is one thing that made a run's manifest narrower than its
+// declaration, and why: the caller, the agent's own standing, or its
+// evaluations.
+type narrowing struct {
+	By       string
+	Why      string
+	Lost     []string
+	Autonomy string
+}
+
+// boundManifest is what a run of an agent may do: its declaration, bounded
+// by whoever starts it, by its own standing in the access policy, and, for
+// a model, by what its evaluations earned. One function, used by the run
+// and by quilzo agent could, so the answer to "could it?" is the one the
+// run enforces. eval is an evaluation's run, which is not paused, needs no
+// sponsor and runs at the declared autonomy, since that is what it measures.
+func boundManifest(root string, set *agentSet, name string, withModel, eval bool,
+	caller *Caller) (agent.Manifest, []narrowing, error) {
+
+	var trail []narrowing
+	m, ok := set.Agents[name]
+	if !ok {
+		return m, nil, fmt.Errorf("no agent called %q; `quilzo agent list`", name)
+	}
+	// Paused by the shield: an evaluation or a playbook found something
+	// steering it, and it does not run until a person lifts that. An
+	// evaluation still runs it, because it writes nothing, calls no tool and
+	// starts no other agent, and re-testing is how somebody knows the pause
+	// can be lifted.
+	if !eval {
+		if err := refuseIfPaused(root, name); err != nil {
+			return m, nil, err
+		}
+		// Somebody answers for it, and that person can still act here.
+		// Evaluations run regardless: they change nothing, and are how a
+		// new sponsor finds out what they are taking on.
+		if id := set.identityOf(name); id != nil {
+			if err := id.MayRun(hasStanding(root, id.Sponsor), time.Now()); err != nil {
+				return m, nil, fmt.Errorf("%s does not run: %w", name, err)
+			}
+		}
+	}
+	// Re-validated against this build before it runs. A manifest that was
+	// written when an operation existed and no longer does describes a
+	// permission nothing grants, and running it would report a clean result
+	// for an agent that cannot work.
+	if err := m.Validate(knownCapabilities(root)); err != nil {
+		return m, nil, err
+	}
+	note := func(by, why string, before agent.Manifest) {
+		n := narrowing{By: by, Why: why}
+		held := map[string]bool{}
+		for _, c := range m.Capabilities {
+			held[c] = true
+		}
+		for _, c := range before.Capabilities {
+			if !held[c] {
+				n.Lost = append(n.Lost, c)
+			}
+		}
+		if m.Autonomy != before.Autonomy {
+			n.Autonomy = string(before.Autonomy) + " to " + string(m.Autonomy)
+		}
+		if len(n.Lost) > 0 || n.Autonomy != "" || m.Retrieval.Path != before.Retrieval.Path {
+			trail = append(trail, n)
+		}
+	}
+
+	// Bounded by whoever started it, before the session is built.
+	//
+	// Not a check inside the run: a manifest narrowed here is narrower in
+	// every later decision, including the ones nobody thought to guard. The
+	// alternative — asking "may this caller do that?" at each step — is the
+	// arrangement that put the content-type gate in the CLI and not in the
+	// API. See agentnarrow.go.
+	before := m
+	m = narrowedBy(m, caller)
+	note("caller", fmt.Sprintf("%s holds %s on %s", caller.Name, caller.Role, nonEmpty(caller.Scope, "/")), before)
+	// And by its own standing, when the access policy gives it one: an
+	// agent granted reader on /docs reads /docs, whoever starts it.
+	if own, err := agentGrants(root, name); err != nil {
+		return m, trail, err
+	} else if own != nil {
+		before = m
+		m = narrowedBy(m, own)
+		note("standing", fmt.Sprintf("%s is granted %s on %s", own.Name, own.Role, own.Scope), before)
+	}
+	// A model drives it only as far as its evaluations have shown it can be
+	// trusted. An evaluation itself runs at the declared autonomy, because
+	// that is what it measures, and changes nothing either way.
+	earnedWhy := ""
+	if withModel && !eval && mustConfig(root).Bool("agents.earned_autonomy") {
+		var latest *evals.Report
+		if reps, err := evalReports(root, name, 1); err == nil && len(reps) > 0 {
+			latest = &reps[0]
+		}
+		earned, why := evals.Earned(latest, time.Now())
+		// Earned in evaluations, and lost in behaviour until evaluated again.
+		if lost, how := trustLost(root, name); !lost.IsZero() && (latest == nil || !latest.At.After(lost)) {
+			earned, why = agent.AutonomyPropose, how+"; an evaluation since then earns its autonomy back"
+		}
+		if !m.Autonomy.AtMost(earned) {
+			earnedWhy = fmt.Sprintf("a model drives %s at %s rather than %s: %s", name, earned, m.Autonomy, why)
+			before = m
+			m.Autonomy = earned
+			m.Capabilities = mayCall(m.Capabilities, earned)
+			note("evaluations", earnedWhy, before)
+		}
+	}
+	if len(m.Capabilities) == 0 {
+		if earnedWhy != "" {
+			return m, trail, fmt.Errorf("%s holds nothing it may do yet: %s (quilzo eval run %s)", name, earnedWhy, name)
+		}
+		return m, trail, fmt.Errorf(
+			"%s holds nothing once bounded by this token: the manifest and "+
+				"the token you are using have no capability in common", name)
+	}
+	return m, trail, nil
+}
+
+func nonEmpty(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
+}
+
 func executeAgentFrom(ctx context.Context, root, name, goal string,
 	withModel bool, caller *Caller, from *agentResume) (agentOutcome, error) {
 
@@ -679,82 +808,18 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	if err != nil {
 		return out, err
 	}
-	m, ok := set.Agents[name]
-	if !ok {
-		return out, fmt.Errorf("no agent called %q; `quilzo agent list`", name)
-	}
-	// Paused by the shield: an evaluation or a playbook found something
-	// steering it, and it does not run until a person lifts that. An
-	// evaluation still runs it, because it writes nothing, calls no tool and
-	// starts no other agent, and re-testing is how somebody knows the pause
-	// can be lifted.
-	if from.Eval == nil {
-		if err := refuseIfPaused(root, name); err != nil {
-			return out, err
-		}
-		// Somebody answers for it, and that person can still act here.
-		// Evaluations run regardless: they change nothing, and are how a
-		// new sponsor finds out what they are taking on.
-		if id := set.identityOf(name); id != nil {
-			if err := id.MayRun(hasStanding(root, id.Sponsor), time.Now()); err != nil {
-				return out, fmt.Errorf("%s does not run: %w", name, err)
-			}
+	m, trail, err := boundManifest(root, set, name, withModel, from.Eval != nil, caller)
+	for _, n := range trail {
+		if n.By == "evaluations" {
+			out.Earned = n.Why
 		}
 	}
-	// Re-validated against this build before it runs. A manifest that was
-	// written when an operation existed and no longer does describes a
-	// permission nothing grants, and running it would report a clean result
-	// for an agent that cannot work.
-	if err := m.Validate(knownCapabilities(root)); err != nil {
-		return out, err
-	}
-
-	s, err := open(root)
 	if err != nil {
 		return out, err
 	}
-
-	// Bounded by whoever started it, before the session is built.
-	//
-	// Not a check inside the run: a manifest narrowed here is narrower in
-	// every later decision, including the ones nobody thought to guard. The
-	// alternative — asking "may this caller do that?" at each step — is the
-	// arrangement that put the content-type gate in the CLI and not in the
-	// API. See agentnarrow.go.
-	m = narrowedBy(m, caller)
-	// And by its own standing, when the access policy gives it one: an
-	// agent granted reader on /docs reads /docs, whoever starts it.
-	if own, err := agentGrants(root, name); err != nil {
+	s, err := open(root)
+	if err != nil {
 		return out, err
-	} else if own != nil {
-		m = narrowedBy(m, own)
-	}
-	// A model drives it only as far as its evaluations have shown it can be
-	// trusted. An evaluation itself runs at the declared autonomy, because
-	// that is what it measures, and changes nothing either way.
-	if withModel && from.Eval == nil && mustConfig(root).Bool("agents.earned_autonomy") {
-		var latest *evals.Report
-		if reps, err := evalReports(root, name, 1); err == nil && len(reps) > 0 {
-			latest = &reps[0]
-		}
-		earned, why := evals.Earned(latest, time.Now())
-		// Earned in evaluations, and lost in behaviour until evaluated again.
-		if lost, how := trustLost(root, name); !lost.IsZero() && (latest == nil || !latest.At.After(lost)) {
-			earned, why = agent.AutonomyPropose, how+"; an evaluation since then earns its autonomy back"
-		}
-		if !m.Autonomy.AtMost(earned) {
-			out.Earned = fmt.Sprintf("a model drives %s at %s rather than %s: %s", name, earned, m.Autonomy, why)
-			m.Autonomy = earned
-			m.Capabilities = mayCall(m.Capabilities, earned)
-		}
-	}
-	if len(m.Capabilities) == 0 {
-		if out.Earned != "" {
-			return out, fmt.Errorf("%s holds nothing it may do yet: %s (quilzo eval run %s)", name, out.Earned, name)
-		}
-		return out, fmt.Errorf(
-			"%s holds nothing once bounded by this token: the manifest and "+
-				"the token you are using have no capability in common", name)
 	}
 	sess := agent.NewSession(m, nil)
 	if from.Prior != nil {
