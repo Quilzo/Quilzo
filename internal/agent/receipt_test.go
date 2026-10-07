@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/audit"
 )
 
 func runFor(t *testing.T, m Manifest, actions ...Action) (Trace, *Session) {
@@ -252,7 +254,7 @@ func TestAnUnmeteredRunDoesNotReportZeroTokens(t *testing.T) {
 	if r.Spend.Metered {
 		t.Error("a run nobody metered reported itself as metered")
 	}
-	if _, present := r.Detail()["tokens"]; present {
+	if _, present := r.Detail()["model_use"]; present {
 		t.Error("the audit payload carries a token count nobody measured")
 	}
 }
@@ -284,8 +286,15 @@ func TestReportedTokensReachTheReceipt(t *testing.T) {
 		t.Errorf("tokens are %d, want 2400 — the figures accumulate across "+
 			"calls rather than keeping the last one", rec.Spend.Tokens)
 	}
-	if rec.Detail()["tokens"] != "2400" {
-		t.Errorf("the audit payload says %q", rec.Detail()["tokens"])
+	if rec.Detail()["model_use"] != "2400" {
+		t.Errorf("the audit payload says %q", rec.Detail()["model_use"])
+	}
+	// The log refuses a whole record for one key it refuses: a metered
+	// run's record was being dropped that way.
+	for k := range rec.Detail() {
+		if why := audit.ForbiddenKey(k); why != "" {
+			t.Error(why)
+		}
 	}
 }
 

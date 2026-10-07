@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"time"
@@ -28,16 +29,25 @@ import (
 // records the log holds, unaltered, without seeing anything else in the
 // log, and against keys they were given rather than keys the file brings.
 
-// receiptFormat names the file's shape, so a later one can be told apart.
-const receiptFormat = "quilzo-agent-receipt/1"
+// receiptFormat names the file's shape, so a later one can be told apart;
+// appReceiptFormat is the same proofs for what an app connected to the
+// agent interface did for one person.
+const (
+	receiptFormat    = "quilzo-agent-receipt/1"
+	appReceiptFormat = "quilzo-app-receipt/1"
+)
 
 type agentReceiptFile struct {
-	Format  string           `json:"format"`
-	Run     string           `json:"run"`
-	Agent   string           `json:"agent,omitempty"`
-	Made    time.Time        `json:"made"`
-	Entries []receiptEntry   `json:"entries"`
-	Head    audit.SignedHead `json:"head"`
+	Format string `json:"format"`
+	Run    string `json:"run,omitempty"`
+	Agent  string `json:"agent,omitempty"`
+	// Connection and App, for an app's receipt: the connection's id and
+	// the app it is.
+	Connection string           `json:"connection,omitempty"`
+	App        string           `json:"app,omitempty"`
+	Made       time.Time        `json:"made"`
+	Entries    []receiptEntry   `json:"entries"`
+	Head       audit.SignedHead `json:"head"`
 	// Keys are the signing keys' public halves, as this store publishes
 	// them. Checking against these proves only that the file agrees with
 	// itself; checking against keys from somewhere else proves more.
@@ -52,15 +62,26 @@ type receiptEntry struct {
 
 // agentReceipt is `quilzo agent receipt RUN [-o FILE]`.
 func agentReceipt(root string, args []string) error {
-	fs := flag.NewFlagSet("agent receipt", flag.ContinueOnError)
+	return receiptCmd(root, "agent receipt", "RUN", args, buildReceipt)
+}
+
+// appReceipt is `quilzo apps receipt CONNECTION [-o FILE]`: every call an
+// app made through one connection, for the person it acted for.
+func appReceipt(root string, args []string) error {
+	return receiptCmd(root, "apps receipt", "CONNECTION", args, buildAppReceipt)
+}
+
+func receiptCmd(root, name, what string, args []string,
+	build func(root, id string, now time.Time) (*agentReceiptFile, error)) error {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	outPath := fs.String("o", "", "write the receipt here instead of printing it")
 	if len(args) < 1 {
-		return errors.New("quilzo agent receipt RUN [-o FILE]")
+		return fmt.Errorf("quilzo %s %s [-o FILE]", name, what)
 	}
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
-	rf, err := buildReceipt(root, args[0], time.Now())
+	rf, err := build(root, args[0], time.Now())
 	if err != nil {
 		return err
 	}
@@ -75,8 +96,12 @@ func agentReceipt(root string, args []string) error {
 	if err := os.WriteFile(*outPath, body, 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("%d records of run %s, each with its proof, against a head of %d signed by %s\n",
-		len(rf.Entries), rf.Run, rf.Head.Size, rf.Head.KeyID)
+	of := "run " + rf.Run
+	if rf.Connection != "" {
+		of = "connection " + rf.Connection
+	}
+	fmt.Printf("%d records of %s, each with its proof, against a head of %d signed by %s\n",
+		len(rf.Entries), of, rf.Head.Size, rf.Head.KeyID)
 	fmt.Printf("  %scheck it anywhere: quilzo agent verify-receipt %s --keys head.pub.json%s\n", dim, *outPath, reset)
 	return nil
 }
@@ -85,62 +110,99 @@ func buildReceipt(root, run string, now time.Time) (*agentReceiptFile, error) {
 	if !agent.ValidRecordID(run) {
 		return nil, fmt.Errorf("%q is not a run id", run)
 	}
-	events, err := audit.Read(auditPath(root))
-	if err != nil {
-		return nil, err
-	}
-	head, err := audit.TreeHead(events, now)
-	if err != nil {
-		return nil, err
-	}
 	rf := &agentReceiptFile{Format: receiptFormat, Run: run, Made: now.UTC()}
-	for i, e := range events {
-		if e.Detail["run"] != run || (e.Action != "agent.action" && e.Action != "agent.run") {
-			continue
-		}
-		proof, _, err := audit.Inclusion(events, e.Seq)
-		if err != nil {
-			return nil, err
-		}
-		rf.Entries = append(rf.Entries, receiptEntry{Entry: e, Index: i, Proof: proof})
-		if rf.Agent == "" {
-			rf.Agent = e.Detail["agent"]
-		}
+	err := proveRecords(root, rf, now, func(e audit.Event) bool {
+		return e.Detail["run"] == run && (e.Action == "agent.action" || e.Action == "agent.run")
+	})
+	if err != nil {
+		return nil, err
 	}
 	if len(rf.Entries) == 0 {
 		return nil, fmt.Errorf("the log holds no record of run %s", run)
 	}
-	signer, err := headSigner(root)
+	rf.Agent = rf.Entries[0].Entry.Detail["agent"]
+	return rf, nil
+}
+
+// buildAppReceipt is every call an app made through one connection.
+func buildAppReceipt(root, connection string, now time.Time) (*agentReceiptFile, error) {
+	if !reConnection.MatchString(connection) {
+		return nil, fmt.Errorf("%q is not an app connection's id (gr_…)", connection)
+	}
+	rf := &agentReceiptFile{Format: appReceiptFormat, Connection: connection, Made: now.UTC()}
+	err := proveRecords(root, rf, now, func(e audit.Event) bool {
+		return e.Action == "mcp.call" && e.Detail["grant"] == connection
+	})
 	if err != nil {
 		return nil, err
 	}
+	if len(rf.Entries) == 0 {
+		return nil, fmt.Errorf("the log holds no call made through %s", connection)
+	}
+	rf.App = rf.Entries[0].Entry.Model
+	return rf, nil
+}
+
+var reConnection = regexp.MustCompile(`^gr_[0-9a-f]{16}$`)
+
+// proveRecords puts the log's records that belong in a receipt into it,
+// each with its proof, and signs a head they are proved against.
+func proveRecords(root string, rf *agentReceiptFile, now time.Time, belongs func(audit.Event) bool) error {
+	events, err := audit.Read(auditPath(root))
+	if err != nil {
+		return err
+	}
+	head, err := audit.TreeHead(events, now)
+	if err != nil {
+		return err
+	}
+	for i, e := range events {
+		if !belongs(e) {
+			continue
+		}
+		proof, _, err := audit.Inclusion(events, e.Seq)
+		if err != nil {
+			return err
+		}
+		rf.Entries = append(rf.Entries, receiptEntry{Entry: e, Index: i, Proof: proof})
+	}
+	if len(rf.Entries) == 0 {
+		return nil
+	}
+	signer, err := headSigner(root)
+	if err != nil {
+		return err
+	}
 	if rf.Head, err = signer.Sign(head); err != nil {
-		return nil, err
+		return err
 	}
 	ed, ml := signer.Verifier().PublicKeys()
 	rf.Keys = publishedKeys{KeyID: signer.Verifier().KeyID(),
 		Ed25519: base64.StdEncoding.EncodeToString(ed), MLDSA: base64.StdEncoding.EncodeToString(ml)}
-	return rf, nil
+	return nil
 }
 
 // receiptCheck is what checking a receipt found.
 type receiptCheck struct {
-	Run      string   `json:"run"`
-	Agent    string   `json:"agent"`
-	Records  int      `json:"records"`
-	Steps    []int    `json:"steps"`
-	Missing  []int    `json:"missing,omitempty"`
-	KeyID    string   `json:"key_id"`
-	OwnKeys  bool     `json:"checked_against_its_own_keys"`
-	Problems []string `json:"problems,omitempty"`
+	Run        string   `json:"run,omitempty"`
+	Agent      string   `json:"agent,omitempty"`
+	Connection string   `json:"connection,omitempty"`
+	App        string   `json:"app,omitempty"`
+	Records    int      `json:"records"`
+	Steps      []int    `json:"steps"`
+	Missing    []int    `json:"missing,omitempty"`
+	KeyID      string   `json:"key_id"`
+	OwnKeys    bool     `json:"checked_against_its_own_keys"`
+	Problems   []string `json:"problems,omitempty"`
 }
 
 // checkReceipt verifies every record's inclusion and the head's signature.
 // keys nil means the receipt's own.
 func checkReceipt(rf *agentReceiptFile, keys *publishedKeys) receiptCheck {
-	c := receiptCheck{Run: rf.Run, Agent: rf.Agent, Records: len(rf.Entries), KeyID: rf.Head.KeyID}
-	if rf.Format != receiptFormat {
-		c.Problems = append(c.Problems, fmt.Sprintf("this is a %q file, not a %s", rf.Format, receiptFormat))
+	c := receiptCheck{Run: rf.Run, Agent: rf.Agent, Connection: rf.Connection, App: rf.App,
+		Records: len(rf.Entries), KeyID: rf.Head.KeyID}
+	if rf.Format != receiptFormat && rf.Format != appReceiptFormat {
+		c.Problems = append(c.Problems, fmt.Sprintf("this is a %q file, not a %s or a %s", rf.Format, receiptFormat, appReceiptFormat))
 		return c
 	}
 	if keys == nil {
@@ -163,7 +225,10 @@ func checkReceipt(rf *agentReceiptFile, keys *publishedKeys) receiptCheck {
 	seen := map[int]bool{}
 	max := 0
 	for _, e := range rf.Entries {
-		if e.Entry.Detail["run"] != rf.Run {
+		switch {
+		case rf.Format == appReceiptFormat && (e.Entry.Action != "mcp.call" || e.Entry.Detail["grant"] != rf.Connection):
+			c.Problems = append(c.Problems, fmt.Sprintf("record %d is not a call through %s", e.Entry.Seq, rf.Connection))
+		case rf.Format == receiptFormat && e.Entry.Detail["run"] != rf.Run:
 			c.Problems = append(c.Problems, fmt.Sprintf("record %d belongs to another run", e.Entry.Seq))
 		}
 		if err := audit.VerifyInclusion(e.Entry, e.Index, e.Proof, rf.Head.Head); err != nil {
@@ -229,7 +294,11 @@ func agentVerifyReceipt(root string, args []string) error {
 		}
 		return errors.New("the receipt does not verify")
 	}
-	w.Human("%sverified%s  %d records of run %s by %s, steps %v\n", bold, reset, c.Records, c.Run, c.Agent, c.Steps)
+	if c.Connection != "" {
+		w.Human("%sverified%s  %s by %s through connection %s\n", bold, reset, count(c.Records, "call"), c.App, c.Connection)
+	} else {
+		w.Human("%sverified%s  %d records of run %s by %s, steps %v\n", bold, reset, c.Records, c.Run, c.Agent, c.Steps)
+	}
 	w.Human("  %seach is in the log under a head signed by %s%s\n", dim, c.KeyID, reset)
 	if len(c.Missing) > 0 {
 		w.Human("  %ssteps %v are not in this receipt%s\n", yellow, c.Missing, reset)

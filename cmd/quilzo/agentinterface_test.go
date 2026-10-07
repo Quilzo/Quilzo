@@ -74,3 +74,30 @@ func TestAnAppIsToldTheScopeItNeeds(t *testing.T) {
 		t.Fatalf("%+v", c)
 	}
 }
+
+// Each call at the interface is the app's record, for the person, with the
+// connection it came through: what agentwatch counts, what an
+// administrator suspends, and what a receipt is of.
+func TestAnAppsCallIsRecordedWithItsConnection(t *testing.T) {
+	tok := auth.Token{Principal: "dana", Grant: "gr_00000000000000aa", Client: "https://app.example.com/meta"}
+	c := &mcp.Caller{Principal: "dana", Client: tok.Client, Data: tok}
+	r := appCallRecord(c, "tools/call", "publish", &mcp.Error{Code: mcp.CodeRefused, Message: "needs approval"})
+	if r.Action != "mcp.call" || r.Principal != "app:"+tok.Client || r.Model != tok.Client || r.Kind != audit.KindAI ||
+		r.Outcome != audit.Denied || r.Detail["grant"] != tok.Grant || r.Detail["on_behalf_of"] != "dana" ||
+		r.Detail["error"] != "needs approval" || r.Detail["operation"] != "publish" {
+		t.Fatalf("%+v", r)
+	}
+	if r := appCallRecord(c, "tools/call", "", &mcp.Error{Code: -32603, Message: "broke"}); r.Outcome != audit.Failure {
+		t.Errorf("a failure recorded as %s", r.Outcome)
+	}
+	// Quilzo's own token: no connection, and no app to name.
+	own := appCallRecord(&mcp.Caller{Principal: "dana", Data: auth.Token{Principal: "dana"}}, "tools/list", "", nil)
+	if _, has := own.Detail["grant"]; has || own.Principal != "mcp-client" || own.Outcome != audit.Success {
+		t.Errorf("%+v", own)
+	}
+	for k := range r.Detail {
+		if why := audit.ForbiddenKey(k); why != "" {
+			t.Error(why)
+		}
+	}
+}

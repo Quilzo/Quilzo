@@ -112,7 +112,11 @@ func TestPlaybookValidation(t *testing.T) {
 			p.On.Signal, p.On.Per = "form-spam", "subject"
 			step(Step{Action: "shield-feature", Feature: "subject", Level: Off, For: h})(p)
 		},
-		"pause":          func(p *Playbook) { p.On.Signal = "agent-hijacked"; step(Step{Action: "pause-agent", For: h})(p) },
+		"pause": func(p *Playbook) { p.On.Signal = "agent-hijacked"; step(Step{Action: "pause-agent", For: h})(p) },
+		"pause flagged": func(p *Playbook) {
+			p.On.Signal, p.On.Per = "agent-misbehaving", "subject"
+			step(Step{Action: "pause-agent", For: h})(p)
+		},
 		"provider":       func(p *Playbook) { p.On.Per = "provider" },
 		"network":        step(Step{Action: "block-network", Where: All, For: h}),
 		"one minute":     step(Step{Action: "lockdown", For: Duration(time.Minute)}),

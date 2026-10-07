@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -83,6 +84,23 @@ func (g grantTokens) RevokeGrant(id string) error {
 	return nil
 }
 
+// admitGrant is asked before a connected app is given tokens. Somebody
+// whose access ended (an identity provider's suspension, a deny) gets
+// nothing more through an app they connected before it; and a lockdown
+// holds connected apps too: a grant from before it that no passkey or
+// single sign-on vouched for gets no new tokens.
+func admitGrant(root string, sh *shieldHost) func(oauthas.Grant, time.Time) error {
+	return func(g oauthas.Grant, now time.Time) error {
+		if !hasStanding(root, g.Principal) {
+			return errors.New("the person who connected this app no longer has access here")
+		}
+		if sh == nil {
+			return nil
+		}
+		return sh.admit(auth.Credential{ID: g.ID, Issued: g.Created.Unix(), Vouched: g.Vouched})
+	}
+}
+
 // appFetcher reads an app's metadata document: https, never inside the
 // network, no redirects, five kilobytes at most.
 func appFetcher(ctx context.Context, url string) ([]byte, time.Duration, error) {
@@ -127,14 +145,7 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 			Fetch:      appFetcher,
 		},
 		Tokens: grantTokens{srv: srv},
-		// A lockdown holds connected apps too: a grant from before it that
-		// no passkey or single sign-on vouched for gets no new tokens.
-		Admit: func(g oauthas.Grant, now time.Time) error {
-			if sh == nil {
-				return nil
-			}
-			return sh.admit(auth.Credential{ID: g.ID, Issued: g.Created.Unix(), Vouched: g.Vouched})
-		},
+		Admit:  admitGrant(root, sh),
 		Record: func(action, principal string, d map[string]string) {
 			kind, verified := audit.KindHuman, true
 			if principal == "" {
@@ -149,6 +160,13 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 		Config:  cfgOf,
 		OAuth:   oa,
 		Docs:    strings.TrimSuffix(admin.DocsBase, "/") + "/#agent-interface",
+		Receipt: func(connection string) ([]byte, error) {
+			rf, err := buildAppReceipt(root, connection, time.Now())
+			if err != nil {
+				return nil, err
+			}
+			return json.MarshalIndent(rf, "", " ")
+		},
 		Build: func(r *http.Request, c *mcp.Caller) (*mcp.Server, error) {
 			tok, ok := c.Data.(auth.Token)
 			if !ok {
@@ -156,32 +174,40 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 			}
 			return buildMCP(root, s, remoteCaller(tok), tplDir), nil
 		},
+		// Every call, reads included: an agent's reading is how it decides
+		// what to do, and the record of an incident starts with what it read.
 		Called: func(r *http.Request, c *mcp.Caller, tool, op string, rerr *mcp.Error) {
-			outcome, d := audit.Success, map[string]string{"tool": tool, "on_behalf_of": c.Principal}
-			if op != "" {
-				d["operation"] = op
-			}
-			// Recorded as the app, acting for the person: the person is who
-			// it acts for, and the app is what acted. Which model the app
-			// runs is its own business and not something it reports, so the
-			// app stands in for it.
-			who, model := "mcp-client", "mcp-client"
-			if c.Client != "" {
-				who, model = "app:"+c.Client, c.Client
-			}
-			if rerr != nil {
-				outcome, d["error"] = audit.Denied, rerr.Message
-				if rerr.Code != mcp.CodeRefused {
-					outcome = audit.Failure
-				}
-			}
-			// Every call, reads included: an agent's reading is how it
-			// decides what to do, and the record of an incident starts with
-			// what it read.
-			record(root, audit.Record{Action: "mcp.call", Resource: "/mcp", Outcome: outcome,
-				Principal: who, Kind: audit.KindAI, Model: model, Verified: true, Detail: d})
+			record(root, appCallRecord(c, tool, op, rerr))
 		},
 	}
+}
+
+// appCallRecord is the record of one call at the agent interface. It is
+// recorded as the app, acting for the person: the person is who it acts
+// for, and the app is what acted. Which model the app runs is its own
+// business and not something it reports, so the app stands in for it.
+func appCallRecord(c *mcp.Caller, tool, op string, rerr *mcp.Error) audit.Record {
+	outcome, d := audit.Success, map[string]string{"tool": tool, "on_behalf_of": c.Principal}
+	if op != "" {
+		d["operation"] = op
+	}
+	// Which connection: what an administrator suspends or ends when one
+	// app misbehaves for one person, and what a receipt is of.
+	if tok, ok := c.Data.(auth.Token); ok && tok.Grant != "" {
+		d["grant"] = tok.Grant
+	}
+	who, model := "mcp-client", "mcp-client"
+	if c.Client != "" {
+		who, model = "app:"+c.Client, c.Client
+	}
+	if rerr != nil {
+		outcome, d["error"] = audit.Denied, rerr.Message
+		if rerr.Code != mcp.CodeRefused {
+			outcome = audit.Failure
+		}
+	}
+	return audit.Record{Action: "mcp.call", Resource: "/mcp", Outcome: outcome,
+		Principal: who, Kind: audit.KindAI, Model: model, Verified: true, Detail: d}
 }
 
 // remoteCaller is the caller a token at the agent interface stands for:

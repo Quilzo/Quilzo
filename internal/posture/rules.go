@@ -100,6 +100,51 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "integration.tool-changed",
+		Title:    "A tool server changed a tool somebody approved",
+		Severity: High,
+		Controls: []string{"SI-7", "SR-4"},
+		Why: "What a tool is decides what an agent does with it. Nothing calls it " +
+			"until it is pinned again, so the agents that use it are stopped " +
+			"until somebody reads what it now is.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			seen := map[string]bool{}
+			for _, t := range s.AI.Tools {
+				key := t.Integration + "/" + t.Tool
+				if t.Changed == "" || seen[key] {
+					continue
+				}
+				seen[key] = true
+				out = append(out, Finding{Resource: "/integrations/" + t.Integration,
+					Detail: t.Integration + " changed " + t.Tool + " since it was approved (now " + short(t.Changed) + ")",
+					Fix:    "quilzo integrations tools " + t.Integration + ", then quilzo integrations pin " + t.Integration + " " + t.Tool})
+			}
+			return out
+		},
+	},
+	{
+		ID:       "integration.unpinned",
+		Title:    "An agent uses a tool nobody approved",
+		Severity: Medium,
+		Controls: []string{"CM-7", "SR-4"},
+		Why: "Without a pin the server can change what the tool is, its " +
+			"description included, and the agent follows. A model already " +
+			"cannot choose an unpinned tool; a declared step still calls it.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, t := range s.AI.Tools {
+				if t.Pinned {
+					continue
+				}
+				out = append(out, Finding{Resource: "agent/" + t.Agent,
+					Detail: t.Agent + " uses " + t.Tool + " on " + t.Integration + ", and nobody pinned what it is",
+					Fix:    "quilzo integrations tools " + t.Integration + ", then quilzo integrations pin " + t.Integration + " " + t.Tool})
+			}
+			return out
+		},
+	},
+	{
 		ID:       "agent.no-sponsor",
 		Title:    "An agent nobody answers for",
 		Severity: High,
@@ -1424,4 +1469,12 @@ func roughly(d time.Duration) string {
 	default:
 		return fmt.Sprintf("%d minutes", int(d.Minutes()))
 	}
+}
+
+// short is a definition's digest as people compare them: its first twelve.
+func short(digest string) string {
+	if len(digest) > 12 {
+		return digest[:12]
+	}
+	return digest
 }

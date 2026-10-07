@@ -64,3 +64,31 @@ func TestTheAgentIdentityChecks(t *testing.T) {
 		}
 	}
 }
+
+func TestTheToolApprovalChecks(t *testing.T) {
+	s := State{Now: time.Now(), AI: AIFacts{Checked: true, Tools: []AgentToolFact{
+		{Agent: "fine", Integration: "crm", Tool: "lookup", Pinned: true},
+		{Agent: "loose", Integration: "crm", Tool: "export"},
+		{Agent: "a", Integration: "files", Tool: "read", Pinned: true, Changed: "abcdef0123456789"},
+		{Agent: "b", Integration: "files", Tool: "read", Pinned: true, Changed: "abcdef0123456789"},
+	}}}
+	got := map[string][]Finding{}
+	for _, f := range Scan(s, nil).Findings {
+		got[f.Rule] = append(got[f.Rule], f)
+	}
+	if u := got["integration.unpinned"]; len(u) != 1 || u[0].Resource != "agent/loose" {
+		t.Errorf("unpinned: %+v", u)
+	}
+	// One server's change is one finding, however many agents use the tool.
+	c := got["integration.tool-changed"]
+	if len(c) != 1 || c[0].Resource != "/integrations/files" || c[0].Detail != "files changed read since it was approved (now abcdef012345)" {
+		t.Errorf("changed: %+v", c)
+	}
+	for _, rule := range []string{"integration.unpinned", "integration.tool-changed"} {
+		for _, f := range got[rule] {
+			if f.Resource == "agent/fine" || f.Resource == "/integrations/crm" {
+				t.Errorf("%s flagged a pinned, unchanged tool", rule)
+			}
+		}
+	}
+}

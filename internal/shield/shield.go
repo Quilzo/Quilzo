@@ -313,7 +313,7 @@ var (
 	reHandle  = regexp.MustCompile(`^p_[0-9a-f]{32}$`)
 	reName    = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 	reMediaID = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	reTokenID = regexp.MustCompile(`^[0-9a-f]{8,64}$`)
+	reTokenID = regexp.MustCompile(`^(gr_)?[0-9a-f]{8,64}$`) // a token, or an app connection (gr_…)
 )
 
 // Validate checks a protection before it is applied, whoever asked.
@@ -399,7 +399,7 @@ func (p Protection) Validate(now time.Time) error {
 		}
 	case Token:
 		if !reTokenID.MatchString(p.Target) {
-			return fmt.Errorf("%q is not a token's id", p.Target)
+			return fmt.Errorf("%q is not a token's id or an app connection's", p.Target)
 		}
 	default:
 		return fmt.Errorf("%q is not a kind of protection", p.Kind)

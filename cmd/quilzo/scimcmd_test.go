@@ -7,11 +7,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/oauthas"
 	"github.com/quilzo/quilzo/internal/scim"
 )
 
@@ -224,5 +228,87 @@ func TestAGrantAlreadyHeldByHandIsNotAnError(t *testing.T) {
 	p, _ := loadPolicy(root)
 	if !p.Evaluate("eve@example.com", auth.ActPublish, "/").Allowed {
 		t.Errorf("the hand-made analyst grant stopped the publisher one: %+v", p.Bindings)
+	}
+}
+
+// writeGrants puts app connections in the store, as the consent screen
+// would have.
+func writeGrants(t *testing.T, root string, gs ...oauthas.Grant) {
+	t.Helper()
+	b, err := json.Marshal(map[string]any{"grants": gs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(oauthDir(root), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oauthDir(root), "grants.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An app somebody connected is connected to nobody once the identity
+// provider suspends them: the connection ends with its tokens, and a
+// refresh from before is refused because they no longer stand here.
+func TestSuspensionEndsTheAppsSomebodyConnected(t *testing.T) {
+	root, c := newSCIM(t)
+	_, u := c.do(http.MethodPost, "/Users", `{"userName":"ada@example.com","active":true}`)
+	id := u["id"].(string)
+	c.do(http.MethodPost, "/Groups", `{"displayName":"Editors","members":[{"value":"`+id+`"}]}`)
+
+	const res = "https://admin.example.org/mcp"
+	now := time.Now()
+	hers := oauthas.Grant{ID: "gr_00000000000000aa", Principal: "ada@example.com", Client: "https://app.example.com/meta",
+		Resource: res, Created: now, Expires: now.Add(24 * time.Hour)}
+	his := oauthas.Grant{ID: "gr_00000000000000bb", Principal: "boss", Client: "https://app.example.com/meta",
+		Resource: res, Created: now, Expires: now.Add(24 * time.Hour)}
+	writeGrants(t, root, hers, his)
+	ts, _ := loadTokens(root)
+	secret, _, err := ts.IssueForGrant(hers.Principal, auth.RolePublisher, auth.Scope{}, hers.Client, hers.ID, res, time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	admit := admitGrant(root, nil)
+	if err := admit(hers, now); err != nil {
+		t.Fatalf("before the suspension her app was refused: %v", err)
+	}
+
+	c.do(http.MethodPatch, "/Users/"+id, `{"Operations":[{"op":"replace","value":{"active":false}}]}`)
+
+	grants, err := (&oauthas.Store{Dir: oauthDir(root)}).Grants()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range grants {
+		switch g.ID {
+		case hers.ID:
+			if g.Live(now) || !strings.Contains(g.EndedWhy, "identity provider") || g.EndedBy != scimBy {
+				t.Errorf("her connection: %+v", g)
+			}
+		case his.ID:
+			if !g.Live(now) {
+				t.Errorf("somebody else's connection ended with hers: %+v", g)
+			}
+		}
+	}
+	ts, _ = loadTokens(root)
+	if _, err := ts.AuthenticateFor(secret, res, now); err == nil {
+		t.Error("her app's access token still works")
+	}
+	if err := admit(hers, now); err == nil || !strings.Contains(err.Error(), "no longer has access") {
+		t.Errorf("a refresh for somebody suspended: %v", err)
+	}
+	evs, _ := audit.Read(auditPath(root))
+	found := false
+	for _, e := range evs {
+		if e.Action == "oauth.disconnected" && e.Detail["grant"] == hers.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("ending her connection was not recorded")
 	}
 }

@@ -320,6 +320,21 @@ type AIFacts struct {
 	Evals []AgentEvalFact `json:"evals,omitempty"`
 	// Identities is who answers for each declared agent.
 	Identities []AgentIdentityFact `json:"identities,omitempty"`
+	// Tools is each declared agent's tools from installed integrations.
+	Tools []AgentToolFact `json:"tools,omitempty"`
+}
+
+// AgentToolFact is one tool an agent declares, on an integration: whether
+// a person approved what it is, and what it became if the server changed
+// it since.
+type AgentToolFact struct {
+	Agent       string `json:"agent"`
+	Integration string `json:"integration"`
+	Tool        string `json:"tool"`
+	Pinned      bool   `json:"pinned"`
+	// Changed is the definition the server gave instead of the pinned one,
+	// until somebody pins again.
+	Changed string `json:"changed,omitempty"`
 }
 
 // AgentIdentityFact is who answers for an agent, and until when.

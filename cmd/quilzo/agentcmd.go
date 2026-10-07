@@ -657,7 +657,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		// Evaluations run regardless: they change nothing, and are how a
 		// new sponsor finds out what they are taking on.
 		if id := set.identityOf(name); id != nil {
-			if err := id.MayRun(sponsorActive(root, id.Sponsor), time.Now()); err != nil {
+			if err := id.MayRun(hasStanding(root, id.Sponsor), time.Now()); err != nil {
 				return out, fmt.Errorf("%s does not run: %w", name, err)
 			}
 		}
@@ -698,7 +698,12 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		if reps, err := evalReports(root, name, 1); err == nil && len(reps) > 0 {
 			latest = &reps[0]
 		}
-		if earned, why := evals.Earned(latest, time.Now()); !m.Autonomy.AtMost(earned) {
+		earned, why := evals.Earned(latest, time.Now())
+		// Earned in evaluations, and lost in behaviour until evaluated again.
+		if lost, how := trustLost(root, name); !lost.IsZero() && (latest == nil || !latest.At.After(lost)) {
+			earned, why = agent.AutonomyPropose, how+"; an evaluation since then earns its autonomy back"
+		}
+		if !m.Autonomy.AtMost(earned) {
 			out.Earned = fmt.Sprintf("a model drives %s at %s rather than %s: %s", name, earned, m.Autonomy, why)
 			m.Autonomy = earned
 			m.Capabilities = mayCall(m.Capabilities, earned)

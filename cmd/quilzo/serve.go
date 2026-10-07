@@ -228,7 +228,7 @@ func cmdServe(root string, args []string) error {
 			}
 			return set.Identities, nil
 		},
-		SponsorActive: func(sponsor string) bool { return sponsorActive(root, sponsor) },
+		SponsorActive: func(sponsor string) bool { return hasStanding(root, sponsor) },
 		Load: func() (map[string]agent.Manifest, error) {
 			set, err := loadAgents(root)
 			if err != nil {
@@ -644,6 +644,8 @@ func cmdServe(root string, args []string) error {
 	// This binary against the Go vulnerability database, hourly, told to
 	// the shield; and whether the binary is still itself.
 	jobs = append(jobs, selfJob(root))
+	// And an agent or app that keeps trying what it was refused.
+	jobs = append(jobs, agentwatchJob(root))
 	upkeepCtx, stopUpkeep := context.WithCancel(context.Background())
 	defer stopUpkeep()
 	go upkeep.Run(upkeepCtx, upkeep.Every, func(j upkeep.Job, n int, err error) {

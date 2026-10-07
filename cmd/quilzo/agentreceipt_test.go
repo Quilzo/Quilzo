@@ -159,3 +159,48 @@ func TestARefusedActionIsRecordedAsRefused(t *testing.T) {
 		t.Fatal("clipping split a character")
 	}
 }
+
+// What an app did through one connection, for the person it acted for:
+// the same proofs and signed head as a run's receipt, and only that
+// connection's calls.
+func TestAnAppsReceiptHoldsOnlyItsConnectionsCalls(t *testing.T) {
+	root, _ := identityStore(t)
+	call := func(grant, tool string, outcome audit.Outcome) {
+		record(root, audit.Record{Action: "mcp.call", Resource: "/mcp", Outcome: outcome,
+			Principal: "app:https://app.example.com/meta", Kind: audit.KindAI, Model: "https://app.example.com/meta",
+			Verified: true, Detail: map[string]string{"tool": tool, "on_behalf_of": "dana", "grant": grant}})
+	}
+	const mine, theirs = "gr_00000000000000aa", "gr_00000000000000bb"
+	call(mine, "list_pages", audit.Success)
+	call(theirs, "list_pages", audit.Success)
+	call(mine, "publish", audit.Denied)
+	rf, err := buildAppReceipt(root, mine, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rf.Entries) != 2 || rf.App != "https://app.example.com/meta" || rf.Format != appReceiptFormat {
+		t.Fatalf("%d entries, app %q, format %q", len(rf.Entries), rf.App, rf.Format)
+	}
+	if c := checkReceipt(rf, nil); len(c.Problems) != 0 || c.Connection != mine {
+		t.Fatalf("a fresh app receipt: %+v", c)
+	}
+	// Another connection's call slipped in still proves it is in the log,
+	// and is still refused as not this connection's.
+	other, err := buildAppReceipt(root, theirs, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mixed := *rf
+	mixed.Entries = append(append([]receiptEntry(nil), rf.Entries...), other.Entries...)
+	if c := checkReceipt(&mixed, nil); len(c.Problems) == 0 {
+		t.Fatal("another connection's call was accepted")
+	}
+	for _, bad := range []string{"../etc", "gr_xyz", "run-20260101-00000000"} {
+		if _, err := buildAppReceipt(root, bad, time.Now()); err == nil || !strings.Contains(err.Error(), "not an app connection") {
+			t.Errorf("%q was taken as a connection: %v", bad, err)
+		}
+	}
+	if _, err := buildAppReceipt(root, "gr_00000000000000cc", time.Now()); err == nil {
+		t.Fatal("a receipt for a connection that made no call")
+	}
+}

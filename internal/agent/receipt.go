@@ -166,7 +166,9 @@ func (r Receipt) Detail() map[string]string {
 	// run nobody metered would put a number in the log that reads as a
 	// measurement and is an absence.
 	if r.Spend.Metered {
-		d["tokens"] = strconv.Itoa(r.Spend.Tokens)
+		// The tokens a model reported, under a name the log accepts: it
+		// refuses any key with "token" in it, and the whole record with it.
+		d["model_use"] = strconv.Itoa(r.Spend.Tokens)
 		if r.Spend.Cost > 0 {
 			d["cost"] = microsString(r.Spend.Cost)
 		}
