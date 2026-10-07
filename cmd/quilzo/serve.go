@@ -191,6 +191,7 @@ func cmdServe(root string, args []string) error {
 	srv.Members = membersHooks(root)
 	srv.Boards = boardsHooks(root)
 	srv.SCIM = scimHooks(root)
+	srv.Memory = memoryAdmin(root)
 	// Events other systems push, the moment they happen.
 	inb := newInboundServer(root)
 	srv.Inbound = inb
@@ -646,6 +647,8 @@ func cmdServe(root string, args []string) error {
 	jobs = append(jobs, selfJob(root))
 	// And an agent or app that keeps trying what it was refused.
 	jobs = append(jobs, agentwatchJob(root))
+	// And what agents remember, past its time.
+	jobs = append(jobs, memoryJob(root))
 	upkeepCtx, stopUpkeep := context.WithCancel(context.Background())
 	defer stopUpkeep()
 	go upkeep.Run(upkeepCtx, upkeep.Every, func(j upkeep.Job, n int, err error) {

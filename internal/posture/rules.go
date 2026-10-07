@@ -119,6 +119,30 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "agent.memory-held",
+		Title:    "What an agent learnt waits for a person",
+		Severity: Low,
+		Controls: []string{"SI-10", "PT-2"},
+		Why: "It was learnt after the agent read content somebody else may have " +
+			"written, so it is not recalled until somebody confirms it, and it " +
+			"is removed in two weeks if nobody does. A planted instruction looks " +
+			"like this.",
+		Check: func(s State) []Finding {
+			names := make([]string, 0, len(s.AI.HeldMemories))
+			for a := range s.AI.HeldMemories {
+				names = append(names, a)
+			}
+			sort.Strings(names)
+			var out []Finding
+			for _, a := range names {
+				out = append(out, Finding{Resource: "agent/" + a,
+					Detail: fmt.Sprintf("%s has %d memories waiting", a, s.AI.HeldMemories[a]),
+					Fix:    "the What agents remember screen, or quilzo memory list --held"})
+			}
+			return out
+		},
+	},
+	{
 		ID:       "agent.program-cannot-run",
 		Title:    "An agent's program has no box it can run in here",
 		Severity: Medium,

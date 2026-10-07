@@ -396,6 +396,8 @@ type Server struct {
 	// Interface is the agent interface at /mcp, with the OAuth server apps
 	// connect through. Nil serves neither. See agentinterface.go.
 	Interface *AgentInterface
+	// Memory is what agents remember, for the people it is about.
+	Memory *MemoryAdmin
 	// Reports receives the admin pages' policy violations, which browsers
 	// post to public.ReportsPath; nil names no endpoint. On this origin a
 	// violation is a script the admin does not run: an extension reading
@@ -1391,6 +1393,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/apps", s.handleApps)
 	mux.HandleFunc("/apps/act", s.handleAppsAct)
 	mux.HandleFunc("/apps/receipt", s.handleAppsReceipt)
+	mux.HandleFunc("/memory", s.handleMemory)
+	mux.HandleFunc("/memory/act", s.handleMemoryAct)
 	mux.HandleFunc("/manifest.webmanifest", s.installManifest)
 	mux.HandleFunc("/icon.svg", s.icon)
 	mux.HandleFunc("/start", s.handleStart)

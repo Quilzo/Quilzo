@@ -1640,6 +1640,10 @@ td.actions, th.actions { white-space: nowrap; }
 td.actions > a, td.actions > form, th.actions > a, th.actions > form {
   display: inline-block; vertical-align: middle; margin-right: 0.6rem; }
 td.actions > *:last-child, th.actions > *:last-child { margin-right: 0; }
+/* A cell holding one short identifier, an agent's name say, keeps it whole:
+   broken across lines it reads as two names. */
+td.ident { white-space: nowrap; }
+td.ident code { overflow-wrap: normal; word-break: normal; }
 /* A link drawn as a button keeps the button's own layout, which centres its
    label; inline-block would set the label at the top of the 48px target. */
 td.actions > a.btn, th.actions > a.btn { display: inline-flex; }

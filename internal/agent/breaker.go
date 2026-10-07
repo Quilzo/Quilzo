@@ -49,6 +49,14 @@ func (s *Session) notePrivate(what string) {
 	s.privateMore++
 }
 
+// HoldsPrivate records that the run now holds something private that is
+// not a draft: what an agent remembers about somebody, say.
+func (s *Session) HoldsPrivate(what string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.notePrivate(what)
+}
+
 // Private is what this run has read that is not published.
 func (s *Session) Private() []string {
 	s.mu.Lock()

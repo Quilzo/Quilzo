@@ -531,6 +531,9 @@ agents and integrations
   quilzo agent run NAME --program "goal"   its own program decides, in a box: the run's interface,
                                            a model through the gateway, its hosts through a proxy
   quilzo agent backends                    where programs can run here, and what each box enforces
+  quilzo memory list [--agent A] [--held]  what agents remember about you (anybody, for an administrator)
+  quilzo memory confirm|delete ID          let a held memory be recalled, or remove one
+  quilzo memory forget [--about P]         every agent forgets you (or P, for an administrator)
   quilzo agent program NAME [--backend B] [--read DIR] [--env K=V] -- COMMAND   what its program is
   quilzo agent runs [NAME] | trace RUN     the runs that are kept, and one step by step
   quilzo eval keep RUN-ID [--finishes --uses a,b --avoids c]   a kept run as a test case
@@ -793,6 +796,8 @@ func main() {
 	// resolve a constant.
 	case "__sandbox":
 		err = cmdSandbox(cmdArgs)
+	case "memory":
+		err = cmdMemory(root, cmdArgs)
 	case "__agentbox":
 		cmdAgentbox()
 	case "__agentbox-exec":

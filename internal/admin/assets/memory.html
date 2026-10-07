@@ -1,0 +1,77 @@
+{{/*
+  What agents remember between runs, for the people it is about.
+
+  Everybody sees what any agent remembers about them and removes any of it,
+  or all of it; an administrator sees everybody's, and confirms what was
+  learnt after an agent read somebody else's words before it is recalled.
+*/}}
+{{template "head" .}}
+<h1>What agents remember</h1>
+
+<p class="lead">What an agent learns in a run it may keep, about the person
+  who started that run, for as long as its declaration says. Only that
+  person's runs recall it. Anything learnt after the agent read content
+  somebody else may have written waits here until a person confirms it.</p>
+
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+
+{{if .Off}}
+<p>Nothing here keeps agents' memory.</p>
+{{else}}
+<h2>Waiting for a person</h2>
+{{if .Held}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Remembered</th><th scope="col">By</th>{{if .Admin}}<th scope="col">About</th>{{end}}
+    <th scope="col">Learnt after reading</th><th scope="col"><span class="visually-hidden">Decide</span></th></tr></thead>
+  <tbody>
+  {{range .Held}}
+  <tr>
+    <th scope="row">{{.Text}}<div class="hint"><code>{{.ID}}</code>, {{.Kind}}</div></th>
+    <td class="ident"><code>{{.Agent}}</code></td>{{if $.Admin}}<td>{{or .About "everybody"}}</td>{{end}}
+    <td>{{.Sources}}</td>
+    <td class="actions">
+      <form method="post" action="/memory/act"><input type="hidden" name="op" value="confirm"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="btn-tonal">Confirm</button></form>
+      <form method="post" action="/memory/act"><input type="hidden" name="op" value="delete"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="btn-text">Delete</button></form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p>Nothing is waiting.</p>
+{{end}}
+
+<h2>{{if .Admin}}Everything remembered{{else}}About you{{end}}</h2>
+{{if .Kept}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Remembered</th><th scope="col">By</th>{{if .Admin}}<th scope="col">About</th>{{end}}
+    <th scope="col">Since</th><th scope="col">Until</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+  <tbody>
+  {{range .Kept}}
+  <tr>
+    <th scope="row">{{.Text}}<div class="hint"><code>{{.ID}}</code>, {{.Kind}}{{if .ConfirmedBy}}, confirmed by {{.ConfirmedBy}}{{end}}</div></th>
+    <td class="ident"><code>{{.Agent}}</code></td>{{if $.Admin}}<td>{{or .About "everybody"}}</td>{{end}}
+    <td>{{when .Created.Unix}}</td><td>{{when .Expires.Unix}}</td>
+    <td class="actions"><form method="post" action="/memory/act"><input type="hidden" name="op" value="delete"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="btn-text">Delete</button></form></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p>No agent remembers anything {{if not .Admin}}about you{{end}}.</p>
+{{end}}
+
+<h2>Forget me</h2>
+<p>Every agent forgets everything it remembers about you, at once. The log
+  records that it happened and which entries went, never what they said.</p>
+<form method="post" action="/memory/act">
+  <input type="hidden" name="op" value="forget">
+  <button type="submit" class="danger">Make every agent forget me</button>
+</form>
+{{end}}
+{{template "foot" .}}

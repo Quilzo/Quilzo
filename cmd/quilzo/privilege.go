@@ -137,7 +137,10 @@ var commandNeeds = map[string]need{
 	// the log needs.
 	"agent receipt":  {action: auth.ActView},
 	"agent backends": {action: auth.ActView},
-	"agent program":  {action: auth.ActGrant},
+	// Each memory is checked against whom it is about; seeing your own needs
+	// only that you are somebody here.
+	"memory":        {action: auth.ActView},
+	"agent program": {action: auth.ActGrant},
 	// Checking a receipt reads only the file and keys it is given.
 	"agent verify-receipt": {why: "checks a file against public keys; it reads nothing in the store"},
 	// Writing the signing key and reading the follower list are both

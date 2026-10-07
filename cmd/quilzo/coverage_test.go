@@ -225,6 +225,10 @@ var coverage = map[string]surfaces{
 	// Quilzo's own flaws, and whether the binary is itself.
 	"self": {GUI: "/security/inventory", MCP: []string{"inventory"}},
 	// What Quilzo is doing to protect itself.
+	"memory": {GUI: "/memory",
+		NoMCP: "what an agent remembers about somebody is theirs to see and remove, " +
+			"and an agent forgetting or confirming its own memory is the thing the " +
+			"held state exists to stop"},
 	"apps": {GUI: "/apps",
 		NoMCP: "which apps may act as people through the agent interface, and " +
 			"ending a connection, are a person's decisions: an app connected " +
