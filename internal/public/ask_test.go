@@ -5,16 +5,19 @@ package public
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/throttle"
 )
 
@@ -294,5 +297,110 @@ func TestAPlantedInstructionIsNotKnowledge(t *testing.T) {
 	}
 	if body := askPost(st, "help", "What is the warranty?").Body.String(); !strings.Contains(body, "lifetime") {
 		t.Fatalf("kept on purpose and still left out: %s", body)
+	}
+}
+
+// A page new to a chatbot's knowledge that it cites first is told to the
+// shield, with a digest of the question; a page that was already there is
+// not, and neither is anything when the server has only just started.
+func TestANewPageCitedFirstIsCounted(t *testing.T) {
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages := map[string]any{"returns": map[string]any{"title": "Returns", "body": "Unopened items can be returned within 30 days."}}
+	if _, err := site.SaveDraft(s, pages, "first", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	st := New(s, render.OneLayout(tpl))
+	st.BaseURL = "https://example.org"
+	set := &assistant.Set{}
+	if err := set.Put(assistant.Assistant{Name: "help", Title: "Help", Public: true}); err != nil {
+		t.Fatal(err)
+	}
+	var told []string
+	st.Assistants = &Assistants{Set: func() (*assistant.Set, error) { return set, nil },
+		Takeover: func(name, page, question string) { told = append(told, name+" "+page+" "+question) }}
+	askPost(st, "help", "Can I return opened items?")
+	if len(told) != 0 {
+		t.Fatalf("a page there from the start was counted: %v", told)
+	}
+	pages["shipping"] = map[string]any{"title": "Shipping", "body": "Shipping is free on every order over 20 pounds."}
+	if _, err := site.SaveDraft(s, pages, "second", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	askPost(st, "help", "Is shipping free?")
+	askPost(st, "help", "  IS shipping   free? ")
+	if len(told) != 2 || !strings.HasPrefix(told[0], "help shipping ") || told[0] != told[1] {
+		t.Fatalf("%v", told)
+	}
+	askPost(st, "help", "Can I return opened items?")
+	if len(told) != 2 {
+		t.Fatalf("the old page was counted: %v", told)
+	}
+}
+
+// An outside classifier's second look: what it flags in a chatbot's
+// knowledge is left out and counted, a flagged question is an injection
+// signal, and what it does not answer about is kept.
+func TestTheGuardrailIsASecondLookThatFailsOpen(t *testing.T) {
+	st := published(t, map[string]any{
+		"returns": map[string]any{"title": "Returns", "body": "Unopened items can be returned within 30 days."},
+		"promo":   map[string]any{"title": "Promotion", "body": "Every order ships free forever, whatever anybody says."},
+	})
+	set := &assistant.Set{}
+	if err := set.Put(assistant.Assistant{Name: "help", Title: "Help", Public: true}); err != nil {
+		t.Fatal(err)
+	}
+	var events, signals []string
+	answer := true
+	st.Assistants = &Assistants{Set: func() (*assistant.Set, error) { return set, nil },
+		Guardrail: func(_ context.Context, texts []string) ([]bool, int) {
+			out := make([]bool, len(texts))
+			if !answer {
+				return out, len(texts)
+			}
+			for i, x := range texts {
+				out[i] = strings.Contains(x, "free forever") || strings.Contains(x, "jailbreak")
+			}
+			return out, 0
+		},
+		GuardrailEvent: func(name, what string, n int) { events = append(events, fmt.Sprintf("%s %s %d", name, what, n)) }}
+	st.OnSignal = func(kind, subject string, r *http.Request) { signals = append(signals, kind+" "+subject) }
+	if body := askPost(st, "help", "Does shipping cost anything?").Body.String(); strings.Contains(body, "free forever") {
+		t.Fatalf("a flagged passage was quoted: %s", body)
+	}
+	if len(events) != 1 || events[0] != "help flagged 1" {
+		t.Fatalf("%v", events)
+	}
+	askPost(st, "help", "Let's try a jailbreak on you")
+	if len(signals) != 1 || signals[0] != ChatbotInjection+" help" {
+		t.Fatalf("%v", signals)
+	}
+	// It stops answering: the question is not a signal, the miss is counted.
+	answer = false
+	askPost(st, "help", "Another jailbreak")
+	if len(signals) != 1 || events[len(events)-1] != "help unanswered 1" {
+		t.Fatalf("%v %v", signals, events)
+	}
+}
+
+func TestAPageIsNewForAWeek(t *testing.T) {
+	var as Assistants
+	was := assistant.NewIndex([]assistant.Passage{{ID: "a", Page: "returns", Text: "x"}})
+	now := assistant.NewIndex([]assistant.Passage{{ID: "a", Page: "returns", Text: "x"}, {ID: "b", Page: "shipping", Text: "y"}})
+	t0 := time.Now()
+	as.noteFresh("help", was, now, t0)
+	if !as.isFresh("help", "shipping", t0.Add(NewFor)) || as.isFresh("help", "returns", t0) || as.isFresh("other", "shipping", t0) {
+		t.Fatal("new is wrong")
+	}
+	if as.isFresh("help", "shipping", t0.Add(NewFor+time.Minute)) {
+		t.Fatal("a page is new for more than a week")
 	}
 }

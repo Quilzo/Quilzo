@@ -193,6 +193,14 @@ func (h *shieldHost) signal(name, subject string, r *http.Request) {
 	h.engine.Observe(s)
 }
 
+// takeover is a page new to a chatbot's knowledge answering a question
+// first: counted by how many different questions it wins, never a reason
+// to refuse whoever asked.
+func (h *shieldHost) takeover(bot, page, question string) {
+	h.engine.Observe(shield.Signal{Name: "knowledge-takeover", Subject: "chatbot:" + bot + " page:" + page,
+		By: question, Where: h.where})
+}
+
 // violation is a page's policy violation a visitor's browser reported: a
 // signal about the page, counted by how many different networks report it,
 // never a reason to refuse whoever sent it.
