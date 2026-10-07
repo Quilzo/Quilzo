@@ -4,6 +4,7 @@
 package posture
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -90,5 +91,21 @@ func TestTheToolApprovalChecks(t *testing.T) {
 				t.Errorf("%s flagged a pinned, unchanged tool", rule)
 			}
 		}
+	}
+}
+
+func TestAProgramWithNoBoxIsAFinding(t *testing.T) {
+	s := State{Now: time.Now(), AI: AIFacts{Checked: true, Programs: []AgentProgramFact{
+		{Agent: "fine", Backend: "native", Available: true},
+		{Agent: "stuck", Backend: "openshell", Why: "the openshell command is not installed here"},
+	}}}
+	var got []Finding
+	for _, f := range Scan(s, nil).Findings {
+		if f.Rule == "agent.program-cannot-run" {
+			got = append(got, f)
+		}
+	}
+	if len(got) != 1 || got[0].Resource != "agent/stuck" || !strings.Contains(got[0].Detail, "not installed") {
+		t.Fatalf("%+v", got)
 	}
 }

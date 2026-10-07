@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/agentexec"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/agentbox"
 	"github.com/quilzo/quilzo/internal/agentmodel"
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -116,6 +118,10 @@ func cmdAgent(root string, args []string) error {
 		return agentReplay(root, args[1:])
 	case "sponsor", "renew":
 		return agentIdentityCmd(root, args[0], args[1:])
+	case "backends":
+		return agentBackends(root)
+	case "program":
+		return agentProgramCmd(root, args[1:])
 	case "receipt":
 		return agentReceipt(root, args[1:])
 	case "verify-receipt":
@@ -370,12 +376,14 @@ func agentCheckRun(root string, args []string) error {
 	fs := flag.NewFlagSet("agent run", flag.ContinueOnError)
 	withModel := fs.Bool("model", false,
 		"let a model choose the actions, instead of walking the manifest")
+	program := fs.Bool("program", false,
+		"run the agent's own program, in its box, deciding the actions")
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
 	args = append(pos, fs.Args()...)
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo agent run NAME [--model] [\"what it should do\"]")
+		return fmt.Errorf("usage: quilzo agent run NAME [--model | --program] [\"what it should do\"]")
 	}
 	if len(args) > 2 {
 		return fmt.Errorf("the goal is one argument, so quote it, and flags " +
@@ -387,8 +395,8 @@ func agentCheckRun(root string, args []string) error {
 		goal = args[1]
 	}
 
-	id, out, runErr := runAgentKept(context.Background(), root, name, goal,
-		*withModel, resolveCaller(root, ""))
+	id, out, runErr := runAgentKeptBy(context.Background(), root, name, goal,
+		*withModel, *program, resolveCaller(root, ""))
 	if out.Manifest.Name == "" {
 		return runErr
 	}
@@ -399,6 +407,17 @@ func agentCheckRun(root string, args []string) error {
 	}
 	if out.Earned != "" {
 		fmt.Printf("  %s%s%s\n", yellow, out.Earned, reset)
+	}
+	if *program {
+		c := out.Program.Confined
+		fmt.Printf("  %sits program ran on %s for %s: namespaces %v, Landlock %d, system call filter %v, capabilities dropped %v%s\n",
+			dim, c.Backend, out.Program.Took.Round(time.Millisecond), c.Namespaces, c.Landlock, c.Seccomp, c.Capabilities, reset)
+		if out.Program.Stopped != "" {
+			fmt.Printf("  %s%s%s\n", yellow, out.Program.Stopped, reset)
+		}
+		if e := strings.TrimSpace(out.ProgramErr); e != "" {
+			fmt.Printf("  %sit said, on its error stream: %s%s\n", dim, clip(e, 400), reset)
+		}
 	}
 	if out.TraceError != "" {
 		fmt.Printf("  %straces not sent: %s%s\n", dim, out.TraceError, reset)
@@ -412,11 +431,18 @@ func agentCheckRun(root string, args []string) error {
 	// questions and a summary that describes the wrong one is worse than
 	// none. Left saying "no model" while a model was deciding, which is a
 	// line somebody would quote in a report.
-	if *withModel {
+	switch {
+	case *program:
+		fmt.Printf("  %sits program chose each action, in its box; each one went "+
+			"through the manifest as a step%s\n", dim, reset)
+		if a := strings.TrimSpace(trace.Answer); a != "" {
+			fmt.Printf("  it said: %s\n", clip(a, 600))
+		}
+	case *withModel:
 		fmt.Printf("  %sa model chose each action from the manifest's "+
 			"capabilities — what it achieved, not what this store can "+
 			"answer%s\n", dim, reset)
-	} else {
+	default:
 		fmt.Printf("  %severy capability tried once, with no arguments and no "+
 			"model — this reports what this store answers, not what the agent "+
 			"would achieve%s\n", dim, reset)
@@ -442,8 +468,12 @@ func agentCheckRun(root string, args []string) error {
 		fmt.Printf("  %s%-22s%s %s\n", dim, what, reset, step.Why)
 	}
 	if rc.Tainted {
-		fmt.Printf("  %sread stored content, so anything it produced needs a "+
-			"person%s\n", dim, reset)
+		why := "read stored content"
+		if *program {
+			why = "was decided by a program"
+		}
+		fmt.Printf("  %s%s, so anything it produced needs a "+
+			"person%s\n", dim, why, reset)
 		// And what it read, because that is the review. Being told a run is
 		// tainted and not what tainted it leaves the only honest check as
 		// re-reading the site, which nobody does — so the approval becomes a
@@ -583,6 +613,10 @@ type agentOutcome struct {
 	// Earned says why a model drove it below its declared autonomy, when it
 	// did.
 	Earned string
+	// Program is how the agent's program ran, and the end of what it wrote
+	// to its error stream, when a program decided.
+	Program    agentbox.Result
+	ProgramErr string
 }
 
 // agentRunModel is the model an agent's run asks: through the gateway when
@@ -627,6 +661,9 @@ type agentResume struct {
 	RunID string
 	// Eval makes the run an evaluation's: see evalcmd.go.
 	Eval *evalMode
+	// Program runs the agent's own program, which decides: see
+	// agentprogram.go.
+	Program bool
 }
 
 func executeAgentFrom(ctx context.Context, root, name, goal string,
@@ -783,6 +820,18 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		i++
 		return a, nil
 	}
+	if from.Program {
+		switch {
+		case m.Program == nil:
+			return out, fmt.Errorf("%s declares no program; it is run by walking its manifest, or with --model", name)
+		case withModel:
+			return out, errors.New("a run is decided by a model or by the agent's program, not both")
+		case from.Prior != nil:
+			return out, errors.New("a program's run is not continued: its program has ended. Start it again")
+		case from.Eval != nil:
+			return out, errors.New("an evaluation decides with a model; a program is run on its own")
+		}
+	}
 	if withModel {
 		var payers []string
 		if caller != nil && caller.Verified && !strings.HasPrefix(caller.Name, agent.PrincipalPrefix) {
@@ -903,6 +952,27 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	// A run here can be held for a person and continued: every run made
 	// through this function is kept, which is what makes that possible.
 	runner.Pause, runner.Checkpoint = true, from.Checkpoint
+
+	// Or the agent's own program decides, in its box. A program cannot be
+	// held for a person and picked up later, since it will have ended, so
+	// what asks first is refused, with the reason, to the program.
+	var prog *programRun
+	if from.Program {
+		runID := from.RunID
+		if runID == "" {
+			if runID, err = newAgentRunID(time.Now().UTC()); err != nil {
+				return out, err
+			}
+			from.RunID = runID
+		}
+		catalog := buildMCP(root, s, caller, "templates").Operations()
+		if prog, err = startProgram(ctx, root, m, sess, caller, goal, runID, catalog); err != nil {
+			return out, err
+		}
+		delegateModel = programModel{name: filepath.Base(m.Program.Command[0])}
+		out.Model = delegateModel.Name()
+		runner.Decide, runner.Pause = prog.bridge.Decide, false
+	}
 	// Every action into the log as it happens, allowed or refused: one
 	// record each, which an auditor can be handed with its proof (quilzo
 	// agent receipt). As each step ends rather than when the run does, so a
@@ -944,6 +1014,15 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		}
 	} else {
 		trace, runErr = runner.Run(ctx, sess, goal)
+	}
+	if prog != nil {
+		why := trace.Stopped
+		if why == "" {
+			why = "the run is finished"
+		}
+		prog.end(root, m, caller, from.RunID, why)
+		out.Program = prog.result
+		out.ProgramErr = prog.stderr.String()
 	}
 	recordSteps(trace)
 	rc := trace.Receipt(sess)

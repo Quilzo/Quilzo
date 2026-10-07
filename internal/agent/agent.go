@@ -296,6 +296,10 @@ type Manifest struct {
 	// use once a person has seen the exact call and agreed to it. The run
 	// stops there and is continued afterwards; see durable.go.
 	AskFirst []string `json:"ask_first,omitempty"`
+
+	// Program is the agent's own program, when it decides for itself. See
+	// program.go.
+	Program *Program `json:"program,omitempty"`
 }
 
 // writeOps are capabilities that change stored content.
@@ -457,6 +461,13 @@ func (m *Manifest) Validate(known map[string]bool) error {
 		if d == m.Name {
 			return fmt.Errorf("%s delegates to itself", m.Name)
 		}
+	}
+	if m.Program != nil && m.Kind == KindSupervisor {
+		return fmt.Errorf("%s is a supervisor and has a program: a program decides for itself, "+
+			"and a supervisor's hand-offs are named in its declaration", m.Name)
+	}
+	if err := m.Program.validate(m.Name); err != nil {
+		return err
 	}
 
 	return nil

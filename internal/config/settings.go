@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"github.com/quilzo/quilzo/internal/clientip"
+	"net"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -435,6 +436,20 @@ var settings = []Setting{
 			"anybody could have the metadata name an address of their choosing. " +
 			"https, or http to this machine for trying it out; an origin with " +
 			"no path.",
+	},
+	{
+		Key: "agents.openshell_listen", Kind: Text, Default: "",
+		Summary: "an address on this machine an OpenShell sandbox can reach, e.g. 172.17.0.1",
+		Why: "An agent's program running in OpenShell reaches its run's services (the agent " +
+			"interface, the model, the proxy) here. Each listens on its own port for the " +
+			"length of one run and answers only that run's credential. An address every " +
+			"interface answers on (0.0.0.0) is refused: name the one the sandboxes use.",
+	},
+	{
+		Key: "agents.openshell_reach", Kind: Text, Default: "",
+		Summary: "the name an OpenShell sandbox uses for that address, e.g. host.openshell.internal",
+		Why: "Written into each sandbox's network policy as the only place it may connect, " +
+			"so its program reaches the outside only through the run's own proxy.",
 	},
 	{
 		Key: "agents.earned_autonomy", Kind: Bool, Default: "true",
@@ -1180,6 +1195,17 @@ func (s Setting) Validate(v string) error {
 				return fmt.Errorf("%q is not https; OAuth needs https except on this machine", v)
 			case strings.ToLower(v) != v:
 				return fmt.Errorf("%q has capitals; give it in lower case, as apps compare it exactly", v)
+			}
+		}
+		if s.Key == "agents.openshell_listen" && v != "" {
+			ip := net.ParseIP(v)
+			if ip == nil || ip.IsUnspecified() {
+				return fmt.Errorf("%q is not one address of this machine; give one, like 172.17.0.1", v)
+			}
+		}
+		if s.Key == "agents.openshell_reach" && v != "" {
+			if len(v) > 253 || strings.Trim(v, "abcdefghijklmnopqrstuvwxyz0123456789.-:") != "" {
+				return fmt.Errorf("%q is not a host name or address in lower case", v)
 			}
 		}
 		if s.Key == "site.base_url" && v != "" {

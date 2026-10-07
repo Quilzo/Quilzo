@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/quilzo/quilzo/internal/agentbox"
 	"os"
 	"path/filepath"
 	"sort"
@@ -39,6 +40,20 @@ import (
 // TestMain runs after everything, which is the only place this can be checked
 // at all.
 func TestMain(m *testing.M) {
+	// This test binary is also an agent program's box, its shim, and the
+	// program in it: see agentprogram_test.go.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "agentbox-init":
+			agentbox.InitMain()
+		case "agentbox-shim":
+			agentbox.ShimMain(os.Args[2])
+			os.Exit(125)
+		case "agentbox-program":
+			programAgentMain()
+			os.Exit(0)
+		}
+	}
 	before := looseEntries()
 	code := m.Run()
 

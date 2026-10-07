@@ -19,6 +19,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // Runs, kept: every run of a declared agent, so that what it did can be
@@ -153,6 +154,13 @@ func (k *keptRun) finish(out agentOutcome) error {
 // worth reading.
 func runAgentKept(ctx context.Context, root, name, goal string, withModel bool,
 	caller *Caller) (string, agentOutcome, error) {
+	return runAgentKeptBy(ctx, root, name, goal, withModel, false, caller)
+}
+
+// runAgentKeptBy is runAgentKept, with the agent's own program deciding
+// when program is set.
+func runAgentKeptBy(ctx context.Context, root, name, goal string, withModel, program bool,
+	caller *Caller) (string, agentOutcome, error) {
 
 	started := time.Now().UTC()
 	id, err := newAgentRunID(started)
@@ -167,7 +175,7 @@ func runAgentKept(ctx context.Context, root, name, goal string, withModel bool,
 		}
 	}
 	out, runErr := executeAgentFrom(ctx, root, name, goal, withModel, caller,
-		&agentResume{Checkpoint: k.checkpoint, RunID: k.rec.ID})
+		&agentResume{Checkpoint: k.checkpoint, RunID: k.rec.ID, Program: program})
 	if out.Manifest.Name == "" {
 		// It never started. Nothing was checkpointed either.
 		return "", out, runErr
@@ -405,6 +413,16 @@ func declareAgent(root string, m agent.Manifest, isNew bool, caller *Caller) err
 		if _, ok := set.Agents[d]; !ok {
 			return fmt.Errorf("%s would hand work to %s, which is not "+
 				"declared", m.Name, d)
+		}
+	}
+	// What runs as an agent, with a run's reach, is an administrator's
+	// decision wherever it is made: here as much as quilzo agent program.
+	if m.Program != nil && !sameProgram(set.Agents[m.Name].Program, m.Program) {
+		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+			return fmt.Errorf("giving an agent a program is an administrator's decision: %w", err)
+		}
+		if err := clearOfStore(root, m.Program); err != nil {
+			return err
 		}
 	}
 	set.Agents[m.Name] = m

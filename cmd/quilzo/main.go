@@ -528,6 +528,10 @@ agents and integrations
   quilzo agent receipt RUN [-o FILE]       every action of a run from the log, with proofs and a signed head
   quilzo agent verify-receipt FILE [--keys head.pub.json]   check one anywhere, against keys you were given
   quilzo agent run NAME                    a model chooses, inside the manifest
+  quilzo agent run NAME --program "goal"   its own program decides, in a box: the run's interface,
+                                           a model through the gateway, its hosts through a proxy
+  quilzo agent backends                    where programs can run here, and what each box enforces
+  quilzo agent program NAME [--backend B] [--read DIR] [--env K=V] -- COMMAND   what its program is
   quilzo agent runs [NAME] | trace RUN     the runs that are kept, and one step by step
   quilzo eval keep RUN-ID [--finishes --uses a,b --avoids c]   a kept run as a test case
   quilzo eval run AGENT [--k 3] [--model]   every case k times, and with instructions planted
@@ -605,6 +609,11 @@ log transparency
                                             and it is listed because anything
                                             dispatched and undocumented ships
                                             for nobody
+  quilzo __agentbox                         an agent program's box's first process
+  quilzo __agentbox-exec SPEC               the shim that confines itself and
+                                            becomes the program. Neither is a
+                                            command you type; both are listed
+                                            for the same reason as __sandbox
   quilzo version                           what this binary is
 
 global
@@ -784,6 +793,10 @@ func main() {
 	// resolve a constant.
 	case "__sandbox":
 		err = cmdSandbox(cmdArgs)
+	case "__agentbox":
+		cmdAgentbox()
+	case "__agentbox-exec":
+		err = cmdAgentboxShim(cmdArgs)
 	case "webhook", "webhooks":
 		err = cmdWebhook(root, cmdArgs)
 	case "logd":

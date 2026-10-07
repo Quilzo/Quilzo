@@ -4,6 +4,7 @@
 package agentwatch
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -288,5 +289,19 @@ func TestAReportNamesTheAgentOrAppAndReadsTheInterfacesRefusals(t *testing.T) {
 	}
 	if (Report{Principal: "p_x"}).Subject() != "p_x" {
 		t.Error("a report with neither names the handle")
+	}
+}
+
+// A run's step records its refusal as why; reaching above its role there
+// is an escalation, as it is anywhere else.
+func TestARunsRefusalIsReadWhereTheRunRecordsIt(t *testing.T) {
+	var events []audit.Event
+	for i := range 2 {
+		events = append(events, ev(int64(i+1), "p_run", "agent.action", fmt.Sprintf("/legal/%d", i), audit.Denied, time.Hour,
+			map[string]string{"why": "the access policy refuses this: it needs the publisher role", "agent": "triage"}))
+	}
+	r := Look(events, now)
+	if len(r) != 1 || r[0].Counts[Escalation] != 2 {
+		t.Fatalf("%+v", r)
 	}
 }

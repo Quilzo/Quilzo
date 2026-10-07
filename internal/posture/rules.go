@@ -100,6 +100,26 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "agent.program-cannot-run",
+		Title:    "An agent's program has no box it can run in here",
+		Severity: Medium,
+		Controls: []string{"SC-39", "CM-7"},
+		Why: "A program runs only confined, so it does not run at all: whoever relies " +
+			"on it is waiting for something that will refuse.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, p := range s.AI.Programs {
+				if p.Available {
+					continue
+				}
+				out = append(out, Finding{Resource: "agent/" + p.Agent,
+					Detail: p.Agent + "'s program runs on " + p.Backend + ", which cannot open a box here: " + p.Why,
+					Fix:    "quilzo agent backends"})
+			}
+			return out
+		},
+	},
+	{
 		ID:       "integration.tool-changed",
 		Title:    "A tool server changed a tool somebody approved",
 		Severity: High,
