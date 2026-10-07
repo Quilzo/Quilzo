@@ -249,6 +249,9 @@ func cmdSite(root string, args []string) error {
 	sh := newShieldHost(root)
 	sh.where = shield.Site
 	st.OnSignal = sh.signal
+	if st.Assistants != nil {
+		st.Assistants.Takeover = sh.takeover
+	}
 	st.Shield = sh.feature
 	st.OnViolation = sh.violation
 

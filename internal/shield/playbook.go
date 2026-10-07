@@ -49,6 +49,7 @@ var Signals = map[string]string{
 	"agent-misbehaving":  "an agent or a connected app kept trying what it was refused",
 	"tool-changed":       "a tool server changed what a tool is after a person approved it",
 	"secret-in-prompt":   "a credential was in a prompt on its way to a model, and was taken out",
+	"knowledge-takeover": "a page new to a chatbot's knowledge is the source it cites first for many different questions",
 }
 
 // Counted is what a trigger counts of each signal, singular and plural, for
@@ -72,6 +73,7 @@ var Counted = map[string][2]string{
 	"agent-misbehaving":  {"agent or app flagged for what it kept trying", "agents or apps flagged for what they kept trying"},
 	"tool-changed":       {"approved tool redefined", "approved tools redefined"},
 	"secret-in-prompt":   {"credential caught in a prompt", "credentials caught in prompts"},
+	"knowledge-takeover": {"question a new page answered first", "different questions a new page answered first"},
 }
 
 // Trait is how far a signal can be trusted, in CrowdSec's terms: Confidence
@@ -126,6 +128,9 @@ var Traits = map[string]Trait{
 	// The secret scanner's own shapes, which are seldom anything else; but
 	// anybody can type one into a public chatbot.
 	"secret-in-prompt": {Confidence: 3, Spoofable: 2},
+	// A new page everybody asks about is popular, or it was written to be
+	// retrieved for everything; and anybody can ask the questions.
+	"knowledge-takeover": {Confidence: 1, Spoofable: 3},
 }
 
 // Per says what a trigger counts by.
@@ -423,6 +428,13 @@ func Builtins() []Playbook {
 			On:  Trigger{Signal: "route-trouble", Per: "subject", Count: 1, Within: h(time.Hour)},
 			Stages: []Stage{
 				{Do: []Step{{Action: "cut-route", For: h(6 * time.Hour)}, {Action: "notify"}}},
+			}},
+		{Name: "knowledge-takeover", Title: "A new page is answering everything", Mode: "act", Builtin: true,
+			Why: "A page published in the last week is what a chatbot cites first for ten different questions within an hour. A page written to be retrieved for every question is how a poisoned page behaves; a popular new page can look the same. Somebody reads the page; nothing is refused.",
+			On:  Trigger{Signal: "knowledge-takeover", Per: "subject", Count: 10, Within: h(time.Hour), Distinct: true},
+			Stages: []Stage{
+				{Do: []Step{{Action: "notify"}, {Action: "open-case"}}},
+				{Do: []Step{{Action: "notify"}}},
 			}},
 		{Name: "secret-in-prompt", Title: "A credential was in a prompt", Mode: "act", Builtin: true,
 			Why: "The gateway took it out, so no model received it. But a key that reached a prompt was pasted somewhere it should not have been, or an agent read it from somewhere it should not be: somebody looks, and rotates it if it was real.",

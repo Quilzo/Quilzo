@@ -312,3 +312,24 @@ func TestACredentialInAPromptIsTheShields(t *testing.T) {
 		t.Fatal("the credential taken out is not counted")
 	}
 }
+
+// A new page winning ten different questions within the hour is a case;
+// the same question asked ten times is one question.
+func TestANewPageWinningEverythingIsACase(t *testing.T) {
+	root := shieldRoot(t)
+	h := newShieldHost(root)
+	for i := 0; i < 12; i++ {
+		h.takeover("help", "shipping", "same-question")
+	}
+	if st, _ := shield.Load(root); len(st.Responses) != 0 {
+		t.Fatalf("one question asked again was counted as many: %+v", st.Responses)
+	}
+	for i := 0; i < 10; i++ {
+		h.takeover("help", "shipping", "q"+strconv.Itoa(i))
+	}
+	st, _ := shield.Load(root)
+	if len(st.Responses) != 1 || st.Responses[0].Playbook != "knowledge-takeover" ||
+		!strings.Contains(strings.Join(st.Responses[0].Did, "; "), "case") {
+		t.Fatalf("%+v", st.Responses)
+	}
+}
