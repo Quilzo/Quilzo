@@ -204,6 +204,11 @@ type Retrieval struct {
 	Locales []string `json:"locales,omitempty"`
 	// Path limits it to a subtree.
 	Path string `json:"path,omitempty"`
+	// KeepInstructions shows the agent sentences in what it reads that
+	// address an AI, which are otherwise replaced with a marker saying they
+	// were left out: for an agent working on pages that discuss these
+	// attacks on purpose.
+	KeepInstructions bool `json:"keep_instructions,omitempty"`
 }
 
 // Tool is a third-party API an agent may call.
@@ -519,6 +524,8 @@ func (m Manifest) Narrow(by Manifest) Manifest {
 		Types:   intersect(m.Retrieval.Types, by.Retrieval.Types),
 		Locales: intersect(m.Retrieval.Locales, by.Retrieval.Locales),
 		Path:    longerPath(m.Retrieval.Path, by.Retrieval.Path),
+		// Shown what addresses an AI only when both sides say so.
+		KeepInstructions: m.Retrieval.KeepInstructions && by.Retrieval.KeepInstructions,
 	}
 
 	// Tools: only the hosts the bound already reaches.

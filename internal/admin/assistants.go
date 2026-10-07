@@ -197,6 +197,7 @@ func (s *Server) handleAssistantSave(w http.ResponseWriter, r *http.Request) {
 			a.Public = r.FormValue("public") == "1"
 			a.Static = r.FormValue("static") == "1"
 			a.UseModel = r.FormValue("use_model") == "1"
+			a.KeepInstructions = r.FormValue("keep_instructions") == "1"
 			n, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("passages")))
 			a.Passages = n
 			a.Documents = r.Form["documents"]

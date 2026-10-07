@@ -54,6 +54,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Passage is one retrievable piece of a published page.
@@ -357,6 +359,10 @@ func pack(page, title string, blocks []block) []Passage {
 
 // oneLine collapses whitespace and strips control characters.
 func oneLine(s string) string {
+	// What draws nothing is taken out first: an instruction written in
+	// invisible characters is read by a model and by nobody who reviewed
+	// the page. See internal/plaintext.
+	s = plaintext.Clean(s)
 	s = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) && r != '\n' && r != '\t' {
 			return -1

@@ -176,6 +176,23 @@ func TestDocumentsAndEmbeddingAreConfigured(t *testing.T) {
 	}
 }
 
+func TestAChatbotCanBeToldToReadWhatAddressesAnAI(t *testing.T) {
+	srv, token, fa := chatbots(t)
+	fa.set.Put(assistant.Assistant{Name: "help", Title: "Help"})
+	decideForm(t, srv, "/assistants/save", token, url.Values{"name": {"help"}, "full": {"1"},
+		"title": {"Help"}, "keep_instructions": {"1"}})
+	if a, _ := fa.set.Get("help"); !a.KeepInstructions {
+		t.Fatal("the choice was not saved")
+	}
+	if body := get(t, srv, "/assistants/help", token).Body.String(); !strings.Contains(body, `name="keep_instructions" value="1" checked`) {
+		t.Fatal("the choice is not shown")
+	}
+	decideForm(t, srv, "/assistants/save", token, url.Values{"name": {"help"}, "full": {"1"}, "title": {"Help"}})
+	if a, _ := fa.set.Get("help"); a.KeepInstructions {
+		t.Fatal("unticking it did not turn it off")
+	}
+}
+
 func TestTheConsoleSaysWhichDocumentsCouldNotBeRead(t *testing.T) {
 	srv, token, fa := chatbots(t)
 	fa.set.Put(assistant.Assistant{Name: "help", Title: "Help"})

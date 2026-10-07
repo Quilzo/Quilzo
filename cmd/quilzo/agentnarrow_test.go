@@ -272,3 +272,16 @@ func TestANarrowedAgentCanStillReachItsHosts(t *testing.T) {
 		t.Errorf("a declared tool was refused after narrowing: %v", err)
 	}
 }
+
+// Whether an agent reads what addresses an AI as it is comes from its
+// declaration: a caller can neither turn it on nor, by saying nothing,
+// turn it off.
+func TestKeepingInstructionsIsTheDeclarationsChoice(t *testing.T) {
+	for _, keep := range []bool{true, false} {
+		m := wideAgent()
+		m.Retrieval.KeepInstructions = keep
+		if got := narrowedBy(m, asToken(auth.RolePublisher, auth.Scope{})).Retrieval.KeepInstructions; got != keep {
+			t.Errorf("declared %v, ran with %v", keep, got)
+		}
+	}
+}

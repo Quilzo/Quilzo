@@ -125,6 +125,8 @@ func TestEveryRetrievalFieldIsAccountedFor(t *testing.T) {
 		"Types":   "Session.Retrieve, Session.Mutate and agentexec's corpus filter",
 		"Locales": "Session.Retrieve, Session.Mutate and agentexec's corpus filter",
 		"Path":    "Session.Retrieve, Session.Mutate and Session.Inside",
+		"KeepInstructions": "agentexec's readPage, which shows what addresses an AI as a marker " +
+			"unless this is set, and Narrow, which keeps it only when both sides do",
 	}
 	rt := reflect.TypeOf(Retrieval{})
 	for i := 0; i < rt.NumField(); i++ {
