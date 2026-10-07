@@ -50,6 +50,30 @@ type Agents struct {
 	Answer func(id string, step int, approve bool, by string) error
 	Resume func(id, by string) error
 	Replay func(id string, step int, by string) (string, error)
+	// Draft asks a model for a declaration from a description, read
+	// through the checker; nil when this build drafts nothing. It saves
+	// nothing.
+	Draft func(description, by string) (AgentDraft, error)
+}
+
+// AgentDraft is a declaration drafted from a description: what the reader
+// took out or changed, and what the checker says each capability could do.
+type AgentDraft struct {
+	Manifest agent.Manifest
+	Notes    []string
+	// Bounded is what narrows a run of it as a whole: the person asking,
+	// its standing, autonomy it has not yet earned.
+	Bounded []string
+	Would   []AgentWould
+	Invalid string
+}
+
+// AgentWould is the checker's answer for one capability of a draft.
+type AgentWould struct {
+	What  string
+	Could bool
+	Why   string
+	Then  []string
 }
 
 // agentRow is one declared agent as the screen shows it.

@@ -331,6 +331,31 @@ func (s *Server) handleAgentEdit(w http.ResponseWriter, r *http.Request) {
 		}
 		m := t.Manifest
 		m.Name = ""
+		data["CanDraft"] = s.Agents.Draft != nil
+		// Described rather than ticked: a model drafts, the checker says
+		// what it could do, and the form below holds the draft for a person
+		// to read, change and save. Nothing is saved here.
+		if r.Method == http.MethodPost {
+			desc := strings.TrimSpace(r.FormValue("describe"))
+			data["Described"] = desc
+			switch {
+			case s.Agents.Draft == nil:
+				data["DraftError"] = "this build drafts nothing; tick what it may do below"
+			case desc == "":
+				data["DraftError"] = "describe what the agent is for"
+			default:
+				d, err := s.Agents.Draft(desc, p.Name)
+				if err != nil {
+					data["DraftError"] = err.Error()
+					break
+				}
+				if dt, ok := agent.For(d.Manifest.Kind); ok {
+					t = dt
+				}
+				m = d.Manifest
+				data["Drafted"], data["NewName"] = d, m.Name
+			}
+		}
 		data["Summary"], data["When"] = t.Summary, t.When
 		s.editData(data, m, true, declared)
 		s.render(w, r, "agent_edit.html", data)

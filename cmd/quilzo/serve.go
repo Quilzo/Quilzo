@@ -254,6 +254,25 @@ func cmdServe(root string, args []string) error {
 		Run: func(name, goal string, model bool, by string) (string, error) {
 			return runAgentOnce(root, name, goal, model, signedIn(by))
 		},
+		Draft: func(description, by string) (admin.AgentDraft, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			out, err := draftAgent(ctx, root, description, "", signedIn(by))
+			if err != nil {
+				return admin.AgentDraft{}, err
+			}
+			d := admin.AgentDraft{Manifest: out.Manifest, Notes: out.Notes, Invalid: out.Invalid}
+			// What bounds a run bounds every capability alike: said once.
+			for i, g := range out.Grants {
+				if i == 0 {
+					for _, b := range g.Bounded {
+						d.Bounded = append(d.Bounded, b.By+": "+b.Why)
+					}
+				}
+				d.Would = append(d.Would, admin.AgentWould{What: g.What, Could: g.Could, Why: g.Why, Then: g.Then})
+			}
+			return d, nil
+		},
 		Runs: func(name string) ([]agent.Record, error) {
 			return listAgentRuns(root, name, 0)
 		},

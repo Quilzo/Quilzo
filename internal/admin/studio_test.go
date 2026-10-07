@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -633,5 +634,49 @@ func TestAWaitingWriteIsShownFieldByField(t *testing.T) {
 		if f := readableInput(in); f != nil {
 			t.Errorf("%v was laid out as %v", in, f)
 		}
+	}
+}
+
+// Described rather than ticked: the draft and the checker's answers are
+// shown, the form holds the draft, and nothing is saved.
+func TestADescribedAgentIsShownWithWhatItCouldDoAndNotSaved(t *testing.T) {
+	srv, token := setup(t)
+	st := wireStudio(srv)
+	if body := get(t, srv, "/agents/new", token).Body.String(); strings.Contains(body, `name="describe"`) {
+		t.Fatal("a describe box with nothing to draft")
+	}
+	var asked string
+	srv.Agents.Draft = func(desc, by string) (AgentDraft, error) {
+		asked = desc + "|" + by
+		return AgentDraft{
+			Manifest: agent.Manifest{Name: "faq-helper", Kind: agent.KindTask, Purpose: "keep the FAQ tidy",
+				Capabilities: []string{"read_page", "write_page"}, Autonomy: agent.AutonomyDraft,
+				Budget: agent.Budget{Steps: 8, Tools: 4, Duration: agent.Duration(2 * time.Minute)}},
+			Notes:   []string{"publish: a draft never publishes on its own"},
+			Bounded: []string{"evaluations: never evaluated"},
+			Would: []AgentWould{{What: "read_page", Could: true},
+				{What: "write_page", Why: "write_page is not in this agent's capabilities"}},
+		}, nil
+	}
+	if body := get(t, srv, "/agents/new", token).Body.String(); !strings.Contains(body, `name="describe"`) {
+		t.Fatal("no describe box")
+	}
+	w := postForm(t, srv, "/agents/new", token, url.Values{"describe": {"Keep our FAQ tidy"}}.Encode())
+	body := w.Body.String()
+	if w.Code != http.StatusOK || !strings.HasPrefix(asked, "Keep our FAQ tidy|") {
+		t.Fatalf("%d asked %q", w.Code, asked)
+	}
+	for _, want := range []string{`value="faq-helper"`, "keep the FAQ tidy", "evaluations: never evaluated",
+		"publish: a draft never publishes", `<code>write_page</code>`, "Nothing is saved until you read it"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page lacks %q", want)
+		}
+	}
+	if len(st.declared) != 0 {
+		t.Fatal("drafting saved it")
+	}
+	srv.Agents.Draft = func(string, string) (AgentDraft, error) { return AgentDraft{}, errors.New("no model is configured") }
+	if body := postForm(t, srv, "/agents/new", token, url.Values{"describe": {"x"}}.Encode()).Body.String(); !strings.Contains(body, "no model is configured") {
+		t.Fatal("a drafting error is not shown")
 	}
 }
