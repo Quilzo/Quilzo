@@ -73,6 +73,17 @@ func Scan(text string, allowed []string) []Hit {
 			out = append(out, Hit{Kind: IBAN, Shown: "a bank account (IBAN) ending " + compact[len(compact)-4:]})
 		}
 	}
+	if locs, names := nationalIDs(text); len(locs) > 0 {
+		for i, l := range locs {
+			d := strings.Map(func(r rune) rune {
+				if unicode.IsLetter(r) || unicode.IsDigit(r) {
+					return r
+				}
+				return -1
+			}, text[l[0]:l[1]])
+			out = append(out, Hit{Kind: NationalID, Shown: names[i] + " ending " + d[len(d)-3:]})
+		}
+	}
 	for _, m := range reEmail.FindAllString(text, -1) {
 		domain := strings.ToLower(m[strings.LastIndexByte(m, '@')+1:])
 		if ownDomain(domain, allowed) {

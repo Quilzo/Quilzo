@@ -7,8 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/pii"
 )
 
 // Running an agent: the loop that turns a manifest into something that happens.
@@ -175,6 +178,9 @@ type Runner struct {
 	// Decide proposes; Perform carries out. Both are the host's.
 	Decide  Decide
 	Perform Perform
+	// OwnDomains are the organisation's own email domains: an address at
+	// one, in what a tool returned, is not somebody's personal data.
+	OwnDomains []string
 	// MaxTurns is a backstop above the manifest's own step budget.
 	//
 	// The budget is the real limit and this is the seatbelt: a Decide that
@@ -379,6 +385,15 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 			})
 		} else {
 			step.Result = out
+			// Personal data off a tool is private from here on, as a draft
+			// is: a customer's address looked up in one system is not to
+			// be posted to another because a page said so (the
+			// exfiltration breaker).
+			if action.Tool != "" {
+				if kinds := personalIn(out, r.OwnDomains); kinds != "" {
+					s.HoldsPrivate("personal data (" + kinds + ") returned by " + action.Tool)
+				}
+			}
 			// Untrusted, always. It came out of the store or off a tool.
 			seen = append(seen, Observation{
 				From: from(action), Body: out, Trusted: false,
@@ -478,4 +493,18 @@ func from(a Action) string {
 		return a.Tool
 	}
 	return a.Op
+}
+
+// personalIn is the kinds of personal data in text, or nothing.
+func personalIn(text string, own []string) string {
+	seen := map[string]bool{}
+	for _, h := range pii.Scan(text, own) {
+		seen[strings.ReplaceAll(string(h.Kind), "_", " ")] = true
+	}
+	kinds := make([]string, 0, len(seen))
+	for k := range seen {
+		kinds = append(kinds, k)
+	}
+	sort.Strings(kinds)
+	return strings.Join(kinds, ", ")
 }

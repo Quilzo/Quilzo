@@ -17,8 +17,9 @@ import (
 // somebody else's words is held until a person confirms it, and what is
 // recalled is private to that person.
 type Memory struct {
-	// Remember keeps an entry; the host knows whose run this is.
-	Remember func(kind, text string, held bool, sources string) (memory.Entry, error)
+	// Remember keeps an entry; the host knows whose run this is. tier is
+	// how far it can be trusted (memory.TierPerson and the others).
+	Remember func(kind, text string, held bool, sources, tier string) (memory.Entry, error)
 	// Recall is what the run's person's memory holds for a query.
 	Recall func(query string, kinds map[string]bool) ([]memory.Entry, error)
 	// About names the person, for what the run now holds in private.
@@ -55,11 +56,17 @@ func WithMemory(m Memory, s *agent.Session,
 				return "nothing is remembered that matches", nil
 			}
 			// What an agent remembers about somebody is theirs: the run now
-			// holds it, and the exfiltration breaker knows.
+			// holds it, and the exfiltration breaker knows. Which memory it
+			// used goes on the receipt, by id.
 			s.HoldsPrivate("what " + s.Manifest().Name + " remembers about " + m.About)
 			var b strings.Builder
 			for _, e := range found {
-				fmt.Fprintf(&b, "- (%s, %s) %s\n", e.Kind, e.Created.Format("2 Jan 2006"), e.Text)
+				s.UsedMemory(true, e.ID)
+				fmt.Fprintf(&b, "- (%s, %s", e.Kind, e.Created.Format("2 Jan 2006"))
+				if w := memory.TierWords[e.Tier]; w != "" {
+					b.WriteString(", " + w)
+				}
+				fmt.Fprintf(&b, ") %s\n", e.Text)
 			}
 			return b.String(), nil
 		}
@@ -76,14 +83,28 @@ func WithMemory(m Memory, s *agent.Session,
 		if held {
 			sources = agent.Provenance(s.Sources(), s.Omitted())
 		}
-		e, err := m.Remember(kind, text, held, sources)
+		e, err := m.Remember(kind, text, held, sources, tierOf(s))
 		if err != nil {
 			return "", err
 		}
+		s.UsedMemory(false, e.ID)
 		if e.Held {
 			return fmt.Sprintf("remembered as %s, and held: it was learnt after reading content somebody "+
 				"else may have written, so it is not recalled until a person confirms it", e.ID), nil
 		}
 		return "remembered as " + e.ID, nil
 	}
+}
+
+// tierOf is how far what a run learns now can be trusted, from what it has
+// read: nothing, only what is published, or something nobody here
+// reviewed.
+func tierOf(s *agent.Session) string {
+	switch {
+	case !s.Tainted():
+		return memory.TierPerson
+	case s.OnlyPublished():
+		return memory.TierPublished
+	}
+	return memory.TierUnreviewed
 }

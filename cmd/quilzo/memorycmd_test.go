@@ -17,6 +17,8 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/agentbox"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/memory"
 )
 
@@ -168,11 +170,11 @@ func TestAProcedureIsAboutNobody(t *testing.T) {
 	root := t.TempDir()
 	m := agent.Manifest{Name: "helper", Memory: agent.Memory{Procedural: true, Semantic: true, Retain: agent.Duration(time.Hour)}}
 	mem := runMemory(root, m, asAdmin("dana"), "run-1")
-	p, err := mem.Remember(memory.Procedural, "refunds over 100 go to finance", false, "")
+	p, err := mem.Remember(memory.Procedural, "refunds over 100 go to finance", false, "", memory.TierPerson)
 	if err != nil || p.About != "" {
 		t.Fatalf("%+v %v", p, err)
 	}
-	f, err := mem.Remember(memory.Semantic, "Dana prefers Spanish", false, "")
+	f, err := mem.Remember(memory.Semantic, "Dana prefers Spanish", false, "", memory.TierPerson)
 	if err != nil || f.About != "dana" || f.Run != "run-1" || f.By != "dana" {
 		t.Fatalf("%+v %v", f, err)
 	}
@@ -180,5 +182,70 @@ func TestAProcedureIsAboutNobody(t *testing.T) {
 	got, _ := sams.Recall("", map[string]bool{memory.Procedural: true, memory.Semantic: true})
 	if len(got) != 1 || got[0].Kind != memory.Procedural {
 		t.Fatalf("sam recalled %+v", got)
+	}
+}
+
+// A person rewrites what is remembered about them, and gets a receipt of
+// what was rewritten, deleted and forgotten about them that anybody can
+// check; nobody rewrites what is remembered about somebody else.
+func TestAPersonRewritesForgetsAndHasAReceipt(t *testing.T) {
+	root, _ := identityStore(t)
+	st := memoryStore(root)
+	now := time.Now()
+	dana, _ := st.Remember(memory.Entry{Agent: "helper", About: "dana", Kind: memory.Semantic,
+		Text: "Dana prefers French", Run: "r1", By: "dana", Tier: memory.TierUnreviewed}, 30*24*time.Hour, now)
+	sam, _ := st.Remember(memory.Entry{Agent: "helper", About: "sam", Kind: memory.Semantic,
+		Text: "Sam is on the wholesale plan", Run: "r2", By: "sam", Tier: memory.TierPerson}, 30*24*time.Hour, now)
+	ma := memoryAdmin(root)
+	if err := ma.Edit(dana.ID, "Dana prefers Spanish", "dana"); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := st.Get(dana.ID); e.Text != "Dana prefers Spanish" || e.Tier != memory.TierPerson {
+		t.Fatalf("%+v", e)
+	}
+	// The command line refuses somebody else's, an administrator's too.
+	toks := &auth.TokenStore{}
+	secret, _, err := toks.Issue("dana", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saveJSON(tokensPath(root), toks)
+	defer func(old string) { flagToken = old }(flagToken)
+	flagToken = secret
+	if err := cmdMemory(root, []string{"edit", sam.ID, "Sam", "left"}); err == nil ||
+		!strings.Contains(err.Error(), "only the person") {
+		t.Fatalf("dana rewrote sam's memory: %v", err)
+	}
+	if e, _ := st.Get(sam.ID); e.Text != "Sam is on the wholesale plan" {
+		t.Fatalf("sam's memory changed: %q", e.Text)
+	}
+	if _, err := forgetPerson(root, "dana", "dana"); err != nil {
+		t.Fatal(err)
+	}
+	rf, err := buildMemoryReceipt(root, "dana", time.Now())
+	if err != nil || rf == nil || len(rf.Entries) != 2 {
+		t.Fatalf("%v %+v", err, rf)
+	}
+	for _, e := range rf.Entries {
+		if strings.Contains(fmt.Sprint(e.Entry.Detail), "French") || strings.Contains(fmt.Sprint(e.Entry.Detail), "Spanish") {
+			t.Fatalf("what it said is in the receipt: %v", e.Entry.Detail)
+		}
+	}
+	if c := checkReceipt(rf, nil); len(c.Problems) != 0 || c.Subject != "dana" || !strings.HasPrefix(rf.Subject, "p_") {
+		t.Fatalf("%+v %s", c, rf.Subject)
+	}
+	// Claimed for somebody else, it does not verify.
+	other, _ := buildMemoryReceipt(root, "sam", time.Now())
+	if other != nil {
+		t.Fatal("sam has a receipt")
+	}
+	l, _ := openAudit(root)
+	rf.Subject = audit.Pseudonym(l.Key(), "sam")
+	if c := checkReceipt(rf, nil); len(c.Problems) == 0 {
+		t.Fatal("dana's receipt verified as sam's")
+	}
+	// Sam has none.
+	if rf, err := buildMemoryReceipt(root, "sam", time.Now()); err != nil || rf != nil {
+		t.Fatalf("sam has a receipt: %+v %v", rf, err)
 	}
 }

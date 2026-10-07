@@ -19,6 +19,19 @@
 {{if .Off}}
 <p>Nothing here keeps agents' memory.</p>
 {{else}}
+{{with .Editing}}
+<section class="card" aria-labelledby="edit-h">
+  <h2 id="edit-h">Rewrite what {{.Agent}} remembers</h2>
+  <p class="hint">What you write is recalled as you wrote it, as something you said. The log
+    records that it was rewritten, never what it said before or after.</p>
+  <form method="post" action="/memory/act">
+    <input type="hidden" name="op" value="edit"><input type="hidden" name="id" value="{{.ID}}">
+    <div class="field"><label for="memtext">Remembered {{template "req"}}</label>
+      <textarea id="memtext" name="text" rows="3" maxlength="2000" required>{{.Text}}</textarea></div>
+    <div class="row"><button type="submit">Save</button> <a class="btn btn-text" href="/memory">Cancel</a></div>
+  </form>
+</section>
+{{end}}
 <h2>Waiting for a person</h2>
 {{if .Held}}
 <div class="table-wrap">
@@ -28,10 +41,11 @@
   <tbody>
   {{range .Held}}
   <tr>
-    <th scope="row">{{.Text}}<div class="hint"><code>{{.ID}}</code>, {{.Kind}}</div></th>
+    <th scope="row">{{.Text}}<div class="hint"><code>{{.ID}}</code>, {{.Kind}}{{with index $.Tiers .Tier}}, {{.}}{{end}}</div></th>
     <td class="ident"><code>{{.Agent}}</code></td>{{if $.Admin}}<td>{{or .About "everybody"}}</td>{{end}}
     <td>{{.Sources}}</td>
     <td class="actions">
+      {{if or (eq .About $.Me) (and $.Admin (not .About))}}<a class="btn btn-text" href="/memory?edit={{.ID}}#edit-h">Edit</a>{{end}}
       <form method="post" action="/memory/act"><input type="hidden" name="op" value="confirm"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="btn-tonal">Confirm</button></form>
       <form method="post" action="/memory/act"><input type="hidden" name="op" value="delete"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="btn-text">Delete</button></form>
     </td>
@@ -53,10 +67,10 @@
   <tbody>
   {{range .Kept}}
   <tr>
-    <th scope="row">{{.Text}}<div class="hint"><code>{{.ID}}</code>, {{.Kind}}{{if .ConfirmedBy}}, confirmed by {{.ConfirmedBy}}{{end}}</div></th>
+    <th scope="row">{{.Text}}<div class="hint"><code>{{.ID}}</code>, {{.Kind}}{{with index $.Tiers .Tier}}, {{.}}{{end}}{{if not .Edited.IsZero}}, rewritten by them{{else if .ConfirmedBy}}, confirmed by {{.ConfirmedBy}}{{end}}</div></th>
     <td class="ident"><code>{{.Agent}}</code></td>{{if $.Admin}}<td>{{or .About "everybody"}}</td>{{end}}
     <td>{{when .Created.Unix}}</td><td>{{when .Expires.Unix}}</td>
-    <td class="actions"><form method="post" action="/memory/act"><input type="hidden" name="op" value="delete"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="btn-text">Delete</button></form></td>
+    <td class="actions">{{if or (eq .About $.Me) (and $.Admin (not .About))}}<a class="btn btn-text" href="/memory?edit={{.ID}}#edit-h">Edit</a>{{end}}<form method="post" action="/memory/act"><input type="hidden" name="op" value="delete"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="btn-text">Delete</button></form></td>
   </tr>
   {{end}}
   </tbody>
@@ -73,5 +87,8 @@
   <input type="hidden" name="op" value="forget">
   <button type="submit" class="danger">Make every agent forget me</button>
 </form>
+<p class="hint">Afterwards, <a href="/memory/receipt">download a receipt</a>: every record of what
+  was forgotten, deleted or rewritten about you, each proved to be in the log, which anybody can
+  check with <code>quilzo agent verify-receipt</code>.</p>
 {{end}}
 {{template "foot" .}}

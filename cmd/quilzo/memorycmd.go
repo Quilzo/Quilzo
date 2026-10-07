@@ -4,9 +4,11 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -33,17 +35,17 @@ func runMemory(root string, m agent.Manifest, caller *Caller, runID string) agen
 	store := memoryStore(root)
 	who := caller.Name
 	return agentexec.Memory{About: who,
-		Remember: func(kind, text string, held bool, sources string) (memory.Entry, error) {
+		Remember: func(kind, text string, held bool, sources, tier string) (memory.Entry, error) {
 			about := who
 			if kind == memory.Procedural {
 				about = ""
 			}
 			e, err := store.Remember(memory.Entry{Agent: m.Name, About: about, Kind: kind, Text: text,
-				Run: runID, By: who, Held: held, Sources: sources}, time.Duration(m.Memory.Retain), time.Now())
+				Run: runID, By: who, Held: held, Sources: sources, Tier: tier}, time.Duration(m.Memory.Retain), time.Now())
 			if err == nil {
 				record(root, actorRecord(caller, "memory.remembered", audit.Success, m, programOrModel(m),
 					map[string]string{"agent": m.Name, "run": runID, "memory": e.ID, "kind": kind,
-						"held": strconv.FormatBool(e.Held)}))
+						"held": strconv.FormatBool(e.Held), "tier": e.Tier}))
 			}
 			return e, err
 		},
@@ -61,7 +63,7 @@ func programOrModel(m agent.Manifest) programModel {
 	return programModel{name: "a model"}
 }
 
-// cmdMemory is `quilzo memory list|confirm|delete|forget`.
+// cmdMemory is `quilzo memory list|confirm|delete|edit|forget|receipt`.
 func cmdMemory(root string, args []string) error {
 	if len(args) == 0 {
 		args = []string{"list"}
@@ -122,8 +124,12 @@ func cmdMemory(root string, args []string) error {
 			if about == "" {
 				about = "everybody (procedure)"
 			}
-			w.Human("%s%s%s%s  %s, %s, about %s, until %s\n    %s\n", bold, e.ID, reset, state, e.Agent, e.Kind, about,
-				e.Expires.Format("2 Jan 2006"), clip(e.Text, 300))
+			tier := ""
+			if words := memory.TierWords[e.Tier]; words != "" {
+				tier = ", " + words
+			}
+			w.Human("%s%s%s%s  %s, %s, about %s%s, until %s\n    %s\n", bold, e.ID, reset, state, e.Agent, e.Kind, about,
+				tier, e.Expires.Format("2 Jan 2006"), clip(e.Text, 300))
 			if e.Held && e.Sources != "" {
 				w.Human("    %slearnt after reading: %s%s\n", dim, clip(e.Sources, 200), reset)
 			}
@@ -153,10 +159,67 @@ func cmdMemory(root string, args []string) error {
 			return err
 		}
 		if err := recordE(root, caller.auditRecord("memory."+args[0]+"ed", "/memory", audit.Success,
-			map[string]string{"memory": e.ID, "agent": e.Agent, "kind": e.Kind})); err != nil {
+			memoryDetail(e))); err != nil {
 			return err
 		}
 		w.Human("%sed %s\n", strings.TrimSuffix(args[0], "e"), e.ID)
+		return nil
+	case "edit":
+		if len(args) < 3 {
+			return errors.New("quilzo memory edit ID TEXT")
+		}
+		e, err := store.Get(args[1])
+		if err != nil {
+			return err
+		}
+		// The person it is about, or an administrator for an agent's own
+		// procedures: nobody rewrites what is remembered about somebody else.
+		if !((e.About != "" && e.About == caller.Name && caller.Verified) || (e.About == "" && admin)) {
+			return errors.New("only the person a memory is about rewrites it; an administrator can delete it")
+		}
+		e, err = store.Edit(e.ID, strings.Join(args[2:], " "), caller.Name, time.Now())
+		if err != nil {
+			return err
+		}
+		if err := recordE(root, caller.auditRecord("memory.edited", "/memory", audit.Success, memoryDetail(e))); err != nil {
+			return err
+		}
+		w.Human("rewrote %s; it is recalled as you wrote it\n", e.ID)
+		return nil
+	case "receipt":
+		fs := flag.NewFlagSet("memory receipt", flag.ContinueOnError)
+		about := fs.String("about", "", "the person; yourself unless you administer")
+		out := fs.String("o", "", "write it here instead of printing it")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *about == "" {
+			*about = caller.Name
+		}
+		if *about != caller.Name && !admin {
+			return errors.New("a receipt about somebody else is an administrator's")
+		}
+		rf, err := buildMemoryReceipt(root, *about, time.Now())
+		if err != nil {
+			return err
+		}
+		if rf == nil {
+			return fmt.Errorf("nothing has been forgotten, deleted or rewritten about %s", *about)
+		}
+		body, err := json.MarshalIndent(rf, "", " ")
+		if err != nil {
+			return err
+		}
+		if *out == "" {
+			_, err = os.Stdout.Write(append(body, '\n'))
+			return err
+		}
+		if err := os.WriteFile(*out, body, 0o600); err != nil {
+			return err
+		}
+		w.Human("%s about %s, each with its proof, against a head of %d signed by %s\n",
+			count(len(rf.Entries), "record"), *about, rf.Head.Size, rf.Head.KeyID)
+		w.Human("  %scheck it anywhere: quilzo agent verify-receipt %s --keys head.pub.json%s\n", dim, *out, reset)
 		return nil
 	case "forget":
 		fs := flag.NewFlagSet("memory forget", flag.ContinueOnError)
@@ -177,7 +240,7 @@ func cmdMemory(root string, args []string) error {
 		w.Human("every agent has forgotten %s: %s removed\n", *about, count(n, "memory"))
 		return nil
 	}
-	return fmt.Errorf("unknown memory command %q; try list, confirm, delete or forget", args[0])
+	return fmt.Errorf("unknown memory command %q; try list, confirm, delete, edit, forget or receipt", args[0])
 }
 
 // forgetPerson removes everything any agent remembers about somebody, and
@@ -212,8 +275,7 @@ func memoryAdmin(root string) *admin.MemoryAdmin {
 	store := memoryStore(root)
 	note := func(action, id, by string, e memory.Entry) {
 		record(root, audit.Record{Action: action, Resource: "/memory", Outcome: audit.Success,
-			Principal: by, Kind: audit.KindHuman, Verified: true,
-			Detail: map[string]string{"memory": id, "agent": e.Agent, "kind": e.Kind}})
+			Principal: by, Kind: audit.KindHuman, Verified: true, Detail: memoryDetail(e)})
 	}
 	return &admin.MemoryAdmin{Store: store,
 		Confirm: func(id, by string) error {
@@ -239,6 +301,63 @@ func memoryAdmin(root string) *admin.MemoryAdmin {
 			note("memory.deleted", id, by, e)
 			return nil
 		},
+		Edit: func(id, text, by string) error {
+			e, err := store.Edit(id, text, by, time.Now())
+			if err != nil {
+				return err
+			}
+			note("memory.edited", id, by, e)
+			return nil
+		},
 		Forget: func(about, by string) (int, error) { return forgetPerson(root, about, by) },
+		Receipt: func(about string) ([]byte, error) {
+			rf, err := buildMemoryReceipt(root, about, time.Now())
+			if err != nil || rf == nil {
+				return nil, err
+			}
+			return json.MarshalIndent(rf, "", " ")
+		},
 	}
 }
+
+// memoryDetail is what the log says about a change to one memory: which,
+// whose and about whom, never what it said.
+func memoryDetail(e memory.Entry) map[string]string {
+	d := map[string]string{"memory": e.ID, "agent": e.Agent, "kind": e.Kind}
+	if e.About != "" {
+		d["subject"] = e.About
+	}
+	return d
+}
+
+// memoryReceiptFormat is the receipt of what was forgotten, deleted or
+// rewritten about one person.
+const memoryReceiptFormat = "quilzo-memory-receipt/1"
+
+// buildMemoryReceipt is every record of memory about somebody being
+// forgotten, deleted or rewritten, each with its proof; nil when there is
+// none.
+//
+// The log names the person by a handle only its key makes, so the receipt
+// carries the handle as its subject, which is what anybody checking it
+// compares, and the name for the person reading it.
+func buildMemoryReceipt(root, about string, now time.Time) (*agentReceiptFile, error) {
+	log, err := openAudit(root)
+	if err != nil {
+		return nil, err
+	}
+	handle := about
+	if log.Pseudonymous() {
+		handle = audit.Pseudonym(log.Key(), about)
+	}
+	rf := &agentReceiptFile{Format: memoryReceiptFormat, Subject: handle, Person: about, Made: now.UTC()}
+	err = proveRecords(root, rf, now, func(e audit.Event) bool {
+		return memoryReceiptAction[e.Action] && e.Detail["subject"] == handle
+	})
+	if err != nil || len(rf.Entries) == 0 {
+		return nil, err
+	}
+	return rf, nil
+}
+
+var memoryReceiptAction = map[string]bool{"memory.forgotten": true, "memory.deleted": true, "memory.edited": true}

@@ -267,6 +267,9 @@ func New(opt Options) (*Log, error) {
 // Pseudonymous reports whether identifiers are being protected.
 func (l *Log) Pseudonymous() bool { return len(l.key) > 0 }
 
+// Key is the pseudonymisation key, for computing a handle with Pseudonym.
+func (l *Log) Key() []byte { return append([]byte(nil), l.key...) }
+
 // IdentityKeys are detail keys whose values name a person or account.
 //
 // Pseudonymised like the principal. They were not: the principal was HMAC'd
