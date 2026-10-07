@@ -194,6 +194,7 @@ sharing a screen
   quilzo apps register NAME --redirect URI an app that cannot publish its own metadata; prints its client_id
   quilzo apps unregister ID | disconnect ID   remove a registered app, or end one connection
   quilzo apps receipt CONNECTION [-o FILE] every call an app made through one connection, with proofs and a signed head
+  quilzo apps could CONNECTION OP [PAGE]   could the app do it, and why: asked of the code that admits its calls
   quilzo shield status | list [--all]      what Quilzo is doing to protect itself, its playbooks, and what ended
   quilzo self check | verify | vex         known flaws in this build, decided by what is linked; is the binary itself
   quilzo self update vulndb.zip            a newer Go vulnerability database, read offline
@@ -522,6 +523,8 @@ compliance evidence
 agents and integrations
   quilzo agent templates                    the agent archetypes, and when to use each
   quilzo agent new NAME --kind KIND         declare what an agent may do
+  quilzo agent draft "what it is for" [-o F] a model drafts a declaration; the checker says what it could do; nothing is saved
+  quilzo agent declare FILE                save a declaration written out, checked again on the way in
   quilzo agent list | show NAME | check     what is declared, and whether it still validates
   quilzo agent sponsor NAME PERSON         who answers for it; it stops running when they can no longer act here
   quilzo agent renew NAME [--for 2160h]    another stretch before it has to be renewed

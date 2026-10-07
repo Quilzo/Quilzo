@@ -60,6 +60,8 @@ func cmdApps(root string, args []string) error {
 		return appsList(root, oa)
 	case "receipt":
 		return appReceipt(root, args[1:])
+	case "could":
+		return appsCould(root, args[1:])
 	case "allow", "disallow":
 		if len(args) != 2 {
 			return fmt.Errorf("quilzo apps %s HOST", args[0])
@@ -154,7 +156,7 @@ func cmdApps(root string, args []string) error {
 		}
 		return oa.End(args[1], by.Name, "disconnected from the command line")
 	default:
-		return fmt.Errorf("unknown apps command %q; try list, allow, disallow, register, unregister, disconnect or receipt", args[0])
+		return fmt.Errorf("unknown apps command %q; try list, allow, disallow, register, unregister, disconnect, receipt or could", args[0])
 	}
 }
 

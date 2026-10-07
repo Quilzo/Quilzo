@@ -138,6 +138,9 @@ var commandNeeds = map[string]need{
 	"agent receipt":  {action: auth.ActView},
 	"agent backends": {action: auth.ActView},
 	"agent could":    {action: auth.ActView},
+	// Drafting asks a model, which is spent and recorded under the person,
+	// and saves nothing; declaring saves, as agent new does.
+	"agent draft": {action: auth.ActEditDraft},
 	// Each memory is checked against whom it is about; seeing your own needs
 	// only that you are somebody here.
 	"memory":        {action: auth.ActView},
@@ -224,6 +227,7 @@ var commandNeeds = map[string]need{
 	// What may act as people through the agent interface, and ending it.
 	"apps":               {action: auth.ActGrant},
 	"apps receipt":       {action: auth.ActView},
+	"apps could":         {action: auth.ActView},
 	"shield status":      {action: auth.ActView},
 	"shield list":        {action: auth.ActView},
 	"shield dry-run":     {action: auth.ActView},
