@@ -1,0 +1,105 @@
+{{/*
+  Every agent the organisation runs or uses, Quilzo's and other vendors',
+  the apps, tool servers and model routes they reach, who called what as
+  the log recorded it, and AI used directly without going through Quilzo.
+*/}}
+{{template "head" .}}
+<h1>Fleet</h1>
+<p class="lead">Every agent, app, tool server and model route, who answers for each, and who
+  called what as the log recorded it: what happened, not only what was declared.</p>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+
+{{if .Off}}
+<p>This build lists no fleet.</p>
+{{else}}
+<p class="chips">
+  <a href="/fleet"{{if eq .Days 30}} class="on" aria-current="true"{{end}}>Last 30 days</a>
+  <a href="/fleet?days=7"{{if eq .Days 7}} class="on" aria-current="true"{{end}}>Last 7 days</a>
+</p>
+
+{{if .Map.Lines}}
+<figure class="wf-fig">
+  <figcaption><h2>Who called what</h2></figcaption>
+  <div class="table-wrap">
+  <svg class="agmap fleetmap" viewBox="0 0 {{.Map.W}} {{.Map.H}}" role="img" aria-label="{{.Map.Says}}">
+    {{range .Map.Heads}}<text class="head" x="{{.X}}" y="20">{{.Label}}</text>{{end}}
+    {{range .Map.Lines}}<line class="edge" x1="{{.X1}}" y1="{{.Y1}}" x2="{{.X2}}" y2="{{.Y2}}" stroke-width="{{printf "%.1f" .Width}}"><title>{{.Title}}</title></line>{{end}}
+    {{range .Map.Boxes}}<rect class="box {{.Class}}" x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="26" rx="6"></rect>
+    <text class="label" x="{{.TX}}" y="{{.TY}}">{{.Label}}</text>{{end}}
+  </svg>
+  </div>
+  <p class="hint">{{.Map.Says}} Drawn from the signed log and the model ledger; every connection is also in the tables below.</p>
+</figure>
+{{else}}
+<p>Nothing called anything in the last {{.Days}} days that the log recorded.</p>
+{{end}}
+
+{{range .Groups}}
+<h2>{{.Title}}</h2>
+{{if .Nodes}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Name</th><th scope="col">Answered for by</th><th scope="col">Standing</th>
+    <th scope="col">Autonomy</th><th scope="col">Spent today</th><th scope="col">Last seen</th></tr></thead>
+  <tbody>
+  {{range .Nodes}}
+  <tr>
+    <th scope="row">{{.Name}}{{with .Detail}}<div class="hint">{{.}}</div>{{end}}
+      {{range .Flags}}<div class="hint warn">{{.}}</div>{{end}}</th>
+    <td>{{or .Owner "nobody"}}</td>
+    <td>{{.Standing}}</td>
+    <td>{{.Autonomy}}</td>
+    <td>{{.Spent}}</td>
+    <td>{{if .Last.IsZero}}<span class="hint">not in this window</span>{{else}}{{when .Last.Unix}}{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p class="hint">None.</p>
+{{end}}
+{{if and (eq .Kind "external agent") $.CanRegister}}
+<form method="post" action="/fleet/act" class="card">
+  <input type="hidden" name="op" value="register">
+  <div class="field"><label for="card">Agent card address {{template "req"}}</label>
+    <input id="card" name="card" type="url" required placeholder="https://agents.example.com/.well-known/agent-card.json"
+      aria-describedby="card-help">
+    <p id="card-help" class="help">Its A2A card: what it says it is and can do. You answer for it here, and
+      Quilzo notices if the card changes.</p></div>
+  <div class="field"><label for="fname">Called here</label>
+    <input id="fname" name="name" pattern="[a-z0-9][a-z0-9\-]{0,63}" placeholder="the name on its card"></div>
+  <button type="submit">Register</button>
+</form>
+{{if .Nodes}}
+<div class="row">
+  <form method="post" action="/fleet/act"><input type="hidden" name="op" value="check"><button type="submit" class="btn-tonal">Check every card</button></form>
+  {{range .Nodes}}<form method="post" action="/fleet/act"><input type="hidden" name="op" value="remove"><input type="hidden" name="name" value="{{.Name}}"><button type="submit" class="btn-text">Remove {{.Name}}</button></form>{{end}}
+</div>
+{{end}}
+{{end}}
+{{end}}
+
+<h2>AI used directly, not through Quilzo</h2>
+<p class="hint">From the security events this install collects (web proxies, DNS, the identity provider's
+  app grants) and its own agents' connections. Not forbidden here, but unseen by the gateway, the budgets
+  and the log.</p>
+{{if .Shadow}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Service</th><th scope="col">Where</th><th scope="col">Who</th>
+    <th scope="col">Seen by</th><th scope="col">Times</th><th scope="col">Last</th></tr></thead>
+  <tbody>
+  {{range .Shadow}}
+  <tr><th scope="row">{{.Service}}</th><td><code>{{.Where}}</code></td><td>{{or .Who "somebody"}}</td>
+    <td>{{.Source}}</td><td>{{.Count}}</td><td>{{when .Last.Unix}}</td></tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p>None seen in the last {{.Days}} days.</p>
+{{end}}
+{{end}}
+{{template "foot" .}}

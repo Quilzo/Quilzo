@@ -42,6 +42,7 @@ import (
 	"github.com/quilzo/quilzo/internal/csp"
 	"github.com/quilzo/quilzo/internal/ext"
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/fleet"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/gate"
 	"github.com/quilzo/quilzo/internal/i18n"
@@ -335,6 +336,15 @@ func cmdServe(root string, args []string) error {
 			}
 			return pageHashes(s, ref)
 		},
+	}
+	srv.Fleet = &admin.Fleet{
+		View: func(days int) (fleet.View, error) { return buildFleet(root, days, time.Now()) },
+		Register: func(cardURL, name, by string) error {
+			_, err := fleetRegister(root, cardURL, name, signedIn(by), time.Now())
+			return err
+		},
+		Remove: func(name, by string) error { return fleetUnregister(root, name, signedIn(by)) },
+		Check:  func() ([]string, error) { return fleetCheck(root, time.Now()) },
 	}
 	srv.Integrations = &admin.Integrations{
 		Held: func() ([]admin.GatewayHeld, error) {

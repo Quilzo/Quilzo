@@ -119,6 +119,47 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "ai.shadow-use",
+		Title:    "AI services are used directly, not through Quilzo",
+		Severity: Medium,
+		Controls: []string{"CM-8", "SA-9"},
+		Why: "Somebody, or an agent's program, reached an AI service in the last week " +
+			"without the gateway: nothing masked what was sent, no budget counted it, " +
+			"and the log does not hold it. Often a person trying something; sometimes " +
+			"the company's data leaving by the side door.",
+		Check: func(s State) []Finding {
+			names := make([]string, 0, len(s.AI.ShadowAI))
+			for n := range s.AI.ShadowAI {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+			var out []Finding
+			for _, n := range names {
+				out = append(out, Finding{Resource: "/fleet",
+					Detail: fmt.Sprintf("%s, by %d people or agents", n, s.AI.ShadowAI[n]),
+					Fix:    "the Fleet screen says who; offer them a model route through the gateway, or ask them to stop"})
+			}
+			return out
+		},
+	},
+	{
+		ID:       "fleet.card-changed",
+		Title:    "Another vendor's agent says it is something else now",
+		Severity: Medium,
+		Controls: []string{"CM-8", "SA-9"},
+		Why: "Its A2A card has changed since somebody registered it and answered for it: " +
+			"what it says it does, where it is, or who runs it. Agents are trusted for " +
+			"what they said on the day somebody looked.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, n := range s.AI.CardsChanged {
+				out = append(out, Finding{Resource: "/fleet", Detail: n + "'s card has changed",
+					Fix: "read the card again; register it again if it is still wanted (quilzo fleet remove, then add)"})
+			}
+			return out
+		},
+	},
+	{
 		ID:       "agent.memory-held",
 		Title:    "What an agent learnt waits for a person",
 		Severity: Low,

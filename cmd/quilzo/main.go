@@ -535,6 +535,10 @@ agents and integrations
                                            a model through the gateway, its hosts through a proxy
   quilzo agent backends                    where programs can run here, and what each box enforces
   quilzo agent could NAME [--model|--program] [--as P] OP [PAGE] | tool:T | host:H   could a run do it, and why
+  quilzo fleet [--days N]                  every agent, app, tool server and model route, and who called what
+  quilzo fleet add CARD_URL [--name N]     register another vendor's agent by its A2A card; you answer for it
+  quilzo fleet remove NAME | check         take one away, or read every card again and say which changed
+  quilzo fleet shadow [--days N]           AI services used directly, from collected events and agents' connections
   quilzo memory list [--agent A] [--held]  what agents remember about you (anybody, for an administrator)
   quilzo memory confirm|delete ID          let a held memory be recalled, or remove one
   quilzo memory edit ID TEXT               rewrite what is remembered about you, as you say it
@@ -808,6 +812,8 @@ func main() {
 		err = cmdSandbox(cmdArgs)
 	case "memory":
 		err = cmdMemory(root, cmdArgs)
+	case "fleet":
+		err = cmdFleet(root, cmdArgs)
 	case "__agentbox":
 		cmdAgentbox()
 	case "__agentbox-exec":

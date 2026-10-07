@@ -331,6 +331,12 @@ type AIFacts struct {
 	// HeldMemories is, for each agent, how many of its memories wait for a
 	// person to confirm them.
 	HeldMemories map[string]int `json:"held_memories,omitempty"`
+	// ShadowAI is each AI service reached directly in the last week, not
+	// through Quilzo, with how many people or agents did; CardsChanged are
+	// other vendors' agents whose cards say something else than when they
+	// were registered.
+	ShadowAI     map[string]int `json:"shadow_ai,omitempty"`
+	CardsChanged []string       `json:"cards_changed,omitempty"`
 }
 
 // AgentProgramFact is an agent's program and its backend's standing here.

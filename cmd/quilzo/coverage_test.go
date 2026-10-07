@@ -225,6 +225,9 @@ var coverage = map[string]surfaces{
 	// Quilzo's own flaws, and whether the binary is itself.
 	"self": {GUI: "/security/inventory", MCP: []string{"inventory"}},
 	// What Quilzo is doing to protect itself.
+	"fleet": {GUI: "/fleet",
+		NoMCP: "a map of every agent and what it reaches is an administrator's; an agent " +
+			"reading the fleet is the reconnaissance the map is there to show"},
 	"memory": {GUI: "/memory",
 		NoMCP: "what an agent remembers about somebody is theirs to see and remove, " +
 			"and an agent forgetting or confirming its own memory is the thing the " +

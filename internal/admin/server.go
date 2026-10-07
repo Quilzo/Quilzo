@@ -153,6 +153,9 @@ type Server struct {
 	// because an empty list and no access look identical and mean opposite
 	// things.
 	Agents *Agents
+	// Fleet is every agent, Quilzo's and other vendors', and who called
+	// what; nil shows nothing.
+	Fleet *Fleet
 	// Inbox is the conversations the site's assistants handed to a person.
 	Inbox *Inbox
 	// Members is the published site's accounts. See members.go.
@@ -1396,6 +1399,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/apps/act", s.handleAppsAct)
 	mux.HandleFunc("/apps/receipt", s.handleAppsReceipt)
 	mux.HandleFunc("/memory", s.handleMemory)
+	mux.HandleFunc("/fleet", s.handleFleet)
+	mux.HandleFunc("/fleet/act", s.handleFleetAct)
 	mux.HandleFunc("/memory/act", s.handleMemoryAct)
 	mux.HandleFunc("/memory/receipt", s.handleMemoryReceipt)
 	mux.HandleFunc("/manifest.webmanifest", s.installManifest)
