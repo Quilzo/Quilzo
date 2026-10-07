@@ -205,6 +205,8 @@ var notAScreen = map[string]string{
 	"/apps/receipt": "is a file to keep, the receipt of one connection's calls, " +
 		"linked from Connected apps beside each connection; with no id it " +
 		"sends the person back there. agentinterface_test.go downloads one",
+	"/security/ai-evidence/aibom.json": "is a file to keep, the AI bill of materials, " +
+		"linked from AI evidence once there is evidence to read; aievidence_test.go downloads one",
 	"/memory/receipt": "is a file to keep, the receipt of what was forgotten, " +
 		"deleted or rewritten about a person, linked from Memory; with nothing " +
 		"to prove it sends the person back there. memory_test.go downloads one",
