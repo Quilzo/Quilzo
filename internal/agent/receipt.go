@@ -87,7 +87,11 @@ type Receipt struct {
 	Omitted int
 	// Private is what the run read that is not published (breaker.go).
 	Private []string `json:"private,omitempty"`
-	Spend   Spend
+	// Recalled and Remembered are the memory the run used and kept, by id:
+	// what steered it, provable afterwards without the memory itself.
+	Recalled   []string `json:"recalled,omitempty"`
+	Remembered []string `json:"remembered,omitempty"`
+	Spend      Spend
 }
 
 // Receipt summarises a run.
@@ -103,6 +107,7 @@ func (t Trace) Receipt(s *Session) Receipt {
 		r.Reads = s.Reads()
 		r.Omitted = s.Omitted()
 		r.Private = s.Private()
+		r.Recalled, r.Remembered = s.MemoryUsed()
 	}
 
 	seen := map[string]bool{}
@@ -187,6 +192,12 @@ func (r Receipt) Detail() map[string]string {
 	// provenance was lost rather than one that read nothing.
 	if len(r.Private) > 0 {
 		d["private"] = strings.Join(r.Private, "; ")
+	}
+	if len(r.Recalled) > 0 {
+		d["recalled"] = strings.Join(r.Recalled, " ")
+	}
+	if len(r.Remembered) > 0 {
+		d["remembered"] = strings.Join(r.Remembered, " ")
 	}
 	if r.Tainted {
 		if p := Provenance(r.Sources, r.Omitted); p != "" {

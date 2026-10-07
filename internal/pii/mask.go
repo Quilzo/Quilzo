@@ -71,6 +71,8 @@ func (m *Masker) Mask(text string, personal bool) string {
 		add(reEmail.FindAllStringIndex(text, -1), Email, func(s string) bool {
 			return !ownDomain(strings.ToLower(s[strings.LastIndexByte(s, '@')+1:]), m.Allowed)
 		})
+		ids, _ := nationalIDs(text)
+		add(ids, NationalID, nil)
 		add(rePhone.FindAllStringIndex(text, -1), Phone, func(s string) bool {
 			d := onlyDigits(s)
 			return len(d) >= 9 && len(d) <= 15

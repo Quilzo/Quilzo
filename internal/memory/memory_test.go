@@ -190,3 +190,62 @@ func TestAMemoryKeepsOnlyWhatCanBeSeen(t *testing.T) {
 		t.Fatalf("kept %q", e.Text)
 	}
 }
+
+// What nobody here reviewed is kept for a month at most, whatever an agent
+// declares; learnt again from something more trusted, it is as trusted as
+// that.
+func TestATierBoundsHowLongAMemoryIsKept(t *testing.T) {
+	s := store(t)
+	long := MaxRetain
+	e, err := s.Remember(Entry{Agent: "help", About: "dana", Kind: Semantic, Text: "Dana's order is late",
+		Run: "r1", By: "dana", Tier: TierUnreviewed}, long, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := e.Expires.Sub(t0); got != TierRetain[TierUnreviewed] {
+		t.Fatalf("unreviewed kept %v", got)
+	}
+	again, err := s.Remember(Entry{Agent: "help", About: "dana", Kind: Semantic, Text: "Dana's order is late",
+		Run: "r2", By: "dana", Tier: TierPerson}, long, t0)
+	if err != nil || again.ID != e.ID || again.Tier != TierPerson || again.Expires.Sub(t0) != long {
+		t.Fatalf("learnt again from the person: %+v %v", again, err)
+	}
+	// And never less trusted by being learnt again from less.
+	if third, _ := s.Remember(Entry{Agent: "help", About: "dana", Kind: Semantic, Text: "Dana's order is late",
+		Run: "r3", By: "dana", Tier: TierUnreviewed}, long, t0); third.Tier != TierPerson {
+		t.Fatalf("demoted: %s", third.Tier)
+	}
+	if _, err := s.Remember(Entry{Agent: "help", About: "dana", Kind: Semantic, Text: "x",
+		Run: "r4", By: "dana", Tier: "rumour"}, long, t0); err == nil {
+		t.Fatal("an unknown tier was kept")
+	}
+	// Confirmed, a held unreviewed memory is still kept a month at most.
+	h, _ := s.Remember(Entry{Agent: "help", About: "sam", Kind: Semantic, Text: "Sam's address changed",
+		Run: "r5", By: "sam", Held: true, Tier: TierUnreviewed}, long, t0)
+	c, err := s.Confirm(h.ID, "admin", t0, long)
+	if err != nil || c.Expires.Sub(c.Created) != TierRetain[TierUnreviewed] {
+		t.Fatalf("confirmed: %+v %v", c, err)
+	}
+}
+
+// The person it is about rewrites it, and what they wrote is what they
+// said.
+func TestAPersonRewritesWhatIsRememberedAboutThem(t *testing.T) {
+	s := store(t)
+	e, _ := s.Remember(Entry{Agent: "help", About: "dana", Kind: Semantic, Text: "Dana prefers French",
+		Run: "r1", By: "dana", Held: true, Tier: TierUnreviewed}, retain, t0)
+	got, err := s.Edit(e.ID, "  Dana prefers Spanish​ ", "dana", t0.Add(time.Hour))
+	if err != nil || got.Text != "Dana prefers Spanish" || got.Tier != TierPerson || got.Held ||
+		got.ConfirmedBy != "dana" || got.Edited.IsZero() || got.Digest != digest("Dana prefers Spanish") || !got.Expires.Equal(e.Expires) {
+		t.Fatalf("%+v %v", got, err)
+	}
+	if found, _ := s.Recall("help", "dana", "Spanish", all, 5, t0.Add(time.Hour)); len(found) != 1 {
+		t.Fatal("the rewritten memory is not recalled")
+	}
+	if _, err := s.Edit(e.ID, "   ", "dana", t0); err == nil {
+		t.Fatal("an empty memory was kept")
+	}
+	if _, err := s.Edit("m_nothing", "x", "dana", t0); err == nil {
+		t.Fatal("a missing memory was edited")
+	}
+}

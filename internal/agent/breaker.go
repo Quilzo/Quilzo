@@ -126,3 +126,54 @@ func (s *Session) breaksTo(host, tool string) (string, bool) {
 	why += ", and this would send to " + to + ". A person decides whether what it holds may leave"
 	return why, true
 }
+
+// MaxMemory bounds the memory a receipt names, each way.
+const MaxMemory = 64
+
+// UsedMemory records memory the run recalled, or kept, by id.
+func (s *Session) UsedMemory(recalled bool, ids ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	list := &s.remembered
+	if recalled {
+		list = &s.recalled
+	}
+	for _, id := range ids {
+		if len(*list) < MaxMemory && !contains(*list, id) {
+			*list = append(*list, id)
+		}
+	}
+}
+
+// MemoryUsed is the memory the run recalled and kept.
+func (s *Session) MemoryUsed() (recalled, remembered []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.recalled...), append([]string(nil), s.remembered...)
+}
+
+// OnlyPublished reports a run that has read, and read only what is
+// published: no draft, no tool's answer, no other agent's, and nothing it
+// read and could not name.
+func (s *Session) OnlyPublished() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.tainted || s.omitted > 0 || isUnpublished(s.manifest.Retrieval.Ref) {
+		return false
+	}
+	for _, src := range s.sourcesLocked() {
+		if src.Kind != FromPage && src.Kind != FromSet {
+			return false
+		}
+	}
+	return true
+}
+
+func contains(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}

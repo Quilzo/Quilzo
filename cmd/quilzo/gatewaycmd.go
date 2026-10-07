@@ -19,6 +19,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/gateway"
+	"github.com/quilzo/quilzo/internal/pii"
 	"github.com/quilzo/quilzo/internal/shield"
 )
 
@@ -86,12 +87,7 @@ func modelGateway(root string) (*gateway.Gateway, *gateway.Config, error) {
 	// record that personal data stayed here, which names none of it.
 	gw.OwnDomains = ownDomains(root)
 	gw.OnMasked = func(consumer, route string, counts map[string]int) {
-		d := map[string]string{"caller": consumer, "route": route}
-		for k, n := range counts {
-			d["masked_"+k] = strconv.Itoa(n)
-		}
-		record(root, audit.Record{Action: "model.masked", Resource: "/models", Outcome: audit.Success,
-			Principal: "quilzo", Kind: audit.KindService, Verified: true, Detail: d})
+		noteMasked(root, consumer, route, counts)
 	}
 	gw.OnTrouble = func(kind, subject string) {
 		name := "route-trouble"
@@ -336,12 +332,27 @@ func directModel(root string) (assist.Model, error) {
 		host = u.Hostname()
 	}
 	return gateway.Guarded{Model: m, Personal: hostIsLocal(host), OwnDomains: ownDomains(root),
-		OnMasked: func(counts map[string]int) {
-			d := map[string]string{"caller": "direct", "route": host}
-			for k, n := range counts {
-				d["masked_"+k] = strconv.Itoa(n)
-			}
-			record(root, audit.Record{Action: "model.masked", Resource: "/models", Outcome: audit.Success,
-				Principal: "quilzo", Kind: audit.KindService, Verified: true, Detail: d})
-		}}, nil
+		OnMasked: func(counts map[string]int) { noteMasked(root, "direct", host, counts) }}, nil
+}
+
+// noteMasked records what was taken out of a prompt before it left, as
+// counts: the record that personal data stayed here, which names none of
+// it. A credential in a prompt is also the shield's: the model never saw
+// it, but somebody pasted it, or an agent read it, somewhere it should not
+// be.
+func noteMasked(root, caller, route string, counts map[string]int) {
+	d := map[string]string{"caller": caller, "route": route}
+	for k, n := range counts {
+		// The log refuses a key that names a secret, and with it the
+		// whole record: a credential is counted under another name.
+		if k == string(pii.Secret) {
+			k = "credential"
+		}
+		d["masked_"+k] = strconv.Itoa(n)
+	}
+	record(root, audit.Record{Action: "model.masked", Resource: "/models", Outcome: audit.Success,
+		Principal: "quilzo", Kind: audit.KindService, Verified: true, Detail: d})
+	if counts[string(pii.Secret)] > 0 {
+		newShieldHost(root).engine.Observe(shield.Signal{Name: "secret-in-prompt", Subject: caller})
+	}
 }

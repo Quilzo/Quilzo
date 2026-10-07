@@ -825,6 +825,8 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	if from.Prior != nil {
 		sess.Recall(from.Prior.Receipt.Sources, from.Prior.Receipt.Omitted)
 		sess.RecallPrivate(from.Prior.Receipt.Private)
+		sess.UsedMemory(true, from.Prior.Receipt.Recalled...)
+		sess.UsedMemory(false, from.Prior.Receipt.Remembered...)
 	}
 
 	// Every capability the manifest holds, tried once, in a fixed order.
@@ -931,7 +933,8 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	}
 
 	runner := agent.Runner{
-		Decide: decide,
+		Decide:     decide,
+		OwnDomains: ownDomains(root),
 		// Reads and writes both, routed by the same classification the
 		// session gate uses. Wiring only the reader would have made every
 		// granted write report "not implemented", which reads as the agent

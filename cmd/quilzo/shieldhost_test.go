@@ -269,3 +269,46 @@ func TestASuspendedAppConnectionRefusesTheTokensItAlreadyHas(t *testing.T) {
 		t.Fatalf("another connection was held with it: %v", err)
 	}
 }
+
+// A credential caught in a prompt is recorded as a count and handed to the
+// shield, which opens a case; personal data alone is only recorded.
+func TestACredentialInAPromptIsTheShields(t *testing.T) {
+	root := shieldRoot(t)
+	noteMasked(root, "chatbot:help", "hosted", map[string]int{"email": 2})
+	if st, _ := shield.Load(root); len(st.Responses) != 0 {
+		t.Fatalf("an email address reached the shield: %+v", st.Responses)
+	}
+	noteMasked(root, "agent:tidy", "hosted", map[string]int{"secret": 1, "email": 1})
+	st, _ := shield.Load(root)
+	if len(st.Responses) != 1 || st.Responses[0].Playbook != "secret-in-prompt" ||
+		!strings.Contains(strings.Join(st.Responses[0].Did, "; "), "case") {
+		t.Fatalf("%+v", st.Responses)
+	}
+	recs, err := audit.Read(auditPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	masked := 0
+	for _, r := range recs {
+		if r.Action == "model.masked" {
+			masked++
+			for _, v := range r.Detail {
+				if strings.Contains(v, "@") {
+					t.Fatalf("a value reached the log: %v", r.Detail)
+				}
+			}
+		}
+	}
+	if masked != 2 {
+		t.Fatalf("%d model.masked records", masked)
+	}
+	if last := recs[len(recs)-1]; last.Action != "model.masked" || last.Detail["masked_credential"] != "1" {
+		// The record of a credential taken out was once refused whole.
+		for _, r := range recs {
+			if r.Action == "model.masked" && r.Detail["masked_credential"] == "1" {
+				return
+			}
+		}
+		t.Fatal("the credential taken out is not counted")
+	}
+}
