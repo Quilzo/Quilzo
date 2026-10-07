@@ -825,6 +825,26 @@ var settings = []Setting{
 			"submission somebody has to unpick by hand.",
 	},
 	{
+		Key: "guardrail.kind", Kind: Text, Default: "",
+		Summary:  "lakera | model-armor | generic, or empty for none",
+		Controls: []string{"SI-4", "SI-10"},
+		Why: "An outside classifier asked about a chatbot's knowledge as it is indexed, and " +
+			"about visitors' questions, after Quilzo's own checks: Lakera Guard, Google " +
+			"Cloud Model Armor, or a classifier served on this network (generic: POST " +
+			"{\"text\"}, answering {\"flagged\"}), such as Llama Prompt Guard 2. What it " +
+			"flags in the knowledge is left out, and a flagged question is counted as an " +
+			"injection attempt; nothing is refused on its word alone. It fails open: when " +
+			"it does not answer, the text stays as Quilzo's own checks left it and the miss " +
+			"is counted. Its key is QUILZO_GUARDRAIL_KEY, never a setting; without one it " +
+			"must be on this network.",
+	},
+	{
+		Key: "guardrail.url", Kind: Text, Default: "",
+		Summary: "the guardrail's address; empty is Lakera Guard's own",
+		Why: "Model Armor's address names the project, location and template " +
+			"(…/templates/T:sanitizeUserPrompt); a generic classifier's is wherever it is served.",
+	},
+	{
 		Key: "telemetry.otlp_endpoint", Kind: Text, Default: "",
 		Summary: "an OpenTelemetry collector to send agent traces to",
 		Why: "Observability for agent runs: which step took the time, where " +

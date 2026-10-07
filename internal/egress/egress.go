@@ -113,6 +113,13 @@ var Purposes = []Purpose{
 			"against one nobody controls",
 	},
 	{
+		Name: "guardrail",
+		What: "asking an outside classifier (Lakera Guard, Model Armor, or one on this network) " +
+			"whether a chatbot's knowledge or a visitor's question is an attack",
+		Without: "only Quilzo's own checks screen what chatbots read and are asked, which is " +
+			"what happens when no guardrail is set",
+	},
+	{
 		Name: "fleet",
 		What: "reading another vendor's agent card (A2A) when somebody registers that agent, " +
 			"and again when the fleet is checked, to see whether it changed",

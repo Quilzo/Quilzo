@@ -66,10 +66,29 @@ type Assistants struct {
 	// HandoffEvent is told that a conversation was opened, added to or
 	// ended — which one and from where, never what was said.
 	HandoffEvent func(action, name, id, source string)
+	// Takeover is told when a page new to a chatbot's knowledge is the first
+	// source it cites: which chatbot, which page, and a digest of the
+	// question, so the shield can count how many different questions one
+	// new page is winning. A page written to win every question is how a
+	// poisoned page behaves (PoisonedRAG); a popular new page can look the
+	// same, so a person is told, nothing is refused.
+	Takeover func(name, page, question string)
+	// Guardrail asks an outside classifier about texts, after Quilzo's own
+	// checks (internal/guardrail): which it flags, and how many went
+	// unanswered, which are kept. GuardrailEvent is told the counts.
+	Guardrail      func(ctx context.Context, texts []string) (flagged []bool, unanswered int)
+	GuardrailEvent func(name, what string, n int)
 
 	mu    sync.Mutex
 	cache map[string]cachedIndex
+	// fresh is, for each chatbot, the pages that entered its knowledge in a
+	// rebuild while this server ran, and when. A page already there when
+	// the server started is not new.
+	fresh map[string]map[string]time.Time
 }
+
+// NewFor is how long a page that entered a chatbot's knowledge counts as new.
+const NewFor = 7 * 24 * time.Hour
 
 type cachedIndex struct {
 	key string
@@ -190,6 +209,18 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 	}
 	if LooksLikeInjection(view.Question) {
 		st.signal(ChatbotInjection, a.Name, r)
+	} else if g := st.Assistants.Guardrail; g != nil {
+		// A second look, counted the same way: a flagged question is a
+		// signal, never a refusal on a classifier's word.
+		gctx, gcancel := context.WithTimeout(r.Context(), 3*time.Second)
+		flagged, missed := g(gctx, []string{view.Question})
+		gcancel()
+		if len(flagged) == 1 && flagged[0] {
+			st.signal(ChatbotInjection, a.Name, r)
+		}
+		if missed > 0 && st.Assistants.GuardrailEvent != nil {
+			st.Assistants.GuardrailEvent(a.Name, "unanswered", missed)
+		}
 	}
 	idx, ierr := st.assistantIndex(a)
 	if ierr != nil {
@@ -218,6 +249,10 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 	}
 	view.Answer = &ans
 	view.Sources = st.citedSources(ans)
+	if top, ok := firstCited(ans); ok && st.Assistants.Takeover != nil && st.Assistants.isFresh(a.Name, top, time.Now()) {
+		sum := sha256.Sum256([]byte(strings.ToLower(strings.Join(strings.Fields(view.Question), " "))))
+		st.Assistants.Takeover(a.Name, top, hex.EncodeToString(sum[:8]))
+	}
 	view.Cards = st.cardsFor(view.Sources, ans)
 	view.FollowUps = followUps(a, view.Question, &ans, view.Sources)
 	if ans.Proposed != nil {
@@ -274,13 +309,87 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	// it on purpose: see internal/assistant/screen.go.
 	if !a.KeepInstructions {
 		passages, _ = assistant.Hold(passages)
+		passages = as.guard(a.Name, passages)
 	}
 	idx := assistant.NewIndex(passages)
 	if as.cache == nil {
 		as.cache = map[string]cachedIndex{}
 	}
+	if old, ok := as.cache[a.Name]; ok {
+		as.noteFresh(a.Name, old.idx, idx, time.Now())
+	}
 	as.cache[a.Name] = cachedIndex{key: key, idx: idx}
 	return idx, nil
+}
+
+// guard leaves out of a chatbot's knowledge what an outside classifier
+// flags, after Quilzo's own screen; what it does not answer about is kept.
+func (as *Assistants) guard(name string, passages []assistant.Passage) []assistant.Passage {
+	if as.Guardrail == nil || len(passages) == 0 {
+		return passages
+	}
+	texts := make([]string, len(passages))
+	for i, p := range passages {
+		texts[i] = p.Header() + "\n" + p.Text
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	flagged, missed := as.Guardrail(ctx, texts)
+	cancel()
+	kept := make([]assistant.Passage, 0, len(passages))
+	held := 0
+	for i, p := range passages {
+		if i < len(flagged) && flagged[i] {
+			held++
+			continue
+		}
+		kept = append(kept, p)
+	}
+	if as.GuardrailEvent != nil {
+		if held > 0 {
+			as.GuardrailEvent(name, "flagged", held)
+		}
+		if missed > 0 {
+			as.GuardrailEvent(name, "unanswered", missed)
+		}
+	}
+	return kept
+}
+
+// noteFresh marks the pages a rebuilt index has that the one before did
+// not. The caller holds the lock.
+func (as *Assistants) noteFresh(name string, was, now *assistant.Index, at time.Time) {
+	before := map[string]bool{}
+	for _, p := range was.Passages {
+		before[p.Page] = true
+	}
+	if as.fresh == nil {
+		as.fresh = map[string]map[string]time.Time{}
+	}
+	f := as.fresh[name]
+	if f == nil {
+		f = map[string]time.Time{}
+		as.fresh[name] = f
+	}
+	for page, since := range f {
+		if at.Sub(since) > NewFor {
+			delete(f, page)
+		}
+	}
+	for _, p := range now.Passages {
+		if p.Page != "" && !before[p.Page] {
+			if _, seen := f[p.Page]; !seen {
+				f[p.Page] = at
+			}
+		}
+	}
+}
+
+// isFresh says a page entered a chatbot's knowledge within NewFor.
+func (as *Assistants) isFresh(name, page string, at time.Time) bool {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	since, ok := as.fresh[name][page]
+	return ok && at.Sub(since) <= NewFor
 }
 
 type askView struct {
@@ -341,6 +450,18 @@ type askField struct {
 	Name, Label, Kind, Value string
 	Required                 bool
 	Choices                  []string
+}
+
+// firstCited is the page of the first source an answer cites.
+func firstCited(ans assistant.Answer) (string, bool) {
+	for _, s := range ans.Kept {
+		for _, n := range s.Cites {
+			if n >= 1 && n <= len(ans.Sources) && ans.Sources[n-1].Page != "" {
+				return ans.Sources[n-1].Page, true
+			}
+		}
+	}
+	return "", false
 }
 
 // citedSources are the passages the answer cites, as links to their pages.

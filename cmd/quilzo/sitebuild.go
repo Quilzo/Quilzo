@@ -169,7 +169,12 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 				Outcome: audit.Denied, Principal: source, Kind: audit.KindUnknown,
 				Detail: map[string]string{"count": fmt.Sprint(n), "distinct": fmt.Sprint(distinct)}})
 		}}
+	guard, guardEvent, gerr := guardrailHooks(root)
+	if gerr != nil {
+		note("  %sguardrail off: %v%s\n", yellow, gerr, reset)
+	}
 	st.Assistants = &public.Assistants{
+		Guardrail: guard, GuardrailEvent: guardEvent,
 		Set:     func() (*assistant.Set, error) { return assistant.Load(assistantsPath(root)) },
 		Handoff: handoffStore(root),
 		HandoffEvent: func(action, name, id, source string) {
