@@ -1,0 +1,45 @@
+{{define "evidence-items"}}
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Requirement</th><th scope="col">Status</th><th scope="col">Evidence</th></tr></thead>
+  <tbody>{{range .}}<tr>
+    <th scope="row"><code>{{.Ref}}</code><div class="hint">{{.Title}}</div></th>
+    <td><span class="wf-word {{if eq .Status "shown"}}good{{else if eq .Status "partly"}}warning{{else}}unknown{{end}}">{{.Status}}</span></td>
+    <td>{{range .Evidence}}<div>{{.}}</div>{{end}}
+      {{range .Findings}}<div class="hint warn">finding: {{.}}</div>{{end}}
+      {{with .Yours}}<div class="hint">yours: {{.}}</div>{{end}}</td>
+  </tr>{{end}}</tbody>
+</table></div>
+{{end}}
+{{template "head" .}}
+<p class="hint"><a href="/security">Security</a> › <a href="/security/frameworks">Frameworks</a></p>
+<h1>AI evidence</h1>
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">What auditors and regulators ask an organisation using AI for, read from what its
+  agents, chatbots and models did: counts from the signed log and facts about how they are set up.</p>
+<p class="chips">
+  <a href="/security/ai-evidence?days=30"{{if eq .Days 30}} class="on" aria-current="true"{{end}}>Last 30 days</a>
+  <a href="/security/ai-evidence"{{if eq .Days 90}} class="on" aria-current="true"{{end}}>Last 90 days</a>
+  <a href="/security/ai-evidence?days=365"{{if eq .Days 365}} class="on" aria-current="true"{{end}}>Last year</a>
+</p>
+<ul class="legend">
+  <li><span class="wf-word good">shown</span> the evidence here supports it</li>
+  <li><span class="wf-word warning">partly</span> it does, with the gaps named</li>
+  <li><span class="wf-word unknown">yours</span> only the organisation can show it; what Quilzo contributes is listed</li>
+</ul>
+<p class="notice">Evidence from the running system, not a certification.</p>
+<p><a class="btn btn-tonal" href="/security/ai-evidence/aibom.json{{if ne .Days 90}}?days={{.Days}}{{end}}">Download the AI bill of materials</a>
+  <span class="hint">CycloneDX 1.6: the models, agents, chatbots, data and services, and which uses which.</span></p>
+
+
+<h2>EU AI Act: a deployer's duties</h2>
+<p class="hint">Regulation (EU) 2024/1689 as amended by Regulation (EU) 2026/1744. Article 26 binds the deployers
+  of high-risk systems; Article 50 every deployer of a system that talks to people or makes content.
+  {{index .DutyCounts "shown"}} shown, {{index .DutyCounts "partly"}} partly, {{index .DutyCounts "yours"}} yours.</p>
+{{template "evidence-items" .Duties}}
+
+<h2>ISO/IEC 42001: Annex A</h2>
+<p class="hint">The reference controls of an AI management system, as a statement of applicability.
+  {{index .AnnexCounts "shown"}} shown, {{index .AnnexCounts "partly"}} partly, {{index .AnnexCounts "yours"}} yours.</p>
+{{template "evidence-items" .Annex}}
+{{end}}
+{{template "foot" .}}

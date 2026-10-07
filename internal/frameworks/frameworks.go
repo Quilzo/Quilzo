@@ -234,6 +234,15 @@ var fromRule = map[string][]Ref{
 	"ai.agent-unevaluated": {{"nist-ai-rmf", "MEASURE 2.5"}, {"iso-42001", "A.6.2.4"}},
 	"ai.agent-flagged": {{"nist-ai-rmf", "MANAGE 4.1"}, {"iso-42001", "A.6.2.6"},
 		{"owasp-llm", "LLM06"}},
+	// The agent control plane's checks.
+	"agent.no-sponsor":           {{"iso-42001", "A.3.2"}, {"eu-ai-act", "Art. 26(2)"}, {"nist-ai-rmf", "GOVERN 2.1"}},
+	"agent.sponsor-gone":         {{"iso-42001", "A.3.2"}, {"eu-ai-act", "Art. 26(2)"}, {"nist-ai-rmf", "GOVERN 2.1"}},
+	"agent.memory-held":          {{"iso-42001", "A.7.4"}, {"owasp-llm", "LLM04"}},
+	"model.personal-data-leaves": {{"iso-42001", "A.10.3"}, {"gdpr", "Art. 28"}},
+	"integration.unpinned":       {{"iso-42001", "A.4.4"}, {"owasp-llm", "LLM03"}},
+	"integration.tool-changed":   {{"iso-42001", "A.10.3"}, {"owasp-llm", "LLM03"}},
+	"ai.shadow-use":              {{"iso-42001", "A.10.3"}, {"iso-42001", "A.4.4"}, {"nist-ai-rmf", "GOVERN 6.1"}},
+	"fleet.card-changed":         {{"iso-42001", "A.10.3"}, {"nist-ai-rmf", "GOVERN 6.1"}},
 	"privacy.model-egress": {{"gdpr", "Art. 28"}, {"gdpr", "Art. 44"},
 		{"gdpr", "Art. 30"}, {"ccpa", "§ 1798.100(d)"}, {"owasp-llm", "LLM02"}},
 }

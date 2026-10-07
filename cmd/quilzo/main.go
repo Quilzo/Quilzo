@@ -514,6 +514,9 @@ compliance evidence
   quilzo compliance pledge                 where Quilzo stands on each goal of CISA's Secure by Design pledge
   quilzo compliance ssp --impact moderate  a draft OSCAL system security plan for this deployment
   quilzo compliance ksi [-o FILE]          what Quilzo shows for each FedRAMP 20x Key Security Indicator
+  quilzo compliance ai-act [--days N]      the EU AI Act's deployer duties, each with what the agents did as evidence
+  quilzo compliance iso42001 [--days N]    ISO/IEC 42001 Annex A, as a statement of applicability with evidence
+  quilzo compliance aibom [FILE]           an AI bill of materials, CycloneDX 1.6: models, agents, data, services
   quilzo compliance acr                    an accessibility conformance report
   quilzo policy show | params              the organisation's NIST parameters, declared and in effect
   quilzo policy propose ac-12_odp="8 hours" --reason "…"   a change, approved by a second administrator

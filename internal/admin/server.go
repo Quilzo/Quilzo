@@ -156,6 +156,9 @@ type Server struct {
 	// Fleet is every agent, Quilzo's and other vendors', and who called
 	// what; nil shows nothing.
 	Fleet *Fleet
+	// AIEvidence is the evidence for AI: deployer duties, ISO/IEC 42001
+	// and the AI bill of materials; nil shows none.
+	AIEvidence *AIEvidence
 	// Inbox is the conversations the site's assistants handed to a person.
 	Inbox *Inbox
 	// Members is the published site's accounts. See members.go.
@@ -1176,6 +1179,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/page/delete", s.handlePageDelete)
 	mux.HandleFunc("/security", s.handleSecurity)
 	mux.HandleFunc("/security/frameworks", s.handleFrameworks)
+	mux.HandleFunc("/security/ai-evidence", s.handleAIEvidence)
+	mux.HandleFunc("/security/ai-evidence/aibom.json", s.handleAIEvidence)
 	mux.HandleFunc("/security/frameworks/", s.handleFramework)
 	mux.HandleFunc("/security/rules", s.handleRules)
 	mux.HandleFunc("/security/rule/", s.handleRule)
