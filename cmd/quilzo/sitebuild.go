@@ -440,6 +440,7 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 					DocumentationURL: cfg.Raw("site.docs_url"),
 					Provider:         cfg.Raw("site.provider"),
 					ProviderURL:      cfg.Raw("site.provider_url"),
+					TaskURL:          a2aTaskURL(cfg),
 				})
 				// Validated on the way out. A deployment that would publish an
 				// invalid card serves nothing instead: no card is a site that

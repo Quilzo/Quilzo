@@ -81,14 +81,23 @@ type Card struct {
 	Version            string       `json:"version"`
 	DocumentationURL   string       `json:"documentationUrl,omitempty"`
 	Capabilities       Capabilities `json:"capabilities"`
-	DefaultInputModes  []string     `json:"defaultInputModes"`
-	DefaultOutputModes []string     `json:"defaultOutputModes"`
-	Skills             []Skill      `json:"skills"`
+	// SupportedInterfaces are where A2A 1.0 tasks are taken, when they are.
+	SupportedInterfaces []Interface `json:"supportedInterfaces,omitempty"`
+	DefaultInputModes   []string    `json:"defaultInputModes"`
+	DefaultOutputModes  []string    `json:"defaultOutputModes"`
+	Skills              []Skill     `json:"skills"`
 
 	// Governance is the extension this project adds, keyed by its URI so a
 	// consumer that does not know it can ignore it and one that does can find
 	// it without guessing at a field name.
 	Governance map[string]Governance `json:"extensions,omitempty"`
+}
+
+// Interface is an address A2A 1.0 is spoken at.
+type Interface struct {
+	URL             string `json:"url"`
+	ProtocolBinding string `json:"protocolBinding"`
+	ProtocolVersion string `json:"protocolVersion"`
 }
 
 // Provider is who runs this.
@@ -219,6 +228,8 @@ type Options struct {
 	Provider string
 	// ProviderURL is theirs, not this project's.
 	ProviderURL string
+	// TaskURL is where A2A 1.0 tasks are taken, when they are.
+	TaskURL string
 }
 
 // From builds a card from the agents a store has declared.
@@ -256,6 +267,9 @@ func From(manifests map[string]agent.Manifest, known map[string]bool, o Options)
 	}
 	if o.Provider != "" {
 		c.Provider = &Provider{Organization: o.Provider, URL: o.ProviderURL}
+	}
+	if o.TaskURL != "" {
+		c.SupportedInterfaces = []Interface{{URL: o.TaskURL, ProtocolBinding: "JSONRPC", ProtocolVersion: TaskVersion}}
 	}
 	c.Description = fmt.Sprintf(
 		"Content held in a merkle store, and the agents allowed to touch it. "+

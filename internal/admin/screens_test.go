@@ -192,6 +192,9 @@ var notAScreen = map[string]string{
 		"interface as a desktop application; there is no page to render",
 	"/decentralised/bundle": "sends a tar.gz of the rendered site, not a page; " +
 		"it redirects with an explanation when there is nothing published",
+	"/a2a": "takes tasks from other agents: JSON-RPC posted by programs with a " +
+		"bearer token, 404 while tasks or the interface are off. " +
+		"agentinterface_test.go posts to it",
 	"/mcp": "is the agent interface: JSON-RPC posted by programs with a " +
 		"bearer token, 404 while the interface is off",
 	"/.well-known/oauth-protected-resource":     "is JSON for programs (RFC 9728), 404 until the interface and the admin's address are set",

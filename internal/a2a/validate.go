@@ -36,6 +36,14 @@ func (c Card) Validate() error {
 	if err := absoluteHTTPS(c.URL, "url"); err != nil {
 		return err
 	}
+	for _, in := range c.SupportedInterfaces {
+		if err := absoluteHTTPS(in.URL, "supportedInterfaces url"); err != nil {
+			return err
+		}
+		if in.ProtocolBinding == "" || in.ProtocolVersion == "" {
+			return fmt.Errorf("an interface names its binding and its protocol version")
+		}
+	}
 	if c.PreferredTransport == "" {
 		return fmt.Errorf(
 			"no preferredTransport, so a caller does not know how to reach it")
