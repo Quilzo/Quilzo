@@ -123,7 +123,7 @@ func anchorSubmit(root string, args []string) error {
 	defer cancel()
 
 	w.Human("submitting %s%s%s\n", bold, short(fp), reset)
-	proofs, errs := anchor.Submit(ctx, httpSubmitter{fetch.New()}, digest, nil,
+	proofs, errs := anchor.Submit(ctx, httpSubmitter{fetch.For("anchor")}, digest, nil,
 		time.Now())
 
 	for _, e := range errs {
@@ -173,7 +173,7 @@ func anchorUpgrade(root string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	sub := httpSubmitter{fetch.New()}
+	sub := httpSubmitter{fetch.For("anchor")}
 
 	var upgraded, waiting int
 	for i := range file.Proofs {

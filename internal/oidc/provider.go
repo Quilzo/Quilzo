@@ -93,7 +93,7 @@ const DefaultTTL = time.Hour
 // address at connect time rather than before it.
 func Discover(ctx context.Context, issuer string, client *fetch.Client) (*Provider, error) {
 	if client == nil {
-		client = fetch.New()
+		client = fetch.For("sso")
 	}
 	base := strings.TrimSuffix(strings.TrimSpace(issuer), "/")
 	res, err := client.Get(ctx, base+"/.well-known/openid-configuration")

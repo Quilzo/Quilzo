@@ -79,3 +79,15 @@ func TestKeylessConfigurationIsAcceptedOnlyForALocalModel(t *testing.T) {
 // NewHTTPModel2Err is NewHTTPModel's error, named so the test above reads as
 // one assertion per line.
 func NewHTTPModel2Err() error { _, err := NewHTTPModel(); return err }
+
+// A model's key is not sent where anybody on the path can read it.
+func TestAModelsKeyTravelsOnlyOverHTTPS(t *testing.T) {
+	if _, err := NewHTTPModelAt("http://models.example.com/v1", "sk-1", "m"); err == nil {
+		t.Fatal("a key over plain http to another host was accepted")
+	}
+	for _, ok := range []string{"https://models.example.com/v1", "http://127.0.0.1:11434/v1", "http://localhost:8080/v1"} {
+		if _, err := NewHTTPModelAt(ok, "sk-1", "m"); err != nil {
+			t.Errorf("%s: %v", ok, err)
+		}
+	}
+}

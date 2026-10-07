@@ -6,6 +6,7 @@ package egress_test
 import "github.com/quilzo/quilzo/internal/egress"
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,5 +160,55 @@ func TestEveryPurposeSaysWhatBreaks(t *testing.T) {
 				"turning the network off is a decision nobody can weigh",
 				p.Name)
 		}
+	}
+}
+
+// Every fetch client names what it is for.
+//
+// One that does not is counted as an import, so an operator who allows a
+// purpose and not another is deciding about the wrong feature: webhooks,
+// sign-in discovery, anchoring and federation were all, for a while,
+// imports to this package. fetch.For names it; fetch.New may only be used
+// where the purpose is set on the next line.
+func TestEveryFetchClientNamesItsPurpose(t *testing.T) {
+	var found []string
+	err := filepath.WalkDir("../..", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if n := d.Name(); n == "testdata" || n == ".git" || n == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel := strings.TrimPrefix(filepath.ToSlash(path), "../../")
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") || strings.HasPrefix(rel, "internal/fetch/") {
+			return nil
+		}
+		body, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		lines := strings.Split(string(body), "\n")
+		for i, line := range lines {
+			if !strings.Contains(line, "fetch.New()") {
+				continue
+			}
+			next := ""
+			for j := i + 1; j < len(lines) && j <= i+3; j++ {
+				next += lines[j]
+			}
+			if !strings.Contains(next, ".Purpose = ") {
+				found = append(found, fmt.Sprintf("%s:%d", rel, i+1))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range found {
+		t.Errorf("%s makes a fetch client without naming its purpose; use fetch.For(purpose)", f)
 	}
 }

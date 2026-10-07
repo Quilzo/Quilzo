@@ -632,7 +632,7 @@ func auditAnchor(root string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	proofs, errs := anchor.Submit(ctx, httpSubmitter{fetch.New()}, digest, nil,
+	proofs, errs := anchor.Submit(ctx, httpSubmitter{fetch.For("anchor")}, digest, nil,
 		time.Now())
 	for _, e := range errs {
 		w.Human("  %s%v%s\n", yellow, e, reset)

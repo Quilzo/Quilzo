@@ -525,7 +525,13 @@ func (c *Client) post(ctx context.Context, in agent.Integration, msg rpc, versio
 	if do == nil {
 		client := c.Fetch
 		if client == nil {
+			// Read no more than a result may be: a server answering with
+			// more is refused below, and is not first held in memory. And
+			// counted as what it is, a call to a declared tool server.
 			client = fetch.New()
+			client.Purpose = "integrations"
+			client.UserAgent = "quilzo/1 (+mcp client)"
+			client.Limits = fetch.Limits{MaxBytes: MaxResult, Timeout: 30 * time.Second, MaxRedirects: -1}
 		}
 		do = func(ctx context.Context, url string, body []byte, headers map[string]string) (*fetch.Result, error) {
 			return client.Do(ctx, "POST", url, body, headers)

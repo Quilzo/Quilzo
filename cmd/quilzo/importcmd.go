@@ -699,7 +699,7 @@ func mediaGet(root string, args []string) error {
 		return fmt.Errorf("usage: quilzo media get <https://...> [--alt \"...\"]")
 	}
 
-	c := fetch.New()
+	c := fetch.For("import")
 	res, err := c.Get(context.Background(), pos[0])
 	if err != nil {
 		return errBlocked{err}

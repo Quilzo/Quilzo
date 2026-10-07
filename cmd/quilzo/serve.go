@@ -1142,7 +1142,7 @@ func cmdServe(root string, args []string) error {
 					"that cannot work", cfg.Issuer, oidcSecretEnv)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		provider, derr := oidc.Discover(ctx, cfg.Issuer, fetch.New())
+		provider, derr := oidc.Discover(ctx, cfg.Issuer, fetch.For("sso"))
 		cancel()
 		if derr != nil {
 			return fmt.Errorf("cannot reach the identity provider: %w", derr)
