@@ -203,7 +203,7 @@ func (s *Server) gateProposal(data map[string]any, prop *assist.Proposal,
 	// pages alone would miss every finding that is about how they sit beside
 	// what is already there — a reference to a page that is not in the draft,
 	// a menu entry pointing at nothing.
-	would := make(map[string]any, len(current)+len(prop.Pages))
+	would := map[string]any{}
 	for name, body := range current {
 		would[name] = body
 	}
