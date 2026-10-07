@@ -741,6 +741,20 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 				facts.HeldMemories[e.Agent]++
 			}
 		}
+		now := time.Now()
+		for _, s := range shadowAI(root, now.Add(-7*24*time.Hour), now) {
+			if facts.ShadowAI == nil {
+				facts.ShadowAI = map[string]int{}
+			}
+			facts.ShadowAI[s.Service]++
+		}
+		if reg, err := loadFleet(root); err == nil {
+			for _, e := range reg.Agents {
+				if e.Changed {
+					facts.CardsChanged = append(facts.CardsChanged, e.Name)
+				}
+			}
+		}
 		sort.Slice(facts.Identities, func(i, j int) bool { return facts.Identities[i].Name < facts.Identities[j].Name })
 		sort.Slice(facts.Evals, func(i, j int) bool { return facts.Evals[i].Name < facts.Evals[j].Name })
 	}

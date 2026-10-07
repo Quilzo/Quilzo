@@ -141,3 +141,23 @@ func TestHeldMemoriesAreAFindingUntilSomebodyLooks(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestShadowAIAndAChangedCardAreFindings(t *testing.T) {
+	rules := func(s State) map[string][]string {
+		out := map[string][]string{}
+		for _, f := range Scan(s, nil).Findings {
+			out[f.Rule] = append(out[f.Rule], f.Detail)
+		}
+		return out
+	}
+	s := State{Now: time.Now(), AI: AIFacts{Checked: true, ShadowAI: map[string]int{"OpenAI": 3, "Anthropic": 1},
+		CardsChanged: []string{"help-desk"}}}
+	got := rules(s)
+	if len(got["ai.shadow-use"]) != 2 || got["ai.shadow-use"][1] != "OpenAI, by 3 people or agents" ||
+		len(got["fleet.card-changed"]) != 1 || !strings.Contains(got["fleet.card-changed"][0], "help-desk") {
+		t.Fatalf("%v", got)
+	}
+	if got := rules(State{Now: time.Now(), AI: AIFacts{Checked: true}}); len(got["ai.shadow-use"])+len(got["fleet.card-changed"]) != 0 {
+		t.Fatalf("flagged with nothing seen: %v", got)
+	}
+}

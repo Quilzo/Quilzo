@@ -133,6 +133,10 @@ var destinations = []destination{
 	{"feeds", "Feeds", "/security/feeds", "Security operations", "feeds", auth.ActGrant},
 
 	{"agents", "Agents", "/agents", "Administration", "agents", auth.ActGrant},
+	// Beside Agents: every agent, Quilzo's and other vendors', the apps and
+	// tool servers and model routes, who called what, and the AI use
+	// nobody registered.
+	{"fleet", "Fleet", "/fleet", "Administration", "fleet", auth.ActGrant},
 	{"people", "People", "/people", "Administration", "users", auth.ActGrant},
 	// The site's own accounts, beside the people who run it.
 	{"members", "Members", "/members", "Administration", "members", auth.ActGrant},
@@ -206,7 +210,7 @@ var docSections = map[string]bool{
 	"vulnerabilities": true, "cases": true,
 	"logging": true, "users": true, "auth": true, "integrations": true,
 	"settings": true, "api": true, "profile": true, "start": true,
-	"agents": true, "design": true, "workforce": true, "agent-interface": true,
+	"agents": true, "design": true, "workforce": true, "agent-interface": true, "fleet": true,
 
 	// Sections no screen owns, because they explain a concept or a surface
 	// rather than a destination. Named individually so that one quietly
@@ -558,6 +562,7 @@ func Screens() []find.Destination {
 		"passkeys":     {"passkey", "webauthn", "2fa", "security key", "login"},
 		"apps":         {"oauth", "mcp", "connected", "assistant", "claude", "chatgpt", "copilot", "agent interface"},
 		"memory":       {"remember", "forget", "personal data", "privacy", "erase", "recall"},
+		"fleet":        {"agent map", "shadow ai", "a2a", "registry", "inventory", "who called what"},
 		"integrations": {"webhook", "siem", "extension"},
 		"settings":     {"configuration", "config", "option", "preference"},
 		"start":        {"help", "documentation", "docs", "guide", "getting started"},

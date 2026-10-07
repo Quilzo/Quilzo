@@ -149,7 +149,10 @@ var commandNeeds = map[string]need{
 	"agent draft": {action: auth.ActEditDraft},
 	// Each memory is checked against whom it is about; seeing your own needs
 	// only that you are somebody here.
-	"memory":        {action: auth.ActView},
+	"memory": {action: auth.ActView},
+	// A map of every agent and what it reaches is a map of the blast
+	// radius, and registering another vendor's agent is answering for it.
+	"fleet":         {action: auth.ActGrant},
 	"agent program": {action: auth.ActGrant},
 	// Checking a receipt reads only the file and keys it is given.
 	"agent verify-receipt": {why: "checks a file against public keys; it reads nothing in the store"},

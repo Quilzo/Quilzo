@@ -2858,3 +2858,13 @@ td code, th code { display: inline-block; max-width: 40ch; overflow: hidden;
 /* A command, and what a step was given, are text to read rather than
    identifiers: they wrap where their words do, and are never cut short. */
 td code.cmd, th code.cmd, .run-steps td:nth-child(2) code { display: inline; max-width: none; white-space: normal; }
+
+/* The fleet's map: who called what. Wider than an agent's, so it scrolls
+   inside its frame on a phone rather than shrinking past reading. */
+.fleetmap { max-width: none; min-width: 760px; }
+.fleetmap .box.person { fill: var(--surface-container-high); }
+.fleetmap .box.agent { fill: var(--primary-container); stroke: var(--primary); }
+.fleetmap .box.external-agent, .fleetmap .box.app { fill: var(--secondary-container); }
+.fleetmap .box.tool-server, .fleetmap .box.model-route, .fleetmap .box.Quilzo { fill: var(--surface-container-low); }
+.fleetmap .box.host { fill: var(--warning-container); stroke: var(--viz-warning); }
+
