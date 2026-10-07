@@ -196,6 +196,18 @@ var Purposes = []Purpose{
 			"administrator registered on the Connected apps screen can connect",
 	},
 	{
+		Name:    "replication",
+		What:    "a replica reading the published site from the store it follows",
+		Without: "a replica stops following and serves what it last had",
+	},
+	{
+		Name: "integrations",
+		What: "calling a tool on an MCP server an administrator declared and enabled, for an " +
+			"agent's run or for another system's agent through the gateway",
+		Without: "agents call no tool outside, and the gateway offers nothing; reading and " +
+			"writing what Quilzo holds still works",
+	},
+	{
 		Name: "agents",
 		What: "an agent's program reaching a host its manifest names, through " +
 			"the proxy its sandbox is given; each connection is recorded",

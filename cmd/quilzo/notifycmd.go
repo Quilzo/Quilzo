@@ -680,7 +680,7 @@ func notifySenders(root string, st *notify.Store, at time.Time) (
 			// customer's endpoint is a URL somebody configured and this
 			// program requests it from inside the network, which is the
 			// shape that needs a connect-time address check.
-			Post: sender{fetch.New()}, Secret: hookSecret, At: clock,
+			Post: sender{fetch.For("webhook")}, Secret: hookSecret, At: clock,
 		}
 	}
 	return out, nil

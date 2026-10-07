@@ -646,7 +646,7 @@ func federationFrom(root string, cfg *config.Config, baseURL string) (
 			KeyID: base + "/@#main-key",
 			Key:   signer,
 			Post: func(req *http.Request) (int, error) {
-				return fetch.New().DoChecked(req)
+				return fetch.For("federation").DoChecked(req)
 			},
 		},
 	}, nil
@@ -723,7 +723,7 @@ func fediverseFetcher(keyID string, signer crypto.Signer) func(string) ([]byte, 
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 
-		res, err := fetch.New().GetSigned(ctx, raw,
+		res, err := fetch.For("federation").GetSigned(ctx, raw,
 			"application/activity+json, application/ld+json",
 			func(r *http.Request) error {
 				return httpsig.Sign(r, keyID, httpsig.RSAPKCS1SHA256, signer,

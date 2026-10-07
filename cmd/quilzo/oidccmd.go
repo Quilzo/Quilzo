@@ -265,7 +265,7 @@ func oidcCheck(root string, args []string) error {
 	defer cancel()
 
 	w.Human("%sdiscovery%s\n", bold, reset)
-	p, err := oidc.Discover(ctx, target, fetch.New())
+	p, err := oidc.Discover(ctx, target, fetch.For("sso"))
 	if err != nil {
 		return errBlocked{err}
 	}

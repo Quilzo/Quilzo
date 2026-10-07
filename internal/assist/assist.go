@@ -473,6 +473,13 @@ func NewHTTPModelAt(base, key, model string) (*HTTPModel, error) {
 				base, why)
 		}
 	}
+	// A key over plain http is a key anybody on the path can read: sent
+	// only over https, or to a model on this machine.
+	if key != "" && strings.HasPrefix(strings.ToLower(base), "http://") {
+		if local, _ := isLocalEndpoint(base); !local {
+			return nil, fmt.Errorf("%s is plain http and not on this machine, and a model's key is sent only over https", base)
+		}
+	}
 	reach := fetch.Anywhere
 	if key == "" {
 		reach = fetch.OnThisNetwork
