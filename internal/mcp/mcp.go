@@ -53,6 +53,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -160,8 +161,23 @@ type Server struct {
 	// that was open by omission.
 	Authorise func(Operation) error
 
+	// Direct, when set, makes this a server that offers another server's
+	// tools as they are, which is what a gateway in front of somebody
+	// else's server serves: its tools are listed, and each call is the
+	// host's to authorise and forward. Nothing runs without Call.
+	Direct *Direct
+
 	operations map[string]Operation
 	handlers   map[string]Handler
+}
+
+// Direct is another server's tools, as a gateway offers them.
+type Direct struct {
+	Instructions string
+	Tools        []Tool
+	// Call authorises and performs one tool. A *Refusal or a *ScopeError
+	// is a decision, answered as one.
+	Call func(name string, args map[string]any) (string, error)
 }
 
 func NewServer(name, version string) *Server {
@@ -183,6 +199,9 @@ func (s *Server) Register(op Operation, h Handler) {
 // Deliberately short descriptions. These are the only definitions that enter a
 // context window unasked, so every word in them is paid for on each session.
 func (s *Server) tools() []Tool {
+	if s.Direct != nil {
+		return append([]Tool(nil), s.Direct.Tools...)
+	}
 	return []Tool{
 		{
 			Name: "quilzo_find",
@@ -326,8 +345,15 @@ func (s *Server) initialize(version string) map[string]any {
 		"protocolVersion": version,
 		"capabilities":    map[string]any{"tools": map[string]any{}},
 		"serverInfo":      map[string]any{"name": s.Name, "version": s.Version},
-		"instructions":    instructions,
+		"instructions":    s.instructions(),
 	}
+}
+
+func (s *Server) instructions() string {
+	if s.Direct != nil {
+		return s.Direct.Instructions
+	}
+	return instructions
 }
 
 // discover is server/discover: the revisions, what is offered, and who.
@@ -335,7 +361,7 @@ func (s *Server) discover() map[string]any {
 	res := s.complete(map[string]any{
 		"supportedVersions": Supported(),
 		"capabilities":      map[string]any{"tools": map[string]any{}},
-		"instructions":      instructions,
+		"instructions":      s.instructions(),
 	})
 	res["ttlMs"] = 3600000
 	res["cacheScope"] = "public"
@@ -363,6 +389,9 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	var p callParams
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return nil, &Error{Code: CodeInvalidParams, Message: err.Error()}
+	}
+	if s.Direct != nil {
+		return s.callDirect(p)
 	}
 
 	if p.Name == "quilzo_find" {
@@ -430,6 +459,42 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 		return nil, &Error{Code: CodeInternal, Message: err.Error()}
 	}
 	return textResult(fmt.Sprintf("%v", result)), nil
+}
+
+// callDirect performs one of another server's tools, through the host.
+func (s *Server) callDirect(p callParams) (any, *Error) {
+	known := false
+	for _, t := range s.Direct.Tools {
+		if t.Name == p.Name {
+			known = true
+		}
+	}
+	if !known {
+		return nil, &Error{Code: CodeMethodNotFound, Message: fmt.Sprintf("no tool %q here", p.Name)}
+	}
+	if s.Direct.Call == nil {
+		return nil, &Error{Code: CodeInternal, Message: fmt.Sprintf(
+			"%q cannot run: nothing is wired to authorise and forward it", p.Name)}
+	}
+	args := p.Arguments
+	if args == nil {
+		args = map[string]any{}
+	}
+	out, err := s.Direct.Call(p.Name, args)
+	if err != nil {
+		var se *ScopeError
+		var ref *Refusal
+		switch {
+		case errors.As(err, &se):
+			return nil, &Error{Code: CodeRefused, Message: se.Reason,
+				Data: map[string]any{"refused": true, "retryable": false}, cause: err}
+		case errors.As(err, &ref):
+			return nil, &Error{Code: CodeRefused, Message: ref.Reason,
+				Data: map[string]any{"refused": true, "retryable": false}}
+		}
+		return nil, &Error{Code: CodeInternal, Message: err.Error()}
+	}
+	return textResult(out), nil
 }
 
 func asRefusal(err error, out **Refusal) bool {

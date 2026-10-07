@@ -57,6 +57,16 @@ type Integrations struct {
 	// was granted is visible without reading JSON over somebody's shoulder,
 	// which is a different job from granting it.
 	Declared func() (agent.Integrations, error)
+	// Held are calls through the MCP gateway waiting for a person, and
+	// Decide approves or declines one; nil when nothing is held here.
+	Held   func() ([]GatewayHeld, error)
+	Decide func(id string, approve bool, by string) error
+}
+
+// GatewayHeld is a call through the gateway waiting for a person.
+type GatewayHeld struct {
+	ID, Integration, Tool, For, App, Args string
+	Asked                                 time.Time
 }
 
 func (s *Server) handleIntegrations(w http.ResponseWriter, r *http.Request) {
@@ -111,6 +121,16 @@ func (s *Server) handleIntegrations(w http.ResponseWriter, r *http.Request) {
 		} else {
 			data["Extensions"] = exts
 		}
+	}
+	if s.Integrations.Held != nil {
+		held, err := s.Integrations.Held()
+		if err != nil {
+			data["HeldError"] = err.Error()
+		}
+		data["Held"] = held
+	}
+	if s.Interface != nil && s.Interface.Gateway != nil {
+		data["GatewayBase"] = s.ownOrigin(r) + "/mcp/gateway/"
 	}
 	if s.Integrations.Declared != nil {
 		set, err := s.Integrations.Declared()
@@ -337,6 +357,29 @@ func (s *Server) handleExtensionSave(w http.ResponseWriter, r *http.Request) {
 	s.auditPub(p, "ext.add", "/", map[string]string{"extension": m.Name,
 		"sha256": shortHash(m.SHA256), "optional": fmt.Sprint(m.Optional)})
 	s.intRedirect(w, r, "registered "+m.Name+", pinned to "+shortHash(m.SHA256), "")
+}
+
+// handleGatewayHeld approves or declines a call through the gateway that
+// a person approves call by call.
+func (s *Server) handleGatewayHeld(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.integrationWriter(w, r)
+	if !ok {
+		return
+	}
+	if s.Integrations.Decide == nil {
+		s.intRedirect(w, r, "", "nothing is held in this build")
+		return
+	}
+	id, approve := r.FormValue("id"), r.FormValue("decision") == "approve"
+	if err := s.Integrations.Decide(id, approve, p.Name); err != nil {
+		s.intRedirect(w, r, "", err.Error())
+		return
+	}
+	said := "declined " + id
+	if approve {
+		said = "approved " + id + ": the same call goes through once, within the hour"
+	}
+	s.intRedirect(w, r, said, "")
 }
 
 func (s *Server) handleExtensionRemove(w http.ResponseWriter, r *http.Request) {

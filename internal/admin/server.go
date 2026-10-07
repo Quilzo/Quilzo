@@ -1262,6 +1262,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/integrations/extension", s.handleExtensionSave)
 	mux.HandleFunc("/integrations/extension/remove", s.handleExtensionRemove)
 	mux.HandleFunc("/integrations/siem", s.handleSIEMExport)
+	mux.HandleFunc("/integrations/held", s.handleGatewayHeld)
 	mux.HandleFunc("/forms", s.handleForms)
 	mux.HandleFunc("/forms/save", s.handleFormSave)
 	mux.HandleFunc("/forms/close", s.handleFormClose)
@@ -1384,6 +1385,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/agents/evals/act", s.handleEvalsAct)
 	// The agent interface, and how apps connect to it. See agentinterface.go.
 	mux.HandleFunc("/mcp", s.handleMCP)
+	mux.HandleFunc("/mcp/gateway/", s.handleGateway)
 	mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", s.handleResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleServerMetadata)

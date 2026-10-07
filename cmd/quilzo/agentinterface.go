@@ -174,6 +174,14 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 			}
 			return buildMCP(root, s, remoteCaller(tok), tplDir), nil
 		},
+		Offered: func(name string) bool { _, ok := gatewayOffered(root, name); return ok },
+		Gateway: func(r *http.Request, c *mcp.Caller, name string) (*mcp.Server, error) {
+			tok, ok := c.Data.(auth.Token)
+			if !ok {
+				return nil, errors.New("the caller was not established")
+			}
+			return gatewayServer(r, root, name, tok)
+		},
 		// Every call, reads included: an agent's reading is how it decides
 		// what to do, and the record of an incident starts with what it read.
 		Called: func(r *http.Request, c *mcp.Caller, tool, op string, rerr *mcp.Error) {

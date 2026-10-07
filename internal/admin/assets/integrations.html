@@ -51,7 +51,10 @@ write.</p>
       {{if .Secret}}<div class="hint">authenticates as <code>{{.Secret}}</code>,
         read from the environment — never from the store, where an object
         cannot be deleted</div>{{end}}</td>
-    <td>{{if .Enabled}}<span class="ok">enabled</span>{{else}}<span class="warn">declared, off</span>{{end}}</td>
+    <td>{{if .Enabled}}<span class="ok">enabled</span>{{else}}<span class="warn">declared, off</span>{{end}}
+      {{$name := .Name}}{{with .Gateway}}<div class="hint">offered through the gateway to {{.Role}}s{{if $.GatewayBase}} at
+        <code>{{$.GatewayBase}}{{$name}}</code>{{end}}, {{.DailyLimit}} calls a caller a day{{if .Ask}}; a person
+        approves each call of {{range $i, $a := .Ask}}{{if $i}}, {{end}}<code>{{$a}}</code>{{end}}{{end}}</div>{{end}}</td>
   </tr>
   {{end}}
   </tbody>
@@ -60,6 +63,34 @@ write.</p>
 <p class="hint"><code>quilzo integrations tools NAME</code> asks a server what
   it offers and marks what this install agreed to. The difference between those
   two lists is the thing worth looking at.</p>
+{{end}}
+
+{{if or .Held .HeldError}}
+<h2>Calls waiting for a person</h2>
+{{with .HeldError}}<p class="notice bad">{{.}}</p>{{end}}
+<p class="hint">Other systems' agents asked to call a tool through the gateway that a person
+  approves call by call. Approved, exactly that call goes through once, within the hour.
+  Somebody other than the person it acts for decides.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Call</th><th scope="col">For</th><th scope="col">Arguments</th>
+    <th scope="col">Asked</th><th scope="col"><span class="visually-hidden">Decide</span></th></tr></thead>
+  <tbody>
+  {{range .Held}}
+  <tr>
+    <th scope="row"><code>{{.Tool}}</code> on {{.Integration}}<div class="hint"><code>{{.ID}}</code></div></th>
+    <td>{{.For}}{{with .App}}<div class="hint">through {{.}}</div>{{end}}</td>
+    <td><code class="cmd">{{.Args}}</code></td>
+    <td>{{when .Asked.Unix}}</td>
+    <td class="actions">
+      <form method="post" action="/integrations/held"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="decision" value="approve"><button type="submit" class="btn-tonal">Approve</button></form>
+      <form method="post" action="/integrations/held"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="decision" value="decline"><button type="submit" class="btn-text">Decline</button></form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
 {{end}}
 
 <h2>Webhooks</h2>

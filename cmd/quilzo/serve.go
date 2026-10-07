@@ -337,6 +337,18 @@ func cmdServe(root string, args []string) error {
 		},
 	}
 	srv.Integrations = &admin.Integrations{
+		Held: func() ([]admin.GatewayHeld, error) {
+			held, err := heldCalls(root, time.Now())
+			var out []admin.GatewayHeld
+			for _, h := range held {
+				out = append(out, admin.GatewayHeld{ID: h.ID, Integration: h.Integration, Tool: h.Tool,
+					For: h.Principal, App: h.Client, Args: h.Args, Asked: h.Asked})
+			}
+			return out, err
+		},
+		Decide: func(id string, approve bool, by string) error {
+			return gatewayDecide(root, id, approve, signedIn(by), time.Now())
+		},
 		Declared: func() (agent.Integrations, error) {
 			set, err := loadIntegrations(root)
 			if err != nil {

@@ -233,3 +233,34 @@ func TestHostsReportsOnlyWhatIsEnabled(t *testing.T) {
 		t.Errorf("hosts are %v; a disabled integration's host is reachable", hosts)
 	}
 }
+
+func TestAGatewayPolicyMeansWhatItSays(t *testing.T) {
+	base := func() Integration {
+		return Integration{Name: "tracker", Kind: IntegrationMCP, Purpose: "file issues", Endpoint: "tracker.example",
+			Uses: []string{"create_issue"}, Writes: true, Gateway: &GatewayPolicy{Role: "author"}}
+	}
+	ok := base()
+	if err := ok.Validate(); err != nil || ok.Gateway.DailyLimit() != DefaultGatewayDaily {
+		t.Fatal(err)
+	}
+	for name, change := range map[string]func(*Integration){
+		"a reader offered writes": func(in *Integration) { in.Gateway.Role = "reader" },
+		"no such role":            func(in *Integration) { in.Gateway.Role = "owner" },
+		"asks about another tool": func(in *Integration) { in.Gateway.Ask = []string{"delete_repo"} },
+		"too many calls":          func(in *Integration) { in.Gateway.Daily = 1000000 },
+		"not an MCP server": func(in *Integration) {
+			in.Kind, in.Endpoint, in.Command, in.Digest = IntegrationProcess, "", "/usr/bin/x", "sha256:"+strings.Repeat("a", 64)
+		},
+	} {
+		in := base()
+		change(&in)
+		if err := in.Validate(); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	in := base()
+	in.Writes, in.Gateway.Role, in.Gateway.Ask, in.Gateway.Daily = false, "reader", []string{"create_issue"}, 20
+	if err := in.Validate(); err != nil || !in.Gateway.Asks("create_issue") || in.Gateway.Asks("x") || in.Gateway.DailyLimit() != 20 {
+		t.Fatalf("%v", err)
+	}
+}
