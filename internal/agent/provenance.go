@@ -77,6 +77,8 @@ func (s Source) String() string {
 		return "a listing of " + s.Name
 	case FromDelegate:
 		return "delegated to " + s.Name
+	case FromProgram:
+		return "decided by the program " + s.Name
 	}
 	return s.Name
 }

@@ -83,11 +83,8 @@ type rulesetAttr struct {
 	Scoped           uint64 // ABI 6
 }
 
-// There is deliberately no per-port rule type or attribute struct here. The
-// network restriction works by declaring the rights and granting nothing, so
-// nothing in this package ever builds a port rule — and a type kept against
-// the day somebody might is weight for nothing. Whoever adds "allow this port"
-// adds them with the code that uses them.
+// A port rule (Rules.ConnectPorts) is the one network grant: see
+// confine_linux.go, which an agent program's sandbox uses.
 
 // pathBeneathAttr mirrors struct landlock_path_beneath_attr, which the kernel
 // declares __attribute__((packed)) — twelve bytes, not sixteen. Getting this
@@ -170,10 +167,15 @@ func Supported() bool { return ABI() > 0 }
 func Restrict(r Rules) (Status, error) {
 	abi := ABI()
 	st := Status{ABI: abi}
+	if r.Hardened {
+		if err := harden(r.Limits, &st); err != nil {
+			return st, err
+		}
+	}
 	if abi == 0 {
 		st.Why = "this kernel has no Landlock; the subprocess will run with " +
 			"the filesystem access of the account that started it"
-		return st, nil
+		return st, filterLast(r, &st)
 	}
 
 	// No new privileges, first. landlock_restrict_self refuses without it, and
@@ -245,10 +247,16 @@ func Restrict(r Rules) (Status, error) {
 		}
 	}
 
-	// No net rules are added on purpose. Declaring the rights and granting
-	// none denies every TCP bind and connect, which is what an extension
-	// should have: it is handed its input on stdin and answers on stdout, so a
-	// socket is either a fetch nobody asked for or an exfiltration channel.
+	// Declaring the rights and granting nothing denies every TCP bind and
+	// connect, which is what an extension should have: it is handed its
+	// input on stdin and answers on stdout, so a socket is either a fetch
+	// nobody asked for or an exfiltration channel. An agent's program is
+	// granted the ports its services were handed in on, and no bind.
+	if netMask != 0 {
+		if err := allowPorts(fd, r.ConnectPorts); err != nil {
+			return st, err
+		}
+	}
 	if _, _, errno := syscall.Syscall(sysRestrictSelf, fd, 0, 0); errno != 0 {
 		return st, fmt.Errorf("cannot enforce the ruleset: %w", errno)
 	}
@@ -258,7 +266,20 @@ func Restrict(r Rules) (Status, error) {
 		st.NetworkWhy = "TCP only; this kernel cannot restrict UDP (Landlock " +
 			"ABI 10 or later), so datagram traffic including DNS is unbounded"
 	}
-	return st, nil
+	return st, filterLast(r, &st)
+}
+
+// filterLast loads the system call filter for a hardened sandbox, after
+// everything else, since setting up the rest needs calls it refuses.
+func filterLast(r Rules, st *Status) error {
+	if !r.Hardened {
+		return nil
+	}
+	if err := applySeccomp(); err != nil {
+		return err
+	}
+	st.Seccomp = true
+	return nil
 }
 
 // Constants the syscall package does not name.

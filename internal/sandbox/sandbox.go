@@ -67,6 +67,25 @@ type Rules struct {
 	// on is a decision somebody makes for an extension that genuinely needs
 	// one.
 	AllowNetwork bool
+	// ConnectPorts are TCP ports the process may still connect to while
+	// the network is restricted: inside an agent program's own network
+	// namespace, the ports its services were handed in on. Nothing else
+	// answers there anyway; this keeps it from listening, and from
+	// reaching anything added later.
+	ConnectPorts []uint16
+	// Hardened is the rest of what an agent's program gets: every
+	// capability dropped, no_new_privs, Limits, and the system call filter.
+	Hardened bool
+	Limits   Limits
+}
+
+// Limits bound what a program can consume. Zero leaves one as it is.
+type Limits struct {
+	CPUSeconds  uint64
+	MemoryBytes uint64 // address space
+	FileBytes   uint64 // the largest file it may write
+	OpenFiles   uint64
+	Processes   uint64 // counted for the account, as the kernel counts them
 }
 
 // Status describes what was actually enforced.
@@ -83,4 +102,7 @@ type Status struct {
 	// NetworkWhy names what the network restriction does not cover, so a
 	// caller is not left believing it covers more than it does.
 	NetworkWhy string
+	// CapabilitiesDropped and Seccomp say a hardened sandbox did both.
+	CapabilitiesDropped bool
+	Seccomp             bool
 }

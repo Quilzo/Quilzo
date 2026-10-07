@@ -733,6 +733,7 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 			facts.Identities = append(facts.Identities, idf)
 		}
 		facts.Tools = agentToolFacts(root, agents)
+		facts.Programs = agentProgramFacts(root, agents)
 		sort.Slice(facts.Identities, func(i, j int) bool { return facts.Identities[i].Name < facts.Identities[j].Name })
 		sort.Slice(facts.Evals, func(i, j int) bool { return facts.Evals[i].Name < facts.Evals[j].Name })
 	}
@@ -774,6 +775,35 @@ func agentToolFacts(root string, agents *agentSet) []posture.AgentToolFact {
 		}
 		return out[i].Tool < out[j].Tool
 	})
+	return out
+}
+
+// agentProgramFacts is every agent that runs its own program, and whether
+// its backend can open a box here.
+func agentProgramFacts(root string, agents *agentSet) []posture.AgentProgramFact {
+	var out []posture.AgentProgramFact
+	for name, m := range agents.Agents {
+		if m.Program == nil {
+			continue
+		}
+		f := posture.AgentProgramFact{Agent: name, Backend: m.Program.Backend}
+		if f.Backend == "" {
+			f.Backend = "native"
+		}
+		b := testBackend
+		var err error
+		if b == nil {
+			b, err = programBackend(root, m.Program.Backend, m.Program.Image)
+		}
+		if err != nil {
+			f.Why = err.Error()
+		} else {
+			a := b.Check()
+			f.Available, f.Why = a.OK, a.Why
+		}
+		out = append(out, f)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Agent < out[j].Agent })
 	return out
 }
 

@@ -135,7 +135,9 @@ var commandNeeds = map[string]need{
 	"agent renew": {action: auth.ActEditDraft},
 	// A run's records from the audit log, with their proofs: what reading
 	// the log needs.
-	"agent receipt": {action: auth.ActView},
+	"agent receipt":  {action: auth.ActView},
+	"agent backends": {action: auth.ActView},
+	"agent program":  {action: auth.ActGrant},
 	// Checking a receipt reads only the file and keys it is given.
 	"agent verify-receipt": {why: "checks a file against public keys; it reads nothing in the store"},
 	// Writing the signing key and reading the follower list are both
@@ -695,6 +697,12 @@ var commandNeeds = map[string]need{
 		"it restricts its own thread and execve's the extension, and never " +
 		"opens the store. Requiring authority here would mean resolving a " +
 		"token inside the process that is about to be confined"},
+	"__agentbox": {why: "is the first process of an agent program's box, which this " +
+		"program re-executes itself as inside new namespaces: it raises the " +
+		"box's loopback and forwards the run's services in, and never opens the store"},
+	"__agentbox-exec": {why: "is the shim an agent program's box re-executes this " +
+		"program as: it drops its capabilities, confines itself and execve's " +
+		"the program, and never opens the store"},
 	"init": {why: "creates the store; there is no policy to consult until one exists"},
 	"logd": {why: "runs as its own account and derives its authority from the " +
 		"socket peer's uid, not from a token in this store"},

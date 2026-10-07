@@ -182,6 +182,13 @@ var Purposes = []Purpose{
 			"administrator registered on the Connected apps screen can connect",
 	},
 	{
+		Name: "agents",
+		What: "an agent's program reaching a host its manifest names, through " +
+			"the proxy its sandbox is given; each connection is recorded",
+		Without: "agents' programs reach nothing outside; the agent interface " +
+			"and the model gateway inside their sandbox still work",
+	},
+	{
 		Name: "import",
 		What: "fetching a page or an image the operator asked to import",
 		Without: "importing by URL is refused. Importing from a file is not " +
