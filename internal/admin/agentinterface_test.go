@@ -491,3 +491,59 @@ func TestHowLongAgoIsSaidInWords(t *testing.T) {
 		t.Error("zero is not never")
 	}
 }
+
+// The gateway answers only for what is offered, with the interface's own
+// tokens, listing and calling the far side's tools directly.
+func TestTheGatewayAnswersOnlyForWhatIsOffered(t *testing.T) {
+	r := newIfaceRig(t)
+	r.oauth = false
+	r.srv.Interface.Offered = func(name string) bool { return name == "tracker" }
+	r.srv.Interface.Gateway = func(req *http.Request, c *mcp.Caller, name string) (*mcp.Server, error) {
+		s := mcp.NewServer("gw", "test")
+		s.Direct = &mcp.Direct{Tools: []mcp.Tool{{Name: "create_issue", Description: "File an issue.",
+			InputSchema: map[string]any{"type": "object"}}},
+			Call: func(tool string, args map[string]any) (string, error) {
+				return "filed for " + c.Principal + " on " + name, nil
+			}}
+		return s, nil
+	}
+	call := func(path, method, name, bearer string) *httptest.ResponseRecorder {
+		params := `{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}`
+		if method == "tools/call" {
+			params = `{"name":"` + name + `","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}`
+		}
+		req := httptest.NewRequest("POST", path, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"`+method+`","params":`+params+`}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+		req.Header.Set("Mcp-Method", method)
+		if name != "" {
+			req.Header.Set("Mcp-Name", name)
+		}
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		w := httptest.NewRecorder()
+		r.srv.Handler().ServeHTTP(w, req)
+		return w
+	}
+	if w := call("/mcp/gateway/other", "tools/list", "", r.token); w.Code != 404 {
+		t.Fatalf("something not offered answered %d", w.Code)
+	}
+	if w := call("/mcp/gateway/tracker", "tools/list", "", ""); w.Code != 401 {
+		t.Fatalf("no token: %d", w.Code)
+	}
+	if w := call("/mcp/gateway/tracker", "tools/list", "", r.token); w.Code != 200 || !strings.Contains(w.Body.String(), `"create_issue"`) ||
+		strings.Contains(w.Body.String(), "quilzo_find") {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	if w := call("/mcp/gateway/tracker", "tools/call", "create_issue", r.token); !strings.Contains(w.Body.String(), "filed for editor on tracker") {
+		t.Fatalf("%s", w.Body.String())
+	}
+	if w := call("/mcp/gateway/tracker", "tools/call", "delete_everything", r.token); !strings.Contains(w.Body.String(), `no tool \"delete_everything\" here`) {
+		t.Fatalf("%s", w.Body.String())
+	}
+	r.on = false
+	if w := call("/mcp/gateway/tracker", "tools/list", "", r.token); w.Code != 404 {
+		t.Fatalf("with the interface off: %d", w.Code)
+	}
+}

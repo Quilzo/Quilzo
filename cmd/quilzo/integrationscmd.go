@@ -8,15 +8,16 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/quilzo/quilzo/internal/fetch"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/mcpclient"
 )
 
@@ -62,9 +63,22 @@ func cmdIntegrations(root string, args []string) error {
 		return integrationsCall(root, args[1:])
 	case "pin":
 		return integrationsPin(root, args[1:])
+	case "gateway":
+		return integrationsGateway(root, args[1:])
+	case "held":
+		return integrationsHeld(root)
+	case "approve", "decline":
+		if len(args) != 2 {
+			return fmt.Errorf("quilzo integrations %s ID", args[0])
+		}
+		if err := gatewayDecide(root, args[1], args[0] == "approve", resolveCaller(root, flagToken), time.Now()); err != nil {
+			return err
+		}
+		fmt.Printf("%sd %s\n", args[0], args[1])
+		return nil
 	default:
 		return fmt.Errorf(
-			"unknown integrations command %q; try list, tools, pin or call", args[0])
+			"unknown integrations command %q; try list, tools, pin, call, gateway, held, approve or decline", args[0])
 	}
 }
 
@@ -375,4 +389,104 @@ func secretEnvName(name string) string {
 		}
 	}
 	return b.String()
+}
+
+// integrationsGateway is `quilzo integrations gateway NAME --role ROLE
+// [--daily N] [--ask TOOL,...]`, or `--off`: offering a company's MCP
+// server to other systems' agents through Quilzo, or not.
+func integrationsGateway(root string, args []string) error {
+	usage := errors.New("quilzo integrations gateway NAME --role reader|author|publisher [--daily N] [--ask TOOL,...] | --off")
+	pos, rest := leadingArgs(args, 1)
+	fs := flag.NewFlagSet("integrations gateway", flag.ContinueOnError)
+	role := fs.String("role", "", "the least role a caller needs")
+	daily := fs.Int("daily", 0, "calls one caller may make a day")
+	ask := fs.String("ask", "", "tools a person approves call by call, separated by commas")
+	off := fs.Bool("off", false, "offer it no longer")
+	if err := fs.Parse(rest); err != nil {
+		return err
+	}
+	if len(pos) != 1 || (*off == (*role != "")) {
+		return usage
+	}
+	caller := resolveCaller(root, flagToken)
+	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+		return fmt.Errorf("offering an outside system to other agents is an administrator's: %w", err)
+	}
+	set, err := loadIntegrations(root)
+	if err != nil {
+		return err
+	}
+	idx := -1
+	for i, in := range set.Declared {
+		if in.Name == pos[0] {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("no integration called %q; quilzo integrations list", pos[0])
+	}
+	in := &set.Declared[idx]
+	detail := map[string]string{"integration": in.Name}
+	if *off {
+		in.Gateway = nil
+		detail["offered"] = "false"
+	} else {
+		g := &agent.GatewayPolicy{Role: *role, Daily: *daily}
+		for _, t := range strings.Split(*ask, ",") {
+			if t = strings.TrimSpace(t); t != "" {
+				g.Ask = append(g.Ask, t)
+			}
+		}
+		in.Gateway = g
+		detail["offered"], detail["role"], detail["daily"] = "true", g.Role, strconv.Itoa(g.DailyLimit())
+		if len(g.Ask) > 0 {
+			detail["ask"] = strings.Join(g.Ask, " ")
+		}
+	}
+	if err := set.Validate(); err != nil {
+		return err
+	}
+	if err := saveJSON(integrationsPath(root), set); err != nil {
+		return err
+	}
+	if err := recordE(root, caller.auditRecord("integration.gateway", "/integrations/"+in.Name, audit.Success, detail)); err != nil {
+		return err
+	}
+	if *off {
+		fmt.Printf("%s is no longer offered through the gateway\n", in.Name)
+		return nil
+	}
+	fmt.Printf("%s is offered through the gateway at /mcp/gateway/%s to %ss, %d calls a caller a day\n",
+		in.Name, in.Name, in.Gateway.Role, in.Gateway.DailyLimit())
+	fmt.Printf("  %sonly the tools it uses that are pinned and unchanged are offered: quilzo integrations pin %s%s\n", dim, in.Name, reset)
+	if !in.Enabled {
+		fmt.Printf("  %sit is not enabled, so nothing is offered until it is%s\n", yellow, reset)
+	}
+	return nil
+}
+
+// integrationsHeld lists the calls through the gateway waiting for a
+// person.
+func integrationsHeld(root string) error {
+	held, err := heldCalls(root, time.Now())
+	if err != nil {
+		return err
+	}
+	if w.JSON(held) {
+		return nil
+	}
+	if len(held) == 0 {
+		w.Human("no call is waiting for a person\n")
+		return nil
+	}
+	for _, h := range held {
+		by := h.Principal
+		if h.Client != "" {
+			by = h.Client + " for " + h.Principal
+		}
+		w.Human("%s%s%s  %s on %s, asked by %s at %s\n    %s\n", bold, h.ID, reset, h.Tool, h.Integration, by,
+			h.Asked.UTC().Format("2006-01-02 15:04 UTC"), clip(h.Args, 300))
+	}
+	w.Human("  %squilzo integrations approve ID, or decline ID%s\n", dim, reset)
+	return nil
 }
