@@ -467,6 +467,21 @@ var settings = []Setting{
 		Weaker: offIsWeaker("a model drives an agent at the autonomy its manifest declares, whatever its evaluations show"),
 	},
 	{
+		Key: "a2a.tasks", Kind: Bool, Default: "false",
+		Summary:  "let other agents hand tasks to this store's agents over A2A 1.0, at /a2a on the admin",
+		Controls: []string{"AC-17", "AC-3"},
+		Why: "Another vendor's agent sends a message; one of this store's agents runs with it " +
+			"as its goal, under its manifest narrowed by the credential that sent it, and the " +
+			"run is the task. The same tokens and app connections as the agent interface, which " +
+			"must be on too; once admin.base_url is set, the public agent card names the address.",
+		Weaker: func(v string) (bool, string) {
+			if b, err := strconv.ParseBool(v); err == nil && b {
+				return true, "other agents can start this store's agents at /a2a; every message still needs a token, and every run is checked and recorded"
+			}
+			return false, ""
+		},
+	},
+	{
 		Key: "mcp.remote", Kind: Bool, Default: "false",
 		Summary:  "serve the agent interface (MCP) at /mcp on the admin",
 		Controls: []string{"AC-17", "AC-3"},
