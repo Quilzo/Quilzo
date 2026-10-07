@@ -33,6 +33,7 @@ import (
 	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/agentwatch"
+	"github.com/quilzo/quilzo/internal/aievidence"
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -337,6 +338,9 @@ func cmdServe(root string, args []string) error {
 			return pageHashes(s, ref)
 		},
 	}
+	srv.AIEvidence = &admin.AIEvidence{Inputs: func(days int) (aievidence.Inputs, error) {
+		return aiEvidenceInputs(root, days, time.Now())
+	}}
 	srv.Fleet = &admin.Fleet{
 		View: func(days int) (fleet.View, error) { return buildFleet(root, days, time.Now()) },
 		Register: func(cardURL, name, by string) error {

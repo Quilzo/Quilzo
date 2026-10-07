@@ -54,9 +54,11 @@ func cmdCompliance(root string, args []string) error {
 		return complianceSSP(root, args[1:])
 	case "ksi":
 		return complianceKSI(root, args[1:])
+	case "ai-act", "iso42001", "aibom":
+		return complianceAI(root, args[0], args[1:])
 	default:
 		return fmt.Errorf("unknown compliance command %q; try site, implementation, component, ssp, ksi, pledge, "+
-			"sbom, crypto, controls, accessibility or summary", args[0])
+			"sbom, crypto, controls, accessibility, summary, %s", args[0], complianceAIName)
 	}
 }
 
