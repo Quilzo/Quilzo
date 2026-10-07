@@ -355,7 +355,19 @@
     });
   });
 
-  document.querySelectorAll("header.bar [title], .iconbutton[title], .rowmenu-open[title], svg [data-tip]").forEach(function (el) {
+  // An identifier too long for its column, and a status too long for the
+  // screen, end in an ellipsis (style.css, "no word broken in two"). The
+  // whole of it is shown on pointing, and on focus, so it can be read
+  // without being selected.
+  var clipped = "td code, th code, .tag, .pill, .chip, .chip-small, .wf-band, .wf-word, .wf-tag, .wf-task";
+  document.querySelectorAll(clipped).forEach(function (c) {
+    if (c.scrollWidth > c.clientWidth + 1 && !c.title) {
+      c.title = c.textContent;
+      c.tabIndex = 0;
+    }
+  });
+
+  document.querySelectorAll("header.bar [title], .iconbutton[title], .rowmenu-open[title], svg [data-tip], [tabindex][title]").forEach(function (el) {
     if (el.hasAttribute("title")) {
       el.dataset.tip = el.getAttribute("title");
       el.removeAttribute("title");

@@ -137,7 +137,7 @@ var rules = []Rule{
 			for _, a := range names {
 				out = append(out, Finding{Resource: "agent/" + a,
 					Detail: fmt.Sprintf("%s has %d memories waiting", a, s.AI.HeldMemories[a]),
-					Fix:    "the What agents remember screen, or quilzo memory list --held"})
+					Fix:    "the Memory screen, or quilzo memory list --held"})
 			}
 			return out
 		},
