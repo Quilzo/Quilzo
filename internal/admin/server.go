@@ -1389,6 +1389,7 @@ func (s *Server) Handler() http.Handler {
 	// The agent interface, and how apps connect to it. See agentinterface.go.
 	mux.HandleFunc("/mcp", s.handleMCP)
 	mux.HandleFunc("/mcp/gateway/", s.handleGateway)
+	mux.HandleFunc("/a2a", s.handleA2A)
 	mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", s.handleResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleServerMetadata)

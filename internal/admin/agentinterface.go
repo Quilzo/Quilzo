@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/a2a"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/oauthas"
@@ -55,6 +56,10 @@ type AgentInterface struct {
 	// and Gateway makes the server answering one caller for it.
 	Offered func(name string) bool
 	Gateway func(r *http.Request, c *mcp.Caller, name string) (*mcp.Server, error)
+	// Tasks says whether other agents may hand tasks over A2A 1.0, and A2A
+	// answers them for one caller.
+	Tasks func() bool
+	A2A   func(c *mcp.Caller) a2a.Host
 }
 
 func (s *Server) interfaceOn() (oauthas.Config, bool, bool) {
@@ -131,6 +136,44 @@ func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	e.ServeHTTP(w, r)
+}
+
+// handleA2A takes tasks from other agents, over A2A 1.0: the same tokens
+// and app connections as /mcp.
+func (s *Server) handleA2A(w http.ResponseWriter, r *http.Request) {
+	cfg, oauth, on := s.interfaceOn()
+	if !on || s.Interface.A2A == nil || s.Interface.Tasks == nil || !s.Interface.Tasks() {
+		http.NotFound(w, r)
+		return
+	}
+	if s.shieldedOff(w, "mcp") {
+		return
+	}
+	if o := r.Header.Get("Origin"); o != "" && o != s.ownOrigin(r) && !(oauth && o == cfg.Issuer) {
+		http.Error(w, "not from another site's page", http.StatusForbidden)
+		return
+	}
+	resource := ""
+	if oauth {
+		resource = cfg.Resource()
+	}
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok || strings.TrimSpace(token) == "" || len(r.Header.Values("Authorization")) != 1 || r.URL.Query().Has("access_token") {
+		challenge := `Bearer realm="quilzo"`
+		if oauth {
+			challenge += `, resource_metadata="` + cfg.MetadataURL() + `"`
+		}
+		w.Header().Set("WWW-Authenticate", challenge)
+		http.Error(w, "a bearer token in the Authorization header", http.StatusUnauthorized)
+		return
+	}
+	c, err := s.interfaceCaller(r, strings.TrimSpace(token), resource)
+	if err != nil {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="quilzo", error="invalid_token"`)
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	s.Interface.A2A(c).Serve(w, r)
 }
 
 var gatewayName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)

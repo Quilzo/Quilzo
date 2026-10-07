@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/a2a"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/oauthas"
@@ -544,6 +545,50 @@ func TestTheGatewayAnswersOnlyForWhatIsOffered(t *testing.T) {
 	}
 	r.on = false
 	if w := call("/mcp/gateway/tracker", "tools/list", "", r.token); w.Code != 404 {
+		t.Fatalf("with the interface off: %d", w.Code)
+	}
+}
+
+// Tasks from other agents are taken only when turned on, with the
+// interface's own tokens.
+func TestTasksAreTakenOnlyWhenTurnedOnWithAToken(t *testing.T) {
+	r := newIfaceRig(t)
+	r.oauth = false
+	tasks := false
+	r.srv.Interface.Tasks = func() bool { return tasks }
+	r.srv.Interface.A2A = func(c *mcp.Caller) a2a.Host {
+		return a2a.Host{Agents: func() []string { return []string{"tidy"} },
+			Send: func(_ *http.Request, agent, text string) (a2a.Task, error) {
+				return a2a.Task{ID: "t1", Status: a2a.TaskStatus{State: a2a.StateCompleted},
+					Metadata: map[string]any{"by": c.Principal, "said": text}}, nil
+			}}
+	}
+	post := func(bearer string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("POST", "/a2a", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":`+
+			`{"message":{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"tidy up"}]}}}`))
+		req.Header.Set("A2A-Version", "1.0")
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		w := httptest.NewRecorder()
+		r.srv.Handler().ServeHTTP(w, req)
+		return w
+	}
+	if w := post(r.token); w.Code != 404 {
+		t.Fatalf("tasks off: %d", w.Code)
+	}
+	tasks = true
+	if w := post(""); w.Code != 401 {
+		t.Fatalf("no token: %d", w.Code)
+	}
+	if w := post("not-a-token"); w.Code != 401 {
+		t.Fatalf("a bad token: %d", w.Code)
+	}
+	if w := post(r.token); w.Code != 200 || !strings.Contains(w.Body.String(), `"by":"editor"`) || !strings.Contains(w.Body.String(), `"said":"tidy up"`) {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	r.on = false
+	if w := post(r.token); w.Code != 404 {
 		t.Fatalf("with the interface off: %d", w.Code)
 	}
 }
