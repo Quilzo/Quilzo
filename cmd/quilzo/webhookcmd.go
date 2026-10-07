@@ -222,7 +222,7 @@ func hookTest(root string, args []string) error {
 		ID: id, Type: "test", At: time.Now().UTC().Format(time.RFC3339),
 	}
 
-	s := sender{fetch.New()}
+	s := sender{fetch.For("webhook")}
 	for _, e := range f.Endpoints {
 		if len(args) == 1 && e.URL != args[0] {
 			continue
@@ -284,7 +284,7 @@ func notifyProposed(root string, prop *collab.Proposal) {
 		At: time.Now().UTC().Format(time.RFC3339), Site: siteName(root),
 	}
 
-	s := sender{fetch.New()}
+	s := sender{fetch.For("webhook")}
 	changed := false
 	for _, e := range f.Endpoints {
 		if !e.Wants("proposed") {
@@ -327,7 +327,7 @@ func fireWebhooks(root, eventType, commit string, pages []string,
 		ev.Form = form[0]
 	}
 
-	s := sender{fetch.New()}
+	s := sender{fetch.For("webhook")}
 	for _, e := range f.Endpoints {
 		if !e.Wants(eventType) {
 			continue

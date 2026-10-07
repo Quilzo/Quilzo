@@ -153,8 +153,7 @@ func (h *HTTPSource) Object(ctx context.Context, oid string) (string, []byte, er
 // fetchTransport is the production transport: internal/fetch, which is where
 // the address rules live.
 func fetchTransport(ctx context.Context, raw, token string) (int, []byte, error) {
-	c := fetch.New()
-	c.UserAgent = "quilzo/1 (+replication)"
+	c := fetch.For("replication")
 	res, err := c.GetWithToken(ctx, raw, token)
 	if err != nil {
 		return 0, nil, err

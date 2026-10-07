@@ -200,6 +200,16 @@ func New() *Client {
 		UserAgent: "quilzo/1 (+content import)"}
 }
 
+// For returns a Client with the defaults, for one declared purpose
+// (internal/egress), so an offline deployment's rules and its report name
+// the feature that wanted the connection.
+func For(purpose string) *Client {
+	c := New()
+	c.Purpose = purpose
+	c.UserAgent = "quilzo/1 (+" + purpose + ")"
+	return c
+}
+
 // GetWithToken is Get with a bearer credential attached.
 //
 // Separate from Get rather than a field on Client, because a credential that
