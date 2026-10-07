@@ -325,6 +325,9 @@ type AIFacts struct {
 	// Programs is each agent that runs its own program, and whether its
 	// box can be opened here.
 	Programs []AgentProgramFact `json:"programs,omitempty"`
+	// PersonalRoutes are model routes off this organisation's network that
+	// are told they may receive personal data.
+	PersonalRoutes []string `json:"personal_routes,omitempty"`
 }
 
 // AgentProgramFact is an agent's program and its backend's standing here.

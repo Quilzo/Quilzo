@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/analyst"
-	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -62,7 +61,7 @@ func analystModel(root string) (decide.Model, string) {
 	if gw != nil {
 		return gw.For(triageAgent), ""
 	}
-	m, err := assist.NewHTTPModel()
+	m, err := directModel(root)
 	if err != nil {
 		return nil, "no model is configured. quilzo gateway route add, " +
 			"and the analyst has something to ask"

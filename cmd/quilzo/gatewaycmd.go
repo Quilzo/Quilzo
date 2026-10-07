@@ -6,8 +6,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -80,6 +82,17 @@ func modelGateway(root string) (*gateway.Gateway, *gateway.Config, error) {
 		p, on := shield.Find(root, shield.Route, route, time.Now())
 		return on && p.Reason != shield.Unreadable
 	}
+	// What was taken out of a prompt before it left, as counts: the
+	// record that personal data stayed here, which names none of it.
+	gw.OwnDomains = ownDomains(root)
+	gw.OnMasked = func(consumer, route string, counts map[string]int) {
+		d := map[string]string{"caller": consumer, "route": route}
+		for k, n := range counts {
+			d["masked_"+k] = strconv.Itoa(n)
+		}
+		record(root, audit.Record{Action: "model.masked", Resource: "/models", Outcome: audit.Success,
+			Principal: "quilzo", Kind: audit.KindService, Verified: true, Detail: d})
+	}
 	gw.OnTrouble = func(kind, subject string) {
 		name := "route-trouble"
 		if kind == "spent" {
@@ -147,8 +160,12 @@ func gatewayStatus(root string) error {
 				key += " (not set)"
 			}
 		}
-		w.Human("  %s  %s %s  %s%s%s\n", h.Route.Name, h.Route.URL, h.Route.Model,
-			dim, key, reset)
+		privacy := "personal data masked"
+		if h.Route.Personal {
+			privacy = "may receive personal data"
+		}
+		w.Human("  %s  %s %s  %s%s; %s%s\n", h.Route.Name, h.Route.URL, h.Route.Model,
+			dim, key, privacy, reset)
 	}
 	w.Human("%stoday%s\n", bold, reset)
 	for _, s := range spend {
@@ -205,7 +222,7 @@ func changeGateway(root, change, name string, edit func(*gateway.Config) error) 
 
 func gatewayRoute(root string, args []string) error {
 	if len(args) < 2 || (args[0] != "add" && args[0] != "remove") {
-		return fmt.Errorf("usage: quilzo gateway route add NAME --url U --model M [--key-env VAR]\n" +
+		return fmt.Errorf("usage: quilzo gateway route add NAME --url U --model M [--key-env VAR] [--personal]\n" +
 			"       quilzo gateway route remove NAME")
 	}
 	verb, name := args[0], args[1]
@@ -216,6 +233,7 @@ func gatewayRoute(root string, args []string) error {
 	priceIn := fs.String("price-in", "", "what a million input tokens cost here, like 0.15")
 	priceOut := fs.String("price-out", "", "what a million output tokens cost here, like 0.60")
 	first := fs.Bool("first", false, "try this route before the others")
+	personal := fs.Bool("personal", false, "it may receive personal data: on this machine, or under an agreement to process it")
 	if err := fs.Parse(args[2:]); err != nil {
 		return err
 	}
@@ -233,7 +251,8 @@ func gatewayRoute(root string, args []string) error {
 			c.Routes = kept
 			return nil
 		}
-		r := gateway.Route{Name: name, URL: *u, Model: *model, KeyEnv: *keyEnv, PriceIn: *priceIn, PriceOut: *priceOut}
+		r := gateway.Route{Name: name, URL: *u, Model: *model, KeyEnv: *keyEnv, PriceIn: *priceIn, PriceOut: *priceOut,
+			Personal: *personal}
 		if *first {
 			c.Routes = append([]gateway.Route{r}, kept...)
 		} else {
@@ -302,4 +321,27 @@ func gatewayCapability(root string) *admin.Models {
 			return nil
 		},
 	}
+}
+
+// directModel is the one model an install configures without the gateway
+// (QUILZO_MODEL_URL), behind the gateway's privacy guard: personal data
+// reaches it only when it is on this organisation's network.
+func directModel(root string) (assist.Model, error) {
+	m, err := assist.NewHTTPModel()
+	if err != nil {
+		return nil, err
+	}
+	host := ""
+	if u, err := url.Parse(m.BaseURL); err == nil {
+		host = u.Hostname()
+	}
+	return gateway.Guarded{Model: m, Personal: hostIsLocal(host), OwnDomains: ownDomains(root),
+		OnMasked: func(counts map[string]int) {
+			d := map[string]string{"caller": "direct", "route": host}
+			for k, n := range counts {
+				d["masked_"+k] = strconv.Itoa(n)
+			}
+			record(root, audit.Record{Action: "model.masked", Resource: "/models", Outcome: audit.Success,
+				Principal: "quilzo", Kind: audit.KindService, Verified: true, Detail: d})
+		}}, nil
 }

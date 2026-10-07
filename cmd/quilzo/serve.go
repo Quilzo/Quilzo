@@ -782,7 +782,7 @@ func cmdServe(root string, args []string) error {
 	}
 	srv.Assist = &admin.Assist{
 		Model: func() (assist.Model, error) {
-			m, err := assist.NewHTTPModel()
+			m, err := directModel(root)
 			if err != nil {
 				// No model configured is not an error condition, it is a
 				// configuration. The screen says so and offers nothing rather

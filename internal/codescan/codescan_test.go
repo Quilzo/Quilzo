@@ -193,3 +193,19 @@ func TestFindingsCarryTheLineNumber(t *testing.T) {
 		t.Errorf("reported line %d, want 3", f[0].Line)
 	}
 }
+
+func TestSecretSpansCoverTheWholeCredential(t *testing.T) {
+	key := "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----"
+	text := "before " + key + " after; and AKIAIOSFODNN7EXAMPLE; and password = \"hunter2hunter2hunter2X9\" nope"
+	spans := SecretSpans(text)
+	found := map[string]bool{}
+	for _, s := range spans {
+		found[text[s[0]:s[1]]] = true
+	}
+	if !found[key] || !found["AKIAIOSFODNN7EXAMPLE"] {
+		t.Fatalf("%v", found)
+	}
+	if len(SecretSpans("api_key = example")) != 0 {
+		t.Fatal("a placeholder value was taken for a key")
+	}
+}

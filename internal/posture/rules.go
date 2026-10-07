@@ -100,6 +100,25 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "model.personal-data-leaves",
+		Title:    "A model provider outside the organisation receives personal data",
+		Severity: Medium,
+		Controls: []string{"PT-2", "SA-9"},
+		Why: "Its route is marked as one that may receive personal data, so nothing is " +
+			"masked before prompts reach it. That is right only under an agreement " +
+			"with the provider to process it (GDPR Article 28), named in the records " +
+			"of processing.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, r := range s.AI.PersonalRoutes {
+				out = append(out, Finding{Resource: "/models",
+					Detail: r + " is sent personal data unmasked",
+					Fix:    "keep the agreement on record, or add the route again without --personal so personal data is masked"})
+			}
+			return out
+		},
+	},
+	{
 		ID:       "agent.program-cannot-run",
 		Title:    "An agent's program has no box it can run in here",
 		Severity: Medium,

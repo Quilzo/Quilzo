@@ -85,6 +85,8 @@ type Receipt struct {
 	// second reports "and 6 more" for a run that read three things twice each.
 	Reads   int
 	Omitted int
+	// Private is what the run read that is not published (breaker.go).
+	Private []string `json:"private,omitempty"`
 	Spend   Spend
 }
 
@@ -100,6 +102,7 @@ func (t Trace) Receipt(s *Session) Receipt {
 		r.Sources = s.Sources()
 		r.Reads = s.Reads()
 		r.Omitted = s.Omitted()
+		r.Private = s.Private()
 	}
 
 	seen := map[string]bool{}
@@ -182,6 +185,9 @@ func (r Receipt) Detail() map[string]string {
 	// Only on a tainted run. A clean run has no sources by construction, and
 	// writing "sources: " into the record would read as a run whose
 	// provenance was lost rather than one that read nothing.
+	if len(r.Private) > 0 {
+		d["private"] = strings.Join(r.Private, "; ")
+	}
 	if r.Tainted {
 		if p := Provenance(r.Sources, r.Omitted); p != "" {
 			d["sources"] = p

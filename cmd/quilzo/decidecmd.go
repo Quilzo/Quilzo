@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/admin"
-	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/decide"
@@ -135,7 +134,7 @@ func deciderModel(root, name string) (decide.Model, string) {
 	if gw != nil {
 		return gw.For("decider:" + name), ""
 	}
-	m, err := assist.NewHTTPModel()
+	m, err := directModel(root)
 	if err != nil {
 		return nil, "no model configured"
 	}

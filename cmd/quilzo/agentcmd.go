@@ -632,7 +632,7 @@ func agentRunModel(root, name string, payers ...string) (assist.Model, string) {
 		// against its own budget.
 		return gw.For("agent:"+name, payers...), ""
 	}
-	m, err := assist.NewHTTPModel()
+	m, err := directModel(root)
 	if err != nil {
 		return nil, err.Error()
 	}
@@ -757,6 +757,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	sess := agent.NewSession(m, nil)
 	if from.Prior != nil {
 		sess.Recall(from.Prior.Receipt.Sources, from.Prior.Receipt.Omitted)
+		sess.RecallPrivate(from.Prior.Receipt.Private)
 	}
 
 	// Every capability the manifest holds, tried once, in a fixed order.
