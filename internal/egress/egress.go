@@ -113,6 +113,13 @@ var Purposes = []Purpose{
 			"against one nobody controls",
 	},
 	{
+		Name: "fleet",
+		What: "reading another vendor's agent card (A2A) when somebody registers that agent, " +
+			"and again when the fleet is checked, to see whether it changed",
+		Without: "other vendors' agents cannot be registered or checked. Quilzo's own " +
+			"agents, apps, tool servers and model routes are still listed",
+	},
+	{
 		Name: "assistant",
 		What: "sending a prompt to a language model over HTTP, for a page or " +
 			"for a picture",
