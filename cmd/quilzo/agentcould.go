@@ -69,16 +69,22 @@ func callerFor(root, person string) (*Caller, error) {
 
 // could answers for one agent, one decider, one thing.
 func could(root, name, what, page string, withModel, program bool, caller *Caller) (couldAnswer, error) {
+	set, err := loadAgents(root)
+	if err != nil {
+		return couldAnswer{Agent: name, What: what, As: caller.Name}, err
+	}
+	return couldIn(root, set, name, what, page, withModel, program, caller)
+}
+
+// couldIn is could, asked of a set of declarations, which may hold one
+// nobody has saved yet: a draft, before anybody saves it.
+func couldIn(root string, set *agentSet, name, what, page string, withModel, program bool, caller *Caller) (couldAnswer, error) {
 	a := couldAnswer{Agent: name, What: what, As: caller.Name, Decider: "walking its declaration"}
 	switch {
 	case withModel:
 		a.Decider = "a model"
 	case program:
 		a.Decider = "its program"
-	}
-	set, err := loadAgents(root)
-	if err != nil {
-		return a, err
 	}
 	decl, ok := set.Agents[name]
 	if !ok {

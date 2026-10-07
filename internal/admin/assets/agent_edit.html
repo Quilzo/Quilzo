@@ -7,6 +7,34 @@
 {{else}}<p class="lead">{{.M.Purpose}}</p>{{end}}
 {{if .Invalid}}<p class="notice warn"><strong>As it stands this would be refused:</strong> {{.Invalid}}</p>{{end}}
 
+{{if and .New .CanDraft}}
+<section class="card" aria-labelledby="describe-h">
+  <h2 id="describe-h">Or describe it</h2>
+  <form method="post" action="/agents/new">
+    <div class="field"><label for="describe">What should it do? {{template "req"}}</label>
+      <textarea id="describe" name="describe" rows="3" maxlength="2000" required aria-describedby="describe-help">{{.Described}}</textarea>
+      <p id="describe-help" class="help">A model drafts a declaration from this. It never names a tool or
+        asks to publish, and the checker below says what the draft could do before anything is saved.</p></div>
+    <button type="submit">Draft it</button>
+  </form>
+  {{with .DraftError}}<p class="notice bad" role="alert">{{.}}</p>{{end}}
+  {{with .Drafted}}
+  <h3>What the draft could do, run by a model for you</h3>
+  {{range .Bounded}}<p class="hint">Bounded by {{.}}</p>{{end}}
+  <ul class="findings">
+    {{range .Would}}<li><span class="wf-word {{if .Could}}good{{else}}critical{{end}}">{{if .Could}}yes{{else}}no{{end}}</span>
+      <code>{{.What}}</code>{{with .Why}} — {{.}}{{end}}
+      {{range .Then}}<div class="hint">then: {{.}}</div>{{end}}</li>{{end}}
+  </ul>
+  {{if .Notes}}<p class="hint">Left out or changed from what the model asked for:</p>
+  <ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}
+  {{with .Invalid}}<p class="notice warn">As drafted it would be refused: {{.}}</p>{{end}}
+  <p class="hint">The form below holds the draft. Nothing is saved until you read it and press Save,
+    and saving checks it again.</p>
+  {{end}}
+</section>
+{{end}}
+
 <figure class="wf-fig">
   <figcaption><h2>What it reads, and what it may do</h2></figcaption>
   <svg class="agmap" viewBox="0 0 {{.Map.W}} {{.Map.H}}" role="img" aria-label="{{.Map.Says}}">
@@ -22,7 +50,7 @@
 <form method="post" action="/agents/act">
   <input type="hidden" name="do" value="save">
   {{if .New}}<input type="hidden" name="new" value="1"><input type="hidden" name="kind" value="{{.M.Kind}}">
-  <p><label>Name <input type="text" name="name" required maxlength="41" pattern="[a-z0-9][a-z0-9\-]*" placeholder="support-answers"></label>
+  <p><label>Name <input type="text" name="name" required maxlength="41" pattern="[a-z0-9][a-z0-9\-]*" placeholder="support-answers" value="{{.NewName}}"></label>
     <span class="hint">Lower-case letters, digits and hyphens. It is how every log entry says which agent acted.</span></p>
   {{else}}<input type="hidden" name="name" value="{{.M.Name}}">{{end}}
   <p><label>What it is for <textarea name="purpose" rows="2" required maxlength="600">{{.M.Purpose}}</textarea></label>
