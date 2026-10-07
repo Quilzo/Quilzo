@@ -150,10 +150,13 @@ func Look(events []audit.Event, now time.Time) []Report {
 			continue
 		}
 
+		// Where the refusal's reason is: a run's step records it as why, the
+		// agent interface as the error the app was told.
 		reason := e.Detail["reason"]
-		if reason == "" {
-			// The agent interface records what the app was told as the error.
-			reason = e.Detail["error"]
+		for _, k := range []string{"why", "error"} {
+			if reason == "" {
+				reason = e.Detail[k]
+			}
 		}
 		// An agent told it needs approval, that stopped, behaved correctly. It
 		// asked. Counting that is what quarantines the well-behaved agents

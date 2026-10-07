@@ -112,7 +112,13 @@ func buildReceipt(root, run string, now time.Time) (*agentReceiptFile, error) {
 	}
 	rf := &agentReceiptFile{Format: receiptFormat, Run: run, Made: now.UTC()}
 	err := proveRecords(root, rf, now, func(e audit.Event) bool {
-		return e.Detail["run"] == run && (e.Action == "agent.action" || e.Action == "agent.run")
+		// Each step, the run's outcome, and for a program's run how its box
+		// went and every connection it asked for.
+		switch e.Action {
+		case "agent.action", "agent.run", "agent.program", "agent.egress":
+			return e.Detail["run"] == run
+		}
+		return false
 	})
 	if err != nil {
 		return nil, err

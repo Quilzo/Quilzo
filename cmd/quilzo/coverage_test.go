@@ -763,6 +763,12 @@ var coverage = map[string]surfaces{
 		"program re-executes itself as to confine an extension",
 		NoMCP: "is a shim, and confining an extension is not an operation an " +
 			"agent performs"},
+	"__agentbox": {Why: "is not a command anybody types: it is the first process " +
+		"of an agent program's box, which this program re-executes itself as",
+		NoMCP: "is a box's first process; running a program is quilzo agent run --program"},
+	"__agentbox-exec": {Why: "is not a command anybody types: it is the shim that " +
+		"confines itself and becomes an agent's program",
+		NoMCP: "is a shim, as __sandbox"},
 	"config-show": {Why: "not a command", NoMCP: "not a command"},
 	"help": {Why: "prints usage",
 		NoMCP: "prints usage; the operation list is how an agent discovers this"},
@@ -1033,6 +1039,14 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 		// closes the finding either way.
 		// Takes away what was said about an asset, which widens its SSVC
 		// decisions back to a range.
+		// Takes away an agent's program; it then runs only by walking its
+		// manifest or with a model.
+		"agent program.remove": {
+			GUI: "/agents",
+			NoMCP: "what runs as an agent, with a run's reach, is an " +
+				"administrator's decision, and a model changing what its own " +
+				"agent runs is the thing a declaration exists to stop",
+		},
 		"asset.remove": {
 			GUI: "/security/vulns",
 			NoMCP: "how exposed a machine is and what is lost with it is " +

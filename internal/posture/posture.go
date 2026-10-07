@@ -322,6 +322,17 @@ type AIFacts struct {
 	Identities []AgentIdentityFact `json:"identities,omitempty"`
 	// Tools is each declared agent's tools from installed integrations.
 	Tools []AgentToolFact `json:"tools,omitempty"`
+	// Programs is each agent that runs its own program, and whether its
+	// box can be opened here.
+	Programs []AgentProgramFact `json:"programs,omitempty"`
+}
+
+// AgentProgramFact is an agent's program and its backend's standing here.
+type AgentProgramFact struct {
+	Agent     string `json:"agent"`
+	Backend   string `json:"backend"`
+	Available bool   `json:"available"`
+	Why       string `json:"why,omitempty"`
 }
 
 // AgentToolFact is one tool an agent declares, on an integration: whether
