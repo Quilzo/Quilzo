@@ -15,6 +15,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/memory"
 	"github.com/quilzo/quilzo/internal/oauthas"
 	"github.com/quilzo/quilzo/internal/scim"
 )
@@ -310,5 +311,28 @@ func TestSuspensionEndsTheAppsSomebodyConnected(t *testing.T) {
 	}
 	if !found {
 		t.Error("ending her connection was not recorded")
+	}
+}
+
+// Deleted by the identity provider, somebody is no longer anybody here, and
+// no agent remembers them; suspended, they may come back, and it waits.
+func TestDeletionByTheIdentityProviderErasesWhatAgentsRemember(t *testing.T) {
+	root, c := newSCIM(t)
+	_, u := c.do(http.MethodPost, "/Users", `{"userName":"ada@example.com","active":true}`)
+	id := u["id"].(string)
+	c.do(http.MethodPost, "/Groups", `{"displayName":"Editors","members":[{"value":"`+id+`"}]}`)
+	if _, err := memoryStore(root).Remember(memory.Entry{Agent: "helper", About: "ada@example.com", Kind: memory.Semantic,
+		Text: "Ada works Tuesdays", Run: "r", By: "ada@example.com"}, time.Hour, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	c.do(http.MethodPatch, "/Users/"+id, `{"Operations":[{"op":"replace","value":{"active":false}}]}`)
+	if left, _ := memoryStore(root).List(memory.Filter{About: "ada@example.com"}); len(left) != 1 {
+		t.Fatal("a suspension erased her memory")
+	}
+	if code, _ := c.do(http.MethodDelete, "/Users/"+id, ""); code != http.StatusNoContent {
+		t.Fatalf("delete: %d", code)
+	}
+	if left, _ := memoryStore(root).List(memory.Filter{About: "ada@example.com"}); len(left) != 0 {
+		t.Fatal("a deleted person is still remembered")
 	}
 }

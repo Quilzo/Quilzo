@@ -209,6 +209,23 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 	by := &Caller{Name: scimBy, Kind: audit.KindService, Verified: true}
 	appsServer(root, by).EndWhere(func(g oauthas.Grant) bool { return strings.EqualFold(g.Principal, name) },
 		scimBy, "the identity provider suspended or removed them")
+	// Deleted, not suspended: no longer anybody here, so no agent keeps
+	// anything about them.
+	exists := false
+	_ = scimStore(root).Read(func(st *scim.State) {
+		for _, u := range st.Users {
+			if strings.EqualFold(u.UserName, name) {
+				exists = true
+			}
+		}
+	})
+	if !exists {
+		for _, who := range spellings {
+			if _, err := forgetPerson(root, who, scimBy); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

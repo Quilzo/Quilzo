@@ -328,6 +328,9 @@ type AIFacts struct {
 	// PersonalRoutes are model routes off this organisation's network that
 	// are told they may receive personal data.
 	PersonalRoutes []string `json:"personal_routes,omitempty"`
+	// HeldMemories is, for each agent, how many of its memories wait for a
+	// person to confirm them.
+	HeldMemories map[string]int `json:"held_memories,omitempty"`
 }
 
 // AgentProgramFact is an agent's program and its backend's standing here.
