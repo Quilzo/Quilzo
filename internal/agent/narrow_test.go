@@ -139,3 +139,17 @@ func TestAParentWithNoToolsGrantsNone(t *testing.T) {
 		t.Errorf("tools are %+v", got.Tools)
 	}
 }
+
+// Reading what addresses an AI as it is takes both sides saying so.
+func TestKeepingInstructionsNeedsBothSides(t *testing.T) {
+	keep := Manifest{Retrieval: Retrieval{KeepInstructions: true}}
+	for _, tc := range []struct{ a, b, want bool }{
+		{true, true, true}, {true, false, false}, {false, true, false}, {false, false, false},
+	} {
+		a, b := keep, keep
+		a.Retrieval.KeepInstructions, b.Retrieval.KeepInstructions = tc.a, tc.b
+		if got := a.Narrow(b).Retrieval.KeepInstructions; got != tc.want {
+			t.Errorf("%v narrowed by %v kept instructions: %v", tc.a, tc.b, got)
+		}
+	}
+}

@@ -56,6 +56,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // The kinds, the manifest's tiers.
@@ -176,7 +177,7 @@ func newID() string {
 // Remember keeps an entry for as long as retain says. The same thing
 // remembered again about the same person is the one entry, kept longer.
 func (s *Store) Remember(e Entry, retain time.Duration, now time.Time) (Entry, error) {
-	e.Text = strings.TrimSpace(e.Text)
+	e.Text = strings.TrimSpace(plaintext.Clean(e.Text))
 	switch {
 	case !Kinds[e.Kind]:
 		return Entry{}, fmt.Errorf("%q is not a kind of memory: episodic, semantic or procedural", e.Kind)

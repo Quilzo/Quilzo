@@ -46,6 +46,10 @@ type Assistant struct {
 	// UseModel answers with the configured model when there is one. Off, it
 	// is always extractive — no model call, no cost, nothing sent anywhere.
 	UseModel bool `json:"use_model,omitempty"`
+	// KeepInstructions keeps passages that address an AI reading them,
+	// which are otherwise left out of what it reads (see screen.go): for a
+	// chatbot whose pages discuss these attacks on purpose.
+	KeepInstructions bool `json:"keep_instructions,omitempty"`
 	// Documents are files from the media library it may also read, by id.
 	// Chosen one by one: the library holds drafts, contracts and whatever
 	// else somebody uploaded, and none of it is knowledge until an owner

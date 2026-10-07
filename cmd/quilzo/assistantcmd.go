@@ -11,6 +11,7 @@ import (
 	"github.com/quilzo/quilzo/internal/admin"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -289,7 +290,30 @@ func assistantKnowledge(root string, a assistant.Assistant) (*assistant.Index, [
 		}
 		passages = append(passages, ps...)
 	}
+	passages, held := screenKnowledge(a, passages)
+	warnings = append(warnings, held...)
 	return assistant.NewIndex(passages), warnings, nil
+}
+
+// screenKnowledge leaves out of what an assistant reads the passages that
+// address an AI, unless it keeps them on purpose, and says which pages and
+// why, for the owner. See internal/assistant/screen.go.
+func screenKnowledge(a assistant.Assistant, passages []assistant.Passage) ([]assistant.Passage, []string) {
+	if a.KeepInstructions {
+		return passages, nil
+	}
+	kept, held := assistant.Hold(passages)
+	byPage := assistant.HeldPages(held)
+	names := make([]string, 0, len(byPage))
+	for p := range byPage {
+		names = append(names, p)
+	}
+	sort.Strings(names)
+	var out []string
+	for _, p := range names {
+		out = append(out, fmt.Sprintf("%s: left out of what it reads, because it %s", p, strings.Join(byPage[p], ", and ")))
+	}
+	return kept, out
 }
 
 // assistantDocument reads one media library file for an assistant.

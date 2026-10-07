@@ -48,6 +48,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/codescan"
 	"github.com/quilzo/quilzo/internal/pii"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Route is one model endpoint.
@@ -433,7 +434,8 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, system, user
 		// What may not leave for this route is replaced first, and put back
 		// in what comes back: see internal/pii/mask.go.
 		mask := &pii.Masker{Allowed: g.OwnDomains, Secrets: codescan.SecretSpans}
-		sys, usr := mask.Mask(system, r.Personal), mask.Mask(user, r.Personal)
+		sys, usr, hidden := visible(system, user)
+		sys, usr = mask.Mask(sys, r.Personal), mask.Mask(usr, r.Personal)
 		if mm, ok := m.(assist.Metered); ok {
 			out, used, err = mm.CompleteMetered(ctx, sys, usr)
 		} else {
@@ -442,6 +444,9 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, system, user
 		}
 		out = mask.Restore(out)
 		masked := mask.Masked()
+		if hidden > 0 {
+			masked["invisible"] = hidden
+		}
 		if len(masked) > 0 && g.OnMasked != nil {
 			g.OnMasked(consumer, r.Name, masked)
 		}
@@ -752,4 +757,13 @@ func Trouble(err error) string {
 		}
 	}
 	return ""
+}
+
+// visible takes out of a prompt what draws nothing, as the last line
+// before it leaves: whatever reached here unread is not sent to a model
+// either. See internal/plaintext.
+func visible(system, user string) (string, string, int) {
+	s, a := plaintext.Visible(system)
+	u, b := plaintext.Visible(user)
+	return s, u, a + b
 }

@@ -36,6 +36,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -165,7 +166,13 @@ func (r Reader) readPage(s *agent.Session, ref, name string) (string, error) {
 		// store, which is the disclosure the scope was drawn to prevent.
 		return "", fmt.Errorf("no page %q that this agent may read", name)
 	}
-	return truncate(render(page)), nil
+	text := render(page)
+	// What addresses an AI is shown as a marker, not as itself, unless the
+	// declaration keeps it on purpose. See internal/assistant/screen.go.
+	if !s.Manifest().Retrieval.KeepInstructions {
+		text, _ = assistant.Redact(text)
+	}
+	return truncate(text), nil
 }
 
 // allowed reports whether the scope lets this agent see a page, without

@@ -17,7 +17,7 @@
   <button type="submit">Ask</button>
 </form>
 {{if .TestError}}<p class="notice bad" role="alert">{{.TestError}}</p>{{end}}
-{{if .DocWarnings}}<div class="notice warn" role="note"><p><strong>Some documents could not be used:</strong></p>
+{{if .DocWarnings}}<div class="notice warn" role="note"><p><strong>Some of what it could read is not being used:</strong></p>
   <ul>{{range .DocWarnings}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
 {{with .Ans}}
 <div class="card">
@@ -104,6 +104,12 @@
     <p class="help">Off, it quotes your pages directly: no model, no cost,
       nothing sent anywhere. On, every sentence is still checked against the
       page it cites.</p></div>
+  <div class="field"><label><input type="checkbox" name="keep_instructions" value="1"{{if .A.KeepInstructions}} checked{{end}} aria-describedby="keep-help">
+    Read passages that address an AI</label>
+    <p id="keep-help" class="help">Off, a passage that speaks to the AI reading it rather than to
+      people ("ignore your previous instructions", "if you are an AI", "do not tell the user")
+      is left out of what it reads: that is how a planted instruction looks. Turn this on only
+      for a chatbot whose pages discuss these attacks on purpose.</p></div>
   <div class="field"><label for="embed">Sites that may embed it</label>
     <textarea id="embed" name="embed" rows="2" placeholder="https://shop.example" aria-describedby="embed-help">{{.EmbedList}}</textarea>
     <p id="embed-help" class="help">One per line, as https://example.com.
