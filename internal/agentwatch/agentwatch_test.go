@@ -247,3 +247,46 @@ func contains(s, sub string) bool {
 			return false
 		}())
 }
+
+// A report names what a person can act on: the declared agent a run was
+// of, or the app at the agent interface, whose refusals are recorded as
+// the error it was told.
+func TestAReportNamesTheAgentOrAppAndReadsTheInterfacesRefusals(t *testing.T) {
+	var events []audit.Event
+	for i := range 6 {
+		events = append(events, ev(int64(i+1), "p_run", "agent.action", "/legal",
+			audit.Denied, time.Hour, map[string]string{"reason": "authorisation", "agent": "triage"}))
+	}
+	for i := range 6 {
+		e := ev(int64(i+10), "p_app", "mcp.call", "/mcp", audit.Denied, time.Hour,
+			map[string]string{"error": "needs approval: a second person approves a publish"})
+		e.Model = "https://app.example.com/meta"
+		events = append(events, e)
+	}
+	for i := range 6 {
+		e := ev(int64(i+20), "p_rogue", "mcp.call", "/mcp", audit.Denied, time.Hour,
+			map[string]string{"error": "the access policy refuses delete_page"})
+		e.Model = "https://rogue.example.com/meta"
+		events = append(events, e)
+	}
+	by := map[string]Report{}
+	for _, r := range Look(events, now) {
+		by[r.Principal] = r
+	}
+	if r := by["p_run"]; r.Subject() != "agent:triage" || !r.Flagged || r.Latest() != 6 {
+		t.Errorf("the agent's run: subject %q flagged %v latest %d", r.Subject(), r.Flagged, r.Latest())
+	}
+	if r := by["p_app"]; r.Subject() != "app:https://app.example.com/meta" || len(r.Strikes) != 0 {
+		t.Errorf("an app told to get approval: subject %q, %d strikes", r.Subject(), len(r.Strikes))
+	}
+	if r := by["p_rogue"]; !r.Flagged || r.Subject() != "app:https://rogue.example.com/meta" || r.Latest() != 25 {
+		t.Errorf("an app that kept trying: %+v", r)
+	}
+	// An unattributed strike has no place in the log, and comes last.
+	if n := (Report{Strikes: []Strike{{Seq: 9}, {Seq: 4}, {Kind: Unattributed}}}).Latest(); n != 9 {
+		t.Errorf("latest %d", n)
+	}
+	if (Report{Principal: "p_x"}).Subject() != "p_x" {
+		t.Error("a report with neither names the handle")
+	}
+}

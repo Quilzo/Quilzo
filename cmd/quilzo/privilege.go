@@ -217,6 +217,7 @@ var commandNeeds = map[string]need{
 	"shield":        {action: auth.ActGrant},
 	// What may act as people through the agent interface, and ending it.
 	"apps":               {action: auth.ActGrant},
+	"apps receipt":       {action: auth.ActView},
 	"shield status":      {action: auth.ActView},
 	"shield list":        {action: auth.ActView},
 	"shield dry-run":     {action: auth.ActView},
@@ -1207,9 +1208,9 @@ var commandAreas = map[string]string{
 	"auditlog": auth.AreaLog,
 	// A receipt is records from the log, with their proofs: read where the
 	// log is read.
-	"agent receipt": auth.AreaLog,
-	"inbox":         auth.AreaInbox,
-	"board list":    auth.AreaBoards, "board held": auth.AreaBoards, "board recent": auth.AreaBoards,
+	"agent receipt": auth.AreaLog, "apps receipt": auth.AreaLog,
+	"inbox":      auth.AreaInbox,
+	"board list": auth.AreaBoards, "board held": auth.AreaBoards, "board recent": auth.AreaBoards,
 	"board approve": auth.AreaBoards, "board delete": auth.AreaBoards,
 }
 

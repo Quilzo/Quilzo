@@ -199,6 +199,9 @@ var notAScreen = map[string]string{
 	"/.well-known/oauth-authorization-server":   "is JSON for programs (RFC 8414), 404 until the interface and the admin's address are set",
 	"/oauth/token":  "is posted to by an app's program, never opened",
 	"/oauth/revoke": "is posted to by an app's program, never opened",
+	"/apps/receipt": "is a file to keep, the receipt of one connection's calls, " +
+		"linked from Connected apps beside each connection; with no id it " +
+		"sends the person back there. agentinterface_test.go downloads one",
 	"/oauth/authorize": "is where an app sends a person with its request in the " +
 		"query; opened with none it says the request cannot be used, and it " +
 		"is 404 while the interface is off. agentinterface_test.go opens it " +
@@ -292,13 +295,13 @@ func fullyWired(t *testing.T) (*Server, string) {
 	srv.Integrations = &Integrations{
 		Webhooks: func() ([]webhook.Endpoint, []webhook.Delivery, error) {
 			return []webhook.Endpoint{{
-				URL: "https://example.org/hook", Secret: "0123456789abcdef",
-				Types: []string{"publish"}, Note: "the deploy trigger",
-			}}, []webhook.Delivery{{
-				ID: "d1", URL: "https://example.org/hook", Type: "publish",
-				Attempt: 1, Status: 200, At: "2026-08-16T09:00:00Z",
-				Succeeded: true,
-			}}, nil
+					URL: "https://example.org/hook", Secret: "0123456789abcdef",
+					Types: []string{"publish"}, Note: "the deploy trigger",
+				}}, []webhook.Delivery{{
+					ID: "d1", URL: "https://example.org/hook", Type: "publish",
+					Attempt: 1, Status: 200, At: "2026-08-16T09:00:00Z",
+					Succeeded: true,
+				}}, nil
 		},
 		SaveWebhooks: func([]webhook.Endpoint) error { return nil },
 		Extensions: func() ([]ext.Manifest, error) {

@@ -728,10 +728,11 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 			idf := posture.AgentIdentityFact{Name: name}
 			if id := agents.identityOf(name); id != nil {
 				idf.Sponsor, idf.Expires = id.Sponsor, id.Expires
-				idf.SponsorActive = sponsorActive(root, id.Sponsor)
+				idf.SponsorActive = hasStanding(root, id.Sponsor)
 			}
 			facts.Identities = append(facts.Identities, idf)
 		}
+		facts.Tools = agentToolFacts(root, agents)
 		sort.Slice(facts.Identities, func(i, j int) bool { return facts.Identities[i].Name < facts.Identities[j].Name })
 		sort.Slice(facts.Evals, func(i, j int) bool { return facts.Evals[i].Name < facts.Evals[j].Name })
 	}
@@ -741,6 +742,39 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 	}
 	facts.Checked = true
 	return facts
+}
+
+// agentToolFacts is every declared agent's tools on installed
+// integrations: whether each is pinned, and what it became if its server
+// changed it since and nobody has pinned it again.
+func agentToolFacts(root string, agents *agentSet) []posture.AgentToolFact {
+	installed, err := loadIntegrations(root)
+	if err != nil || installed == nil {
+		return nil
+	}
+	changes := loadToolChanges(root)
+	var out []posture.AgentToolFact
+	for name, m := range agents.Agents {
+		for _, t := range m.Tools {
+			in, err := installed.Resolve(t.Name)
+			if err != nil {
+				continue
+			}
+			pin := in.Pins[t.Name]
+			f := posture.AgentToolFact{Agent: name, Integration: in.Name, Tool: t.Name, Pinned: pin != ""}
+			if c, ok := changes[in.Name+"/"+t.Name]; ok && pin != "" && c.Pinned == pin {
+				f.Changed = c.Now
+			}
+			out = append(out, f)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Agent != out[j].Agent {
+			return out[i].Agent < out[j].Agent
+		}
+		return out[i].Tool < out[j].Tool
+	})
+	return out
 }
 
 // askPageDiscloses reports whether the pages visitors see answers on say

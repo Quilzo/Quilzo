@@ -445,3 +445,49 @@ func TestErrorPagesKeepTheirScript(t *testing.T) {
 		}
 	}
 }
+
+// The person an app acted for takes away the receipt of what it did; an
+// administrator can too; nobody else can, and cannot tell it exists.
+func TestAConnectionsReceiptIsForThePersonItActedFor(t *testing.T) {
+	r := newIfaceRig(t)
+	r.connect(t)
+	asked := ""
+	r.srv.Interface.Receipt = func(id string) ([]byte, error) {
+		asked = id
+		return []byte(`{"format":"quilzo-app-receipt/1","connection":"` + id + `"}`), nil
+	}
+	grants, _ := r.srv.Interface.OAuth.Store.Grants()
+	id := grants[0].ID
+	if w := r.do(t, "GET", "/apps", r.token, nil, nil); !strings.Contains(w.Body.String(), "/apps/receipt?id="+id) {
+		t.Fatal("Connected apps does not offer the receipt")
+	}
+	w := r.do(t, "GET", "/apps/receipt?id="+id, r.token, nil, nil)
+	if w.Code != 200 || asked != id || !strings.Contains(w.Header().Get("Content-Disposition"), "receipt-"+id+".json") ||
+		w.Header().Get("Cache-Control") != "no-store" || !strings.Contains(w.Body.String(), id) {
+		t.Fatalf("%d %q %v", w.Code, asked, w.Header())
+	}
+	r.srv.Policy.Grant(auth.Binding{Principal: "rae", Role: auth.RoleAuthor, Resource: "/"})
+	rae, _, _ := r.srv.Tokens.Issue("rae", "rae", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	asked = ""
+	for _, q := range []string{id, "gr_00000000000000ff", ""} {
+		w := r.do(t, "GET", "/apps/receipt?id="+q, rae, nil, nil)
+		if w.Code != 303 || asked != "" || !strings.Contains(w.Header().Get("Location"), "no+connection+of+yours") {
+			t.Errorf("%q for rae: %d %q", q, w.Code, w.Header().Get("Location"))
+		}
+	}
+}
+
+func TestHowLongAgoIsSaidInWords(t *testing.T) {
+	now := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
+	for ago, want := range map[time.Duration]string{
+		30 * time.Second: "just now", time.Minute: "1 minute ago", 5 * time.Minute: "5 minutes ago",
+		time.Hour: "1 hour ago", 3 * time.Hour: "3 hours ago", 24 * time.Hour: "1 day ago", 72 * time.Hour: "3 days ago",
+	} {
+		if got := agoAt(now.Add(-ago).Unix(), now); got != want {
+			t.Errorf("%s: %q", ago, got)
+		}
+	}
+	if agoAt(0, now) != "never" {
+		t.Error("zero is not never")
+	}
+}

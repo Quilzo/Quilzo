@@ -232,9 +232,7 @@ func newMCPClient(root string) *mcpclient.Client {
 		// it is what a server that was trusted turning on its users looks
 		// like.
 		Changed: func(in agent.Integration, tool, pinned, now string) {
-			record(root, audit.Record{Action: "integration.tool-changed", Resource: "/integrations/" + in.Name,
-				Outcome: audit.Denied, Principal: "quilzo", Kind: audit.KindService, Verified: true,
-				Detail: map[string]string{"integration": in.Name, "tool": tool, "pinned": pinned, "now": now}})
+			noteToolChanged(root, in, tool, pinned, now)
 		},
 	}
 }
@@ -274,11 +272,13 @@ func integrationsPin(root string, args []string) error {
 	}
 	caller := resolveCaller(root, flagToken)
 	pinned := 0
+	var looked []string
 	for _, t := range tools {
 		if !t.Allowed || (len(want) > 0 && !want[t.Name]) {
 			continue
 		}
 		delete(want, t.Name)
+		looked = append(looked, t.Name)
 		// Shown in full: this is what is being approved, and a model that
 		// chooses it is choosing what this says.
 		fmt.Printf("%s%s%s  %s\n", bold, t.Name, reset, t.Definition[:16])
@@ -298,16 +298,23 @@ func integrationsPin(root string, args []string) error {
 	for t := range want {
 		return fmt.Errorf("%s does not use %q, or the server no longer offers it", in.Name, t)
 	}
+	if pinned > 0 {
+		set.Declared[idx] = in
+		if err := set.Validate(); err != nil {
+			return err
+		}
+		if err := saveJSON(integrationsPath(root), set); err != nil {
+			return err
+		}
+	}
+	// Shown and approved as they are: a redefinition seen earlier is now
+	// one somebody has looked at, even one that changed back.
+	if err := forgetToolChanges(root, in.Name, looked); err != nil {
+		return err
+	}
 	if pinned == 0 {
 		fmt.Printf("\n  %snothing changed: every definition was already pinned as it is%s\n", dim, reset)
 		return nil
-	}
-	set.Declared[idx] = in
-	if err := set.Validate(); err != nil {
-		return err
-	}
-	if err := saveJSON(integrationsPath(root), set); err != nil {
-		return err
 	}
 	fmt.Printf("\npinned %d definition(s) of %s; a change by the server is refused until pinned again\n", pinned, in.Name)
 	return nil

@@ -46,7 +46,8 @@
     <td>{{when .Created.Unix}}</td>
     <td>{{if .LastUsed.IsZero}}never{{else}}{{ago .LastUsed.Unix}}{{end}}</td>
     <td>{{when .Expires.Unix}}</td>
-    <td>
+    <td class="actions">
+      {{if $.Receipts}}<a class="btn btn-text" href="/apps/receipt?id={{.ID}}" download>Receipt</a>{{end}}
       <form method="post" action="/apps/act">
         <input type="hidden" name="action" value="disconnect">
         <input type="hidden" name="grant" value="{{.ID}}">

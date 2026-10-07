@@ -19,11 +19,12 @@ import (
 // Agents as principals: who answers for each, until when it may run, and
 // what the access policy grants it of its own. See internal/agent/identity.go.
 
-// sponsorActive reports whether a sponsor can still act here: the access
+// hasStanding reports whether somebody can still act here: the access
 // policy grants them something, and nothing (an identity provider's
 // suspension, an administrator's deny) refuses it. With no policy in use
-// nothing is enforced, so nothing is refused here either.
-func sponsorActive(root, sponsor string) bool {
+// nothing is enforced, so nothing is refused here either. An agent's
+// sponsor and a person who connected an app are both asked this.
+func hasStanding(root, who string) bool {
 	inUse, err := policyInUse(root)
 	if err != nil {
 		return false
@@ -36,7 +37,7 @@ func sponsorActive(root, sponsor string) bool {
 		return false
 	}
 	for _, b := range pol.Snapshot() {
-		if b.Principal == sponsor && !b.Deny && pol.Evaluate(sponsor, auth.ActView, b.Resource).Allowed {
+		if b.Principal == who && !b.Deny && pol.Evaluate(who, auth.ActView, b.Resource).Allowed {
 			return true
 		}
 	}
@@ -139,7 +140,7 @@ func agentIdentityCmd(root, verb string, args []string) error {
 			return err
 		}
 		person := args[1]
-		if !sponsorActive(root, person) {
+		if !hasStanding(root, person) {
 			return fmt.Errorf("%s has no access here, so cannot answer for an agent", person)
 		}
 		id, err = agent.NewIdentity(person, caller.Name, *lifetime, now)

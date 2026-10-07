@@ -46,6 +46,8 @@ var Signals = map[string]string{
 	"self-flaw":          "a flaw in the Go this build was made with reaches it",
 	"binary-changed":     "the running binary is not the one it says it is",
 	"setting-reverted":   "a setting weakened by hand, with no reason recorded, was put back",
+	"agent-misbehaving":  "an agent or a connected app kept trying what it was refused",
+	"tool-changed":       "a tool server changed what a tool is after a person approved it",
 }
 
 // Counted is what a trigger counts of each signal, singular and plural, for
@@ -66,6 +68,8 @@ var Counted = map[string][2]string{
 	"self-flaw":          {"flaw in this build", "flaws in this build"},
 	"binary-changed":     {"change to the binary", "changes to the binary"},
 	"setting-reverted":   {"setting put back", "settings put back"},
+	"agent-misbehaving":  {"agent or app flagged for what it kept trying", "agents or apps flagged for what they kept trying"},
+	"tool-changed":       {"approved tool redefined", "approved tools redefined"},
 }
 
 // Trait is how far a signal can be trusted, in CrowdSec's terms: Confidence
@@ -112,6 +116,11 @@ var Traits = map[string]Trait{
 	"self-flaw":        {Confidence: 3},
 	"binary-changed":   {Confidence: 3},
 	"setting-reverted": {Confidence: 3},
+	// Counted from the log's own refusals, so nobody raises it for another;
+	// but a busy agent exploring can cross the line too.
+	"agent-misbehaving": {Confidence: 2},
+	// The server's own answer, compared here with what a person approved.
+	"tool-changed": {Confidence: 3},
 }
 
 // Per says what a trigger counts by.
@@ -303,7 +312,7 @@ func (s Step) validate(on Trigger) error {
 			return errors.New("only a chatbot can be limited to quoting pages")
 		}
 	case "pause-agent":
-		if on.Signal != "agent-hijacked" && on.Signal != "model-spend" {
+		if on.Signal != "agent-hijacked" && on.Signal != "model-spend" && on.Signal != "agent-misbehaving" {
 			return errors.New("an agent is paused on an agent's signal")
 		}
 	case "cut-route":
@@ -439,6 +448,18 @@ func Builtins() []Playbook {
 		{Name: "setting-reverted", Title: "A setting weakened by hand was put back", Mode: "act", Builtin: true,
 			Why: "A weaker setting with no reason recorded is an accident or an intruder's edit, and the program cannot tell which: it is put back, and whoever meant it is told how to set it again with a reason.",
 			On:  Trigger{Signal: "setting-reverted", Per: "subject", Count: 1, Within: h(time.Hour)},
+			Stages: []Stage{
+				{Do: []Step{{Action: "notify"}, {Action: "open-case"}}},
+			}},
+		{Name: "tool-redefined", Title: "A tool server changed a tool somebody approved", Mode: "act", Builtin: true,
+			Why: "What a tool is decides what an agent does with it, and a server that redefines one after it was approved is how a trusted server turns on its users. Nothing calls it until it is pinned again; somebody looks at what it now is.",
+			On:  Trigger{Signal: "tool-changed", Per: "subject", Count: 1, Within: h(24 * time.Hour)},
+			Stages: []Stage{
+				{Do: []Step{{Action: "notify"}, {Action: "open-case"}}},
+			}},
+		{Name: "agent-misbehaving", Title: "An agent or app keeps trying what it was refused", Mode: "act", Builtin: true,
+			Why: "Asking and accepting no is how an agent should behave; reaching again and again for what it was never given is not. The count is a heuristic, so this tells the security contact and whoever answers for the agent, and opens a case; pausing it is a step administrators can add.",
+			On:  Trigger{Signal: "agent-misbehaving", Per: "subject", Count: 1, Within: h(24 * time.Hour)},
 			Stages: []Stage{
 				{Do: []Step{{Action: "notify"}, {Action: "open-case"}}},
 			}},

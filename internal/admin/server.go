@@ -522,22 +522,7 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 		"b64": func(b []byte) string {
 			return base64.RawURLEncoding.EncodeToString(b)
 		},
-		"ago": func(unix int64) string {
-			if unix == 0 {
-				return "never"
-			}
-			d := time.Since(time.Unix(unix, 0))
-			switch {
-			case d < time.Minute:
-				return "just now"
-			case d < time.Hour:
-				return fmt.Sprintf("%d minutes ago", int(d.Minutes()))
-			case d < 24*time.Hour:
-				return fmt.Sprintf("%d hours ago", int(d.Hours()))
-			default:
-				return fmt.Sprintf("%d days ago", int(d.Hours()/24))
-			}
-		},
+		"ago": func(unix int64) string { return agoAt(unix, time.Now()) },
 	}).ParseFS(assets, "assets/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("admin templates: %w", err)
@@ -1405,6 +1390,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/oauth/revoke", s.handleOAuthRevoke)
 	mux.HandleFunc("/apps", s.handleApps)
 	mux.HandleFunc("/apps/act", s.handleAppsAct)
+	mux.HandleFunc("/apps/receipt", s.handleAppsReceipt)
 	mux.HandleFunc("/manifest.webmanifest", s.installManifest)
 	mux.HandleFunc("/icon.svg", s.icon)
 	mux.HandleFunc("/start", s.handleStart)
@@ -3581,6 +3567,25 @@ func firstOf(v url.Values) map[string]string {
 		}
 	}
 	return out
+}
+
+// agoAt is a moment as how long before now: "just now", "1 minute ago",
+// "3 days ago"; zero is never.
+func agoAt(unix int64, now time.Time) string {
+	if unix == 0 {
+		return "never"
+	}
+	d := now.Sub(time.Unix(unix, 0))
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return counted(int(d.Minutes()), "minute", "minutes") + " ago"
+	case d < 24*time.Hour:
+		return counted(int(d.Hours()), "hour", "hours") + " ago"
+	default:
+		return counted(int(d.Hours()/24), "day", "days") + " ago"
+	}
 }
 
 func plural(n int) string {

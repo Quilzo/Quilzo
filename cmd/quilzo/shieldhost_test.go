@@ -241,3 +241,31 @@ func TestASuspendedTokenAndItsSessionsAreRefusedUntilLifted(t *testing.T) {
 		t.Fatalf("lifted, still refused: %v", err)
 	}
 }
+
+// Suspending an app connection holds the access tokens it was already
+// given, not only the ones a refresh would give it next.
+func TestASuspendedAppConnectionRefusesTheTokensItAlreadyHas(t *testing.T) {
+	root := shieldRoot(t)
+	ts := &auth.TokenStore{}
+	const mcp = "https://admin.example.org/mcp"
+	now := time.Now()
+	held, _, err := ts.IssueForGrant("dana", auth.RoleAuthor, auth.Scope{}, "https://app.example.com/meta", "gr_00000000000000aa", mcp, time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, _, err := ts.IssueForGrant("dana", auth.RoleAuthor, auth.Scope{}, "https://other.example.com/meta", "gr_00000000000000bb", mcp, time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := shield.Apply(root, shield.Protection{Kind: shield.Token, Target: "gr_00000000000000aa", Reason: "acting oddly",
+		By: "dana", Until: now.Add(time.Hour)}, now); err != nil {
+		t.Fatal(err)
+	}
+	newShieldHost(root).gate(ts)
+	if _, err := ts.AuthenticateFor(held, mcp, now); err == nil || !strings.Contains(err.Error(), "suspended") {
+		t.Fatalf("a suspended connection's token: %v", err)
+	}
+	if _, err := ts.AuthenticateFor(other, mcp, now); err != nil {
+		t.Fatalf("another connection was held with it: %v", err)
+	}
+}

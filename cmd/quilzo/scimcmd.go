@@ -20,6 +20,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/oauthas"
 	"github.com/quilzo/quilzo/internal/scim"
 	"github.com/quilzo/quilzo/internal/throttle"
 )
@@ -193,15 +194,21 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 			}
 		}
 	}
-	if ended == 0 {
-		return nil
+	if ended > 0 {
+		if err := saveJSON(tokensPath(root), ts); err != nil {
+			return err
+		}
+		record(root, audit.Record{Action: "scim.sessions-ended", Resource: "/",
+			Outcome: audit.Success, Principal: scimBy, Kind: audit.KindService,
+			Verified: true, Detail: map[string]string{"subject": name, "count": fmt.Sprint(ended)}})
 	}
-	if err := saveJSON(tokensPath(root), ts); err != nil {
-		return err
-	}
-	record(root, audit.Record{Action: "scim.sessions-ended", Resource: "/",
-		Outcome: audit.Success, Principal: scimBy, Kind: audit.KindService,
-		Verified: true, Detail: map[string]string{"subject": name, "count": fmt.Sprint(ended)}})
+	// And the apps they connected: an app acting for somebody who is no
+	// longer here is not connected to anybody. Ended after the tokens are
+	// saved, because ending a connection revokes its tokens in the same
+	// file.
+	by := &Caller{Name: scimBy, Kind: audit.KindService, Verified: true}
+	appsServer(root, by).EndWhere(func(g oauthas.Grant) bool { return strings.EqualFold(g.Principal, name) },
+		scimBy, "the identity provider suspended or removed them")
 	return nil
 }
 
