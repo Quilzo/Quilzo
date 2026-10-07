@@ -278,6 +278,13 @@ func validNext(p string) bool {
 		!strings.ContainsAny(p, "\\\r\n")
 }
 
+// authorizeAgain is where to send somebody back to, rebuilt from a request
+// validNext accepted: the path is this program's own and only the query is
+// carried over, so the redirect stays on this origin whatever it held.
+func authorizeAgain(p string) string {
+	return "/oauth/authorize?" + strings.TrimPrefix(p, "/oauth/authorize?")
+}
+
 func (s *Server) rememberNext(w http.ResponseWriter, r *http.Request, p string) {
 	if !validNext(p) {
 		return
@@ -686,7 +693,7 @@ func (s *Server) handleAppsAct(w http.ResponseWriter, r *http.Request) {
 		oa.Directory.Forget()
 		s.audit("oauth."+action, "/", map[string]string{"by": p.Name, "host": host})
 		if ret := r.FormValue("return"); action == "allow-host" && validNext(ret) {
-			http.Redirect(w, r, ret, http.StatusSeeOther)
+			http.Redirect(w, r, authorizeAgain(ret), http.StatusSeeOther)
 			return
 		}
 		if action == "allow-host" {
