@@ -738,6 +738,13 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 		sort.Slice(facts.Evals, func(i, j int) bool { return facts.Evals[i].Name < facts.Evals[j].Name })
 	}
 	facts.ModelHost, facts.ModelLocal = modelHostOf(root)
+	if _, cfg, err := modelGateway(root); err == nil && cfg != nil {
+		for _, r := range cfg.Routes {
+			if u, err := url.Parse(r.URL); err == nil && r.Personal && !hostIsLocal(u.Hostname()) {
+				facts.PersonalRoutes = append(facts.PersonalRoutes, r.Name)
+			}
+		}
+	}
 	for _, r := range agentwatch.Flagged(agentwatch.Look(events, time.Now())) {
 		facts.Flagged = append(facts.Flagged, r.Principal)
 	}

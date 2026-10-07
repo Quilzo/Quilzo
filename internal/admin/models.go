@@ -109,7 +109,8 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 				Model:    strings.TrimSpace(r.FormValue("model")),
 				KeyEnv:   strings.TrimSpace(r.FormValue("key_env")),
 				PriceIn:  strings.TrimSpace(r.FormValue("price_in")),
-				PriceOut: strings.TrimSpace(r.FormValue("price_out"))})
+				PriceOut: strings.TrimSpace(r.FormValue("price_out")),
+				Personal: r.FormValue("personal") == "yes"})
 		case "route-first":
 			if found == nil {
 				back("e", "there is no route called "+name)

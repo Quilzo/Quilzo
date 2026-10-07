@@ -52,6 +52,9 @@ func TestMain(m *testing.M) {
 		case "agentbox-program":
 			programAgentMain()
 			os.Exit(0)
+		case "agentbox-program-leak":
+			programLeakMain()
+			os.Exit(0)
 		}
 	}
 	before := looseEntries()

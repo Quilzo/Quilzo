@@ -104,6 +104,9 @@ func (d Delegates) Perform(s *agent.Session) func(context.Context, agent.Action)
 		}
 
 		child := agent.NewSession(bound, nil)
+		// Holding what its supervisor holds, so a hand-off is not a way
+		// round the exfiltration breaker.
+		child.Inherit(s)
 		// Folded whatever happens. A delegate that failed halfway still spent
 		// what it spent and still read what it read, and a parent that only
 		// inherited from successful children would be a parent that could read

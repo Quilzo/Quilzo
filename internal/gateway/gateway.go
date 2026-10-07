@@ -46,6 +46,8 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/codescan"
+	"github.com/quilzo/quilzo/internal/pii"
 )
 
 // Route is one model endpoint.
@@ -62,6 +64,12 @@ type Route struct {
 	// is free, which a model on this machine is.
 	PriceIn  string `json:"price_in,omitempty"`
 	PriceOut string `json:"price_out,omitempty"`
+	// Personal says this route may receive personal data: a model on this
+	// machine, or a provider under an agreement to process it. Without it,
+	// email addresses, telephone numbers and bank accounts are replaced
+	// with placeholders before a prompt leaves, and put back in the answer.
+	// Card numbers and credentials are replaced for every route.
+	Personal bool `json:"personal,omitempty"`
 }
 
 // Budget bounds one caller.
@@ -247,6 +255,12 @@ type Gateway struct {
 	// refused for its spend cap or its key ("route-spent", "route-auth",
 	// with the route). Nil tells nobody.
 	OnTrouble func(kind, subject string)
+	// OnMasked is told when personal data or a credential was taken out of
+	// a prompt: the caller, the route, and how many of each kind.
+	OnMasked func(consumer, route string, counts map[string]int)
+	// OwnDomains are the site's own email domains, published on purpose
+	// and not masked.
+	OwnDomains []string
 
 	mu      sync.Mutex
 	models  map[string]Model
@@ -411,11 +425,20 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, system, user
 		start := g.now()
 		var out string
 		var used assist.Usage
+		// What may not leave for this route is replaced first, and put back
+		// in what comes back: see internal/pii/mask.go.
+		mask := &pii.Masker{Allowed: g.OwnDomains, Secrets: codescan.SecretSpans}
+		sys, usr := mask.Mask(system, r.Personal), mask.Mask(user, r.Personal)
 		if mm, ok := m.(assist.Metered); ok {
-			out, used, err = mm.CompleteMetered(ctx, system, user)
+			out, used, err = mm.CompleteMetered(ctx, sys, usr)
 		} else {
-			out, err = m.Complete(ctx, system, user)
-			used = assist.Estimate(system+user, out)
+			out, err = m.Complete(ctx, sys, usr)
+			used = assist.Estimate(sys+usr, out)
+		}
+		out = mask.Restore(out)
+		masked := mask.Masked()
+		if len(masked) > 0 && g.OnMasked != nil {
+			g.OnMasked(consumer, r.Name, masked)
 		}
 		took := g.now().Sub(start)
 		if err != nil {
@@ -439,7 +462,7 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, system, user
 		g.ledger.record(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name,
 			Model: r.Model, In: in, Out: len(out), Millis: took.Milliseconds(),
 			TokensIn: used.In, TokensOut: used.Out, Estimated: !used.Reported, Cost: cost,
-			Outcome: "ok"})
+			Masked: masked, Outcome: "ok"})
 		return out, used, cost, nil
 	}
 	return "", assist.Usage{}, 0, fmt.Errorf("%w: %s", ErrNoRoute, strings.Join(errs, "; "))
@@ -497,8 +520,11 @@ type Usage struct {
 	TokensOut int  `json:"tokens_out,omitempty"`
 	Estimated bool `json:"estimated,omitempty"`
 	// Cost is at the route's prices, in millionths of the currency.
-	Cost    Money  `json:"cost,omitempty"`
-	Outcome string `json:"outcome"`
+	Cost Money `json:"cost,omitempty"`
+	// Masked is how many of each kind of personal data and credential were
+	// replaced before the prompt left. Counts, never values.
+	Masked  map[string]int `json:"masked,omitempty"`
+	Outcome string         `json:"outcome"`
 }
 
 func (u Usage) payers() []string { return append([]string{u.Consumer}, u.Also...) }
