@@ -38,7 +38,7 @@ trying what it isn't allowed to.</p>
       <td>{{if .Tools}}{{range .Tools}}<span class="mono">{{.Host}}</span><br>{{end}}
         {{else}}<span class="help">nothing outside</span>{{end}}</td>
       <td>{{if eq .Standing "unsponsored"}}<span class="tag tag-bad">nobody</span>
-          <br><span class="help"><code>quilzo agent sponsor {{.Name}} PERSON</code></span>
+          <br><span class="help"><code class="cmd">quilzo agent sponsor {{.Name}} PERSON</code></span>
         {{else if .Sponsor}}{{.Sponsor}}
           {{if eq .Standing "orphaned"}}<br><span class="tag tag-bad">can no longer act here; it does not run</span>
           {{else if eq .Standing "ended"}}<br><span class="tag tag-bad">ended {{when .Ends.Unix}}; it does not run</span>

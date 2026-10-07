@@ -207,7 +207,7 @@ func memoryJob(root string) upkeep.Job {
 	}}
 }
 
-// memoryAdmin is the What agents remember screen's hooks.
+// memoryAdmin is the Memory screen's hooks.
 func memoryAdmin(root string) *admin.MemoryAdmin {
 	store := memoryStore(root)
 	note := func(action, id, by string, e memory.Entry) {

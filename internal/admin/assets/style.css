@@ -1681,7 +1681,7 @@ td.actions > a.btn, th.actions > a.btn { display: inline-flex; }
 .owner-of {
   display: block; margin-top: 0.2rem;
   font: var(--label-md); color: var(--on-surface-variant);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 /* The accessibility findings on the review screen. */
@@ -2369,7 +2369,7 @@ th[scope="row"] { font-weight: 500; }
 /* A run's steps: the long column is what it tried, so the controls beside
    it keep their words on one line rather than wrapping into a circle. */
 .run-steps button, .run-steps summary, .run-steps thead th { white-space: nowrap; }
-.run-steps td:nth-child(2) code { overflow-wrap: anywhere; }
+.run-steps td:nth-child(2) code { overflow-wrap: break-word; }
 
 /* The logotype: the mark set as the Q, its ring on the baseline at the
    letters' cap height and its tail descending, as a Q's does. Sized in em so
@@ -2552,7 +2552,7 @@ input:hover, textarea:hover, select:hover { border-color: var(--on-surface); }
 .tooltip { position: fixed; margin: 0; inset: auto; padding: 4px 8px; border: 0;
   border-radius: var(--shape-xs); background: var(--inverse-surface);
   color: var(--inverse-on-surface); font: var(--body-sm); letter-spacing: .025rem;
-  max-width: 20rem; pointer-events: none; }
+  max-width: min(20rem, calc(100vw - 16px)); overflow-wrap: break-word; pointer-events: none; }
 
 /* Every disclosure carries Material's expand_more, turned over when open,
    in place of the browser's triangle: one chevron across the interface. */
@@ -2823,3 +2823,38 @@ dialog.idle-warn p { margin: 0 0 20px; }
 .param-form { display: grid; gap: 6px; max-width: 32rem; margin-top: 8px; }
 .param-form fieldset { border: 0; padding: 0; margin: 0 0 4px; display: grid; gap: 6px; }
 .param-form legend { font-weight: 500; margin-bottom: 4px; }
+
+/* Review, 7 October: no word broken in two, and a status on one line.
+
+   overflow-wrap: anywhere counts every character as a place a line may end
+   when a table works out how narrow a column may go. Code had it, so a
+   column of short identifiers shrank to a character or two and
+   "catalogue" came out as "catalogu" over "e": 930 words on 20 screens, in
+   Chromium at 390, 768 and 1,280 wide (MDN, overflow-wrap). In prose it is
+   right, and stays: there a line is as wide as its column, a word breaks
+   only when it is wider than the whole line, and a card or a flex row can
+   still shrink to the screen. In a table cell it is wrong, so nothing in
+   one has it: an identifier is kept whole, and text wraps where its words
+   do (break-word does not narrow a column). */
+
+/* A status, a tag and a button's label each read as one thing: over two
+   lines they read as two. */
+.tag, .pill, .chip, .chip-small, .chips a, .label, .wf-band, .wf-word, .wf-tag, .wf-task,
+button, .btn, input[type=submit], input[type=button] { white-space: nowrap; }
+/* One too long for the screen (a chatbot's address, with its name in it)
+   ends in an ellipsis rather than pushing the page wider, and admin.js
+   shows the whole of it. clip, not hidden, so it keeps its baseline and
+   still sits in line with the text around it. */
+.tag, .pill, .chip, .chip-small, .chips a, .wf-band, .wf-word, .wf-tag, .wf-task {
+  max-width: 100%; overflow: clip; text-overflow: ellipsis; }
+
+/* An identifier in a table is one token, never broken. One too long to be
+   useful whole (a content address, a file's hash) ends in an ellipsis: the
+   whole value is still there to select, copy and be read aloud, and
+   admin.js shows it on pointing and on focus (Carbon and PatternFly on
+   truncation). */
+td code, th code { display: inline-block; max-width: 40ch; overflow: hidden;
+  white-space: nowrap; text-overflow: ellipsis; vertical-align: bottom; }
+/* A command, and what a step was given, are text to read rather than
+   identifiers: they wrap where their words do, and are never cut short. */
+td code.cmd, th code.cmd, .run-steps td:nth-child(2) code { display: inline; max-width: none; white-space: normal; }

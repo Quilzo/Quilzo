@@ -39,7 +39,7 @@ write.</p>
     <th scope="row">{{.Name}}
       <div class="hint">{{.Purpose}}</div></th>
     <td>{{.Kind}}</td>
-    <td>{{if .Endpoint}}<code>{{.Endpoint}}</code>{{else}}<code>{{.Command}}</code>{{end}}
+    <td>{{if .Endpoint}}<code>{{.Endpoint}}</code>{{else}}<code class="cmd">{{.Command}}</code>{{end}}
       {{if .Writes}}<div class="hint warn">changes something on the far side</div>{{end}}</td>
     {{/*
       Named, never "everything it offers". This is the control that answers
@@ -159,7 +159,7 @@ write.</p>
   <tr>
     <th scope="row">{{.Name}} <span class="hint">{{.Version}}</span>
       {{if .Description}}<div class="hint">{{.Description}}</div>{{end}}
-      <div class="hint"><code>{{range $i, $c := .Command}}{{if $i}} {{end}}{{$c}}{{end}}</code></div></th>
+      <div class="hint"><code class="cmd">{{range $i, $c := .Command}}{{if $i}} {{end}}{{$c}}{{end}}</code></div></th>
     <td>{{range $i, $h := .Hooks}}{{if $i}}, {{end}}{{$h}}{{end}}</td>
     <td>{{if .Fields}}{{range $i, $f := .Fields}}{{if $i}}, {{end}}{{$f}}{{end}}
         {{else}}<span class="hint">nothing</span>{{end}}</td>
