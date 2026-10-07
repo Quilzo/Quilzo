@@ -123,7 +123,7 @@ func (m *Masker) Restore(text string) string {
 	if len(m.values) == 0 {
 		return text
 	}
-	pairs := make([]string, 0, 2*len(m.values))
+	var pairs []string
 	for p, v := range m.values {
 		pairs = append(pairs, p, v)
 	}
