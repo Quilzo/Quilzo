@@ -83,6 +83,8 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 			// tags, so this is the same vocabulary and not a translation.
 			Types:   c.Limits.Types,
 			Locales: c.Limits.Locales,
+			// A caller has no say in this; the declaration does.
+			KeepInstructions: m.Retrieval.KeepInstructions,
 		},
 		// Unbounded here. A budget belongs to the agent and a token does not
 		// carry one; capping it by the caller would mean inventing a number.

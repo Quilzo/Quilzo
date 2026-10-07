@@ -32,7 +32,8 @@ func (g Guarded) Complete(ctx context.Context, system, user string) (string, err
 
 func (g Guarded) CompleteMetered(ctx context.Context, system, user string) (string, assist.Usage, error) {
 	mask := &pii.Masker{Allowed: g.OwnDomains, Secrets: codescan.SecretSpans}
-	sys, usr := mask.Mask(system, g.Personal), mask.Mask(user, g.Personal)
+	sys, usr, hidden := visible(system, user)
+	sys, usr = mask.Mask(sys, g.Personal), mask.Mask(usr, g.Personal)
 	var out string
 	var used assist.Usage
 	var err error
@@ -42,7 +43,11 @@ func (g Guarded) CompleteMetered(ctx context.Context, system, user string) (stri
 		out, err = g.Model.Complete(ctx, sys, usr)
 		used = assist.Estimate(sys+usr, out)
 	}
-	if counts := mask.Masked(); len(counts) > 0 && g.OnMasked != nil {
+	counts := mask.Masked()
+	if hidden > 0 {
+		counts["invisible"] = hidden
+	}
+	if len(counts) > 0 && g.OnMasked != nil {
 		g.OnMasked(counts)
 	}
 	return mask.Restore(out), used, err

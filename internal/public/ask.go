@@ -244,7 +244,7 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	// The declaration is part of the key: an owner narrowing what the
 	// assistant reads must not be answered from the wider index.
 	h.Write([]byte(strings.Join(a.Pages, ",") + "|" + strings.Join(a.Exclude, ",") +
-		"|" + strings.Join(a.Documents, ",")))
+		"|" + strings.Join(a.Documents, ",") + "|" + strconv.FormatBool(a.KeepInstructions)))
 	for _, n := range names {
 		h.Write([]byte(n + "\x00" + hashes[n] + "\x00"))
 	}
@@ -269,6 +269,11 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 			}
 			passages = append(passages, ps...)
 		}
+	}
+	// What addresses an AI reading it is left out, unless the owner keeps
+	// it on purpose: see internal/assistant/screen.go.
+	if !a.KeepInstructions {
+		passages, _ = assistant.Hold(passages)
 	}
 	idx := assistant.NewIndex(passages)
 	if as.cache == nil {
