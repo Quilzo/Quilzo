@@ -86,9 +86,14 @@ const (
 
 // Report is what was seen about one agent.
 type Report struct {
-	Principal string   `json:"principal"`
-	Model     string   `json:"model,omitempty"`
-	Strikes   []Strike `json:"strikes"`
+	Principal string `json:"principal"`
+	Model     string `json:"model,omitempty"`
+	// Agent is the declared agent the actions were a run of, and App the
+	// connected app that made them, when the log says: what a person can
+	// pause or disconnect, where Principal is the log's handle.
+	Agent   string   `json:"agent,omitempty"`
+	App     string   `json:"app,omitempty"`
+	Strikes []Strike `json:"strikes"`
 	// Counts group the strikes, because "twelve refusals" is a different
 	// situation from "twelve different things" and a flat list hides which.
 	Counts map[string]int `json:"counts"`
@@ -106,6 +111,8 @@ func Look(events []audit.Event, now time.Time) []Report {
 
 	type agent struct {
 		model    string
+		name     string
+		app      string
 		actions  int
 		strikes  []Strike
 		refusals map[string]int // action+resource -> times refused
@@ -129,6 +136,14 @@ func Look(events []audit.Event, now time.Time) []Report {
 		if e.Model != "" {
 			a.model = e.Model
 		}
+		if n := e.Detail["agent"]; n != "" {
+			a.name = n
+		}
+		// An app at the agent interface is recorded with itself as the
+		// model, because which model it runs is its own business.
+		if e.Action == "mcp.call" && e.Model != "" && e.Model != "mcp-client" {
+			a.app = e.Model
+		}
 		a.actions++
 
 		if e.Outcome != audit.Denied {
@@ -136,6 +151,10 @@ func Look(events []audit.Event, now time.Time) []Report {
 		}
 
 		reason := e.Detail["reason"]
+		if reason == "" {
+			// The agent interface records what the app was told as the error.
+			reason = e.Detail["error"]
+		}
 		// An agent told it needs approval, that stopped, behaved correctly. It
 		// asked. Counting that is what quarantines the well-behaved agents
 		// fastest, because they are the ones that try and accept the answer.
@@ -190,7 +209,7 @@ func Look(events []audit.Event, now time.Time) []Report {
 	var out []Report
 	for principal, a := range agents {
 		r := Report{
-			Principal: principal, Model: a.model, Strikes: a.strikes,
+			Principal: principal, Model: a.model, Agent: a.name, App: a.app, Strikes: a.strikes,
 			Actions: a.actions, Counts: map[string]int{},
 		}
 		for _, s := range a.strikes {
@@ -207,6 +226,29 @@ func Look(events []audit.Event, now time.Time) []Report {
 		return out[i].Principal < out[j].Principal
 	})
 	return out
+}
+
+// Subject is what the report is about, as the shield names it: agent:NAME
+// for a declared agent, app:CLIENT for a connected app, and otherwise the
+// log's handle.
+func (r Report) Subject() string {
+	switch {
+	case r.Agent != "":
+		return "agent:" + r.Agent
+	case r.App != "":
+		return "app:" + r.App
+	}
+	return r.Principal
+}
+
+// Latest is the newest strike's place in the log: a report whose latest
+// strike is one already acted on has nothing new to say.
+func (r Report) Latest() int64 {
+	var n int64
+	for _, s := range r.Strikes {
+		n = max(n, s.Seq)
+	}
+	return n
 }
 
 // isApprovalRefusal recognises the refusal that means "you asked correctly".

@@ -125,6 +125,32 @@ func detailKeys(f *ast.File) []detailKey {
 
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch x := n.(type) {
+		case *ast.FuncDecl:
+			// A record's detail built by a method of its own, the way a
+			// run's receipt is (Receipt.Detail): every map literal it makes.
+			if x.Body != nil && strings.Contains(x.Name.Name, "Detail") {
+				ast.Inspect(x.Body, func(n ast.Node) bool {
+					if e, ok := n.(ast.Expr); ok {
+						collect(e)
+					}
+					return true
+				})
+			}
+		case *ast.AssignStmt:
+			// And a key added to a detail map after it was made:
+			// detail["cost"] = …, which no literal shows. A "tokens" key
+			// written this way dropped every metered run's record.
+			for _, l := range x.Lhs {
+				ix, ok := l.(*ast.IndexExpr)
+				if !ok || !detailNamed(ix.X) {
+					continue
+				}
+				if k, ok := ix.Index.(*ast.BasicLit); ok && k.Kind == token.STRING {
+					if name, err := strconv.Unquote(k.Value); err == nil {
+						out = append(out, detailKey{name})
+					}
+				}
+			}
 		case *ast.CallExpr:
 			if !auditShaped(x.Fun) {
 				return true
@@ -140,6 +166,22 @@ func detailKeys(f *ast.File) []detailKey {
 		return true
 	})
 	return out
+}
+
+// detailNamed is a map that by its name holds a record's detail.
+func detailNamed(e ast.Expr) bool {
+	name := ""
+	switch x := e.(type) {
+	case *ast.Ident:
+		name = x.Name
+	case *ast.SelectorExpr:
+		name = x.Sel.Name
+	}
+	switch strings.ToLower(name) {
+	case "d", "detail", "details", "det":
+		return true
+	}
+	return false
 }
 
 func auditShaped(fun ast.Expr) bool {

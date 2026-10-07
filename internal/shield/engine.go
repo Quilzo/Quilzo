@@ -597,6 +597,9 @@ func describe(p Protection) string {
 	case Route:
 		return "cut the model route " + p.Target + " " + until
 	case Token:
+		if strings.HasPrefix(p.Target, "gr_") {
+			return "suspended the app connection " + p.Target + " and its tokens " + until
+		}
 		return "suspended the token " + p.Target + " and its sessions " + until
 	}
 	return p.Kind

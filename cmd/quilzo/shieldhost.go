@@ -78,6 +78,23 @@ func newShieldHost(root string) *shieldHost {
 			}
 			record(root, audit.Record{Action: "shield." + id, Resource: "/", Outcome: outcome,
 				Principal: "shield", Kind: audit.KindService, Verified: true, Detail: detail})
+			// And whoever answers for the agent it is about: the security
+			// contact handles the incident, the sponsor knows the agent.
+			if id != "notify" {
+				return
+			}
+			sponsor := sponsorOf(root, agentOf(s))
+			if !strings.Contains(sponsor, "@") {
+				return
+			}
+			ev.Fields["owner"] = sponsor
+			detail = map[string]string{"playbook": r.Playbook, "step": id, "did": "told the agent's sponsor", "owner": sponsor}
+			outcome = audit.Success
+			if _, err := act.Run(ev, map[string]string{"to": "person"}); err != nil {
+				detail["error"], outcome = err.Error(), audit.Failure
+			}
+			record(root, audit.Record{Action: "shield." + id, Resource: "/", Outcome: outcome,
+				Principal: "shield", Kind: audit.KindService, Verified: true, Detail: detail})
 		}
 	}
 	h.engine = &shield.Engine{Root: root, Guard: g, Playbooks: lib.Get,
@@ -89,6 +106,34 @@ func newShieldHost(root string) *shieldHost {
 		CanLockdown: func() bool { return canSignInStrongly(root) },
 	}
 	return h
+}
+
+// agentOf is the declared agent a signal is about, if it is about one: an
+// agent's evaluation names it, the gateway and agentwatch say agent:NAME.
+func agentOf(s shield.Signal) string {
+	if s.Name == "agent-hijacked" {
+		return s.Subject
+	}
+	name, _ := strings.CutPrefix(s.Subject, "agent:")
+	if name == s.Subject {
+		return ""
+	}
+	return name
+}
+
+// sponsorOf is who answers for a declared agent, if anybody does.
+func sponsorOf(root, name string) string {
+	if name == "" {
+		return ""
+	}
+	set, err := loadAgents(root)
+	if err != nil {
+		return ""
+	}
+	if id := set.identityOf(name); id != nil {
+		return id.Sponsor
+	}
+	return ""
 }
 
 // shieldSummary is a response in a sentence or two, for a message and a
@@ -192,7 +237,9 @@ func (h *shieldHost) admit(c auth.Credential) error {
 	if p, on := h.guard.Lockdown(now); on && shield.LockedOut(p, c.Issued, c.Vouched) {
 		return fmt.Errorf("%w (until about %s)", auth.ErrLockedDown, p.Until.UTC().Format("15:04 UTC"))
 	}
-	for _, id := range []string{c.ID, c.Parent} {
+	// A suspended app connection holds the access tokens already issued
+	// from it, not only the ones it would be given next.
+	for _, id := range []string{c.ID, c.Parent, c.Grant} {
 		if id == "" {
 			continue
 		}

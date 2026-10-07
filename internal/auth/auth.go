@@ -768,8 +768,9 @@ type TokenStore struct {
 // Credential is what Admit is told about one presented credential.
 type Credential struct {
 	// ID is the credential's own id; Parent the long-lived token it was
-	// exchanged from, if it was.
-	ID, Parent string
+	// exchanged from, if it was; Grant the app connection it was issued
+	// for, if it was.
+	ID, Parent, Grant string
 	// Issued is when the long-lived token behind it was made: the parent's
 	// for an exchanged session.
 	Issued int64
@@ -1198,7 +1199,8 @@ func (ts *TokenStore) authenticate(secret string, now time.Time) (*Token, error)
 				}
 			}
 		}
-		if err := ts.Admit(Credential{ID: found.ID, Parent: found.Parent, Issued: issued, Vouched: found.Session}); err != nil {
+		if err := ts.Admit(Credential{ID: found.ID, Parent: found.Parent, Grant: found.Grant,
+			Issued: issued, Vouched: found.Session}); err != nil {
 			return nil, err
 		}
 	}

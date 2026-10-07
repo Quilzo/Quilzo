@@ -86,7 +86,7 @@ func TestAnAgentStopsWhenItsSponsorCannotActHere(t *testing.T) {
 	pol.Grant(auth.Binding{Principal: "dana", Role: auth.RoleAdmin, Resource: "/"})
 	pol.Grant(auth.Binding{Principal: "dana", Role: auth.RoleReader, Resource: "/", Deny: true})
 	saveJSON(policyPath(root), pol)
-	if sponsorActive(root, "dana") {
+	if hasStanding(root, "dana") {
 		t.Fatal("a suspended sponsor counted as active")
 	}
 }

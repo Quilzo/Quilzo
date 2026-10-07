@@ -20,6 +20,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/provenance"
+	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/site"
 )
 
@@ -796,5 +797,89 @@ func TestAModelDrivesOnlyAsFarAsEvaluationsEarned(t *testing.T) {
 	out, _ = executeAgentFrom(context.Background(), root, "tidy", "write a welcome page", true, asAdmin("dana"), nil)
 	if out.Earned != "" || out.Manifest.Autonomy != agent.AutonomyDraft {
 		t.Fatalf("an earned draft was still capped: %q %s", out.Earned, out.Manifest.Autonomy)
+	}
+}
+
+// Autonomy earned in evaluations is lost in behaviour: once the shield
+// paused an agent, or agentwatch flagged it, a model drives it only to
+// propose until it is evaluated again. A pause a person judged a mistake
+// costs it nothing.
+func TestAutonomyEarnedInEvaluationsIsLostInBehaviour(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	standInModel(t)
+	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	evaluated := func(at time.Time) {
+		t.Helper()
+		rep := evals.Report{Agent: "tidy", At: at, Model: "stand-in", K: 3, Cases: 3, Reliable: 3, Planted: 3}
+		if err := os.MkdirAll(filepath.Join(root, "evals", "results", "tidy"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := saveEvalReport(root, rep); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := func() agentOutcome {
+		t.Helper()
+		out, _ := executeAgentFrom(context.Background(), root, "tidy", "write a welcome page", true, asAdmin("dana"), nil)
+		return out
+	}
+	evaluated(time.Now().Add(-2 * time.Hour))
+	if out := run(); out.Manifest.Autonomy != agent.AutonomyDraft {
+		t.Fatalf("evaluated, not drafting: %q", out.Earned)
+	}
+
+	// Paused by the shield an hour ago, and lifted since.
+	p, _, err := shield.Apply(root, shield.Protection{Kind: shield.Agent, Target: "tidy", Reason: "followed a planted instruction",
+		By: "shield", Auto: true, Until: time.Now().Add(time.Hour)}, time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := shield.Lift(root, p.ID, "dana", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	out := run()
+	if out.Manifest.Autonomy != agent.AutonomyPropose || !strings.Contains(out.Earned, "the shield paused it") {
+		t.Fatalf("after a pause: %s %q", out.Manifest.Autonomy, out.Earned)
+	}
+	evaluated(time.Now())
+	if out := run(); out.Manifest.Autonomy != agent.AutonomyDraft {
+		t.Fatalf("evaluated again after the pause, still capped: %q", out.Earned)
+	}
+
+	// Flagged by agentwatch after that evaluation.
+	if err := noteFlagged(root, "tidy", time.Now().Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if out := run(); out.Manifest.Autonomy != agent.AutonomyPropose || !strings.Contains(out.Earned, "agentwatch flagged it") {
+		t.Fatalf("after a flag: %s %q", out.Manifest.Autonomy, out.Earned)
+	}
+}
+
+// A pause somebody judged a mistake is not held against the agent.
+func TestAPauseJudgedAMistakeCostsNothing(t *testing.T) {
+	root := shieldRoot(t)
+	at := time.Now().Add(-time.Hour)
+	p, _, err := shield.Apply(root, shield.Protection{Kind: shield.Agent, Target: "tidy", Reason: "x", By: "shield",
+		Auto: true, Until: at.Add(time.Hour)}, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lost, _ := trustLost(root, "tidy"); !lost.Equal(p.At) {
+		t.Fatalf("a pause was not counted: %v", lost)
+	}
+	if lost, _ := trustLost(root, "other"); !lost.IsZero() {
+		t.Fatal("another agent's pause was held against it")
+	}
+	if _, err := shield.Judge(root, p.ID, shield.Mistake, "dana", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if lost, _ := trustLost(root, "tidy"); !lost.IsZero() {
+		t.Fatalf("a mistaken pause was held against it: %v", lost)
+	}
+	if lost, _ := trustLost(root, "other"); !lost.IsZero() {
+		t.Fatal("another agent's pause was held against it")
 	}
 }

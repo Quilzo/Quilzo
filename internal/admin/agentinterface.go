@@ -47,6 +47,9 @@ type AgentInterface struct {
 	Called func(r *http.Request, c *mcp.Caller, tool, operation string, err *mcp.Error)
 	// Docs is the manual's page about it.
 	Docs string
+	// Receipt is every call made through one connection, with proofs of
+	// inclusion and a signed head: what the person it acted for keeps.
+	Receipt func(connection string) ([]byte, error)
 }
 
 func (s *Server) interfaceOn() (oauthas.Config, bool, bool) {
@@ -435,6 +438,7 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 		"On": on, "OAuth": oauth, "Admin": admin}
 	if s.Interface != nil {
 		data["Docs"] = s.Interface.Docs
+		data["Receipts"] = s.Interface.Receipt != nil
 	}
 	if on {
 		if oauth {
@@ -467,6 +471,51 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.render(w, r, "apps.html", data)
+}
+
+// handleAppsReceipt gives a connection's receipt to the person it acted
+// for, or to an administrator: a file to keep, which checks anywhere with
+// the store's published keys.
+func (s *Server) handleAppsReceipt(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if s.Interface == nil || s.Interface.OAuth == nil || s.Interface.Receipt == nil {
+		http.NotFound(w, r)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	grants, err := s.Interface.OAuth.Store.Grants()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	admin := s.Policy != nil && s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed &&
+		auth.CheckCredential(p.Role, p.Scope, p.Limits, auth.ActGrant, "/") == nil
+	var found *oauthas.Grant
+	for i := range grants {
+		if grants[i].ID == id && (admin || grants[i].Principal == p.Name) {
+			found = &grants[i]
+		}
+	}
+	// Somebody else's connection and no connection at all look the same.
+	if found == nil {
+		http.Redirect(w, r, "/apps?e="+url.QueryEscape("no connection of yours has that id"), http.StatusSeeOther)
+		return
+	}
+	body, err := s.Interface.Receipt(found.ID)
+	if err != nil {
+		http.Redirect(w, r, "/apps?e="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	if s.Audit != nil {
+		s.Audit("oauth.receipt", "/apps", map[string]string{"by": p.Name, "grant": found.ID, "client": found.Client})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="receipt-`+found.ID+`.json"`)
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(body)
 }
 
 // handleAppsAct changes connected apps: disconnecting one's own (or, for an

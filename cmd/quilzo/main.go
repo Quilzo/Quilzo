@@ -193,6 +193,7 @@ sharing a screen
   quilzo apps allow|disallow HOST          let apps published from HOST ask people to connect; disallow ends theirs
   quilzo apps register NAME --redirect URI an app that cannot publish its own metadata; prints its client_id
   quilzo apps unregister ID | disconnect ID   remove a registered app, or end one connection
+  quilzo apps receipt CONNECTION [-o FILE] every call an app made through one connection, with proofs and a signed head
   quilzo shield status | list [--all]      what Quilzo is doing to protect itself, its playbooks, and what ended
   quilzo self check | verify | vex         known flaws in this build, decided by what is linked; is the binary itself
   quilzo self update vulndb.zip            a newer Go vulnerability database, read offline
@@ -201,7 +202,7 @@ sharing a screen
   quilzo shield feature chatbot:help|forms|api|… [--level limited] --for 1h --reason "…"
   quilzo shield lockdown|freeze --for 6h --reason "…"   admin to passkeys and SSO; no publishing
   quilzo shield pause AGENT --for 24h --reason "…"   an agent does not run
-  quilzo shield cut ROUTE | suspend TOKEN-ID | quarantine MEDIA-ID --for 6h --reason "…"   a model route, one credential, one upload
+  quilzo shield cut ROUTE | suspend TOKEN-ID|gr_… | quarantine MEDIA-ID --for 6h --reason "…"   a model route, one credential or app connection, one upload
   quilzo shield playbook mode NAME act|watch|off --why "…"   proposed; a second administrator approves
   quilzo shield dry-run [NAME] [--days 30] what the playbooks would have done over the history
   quilzo shield hold --why "…" | release --why "…"   every playbook to watching, and back
