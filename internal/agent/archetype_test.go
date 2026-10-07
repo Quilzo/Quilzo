@@ -150,20 +150,31 @@ func TestNoArchetypeDeclaresMemory(t *testing.T) {
 	}
 }
 
-// And the refusal is in Validate, so a manifest somebody wrote by hand cannot
-// reach it either.
-func TestAManifestDeclaringMemoryIsRefused(t *testing.T) {
+// Memory is stored now, so declaring it is a statement about real
+// storage: with a retention, within the ceiling, and the capabilities that
+// use it only alongside it.
+func TestADeclarationOfMemoryIsHeldToItsRetention(t *testing.T) {
 	m, err := agent.New(agent.KindRetrieval, "remembers", everyRegisteredOp())
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.Memory = agent.Memory{Episodic: true, Retain: agent.Duration(time.Hour)}
-
-	err = m.Validate(everyRegisteredOp())
-	if err == nil {
-		t.Fatal("a manifest declaring memory validated")
+	known := everyRegisteredOp()
+	known["remember"], known["recall"] = true, true
+	m.Memory = agent.Memory{Semantic: true, Retain: agent.Duration(30 * 24 * time.Hour)}
+	m.Capabilities = append(m.Capabilities, "recall")
+	if err := m.Validate(known); err != nil {
+		t.Fatalf("a memory with a retention: %v", err)
 	}
-	if !strings.Contains(err.Error(), "nothing in this build stores one") {
-		t.Errorf("the refusal does not say why: %v", err)
+	m.Memory.Retain = 0
+	if err := m.Validate(known); err == nil || !strings.Contains(err.Error(), "retention") {
+		t.Errorf("no retention: %v", err)
+	}
+	m.Memory.Retain = agent.MaxRetain + agent.Duration(time.Hour)
+	if err := m.Validate(known); err == nil {
+		t.Error("kept past the ceiling")
+	}
+	m.Memory = agent.Memory{}
+	if err := m.Validate(known); err == nil || !strings.Contains(err.Error(), "keeps no memory") {
+		t.Errorf("recall with no memory: %v", err)
 	}
 }

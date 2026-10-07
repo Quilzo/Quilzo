@@ -473,8 +473,14 @@ func withdrawAgent(root, name string, caller *Caller) error {
 	if err := saveJSON(agentsPath(root), set); err != nil {
 		return err
 	}
+	// What it remembered goes with it: memory nobody can recall is personal
+	// data kept for no one.
+	gone, err := memoryStore(root).EraseAgent(name)
+	if err != nil {
+		return err
+	}
 	return recordE(root, caller.auditRecord("agent.withdrawn", "/",
-		audit.Success, map[string]string{"agent": name}))
+		audit.Success, map[string]string{"agent": name, "memories_erased": strconv.Itoa(len(gone))}))
 }
 
 // runAgentOnce runs a declared agent from the screen and keeps the run.

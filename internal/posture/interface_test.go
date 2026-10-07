@@ -128,3 +128,16 @@ func TestPersonalDataSentOutsideIsAFinding(t *testing.T) {
 		}
 	}
 }
+
+func TestHeldMemoriesAreAFindingUntilSomebodyLooks(t *testing.T) {
+	s := State{Now: time.Now(), AI: AIFacts{Checked: true, HeldMemories: map[string]int{"helper": 3}}}
+	var got []Finding
+	for _, f := range Scan(s, nil).Findings {
+		if f.Rule == "agent.memory-held" {
+			got = append(got, f)
+		}
+	}
+	if len(got) != 1 || got[0].Resource != "agent/helper" || !strings.Contains(got[0].Detail, "3 memories") {
+		t.Fatalf("%+v", got)
+	}
+}

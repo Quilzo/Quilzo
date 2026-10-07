@@ -23,6 +23,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/frameworks"
+	"github.com/quilzo/quilzo/internal/memory"
 	"github.com/quilzo/quilzo/internal/oauthas"
 	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/out"
@@ -734,6 +735,12 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 		}
 		facts.Tools = agentToolFacts(root, agents)
 		facts.Programs = agentProgramFacts(root, agents)
+		if held, err := memoryStore(root).List(memory.Filter{Held: true}); err == nil && len(held) > 0 {
+			facts.HeldMemories = map[string]int{}
+			for _, e := range held {
+				facts.HeldMemories[e.Agent]++
+			}
+		}
 		sort.Slice(facts.Identities, func(i, j int) bool { return facts.Identities[i].Name < facts.Identities[j].Name })
 		sort.Slice(facts.Evals, func(i, j int) bool { return facts.Evals[i].Name < facts.Evals[j].Name })
 	}

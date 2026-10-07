@@ -63,7 +63,9 @@ func RunServer(b *Bridge, m agent.Manifest, catalog []mcp.Operation, version str
 		if !held[name] {
 			op.Summary += " (this agent does not hold it; asking is refused and recorded)"
 		}
-		op.Writes, op.NeedsRole = agent.IsWrite(name), ""
+		// Remembering changes what later runs recall: a write, through
+		// quilzo_write, though it changes no content.
+		op.Writes, op.NeedsRole = agent.IsWrite(name) || name == "remember", ""
 		s.Register(op, step(agent.Action{Op: name}))
 	}
 	for _, t := range m.Tools {

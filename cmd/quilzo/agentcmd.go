@@ -84,6 +84,8 @@ func knownCapabilities(root string) map[string]bool {
 	for _, op := range srv.Operations() {
 		known[op.Name] = true
 	}
+	// A run's memory, which no other surface performs.
+	known["remember"], known["recall"] = true, true
 	return known
 }
 
@@ -973,6 +975,16 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		delegateModel = programModel{name: filepath.Base(m.Program.Command[0])}
 		out.Model = delegateModel.Name()
 		runner.Decide, runner.Pause = prog.bridge.Decide, false
+	}
+	// What it remembers between runs, when it keeps any. Not for an
+	// evaluation, which measures and leaves nothing behind.
+	if m.Memory.Any() && from.Eval == nil {
+		if from.RunID == "" {
+			if from.RunID, err = newAgentRunID(time.Now().UTC()); err != nil {
+				return out, err
+			}
+		}
+		runner.Perform = agentexec.WithMemory(runMemory(root, m, caller, from.RunID), sess, runner.Perform)
 	}
 	// Every action into the log as it happens, allowed or refused: one
 	// record each, which an auditor can be handed with its proof (quilzo
