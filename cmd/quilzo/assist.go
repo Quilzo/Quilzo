@@ -54,7 +54,7 @@ func cmdAssist(root string, args []string) error {
 				"model writes, and that is never the tool")
 	}
 
-	model, err := assist.NewHTTPModel()
+	model, err := directModel(root)
 	if err != nil {
 		return err
 	}

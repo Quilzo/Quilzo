@@ -18,6 +18,7 @@
 <div class="table-wrap">
 <table>
   <thead><tr><th scope="col">Route</th><th scope="col">Model</th><th scope="col">Key</th>
+    <th scope="col">Personal data</th>
     <th scope="col">A million tokens</th>
     <th scope="col">State</th><th scope="col"><span class="visually-hidden">Change</span></th></tr></thead>
   <tbody>
@@ -26,6 +27,7 @@
     <th scope="row">{{$h.Route.Name}}<div class="hint mono">{{$h.Route.URL}}</div></th>
     <td><code>{{$h.Route.Model}}</code></td>
     <td>{{if $h.Route.KeyEnv}}<code>${{$h.Route.KeyEnv}}</code>{{if not $h.KeySet}} <span class="tag tag-bad">not set</span>{{end}}{{else}}<span class="hint">none — this network only</span>{{end}}</td>
+    <td>{{if $h.Route.Personal}}<span class="tag tag-warn">sent</span>{{else}}<span class="tag tag-ok">masked</span>{{end}}</td>
     <td>{{if or $h.Route.PriceIn $h.Route.PriceOut}}{{or $h.Route.PriceIn "0"}} in, {{or $h.Route.PriceOut "0"}} out{{with $.Cfg}} {{.Currency}}{{end}}{{else}}<span class="hint">free</span>{{end}}</td>
     <td>{{if $h.Resting}}<span class="tag tag-warn">resting</span>{{else}}<span class="tag tag-ok">ready</span>{{end}}</td>
     <td><div class="btn-group">
@@ -57,6 +59,8 @@
   <div class="field"><label for="rkey">Key variable</label>
     <input id="rkey" name="key_env" pattern="[A-Z_][A-Z0-9_]{0,63}" placeholder="HOSTED_MODEL_KEY" aria-describedby="rkey-help">
     <p id="rkey-help" class="help">The name of the environment variable holding the key — never the key itself. Leave empty for a model on this network.</p></div>
+  <div class="field"><label><input type="checkbox" name="personal" value="yes" aria-describedby="rpersonal-help"> It may receive personal data</label>
+    <p id="rpersonal-help" class="help">Only for a model on this machine or network, or a provider with an agreement to process personal data for you. Otherwise email addresses, telephone numbers and bank accounts are replaced before a prompt leaves and put back in the answer. Card numbers and keys are replaced for every route.</p></div>
   <button type="submit">Add route</button>
 </form>
 

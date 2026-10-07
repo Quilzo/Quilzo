@@ -716,7 +716,7 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 	}
 	data["Row"] = row
 	if wt := rec.Trace.Waiting; wt != nil {
-		pend := stepRow{N: wt.N}
+		pend := stepRow{N: wt.N, Why: wt.Why}
 		switch {
 		case wt.Action.Tool != "":
 			pend.What, pend.Kind = wt.Action.Tool, "tool"

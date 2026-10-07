@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -329,7 +328,7 @@ func assistantModelAt(root string, a assistant.Assistant) (assistant.Model, stri
 			return gw.For("chatbot:" + a.Name), ""
 		}
 	}
-	m, err := assist.NewHTTPModel()
+	m, err := directModel(root)
 	if err != nil {
 		return nil, "no model configured: " + err.Error()
 	}

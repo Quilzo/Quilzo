@@ -233,7 +233,15 @@ func startProgram(ctx context.Context, root string, m agent.Manifest, sess *agen
 	// connection is in the log, against the run.
 	actor := programModel{name: filepath.Base(m.Program.Command[0])}
 	proxy := &agentbox.Proxy{Secret: secret,
-		Allow: func(host string, _ int) error { return sess.MayReach(host) },
+		Allow: func(host string, _ int) error {
+			// The exfiltration breaker first: a program cannot be held for
+			// a person, so a connection that would complete the three is
+			// refused, with the reason.
+			if why, breaks := sess.BreaksTo(host); breaks {
+				return errors.New(why)
+			}
+			return sess.MayReach(host)
+		},
 		Record: func(e agentbox.Egress) {
 			outcome := audit.Success
 			if !e.Allowed {

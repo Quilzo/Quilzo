@@ -257,3 +257,35 @@ func looksSecret(match string) bool {
 }
 
 func fmtRule(id string) string { return fmt.Sprintf("codescan.%s", id) }
+
+// SecretSpans are where credentials are in text, as byte offsets: the
+// secret rules' matches, confirmed as Scan confirms them. For a caller that
+// has to take them out rather than report them, as the model gateway does
+// before a prompt leaves. A private key is the whole block, through its END
+// line, not only the line that names it.
+func SecretSpans(text string) [][2]int {
+	var out [][2]int
+	for _, r := range rules {
+		if !strings.HasPrefix(r.ID, "secret.") {
+			continue
+		}
+		for _, loc := range r.Pattern.FindAllStringIndex(text, -1) {
+			start, end := loc[0], loc[1]
+			if r.Confirm != nil && !r.Confirm(text[start:end]) {
+				continue
+			}
+			if r.ID == "secret.private-key" {
+				if i := strings.Index(text[end:], "-----END "); i >= 0 {
+					end += i + len("-----END ")
+					if j := strings.Index(text[end:], "-----"); j >= 0 {
+						end += j + len("-----")
+					}
+				} else {
+					end = len(text) // no end in sight: everything after it is the key
+				}
+			}
+			out = append(out, [2]int{start, end})
+		}
+	}
+	return out
+}

@@ -103,6 +103,11 @@ type Session struct {
 	// true for the life of the session — there is no sanitising step that
 	// clears it, because there is no sanitiser this package would trust.
 	tainted bool
+	// private is what the run read that is not published, for the
+	// exfiltration breaker (breaker.go); privateMore counts past
+	// MaxPrivate.
+	private     []string
+	privateMore int
 	// sources is what the taint came from, and reads is how many there were
 	// including any past MaxSources that are counted and not named. See
 	// provenance.go: a person asked to approve a tainted run was told that it
@@ -372,8 +377,15 @@ func (s *Session) Retrieve(ref, page, typeName, locale string) error {
 	// been written by a form submission, an importer, or a previous agent.
 	s.tainted = true
 	s.note(FromPage, page, "")
+	// And anything not yet published is private.
+	if isUnpublished(ref) {
+		s.notePrivate("the draft of " + named(page))
+	}
 	return nil
 }
+
+// isUnpublished is a ref other than what the public site serves.
+func isUnpublished(ref string) bool { return ref != "" && !strings.EqualFold(ref, "live") }
 
 // RetrieveSet authorises reading the whole published set, to narrow it here.
 //
@@ -405,6 +417,9 @@ func (s *Session) RetrieveSet(ref string) error {
 			"this agent reads %s and something asked it for %s", want, ref))
 	}
 	s.tainted = true
+	if isUnpublished(ref) {
+		s.notePrivate("the " + ref)
+	}
 	// The ref rather than the pages. A listing is a read of everything that
 	// matched, and which pages those were is the caller's business — saying
 	// "a listing of draft" is true, and naming pages this did not check would

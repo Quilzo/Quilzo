@@ -47,6 +47,9 @@ type Pending struct {
 	N      int
 	Action Action
 	Since  time.Time
+	// Why is the reason it waits when it is not the declaration's asking
+	// first: the exfiltration breaker's sentence, which the person reads.
+	Why string `json:",omitempty"`
 }
 
 // PendingTTL is how long a question stays answerable. After that whatever

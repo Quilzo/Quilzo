@@ -296,6 +296,24 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 			break
 		}
 
+		// The exfiltration breaker: what this run holds in private, after
+		// somebody else's words, is not sent outside without a person. Only
+		// for a call the declaration allows anyway, as with asking first.
+		if !approved && s.wouldAllow(action) {
+			if why, breaks := s.Breaks(action); breaks {
+				if !r.Pause {
+					step.Why = why
+					t.Steps = append(t.Steps, step)
+					seen = append(seen, Observation{From: "quilzo", Body: "refused: " + why, Trusted: true})
+					r.checkpoint(t, s)
+					continue
+				}
+				t.Waiting = &Pending{N: turn, Action: action, Since: step.At, Why: why}
+				t.Stopped = "waiting for a person: " + why
+				break
+			}
+		}
+
 		// The one gate. A tool call is authorised by host first, because the
 		// useful refusal for "call evil.example.com" names the host rather
 		// than the capability.

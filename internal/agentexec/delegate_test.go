@@ -20,6 +20,7 @@ type runSpy struct {
 	instruction string
 	held        agent.Manifest
 	read        bool
+	private     []string
 	answer      string
 	err         error
 }
@@ -30,6 +31,7 @@ func (r *runSpy) Run(_ context.Context, name string, child *agent.Session,
 	r.name = name
 	r.instruction = instruction
 	r.held = child.Manifest()
+	r.private = child.Private()
 	if r.read {
 		// A delegate that reads stored content, which is how the interesting
 		// half of this works.
@@ -286,5 +288,23 @@ func TestAnInstructionIsBounded(t *testing.T) {
 func TestTheExecutorReportsThatItPerformsDelegations(t *testing.T) {
 	if !PerformsDelegates() {
 		t.Fatal("the surface says it does not exist")
+	}
+}
+
+// A delegate starts holding what its supervisor holds, so handing work on
+// is not how the draft reaches a tool without a person.
+func TestADelegateStartsHoldingWhatItsSupervisorRead(t *testing.T) {
+	r := &runSpy{}
+	m := lead()
+	m.Retrieval = agent.Retrieval{Ref: "draft"}
+	s := agent.NewSession(m, nil)
+	if err := s.Retrieve("draft", "pricing", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := delegates(r).Perform(s)(context.Background(), agent.Action{Delegate: "researcher", Say: "go"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.private) != 1 || !strings.Contains(r.private[0], "pricing") {
+		t.Fatalf("the delegate started holding %v", r.private)
 	}
 }
