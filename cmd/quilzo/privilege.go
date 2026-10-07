@@ -120,11 +120,17 @@ var commandNeeds = map[string]need{
 	"integrations call": {action: auth.ActPublish},
 	// Approving what a tool on another system is, for agents to call.
 	"integrations pin": {action: auth.ActGrant},
-	"integration":      {action: auth.ActView},
-	"agent templates":  {action: auth.ActView},
-	"agent list":       {action: auth.ActView},
-	"agent show":       {action: auth.ActView},
-	"agent check":      {action: auth.ActView},
+	// Offering a company's MCP server to other systems' agents, and
+	// deciding the calls a person approves one by one.
+	"integrations gateway": {action: auth.ActGrant},
+	"integrations held":    {action: auth.ActGrant},
+	"integrations approve": {action: auth.ActGrant},
+	"integrations decline": {action: auth.ActGrant},
+	"integration":          {action: auth.ActView},
+	"agent templates":      {action: auth.ActView},
+	"agent list":           {action: auth.ActView},
+	"agent show":           {action: auth.ActView},
+	"agent check":          {action: auth.ActView},
 	// Running one acts under the agent's manifest, and the least it can do is
 	// read the store. Author rather than view: a run writes an audit record
 	// attributed to the caller, and an entry somebody could create without

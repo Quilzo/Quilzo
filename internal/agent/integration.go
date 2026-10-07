@@ -136,6 +136,44 @@ type Integration struct {
 	// day it was trusted, and a name staying the same is not the tool
 	// staying the same. Only a pinned tool can be chosen by a model.
 	Pins map[string]string `json:"pins,omitempty"`
+
+	// Gateway offers this server's tools to other vendors' agents through
+	// Quilzo, at /mcp/gateway/NAME on the admin: only the tools agreed in
+	// Uses and pinned, each call checked, recorded and counted, with
+	// Quilzo's credential and never the caller's. Nil offers nothing.
+	Gateway *GatewayPolicy `json:"gateway,omitempty"`
+}
+
+// GatewayPolicy is how an integration is offered through the gateway.
+type GatewayPolicy struct {
+	// Role is the least role a caller needs: reader, author or publisher.
+	Role string `json:"role"`
+	// Daily is how many calls one caller may make in a day; 0 means
+	// DefaultGatewayDaily.
+	Daily int `json:"daily,omitempty"`
+	// Ask are the tools a person approves call by call, on the web.
+	Ask []string `json:"ask,omitempty"`
+}
+
+// DefaultGatewayDaily is a caller's calls a day when a policy names none.
+const DefaultGatewayDaily = 500
+
+// DailyLimit is the calls one caller may make in a day.
+func (g GatewayPolicy) DailyLimit() int {
+	if g.Daily > 0 {
+		return g.Daily
+	}
+	return DefaultGatewayDaily
+}
+
+// Asks reports whether a person approves each call of a tool.
+func (g GatewayPolicy) Asks(tool string) bool {
+	for _, a := range g.Ask {
+		if a == tool {
+			return true
+		}
+	}
+	return false
 }
 
 // Validate refuses an integration that cannot mean what it appears to.
@@ -218,6 +256,24 @@ func (in *Integration) Validate() error {
 		}
 		if !rePin.MatchString(pin) {
 			return fmt.Errorf("%s pins %q with %q, which is not a SHA-256", in.Name, tool, pin)
+		}
+	}
+	if g := in.Gateway; g != nil {
+		switch {
+		case in.Kind != IntegrationMCP:
+			return fmt.Errorf("%s is a %s integration; only an MCP server is offered through the gateway", in.Name, in.Kind)
+		case g.Role != "reader" && g.Role != "author" && g.Role != "publisher":
+			return fmt.Errorf("%s is offered to %q; the gateway's roles are reader, author and publisher", in.Name, g.Role)
+		case in.Writes && g.Role == "reader":
+			return fmt.Errorf("%s changes something on the far side, and offering that to a reader "+
+				"would let somebody who may only read here change things there; offer it to authors", in.Name)
+		case g.Daily < 0 || g.Daily > 100000:
+			return fmt.Errorf("%s allows %d calls a day; between 1 and 100,000, or 0 for %d", in.Name, g.Daily, DefaultGatewayDaily)
+		}
+		for _, a := range g.Ask {
+			if !seen[a] {
+				return fmt.Errorf("%s asks a person about %q, which it does not use", in.Name, a)
+			}
 		}
 	}
 

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -50,6 +51,10 @@ type AgentInterface struct {
 	// Receipt is every call made through one connection, with proofs of
 	// inclusion and a signed head: what the person it acted for keeps.
 	Receipt func(connection string) ([]byte, error)
+	// Offered says whether an integration is offered through the gateway,
+	// and Gateway makes the server answering one caller for it.
+	Offered func(name string) bool
+	Gateway func(r *http.Request, c *mcp.Caller, name string) (*mcp.Server, error)
 }
 
 func (s *Server) interfaceOn() (oauthas.Config, bool, bool) {
@@ -95,6 +100,41 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 
 // interfaceCaller authenticates a bearer token at the interface: through
 // the same throttle as every other door, with failures told to the shield.
+// handleGateway is the governed MCP gateway: a company's MCP server, as
+// Quilzo offers it, at /mcp/gateway/NAME. The same tokens and app
+// connections as /mcp, which it is part of.
+func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
+	cfg, oauth, on := s.interfaceOn()
+	name := strings.TrimPrefix(r.URL.Path, "/mcp/gateway/")
+	if !on || s.Interface.Gateway == nil || s.Interface.Offered == nil || !gatewayName.MatchString(name) || !s.Interface.Offered(name) {
+		http.NotFound(w, r)
+		return
+	}
+	if s.shieldedOff(w, "mcp") {
+		return
+	}
+	resource, metadata, scope := "", "", ""
+	if oauth {
+		resource, metadata, scope = cfg.Resource(), cfg.MetadataURL(), oauthas.DefaultScope
+	}
+	own := s.ownOrigin(r)
+	e := &mcp.Endpoint{
+		Metadata: metadata, DefaultScope: scope,
+		Authenticate: func(r *http.Request, token string) (*mcp.Caller, error) {
+			return s.interfaceCaller(r, token, resource)
+		},
+		Build: func(r *http.Request, c *mcp.Caller) (*mcp.Server, error) {
+			return s.Interface.Gateway(r, c, name)
+		},
+		SameOrigin: func(o string) bool {
+			return o == own || (oauth && o == cfg.Issuer)
+		},
+	}
+	e.ServeHTTP(w, r)
+}
+
+var gatewayName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+
 func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.Caller, error) {
 	if s.ReloadTokens != nil {
 		s.ReloadTokens()

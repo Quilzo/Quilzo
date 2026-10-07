@@ -555,6 +555,10 @@ agents and integrations
                                             which are not accepting refusals
   quilzo integrations list|tools|call      outside systems this install may reach
   quilzo integrations pin NAME [TOOL...]   approve what a tool is; a server's change to it is refused until pinned again
+  quilzo integrations gateway NAME --role R [--daily N] [--ask T,...] | --off
+                                           offer an MCP server to other systems' agents through Quilzo, checked and recorded
+  quilzo integrations held                 calls through the gateway waiting for a person
+  quilzo integrations approve|decline ID   decide one; somebody other than the person it acts for
   quilzo rights [REF]                      image licences: expired, lapsing, undeclared
   quilzo brand init                        claim rules: what needs substantiating
   quilzo brand list | check                what this shop may not say unbacked
