@@ -6,7 +6,7 @@
   learnt after an agent read somebody else's words before it is recalled.
 */}}
 {{template "head" .}}
-<h1>What agents remember</h1>
+<h1>Memory</h1>
 
 <p class="lead">What an agent learns in a run it may keep, about the person
   who started that run, for as long as its declaration says. Only that
@@ -63,7 +63,7 @@
 </table>
 </div>
 {{else}}
-<p>No agent remembers anything {{if not .Admin}}about you{{end}}.</p>
+<p>No agent remembers anything{{if not .Admin}} about you{{end}}.</p>
 {{end}}
 
 <h2>Forget me</h2>

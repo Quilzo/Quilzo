@@ -151,7 +151,7 @@ var destinations = []destination{
 	{"apps", "Connected apps", "/apps", "Administration", "agent-interface", auth.ActView},
 	// View, as with apps: everybody sees, and removes, what agents remember
 	// about them.
-	{"memory", "What agents remember", "/memory", "Administration", "agents", auth.ActView},
+	{"memory", "Memory", "/memory", "Administration", "agents", auth.ActView},
 	{"integrations", "Integrations", "/integrations", "Administration", "integrations", auth.ActGrant},
 	// Beside Integrations: both decide what this program talks to, and a
 	// model route decides who receives what visitors typed.

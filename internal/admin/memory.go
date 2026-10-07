@@ -29,7 +29,7 @@ func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	data := map[string]any{"Nav": "memory", "Title": "What agents remember", "Principal": p,
+	data := map[string]any{"Nav": "memory", "Title": "Memory", "Principal": p,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e")}
 	if s.Memory == nil {
 		data["Off"] = true
