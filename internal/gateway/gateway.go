@@ -315,6 +315,11 @@ func (b *bound) CompleteCosted(ctx context.Context, system, user string) (string
 // Currency is what costs are in.
 func (g *Gateway) Currency() string { return g.cfg.Currency }
 
+// TodaySpend is what a caller has spent today, at the routes' prices.
+func (g *Gateway) TodaySpend(consumer string, now time.Time) Money {
+	return g.ledger.TodayCost(consumer, now)
+}
+
 // admit checks a call against every budget it is charged to.
 func (g *Gateway) admit(consumers []string, chars int) error {
 	for _, c := range consumers {

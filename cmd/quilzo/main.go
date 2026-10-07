@@ -531,6 +531,7 @@ agents and integrations
   quilzo agent run NAME --program "goal"   its own program decides, in a box: the run's interface,
                                            a model through the gateway, its hosts through a proxy
   quilzo agent backends                    where programs can run here, and what each box enforces
+  quilzo agent could NAME [--model|--program] [--as P] OP [PAGE] | tool:T | host:H   could a run do it, and why
   quilzo memory list [--agent A] [--held]  what agents remember about you (anybody, for an administrator)
   quilzo memory confirm|delete ID          let a held memory be recalled, or remove one
   quilzo memory forget [--about P]         every agent forgets you (or P, for an administrator)
