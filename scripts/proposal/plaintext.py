@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-FileCopyrightText: 2026 rsh1k
+# SPDX-FileCopyrightText: 2026 Rashik Adhikari
 # SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
 
 """Render the Incubator proposal as the plain text an ASF list will accept.

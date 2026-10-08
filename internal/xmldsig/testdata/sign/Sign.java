@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-FileCopyrightText: 2026 Rashik Adhikari
 // SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
 
 // Signs one element of a SAML document with the JDK's own XML Signature
