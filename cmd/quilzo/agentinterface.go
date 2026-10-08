@@ -160,7 +160,7 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 		Enabled: func() bool { return cc.get().Bool("mcp.remote") },
 		Config:  cfgOf,
 		OAuth:   oa,
-		Docs:    strings.TrimSuffix(admin.DocsBase, "/") + "/#agent-interface",
+		Docs:    admin.DocURL("agent-interface"),
 		Receipt: func(connection string) ([]byte, error) {
 			rf, err := buildAppReceipt(root, connection, time.Now())
 			if err != nil {

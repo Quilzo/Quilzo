@@ -70,41 +70,41 @@ var groups = []string{
 // destinations is every screen, in the default order.
 var destinations = []destination{
 	{"pages", "Pages", "/", "Content", "pages", auth.ActView},
-	{"records", "Data", "/records", "Content", "data", auth.ActView},
+	{"records", "Data", "/records", "Content", "types", auth.ActView},
 	{"types", "Types", "/types", "Content", "types", auth.ActView},
 	{"structure", "Structure", "/structure", "Content", "structure", auth.ActView},
-	{"listings", "Listings", "/listings", "Content", "listings", auth.ActView},
+	{"listings", "Listings", "/listings", "Content", "structure", auth.ActView},
 	{"forms", "Forms", "/forms", "Content", "forms", auth.ActEditDraft},
 	{"media", "Media", "/media", "Content", "media", auth.ActView},
 	// Its own section rather than #templates. The template language and the
 	// theme are different things, and the screen an operator opens to change
 	// a colour was sending Help to the page explaining why there is no eval.
 	{"design", "Design", "/design", "Content", "design", auth.ActEditDraft},
-	{"sections", "Sections", "/sections", "Content", "templates", auth.ActEditDraft},
+	{"sections", "Sections", "/sections", "Content", "pages", auth.ActEditDraft},
 	{"languages", "Languages", "/languages", "Content", "languages", auth.ActView},
-	{"assist", "Assistant", "/assist", "Content", "ai", auth.ActEditDraft},
+	{"assist", "Assistant", "/assist", "Content", "assistant", auth.ActEditDraft},
 	// Beside Assistant, which drafts pages for the people editing them. This
 	// is the other side: chatbots the site offers its visitors, answering
 	// from what is published.
-	{"assistants", "Chatbots", "/assistants", "Content", "ai", auth.ActEditDraft},
+	{"assistants", "Chatbots", "/assistants", "Content", "chatbots", auth.ActEditDraft},
 	// Next to the chatbots it is fed by: what a visitor asked a person.
-	{"inbox", "Inbox", "/inbox", "Content", "ai", auth.ActEditDraft},
+	{"inbox", "Inbox", "/inbox", "Content", "chatbots", auth.ActEditDraft},
 	// What members wrote, beside what visitors asked a person.
 	{"boards", "Boards", "/boards", "Content", "members", auth.ActEditDraft},
-	{"decisions", "Decisions", "/decisions", "Content", "ai", auth.ActEditDraft},
+	{"decisions", "Decisions", "/decisions", "Content", "assistant", auth.ActEditDraft},
 
 	// With Review rather than with Content: a note is part of agreeing that
 	// something is ready, which is what this group is about.
 	{"notes", "Notes", "/notes", "Release", "publishing", auth.ActView},
 	{"review", "Review", "/review", "Release", "publishing", auth.ActView},
-	{"publishing", "Publishing", "/publishing", "Release", "environments", auth.ActView},
-	{"history", "History", "/history", "Release", "history", auth.ActView},
+	{"publishing", "Publishing", "/publishing", "Release", "publishing", auth.ActView},
+	{"history", "History", "/history", "Release", "publishing", auth.ActView},
 	// With Release: what happened to what went out.
-	{"analytics", "Analytics", "/analytics", "Release", "publishing", auth.ActEditDraft},
-	{"experiments", "Experiments", "/experiments", "Release", "publishing", auth.ActEditDraft},
-	{"personalise", "Personalisation", "/personalise", "Release", "publishing", auth.ActEditDraft},
+	{"analytics", "Analytics", "/analytics", "Release", "growth", auth.ActEditDraft},
+	{"experiments", "Experiments", "/experiments", "Release", "growth", auth.ActEditDraft},
+	{"personalise", "Personalisation", "/personalise", "Release", "growth", auth.ActEditDraft},
 	{"transfer", "Transfer", "/transfer", "Release", "transfer", auth.ActView},
-	{"decentralised", "Permanent web", "/decentralised", "Release", "ipfs", auth.ActView},
+	{"decentralised", "Permanent web", "/decentralised", "Release", "transfer", auth.ActView},
 
 	{"provenance", "Provenance", "/provenance", "Assurance", "provenance", auth.ActView},
 	// Reading, on guarded areas: see auth's guardedAreas.
@@ -130,14 +130,14 @@ var destinations = []destination{
 	{"shield", "Shield", "/security/shield", "Security operations", "shield", auth.ActGrant},
 	{"automations", "Automations", "/security/automations", "Security operations", "automations", auth.ActGrant},
 	{"signins", "Sign-ins", "/security/signins", "Security operations", "automations", auth.ActGrant},
-	{"feeds", "Feeds", "/security/feeds", "Security operations", "feeds", auth.ActGrant},
+	{"feeds", "Feeds", "/security/feeds", "Security operations", "collect", auth.ActGrant},
 
 	{"agents", "Agents", "/agents", "Administration", "agents", auth.ActGrant},
 	// Beside Agents: every agent, Quilzo's and other vendors', the apps and
 	// tool servers and model routes, who called what, and the AI use
 	// nobody registered.
 	{"fleet", "Fleet", "/fleet", "Administration", "fleet", auth.ActGrant},
-	{"people", "People", "/people", "Administration", "users", auth.ActGrant},
+	{"people", "People", "/people", "Administration", "people", auth.ActGrant},
 	// The site's own accounts, beside the people who run it.
 	{"members", "Members", "/members", "Administration", "members", auth.ActGrant},
 	// Beside People: the same people, kept in step by the identity provider.
@@ -145,21 +145,21 @@ var destinations = []destination{
 	// Beside Provisioning: the identity provider that keeps people in step
 	// is usually the one they sign in through.
 	{"sso", "Single sign-on", "/sso", "Administration", "sso", auth.ActGrant},
-	{"access", "Access", "/access", "Administration", "auth", auth.ActGrant},
+	{"access", "Access", "/access", "Administration", "people", auth.ActGrant},
 	// View, not grant: everybody manages their own passkeys, and a screen that
 	// only administrators could open would be a second factor only
 	// administrators could have.
-	{"passkeys", "Passkeys", "/passkeys", "Administration", "auth", auth.ActView},
+	{"passkeys", "Passkeys", "/passkeys", "Administration", "passkeys", auth.ActView},
 	// View, for the same reason: everybody sees and disconnects the apps
 	// they connected to the agent interface.
 	{"apps", "Connected apps", "/apps", "Administration", "agent-interface", auth.ActView},
 	// View, as with apps: everybody sees, and removes, what agents remember
 	// about them.
-	{"memory", "Memory", "/memory", "Administration", "agents", auth.ActView},
+	{"memory", "Memory", "/memory", "Administration", "memory", auth.ActView},
 	{"integrations", "Integrations", "/integrations", "Administration", "integrations", auth.ActGrant},
 	// Beside Integrations: both decide what this program talks to, and a
 	// model route decides who receives what visitors typed.
-	{"models", "Models", "/models", "Administration", "ai", auth.ActGrant},
+	{"models", "Models", "/models", "Administration", "models", auth.ActGrant},
 	{"settings", "Settings", "/settings", "Administration", "settings", auth.ActEditDraft},
 
 	// Find is in Reference and not in Content, because it is about this
@@ -169,7 +169,7 @@ var destinations = []destination{
 	{"find", "Find", "/find", "Reference", "start", auth.ActView},
 	{"start", "Get started", "/start", "Reference", "start", auth.ActView},
 	{"playground", "API", "/playground", "Reference", "api", auth.ActView},
-	{"profile", "You", "/profile", "Reference", "profile", auth.ActView},
+	{"profile", "You", "/profile", "Reference", "start", auth.ActView},
 }
 
 // DocsBase is where the manual lives.
@@ -201,30 +201,30 @@ const DocsBase = "https://quilzo.github.io/"
 // person following it concludes the feature was removed, which is the belief
 // the documentation exists to correct.
 var docSections = map[string]bool{
-	// One per screen, named by the destination table above.
-	"pages": true, "data": true, "types": true, "structure": true,
-	"listings": true, "forms": true, "media": true, "languages": true,
-	"ai": true, "publishing": true, "environments": true, "history": true,
-	"transfer": true, "ipfs": true, "provenance": true, "security": true, "detection": true,
-	"members": true, "provisioning": true, "sso": true, "automations": true, "feeds": true, "shield": true,
-	"vulnerabilities": true, "cases": true,
-	"logging": true, "users": true, "auth": true, "integrations": true,
-	"settings": true, "api": true, "profile": true, "start": true,
-	"agents": true, "design": true, "workforce": true, "agent-interface": true, "fleet": true,
+	// One page per screen, named by the destination table above.
+	"agent-interface": true, "agents": true, "api": true, "assistant": true, "automations": true, "cases": true,
+	"chatbots": true, "collect": true, "design": true, "detection": true, "fleet": true, "forms": true,
+	"growth": true, "integrations": true, "languages": true, "logging": true, "media": true, "members": true,
+	"memory": true, "models": true, "pages": true, "passkeys": true, "people": true, "provenance": true,
+	"provisioning": true, "publishing": true, "security": true, "settings": true, "shield": true, "sso": true,
+	"start": true, "structure": true, "transfer": true, "types": true, "vulnerabilities": true, "workforce": true,
 
-	// Sections no screen owns, because they explain a concept or a surface
+	// Guides no screen owns, because they explain a concept or a surface
 	// rather than a destination. Named individually so that one quietly
 	// disappearing from the site is a change somebody made on purpose.
-	"setup": true, "concepts": true, "privacy": true,
-	"cli": true, "mcp": true, "templates": true,
+	"install": true, "concepts": true, "agent-limits": true, "agent-identity": true, "evals": true, "programs": true,
+	"chatbot-safety": true, "a2a": true, "ai-evidence": true, "compliance": true, "isolated": true, "privacy": true,
+	"collaboration": true, "licence": true,
 }
 
-// DocURL is the address of one section of the manual.
-func DocURL(anchor string) string {
-	if anchor == "" {
+// DocURL is the address of one guide in the manual. Each guide is a page
+// of its own, at /SLUG/; the manual's home page sends a Help link from an
+// older build, which used /#anchor, to the page that replaced the anchor.
+func DocURL(page string) string {
+	if page == "" {
 		return DocsBase
 	}
-	return DocsBase + "#" + anchor
+	return DocsBase + page + "/"
 }
 
 // docFor returns the documentation anchor for a screen key.

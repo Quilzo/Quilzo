@@ -73,7 +73,7 @@ func Refuse(w http.ResponseWriter, r *http.Request, p Protection, now time.Time)
 	case wantsJSON(r):
 		h.Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusTooManyRequests)
-		fmt.Fprintf(w, `{"type":"https://quilzo.github.io/#shield","title":"Requests from this address are refused for now","status":429,"detail":"Try again after %s.","reference":%q}`+"\n",
+		fmt.Fprintf(w, `{"type":"https://quilzo.github.io/shield/","title":"Requests from this address are refused for now","status":429,"detail":"Try again after %s.","reference":%q}`+"\n",
 			when, p.ID)
 	case wantsHTML(r):
 		h.Set("Content-Type", "text/html; charset=utf-8")
