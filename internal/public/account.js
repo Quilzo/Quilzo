@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-FileCopyrightText: 2026 Rashik Adhikari
 // SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
 //
 // Passkeys for a site's members: creating an account, signing in, and adding
