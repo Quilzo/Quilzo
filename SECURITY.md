@@ -6,9 +6,10 @@ Use GitHub's private vulnerability reporting:
 **[Report a vulnerability](../../security/advisories/new)**
 
 That channel is private between you and the maintainers until an advisory is
-published. It needs no email address from either side, which is deliberate —
-this project is maintained pseudonymously and a disclosure process should not
-depend on anybody publishing a personal address.
+published. It needs no email address from either side, which is deliberate: a
+disclosure process should not depend on anybody publishing a personal address.
+Today there is one maintainer, Rashik Adhikari ([@rsh1k](https://github.com/rsh1k)),
+who receives every report.
 
 If private reporting is unavailable to you for any reason, open a public issue
 containing only the words "security contact requested" and nothing else, and a
