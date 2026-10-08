@@ -52,4 +52,4 @@ One disclosure that a licensee's counsel will want, made here rather than
 found later: this project was public under Apache-2.0 for approximately eighty
 minutes on 22 August 2026. That grant is irrevocable for anyone who took a
 copy in that window, and it covers the commits between 656bc88 and 67a85b8.
-NOTICE records the times, the reasoning, and an estimate of the exposure.
+LICENSING.md records the times, the reasoning, and an estimate of the exposure.

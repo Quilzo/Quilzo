@@ -28,9 +28,10 @@ mkdir /tmp/try && cd /tmp/try
 ../quilzo demo      # a complete example application
 ```
 
-`quilzo demo` installs Gram — a photo-sharing site with a feed over structured
-records, an explore page with a working filter, profiles under a content type,
-stories that stop being served on a date, and a message box.
+`quilzo demo` installs Marginalia, a small paper shop: products as structured
+records, a catalogue a machine can read, claims that have to be substantiated
+before they publish, a sale that starts on its own, and a wholesale enquiry form
+the public server cannot read back.
 
 ### Getting a token, which you need for anything that writes
 
@@ -45,11 +46,16 @@ Two commands. The order matters, and the token is shown once:
 ../quilzo token issue laptop --principal you --role admin
 ```
 
-That prints a secret starting `qz_`. Put it in the environment:
+That prints a secret starting `qz_`, once. Save it where the command line looks
+first, readable only by you:
 
 ```bash
-export QUILZO_TOKEN=qz_…
+mkdir -p ~/.quilzo && umask 077 && printf '%s\n' 'qz_…' > ~/.quilzo/token
 ```
+
+`QUILZO_TOKEN` in the environment works too, and is looked at after the file. The
+file is preferred because every program you start inherits your environment,
+including an agent you are letting drive the command line.
 
 Then start both processes:
 
@@ -59,15 +65,17 @@ Then start both processes:
 ```
 
 Open `http://127.0.0.1:8080` for the admin and `http://127.0.0.1:8081` for the
-site. The admin's manual is at `/docs` and every screen's Help link points at
-its own section.
+site. The manual is at [quilzo.github.io](https://quilzo.github.io), and every
+screen's Help link opens the guide for that screen.
 
 Things worth trying, because they are the parts that are hard to believe:
 
 | Try | What it shows |
 |---|---|
-| `/explore?topic=travel` on the site | A declared query with a typed parameter, filtered per request |
-| `/stories/sol-rooftop` | 404s until September — the window is checked when the page is asked for, not by a job |
+| `/catalogue.json` on the site | Everything for sale, as a shopping agent reads it |
+| `/ranges?range=archive` | A declared listing with a parameter, filtered per request |
+| `/sale` | 404s until 24 November: the window is checked when the page is asked for, not by a job |
+| `quilzo brand check` | Every claim, and what backs it up; take `guarantee_terms` off the brass pen and publishing stops |
 | Remove a page the menu points at | Refused, naming the menu entry |
 | `quilzo verify` | Every object re-hashed against the id it is filed under |
 | `quilzo rollback` | Instant, because it is a pointer move |
@@ -80,20 +88,25 @@ immediately — revocation is checked on use, not only at issue.
 ## Building and testing
 
 ```bash
-make test        # the whole suite, about 1400 tests
-make build       # one binary for this platform
-make build-all   # linux/amd64, linux/arm64, darwin/amd64, darwin/arm64
-gofmt -l .       # must print nothing
-go vet ./...     # must print nothing
+make test                  # the whole suite, over four thousand tests
+make build                 # one binary for this platform
+make build-all             # linux, darwin and windows, each on amd64 and arm64
+go run cmd/gofmt -l .      # must print nothing
+go vet ./...               # must print nothing
 ```
 
-CI runs formatting, vet, the full suite, and a container build. All four must
-pass. There is no separate lint step and no configuration to learn.
+`go run cmd/gofmt` is the gofmt of the toolchain go.mod names. An older gofmt on
+your PATH can call a file clean that CI then rejects.
+
+CI runs formatting and vet, a build for every released platform, the published
+injection figure, govulncheck against the toolchain, the full suite, and a
+container build. All of them must pass, and code scanning (CodeQL) must find
+nothing new. There is no separate lint step and no configuration to learn.
 
 ## The one rule that will surprise you
 
-**No third-party dependencies.** `go.mod` has no `require` block and CI fails if
-one appears.
+**No third-party dependencies.** `go.mod` has no `require` block, and a test fails
+if one appears.
 
 This is not preference. A CMS is the highest-value place in an infrastructure to
 put something, and every transitive dependency is somebody else's release
@@ -129,7 +142,7 @@ feature nobody has.
 
 ## Signing off: DCO, and a CLA
 
-Every commit needs a `Signed-off-by` line:
+Every commit in a pull request needs a `Signed-off-by` line:
 
 ```bash
 git commit -s -m "your message"
@@ -261,9 +274,10 @@ has already thought about it can tell you what they found.
 ## What this project is not looking for
 
 - Dependencies, as above.
-- A JavaScript build step. The admin is server-rendered and its CSP forbids
-  script entirely; a security dashboard that needs a framework to tell you a
-  token is world-readable has the dependency the wrong way round.
+- A JavaScript build step. The admin is server-rendered. Its one script is
+  first-party, allowed per page by a nonce, and every screen works with it
+  switched off; a security dashboard that needs a framework to tell you a token
+  is world-readable has the dependency the wrong way round.
 - Features that add a query language over content. The absence of one is what
   removes an entire vulnerability class.
 - Anything that makes a control easier to skip. Overrides are fine when they are

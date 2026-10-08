@@ -107,11 +107,12 @@ status. That is the case for the base licence and it is a strong one.
 
 **The rest of the Redis story is the case for the other licence, and it does not
 flatter AGPL.** Returning to AGPLv3 did not win Redis its position back. By 2026
-Valkey — the fork the licence change caused — is what AWS ElastiCache and Google
-Memorystore provision for new clusters by default, and Valkey 9.1 is the default
-cache package on major Linux distributions. AGPL was the right licence and it
-was not a recovery strategy, because the buyers who left were the ones whose
-legal departments will not accept AGPL at all.
+Valkey, the fork the licence change caused, is what AWS calls the recommended
+engine for ElastiCache; Google runs Memorystore for Valkey beside Memorystore for
+Redis; and Linux distributions such as Fedora package Valkey as the
+Redis-compatible server. AGPL was the right licence and it was not a recovery
+strategy, because the buyers who left were the ones whose legal departments will
+not accept AGPL at all.
 
 Both halves of that are true at once, and this page would be dishonest with
 either one on its own:
