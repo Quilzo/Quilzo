@@ -82,3 +82,24 @@ func TestTheScriptKeepsEverythingOnTheDevice(t *testing.T) {
 	}
 	_ = assistant.Assistant{}
 }
+
+// Translating before sending has a deadline: an on-device model that is
+// still downloading, or never answers, must not swallow the question.
+func TestAQuestionIsSentEvenIfTranslatingStalls(t *testing.T) {
+	at := strings.Index(askVoiceJS, "Detector.create()")
+	if at < 0 {
+		t.Fatal("the script no longer detects the question's language")
+	}
+	before := askVoiceJS[:at]
+	start := strings.LastIndex(before, "e.preventDefault();")
+	if start < 0 {
+		t.Fatal("the submit handler no longer holds the question back")
+	}
+	held := before[start:]
+	if !strings.Contains(held, "setTimeout(") || !strings.Contains(held, "go();") {
+		t.Errorf("the question waits on translation with no deadline:\n%s", held)
+	}
+	if !strings.Contains(askVoiceJS, "if (sent) return;") {
+		t.Errorf("a translation finishing after the deadline could send the question twice")
+	}
+}
