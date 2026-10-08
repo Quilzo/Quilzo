@@ -518,7 +518,6 @@ proposer would rather hear it than receive a probationary yes.
 - Source: <https://github.com/Quilzo/Quilzo>
 - Manual: <https://quilzo.github.io>
 - `SECURITY.md`, `GOVERNANCE.md`, `CONTRIBUTING.md` in-repo
-- Live demonstration site, built with the tool: <https://quilzo.github.io/demo/>
 
 ## Initial Source
 
