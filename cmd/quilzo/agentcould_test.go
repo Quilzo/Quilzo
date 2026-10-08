@@ -86,3 +86,22 @@ func TestCouldAnswersAsTheRunEnforces(t *testing.T) {
 		t.Fatalf("paused: %+v", a)
 	}
 }
+
+// A write is asked of the draft, where a run writes, whatever the agent reads:
+// an agent reading the live site may still draft the page its runs draft.
+func TestCouldAsksAWriteOfTheDraft(t *testing.T) {
+	root, _ := identityStore(t)
+	set, _ := loadAgents(root)
+	m := set.Agents["tidy"]
+	m.Retrieval = agent.Retrieval{Ref: "live"}
+	if err := declareAgent(root, m, false, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	a, err := could(root, "tidy", "write_page", "about", false, false, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !a.Could || !strings.Contains(strings.Join(a.Then, ";"), "approves the exact call") {
+		t.Fatalf("an agent reading live was told it could not draft: %+v", a)
+	}
+}

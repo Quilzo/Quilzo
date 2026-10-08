@@ -13,6 +13,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // Could an agent do something, and why: answered by the code that decides
@@ -155,6 +156,13 @@ func couldIn(root string, set *agentSet, name, what, page string, withModel, pro
 				return a, err
 			}
 			ref := refOf(m)
+			if agent.IsWrite(what) {
+				// A run reads where its declaration says and writes to the
+				// draft whatever that is (agentexec's writer), so a write is
+				// asked of the draft. Asked of the read ref, an agent reading
+				// the live site was told it could not write what its runs do.
+				ref = site.RefDraft
+			}
 			typ, loc := pageTypeOf(root)(page), pageLocaleOf(st, ref)(page)
 			if agent.IsWrite(what) {
 				err = s.Mutate(ref, page, typ, loc)
