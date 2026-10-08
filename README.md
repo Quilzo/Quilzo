@@ -52,7 +52,9 @@ called, evidence for the EU AI Act and ISO/IEC 42001, a security console, a
 shield that defends the installation itself, and the content platform the agents
 read and write.
 
-One static binary. Go, standard library only, no third-party dependencies. It
+One static binary. Go, standard library only, no third-party dependencies; the
+few third-party assets it carries (a typeface, icons, public data sets) are
+credited in [NOTICE](NOTICE). It
 runs on a laptop with a local model, or on a server with the providers you
 already pay for.
 
@@ -211,7 +213,7 @@ Help link opens its own.
 | **Voice and languages** | On-device speech and translation where the browser has them; the answer stays the site's own. | `assistant add … --voice --translate` |
 | **Talk to a person** | A visitor hands the conversation to a person, who replies from the Inbox. | `quilzo inbox list`, `inbox reply` |
 | **On every page** | A launcher, a widget for other sites, static copies, and actions it may offer (a link or a form). | `assistant action NAME ACTION` |
-| **Typed decisions** | A model answers a fixed question with a confidence; below the threshold a person decides. | `quilzo decide set|ask|eval` |
+| **Typed decisions** | A model answers a fixed question with a confidence; below the threshold a person decides. | `quilzo decide set\|ask\|eval` |
 
 ### Apps, tools and other vendors' agents
 
@@ -220,8 +222,8 @@ Help link opens its own.
 | Feature | What it does | How |
 |---|---|---|
 | **Agent interface (MCP)** | Quilzo's operations for any agent or AI app: over stdio, and over HTTP at `/mcp` (MCP 2026-07-28, stateless) with Quilzo's tokens or OAuth 2.1 with a person's consent. Every call is recorded. | `quilzo mcp`; setting `mcp.remote`; Connected apps screen |
-| **Connected apps** | The apps people connected, what each was given, receipts of every call, disconnecting. | `quilzo apps list|receipt|disconnect` |
-| **MCP client, pinned** | Agents call tools on servers you declared, only the tools agreed, and only while each tool's definition is still the one a person approved; a redefined tool is refused and told to the shield. | `quilzo integrations tools|pin|call` |
+| **Connected apps** | The apps people connected, what each was given, receipts of every call, disconnecting. | `quilzo apps list\|receipt\|disconnect` |
+| **MCP client, pinned** | Agents call tools on servers you declared, only the tools agreed, and only while each tool's definition is still the one a person approved; a redefined tool is refused and told to the shield. | `quilzo integrations tools\|pin\|call` |
 | **Governed MCP gateway** | Your MCP servers offered to other vendors' agents through Quilzo: only pinned tools, per-role access, a daily count per caller, Quilzo's credential injected, tools a person approves call by call, every call recorded with an argument digest. | `quilzo integrations gateway NAME --role R`; `/mcp/gateway/NAME`; Integrations → Calls waiting for a person |
 | **A2A 1.0** | An agent card stating each agent's capabilities, budget and oversight, and tasks from other agents (SendMessage, GetTask, ListTasks, CancelTask), each run under the agent's declaration narrowed by the credential that sent it. | Settings `site.agent_card`, `a2a.tasks`; `/a2a` |
 | **Fleet** | Every agent, app, tool server, model route and other vendor's agent (registered by its A2A card), who answers for each, and who called what from the log. | Fleet screen; `quilzo fleet`, `fleet add CARD_URL`, `fleet check` |
@@ -237,21 +239,21 @@ Help link opens its own.
 
 | Feature | What it does | How |
 |---|---|---|
-| **Collect** | Logs read directly from Okta, Microsoft Entra, GitHub and EVM chains; mappings for 17 platforms (AWS CloudTrail, Google Workspace, Google Cloud, Azure, Kubernetes, CrowdStrike, Cloudflare, Slack and more) for logs that arrive as files; events pushed by Okta hooks, signed webhooks and OpenID Shared Signals (SSF, CAEP, RISC); your own application's log through a mapping. | `quilzo connect`, `collect run|file|auto`, `inbound add`, `source add` |
-| **Detections** | Rules for identity, code, cloud and chain that ship with fixtures, Sigma import, trial rings, suppressions that end, replay over ruled events. | `quilzo detect pack|test|run|replay`, `sigma import`; Detections screen |
-| **Event store** | Events kept sealed and digested in segments, with retention that shows what it would delete first, and holds while something is investigated. | `quilzo spool add|verify|retain|hold` |
-| **Findings and risk** | One queue, ranked; what is open about each person or machine added up. | Findings, Risk screens; `quilzo finding list|risk|decide` |
-| **Cases and incidents** | Cases with playbooks, and incidents with the clocks each regime starts (NIS2, GDPR, DORA, SEC, CIRCIA, HIPAA), discharged or waived on the record. | Cases screen; `quilzo incident declare|decide|discharge` |
-| **Actions, two-person** | Suspend an account or end its sessions in another tool; the exact request is shown and a second person approves. | `quilzo action add`, `incident act|act-approve` |
-| **Analyst agent** | A first pass over the queue that can only suggest, measured on what people ruled and under planted text. | `quilzo analyst triage|eval` |
+| **Collect** | Logs read directly from Okta, Microsoft Entra, GitHub and EVM chains; mappings for 17 platforms (AWS CloudTrail, Google Workspace, Google Cloud, Azure, Kubernetes, CrowdStrike, Cloudflare, Slack and more) for logs that arrive as files; events pushed by Okta hooks, signed webhooks and OpenID Shared Signals (SSF, CAEP, RISC); your own application's log through a mapping. | `quilzo connect`, `collect run\|file\|auto`, `inbound add`, `source add` |
+| **Detections** | Rules for identity, code, cloud and chain that ship with fixtures, Sigma import, trial rings, suppressions that end, replay over ruled events. | `quilzo detect pack\|test\|run\|replay`, `sigma import`; Detections screen |
+| **Event store** | Events kept sealed and digested in segments, with retention that shows what it would delete first, and holds while something is investigated. | `quilzo spool add\|verify\|retain\|hold` |
+| **Findings and risk** | One queue, ranked; what is open about each person or machine added up. | Findings, Risk screens; `quilzo finding list\|risk\|decide` |
+| **Cases and incidents** | Cases with playbooks, and incidents with the clocks each regime starts (NIS2, GDPR, DORA, SEC, CIRCIA, HIPAA), discharged or waived on the record. | Cases screen; `quilzo incident declare\|decide\|discharge` |
+| **Actions, two-person** | Suspend an account or end its sessions in another tool; the exact request is shown and a second person approves. | `quilzo action add`, `incident act\|act-approve` |
+| **Analyst agent** | A first pass over the queue that can only suggest, measured on what people ruled and under planted text. | `quilzo analyst triage\|eval` |
 | **Hunt, indicators** | What is rare in the events; STIX and lists of indicators, looked back over. | Hunt, Indicators screens; `quilzo hunt`, `intel import` |
-| **Vulnerabilities** | Prioritised by exploitation and exposure (KEV, EPSS, SSVC), with reachability, upgrade plans, accepted risk that ends, and OpenVEX. | `quilzo vuln import|queue|plan|vex`; Vulnerabilities screen |
-| **Workforce risk** | People and their machines joined across HR, identity and device tools, with reasons for each score (administrators only). | `quilzo estate sync|scores`; Workforce risk screen |
+| **Vulnerabilities** | Prioritised by exploitation and exposure (KEV, EPSS, SSVC), with reachability, upgrade plans, accepted risk that ends, and OpenVEX. | `quilzo vuln import\|queue\|plan\|vex`; Vulnerabilities screen |
+| **Workforce risk** | People and their machines joined across HR, identity and device tools, with reasons for each score (administrators only). | `quilzo estate sync\|scores`; Workforce risk screen |
 | **Automations** | When this happens, do this: watch, ask or act. | `quilzo automate`; Automations screen |
 | **Sign-ins** | Where sign-ins come from, offices and VPNs, impossible travel. | `quilzo geo`; Sign-ins screen |
 | **Canaries and decoys** | Values nothing should read, and tokens that open nothing and tell on whoever holds them. | `quilzo canary plant`, `shield decoy add` |
 | **Access reviews, vendors, notices** | Reviewer campaigns, a vendor register reconciled against real credentials, and GDPR notices with their deadlines. | `quilzo access`, `vendor`, `notify` |
-| **Code scanning** | Any scanner's alerts (SARIF) triaged by what a change introduced; a merge gate on what is new, never on the debt; dependency findings you can actually fix; a leaked secret closes only when rotated. | `quilzo appsec triage|gate|rotated`, `sarif read`, `sca scan` |
+| **Code scanning** | Any scanner's alerts (SARIF) triaged by what a change introduced; a merge gate on what is new, never on the debt; dependency findings you can actually fix; a leaked secret closes only when rotated. | `quilzo appsec triage\|gate\|rotated`, `sarif read`, `sca scan` |
 | **Questionnaires and reminders** | Security questionnaires answered from claims checked against the register; reminders to people inside working hours. | `quilzo attest fill`, `remind send` |
 
 ### The shield: Quilzo defends itself
@@ -260,10 +262,10 @@ Help link opens its own.
 
 | Feature | What it does | How |
 |---|---|---|
-| **Playbooks** | Decided beforehand, acting at once: block a source, slow it, turn a public feature down, lock the admin to passkeys and single sign-on, freeze publishing, pause an agent, cut a model route, suspend a credential or app connection, quarantine an upload. Every protection ends by itself. | Shield screen; `quilzo shield status|lift` |
+| **Playbooks** | Decided beforehand, acting at once: block a source, slow it, turn a public feature down, lock the admin to passkeys and single sign-on, freeze publishing, pause an agent, cut a model route, suspend a credential or app connection, quarantine an upload. Every protection ends by itself. | Shield screen; `quilzo shield status\|lift` |
 | **Two people, and a dry run** | Changing a playbook takes two administrators; a dry run over the log shows what it would have done first. | `quilzo shield playbook mode`, `shield dry-run` |
 | **Never on the inside** | An administrator's own address keeps the admin; internal networks are never blocked; the command line on the machine always works. | Automatic; `quilzo shield trust add` |
-| **Its own flaws** | The running binary checked against the Go vulnerability database, by what is actually linked, offline; a flaw reachable through one feature turns that feature off. | `quilzo self check|verify|vex` |
+| **Its own flaws** | The running binary checked against the Go vulnerability database, by what is actually linked, offline; a flaw reachable through one feature turns that feature off. | `quilzo self check\|verify\|vex` |
 
 ### Compliance and evidence
 
@@ -271,12 +273,12 @@ Help link opens its own.
 
 | Feature | What it does | How |
 |---|---|---|
-| **Posture** | Continuous checks of how the installation is set up, each with why it matters and the fix; suppressions that end. | Security screen; `quilzo posture scan|explain` |
+| **Posture** | Continuous checks of how the installation is set up, each with why it matters and the fix; suppressions that end. | Security screen; `quilzo posture scan\|explain` |
 | **Frameworks** | The same checks read as FedRAMP, NIST 800-53, ISO 27001, SOC 2, NIST CSF 2.0, HIPAA, GDPR, CCPA, the EU AI Act, NIST AI RMF, ISO/IEC 42001 and OWASP's LLM Top 10. | Frameworks screen; `quilzo posture frameworks` |
-| **AI evidence** | The EU AI Act's deployer duties, ISO/IEC 42001 Annex A as a statement of applicability, and an AI bill of materials (CycloneDX 1.6), each read from what the agents, chatbots and models did. | Frameworks → AI evidence; `quilzo compliance ai-act|iso42001|aibom` |
-| **Quilzo's own controls** | How Quilzo implements each NIST control and who does the rest, as OSCAL; a draft system security plan; FedRAMP 20x indicators; a position on each goal of CISA's Secure by Design pledge. | `quilzo compliance implementation|component|ssp|ksi|pledge` |
-| **Organisation policy** | The organisation's NIST parameters (session limits and the like) declared, changed by two administrators and enforced as floors. | `quilzo policy show|propose|approve` |
-| **Supply chain** | A CycloneDX SBOM from the build, every cryptographic algorithm with its post-quantum status, release binaries with provenance attestations. | `quilzo compliance sbom|crypto` |
+| **AI evidence** | The EU AI Act's deployer duties, ISO/IEC 42001 Annex A as a statement of applicability, and an AI bill of materials (CycloneDX 1.6), each read from what the agents, chatbots and models did. | Frameworks → AI evidence; `quilzo compliance ai-act\|iso42001\|aibom` |
+| **Quilzo's own controls** | How Quilzo implements each NIST control and who does the rest, as OSCAL; a draft system security plan; FedRAMP 20x indicators; a position on each goal of CISA's Secure by Design pledge. | `quilzo compliance implementation\|component\|ssp\|ksi\|pledge` |
+| **Organisation policy** | The organisation's NIST parameters (session limits and the like) declared, changed by two administrators and enforced as floors. | `quilzo policy show\|propose\|approve` |
+| **Supply chain** | A CycloneDX SBOM from the build, every cryptographic algorithm with its post-quantum status, release binaries with provenance attestations. | `quilzo compliance sbom\|crypto` |
 | **The published site** | What the law asks of it: accessibility (and a draft statement and conformance report), forms' lawful basis, personal data held back from publishing, AI disclosure, browser protections. | `quilzo compliance site`, `compliance acr` |
 | **Assurance, auditors, groups** | Evidence over a period and the days nobody can speak to; scoped auditor engagements as one verifiable file; controls across a group of companies. | `quilzo assurance`, `engagement`, `entity` |
 
@@ -284,19 +286,19 @@ Help link opens its own.
 
 | Feature | What it does | How |
 |---|---|---|
-| **Roles, jobs, areas** | Reader, author, publisher and admin on any subtree; analyst, compliance, support and auditor jobs that must end; denies that win. | `quilzo auth grant|deny|explain` |
+| **Roles, jobs, areas** | Reader, author, publisher and admin on any subtree; analyst, compliance, support and auditor jobs that must end; denies that win. | `quilzo auth grant\|deny\|explain` |
 | **Single sign-on** | OIDC (Google Workspace, Microsoft Entra, any issuer) and SAML (presets for Okta, Entra, Google, JumpCloud, OneLogin, PingOne, AD FS and Keycloak), which can be required, with named break-glass accounts. | `quilzo oidc configure`, `quilzo saml add`; Single sign-on screen |
 | **Provisioning** | SCIM from Okta, Entra and others, with their groups mapped to roles and jobs; deactivation suspends a person at once, and deletion erases what agents remember about them. | `quilzo scim`; Provisioning screen |
-| **Passkeys and sessions** | Passkeys, idle and absolute session limits, tokens that expire or are exchanged for short sessions, a break-glass when every admin token is lost. | Passkeys screen; `quilzo token issue|exchange`, `auth recover` |
+| **Passkeys and sessions** | Passkeys, idle and absolute session limits, tokens that expire or are exchanged for short sessions, a break-glass when every admin token is lost. | Passkeys screen; `quilzo token issue\|exchange`, `auth recover` |
 
 ### Audit and integrity
 
 | Feature | What it does | How |
 |---|---|---|
-| **A signed log** | Every action, hash-chained, identifiers pseudonymised, a refused secret never written; heads signed with Ed25519 and ML-DSA; inclusion and consistency proofs. | `quilzo auditlog verify|prove|consistency|head` |
+| **A signed log** | Every action, hash-chained, identifiers pseudonymised, a refused secret never written; heads signed with Ed25519 and ML-DSA; inclusion and consistency proofs. | `quilzo auditlog verify\|prove\|consistency\|head` |
 | **Written by its own account** | The log writer can run as a separate user the content platform cannot impersonate. | `quilzo logd` |
 | **Anchored in time** | Heads anchored where the operator cannot alter them, and RFC 3161 timestamps of what was published. | `quilzo auditlog anchor`, `quilzo timestamp` |
-| **Encrypted at rest** | Objects sealed on disk with rotatable keys. | `quilzo vault enable|rotate` |
+| **Encrypted at rest** | Objects sealed on disk with rotatable keys. | `quilzo vault enable\|rotate` |
 
 ### The content platform underneath
 
@@ -308,19 +310,19 @@ reference.
 
 | Feature | What it does | How |
 |---|---|---|
-| **Pages and publishing** | Content-addressed drafts, review approvals, environments promoted by pointer, scheduled publishing, rollback, an accessibility gate. | `quilzo add|diff|publish|rollback|env|schedule|review` |
-| **Working together** | Advisory locks, notes on what is wrong with a page, owners and a schedule for confirming a page is still right. | `quilzo lock|note|checked` |
-| **Structure** | Move a page and everything under it, see what links where and what is broken, keep old URLs working. | `quilzo move|links`, `site --redirects` |
+| **Pages and publishing** | Content-addressed drafts, review approvals, environments promoted by pointer, scheduled publishing, rollback, an accessibility gate. | `quilzo add\|diff\|publish\|rollback\|env\|schedule\|review` |
+| **Working together** | Advisory locks, notes on what is wrong with a page, owners and a schedule for confirming a page is still right. | `quilzo lock\|note\|checked` |
+| **Structure** | Move a page and everything under it, see what links where and what is broken, keep old URLs working. | `quilzo move\|links`, `site --redirects` |
 | **Provenance** | Who or what wrote each page; what an agent or assistant writes is marked as AI-generated. | `quilzo provenance check` |
-| **Typed data** | Types, records and collections; listings, menus and vocabularies that are checked. | `quilzo type|records|listing|menu|terms` |
-| **Design** | Starters, sections, themes from one colour with contrast checked, design tokens in and out. | `quilzo template|section|theme`; Design screen |
+| **Typed data** | Types, records and collections; listings, menus and vocabularies that are checked. | `quilzo type\|records\|listing\|menu\|terms` |
+| **Design** | Starters, sections, themes from one colour with contrast checked, design tokens in and out. | `quilzo template\|section\|theme`; Design screen |
 | **Media** | Uploads checked, renditions, crops that keep the original, captions required for video, C2PA provenance, generated images marked. | `quilzo media` |
-| **People on the site** | Forms with retention and erasure, member accounts with passkeys and recovery codes, boards with moderation, cookieless analytics, A/B experiments, personalisation by what the request says. | `quilzo form|member|board|analytics|experiment|personalise` |
+| **People on the site** | Forms with retention and erasure, member accounts with passkeys and recovery codes, boards with moderation, cookieless analytics, A/B experiments, personalisation by what the request says. | `quilzo form\|member\|board\|analytics\|experiment\|personalise` |
 | **Languages** | Locales, stale and missing translations. | `quilzo lang` |
-| **Out and in** | Export to Markdown (Hugo, Astro, Eleventy, Jekyll), WordPress WXR, lossless JSON and RO-Crate; import from WordPress; replicas; the permanent web (IPFS); the fediverse (ActivityPub). | `quilzo export|import|peer|ipfs|fediverse` |
+| **Out and in** | Export to Markdown (Hugo, Astro, Eleventy, Jekyll), WordPress WXR, lossless JSON and RO-Crate; import from WordPress; replicas; the permanent web (IPFS); the fediverse (ActivityPub). | `quilzo export\|import\|peer\|ipfs\|fediverse` |
 | **API** | A content API, read-only or writable with If-Match, and a playground in the admin. | `quilzo site --api`; API screen |
-| **Checks** | XSS, injection and leaked secrets in content; the content security policy your content implies; claims that need substantiating; image licences. | `quilzo scan|csp|brand|rights` |
-| **Extensions** | Your own code that observes or transforms content, run in a sandbox outside the process, pinned by digest. | `quilzo ext list|add|pin|test` |
+| **Checks** | XSS, injection and leaked secrets in content; the content security policy your content implies; claims that need substantiating; image licences. | `quilzo scan\|csp\|brand\|rights` |
+| **Extensions** | Your own code that observes or transforms content, run in a sandbox outside the process, pinned by digest. | `quilzo ext list\|add\|pin\|test` |
 
 ### Experimental: conversation and calls
 
@@ -329,9 +331,9 @@ line and not yet a product of their own.
 
 | Feature | What it does | How |
 |---|---|---|
-| **Rooms** | Conversations with a stated purpose; an edit appends a revision, and removing words leaves the shape of the message. | `quilzo room open|say|read|history` |
+| **Rooms** | Conversations with a stated purpose; an edit appends a revision, and removing words leaves the shape of the message. | `quilzo room open\|say\|read\|history` |
 | **Calls and screen sharing** | Lobby, shares, raised hands, mute and eject, with media encrypted end to end by SFrame (RFC 9605) under a key every member computes without trusting the server; what a shared screen and a membership change cost. | `quilzo huddle demo`, `call demo`, `sframe check`, `screen cost` |
-| **An AI note-taker** | A note-taker that sits in a call as a member, and what it may lawfully do and who must agree. | `quilzo scribe law|demo` |
+| **An AI note-taker** | A note-taker that sits in a call as a member, and what it may lawfully do and who must agree. | `quilzo scribe law\|demo` |
 | **Screen recording** | Record the screen into the media library. | `quilzo studio` |
 
 ### Running it
@@ -341,8 +343,8 @@ line and not yet a product of their own.
 | **One binary** | The admin on loopback, the public site on its own listener, installable as an app; the command line does everything the screens do. | `quilzo serve`, `quilzo site` |
 | **Every connection named** | Each outbound connection has a declared purpose and is checked against the address actually dialled, after DNS. Offline mode refuses every connection that would leave the host, and names the feature that wanted it. | `quilzo network`; setting `network.mode` |
 | **Settings that explain themselves** | Every setting with what it is for and what it costs; one that weakens security needs a stated reason. | `quilzo config explain KEY`, `config set … --accept-risk "why"` |
-| **What each part holds** | What each process holds and what running two together costs; what a role can be handed by a situation. | `quilzo boundary show|credentials`, `standing list` |
-| **Isolated networks** | A classification marking, and paperwork for carrying an export across, checked on arrival. | `quilzo marking`, `transfer record|verify` |
+| **What each part holds** | What each process holds and what running two together costs; what a role can be handed by a situation. | `quilzo boundary show\|credentials`, `standing list` |
+| **Isolated networks** | A classification marking, and paperwork for carrying an export across, checked on arrival. | `quilzo marking`, `transfer record\|verify` |
 | **Find anything** | A command palette over every screen, page, setting and type. | Ctrl K in the admin; `quilzo find WORDS` |
 | **Exit codes** | 3 when a gate refused, distinct from 1 when the command failed. | `--json` on every command |
 
@@ -399,10 +401,11 @@ the interface that faces the internet, and what each process may touch.
 **[quilzo.github.io](https://quilzo.github.io)**: the manual, with screenshots.
 Every screen in the admin has a Help link to its own section.
 
-- [Agents](https://quilzo.github.io/#agents): declaring one, asking first, runs, memory, programs
-- [Agent interface](https://quilzo.github.io/#agent-interface): MCP, connected apps, the gateway, A2A
-- [Fleet](https://quilzo.github.io/#fleet): every agent and what it called, and shadow AI
-- [Detection](https://quilzo.github.io/#detection), [cases](https://quilzo.github.io/#cases) and the [shield](https://quilzo.github.io/#shield)
+- [Get started](https://quilzo.github.io/start/): install, sign in, and run a first agent in ten minutes
+- [Build an agent](https://quilzo.github.io/agents/), [limits that hold](https://quilzo.github.io/agent-limits/), [evaluations](https://quilzo.github.io/evals/) and [memory](https://quilzo.github.io/memory/)
+- [Models and the gateway](https://quilzo.github.io/models/), [chatbots](https://quilzo.github.io/chatbots/) and [prompt injection in RAG](https://quilzo.github.io/chatbot-safety/)
+- [Connect AI apps over MCP](https://quilzo.github.io/agent-interface/), [the MCP gateway](https://quilzo.github.io/integrations/), [A2A](https://quilzo.github.io/a2a/) and [the fleet](https://quilzo.github.io/fleet/)
+- [Detection](https://quilzo.github.io/detection/), [cases](https://quilzo.github.io/cases/), [the shield](https://quilzo.github.io/shield/) and [AI evidence](https://quilzo.github.io/ai-evidence/)
 - [docs/cms.md](docs/cms.md): the content platform, in full
 - [SECURITY.md](SECURITY.md): what is and is not bounded, and how to report
 

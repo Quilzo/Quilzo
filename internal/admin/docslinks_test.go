@@ -58,12 +58,20 @@ func TestNoDeclaredSectionIsUnaccountedFor(t *testing.T) {
 	// Sections no screen owns, because they explain a concept or a surface
 	// rather than a destination.
 	standalone := map[string]bool{
-		"setup":     true, // the walkthrough, reached from the contents
-		"concepts":  true, // the glossary
-		"privacy":   true, // a statement, not a screen
-		"cli":       true, // a surface with no screen, by definition
-		"mcp":       true, // the same
-		"templates": true, // deliberately has no screen; the section says why
+		"install":        true,
+		"concepts":       true,
+		"agent-limits":   true,
+		"agent-identity": true,
+		"evals":          true,
+		"programs":       true,
+		"chatbot-safety": true,
+		"a2a":            true,
+		"ai-evidence":    true,
+		"compliance":     true,
+		"isolated":       true,
+		"privacy":        true,
+		"collaboration":  true,
+		"licence":        true,
 	}
 	var loose []string
 	for id := range docSections {

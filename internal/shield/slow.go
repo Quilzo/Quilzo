@@ -104,7 +104,7 @@ func RefuseSlow(w http.ResponseWriter, r *http.Request, wait time.Duration) {
 	case wantsJSON(r):
 		h.Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusTooManyRequests)
-		fmt.Fprintf(w, `{"type":"https://quilzo.github.io/#shield","title":"Too many requests from this address just now","status":429,"detail":"Try again in %d seconds."}`+"\n", secs)
+		fmt.Fprintf(w, `{"type":"https://quilzo.github.io/shield/","title":"Too many requests from this address just now","status":429,"detail":"Try again in %d seconds."}`+"\n", secs)
 	default:
 		h.Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusTooManyRequests)
