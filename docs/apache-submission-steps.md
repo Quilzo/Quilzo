@@ -132,7 +132,6 @@ which made the opposite decision on the point that defines this one.
 
 Source:   https://github.com/Quilzo/Quilzo
 Manual:   https://quilzo.github.io
-Demo:     https://quilzo.github.io/demo/
 
 Grateful for any feedback, and particularly for anyone willing to
 Champion it.
