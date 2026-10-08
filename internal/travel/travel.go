@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-FileCopyrightText: 2026 Rashik Adhikari
 // SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
 
 // Package travel keeps each person's recent sign-ins and says when a new one
