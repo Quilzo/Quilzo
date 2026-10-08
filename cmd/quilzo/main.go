@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-FileCopyrightText: 2026 Rashik Adhikari
 // SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
 
 // Command quilzo is the whole CMS: the command line, the admin interface, the
@@ -1045,7 +1045,7 @@ func main() {
 	// string and was unreachable to everything that looks for it.
 	case "version", "--version", "-V":
 		fmt.Printf("quilzo %s\n", version)
-		fmt.Println("Copyright (C) 2026 rsh1k")
+		fmt.Println("Copyright (C) 2026 Rashik Adhikari")
 		fmt.Println("License AGPLv3+: GNU AGPL version 3 or later " +
 			"<https://gnu.org/licenses/agpl.html>.")
 		fmt.Println("This is free software: you are free to change and " +
