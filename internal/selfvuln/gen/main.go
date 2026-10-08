@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 rsh1k
+// SPDX-FileCopyrightText: 2026 Rashik Adhikari
 // SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
 
 // Command gen writes the two files internal/selfvuln embeds, at release:
