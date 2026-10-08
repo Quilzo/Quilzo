@@ -1849,7 +1849,7 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 	// which asks them again. See agentinterface.go.
 	if r.Method == http.MethodGet && r.URL.Path != "/oauth/authorize" {
 		if next := s.takeNext(w, r); next != "" {
-			http.Redirect(w, r, next, http.StatusSeeOther)
+			http.Redirect(w, r, authorizeAgain(next), http.StatusSeeOther)
 			return principal{}, false
 		}
 	}

@@ -291,7 +291,7 @@ func carryCSP(body []byte, policy, ctype string) []byte {
 	default:
 		i = afterOpeningHTML(body)
 	}
-	out := make([]byte, 0, len(body)+len(meta)+1)
+	var out []byte
 	out = append(out, body[:i]...)
 	out = append(out, '\n')
 	out = append(out, meta...)

@@ -163,7 +163,7 @@ func insertBanner(body []byte, banner string) ([]byte, error) {
 		`role="note" aria-label="Classification banner">` +
 		escapeBanner(banner) + `</div>`)
 
-	out := make([]byte, 0, len(body)+len(top)+len(bottom))
+	var out []byte
 	out = append(out, body[:openEnd]...)
 	out = append(out, top...)
 	out = append(out, body[openEnd:closeAt]...)
