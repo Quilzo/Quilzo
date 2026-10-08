@@ -94,7 +94,7 @@ leaving (there is no lock-in here, and this is how it is proved)
   quilzo export json --to DIR              lossless; this tool re-imports it
   quilzo export ro-crate --licence URI     a deposit: markdown plus checksums
   quilzo siem ocsf|cef|jsonl --envelope F  the audit log, still verifiable
-  quilzo siem verify FILE --envelope F     check an export was not altered
+  quilzo siem verify FILE --envelope F     check a JSON Lines export was not altered
 
 importing
   quilzo import FILE [--from wordpress]    bring in another CMS's export

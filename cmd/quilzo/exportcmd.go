@@ -290,11 +290,43 @@ func cmdSiem(root string, args []string) error {
 			"  %sno envelope written: without one the receiving system cannot\n"+
 				"  tell whether events were removed. Pass --envelope FILE.%s\n",
 			yellow, reset)
-	} else {
+	} else if format == siem.Format("jsonl") {
 		fmt.Fprintf(os.Stderr, "  %senvelope in %s — verify with "+
 			"`quilzo siem verify`%s\n", dim, *envelopePath, reset)
+	} else {
+		// An OCSF or CEF record carries its event's hash and not the event,
+		// so it cannot be recomputed; saying "verify with" here sent people
+		// to a check that reported their untouched export as altered.
+		fmt.Fprintf(os.Stderr, "  %senvelope in %s — it lists every event's hash in order, as the export\n"+
+			"  carries them (%s); a JSON Lines export (quilzo siem jsonl) carries each event\n"+
+			"  whole, and is the one `quilzo siem verify` can check%s\n",
+			dim, *envelopePath, hashWhere(format), reset)
 	}
 	return nil
+}
+
+// hashWhere is where an export format puts each event's hash.
+func hashWhere(f siem.Format) string {
+	if f == siem.Format("cef") {
+		return "cs3, labelled eventHash"
+	}
+	return "metadata.uid"
+}
+
+// exportFormatOf names a SIEM format that is not JSON Lines of audit
+// events, from its first line, or says nothing.
+func exportFormatOf(line string) string {
+	line = strings.TrimSpace(line)
+	if strings.HasPrefix(line, "CEF:") {
+		return "CEF"
+	}
+	var probe map[string]json.RawMessage
+	if json.Unmarshal([]byte(line), &probe) == nil {
+		if _, ocsf := probe["class_uid"]; ocsf {
+			return "OCSF"
+		}
+	}
+	return ""
 }
 
 // cmdSiemVerify checks an export against its envelope.
@@ -316,6 +348,20 @@ func cmdSiemVerify(root string, args []string) error {
 	raw, err := os.ReadFile(pos[0])
 	if err != nil {
 		return err
+	}
+	// The check recomputes each event from the event itself, which only a
+	// JSON Lines export carries. An OCSF or CEF line read as an event has
+	// no hash and no sequence, and was reported as "altered after export":
+	// a false accusation about evidence nobody touched.
+	if f := exportFormatOf(strings.SplitN(strings.TrimSpace(string(raw)), "\n", 2)[0]); f != "" {
+		article := "a"
+		if f == "OCSF" {
+			article = "an"
+		}
+		return fmt.Errorf("%s is %s %s export, which carries each event's hash (%s) and not the event, "+
+			"so it cannot be recomputed here. Compare those hashes, in order, with the envelope's; "+
+			"for an export this can verify, use quilzo siem jsonl", pos[0], article, f,
+			hashWhere(siem.Format(strings.ToLower(f))))
 	}
 	var events []audit.Event
 	for i, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
