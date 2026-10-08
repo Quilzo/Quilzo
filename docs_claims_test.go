@@ -568,3 +568,20 @@ func TestTheSpellingGuardDoesNotGoQuietAtARoundNumber(t *testing.T) {
 		t.Error("a refusal returned padding")
 	}
 }
+
+// The one rule CONTRIBUTING.md says will surprise people, held by a test
+// rather than by review: go.mod requires nothing and there is no go.sum. A
+// dependency added by `go get` in a hurry would otherwise arrive in a
+// pull request whose diff looks like one line.
+func TestGoModRequiresNothing(t *testing.T) {
+	for _, line := range strings.Split(read(t, "go.mod"), "\n") {
+		f := strings.Fields(line)
+		if len(f) > 0 && (f[0] == "require" || f[0] == "replace") {
+			t.Errorf("go.mod has %q. Quilzo has no third-party dependencies; "+
+				"CONTRIBUTING.md says what to do instead", strings.TrimSpace(line))
+		}
+	}
+	if _, err := os.Stat("go.sum"); err == nil {
+		t.Error("there is a go.sum, so something outside the standard library was fetched")
+	}
+}

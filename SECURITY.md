@@ -50,6 +50,44 @@ is false is a vulnerability even without a working exploit:
 - **Nothing is executed from content.** Any way a template or an imported
   document causes code to run, or any way content decides what an extension is.
 
+### The agent control plane
+
+The same applies to the claims Quilzo makes about AI agents and the apps and
+agents connected to it. A demonstration that any of these is false is a
+vulnerability:
+
+- **An agent cannot exceed its declaration.** Any action a run performs that its
+  declaration, the agent's own role, or the access of the person who started it
+  does not allow, whether a model, the agent's own program, a delegate or a task
+  from another agent (A2A) chose it.
+- **A model cannot approve its own work.** Any path by which a model or an agent
+  approves a step, declares or widens an agent, or publishes without a person.
+- **Asking first holds.** Any way the call that runs after approval differs from
+  the call a person approved.
+- **The exfiltration breaker holds.** Any way a run that holds private material
+  and has read content somebody else wrote sends something outside without a
+  person deciding.
+- **A receipt proves what it says.** Any way to alter, add or leave out a record
+  and still have `quilzo agent verify-receipt` accept it against the published
+  keys.
+- **A program stays in its box.** Any way an agent's program reads the store,
+  reaches a host its declaration does not name, or keeps a capability.
+- **A connected app acts as one person, and no more.** Any way an app does what
+  its scope or its person's access does not allow, or keeps acting after that
+  access ended or the connection was revoked.
+- **The MCP gateway offers only what was agreed.** Any way a caller reaches a tool
+  that is not declared and pinned, gets past its daily limit, or has a held call
+  run without a second person.
+- **Memory stays with its person.** Any way one person's runs recall what an agent
+  learnt about somebody else, a held memory is recalled before a person confirms
+  it, or forgotten memory is recalled at all.
+- **Personal data stays out of prompts.** Any way a value the privacy guard masks
+  reaches a model route that may not receive it.
+- **The shield cannot be turned on the inside.** Any way a playbook blocks an
+  internal network, locks every administrator out, or protects without ending.
+
+These are on `main` and not yet in a release: report against `main`.
+
 ### What the extension boundary actually is
 
 An extension is a subprocess. It gets an empty environment, a working directory
@@ -132,3 +170,10 @@ a report is most useful when it makes one of those tests fail. Relevant places:
 - `internal/auth` — roles, scopes, throttling
 - `cmd/quilzo/gate_test.go` — every write surface consults the type gate
 - `internal/admin/roles_test.go` — every role can do its own job and no more
+- `internal/agent` — the gate, narrowing, the breaker and receipts
+- `cmd/quilzo/agent*_test.go` — runs, approvals, could-it and receipts end to end
+- `internal/agentbox` — the box an agent's program runs in
+- `internal/oauthas`, `cmd/quilzo/agentinterface_test.go` — connected apps
+- `cmd/quilzo/mcpgateway_test.go` — the MCP gateway
+- `internal/memory`, `internal/pii` — governed memory and the privacy guard
+- `internal/shield/guardrails_test.go` — what a playbook may never do

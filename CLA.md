@@ -29,15 +29,15 @@ to state which agreement applies is to state the selections:
 
 | Choice | Selection |
 |---|---|
-| Base agreement | **HA-CLA-I** — Contributor **Licence** Agreement, individual |
-| Outbound licence (§2.1(d)) | **Option 5** — any licence, with the promise back that the contribution is also licensed under the project's original licences |
-| Media (§2.1(e)) | Included — documentation, diagrams and site content |
-| Third-party content (§3(d)) | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| Governing law (§5.1) | **not yet set** — see below |
+| Base agreement | **HA-CLA-I** — Contributor **Licence** Agreement, individual; with option five below, the agreement Harmony names **HA-CLA-I-ANY** |
+| Outbound licence (§2.3) | **Option Five** — any licence, with the promise back that the contribution is also licensed under the licences the project used on the day it was submitted |
+| Media licences (§2.3, final paragraph) | None listed separately. "Media" is any part of a contribution that is not software, such as documentation, diagrams and site content, and option five already covers it |
+| Contributions you do not own (§3(d)) | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Governing law (§6.1) | **not yet set** — see below |
 | Mechanism | Sign-off in the pull request, recorded against the PR |
 
-Entity contributors — anybody contributing on an employer's behalf — need
-**HA-CCLA-E** with the same selections.
+Entity contributors — anybody contributing on an employer's behalf — need the
+entity version, **HA-CLA-E** (**HA-CLA-E-ANY**), with the same selections.
 
 ### The two selections that matter, in plain terms
 
@@ -46,10 +46,13 @@ The assignment version (CAA) transfers copyright to the project; this one does
 not. **Your copyright stays yours.** That was the part of the old promise worth
 keeping and it is kept.
 
-**Outbound option 5 is the only one that permits a commercial licence.** Harmony's
-five options run from "the original licences only" up to "any licence". Options 1
-through 4 restrict outbound licensing to open source licences and would make dual
-licensing impossible, so option 5 is not a preference here, it is the requirement.
+**Outbound option five is the only one that fits a commercial licence.** Harmony's
+five options run from "the original licences only" up to "any licence": option one
+keeps the original licences, option two adds a list fixed in advance, and options
+three and four add licences the OSI approves or the FSF recommends as copyleft. A
+commercial licence here is negotiated with each licensee rather than published as
+one text that could be put on a list, so option five is not a preference, it is
+the requirement.
 
 ## What this actually costs you
 
@@ -79,7 +82,7 @@ testing are all contributions that need no agreement at all.
 ## What has not changed
 
 - **Sign-off is still required.** The DCO has not been replaced by the CLA; the
-  CLA is in addition. Every commit still carries `Signed-off-by`.
+  CLA is in addition. Every commit in a contribution carries `Signed-off-by`.
 - **Copyright is still not assigned.** There is no CAA and none is planned.
 - **Nothing already contributed is affected.** This applies to contributions made
   after it was published. A CLA cannot reach backwards any more than a licence
@@ -91,7 +94,7 @@ testing are all contributions that need no agreement at all.
 Two things are deliberately unfinished, and a contributor asked to sign an
 unfinished agreement should be able to see that from here.
 
-- **Governing law (§5.1) is not set.** Harmony asks for the jurisdiction the
+- **Governing law (§6.1) is not set.** Harmony asks for the jurisdiction the
   project's holder is in, and that is a fact about the maintainer rather than
   something to be guessed at. Until it is filled in, the agreement is incomplete.
 - **This has not been reviewed by counsel.** Harmony's own adoption guidance says

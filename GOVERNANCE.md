@@ -194,9 +194,11 @@ The intention is to place Quilzo under a neutral non-profit. That is not
 possible yet, and the reasons are worth writing down so nobody has to rediscover
 them:
 
-- **Software Freedom Conservancy** requires "an existing, vibrant, diverse
-  community" and does not take projects under a year old. AGPL is fine with
-  them. This is the target, and the gate is community, not code.
+- **Software Freedom Conservancy** asks for "an existing, vibrant, diverse
+  community that develops and documents the software", and generally does not
+  take projects under development for less than a year. An OSI-approved licence
+  is mandatory, which the AGPL is. This is the target, and the gate is
+  community, not code.
 - **The Apache Software Foundation** is unavailable, and since September 2026 for
   a second and harder reason. The first stands: GPLv3-family licences are
   Category X under ASF policy, so going there means relicensing to Apache-2.0.
