@@ -146,7 +146,14 @@
       if (!asked) return;
       e.preventDefault();
       sending = true;
-      var go = function () { form.submit(); };
+      // Translating is a courtesy and the question is the point: a
+      // detector or translator that is still downloading its model, or
+      // never answers, must not keep the question from being asked. After
+      // a few seconds it goes as it was typed, and a translation finishing
+      // later changes nothing.
+      var sent = false;
+      var go = function () { if (sent) return; sent = true; form.submit(); };
+      setTimeout(function () { if (!sent) { put(trKey, null); go(); } }, 4000);
       Detector.create().then(function (d) { return d.detect(asked); }).then(function (found) {
         var top = found && found[0];
         var lang = top && top.confidence >= 0.6 ? base(top.detectedLanguage) : "";
@@ -157,6 +164,7 @@
           return Translator.create({ sourceLanguage: lang, targetLanguage: site }).then(function (t) {
             return t.translate(asked);
           }).then(function (text) {
+            if (sent) return;
             put(trKey, { lang: lang, asked: asked });
             box.value = text;
             go();
