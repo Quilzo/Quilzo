@@ -123,12 +123,16 @@ func programAgent(t *testing.T) string {
 // answerWhenAsked waits for a program's run to ask a person, and answers it
 // the way the run's page does.
 func answerWhenAsked(t *testing.T, root string, approve bool, by string) chan error {
+	return answerAgentWhenAsked(t, root, "coder", approve, by)
+}
+
+func answerAgentWhenAsked(t *testing.T, root, name string, approve bool, by string) chan error {
 	t.Helper()
 	done := make(chan error, 1)
 	go func() {
 		deadline := time.Now().Add(30 * time.Second)
 		for time.Now().Before(deadline) {
-			recs, _ := listAgentRuns(root, "coder", 0)
+			recs, _ := listAgentRuns(root, name, 0)
 			for _, r := range recs {
 				if w := r.Trace.Waiting; w != nil && w.Live {
 					_, err := continueAgentRun(context.Background(), root, r.ID,

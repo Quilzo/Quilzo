@@ -241,16 +241,22 @@ func (r Runner) holdFor(ctx context.Context, t *Trace, s *Session, w Pending) (b
 	v, err := r.Hold(hctx, w, func() { r.checkpoint(*t, s) })
 	cancel()
 	t.Waiting = nil
+	// The reason it waited goes with the refusal, so the program knows what
+	// a person was asked about and not only that they were.
+	because := ""
+	if w.Why != "" {
+		because = ": " + w.Why
+	}
 	switch {
 	case err != nil:
-		return false, fmt.Sprintf("%s waited for a person and was not decided: %v", what, err)
+		return false, fmt.Sprintf("%s waited for a person and was not decided (%v)%s", what, err, because)
 	case v.N != w.N:
 		return false, fmt.Sprintf("the answer was for step %d and this is step %d", v.N, w.N)
 	case !v.Approve:
 		if v.By != "" {
-			return false, v.By + " declined this"
+			return false, v.By + " declined this" + because
 		}
-		return false, "a person declined this"
+		return false, "a person declined this" + because
 	}
 	return true, ""
 }

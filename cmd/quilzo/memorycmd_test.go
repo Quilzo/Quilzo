@@ -118,9 +118,14 @@ func TestAnAgentRemembersForThePersonAndOnlyOnceAPersonConfirms(t *testing.T) {
 	}
 
 	// Now dana's runs recall it, and holding it, the run sends nothing out.
+	// The breaker holds the call for a person, who declines it here.
 	setCalls(t, root, `[{"tool":"quilzo_read","op":"recall","args":{"query":"spanish replies"}},
 		{"tool":"quilzo_write","op":"tool:lookup","args":{}}]`)
+	answered := answerAgentWhenAsked(t, root, "helper", false, "lee")
 	_, out, err = runAgentKeptBy(context.Background(), root, "helper", "reply to me", false, true, dana)
+	if aerr := <-answered; aerr != nil {
+		t.Fatalf("answering: %v", aerr)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

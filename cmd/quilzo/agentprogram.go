@@ -224,6 +224,28 @@ func startProgram(ctx context.Context, root string, m agent.Manifest, sess *agen
 		}
 		out, err := model.Complete(ctx, system, user)
 		return out, 0, 0, err
+	}, Chat: func(ctx context.Context, req assist.ChatRequest) (assist.ChatReply, error) {
+		if model == nil {
+			return assist.ChatReply{}, errors.New("no model is configured for this run: " + why)
+		}
+		if err := runModelGate(m, sess); err != nil {
+			return assist.ChatReply{}, err
+		}
+		type costed interface {
+			ChatCosted(ctx context.Context, req assist.ChatRequest) (assist.ChatReply, int64, error)
+		}
+		switch mm := model.(type) {
+		case costed:
+			r, cost, err := mm.ChatCosted(ctx, req)
+			sess.Tokens(r.Usage.In + r.Usage.Out)
+			sess.Charge(cost)
+			return r, err
+		case assist.Chatter:
+			r, err := mm.Chat(ctx, req)
+			sess.Tokens(r.Usage.In + r.Usage.Out)
+			return r, err
+		}
+		return assist.ChatReply{}, fmt.Errorf("%s takes a prompt, not a conversation with pictures or tools", model.Name())
 	}}
 	if err := p.serveUnix(filepath.Join(sockDir, "model.sock"), models); err != nil {
 		return fail(err)

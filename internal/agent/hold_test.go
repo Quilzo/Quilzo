@@ -60,7 +60,7 @@ func TestAHeldActionIsRefusedWhenDeclinedOrUndecided(t *testing.T) {
 		want string
 	}{
 		"declined":   {v: Verdict{Approve: false, By: "dana"}, want: "dana declined this"},
-		"undecided":  {err: errors.New("nobody decided within 10m0s"), want: "nobody decided within 10m0s"},
+		"undecided":  {err: errors.New("nobody decided within 10m0s"), want: "(nobody decided within 10m0s)"},
 		"wrong step": {v: Verdict{N: 7, Approve: true}, want: "answer was for step 7"},
 	} {
 		p := &scripted{plan: []Action{write}}
