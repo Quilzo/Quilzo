@@ -755,6 +755,7 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 			pend.Fields = readableInput(wt.Action.Input)
 		}
 		data["Pending"] = pend
+		data["Live"] = wt.Live
 		data["Asked"] = agoText(now.Sub(wt.Since))
 		data["Expired"] = now.Sub(wt.Since) > agent.PendingTTL
 	}

@@ -211,6 +211,48 @@ type Runner struct {
 	// durable.go.
 	Checkpoint func(Trace)
 	Pause      bool
+	// Hold waits, in this process, for a person to decide on an action that
+	// asks first, for a run that cannot be paused and picked up later: a
+	// program's, whose program is waiting on the call. beat keeps the run's
+	// record fresh while it waits. An error (nobody decided in time, the run
+	// was cancelled) refuses the action, with the reason. Nil refuses
+	// straight away, because there is nobody to ask.
+	Hold func(ctx context.Context, w Pending, beat func()) (Verdict, error)
+}
+
+// holdFor asks a person about an action while the run waits in this
+// process. It reports whether they approved it and, when not, why it is
+// refused. The run's record carries the question while it waits, marked
+// live, so the run's page and `quilzo agent approve` can answer it.
+func (r Runner) holdFor(ctx context.Context, t *Trace, s *Session, w Pending) (bool, string) {
+	what := from(w.Action)
+	if r.Hold == nil {
+		if w.Why != "" {
+			return false, w.Why
+		}
+		return false, fmt.Sprintf("%s asks a person first, and this run has nobody to ask", what)
+	}
+	w.Live = true
+	t.Waiting = &w
+	r.checkpoint(*t, s)
+	// No longer than the run may last: the program is waiting on this call
+	// inside a box whose clock does not stop for a person.
+	hctx, cancel := context.WithTimeout(ctx, time.Duration(s.Remaining().Duration))
+	v, err := r.Hold(hctx, w, func() { r.checkpoint(*t, s) })
+	cancel()
+	t.Waiting = nil
+	switch {
+	case err != nil:
+		return false, fmt.Sprintf("%s waited for a person and was not decided: %v", what, err)
+	case v.N != w.N:
+		return false, fmt.Sprintf("the answer was for step %d and this is step %d", v.N, w.N)
+	case !v.Approve:
+		if v.By != "" {
+			return false, v.By + " declined this"
+		}
+		return false, "a person declined this"
+	}
+	return true, ""
 }
 
 // ErrNoDecide is returned when a runner has no way to decide anything.
@@ -288,18 +330,20 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 		// reading.
 		if !approved && s.AsksFirst(action) && s.wouldAllow(action) {
 			if !r.Pause {
-				step.Why = fmt.Sprintf("%s asks a person first, and this run "+
-					"has nobody to ask", from(action))
-				t.Steps = append(t.Steps, step)
-				seen = append(seen, Observation{From: "quilzo",
-					Body: "refused: " + step.Why, Trusted: true})
-				r.checkpoint(t, s)
-				continue
+				w := Pending{N: turn, Action: action, Since: step.At}
+				if approved, step.Why = r.holdFor(ctx, &t, s, w); !approved {
+					t.Steps = append(t.Steps, step)
+					seen = append(seen, Observation{From: "quilzo",
+						Body: "refused: " + step.Why, Trusted: true})
+					r.checkpoint(t, s)
+					continue
+				}
+			} else {
+				t.Waiting = &Pending{N: turn, Action: action, Since: step.At}
+				t.Stopped = fmt.Sprintf("waiting for a person to decide on %s",
+					from(action))
+				break
 			}
-			t.Waiting = &Pending{N: turn, Action: action, Since: step.At}
-			t.Stopped = fmt.Sprintf("waiting for a person to decide on %s",
-				from(action))
-			break
 		}
 
 		// The exfiltration breaker: what this run holds in private, after
@@ -308,15 +352,18 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 		if !approved && s.wouldAllow(action) {
 			if why, breaks := s.Breaks(action); breaks {
 				if !r.Pause {
-					step.Why = why
-					t.Steps = append(t.Steps, step)
-					seen = append(seen, Observation{From: "quilzo", Body: "refused: " + why, Trusted: true})
-					r.checkpoint(t, s)
-					continue
+					w := Pending{N: turn, Action: action, Since: step.At, Why: why}
+					if approved, step.Why = r.holdFor(ctx, &t, s, w); !approved {
+						t.Steps = append(t.Steps, step)
+						seen = append(seen, Observation{From: "quilzo", Body: "refused: " + step.Why, Trusted: true})
+						r.checkpoint(t, s)
+						continue
+					}
+				} else {
+					t.Waiting = &Pending{N: turn, Action: action, Since: step.At, Why: why}
+					t.Stopped = "waiting for a person: " + why
+					break
 				}
-				t.Waiting = &Pending{N: turn, Action: action, Since: step.At, Why: why}
-				t.Stopped = "waiting for a person: " + why
-				break
 			}
 		}
 
