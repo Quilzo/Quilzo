@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/assistant"
-	"github.com/quilzo/quilzo/internal/throttle"
 )
 
 // An answer above the search results, from the site's own assistant.
@@ -89,12 +88,8 @@ func (st *Site) searchAnswer(r *http.Request, query string) map[string]any {
 		st.signal(ChatbotInjection, a.Name, r)
 		return nil
 	}
-	source := sourceOf(r)
-	if l := st.Assistants.Limit; l != nil {
-		if d := l.Check(throttle.Subject{Source: source}); !d.Allowed {
-			return nil // the results are still there; the answer can wait
-		}
-		l.Spend(throttle.Subject{Source: source})
+	if ok, _ := st.questionAllowed(r); !ok {
+		return nil // the results are still there; the answer can wait
 	}
 	idx, err := st.assistantIndex(a)
 	if err != nil {
@@ -110,7 +105,7 @@ func (st *Site) searchAnswer(r *http.Request, query string) map[string]any {
 	defer cancel()
 	ans, err := assistant.RespondTo(ctx, a, idx, m, query, "")
 	if st.Assistants.Audit != nil {
-		st.Assistants.Audit(a.Name, source, err == nil && !ans.Refused)
+		st.Assistants.Audit(a.Name, sourceOf(r), err == nil && !ans.Refused)
 	}
 	if err != nil || ans.Refused || len(ans.Kept) == 0 {
 		return nil

@@ -18,7 +18,6 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/handoff"
-	"github.com/quilzo/quilzo/internal/throttle"
 )
 
 // Talking to a person.
@@ -65,18 +64,13 @@ func (st *Site) handoffStore(a assistant.Assistant) (handoff.Store, bool) {
 // handoffAllowed spends from the same allowance as asking a question, so
 // talking to a person is not a way round the rate limit.
 func (st *Site) handoffAllowed(w http.ResponseWriter, r *http.Request) bool {
-	l := st.Assistants.Limit
-	if l == nil {
-		return true
-	}
-	sub := throttle.Subject{Source: sourceOf(r)}
-	if d := l.Check(sub); !d.Allowed {
-		w.Header().Set("Retry-After", strconv.Itoa(int(d.RetryAfter.Seconds())+1))
-		http.Error(w, "You have sent a lot in a short time. Please wait a "+
-			"moment and try again.", http.StatusTooManyRequests)
+	ok, wait := st.questionAllowed(r)
+	if !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		http.Error(w, "You have sent a lot in a short time. You can send again "+
+			inAbout(wait)+".", http.StatusTooManyRequests)
 		return false
 	}
-	l.Spend(sub)
 	return true
 }
 

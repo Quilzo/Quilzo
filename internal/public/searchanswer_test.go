@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/rate"
 	"github.com/quilzo/quilzo/internal/render"
-	"github.com/quilzo/quilzo/internal/throttle"
 )
 
 const answerLayout = `<html><body>{% if answer %}<section class="answer"><p>{{ answer.title }}</p>{% for a in answer.sentences %}<p>{{ a.text }}{% for c in a.cites %}<a href="{{ c.href }}">[{{ c.n }}]</a>{% end %}</p>{% end %}<a class="more" href="{{ answer.more }}">more</a></section>{% end %}<p>{{ search.count }} results</p></body></html>`
@@ -51,8 +51,7 @@ func TestASearchQuestionIsAnsweredAboveTheResults(t *testing.T) {
 // Search answers spend from the same budget as the conversation page.
 func TestSearchAnswersAreRateLimitedWithTheChatbot(t *testing.T) {
 	st := answeringSearchSite(t, shopBot)
-	pol := throttle.Default()
-	st.Assistants.Limit = throttle.New(pol)
+	st.Assistants.Questions = rate.PerHour(120, 20)
 	answered := 0
 	for i := 0; i < 60; i++ {
 		if strings.Contains(get(st, "/search?q=can%20I%20return%20opened%20ink%3f", nil).Body.String(), `class="answer"`) {
