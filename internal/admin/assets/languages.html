@@ -10,8 +10,8 @@ monolingual site is in and works perfectly well. Declaring one is what makes a
 second one possible.</p>
 {{if .CanWrite}}
 <form method="post" action="/languages/add" class="inline">
-  <label for="l-init">Default language {{template "req"}}</label>
-  <input id="l-init" name="locale" required spellcheck="false" placeholder="en">
+  <span class="pair"><label for="l-init">Default language {{template "req"}}</label>
+  <input id="l-init" name="locale" required spellcheck="false" placeholder="en"></span>
   <button type="submit">Set</button>
 </form>
 <p class="hint">Pages stay where they are. A second language is added under a
@@ -42,8 +42,8 @@ their names; every other language lives under its own prefix.</p>
 
 {{if .CanWrite}}
 <form method="post" action="/languages/add" class="inline">
-  <label for="l-add">Add a language {{template "req"}}</label>
-  <input id="l-add" name="locale" required spellcheck="false" placeholder="fr">
+  <span class="pair"><label for="l-add">Add a language {{template "req"}}</label>
+  <input id="l-add" name="locale" required spellcheck="false" placeholder="fr"></span>
   <button type="submit">Add</button>
 </form>
 {{end}}
@@ -98,10 +98,10 @@ their names; every other language lives under its own prefix.</p>
 {{if .CanWrite}}
 <h3>Record a translation</h3>
 <form method="post" action="/languages/translated" class="inline">
-  <label for="t-page">Page {{template "req"}}</label>
-  <input id="t-page" name="page" required spellcheck="false">
-  <label for="t-locale">Language {{template "req"}}</label>
-  <input id="t-locale" name="locale" required spellcheck="false">
+  <span class="pair"><label for="t-page">Page {{template "req"}}</label>
+  <input id="t-page" name="page" required spellcheck="false"></span>
+  <span class="pair"><label for="t-locale">Language {{template "req"}}</label>
+  <input id="t-locale" name="locale" required spellcheck="false"></span>
   <button type="submit">Record</button>
 </form>
 <p class="hint">

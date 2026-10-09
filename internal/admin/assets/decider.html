@@ -34,7 +34,7 @@
 </form>
 <form method="post" action="/decisions/remove">
   <input type="hidden" name="name" value="{{.D.Name}}">
-  <button type="submit" class="btn-danger">Remove {{.D.Title}}</button>
+  <button type="submit" class="btn-danger">Remove this decision<span class="visually-hidden">: {{.D.Title}}</span></button>
 </form>
 {{else}}
 <h2>Declaration</h2>

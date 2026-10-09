@@ -91,6 +91,7 @@ func (s *Server) handleIntegrations(w http.ResponseWriter, r *http.Request) {
 		"Formats": siem.Formats(),
 		"Hooks":   []ext.Hook{ext.OnValidate, ext.OnTransform, ext.OnPublish},
 	}
+	data["EventTypes"] = webhook.EventTypes
 
 	if s.Integrations.Webhooks != nil {
 		endpoints, deliveries, err := s.Integrations.Webhooks()

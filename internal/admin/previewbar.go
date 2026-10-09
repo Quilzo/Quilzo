@@ -235,6 +235,9 @@ const PreviewBarCSS = `
   --qz-accent:#0842a0;--qz-on-accent:#ffffff;--qz-link:#0842a0;
   font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   color:var(--qz-fg)}
+/* Room at the foot of the page for the pill, so the page's last lines can be
+   scrolled clear of it rather than read underneath it. */
+@supports selector(:popover-open){.qz-bar{display:block;height:64px}}
 @media (prefers-color-scheme:dark){.qz-bar{--qz-bg:#1e1f20;--qz-fg:#e3e3e3;
   --qz-muted:#c4c7c5;--qz-line:#444746;--qz-accent:#a8c7fa;--qz-on-accent:#062e6f;
   --qz-link:#a8c7fa}}

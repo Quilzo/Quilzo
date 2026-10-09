@@ -39,7 +39,8 @@ write.</p>
     <th scope="row">{{.Name}}
       <div class="hint">{{.Purpose}}</div></th>
     <td>{{.Kind}}</td>
-    <td>{{if .Endpoint}}<code>{{.Endpoint}}</code>{{else}}<code class="cmd">{{.Command}}</code>{{end}}
+    <td>{{if .Endpoint}}<code>{{.Where}}</code>{{else}}<code class="cmd">{{.Command}}</code>{{end}}
+      {{if .Reach}}<div class="hint">on your own network, inside {{range $i, $r := .Reach}}{{if $i}}, {{end}}<code>{{$r}}</code>{{end}}</div>{{end}}
       {{if .Writes}}<div class="hint warn">changes something on the far side</div>{{end}}</td>
     {{/*
       Named, never "everything it offers". This is the control that answers
@@ -130,16 +131,18 @@ write.</p>
 </div>
 {{end}}
 
-<form method="post" action="/integrations/webhook" class="inline">
-  <label for="w-url">Endpoint {{template "req"}}</label>
-  <input id="w-url" name="url" required spellcheck="false" size="36"
-         placeholder="https://example.org/hooks/quilzo">
-  <label for="w-types">Events</label>
-  <input id="w-types" name="types" placeholder="blank means all">
-  <label for="w-note">Note</label>
-  <input id="w-note" name="note">
-  <button type="submit">Add</button>
+<form method="post" action="/integrations/webhook" class="fieldrow">
+  <div class="field wide"><label for="w-url">Endpoint {{template "req"}}</label>
+    <input id="w-url" name="url" type="url" required spellcheck="false"
+           placeholder="https://example.org/hooks/quilzo"></div>
+  <div class="field"><label for="w-types">Events</label>
+    <input id="w-types" name="types" list="w-events" placeholder="all of them" aria-describedby="w-types-hint">
+    <datalist id="w-events">{{range .EventTypes}}<option value="{{.}}">{{end}}</datalist></div>
+  <div class="field"><label for="w-note">Note</label>
+    <input id="w-note" name="note" placeholder="Who receives it"></div>
+  <button type="submit">Add endpoint</button>
 </form>
+<p class="hint" id="w-types-hint">Events, separated by commas: {{range $i, $e := .EventTypes}}{{if $i}}, {{end}}<code>{{$e}}</code>{{end}}. Leave it empty for all of them.</p>
 <p class="hint">
   https only. Over cleartext the payload is readable and the signature is
   replayable by anyone on the path, so it is refused rather than warned about.
@@ -227,8 +230,7 @@ write.</p>
       <input id="x-fields" name="fields" placeholder="title, body">
       <span class="hint">Comma separated. Blank means nothing — not
         everything.</span></p>
-    <p><label for="x-opt">Carry on if it fails</label>
-      <input id="x-opt" type="checkbox" name="optional" value="1">
+    <p><input id="x-opt" type="checkbox" name="optional" value="1"> <label for="x-opt">Carry on if it fails</label>
       <span class="hint">Off means a failure blocks the write. An extension
         registered to validate content exists to refuse some of it, so if it
         crashes, nothing validated that page.</span></p>
@@ -270,12 +272,11 @@ write.</p>
 
 <h2>Send the audit log to a SIEM</h2>
 <form method="post" action="/integrations/siem" class="inline">
-  <label for="s-format">Format</label>
+  <span class="pair"><label for="s-format">Format</label>
   <select id="s-format" name="format">
     {{range .Formats}}<option value="{{.}}">{{.}}</option>{{end}}
-  </select>
-  <label for="s-reveal">Show identifiers</label>
-  <input id="s-reveal" type="checkbox" name="reveal" value="1">
+  </select></span>
+  <span class="pair check"><input id="s-reveal" type="checkbox" name="reveal" value="1"> <label for="s-reveal">Show identifiers</label></span>
   <button type="submit">Export</button>
 </form>
 <p class="hint">

@@ -144,36 +144,35 @@ of schema validators, and content does not need them.</p>
       <input id="t-alt" name="alt_for" placeholder="hero">
       <span class="hint">Names the field this one describes, so the
         accessibility check knows the image has a description.</span></p>
-    <p><label for="t-req">Required</label>
-      <input id="t-req" type="checkbox" name="required" value="true"></p>
+    <p><input id="t-req" type="checkbox" name="required" value="true"> <label for="t-req">Required</label></p>
   </div>
   <button type="submit">Save field</button>
 </form>
 
 <h2>What must satisfy what</h2>
 <form method="post" action="/types/bind" class="inline">
-  <label for="b-page">Page {{template "req"}}</label>
-  <input id="b-page" name="page" required spellcheck="false" list="pagelist">
+  <span class="pair"><label for="b-page">Page {{template "req"}}</label>
+  <input id="b-page" name="page" required spellcheck="false" list="pagelist"></span>
   <datalist id="pagelist">
     {{range .Unbound}}<option value="{{.}}"></option>{{end}}
   </datalist>
-  <label for="b-type">Type</label>
+  <span class="pair"><label for="b-type">Type</label>
   <select id="b-type" name="type">
     {{range .Rows}}<option value="{{.Type.Name}}">{{.Type.Name}}</option>{{end}}
-  </select>
+  </select></span>
   <button type="submit">Bind</button>
 </form>
 <form method="post" action="/types/bind" class="inline">
   <input type="hidden" name="unbind" value="1">
-  <label for="u-page">Stop requiring a type of {{template "req"}}</label>
-  <input id="u-page" name="page" required spellcheck="false">
+  <span class="pair"><label for="u-page">Stop requiring a type of {{template "req"}}</label>
+  <input id="u-page" name="page" required spellcheck="false"></span>
   <button type="submit">Unbind</button>
 </form>
 
 <h2>Delete a type</h2>
 <form method="post" action="/types/delete" class="inline">
-  <label for="d-type">Type {{template "req"}}</label>
-  <input id="d-type" name="type" required spellcheck="false">
+  <span class="pair"><label for="d-type">Type {{template "req"}}</label>
+  <input id="d-type" name="type" required spellcheck="false"></span>
   <button type="submit" class="danger">Delete</button>
 </form>
 <p class="hint">
