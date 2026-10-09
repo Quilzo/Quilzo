@@ -15,10 +15,10 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/rate"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
-	"github.com/quilzo/quilzo/internal/throttle"
 )
 
 func askSite(t *testing.T, a ...assistant.Assistant) (*Site, *[]bool) {
@@ -116,15 +116,34 @@ func TestWhatAVisitorTypesIsEscaped(t *testing.T) {
 	}
 }
 
-func TestQuestionsAreRateLimited(t *testing.T) {
+// A conversation is not held back; a script on repeat is, and is told
+// when it may ask again. The sign-in throttle this used to share made the
+// sixth question in an hour wait, and the fifteenth wait minutes.
+func TestQuestionsComeAtAConversationsPace(t *testing.T) {
 	st, _ := askSite(t, shopBot)
-	st.Assistants.Limit = throttle.New(throttle.Default())
-	var last int
+	st.Assistants.Questions = rate.PerHour(120, 20)
 	for i := 0; i < 20; i++ {
-		last = askPost(st, "help", "returns").Code
+		if code := askPost(st, "help", "returns").Code; code != http.StatusOK {
+			t.Fatalf("question %d of a conversation answered %d", i+1, code)
+		}
 	}
-	if last != http.StatusTooManyRequests {
-		t.Fatalf("twenty questions from one address, last answered %d", last)
+	w := askPost(st, "help", "returns")
+	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" {
+		t.Fatalf("the 21st question at once answered %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "You can ask again in about") {
+		t.Fatalf("the visitor is not told when they can ask again: %s", w.Body.String())
+	}
+}
+
+func TestAWaitIsSaidAsAPersonWouldSayIt(t *testing.T) {
+	for d, want := range map[time.Duration]string{
+		500 * time.Millisecond: "in a second", 25 * time.Second: "in about 25 seconds",
+		70 * time.Second: "in about a minute", 5 * time.Minute: "in about 5 minutes",
+	} {
+		if got := inAbout(d); got != want {
+			t.Errorf("%s: %q, want %q", d, got, want)
+		}
 	}
 }
 

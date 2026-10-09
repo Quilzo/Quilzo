@@ -14,7 +14,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/handoff"
-	"github.com/quilzo/quilzo/internal/throttle"
+	"github.com/quilzo/quilzo/internal/rate"
 )
 
 var handingBot = assistant.Assistant{Name: "help", Title: "Ask the shop",
@@ -217,8 +217,7 @@ func TestAVisitorCanEndTheConversation(t *testing.T) {
 
 func TestTalkingToAPersonSpendsTheSameAllowanceAsAsking(t *testing.T) {
 	st, store, _ := handoffSite(t)
-	st.Assistants.Limit = throttle.New(throttle.Policy{On: true, After: 2,
-		Ceiling: 3, Base: time.Minute, Max: time.Hour, Window: time.Hour})
+	st.Assistants.Questions = rate.PerHour(1, 3)
 	codes := []int{}
 	for i := 0; i < 5; i++ {
 		w := send(st, http.MethodPost, "/ask/help/handoff", url.Values{"message": {"hi"}})

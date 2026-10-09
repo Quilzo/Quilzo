@@ -14,6 +14,7 @@ import (
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/httpsig"
+	"github.com/quilzo/quilzo/internal/rate"
 	"io"
 	"net/http"
 	"os"
@@ -188,7 +189,7 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 			m, _ := assistantModelAt(root, a)
 			return m
 		},
-		Limit: throttle.New(throttlePolicy(mustConfig(root))),
+		Questions: chatbotQuestions(mustConfig(root)),
 		Audit: func(name, source string, answered bool) {
 			outcome := audit.Success
 			if !answered {
@@ -734,4 +735,10 @@ func fediverseFetcher(keyID string, signer crypto.Signer) func(string) ([]byte, 
 		}
 		return res.Body, nil
 	}
+}
+
+// chatbotQuestions is the chatbots' allowance per visitor, from the
+// configuration (chatbot.questions.*).
+func chatbotQuestions(c *config.Config) *rate.Limiter {
+	return rate.PerHour(c.Int("chatbot.questions.per_hour"), c.Int("chatbot.questions.burst"))
 }

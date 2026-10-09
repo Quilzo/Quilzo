@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"html/template"
 	"net/http"
 	"regexp"
@@ -19,7 +20,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/handoff"
-	"github.com/quilzo/quilzo/internal/throttle"
+	"github.com/quilzo/quilzo/internal/rate"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
@@ -54,10 +55,14 @@ type Assistants struct {
 	// Document reads a media library file an assistant was given. Nil means
 	// assistants answer from pages only.
 	Document func(id string) (name, format string, body []byte, err error)
-	// Limit bounds questions per source. A question can cost a model call;
-	// an unbounded public endpoint that spends somebody's model budget is a
-	// way to spend it.
-	Limit *throttle.Limiter
+	// Questions bounds how often a visitor may ask: a burst at once, then a
+	// steady pace (chatbot.questions.*). A question can cost a model call,
+	// and an unbounded public endpoint is a way to spend somebody's model
+	// budget; but a conversation is a person asking on purpose and often,
+	// so this is a rate, not the sign-in throttle's lengthening penalty.
+	// Counted per signed-in member where there is one — a team behind one
+	// office address is several people — and per address otherwise.
+	Questions *rate.Limiter
 	// Audit records that a question was asked, never what.
 	Audit func(name, source string, answered bool)
 	// Handoff keeps conversations an assistant passed to a person. Nil means
@@ -195,17 +200,12 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 	a assistant.Assistant, view *askView) bool {
 
-	source := sourceOf(r)
-	if l := st.Assistants.Limit; l != nil {
-		if d := l.Check(throttle.Subject{Source: source}); !d.Allowed {
-			secs := int(d.RetryAfter.Seconds()) + 1
-			w.Header().Set("Retry-After", strconv.Itoa(secs))
-			view.Problem = "You have asked a lot of questions in a short " +
-				"time. Please wait a moment and try again."
-			st.renderAsk(w, r, *view, http.StatusTooManyRequests)
-			return false
-		}
-		l.Spend(throttle.Subject{Source: source})
+	if ok, wait := st.questionAllowed(r); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		view.Problem = "You have asked a lot of questions in a short time. " +
+			"You can ask again " + inAbout(wait) + "."
+		st.renderAsk(w, r, *view, http.StatusTooManyRequests)
+		return false
 	}
 	if LooksLikeInjection(view.Question) {
 		st.signal(ChatbotInjection, a.Name, r)
@@ -242,7 +242,7 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 		return false
 	}
 	if st.Assistants.Audit != nil {
-		st.Assistants.Audit(a.Name, source, !ans.Refused)
+		st.Assistants.Audit(a.Name, sourceOf(r), !ans.Refused)
 	}
 	if !ans.Refused {
 		st.convert(r, "chatbot:"+a.Name)
@@ -812,3 +812,31 @@ func allowFraming(h http.Header, origins []string, self bool) {
 }
 
 var reFrameAncestors = regexp.MustCompile(`frame-ancestors[^;]*`)
+
+// questionAllowed spends one question from the visitor's allowance: the
+// signed-in member's when there is one, the address's otherwise.
+func (st *Site) questionAllowed(r *http.Request) (bool, time.Duration) {
+	l := st.Assistants.Questions
+	if l == nil {
+		return true, 0
+	}
+	key := "a:" + sourceOf(r)
+	if m, ok := st.signedIn(r); ok && m.ID != "" {
+		key = "m:" + m.ID
+	}
+	return l.Allow(key, time.Now())
+}
+
+// inAbout is a wait as a visitor reads it.
+func inAbout(d time.Duration) string {
+	switch s := int(d.Round(time.Second).Seconds()); {
+	case s <= 1:
+		return "in a second"
+	case s < 60:
+		return fmt.Sprintf("in about %d seconds", s)
+	case s < 120:
+		return "in about a minute"
+	default:
+		return fmt.Sprintf("in about %d minutes", (s+59)/60)
+	}
+}

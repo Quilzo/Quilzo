@@ -265,6 +265,27 @@ var settings = []Setting{
 
 	// -- the public site ------------------------------------------------------
 	{
+		Key: "chatbot.questions.per_hour", Kind: Int, Default: "120",
+		Summary:  "how many questions a visitor may ask a chatbot in an hour, at a steady pace",
+		Controls: []string{"SC-5"},
+		Why: "One every thirty seconds on average, after the burst below: a person in a " +
+			"conversation is never held back, and a script asking on repeat is. Counted " +
+			"per signed-in member, or per address for visitors who are not, so an office " +
+			"behind one address shares it — raise it for a site whose visitors are mostly " +
+			"behind one network. The model budget on the Models screen is what caps the cost.",
+		Weaker: atMost(1200, "%s questions an hour per visitor lets one script spend a "+
+			"model budget quickly"),
+	},
+	{
+		Key: "chatbot.questions.burst", Kind: Int, Default: "20",
+		Summary:  "how many questions a visitor may ask at once before the hourly pace applies",
+		Controls: []string{"SC-5"},
+		Why: "Twenty: enough for a conversation that comes in a rush of follow-ups, " +
+			"without letting a script spend an hour's allowance in a second.",
+		Weaker: atMost(200, "a burst of %s questions lets one script spend a model "+
+			"budget in seconds"),
+	},
+	{
 		Key: "site.webmcp", Kind: Bool, Default: "true",
 		Summary: "mark the site's search, chatbots and forms as tools a visitor's browser agent can use",
 		Why: "WebMCP: attributes on the forms the site already has, saying what " +
