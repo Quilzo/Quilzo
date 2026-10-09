@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/mcp"
 )
 
@@ -90,42 +91,37 @@ type Models struct {
 	// Complete answers a conversation flattened to a system prompt and the
 	// rest, with the tokens the provider reported.
 	Complete func(ctx context.Context, system, user string) (text string, in, out int, err error)
+	// Chat answers a whole conversation: pictures, the tools offered and the
+	// tool the model chose. A program that looks at a screen, or an agent
+	// framework that calls tools, needs it; a conversation that is only text
+	// still goes through Complete. Nil refuses pictures and tools, saying
+	// so, rather than dropping them and answering something else.
+	Chat func(ctx context.Context, req assist.ChatRequest) (assist.ChatReply, error)
 	// Name is the model the box is told it is talking to.
 	Name string
 }
 
-type chatMessage struct {
-	Role    string          `json:"role"`
-	Content json.RawMessage `json:"content"`
-}
-
 type chatRequest struct {
-	Model    string        `json:"model"`
-	Messages []chatMessage `json:"messages"`
-	Stream   bool          `json:"stream"`
+	Model      string               `json:"model"`
+	Messages   []assist.ChatMessage `json:"messages"`
+	Tools      []assist.ChatTool    `json:"tools"`
+	ToolChoice json.RawMessage      `json:"tool_choice"`
+	MaxTokens  int                  `json:"max_tokens"`
+	Stream     bool                 `json:"stream"`
 }
 
-// text is a message's content: a string, or the parts a newer client
-// sends, of which the text ones are kept.
-func (m chatMessage) text() string {
-	var s string
-	if json.Unmarshal(m.Content, &s) == nil {
-		return s
+// whole reports whether a request needs the conversation as it is: it
+// carries a picture, offers a tool, or continues one.
+func (r chatRequest) whole() bool {
+	if len(r.Tools) > 0 {
+		return true
 	}
-	var parts []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	if json.Unmarshal(m.Content, &parts) == nil {
-		var b strings.Builder
-		for _, p := range parts {
-			if p.Type == "text" {
-				b.WriteString(p.Text)
-			}
+	for _, m := range r.Messages {
+		if m.Images() > 0 || len(m.ToolCalls) > 0 || m.Role == "tool" {
+			return true
 		}
-		return b.String()
 	}
-	return ""
+	return false
 }
 
 func (h *Models) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -149,36 +145,92 @@ func (h *Models) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req chatRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<20)).Decode(&req); err != nil {
+	// Room for a few screens: a picture is a few hundred kilobytes once
+	// encoded, and assist.ChatRequest.Check bounds how many there may be.
+	if err := json.NewDecoder(io.LimitReader(r.Body, 24<<20)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "the request is not a chat completion: "+err.Error())
 		return
 	}
-	var system, rest strings.Builder
-	for _, m := range req.Messages {
-		t := m.text()
-		if m.Role == "system" || m.Role == "developer" {
-			system.WriteString(t + "\n")
-			continue
+	var text, finish string
+	var calls []assist.ToolCall
+	var in, out int
+	if req.whole() {
+		if h.Chat == nil {
+			writeError(w, http.StatusBadRequest, "this run's model takes text only: pictures and tools are not passed on")
+			return
 		}
-		fmt.Fprintf(&rest, "%s: %s\n", m.Role, t)
+		creq := assist.ChatRequest{Messages: req.Messages, Tools: req.Tools, MaxTokens: req.MaxTokens}
+		if len(req.ToolChoice) > 0 {
+			// A choice naming one function is read as "required", which
+			// is what it asks for in every case this endpoint can honour.
+			var s string
+			if json.Unmarshal(req.ToolChoice, &s) == nil {
+				creq.ToolChoice = s
+			} else {
+				creq.ToolChoice = "required"
+			}
+		}
+		if err := creq.Check(); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		reply, err := h.Chat(r.Context(), creq)
+		if err != nil {
+			writeError(w, http.StatusTooManyRequests, err.Error())
+			return
+		}
+		text, calls, finish = reply.Message.Text(), reply.Message.ToolCalls, reply.Finish
+		in, out = reply.Usage.In, reply.Usage.Out
+	} else {
+		var system, rest strings.Builder
+		for _, m := range req.Messages {
+			t := m.Text()
+			if m.Role == "system" || m.Role == "developer" {
+				system.WriteString(t + "\n")
+				continue
+			}
+			fmt.Fprintf(&rest, "%s: %s\n", m.Role, t)
+		}
+		if rest.Len() == 0 {
+			writeError(w, http.StatusBadRequest, "a conversation needs at least one message that is not a system prompt")
+			return
+		}
+		var err error
+		if text, in, out, err = h.Complete(r.Context(), system.String(), rest.String()); err != nil {
+			writeError(w, http.StatusTooManyRequests, err.Error())
+			return
+		}
 	}
-	if rest.Len() == 0 {
-		writeError(w, http.StatusBadRequest, "a conversation needs at least one message that is not a system prompt")
-		return
-	}
-	text, in, out, err := h.Complete(r.Context(), system.String(), rest.String())
-	if err != nil {
-		writeError(w, http.StatusTooManyRequests, err.Error())
-		return
+	if finish == "" {
+		finish = "stop"
+		if len(calls) > 0 {
+			finish = "tool_calls"
+		}
 	}
 	id := fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano())
 	usage := map[string]int{"prompt_tokens": in, "completion_tokens": out, "total_tokens": in + out}
+	message := map[string]any{"role": "assistant", "content": text}
+	if len(calls) > 0 {
+		message["tool_calls"] = calls
+		if text == "" {
+			message["content"] = nil
+		}
+	}
 	if req.Stream {
 		// The whole answer in one chunk: honest about having it all at once,
-		// and enough for every client that asked for a stream.
+		// and enough for every client that asked for a stream. A stream's
+		// tool calls carry their position.
+		delta := map[string]any{"role": "assistant", "content": message["content"]}
+		if len(calls) > 0 {
+			indexed := make([]map[string]any, len(calls))
+			for i, c := range calls {
+				indexed[i] = map[string]any{"index": i, "id": c.ID, "type": c.Type, "function": c.Function}
+			}
+			delta["tool_calls"] = indexed
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		chunk := map[string]any{"id": id, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": name,
-			"choices": []any{map[string]any{"index": 0, "delta": map[string]any{"role": "assistant", "content": text}, "finish_reason": "stop"}},
+			"choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}},
 			"usage":   usage}
 		b, _ := json.Marshal(chunk)
 		fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", b)
@@ -187,8 +239,7 @@ func (h *Models) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "object": "chat.completion", "created": time.Now().Unix(),
 		"model": name, "usage": usage,
-		"choices": []any{map[string]any{"index": 0, "finish_reason": "stop",
-			"message": map[string]any{"role": "assistant", "content": text}}}})
+		"choices": []any{map[string]any{"index": 0, "finish_reason": finish, "message": message}}})
 }
 
 func writeError(w http.ResponseWriter, code int, msg string) {
