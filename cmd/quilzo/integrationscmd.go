@@ -104,7 +104,10 @@ func integrationsList(root string) error {
 		fmt.Printf("%s%s%s  %s  %s\n", bold, in.Name, reset, in.Kind, state)
 		fmt.Printf("  %s%s%s\n", dim, in.Purpose, reset)
 		if in.Endpoint != "" {
-			fmt.Printf("  reaches %s\n", in.Endpoint)
+			fmt.Printf("  reaches %s\n", in.Where())
+		}
+		if len(in.Reach) > 0 {
+			fmt.Printf("  %son your own network, inside %s%s\n", yellow, strings.Join(in.Reach, ", "), reset)
 		}
 		fmt.Printf("  may call %s\n", strings.Join(in.Uses, ", "))
 		if in.Writes {

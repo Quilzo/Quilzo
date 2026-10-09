@@ -264,3 +264,59 @@ func TestAGatewayPolicyMeansWhatItSays(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+// A server inside the network is declared with its port, its path and the
+// range it is in; each is checked for what it can mean.
+func TestAServerOnTheOwnNetworkIsDeclaredNarrowly(t *testing.T) {
+	in := mcpIntegration()
+	in.Endpoint, in.Port, in.Path = "tools.corp.example", 8443, "/mcp"
+	in.Reach = []string{"10.20.0.0/16", "10.30.4.5"}
+	if err := in.Validate(); err != nil {
+		t.Fatalf("a narrow declaration was refused: %v", err)
+	}
+	if got, want := in.URL(), "https://tools.corp.example:8443/mcp"; got != want {
+		t.Errorf("URL %q, want %q", got, want)
+	}
+
+	for name, change := range map[string]func(*Integration){
+		"metadata":    func(in *Integration) { in.Reach = []string{"169.254.169.254/32"} },
+		"all of it":   func(in *Integration) { in.Reach = []string{"0.0.0.0/0"} },
+		"public":      func(in *Integration) { in.Reach = []string{"8.8.8.0/24"} },
+		"not a range": func(in *Integration) { in.Reach = []string{"corp"} },
+		"too many": func(in *Integration) {
+			in.Reach = strings.Split("10.0.0.0/24 10.0.1.0/24 10.0.2.0/24 10.0.3.0/24 10.0.4.0/24 10.0.5.0/24 10.0.6.0/24 10.0.7.0/24 10.0.8.0/24", " ")
+		},
+		"port":     func(in *Integration) { in.Port = 70000 },
+		"query":    func(in *Integration) { in.Path = "/mcp?x=1" },
+		"escape":   func(in *Integration) { in.Path = "/m%63p" },
+		"climbs":   func(in *Integration) { in.Path = "/a/../admin" },
+		"no slash": func(in *Integration) { in.Path = "mcp" },
+		"private, undeclared": func(in *Integration) {
+			in.Endpoint, in.Reach = "10.20.1.2", nil
+		},
+		"metadata literal": func(in *Integration) {
+			in.Endpoint, in.Reach = "169.254.169.254", []string{"10.0.0.0/8"}
+		},
+	} {
+		bad := mcpIntegration()
+		change(&bad)
+		if err := bad.Validate(); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+
+	lit := mcpIntegration()
+	lit.Endpoint, lit.Reach = "10.20.1.2", []string{"10.20.0.0/16"}
+	if err := lit.Validate(); err != nil {
+		t.Errorf("a private address inside its declared range was refused: %v", err)
+	}
+	if got := mcpIntegration().URL(); got != "https://mcp.tracker.example.com/" {
+		t.Errorf("a plain declaration's URL is %q", got)
+	}
+	if got := mcpIntegration().Where(); got != "mcp.tracker.example.com" {
+		t.Errorf("a plain declaration reads as %q", got)
+	}
+	if got := in.Where(); got != "tools.corp.example:8443/mcp" {
+		t.Errorf("a declaration inside the network reads as %q", got)
+	}
+}
