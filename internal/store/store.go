@@ -50,7 +50,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/vault"
 	"sync"
@@ -490,7 +492,109 @@ func (s *Store) SetRef(name, oid string) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return writeAtomic(path, []byte(oid), 0o600, true)
+	previous := ""
+	if b, err := os.ReadFile(path); err == nil {
+		previous = strings.TrimSpace(string(b))
+	}
+	if err := writeAtomic(path, []byte(oid), 0o600, true); err != nil {
+		return err
+	}
+	if previous == oid {
+		return nil
+	}
+	if err := s.appendRefLog(name, previous, oid); err != nil {
+		return fmt.Errorf("%s now points at %s and the record of it could not be written: %w",
+			name, oid[:12], err)
+	}
+	return nil
+}
+
+// The record of where each ref has pointed.
+//
+// A ref says where it points now and nothing about where it pointed before.
+// "Go back to the previous version" was therefore worked out from the commit
+// history, where every save to the draft is a commit too: going back one
+// step from what was live landed on a save nobody had published, and putting
+// it live that way skipped every check publishing makes. So each move is
+// written down, one line per move, and going back means going back along
+// this record.
+//
+// Written after the ref, so a crash between the two leaves a move the
+// record does not know about, which fails closed: a version the record does
+// not name is one nobody can go back to without publishing it. A store from
+// before the record existed starts it, at its first move, with the commit
+// the ref pointed at until then.
+
+// RefEntry is one recorded move.
+type RefEntry struct {
+	Commit string
+	At     time.Time
+}
+
+func (s *Store) refLogPath(name string) (string, error) {
+	if !reSegment.MatchString(name) {
+		return "", fmt.Errorf("%q is not a usable ref name", name)
+	}
+	return filepath.Join(s.root, "reflogs", name), nil
+}
+
+// appendRefLog records a move. Held lock.
+func (s *Store) appendRefLog(name, previous, oid string) error {
+	path, err := s.refLogPath(name)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	var lines string
+	if _, err := os.Stat(path); os.IsNotExist(err) && previous != "" && reID.MatchString(previous) {
+		lines = previous + " 0\n"
+	}
+	lines += fmt.Sprintf("%s %d\n", oid, time.Now().Unix())
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(lines); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// RefLog is every commit a ref has pointed at since the store began keeping
+// the record, oldest first. A ref that has not moved since then has none.
+// An entry carried over from before the record has no time.
+func (s *Store) RefLog(name string) ([]RefEntry, error) {
+	path, err := s.refLogPath(name)
+	if err != nil {
+		return nil, err
+	}
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []RefEntry
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) != 2 || !reID.MatchString(f[0]) {
+			continue
+		}
+		e := RefEntry{Commit: f[0]}
+		if sec, err := strconv.ParseInt(f[1], 10, 64); err == nil && sec > 0 {
+			e.At = time.Unix(sec, 0).UTC()
+		}
+		out = append(out, e)
+	}
+	return out, nil
 }
 
 // GetRef returns what a ref points at, or "" if it does not exist.

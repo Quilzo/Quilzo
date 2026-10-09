@@ -1,7 +1,9 @@
 {{template "head" .}}
 <h1>History</h1>
-<p>Every version is still stored. Rolling back moves a pointer, so it cannot
-half-complete and the version you leave stays available.</p>
+<p>Every version is still stored. Going back returns to a version that was
+live before, by moving a pointer, so it cannot half-complete and the version
+you leave stays available. A version that was saved and never published goes
+live through <a href="/review">Review</a>, where it is checked.</p>
 
 <div class="table-wrap">
 <table>
@@ -17,10 +19,11 @@ half-complete and the version you leave stays available.</p>
       <th scope="row"><code>{{.Short}}</code></th>
       <td>{{.Message}}</td>
       <td>{{.Author}}</td>
-      <td>{{if .Live}}<span class="tag tag-ok">live</span>{{else}}<span class="help">—</span>{{end}}</td>
+      <td>{{if .Live}}<span class="tag tag-ok">live</span>{{else if .WasLive}}<span class="tag">was live</span>{{else}}<span class="help">—</span>{{end}}</td>
       {{if $.CanRollback}}
       <td>
         {{if .Live}}<span class="help">current</span>
+        {{else if not .WasLive}}<span class="help">never published</span>
         {{else}}
         <form method="post" action="/rollback" class="inline">
           <input type="hidden" name="commit" value="{{.ID}}">

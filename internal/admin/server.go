@@ -3317,7 +3317,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 
 	type entry struct {
 		ID, Short, Message, Author string
-		Live                       bool
+		Live, WasLive              bool
 	}
 	var entries []entry
 	hist, err := s.Store.History(head, 30)
@@ -3325,10 +3325,15 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	pubs, _ := site.Publications(s.Store)
+	was := map[string]bool{}
+	for _, c := range pubs {
+		was[c] = true
+	}
 	for _, h := range hist {
 		entries = append(entries, entry{
 			ID: h.ID, Short: h.ID[:12], Message: h.Commit.Message,
-			Author: h.Commit.Author, Live: h.ID == live,
+			Author: h.Commit.Author, Live: h.ID == live, WasLive: was[h.ID],
 		})
 	}
 	s.render(w, r, "history.html", map[string]any{
@@ -3353,6 +3358,20 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 	target := r.FormValue("commit")
 	if target == "" {
 		http.Error(w, "no commit given", http.StatusBadRequest)
+		return
+	}
+	// Only back to a version that was live. Any other commit is a draft
+	// nobody published, and putting it live from here would skip every check
+	// and approval publishing makes.
+	if !site.WasLive(s.Store, target) {
+		s.audit("rollback", "/", map[string]string{"by": p.Name, "commit": shortHash(target),
+			"outcome": "denied", "reason": "never live"})
+		w.WriteHeader(http.StatusConflict)
+		s.render(w, r, "message.html", map[string]any{
+			"Title": "Not rolled back", "Principal": p, "Heading": "That version was never live",
+			"Body": "Going back only returns to a version the public has already seen. " +
+				"This one was saved and never published, so it goes through Review, where it is checked.",
+		})
 		return
 	}
 	pub, err := site.Publish(s.Store, target)

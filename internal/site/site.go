@@ -364,7 +364,11 @@ func publishLocked(s *store.Store, commitID string) (Publication, error) {
 	return Publication{Published: target, Previous: previous, Changes: changes}, nil
 }
 
-// Rollback walks live back along its own history.
+// Rollback walks live back along its own history: the versions that were
+// live, in the order they first were, as the store's record of the live ref
+// has them. Not the commit history, where every save to the draft is a
+// commit: going back along that put saves live that nobody had published,
+// past every check publishing makes.
 //
 // Not a restore. The commit being returned to was never removed, so this is a
 // pointer going back to an object that has been sitting there the whole time.
@@ -384,16 +388,26 @@ func rollbackLocked(s *store.Store, steps int) (Publication, error) {
 	if current == "" {
 		return Publication{}, fmt.Errorf("nothing is live")
 	}
-	hist, err := s.History(current, steps+1)
+	if steps < 1 {
+		return Publication{}, fmt.Errorf("go back at least one version")
+	}
+	pubs, err := Publications(s)
 	if err != nil {
 		return Publication{}, err
 	}
-	if len(hist) <= steps {
-		return Publication{}, fmt.Errorf(
-			"cannot go back %d: only %d earlier commit(s) exist on this line",
-			steps, len(hist)-1)
+	at := len(pubs)
+	for i, p := range pubs {
+		if p == current {
+			at = i
+		}
 	}
-	target := hist[steps].ID
+	if at-steps < 0 {
+		return Publication{}, fmt.Errorf(
+			"cannot go back %d: %d earlier version(s) are recorded as having been live. "+
+				"An older version can still be published, with every check: quilzo publish COMMIT",
+			steps, at)
+	}
+	target := pubs[at-steps]
 	changes, err := Diff(s, current, target)
 	if err != nil {
 		return Publication{}, err
@@ -402,6 +416,42 @@ func rollbackLocked(s *store.Store, steps int) (Publication, error) {
 		return Publication{}, err
 	}
 	return Publication{Published: target, Previous: current, Changes: changes}, nil
+}
+
+// Publications are the versions that have been live, each once, in the order
+// they first were, as far as the store's record of the live ref goes back.
+func Publications(s *store.Store) ([]string, error) {
+	log, err := s.RefLog(RefLive)
+	if err != nil {
+		return nil, fmt.Errorf("the record of what has been live cannot be read: %w", err)
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, e := range log {
+		if !seen[e.Commit] {
+			seen[e.Commit] = true
+			out = append(out, e.Commit)
+		}
+	}
+	if cur := s.GetRef(RefLive); cur != "" && !seen[cur] {
+		out = append(out, cur)
+	}
+	return out, nil
+}
+
+// WasLive reports whether a commit has been live, as far as the record goes:
+// the one version it is safe to put live again without publishing it.
+func WasLive(s *store.Store, commit string) bool {
+	pubs, err := Publications(s)
+	if err != nil {
+		return false
+	}
+	for _, p := range pubs {
+		if p == commit {
+			return true
+		}
+	}
+	return false
 }
 
 // Conflict is a write refused because the draft moved underneath it.
