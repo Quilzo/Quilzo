@@ -102,6 +102,7 @@
 <form method="post" action="/assist/accept">
   <input type="hidden" name="proposal" value="{{.Serialised}}">
   <input type="hidden" name="model" value="{{.Model}}">
+  <input type="hidden" name="seal" value="{{.Seal}}">
   <p><label for="a-over">Replace pages that already exist</label>
     <input id="a-over" type="checkbox" name="overwrite" value="1"></p>
   <button type="submit">Accept into the draft</button>

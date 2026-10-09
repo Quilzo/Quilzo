@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -159,8 +160,10 @@ func TestAcceptingAProposalChecksEveryPageItNames(t *testing.T) {
 			return nil
 		},
 	}
+	proposal := `{"pages":{"about":{"title":"T","body":"B"}}}`
 	w := postForm(t, srv, "/assist/accept", tok["editor"],
-		"overwrite=1&proposal="+`{"pages":{"about":{"title":"T","body":"B"}}}`)
+		"overwrite=1&model=m&proposal="+url.QueryEscape(proposal)+
+			"&seal="+srv.sealProposal("editor", "m", proposal))
 	if w.Code != http.StatusForbidden {
 		t.Errorf("accepting a proposal naming a denied page answered %d", w.Code)
 	}
