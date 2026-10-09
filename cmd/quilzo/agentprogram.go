@@ -292,9 +292,13 @@ func startProgram(ctx context.Context, root string, m agent.Manifest, sess *agen
 	for k, v := range m.Program.Env {
 		env = append(env, k+"="+v)
 	}
-	limits := sandbox.Limits{CPUSeconds: 600, MemoryBytes: 2 << 30, FileBytes: 256 << 20, OpenFiles: 1024, Processes: 4096}
+	// Memory is bounded by what the program writes (RLIMIT_DATA), not by the
+	// address space it reserves: a JavaScript engine, in Node or in a
+	// browser, reserves tens of gigabytes it never touches, and an
+	// address-space limit killed it before it started.
+	limits := sandbox.Limits{CPUSeconds: 600, DataBytes: 2 << 30, FileBytes: 256 << 20, OpenFiles: 1024, Processes: 4096}
 	if m.Program.MemoryMB > 0 {
-		limits.MemoryBytes = uint64(m.Program.MemoryMB) << 20
+		limits.DataBytes = uint64(m.Program.MemoryMB) << 20
 	}
 	if m.Program.CPUSeconds > 0 {
 		limits.CPUSeconds = uint64(m.Program.CPUSeconds)

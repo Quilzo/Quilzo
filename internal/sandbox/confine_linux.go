@@ -55,6 +55,7 @@ func harden(l Limits, st *Status) error {
 		v     uint64
 	}{
 		{syscall.RLIMIT_CPU, l.CPUSeconds}, {rlimitAddressSpace, l.MemoryBytes},
+		{syscall.RLIMIT_DATA, l.DataBytes},
 		{syscall.RLIMIT_FSIZE, l.FileBytes}, {syscall.RLIMIT_NOFILE, l.OpenFiles},
 		{rlimitNproc, l.Processes},
 	} {
