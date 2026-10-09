@@ -1931,7 +1931,7 @@ func printA11y(reports []*a11y.Report) {
 				colour, f.Severity, reset, onOneLine(f.Rule), onOneLine(f.Criterion),
 				onOneLine(f.Detail))
 			if f.Excerpt != "" {
-				fmt.Printf("      %s%s%s\n", dim, forTerminal(f.Excerpt), reset)
+				fmt.Printf("      %s%s%s\n", dim, onOneLine(f.Excerpt), reset)
 			}
 		}
 	}
