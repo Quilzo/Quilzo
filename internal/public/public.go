@@ -745,8 +745,12 @@ func (st *Site) searchVisible(q string, visible map[string]any, n int) []search.
 }
 
 // PermissionsPolicy is what a published page may ask the browser for.
+//
+// Only features Chromium recognises. "bluetooth" is not one, and naming it
+// made every page of every site log an error in its visitors' consoles while
+// denying nothing; the admin's own policy never named it.
 const PermissionsPolicy = "camera=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), " +
-	"bluetooth=(), display-capture=(), microphone=(self)"
+	"display-capture=(), microphone=(self)"
 
 // securityHeaders for a public site.
 //
