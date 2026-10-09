@@ -1755,6 +1755,11 @@ func cmdRollback(root string, args []string) error {
 			"to":    short(pub.Published),
 			"steps": fmt.Sprintf("%d", *steps),
 		}))
+	var reverted []string
+	for _, c := range pub.Changes {
+		reverted = append(reverted, c.Path)
+	}
+	fireWebhooks(root, "rolled-back", pub.Published, reverted)
 	fmt.Printf("live is now %s  (%d change(s) reverted)\n",
 		short(pub.Published), len(pub.Changes))
 	fmt.Printf("  %srolled back from %s, which is still stored and can be "+

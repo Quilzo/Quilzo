@@ -285,6 +285,9 @@ func (s *Server) handleScheduleAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditPub(p, "schedule.add", "/", map[string]string{
 		"scheduled": draft, "at": when.UTC().Format(time.RFC3339), "note": note})
+	if s.Told != nil {
+		go s.Told("scheduled", draft, nil)
+	}
 	s.pubRedirect(w, r, fmt.Sprintf(
 		"%s will publish at %s. Every gate runs then, against the content as it "+
 			"stands, not now.",
