@@ -447,6 +447,11 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			Principal: "mcp-client", Kind: audit.KindAI, Model: "mcp-client",
 			Verified: false, Detail: map[string]string{"on_behalf_of": caller.Name},
 		})
+		var changed []string
+		for _, c := range pub.Changes {
+			changed = append(changed, c.Path)
+		}
+		fireWebhooks(root, "published", pub.Published, changed)
 		return fmt.Sprintf("published; %d change(s) are live", len(pub.Changes)), nil
 	})
 

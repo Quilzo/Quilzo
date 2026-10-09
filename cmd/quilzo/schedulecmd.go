@@ -87,6 +87,7 @@ func scheduleAdd(root string, args []string) error {
 			"note": truncate(*note, 200),
 		},
 	})
+	fireWebhooks(root, "scheduled", draft, nil)
 
 	w.Human("%s will publish at %s%s%s\n", short(draft), bold,
 		when.UTC().Format("15:04 on 2 Jan 2006"), reset)

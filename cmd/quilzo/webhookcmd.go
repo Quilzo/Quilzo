@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -303,6 +304,8 @@ func notifyProposed(root string, prop *collab.Proposal) {
 	_ = saveJSON(hooksPath(root), f)
 }
 
+var hooksMu sync.Mutex
+
 // fireWebhooks posts an event to the configured endpoints.
 //
 // Named for what it does rather than the bare "notify" it used to be: since
@@ -311,6 +314,10 @@ func notifyProposed(root string, prop *collab.Proposal) {
 // with nothing in the name to say which.
 func fireWebhooks(root, eventType, commit string, pages []string,
 	form ...string) {
+	// One at a time: the admin tells from a goroutine per change, and two
+	// publishes reading and rewriting the deliveries at once would lose one.
+	hooksMu.Lock()
+	defer hooksMu.Unlock()
 	f := &hookFile{}
 	if err := loadJSON(hooksPath(root), f); err != nil || len(f.Endpoints) == 0 {
 		return

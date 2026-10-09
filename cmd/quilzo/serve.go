@@ -903,6 +903,7 @@ func cmdServe(root string, args []string) error {
 	srv.Frozen = sh.frozen
 	srv.Reports = public.ReportsHandler(sh.violation)
 	srv.Version = version
+	srv.Told = func(event, commit string, pages []string) { fireWebhooks(root, event, commit, pages) }
 	srv.KSI = func() (fedramp.Source, []fedramp.Result, error) {
 		return fedramp.Assess(failingByControl(root, *tplDir))
 	}

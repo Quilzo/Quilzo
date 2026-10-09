@@ -127,6 +127,11 @@ type Server struct {
 	Parameters *Parameters
 	// Version is the build's version, for documents the admin exports.
 	Version string
+	// Told tells the webhooks what happened to the live site — published,
+	// rolled-back, scheduled — after the fact; nil tells nobody. The same
+	// events the command line sends, so a receiver does not depend on
+	// which interface somebody used.
+	Told func(event, commit string, pages []string)
 	// DraftSSP drafts the system security plan at an impact level, from
 	// the same code as quilzo compliance ssp.
 	DraftSSP func(impact string) ([]byte, error)
@@ -3057,6 +3062,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		"waived":  strings.Join(waived, ","),
 		"reason":  reason,
 	})
+	s.tell("published", pub)
 	s.render(w, r, "message.html", map[string]any{
 		"Title": "Published", "Principal": p,
 		"Heading": "Published",
@@ -3343,6 +3349,20 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// tell sends a change to the live site to the webhooks, with the pages it
+// touched. Never blocking and never failing the request: a receiver being
+// down is not a reason the site cannot change.
+func (s *Server) tell(event string, pub site.Publication) {
+	if s.Told == nil {
+		return
+	}
+	pages := make([]string, 0, len(pub.Changes))
+	for _, c := range pub.Changes {
+		pages = append(pages, c.Path)
+	}
+	go s.Told(event, pub.Published, pages)
+}
+
 func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
@@ -3385,6 +3405,7 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 		"by": p.Name, "commit": shortHash(target),
 		"changes": strconv.Itoa(len(pub.Changes)),
 	})
+	s.tell("rolled-back", pub)
 	s.render(w, r, "message.html", map[string]any{
 		"Title": "Rolled back", "Principal": p, "Heading": "Rolled back",
 		"Body": fmt.Sprintf("live is now %s. %d page%s changed. The version you "+
