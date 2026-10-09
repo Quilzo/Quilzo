@@ -415,7 +415,7 @@ publishing
   quilzo publish [COMMIT]                  move live to the draft
   quilzo schedule add 48h | list | run     publish later; gates run at publish
   quilzo schedule cancel ID                call one off before it fires
-  quilzo rollback [--steps N]              move live back along its history
+  quilzo rollback [--steps N]              back to a version that was live before
   quilzo a11y [--ref REF]                  accessibility check, blocking publish
 
 the assistant
@@ -1731,7 +1731,7 @@ func cmdPublish(root string, args []string) error {
 
 func cmdRollback(root string, args []string) error {
 	fs := flag.NewFlagSet("rollback", flag.ContinueOnError)
-	steps := fs.Int("steps", 1, "how many commits to go back")
+	steps := fs.Int("steps", 1, "how many earlier publications to go back")
 	if err := fs.Parse(reorder(args, map[string]bool{"steps": true})); err != nil {
 		return err
 	}
