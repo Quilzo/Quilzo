@@ -53,6 +53,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"syscall"
@@ -177,6 +178,65 @@ func CheckIP(ip net.IP) string {
 	return ""
 }
 
+// reachable are the refused ranges a declaration may open for one
+// destination: the networks an organisation's own services live on, and the
+// host itself for a server running beside this one. Nothing else in the
+// blocked list can be opened. Link-local is where cloud metadata hands out
+// credentials, and the rest are not where anybody's server is.
+var reachable = []netip.Prefix{
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("127.0.0.0/8"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+	netip.MustParsePrefix("::1/128"),
+	netip.MustParsePrefix("fc00::/7"),
+}
+
+// Declarable reports why a range may not be declared reachable, or empty if
+// it may. A range may be declared when it lies inside one private network
+// or loopback; it is written as its first address, so what is read is what
+// is opened.
+func Declarable(p netip.Prefix) string {
+	if !p.IsValid() {
+		return "not a range"
+	}
+	if p.Addr().Is4In6() {
+		return fmt.Sprintf("%s is an IPv4 range written as IPv6; write it as IPv4", p)
+	}
+	if p.Addr().Zone() != "" {
+		return fmt.Sprintf("%s names an interface; write the range alone", p)
+	}
+	if m := p.Masked(); m != p {
+		return fmt.Sprintf("%s does not start where its range does; write %s", p, m)
+	}
+	if inside(p) {
+		return ""
+	}
+	for _, b := range blocked {
+		n := netip.MustParsePrefix(b.cidr)
+		if p.Overlaps(n) && !inside(n) {
+			return fmt.Sprintf("%s takes in %s (%s), and nothing may reach it", p, b.cidr, b.why)
+		}
+	}
+	for _, r := range reachable {
+		if p.Overlaps(r) {
+			return fmt.Sprintf("%s is wider than the private network %s; name the part your servers are in", p, r)
+		}
+	}
+	return fmt.Sprintf("%s is public, and a public address needs no declaration", p)
+}
+
+// inside reports a range lying wholly within one reachable range.
+func inside(p netip.Prefix) bool {
+	for _, r := range reachable {
+		if r.Bits() <= p.Bits() && r.Contains(p.Addr()) {
+			return true
+		}
+	}
+	return false
+}
+
 // Client fetches URLs.
 type Client struct {
 	// Purpose says which declared network purpose this client's connections
@@ -192,6 +252,19 @@ type Client struct {
 	// UserAgent identifies the fetch. Sites block anonymous fetchers, and a
 	// blank agent is also a way to fetch things nobody can attribute.
 	UserAgent string
+	// Reach is the rule each address is held to, when it is not Public:
+	// Within, for a client made for one destination somebody declared inside
+	// the network. Nil is Public, as for every fetch somebody else chose the
+	// address of.
+	Reach Reach
+}
+
+// checkIP is the client's rule.
+func (c *Client) checkIP(ip net.IP) string {
+	if c.Reach != nil {
+		return c.Reach(ip)
+	}
+	return CheckIP(ip)
 }
 
 // New returns a Client with the defaults.
@@ -281,6 +354,11 @@ func (c *Client) GetSigned(ctx context.Context, raw, accept string,
 // boundary — that is Control, below. Doing it here as well means an obviously
 // wrong URL gets a useful message rather than a connection error.
 func ValidateURL(raw string) (*url.URL, error) {
+	return (&Client{}).validateURL(raw)
+}
+
+// validateURL is ValidateURL with this client's declared ranges open.
+func (c *Client) validateURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return nil, fmt.Errorf("that is not a URL: %w", err)
@@ -302,7 +380,7 @@ func ValidateURL(raw string) (*url.URL, error) {
 	// again, but saying so now is a better error.
 	host := u.Hostname()
 	if ip := net.ParseIP(host); ip != nil {
-		if why := CheckIP(ip); why != "" {
+		if why := c.checkIP(ip); why != "" {
 			return nil, fmt.Errorf("refusing to fetch: %s", why)
 		}
 	}
@@ -320,7 +398,7 @@ func (c *Client) Get(ctx context.Context, raw string) (*Result, error) {
 // stops being revalidated.
 func (c *Client) get(ctx context.Context, raw string, decorate func(*http.Request)) (*Result, error) {
 	lim := c.Limits.withDefaults()
-	u, err := ValidateURL(raw)
+	u, err := c.validateURL(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +417,7 @@ func (c *Client) get(ctx context.Context, raw string, decorate func(*http.Reques
 			return fmt.Errorf("too many redirects (%d); the source keeps "+
 				"forwarding", hops)
 		}
-		if _, err := ValidateURL(req.URL.String()); err != nil {
+		if _, err := c.validateURL(req.URL.String()); err != nil {
 			return fmt.Errorf("redirect to %s refused: %w", req.URL, err)
 		}
 		return nil
@@ -397,7 +475,7 @@ func (c *Client) httpClient(lim Limits) (*http.Client, error) {
 				return fmt.Errorf("refusing to dial %q", address)
 			}
 			ip := net.ParseIP(host)
-			if why := CheckIP(ip); why != "" {
+			if why := c.checkIP(ip); why != "" {
 				return fmt.Errorf("refusing to connect: %s", why)
 			}
 			return nil
@@ -467,7 +545,7 @@ func (c *Client) dialContext(d *net.Dialer) func(context.Context, string, string
 		// public address and one internal one is the whole trick, and taking
 		// the first would make the refusal depend on ordering.
 		for _, ip := range ips {
-			if why := CheckIP(ip); why != "" {
+			if why := c.checkIP(ip); why != "" {
 				return nil, fmt.Errorf("refusing to connect: %s", why)
 			}
 		}
@@ -496,7 +574,7 @@ func (c *Client) PostForm(ctx context.Context, raw string, form url.Values,
 	username, password string) (*Result, error) {
 
 	lim := c.Limits.withDefaults()
-	u, err := ValidateURL(raw)
+	u, err := c.validateURL(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -575,7 +653,7 @@ func (c *Client) PostWithHeaders(ctx context.Context, raw string, body []byte,
 	headers map[string]string) (*Result, error) {
 
 	lim := c.Limits.withDefaults()
-	u, err := ValidateURL(raw)
+	u, err := c.validateURL(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -628,7 +706,7 @@ func (c *Client) Do(ctx context.Context, method, raw string, body []byte,
 	headers map[string]string) (*Result, error) {
 
 	lim := c.Limits.withDefaults()
-	u, err := ValidateURL(raw)
+	u, err := c.validateURL(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -683,7 +761,7 @@ func (c *Client) PostSigned(ctx context.Context, raw string, body []byte,
 	headers map[string]string) (*Result, error) {
 
 	lim := c.Limits.withDefaults()
-	u, err := ValidateURL(raw)
+	u, err := c.validateURL(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -741,7 +819,7 @@ func (c *Client) PostSigned(ctx context.Context, raw string, body []byte,
 // redirect would replay a signed body at an address the signature never named.
 func (c *Client) DoChecked(req *http.Request) (int, error) {
 	lim := c.Limits.withDefaults()
-	if _, err := ValidateURL(req.URL.String()); err != nil {
+	if _, err := c.validateURL(req.URL.String()); err != nil {
 		return 0, err
 	}
 	client, err := c.httpClient(lim)

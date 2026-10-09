@@ -126,7 +126,7 @@ func AIBOM(in Inputs) *BOM {
 			Properties: []Property{prop("enabled", strconv.FormatBool(t.Enabled)), prop("writes", strconv.FormatBool(t.Writes)),
 				prop("tools", strings.Join(t.Uses, " "))}}
 		if t.Endpoint != "" {
-			sv.Endpoints = []string{"https://" + t.Endpoint}
+			sv.Endpoints = []string{t.URL()}
 		}
 		if t.Gateway != nil {
 			sv.Properties = append(sv.Properties, prop("offered-through-gateway-to", t.Gateway.Role))

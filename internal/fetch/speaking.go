@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"syscall"
 	"time"
 
@@ -95,6 +96,30 @@ func OnThisNetwork(ip net.IP) string {
 	}
 	return fmt.Sprintf("%s is public, and only this machine and the network "+
 		"it is on are permitted here", ip)
+}
+
+// Within permits what Public does and the ranges declared for one
+// destination: an MCP server on the organisation's own network, say. Only a
+// range Declarable accepts is opened, so no declaration reaches link-local,
+// where cloud metadata lives, whatever it names.
+func Within(ranges []netip.Prefix) Reach {
+	return func(ip net.IP) string {
+		why := CheckIP(ip)
+		if why == "" || len(ranges) == 0 {
+			return why
+		}
+		a, ok := netip.AddrFromSlice(ip)
+		if !ok {
+			return why
+		}
+		a = a.Unmap()
+		for _, p := range ranges {
+			if p.Contains(a) && Declarable(p) == "" {
+				return ""
+			}
+		}
+		return why + ", outside the ranges declared for this destination"
+	}
 }
 
 // Anywhere permits every address, leaving only the deployment's network mode.

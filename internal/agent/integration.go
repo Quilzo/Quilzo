@@ -5,9 +5,13 @@ package agent
 
 import (
 	"fmt"
+	"net/netip"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/fetch"
 )
 
 // Integrations: reaching other people's systems, without carrying their code.
@@ -103,6 +107,23 @@ type Integration struct {
 	// scheme, no path, no wildcard — the same rule Tool.Host follows, and for
 	// the same reason.
 	Endpoint string `json:"endpoint,omitempty"`
+
+	// Port is the endpoint's port, when it is not 443: a server inside the
+	// network listens wherever its team put it.
+	Port int `json:"port,omitempty"`
+
+	// Path is where on the host the server answers, "/mcp" for most. Empty
+	// is "/".
+	Path string `json:"path,omitempty"`
+
+	// Reach are the private ranges the endpoint may resolve to, for a
+	// server on the organisation's own network: "10.20.0.0/16". Without
+	// one, a private, loopback or link-local answer is refused, which is
+	// what stops a declaration from being pointed at whatever else is
+	// inside. Only private ranges and loopback can be named; link-local,
+	// where cloud metadata lives, never can. Every address the name
+	// resolves to has to fall inside, checked when the connection is made.
+	Reach []string `json:"reach,omitempty"`
 
 	// Command is the program for the process kind.
 	Command string `json:"command,omitempty"`
@@ -200,6 +221,9 @@ func (in *Integration) Validate() error {
 			return fmt.Errorf(
 				"%s is a %s integration and names a command; it reaches a host",
 				in.Name, in.Kind)
+		}
+		if err := in.checkWhere(); err != nil {
+			return err
 		}
 	case IntegrationProcess:
 		if strings.TrimSpace(in.Command) == "" {
@@ -304,6 +328,103 @@ func (in *Integration) Validate() error {
 				"control that does not run", in.Name, in.Kind)
 	}
 	return nil
+}
+
+// rePath is a server's path: letters, digits and . _ ~ - between slashes.
+// Nothing that a URL parser would read as a query, a fragment or an escape.
+var rePath = regexp.MustCompile(`^(/[A-Za-z0-9._~-]+)*/?$`)
+
+// MaxReach bounds the ranges one integration may name. A list longer than
+// this is a network, not a server.
+const MaxReach = 8
+
+// checkWhere checks the port, the path and the declared ranges.
+func (in *Integration) checkWhere() error {
+	if in.Port < 0 || in.Port > 65535 {
+		return fmt.Errorf("%s listens on port %d, which no server can", in.Name, in.Port)
+	}
+	if in.Path != "" {
+		if !strings.HasPrefix(in.Path, "/") || !rePath.MatchString(in.Path) || len(in.Path) > 200 {
+			return fmt.Errorf("%s has the path %q; write it like /mcp: letters, digits, . _ ~ - between slashes", in.Name, in.Path)
+		}
+		for _, seg := range strings.Split(in.Path, "/") {
+			if seg == "." || seg == ".." {
+				return fmt.Errorf("%s has the path %q; name the path itself, without . or ..", in.Name, in.Path)
+			}
+		}
+	}
+	if len(in.Reach) > MaxReach {
+		return fmt.Errorf("%s names %d ranges; at most %d, each the part of the network its server is in",
+			in.Name, len(in.Reach), MaxReach)
+	}
+	if _, err := in.Ranges(); err != nil {
+		return err
+	}
+	if ip, err := netip.ParseAddr(in.Endpoint); err == nil {
+		if fetch.Public(ip.AsSlice()) != "" && !in.reaches(ip) {
+			return fmt.Errorf("%s reaches %s, which is %s. If the server is on your own network, "+
+				"name its range in reach", in.Name, in.Endpoint, fetch.Public(ip.AsSlice()))
+		}
+	}
+	return nil
+}
+
+// Ranges is Reach read, each range checked.
+func (in Integration) Ranges() ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, r := range in.Reach {
+		r = strings.TrimSpace(r)
+		p, err := netip.ParsePrefix(r)
+		if err != nil {
+			a, aerr := netip.ParseAddr(r)
+			if aerr != nil {
+				return nil, fmt.Errorf("%s reaches %q, which is not a range; write it like 10.20.0.0/16", in.Name, r)
+			}
+			p = netip.PrefixFrom(a, a.BitLen())
+		}
+		if why := fetch.Declarable(p); why != "" {
+			return nil, fmt.Errorf("%s: %s", in.Name, why)
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+func (in Integration) reaches(a netip.Addr) bool {
+	rs, _ := in.Ranges()
+	for _, p := range rs {
+		if p.Contains(a.Unmap()) {
+			return true
+		}
+	}
+	return false
+}
+
+// URL is where the server is called: always https, at the declared port
+// and path.
+func (in Integration) URL() string {
+	if in.Endpoint == "" {
+		return ""
+	}
+	host := in.Endpoint
+	if in.Port != 0 && in.Port != 443 {
+		host += ":" + strconv.Itoa(in.Port)
+	}
+	path := in.Path
+	if path == "" {
+		path = "/"
+	}
+	return "https://" + host + path
+}
+
+// Where is URL as a person reads it: the host, and the port and path when
+// they are not the usual ones.
+func (in Integration) Where() string {
+	w := strings.TrimPrefix(in.URL(), "https://")
+	if in.Path == "" {
+		w = strings.TrimSuffix(w, "/")
+	}
+	return w
 }
 
 // checkHost applies the one-exact-hostname rule.

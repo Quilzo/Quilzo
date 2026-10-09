@@ -256,7 +256,7 @@ func (c *Client) checkPin(ctx context.Context, in agent.Integration, tool, pin s
 // Definitions are a server's tools with their definitions' digests and
 // this install's pins, kept for a few minutes.
 func (c *Client) Definitions(ctx context.Context, in agent.Integration) ([]Tool, error) {
-	key := in.Name + "|" + in.Endpoint
+	key := in.Name + "|" + in.URL()
 	c.mu.Lock()
 	if d, ok := c.defs[key]; ok && c.now().Before(d.until) {
 		c.mu.Unlock()
@@ -350,7 +350,7 @@ func (c *Client) permits(in agent.Integration, tool string) error {
 func (c *Client) send(ctx context.Context, in agent.Integration, method string,
 	params map[string]any) (json.RawMessage, error) {
 
-	key := in.Name + "|" + in.Endpoint
+	key := in.Name + "|" + in.URL()
 	c.mu.Lock()
 	sess := c.sessions[key]
 	c.mu.Unlock()
@@ -533,17 +533,32 @@ func (c *Client) post(ctx context.Context, in agent.Integration, msg rpc, versio
 			client.UserAgent = "quilzo/1 (+mcp client)"
 			client.Limits = fetch.Limits{MaxBytes: MaxResult, Timeout: 30 * time.Second, MaxRedirects: -1}
 		}
+		// A server on the organisation's own network is reached only
+		// inside the ranges declared for it.
+		ranges, err := in.Ranges()
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(ranges) > 0 {
+			own := *client
+			own.Reach = fetch.Within(ranges)
+			client = &own
+		}
 		do = func(ctx context.Context, url string, body []byte, headers map[string]string) (*fetch.Result, error) {
 			return client.Do(ctx, "POST", url, body, headers)
 		}
 	}
 	// https, always. An MCP call carries a credential and whatever the tool
-	// was given; over plain HTTP both are on the wire. The endpoint is a
-	// hostname by declaration — Integration.Validate refuses a URL — so the
-	// scheme is this package's to choose and there is one right answer.
-	url := "https://" + in.Endpoint
-	res, err := do(ctx, url, body, headers)
+	// was given; over plain HTTP both are on the wire, inside the network as
+	// much as outside it. The endpoint is a hostname by declaration —
+	// Integration.Validate refuses a URL — so the scheme is this package's
+	// to choose and there is one right answer.
+	res, err := do(ctx, in.URL(), body, headers)
 	if err != nil {
+		if len(in.Reach) == 0 && strings.Contains(err.Error(), "refusing to") {
+			return nil, nil, fmt.Errorf("%s: %w. If the server is on your own network, "+
+				"name its range in the integration's reach", in.Name, err)
+		}
 		return nil, nil, fmt.Errorf("%s: %w", in.Name, err)
 	}
 	if msg.ID == 0 {
