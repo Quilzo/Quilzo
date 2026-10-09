@@ -16,4 +16,8 @@ go 1.27
 // every released binary carried 29 known standard-library CVEs with no
 // path to a fix. That is the cost of the zero-dependency argument being
 // true: there is one dependency, and it has to be current.
-toolchain go1.27.0
+//
+// 1.27.2 because govulncheck found twelve reachable standard-library
+// vulnerabilities in 1.27.0 on 9 October 2026 (among them two in
+// html/template, which renders every admin screen), all fixed in 1.27.2.
+toolchain go1.27.2
