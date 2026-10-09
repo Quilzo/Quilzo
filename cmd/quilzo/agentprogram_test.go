@@ -120,9 +120,37 @@ func programAgent(t *testing.T) string {
 	return root
 }
 
+// answerWhenAsked waits for a program's run to ask a person, and answers it
+// the way the run's page does.
+func answerWhenAsked(t *testing.T, root string, approve bool, by string) chan error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() {
+		deadline := time.Now().Add(30 * time.Second)
+		for time.Now().Before(deadline) {
+			recs, _ := listAgentRuns(root, "coder", 0)
+			for _, r := range recs {
+				if w := r.Trace.Waiting; w != nil && w.Live {
+					_, err := continueAgentRun(context.Background(), root, r.ID,
+						&agent.Verdict{N: w.N, Approve: approve}, asAdmin(by))
+					done <- err
+					return
+				}
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		done <- fmt.Errorf("the run never asked")
+	}()
+	return done
+}
+
 func TestAnAgentsProgramDecidesInItsBoxThroughTheRunsGate(t *testing.T) {
 	root := programAgent(t)
+	answered := answerWhenAsked(t, root, false, "lee")
 	id, out, err := runAgentKeptBy(context.Background(), root, "coder", "list the pages", false, true, asAdmin("dana"))
+	if aerr := <-answered; aerr != nil {
+		t.Fatalf("answering: %v", aerr)
+	}
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out.ProgramErr)
 	}
@@ -131,7 +159,7 @@ func TestAnAgentsProgramDecidesInItsBoxThroughTheRunsGate(t *testing.T) {
 		t.Fatalf("answer %q stopped %q\n%s", tr.Answer, tr.Stopped, out.ProgramErr)
 	}
 	// The refusals came back to the program as refusals.
-	for _, want := range []string{`publish="refused:`, `asked="refused:`, "nobody to ask", "model=429", "away=403"} {
+	for _, want := range []string{`publish="refused:`, `asked="refused:`, "lee declined this", "model=429", "away=403"} {
 		if !strings.Contains(tr.Answer, want) {
 			t.Errorf("the program saw %q, not %s", tr.Answer, want)
 		}
@@ -150,14 +178,14 @@ func TestAnAgentsProgramDecidesInItsBoxThroughTheRunsGate(t *testing.T) {
 	if !tr.Tainted || out.Model != "program:"+strings.TrimPrefix(os.Args[0][strings.LastIndex(os.Args[0], "/")+1:], "") {
 		t.Errorf("tainted %v, decided by %q", tr.Tainted, out.Model)
 	}
-	// Three steps, in the run's own record, two of them refused, and the
-	// one that asks first refused rather than held: a program cannot wait.
+	// Three steps, in the run's own record, two of them refused: the one
+	// that asks first waited for a person, who declined it.
 	if len(tr.Steps) != 4 || !tr.Steps[0].Allowed || tr.Steps[1].Allowed || tr.Steps[2].Allowed ||
-		!strings.Contains(tr.Steps[2].Why, "nobody to ask") || !tr.Steps[3].Action.Done() {
+		!strings.Contains(tr.Steps[2].Why, "lee declined this") || !tr.Steps[3].Action.Done() {
 		t.Fatalf("steps %+v", tr.Steps)
 	}
 	evs, _ := audit.Read(auditPath(root))
-	var actions, program, egress int
+	var actions, program, egress, declined int
 	for _, e := range evs {
 		if e.Detail["run"] != id {
 			continue
@@ -173,6 +201,8 @@ func TestAnAgentsProgramDecidesInItsBoxThroughTheRunsGate(t *testing.T) {
 			if e.Detail["seccomp"] != "true" || e.Detail["backend"] != "native" {
 				t.Errorf("program record %v", e.Detail)
 			}
+		case "agent.decline":
+			declined++
 		case "agent.egress":
 			egress++
 			if e.Outcome != audit.Denied || e.Detail["host"] != "evil.example.com" {
@@ -180,8 +210,8 @@ func TestAnAgentsProgramDecidesInItsBoxThroughTheRunsGate(t *testing.T) {
 			}
 		}
 	}
-	if actions != 4 || program != 1 || egress != 1 {
-		t.Fatalf("%d action records, %d program, %d egress", actions, program, egress)
+	if actions != 4 || program != 1 || egress != 1 || declined != 1 {
+		t.Fatalf("%d action records, %d program, %d egress, %d declined", actions, program, egress, declined)
 	}
 	// And the receipt holds all of it.
 	rf, err := buildReceipt(root, id, time.Now())
@@ -197,6 +227,37 @@ func TestAnAgentsProgramDecidesInItsBoxThroughTheRunsGate(t *testing.T) {
 	}
 	if c := checkReceipt(rf, nil); len(c.Problems) != 0 {
 		t.Fatalf("%+v", c.Problems)
+	}
+}
+
+// What asks first waits for a person while the program waits on the call,
+// and an approval does exactly that action and answers the program.
+func TestAProgramWaitsForAPersonAndAnApprovalAnswersIt(t *testing.T) {
+	root := programAgent(t)
+	answered := answerWhenAsked(t, root, true, "lee")
+	id, out, err := runAgentKeptBy(context.Background(), root, "coder", "list the pages", false, true, asAdmin("dana"))
+	if aerr := <-answered; aerr != nil {
+		t.Fatalf("answering: %v", aerr)
+	}
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out.ProgramErr)
+	}
+	tr := out.Trace
+	// Done, and answered by the read itself: the program names no page.
+	if !tr.Steps[2].Allowed || tr.Steps[2].Action.Op != "read_page" ||
+		!strings.Contains(tr.Answer, "no page was named") || strings.Contains(tr.Answer, "declined") {
+		t.Fatalf("the approved read was not done: %q %+v", tr.Answer, tr.Steps)
+	}
+	rec, err := loadAgentRun(root, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.Answers) != 1 || !rec.Answers[0].Approve || rec.Answers[0].By != "lee" || rec.Trace.Waiting != nil {
+		t.Errorf("the record keeps answers %+v, waiting %+v", rec.Answers, rec.Trace.Waiting)
+	}
+	// An answer to a run that has ended is refused: nothing would act on it.
+	if _, err := continueAgentRun(context.Background(), root, id, &agent.Verdict{N: 3, Approve: true}, asAdmin("lee")); err == nil {
+		t.Error("a finished run took an answer")
 	}
 }
 

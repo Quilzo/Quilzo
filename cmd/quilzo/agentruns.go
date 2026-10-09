@@ -175,7 +175,8 @@ func runAgentKeptBy(ctx context.Context, root, name, goal string, withModel, pro
 		}
 	}
 	out, runErr := executeAgentFrom(ctx, root, name, goal, withModel, caller,
-		&agentResume{Checkpoint: k.checkpoint, RunID: k.rec.ID, Program: program})
+		&agentResume{Checkpoint: k.checkpoint, RunID: k.rec.ID, Program: program,
+			Answered: func(a agent.Answer) { k.rec.Answers = append(k.rec.Answers, a) }})
 	if out.Manifest.Name == "" {
 		// It never started. Nothing was checkpointed either.
 		return "", out, runErr
@@ -212,6 +213,30 @@ func continueAgentRun(ctx context.Context, root, id string, v *agent.Verdict,
 			prior.OutcomeAt(now))
 	case v != nil && prior.Trace.Waiting == nil:
 		return none, agent.ErrNotWaiting
+	case prior.Trace.Waiting != nil && prior.Trace.Waiting.Live:
+		// A program's run, waiting in its own process: the answer is left
+		// for that process, which goes on from there. See agenthold.go.
+		if v == nil {
+			return none, fmt.Errorf("%s is waiting for a person to decide; continuing it "+
+				"without an answer would be one", id)
+		}
+		if err := answerLive(root, prior, *v, caller.Name, now); err != nil {
+			return none, err
+		}
+		did, w := "agent.approve", prior.Trace.Waiting
+		if !v.Approve {
+			did = "agent.decline"
+		}
+		what := w.Action.Op
+		if what == "" {
+			what = w.Action.Tool
+		}
+		if err := recordE(root, caller.auditRecord(did, "/", audit.Success,
+			map[string]string{"agent": prior.Agent, "run": id,
+				"step": fmt.Sprint(w.N), "what": what})); err != nil {
+			return none, err
+		}
+		return prior, nil
 	}
 	k := &keptRun{root: root, rec: prior}
 	if v != nil {

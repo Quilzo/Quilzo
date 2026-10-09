@@ -674,6 +674,9 @@ type agentResume struct {
 	// Program runs the agent's own program, which decides: see
 	// agentprogram.go.
 	Program bool
+	// Answered records a person's answer to a question a program's run
+	// waited for in its process: see agenthold.go.
+	Answered func(agent.Answer)
 }
 
 // narrowing is one thing that made a run's manifest narrower than its
@@ -1032,7 +1035,9 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 
 	// Or the agent's own program decides, in its box. A program cannot be
 	// held for a person and picked up later, since it will have ended, so
-	// what asks first is refused, with the reason, to the program.
+	// what asks first waits for a person while the program waits on the
+	// call (agenthold.go), and is refused, with the reason, when nobody
+	// decides before the run's time is up.
 	var prog *programRun
 	if from.Program {
 		runID := from.RunID
@@ -1049,6 +1054,11 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		delegateModel = programModel{name: filepath.Base(m.Program.Command[0])}
 		out.Model = delegateModel.Name()
 		runner.Decide, runner.Pause = prog.bridge.Decide, false
+		if from.Eval == nil {
+			runner.Hold = programHold(root, runID, prog.done, func(line string) {
+				fmt.Fprintf(os.Stderr, "  %s%s%s\n", yellow, onOneLine(line), reset)
+			}, from.Answered)
+		}
 	}
 	// What it remembers between runs, when it keeps any. Not for an
 	// evaluation, which measures and leaves nothing behind.

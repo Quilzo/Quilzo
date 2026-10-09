@@ -50,6 +50,11 @@ type Pending struct {
 	// Why is the reason it waits when it is not the declaration's asking
 	// first: the exfiltration breaker's sentence, which the person reads.
 	Why string `json:",omitempty"`
+	// Live says the run is waiting in its own process, as a program's run
+	// does: its program is blocked on this very call. A decision is handed
+	// to that process rather than continuing the run from its record, and
+	// a run whose process has gone can no longer be answered.
+	Live bool `json:",omitempty"`
 }
 
 // PendingTTL is how long a question stays answerable. After that whatever
