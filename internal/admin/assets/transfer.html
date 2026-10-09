@@ -6,10 +6,10 @@
 
 <h2>Take this site out</h2>
 <form method="post" action="/transfer/export" class="inline">
-  <label for="x-format">Format</label>
+  <span class="pair"><label for="x-format">Format</label>
   <select id="x-format" name="format">
     {{range .Formats}}<option value="{{.}}">{{.}}</option>{{end}}
-  </select>
+  </select></span>
   <button type="submit">Export</button>
 </form>
 <p class="hint">
@@ -27,8 +27,7 @@
   <p><label for="i-source">Format</label>
     <input id="i-source" name="source" placeholder="blank to detect"
            spellcheck="false"></p>
-  <p><label for="i-write">Write the pages into the draft</label>
-    <input id="i-write" type="checkbox" name="write" value="1">
+  <p><input id="i-write" type="checkbox" name="write" value="1"> <label for="i-write">Write the pages into the draft</label>
     <span class="hint">Leave this off to see what would come in, and what
       would be skipped, before anything is written.</span></p>
   <button type="submit">Read it</button>
@@ -50,9 +49,9 @@
     <td>
       <form method="post" action="/transfer/starter" class="inline">
         <input type="hidden" name="name" value="{{.Name}}">
-        <label for="s-{{.Name}}">as page</label>
+        <span class="pair"><label for="s-{{.Name}}">as page</label>
         <input id="s-{{.Name}}" name="page" size="10" placeholder="index"
-               spellcheck="false">
+               spellcheck="false"></span>
         <label>replace <input type="checkbox" name="overwrite" value="1"></label>
         <button type="submit">Apply</button>
       </form>

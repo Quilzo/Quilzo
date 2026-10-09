@@ -598,6 +598,9 @@ td > a, th > a, .bar a, p > a:only-child {
   padding-block: 5px; margin-block: -5px;
 }
 summary { padding-block: 5px; margin-block: -5px; }
+/* Its target reaches 5px below the line, so a button straight after a closed
+   panel was drawn over it. */
+details + button, details + .btn { margin-top: 12px; }
 .focusgrid label { min-height: 24px; }
 
 /* A file picker is a control and browsers draw it at whatever height the font
@@ -642,6 +645,18 @@ form.inline input:not([type=checkbox]), form.inline select {
   width: auto; min-width: 9rem; max-width: 20rem; flex: 0 1 auto;
 }
 form.inline textarea { width: 100%; }
+/* A label and its control are one item in the row. As two items they were
+   split wherever the row wrapped: "Note" ended one line and its field began
+   the next, with nothing to say they belonged together. A checkbox sits
+   beside its label, as it does everywhere else, and is centred on the
+   fields it shares a row with. */
+form.inline > .pair { display: flex; flex-direction: column; min-width: 0; }
+form.inline > .pair.check { flex-direction: row; align-items: center; min-height: 56px; }
+form.inline > .pair.check label { margin: 0; }
+form.inline:has(> .pair:not(.check)) > button { margin-block-end: 8px; }
+/* A checkbox comes before its label, and its hint goes under both. With the
+   label first, a block-level label put the box on the line below it, alone. */
+p > input[type=checkbox] + label + .hint { display: block; margin-top: 0.35rem; }
 
 /* A fieldset of checkboxes. The default border is heavier than anything else
    on these screens.
@@ -2868,3 +2883,11 @@ td code.cmd, th code.cmd, .run-steps td:nth-child(2) code { display: inline; max
 .fleetmap .box.tool-server, .fleetmap .box.model-route, .fleetmap .box.Quilzo { fill: var(--surface-container-low); }
 .fleetmap .box.host { fill: var(--warning-container); stroke: var(--viz-warning); }
 
+
+/* A row of labelled fields that wraps as a whole: each label stays with its
+   field, and the button sits on the fields' baseline. */
+form.fieldrow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; margin: 0 0 8px; }
+form.fieldrow .field { flex: 1 1 12rem; margin: 0; max-width: none; }
+form.fieldrow .field.wide { flex: 2 1 18rem; }
+form.fieldrow .field input { width: 100%; }
+form.fieldrow > button { margin-bottom: 2px; }

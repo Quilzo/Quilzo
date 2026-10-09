@@ -45,9 +45,9 @@
 
 <h2>Check what a service told you</h2>
 <form method="post" action="/decentralised/verify" class="inline">
-  <label for="v-cid">Identifier your service returned</label>
+  <span class="pair"><label for="v-cid">Identifier your service returned</label>
   <input id="v-cid" name="cid" size="52" spellcheck="false" value="{{.Claimed}}"
-         placeholder="bafybei…">
+         placeholder="bafybei…"></span>
   <button type="submit">Check it</button>
 </form>
 {{if .Verdict}}

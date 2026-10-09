@@ -38,8 +38,7 @@
         <input type="hidden" name="form" value="{{.Name}}">
         <button type="submit">Export</button>
         {{if $.CanErase}}
-        <label for="sx-{{.Name}}">Include held fields</label>
-        <input id="sx-{{.Name}}" type="checkbox" name="sensitive" value="1">
+        <span class="pair check"><input id="sx-{{.Name}}" type="checkbox" name="sensitive" value="1"> <label for="sx-{{.Name}}">Include held fields</label></span>
         {{end}}
       </form>
     </td>
@@ -111,9 +110,9 @@ not that the number is fresh.</p>
   identifier. This searches every form's values for it.
 </p>
 <form method="get" action="/forms" class="inline">
-  <label for="q">Search submissions for</label>
+  <span class="pair"><label for="q">Search submissions for</label>
   <input id="q" name="q" value="{{.Query}}" size="32"
-         placeholder="dana@example.org">
+         placeholder="dana@example.org"></span>
   <button type="submit">Find</button>
 </form>
 {{if .Found}}
@@ -184,10 +183,8 @@ not that the number is fresh.</p>
     <p><label for="f-help">Its help text</label>
       <input id="f-help" name="field_help"
              placeholder="we only use this to reply"></p>
-    <p><label for="f-req">Required</label>
-      <input id="f-req" type="checkbox" name="required" value="1"></p>
-    <p><label for="f-sens">Sensitive</label>
-      <input id="f-sens" type="checkbox" name="sensitive" value="1">
+    <p><input id="f-req" type="checkbox" name="required" value="1"> <label for="f-req">Required</label></p>
+    <p><input id="f-sens" type="checkbox" name="sensitive" value="1"> <label for="f-sens">Sensitive</label>
       <span class="hint">Held but not shown in listings.</span></p>
   </div>
   <button type="submit">Save</button>
@@ -196,10 +193,10 @@ not that the number is fresh.</p>
 {{if .CanErase}}
 <h2>Erase everything a form gathered</h2>
 <form method="post" action="/forms/purge" class="inline">
-  <label for="p-form">Form {{template "req"}}</label>
-  <input id="p-form" name="form" required spellcheck="false">
-  <label for="p-conf">Type its name again {{template "req"}}</label>
-  <input id="p-conf" name="confirm" required spellcheck="false">
+  <span class="pair"><label for="p-form">Form {{template "req"}}</label>
+  <input id="p-form" name="form" required spellcheck="false"></span>
+  <span class="pair"><label for="p-conf">Type its name again {{template "req"}}</label>
+  <input id="p-conf" name="confirm" required spellcheck="false"></span>
   <button type="submit" class="danger">Erase all</button>
 </form>
 <p class="hint">

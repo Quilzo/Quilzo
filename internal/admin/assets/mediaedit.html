@@ -80,8 +80,7 @@
     </fieldset>
   </div>
 
-  <p class="field"><label for="e-grey">Take the colour out</label>
-    <input id="e-grey" type="checkbox" name="grey" value="1"{{if .Edit.Grey}} checked{{end}}></p>
+  <p class="field"><input id="e-grey" type="checkbox" name="grey" value="1"{{if .Edit.Grey}} checked{{end}}> <label for="e-grey">Take the colour out</label></p>
 
   <details{{if .Edit.Crop}} open{{end}}>
     <summary>Cut an exact rectangle instead<span class="chev">{{icon "expand_more"}}</span></summary>

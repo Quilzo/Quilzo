@@ -143,7 +143,7 @@
   <form method="post" action="/security/shield/act"><input type="hidden" name="do" value="trust-remove"><input type="hidden" name="network" value="{{.}}">
     <button type="submit" class="btn-text">Remove<span class="visually-hidden"> {{.}}</span></button></form></div></li>{{end}}</ul>{{end}}
 <form method="post" action="/security/shield/act" class="auto-controls shield-inline"><input type="hidden" name="do" value="trust-add">
-  <label for="trust-net">Network {{template "req"}}</label><input id="trust-net" name="network" required placeholder="198.51.100.0/24">
+  <span class="pair"><label for="trust-net">Network {{template "req"}}</label><input id="trust-net" name="network" required placeholder="198.51.100.0/24"></span>
   <button type="submit" class="btn-tonal">{{icon "add"}}Add</button></form>
 
 <h2>Decoys</h2>
@@ -152,7 +152,7 @@
   <form method="post" action="/security/shield/act"><input type="hidden" name="do" value="decoy-remove"><input type="hidden" name="id" value="{{.ID}}">
     <button type="submit" class="btn-text">Remove<span class="visually-hidden"> {{.Note}}</span></button></form></div></li>{{end}}</ul>{{end}}
 <form method="post" action="/security/shield/act" class="auto-controls shield-inline"><input type="hidden" name="do" value="decoy-add">
-  <label for="decoy-where">Where it will be planted {{template "req"}}</label><input id="decoy-where" name="where" required maxlength="200" placeholder="The deploy job's variables">
+  <span class="pair"><label for="decoy-where">Where it will be planted {{template "req"}}</label><input id="decoy-where" name="where" required maxlength="200" placeholder="The deploy job's variables"></span>
   <button type="submit" class="btn-tonal">{{icon "add"}}Plant a decoy</button></form>
 
 {{if not .Held}}<h2>Stop the playbooks acting</h2>

@@ -41,17 +41,17 @@
 
   {{if and .Configured (or (not .Proposed) (not .Matches))}}
   <form method="post" action="/review/propose" class="inline">
-    <label for="ap-msg">What changed, and why</label>
-    <input id="ap-msg" name="message" size="40">
+    <span class="pair"><label for="ap-msg">What changed, and why</label>
+    <input id="ap-msg" name="message" size="40"></span>
     <button type="submit">Offer this for review</button>
   </form>
   {{end}}
 
   {{if .CanApprove}}
   <form method="post" action="/review/approve" class="inline">
-    <label for="ap-note">Why you agree</label>
+    <span class="pair"><label for="ap-note">Why you agree</label>
     <input id="ap-note" name="note" size="40"
-           placeholder="the part an auditor reads">
+           placeholder="the part an auditor reads"></span>
     <button type="submit">Approve</button>
   </form>
   {{else if .Why}}<p class="hint">{{.Why}}</p>{{end}}
