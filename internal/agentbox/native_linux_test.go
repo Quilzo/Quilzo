@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -121,6 +122,19 @@ func programMain(args []string) {
 		return err
 	})
 	try("unshare", func() error { return syscall.Unshare(syscall.CLONE_NEWUSER) })
+	// The machine's hardware, under /sys: the box's own /sys has none.
+	try("hardware", func() error { _, err := os.ReadDir("/sys/class/net"); return err })
+	// Recorded as refused when it lists nothing: unreadable, or empty.
+	try("no pci devices", func() error {
+		es, err := os.ReadDir("/sys/bus/pci/devices")
+		switch {
+		case err != nil:
+			return err
+		case len(es) == 0:
+			return errors.New("empty")
+		}
+		return nil
+	})
 	s.Wrote = os.WriteFile(filepath.Join(os.Getenv("HOME"), "out.txt"), []byte("x"), 0o600) == nil
 	b, _ := json.Marshal(s)
 	os.Stdout.Write(b)
@@ -169,13 +183,16 @@ func TestAProgramInTheNativeBoxReachesOnlyWhatItWasHanded(t *testing.T) {
 	if s.Service != "hi from /hello" {
 		t.Errorf("the handed-in service: %q (%v)", s.Service, s.Refused["service"])
 	}
-	for _, door := range []string{"other port", "outside", "host loopback", "secret", "listen", "unshare"} {
+	for _, door := range []string{"other port", "outside", "host loopback", "secret", "listen", "unshare", "hardware"} {
 		if s.Refused[door] == "" {
 			t.Errorf("%s was open", door)
 		}
 	}
 	if !s.Wrote {
 		t.Error("it could not write its own directory")
+	}
+	if s.Refused["no pci devices"] == "" {
+		t.Error("the box's /sys shows the machine's PCI devices")
 	}
 	t.Logf("own /proc: %v, showing %d processes", c.OwnProc, s.Procs)
 	// A /proc of its own shows the box's few processes, never the machine's.

@@ -83,9 +83,15 @@ type Rules struct {
 type Limits struct {
 	CPUSeconds  uint64
 	MemoryBytes uint64 // address space
-	FileBytes   uint64 // the largest file it may write
-	OpenFiles   uint64
-	Processes   uint64 // counted for the account, as the kernel counts them
+	// DataBytes bounds what a program writes into memory (RLIMIT_DATA:
+	// its heap and private writable mappings), for one that reserves far
+	// more address space than it uses. A browser's JavaScript engine
+	// reserves tens of gigabytes it never touches, and an address-space
+	// limit kills it at start; this one counts what is actually written.
+	DataBytes uint64
+	FileBytes uint64 // the largest file it may write
+	OpenFiles uint64
+	Processes uint64 // counted for the account, as the kernel counts them
 }
 
 // Status describes what was actually enforced.

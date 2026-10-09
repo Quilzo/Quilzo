@@ -255,6 +255,7 @@ func InitMain() {
 		os.Exit(0)
 	}
 	proc := ownProc()
+	sys := proc && ownSys()
 	for _, sv := range spec.Forward {
 		ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(int(sv.Port)))
 		if err != nil {
@@ -270,6 +271,9 @@ func InitMain() {
 	cmd.Env, cmd.Dir = spec.Env, spec.Dir
 	if proc {
 		cmd.Env = append(append([]string(nil), spec.Env...), boxProc+"=1")
+	}
+	if sys {
+		cmd.Env = append(cmd.Env, boxSys+"=1")
 	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if report != nil {
@@ -323,6 +327,30 @@ func ownProc() bool {
 	return syscall.Mount("proc", "/proc", "proc", syscall.MS_NOSUID|syscall.MS_NODEV|syscall.MS_NOEXEC, "") == nil
 }
 
+// boxSys tells the shim the box has a /sys of its own, as boxProc does for
+// /proc.
+const boxSys = "QUILZO_BOX_OWN_SYS"
+
+// ownSys gives the box a /sys of its own: empty, read-only, but for the
+// directories programs look in to learn about the machine. The machine's
+// /sys lists its hardware, which a program has no business reading; and
+// with none at all, a browser's graphics probe (libpci) cannot open
+// /sys/bus/pci/devices and exits the whole browser. Here it finds no
+// devices and carries on without them.
+func ownSys() bool {
+	if err := syscall.Mount("tmpfs", "/sys", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV|syscall.MS_NOEXEC,
+		"size=64k,mode=0755"); err != nil {
+		return false
+	}
+	for _, d := range []string{"/sys/bus/pci/devices", "/sys/devices/system/cpu", "/sys/fs/cgroup"} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			return false
+		}
+	}
+	return syscall.Mount("tmpfs", "/sys", "tmpfs",
+		syscall.MS_REMOUNT|syscall.MS_RDONLY|syscall.MS_NOSUID|syscall.MS_NODEV|syscall.MS_NOEXEC, "") == nil
+}
+
 // loopbackUp raises the box's loopback, which a new network namespace
 // starts with down.
 func loopbackUp() error {
@@ -371,6 +399,10 @@ func ShimMain(arg string) {
 		procs = []string{"/proc"}
 	}
 	os.Unsetenv(boxProc)
+	if os.Getenv(boxSys) == "1" {
+		procs = append(procs, "/sys")
+	}
+	os.Unsetenv(boxSys)
 	for _, p := range append(procs, "/dev/urandom", "/dev/random", "/dev/zero") {
 		if _, err := os.Stat(p); err == nil {
 			reads = append(reads, p)
