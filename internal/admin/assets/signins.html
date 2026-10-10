@@ -20,7 +20,7 @@
   <tbody>{{range .Rows}}<tr><th scope="row">{{.Person}}<br><span class="hint">{{.How}}</span></th><td>{{.When}}</td>
     <td>{{.Place}}{{if eq .Network "vpn"}} <span class="wf-band unknown">VPN</span>{{end}}{{if eq .Network "office"}} <span class="wf-band good">office</span>{{end}}{{if .Provider}}<br><span class="hint">{{.Provider}}</span>{{end}}</td>
     <td>{{if .Device}}{{.Device}}{{else}}<span class="hint">not said</span>{{end}}</td>
-    <td><span class="wf-band {{.RiskTone}}"><span class="wf-icon">{{icon (toneicon .RiskTone)}}</span>{{.Risk}}</span>{{if .Score}}<br><span class="hint">{{.Score}}</span>{{end}}</td>
+    <td><span class="wf-band {{.RiskTone}}"{{if .Score}} title="{{.Score}}"{{end}}><span class="wf-icon">{{icon (toneicon .RiskTone)}}</span>{{.Risk}}</span></td>
     <td>{{range .Signals}}<span class="chip-small">{{.}}</span> {{else}}<span class="hint">nothing unusual</span>{{end}}</td></tr>{{end}}</tbody>
 </table></div>{{else}}<p>No sign-ins yet.</p>{{end}}
 {{template "foot" .}}

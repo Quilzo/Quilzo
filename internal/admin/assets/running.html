@@ -1,7 +1,11 @@
 {{template "head" .}}
+<p class="wf-back"><a href="/security">Security</a></p>
 <h1>Is it running</h1>
 
-{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+{{if .Unavailable}}<div class="notice warn"><p>{{.Unavailable}}</p>
+  <p>Until it does, check each one on its own screen: <a href="/security/events">Events</a> for sources that went quiet,
+  <a href="/security/detections">Detections</a> for rules that never fired, and <a href="/security/automations">Automations</a>
+  for rules that never acted.</p></div>{{else}}
 
 <p class="lead">Four things that fail in the same direction. A feed that
 stopped updating reports no vulnerabilities. A log source that changed shape
@@ -130,5 +134,4 @@ tools.</p>
 
 <p class="hint">As of {{.As.Format "2006-01-02 15:04"}} UTC.</p>
 {{end}}
-<p class="hint"><a href="/security">Back to the posture dashboard.</a></p>
 {{template "foot" .}}

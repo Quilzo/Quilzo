@@ -379,8 +379,9 @@ var rules = []Rule{
 				return nil
 			}
 			return []Finding{{Resource: s.AI.ModelHost,
-				Detail: fmt.Sprintf("%s receives what %d chatbot(s) and %d "+
-					"agent(s) send it", s.AI.ModelHost, users, s.AI.Agents),
+				Detail: fmt.Sprintf("%s receives what %d %s and %d %s send it",
+					s.AI.ModelHost, users, plural(users, "chatbot", "chatbots"),
+					s.AI.Agents, plural(s.AI.Agents, "agent", "agents")),
 				Fix: "record the processing agreement, then quilzo posture " +
 					"suppress privacy.model-egress:" + s.AI.ModelHost +
 					" --days 365 --reason \"DPA signed …\""}}
@@ -429,8 +430,8 @@ var rules = []Rule{
 				}
 			}
 			return []Finding{{
-				Detail: fmt.Sprintf("%d binding(s), none of them a deny",
-					len(s.Policy.Bindings)),
+				Detail: fmt.Sprintf("%d %s, none of them a deny", len(s.Policy.Bindings),
+					plural(len(s.Policy.Bindings), "binding", "bindings")),
 				Fix: "quilzo auth deny WHO ROLE --on /some/sensitive/path",
 			}}
 		},
@@ -786,8 +787,8 @@ var rules = []Rule{
 				where = append(where, fmt.Sprintf("seq %d: %s", p.Seq, p.Reason))
 			}
 			return []Finding{{
-				Detail: fmt.Sprintf("%d break(s) — %s",
-					len(problems), joinShort(where, 3)),
+				Detail: fmt.Sprintf("%d %s — %s", len(problems),
+					plural(len(problems), "break", "breaks"), joinShort(where, 3)),
 				Fix: "quilzo auditlog verify  # then treat the log as evidence " +
 					"of tampering, not as a record of events",
 			}}
@@ -1050,8 +1051,8 @@ var rules = []Rule{
 				return nil
 			}
 			return []Finding{{
-				Detail: fmt.Sprintf("%d blocking failure(s) are live, which "+
-					"means the publish gate was bypassed", s.Content.BlockingA11y),
+				Detail: fmt.Sprintf("%d %s live, which means the publish gate was bypassed",
+					s.Content.BlockingA11y, plural(s.Content.BlockingA11y, "blocking failure is", "blocking failures are")),
 				Fix: "quilzo a11y --ref live",
 			}}
 		},
@@ -1118,7 +1119,7 @@ var rules = []Rule{
 					return nil
 				}
 				return []Finding{{
-					Resource: fmt.Sprintf("%d extension(s)", s.Ext.Registered),
+					Resource: fmt.Sprintf("%d %s", s.Ext.Registered, plural(s.Ext.Registered, "extension", "extensions")),
 					Detail: "extensions are confined to a filesystem but not " +
 						"to a network: this kernel cannot restrict outbound " +
 						"connections (Landlock ABI 4 or later)",
@@ -1132,7 +1133,7 @@ var rules = []Rule{
 				why = "this host cannot confine them"
 			}
 			return []Finding{{
-				Resource: fmt.Sprintf("%d extension(s)", s.Ext.Registered),
+				Resource: fmt.Sprintf("%d %s", s.Ext.Registered, plural(s.Ext.Registered, "extension", "extensions")),
 				Detail: "extensions are not sandboxed: " + why +
 					". They run with the filesystem access of the account " +
 					"running this process, which includes the credential store",

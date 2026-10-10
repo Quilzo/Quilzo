@@ -75,10 +75,10 @@ func (s *Server) handleRunningScreen(w http.ResponseWriter, r *http.Request) {
 		"Nav": "security", "Title": "Is it running", "Principal": p,
 	}
 	if s.Running == nil {
-		data["Unavailable"] = "This build was started without the " +
-			"operational capabilities wired in. An empty screen here " +
-			"would read as everything being fine, which is the one thing " +
-			"it must not do."
+		data["Unavailable"] = "This build does not check whether its " +
+			"feeds, log sources, automations and detections are working, " +
+			"so this screen has nothing to say, and an empty screen would " +
+			"read as everything being fine."
 		s.render(w, r, "running.html", data)
 		return
 	}
