@@ -6,6 +6,7 @@
 <p class="lead">Places on the site where members write: comments under a page,
   a discussion. A page shows one with a comments section naming the board.</p>
 
+{{if or .Boards .Held .Recent}}
 <h2>Waiting for a person</h2>
 {{if .Held}}<ul class="post-queue">{{range .Held}}<li class="card">
   <p class="hint"><strong>{{.Name}}</strong> on <a href="{{.Href}}">{{.Thread}}</a> · {{.Board}} · {{.When}}</p>
@@ -13,7 +14,7 @@
   <form method="post" action="/boards/act" class="actions"><input type="hidden" name="id" value="{{.ID}}">
     <button type="submit" name="do" value="approve">Approve<span class="visually-hidden"> the post by {{.Name}}</span></button>
     <button type="submit" name="do" value="delete" class="danger">Delete<span class="visually-hidden"> the post by {{.Name}}</span></button></form>
-</li>{{end}}</ul>{{else}}<p>Nothing is waiting.</p>{{end}}
+</li>{{end}}</ul>{{else}}<p class="notice">Nothing is waiting.</p>{{end}}
 
 <h2>Recently posted</h2>
 {{if .Recent}}<ul class="post-queue">{{range .Recent}}<li class="card">
@@ -21,7 +22,7 @@
   <p class="post-text">{{.Body}}</p>
   <form method="post" action="/boards/act"><input type="hidden" name="id" value="{{.ID}}">
     <button type="submit" name="do" value="delete" class="quiet">Delete<span class="visually-hidden"> the post by {{.Name}}</span></button></form>
-</li>{{end}}</ul>{{else}}<p>Nobody has posted yet.</p>{{end}}
+</li>{{end}}</ul>{{else}}<p class="notice">Nobody has posted yet.</p>{{end}}
 
 <h2>The boards</h2>
 {{if .Boards}}<div class="table-wrap"><table>
@@ -32,20 +33,26 @@
     <td>{{.Limit}} characters</td>
     <td>{{if $.CanDeclare}}<form method="post" action="/boards/act"><input type="hidden" name="do" value="remove"><input type="hidden" name="name" value="{{.Name}}">
       <button type="submit" class="quiet">Remove<span class="visually-hidden"> {{.Title}}</span></button></form>{{end}}</td>
-  </tr>{{end}}</tbody></table></div>{{else}}<p>No boards yet.</p>{{end}}
+  </tr>{{end}}</tbody></table></div>{{else}}<p class="notice">No boards yet.</p>{{end}}
+{{else}}
+<p class="notice">No boards yet.{{if .CanDeclare}} Add one below.{{end}} Once a
+  page has a comments section naming a board, its posts, and any waiting for
+  a person to approve them, appear here.</p>
+{{end}}
 
-{{if .CanDeclare}}<form method="post" action="/boards/act" class="card">
+{{if .CanDeclare}}
+<h2>Add or change a board</h2>
+<form method="post" action="/boards/act" class="card">
   <input type="hidden" name="do" value="declare">
-  <h3>Add or change a board</h3>
   <div class="field"><label for="b-name">Name {{template "req"}}</label>
-    <input id="b-name" name="name" required pattern="[a-z][a-z0-9\-]{0,39}" aria-describedby="b-name-help">
-    <p id="b-name-help" class="help">Lower-case letters, digits and hyphens. A page's comments section names it.</p></div>
+    <input id="b-name" class="short" name="name" required pattern="[a-z][a-z0-9\-]{0,39}" aria-describedby="b-name-help">
+    <p id="b-name-help" class="help">Lower-case letters, digits and hyphens. A page's comments section names it. The name of a board already here changes that board.</p></div>
   <div class="field"><label for="b-title">Title {{template "req"}}</label><input id="b-title" name="title" required></div>
   <fieldset class="field"><legend>When a post is shown</legend>
     <label><input type="radio" name="moderation" value="post" checked> At once; anybody can report it to you</label><br>
     <label><input type="radio" name="moderation" value="pre"> After a person approves it here</label></fieldset>
-  <div class="field"><label for="b-max">Longest post, in characters</label><input id="b-max" name="max" type="number" min="0" max="10000" value="0" aria-describedby="b-max-help">
-    <p id="b-max-help" class="help">0 means 2000.</p></div>
+  <div class="field"><label for="b-max">Longest post, in characters</label><input id="b-max" name="max" type="number" min="1" max="10000" placeholder="2000" aria-describedby="b-max-help">
+    <p id="b-max-help" class="help">Up to 10,000. Leave empty for 2,000.</p></div>
   <div class="field"><label><input type="checkbox" name="closed" value="1"> Closed: keep what is there and take nothing new</label></div>
   <button type="submit">Save the board</button>
 </form>{{end}}

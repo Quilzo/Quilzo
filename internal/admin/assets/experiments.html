@@ -35,19 +35,21 @@
 <form method="post" action="/experiments/change" class="card">
   <input type="hidden" name="op" value="add">
   <div class="field"><label for="xname">Name {{template "req"}}</label>
-    <input id="xname" name="name" required pattern="[a-z0-9][a-z0-9\-]{0,39}" placeholder="pricing-headline"></div>
+    <input id="xname" class="short" name="name" required pattern="[a-z0-9][a-z0-9\-]{0,39}" placeholder="pricing-headline"></div>
   <div class="field"><label for="xpage">Page being tested {{template "req"}}</label>
-    <input id="xpage" name="page" required placeholder="pricing" aria-describedby="xpage-help">
+    <input id="xpage" class="short" name="page" required placeholder="pricing" aria-describedby="xpage-help">
     <p id="xpage-help" class="help">Its current content is the control.</p></div>
   <div class="field"><label for="xvariant">Variant page {{template "req"}}</label>
-    <input id="xvariant" name="variant" required placeholder="pricing-b" aria-describedby="xvariant-help">
+    <input id="xvariant" class="short" name="variant" required placeholder="pricing-b" aria-describedby="xvariant-help">
     <p id="xvariant-help" class="help">A published page with the change. It is shown at the tested page's address.</p></div>
   <div class="field"><label for="xweight">Share of visitors who see the variant (%)</label>
     <input id="xweight" name="weight" type="number" min="1" max="99" value="50"></div>
   <div class="field"><label for="xgoal">Goal {{template "req"}}</label>
-    <input id="xgoal" name="goal" required placeholder="form:contact" aria-describedby="xgoal-help">
+    <input id="xgoal" class="short" name="goal" required placeholder="form:contact" aria-describedby="xgoal-help">
     <p id="xgoal-help" class="help"><code>form:NAME</code> for a form sent, <code>chatbot:NAME</code> for a question answered, <code>page:/path</code> for reaching a page.</p></div>
-  <button type="submit">Create, stopped</button>
+  <p class="help">A new experiment starts stopped. Start it from its card
+    above once the variant page is published.</p>
+  <button type="submit">Create experiment</button>
 </form>
 {{end}}
 {{end}}
