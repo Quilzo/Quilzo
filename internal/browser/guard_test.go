@@ -127,3 +127,92 @@ func TestThePageReachesOnlyWhatTheRuleAllows(t *testing.T) {
 		t.Errorf("refusals:\n%s", all)
 	}
 }
+
+// What a page starts is watched as the page is: a frame from another site
+// (its own process), a worker, a service worker and a window it opens each
+// try to post to a host that may only be read, and none of them reaches it.
+func TestNothingThePageStartsGoesUnwatched(t *testing.T) {
+	path := localChromium(t)
+	var mu sync.Mutex
+	var hits []string
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Each reads what it may, and then tries to send.
+	post := func(path string) string {
+		return fmt.Sprintf(`fetch(%q).then(()=>fetch(%q,{method:'POST',body:'secret'})).catch(()=>{});`, "/read"+path, path)
+	}
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits = append(hits, r.Method+" "+r.Host+r.URL.Path)
+		mu.Unlock()
+		port := strings.Split(r.Host, ":")[1]
+		switch r.URL.Path {
+		case "/page":
+			fmt.Fprintf(w, `<title>page</title><iframe src="http://localhost:%s/frame"></iframe><script>`+
+				`new Worker('/worker.js');`+
+				`navigator.serviceWorker.register('/sw.js').then(()=>navigator.serviceWorker.ready).then(r=>r.active.postMessage('go'));`+
+				`window.open('/popup');</script>`, port)
+		case "/frame":
+			fmt.Fprintf(w, `<script>%s</script>`, post("/from-frame"))
+		case "/popup":
+			fmt.Fprintf(w, `<script>%s</script>`, post("/from-popup"))
+		case "/worker.js":
+			w.Header().Set("Content-Type", "text/javascript")
+			fmt.Fprint(w, post("/from-worker"))
+		case "/sw.js":
+			w.Header().Set("Content-Type", "text/javascript")
+			fmt.Fprintf(w, `self.addEventListener('install',()=>{%s});self.addEventListener('message',()=>{%s});`,
+				post("/from-sw-install"), post("/from-sw"))
+		}
+	})}
+	go srv.Serve(ln)
+	defer srv.Close()
+	base := "http://" + ln.Addr().String()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	b, err := cdp.Launch(ctx, cdp.Options{Path: path, Profile: filepath.Join(t.TempDir(), "p"), Stderr: io.Discard,
+		Args: []string{"--proxy-server=direct://", "--proxy-bypass-list=*"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	p, err := b.NewPage(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var refused []string
+	stop, err := Guard(ctx, b, p, Hosts{Read: []string{"127.0.0.1", "localhost"}, Plain: true}.Rule(), "", "", func(r Refusal) {
+		mu.Lock()
+		refused = append(refused, r.Request.Kind+" "+r.Why)
+		mu.Unlock()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	if err := p.Navigate(ctx, base+"/page"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(3 * time.Second)
+	mu.Lock()
+	got := strings.Join(hits, "\n")
+	mu.Unlock()
+	if !strings.Contains(got, "GET 127.0.0.1") {
+		t.Fatalf("the page did not load:\n%s", got)
+	}
+	if strings.Contains(got, "POST") {
+		t.Errorf("something the page started posted to a read host:\n%s", got)
+	}
+	// Watched is not stopped: what was started ran, and read what it may.
+	for _, read := range []string{"localhost:" + strings.Split(base, ":")[2] + "/read/from-frame", "/read/from-worker"} {
+		if !strings.Contains(got, read) {
+			t.Errorf("%s did not arrive: what the page started was held and never let run:\n%s", read, got)
+		}
+	}
+	mu.Lock()
+	t.Logf("requests:\n%s\nrefused:\n%s", got, strings.Join(refused, "\n"))
+	mu.Unlock()
+}
