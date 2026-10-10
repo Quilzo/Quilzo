@@ -5,11 +5,11 @@
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 {{if .New}}<p class="lead">Starting from <strong>{{.M.Kind}}</strong>: {{.Summary}}. {{.When}}</p>
 {{else}}<p class="lead">{{.M.Purpose}}</p>{{end}}
-{{if .Invalid}}<p class="notice warn"><strong>As it stands this would be refused:</strong> {{.Invalid}}</p>{{end}}
+{{if and .Invalid (or (not .New) .M.Name)}}<p class="notice warn"><strong>As it stands this would be refused:</strong> {{.Invalid}}</p>{{end}}
 
 {{if and .New .CanDraft}}
-<section class="card" aria-labelledby="describe-h">
-  <h2 id="describe-h">Or describe it</h2>
+<details class="card describe"{{if .Described}} open{{end}}>
+  <summary><h2>Describe it instead</h2> <span class="hint">and let a model draft it</span><span class="chev">{{icon "expand_more"}}</span></summary>
   <form method="post" action="/agents/new">
     <div class="field"><label for="describe">What should it do? {{template "req"}}</label>
       <textarea id="describe" name="describe" rows="3" maxlength="2000" required aria-describedby="describe-help">{{.Described}}</textarea>
@@ -32,7 +32,7 @@
   <p class="hint">The form below holds the draft. Nothing is saved until you read it and press Save,
     and saving checks it again.</p>
   {{end}}
-</section>
+</details>
 {{end}}
 
 <figure class="wf-fig">
@@ -44,7 +44,7 @@
     {{if eq .Class "gate"}}<text class="gatelabel" x="{{.TX}}" y="{{.TY}}" transform="rotate(-90 {{.TX}} {{.TY}})" text-anchor="middle">{{.Label}}</text>
     {{else}}<text class="label {{.Class}}" x="{{.TX}}" y="{{.TY}}">{{.Label}}</text>{{if .Sub}}<text class="sub" x="{{.TX}}" y="{{.TY}}" dy="14">{{.Sub}}</text>{{end}}{{end}}{{end}}
   </svg>
-  <p class="hint">{{.Map.Says}} Drawn from the declaration below; the two cannot disagree.</p>
+  <p class="hint mapsays">{{.Map.Says}} <span class="drawnnote">Drawn from the declaration below; the two cannot disagree.</span></p>
 </figure>
 
 <form method="post" action="/agents/act">
@@ -64,11 +64,19 @@
   </fieldset>
 
   <fieldset class="caps-set"><legend>What it may do</legend>
-    <div class="caps">
-    {{range .Caps}}<p><label><input type="checkbox" name="cap" value="{{.Name}}"{{if .On}} checked{{end}}> <code>{{.Name}}</code>{{if .Risk}} <span class="wf-word serious">writes</span>{{end}}</label>
-      <label class="ask"><input type="checkbox" name="ask" value="{{.Name}}"{{if .Ask}} checked{{end}}> ask first<span class="visually-hidden"> before {{.Name}}</span></label></p>{{end}}
+    {{if .UnknownCaps}}<div class="caps">
     {{range .UnknownCaps}}<p><label><input type="checkbox" name="cap" value="{{.}}" checked> <code>{{.}}</code> <span class="wf-word critical">nothing offers this</span></label></p>{{end}}
-    </div>
+    </div>{{end}}
+    {{range .CapGroups}}
+    <details class="capgroup"{{if .Held}} open{{end}}>
+      <summary>{{.Name}} <span class="hint">{{if .Held}}{{.Held}} of {{len .Caps}} chosen{{else}}none of {{len .Caps}} chosen{{end}}</span><span class="chev">{{icon "expand_more"}}</span></summary>
+      <div class="caps">
+      {{range .Caps}}<p><label><input type="checkbox" name="cap" value="{{.Name}}"{{if .On}} checked{{end}}> <code>{{.Name}}</code>{{if .Risk}} <span class="wf-word serious">writes</span>{{end}}</label>
+        <label class="ask"><input type="checkbox" name="ask" value="{{.Name}}"{{if .Ask}} checked{{end}}> Ask first<span class="visually-hidden"> before {{.Name}}</span></label></p>{{end}}
+      </div>
+    </details>
+    {{end}}
+    {{if .Caps}}<p class="hint">Once a capability is chosen, “Ask first” appears beside it: the agent then stops and waits for a person to agree to each call.</p>{{end}}
     {{if not .Caps}}<p class="hint">The list of capabilities could not be read, so what is held is kept as it is.</p>{{end}}
   </fieldset>
 
@@ -119,7 +127,7 @@
 {{if .Runs}}<div class="table-wrap"><table>
   <thead><tr><th scope="col">Run</th><th scope="col">Outcome</th><th scope="col">Did</th><th scope="col">Refused</th><th scope="col">Failed</th><th scope="col">When</th></tr></thead>
   <tbody>{{range .Runs}}<tr><th scope="row"><a href="/agents/run/{{.ID}}">{{if .Goal}}{{.Goal}}{{else}}{{.ID}}{{end}}</a></th>
-    <td><span class="wf-word {{.Tone}}">{{.Outcome}}</span></td><td>{{.Did}}</td><td>{{.Refused}}</td><td>{{.Failed}}</td><td>{{.When}}</td></tr>{{end}}</tbody>
+    <td><span class="wf-word {{.Tone}}">{{.Outcome}}</span></td><td>{{.Did}}</td><td>{{.Refused}}</td><td>{{.Failed}}</td><td class="when">{{.When}}</td></tr>{{end}}</tbody>
 </table></div>
 <p class="hint"><a href="/agents/runs?agent={{.M.Name}}">Every run of {{.M.Name}}</a></p>{{end}}
 
