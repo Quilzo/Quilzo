@@ -114,13 +114,23 @@ func (s *Server) handleDetections(w http.ResponseWriter, r *http.Request) {
 		Last     string
 		RingTone string
 		Severity string
+		// Group is the heading over a run of rules from one source, set on
+		// the first rule of the run.
+		Group string
+		// Named is each technique with its name: "T1110 Brute force".
+		Named []string
 	}
 	var rows []row
+	anyVerdicts := false
 	var live, trial, off, silent int
 	for _, rule := range v.Rules {
 		st := stats[rule.ID]
 		rw := row{Rule: rule, S: st, Bar: verdictBarOf(st),
 			Severity: severityName(rule.Severity)}
+		for _, t := range rule.Technique {
+			rw.Named = append(rw.Named, techniqueWords(t))
+		}
+		anyVerdicts = anyVerdicts || st.Findings > 0
 		switch st.Ring {
 		case detect.Trial:
 			trial++
@@ -137,8 +147,7 @@ func (s *Server) handleDetections(w http.ResponseWriter, r *http.Request) {
 			rw.Quality = fmt.Sprintf("%.0f%% real (likely %.0f–%.0f%%)",
 				rate*100, low*100, high*100)
 		} else {
-			rw.Quality = fmt.Sprintf("%d of the %d verdicts needed",
-				st.Decided(), detect.MinVerdicts)
+			rw.Quality = fmt.Sprintf("%d/%d", st.Decided(), detect.MinVerdicts)
 		}
 		// One thing is only "most of the noise" when it is: at least three
 		// verdicts and half of them. Naming an account from a single false
@@ -155,7 +164,16 @@ func (s *Server) handleDetections(w http.ResponseWriter, r *http.Request) {
 		}
 		rows = append(rows, rw)
 	}
-	data["Rows"] = rows
+	// Rules from one source together, under its name: a list of thirty
+	// rules reads as a few short lists. The order within a source is kept.
+	sort.SliceStable(rows, func(i, j int) bool { return ruleGroup(rows[i].ID) < ruleGroup(rows[j].ID) })
+	for i := range rows {
+		if g := ruleGroup(rows[i].ID); i == 0 || g != ruleGroup(rows[i-1].ID) {
+			rows[i].Group = g
+		}
+	}
+	data["Rows"], data["AnyVerdicts"] = rows, anyVerdicts
+	data["MinVerdicts"] = detect.MinVerdicts
 	data["Live"], data["Trial"], data["Off"], data["Silent"] = live, trial,
 		off, silent
 	data["Proposals"] = v.Proposals
@@ -182,6 +200,7 @@ func (s *Server) handleDetections(w http.ResponseWriter, r *http.Request) {
 	// each one, and whether any of them has ever fired.
 	type tech struct {
 		ID    string
+		Name  string
 		Rules []string
 		Fired bool
 	}
@@ -193,7 +212,7 @@ func (s *Server) handleDetections(w http.ResponseWriter, r *http.Request) {
 		for _, id := range rule.Technique {
 			t := byTech[id]
 			if t == nil {
-				t = &tech{ID: id}
+				t = &tech{ID: id, Name: techniqueNames[id]}
 				byTech[id] = t
 			}
 			t.Rules = append(t.Rules, rule.ID)
@@ -265,4 +284,48 @@ func (s *Server) handleDetectionsAct(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "nothing to do", http.StatusBadRequest)
 	}
+}
+
+// ruleGroup is the source a rule belongs to, by the first word of its id,
+// as a person names it: "aws.root-account-used" is under AWS.
+func ruleGroup(id string) string {
+	head, _, _ := strings.Cut(id, ".")
+	switch head {
+	case "corr":
+		return "Across sources"
+	case "workspace":
+		return "Google Workspace"
+	}
+	return productName(head)
+}
+
+// techniqueNames are the ATT&CK techniques the rules name, by their
+// published names, so an id is never shown alone.
+var techniqueNames = map[string]string{
+	"T1059":     "Command and scripting interpreter",
+	"T1059.001": "PowerShell",
+	"T1070":     "Indicator removal",
+	"T1078":     "Valid accounts",
+	"T1078.004": "Cloud accounts",
+	"T1090":     "Proxy",
+	"T1098":     "Account manipulation",
+	"T1110":     "Brute force",
+	"T1190":     "Exploit public-facing application",
+	"T1485":     "Data destruction",
+	"T1499":     "Endpoint denial of service",
+	"T1528":     "Steal application access token",
+	"T1556":     "Modify authentication process",
+	"T1556.006": "Multi-factor authentication",
+	"T1562":     "Impair defenses",
+	"T1562.008": "Disable or modify cloud logs",
+	"T1565":     "Data manipulation",
+	"T1595":     "Active scanning",
+}
+
+// techniqueWords is a technique's id with its name, when known.
+func techniqueWords(id string) string {
+	if n := techniqueNames[id]; n != "" {
+		return id + " " + n
+	}
+	return id
 }

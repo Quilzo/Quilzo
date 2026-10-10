@@ -9,7 +9,7 @@
   reason on the record.</p>
 
 <dl class="stats-row">
-  <div><dt>In the queue</dt><dd>{{.Live}}</dd></div>
+  <div><dt>Live, raising findings</dt><dd>{{.Live}}</dd></div>
   <div{{if .Trial}} class="serious"{{end}}><dt>On trial</dt><dd>{{.Trial}}</dd></div>
   <div><dt>Switched off</dt><dd>{{.Off}}</dd></div>
   <div{{if .Silent}} class="serious"{{end}}><dt>Never fired</dt><dd>{{.Silent}}</dd></div>
@@ -20,11 +20,33 @@
   <ul>{{range .Proposals}}<li><strong>{{.What}}.</strong> {{.Why}}.</li>{{end}}</ul></section>{{end}}
 
 <h2>Rules</h2>
-<p class="wf-scale" aria-hidden="true"><span class="dt-key real">real</span><span class="dt-key false">false</span><span class="dt-key benign">benign</span><span class="dt-key open">undecided</span></p>
+{{if .AnyVerdicts}}<p class="wf-scale" aria-hidden="true"><span class="dt-key real">real</span><span class="dt-key false">false</span><span class="dt-key benign">benign</span><span class="dt-key open">undecided</span></p>{{end}}
 {{if .Rows}}<div class="table-wrap"><table class="wf-people dt-rules">
   <thead><tr><th scope="col">Rule</th><th scope="col">Ring</th><th scope="col">Raised</th><th scope="col">Verdicts</th><th scope="col">How good</th><th scope="col">Last fired</th></tr></thead>
-  <tbody>{{range .Rows}}<tr>
-    <th scope="row">{{.Title}}<br><code>{{.ID}}</code> <span class="pill {{.Severity}}">{{sentence .Severity}}</span></th>
+  <tbody>{{range .Rows}}{{if .Group}}<tr class="dt-group"><th scope="colgroup" colspan="6">{{.Group}}</th></tr>{{end}}<tr>
+    <th scope="row">{{.Title}} <span class="pill {{.Severity}}">{{sentence .Severity}}</span><br><code>{{.ID}}</code>
+    <details class="dt-more"><summary>About this rule<span class="chev">{{icon "expand_more"}}</span></summary>
+    {{if .Why}}<p><strong>Looks for:</strong> {{.Why}}</p>{{end}}
+    {{if .Blind}}<p><strong>Does not catch:</strong> {{.Blind}}</p>{{else}}<p class="hint">Nobody has written down what this rule does not catch.</p>{{end}}
+    <p class="hint">Reads {{range $i, $s := .Sources}}{{if $i}}, {{end}}{{$s}}{{end}}{{if .Named}} · names {{range $i, $t := .Named}}{{if $i}}, {{end}}{{$t}}{{end}}{{end}}{{if .S.NoisyEntity}} · most of its noise is about <code>{{.S.NoisyEntity}}</code> ({{.S.NoisyCount}}){{end}}</p>
+    <div class="grid2">
+    <form method="post" action="/security/detections/act">
+      <input type="hidden" name="do" value="ring"><input type="hidden" name="rule" value="{{.ID}}">
+      <p><label>Ring <select name="ring">{{$cur := .S.Ring}}{{range $.Rings}}<option value="{{.}}"{{if eq . $cur}} selected{{end}}>{{.}}</option>{{end}}</select></label></p>
+      <p><label>Why <input type="text" name="because" maxlength="300"></label></p>
+      <p class="hint">A reason is needed to take a rule out of the queue.</p>
+      <p><button type="submit" class="btn-tonal">Move the rule</button></p>
+    </form>
+    <form method="post" action="/security/detections/act">
+      <input type="hidden" name="do" value="suppress"><input type="hidden" name="rule" value="{{.ID}}">
+      <p><label>Where <select name="field"><option value="actor">actor</option><option value="target">target</option><option value="device">device</option><option value="ip">ip</option></select></label>
+        <label>is exactly <input type="text" name="value" required maxlength="256" placeholder="okta:svc-backup"{{if .S.NoisyEntity}} value="{{.S.NoisyEntity}}"{{end}}></label></p>
+      <p><label>Owner <input type="text" name="owner" required maxlength="120"></label>
+        <label>Until <input type="date" name="until" required min="{{$.Tomorrow}}" max="{{$.MaxUntil}}"></label></p>
+      <p><label>Why <input type="text" name="because" required maxlength="300"></label></p>
+      <p><button type="submit" class="btn-tonal">Suppress this one thing</button></p>
+    </form>
+    </div></details></th>
     <td><span class="wf-word {{.RingTone}}">{{.S.Ring}}</span></td>
     <td>{{if .S.Findings}}{{.S.Findings}} <span class="hint">({{.S.Fired}} times)</span>{{else}}<span class="hint">never</span>{{end}}{{if .S.Suppressed}}<br><span class="hint">{{.S.Suppressed}} hidden</span>{{end}}</td>
     <td>{{if .S.Findings}}<svg class="dt-bar" viewBox="0 0 200 10" role="img" aria-label="{{.S.Real}} real, {{.S.False}} false, {{.S.Benign}} benign, {{.S.Undecided}} undecided">
@@ -34,31 +56,10 @@
         {{if .Bar.BenignW}}<rect class="benign" x="{{.Bar.BenignX}}" y="0" width="{{.Bar.BenignW}}" height="10" rx="2"></rect>{{end}}
         {{if .Bar.OpenW}}<rect class="open" x="{{.Bar.OpenX}}" y="0" width="{{.Bar.OpenW}}" height="10" rx="2"></rect>{{end}}
       </svg><br><span class="hint">{{.S.Real}} · {{.S.False}} · {{.S.Benign}} · {{.S.Undecided}}</span>{{else}}<span class="hint">—</span>{{end}}</td>
-    <td>{{if .Enough}}{{.Quality}}{{else}}<span class="hint">{{.Quality}}</span>{{end}}</td>
+    <td>{{if .Enough}}{{.Quality}}{{else}}<span class="hint" title="{{.S.Decided}} of the {{$.MinVerdicts}} verdicts needed">{{.Quality}}<span class="visually-hidden"> verdicts of the {{$.MinVerdicts}} needed</span></span>{{end}}</td>
     <td>{{if .Last}}{{.Last}}{{else}}<span class="hint">never</span>{{end}}</td>
   </tr>
-  <tr class="dt-more"><td colspan="6"><details><summary>Why, what it misses, and changing it<span class="chev">{{icon "expand_more"}}</span></summary>
-    {{if .Why}}<p><strong>Looks for:</strong> {{.Why}}</p>{{end}}
-    {{if .Blind}}<p><strong>Does not catch:</strong> {{.Blind}}</p>{{else}}<p class="hint">Nobody has written down what this rule does not catch.</p>{{end}}
-    <p class="hint">Reads {{range $i, $s := .Sources}}{{if $i}}, {{end}}{{$s}}{{end}}{{if .Technique}} · names {{range $i, $t := .Technique}}{{if $i}}, {{end}}{{$t}}{{end}}{{end}}{{if .S.NoisyEntity}} · most of its noise is about <code>{{.S.NoisyEntity}}</code> ({{.S.NoisyCount}}){{end}}</p>
-    <div class="grid2">
-    <form method="post" action="/security/detections/act">
-      <input type="hidden" name="do" value="ring"><input type="hidden" name="rule" value="{{.ID}}">
-      <p><label>Ring <select name="ring">{{$cur := .S.Ring}}{{range $.Rings}}<option value="{{.}}"{{if eq . $cur}} selected{{end}}>{{.}}</option>{{end}}</select></label></p>
-      <p><label>Why <input type="text" name="because" maxlength="300"></label></p>
-      <p class="hint">A reason is needed to take a rule out of the queue.</p>
-      <p><button type="submit">Move the rule</button></p>
-    </form>
-    <form method="post" action="/security/detections/act">
-      <input type="hidden" name="do" value="suppress"><input type="hidden" name="rule" value="{{.ID}}">
-      <p><label>Where <select name="field"><option value="actor">actor</option><option value="target">target</option><option value="device">device</option><option value="ip">ip</option></select></label>
-        <label>is exactly <input type="text" name="value" required maxlength="256" placeholder="okta:svc-backup"{{if .S.NoisyEntity}} value="{{.S.NoisyEntity}}"{{end}}></label></p>
-      <p><label>Owner <input type="text" name="owner" required maxlength="120"></label>
-        <label>Until <input type="date" name="until" required min="{{$.Tomorrow}}" max="{{$.MaxUntil}}"></label></p>
-      <p><label>Why <input type="text" name="because" required maxlength="300"></label></p>
-      <p><button type="submit">Suppress this one thing</button></p>
-    </form>
-    </div></details></td></tr>{{end}}</tbody>
+  </tr>{{end}}</tbody>
 </table></div>{{else}}<p>No rules were found.</p>{{end}}
 
 <h2>Suppressions</h2>
@@ -77,7 +78,7 @@
 <h2>Techniques the rules name</h2>
 {{if .Techniques}}<div class="table-wrap"><table>
   <thead><tr><th scope="col">ATT&amp;CK technique</th><th scope="col">Rules that name it</th><th scope="col">Any of them fired</th></tr></thead>
-  <tbody>{{range .Techniques}}<tr><th scope="row"><code>{{.ID}}</code></th>
+  <tbody>{{range .Techniques}}<tr><th scope="row"><code>{{.ID}}</code>{{if .Name}} {{.Name}}{{end}}</th>
     <td>{{range $i, $r := .Rules}}{{if $i}}, {{end}}<code>{{$r}}</code>{{end}}</td>
     <td>{{if .Fired}}<span class="wf-word good">Yes</span>{{else}}<span class="wf-word unknown">Not yet</span>{{end}}</td></tr>{{end}}</tbody>
 </table></div>{{else}}<p>No rule names a technique.</p>{{end}}

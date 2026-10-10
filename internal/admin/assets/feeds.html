@@ -46,23 +46,23 @@
 
 {{if .SiteAdmin}}
 <h2>Add a feed</h2>
-<form method="post" action="/security/feeds/act" class="auto-builder">
+<form method="post" action="/security/feeds/act" class="auto-builder feed-add">
   <input type="hidden" name="do" value="add">
-  <fieldset><legend>What sends it</legend>
-    <p><label><input type="radio" name="kind" value="okta" checked> <strong>Okta event hook</strong> <span class="hint">sign-ins, lifecycle, sessions and risk as they happen, with a secret Okta sends</span></label></p>
-    <p><label><input type="radio" name="kind" value="ssf"> <strong>Shared signals</strong> <span class="hint">OpenID SSF from Okta, Google, Jamf and other transmitters, every event signed</span></label></p>
-    <p><label><input type="radio" name="kind" value="webhook"> <strong>Signed webhook</strong> <span class="hint">anything that signs the Standard Webhooks way, read through one of your mappings</span></label></p>
-    <p><label><input type="radio" name="kind" value="github"> <strong>GitHub webhook</strong> <span class="hint">signed with X-Hub-Signature-256, read through one of your mappings</span></label></p>
+  <fieldset class="choices"><legend>What sends it</legend>
+    <p><label><input type="radio" name="kind" value="okta" checked> <span><strong>Okta event hook</strong> <span class="hint">sign-ins, lifecycle, sessions and risk as they happen, with a secret Okta sends</span></span></label></p>
+    <p><label><input type="radio" name="kind" value="ssf"> <span><strong>Shared signals</strong> <span class="hint">OpenID SSF from Okta, Google, Jamf and other transmitters, every event signed</span></span></label></p>
+    <p><label><input type="radio" name="kind" value="webhook"> <span><strong>Signed webhook</strong> <span class="hint">anything that signs the Standard Webhooks way, read through one of your mappings</span></span></label></p>
+    <p><label><input type="radio" name="kind" value="github"> <span><strong>GitHub webhook</strong> <span class="hint">signed with X-Hub-Signature-256, read through one of your mappings</span></span></label></p>
   </fieldset>
   <div class="field"><label for="feed-name">Name {{template "req"}}</label>
     <input id="feed-name" name="name" required pattern="[a-z0-9][a-z0-9\-]{1,39}" aria-describedby="feed-name-hint">
     <p class="hint" id="feed-name-hint">Lowercase letters, digits and hyphens. It becomes the end of the address.</p></div>
-  <div class="field"><label for="feed-mapping">Mapping, for a webhook</label>
+  <div class="field feed-only" data-for="webhook github"><label for="feed-mapping">Mapping</label>
     <select id="feed-mapping" name="mapping"><option value="">—</option>{{range .Mappings}}<option value="{{.}}">{{.}}</option>{{end}}</select></div>
-  <div class="field"><label for="feed-issuer">Transmitter, for shared signals</label>
+  <div class="field feed-only" data-for="ssf"><label for="feed-issuer">Transmitter</label>
     <input id="feed-issuer" name="issuer" type="url" placeholder="https://acme.okta.com" aria-describedby="feed-issuer-hint">
     <p class="hint" id="feed-issuer-hint">Its configuration is read from the address now, and its signing keys from what that names.</p></div>
-  <div class="field"><label for="feed-alias">Whose ids its people have, for shared signals</label>
+  <div class="field feed-only" data-for="ssf"><label for="feed-alias">Whose ids its people have</label>
     <input id="feed-alias" name="alias" placeholder="okta" aria-describedby="feed-alias-hint">
     <p class="hint" id="feed-alias-hint">A person the transmitter names only by its own id is matched through the identity links collecting has learned.</p></div>
   <button type="submit">{{icon "add"}}Add feed</button>
