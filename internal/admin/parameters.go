@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -34,11 +35,43 @@ type Parameters struct {
 
 type paramRow struct {
 	odp.Param
+	Title     string
 	Declared  *odp.Declared
 	Effective string
 	Met       bool
 	Choices   []paramChoice
 	Plain     string
+}
+
+// paramTitles names each parameter the way a person would ask about it;
+// the catalogue's own label ("number", "time period") says little alone.
+var paramTitles = map[string]string{
+	"ac-07_odp.01": "Failed sign-ins before a delay",
+	"ac-07_odp.02": "How long failed sign-ins are counted",
+	"ac-07_odp.03": "What happens after too many failed sign-ins",
+	"ac-07_odp.04": "How long a lockout lasts",
+	"ac-07_odp.05": "How the delay grows",
+	"ac-02.05_odp": "Sign out after inactivity",
+	"ac-12_odp":    "Longest sign-in",
+	"ia-05_odp.01": "Longest life of a token",
+	"au-11_odp":    "How long the audit log is kept",
+}
+
+// insertParam is OSCAL's placeholder for another parameter's value inside
+// a choice, as in "delay next logon prompt per {{ insert: param, X }}".
+var insertParam = regexp.MustCompile(`\{\{\s*insert:\s*param,\s*([A-Za-z0-9_.()-]+)\s*\}\}`)
+
+// plainParam writes a parameter's value for reading: lines become a list
+// and a placeholder names the parameter it stands for, by its title.
+func plainParam(v string) string {
+	v = insertParam.ReplaceAllStringFunc(v, func(m string) string {
+		id := insertParam.FindStringSubmatch(m)[1]
+		if t, ok := paramTitles[id]; ok {
+			return "“" + t + "”"
+		}
+		return id
+	})
+	return strings.ReplaceAll(v, "\n", "; ")
 }
 
 type paramChoice struct {
@@ -81,7 +114,11 @@ func (s *Server) handleParameters(w http.ResponseWriter, r *http.Request) {
 	var rows []paramRow
 	unmet := 0
 	for _, prm := range odp.Params {
-		row := paramRow{Param: prm, Effective: odp.Effective(prm, cfg), Met: true}
+		row := paramRow{Param: prm, Title: paramTitles[prm.ID],
+			Effective: odp.Effective(prm, cfg), Met: true}
+		if row.Title == "" {
+			row.Title = prm.ID
+		}
 		if d, ok := pol.Find(prm.ID); ok {
 			d := d
 			row.Declared = &d
@@ -102,7 +139,7 @@ func (s *Server) handleParameters(w http.ResponseWriter, r *http.Request) {
 					Checked: strings.Contains(have, strings.TrimSpace(strings.Split(c, "{{")[0]))})
 			}
 		}
-		row.Plain = strings.ReplaceAll(row.Effective, "\n", "; ")
+		row.Plain = plainParam(row.Effective)
 		rows = append(rows, row)
 	}
 	var pending []paramProposal
@@ -112,7 +149,7 @@ func (s *Server) handleParameters(w http.ResponseWriter, r *http.Request) {
 			if c.Value == "" {
 				pp.Lines = append(pp.Lines, c.Param+": take the declaration away")
 			} else {
-				pp.Lines = append(pp.Lines, c.Param+" = "+strings.ReplaceAll(c.Value, "\n", "; "))
+				pp.Lines = append(pp.Lines, c.Param+" = "+plainParam(c.Value))
 			}
 		}
 		pending = append(pending, pp)
