@@ -1,4 +1,5 @@
 {{template "head" .}}
+<p class="hint"><a href="/security">Security</a> › <a href="/security/controls">Controls</a></p>
 <h1>FedRAMP 20x indicators</h1>
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
 {{else}}
@@ -9,8 +10,14 @@
   <span class="wf-band as-written unknown"><span class="wf-icon">{{icon "help"}}</span>Yours alone: {{.Elsewhere}}</span>
   <span class="hint">{{.Source.Title}}, version {{.Source.Version}} · <a href="/security/controls/ksi?format=json">Download as JSON</a> · <a href="/security/controls">Controls</a></span>
 </div>
+<nav class="chips" aria-label="Show">
+  {{range .Chips}}<a href="{{.Href}}"{{if .On}} class="on" aria-current="true"{{end}}>{{.Label}}<span class="count">{{.Count}}</span></a>{{end}}
+</nav>
+{{if .Themes}}<nav class="jump-list" aria-label="Themes">
+  <span class="hint">Jump to</span>{{range .Themes}}<a href="#{{.ID}}">{{.Name}}</a>{{end}}
+</nav>{{else}}<p>No indicator matches.</p>{{end}}
 {{range .Themes}}
-<h2>{{.Name}}</h2>
+<h2 id="{{.ID}}">{{.Name}}</h2>
 <ul class="auto-list">{{range .Items}}<li class="auto-card">
   <div class="auto-head"><strong>{{.ID}}</strong> <span>{{.Name}}</span>
     {{if eq (print .Standing) "contributes"}}<span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Quilzo contributes</span>
