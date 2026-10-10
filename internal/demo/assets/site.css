@@ -160,3 +160,25 @@ a { color: var(--accent); }
 .card .name a { color: inherit; text-decoration: none; }
 .card .name a:hover { text-decoration: underline; }
 .shotlink { display: block; }
+
+/* The next step from a product, and from the home page's short list. */
+.buy { margin: 0 0 1rem; font-weight: 600; }
+.more { margin: -1.5rem 0 3rem; font-weight: 600; }
+
+/* The product pictures are pale paper colours. On a dark page they are
+ * dimmed a little, so each card does not glare. */
+@media (prefers-color-scheme: dark) {
+  .shot { filter: brightness(.78) saturate(.9); }
+}
+
+/* A phone: the wordmark has room above it, the menu is one row that scrolls
+ * sideways rather than two ragged ones, and a picture is shorter than the
+ * screen so the name and price under it are seen with it. */
+@media (max-width: 40rem) {
+  .bar { gap: .25rem; padding-top: 12px; flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
+  .bar nav { min-width: 0; margin: 0 -20px; }
+  .mainnav { flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; scrollbar-width: none;
+    padding: 0 20px .4rem; }
+  .mainnav::-webkit-scrollbar { display: none; }
+  .grid .shot { aspect-ratio: 4 / 3; }
+}
