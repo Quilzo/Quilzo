@@ -18,7 +18,7 @@
 <p class="hint">OSCAL, held to NIST's baseline for that level; Quilzo's part of each control written, yours named for you to describe, and any control the posture scan reports failing marked partial.</p>
 
 {{if .Families}}<nav class="jump-list" aria-label="Families">
-  <span class="hint">Jump to</span>{{range .Families}}<a href="#{{.Code}}" title="{{.Name}}">{{.Code}}</a>{{end}}<a href="#secure-by-design">Secure by Design</a>
+  <span class="hint">Jump to</span>{{range .Families}}<a href="#{{.Code}}" title="{{.Name}}" aria-label="{{.Code}}, {{.Name}}">{{.Code}}</a>{{end}}<a href="#secure-by-design">Secure by Design</a>
 </nav>{{end}}
 
 {{range .Families}}
