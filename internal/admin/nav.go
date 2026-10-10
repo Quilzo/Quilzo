@@ -408,13 +408,18 @@ func (s *Server) handleNavOrder(w http.ResponseWriter, r *http.Request) {
 	case r.FormValue("key") != "":
 		keys = move(keys, r.FormValue("key"), r.FormValue("direction"))
 	}
+	// Back to the tab that moved, with its group open.
+	back := "/profile#arrangement"
+	if k := r.FormValue("key"); groupOf(k) != "" {
+		back = "/profile?moved=" + url.QueryEscape(k) + "#tab-" + url.PathEscape(k)
+	}
 
 	http.SetCookie(w, &http.Cookie{
 		Name: NavOrderCookie, Value: url.QueryEscape(strings.Join(keys, ",")),
 		Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode,
 		Secure: r.TLS != nil || s.behindTLSProxy(), MaxAge: 365 * 24 * 3600,
 	})
-	http.Redirect(w, r, "/profile#arrangement", http.StatusSeeOther)
+	http.Redirect(w, r, back, http.StatusSeeOther)
 }
 
 // move shifts one key one place, within its own group.
