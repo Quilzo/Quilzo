@@ -44,6 +44,7 @@
     </li>
     {% end %}
   </ul>
+  <p class="more"><a href="/shop">See all twelve products</a></p>
   {% end %}
 
   {% if listings.by_range %}
@@ -121,16 +122,17 @@
 
   {% if page.form %}
   <form class="enquiry" method="post" action="/form/{{ page.form }}">
-    <p class="field"><label for="f-shop">Shop name</label>
+    <p class="field"><label for="f-shop">Shop name <span class="req">required</span></label>
       <input id="f-shop" name="shop" type="text" required></p>
-    <p class="field"><label for="f-contact">Your name</label>
+    <p class="field"><label for="f-contact">Your name <span class="req">required</span></label>
       <input id="f-contact" name="contact" type="text" autocomplete="name" required></p>
-    <p class="field"><label for="f-email">Email</label>
+    <p class="field"><label for="f-email">Email <span class="req">required</span></label>
       <input id="f-email" name="email" type="email" autocomplete="email" required></p>
-    <p class="field"><label for="f-city">Where you are</label>
+    <p class="field"><label for="f-city">Where you are <span class="req">required</span></label>
       <input id="f-city" name="city" type="text" required></p>
     <p class="field"><label for="f-ranges">Which ranges interest you</label>
       <select id="f-ranges" name="ranges">
+        <option value="">Choose a range</option>
         <option>desk</option><option>correspondence</option>
         <option>archive</option><option>all of them</option>
       </select></p>
@@ -151,6 +153,7 @@
       <p class="price"><span class="amount">{{ record.price_display }}</span>
         <span class="avail avail-{{ record.availability }}">{{ record.availability_label }}</span></p>
       {% if record.lead_time %}<p class="lead">{{ record.lead_time }}</p>{% end %}
+      <p class="buy"><a href="/stockists">Where to buy it</a></p>
       <p class="desc">{{ record.description }}</p>
       <dl class="spec">
         <dt>Range</dt><dd>{{ record.range }}</dd>

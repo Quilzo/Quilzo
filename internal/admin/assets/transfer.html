@@ -1,5 +1,7 @@
 {{template "head" .}}
 <h1>Transfer</h1>
+<p class="lead">Take this site out, bring another one in, or start a page from
+  a ready-made shape.</p>
 
 {{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
@@ -8,7 +10,7 @@
 <form method="post" action="/transfer/export" class="inline">
   <span class="pair"><label for="x-format">Format</label>
   <select id="x-format" name="format">
-    {{range .Formats}}<option value="{{.}}">{{.}}</option>{{end}}
+    {{range .Formats}}<option value="{{.Value}}">{{.Label}}</option>{{end}}
   </select></span>
   <button type="submit">Export</button>
 </form>
@@ -25,8 +27,10 @@
   <p><label for="i-file">Export file {{template "req"}}</label>
     <input id="i-file" type="file" name="file" required></p>
   <p><label for="i-source">Format</label>
-    <input id="i-source" name="source" placeholder="blank to detect"
-           spellcheck="false"></p>
+    <select id="i-source" class="short" name="source">
+      <option value="">Work it out from the file</option>
+      {{range .Sources}}<option value="{{.Value}}">{{.Label}}</option>{{end}}
+    </select></p>
   <p><input id="i-write" type="checkbox" name="write" value="1"> <label for="i-write">Write the pages into the draft</label>
     <span class="hint">Leave this off to see what would come in, and what
       would be skipped, before anything is written.</span></p>
@@ -34,37 +38,30 @@
 </form>
 
 <h2>Start from something</h2>
-<div class="table-wrap">
-<table>
-  <thead><tr>
-    <th scope="col">Starter</th><th scope="col">What it is for</th>
-    <th scope="col">Fields</th><th scope="col"><span class="visually-hidden">Actions</span></th>
-  </tr></thead>
-  <tbody>
-  {{range .Starters}}
-  <tr>
-    <th scope="row">{{.Name}}</th>
-    <td>{{.Summary}}</td>
-    <td class="hint">{{range $i, $f := .Fields}}{{if $i}}, {{end}}{{$f}}{{end}}</td>
-    <td>
-      <form method="post" action="/transfer/starter" class="inline">
-        <input type="hidden" name="name" value="{{.Name}}">
-        <span class="pair"><label for="s-{{.Name}}">as page</label>
-        <input id="s-{{.Name}}" name="page" size="10" placeholder="index"
-               spellcheck="false"></span>
-        <label>replace <input type="checkbox" name="overwrite" value="1"></label>
-        <button type="submit">Apply</button>
-      </form>
-    </td>
-  </tr>
-  {{end}}
-  </tbody>
-</table>
-</div>
 <p class="hint">
   A starter's sample content is a whole page, so applying one over a page
   somebody wrote replaces their work with an example. That is refused unless
-  replace is ticked.
+  "Replace if it exists" is ticked.
 </p>
+<div class="starters">
+  {{range .Starters}}
+  <section class="card">
+    <h3>{{.Name}}</h3>
+    <p>{{.Summary}}</p>
+    <details><summary>What it lets you fill in ({{len .Fields}})<span class="chev">{{icon "expand_more"}}</span></summary>
+      <p class="hint">{{range $i, $f := .Fields}}{{if $i}}, {{end}}<code>{{$f}}</code>{{end}}</p>
+    </details>
+    <form method="post" action="/transfer/starter" class="inline">
+      <input type="hidden" name="name" value="{{.Name}}">
+      <span class="pair"><label for="s-{{.Name}}">Write it as page</label>
+      <input id="s-{{.Name}}" name="page" placeholder="index"
+             spellcheck="false"></span>
+      <span class="pair check"><input id="s-{{.Name}}-o" type="checkbox" name="overwrite" value="1">
+        <label for="s-{{.Name}}-o">Replace if it exists</label></span>
+      <button type="submit" class="btn-tonal">Apply<span class="visually-hidden"> {{.Name}}</span></button>
+    </form>
+  </section>
+  {{end}}
+</div>
 {{end}}
 {{template "foot" .}}
