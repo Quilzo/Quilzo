@@ -68,9 +68,11 @@
 
 {{if .CanSave}}
 <h2>Settings</h2>
-<form method="post" action="/assistants/save" class="card">
+<form method="post" action="/assistants/save" class="card settings-form">
   <input type="hidden" name="name" value="{{.A.Name}}">
   <input type="hidden" name="full" value="1">
+
+  <h3>What it says</h3>
   <div class="field"><label for="title">Title {{template "req"}}</label>
     <input id="title" name="title" value="{{.A.Title}}" required></div>
   <div class="field"><label for="greeting">Greeting</label>
@@ -80,6 +82,10 @@
     <p id="instr-help" class="help">How it should sound. This cannot widen
       what it reads or does: those are the settings below, enforced whatever
       the text says.</p></div>
+  <div class="field"><label for="refusal">When it does not know, it says</label>
+    <input id="refusal" name="refusal" value="{{.A.Refusal}}" placeholder="I could not find that on this site."></div>
+
+  <h3>What it reads</h3>
   <div class="field"><label for="pages">Reads only pages under</label>
     <input id="pages" name="pages" value="{{.Pages}}" placeholder="help, returns — empty means every published page" aria-describedby="pages-help">
     <p id="pages-help" class="help">Comma-separated. Only published pages, never drafts.</p></div>
@@ -95,10 +101,9 @@
     {{else}}<p class="help">Upload a PDF, Markdown or text file on the
       <a href="/media">Media</a> screen and it will appear here.</p>{{end}}
   </fieldset>
-  <div class="field"><label for="refusal">When it does not know, it says</label>
-    <input id="refusal" name="refusal" value="{{.A.Refusal}}" placeholder="I could not find that on this site."></div>
   <div class="field"><label for="passages">Passages per question</label>
-    <input id="passages" name="passages" type="number" min="0" max="12" value="{{.A.Passages}}"></div>
+    <input id="passages" name="passages" type="number" min="1" max="12" value="{{if .A.Passages}}{{.A.Passages}}{{end}}" placeholder="5" aria-describedby="passages-help">
+    <p id="passages-help" class="help">Up to 12. Leave empty for 5.</p></div>
   <div class="field"><label><input type="checkbox" name="use_model" value="1"{{if .A.UseModel}} checked{{end}}>
     Write answers with the configured model</label>
     <p class="help">Off, it quotes your pages directly: no model, no cost,
@@ -110,16 +115,17 @@
       people ("ignore your previous instructions", "if you are an AI", "do not tell the user")
       is left out of what it reads: that is how a planted instruction looks. Turn this on only
       for a chatbot whose pages discuss these attacks on purpose.</p></div>
-  <div class="field"><label for="embed">Sites that may embed it</label>
-    <textarea id="embed" name="embed" rows="2" placeholder="https://shop.example" aria-describedby="embed-help">{{.EmbedList}}</textarea>
-    <p id="embed-help" class="help">One per line, as https://example.com.
-      Nobody else can put it in a frame.</p></div>
+
+  <h3>What visitors can do</h3>
   <div class="field"><label><input type="checkbox" name="handoff" value="1"{{if .A.Handoff}} checked{{end}}>
     Let a visitor ask for a person</label>
     <p class="help">Under each answer, a visitor can choose to send their
       question to somebody here. It arrives in the <a href="/inbox">Inbox</a>
       and is kept, which nothing else a visitor asks is. They are told so,
       and for how long, before they send.</p></div>
+  <div class="field"><label for="handoff_days">Keep those conversations for (days)</label>
+    <input id="handoff_days" name="handoff_days" type="number" min="1" max="90" value="{{if .A.HandoffDays}}{{.A.HandoffDays}}{{end}}" placeholder="30" aria-describedby="handoff-days-help">
+    <p id="handoff-days-help" class="help">Counted from the last message. Up to 90 days. Leave empty for 30.</p></div>
   <div class="field"><label><input type="checkbox" name="voice" value="1"{{if .A.Voice}} checked{{end}} aria-describedby="voice-help">
     Let visitors speak and listen</label>
     <p id="voice-help" class="help">A microphone button, offered only where the
@@ -132,22 +138,28 @@
       device, a question in another language is translated into the site's, and
       the answer back, marked as a translation with the original a click away.
       The answer is still checked against your pages.</p></div>
-  <div class="field"><label for="handoff_days">Keep those conversations for (days)</label>
-    <input id="handoff_days" name="handoff_days" type="number" min="0" max="90" value="{{.A.HandoffDays}}" aria-describedby="handoff-days-help">
-    <p id="handoff-days-help" class="help">After it last moves. 0 means thirty; ninety at most.</p></div>
+
+  <h3>Where it appears</h3>
   <div class="field"><label><input type="checkbox" name="public" value="1"{{if .A.Public}} checked{{end}}>
     Public — serve it on the site at <code>/ask/{{.A.Name}}</code></label></div>
-  <div class="field"><label><input type="checkbox" name="static" value="1"{{if .A.Static}} checked{{end}} aria-describedby="static-help">
-    Answer on static copies of the site too</label>
-    <p id="static-help" class="help">For a copy made with <code>quilzo export</code>
-      or <code>quilzo ipfs write</code>. The copy answers in the visitor's
-      browser, without a model, from published pages only — the passages are
-      published with it as a file anyone can download. Needs Public.</p></div>
-  <fieldset><legend>On the site's pages</legend>
-    <div class="field"><label><input type="checkbox" name="launcher" value="1"{{if .A.Launcher}} checked{{end}} aria-describedby="launcher-help">
-      Show a button that opens it beside the page</label>
-      <p id="launcher-help" class="help">In a corner of every page, or of the pages below. With scripts off it is a link to the
-        conversation, so it works for everybody. Needs Public, and a site shows one.</p></div>
+  <div class="field"><label for="embed">Sites that may embed it</label>
+    <textarea id="embed" name="embed" rows="2" placeholder="https://shop.example" aria-describedby="embed-help">{{.EmbedList}}</textarea>
+    <p id="embed-help" class="help">One per line, as https://example.com.
+      Nobody else can put it in a frame.</p></div>
+  <div class="field"><label><input type="checkbox" name="launcher" value="1"{{if .A.Launcher}} checked{{end}} aria-describedby="launcher-help">
+    Show a button on the site's pages that opens it beside the page</label>
+    <p id="launcher-help" class="help">In a corner of every page, or of the pages below. With scripts off it is a link to the
+      conversation, so it works for everybody. Needs Public, and a site shows one.</p></div>
+  <div class="field"><label for="launcher_pages">Only on pages under</label>
+    <input id="launcher_pages" name="launcher_pages" value="{{.LPages}}" placeholder="/docs, /pricing" aria-describedby="launcher-pages-help">
+    <p id="launcher-pages-help" class="help">Comma-separated. Empty is every page.</p></div>
+  <div class="field"><label for="suggestions">Questions to offer before the first one</label>
+    <textarea id="suggestions" name="suggestions" rows="3" aria-describedby="suggestions-help">{{.LSuggestions}}</textarea>
+    <p id="suggestions-help" class="help">One per line, up to four. Each is a link that asks it.</p></div>
+
+  <details class="settings-more"><summary>How the button looks<span class="chev">{{icon "expand_more"}}</span></summary>
+    <div class="field"><label for="launcher_label">What the button says</label>
+      <input id="launcher_label" class="short" name="launcher_label" maxlength="24" value="{{.L.Label}}"></div>
     <fieldset><legend>Button</legend>
       <p><label><input type="radio" name="launcher_style" value="bubble"{{if eq .L.Style "bubble"}} checked{{end}}> <strong>Round</strong> <span class="help">an icon on its own</span></label></p>
       <p><label><input type="radio" name="launcher_style" value="pill"{{if eq .L.Style "pill"}} checked{{end}}> <strong>With a label</strong> <span class="help">an icon and a word, easier to understand</span></label></p>
@@ -161,15 +173,10 @@
       <p><label><input type="radio" name="panel" value="float"{{if eq .L.Panel "float"}} checked{{end}}> <strong>A panel over the corner</strong> <span class="help">for most sites</span></label></p>
       <p><label><input type="radio" name="panel" value="side"{{if eq .L.Panel "side"}} checked{{end}}> <strong>A panel beside the page</strong> <span class="help">the page moves over to make room; for documentation and portals</span></label></p>
     </fieldset>
-    <div class="field"><label for="launcher_label">What the button says</label>
-      <input id="launcher_label" name="launcher_label" maxlength="24" value="{{.L.Label}}"></div>
-    <div class="field"><label for="launcher_pages">Only on pages under</label>
-      <input id="launcher_pages" name="launcher_pages" value="{{.LPages}}" placeholder="/docs, /pricing" aria-describedby="launcher-pages-help">
-      <p id="launcher-pages-help" class="help">Comma-separated. Empty is every page.</p></div>
-    <div class="field"><label for="suggestions">Questions to offer before the first one</label>
-      <textarea id="suggestions" name="suggestions" rows="3" aria-describedby="suggestions-help">{{.LSuggestions}}</textarea>
-      <p id="suggestions-help" class="help">One per line, up to four. Each is a link that asks it.</p></div>
-    <div class="field"><label for="nudge">A nudge beside the button</label>
+  </details>
+
+  <details class="settings-more"><summary>A nudge beside the button{{if .A.Launcher}}{{if .A.Launcher.Nudge}} (on){{end}}{{end}}<span class="chev">{{icon "expand_more"}}</span></summary>
+    <div class="field"><label for="nudge">What the nudge says</label>
       <input id="nudge" name="nudge" maxlength="120" value="{{if .A.Launcher}}{{.A.Launcher.Nudge}}{{end}}" placeholder="Questions about pricing? Ask here." aria-describedby="nudge-help">
       <p id="nudge-help" class="help">Off unless you write one. Shown once a visit, beside the button and never over the page,
         not again for a month once dismissed, and on a phone only after the first screen has been scrolled past.</p></div>
@@ -177,8 +184,18 @@
       <input id="nudge_after" name="nudge_after" type="number" min="5" max="600" value="{{.L.NudgeAfter}}"></div>
     <div class="field"><label for="nudge_pages">Nudge only on pages under</label>
       <input id="nudge_pages" name="nudge_pages" value="{{.LNudgePages}}" placeholder="/pricing"></div>
-  </fieldset>
-  <button type="submit">Save</button>
+  </details>
+
+  <details class="settings-more"><summary>Static copies of the site{{if .A.Static}} (on){{end}}<span class="chev">{{icon "expand_more"}}</span></summary>
+    <div class="field"><label><input type="checkbox" name="static" value="1"{{if .A.Static}} checked{{end}} aria-describedby="static-help">
+      Answer on static copies of the site too</label>
+      <p id="static-help" class="help">For a copy made with <code>quilzo export</code>
+        or <code>quilzo ipfs write</code>. The copy answers in the visitor's
+        browser, without a model, from published pages only — the passages are
+        published with it as a file anyone can download. Needs Public.</p></div>
+  </details>
+
+  <div class="savebar"><button type="submit">Save</button></div>
 </form>
 
 {{if and .A.Public .A.Embed}}
@@ -216,14 +233,14 @@
 <form method="post" action="/assistants/action" class="card">
   <input type="hidden" name="assistant" value="{{.A.Name}}">
   <div class="field"><label for="action">Action name {{template "req"}}</label>
-    <input id="action" name="action" required pattern="[a-z0-9][a-z0-9\-]{0,62}" placeholder="start-return"></div>
+    <input id="action" class="short" name="action" required pattern="[a-z0-9][a-z0-9\-]{0,62}" placeholder="start-return"></div>
   <div class="field"><label for="kind">Kind</label>
     <select id="kind" name="kind">
       <option value="link">Link to a page</option>
       <option value="form">Fill in a form</option>
     </select></div>
   <div class="field"><label for="target">Page or form {{template "req"}}</label>
-    <input id="target" name="target" required list="form-names" placeholder="contact"></div>
+    <input id="target" class="short" name="target" required list="form-names" placeholder="contact"></div>
   <datalist id="form-names">{{range .FormNames}}<option value="{{.}}">{{end}}</datalist>
   <div class="field"><label for="description">What it does {{template "req"}}</label>
     <input id="description" name="description" required placeholder="Start a return for an order"></div>
