@@ -108,6 +108,18 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// A record opened for editing: its fields fill the form, and its id the
+	// id box, so changing one record is not retyping it.
+	if id := strings.TrimSpace(r.URL.Query().Get("edit")); id != "" && selected != "" {
+		if rec, err := collection.Get(s.Store, tree, selected, id); err == nil && rec != nil {
+			if body, jerr := json.MarshalIndent(rec.Fields, "", "  "); jerr == nil {
+				data["Blank"] = string(body)
+				data["BlankType"] = ""
+				data["EditID"] = rec.ID
+			}
+		}
+	}
+
 	if selected != "" {
 		q := collection.Query{Limit: 100, Sort: r.URL.Query().Get("sort")}
 		if f := strings.TrimSpace(r.URL.Query().Get("find")); f != "" {
@@ -166,10 +178,24 @@ func columnsOf(recs []collection.Record) []string {
 		out = append(out, k)
 	}
 	sort.Strings(out)
-	if len(out) > 8 {
+	// The field that names a record leads, so a row reads as "which one"
+	// before "what about it".
+	for _, lead := range []string{"name", "title", "label", "heading"} {
+		if seen[lead] {
+			rest := []string{lead}
+			for _, k := range out {
+				if k != lead {
+					rest = append(rest, k)
+				}
+			}
+			out = rest
+			break
+		}
+	}
+	if len(out) > 5 {
 		// A table wider than the screen is a table nobody reads. The rest are
-		// on the record's own page.
-		out = out[:8]
+		// on the record itself, which Edit opens.
+		out = out[:5]
 	}
 	return out
 }
