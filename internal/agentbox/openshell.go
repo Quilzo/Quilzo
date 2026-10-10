@@ -150,6 +150,9 @@ func envFile(env []string, reach string, ports map[uint16]int) string {
 // Run runs the program in a new sandbox, waits for it, and deletes the
 // sandbox.
 func (o OpenShell) Run(ctx context.Context, s Spec) (Result, error) {
+	if len(s.Files) > 0 {
+		return Result{}, errors.New("an OpenShell sandbox cannot be handed open files; a browser runs in the native box")
+	}
 	if a := o.Check(); !a.OK {
 		return Result{}, fmt.Errorf("%w: %s", ErrUnavailable, a.Why)
 	}

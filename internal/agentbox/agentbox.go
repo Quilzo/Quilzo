@@ -38,6 +38,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/sandbox"
@@ -81,6 +82,13 @@ type Spec struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
+	// Files are handed to the program as its file descriptors from 3 on, in
+	// order: a browser's control pipe, whose other ends this process keeps.
+	// Nothing in the box can open them; only the program is given them.
+	Files []*os.File
+	// Started is called once the box's first process is running and holds
+	// its own copies of Files, so the caller may close its ends.
+	Started func()
 }
 
 // Result is how a run of a program ended.
