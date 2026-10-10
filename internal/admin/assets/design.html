@@ -6,20 +6,20 @@
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
 
 <p class="hint">
-  The design is two halves. These tokens are yours — colours, type, spacing,
-  shape — and the component rules underneath them are not, because that is
-  where the focus ring, the target sizes and the reduced-motion handling live.
-  Files are in <code>{{.Dir}}</code>.
+  Colours, type, spacing and shape for the public site. Files are in
+  <code>{{.Dir}}</code>.
 </p>
 
 {{if .Own}}
 <div class="card bad">
-  <p><strong><code>{{.Dir}}/site.css</code> exists, so it is served exactly as written.</strong></p>
-  <p>None of the values below are in effect, and the contrast check does not
-    cover what readers get. Delete that file to use the generated stylesheet, or
-    keep editing it by hand.</p>
+  <p><strong>Your own stylesheet is in use, so the settings below are switched off.</strong></p>
+  <p>The site is styled by <code>{{.Dir}}/site.css</code>, exactly as written,
+    and the contrast check does not cover it. To use these settings again,
+    delete or rename that file; to keep it, edit it by hand.</p>
 </div>
 {{end}}
+<fieldset class="whileown"{{if .Own}} disabled{{end}}>
+<legend class="visually-hidden">Design settings</legend>
 
 {{if .Blocking}}
 <div class="card bad">
@@ -42,8 +42,7 @@
 {{end}}
 
 <h2>Look</h2>
-<p class="hint">A style sets corners, density and type for the whole site, and adds the few component rules tokens cannot
-  express. It never changes colour, so it cannot make the site unreadable, and any token you set yourself below still wins.</p>
+<p class="hint">Corners, density and type for the whole site. A style never changes colour.</p>
 <form method="post" action="/design/save" class="design-look">
   <input type="hidden" name="token" value="style">
   <fieldset><legend>Style</legend>
@@ -82,8 +81,7 @@
 </form>
 
 <h2>A palette from one colour</h2>
-<p class="hint">Every colour is chosen against the contrast pairs publishing checks, so the result always passes. The palette
-  replaces the colours set now; layouts, type and shape are untouched.</p>
+<p class="hint">Every colour it makes passes the contrast check. It replaces the colours set now, and nothing else.</p>
 <form method="post" action="/design/generate" class="design-look">
   <div class="field"><label for="seed">Your colour</label>
     <input id="seed" name="seed" type="color" value="{{.Seed}}"></div>
@@ -95,13 +93,12 @@
   </fieldset>
   <button type="submit">Make the palette</button>
 </form>
+</fieldset>
 
 <h2>Layouts</h2>
 <p class="hint">
-  A page renders through the layout it names in its own <code>layout</code>
-  field. A page that names none renders through <code>page</code>. A page naming
-  a layout that is not here does not publish — it would render as nothing for a
-  reader, so it is refused rather than quietly sent through the default.
+  A page uses the layout named in its <code>layout</code> field, or
+  <code>page</code> when it names none.
 </p>
 {{if .Layouts}}
 <ul class="chips">{{range .Layouts}}<li class="chip"><code>{{.}}</code></li>{{end}}</ul>
@@ -113,9 +110,8 @@
 {{if .CanInstall}}
 <h2>Install a design</h2>
 <p class="hint">
-  Writes the layout and its palette into <code>{{.Dir}}</code>. This replaces
-  what is there and changes every page the moment the site process restarts,
-  which is why it needs publishing authority rather than editing authority.
+  Replaces the layout and palette in <code>{{.Dir}}</code>, which changes every
+  page when the site next restarts.
 </p>
 <div class="table-wrap">
 <table>
@@ -155,13 +151,9 @@
   <code>Satoshi-600.woff2</code>, <code>Satoshi-400..700.woff2</code>,
   <code>Satoshi-italic.woff2</code>.
 </p>
-<p class="hint">
-  There is deliberately no way to name a font on somebody else's server. A page
-  that fetches one has handed that server a request on every visit and the
-  ability to stall the render, and the policy cannot help because the page asked
-  for it.
-</p>
 {{end}}
+<fieldset class="whileown"{{if .Own}} disabled{{end}}>
+<legend class="visually-hidden">Design tokens</legend>
 
 {{/*
   One disclosure per token group, open when something in it has been changed.
@@ -229,6 +221,7 @@
 </div>
 </details>
 {{end}}
+</fieldset>
 
 {{if .Advisory}}
 <h2>Worth knowing</h2>
@@ -236,11 +229,9 @@
 {{end}}
 
 <p class="hint">
-  A colour is three or six hex digits after a <code>#</code> and nothing else.
-  <code>rgb()</code>, a named colour and <code>var()</code> are refused because
-  this value lands inside a stylesheet this origin serves, and a sanitiser would
-  be a promise about every future version of CSS. Every change is in the audit
-  log.
+  Write a colour as <code>#</code> and three or six hex digits, such as
+  <code>#1a73e8</code>.
 </p>
+
 {{end}}
 {{template "foot" .}}
