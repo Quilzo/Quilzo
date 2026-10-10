@@ -1,21 +1,28 @@
 {{template "head" .}}
+<p class="hint"><a href="/security">Security</a></p>
 <h1>Controls</h1>
 <p class="lead">How Quilzo implements each NIST SP 800-53 control it has anything to do with, and who does the rest. Each statement says what the software does, written beside the code and joined to the rules that check it and the settings that hold it. A shared control is only as implemented as the customer's part.</p>
 
+<nav class="chips" aria-label="Show">
+  {{range .Chips}}<a href="{{.Href}}"{{if .On}} class="on" aria-current="true"{{end}}>{{.Label}}<span class="count">{{.Count}}</span></a>{{end}}
+</nav>
 <div class="shield-status">
-  <span class="hint">{{.Total}} controls · <a href="/security/controls?who=quilzo">Quilzo's {{.Quilzo}}</a> · <a href="/security/controls?who=shared">shared {{.Shared}}</a> · <a href="/security/controls?who=customer">the customer's {{.Customer}}</a>{{if .Who}} · <a href="/security/controls">all</a>{{end}}</span>
   <span class="hint"><a href="/security/controls/ksi">FedRAMP 20x indicators</a> — what Quilzo shows for each.</span>
   <span class="hint"><a href="/security/controls/component">Download as an OSCAL component definition</a> — import it into your governance tool's system security plan.</span>
 </div>
-<form method="get" action="/security/controls/ssp" class="auto-controls">
+<form method="get" action="/security/controls/ssp" class="auto-controls ssp-form">
   <label for="ssp-impact">Draft a system security plan at</label>
   <select id="ssp-impact" name="impact"><option value="low">Low impact</option><option value="moderate" selected>Moderate impact</option><option value="high">High impact</option></select>
   <button type="submit" class="btn-tonal">Download the draft</button>
-  <span class="hint">OSCAL, held to NIST's baseline for that level; Quilzo's part of each control written, yours named for you to describe, and any control the posture scan reports failing marked partial.</span>
 </form>
+<p class="hint">OSCAL, held to NIST's baseline for that level; Quilzo's part of each control written, yours named for you to describe, and any control the posture scan reports failing marked partial.</p>
+
+{{if .Families}}<nav class="jump-list" aria-label="Families">
+  <span class="hint">Jump to</span>{{range .Families}}<a href="#{{.Code}}" title="{{.Name}}">{{.Code}}</a>{{end}}<a href="#secure-by-design">Secure by Design</a>
+</nav>{{end}}
 
 {{range .Families}}
-<h2 id="{{.Code}}">{{.Code}}</h2>
+<h2 id="{{.Code}}">{{.Code}}{{if .Name}} · {{.Name}}{{end}}</h2>
 <ul class="auto-list">{{range .Items}}<li class="auto-card" id="{{.Control}}">
   <div class="auto-head"><strong>{{.Control}}</strong> <span>{{.Title}}</span>
     {{if eq (print .Responsibility) "quilzo"}}<span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Quilzo</span>
