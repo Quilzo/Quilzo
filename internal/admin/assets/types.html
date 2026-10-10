@@ -1,9 +1,7 @@
 {{template "head" .}}
 <h1>Types</h1>
 
-<p class="lead">A type is a flat list of fields. There is no regex, no
-reference and no nesting — those three are the whole published attack surface
-of schema validators, and content does not need them.</p>
+<p class="lead">A type is the list of fields a page or record must have.</p>
 
 {{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
@@ -13,7 +11,9 @@ of schema validators, and content does not need them.</p>
   <p><strong>{{plural (len .Orphans) "page is" "pages are"}} bound to a type that no longer exists.</strong>
     Validation fails closed on that, so those pages cannot be written until the
     type is recreated or the binding removed.</p>
-  <ul>{{range .Orphans}}<li><code>{{.}}</code></li>{{end}}
+  <ul>{{range .Orphans}}<li><code>{{.}}</code></li>{{end}}</ul>
+</div>
+{{end}}
 
 {{/*
   Bound pages with no recorded validation.
@@ -30,14 +30,9 @@ of schema validators, and content does not need them.</p>
 {{if .Unattested}}
 <div class="notice">
   <h2>Valid, and never recorded as valid</h2>
-  <p>These pages satisfy their type and nothing wrote that down, so
-     <code>quilzo types</code> cannot attest to them. Saving one records it.
-     Unrecorded reads as unvalidated, which is the safe way round and is why
-     they are listed rather than assumed.</p>
+  <p>These pages satisfy their type, but no check of them was recorded, so
+     <code>quilzo types</code> cannot vouch for them. Saving one records it.</p>
   <ul>{{range .Unattested}}<li><a href="/page/{{.}}">{{.}}</a></li>{{end}}</ul>
-</div>
-{{end}}
-</ul>
 </div>
 {{end}}
 
@@ -106,11 +101,12 @@ of schema validators, and content does not need them.</p>
 {{if .CanWrite}}
 <h2>Add or change a field</h2>
 <p class="hint">
-  Naming a type that does not exist creates it. A type with no fields cannot be
-  stored — it would describe nothing — so a type is created together with its
-  first field. Reusing a field name replaces that field.
+  Naming a type that does not exist creates it, with this as its first field.
+  Reusing a field name replaces that field.
 </p>
 <form method="post" action="/types/save">
+  <fieldset class="part">
+  <legend>The type</legend>
   <div class="grid2">
     <p><label for="t-type">Type {{template "req"}}</label>
       <input id="t-type" name="type" required spellcheck="false"
@@ -118,6 +114,12 @@ of schema validators, and content does not need them.</p>
     <p><label for="t-desc">Description</label>
       <input id="t-desc" name="description"
              placeholder="used only when the type is created"></p>
+  </div>
+  </fieldset>
+  <fieldset class="part">
+  <legend>The field</legend>
+  <p class="checkrow"><input id="t-req" type="checkbox" name="required" value="true"> <label for="t-req">Required</label></p>
+  <div class="grid2">
     <p><label for="t-field">Field {{template "req"}}</label>
       <input id="t-field" name="field" required spellcheck="false"
              placeholder="title"></p>
@@ -133,19 +135,21 @@ of schema validators, and content does not need them.</p>
     <p><label for="t-choices">Choices</label>
       <input id="t-choices" name="choices" placeholder="news, opinion, review">
       <span class="hint">Comma separated. Required for a choice field.</span></p>
+    <p><label for="t-alt">Alt text for</label>
+      <input id="t-alt" name="alt_for" placeholder="hero">
+      <span class="hint">The image field this one describes.</span></p>
+  </div>
+  <div class="grid2">
     <p><label for="t-maxlen">Maximum length</label>
       <input id="t-maxlen" name="max_len" inputmode="numeric"></p>
     <p><label for="t-min">Minimum</label>
       <input id="t-min" name="min" inputmode="decimal">
-      <span class="hint">Numbers only.</span></p>
+      <span class="hint">For a number.</span></p>
     <p><label for="t-max">Maximum</label>
-      <input id="t-max" name="max" inputmode="decimal"></p>
-    <p><label for="t-alt">Alt text for</label>
-      <input id="t-alt" name="alt_for" placeholder="hero">
-      <span class="hint">Names the field this one describes, so the
-        accessibility check knows the image has a description.</span></p>
-    <p><input id="t-req" type="checkbox" name="required" value="true"> <label for="t-req">Required</label></p>
+      <input id="t-max" name="max" inputmode="decimal">
+      <span class="hint">For a number.</span></p>
   </div>
+  </fieldset>
   <button type="submit">Save field</button>
 </form>
 
@@ -166,29 +170,28 @@ of schema validators, and content does not need them.</p>
   <input type="hidden" name="unbind" value="1">
   <span class="pair"><label for="u-page">Stop requiring a type of {{template "req"}}</label>
   <input id="u-page" name="page" required spellcheck="false"></span>
-  <button type="submit">Unbind</button>
+  <button type="submit" class="btn-outlined">Unbind</button>
 </form>
-
-<h2>Delete a type</h2>
-<form method="post" action="/types/delete" class="inline">
-  <span class="pair"><label for="d-type">Type {{template "req"}}</label>
-  <input id="d-type" name="type" required spellcheck="false"></span>
-  <button type="submit" class="danger">Delete</button>
-</form>
-<p class="hint">
-  Refused while any page is bound to it. A binding pointing at a type that is
-  gone fails closed, so deleting one in use would break every page under it
-  with an error about the configuration rather than about the content.
-</p>
 {{end}}
 
 {{if .Unbound}}
 <h2>Pages with no type</h2>
 <p class="hint">
-  {{plural (len .Unbound) "page" "pages"}} may contain anything. That is a legitimate state and
-  it is also the state a site is in when nobody has decided yet, so it is
-  counted rather than left implicit.
+  {{plural (len .Unbound) "page" "pages"}} may contain anything, because no type is required of them.
 </p>
 <p>{{range $i, $p := .Unbound}}{{if $i}}, {{end}}<code>{{$p}}</code>{{end}}</p>
 {{end}}
+
+{{if .CanWrite}}
+<section class="danger-zone" aria-labelledby="del-h">
+<h2 id="del-h">Delete a type</h2>
+<p class="hint">A type that any page must satisfy cannot be deleted; stop requiring it first.</p>
+<form method="post" action="/types/delete" class="inline">
+  <span class="pair"><label for="d-type">Type {{template "req"}}</label>
+  <input id="d-type" name="type" required spellcheck="false"></span>
+  <button type="submit" class="danger">Delete</button>
+</form>
+</section>
+{{end}}
+
 {{template "foot" .}}
