@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/cdp"
 )
 
@@ -236,4 +237,51 @@ func TestABrowserRunFromTheScreenComesBackAtOnce(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatal("the run did not finish")
+}
+
+// A person stops a run while it waits on them: nothing is paid, the run
+// says who stopped it, and what the browser showed now is gone with it.
+func TestStoppingABrowserRunEndsItWhereItIs(t *testing.T) {
+	root, paid := shopRun(t)
+	id, err := runAgentOnce(root, "buyer", "pay the invoice", true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Minute)
+	for {
+		rec, _ := loadAgentRun(root, id)
+		if w := rec.Trace.Waiting; w != nil && w.Live {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the run never asked\n%s", describeRun(rec.Trace))
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if err := stopRun(root, id, &Caller{Name: "a-model", Kind: audit.KindAI}, time.Now()); err == nil {
+		t.Error("a model stopped a run")
+	}
+	if err := stopRun(root, id, asAdmin("lee"), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	var rec agent.Record
+	for time.Now().Before(deadline) {
+		rec, _ = loadAgentRun(root, id)
+		if o := rec.OutcomeAt(time.Now()); o != "running" && o != "waiting" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if rec.Trace.Stopped != "stopped by lee" || paid() != 0 {
+		t.Fatalf("paid %d times\n%s", paid(), describeRun(rec.Trace))
+	}
+	if path, _ := liveFrame(root, id); path != "" {
+		t.Error("the picture of now outlived the run")
+	}
+	if _, err := os.Stat(stopPath(root, id)); err == nil {
+		t.Error("the note to stop outlived the run")
+	}
+	if err := stopRun(root, id, asAdmin("lee"), time.Now()); err == nil || !strings.Contains(err.Error(), "not going on") {
+		t.Errorf("a finished run was asked to stop: %v", err)
+	}
 }

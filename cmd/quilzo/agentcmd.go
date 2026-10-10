@@ -118,6 +118,8 @@ func cmdAgent(root string, args []string) error {
 		return agentTrace(root, args[1:])
 	case "approve", "decline":
 		return agentAnswer(root, args[0] == "approve", args[1:])
+	case "stop":
+		return agentStop(root, args[1:])
 	case "resume":
 		return agentResumeCmd(root, args[1:])
 	case "replay":
@@ -834,6 +836,13 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	if err != nil {
 		return out, err
 	}
+	// A kept run can be stopped by a person while it goes on
+	// (agentstop.go).
+	stoppedBy := func() string { return "" }
+	if from.RunID != "" && from.Eval == nil {
+		ctx, stoppedBy = watchStop(ctx, root, from.RunID)
+		defer stoppedBy()
+	}
 	sess := agent.NewSession(m, nil)
 	if from.Prior != nil {
 		sess.Recall(from.Prior.Receipt.Sources, from.Prior.Receipt.Omitted)
@@ -1150,6 +1159,10 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		}
 	} else {
 		trace, runErr = runner.Run(ctx, sess, goal)
+	}
+	if by := stoppedBy(); by != "" {
+		// Stopped on purpose, which is not the run failing.
+		trace.Stopped, trace.Waiting, runErr = "stopped by "+by, nil, nil
 	}
 	if prog != nil {
 		why := trace.Stopped

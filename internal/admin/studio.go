@@ -5,6 +5,7 @@ package admin
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -485,7 +486,7 @@ func (s *Server) handleAgentsAct(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	do := r.FormValue("do")
-	if do == "answer" || do == "resume" || do == "replay" {
+	if do == "answer" || do == "resume" || do == "replay" || do == "stop" {
 		s.handleRunAct(w, r, p, do, back)
 		return
 	}
@@ -650,7 +651,12 @@ func (s *Server) handleAgentFrame(w http.ResponseWriter, r *http.Request) {
 	}
 	id, num, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/agents/frame/"), "/")
 	n, err := strconv.Atoi(num)
-	if s.Agents == nil || s.Agents.Frame == nil || !agent.ValidRecordID(id) || err != nil || n < 1 {
+	if num == "live" {
+		n, err = 0, nil
+	} else if n < 1 {
+		err = errors.New("no such picture")
+	}
+	if s.Agents == nil || s.Agents.Frame == nil || !agent.ValidRecordID(id) || err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -683,6 +689,11 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UTC()
 	row := runRows([]agent.Record{rec}, now)[0]
+	var frames []RunFrame
+	var live bool
+	if s.Agents.Frames != nil {
+		frames, live = s.Agents.Frames(id)
+	}
 	data := map[string]any{"Title": "Run of " + rec.Agent, "Principal": p,
 		"Nav": "agents", "R": rec, "Row": row,
 		"Started": rec.Started.Format("Mon 2 Jan 2006 15:04:05 UTC"),
@@ -699,6 +710,8 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		// slowest, for the timeline.
 		Took string
 		Bar  int
+		// Frame is the picture its browser kept after the step.
+		Frame string
 	}
 	var steps []stepRow
 	prev := rec.Started
@@ -721,6 +734,17 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		sr := stepRow{N: st.N, Allowed: st.Allowed, Why: st.Why,
 			Result: st.Result, Err: st.Err, Redirected: st.Redirected}
 		sr.Took = took[i].Round(time.Millisecond).String()
+		if agent.IsBrowser(st.Action.Op) {
+			var next time.Time
+			if i+1 < len(rec.Trace.Steps) {
+				next = rec.Trace.Steps[i+1].At
+			}
+			for _, f := range frames {
+				if f.Asking == "" && !f.When.Before(st.At) && (next.IsZero() || f.When.Before(next)) {
+					sr.Frame = fmt.Sprintf("/agents/frame/%s/%d", rec.ID, f.N)
+				}
+			}
+		}
 		if slowest > 0 {
 			sr.Bar = int(100*took[i]/slowest + 0)
 			if sr.Bar < 2 {
@@ -779,18 +803,26 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		}
 		data["Pending"] = pend
 		data["Live"] = wt.Live
-		if s.Agents.Asking != nil {
-			if n, ok := s.Agents.Asking(rec.ID, wt.Why); ok {
-				data["Picture"] = fmt.Sprintf("/agents/frame/%s/%d", rec.ID, n)
+		for i := len(frames) - 1; i >= 0; i-- {
+			if wt.Why != "" && frames[i].Asking == wt.Why {
+				data["Picture"] = fmt.Sprintf("/agents/frame/%s/%d", rec.ID, frames[i].N)
+				break
 			}
 		}
 		data["Asked"] = agoText(now.Sub(wt.Since))
 		data["Expired"] = now.Sub(wt.Since) > agent.PendingTTL
 	}
-	// A run still working is looked at again until it finishes or asks.
+	// A run still working is looked at again until it finishes or asks,
+	// with what its browser shows now when it has one; and it can be
+	// stopped while it works or waits on somebody here.
 	if row.Outcome == "running" && rec.Trace.Waiting == nil {
 		data["Refresh"] = "2"
+		if live {
+			data["LiveView"] = "/agents/frame/" + rec.ID + "/live"
+		}
 	}
+	data["CanStop"] = s.Agents.Stop != nil && (row.Outcome == "running" ||
+		(rec.Trace.Waiting != nil && rec.Trace.Waiting.Live && row.Outcome == "waiting"))
 	data["Answers"] = rec.Answers
 	data["CanReplay"] = s.Agents.Replay != nil && rec.Trace.Waiting == nil &&
 		rec.State != agent.Running
@@ -833,6 +865,12 @@ func (s *Server) handleRunAct(w http.ResponseWriter, r *http.Request,
 		} else {
 			back(page, fmt.Sprintf("Step %d was declined, and the agent was told.", step), nil)
 		}
+	case "stop":
+		if s.Agents.Stop == nil {
+			http.NotFound(w, r)
+			return
+		}
+		back(page, "Asked it to stop. It stops within a second, wherever it is.", s.Agents.Stop(id, p.Name))
 	case "resume":
 		if s.Agents.Resume == nil {
 			http.NotFound(w, r)
