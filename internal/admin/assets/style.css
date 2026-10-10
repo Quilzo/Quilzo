@@ -3282,3 +3282,6 @@ td.ev-value { min-width: 12rem; white-space: nowrap; }
 .ssp-form + .hint { margin-top: 4px; }
 .jump-list { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin: 1rem 0; }
 .jump-list a { font: var(--label-lg); }
+.wf-fig .wfbars { max-width: 36rem; }
+.wf-tasks > span { display: inline-block; margin: 0 .75rem .25rem 0; white-space: nowrap; }
+.wf-machines td:nth-child(2), .wf-machines td:nth-child(6) { white-space: nowrap; }

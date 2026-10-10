@@ -28,10 +28,10 @@
 <h2>What each tool says</h2>
 <div class="table-wrap"><table>
   <thead><tr><th scope="col">Tool</th><th scope="col">Address</th><th scope="col">Current</th><th scope="col">Department</th><th scope="col">Title</th><th scope="col">Tasks</th></tr></thead>
-  <tbody>{{range .Person.Records}}<tr><th scope="row">{{.ID.Issuer}}</th><td>{{.Email}}</td>
+  <tbody>{{range $i, $rec := .Person.Records}}{{with $rec}}<tr><th scope="row">{{.ID.Issuer}}</th><td>{{.Email}}</td>
     <td>{{if .Active}}{{if deref .Active}}yes{{else}}<strong>no</strong>{{end}}{{else}}<span class="hint">not said</span>{{end}}</td>
     <td>{{.Department}}</td><td>{{.Title}}</td>
-    <td>{{range $t, $st := .Tasks}}<span class="wf-task">{{$t}}: {{$st}}</span> {{end}}</td></tr>{{end}}</tbody>
+    <td class="wf-tasks">{{range index $.RecordTasks $i}}<span>{{.Name}}: <span class="wf-word {{.Tone}}">{{.Word}}</span></span> {{end}}</td></tr>{{end}}{{end}}</tbody>
 </table></div>
 
 <h2>Machines</h2>
