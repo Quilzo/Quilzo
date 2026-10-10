@@ -5,6 +5,7 @@ declaration lists, and nothing it reads can give it more.</p>
 <p class="help"><a href="/agents/runs">Runs</a> shows what each one did, step
 by step. <a href="/security/agents">Agent activity</a> flags one that keeps
 trying what it isn't allowed to.</p>
+<p class="actions"><a class="btn" href="/agents/new">{{icon "add"}}Declare an agent</a></p>
 
 {{if .Unavailable}}
 <div class="notice warn"><p>{{.Unavailable}}</p></div>
@@ -56,13 +57,13 @@ trying what it isn't allowed to.</p>
 
 <h2>Start from a template</h2>
 <p>Each template starts with as little permission as it needs. Pick the
-closest one and add only what you need. Or <a href="/agents/new">start from scratch</a>.</p>
+closest one and add only what you need.</p>
 
-<dl class="gates">
-{{range .Templates}}
-  <dt><a href="/agents/new?kind={{.Manifest.Kind}}">{{.Manifest.Kind}}</a> — {{.Summary}}</dt>
-  <dd>{{.When}}<br><span class="help">{{.Research}}</span></dd>
-{{end}}
-</dl>
+<ul class="auto-list templates agent-templates">{{range .Templates}}<li class="auto-card">
+  <div class="auto-head"><a href="/agents/new?kind={{.Manifest.Kind}}">{{.Manifest.Kind}}</a></div>
+  <p>{{.Summary}}.</p>
+  <p class="hint">{{.When}}</p>
+  <details><summary>Why this shape<span class="chev">{{icon "expand_more"}}</span></summary><p class="hint">{{.Research}}</p></details>
+</li>{{end}}</ul>
 
 {{template "foot" .}}

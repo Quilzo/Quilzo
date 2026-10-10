@@ -5,15 +5,27 @@
 <p class="lead">Every run of a declared agent, kept: what it was asked, each
   thing it tried, whether that was allowed, and what came back.</p>
 {{if .Only}}<p class="hint"><a href="/agents/runs">Every agent's runs</a></p>{{end}}
-{{if .Runs}}<div class="table-wrap"><table class="wf-people">
+{{if .Total}}
+<nav class="chips" aria-label="Outcome">
+  <a href="/agents/runs{{if .Only}}?agent={{.Only}}{{end}}"{{if not .Outcome}} class="on" aria-current="true"{{end}}>{{plural .Total "run" "runs"}}</a>
+  {{range .Outcomes}}<a href="/agents/runs?{{if $.Only}}agent={{$.Only}}&amp;{{end}}outcome={{.Name}}"{{if eq $.Outcome .Name}} class="on" aria-current="true"{{end}}><span class="cap">{{.Name}}</span> <span class="count">{{.Count}}</span></a>{{end}}
+</nav>
+{{if and (not .Only) (gt (len .RanAgents) 1)}}
+<nav class="chips" aria-label="Agent">
+  {{range .RanAgents}}<a href="/agents/runs?agent={{.Name}}">{{.Name}} <span class="count">{{.Count}}</span></a>{{end}}
+</nav>
+{{end}}
+{{end}}
+{{if .Runs}}<div class="table-wrap"><table class="wf-people runs-table">
   <thead><tr><th scope="col">What it was asked</th><th scope="col">Agent</th><th scope="col">Outcome</th><th scope="col">Did</th><th scope="col">Refused</th><th scope="col">Failed</th><th scope="col">Chosen by</th><th scope="col">When</th></tr></thead>
   <tbody>{{range .Runs}}<tr>
-    <th scope="row"><a href="/agents/run/{{.ID}}">{{if .Goal}}{{.Goal}}{{else}}{{.ID}}{{end}}</a>{{if .Tainted}}<br><span class="wf-word warning">read stored content</span>{{end}}</th>
+    <th scope="row"><a href="/agents/run/{{.ID}}">{{if .Goal}}{{.Goal}}{{else}}{{.ID}}{{end}}</a>
+      <div class="hint">by {{.By}}{{if .Tainted}} · read stored content{{end}}</div></th>
     <td><a href="/agents/edit/{{.Agent}}">{{.Agent}}</a></td>
     <td><span class="wf-word {{.Tone}}">{{.Outcome}}</span></td>
     <td>{{.Did}}</td><td>{{.Refused}}</td><td>{{.Failed}}</td>
-    <td>{{if .Model}}{{.Model}}{{else}}<span class="hint">the declaration, walked</span>{{end}}</td>
-    <td>{{.When}}<br><span class="hint">by {{.By}}</span></td>
+    <td>{{if .Model}}<span title="{{.Model}}">{{.ModelLabel}}</span>{{else}}<span class="hint">the declaration, walked</span>{{end}}</td>
+    <td class="when">{{.When}}</td>
   </tr>{{end}}</tbody></table></div>
 {{if .More}}<p class="hint">{{.More}} older runs are not shown.</p>{{end}}
 {{else}}<p>No run has been kept yet. Open an agent and try it.</p>{{end}}
