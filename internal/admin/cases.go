@@ -132,6 +132,58 @@ func gradeTone(g incident.Grade) string {
 	return "unknown"
 }
 
+// gradeWord is a grade as a person writes it: "Sev 2".
+func gradeWord(g incident.Grade) string {
+	if n, ok := strings.CutPrefix(string(g), "sev"); ok {
+		return "Sev " + n
+	}
+	return string(g)
+}
+
+// caseStateWord is a case's state as a person says it.
+func caseStateWord(s incident.State) string {
+	switch s {
+	case incident.Open:
+		return "Open"
+	case incident.Watching:
+		return "Being watched"
+	case incident.Closed:
+		return "Closed"
+	}
+	return string(s)
+}
+
+// roleWord is an incident role's name, as the people holding it say it.
+func roleWord(r incident.Role) string {
+	switch r {
+	case incident.Commander:
+		return "Commander"
+	case incident.Comms:
+		return "Communications"
+	case incident.Scribe:
+		return "Scribe"
+	}
+	return string(r)
+}
+
+// regimeList names a scope's regimes once each, its shared first word said
+// once: "NIS2: early warning, notification, final report".
+func regimeList(names []string) string {
+	if len(names) < 2 {
+		return strings.Join(names, ", ")
+	}
+	head, _, _ := strings.Cut(names[0], " ")
+	var rest []string
+	for _, n := range names {
+		r, ok := strings.CutPrefix(n, head+" ")
+		if !ok {
+			return strings.Join(names, ", ")
+		}
+		rest = append(rest, r)
+	}
+	return head + ": " + strings.Join(rest, ", ")
+}
+
 func stateTone(s incident.State) string {
 	switch s {
 	case incident.Open:
@@ -165,6 +217,7 @@ func (s *Server) handleCases(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	type row struct {
 		ID, Href, Title, Grade, GradeTone, State, StateTone string
+		GradeWord, StateWord                                string
 		Commander, Age, Next, NextTone                      string
 		Unstarted, Findings                                 int
 	}
@@ -174,6 +227,7 @@ func (s *Server) handleCases(w http.ResponseWriter, r *http.Request) {
 		rw := row{ID: i.ID, Href: caseHref(i.ID), Title: i.Title,
 			Grade: string(i.Grade), GradeTone: gradeTone(i.Grade),
 			State: string(i.State), StateTone: stateTone(i.State),
+			GradeWord: gradeWord(i.Grade), StateWord: caseStateWord(i.State),
 			Commander: i.Filled[incident.Commander],
 			Age:       agoText(now.Sub(i.Declared)), Findings: len(i.Findings)}
 		if i.State != incident.Closed {
@@ -232,10 +286,15 @@ func (s *Server) handleCases(w http.ResponseWriter, r *http.Request) {
 				names = append(names, o.Regime)
 			}
 		}
-		scopes = append(scopes, scope{sc, set[sc], strings.Join(names, ", ")})
+		scopes = append(scopes, scope{sc, set[sc], regimeList(names)})
 	}
 	data["Scopes"], data["NoRegimes"] = scopes, len(set) == 0
-	data["Grades"] = incident.Grades
+	type grade struct{ Value, Word string }
+	var grades []grade
+	for _, g := range incident.Grades {
+		grades = append(grades, grade{string(g), gradeWord(g)})
+	}
+	data["Grades"] = grades
 	data["Finding"] = strings.TrimSpace(r.URL.Query().Get("finding"))
 	s.render(w, r, "cases.html", data)
 }
@@ -260,6 +319,7 @@ func (s *Server) handleCase(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{"Nav": "cases", "Title": i.Title, "Principal": p,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"I": i, "GradeTone": gradeTone(i.Grade), "StateTone": stateTone(i.State),
+		"GradeWord": gradeWord(i.Grade), "StateWord": caseStateWord(i.State),
 		"Declared": i.Declared.Format("Mon 2 Jan 2006 15:04 UTC"),
 		"Age":      agoText(now.Sub(i.Declared)),
 		"Closed":   i.State == incident.Closed,
@@ -305,12 +365,12 @@ func (s *Server) handleCase(w http.ResponseWriter, r *http.Request) {
 	data["NoRegimes"] = len(i.Regimes) == 0
 
 	type role struct {
-		Role incident.Role
-		Who  string
+		Role      incident.Role
+		Word, Who string
 	}
 	var roles []role
 	for _, ro := range incident.Roles {
-		roles = append(roles, role{ro, i.Filled[ro]})
+		roles = append(roles, role{ro, roleWord(ro), i.Filled[ro]})
 	}
 	data["Roles"] = roles
 	data["NoCommander"] = i.State != incident.Closed &&

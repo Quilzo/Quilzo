@@ -21,21 +21,23 @@
   {{.Total}} recorded. Ranked by severity, age, recurrence and ownership, so
   the top of the list is the place to start.</p>
 
-<div class="chips" aria-label="Severity of what needs attention">
-  {{range .BySev}}<a href="{{.Href}}"{{if .On}} class="on" aria-current="true"{{end}}>
-    <span class="pill {{.Label}}">{{sentence .Label}}</span><span class="count">{{.Count}}</span></a>{{end}}
-</div>
-
 <p class="hint">{{.Person}} rest{{if eq .Person 1}}s{{end}} on log text that
   whoever is being detected can write, so a person decides ·
   {{.Unowned}} owned by nobody{{if .Expired}} ·
   <span class="bad">{{plural .Expired "accepted risk" "accepted risks"}} past their date, still
   reported as handled</span>{{end}}</p>
 
+<nav class="chips" aria-label="Filter by severity">
+  <span class="chips-label">Severity</span>
+  {{range .BySev}}<a href="{{.Href}}"{{if .On}} class="on" aria-current="true"{{end}}>{{.Label}}<span class="count">{{.Count}}</span></a>{{end}}
+</nav>
+
 <nav aria-label="Filter by kind" class="chips">
+  <span class="chips-label">Kind</span>
   {{range .Kinds}}<a href="{{.Href}}"{{if .On}} class="on" aria-current="true"{{end}}>{{.Label}}<span class="count">{{.Count}}</span></a>{{end}}
 </nav>
 <nav aria-label="Filter by state" class="chips">
+  <span class="chips-label">State</span>
   {{range .States}}<a href="{{.Href}}"{{if .On}} class="on" aria-current="true"{{end}}>{{.Label}}<span class="count">{{.Count}}</span></a>{{end}}
 </nav>
 
@@ -50,22 +52,23 @@
   <caption class="visually-hidden">Findings, most urgent first</caption>
   <thead><tr>
     <th scope="col">Severity</th><th scope="col">Finding</th>
-    <th scope="col">Kind</th><th scope="col">State</th>
-    <th scope="col">Open for</th><th scope="col">Seen</th>
-    <th scope="col">Owner</th>
+    {{if .ShowKind}}<th scope="col">Kind</th>{{end}}{{if .ShowState}}<th scope="col">State</th>{{end}}
+    <th scope="col">Open for</th><th scope="col">Times seen</th>
+    {{if .ShowOwner}}<th scope="col">Owner</th>{{end}}
   </tr></thead>
   <tbody>
+  {{$kind := .ShowKind}}{{$state := .ShowState}}{{$owner := .ShowOwner}}
   {{range .Rows}}
   <tr>
     <td><span class="pill {{.Sev}}">{{sentence .Sev}}</span></td>
     <th scope="row"><a href="/findings/{{.ID}}">{{.Title}}</a>
       <div class="hint">{{if not .Entity.Zero}}<code>{{.Entity.String}}</code> · {{end}}{{.Source}}
-      {{if .Person}} · <span class="warn">a person decides</span>{{end}}</div></th>
-    <td>{{.Kind}}</td>
-    <td><span class="tag{{if .Expired}} tag-bad{{else if .Closed}} tag-ok{{end}}">{{.State}}{{if .Expired}} (lapsed){{end}}</span></td>
-    <td>{{.Age}}</td>
-    <td>{{.Seen}}</td>
-    <td>{{if .Owner}}{{.Owner}}{{else}}<span class="dim">nobody</span>{{end}}</td>
+      {{if .Person}} · <span class="warn">a person decides</span>{{end}}{{if and (not $state) .Expired}} · <span class="bad">lapsed</span>{{end}}</div></th>
+    {{if $kind}}<td>{{.KindWord}}</td>{{end}}
+    {{if $state}}<td><span class="pill{{if .Expired}} critical{{else if .Closed}} ok{{end}}">{{.StateWord}}{{if .Expired}} (lapsed){{end}}</span></td>{{end}}
+    <td class="num">{{.Age}}</td>
+    <td class="num">{{.Seen}}</td>
+    {{if $owner}}<td>{{if .Owner}}{{.Owner}}{{else}}<span class="dim">nobody</span>{{end}}</td>{{end}}
   </tr>
   {{end}}
   </tbody>

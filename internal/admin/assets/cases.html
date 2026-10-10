@@ -14,8 +14,8 @@
   <thead><tr><th scope="col">Incident</th><th scope="col">Grade</th><th scope="col">State</th><th scope="col">Commander</th><th scope="col">Next deadline</th><th scope="col">Declared</th></tr></thead>
   <tbody>{{range .Rows}}<tr>
     <th scope="row"><a href="{{.Href}}">{{.Title}}</a><br><code>{{.ID}}</code>{{if .Findings}} <span class="hint">{{plural .Findings "finding" "findings"}}</span>{{end}}</th>
-    <td><span class="wf-word {{.GradeTone}}">{{.Grade}}</span></td>
-    <td><span class="wf-word {{.StateTone}}">{{.State}}</span></td>
+    <td><span class="wf-word {{.GradeTone}}">{{.GradeWord}}</span></td>
+    <td><span class="pill">{{.StateWord}}</span></td>
     <td>{{if .Commander}}{{.Commander}}{{else}}<span class="hint">nobody</span>{{end}}</td>
     <td>{{if .Next}}<span class="wf-word {{.NextTone}}">{{.Next}}</span>{{end}}{{if .Unstarted}}{{if .Next}}<br>{{end}}<span class="wf-word warning">{{.Unstarted}} with no clock yet</span>{{end}}{{if and (not .Next) (not .Unstarted)}}<span class="hint">none owed</span>{{end}}</td>
     <td>{{.Age}}</td>
@@ -25,16 +25,16 @@
 <h2 id="declare">Declare an incident</h2>
 <form method="post" action="/security/cases/act">
   <input type="hidden" name="do" value="declare">
-  <div class="grid2">
+  <div class="case-declare">
   <p><label>What is wrong, in a line <input type="text" name="title" required maxlength="200"></label></p>
-  <p><label>Grade <select name="grade">{{range .Grades}}<option value="{{.}}"{{if eq (print .) "sev3"}} selected{{end}}>{{.}}</option>{{end}}</select></label>
-    <span class="hint">sev1 and sev2 need a commander.</span></p>
-  </div>
-  <fieldset><legend>Which obligations apply to this organisation</legend>
-    {{range .Scopes}}<p><label><input type="checkbox" name="regime" value="{{.Name}}"{{if .On}} checked{{end}}> <strong>{{.Name}}</strong> <span class="hint">{{.Regimes}}</span></label></p>{{end}}
+  <p><label>Grade <select name="grade">{{range .Grades}}<option value="{{.Value}}"{{if eq .Value "sev3"}} selected{{end}}>{{.Word}}</option>{{end}}</select></label>
+    <span class="hint">Sev 1 and Sev 2 need a commander.</span></p>
+  <fieldset class="choices"><legend>Which obligations apply to this organisation</legend>
+    {{range .Scopes}}<p><label><input type="checkbox" name="regime" value="{{.Name}}"{{if .On}} checked{{end}}> <span>{{.Regimes}}</span></label></p>{{end}}
     {{if .NoRegimes}}<p class="hint">None is set as the default. <code>quilzo incident regimes eu nis2</code> sets what a new incident starts with.</p>{{end}}
   </fieldset>
   <p><label>A finding this is about (optional) <input type="text" name="finding" value="{{.Finding}}" maxlength="200"></label></p>
+  </div>
   <p class="hint">Declaring starts no clock. The page that follows lists the
     decisions that would, and what each one starts. This is a table of
     published deadlines, not legal advice: whether a regime applies is

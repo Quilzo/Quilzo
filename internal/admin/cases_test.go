@@ -191,7 +191,7 @@ func TestClosingOnTheScreenIsRefusedOverAnOpenObligation(t *testing.T) {
 			t.Errorf("the closed page lacks %q", want)
 		}
 	}
-	for _, gone := range []string{"Close it", "Record it, as of now", ">Assign<"} {
+	for _, gone := range []string{"Close the incident", "Record it, as of now", ">Assign"} {
 		if strings.Contains(body, gone) {
 			t.Errorf("a closed incident still offers %q", gone)
 		}

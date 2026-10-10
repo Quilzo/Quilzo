@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -132,8 +133,19 @@ func (s *Server) shieldData(data map[string]any, p principal, try, daysParam str
 			When: q.At.UTC().Format("2 Jan 15:04 UTC"), Mine: strings.EqualFold(q.By, p.Name)})
 	}
 	data["Pending"], data["ReleaseWaiting"] = pending, releaseWaiting
+	// How often each playbook responded, and when last: a playbook that
+	// told somebody ten times has acted, even if it put nothing in force.
+	fired, firedLast := map[string]int{}, map[string]time.Time{}
+	for _, r := range st.Responses {
+		fired[r.Playbook]++
+		if r.At.After(firedLast[r.Playbook]) {
+			firedLast[r.Playbook] = r.At
+		}
+	}
+	titles := map[string]string{}
 	var pbs []shieldPlaybook
 	for _, pb := range bk.InForce() {
+		titles[pb.Name] = pb.Title
 		v := shieldPlaybook{Playbook: pb, Trigger: shieldTrigger(pb), Waiting: waiting[pb.Name] && pb.Name != ""}
 		for i, stg := range pb.Stages {
 			var steps []string
@@ -146,7 +158,7 @@ func (s *Server) shieldData(data map[string]any, p principal, try, daysParam str
 			}
 			v.Stages = append(v.Stages, lead+": "+strings.Join(steps, "; ")+".")
 		}
-		v.Precision = shieldPrecision(recs[pb.Name])
+		v.Precision = shieldPrecision(recs[pb.Name], fired[pb.Name], firedLast[pb.Name])
 		pbs = append(pbs, v)
 	}
 	data["Playbooks"], data["Problems"] = pbs, bk.Problems()
@@ -169,7 +181,7 @@ func (s *Server) shieldData(data map[string]any, p principal, try, daysParam str
 		r := rs[i]
 		tone := map[string]string{"act": "good", "watch": "unknown", "held": "warning", "limited": "warning"}[r.Mode]
 		responses = append(responses, map[string]string{"When": r.At.UTC().Format("2 Jan 15:04"),
-			"Playbook": r.Playbook, "Stage": strconv.Itoa(r.Stage), "Mode": r.Mode, "Tone": tone,
+			"Playbook": cmp.Or(titles[r.Playbook], r.Playbook), "Stage": strconv.Itoa(r.Stage), "Mode": r.Mode, "Tone": tone,
 			"Did": strings.Join(r.Did, "; ")})
 	}
 	data["Responses"] = responses
@@ -252,7 +264,7 @@ func shieldTrigger(pb shield.Playbook) string {
 		"subject": "about one chatbot, form or agent", "any": "from anywhere"}[pb.On.Per]
 	what := "One " + nouns[0]
 	switch {
-	case pb.On.Count > 1 && pb.On.Distinct:
+	case pb.On.Count > 1 && pb.On.Distinct && !strings.HasPrefix(nouns[1], "different "):
 		what = fmt.Sprintf("%d different %s", pb.On.Count, nouns[1])
 	case pb.On.Count > 1:
 		what = fmt.Sprintf("%d %s", pb.On.Count, nouns[1])
@@ -308,12 +320,21 @@ func shieldStepWords(st shield.Step) string {
 	return st.Action
 }
 
-func shieldPrecision(r shield.Record) string {
+// shieldPrecision says what a playbook has done: how often it responded,
+// how many protections it put in force, and how often those were right.
+func shieldPrecision(r shield.Record, fired int, last time.Time) string {
+	if fired == 0 && r.Applied == 0 {
+		return "Has not responded to anything yet."
+	}
+	s := ""
+	if fired > 0 {
+		s = fmt.Sprintf("Responded %s, most recently %s. ", counted(fired, "time", "times"), last.UTC().Format("2 Jan 15:04"))
+	}
 	if r.Applied == 0 {
-		return "Has not acted yet."
+		return s + "Has put no protection in force."
 	}
 	rate, low, high, enough := r.Precision()
-	s := fmt.Sprintf("Applied %d.", r.Applied)
+	s += fmt.Sprintf("Put %s in force.", counted(r.Applied, "protection", "protections"))
 	switch {
 	case r.Right+r.Mistakes == 0:
 		s += " None judged yet."
