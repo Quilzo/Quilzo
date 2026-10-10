@@ -62,10 +62,44 @@ func (s *Server) handleTransfer(w http.ResponseWriter, r *http.Request) {
 	}
 	s.render(w, r, "transfer.html", map[string]any{
 		"Nav": "transfer", "Title": "Transfer", "Principal": p,
-		"Formats": export.Formats(), "Starters": starter.All(),
-		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
+		"Formats": exportChoices(), "Sources": importChoices,
+		"Starters": starter.All(),
+		"Message":  r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"CanWrite": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
 	})
+}
+
+// choice is one option in a select: the value sent, and the words a
+// person reads.
+type choice struct{ Value, Label string }
+
+// formatLabels says what each export format is for; a format without one
+// shows its own name.
+var formatLabels = map[export.Format]string{
+	export.Markdown: "Markdown, for static site tools",
+	export.JSON:     "JSON, lossless",
+	export.WXR:      "WordPress export file",
+	export.ROCrate:  "Archive deposit (RO-Crate)",
+}
+
+func exportChoices() []choice {
+	var out []choice
+	for _, f := range export.Formats() {
+		label := formatLabels[f]
+		if label == "" {
+			label = string(f)
+		}
+		out = append(out, choice{string(f), label})
+	}
+	return out
+}
+
+// importChoices is every format the importer reads. The form's first option,
+// an empty value, has the importer work the format out from the file.
+var importChoices = []choice{
+	{string(importer.WordPress), "WordPress export file"},
+	{string(importer.Markdown), "Markdown"},
+	{string(importer.JSON), "JSON exported from Quilzo"},
 }
 
 // handleExport writes the site out.
