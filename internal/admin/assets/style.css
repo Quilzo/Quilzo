@@ -2979,6 +2979,39 @@ details.sample .table-wrap { margin-top: 8px; }
 fieldset.whileown { border: 0; padding: 0; margin: 0; max-width: none; min-width: 0; }
 fieldset.whileown:disabled { opacity: .55; }
 
+/* Media: a small picture beside each image's name, so pictures can be told
+   apart by sight. Its address is in a box that holds the whole of it, to
+   select and copy. */
+.media-name { display: flex; gap: 12px; align-items: flex-start; }
+.media-thumb { width: 48px; height: 48px; flex: none; object-fit: cover;
+  border-radius: var(--shape-sm); background: var(--surface-container-high); }
+details.media-path input { width: 100%; min-width: 22rem; margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8125rem; }
+
+/* The page editor: the fields and the page's details in one column, the
+   preview in the other, held in view while the fields scroll. On a phone the
+   fields come first, then the preview, then the details. */
+.edit-main { min-width: 0; }
+.help:has(+ .editing) { margin-bottom: 16px; }
+.edit-details { margin-top: 40px; }
+.edit-details > section:first-child h2 { margin-top: 0; }
+@media (max-width: 62rem) {
+  .edit-main { display: contents; }
+  .editing .preview { order: 1; position: static; }
+  .edit-details { order: 2; margin-top: 16px; }
+}
+
+/* Nothing here yet: a neutral line and where to go, never the green of a
+   passed check. */
+.emptystate { padding: 20px 24px; border-radius: var(--shape-lg);
+  background: var(--surface-container-low); max-width: 62ch; }
+.emptystate p { margin: 0 0 4px; }
+/* Pages to pick from, as a row of outlined chips. */
+ul.pagepick { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 16px 0; }
+ul.pagepick a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px;
+  border: 1px solid var(--outline-variant); border-radius: var(--shape-full); text-decoration: none; }
+ul.pagepick a:hover { background: var(--surface-container); }
+
 /* A part of a declaring form (the type, then the field) is as wide as the
    form, so its grid keeps its columns. */
 fieldset.part { max-width: none; }
