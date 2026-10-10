@@ -14,26 +14,37 @@
 
   <fieldset><legend>If</legend>
     <p class="hint">Every line must hold. Leave a line's field empty to leave it out. A field belongs to one kind of event; the rule is checked when you save.</p>
-    {{range $i, $c := .Conds}}<div class="row auto-row">
-      <label>Field <select name="field{{$i}}"><option value="">—</option>{{range $.Fields}}<option value="{{.Kind}}:{{.Name}}"{{if and (eq .Name $c.Field) (eq .Kind $.Rule.When)}} selected{{end}}>{{.Kind}}: {{.Name}}</option>{{end}}</select></label>
-      <label>Compare <select name="op{{$i}}">{{range $.OpOrder}}<option value="{{.}}"{{if eq . $c.Op}} selected{{end}}>{{index $.Ops .}}</option>{{end}}</select></label>
-      <label>Value <input name="value{{$i}}" value="{{$c.Value}}"></label>
+    {{range $c := .Conds}}<div class="row auto-row rule-cond">
+      <label><span{{if not .First}} class="visually-hidden"{{end}}>Field</span> <select name="field{{.I}}"><option value="">—</option>{{range $.Fields}}<option value="{{.Kind}}:{{.Name}}"{{if and (eq .Name $c.Field) (eq .Kind $.Rule.When)}} selected{{end}}>{{.Kind}}: {{.Name}}</option>{{end}}</select></label>
+      <label><span{{if not .First}} class="visually-hidden"{{end}}>Compare</span> <select name="op{{.I}}">{{range $.OpOrder}}<option value="{{.}}"{{if eq . $c.Op}} selected{{end}}>{{index $.Ops .}}</option>{{end}}</select></label>
+      <label><span{{if not .First}} class="visually-hidden"{{end}}>Value</span> <input name="value{{.I}}" value="{{$c.Value}}"></label>
     </div>{{end}}
+    {{if .SpareConds}}<details class="rule-more"><summary>{{icon "add"}}Add a condition<span class="chev">{{icon "expand_more"}}</span></summary>
+    {{range $c := .SpareConds}}<div class="row auto-row rule-cond">
+      <label><span{{if not .First}} class="visually-hidden"{{end}}>Field</span> <select name="field{{.I}}"><option value="">—</option>{{range $.Fields}}<option value="{{.Kind}}:{{.Name}}"{{if and (eq .Name $c.Field) (eq .Kind $.Rule.When)}} selected{{end}}>{{.Kind}}: {{.Name}}</option>{{end}}</select></label>
+      <label><span{{if not .First}} class="visually-hidden"{{end}}>Compare</span> <select name="op{{.I}}">{{range $.OpOrder}}<option value="{{.}}"{{if eq . $c.Op}} selected{{end}}>{{index $.Ops .}}</option>{{end}}</select></label>
+      <label><span{{if not .First}} class="visually-hidden"{{end}}>Value</span> <input name="value{{.I}}" value="{{$c.Value}}"></label>
+    </div>{{end}}</details>{{end}}
   </fieldset>
 
   <fieldset><legend>Then</legend>
-    {{range $i, $s := .Steps}}<div class="row auto-row">
-      <label>Do <select name="action{{$i}}"><option value="">—</option>{{range $.Actions}}<option value="{{.ID}}"{{if eq .ID $s.Action}} selected{{end}}>{{.Name}}</option>{{end}}</select></label>
-      <label>Tell <select name="to{{$i}}"><option value="">—</option><option value="security"{{if eq (index $s.With "to") "security"}} selected{{end}}>the security team</option><option value="person"{{if eq (index $s.With "to") "person"}} selected{{end}}>the person</option></select></label>
+    {{range $s := .Steps}}<div class="row auto-row">
+      <label><span{{if not .First}} class="visually-hidden"{{end}}>Do</span> <select name="action{{.I}}"><option value="">—</option>{{range $.Actions}}<option value="{{.ID}}"{{if eq .ID $s.Action}} selected{{end}}>{{.Name}}</option>{{end}}</select></label>
+      <label><span{{if not .First}} class="visually-hidden"{{end}}>Tell</span> <select name="to{{.I}}"><option value="">—</option><option value="security"{{if eq (index $s.With "to") "security"}} selected{{end}}>the security team</option><option value="person"{{if eq (index $s.With "to") "person"}} selected{{end}}>the person</option></select></label>
     </div>{{end}}
+    {{if .SpareSteps}}<details class="rule-more"><summary>{{icon "add"}}Add an action<span class="chev">{{icon "expand_more"}}</span></summary>
+    {{range $s := .SpareSteps}}<div class="row auto-row">
+      <label><span{{if not .First}} class="visually-hidden"{{end}}>Do</span> <select name="action{{.I}}"><option value="">—</option>{{range $.Actions}}<option value="{{.ID}}"{{if eq .ID $s.Action}} selected{{end}}>{{.Name}}</option>{{end}}</select></label>
+      <label><span{{if not .First}} class="visually-hidden"{{end}}>Tell</span> <select name="to{{.I}}"><option value="">—</option><option value="security"{{if eq (index $s.With "to") "security"}} selected{{end}}>the security team</option><option value="person"{{if eq (index $s.With "to") "person"}} selected{{end}}>the person</option></select></label>
+    </div>{{end}}</details>{{end}}
     <details class="wf-how"><summary>What each action does<span class="chev">{{icon "expand_more"}}</span></summary>
       <dl class="auto-actions">{{range .Actions}}<dt>{{.Name}}</dt><dd>{{.Does}} <span class="hint">When: {{.Kinds}}. {{.Undo}}</span></dd>{{end}}</dl></details>
   </fieldset>
 
-  <fieldset><legend>How</legend>
-    <p><label><input type="radio" name="mode" value="watch"{{if eq .Rule.Mode "watch"}} checked{{end}}> <strong>Watch</strong> <span class="hint">record what it would have done, and do nothing</span></label></p>
-    <p><label><input type="radio" name="mode" value="ask"{{if eq .Rule.Mode "ask"}} checked{{end}}> <strong>Ask first</strong> <span class="hint">wait here for a person to approve</span></label></p>
-    <p><label><input type="radio" name="mode" value="act"{{if eq .Rule.Mode "act"}} checked{{end}}> <strong>Act</strong> <span class="hint">do it at once</span></label></p>
+  <fieldset class="choices"><legend>How</legend>
+    <p><label><input type="radio" name="mode" value="watch"{{if eq .Rule.Mode "watch"}} checked{{end}}> <span><strong>Watch</strong> <span class="hint">record what it would have done, and do nothing</span></span></label></p>
+    <p><label><input type="radio" name="mode" value="ask"{{if eq .Rule.Mode "ask"}} checked{{end}}> <span><strong>Ask first</strong> <span class="hint">wait here for a person to approve</span></span></label></p>
+    <p><label><input type="radio" name="mode" value="act"{{if eq .Rule.Mode "act"}} checked{{end}}> <span><strong>Act</strong> <span class="hint">do it at once</span></span></label></p>
     <div class="field"><label for="per_hour">At most this many times an hour</label>
       <input id="per_hour" name="per_hour" type="number" min="1" inputmode="numeric" placeholder="{{.DefaultPerHour}}" value="{{if .Rule.PerHour}}{{.Rule.PerHour}}{{end}}" aria-describedby="per_hour_hint">
       <p class="hint" id="per_hour_hint">Past it, the rule only watches until the hour is out, so one noisy source cannot act on everybody. {{.DefaultPerHour}} if left empty.</p></div>
