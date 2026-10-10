@@ -1,4 +1,5 @@
 {{template "head" .}}
+<p class="hint"><a href="/security">Security</a></p>
 <h1>Content policy</h1>
 
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
@@ -41,5 +42,4 @@ serves; it is not a template somebody filled in.</p>
   <code>site.csp.mode</code>, on the <a href="/settings">settings</a> screen.
 </p>
 {{end}}
-<p class="hint"><a href="/security">Back to the posture dashboard.</a></p>
 {{template "foot" .}}

@@ -2981,3 +2981,4 @@ input[type=file]::file-selector-button {
 .wf-fig .wfbars { max-width: 36rem; }
 .wf-tasks > span { display: inline-block; margin: 0 .75rem .25rem 0; white-space: nowrap; }
 .wf-machines td:nth-child(2), .wf-machines td:nth-child(6) { white-space: nowrap; }
+td .duty-more { margin: 4px 0 0; }
