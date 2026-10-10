@@ -62,9 +62,20 @@ func (s *Server) handleSections(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.URL.Query().Get("page"))
 	if name == "" {
+		rows := s.pagesWithSections()
+		// Whether any page is built from sections yet. When none is, the
+		// list is one line of guidance and the page names, rather than a
+		// column saying "none yet" on every row.
+		built := false
+		for _, row := range rows {
+			if n, _ := row["Count"].(int); n > 0 {
+				built = true
+				break
+			}
+		}
 		s.render(w, r, "sections.html", map[string]any{
 			"Title": "Sections", "Principal": p, "Nav": "sections",
-			"Pages": s.pagesWithSections(),
+			"Pages": rows, "AnyBuilt": built,
 		})
 		return
 	}

@@ -5,9 +5,7 @@
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
 
 <p class="lead">
-  What content can be classified as, and what the navigation points at. Both
-  refer to things that can be deleted, which is why both are checked here and
-  again at the publish gate.
+  The words content can be filed under, and the site's menus.
 </p>
 
 {{if .WouldBreak}}
@@ -22,10 +20,8 @@
 
 <h2>Vocabularies</h2>
 <p class="hint">
-  A vocabulary is closed unless somebody opens it. That is the difference
-  between a controlled list and free-text tags, which reliably become two
-  thousand entries with "marketing", "Marketing" and "mktg" as three unrelated
-  categories. Spellings go in as synonyms and resolve to the real term.
+  A vocabulary is a fixed list of terms. Other spellings of a term go in as
+  "also spelled", so they count as the same term.
 </p>
 
 {{if not .Vocabularies}}
@@ -33,7 +29,7 @@
 {{end}}
 
 {{range $v := .Vocabularies}}
-<h3>{{$v.Name}}{{if $v.Label}} — {{$v.Label}}{{end}}
+<h3>{{if $v.Label}}{{$v.Label}} <span class="key">{{$v.Name}}</span>{{else}}{{$v.Name}}{{end}}
   {{if $v.Open}}<span class="tag tag-warn">open</span>
   {{else}}<span class="tag tag-ok">closed</span>{{end}}</h3>
 {{if not $v.Terms}}
@@ -74,19 +70,24 @@
 {{if .CanWrite}}
 <h3>Add a vocabulary, or a term to one</h3>
 <form method="post" action="/structure/vocabulary">
+  <fieldset class="part">
+  <legend>The vocabulary</legend>
+  <p class="checkrow"><input id="v-open" type="checkbox" name="open" value="1"> <label for="v-open">Accept terms nobody declared</label>
+    <span class="hint">Best left off, so the list stays tidy.</span></p>
   <div class="grid2">
     <p><label for="v-name">Vocabulary {{template "req"}}</label>
       <input id="v-name" name="vocabulary" required spellcheck="false"
              placeholder="topics"></p>
     <p><label for="v-label">Label</label>
       <input id="v-label" name="label" placeholder="used when it is created"></p>
-    <p><input id="v-open" type="checkbox" name="open" value="1"> <label for="v-open">Accept terms nobody declared</label>
-      <span class="hint">Leave this off. An open vocabulary is how a tag list
-        becomes unusable.</span></p>
+  </div>
+  </fieldset>
+  <fieldset class="part">
+  <legend>A term in it</legend>
+  <div class="grid2">
     <p><label for="v-term">Term</label>
       <input id="v-term" name="term" spellcheck="false" placeholder="marketing">
-      <span class="hint">Optional — a vocabulary with no terms yet is a
-        legitimate state.</span></p>
+      <span class="hint">Optional.</span></p>
     <p><label for="v-tlabel">Term label</label>
       <input id="v-tlabel" name="term_label" placeholder="Marketing"></p>
     <p><label for="v-desc">What it means</label>
@@ -98,18 +99,17 @@
       <span class="hint">Filtering by a parent finds everything beneath it.</span></p>
     <p><label for="v-syn">Also spelled</label>
       <input id="v-syn" name="synonyms" placeholder="mktg, marketting">
-      <span class="hint">Comma separated. These resolve to the term rather
-        than becoming terms.</span></p>
+      <span class="hint">Comma separated.</span></p>
   </div>
+  </fieldset>
   <button type="submit">Save</button>
 </form>
 {{end}}
 
 <h2>Menus</h2>
 <p class="hint">
-  Every internal entry is checked against the pages that exist when it is saved,
-  and again against the pages being published. A menu here cannot point at
-  nothing.
+  An entry must point at a page that exists, and is checked again when you
+  publish.
 </p>
 
 {{if not .Menus}}
@@ -117,7 +117,7 @@
 {{end}}
 
 {{range $m := .Menus}}
-<h3>{{$m.Name}}{{if $m.Label}} — {{$m.Label}}{{end}}
+<h3>{{if $m.Label}}{{$m.Label}} <span class="key">{{$m.Name}}</span>{{else}}{{$m.Name}}{{end}}
   {{if $m.Broken}}<span class="tag tag-bad">{{$m.Broken}} broken</span>{{end}}</h3>
 <div class="table-wrap">
 <table>
@@ -156,12 +156,19 @@
 {{if .CanWrite}}
 <h3>Add a menu, or an entry to one</h3>
 <form method="post" action="/structure/menu">
+  <fieldset class="part">
+  <legend>The menu</legend>
   <div class="grid2">
     <p><label for="m-name">Menu {{template "req"}}</label>
       <input id="m-name" name="menu" required spellcheck="false"
              placeholder="main"></p>
     <p><label for="m-label">Label</label>
       <input id="m-label" name="label" placeholder="used when it is created"></p>
+  </div>
+  </fieldset>
+  <fieldset class="part">
+  <legend>An entry in it</legend>
+  <div class="grid2">
     <p><label for="m-ilabel">Entry</label>
       <input id="m-ilabel" name="item_label" placeholder="About us"></p>
     <p><label for="m-kind">Kind</label>
@@ -184,7 +191,9 @@
       <input id="m-note" name="note"
              placeholder="for whoever finds this in two years"></p>
   </div>
+  </fieldset>
   <button type="submit">Save</button>
+
 </form>
 {{end}}
 {{template "foot" .}}

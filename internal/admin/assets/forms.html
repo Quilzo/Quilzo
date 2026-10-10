@@ -5,10 +5,8 @@
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
 
 <p class="lead">
-  What visitors sent, kept deliberately outside the content store. A submission
-  is personal data somebody may ask you to erase, and an append-only store
-  cannot erase anything — so these live in plain files that can be deleted one
-  at a time and disappear on their own after their retention period.
+  What visitors sent through your forms. Each submission can be erased on its
+  own, and is deleted by itself once its form's keeping time is up.
 </p>
 
 {{if not .Forms}}
@@ -32,7 +30,7 @@
     <td>
       <form method="post" action="/forms/close" class="inline">
         <input type="hidden" name="form" value="{{.Name}}">
-        <button type="submit">{{if .Closed}}Reopen{{else}}Close{{end}}</button>
+        <button type="submit" class="btn-outlined">{{if .Closed}}Reopen{{else}}Close{{end}}</button>
       </form>
       <form method="post" action="/forms/export" class="inline">
         <input type="hidden" name="form" value="{{.Name}}">
@@ -48,9 +46,8 @@
 </table>
 </div>
 <p class="hint">
-  Put a form on a page by posting to <code>/form/&lt;name&gt;</code>. The public
-  server can append a submission and cannot read one — everything on this screen
-  is behind your sign-in, in a different process.
+  Put a form on a page by posting to <code>/form/&lt;name&gt;</code>. Open a
+  form's name for the code to paste.
 </p>
 <form method="post" action="/forms/expire" class="inline">
   <button type="submit">Run retention now</button>
@@ -59,14 +56,9 @@
 
 {{if .Embed}}
 <h2 id="embed">Put {{.Selected}} on a page</h2>
-<p>Paste this into your template. Two of the fields are not ones you declared
-and both are required: the honeypot catches anything that fills in every field
-it finds, and the timestamp refuses a submission that arrives faster than a
-person can type. A form without them is refused, and the refusal is deliberately
-vague because a spam script reads it too.</p>
-<p class="hint">Set the timestamp to the moment the page was rendered. A static
-page can carry the time it was published; the check is that some time passed,
-not that the number is fresh.</p>
+<p>Paste this into your template. Keep the two fields you did not declare, the
+hidden trap field and the time the page was shown: they stop spam, and a form
+without them is refused.</p>
 <div class="table-wrap">
 <pre><code>{{.Embed}}</code></pre>
 </div>
@@ -106,8 +98,8 @@ not that the number is fresh.</p>
 
 <h2 id="erasure">Find and erase</h2>
 <p class="hint">
-  Somebody asking to be forgotten gives you an address, not a submission
-  identifier. This searches every form's values for it.
+  When somebody asks to be forgotten, search every form for their email
+  address or name.
 </p>
 <form method="get" action="/forms" class="inline">
   <span class="pair"><label for="q">Search submissions for</label>
@@ -145,6 +137,8 @@ not that the number is fresh.</p>
 
 <h2>Declare a form, or add a field</h2>
 <form method="post" action="/forms/save">
+  <fieldset class="part">
+  <legend>The form</legend>
   <div class="grid2">
     <p><label for="f-name">Form {{template "req"}}</label>
       <input id="f-name" name="form" required spellcheck="false"
@@ -169,6 +163,11 @@ not that the number is fresh.</p>
     <p><label for="f-ret">Kept for, in days</label>
       <input id="f-ret" name="retention" inputmode="numeric" placeholder="90">
       <span class="hint">At most {{.MaxRetention}}.</span></p>
+  </div>
+  </fieldset>
+  <fieldset class="part">
+  <legend>A field on it</legend>
+  <div class="grid2">
     <p><label for="f-field">Field</label>
       <input id="f-field" name="field" spellcheck="false" placeholder="email"></p>
     <p><label for="f-flabel">Its label</label>
@@ -183,15 +182,20 @@ not that the number is fresh.</p>
     <p><label for="f-help">Its help text</label>
       <input id="f-help" name="field_help"
              placeholder="we only use this to reply"></p>
+  </div>
+  <div class="checkrow">
     <p><input id="f-req" type="checkbox" name="required" value="1"> <label for="f-req">Required</label></p>
     <p><input id="f-sens" type="checkbox" name="sensitive" value="1"> <label for="f-sens">Sensitive</label>
       <span class="hint">Held but not shown in listings.</span></p>
   </div>
+  </fieldset>
   <button type="submit">Save</button>
 </form>
 
 {{if .CanErase}}
-<h2>Erase everything a form gathered</h2>
+<section class="danger-zone" aria-labelledby="purge-h">
+<h2 id="purge-h">Erase everything a form gathered</h2>
+<p class="hint">This deletes every submission the form holds, and cannot be undone.</p>
 <form method="post" action="/forms/purge" class="inline">
   <span class="pair"><label for="p-form">Form {{template "req"}}</label>
   <input id="p-form" name="form" required spellcheck="false"></span>
@@ -199,9 +203,7 @@ not that the number is fresh.</p>
   <input id="p-conf" name="confirm" required spellcheck="false"></span>
   <button type="submit" class="danger">Erase all</button>
 </form>
-<p class="hint">
-  Irreversible across the whole form. This is the operation an append-only
-  store cannot offer, and the reason submissions are not in one.
-</p>
+</section>
 {{end}}
+
 {{template "foot" .}}

@@ -4,14 +4,13 @@
 {{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
 
-<p class="lead">
-  {{if .Undeclared}}<p class="notice">{{plural .Undeclared "image has" "images have"}} no rights
-recorded. Publishing reports them, and an expired one stops a publication —
-so this is the screen that answers that gate.</p>{{end}}
+{{if .Undeclared}}<p class="notice">{{plural .Undeclared "image has" "images have"}} no rights
+recorded. Publishing reports them, and one whose permission has ended stops a
+publication. Open Record in the Rights column to fill them in.</p>{{end}}
 
-{{plural (len .Files) "file" "files"}}, {{.Total}} bytes. Every accepted format is decoded
-  rather than sniffed — magic bytes are bypassable with a polyglot, so a file
-  has to actually parse before it is stored.
+<p class="lead">
+  Pictures, recordings and documents for your pages:
+  {{plural (len .Files) "file" "files"}}, {{bytes .Total}} in all.
 </p>
 
 {{if .CanWrite}}
@@ -27,24 +26,20 @@ so this is the screen that answers that gate.</p>{{end}}
       larger recordings than this — `quilzo media add` puts a full-length one
       in — and the number here is what is reasonable to ask of a form.
     */}}
-    <span class="hint">Up to {{.MaxUpload}} through this form. A longer
-      recording goes in with <code>quilzo media add</code>, which has no
-      such limit and can tell you how it is getting on.</span></p>
+    <span class="hint">Up to {{.MaxUpload}}. For a longer recording use
+      <code>quilzo media add</code>, which has no limit.</span></p>
   <p><label for="m-alt">Description</label>
     <input id="m-alt" name="alt" size="60"
            placeholder="what the image conveys, not that it is an image">
-    <span class="hint">Required for images. WCAG 1.1.1, asked for here rather
-      than audited later — a library of undescribed images is one somebody has
-      to go back through, and nobody ever does.</span></p>
+    <span class="hint">Required for images, so people who cannot see them
+      know what they show.</span></p>
   <p><input id="m-dec" type="checkbox" name="decorative" value="1"> <label for="m-dec">Decorative, and needs no description</label></p>
   <button type="submit">Upload</button>
 </form>
 <p class="hint">
   Accepted: {{range $i, $a := .Accepted}}{{if $i}}, {{end}}{{$a}}{{end}}.
-  Images are resized, re-encoded and stripped of metadata according to the
-  media settings. {{if .HaveWebP}}WebP conversion is available via
-  <code>{{.WebP}}</code>.{{else}}WebP conversion needs an external encoder,
-  which is not installed here, so uploads are optimised natively instead.{{end}}
+  Images are resized and their hidden metadata removed.
+  {{if not .HaveWebP}}WebP conversion is not installed here.{{end}}
 </p>
 {{/*
   What a recording gets, which depends on what is installed. Said here rather
@@ -52,13 +47,12 @@ so this is the screen that answers that gate.</p>{{end}}
   owed the reason, and "the tool is not on this machine" is a different answer
   from "this is broken".
 */}}
+{{if not .HaveFFmpeg}}
 <p class="hint">
-  {{if .HaveFFmpeg}}A video's dimensions and length are read on upload and a
-  poster frame is taken from it, via <code>{{.FFmpeg}}</code>.{{else}}A video
-  is stored as it arrives. Reading its dimensions and taking a poster frame
-  need <code>ffmpeg</code>, which is not installed here — so a player shows
-  no still and the page cannot reserve the right space for it.{{end}}
+  A video is stored as it arrives, with no still image, because
+  <code>ffmpeg</code> is not installed here.
 </p>
+{{end}}
 {{end}}
 
 {{if not .Files}}
@@ -76,11 +70,20 @@ so this is the screen that answers that gate.</p>{{end}}
   {{range .Files}}
   <tr>
     <th scope="row">
+      <div class="media-name">
+      {{if eq (printf "%s" .Kind) "image"}}<img class="media-thumb" src="/media/file/{{.ID}}" alt=""
+        width="48" height="48" loading="lazy" decoding="async">{{end}}
+      <div>
       <a href="/media/file/{{.ID}}">{{.Name}}</a>
-      <div class="hint">On the published site: <code>/media/{{.ID}}</code></div>
+      <details class="media-path">
+        <summary class="hint">Its address<span class="chev">{{icon "expand_more"}}</span></summary>
+        <input readonly value="/media/{{.ID}}" aria-label="Address of {{.Name}} on the published site" spellcheck="false">
+      </details>
+      </div>
+      </div>
     </th>
     <td>{{.Format}}<div class="hint">{{.Kind}}{{if not .Inline}} · download only{{end}}</div></td>
-    <td>{{.Size}}{{if .Width}}<div class="hint">{{.Width}}×{{.Height}}</div>{{end}}
+    <td class="nowrap">{{bytes .Size}}{{if .Width}}<div class="hint">{{.Width}}×{{.Height}}</div>{{end}}
       {{if .Seconds}}<div class="hint">{{printf "%.0f" .Seconds}}s</div>{{end}}</td>
     <td>{{if .Alt}}{{.Alt}}{{else}}<span class="hint">decorative</span>{{end}}</td>
     <td>
@@ -209,13 +212,8 @@ so this is the screen that answers that gate.</p>{{end}}
 {{end}}
 
 <p class="hint">
-  Put the path above in a page field to use an asset — <code>/media/…</code> is
-  where the published site serves it, and the link on the name is the same file
-  through this interface, which needs a sign-in.
+  To use a file on a page, put its address in a page field. Open "Its address"
+  under the file's name to copy it.
 </p>
-<p class="hint">
-  A file's name is the hash of its bytes, so the same photograph uploaded twice
-  is stored once and a change is a different address. That is also why these can
-  be cached forever and never purged: different content is a different URL.
-</p>
+
 {{template "foot" .}}

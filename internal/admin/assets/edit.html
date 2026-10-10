@@ -1,16 +1,16 @@
 {{template "head" .}}
-<h1>Edit {{.Name}}</h1>
-{{if .Type}}<p class="help">This page is a <strong>{{.Type}}</strong>. The fields below are the ones that type declares; a save that does not satisfy it is refused.</p>{{end}}
+<h1>Edit {{if .PageTitle}}“{{.PageTitle}}”{{else}}{{.Name}}{{end}}</h1>
+{{if or .PageTitle .Type}}<p class="help">{{if .PageTitle}}The page <code>{{.Name}}</code>. {{end}}{{if .Type}}It is a <strong>{{.Type}}</strong>, so it must have the fields that type asks for.{{end}}</p>{{end}}
 {{with .HeldBy}}
 <div class="notice warn">
   <p><strong>{{.Holder}}</strong> opened this page for editing recently{{if .Note}} — {{.Note}}{{end}}.</p>
-  <p class="help">You can still edit it. This is a courtesy, not a lock: if you
-  both save, the second one is refused rather than overwriting the first, and
-  nothing here can expire into a stale claim nobody can clear.</p>
+  <p class="help">You can still edit it. If you both save, the second save is
+  refused rather than overwriting the first.</p>
 </div>
 {{end}}
 {{if .CanEdit}}
 <div class="editing">
+<div class="edit-main">
 <form method="post" action="/save">
   <input type="hidden" name="__name" value="{{.Name}}">
   <input type="hidden" name="__base" value="{{.Base}}">
@@ -65,11 +65,13 @@
     <label for="f-msg">What changed</label>
     <input id="f-msg" name="__message" type="text"
            aria-describedby="msg-help" value="edit {{.Name}}">
-    <p id="msg-help" class="help">Recorded in the commit, so the history explains itself later.</p>
+    <p id="msg-help" class="help">Kept in the page's history.</p>
   </div>
   <button type="submit">Save to draft</button>
   <p class="help">Saving writes a draft. Nothing is public until someone publishes.</p>
 </form>
+
+<div class="edit-details">
 
 {{/*
   The page itself, beside the form.
@@ -136,9 +138,8 @@
     </details>
     <button type="submit">I have read this and it is still right</button>
   </form>
-  <p class="help">Recorded against the page as it stands, with your name and
-    the date. It blocks nothing and publishes nothing — it is how the next
-    person knows whether anybody has looked.</p>
+  <p class="help">Your name and the date are kept with the page, so the next
+    person knows somebody has looked.</p>
 
   {{/*
     Whose job it is, which is not the same question as who last read it. A
@@ -154,8 +155,8 @@
       <input id="ck-owner" name="owner" maxlength="120"
              value="{{with .CheckedNow}}{{.Owner}}{{end}}"
              placeholder="a name, a team, an address">
-      <span class="hint">Who to ask when it goes out of date. Empty means
-        nobody has said — save it empty to hand the page back.</span></p>
+      <span class="hint">Who to ask when it goes out of date. Save it empty
+        to hand the page back.</span></p>
     <button type="submit">Record who owns this</button>
   </form>
 </section>
@@ -164,9 +165,8 @@
 {{if .Incoming}}
 <section aria-labelledby="links-h">
   <h2 id="links-h">Referenced by</h2>
-  <p class="hint">These pages name this one in a reference field. Renaming or
-    removing it breaks them, and publishing is refused until they are put
-    right.</p>
+  <p class="hint">These pages link to this one, so renaming or removing it
+    would break them.</p>
   <ul class="notelist">
     {{range .Incoming}}
     <li><a href="/page/{{.From}}">{{.From}}</a>
@@ -211,9 +211,8 @@
       <textarea id="n-text" name="text" rows="3" required
                 aria-describedby="n-help"
                 placeholder="this heading is wrong"></textarea>
-      <p id="n-help" class="help">Recorded against the page as it stands now,
-        so it says so if the page changes underneath it. Not published — notes
-        live outside the content store.</p>
+      <p id="n-help" class="help">For the people editing this page. Notes are
+        never published.</p>
     </div>
     <div class="field">
       <label for="n-field">Which field, if it is about one</label>
@@ -226,12 +225,14 @@
   </form>
 </section>
 {{end}}
+</div>
+</div>
 
 <aside class="preview" aria-labelledby="preview-h">
   <h2 id="preview-h">The page</h2>
-  <p class="help">The real page, drawn by your browser from the draft — not an
-    approximation of it. It changes when you save, not as you type.
+  <p class="help">Your draft as readers will see it. It updates when you save, not as you type.
     <a href="/preview/{{.Name}}" target="_blank" rel="noopener">Open in a tab</a>.</p>
+
   {{/*
     ?plain=1 here and nowhere else. The editing panel is what turns a preview
     into a way back into the page, and beside a form that already lists every
