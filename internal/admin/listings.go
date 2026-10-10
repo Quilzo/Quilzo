@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
@@ -64,7 +65,13 @@ func (s *Server) handleListings(w http.ResponseWriter, r *http.Request) {
 		// query somebody cannot see the result of is a query they will get
 		// wrong twice before noticing", and an aggregate is the part of the
 		// result that is hardest to check by eye.
-		Numbers      map[string]any
+		Numbers map[string]any
+		// Cols and Cells are the sample as a small table: the fields the
+		// listing names (or, with none named, the ones that say which record
+		// it is), with times as "3 days ago" rather than a count of seconds.
+		Cols         []string
+		Cells        [][]string
+		More         int
 		Problem      string
 		Unrestricted bool
 	}
@@ -93,6 +100,8 @@ func (s *Server) handleListings(w http.ResponseWriter, r *http.Request) {
 			if len(item.Sample) > 3 {
 				item.Sample = item.Sample[:3]
 			}
+			item.Cols, item.Cells = previewTable(l.Fields, item.Sample)
+			item.More = res.Total - len(item.Sample)
 		}
 		rows = append(rows, item)
 	}
@@ -119,6 +128,72 @@ func (s *Server) handleListings(w http.ResponseWriter, r *http.Request) {
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"CanWrite": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
 	})
+}
+
+// previewTable shapes a listing's sample rows for reading on this screen.
+//
+// The columns are the fields the listing names, at most five. A listing that
+// names none exposes everything, and every field of every row in one cell was
+// unreadable: there the columns are whichever of the naming fields the rows
+// carry, then the time each was last changed. A value that is a content
+// address is left out of the preview; it says nothing to a person.
+func previewTable(fields []string, rows []listing.Row) ([]string, [][]string) {
+	cols := fields
+	if len(cols) == 0 {
+		have := map[string]bool{}
+		for _, r := range rows {
+			for k := range r {
+				have[k] = true
+			}
+		}
+		for _, k := range []string{"name", "title", "label", "heading", "status", "price"} {
+			if have[k] {
+				cols = append(cols, k)
+			}
+		}
+		if len(cols) == 0 {
+			cols = append(cols, "id")
+		}
+		cols = append(cols, "updated")
+	}
+	if len(cols) > 5 {
+		cols = cols[:5]
+	}
+	cells := make([][]string, 0, len(rows))
+	now := time.Now()
+	for _, r := range rows {
+		line := make([]string, len(cols))
+		for i, c := range cols {
+			v, ok := r[c]
+			if !ok {
+				continue
+			}
+			if n, isInt := v.(int64); isInt && (c == "created" || c == "updated") {
+				line[i] = agoAt(n, now)
+				continue
+			}
+			text := fmt.Sprint(v)
+			if looksLikeHash(text) {
+				text = "—"
+			}
+			line[i] = text
+		}
+		cells = append(cells, line)
+	}
+	return cols, cells
+}
+
+// looksLikeHash is a 64-character hex string: a content address.
+func looksLikeHash(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // templateExample is what showing a listing looks like in a page template.
