@@ -500,6 +500,8 @@ encryption at rest
   quilzo vault rotate                      a new key, active from now on
   quilzo vault rewrap                      move what is there onto it
       QUILZO_KEY / _KEY_FILE / _KEY_COMMAND  where the key comes from
+  quilzo secret set NAME < file            keep a credential an agent uses, sealed
+  quilzo secret list | remove NAME         what is kept, by name; never the value
 
 compliance evidence
   quilzo compliance summary                what a procurement questionnaire asks
@@ -843,6 +845,8 @@ func main() {
 		err = cmdEval(root, cmdArgs)
 	case "vault":
 		err = cmdVault(root, cmdArgs)
+	case "secret":
+		err = cmdSecret(root, cmdArgs)
 	case "lock", "locks":
 		err = cmdLock(root, cmdArgs)
 	case "review":
