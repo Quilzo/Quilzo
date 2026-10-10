@@ -536,6 +536,8 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 			return base64.RawURLEncoding.EncodeToString(b)
 		},
 		"ago": func(unix int64) string { return agoAt(unix, time.Now()) },
+		// bytes is a file size as a person reads it: "2.4 MB", not 2411954.
+		"bytes": humanBytes,
 	}).ParseFS(assets, "assets/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("admin templates: %w", err)
