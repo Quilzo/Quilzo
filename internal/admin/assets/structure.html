@@ -44,7 +44,7 @@
   <thead><tr>
     <th scope="col">Term</th><th scope="col">Means</th>
     <th scope="col">Also spelled</th><th scope="col">Used by</th>
-    {{if $.CanWrite}}<th scope="col"></th>{{end}}
+    {{if $.CanWrite}}<th scope="col"><span class="visually-hidden">Actions</span></th>{{end}}
   </tr></thead>
   <tbody>
   {{range $t := $v.Terms}}
@@ -123,7 +123,7 @@
 <table>
   <thead><tr>
     <th scope="col">Entry</th><th scope="col">Points at</th>
-    <th scope="col">State</th>{{if $.CanWrite}}<th scope="col"></th>{{end}}
+    <th scope="col">State</th>{{if $.CanWrite}}<th scope="col"><span class="visually-hidden">Actions</span></th>{{end}}
   </tr></thead>
   <tbody>
   {{range $it := $m.Items}}

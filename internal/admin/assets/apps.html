@@ -35,7 +35,7 @@
   <thead><tr>
     <th scope="col">App</th>{{if .Admin}}<th scope="col">For</th>{{end}}
     <th scope="col">May</th><th scope="col">Connected</th><th scope="col">Last used</th>
-    <th scope="col">Asks again</th><th scope="col"></th>
+    <th scope="col">Asks again</th><th scope="col"><span class="visually-hidden">Actions</span></th>
   </tr></thead>
   <tbody>
   {{range .Apps}}
@@ -95,7 +95,7 @@
 {{if .Registered}}
 <div class="table-wrap">
 <table>
-  <thead><tr><th scope="col">App</th><th scope="col">client_id</th><th scope="col">Returns to</th><th scope="col">Added</th><th scope="col"></th></tr></thead>
+  <thead><tr><th scope="col">App</th><th scope="col">client_id</th><th scope="col">Returns to</th><th scope="col">Added</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
   <tbody>
   {{range .Registered}}
   <tr>
