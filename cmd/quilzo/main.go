@@ -557,6 +557,7 @@ agents and integrations
   quilzo eval cases AGENT | show AGENT | add AGENT --goal G ... | remove AGENT CASE
   quilzo agent approve RUN STEP            let the action a run is waiting on go ahead
   quilzo agent decline RUN STEP            refuse it; the run carries on without
+  quilzo agent stop RUN                    stop a run that is going on, wherever it is
   quilzo agent resume RUN                  continue a run that was cut off
   quilzo agent replay RUN STEP             run it again from after a step, as a new run
   quilzo agent probe < question.json       ask the gate: would this agent be

@@ -51,6 +51,9 @@ type Driver struct {
 	// Frames keeps a picture of the page after each action, and of what a
 	// person is asked about, for the run's record. Nil keeps none.
 	Frames func(Frame)
+	// Live is handed what the page shows now, at most once a second while
+	// it changes, for a person watching the run. Nil sends nothing.
+	Live func(jpeg []byte)
 	// Picture hands a screenshot to a model that reads pictures. Nil means
 	// this run's model reads text only.
 	Picture func(png []byte)
@@ -235,8 +238,52 @@ func (d *Driver) start(ctx context.Context) error {
 	}
 	d.stops = append(d.stops, stop)
 	d.stops = append(d.stops, d.answerDialogs(b, p))
+	if d.Live != nil {
+		if stop, err := d.screencast(ctx, b, p); err == nil {
+			d.stops = append(d.stops, stop)
+		}
+	}
 	d.browser, d.page = b, p
 	return nil
+}
+
+// screencast hands Live what the page shows as it changes, at most once a
+// second: the browser sends a frame when the page repaints, and each is
+// acknowledged so it sends the next.
+func (d *Driver) screencast(ctx context.Context, b *cdp.Browser, p *cdp.Page) (func(), error) {
+	evs, cancel := b.Subscribe(func(e cdp.Event) bool {
+		return e.SessionID == p.Session && e.Method == "Page.screencastFrame"
+	})
+	if err := p.Call(ctx, "Page.startScreencast", map[string]any{"format": "jpeg", "quality": 50,
+		"maxWidth": 1280, "maxHeight": 800, "everyNthFrame": 1}, nil); err != nil {
+		cancel()
+		return nil, err
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var last time.Time
+		for e := range evs {
+			var f struct {
+				Data      string `json:"data"`
+				SessionID int64  `json:"sessionId"`
+			}
+			if json.Unmarshal(e.Params, &f) != nil {
+				continue
+			}
+			actx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = p.Call(actx, "Page.screencastFrameAck", map[string]any{"sessionId": f.SessionID}, nil)
+			stop()
+			if time.Since(last) < time.Second {
+				continue
+			}
+			if jpg, err := base64.StdEncoding.DecodeString(f.Data); err == nil {
+				last = time.Now()
+				d.Live(jpg)
+			}
+		}
+	}()
+	return func() { cancel(); <-done }, nil
 }
 
 // answerDialogs answers what a page asks in a dialog, which would

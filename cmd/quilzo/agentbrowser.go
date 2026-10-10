@@ -89,7 +89,7 @@ func newRunBrowser(root string, m agent.Manifest, sess *agent.Session, caller *C
 		},
 	}
 	if rb.frames != nil {
-		d.Frames = rb.frames.keep
+		d.Frames, d.Live = rb.frames.keep, rb.frames.now
 	}
 	if chat {
 		d.Picture = func(png []byte) {
@@ -127,6 +127,9 @@ func (rb *runBrowser) pictures() [][]byte {
 // end closes the browser and everything made for it.
 func (rb *runBrowser) end() {
 	rb.driver.Close()
+	if rb.frames != nil {
+		rb.frames.endLive()
+	}
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 	for i := len(rb.close) - 1; i >= 0; i-- {
@@ -391,6 +394,46 @@ func (f *runFrames) keep(fr browser.Frame) {
 	}
 }
 
+// now keeps what the page shows now, in place of the last one: for a
+// person watching the run, not part of its record.
+func (f *runFrames) now(jpg []byte) {
+	dir := runFramesDir(f.root, f.id)
+	if os.MkdirAll(dir, 0o700) != nil {
+		return
+	}
+	name := "live.jpg"
+	if f.kr != nil {
+		s, err := f.kr.Seal(jpg, frameAAD(f.id, 0))
+		if err != nil {
+			return
+		}
+		if jpg, err = vault.Marshal(s); err != nil {
+			return
+		}
+		name += ".sealed"
+	}
+	_ = atomicfile.Write(filepath.Join(dir, name), jpg, 0o600)
+}
+
+// liveFrame is the picture of now a run keeps, and whether it is sealed.
+func liveFrame(root, id string) (string, bool) {
+	dir := runFramesDir(root, id)
+	if _, err := os.Stat(filepath.Join(dir, "live.jpg.sealed")); err == nil {
+		return filepath.Join(dir, "live.jpg.sealed"), true
+	}
+	if _, err := os.Stat(filepath.Join(dir, "live.jpg")); err == nil {
+		return filepath.Join(dir, "live.jpg"), false
+	}
+	return "", false
+}
+
+// endLive removes the picture of now once the run is over.
+func (f *runFrames) endLive() {
+	dir := runFramesDir(f.root, f.id)
+	_ = os.Remove(filepath.Join(dir, "live.jpg"))
+	_ = os.Remove(filepath.Join(dir, "live.jpg.sealed"))
+}
+
 // loadRunFrames is the pictures a run kept, in order.
 func loadRunFrames(root, id string) ([]runFrame, error) {
 	if !agent.ValidRecordID(id) {
@@ -412,6 +455,13 @@ func runFramePicture(root, id string, n int) ([]byte, error) {
 	frames, err := loadRunFrames(root, id)
 	if err != nil {
 		return nil, err
+	}
+	if n == 0 {
+		path, sealed := liveFrame(root, id)
+		if path == "" {
+			return nil, fmt.Errorf("%s has no picture of now", id)
+		}
+		frames = []runFrame{{N: 0, File: filepath.Base(path), Sealed: sealed}}
 	}
 	for _, f := range frames {
 		if f.N != n {

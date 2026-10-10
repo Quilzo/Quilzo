@@ -294,3 +294,25 @@ func TestADialogIsAnsweredAndReported(t *testing.T) {
 		t.Errorf("after the dialog:\n%s", out)
 	}
 }
+
+// Somebody watching a run sees what its page shows now.
+func TestWhatThePageShowsNowIsHandedOn(t *testing.T) {
+	sh := newShop(t)
+	d, _ := newDriver(t, agent.NewSession(shopper(), nil))
+	got := make(chan []byte, 8)
+	d.Live = func(jpg []byte) {
+		select {
+		case got <- jpg:
+		default:
+		}
+	}
+	must(t, d, act("browser_open", "url", sh.base+"/shop"))
+	select {
+	case jpg := <-got:
+		if len(jpg) < 2 || jpg[0] != 0xFF || jpg[1] != 0xD8 {
+			t.Error("what was handed on is not a JPEG")
+		}
+	case <-time.After(10 * time.Second):
+		t.Error("nothing was handed on")
+	}
+}

@@ -281,17 +281,20 @@ func cmdServe(root string, args []string) error {
 		RunGet: func(id string) (agent.Record, error) {
 			return loadAgentRun(root, id)
 		},
-		Asking: func(id, why string) (int, bool) {
-			frames, _ := loadRunFrames(root, id)
-			for i := len(frames) - 1; i >= 0; i-- {
-				if why != "" && frames[i].Asking == why {
-					return frames[i].N, true
-				}
+		Frames: func(id string) ([]admin.RunFrame, bool) {
+			kept, _ := loadRunFrames(root, id)
+			out := make([]admin.RunFrame, 0, len(kept))
+			for _, f := range kept {
+				out = append(out, admin.RunFrame{N: f.N, Op: f.Op, When: f.When, Asking: f.Asking})
 			}
-			return 0, false
+			path, _ := liveFrame(root, id)
+			return out, path != ""
 		},
 		Frame: func(id string, n int) ([]byte, error) {
 			return runFramePicture(root, id, n)
+		},
+		Stop: func(id, by string) error {
+			return stopRun(root, id, signedIn(by), time.Now())
 		},
 		Answer: func(id string, step int, approve bool, by string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
