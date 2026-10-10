@@ -124,15 +124,15 @@
     <p><label for="l-sort">Sorted by</label>
       <input id="l-sort" name="sort" spellcheck="false"
              placeholder="updated"></p>
-    <p><input id="l-desc" type="checkbox" name="descending" value="1"> <label for="l-desc">Newest or highest first</label></p>
     <p><label for="l-rows">Rows</label>
       <input id="l-rows" name="rows" inputmode="numeric" placeholder="20">
       <span class="hint">At most {{.MaxRows}}.</span></p>
     <p><label for="l-descr">Description</label>
       <input id="l-descr" name="description"></p>
   </div>
+  <p class="checkrow"><input id="l-desc" type="checkbox" name="descending" value="1"> <label for="l-desc">Newest or highest first</label></p>
 
-  <fieldset>
+  <fieldset class="part">
     <legend>Add a parameter</legend>
     <div class="grid2">
       <p><label for="p-name">Name</label>
@@ -148,7 +148,7 @@
     </div>
   </fieldset>
 
-  <fieldset>
+  <fieldset class="part">
     <legend>Add a condition</legend>
     <div class="grid2">
       <p><label for="w-field">Field</label>
