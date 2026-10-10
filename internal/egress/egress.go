@@ -86,6 +86,13 @@ type Purpose struct {
 // review is the point.
 var Purposes = []Purpose{
 	{
+		Name: "browser",
+		What: "downloading the pinned Chrome for Testing browser an agent's " +
+			"browser runs, once, checked against the SHA-256 this release carries",
+		Without: "the browser is not downloaded. Point browser.path at a " +
+			"Chromium already on this machine, or agents do not browse",
+	},
+	{
 		Name: "federation",
 		What: "delivering activities to followers' inboxes, and fetching a " +
 			"remote actor's public key so their delivery can be verified",

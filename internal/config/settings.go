@@ -650,6 +650,15 @@ var settings = []Setting{
 			"issued keys are ever enrolled.",
 	},
 	{
+		Key: "browser.path", Kind: Text, Default: "",
+		Summary: "a Chromium on this machine for agents' browsers, instead of the pinned one",
+		Why: "An agent's browser is the Chrome for Testing build this release pins, fetched " +
+			"once by quilzo browser install and checked against its SHA-256. A machine that " +
+			"cannot download it names a Chromium of its own here, as an absolute path; the " +
+			"browser is still run in the agent's box and driven the same way, but nothing " +
+			"checks what it is, so it should be one the operator installed on purpose.",
+	},
+	{
 		Key: "network.mode", Kind: Text, Default: "open",
 		Summary: "whether this deployment may reach the network: open or offline",
 		Why: "offline refuses every connection that would leave this host, " +
