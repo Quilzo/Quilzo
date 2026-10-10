@@ -17,6 +17,9 @@
    "mcp",
    "uploads"
   ],
+  "cmp": [
+   "*"
+  ],
   "compress/flate": [
    "*"
   ],
