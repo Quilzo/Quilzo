@@ -189,7 +189,13 @@ func (c *Conn) publish(e Event) {
 // Subscribe receives the events match accepts, until cancel or the browser
 // goes. The channel is buffered; a reader that falls behind misses events.
 func (c *Conn) Subscribe(match func(Event) bool) (<-chan Event, func()) {
-	ch := make(chan Event, 256)
+	return c.SubscribeN(256, match)
+}
+
+// SubscribeN is Subscribe with room for n events: for a reader that must
+// see every one, such as one deciding each request a page makes.
+func (c *Conn) SubscribeN(n int, match func(Event) bool) (<-chan Event, func()) {
+	ch := make(chan Event, n)
 	c.mu.Lock()
 	if c.err != nil {
 		c.mu.Unlock()

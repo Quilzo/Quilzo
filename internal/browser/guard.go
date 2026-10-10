@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/cdp"
 )
@@ -96,17 +97,26 @@ type Refusal struct {
 // allows. proxyUser and proxyPass answer the box's proxy when it asks; a
 // site asking for a password is refused. Refused requests are reported to
 // refused, which may be nil. Stop the guard with the returned function.
+//
+// A page is more than its tab. A frame from another site runs in a process
+// of its own, and a worker, a service worker or a window the page opens is
+// a target of its own, whose requests the tab's interception never sees. So
+// every target the browser or the page starts is attached as it starts,
+// held before it runs anything, and let go only once its requests pass
+// here too. One that cannot be watched is never let go, and a page other
+// than this one is closed.
 func Guard(ctx context.Context, b *cdp.Browser, p *cdp.Page, rule Rule, proxyUser, proxyPass string, refused func(Refusal)) (func(), error) {
-	evs, cancel := b.Subscribe(func(e cdp.Event) bool {
-		return e.SessionID == p.Session && (e.Method == "Fetch.requestPaused" || e.Method == "Fetch.authRequired")
+	g := &guard{b: b, page: p, rule: rule, user: proxyUser, pass: proxyPass, refused: refused,
+		watched: map[string]bool{p.Session: true}, targets: map[string]bool{}}
+	evs, cancel := b.SubscribeN(4096, func(e cdp.Event) bool {
+		switch e.Method {
+		case "Fetch.requestPaused", "Fetch.authRequired":
+			return g.watching(e.SessionID)
+		case "Target.attachedToTarget", "Target.detachedFromTarget":
+			return true
+		}
+		return false
 	})
-	if err := p.Call(ctx, "Fetch.enable", map[string]any{
-		"patterns":           []map[string]any{{"urlPattern": "*", "requestStage": "Request"}},
-		"handleAuthRequests": true,
-	}, nil); err != nil {
-		cancel()
-		return nil, err
-	}
 	gctx, stop := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -120,18 +130,156 @@ func Guard(ctx context.Context, b *cdp.Browser, p *cdp.Page, rule Rule, proxyUse
 				if !ok {
 					return
 				}
-				decide(gctx, p, e, rule, proxyUser, proxyPass, refused)
+				g.handle(gctx, e)
 			}
 		}
 	}()
-	return func() {
+	end := func() {
 		stop()
 		cancel()
 		wg.Wait()
-	}, nil
+		g.wg.Wait()
+	}
+	if err := g.watch(ctx, p.Session); err != nil {
+		end()
+		return nil, err
+	}
+	// What the browser starts on its own account (service and shared
+	// workers, a window), and what this page starts (frames, workers).
+	for _, session := range []string{"", p.Session} {
+		if err := b.Call(ctx, session, "Target.setAutoAttach", autoAttach, nil); err != nil {
+			end()
+			return nil, err
+		}
+	}
+	return end, nil
 }
 
-func decide(ctx context.Context, p *cdp.Page, e cdp.Event, rule Rule, user, pass string, refused func(Refusal)) {
+// autoAttach holds each new target before it runs, until it is watched.
+var autoAttach = map[string]any{
+	"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true,
+	"filter": []map[string]any{{"type": "browser", "exclude": true}, {"type": "tab", "exclude": true}, {}},
+}
+
+type guard struct {
+	b          *cdp.Browser
+	page       *cdp.Page
+	rule       Rule
+	user, pass string
+	refused    func(Refusal)
+
+	mu      sync.Mutex
+	watched map[string]bool
+	targets map[string]bool
+	wg      sync.WaitGroup
+}
+
+func (g *guard) watching(session string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.watched[session]
+}
+
+// watch pauses every request one target makes, from here on.
+func (g *guard) watch(ctx context.Context, session string) error {
+	g.mu.Lock()
+	g.watched[session] = true
+	g.mu.Unlock()
+	return g.b.Call(ctx, session, "Fetch.enable", map[string]any{
+		"patterns":           []map[string]any{{"urlPattern": "*", "requestStage": "Request"}},
+		"handleAuthRequests": true,
+	}, nil)
+}
+
+func (g *guard) handle(ctx context.Context, e cdp.Event) {
+	switch e.Method {
+	case "Target.attachedToTarget":
+		var a struct {
+			SessionID  string `json:"sessionId"`
+			TargetInfo struct {
+				TargetID string `json:"targetId"`
+				Type     string `json:"type"`
+				URL      string `json:"url"`
+			} `json:"targetInfo"`
+		}
+		if json.Unmarshal(e.Params, &a) != nil {
+			return
+		}
+		// Each on its own, so the requests already paused are decided
+		// while a new target is set up.
+		g.wg.Add(1)
+		go func() {
+			defer g.wg.Done()
+			actx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			g.attached(actx, a.SessionID, a.TargetInfo.TargetID, a.TargetInfo.Type, a.TargetInfo.URL)
+		}()
+	case "Target.detachedFromTarget":
+		var d struct {
+			SessionID string `json:"sessionId"`
+		}
+		if json.Unmarshal(e.Params, &d) == nil && d.SessionID != g.page.Session {
+			g.mu.Lock()
+			delete(g.watched, d.SessionID)
+			g.mu.Unlock()
+		}
+	default:
+		decide(ctx, g.b, e, g.rule, g.user, g.pass, g.refused)
+	}
+}
+
+// attached is a target the browser holds until this lets it run.
+func (g *guard) attached(ctx context.Context, session, target, kind, at string) {
+	if kind == "page" {
+		if target != g.page.Target {
+			// A window this page did not get to be: there is one page,
+			// and it is the one attached on purpose.
+			_ = g.b.Call(ctx, "", "Target.closeTarget", map[string]any{"targetId": target}, nil)
+		}
+		// This page, attached twice: the first attachment watches it.
+		_ = g.b.Call(ctx, "", "Target.detachFromTarget", map[string]any{"sessionId": session}, nil)
+		return
+	}
+	// Attached both from the browser and from the page, a service worker
+	// is: once is enough, and the second is let go.
+	g.mu.Lock()
+	again := g.targets[target]
+	g.targets[target] = true
+	g.mu.Unlock()
+	if again {
+		_ = g.b.Call(ctx, "", "Target.detachFromTarget", map[string]any{"sessionId": session}, nil)
+		return
+	}
+	if kind == "worker" {
+		// A dedicated worker's requests are its page's, and paused there
+		// (TestNothingThePageStartsGoesUnwatched shows it); it has no
+		// interception of its own to turn on.
+		_ = g.b.Call(ctx, session, "Target.setAutoAttach", autoAttach, nil)
+		_ = g.b.Call(ctx, session, "Runtime.runIfWaitingForDebugger", nil, nil)
+		return
+	}
+	if err := g.watch(ctx, session); err != nil {
+		// Left held: what cannot be watched does not run.
+		if g.refused != nil {
+			u, _ := url.Parse(at)
+			if u == nil {
+				u = &url.URL{}
+			}
+			g.refused(Refusal{Request: Request{URL: u, Kind: kind},
+				Why: fmt.Sprintf("a %s the page started could not be watched, so it was not run (%v)", kind, err)})
+		}
+		return
+	}
+	// What it starts in turn is held the same way; a worker that starts
+	// nothing has no such command, which is fine.
+	_ = g.b.Call(ctx, session, "Target.setAutoAttach", autoAttach, nil)
+	_ = g.b.Call(ctx, session, "Runtime.runIfWaitingForDebugger", nil, nil)
+}
+
+func decide(ctx context.Context, b *cdp.Browser, e cdp.Event, rule Rule, user, pass string, refused func(Refusal)) {
+	call := func(method string, params map[string]any) {
+		_ = b.Call(ctx, e.SessionID, method, params, nil)
+	}
 	switch e.Method {
 	case "Fetch.authRequired":
 		var a struct {
@@ -147,7 +295,7 @@ func decide(ctx context.Context, p *cdp.Page, e cdp.Event, rule Rule, user, pass
 		if a.AuthChallenge.Source == "Proxy" && user != "" {
 			answer = map[string]any{"response": "ProvideCredentials", "username": user, "password": pass}
 		}
-		_ = p.Call(ctx, "Fetch.continueWithAuth", map[string]any{"requestId": a.RequestID, "authChallengeResponse": answer}, nil)
+		call("Fetch.continueWithAuth", map[string]any{"requestId": a.RequestID, "authChallengeResponse": answer})
 	case "Fetch.requestPaused":
 		var r struct {
 			RequestID string `json:"requestId"`
@@ -169,9 +317,9 @@ func decide(ctx context.Context, p *cdp.Page, e cdp.Event, rule Rule, user, pass
 			if refused != nil {
 				refused(Refusal{Request: req, Why: err.Error()})
 			}
-			_ = p.Call(ctx, "Fetch.failRequest", map[string]any{"requestId": r.RequestID, "errorReason": "BlockedByClient"}, nil)
+			call("Fetch.failRequest", map[string]any{"requestId": r.RequestID, "errorReason": "BlockedByClient"})
 			return
 		}
-		_ = p.Call(ctx, "Fetch.continueRequest", map[string]any{"requestId": r.RequestID}, nil)
+		call("Fetch.continueRequest", map[string]any{"requestId": r.RequestID})
 	}
 }

@@ -61,7 +61,8 @@ type Browser struct {
 // talk to somebody nobody asked it to, or do something an agent's browser
 // has no business doing: phone home for updates, safe-browsing lists,
 // metrics, crash reports or sync; run extensions; keep passwords in the
-// desktop's keyring; play sound.
+// desktop's keyring; play sound; open a window of its own, which would be
+// a page nobody attached to.
 var hardening = []string{
 	"--no-first-run", "--no-default-browser-check",
 	"--disable-background-networking", "--disable-component-update", "--disable-sync",
@@ -70,7 +71,7 @@ var hardening = []string{
 	"--metrics-recording-only", "--disable-background-timer-throttling",
 	"--password-store=basic", "--use-mock-keychain", "--mute-audio",
 	"--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication",
-	"--disable-dev-shm-usage",
+	"--disable-dev-shm-usage", "--block-new-web-contents",
 }
 
 // Argv is the command line a browser is started with.
