@@ -3131,6 +3131,16 @@ table.declared th[scope=row] code.cmd { overflow-wrap: break-word; }
 .starters h3 { text-transform: capitalize; }
 .starters form.inline { margin-top: auto; }
 .starters form.inline input:not([type=checkbox]) { min-width: 0; width: 8rem; }
+/* Analytics' three counts fit one row on a phone, rather than leaving the
+   third alone on a row of its own. */
+.stats-row.stats-three { grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); }
+/* A personalisation condition is one row: what it looks at, then the values,
+   side by side; stacked on a phone. */
+fieldset.conds { max-width: 60rem; }
+.cond { display: grid; grid-template-columns: minmax(12rem, 16rem) 1fr; gap: 0 1rem; align-items: end; }
+.cond .field { margin-bottom: .75rem; }
+.cond label { display: block; }
+@media (max-width: 40rem) { .cond { grid-template-columns: 1fr; } .cond .field + .field { margin-bottom: 1.25rem; } }
 
 /* -- review 10 October: security operations -------------------------------- */
 /* (Findings, Shield, Cases, Risk, Detections, Automations, Feeds, Hunt,
