@@ -6,7 +6,8 @@
   and read the values that are rare: most of what is malicious is rare, and
   most of what is rare is not malicious, which is why a person reads this.</p>
 
-<form class="wf-filters" method="get" action="/security/hunt" aria-label="Hunt">
+<form class="wf-filters hunt-form" method="get" action="/security/hunt" aria-label="Hunt">
+  <div class="hunt-row">
   <label>Stack by
     <select name="field" required>
       <option value="">Choose a field</option>
@@ -18,7 +19,9 @@
       <option value="24"{{if eq .Hours 24}} selected{{end}}>24 hours</option>
       <option value="168"{{if eq .Hours 168}} selected{{end}}>7 days</option>
     </select></label>
-  <label>Only where
+  </div>
+  <fieldset class="hunt-where"><legend>Only where</legend>
+  <label><span class="visually-hidden">Field</span>
     <select name="where">
       <option value="">everything</option>
       {{range .Fields}}<option value="{{.Name}}"{{if eq .Name $.Where}} selected{{end}}>{{.Name}}</option>{{end}}
@@ -26,7 +29,8 @@
   <label><span class="visually-hidden">Comparison</span>
     <select name="op">{{range .Ops}}<option value="{{.}}"{{if eq (print .) $.Op}} selected{{end}}>{{.}}</option>{{end}}</select></label>
   <label><span class="visually-hidden">Value</span>
-    <input type="text" name="is" value="{{.Is}}" maxlength="256"></label>
+    <input type="text" name="is" value="{{.Is}}" maxlength="256" placeholder="value"></label>
+  </fieldset>
   <button type="submit">Hunt</button>
 </form>
 
@@ -63,8 +67,9 @@
 {{else}}<p>No event in the period carries that field.</p>{{end}}
 {{else}}
 <h2>What these events carry</h2>
+{{if not .Fields}}<p>No events in this window. Pick a longer window, or check <a href="/security/events">Events</a> to see whether anything is arriving.</p>{{else}}
 <div class="table-wrap"><table><thead><tr><th scope="col">Field</th><th scope="col">Events carrying it</th></tr></thead>
-  <tbody>{{range .Fields}}<tr><th scope="row"><code>{{.Name}}</code></th><td>{{.Count}}</td></tr>{{end}}</tbody></table></div>
+  <tbody>{{range .Fields}}<tr><th scope="row"><code>{{.Name}}</code></th><td>{{.Count}}</td></tr>{{end}}</tbody></table></div>{{end}}
 {{end}}
 {{end}}
 {{template "foot" .}}
