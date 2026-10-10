@@ -554,23 +554,85 @@ func (s *Server) handleWorkforcePerson(w http.ResponseWriter, r *http.Request) {
 	data["Score"] = score
 	if score != nil {
 		data["Tone"] = bandTone(score.Band)
+		// One bar to an area, so two reasons in one area do not show as
+		// two bars with the same name; the table below lists each reason.
+		type areaSum struct {
+			area   estate.Area
+			points int
+			why    []string
+		}
+		var sums []*areaSum
+		byArea := map[estate.Area]*areaSum{}
+		for _, f := range score.Factors {
+			a := byArea[f.Area]
+			if a == nil {
+				a = &areaSum{area: f.Area}
+				byArea[f.Area] = a
+				sums = append(sums, a)
+			}
+			a.points += f.Points
+			a.why = append(a.why, fmt.Sprintf("%s (%s): %+d", f.What, f.Source, f.Points))
+		}
+		sort.SliceStable(sums, func(i, j int) bool {
+			return abs(sums[i].points) > abs(sums[j].points)
+		})
 		var bars []wfBar
 		var vals []int
-		for _, f := range score.Factors {
-			v := f.Points
+		for _, a := range sums {
+			v := a.points
 			tone := "series"
 			if v < 0 {
 				v, tone = -v, "good"
 			}
-			bars = append(bars, wfBar{Label: areaLabel[f.Area],
-				Value: fmt.Sprintf("%+d", f.Points), Tone: tone,
-				Title: fmt.Sprintf("%s (%s): %+d", f.What, f.Source, f.Points)})
+			bars = append(bars, wfBar{Label: areaLabel[a.area],
+				Value: fmt.Sprintf("%+d", a.points), Tone: tone,
+				Title: strings.Join(a.why, "; ")})
 			vals = append(vals, v)
 		}
 		data["Factors"] = chart("What the score is made of", bars, vals)
 	}
+	// Each tool's tasks in words, in the order the tool's record lists
+	// them: "Background check: done", not "background_check: COMPLETE".
+	recTasks := make([][]personTask, len(ind.Records))
+	for i, rec := range ind.Records {
+		for _, k := range sortedStrings(rec.Tasks) {
+			st := rec.Tasks[k]
+			t := personTask{Name: taskNames[k], Word: st, Tone: "unknown"}
+			if t.Name == "" {
+				t.Name = strings.ReplaceAll(k, "_", " ")
+				t.Name = strings.ToUpper(t.Name[:1]) + t.Name[1:]
+			}
+			if w, ok := taskWords[st]; ok {
+				t.Word, t.Tone = w[0], w[1]
+			}
+			recTasks[i] = append(recTasks[i], t)
+		}
+	}
+	data["RecordTasks"] = recTasks
 	data["Machines"] = machineRows(ind.Devices, now)
 	s.render(w, r, "workforce_person.html", data)
+}
+
+// personTask is one task a tool says a person has, in words.
+type personTask struct{ Name, Word, Tone string }
+
+var taskNames = map[string]string{
+	"training": "Training", "policies": "Policies",
+	"device_monitoring": "Device monitoring", "background_check": "Background check",
+}
+
+// taskWords is each task status as a word and the tone it is shown in.
+var taskWords = map[string][2]string{
+	"COMPLETE": {"done", "good"}, "OVERDUE": {"overdue", "critical"},
+	"DUE_SOON": {"due soon", "warning"}, "NONE": {"nothing due", "unknown"},
+	"PAUSED": {"paused", "unknown"},
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 // machineRow is one machine with each tool's word on each property.

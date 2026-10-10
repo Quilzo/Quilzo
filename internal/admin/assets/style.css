@@ -3277,3 +3277,12 @@ td.ev-value { min-width: 12rem; white-space: nowrap; }
 /* -- review 10 October: assurance and workforce ---------------------------- */
 /* (Frameworks, Parameters, Workforce, Inventory, Reminders, Controls, KSI,
    AI evidence, Integrity, Policy, Site, Vulnerabilities.) */
+.param-id { font-size: .75rem; color: var(--on-surface-variant); }
+.ssp-form select { width: auto; min-width: 14rem; max-width: 100%; }
+.ssp-form + .hint { margin-top: 4px; }
+.jump-list { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin: 1rem 0; }
+.jump-list a { font: var(--label-lg); }
+.wf-fig .wfbars { max-width: 36rem; }
+.wf-tasks > span { display: inline-block; margin: 0 .75rem .25rem 0; white-space: nowrap; }
+.wf-machines td:nth-child(2), .wf-machines td:nth-child(6) { white-space: nowrap; }
+td .duty-more { margin: 4px 0 0; }

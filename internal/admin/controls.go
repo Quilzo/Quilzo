@@ -23,7 +23,31 @@ import (
 
 type controlFamily struct {
 	Code  string
+	Name  string
 	Items []controls.Implementation
+}
+
+// controlFamilyNames are SP 800-53's twenty families, so a heading says
+// "Access control" and not only "AC".
+var controlFamilyNames = map[string]string{
+	"AC": "Access control", "AT": "Awareness and training",
+	"AU": "Audit and accountability", "CA": "Assessment, authorisation and monitoring",
+	"CM": "Configuration management", "CP": "Contingency planning",
+	"IA": "Identification and authentication", "IR": "Incident response",
+	"MA": "Maintenance", "MP": "Media protection",
+	"PE": "Physical and environmental protection", "PL": "Planning",
+	"PM": "Programme management", "PS": "Personnel security",
+	"PT": "Personal data processing and transparency", "RA": "Risk assessment",
+	"SA": "System and services acquisition", "SC": "System and communications protection",
+	"SI": "System and information integrity", "SR": "Supply chain risk management",
+}
+
+// filterChip is one choice in a row of filters: what it shows, how many,
+// and whether it is the one shown now.
+type filterChip struct {
+	Label, Href string
+	Count       int
+	On          bool
 }
 
 func (s *Server) handleControls(w http.ResponseWriter, r *http.Request) {
@@ -40,13 +64,19 @@ func (s *Server) handleControls(w http.ResponseWriter, r *http.Request) {
 		}
 		code, _, _ := strings.Cut(im.Control, "-")
 		if len(fams) == 0 || fams[len(fams)-1].Code != code {
-			fams = append(fams, controlFamily{Code: code})
+			fams = append(fams, controlFamily{Code: code, Name: controlFamilyNames[code]})
 		}
 		fams[len(fams)-1].Items = append(fams[len(fams)-1].Items, im)
 	}
 	n := controls.Count(all)
+	chips := []filterChip{
+		{"All", "/security/controls", len(all), want == ""},
+		{"Quilzo's", "/security/controls?who=quilzo", n[controls.Quilzo], want == "quilzo"},
+		{"Shared", "/security/controls?who=shared", n[controls.Shared], want == "shared"},
+		{"Yours", "/security/controls?who=customer", n[controls.Customer], want == "customer"},
+	}
 	s.render(w, r, "controls.html", map[string]any{"Title": "Controls", "Nav": "security", "Principal": p,
-		"Families": fams, "Total": len(all), "Quilzo": n[controls.Quilzo], "Shared": n[controls.Shared],
+		"Families": fams, "Chips": chips, "Total": len(all), "Quilzo": n[controls.Quilzo], "Shared": n[controls.Shared],
 		"Customer": n[controls.Customer], "Who": want, "Pledge": controls.Pledge, "PledgeURL": controls.PledgeURL})
 }
 
@@ -130,15 +160,25 @@ func (s *Server) handleControlsKSI(w http.ResponseWriter, r *http.Request) {
 		ID, Name string
 		Items    []fedramp.Result
 	}
+	show := r.URL.Query().Get("show")
 	var themes []theme
 	for _, r := range res {
 		n[r.Standing]++
+		if show != "" && string(r.Standing) != show {
+			continue
+		}
 		if len(themes) == 0 || themes[len(themes)-1].ID != r.Theme {
 			themes = append(themes, theme{ID: r.Theme, Name: r.ThemeName})
 		}
 		themes[len(themes)-1].Items = append(themes[len(themes)-1].Items, r)
 	}
 	data["Source"], data["Themes"] = src, themes
+	data["Chips"] = []filterChip{
+		{"All", "/security/controls/ksi", len(res), show == ""},
+		{"Failing", "/security/controls/ksi?show=" + string(fedramp.Failing), n[fedramp.Failing], show == string(fedramp.Failing)},
+		{"Quilzo contributes", "/security/controls/ksi?show=" + string(fedramp.Contributes), n[fedramp.Contributes], show == string(fedramp.Contributes)},
+		{"Your process", "/security/controls/ksi?show=" + string(fedramp.Elsewhere), n[fedramp.Elsewhere], show == string(fedramp.Elsewhere)},
+	}
 	data["Contributes"], data["Failing"], data["Elsewhere"] = n[fedramp.Contributes], n[fedramp.Failing], n[fedramp.Elsewhere]
 	s.render(w, r, "ksi.html", data)
 }

@@ -1,4 +1,5 @@
 {{template "head" .}}
+<p class="hint"><a href="/security">Security</a></p>
 <h1>Organisation policy</h1>
 {{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
@@ -26,8 +27,8 @@
 </li>{{end}}</ul>{{end}}
 
 <h2>Parameters</h2>
-<ul class="auto-list">{{range .Rows}}<li class="auto-card">
-  <div class="auto-head"><strong><code>{{.ID}}</code></strong><span class="chip-small">{{.Control}}</span>
+<ul class="auto-list">{{range .Rows}}<li class="auto-card" id="{{.ID}}">
+  <div class="auto-head"><strong>{{.Title}}</strong><span class="chip-small">{{.Control}}</span><code class="param-id">{{.ID}}</code>
     {{if .Declared}}{{if .Met}}<span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Declared, met</span>{{else}}<span class="wf-band as-written serious"><span class="wf-icon">{{icon "warning"}}</span>Declared, not met</span>{{end}}
     {{else if eq (print .How) "described"}}<span class="wf-band as-written low"><span class="wf-icon">{{icon "info"}}</span>Described here</span>
     {{else}}<span class="wf-band as-written unknown"><span class="wf-icon">{{icon "help"}}</span>Not declared</span>{{end}}</div>
