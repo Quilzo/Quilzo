@@ -55,7 +55,7 @@ func TestSeveralSmallFindingsAboutOnePersonAddUp(t *testing.T) {
 		sum += p.Points
 	}
 	if math.Abs(sum*breadth(dana.Rules)-dana.Score) > 1e-9 ||
-		!strings.Contains(dana.Why(), "3 finding(s) worth 45") ||
+		!strings.Contains(dana.Why(), "3 findings worth 45") ||
 		!strings.Contains(dana.Why(), "3 different rules") {
 		t.Errorf("why: %s", dana.Why())
 	}

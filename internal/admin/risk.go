@@ -157,7 +157,7 @@ func (s *Server) handleRisk(w http.ResponseWriter, r *http.Request) {
 		var loose []finding.Part
 		for _, pt := range e.Parts {
 			rw.Parts = append(rw.Parts, part{ID: pt.Finding.ID,
-				Title: pt.Finding.Title, Sev: severityName(pt.Finding.Severity),
+				Title: withProductNames(pt.Finding.Title), Sev: severityName(pt.Finding.Severity),
 				Source: pt.Finding.Source,
 				Age:    agoText(now.Sub(pt.Finding.Last)),
 				Points: fmt.Sprintf("%.0f", pt.Points), Case: gathered[pt.Finding.ID]})

@@ -3167,6 +3167,113 @@ details.settings-more[open] > summary { margin-bottom: 12px; }
 /* (Findings, Shield, Cases, Risk, Detections, Automations, Feeds, Hunt,
    Events, Running, Rules, Scan, Sign-ins, Security.) */
 
+/* A row of filter chips says what it filters, in a word before the chips. */
+.chips .chips-label { align-self: center; min-width: 4.5rem;
+  font: var(--label-md); color: var(--on-surface-variant); }
+/* The queue's figures line up whichever columns the filters leave. */
+table.queue td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* A moment is one token: a date broken after its month reads as two. */
+table.evidence td.when { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Declaring an incident is one column of fields at one width. */
+.case-declare { max-width: 44rem; }
+.case-declare > p { margin: 0 0 1.25rem; }
+.case-declare fieldset { max-width: none; }
+/* A choice with a description: the description hangs under its label,
+   never back under the box. */
+fieldset.choices label { display: grid; grid-template-columns: auto 1fr;
+  gap: .1rem .6rem; align-items: start; font-weight: 400; }
+fieldset.choices label > input { margin-top: .2rem; width: auto; }
+fieldset.choices label > span { min-width: 0; }
+fieldset.choices label strong { font-weight: 600; }
+fieldset.choices p { margin: .5rem 0; clear: both; }
+
+/* Shield: the trial run lines up with the card's text, and a change is a
+   reason on its own line, then the choice. */
+.shield-try .btn-text { margin-inline-start: -12px; }
+.shield-change { display: grid; gap: .5rem; justify-items: start; max-width: 32rem; }
+.shield-change .field { margin: 0; width: 100%; }
+.shield-change .hint { margin: 0; }
+.shield-change .seg button.on { font-weight: 700; }
+.shield-change .seg button .icon { width: 18px; height: 18px; margin-inline-end: 4px; vertical-align: -3px; }
+
+/* Hunt: what to stack and over when on one row, the condition on the next
+   as one sentence. */
+.hunt-form { display: grid; gap: .75rem; justify-items: start; }
+.hunt-form label { font: var(--label-lg); font-weight: 700; color: var(--on-surface); }
+.hunt-row { display: flex; flex-wrap: wrap; gap: .75rem 1rem; }
+.hunt-where { display: flex; flex-wrap: wrap; gap: .5rem .75rem; align-items: end;
+  max-width: 44rem; margin: 0; }
+.hunt-where legend { padding: 0 .4rem; }
+.hunt-form > button { margin: 0; }
+@media (max-width: 40rem) {
+  .hunt-form, .hunt-row, .hunt-row label, .hunt-where, .hunt-where label { width: 100%; }
+  .hunt-form select, .hunt-form input { width: 100%; min-width: 0; }
+}
+
+/* The rule builder: each section as wide as the name above it, each
+   condition one line that reads as a sentence. */
+.auto-builder fieldset { max-width: 44rem; }
+.auto-builder legend { font-weight: 700; }
+.auto-builder .rule-cond { grid-template-columns: 2fr 1fr 2fr; align-items: end; }
+.rule-more { margin: 0 0 12px; clear: both; }
+.rule-more > summary { cursor: pointer; color: var(--primary); font: var(--label-lg);
+  display: inline-flex; gap: 4px; align-items: center; margin-bottom: 8px; }
+.rule-more > summary .icon { width: 20px; height: 20px; }
+@media (max-width: 40rem) { .auto-builder .rule-cond { grid-template-columns: 1fr; } }
+
+/* Adding a feed asks only what the chosen kind needs. */
+.feed-add .feed-only { display: none; }
+.feed-add:has(input[name=kind][value=webhook]:checked) .feed-only[data-for~=webhook],
+.feed-add:has(input[name=kind][value=github]:checked) .feed-only[data-for~=github],
+.feed-add:has(input[name=kind][value=ssf]:checked) .feed-only[data-for~=ssf] { display: block; }
+
+/* Detections: a source's rules under its name; the details a small link in
+   the rule's own cell. */
+.dt-rules tr.dt-group th { font: var(--title-sm); font-weight: 700; padding-top: 1.25rem;
+  background: var(--surface-container-low); }
+.dt-rules th .pill { margin-inline-start: .4rem; }
+.dt-rules details.dt-more { margin-top: .25rem; font-weight: 400; }
+.dt-rules details.dt-more[open] { min-width: min(36rem, 75vw); }
+
+/* Risk: one table, a row a person or thing. */
+.risk-table th[scope=row] { min-width: 10rem; vertical-align: top; }
+.risk-table td { vertical-align: top; }
+.risk-more > summary { cursor: pointer; font: var(--label-md); color: var(--primary); margin-top: .35rem; }
+.risk-parts { list-style: none; margin: .5rem 0; padding: 0; display: grid; gap: .5rem; }
+.risk-more form { margin-top: .75rem; }
+.risk-more h3 { font: var(--title-sm); margin: 0 0 .5rem; }
+
+/* Posture findings: the fix and where it comes from share a line, and the
+   card is no taller than what it says. */
+.finding { padding: .9rem 1.1rem; }
+.finding > p:first-of-type { margin-top: 0; }
+.finding-foot { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; align-items: baseline; }
+.finding-foot > p { margin: 0; }
+.fix-note { color: var(--on-surface-variant); }
+.finding-low { margin: 0 0 1rem; }
+.finding-low > summary { cursor: pointer; color: var(--primary); font: var(--label-lg);
+  width: fit-content; margin-bottom: .75rem; }
+h2 + .help { margin-bottom: 1rem; }
+.rule.critical { border-left-color: var(--error); }
+.rule.high { border-left-color: var(--viz-serious); }
+.rule.medium { border-left-color: var(--warning); }
+.rule.low, .rule.info { border-left-color: var(--outline); }
+.rule h2 { font: var(--title-md); font-weight: 600; }
+
+/* Template cards: the mode above the name, the button at the foot, so a
+   row of cards lines up. */
+.auto-list.templates .auto-card { display: flex; flex-direction: column; }
+.auto-list.templates .auto-head { flex-direction: column-reverse; align-items: flex-start; gap: 6px; }
+.auto-list.templates .auto-card > form { margin-top: auto; padding-top: 8px; }
+
+/* Events: a measure's value is read on one line. */
+td.ev-value { min-width: 12rem; white-space: nowrap; }
+
+/* Figures above a table: a gap under them, the number at the top of each. */
+.stats-row { margin-bottom: 1.5rem; align-items: stretch; }
+.stats-row > div { display: flex; flex-direction: column; justify-content: flex-start; }
+
 /* -- review 10 October: assurance and workforce ---------------------------- */
 /* (Frameworks, Parameters, Workforce, Inventory, Reminders, Controls, KSI,
    AI evidence, Integrity, Policy, Site, Vulnerabilities.) */

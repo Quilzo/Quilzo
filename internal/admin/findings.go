@@ -111,6 +111,9 @@ type findingRow struct {
 	Closed   bool
 	Expired  bool
 	Evidence []evidenceRow
+	// KindWord and StateWord are the kind and state as a person names
+	// them: "Control", "Open".
+	KindWord, StateWord string
 }
 
 type evidenceRow struct {
@@ -123,12 +126,40 @@ func rowOf(f finding.Finding, now time.Time) findingRow {
 		Finding: f, Sev: severityName(f.Severity), Age: plainAge(f.Age(now)),
 		Why: f.Why(now), Person: f.NeedsAPerson() != "",
 		Closed: f.State.Closed(), Expired: f.Expired(now),
+		KindWord: kindOne(f.Kind), StateWord: stateWord(f.State),
 	}
+	r.Title = withProductNames(f.Title)
 	for _, e := range f.Evidence {
 		r.Evidence = append(r.Evidence, evidenceRow{Evidence: e,
 			When: e.At.UTC().Format("2006-01-02 15:04")})
 	}
 	return r
+}
+
+// evidenceRun is one or more pieces of evidence in a row that say the same
+// thing from the same place: a check that fails every fifteen minutes is one
+// line saying how often and over what span, not thirty identical lines.
+type evidenceRun struct {
+	evidenceRow
+	Times int
+	Last  string
+}
+
+// evidenceRuns folds consecutive identical evidence into runs, in order.
+func evidenceRuns(rows []evidenceRow) []evidenceRun {
+	var out []evidenceRun
+	for _, e := range rows {
+		if n := len(out); n > 0 {
+			p := &out[n-1]
+			if p.Source == e.Source && p.What == e.What && p.Ref == e.Ref && p.Tainted == e.Tainted {
+				p.Times++
+				p.Last = e.When
+				continue
+			}
+		}
+		out = append(out, evidenceRun{evidenceRow: e, Times: 1, Last: e.When})
+	}
+	return out
 }
 
 // plainAge says how long, the way a person would.
@@ -285,14 +316,27 @@ func (s *Server) handleFindings(w http.ResponseWriter, r *http.Request) {
 		Href: link(string(kind), "all", sev), Count: byState["all"], On: state == "all"})
 
 	data["Rows"] = rows
+	// A column whose value is the same on every row says nothing a row
+	// needs: the filter above, or the count of unowned, says it once.
+	kindsSeen, statesSeen, owned := map[finding.Kind]bool{}, map[finding.State]bool{}, false
+	for _, r := range rows {
+		kindsSeen[r.Kind], statesSeen[r.State] = true, true
+		if strings.TrimSpace(r.Owner) != "" {
+			owned = true
+		}
+	}
+	data["ShowKind"], data["ShowState"], data["ShowOwner"] = len(kindsSeen) > 1, len(statesSeen) > 1, owned
+	if len(rows) > 0 {
+		data["OneKind"], data["OneState"] = rows[0].KindWord, rows[0].StateWord
+	}
 	data["Kinds"], data["States"] = kinds, states
 	data["Open"], data["Person"] = open, person
 	data["Unowned"], data["Expired"] = unowned, expired
 	data["BySev"] = []facet{
-		{Label: "critical", Count: bySev["critical"], Href: link(string(kind), state, "critical"), On: sev == "critical"},
-		{Label: "high", Count: bySev["high"], Href: link(string(kind), state, "high"), On: sev == "high"},
-		{Label: "medium", Count: bySev["medium"], Href: link(string(kind), state, "medium"), On: sev == "medium"},
-		{Label: "low", Count: bySev["low"] + bySev["info"] + bySev["unknown"], Href: link(string(kind), state, "low"), On: sev == "low"},
+		{Label: "Critical", Count: bySev["critical"], Href: link(string(kind), state, "critical"), On: sev == "critical"},
+		{Label: "High", Count: bySev["high"], Href: link(string(kind), state, "high"), On: sev == "high"},
+		{Label: "Medium", Count: bySev["medium"], Href: link(string(kind), state, "medium"), On: sev == "medium"},
+		{Label: "Low", Count: bySev["low"] + bySev["info"] + bySev["unknown"], Href: link(string(kind), state, "low"), On: sev == "low"},
 	}
 	data["Filtered"] = kind != "" || state != "" || sev != ""
 	data["Total"] = len(all)
@@ -320,6 +364,25 @@ func kindLabel(k finding.Kind) string {
 		return "Questionnaires"
 	case finding.FromVendor:
 		return "Vendors"
+	case finding.FromCode:
+		return "Code"
+	}
+	return string(k)
+}
+
+// kindOne is one finding's kind as a person names it.
+func kindOne(k finding.Kind) string {
+	switch k {
+	case finding.FromDetection:
+		return "Detection"
+	case finding.FromVulnerability:
+		return "Vulnerability"
+	case finding.FromControl:
+		return "Control"
+	case finding.FromQuestionnaire:
+		return "Questionnaire"
+	case finding.FromVendor:
+		return "Vendor"
 	case finding.FromCode:
 		return "Code"
 	}
@@ -410,11 +473,12 @@ func (s *Server) handleFinding(w http.ResponseWriter, r *http.Request) {
 	}
 	row := rowOf(*found, now)
 	data := map[string]any{
-		"Nav": "findings", "Title": found.Title, "Principal": p,
-		"F": row, "History": hist, "Options": opts, "Proposals": props,
+		"Nav": "findings", "Title": row.Title, "Principal": p,
+		"F": row, "Evidence": evidenceRuns(row.Evidence), "History": hist, "Options": opts, "Proposals": props,
 		"NeedsAPerson": found.NeedsAPerson(),
-		"CanDecide":    s.mayDecide(p),
-		"Message":      r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
+		"KindWord":     row.KindWord, "StateWord": row.StateWord,
+		"CanDecide": s.mayDecide(p),
+		"Message":   r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"MinUntil": now.Add(24 * time.Hour).Format("2006-01-02"),
 	}
 	if found.First.Equal(found.Last) {

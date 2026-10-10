@@ -12,34 +12,38 @@
   benign, and what a rule on trial raised, is not counted. Several rules
   agreeing count for more than one rule firing several times.</p>
 
-{{range .Rows}}
-<section class="card">
-  <h2><a href="{{.Href}}"><code>{{.Entity}}</code></a> <span class="wf-word {{.Tone}}">{{.Band}}</span></h2>
-  <p class="wf-score"><span class="wf-points">{{.Score}}</span>
-    <svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.W}}" height="8" rx="4"></rect></svg>
-</p>
-  <p class="hint">{{.Why}}</p>
-  {{if .Person}}<p class="hint">One person, known as {{range $i, $x := .Identifiers}}{{if $i}}, {{end}}<code>{{$x}}</code>{{end}}.</p>{{end}}
-  <div class="table-wrap"><table>
-    <thead><tr><th scope="col">Finding</th><th scope="col">Severity</th><th scope="col">Last seen</th><th scope="col">Points</th><th scope="col">Incident</th></tr></thead>
-    <tbody>{{range .Parts}}<tr><th scope="row"><a href="/findings/{{.ID}}">{{.Title}}</a><br><span class="hint">{{.Source}}</span></th>
-      <td><span class="pill {{.Sev}}">{{sentence .Sev}}</span></td><td>{{.Age}}</td><td>{{.Points}}</td>
-      <td>{{if .Case}}<a href="/security/case/{{.Case}}"><code>{{.Case}}</code></a>{{else}}<span class="hint">none</span>{{end}}</td></tr>{{end}}</tbody>
-  </table></div>
-  {{if .Offer}}<details class="wf-how"><summary>These look like one thing: declare an incident<span class="chev">{{icon "expand_more"}}</span></summary>
-  <form method="post" action="/security/cases/act">
-    <input type="hidden" name="do" value="declare">
-    {{range .Offer}}<input type="hidden" name="finding" value="{{.}}">{{end}}
-    <p><label>What is wrong, in a line <input type="text" name="title" required maxlength="200" value="{{.OfferTitle}}"></label></p>
-    <p><label>Grade <select name="grade"><option value="sev2">sev2</option><option value="sev3" selected>sev3</option><option value="sev1">sev1</option><option value="sev4">sev4</option></select></label></p>
-    {{if .Playbook}}<p><label><input type="checkbox" name="playbook" value="{{.Playbook}}" checked> Propose the playbook that fits the rules behind these: <strong>{{.PlaybookTitle}}</strong></label></p>{{end}}
-    <p class="hint">Offered because there are several, from more than one
-      rule. It gathers the {{plural (len .Offer) "finding" "findings"}} no incident has yet,
-      under the obligations set as this organisation's. Nothing is declared
-      until you do it, and a playbook proposed here still needs approving.</p>
-    <p><button type="submit">Declare the incident</button></p>
-  </form></details>{{end}}
-</section>
+{{if .Rows}}<div class="table-wrap"><table class="risk-table">
+  <caption class="visually-hidden">Who or what has the most open, highest first</caption>
+  <thead><tr><th scope="col">Who or what</th><th scope="col">Score</th><th scope="col">Level</th><th scope="col">What is open</th></tr></thead>
+  <tbody>{{range .Rows}}<tr>
+    <th scope="row"><a href="{{.Href}}"><code>{{.Entity}}</code></a>
+      {{if .Person}}<div class="meta">Known as {{range $i, $x := .Identifiers}}{{if $i}}, {{end}}<code>{{$x}}</code>{{end}}</div>{{end}}</th>
+    <td class="wf-score"><span class="wf-points">{{.Score}}</span>
+      <svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.W}}" height="8" rx="4"></rect></svg></td>
+    <td><span class="pill {{.Band}}">{{sentence .Band}}</span></td>
+    <td>{{with index .Parts 0}}<a href="/findings/{{.ID}}">{{.Title}}</a> <span class="pill {{.Sev}}">{{sentence .Sev}}</span>{{end}}
+      <div class="meta">{{.Why}}</div>
+      {{if or (gt (len .Parts) 1) .Offer (index .Parts 0).Case}}<details class="risk-more"><summary>{{if gt (len .Parts) 1}}All {{len .Parts}} findings{{else}}More about it{{end}}<span class="chev">{{icon "expand_more"}}</span></summary>
+      <ul class="risk-parts">{{range .Parts}}<li><a href="/findings/{{.ID}}">{{.Title}}</a> <span class="pill {{.Sev}}">{{sentence .Sev}}</span>
+        <div class="meta">{{.Source}} · seen {{.Age}} · {{.Points}} points · {{if .Case}}in <a href="/security/case/{{.Case}}"><code>{{.Case}}</code></a>{{else}}no incident{{end}}</div></li>{{end}}</ul>
+      {{if .Offer}}<form method="post" action="/security/cases/act">
+        <h3>These look like one thing: declare an incident</h3>
+        <input type="hidden" name="do" value="declare">
+        {{range .Offer}}<input type="hidden" name="finding" value="{{.}}">{{end}}
+        <p><label>What is wrong, in a line <input type="text" name="title" required maxlength="200" value="{{.OfferTitle}}"></label></p>
+        <p><label>Grade <select name="grade"><option value="sev2">Sev 2</option><option value="sev3" selected>Sev 3</option><option value="sev1">Sev 1</option><option value="sev4">Sev 4</option></select></label></p>
+        {{if .Playbook}}<p><label><input type="checkbox" name="playbook" value="{{.Playbook}}" checked> Propose the playbook that fits the rules behind these: <strong>{{.PlaybookTitle}}</strong></label></p>{{end}}
+        <p class="hint">Offered because there are several, from more than one
+          rule. It gathers the {{plural (len .Offer) "finding" "findings"}} no incident has yet,
+          under the obligations set as this organisation's. Nothing is declared
+          until you do it, and a playbook proposed here still needs approving.</p>
+        <p><button type="submit">Declare the incident</button></p>
+      </form>{{end}}</details>{{end}}</td>
+  </tr>{{end}}</tbody>
+</table></div>
+<p class="hint">The level comes from the score, not from the worst finding:
+  findings add up and fade as they age, so a single critical finding can sit
+  at a medium level.</p>
 {{else}}<p>Nothing is open about anybody.</p>{{end}}
 {{if .More}}<p class="hint">{{.More}} more are below these.</p>{{end}}
 {{end}}

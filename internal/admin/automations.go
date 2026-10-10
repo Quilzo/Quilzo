@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/automate"
@@ -478,7 +480,7 @@ func (s *Server) handleSignIns(w http.ResponseWriter, r *http.Request) {
 			row.Risk = "none"
 		}
 		if in.Score != 0 {
-			row.Score = fmt.Sprintf("%.1f bits", in.Score)
+			row.Score = fmt.Sprintf("How unusual, in bits of surprise: %.1f", in.Score)
 		}
 		for _, sg := range in.Signals {
 			row.Signals = append(row.Signals, signalWords[sg])
@@ -580,7 +582,7 @@ func ruleWords(r automate.Rule, actions map[string]automate.Action) string {
 		} else {
 			b.WriteString(" and ")
 		}
-		fmt.Fprintf(&b, "%s %s %s", c.Field, automate.Ops[c.Op], c.Value)
+		fmt.Fprintf(&b, "%s %s %s", strings.ReplaceAll(c.Field, "_", " "), automate.Ops[c.Op], valueWords(c.Value))
 	}
 	b.WriteString(": ")
 	for i, st := range r.Then {
@@ -589,7 +591,9 @@ func ruleWords(r automate.Rule, actions map[string]automate.Action) string {
 		}
 		name := st.Action
 		if a, ok := actions[st.Action]; ok {
-			name = strings.ToLower(a.Name)
+			// Only the first letter: "Suspend in Okta" is "suspend in
+			// Okta" mid-sentence, not "suspend in okta".
+			name = lowerFirst(a.Name)
 		}
 		b.WriteString(name)
 		if to := st.With["to"]; to != "" {
@@ -598,6 +602,37 @@ func ruleWords(r automate.Rule, actions map[string]automate.Action) string {
 	}
 	b.WriteString(".")
 	return b.String()
+}
+
+// valueWords says a condition's value the way the rest of the sentence
+// reads: a signal by its name, a product by its own, a check as a check,
+// and a list as "this or that".
+func valueWords(v string) string {
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		part = strings.TrimSpace(part)
+		switch {
+		case signalWords[part] != "":
+			part = signalWords[part]
+		case strings.HasPrefix(part, "estate/"):
+			part = "the " + strings.ReplaceAll(strings.TrimPrefix(part, "estate/"), "-", " ") + " check"
+		case productName(part) != part:
+			part = productName(part)
+		default:
+			part = strings.ReplaceAll(part, "-", " ")
+		}
+		out = append(out, part)
+	}
+	return strings.Join(out, " or ")
+}
+
+// lowerFirst lowers a name's first letter for the middle of a sentence.
+func lowerFirst(s string) string {
+	r, n := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError {
+		return s
+	}
+	return string(unicode.ToLower(r)) + s[n:]
 }
 
 var runTone = map[string]string{"done": "good", "approved": "good", "watched": "unknown",
@@ -713,10 +748,38 @@ func (s *Server) handleAutomationRule(w http.ResponseWriter, r *http.Request) {
 	copy(conds, rule.If)
 	steps := make([]automate.Step, 3)
 	copy(steps, rule.Then)
+	// The rows in use, and one to start with, are shown; the empty rest
+	// wait behind "Add a condition" so a new rule is not nine empty fields.
+	type condRow struct {
+		I     int
+		First bool
+		automate.Condition
+	}
+	type stepRow struct {
+		I     int
+		First bool
+		automate.Step
+	}
+	var condShown, condSpare []condRow
+	for i, c := range conds {
+		if i == 0 || c.Field != "" {
+			condShown = append(condShown, condRow{i, len(condShown) == 0, c})
+		} else {
+			condSpare = append(condSpare, condRow{i, false, c})
+		}
+	}
+	var stepShown, stepSpare []stepRow
+	for i, st := range steps {
+		if i == 0 || st.Action != "" {
+			stepShown = append(stepShown, stepRow{i, len(stepShown) == 0, st})
+		} else {
+			stepSpare = append(stepSpare, stepRow{i, false, st})
+		}
+	}
 	s.render(w, r, "automation_rule.html", map[string]any{
 		"Title": "Automation", "Nav": "automations", "Principal": p, "Rule": rule,
 		"Kinds": kinds, "KindNames": automate.KindNames, "Fields": fields, "Ops": automate.Ops, "OpOrder": automate.OpOrder, "DefaultPerHour": automate.DefaultPerHour,
-		"Actions": acts, "Conds": conds, "Steps": steps, "Modes": automate.Modes,
+		"Actions": acts, "Conds": condShown, "SpareConds": condSpare, "Steps": stepShown, "SpareSteps": stepSpare, "Modes": automate.Modes,
 		"Error": r.URL.Query().Get("e"),
 	})
 }

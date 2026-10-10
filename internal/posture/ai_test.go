@@ -64,7 +64,7 @@ func TestSendingToAnOutsideModelIsADecisionToRecord(t *testing.T) {
 	s := clean(t)
 	s.AI.ModelHost, s.AI.ModelLocal = "api.provider.example", false
 	f, ok := findingFor(Scan(s, nil), "privacy.model-egress:api.provider.example")
-	if !ok || !strings.Contains(f.Detail, "1 chatbot(s) and 1 agent(s)") {
+	if !ok || !strings.Contains(f.Detail, "1 chatbot and 1 agent") {
 		t.Fatalf("an outside model was not reported: %+v", f)
 	}
 	// Once the agreement is recorded, it is suppressed like any accepted risk.

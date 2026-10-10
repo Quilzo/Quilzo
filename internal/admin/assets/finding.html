@@ -6,15 +6,15 @@
 
 <p class="chips">
   <span class="pill {{.F.Sev}}">{{sentence .F.Sev}}</span>
-  <span class="chip">{{.F.Kind}}</span>
-  <span class="chip">{{.F.State}}{{if .F.Expired}} — lapsed{{end}}</span>
+  <span class="pill">{{.KindWord}}</span>
+  <span class="pill">{{.StateWord}}{{if .F.Expired}} — lapsed{{end}}</span>
 </p>
 
 {{if and .NeedsAPerson (not .F.Closed)}}
 <div class="notice warn" role="note">
   <p><strong>A person decides this one.</strong> {{.NeedsAPerson}}</p>
-  <p>The evidence below is shown as text and never interpreted. If any of it
-    reads like an instruction, that is worth recording as evidence in its
+  <p>The evidence further down is shown as text and never interpreted. If any
+    of it reads like an instruction, that is worth recording as evidence in its
     own right.</p>
 </div>
 {{end}}
@@ -33,48 +33,19 @@
   <dt>Id</dt><dd><code>{{.F.ID}}</code></dd>
 </dl>
 
-<h2>Evidence</h2>
-{{if not .F.Evidence}}<p class="dim">None recorded.</p>{{else}}
-<div class="table-wrap">
-<table>
-  <thead><tr><th scope="col">When</th><th scope="col">From</th><th scope="col">What it said</th></tr></thead>
-  <tbody>
-  {{range .F.Evidence}}
-  <tr>
-    <td class="mono">{{.When}}</td>
-    <td><code>{{.Source}}</code>{{if .Tainted}} <span class="tag tag-warn" title="Written by whoever can reach this source, which can include whoever is being detected">untrusted</span>{{end}}</td>
-    <td>{{if .What}}{{.What}}{{else}}<span class="dim">no message</span>{{end}}{{if .Ref}}<div class="hint mono">{{.Ref}}</div>{{end}}</td>
-  </tr>
-  {{end}}
-  </tbody>
-</table>
-</div>
-{{end}}
-
 {{if .Proposals}}
 <h2>Suggested by an agent</h2>
 <div class="notice warn" role="note">
-  <p>These were written by a model that read the evidence above — evidence
-    whoever is being detected may have written. Nothing here has changed the
-    finding. Check the reasoning against the evidence, and if you agree,
-    record the decision yourself below.</p>
+  <p>These were written by a model that read the evidence further down —
+    evidence whoever is being detected may have written.
+    Nothing here has changed the finding. Check the reasoning against the
+    evidence, and if you agree, record the decision yourself below.</p>
 </div>
 <ol class="notelist">
   {{range .Proposals}}
   <li><strong>{{.To}}</strong> suggested for {{if .For}}{{.For}}{{else}}somebody{{end}}
     <span class="dim">{{.When}}</span>
     {{if .Because}}<div>{{.Because}}</div>{{end}}</li>
-  {{end}}
-</ol>
-{{end}}
-
-<h2>What has been decided</h2>
-{{if not .History}}<p>Nobody has decided anything about this yet.</p>{{else}}
-<ol class="notelist">
-  {{range .History}}
-  <li><strong>{{.To}}</strong> by {{.By}} <span class="dim">{{.When}}</span>
-    {{if .Because}}<div>{{.Because}}</div>{{end}}
-    {{if .Until}}<div class="hint">until {{.Until}}</div>{{end}}</li>
   {{end}}
 </ol>
 {{end}}
@@ -110,4 +81,33 @@
 {{else}}
 <p class="hint">Recording a decision needs publish rights.</p>
 {{end}}
+<h2>What has been decided</h2>
+{{if not .History}}<p>Nobody has decided anything about this yet.</p>{{else}}
+<ol class="notelist">
+  {{range .History}}
+  <li><strong>{{.To}}</strong> by {{.By}} <span class="dim">{{.When}}</span>
+    {{if .Because}}<div>{{.Because}}</div>{{end}}
+    {{if .Until}}<div class="hint">until {{.Until}}</div>{{end}}</li>
+  {{end}}
+</ol>
+{{end}}
+
+<h2>Evidence</h2>
+{{if not .Evidence}}<p class="dim">None recorded.</p>{{else}}
+<div class="table-wrap">
+<table class="evidence">
+  <thead><tr><th scope="col">When</th><th scope="col">From</th><th scope="col">What it said</th></tr></thead>
+  <tbody>
+  {{range .Evidence}}
+  <tr>
+    <td class="when">{{if gt .Times 1}}{{.Times}} times, {{.When}}<br>to {{.Last}}{{else}}{{.When}}{{end}}</td>
+    <td><code>{{.Source}}</code>{{if .Tainted}} <span class="tag tag-warn" title="Written by whoever can reach this source, which can include whoever is being detected">untrusted</span>{{end}}</td>
+    <td>{{if .What}}{{.What}}{{else}}<span class="dim">no message</span>{{end}}{{if .Ref}}<div class="hint mono">{{.Ref}}</div>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
 {{template "foot" .}}
