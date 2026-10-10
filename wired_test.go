@@ -76,6 +76,9 @@ var notImported = map[string]string{
 		"test there fails when the embedded map no longer matches the source",
 	"internal/fedramp/gen": "a release tool, run with go run: it writes the FedRAMP Key Security " +
 		"Indicators internal/fedramp embeds, from FedRAMP's consolidated rules",
+	"internal/cdp": "waiting for the governed browser it was written for (the agent's browser " +
+		"driver, phase 1 of letting agents use a computer), which is built next and imports it; " +
+		"remove this row then",
 }
 
 // importGraph returns which packages are imported from outside themselves, and
