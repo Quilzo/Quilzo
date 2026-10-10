@@ -206,6 +206,8 @@ const agentCSS = `.qz-launch,.qz-panel{
 @media (min-width:900px){html.qz-agent-side:has(.qz-panel-side.qz-panel-right:not([hidden])) body{margin-right:min(420px,40vw)}
  html.qz-agent-side:has(.qz-panel-side.qz-panel-left:not([hidden])) body{margin-left:min(420px,40vw)}
  .qz-panel-side{width:min(420px,40vw)}}
+@media (max-width:599px){.qz-launch-btn{min-height:48px;min-width:48px}.qz-launch-bubble .qz-launch-btn{width:48px}
+ body:has(>.qz-launch:not(.qz-launch-tab)){padding-bottom:80px}html:has(body>.qz-launch:not(.qz-launch-tab)){scroll-padding-bottom:80px}}
 @media (max-width:599px){.qz-panel.qz-panel-float,.qz-panel.qz-panel-side,.qz-panel.qz-panel-right,.qz-panel.qz-panel-left{inset:0;width:auto;height:auto;border-radius:0;border:0}}
 @keyframes qz-in{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.qz-panel,.qz-nudge,.qz-launch-btn{animation:none;transition:none}}
