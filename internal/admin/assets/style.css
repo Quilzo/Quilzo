@@ -3123,6 +3123,14 @@ table.declared th[scope=row] code.cmd { overflow-wrap: break-word; }
 /* -- review 10 October: site and growth ------------------------------------ */
 /* (Transfer, Analytics, Personalise, Chatbots, Experiments, Boards, Inbox,
    the permanent web, the public site's furniture.) */
+/* Transfer's starters: one card each, side by side where there is room, and
+   the form that applies one is a single row that wraps on a phone. */
+.starters { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: 12px; margin: 0 0 1rem; }
+.starters .card { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+.starters .card > * { margin: 0; }
+.starters h3 { text-transform: capitalize; }
+.starters form.inline { margin-top: auto; }
+.starters form.inline input:not([type=checkbox]) { min-width: 0; width: 8rem; }
 
 /* -- review 10 October: security operations -------------------------------- */
 /* (Findings, Shield, Cases, Risk, Detections, Automations, Feeds, Hunt,
