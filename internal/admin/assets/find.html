@@ -20,10 +20,8 @@
          autofocus placeholder="a page, a screen, a setting, a picture">
   <button type="submit">Find</button>
 </form>
-<p class="help">Words, not a query. There is no syntax here — a colon or a
-  quotation mark is a character in a word — because the thing that eventually
-  gets an injection is a query language, and this is not one. To ask a question
-  <em>about</em> content, declare a <a href="/listings">listing</a>.</p>
+<p class="help">Type words as you would say them; quotation marks and colons
+  are searched for like any other character.</p>
 
 {{if .Query}}
 {{if .Hits}}
@@ -45,10 +43,10 @@
 {{else}}
 <p class="notice warn">Nothing matched <strong>{{.Query}}</strong>.</p>
 <p class="help">This searches the pages in your draft, the screens of this
-  interface, your content types and the descriptions on your media. It does not
-  search what people have sent through your forms — those are gated separately,
-  and a search that reached them would be a way past that gate with a text box
-  in front of it.</p>
+  interface, your content types and the descriptions on your media. To look
+  through what people sent, use <a href="/forms#erasure">Find and erase</a> on
+  Forms.</p>
+
 {{end}}
 {{end}}
 

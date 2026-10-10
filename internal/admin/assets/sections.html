@@ -3,24 +3,34 @@
 {{if not .Page}}
 <h1>Sections</h1>
 <p class="hint">
-  A page's shape is a list of sections, so reordering it is an edit rather than
-  a deploy — and it rolls back like any other edit. Pick a page.
+  A page can be built from sections, such as a hero, a list of features or a
+  call to action, in any order. Pick a page to add or arrange its sections.
 </p>
 {{if .Pages}}
+{{if not .AnyBuilt}}
+<div class="emptystate">
+  <p><strong>No page is built from sections yet.</strong></p>
+  <p class="hint">Pick a page below to start.</p>
+</div>
+<ul class="pagepick">
+  {{range .Pages}}<li><a href="/sections?page={{.Name}}">{{.Name}}</a></li>{{end}}
+</ul>
+{{else}}
 <div class="table-wrap">
 <table>
-  <thead><tr><th scope="col">Page</th><th scope="col">Sections</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+  <thead><tr><th scope="col">Page</th><th scope="col">Sections</th><th scope="col">Actions</th></tr></thead>
   <tbody>
   {{range .Pages}}
   <tr>
-    <th scope="row"><code>{{.Name}}</code></th>
-    <td>{{if .Count}}{{.Count}}{{else}}<span class="hint">none yet</span>{{end}}</td>
-    <td><a href="/sections?page={{.Name}}">Arrange {{.Name}}</a></td>
+    <th scope="row">{{.Name}}</th>
+    <td>{{if .Count}}{{plural .Count "section" "sections"}}{{else}}<span class="hint">—</span>{{end}}</td>
+    <td><a href="/sections?page={{.Name}}">Arrange<span class="visually-hidden"> {{.Name}}</span></a></td>
   </tr>
   {{end}}
   </tbody>
 </table>
 </div>
+{{end}}
 {{else}}
 <p class="notice">There are no pages in the draft yet.</p>
 {{end}}
@@ -33,11 +43,10 @@
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
 
 <p class="hint">
-  The order here is the order on the page. Each button below writes a draft
-  commit saying what it did, so an accidental move is undone by rolling the
-  draft back rather than by remembering what the order used to be.
-  {{if .Layout}}This page renders through the <code>{{.Layout}}</code> layout.
-  {{else}}This page renders through the default layout.{{end}}
+  The order here is the order on the page. Every change is saved to the draft
+  and can be undone from History.
+  {{if .Layout}}This page uses the <code>{{.Layout}}</code> layout.
+  {{else}}This page uses the default layout.{{end}}
 </p>
 
 {{if .Sections}}
@@ -145,11 +154,10 @@
 {{end}}
 
 <p class="hint">
-  A section is added at the end and moved from there. Every kind arrives with
-  content that renders and passes the accessibility gate, which is asserted by a
-  test rather than hoped for — a button that says "added" over a page that looks
-  identical is a button nobody presses twice.
+  A section is added at the end, with sample content you can replace, and moved
+  from there.
 </p>
+
 
 {{end}}
 {{template "foot" .}}
