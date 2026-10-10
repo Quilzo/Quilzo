@@ -55,6 +55,7 @@ const boxNamespaces = syscall.CLONE_NEWUSER | syscall.CLONE_NEWPID | syscall.CLO
 
 type initSpec struct {
 	Probe   bool      `json:"probe,omitempty"`
+	Files   int       `json:"files,omitempty"`
 	Forward []Service `json:"forward,omitempty"`
 	Shim    []string  `json:"shim,omitempty"`
 	Env     []string  `json:"env,omitempty"`
@@ -68,6 +69,7 @@ type shimSpec struct {
 	ReadWrite []string       `json:"read_write,omitempty"`
 	Ports     []uint16       `json:"ports,omitempty"`
 	Limits    sandbox.Limits `json:"limits"`
+	Files     int            `json:"files,omitempty"`
 }
 
 func (n Native) Name() string { return "native" }
@@ -124,7 +126,7 @@ func firstLine(b []byte) string {
 
 // command is the box's first process, its spec written to it on fd 3 and
 // what the shim reports read from fd 4.
-func (n Native) command(ctx context.Context, spec initSpec, report *os.File) (*exec.Cmd, error) {
+func (n Native) command(ctx context.Context, spec initSpec, report *os.File, files ...*os.File) (*exec.Cmd, error) {
 	body, err := json.Marshal(spec)
 	if err != nil {
 		return nil, err
@@ -142,6 +144,7 @@ func (n Native) command(ctx context.Context, spec initSpec, report *os.File) (*e
 	cmd.ExtraFiles = []*os.File{r}
 	if report != nil {
 		cmd.ExtraFiles = append(cmd.ExtraFiles, report)
+		cmd.ExtraFiles = append(cmd.ExtraFiles, files...)
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags:                 boxNamespaces,
@@ -165,7 +168,7 @@ func (n Native) Run(ctx context.Context, s Spec) (Result, error) {
 	if s.Workdir == "" || !filepath.IsAbs(s.Workdir) {
 		return Result{}, errors.New("a box needs its own working directory")
 	}
-	ss := shimSpec{Program: s.Program, Args: s.Args, ReadWrite: []string{s.Workdir}, Limits: s.Limits}
+	ss := shimSpec{Program: s.Program, Args: s.Args, ReadWrite: []string{s.Workdir}, Limits: s.Limits, Files: len(s.Files)}
 	for _, p := range append(append([]string(nil), systemReads...), s.Read...) {
 		if _, err := os.Stat(p); err == nil {
 			ss.Read = append(ss.Read, p)
@@ -179,7 +182,7 @@ func (n Native) Run(ctx context.Context, s Spec) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	spec := initSpec{Forward: s.Services, Env: s.Env, Dir: s.Workdir,
+	spec := initSpec{Forward: s.Services, Env: s.Env, Dir: s.Workdir, Files: len(s.Files),
 		Shim: append(append([]string{n.Exe}, n.Shim...), string(shimArg))}
 
 	if s.Wall > 0 {
@@ -191,7 +194,7 @@ func (n Native) Run(ctx context.Context, s Spec) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	cmd, err := n.command(ctx, spec, rw)
+	cmd, err := n.command(ctx, spec, rw, s.Files...)
 	if err != nil {
 		rr.Close()
 		rw.Close()
@@ -205,6 +208,9 @@ func (n Native) Run(ctx context.Context, s Spec) (Result, error) {
 		return Result{}, err
 	}
 	rw.Close()
+	if s.Started != nil {
+		s.Started()
+	}
 	var conf Confinement
 	reported := make(chan struct{})
 	go func() {
@@ -278,6 +284,11 @@ func InitMain() {
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if report != nil {
 		cmd.ExtraFiles = []*os.File{report}
+		// The program's own files arrive after the spec and the report,
+		// and go on to the shim after its report.
+		for i := 0; i < spec.Files; i++ {
+			cmd.ExtraFiles = append(cmd.ExtraFiles, os.NewFile(uintptr(5+i), "file"))
+		}
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
 	if err := cmd.Start(); err != nil {
@@ -285,6 +296,11 @@ func InitMain() {
 	}
 	if report != nil {
 		report.Close()
+	}
+	// Only the program holds the files now: an end left open here would
+	// keep a pipe alive after the program had gone.
+	for _, f := range cmd.ExtraFiles[min(1, len(cmd.ExtraFiles)):] {
+		f.Close()
 	}
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
@@ -419,6 +435,17 @@ func ShimMain(arg string) {
 		c.Note = "the box could not be closed: " + st.Why
 	default:
 		say(c)
+		// The program's files, which reached the shim after its report
+		// (fd 4 on), moved down to fd 3 on now the report is closed.
+		for i := 0; i < s.Files; i++ {
+			if err := syscall.Dup3(4+i, 3+i, 0); err != nil {
+				fmt.Fprintln(os.Stderr, "quilzo box: cannot hand the program its files: "+err.Error())
+				os.Exit(shimRefused)
+			}
+		}
+		if s.Files > 0 {
+			syscall.Close(3 + s.Files)
+		}
 		argv := append([]string{s.Program}, s.Args...)
 		err = syscall.Exec(s.Program, argv, os.Environ())
 		fmt.Fprintln(os.Stderr, "quilzo box: cannot start "+s.Program+": "+err.Error())

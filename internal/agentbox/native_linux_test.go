@@ -6,6 +6,7 @@
 package agentbox
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -68,6 +69,12 @@ type seen struct {
 func programMain(args []string) {
 	if len(args) > 0 && args[0] == "sleep" {
 		time.Sleep(time.Minute)
+		return
+	}
+	if len(args) > 0 && args[0] == "echo-fds" {
+		in, out := os.NewFile(3, "in"), os.NewFile(4, "out")
+		line, _ := bufio.NewReader(in).ReadString('\n')
+		fmt.Fprintf(out, "pong %s\n", strings.TrimSpace(line))
 		return
 	}
 	s := seen{UID: os.Getuid(), PID: os.Getpid(), Refused: map[string]string{}, Env: os.Getenv("QUILZO_SEEN")}
