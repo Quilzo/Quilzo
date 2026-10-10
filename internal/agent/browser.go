@@ -82,6 +82,17 @@ func (b *Browser) Reads(host string) bool {
 	return contains(b.Read, h) || contains(b.Write, h)
 }
 
+// ReadOnly is the browser reading only: every host it may reach, none it
+// may send to, and so no credential to sign in with.
+func (b *Browser) ReadOnly() *Browser {
+	if b == nil {
+		return nil
+	}
+	read := append(append([]string(nil), b.Read...), b.Write...)
+	sort.Strings(read)
+	return &Browser{Read: read, Pictures: b.Pictures}
+}
+
 // CredentialFor is the declared credential named secret.
 func (b *Browser) CredentialFor(secret string) (BrowserCredential, bool) {
 	if b == nil {

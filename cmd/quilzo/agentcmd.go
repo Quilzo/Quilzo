@@ -794,6 +794,12 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 			note("evaluations", earnedWhy, before)
 		}
 	}
+	// An agent that proposes and does not write sends nothing through its
+	// browser either, however it came to propose: the caller, its standing
+	// or its evaluations. Nor does an evaluation, which changes nothing.
+	if m.Browser != nil && (eval || m.Autonomy == agent.AutonomyPropose) {
+		m.Browser = m.Browser.ReadOnly()
+	}
 	if len(m.Capabilities) == 0 {
 		if earnedWhy != "" {
 			return m, trail, fmt.Errorf("%s holds nothing it may do yet: %s (quilzo eval run %s)", name, earnedWhy, name)
