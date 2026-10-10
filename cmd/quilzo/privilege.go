@@ -668,6 +668,8 @@ var commandNeeds = map[string]need{
 	"oidc":  {action: auth.ActGrant},
 	"saml":  {action: auth.ActGrant},
 	"vault": {action: auth.ActToken},
+	// Credentials agents use: whoever may mint a token may keep one.
+	"secret": {action: auth.ActToken},
 
 	// Suppressing a posture rule is accepting a risk on the organisation's
 	// behalf, and scanning is not — so the parent takes the strict answer and

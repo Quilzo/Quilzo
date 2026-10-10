@@ -690,10 +690,13 @@ var coverage = map[string]surfaces{
 	"ext":      {GUI: "/integrations", NoMCP: "registers a process this store executes. Arbitrary code execution, reached by asking"},
 	"webhook":  {GUI: "/integrations", NoMCP: "adds an outbound destination for content, which is exfiltration with a configuration screen"},
 	"vault":    {GUI: "/security/integrity", NoMCP: "handles key material"},
-	"siem":     {GUI: "/integrations", NoMCP: "exports the audit log and can be asked to reveal identifiers"},
-	"csp":      {GUI: "/security/policy", NoMCP: "is derived from published content and read on a screen; there is nothing an agent does with it"},
-	"lock":     {GUI: "/publishing", NoMCP: "is a courtesy between people about who is mid-edit, and an agent is not one of them"},
-	"import":   {GUI: "/transfer", NoMCP: "reads a file from disk this process was handed; there is no path by which an agent supplies one"},
+	"secret": {Why: "a credential is given on standard input, where no browser history, " +
+		"screen or form field holds it on the way",
+		NoMCP: "keeps credentials; an agent that could set one could set the one it is about to be handed"},
+	"siem":   {GUI: "/integrations", NoMCP: "exports the audit log and can be asked to reveal identifiers"},
+	"csp":    {GUI: "/security/policy", NoMCP: "is derived from published content and read on a screen; there is nothing an agent does with it"},
+	"lock":   {GUI: "/publishing", NoMCP: "is a courtesy between people about who is mid-edit, and an agent is not one of them"},
+	"import": {GUI: "/transfer", NoMCP: "reads a file from disk this process was handed; there is no path by which an agent supplies one"},
 	"demo": {GUI: "/transfer",
 		NoMCP: "installs a whole application over an empty store, including " +
 			"content types and a template; an agent that could do this could " +

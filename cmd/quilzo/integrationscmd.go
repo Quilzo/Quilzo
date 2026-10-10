@@ -363,16 +363,26 @@ func clampString(s string, n int) string {
 // The mapping is mechanical and stated in the error, because a secret that is
 // present under a name nobody guessed reads exactly like a secret that is
 // missing.
-func readSecret(_ string, name string) (string, error) {
+func readSecret(root string, name string) (string, error) {
 	env := secretEnvName(name)
 	if v := os.Getenv(env); v != "" {
 		return v, nil
 	}
+	// Then the sealed credentials (secretcmd.go). The declaration names the
+	// credential and never carries it: a token in a content-addressed object
+	// is in the history permanently and no rotation removes it.
+	if root != "" {
+		v, ok, err := sealedSecret(root, name)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return v, nil
+		}
+	}
 	return "", fmt.Errorf(
-		"nothing is set in %s. The declaration names the credential and never "+
-			"carries it — a token in a content-addressed object is in the "+
-			"history permanently and no rotation removes it — so the value "+
-			"comes from the environment", env)
+		"nothing is set in %s and no credential %q is kept. Keep it sealed with "+
+			"quilzo secret set %s < file, or set it in the environment", env, name, name)
 }
 
 // secretEnvName maps a declared name onto an environment variable.
