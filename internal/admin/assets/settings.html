@@ -5,7 +5,7 @@
 {{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
 
 {{if .Weakened}}
-<div class="card bad">
+<div class="card bad weakened">
   <p><strong>{{plural (len .Weakened) "setting is" "settings are"}} running weaker than the default.</strong></p>
   <ul>
   {{range .Weakened}}
@@ -59,23 +59,23 @@
     <td>{{if .Overriden}}<strong>{{.Value}}</strong>{{else}}{{.Value}}{{end}}</td>
     <td class="hint">{{.Setting.Default}}</td>
     {{if $.CanWrite}}
-    <td>
+    <td><div class="setrow">
       <form method="post" action="/settings/save" class="inline">
         <input type="hidden" name="key" value="{{.Setting.Key}}">
         <input name="value" value="{{.Value}}" size="10" spellcheck="false"
           aria-label="Value for {{.Setting.Key}}">
-        {{if .Setting.Weaker}}<input name="reason" placeholder="reason, if weaker"
-          size="16" aria-label="Reason for weakening {{.Setting.Key}}">{{end}}
+        {{if .Setting.Weaker}}<input name="reason" placeholder="Reason"
+          size="14" aria-label="Reason for weakening {{.Setting.Key}}">{{end}}
         <button type="submit">Set</button>
       </form>
       {{if .Overriden}}
       <form method="post" action="/settings/save" class="inline">
         <input type="hidden" name="key" value="{{.Setting.Key}}">
         <input type="hidden" name="reset" value="1">
-        <button type="submit">Reset</button>
+        <button type="submit" class="btn-text">Reset<span class="visually-hidden"> {{.Setting.Key}}</span></button>
       </form>
       {{end}}
-    </td>
+    </div></td>
     {{end}}
   </tr>
   {{end}}

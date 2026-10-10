@@ -5,7 +5,7 @@
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
 <p class="lead">People with an account on the published site. They sign in
   with passkeys, and an account holds a name and those passkeys, nothing else.</p>
-{{if eq .Mode "off"}}<p class="notice warn">Accounts are off, so nobody can sign up or sign in.
+{{if eq .Mode "off"}}<p class="notice warn"><strong>Accounts are off.</strong> Nobody can sign up or sign in.
   Turn them on with <code>site.members</code> under <a href="/settings">Settings</a>:
   <em>open</em> for anybody, or <em>invite</em> for people given a code here.</p>
 {{else}}<p>Sign-up is <strong>{{if eq .Mode "open"}}open to anybody{{else}}by invitation{{end}}</strong>.</p>{{end}}
