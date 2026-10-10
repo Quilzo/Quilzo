@@ -62,7 +62,10 @@ func loadGeo(root string) (*geo.Locator, string, error) {
 		return nil, "", err
 	}
 	l := &geo.Locator{Networks: c.Networks}
-	desc := fmt.Sprintf("Places come from %d network(s) you declared", len(c.Networks))
+	desc := fmt.Sprintf("Places come from the %d networks you declared", len(c.Networks))
+	if len(c.Networks) == 1 {
+		desc = "Places come from the 1 network you declared"
+	}
 	if b, err := os.ReadFile(geoDBPath(root)); err == nil {
 		db, oerr := geo.Open(b)
 		if oerr != nil {

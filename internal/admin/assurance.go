@@ -336,7 +336,7 @@ func (s *Server) handleAgentsScreen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := map[string]any{
-		"Nav": "agents", "Title": "Agent activity", "Principal": p,
+		"Nav": "security", "Title": "Agent activity", "Principal": p,
 		"Threshold": agentwatch.Threshold, "Window": plainDuration(agentwatch.Window),
 	}
 	if s.Assurance == nil || s.Assurance.Agents == nil {

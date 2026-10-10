@@ -509,6 +509,9 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 		"severities": func() []string { return []string{"critical", "high", "medium", "low", "info"} },
 		// plural is a count with its noun: "1 advisory", "8 advisories".
 		"plural": countOf,
+		// fixparts splits a fix into the command to run and the words
+		// after its shell comment, so the words are read as words.
+		"fixparts": fixParts,
 		// deref reads a yes or no a tool may not have given; the template
 		// checks for nil before calling it.
 		"deref": func(b *bool) bool { return b != nil && *b },
@@ -544,6 +547,38 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 	}
 	return &Server{Store: s, Policy: p, Tokens: ts, Layouts: layouts,
 		Records: collection.NewCache(), tpl: t, flashKey: newFlashKey()}, nil
+}
+
+// fixPart is a run of a fix's note: words, or a command it names.
+type fixPart struct {
+	Text string
+	Code bool
+}
+
+// fixWords is a fix as a command and the note that follows it.
+type fixWords struct {
+	Cmd  string
+	Note []fixPart
+}
+
+// fixParts splits "quilzo auditlog anchor  # or `auditlog head --save`"
+// into the command and a note of words and commands, the backticks gone.
+func fixParts(fix string) fixWords {
+	cmd, note, ok := strings.Cut(fix, " # ")
+	if !ok {
+		if !strings.Contains(fix, "`") {
+			return fixWords{Cmd: fix}
+		}
+		// Words that name a command: the words as words.
+		cmd, note = "", fix
+	}
+	out := fixWords{Cmd: strings.TrimSpace(cmd)}
+	for i, seg := range strings.Split(strings.TrimSpace(note), "`") {
+		if seg != "" {
+			out.Note = append(out.Note, fixPart{Text: seg, Code: i%2 == 1})
+		}
+	}
+	return out
 }
 
 // countOf is a count with its noun, for a template whose count may be any
@@ -2430,10 +2465,18 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 		controls = append(controls, c)
 	}
 	sort.Strings(controls)
+	// Low and informational findings wait behind one line, so the serious
+	// ones are what the screen opens on.
+	low := 0
+	for _, f := range rep.Findings {
+		if sv := fmt.Sprint(f.Severity); sv == "low" || sv == "info" {
+			low++
+		}
+	}
 
 	s.render(w, r, "security.html", map[string]any{
 		"Nav":   "security",
-		"Title": "Security", "Principal": p,
+		"Title": "Security", "Principal": p, "Low": low,
 		"Report": rep, "Controls": controls, "Band": band(rep.Score),
 		"Throttled": s.throttled(), "Ran": ranAgo(rep.At),
 	})
@@ -2514,10 +2557,24 @@ func (s *Server) handleRule(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	s.render(w, r, "rules.html", map[string]any{
+	data := map[string]any{
 		"Nav":   "security",
 		"Title": rule.Title, "Principal": p, "Rules": []posture.Rule{rule},
-	})
+		"One": true,
+	}
+	// Where it stands now: a rule's page says whether it is failing here,
+	// and what to run, before why it matters.
+	if s.Posture != nil {
+		rep := s.Posture()
+		var now []posture.Finding
+		for _, f := range rep.Findings {
+			if f.Rule == rule.ID {
+				now = append(now, f)
+			}
+		}
+		data["Checked"], data["Failing"] = true, now
+	}
+	s.render(w, r, "rules.html", data)
 }
 
 func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {

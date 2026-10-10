@@ -1,4 +1,5 @@
 {{template "head" .}}
+<p class="wf-back"><a href="/security">Security</a></p>
 <h1>Events</h1>
 
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
@@ -33,9 +34,9 @@ anything asked of this store can be believed.</p>
   </tr>
   <tr>
     <th scope="row">Arrival delay</th>
-    <td>{{.Median}} median<br>{{.P99}} at the 99th<br>{{.Worst}} worst</td>
-    <td>How far behind the sources run. The 99th is the one a window has to
-      wait for; the median is what it feels like and is not the number that
+    <td class="ev-value">{{.Median}} median<br>{{.P99}} for the slowest 1 in 100<br>{{.Worst}} worst</td>
+    <td>How far behind the sources run. The slowest 1 in 100 is what a window
+      has to wait for; the median is what it feels like and is not the number that
       loses events.</td>
   </tr>
   <tr>
@@ -59,9 +60,10 @@ investigation losing its evidence to a schedule.</p>
 
 <h2>What is sending</h2>
 {{if not .Senders}}
-<p class="notice warn">Nothing has sent anything. An empty store and a
-collector that has stopped look the same from here, and only one of them is
-fine.</p>
+<p>Nothing has sent anything yet. An empty store and a collector that has
+stopped look the same from here, so check that a source is set up:
+<a href="/security/feeds">Feeds</a> for what other systems push, or
+<code>quilzo estate sync</code> for what is collected on a schedule.</p>
 {{else}}
 <p>Quietest first, because the source that has stopped is the one worth
 seeing and a list sorted by volume buries it under whatever is loudest.</p>
@@ -115,5 +117,4 @@ clock cannot push everything else off the screen.</p>
 
 <p class="hint">As of {{.As.Format "2006-01-02 15:04"}} UTC.</p>
 {{end}}
-<p class="hint"><a href="/security">Back to the posture dashboard.</a></p>
 {{template "foot" .}}
