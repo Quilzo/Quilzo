@@ -1,8 +1,7 @@
 {{template "head" .}}
 <h1>Provenance</h1>
-<p>Who or what wrote each page. The EU AI Act's Article 50 has required a
-machine-readable mark on AI-generated content since 2&nbsp;August&nbsp;2026, and
-<strong>unrecorded is not the same as human-written</strong>.</p>
+<p>Who or what wrote each page, so readers can be told when a model wrote
+it. A page with nothing recorded is not assumed to be written by a person.</p>
 
 {{if .Saved}}<p class="notice ok" role="status">Recorded provenance for <strong>{{.Saved}}</strong>.</p>{{end}}
 
@@ -22,7 +21,7 @@ machine-readable mark on AI-generated content since 2&nbsp;August&nbsp;2026, and
         {{else if eq .State "stale"}}<span class="tag tag-bad">stale</span>
         {{else}}<span class="tag tag-warn">unrecorded</span>{{end}}
       </td>
-      <td>{{if .SourceType}}<code>{{.SourceType}}</code>{{if .Model}} <span class="help">{{.Model}}</span>{{end}}{{else}}—{{end}}</td>
+      <td>{{if .SourceType}}<span title="IPTC digital source type: {{.SourceType}}">{{with index $.SourceWords (printf "%s" .SourceType)}}{{.}}{{else}}{{.SourceType}}{{end}}</span>{{if .Model}} <span class="help">{{.Model}}</span>{{end}}{{else}}—{{end}}</td>
       <td>{{if .Disclosure}}{{.Disclosure}}{{else}}<span class="help">nothing to disclose</span>{{end}}</td>
     </tr>
   {{end}}
@@ -47,8 +46,8 @@ machine-readable mark on AI-generated content since 2&nbsp;August&nbsp;2026, and
       <option value="compositeWithTrainedAlgorithmicMedia">Part AI, part human</option>
       <option value="algorithmicMedia">Software, but not a trained model</option>
     </select>
-    <p id="source-help" class="help">The last option covers imports and template
-      expansion. Marking those as AI would devalue the mark that matters.</p>
+    <p id="source-help" class="help">Use the last one for imported pages and
+      pages filled in from a template.</p>
   </div>
   <div class="field">
     <label for="model">Which model, if one was involved</label>
@@ -58,12 +57,12 @@ machine-readable mark on AI-generated content since 2&nbsp;August&nbsp;2026, and
   <div class="field">
     <label for="reviewed_by">Who reviewed the output, if anyone</label>
     <input id="reviewed_by" name="reviewed_by" type="text" aria-describedby="rev-help">
-    <p id="rev-help" class="help">Leave blank if nobody has. The disclosure will
-      then say so, which is a different claim and readers are entitled to it.</p>
+    <p id="rev-help" class="help">Leave blank if nobody has, and readers are
+      told that.</p>
   </div>
   <button type="submit">Record</button>
-  <p class="help">You are recorded as the accountable author. Article 50 binds a
-    person or organisation, never the tool.</p>
+  <p class="help">You are recorded as the person answerable for it.</p>
+
 </form>
 {{end}}
 {{template "foot" .}}
