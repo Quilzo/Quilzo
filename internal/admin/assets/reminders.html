@@ -10,7 +10,7 @@
   and never about phishing results.</p>
 
 <dl class="stats-row">
-  <div class="{{if .Config.Enabled}}good{{else}}serious{{end}}"><dt>State</dt><dd>{{if .Config.Enabled}}Enabled{{else}}Disabled{{end}}</dd></div>
+  <div{{if .Config.Enabled}} class="good"{{end}}><dt>State</dt><dd>{{if .Config.Enabled}}Enabled{{else}}Disabled{{end}}</dd></div>
   <div><dt>Due now</dt><dd>{{len .Rows}}</dd></div>
   <div><dt>Held back</dt><dd>{{len .Held}}</dd></div>
 </dl>
@@ -24,7 +24,6 @@
   <tr><th scope="row">Signed</th><td>{{.Config.Signature}}</td></tr>
 </tbody></table></div>
 <p class="hint">These are set in <code>remind/config.json</code>.</p>
-{{range $ch, $why := .Unusable}}<p class="notice warn"><strong>{{$ch}}</strong> cannot be used: {{$why}}</p>{{end}}
 
 <div class="grid2">
 {{if .Config.Enabled}}
@@ -32,7 +31,7 @@
   <input type="hidden" name="do" value="send">
   <p><label><input type="checkbox" name="confirm" value="yes" required> Send
     to everybody below now</label></p>
-  <p><button type="submit"{{if not .InHours}} disabled{{end}}>Send now</button></p>
+  <p><button type="submit"{{if or (not .InHours) .NoChannel}} disabled{{end}}>Send now</button></p>
 </form>
 <form method="post" action="/workforce/reminders/act">
   <input type="hidden" name="do" value="disable">
@@ -43,10 +42,14 @@
   <input type="hidden" name="do" value="enable">
   <p><label><input type="checkbox" name="read" value="yes" required> I have
     read the preview below</label></p>
-  <p><button type="submit">Enable reminders</button></p>
+  <p><button type="submit"{{if .NoChannel}} disabled{{end}}>Enable reminders</button></p>
 </form>
 {{end}}
 </div>
+{{range $ch, $why := .Unusable}}<p class="notice warn"><strong>{{sentence $ch}}</strong> cannot be used: {{$why}}</p>{{end}}
+{{if .NoChannel}}<p class="hint">Nothing can be delivered until a way of
+  sending works. Set up a mail relay in <code>notify/mail.json</code>, or add
+  another channel in <code>remind/config.json</code>, then reload this page.</p>{{end}}
 
 <h2>Would be sent now</h2>
 {{if .Rows}}<div class="table-wrap"><table class="wf-people">

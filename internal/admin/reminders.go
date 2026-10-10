@@ -85,6 +85,15 @@ func (s *Server) handleReminders(w http.ResponseWriter, r *http.Request) {
 	data["Window"] = fmt.Sprintf("%02d:00–%02d:00 %s%s", c.FromHour,
 		c.ToHour, c.Zone, map[bool]string{true: ", Monday to Friday"}[c.Weekdays])
 	data["Rows"], data["Held"], data["Unusable"] = rows, held, unusable
+	// Nothing can be delivered when every configured channel is unusable;
+	// the screen then holds back the buttons that would start sending.
+	usable := 0
+	for _, ch := range c.Channels {
+		if _, bad := missing[ch]; !bad {
+			usable++
+		}
+	}
+	data["NoChannel"] = usable == 0
 
 	if s.Reminders.Ledger != nil {
 		ledger, lerr := s.Reminders.Ledger()
