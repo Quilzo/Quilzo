@@ -2966,11 +2966,37 @@ td.nowrap form.inline { display: inline-block; margin-left: 4px; }
 
 /* A listing is headed by its label; the name a page uses follows it, small
    and in the code face. Its sample rows wait behind a summary. */
-h2 .key { font: var(--body-md); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+h2 .key, h3 .key { font: var(--body-md); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--on-surface-variant); margin-left: 6px; }
 details.sample { margin: 0 0 1rem; }
 details.sample > summary { color: var(--primary); font-weight: 500; }
 details.sample .table-wrap { margin-top: 8px; }
+
+/* Design: each choice's button is its own width, under what it applies.
+   While the site's own stylesheet is in use the settings are switched off
+   and drawn faded, so nobody changes values that do nothing. */
+.design-look > button { justify-self: start; }
+fieldset.whileown { border: 0; padding: 0; margin: 0; max-width: none; min-width: 0; }
+fieldset.whileown:disabled { opacity: .55; }
+
+/* A part of a declaring form (the type, then the field) is as wide as the
+   form, so its grid keeps its columns. */
+fieldset.part { max-width: none; }
+
+/* Checkboxes in a form that declares something get a row of their own,
+   rather than whichever grid cell was left over. */
+.checkrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 24px; margin: 0 0 12px; }
+.checkrow > p { margin: 0; }
+.checkrow .hint { margin: 0; }
+
+/* The one place on a screen where something cannot be undone: last on the
+   page, in a card outlined in the error colour, with a red button in both
+   schemes. */
+section.danger-zone { margin: 40px 0 16px; padding: 4px 20px 16px;
+  border: 1px solid var(--error); border-radius: var(--shape-lg); }
+section.danger-zone h2 { color: var(--error); }
+section.danger-zone button.danger { background: transparent; color: var(--error); border-color: var(--error); }
+section.danger-zone button.danger:hover { background: var(--error); color: var(--on-error); }
 
 /* -- review 10 October: agents and administration -------------------------- */
 /* (Agents, the agent form, Runs, Fleet, Memory, Models, Apps, Integrations,
