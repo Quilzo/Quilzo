@@ -351,6 +351,8 @@ func pruneRunsIn(dir string, max int) error {
 		if err := os.Remove(filepath.Join(dir, a.name)); err != nil {
 			return err
 		}
+		// And the pictures its browser kept, which go with it.
+		_ = os.RemoveAll(filepath.Join(dir, strings.TrimSuffix(a.name, ".json")+".frames"))
 	}
 	return nil
 }
@@ -521,8 +523,47 @@ func runAgentOnce(root, name, goal string, withModel bool,
 		return "", fmt.Errorf("say what it should do. A model with nothing " +
 			"asked of it chooses something")
 	}
+	if set, lerr := loadAgents(root); lerr == nil && withModel {
+		if m, ok := set.Agents[name]; ok && holdsBrowser(m) {
+			cancel()
+			return startAgentRunLive(root, name, goal, caller, m)
+		}
+	}
 	id, _, err := runAgentKept(ctx, root, name, goal, withModel, caller)
 	return id, err
+}
+
+// startAgentRunLive starts a run of an agent with a browser and returns
+// its identifier at once, so the person who started it is on its page
+// while it works: what it asks them waits in this process, on that page,
+// and a screen waiting for the run to end would be waiting for itself.
+// The run is bounded by its own budget's time, not by the screen's.
+func startAgentRunLive(root, name, goal string, caller *Caller, m agent.Manifest) (string, error) {
+	started := time.Now().UTC()
+	id, err := newAgentRunID(started)
+	if err != nil {
+		return "", err
+	}
+	k := &keptRun{root: root, rec: agent.Record{ID: id, Agent: name, Goal: goal, By: caller.Name,
+		Started: started, State: agent.Running}}
+	if mm, _ := agentRunModel(root, name); mm != nil {
+		k.rec.Model = mm.Name()
+	}
+	if err := writeAgentRun(root, k.rec); err != nil {
+		return "", err
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(m.Budget.Duration)+time.Minute)
+		defer cancel()
+		out, _ := executeAgentFrom(ctx, root, name, goal, true, caller,
+			&agentResume{Checkpoint: k.checkpoint, RunID: id,
+				Answered: func(a agent.Answer) { k.rec.Answers = append(k.rec.Answers, a) }})
+		if out.Manifest.Name == "" {
+			out.Trace.Stopped = "it could not start"
+		}
+		_ = k.finish(out)
+	}()
+	return id, nil
 }
 
 func agentRuns(root string, args []string) error {

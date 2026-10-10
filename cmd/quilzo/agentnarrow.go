@@ -106,6 +106,11 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 		// watching the probe never try it.
 		Tools: m.Tools,
 
+		// The agent's own browser, unchanged, for the same reason: a
+		// bound saying nothing about a browser would have taken away every
+		// host it may reach.
+		Browser: m.Browser,
+
 		// Memory is the agent's, and a token says nothing about it.
 		Memory: agent.Memory{
 			Episodic: true, Semantic: true, Procedural: true,
@@ -118,6 +123,13 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 	// been dropped on the floor once already.
 	if c.Limits.ReadOnly {
 		b.Retrieval.Ref = site.RefLive
+		// And its browser only reads: every host it may reach, none it may
+		// send to, and so no signing in. A read-only credential does not
+		// get forms sent on its say-so.
+		if m.Browser != nil {
+			b.Browser = &agent.Browser{Read: append(append([]string(nil), m.Browser.Read...), m.Browser.Write...),
+				Pictures: m.Browser.Pictures}
+		}
 	}
 	// A caller confined to part of the site confines the agent to it: a
 	// token issued --on /docs, or an agent granted a role on /docs only.

@@ -234,10 +234,14 @@
    "*",
    "uploads"
   ],
+  "image/draw": [
+   "*"
+  ],
   "image/gif": [
    "uploads"
   ],
   "image/jpeg": [
+   "*",
    "uploads"
   ],
   "image/png": [

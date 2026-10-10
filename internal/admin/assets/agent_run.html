@@ -16,7 +16,9 @@
   {{else if .Pending.Input}}<pre class="code whole"><code>{{.Pending.Input}}</code></pre>{{end}}
   <p class="hint">Asked {{.Asked}}. Nothing has been done or charged. If you agree, exactly this goes ahead, through the same limits as everything else it does; the model is not asked again.{{if .R.Trace.Tainted}} It had read stored content before asking, and content can carry instructions: read what it wants to do as if a stranger had asked.{{end}}</p>
   {{if .Expired}}<p><strong>This was asked too long ago to agree to.</strong> Decline it, or run the agent again.</p>{{end}}
-  {{if .Live}}<p><strong>Its program is waiting on this call now,</strong> and goes on as soon as you answer. If nobody answers before the run's time is up, it is refused.</p>{{end}}
+  {{if .Picture}}<figure class="shot"><img src="{{.Picture}}" alt="The page the agent has open, with what it would press outlined in red">
+    <figcaption>The page as it is now, with what it would press outlined in red.</figcaption></figure>{{end}}
+  {{if .Live}}<p><strong>The run is waiting on this now,</strong> and goes on as soon as you answer. If nobody answers before the run's time is up, it is refused.</p>{{end}}
   <form method="post" action="/agents/act">
     <input type="hidden" name="do" value="answer"><input type="hidden" name="run" value="{{.R.ID}}"><input type="hidden" name="step" value="{{.Pending.N}}">
     <p class="actions">{{if not .Expired}}<button type="submit" name="verdict" value="approve">Let it go ahead</button>{{end}}

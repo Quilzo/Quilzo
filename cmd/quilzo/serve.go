@@ -281,6 +281,18 @@ func cmdServe(root string, args []string) error {
 		RunGet: func(id string) (agent.Record, error) {
 			return loadAgentRun(root, id)
 		},
+		Asking: func(id, why string) (int, bool) {
+			frames, _ := loadRunFrames(root, id)
+			for i := len(frames) - 1; i >= 0; i-- {
+				if why != "" && frames[i].Asking == why {
+					return frames[i].N, true
+				}
+			}
+			return 0, false
+		},
+		Frame: func(id string, n int) ([]byte, error) {
+			return runFramePicture(root, id, n)
+		},
 		Answer: func(id string, step int, approve bool, by string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
 			defer cancel()

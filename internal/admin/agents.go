@@ -44,6 +44,11 @@ type Agents struct {
 	// Runs lists kept runs, newest first, of one agent or all of them.
 	Runs   func(name string) ([]agent.Record, error)
 	RunGet func(id string) (agent.Record, error)
+	// Asking is the picture kept of what a run's browser is asking a
+	// person about, with the element outlined, by its number; Frame is a
+	// kept picture's bytes. Nil when nothing is kept.
+	Asking func(id, why string) (int, bool)
+	Frame  func(id string, n int) ([]byte, error)
 	// Answer decides the action a run is waiting on, Resume continues one
 	// that was cut off, and Replay runs one again from after a step and
 	// returns the new run.

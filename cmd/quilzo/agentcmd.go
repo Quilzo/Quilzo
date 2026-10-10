@@ -86,6 +86,10 @@ func knownCapabilities(root string) map[string]bool {
 	}
 	// A run's memory, which no other surface performs.
 	known["remember"], known["recall"] = true, true
+	// And its browser, performed by the run itself (agentbrowser.go).
+	for _, c := range agent.BrowserCapabilities {
+		known[c] = true
+	}
 	return known
 }
 
@@ -879,6 +883,9 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	plan = append(plan, agent.Action{Say: "checked"})
 
 	var delegateModel assist.Model
+	// The run's browser, when it holds one; made below, and asked for
+	// pictures by the model's decisions.
+	var rb *runBrowser
 
 	i := 0
 	if p := from.Prior; p != nil {
@@ -938,6 +945,12 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 			Charge:    sess.Charge,
 			Tools:     tools,
 			Delegates: delegates,
+			Pictures: func() [][]byte {
+				if rb == nil {
+					return nil
+				}
+				return rb.pictures()
+			},
 		}.Decide()
 	}
 
@@ -1056,6 +1069,32 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		runner.Decide, runner.Pause = prog.bridge.Decide, false
 		if from.Eval == nil {
 			runner.Hold = programHold(root, runID, prog.done, func(line string) {
+				fmt.Fprintf(os.Stderr, "  %s%s%s\n", yellow, onOneLine(line), reset)
+			}, from.Answered)
+		}
+	}
+	// Its browser: performed here, in a box made when the agent first
+	// opens a page. The page lives in this process, so what a person is
+	// asked about waits here for them, as a program's does, rather than
+	// pausing the run to be picked up later by a process with no page.
+	if holdsBrowser(m) {
+		if from.RunID == "" && from.Eval == nil {
+			if from.RunID, err = newAgentRunID(time.Now().UTC()); err != nil {
+				return out, err
+			}
+		}
+		pictures := false
+		if p, ok := delegateModel.(interface{ TakesPictures() bool }); ok {
+			pictures = p.TakesPictures()
+		}
+		if rb, err = newRunBrowser(root, m, sess, caller, delegateModel, from.RunID, pictures); err != nil {
+			return out, err
+		}
+		defer rb.end()
+		runner.Perform, runner.Weighs = rb.driver.Perform(runner.Perform), rb.driver.Weighs
+		if from.Eval == nil {
+			runner.Pause = false
+			runner.Hold = programHold(root, from.RunID, nil, func(line string) {
 				fmt.Fprintf(os.Stderr, "  %s%s%s\n", yellow, onOneLine(line), reset)
 			}, from.Answered)
 		}
