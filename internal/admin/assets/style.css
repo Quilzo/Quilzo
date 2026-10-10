@@ -3145,6 +3145,23 @@ fieldset.conds { max-width: 60rem; }
 details.files-list { margin: 0 0 1rem; }
 details.files-list .table-wrap { margin-top: 12px; }
 details.files-list th:last-child, details.files-list td:last-child { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* A conversation: the reply is as wide as the thread above it, and ending
+   the conversation sits apart from the reply, below a rule, outlined red. */
+form.conv-reply { max-width: 46rem; }
+form.conv-reply textarea { width: 100%; max-width: none; }
+form.conv-end { max-width: 46rem; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--outline-variant); }
+form.conv-end button.danger { background: transparent; color: var(--error); border: 1px solid var(--error); }
+form.conv-end button.danger:hover { background: var(--error); color: var(--on-error); }
+/* A chatbot's settings: headed groups, the rarely changed ones folded, and
+   Save kept in reach at the bottom of the window from any field. */
+.settings-form h3 { margin: 32px 0 12px; padding-top: 16px; border-top: 1px solid var(--outline-variant); }
+.settings-form > h3:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
+details.settings-more { margin: 0 0 12px; }
+details.settings-more > summary { font: var(--title-sm); }
+details.settings-more[open] > summary { margin-bottom: 12px; }
+.settings-form .savebar { position: sticky; bottom: 0; z-index: 1; margin: 16px -1.15rem -1rem; padding: 12px 1.15rem;
+  background: var(--surface-container-low); border-top: 1px solid var(--outline-variant);
+  border-radius: 0 0 var(--shape-md) var(--shape-md); }
 
 /* -- review 10 October: security operations -------------------------------- */
 /* (Findings, Shield, Cases, Risk, Detections, Automations, Feeds, Hunt,
