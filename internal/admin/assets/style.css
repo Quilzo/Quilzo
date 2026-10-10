@@ -2973,3 +2973,4 @@ input[type=file]::file-selector-button {
 /* -- review 10 October: assurance and workforce ---------------------------- */
 /* (Frameworks, Parameters, Workforce, Inventory, Reminders, Controls, KSI,
    AI evidence, Integrity, Policy, Site, Vulnerabilities.) */
+.param-id { font-size: .75rem; color: var(--on-surface-variant); }
