@@ -3278,3 +3278,7 @@ td.ev-value { min-width: 12rem; white-space: nowrap; }
 /* (Frameworks, Parameters, Workforce, Inventory, Reminders, Controls, KSI,
    AI evidence, Integrity, Policy, Site, Vulnerabilities.) */
 .param-id { font-size: .75rem; color: var(--on-surface-variant); }
+.ssp-form select { width: auto; min-width: 14rem; max-width: 100%; }
+.ssp-form + .hint { margin-top: 4px; }
+.jump-list { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin: 1rem 0; }
+.jump-list a { font: var(--label-lg); }
