@@ -32,9 +32,12 @@
     <textarea id="declaration" name="declaration" rows="16" required class="mono">{{.Declaration}}</textarea></div>
   <button type="submit">Save</button>
 </form>
+
+<h2>Remove it</h2>
 <form method="post" action="/decisions/remove">
   <input type="hidden" name="name" value="{{.D.Name}}">
-  <button type="submit" class="btn-danger">Remove this decision<span class="visually-hidden">: {{.D.Title}}</span></button>
+  <p class="hint">Nothing can ask it for a decision after this.</p>
+  <p><button type="submit" class="danger">Remove this decision<span class="visually-hidden">: {{.D.Title}}</span></button></p>
 </form>
 {{else}}
 <h2>Declaration</h2>
