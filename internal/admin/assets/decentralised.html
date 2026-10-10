@@ -18,7 +18,7 @@
   <p class="label">This site's identifier</p>
   <p><code>{{.Root}}</code></p>
   <p class="hint">
-    {{plural (len .Files) "file" "files"}}, {{.Total}} bytes, {{plural .Blocks "block" "blocks"}}. Computed
+    {{plural (len .Files) "file" "files"}}, <span title="{{.Total}} bytes">{{bytes .Total}}</span>, {{plural .Blocks "block" "blocks"}}. Computed
     here, from your bytes, before anything is uploaded anywhere.
   </p>
 </div>
@@ -60,22 +60,24 @@
 </p>
 
 <h2>Every file</h2>
+<details class="files-list"><summary>Show all {{plural (len .Files) "file" "files"}}<span class="chev">{{icon "expand_more"}}</span></summary>
 <div class="table-wrap">
 <table>
   <thead><tr>
-    <th scope="col">Path</th><th scope="col">Identifier</th><th scope="col">Bytes</th>
+    <th scope="col">Path</th><th scope="col">Identifier</th><th scope="col">Size</th>
   </tr></thead>
   <tbody>
   {{range .Files}}
   <tr>
     <th scope="row"><code>{{.Path}}</code></th>
-    <td class="hint"><code>{{.CID}}</code></td>
-    <td class="hint">{{.Size}}</td>
+    <td class="hint" title="{{.CID}}"><code>{{.CID}}</code></td>
+    <td class="hint" title="{{.Size}} bytes">{{bytes .Size}}</td>
   </tr>
   {{end}}
   </tbody>
 </table>
 </div>
+</details>
 <p class="hint">
   A single file's identifier is the hash of its bytes and nothing else — no
   name, no timestamp, no metadata. Two people with the same file always get the

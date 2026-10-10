@@ -3141,6 +3141,10 @@ fieldset.conds { max-width: 60rem; }
 .cond .field { margin-bottom: .75rem; }
 .cond label { display: block; }
 @media (max-width: 40rem) { .cond { grid-template-columns: 1fr; } .cond .field + .field { margin-bottom: 1.25rem; } }
+/* The permanent web's file list: sizes line up on the right, to compare. */
+details.files-list { margin: 0 0 1rem; }
+details.files-list .table-wrap { margin-top: 12px; }
+details.files-list th:last-child, details.files-list td:last-child { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* -- review 10 October: security operations -------------------------------- */
 /* (Findings, Shield, Cases, Risk, Detections, Automations, Feeds, Hunt,

@@ -113,13 +113,13 @@ func (s *Server) handleDecentralised(w http.ResponseWriter, r *http.Request) {
 	// else, so this is also the cheapest possible integrity check.
 	type row struct {
 		Path, CID string
-		Size      int
+		Size      int64
 	}
 	var rows []row
-	var total int
+	var total int64
 	for path, body := range bundle {
-		rows = append(rows, row{path, ipfs.File(body).Block.CID, len(body)})
-		total += len(body)
+		rows = append(rows, row{path, ipfs.File(body).Block.CID, int64(len(body))})
+		total += int64(len(body))
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Path < rows[j].Path })
 
