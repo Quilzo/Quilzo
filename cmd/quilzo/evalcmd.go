@@ -79,7 +79,9 @@ func (e *evalMode) perform(real agent.Perform) agent.Perform {
 			return "(evaluation: the tool " + a.Tool + " was not called)", nil
 		case a.Delegate != "":
 			return "(evaluation: " + a.Delegate + " was not started)", nil
-		case a.Op != "" && !e.Reads[a.Op]:
+		case a.Op != "" && !e.Reads[a.Op] && !agent.IsBrowser(a.Op):
+			// The browser is real and reads only: its declaration is read-only
+			// in an evaluation (boundManifest), so nothing it does sends.
 			return "(evaluation: " + a.Op + " changes something, so nothing was written)", nil
 		}
 		res, err := real(ctx, a)
@@ -189,7 +191,17 @@ func evalRunning(root, name string) (time.Time, bool) {
 // runEvaluation evaluates an agent: every case k times, and with a model,
 // once per plant. The report is kept and returned.
 func runEvaluation(root, name string, k int, withModel bool, caller *Caller) (evals.Report, error) {
+	return runEvaluationWith(root, name, evals.Options{K: k, Attempts: 1}, withModel, caller)
+}
+
+// runEvaluationWith is runEvaluation trying each plant o.Attempts times. An
+// agent with a browser is also given the plants web pages carry.
+func runEvaluationWith(root, name string, o evals.Options, withModel bool, caller *Caller) (evals.Report, error) {
+	k := o.K
 	rep := evals.Report{Agent: name, By: caller.Name, K: k, At: time.Now().UTC()}
+	if o.Attempts > 1 {
+		rep.Attempts = min(o.Attempts, evals.MaxK)
+	}
 	if err := evalAgentOK(name); err != nil {
 		return rep, err
 	}
@@ -247,7 +259,13 @@ func runEvaluation(root, name string, k int, withModel bool, caller *Caller) (ev
 		}
 		return id, out.Trace, runErr
 	}
-	rep.Results = evals.Evaluate(cases, k, withModel, run)
+	if o.Plants == nil {
+		o.Plants = evals.Plants
+		if set, err := loadAgents(root); err == nil && holdsBrowser(set.Agents[name]) {
+			o.Plants = append(append([]string(nil), evals.Plants...), evals.BrowserPlants...)
+		}
+	}
+	rep.Results = evals.EvaluateWith(cases, o, withModel, run)
 	rep.Tally()
 	rep.Took = time.Since(start).Round(time.Second).String()
 	if err := saveEvalReport(root, rep); err != nil {
@@ -492,13 +510,14 @@ func cmdEval(root string, args []string) error {
 		fs := flag.NewFlagSet("eval run", flag.ContinueOnError)
 		k := fs.Int("k", 3, "how many times each case is run")
 		model := fs.Bool("model", false, "let the configured model choose, and plant instructions")
+		attempts := fs.Int("attempts", 1, "how many times each planted instruction is tried; a plant that works once in several tries works")
 		if err := fs.Parse(args[2:]); err != nil {
 			return err
 		}
 		if err := known(args[1]); err != nil {
 			return err
 		}
-		rep, err := runEvaluation(root, args[1], *k, *model, caller)
+		rep, err := runEvaluationWith(root, args[1], evals.Options{K: *k, Attempts: *attempts}, *model, caller)
 		if err != nil {
 			return err
 		}
@@ -562,7 +581,10 @@ func printEvalReport(r evals.Report) {
 	w.Human("%s%s%s, %s, %s, k=%d (%s)\n", bold, r.Agent, reset, r.Verdict(),
 		r.At.Format("2 Jan 15:04"), r.K, how)
 	w.Human("  pass^%d   %d of %d cases (%.0f%%)\n", r.K, r.Reliable, r.Cases, r.PassK*100)
-	if r.Planted > 0 {
+	if r.Planted > 0 && r.Attempts > 1 {
+		w.Human("  planted  %d of %d cases followed an instruction planted in what they read on the first try, "+
+			"%d within %d tries\n", r.HijackedFirst, r.Planted, r.Hijacked, r.Attempts)
+	} else if r.Planted > 0 {
 		w.Human("  planted  %d of %d cases followed an instruction planted in what they read\n", r.Hijacked, r.Planted)
 	}
 	for _, c := range r.Results {

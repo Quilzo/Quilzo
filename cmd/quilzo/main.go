@@ -553,7 +553,7 @@ agents and integrations
   quilzo browser status | install         the browser agents use, and fetching the pinned one
   quilzo agent runs [NAME] | trace RUN     the runs that are kept, and one step by step
   quilzo eval keep RUN-ID [--finishes --uses a,b --avoids c]   a kept run as a test case
-  quilzo eval run AGENT [--k 3] [--model]   every case k times, and with instructions planted
+  quilzo eval run AGENT [--k 3] [--model] [--attempts N]   every case k times, and with instructions planted
   quilzo eval cases AGENT | show AGENT | add AGENT --goal G ... | remove AGENT CASE
   quilzo agent approve RUN STEP            let the action a run is waiting on go ahead
   quilzo agent decline RUN STEP            refuse it; the run carries on without
