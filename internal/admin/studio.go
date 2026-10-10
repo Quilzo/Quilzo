@@ -201,8 +201,14 @@ func drawAgent(m agent.Manifest) agentMap {
 	case m.HumanApproval:
 		person = "a person approves before anything it did is public"
 	}
+	// A new agent has no name yet, and a sentence that starts " reads"
+	// starts in the middle.
+	who := m.Name
+	if who == "" {
+		who = "This agent"
+	}
 	out.Says = fmt.Sprintf("%s reads %s and may do %s, "+
-		"%d of which write; %s.", m.Name, countOf(len(reads), "source", "sources"),
+		"%d of which write; %s.", who, countOf(len(reads), "source", "sources"),
 		countOf(len(does), "thing", "things"), writes, person)
 	if asked > 0 {
 		if m.Autonomy != agent.AutonomyPropose && !m.HumanApproval {
@@ -210,7 +216,7 @@ func drawAgent(m agent.Manifest) agentMap {
 		}
 		out.Says = fmt.Sprintf("%s reads %s and may do %s, "+
 			"%d of which write. It stops and asks a person before %d of "+
-			"them; %s.", m.Name, countOf(len(reads), "source", "sources"),
+			"them; %s.", who, countOf(len(reads), "source", "sources"),
 			countOf(len(does), "thing", "things"), writes, asked, person)
 	}
 	return out
@@ -271,6 +277,7 @@ func (s *Server) editData(data map[string]any, m agent.Manifest, isNew bool,
 		return caps[i].Name < caps[j].Name
 	})
 	data["Caps"], data["UnknownCaps"] = caps, unknown
+	data["CapGroups"] = groupCaps(caps)
 	data["Types"] = strings.Join(m.Retrieval.Types, ", ")
 	data["Locales"] = strings.Join(m.Retrieval.Locales, ", ")
 	data["Retain"] = ""
@@ -593,8 +600,11 @@ func (s *Server) handleAgentsAct(w http.ResponseWriter, r *http.Request) {
 // runRow is one kept run in a list.
 type runRow struct {
 	ID, Agent, Goal, By, Model, When, Outcome, Tone, Took string
-	Did, Refused, Failed, Steps                           int
-	Tainted                                               bool
+	// ModelLabel is Model as a person reads it: a gateway route
+	// "gateway:agent:help-desk" is "help-desk (gateway)".
+	ModelLabel                  string
+	Did, Refused, Failed, Steps int
+	Tainted                     bool
 }
 
 func runRows(in []agent.Record, now time.Time) []runRow {
@@ -609,6 +619,10 @@ func runRows(in []agent.Record, now time.Time) []runRow {
 		row.Tone = map[string]string{"complete": "good", "refused": "warning",
 			"failed": "critical", "stopped": "serious", "waiting": "warning",
 			"running": "info", "interrupted": "serious"}[row.Outcome]
+		row.ModelLabel = row.Model
+		if rest, ok := strings.CutPrefix(row.Model, "gateway:"); ok && rest != "" {
+			row.ModelLabel = rest[strings.LastIndex(rest, ":")+1:] + " (gateway)"
+		}
 		out = append(out, row)
 	}
 	return out
@@ -640,7 +654,46 @@ func (s *Server) handleAgentRuns(w http.ResponseWriter, r *http.Request) {
 		data["More"] = len(runs) - 200
 		runs = runs[:200]
 	}
-	data["Runs"] = runRows(runs, time.Now().UTC())
+	rows := runRows(runs, time.Now().UTC())
+
+	// What the list holds, in one line that is also its filter: how many
+	// runs, how many of each outcome, and which agents ran.
+	type tally struct {
+		Name  string
+		Count int
+	}
+	var outcomes, agents []tally
+	oAt, aAt := map[string]int{}, map[string]int{}
+	for _, row := range rows {
+		if i, ok := oAt[row.Outcome]; ok {
+			outcomes[i].Count++
+		} else {
+			oAt[row.Outcome] = len(outcomes)
+			outcomes = append(outcomes, tally{row.Outcome, 1})
+		}
+		if i, ok := aAt[row.Agent]; ok {
+			agents[i].Count++
+		} else {
+			aAt[row.Agent] = len(agents)
+			agents = append(agents, tally{row.Agent, 1})
+		}
+	}
+	sort.SliceStable(outcomes, func(i, j int) bool { return outcomes[i].Count > outcomes[j].Count })
+	sort.Slice(agents, func(i, j int) bool { return agents[i].Name < agents[j].Name })
+	data["Total"], data["Outcomes"], data["RanAgents"] = len(rows), outcomes, agents
+
+	outcome := r.URL.Query().Get("outcome")
+	if _, ok := oAt[outcome]; outcome != "" && ok {
+		kept := rows[:0]
+		for _, row := range rows {
+			if row.Outcome == outcome {
+				kept = append(kept, row)
+			}
+		}
+		rows = kept
+		data["Outcome"] = outcome
+	}
+	data["Runs"] = rows
 	s.render(w, r, "agent_runs.html", data)
 }
 

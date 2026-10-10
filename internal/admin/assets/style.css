@@ -3035,6 +3035,91 @@ section.danger-zone button.danger:hover { background: var(--error); color: var(-
 /* (Agents, the agent form, Runs, Fleet, Memory, Models, Apps, Integrations,
    Decisions, People, You, Settings, the playground, Passkeys.) */
 
+/* A setting's Set and Reset on one line, Reset the quieter of the two. */
+.setrow { display: flex; align-items: center; gap: 4px 8px; flex-wrap: nowrap; }
+.setrow form.inline { flex-wrap: nowrap; align-items: center; }
+.setrow form.inline input:not([type=checkbox]) { min-width: 7rem; }
+@media (max-width: 40rem) { .setrow, .setrow form.inline { flex-wrap: wrap; } }
+
+/* You: the tabs, one closed group each, under the group's name. */
+.settinggroup > summary > h4 { margin: 0; font: var(--title-sm); }
+
+/* Agents: the templates as cards, the research behind each one closed. */
+.agent-templates .auto-head a { text-transform: capitalize; }
+.agent-templates .auto-card > p:first-of-type::first-letter { text-transform: uppercase; }
+.agent-templates details { margin-top: 8px; }
+.agent-templates summary { cursor: pointer; color: var(--primary); font: var(--label-lg); }
+.agent-templates details > p { margin: 6px 0 0; }
+
+/* The agent form: capabilities by area, each area closed until it holds
+   one. "Ask first" sits right after the name, and only for a capability
+   that is chosen: beside an unchosen one it is a choice that means nothing. */
+.capgroup { border-top: 1px solid var(--outline-variant); padding: .25rem 0; }
+.capgroup:first-of-type { border-top: 0; }
+.capgroup > summary { cursor: pointer; padding: .5rem 0; font: var(--title-sm); }
+.capgroup > summary .hint { font: var(--body-sm); margin-left: .5rem; }
+.capgroup .caps { padding: .25rem 0 .5rem; }
+.capgroup .caps p { flex-wrap: wrap; gap: 4px 12px; }
+.capgroup .caps label.ask { margin-left: 0; }
+.capgroup .caps p:has(input[name=cap]:not(:checked)) label.ask { visibility: hidden; }
+
+/* Declaring an agent: describing it instead is one closed line above the
+   form, not a second form competing with it. */
+details.describe { padding-block: .5rem; }
+details.describe > summary { cursor: pointer; padding: .5rem 0; }
+details.describe > summary > h2 { margin: 0 .5rem 0 0; font: var(--title-md); display: inline; }
+details.describe[open] > summary { margin-bottom: .75rem; }
+
+/* An agent's map and the fleet's, on a phone: scaled to the screen their
+   labels were a few pixels high, and the fleet's ran off its edge. The
+   sentence under each carries the same facts, so on a phone it stands in
+   for the drawing (and the note about where the drawing comes from goes
+   with it). */
+.mapframe { margin: 0 0 .5rem; }
+@media (max-width: 40rem) {
+  .wf-fig svg.agmap, .wf-fig .mapframe { display: none; }
+  .mapsays .drawnnote { display: none; }
+  .mapsays { font: var(--body-md); color: var(--on-surface); }
+}
+
+/* Runs: "2 days ago" on one line, an outcome's name capitalised in its
+   filter chip. */
+td.when { white-space: nowrap; }
+.chips .cap { text-transform: capitalize; }
+.runs-table th[scope=row] { min-width: 16rem; }
+.runs-table td > a { white-space: nowrap; }
+
+/* Settings' weakened card is read, not shouted: .bad set every word of it in
+   bold red, on a red block that in the dark theme filled a phone's screen.
+   A red edge and a red heading say the same thing. */
+.card.bad.weakened { font-weight: 400; background: var(--surface-container-low); color: var(--on-surface); }
+.card.bad.weakened > p:first-child strong { color: var(--error); }
+
+/* People: the grant form with room for a name. Who and Somebody new share a
+   row, Role takes twice the room of Where and Until, and the deny box has a
+   line of its own. */
+.grantform { max-width: 60rem; }
+.grantform > p { margin: .25rem 0 1.25rem; }
+.grantform .field { max-width: none; margin-bottom: 1rem; }
+.grantform .field select, .grantform .field input { width: 100%; }
+.grantrow { display: grid; gap: 0 1.5rem; grid-template-columns: 2fr 1fr 1fr; }
+@media (max-width: 48rem) { .grantrow { grid-template-columns: 1fr; } }
+
+/* Integrations: an outside system's name and purpose get room enough not to
+   wrap a word a line. */
+table.declared th[scope=row] { min-width: 14rem; }
+table.declared th[scope=row] code.cmd { overflow-wrap: break-word; }
+
+/* Models: short numbers side by side in short fields, their shared hint
+   under the row; the currency closes the budgets card. */
+.numrow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0 1.5rem; }
+.numrow .field { flex: 0 1 15rem; margin-bottom: .5rem; }
+.budgetcard > form:first-child > h3 { margin-top: 0; }
+.numrow .field input { max-width: 12rem; }
+.numhelp { margin: 0 0 1.25rem; max-width: 44rem; }
+.currencyform { border-top: 1px solid var(--outline-variant); margin-top: 1.5rem; padding-top: 1.25rem; }
+.currencyform input { max-width: 8rem; }
+
 /* -- review 10 October: site and growth ------------------------------------ */
 /* (Transfer, Analytics, Personalise, Chatbots, Experiments, Boards, Inbox,
    the permanent web, the public site's furniture.) */
