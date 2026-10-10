@@ -63,17 +63,22 @@
     {{if .Why}}<p class="hint">{{.Why}}</p>{{end}}
   </details>
   <p class="hint">{{.Precision}}</p>
-  <div class="auto-controls">
+  <div class="auto-controls shield-try">
     <a class="btn btn-text" href="/security/shield?try={{.Name}}#try">Try on the last 30 days<span class="visually-hidden">: {{.Title}}</span></a>
-    {{if $.SiteAdmin}}{{if .Waiting}}<span class="hint">A change to it is waiting above.</span>{{else}}
-    <form method="post" action="/security/shield/act" aria-label="Change what {{.Title}} does">
-      <input type="hidden" name="do" value="mode"><input type="hidden" name="name" value="{{.Name}}">
-      <label for="why-{{.Name}}" class="visually-hidden">Why change {{.Title}} {{template "req"}}</label>
-      <input id="why-{{.Name}}" name="why" required maxlength="300" placeholder="Why">
-      <span class="seg">
-        <button type="submit" name="mode" value="watch"{{if eq .Mode "watch"}} aria-pressed="true" class="on" disabled{{else}} aria-pressed="false"{{end}}>Watch</button><button type="submit" name="mode" value="act"{{if eq .Mode "act"}} aria-pressed="true" class="on" disabled{{else}} aria-pressed="false"{{end}}>Act</button><button type="submit" name="mode" value="off"{{if eq .Mode "off"}} aria-pressed="true" class="on" disabled{{else}} aria-pressed="false"{{end}}>Off</button>
-      </span></form>{{end}}{{end}}
+    {{if $.SiteAdmin}}{{if .Waiting}}<span class="hint">A change to it is waiting above.</span>{{end}}{{end}}
   </div>
+  {{if $.SiteAdmin}}{{if not .Waiting}}
+  <details class="shield-more">
+    <summary>Change what it does<span class="chev">{{icon "expand_more"}}</span></summary>
+    <form method="post" action="/security/shield/act" class="shield-change" aria-label="Change what {{.Title}} does">
+      <input type="hidden" name="do" value="mode"><input type="hidden" name="name" value="{{.Name}}">
+      <div class="field"><label for="why-{{.Name}}">Reason for the change {{template "req"}}</label>
+        <input id="why-{{.Name}}" name="why" required maxlength="300"></div>
+      <span class="seg" role="group" aria-label="What {{.Title}} does">
+        <button type="submit" name="mode" value="watch"{{if eq .Mode "watch"}} aria-pressed="true" class="on" disabled{{else}} aria-pressed="false"{{end}}>{{if eq .Mode "watch"}}{{icon "check_circle"}}{{end}}Watch</button><button type="submit" name="mode" value="act"{{if eq .Mode "act"}} aria-pressed="true" class="on" disabled{{else}} aria-pressed="false"{{end}}>{{if eq .Mode "act"}}{{icon "check_circle"}}{{end}}Act</button><button type="submit" name="mode" value="off"{{if eq .Mode "off"}} aria-pressed="true" class="on" disabled{{else}} aria-pressed="false"{{end}}>{{if eq .Mode "off"}}{{icon "check_circle"}}{{end}}Off</button>
+      </span>
+      <p class="hint">Another administrator approves it before it changes.</p></form>
+  </details>{{end}}{{end}}
 </li>{{end}}</ul>
 <p><a class="btn btn-text" href="/security/shield?try=all#try">Try every playbook on the last 30 days</a></p>
 

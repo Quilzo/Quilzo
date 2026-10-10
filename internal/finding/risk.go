@@ -85,7 +85,10 @@ func (e EntityRisk) Why() string {
 	for _, p := range e.Parts {
 		base += p.Points
 	}
-	s := fmt.Sprintf("%d finding(s) worth %.0f", len(e.Parts), base)
+	s := fmt.Sprintf("%d findings worth %.0f", len(e.Parts), base)
+	if len(e.Parts) == 1 {
+		s = fmt.Sprintf("1 finding worth %.0f", base)
+	}
 	if e.Rules > 1 {
 		s += fmt.Sprintf(", raised by %d different rules (×%.2f)", e.Rules,
 			breadth(e.Rules))

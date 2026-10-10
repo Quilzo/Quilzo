@@ -56,7 +56,7 @@ func TestRiskIsOneRowPerPersonWithTheFindingsItIsMadeOf(t *testing.T) {
 	if dana < 0 || other < 0 || dana > other {
 		t.Fatalf("the person with three findings is not above the one with one (%d, %d)", dana, other)
 	}
-	for _, want := range []string{"3 finding(s) worth 95", "3 different rules",
+	for _, want := range []string{"3 findings worth 95", "3 different rules",
 		"github:dana-gh", "okta:00u1", `href="/security/entity/person:dana@acme.com"`,
 		"These look like one thing", "An account somebody else is using"} {
 		if !strings.Contains(body, want) {
