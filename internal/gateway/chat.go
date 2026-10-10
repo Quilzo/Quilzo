@@ -44,6 +44,17 @@ func (b *bound) ChatCosted(ctx context.Context, req assist.ChatRequest) (assist.
 }
 
 // Chat sends a conversation through the gateway.
+// TakesPictures reports whether a picture could go anywhere from here:
+// some route is marked personal, the only kind a picture is sent to.
+func (b *bound) TakesPictures() bool {
+	for _, r := range b.g.cfg.Routes {
+		if r.Personal {
+			return true
+		}
+	}
+	return false
+}
+
 func (b *bound) Chat(ctx context.Context, req assist.ChatRequest) (assist.ChatReply, error) {
 	r, _, err := b.g.chat(ctx, b.consumers, req)
 	return r, err

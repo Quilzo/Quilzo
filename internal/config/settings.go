@@ -659,6 +659,14 @@ var settings = []Setting{
 			"checks what it is, so it should be one the operator installed on purpose.",
 	},
 	{
+		Key: "browser.sessions", Kind: Int, Default: "2",
+		Summary: "how many agents' browsers may run at once on this machine",
+		Why: "Each agent's browser is a Chromium in a box of its own: a few hundred megabytes, " +
+			"and a core while a page loads. A run that would start one more waits for one to " +
+			"finish, for as long as its budget lets it, rather than slowing every run here down. " +
+			"Raise it on a machine with the memory for more.",
+	},
+	{
 		Key: "network.mode", Kind: Text, Default: "open",
 		Summary: "whether this deployment may reach the network: open or offline",
 		Why: "offline refuses every connection that would leave this host, " +

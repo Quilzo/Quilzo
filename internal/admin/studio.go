@@ -643,6 +643,29 @@ func (s *Server) handleAgentRuns(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "agent_runs.html", data)
 }
 
+// handleAgentFrame is a picture a run's browser kept: /agents/frame/ID/N.
+func (s *Server) handleAgentFrame(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.studioAllowed(w, r); !ok {
+		return
+	}
+	id, num, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/agents/frame/"), "/")
+	n, err := strconv.Atoi(num)
+	if s.Agents == nil || s.Agents.Frame == nil || !agent.ValidRecordID(id) || err != nil || n < 1 {
+		http.NotFound(w, r)
+		return
+	}
+	b, err := s.Agents.Frame(id, n)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	// A page an agent was signed in to is somebody's own: not kept by
+	// anything between here and the person looking at it.
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "private, no-store")
+	_, _ = w.Write(b)
+}
+
 func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.studioAllowed(w, r)
 	if !ok {
@@ -756,8 +779,17 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		}
 		data["Pending"] = pend
 		data["Live"] = wt.Live
+		if s.Agents.Asking != nil {
+			if n, ok := s.Agents.Asking(rec.ID, wt.Why); ok {
+				data["Picture"] = fmt.Sprintf("/agents/frame/%s/%d", rec.ID, n)
+			}
+		}
 		data["Asked"] = agoText(now.Sub(wt.Since))
 		data["Expired"] = now.Sub(wt.Since) > agent.PendingTTL
+	}
+	// A run still working is looked at again until it finishes or asks.
+	if row.Outcome == "running" && rec.Trace.Waiting == nil {
+		data["Refresh"] = "2"
 	}
 	data["Answers"] = rec.Answers
 	data["CanReplay"] = s.Agents.Replay != nil && rec.Trace.Waiting == nil &&
