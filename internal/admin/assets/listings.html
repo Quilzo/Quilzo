@@ -5,9 +5,7 @@
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
 
 <p class="lead">
-  A declared query a page can show. Name one in a page's <code>listings</code>
-  field and the template gets its rows — no query language, no expressions, and
-  a cost that is known before the page is built.
+  A saved list of records that a page can show, such as the products in stock.
 </p>
 
 {{if not .Listings}}
@@ -15,7 +13,7 @@
 {{end}}
 
 {{range $l := .Listings}}
-<h2>{{$l.Name}}{{if $l.Label}} — {{$l.Label}}{{end}}</h2>
+<h2>{{if $l.Label}}{{$l.Label}} <span class="key">{{$l.Name}}</span>{{else}}{{$l.Name}}{{end}}</h2>
 {{if $l.Description}}<p>{{$l.Description}}</p>{{end}}
 
 {{if $l.Problem}}
@@ -33,10 +31,8 @@
 
 {{if $l.Unrestricted}}
 <p class="notice warn">
-  This exposes every field on every matching record. That is a legitimate
-  choice for an internal listing and a liability on a public page: adding a
-  field to the content type will put it on the page, and nobody will re-review
-  it. Name the fields to fix that.
+  This shows every field of every record, including any field added later.
+  Name the fields it shows if a public page uses it.
 </p>
 {{end}}
 
@@ -78,17 +74,21 @@
 </ul>
 {{end}}
 
-{{if $l.Sample}}
-<p class="hint">What it returns right now:</p>
-<div class="table-wrap">
-<table>
-  <tbody>
-  {{range $l.Sample}}
-  <tr><td class="hint">{{range $k, $v := .}}<code>{{$k}}</code>={{$v}} {{end}}</td></tr>
-  {{end}}
-  </tbody>
-</table>
-</div>
+{{if $l.Cells}}
+<details class="sample">
+  <summary>What it returns right now<span class="chev">{{icon "expand_more"}}</span></summary>
+  <div class="table-wrap">
+  <table>
+    <thead><tr>{{range $l.Cols}}<th scope="col">{{.}}</th>{{end}}</tr></thead>
+    <tbody>
+    {{range $l.Cells}}
+    <tr>{{range .}}<td class="clip">{{.}}</td>{{end}}</tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{if $l.More}}<p class="hint">and {{$l.More}} more</p>{{end}}
+</details>
 {{end}}
 
 {{if $.CanWrite}}
@@ -172,9 +172,7 @@
 <h2>Showing one on a page</h2>
 <p class="hint">
   Put the listing's name in a page's <code>listings</code> field, then read it
-  in the template. Resolution happens before the template runs, because the
-  template language has no calls in it — which is also why a listing cannot be
-  smuggled in through content.
+  in the template.
 </p>
 <pre class="code"><code>{{.Example}}</code></pre>
 {{end}}

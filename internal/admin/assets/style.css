@@ -2958,6 +2958,20 @@ input[type=file]::file-selector-button {
 /* (Records, Listings, Design, Media, the page editor, Provenance, Sections,
    History, Notes, Types, Forms, Structure.) */
 
+/* A record's field in the Data table is one line: long text ends in an
+   ellipsis, and the whole record opens with Edit. */
+td.clip { max-width: 24ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+td.nowrap { white-space: nowrap; }
+td.nowrap form.inline { display: inline-block; margin-left: 4px; }
+
+/* A listing is headed by its label; the name a page uses follows it, small
+   and in the code face. Its sample rows wait behind a summary. */
+h2 .key { font: var(--body-md); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--on-surface-variant); margin-left: 6px; }
+details.sample { margin: 0 0 1rem; }
+details.sample > summary { color: var(--primary); font-weight: 500; }
+details.sample .table-wrap { margin-top: 8px; }
+
 /* -- review 10 October: agents and administration -------------------------- */
 /* (Agents, the agent form, Runs, Fleet, Memory, Models, Apps, Integrations,
    Decisions, People, You, Settings, the playground, Passkeys.) */
