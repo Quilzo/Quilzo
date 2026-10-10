@@ -28,7 +28,7 @@ write.</p>
   until this install allows processes at all
   ({{if .AllowProcess}}it does{{else}}it does not{{end}}).</p>
 <div class="table-wrap">
-<table>
+<table class="declared">
   <thead><tr>
     <th scope="col">Name</th><th scope="col">Kind</th><th scope="col">Reaches</th>
     <th scope="col">May call</th><th scope="col">State</th>
@@ -37,7 +37,8 @@ write.</p>
   {{range .Declared}}
   <tr>
     <th scope="row">{{.Name}}
-      <div class="hint">{{.Purpose}}</div></th>
+      <div class="hint">{{.Purpose}}</div>
+      {{if and .Gateway $.GatewayBase}}<div class="hint">At <code class="cmd">{{$.GatewayBase}}{{.Name}}</code></div>{{end}}</th>
     <td>{{.Kind}}</td>
     <td>{{if .Endpoint}}<code>{{.Where}}</code>{{else}}<code class="cmd">{{.Command}}</code>{{end}}
       {{if .Reach}}<div class="hint">on your own network, inside {{range $i, $r := .Reach}}{{if $i}}, {{end}}<code>{{$r}}</code>{{end}}</div>{{end}}
@@ -53,9 +54,8 @@ write.</p>
         read from the environment — never from the store, where an object
         cannot be deleted</div>{{end}}</td>
     <td>{{if .Enabled}}<span class="ok">enabled</span>{{else}}<span class="warn">declared, off</span>{{end}}
-      {{$name := .Name}}{{with .Gateway}}<div class="hint">offered through the gateway to {{.Role}}s{{if $.GatewayBase}} at
-        <code>{{$.GatewayBase}}{{$name}}</code>{{end}}, {{.DailyLimit}} calls a caller a day{{if .Ask}}; a person
-        approves each call of {{range $i, $a := .Ask}}{{if $i}}, {{end}}<code>{{$a}}</code>{{end}}{{end}}</div>{{end}}</td>
+      {{with .Gateway}}<div class="hint">via the gateway, for {{.Role}}s, {{.DailyLimit}} calls a day each{{if .Ask}};
+        a person approves {{range $i, $a := .Ask}}{{if $i}}, {{end}}<code>{{$a}}</code>{{end}}{{end}}</div>{{end}}</td>
   </tr>
   {{end}}
   </tbody>
@@ -117,7 +117,7 @@ write.</p>
       <form method="post" action="/integrations/webhook/remove" class="inline">
         <input type="hidden" name="url" value="{{.URL}}">
         <input type="hidden" name="disable" value="1">
-        <button type="submit">{{if .Disabled}}Turn on{{else}}Turn off{{end}}</button>
+        <button type="submit" class="btn-text">{{if .Disabled}}Turn on{{else}}Turn off{{end}}</button>
       </form>
       <form method="post" action="/integrations/webhook/remove" class="inline">
         <input type="hidden" name="url" value="{{.URL}}">
@@ -230,17 +230,22 @@ write.</p>
       <input id="x-fields" name="fields" placeholder="title, body">
       <span class="hint">Comma separated. Blank means nothing — not
         everything.</span></p>
-    <p><input id="x-opt" type="checkbox" name="optional" value="1"> <label for="x-opt">Carry on if it fails</label>
-      <span class="hint">Off means a failure blocks the write. An extension
-        registered to validate content exists to refuse some of it, so if it
-        crashes, nothing validated that page.</span></p>
   </div>
+  <div class="grid2">
   <fieldset>
     <legend>Runs at</legend>
     {{range .Hooks}}
     <p><label><input type="checkbox" name="hooks" value="{{.}}"> {{.}}</label></p>
     {{end}}
   </fieldset>
+  <fieldset>
+    <legend>If it fails</legend>
+    <p><input id="x-opt" type="checkbox" name="optional" value="1"> <label for="x-opt">Carry on if it fails</label>
+      <span class="hint">Off means a failure blocks the write. An extension
+        registered to validate content exists to refuse some of it, so if it
+        crashes, nothing validated that page.</span></p>
+  </fieldset>
+  </div>
   <button type="submit">Register</button>
 </form>
 
