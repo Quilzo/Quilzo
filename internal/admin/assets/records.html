@@ -33,7 +33,7 @@ which is what an application holds rather than what a page does.</p>
     <th scope="col">id</th>
     {{range .Columns}}<th scope="col">{{.}}</th>{{end}}
     <th scope="col">updated</th>
-    {{if $.CanWrite}}<th scope="col"></th>{{end}}
+    {{if $.CanWrite}}<th scope="col"><span class="visually-hidden">Actions</span></th>{{end}}
   </tr></thead>
   <tbody>
   {{range .Records}}

@@ -2891,3 +2891,85 @@ form.fieldrow .field { flex: 1 1 12rem; margin: 0; max-width: none; }
 form.fieldrow .field.wide { flex: 2 1 18rem; }
 form.fieldrow .field input { width: 100%; }
 form.fieldrow > button { margin-bottom: 2px; }
+
+/* Review, 10 October: what a pass over every screen's screenshots found,
+   each finding checked by a second reader against the picture.
+
+   A notice is read, not shouted. The text classes .ok, .warn and .bad are
+   bold, and a notice carrying one of them as its tone was set in bold from
+   its first word to its last; only a <strong> inside it is now. */
+.notice.ok, .notice.warn, .notice.bad { font-weight: 400; }
+.notice strong, .notice b { font-weight: 700; }
+
+/* A table wider than the screen says so: a shadow at whichever edge has
+   more past it. The covers scroll with the content and the shadows stay
+   put, so a shadow shows only where something is hidden. */
+.table-wrap {
+  background:
+    linear-gradient(to right, var(--surface-container-lowest) 40%, transparent) left / 2.5rem 100% no-repeat local,
+    linear-gradient(to left, var(--surface-container-lowest) 40%, transparent) right / 2.5rem 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, color-mix(in srgb, var(--on-surface) 22%, transparent), transparent) left / 1rem 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, color-mix(in srgb, var(--on-surface) 22%, transparent), transparent) right / 1rem 100% no-repeat scroll;
+  background-color: var(--surface-container-lowest);
+}
+
+/* On a phone, a table of four columns or more is a stack of cards: each
+   row a card, each value under its column's name (admin.js labels them).
+   Hiding the columns that matter past the screen's edge left the actions
+   column, Edit and Delete and Make live, where nobody could reach it. */
+@media (max-width: 40rem) {
+  table.stacks thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  table.stacks, table.stacks tbody, table.stacks tr, table.stacks td, table.stacks th[scope=row] { display: block; width: auto; min-width: 0; max-width: none; }
+  table.stacks tr { padding: .75rem 1rem; border-bottom: 1px solid var(--outline-variant); }
+  table.stacks tr:last-child { border-bottom: 0; }
+  table.stacks td, table.stacks th[scope=row] { border: 0; padding: .25rem 0; white-space: normal; }
+  table.stacks th[scope=row] { font: var(--title-md); font-weight: 600; padding-bottom: .4rem; }
+  table.stacks td[data-label]::before { content: attr(data-label); display: block;
+    font: var(--label-md); color: var(--on-surface-variant); margin-bottom: .1rem; }
+  table.stacks td:empty { display: none; }
+  table.stacks td form.inline, table.stacks td .actions { margin-top: .25rem; }
+}
+
+/* A button in a table row is one of many rows' buttons: tonal, so a column
+   of them does not outshout the page's own action. A destructive one keeps
+   its red outline, and one that must stand out says so with .btn-filled. */
+td button:not(.danger):not(.btn-danger):not(.btn-text):not(.btn-outlined):not(.btn-filled):not(.iconbutton),
+td .btn:not(.danger):not(.btn-danger):not(.btn-text):not(.btn-outlined):not(.btn-filled) {
+  background: var(--secondary-container); color: var(--on-secondary-container);
+  min-height: 40px; padding: 0 1.1rem;
+}
+td button:not(.danger):not(.btn-danger):not(.btn-text):not(.btn-outlined):not(.btn-filled):not(.iconbutton):hover {
+  background: color-mix(in srgb, var(--on-secondary-container) var(--state-hover), var(--secondary-container));
+}
+
+/* A short number is a short field. */
+input[type=number] { max-width: 12rem; }
+.short { max-width: 20rem; }
+
+/* The browser's own file control, drawn as an outlined button like the
+   others. */
+input[type=file]::file-selector-button {
+  font: var(--label-lg); font-weight: 700; min-height: 40px; padding: 0 1.1rem; margin-right: .75rem;
+  border-radius: var(--shape-full); border: 1px solid var(--outline);
+  background: transparent; color: var(--primary); cursor: pointer;
+}
+
+/* -- review 10 October: content screens ------------------------------------ */
+/* (Records, Listings, Design, Media, the page editor, Provenance, Sections,
+   History, Notes, Types, Forms, Structure.) */
+
+/* -- review 10 October: agents and administration -------------------------- */
+/* (Agents, the agent form, Runs, Fleet, Memory, Models, Apps, Integrations,
+   Decisions, People, You, Settings, the playground, Passkeys.) */
+
+/* -- review 10 October: site and growth ------------------------------------ */
+/* (Transfer, Analytics, Personalise, Chatbots, Experiments, Boards, Inbox,
+   the permanent web, the public site's furniture.) */
+
+/* -- review 10 October: security operations -------------------------------- */
+/* (Findings, Shield, Cases, Risk, Detections, Automations, Feeds, Hunt,
+   Events, Running, Rules, Scan, Sign-ins, Security.) */
+
+/* -- review 10 October: assurance and workforce ---------------------------- */
+/* (Frameworks, Parameters, Workforce, Inventory, Reminders, Controls, KSI,
+   AI evidence, Integrity, Policy, Site, Vulnerabilities.) */

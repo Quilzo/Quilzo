@@ -12,7 +12,7 @@ what production serves is the bytes that were checked — not a copy of them.</p
 <table>
   <thead><tr>
     <th scope="col">Environment</th><th scope="col">Holding</th>
-    <th scope="col">State</th>{{if .CanPromote}}<th scope="col"></th>{{end}}
+    <th scope="col">State</th>{{if .CanPromote}}<th scope="col"><span class="visually-hidden">Actions</span></th>{{end}}
   </tr></thead>
   <tbody>
   <tr>
@@ -92,7 +92,7 @@ what production serves is the bytes that were checked — not a copy of them.</p
   <thead><tr>
     <th scope="col">When</th><th scope="col">Commit</th>
     <th scope="col">By</th><th scope="col">State</th>
-    {{if .CanPromote}}<th scope="col"></th>{{end}}
+    {{if .CanPromote}}<th scope="col"><span class="visually-hidden">Actions</span></th>{{end}}
   </tr></thead>
   <tbody>
   {{range .Pending}}
@@ -145,7 +145,7 @@ what production serves is the bytes that were checked — not a copy of them.</p
 <table>
   <thead><tr>
     <th scope="col">Page</th><th scope="col">Held by</th>
-    <th scope="col">Since</th>{{if .CanEdit}}<th scope="col"></th>{{end}}
+    <th scope="col">Since</th>{{if .CanEdit}}<th scope="col"><span class="visually-hidden">Actions</span></th>{{end}}
   </tr></thead>
   <tbody>
   {{range .Locks}}

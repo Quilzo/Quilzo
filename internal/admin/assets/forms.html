@@ -18,7 +18,7 @@
 <table>
   <thead><tr>
     <th scope="col">Form</th><th scope="col">Held</th>
-    <th scope="col">Kept for</th><th scope="col">State</th><th scope="col"></th>
+    <th scope="col">Kept for</th><th scope="col">State</th><th scope="col"><span class="visually-hidden">Actions</span></th>
   </tr></thead>
   <tbody>
   {{range .Forms}}
@@ -79,7 +79,7 @@ not that the number is fresh.</p>
   <thead><tr>
     <th scope="col">Received</th>
     {{range .Fields}}<th scope="col">{{.Label}}</th>{{end}}
-    <th scope="col"></th>
+    <th scope="col"><span class="visually-hidden">Actions</span></th>
   </tr></thead>
   <tbody>
   {{range $sub := .Submissions}}
@@ -120,7 +120,7 @@ not that the number is fresh.</p>
 <table>
   <thead><tr>
     <th scope="col">Form</th><th scope="col">Received</th>
-    <th scope="col">Values</th><th scope="col"></th>
+    <th scope="col">Values</th><th scope="col"><span class="visually-hidden">Actions</span></th>
   </tr></thead>
   <tbody>
   {{range .Found}}
