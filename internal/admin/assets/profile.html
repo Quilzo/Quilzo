@@ -116,34 +116,38 @@ role <strong>{{.Principal.Role}}</strong>.</p>
 
 <h3>The order of your tabs</h3>
 <p class="hint">
-  Buttons rather than dragging: WCAG 2.2 forbids requiring a drag gesture for
-  any function, and pressing a button also works on a phone and from a
-  keyboard. A tab moves within its own group — the groups are the structure
-  rather than a preference.
+  Open a group and move its tabs up or down. A tab stays in its own group:
+  the groups are the structure, and the order within them is yours.
 </p>
+{{range .TabGroups}}
+<details class="settinggroup"{{if .Open}} open{{end}}>
+<summary>
+  <h4>{{.Name}}</h4>
+  <span class="hint">{{len .Rows}} tab{{if ne (len .Rows) 1}}s{{end}}</span>
+  <span class="chev">{{icon "expand_more"}}</span>
+</summary>
 <div class="table-wrap">
 <table>
   <thead><tr>
-    <th scope="col">Tab</th><th scope="col">Group</th><th scope="col">Move</th>
+    <th scope="col">Tab</th><th scope="col"><span class="visually-hidden">Move</span></th>
   </tr></thead>
   <tbody>
-  {{range .Arrangement}}
-  <tr>
+  {{range .Rows}}
+  <tr id="tab-{{.Key}}">
     <th scope="row">{{.Label}}</th>
-    <td class="hint">{{.Group}}</td>
-    <td>
+    <td class="right">
       {{if not .First}}
       <form method="post" action="/nav/order" class="inline">
         <input type="hidden" name="key" value="{{.Key}}">
         <input type="hidden" name="direction" value="up">
-        <button type="submit">Up<span class="sr">: move {{.Label}} earlier</span></button>
+        <button type="submit" class="btn-text">Up<span class="sr">: move {{.Label}} earlier</span></button>
       </form>
       {{end}}
       {{if not .Last}}
       <form method="post" action="/nav/order" class="inline">
         <input type="hidden" name="key" value="{{.Key}}">
         <input type="hidden" name="direction" value="down">
-        <button type="submit">Down<span class="sr">: move {{.Label}} later</span></button>
+        <button type="submit" class="btn-text">Down<span class="sr">: move {{.Label}} later</span></button>
       </form>
       {{end}}
     </td>
@@ -152,6 +156,8 @@ role <strong>{{.Principal.Role}}</strong>.</p>
   </tbody>
 </table>
 </div>
+</details>
+{{end}}
 <form method="post" action="/nav/order" class="inline">
   <input type="hidden" name="reset" value="1">
   <button type="submit">Put them back the way they were</button>

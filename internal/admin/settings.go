@@ -327,6 +327,20 @@ func settingGroupLabel(key string) string {
 		return "Media"
 	case "ext":
 		return "Extensions"
+	case "content":
+		return "Content"
+	case "session":
+		return "Admin sessions"
+	case "chatbot":
+		return "Chatbots"
+	case "agents":
+		return "Agents"
+	case "a2a":
+		return "Other vendors' agents (A2A)"
+	case "mcp":
+		return "Agent interface (MCP)"
+	case "guardrail":
+		return "Guardrails"
 	}
 	return key
 }
