@@ -36,7 +36,7 @@
     <select name="band"><option value="">Every band</option>
       {{range .BandList}}<option value="{{.}}"{{if eq (print .) $.Band}} selected{{end}}>{{.}}</option>{{end}}
     </select></label>
-  <button type="submit">Apply</button>
+  <button type="submit" class="btn-tonal">Apply</button>
   {{if .Filtered}}<a href="/workforce">Clear</a>{{end}}
   <span class="wf-aside"><a href="/workforce/devices">Machines</a> ·
     <a href="/workforce/reminders">Reminders</a></span>
