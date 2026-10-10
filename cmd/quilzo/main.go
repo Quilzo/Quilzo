@@ -550,6 +550,7 @@ agents and integrations
   quilzo memory forget [--about P]         every agent forgets you (or P, for an administrator)
   quilzo memory receipt [--about P] [-o F] what was forgotten, deleted or rewritten about you, proved
   quilzo agent program NAME [--backend B] [--read DIR] [--env K=V] -- COMMAND   what its program is
+  quilzo browser status | install         the browser agents use, and fetching the pinned one
   quilzo agent runs [NAME] | trace RUN     the runs that are kept, and one step by step
   quilzo eval keep RUN-ID [--finishes --uses a,b --avoids c]   a kept run as a test case
   quilzo eval run AGENT [--k 3] [--model]   every case k times, and with instructions planted
@@ -847,6 +848,8 @@ func main() {
 		err = cmdVault(root, cmdArgs)
 	case "secret":
 		err = cmdSecret(root, cmdArgs)
+	case "browser":
+		err = cmdBrowser(root, cmdArgs)
 	case "lock", "locks":
 		err = cmdLock(root, cmdArgs)
 	case "review":

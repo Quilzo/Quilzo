@@ -31,19 +31,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func localChromium(t *testing.T) string {
-	t.Helper()
-	if p := os.Getenv("QUILZO_TEST_CHROMIUM"); p != "" {
-		return p
-	}
-	home, _ := os.UserHomeDir()
-	found, _ := filepath.Glob(filepath.Join(home, ".cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"))
-	if len(found) == 0 {
-		t.Skip("no Chromium here (set QUILZO_TEST_CHROMIUM)")
-	}
-	return found[len(found)-1]
-}
-
 // Chromium in the agent's box, driven from outside it over the pipe: the
 // page renders in the box, and the connection is this process's alone.
 func TestABrowserInTheBoxIsDrivenFromOutside(t *testing.T) {

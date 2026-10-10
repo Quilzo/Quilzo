@@ -670,6 +670,10 @@ var commandNeeds = map[string]need{
 	"vault": {action: auth.ActToken},
 	// Credentials agents use: whoever may mint a token may keep one.
 	"secret": {action: auth.ActToken},
+	// Fetching and installing a program this store then runs: whoever may
+	// mint a token. Looking at which browser would be used is reading.
+	"browser":        {action: auth.ActToken},
+	"browser status": {action: auth.ActView},
 
 	// Suppressing a posture rule is accepting a risk on the organisation's
 	// behalf, and scanning is not — so the parent takes the strict answer and

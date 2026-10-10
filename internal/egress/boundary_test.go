@@ -55,8 +55,12 @@ func TestNothingReachesTheNetworkOutsideThisPackage(t *testing.T) {
 			return err
 		}
 		if info.IsDir() {
-			switch info.Name() {
-			case ".git", "node_modules", "testdata", "scratchpad":
+			// A directory whose name starts with a dot is not part of the
+			// build (the go tool skips it too): .git, and worktrees and
+			// tool state kept inside a checkout.
+			switch n := info.Name(); {
+			case n == "node_modules", n == "testdata", n == "scratchpad",
+				strings.HasPrefix(n, ".") && path != "../..":
 				return filepath.SkipDir
 			}
 			return nil
@@ -177,7 +181,7 @@ func TestEveryFetchClientNamesItsPurpose(t *testing.T) {
 			return err
 		}
 		if d.IsDir() {
-			if n := d.Name(); n == "testdata" || n == ".git" || n == "node_modules" {
+			if n := d.Name(); n == "testdata" || n == "node_modules" || (strings.HasPrefix(n, ".") && path != "../..") {
 				return filepath.SkipDir
 			}
 			return nil
