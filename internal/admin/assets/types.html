@@ -54,7 +54,7 @@ of schema validators, and content does not need them.</p>
   <thead><tr>
     <th scope="col">Field</th><th scope="col">Kind</th>
     <th scope="col">Rules</th><th scope="col">Label and help</th>
-    {{if $.CanWrite}}<th scope="col"></th>{{end}}
+    {{if $.CanWrite}}<th scope="col"><span class="visually-hidden">Actions</span></th>{{end}}
   </tr></thead>
   <tbody>
   {{range $f := $row.Type.Fields}}

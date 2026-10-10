@@ -72,7 +72,7 @@
 
 <h2 id="personal-data">Personal data on published pages</h2>
 {{if .PersonalData}}<div class="table-wrap"><table>
-  <thead><tr><th scope="col">Page</th><th scope="col">What</th><th scope="col"></th></tr></thead>
+  <thead><tr><th scope="col">Page</th><th scope="col">What</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
   <tbody>{{range .PersonalData}}<tr>
     <th scope="row"><a href="/page/{{.Page}}">{{.Page}}</a></th>
     <td>{{.Detail}}</td>

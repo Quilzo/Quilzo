@@ -17,7 +17,11 @@
 //   * on the rail, pointing at a section opens its flyout after a moment
 //     and moving away closes it, as Gmail's does. Clicking, Enter and
 //     Escape work without the script; this only adds the pointer;
-//   * a menu longer than the window opens scrolled to the current screen.
+//   * a menu longer than the window opens scrolled to the current screen;
+//   * on a phone, a table of four columns or more reads as a stack of cards,
+//     each value under its column's name, instead of hiding the columns
+//     that matter past the edge of the screen. Without the script the table
+//     scrolls sideways, with a shadow at the edge that says it does.
 //
 // The palette is a native <dialog> with the ARIA combobox pattern: the
 // input owns a listbox, arrow keys move the active option, Enter opens it,
@@ -396,6 +400,32 @@
       navbox.scrollTop += hb.top - nb.top - (nb.height - hb.height) / 2;
     }
   }
+
+  // Tables that become cards on a phone (style.css, table.stacks): each
+  // cell is labelled with its column's heading, spans included, so a
+  // value never appears without the name of what it is. A table can opt
+  // out with data-nostack; one with fewer than four columns needs no help.
+  document.querySelectorAll(".table-wrap table").forEach(function (t) {
+    if (t.hasAttribute("data-nostack") || !t.tHead) return;
+    var row = t.tHead.rows[t.tHead.rows.length - 1];
+    if (!row || row.cells.length < 4) return;
+    var names = [];
+    Array.prototype.forEach.call(row.cells, function (c) {
+      var name = c.textContent.trim();
+      for (var i = 0; i < (c.colSpan || 1); i++) names.push(name);
+    });
+    Array.prototype.forEach.call(t.tBodies, function (body) {
+      Array.prototype.forEach.call(body.rows, function (tr) {
+        var at = 0;
+        Array.prototype.forEach.call(tr.cells, function (cell) {
+          var name = names[at] || "";
+          if (name && cell.tagName === "TD" && !cell.hasAttribute("data-label")) cell.setAttribute("data-label", name);
+          at += cell.colSpan || 1;
+        });
+      });
+    });
+    t.classList.add("stacks");
+  });
 
   // The shortcut, shown where people look for search, in their platform's
   // spelling. Only once the script is running, since it is what makes it work.

@@ -69,8 +69,8 @@ so this is the screen that answers that gate.</p>{{end}}
   <thead><tr>
     <th scope="col">File</th><th scope="col">Format</th>
     <th scope="col">Size</th><th scope="col">Description</th>
-    <th scope="col">Rights</th><th scope="col">Crop</th>
-    <th scope="col">Uploaded</th>{{if .CanWrite}}<th scope="col"></th>{{end}}
+    <th scope="col">Crop from</th><th scope="col">Rights</th>
+    <th scope="col">Uploaded</th>{{if .CanWrite}}<th scope="col">Actions</th>{{end}}
   </tr></thead>
   <tbody>
   {{range .Files}}
