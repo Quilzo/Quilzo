@@ -23,7 +23,16 @@ type Personalise struct {
 	Simulate func(campaign, referrer, lang, device, at string) (*http.Request, time.Time, error)
 }
 
-var ruleFields = []string{"campaign", "referrer", "language", "device", "weekday", "hour", "param"}
+// ruleFields is what a condition can look at, with the words a person reads.
+var ruleFields = []choice{
+	{"campaign", "Campaign"},
+	{"referrer", "Site they came from"},
+	{"language", "Browser language"},
+	{"device", "Device"},
+	{"weekday", "Day of the week"},
+	{"hour", "Hour of the day"},
+	{"param", "Link parameter"},
+}
 
 func (s *Server) handlePersonalise(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.requireAuth(w, r)

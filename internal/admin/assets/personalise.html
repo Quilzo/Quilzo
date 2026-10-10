@@ -22,8 +22,38 @@
 </table></div>
 {{else}}<p class="notice">No rules yet.</p>{{end}}
 
-<h2 id="try">Which version would a visitor get?</h2>
-<form method="get" action="/personalise#try" class="card">
+{{if .CanSave}}
+<h2>New rule</h2>
+<form method="post" action="/personalise/change" class="card">
+  <input type="hidden" name="op" value="add">
+  <div class="grid2">
+    <div class="field"><label for="rname">Name {{template "req"}}</label><input id="rname" class="short" name="name" required pattern="[a-z0-9][a-z0-9\-]{0,39}" placeholder="newsletter-landing"></div>
+    <div class="field"><label for="rpage">On page {{template "req"}}</label><input id="rpage" class="short" name="page" required placeholder="index"></div>
+    <div class="field"><label for="rvar">Serve page {{template "req"}}</label><input id="rvar" class="short" name="variant" required placeholder="index-newsletter"></div>
+    <div class="field"><label for="rtz">Timezone</label><input id="rtz" class="short" name="timezone" placeholder="Europe/London" aria-describedby="rtz-help">
+      <p id="rtz-help" class="help">For the day and hour conditions.</p></div>
+  </div>
+  <fieldset class="conds"><legend>When all of these hold</legend>
+  {{range $i, $_ := (slice $.Fields 0 3)}}
+  <div class="cond">
+    <div class="field"><label for="f{{$i}}">Looks at</label><select id="f{{$i}}" name="field{{$i}}"><option value="">Nothing</option>{{range $.Fields}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</select></div>
+    <div class="field"><label for="v{{$i}}">Is one of</label><input id="v{{$i}}" name="values{{$i}}" placeholder="{{if eq $i 0}}newsletter, partner{{end}}"></div>
+  </div>
+  {{end}}
+  <p class="help">Separate values with commas. A campaign is the link's
+    <code>utm_source</code>; language is like <code>de</code> or
+    <code>en-gb</code>; device is <code>phone</code> or <code>desktop</code>;
+    day is <code>mon</code>…<code>sun</code>; hour is a range like
+    <code>9-17</code>.</p>
+  </fieldset>
+  <p class="help">A new rule starts turned off. Turn it on from the list above.</p>
+  <button type="submit">Add rule</button>
+</form>
+{{end}}
+
+{{if .Rules}}
+<details class="card" id="try"{{if .Q.Get "page"}} open{{end}}><summary>Check which version a visitor gets<span class="chev">{{icon "expand_more"}}</span></summary>
+<form method="get" action="/personalise#try">
   <div class="grid2">
     <div class="field"><label for="spage">Page</label><input id="spage" name="page" value="{{.Q.Get "page"}}" placeholder="pricing"></div>
     <div class="field"><label for="scamp">Campaign</label><input id="scamp" name="campaign" value="{{.Q.Get "campaign"}}" placeholder="newsletter"></div>
@@ -32,33 +62,12 @@
     <div class="field"><label for="sdev">Device</label><select id="sdev" name="device"><option value="desktop">desktop</option><option value="phone"{{if eq (.Q.Get "device") "phone"}} selected{{end}}>phone</option></select></div>
     <div class="field"><label for="sat">At (UTC)</label><input id="sat" name="at" value="{{.Q.Get "at"}}" placeholder="2026-09-29T20:30:00Z"></div>
   </div>
-  <button type="submit">Check</button>
+  <button type="submit" class="btn-tonal">Check</button>
 </form>
 {{if .SimError}}<p class="notice bad" role="alert">{{.SimError}}</p>{{end}}
 {{with .SimRule}}<p class="notice ok" role="status"><strong>{{.Name}}</strong> applies: <code>/{{.Variant}}</code> is served.</p>{{end}}
 {{with .SimNone}}<p class="notice" role="status">No rule applies: <code>/{{.}}</code> is served as it is.</p>{{end}}
-
-{{if .CanSave}}
-<h2>New rule</h2>
-<form method="post" action="/personalise/change" class="card">
-  <input type="hidden" name="op" value="add">
-  <div class="grid2">
-    <div class="field"><label for="rname">Name {{template "req"}}</label><input id="rname" name="name" required pattern="[a-z0-9][a-z0-9\-]{0,39}" placeholder="newsletter-landing"></div>
-    <div class="field"><label for="rtz">Timezone</label><input id="rtz" name="timezone" placeholder="Europe/London"></div>
-    <div class="field"><label for="rpage">On page {{template "req"}}</label><input id="rpage" name="page" required placeholder="index"></div>
-    <div class="field"><label for="rvar">Serve page {{template "req"}}</label><input id="rvar" name="variant" required placeholder="index-newsletter"></div>
-  </div>
-  <fieldset><legend>When all of these hold</legend>
-  {{range $i, $_ := (slice $.Fields 0 3)}}
-  <div class="grid2">
-    <div class="field"><label for="f{{$i}}">Looks at</label><select id="f{{$i}}" name="field{{$i}}"><option value="">—</option>{{range $.Fields}}<option>{{.}}</option>{{end}}</select></div>
-    <div class="field"><label for="v{{$i}}">Is one of</label><input id="v{{$i}}" name="values{{$i}}" placeholder="newsletter, partner"></div>
-  </div>
-  {{end}}
-  <p class="help">Language is like <code>de</code> or <code>en-gb</code>; device is <code>phone</code> or <code>desktop</code>; weekday is <code>mon</code>…<code>sun</code>; hour is a range like <code>9-17</code>.</p>
-  </fieldset>
-  <button type="submit">Add, turned off</button>
-</form>
+</details>
 {{end}}
 {{end}}
 {{template "foot" .}}
