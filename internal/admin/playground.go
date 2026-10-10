@@ -179,14 +179,15 @@ func playgroundHTML(nonce, who, theme string, routes []Route) string {
   /* Explicit surface and text, never inherit. Inheriting means the control
      takes the page's colour and the browser's own background, which is the
      pair that does not match. */
-  .pg select, .pg input, .pg textarea, .pg button {
+  .pg select, .pg input, .pg textarea {
     font: inherit; padding: .5rem .6rem; border-radius: 8px;
     border: 1px solid var(--outline, #8a9199);
     background: var(--surface, Canvas); color: var(--on-surface, CanvasText); }
   .pg option { background: var(--surface, Canvas); color: var(--on-surface, CanvasText); }
-  .pg button { cursor: pointer; font-weight: 600; }
+  /* The buttons are the admin's own, from style.css: Send the filled one,
+     Copy as curl a text button beside it. */
   .pg select:focus-visible, .pg input:focus-visible,
-  .pg textarea:focus-visible, .pg button:focus-visible {
+  .pg textarea:focus-visible {
     outline: 2px solid var(--primary, Highlight); outline-offset: 2px; }
   .pg select { flex: 1 1 22rem; }
   .pg input { flex: 1 1 14rem; }
@@ -196,12 +197,16 @@ func playgroundHTML(nonce, who, theme string, routes []Route) string {
     white-space: pre-wrap; word-break: break-word; }
   .pg .status { font-weight: 600; }
   .pg .ok { color: #2e7d32 } .pg .warn { color: #b26a00 } .pg .err { color: #c62828 }
-  .pg .note { font-size: .875rem; opacity: .8; margin: .4rem 0 0 }
+  .pg .note { font-size: .875rem; opacity: .8; margin: .4rem 0 0; padding: 0; border: 0 }
+  /* Nothing to say yet is nothing on screen: an empty note was a stray dot,
+     and two empty boxes under Response looked like a load that never ended. */
+  .pg .note:empty, .pg pre:empty { display: none; }
+  .pg .status.waiting { font-weight: 400; color: var(--on-surface-variant, GrayText); }
   .pg .hint { font-size: .8125rem; opacity: .7 }
 </style>
 </head><body>
 <main class="pg">
-<p class="hint"><a href="/">&larr; back to quilzo</a></p>
+<p class="hint"><a href="/">Back to Quilzo</a></p>
 <h1>API playground</h1>
 <p class="hint">Signed in as ` + html.EscapeString(who) + `. Requests go to this
 server, through the same middleware your own code will meet, using your session
@@ -221,11 +226,11 @@ server, through the same middleware your own code will meet, using your session
 <p class="note" id="note"></p>
 <div class="pg-row">
   <button id="send" type="button">Send</button>
-  <button id="curl" type="button">Copy as curl</button>
+  <button id="curl" type="button" class="btn-text">Copy as curl</button>
 </div>
 
 <h2>Response</h2>
-<p class="status" id="status">&mdash;</p>
+<p class="status waiting" id="status">Send a request to see the response here.</p>
 <pre id="headers"></pre>
 <pre id="out"></pre>
 </main>
@@ -269,7 +274,9 @@ server, through the same middleware your own code will meet, using your session
       opts.headers["Content-Type"] = "application/json";
       opts.body = body.value;
     }
-    show(0, "sending…", "", "");
+    show(0, "", "", "");
+    $("status").textContent = "Sending…";
+    $("status").className = "status waiting";
     fetch(path.value, opts).then(function (res) {
       var hs = [];
       res.headers.forEach(function (v, k) { hs.push(k + ": " + v); });
@@ -303,7 +310,7 @@ server, through the same middleware your own code will meet, using your session
     // Emitting a working credential into somebody's clipboard, and from there
     // into a terminal history and a support ticket, is how tokens leak.
     $("out").textContent = cmd;
-    $("status").textContent = "copied below — set QUILZO_TOKEN yourself";
+    $("status").textContent = "The command is below. Set QUILZO_TOKEN yourself.";
     $("status").className = "status";
   });
 }());

@@ -130,8 +130,8 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "profile.html", map[string]any{
 		"Nav": "profile", "Title": "You", "Principal": p,
 		"Details": details, "May": may, "Sessions": mine,
-		"Arrangement": s.arrangement(r, p),
-		"Message":     r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
+		"TabGroups": tabGroups(s.arrangement(r, p), r.URL.Query().Get("moved")),
+		"Message":   r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 	})
 }
 
@@ -139,6 +139,34 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 type navRow struct {
 	Key, Label, Group string
 	First, Last       bool
+}
+
+// tabGroup is one group of tabs on You, closed unless it holds the tab that
+// was just moved: sixty-odd rows open at once made the page six screens long.
+type tabGroup struct {
+	Name string
+	Rows []navRow
+	Open bool
+}
+
+// tabGroups gathers the rows under their groups, in the order the groups
+// first appear.
+func tabGroups(rows []navRow, moved string) []tabGroup {
+	var out []tabGroup
+	at := map[string]int{}
+	for _, row := range rows {
+		i, ok := at[row.Group]
+		if !ok {
+			i = len(out)
+			at[row.Group] = i
+			out = append(out, tabGroup{Name: row.Group})
+		}
+		out[i].Rows = append(out[i].Rows, row)
+		if moved != "" && row.Key == moved {
+			out[i].Open = true
+		}
+	}
+	return out
 }
 
 func (s *Server) arrangement(r *http.Request, p principal) []navRow {

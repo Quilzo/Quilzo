@@ -47,7 +47,7 @@
     <td class="actions">
       {{if or (eq .About $.Me) (and $.Admin (not .About))}}<a class="btn btn-text" href="/memory?edit={{.ID}}#edit-h">Edit</a>{{end}}
       <form method="post" action="/memory/act"><input type="hidden" name="op" value="confirm"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="btn-tonal">Confirm</button></form>
-      <form method="post" action="/memory/act"><input type="hidden" name="op" value="delete"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="btn-text">Delete</button></form>
+      <form method="post" action="/memory/act"><input type="hidden" name="op" value="delete"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="danger">Delete</button></form>
     </td>
   </tr>
   {{end}}
@@ -70,7 +70,7 @@
     <th scope="row">{{.Text}}<div class="hint"><code>{{.ID}}</code>, {{.Kind}}{{with index $.Tiers .Tier}}, {{.}}{{end}}{{if not .Edited.IsZero}}, rewritten by them{{else if .ConfirmedBy}}, confirmed by {{.ConfirmedBy}}{{end}}</div></th>
     <td class="ident"><code>{{.Agent}}</code></td>{{if $.Admin}}<td>{{or .About "everybody"}}</td>{{end}}
     <td>{{when .Created.Unix}}</td><td>{{when .Expires.Unix}}</td>
-    <td class="actions">{{if or (eq .About $.Me) (and $.Admin (not .About))}}<a class="btn btn-text" href="/memory?edit={{.ID}}#edit-h">Edit</a>{{end}}<form method="post" action="/memory/act"><input type="hidden" name="op" value="delete"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="btn-text">Delete</button></form></td>
+    <td class="actions">{{if or (eq .About $.Me) (and $.Admin (not .About))}}<a class="btn btn-text" href="/memory?edit={{.ID}}#edit-h">Edit</a>{{end}}<form method="post" action="/memory/act"><input type="hidden" name="op" value="delete"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="danger">Delete</button></form></td>
   </tr>
   {{end}}
   </tbody>

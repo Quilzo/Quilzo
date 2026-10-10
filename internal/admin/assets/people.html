@@ -5,54 +5,44 @@
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
 
 <h2>Add or change access</h2>
-<form method="post" action="/people/grant" class="stack">
-  <div class="row">
-    <label>Who
-      <select name="principal" aria-label="Principal">
-        <option value="">— somebody new, named below —</option>
-        {{range .Known}}<option value="{{.}}">{{.}}</option>{{end}}
-      </select>
-    </label>
-    <label>Somebody new
-      <input name="new_principal" autocomplete="off" spellcheck="false"
-             aria-label="New principal"
-             placeholder="their name, or the subject their IdP sends">
-    </label>
-    <label>Role
-      <select name="role" aria-label="Role">
-        <optgroup label="Over the site, or part of it">{{range .Roles}}<option value="{{.}}">{{.}}</option>{{end}}</optgroup>
-        <optgroup label="A job, over its own areas">{{range .Jobs}}<option value="job:{{.Name}}">{{.Name}}: {{.Summary}}</option>{{end}}</optgroup>
-      </select>
-    </label>
-    <label>On
-      <input name="resource" value="/" spellcheck="false" aria-label="Resource">
-    </label>
-    <label>Until
-      <input name="until" type="date" aria-label="Until" aria-describedby="until-help">
-    </label>
-  </div>
-  <p id="until-help" class="hint">Leave Until empty for access that lasts until it is removed. A job ignores On: it is its own areas.</p>
-  <div class="row">
-    <label class="check"><input type="checkbox" name="deny">
-      deny instead of grant</label>
-    <label>Why
-      <input name="note" placeholder="optional, and worth writing"
-        aria-label="Note">
-    </label>
-  </div>
-  <p><button type="submit">Save</button></p>
-</form>
 <p class="hint">
   Pick somebody this store already knows, or name a new person. Typing a name
   that is nearly right is how a grant ends up applying to nobody and looking
   as though it applies to somebody.
 </p>
-<p class="hint">
-  <strong>A job</strong> is the access a kind of work needs and nothing more:
-  an <em>analyst</em> works in security operations, <em>compliance</em> in the
-  posture and frameworks, <em>support</em> in the inbox and members&rsquo;
-  posts. None of them can grant access or open a page.
-</p>
+<form method="post" action="/people/grant" class="card grantform">
+  <div class="grid2">
+    <div class="field"><label for="g-who">Who</label>
+      <select id="g-who" name="principal">
+        <option value="">Somebody not listed: name them</option>
+        {{range .Known}}<option value="{{.}}">{{.}}</option>{{end}}
+      </select></div>
+    <div class="field"><label for="g-new">Somebody new</label>
+      <input id="g-new" name="new_principal" autocomplete="off" spellcheck="false"
+             placeholder="Name or IdP subject"></div>
+  </div>
+  <div class="grantrow">
+    <div class="field"><label for="g-role">Role</label>
+      <select id="g-role" name="role" aria-describedby="role-help">
+        <optgroup label="Over the site, or part of it">{{range .Roles}}<option value="{{.}}">{{.}}</option>{{end}}</optgroup>
+        <optgroup label="A job, over its own areas">{{range .Jobs}}<option value="job:{{.Name}}">{{.Name}}: {{.Summary}}</option>{{end}}</optgroup>
+      </select>
+      <p id="role-help" class="hint"><strong>A job</strong> is the access a kind of work needs and nothing more:
+        an <em>analyst</em> works in security operations, <em>compliance</em> in the
+        posture and frameworks, <em>support</em> in the inbox and members&rsquo;
+        posts. None of them can grant access or open a page.</p></div>
+    <div class="field"><label for="g-on">Where (path)</label>
+      <input id="g-on" name="resource" value="/" spellcheck="false" aria-describedby="on-help">
+      <p id="on-help" class="hint">For example /docs. A job ignores this: it is its own areas.</p></div>
+    <div class="field"><label for="g-until">Until</label>
+      <input id="g-until" name="until" type="date" aria-describedby="until-help">
+      <p id="until-help" class="hint">Empty lasts until it is removed.</p></div>
+  </div>
+  <p><input type="checkbox" id="g-deny" name="deny"> <label for="g-deny">Deny instead of grant</label></p>
+  <div class="field"><label for="g-note">Why</label>
+    <input id="g-note" name="note" placeholder="Optional, and worth writing"></div>
+  <p><button type="submit">Save</button></p>
+</form>
 
 <h2>Everybody</h2>
 {{if not .People}}

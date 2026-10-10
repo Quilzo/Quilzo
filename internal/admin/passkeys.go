@@ -240,7 +240,7 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 	// nothing happened.
 	unavailable := ""
 	if _, perr := partyFor(r); perr != nil {
-		unavailable = perr.Error()
+		unavailable = asNotice(perr.Error())
 	}
 
 	// Principal, or this screen renders with no navigation at all.
@@ -442,7 +442,7 @@ func (s *Server) handlePasskeySignIn(w http.ResponseWriter, r *http.Request) {
 
 	unavailable := ""
 	if _, perr := partyFor(r); perr != nil {
-		unavailable = perr.Error()
+		unavailable = asNotice(perr.Error())
 	}
 	s.render(w, r, "passkeysignin.html", map[string]any{
 		"Title": "Sign in with a passkey", "Nonce": n,
@@ -680,12 +680,23 @@ func (s *Server) passkeysUnavailable(w http.ResponseWriter, r *http.Request,
 	w.WriteHeader(http.StatusServiceUnavailable)
 	data := map[string]any{
 		"Nav":   "passkeys",
-		"Title": "Passkeys", "Unavailable": errNoPasskeyStore.Error(),
+		"Title": "Passkeys", "Unavailable": asNotice(errNoPasskeyStore.Error()),
 	}
 	if who.Name != "" {
 		data["Principal"] = who
 	}
 	s.render(w, r, "passkeys.html", data)
+}
+
+// asNotice is an error as a banner shows it: a capital first and a full stop
+// last. An error is written lower case and unpunctuated so that it reads
+// inside another sentence; a banner is a sentence of its own.
+func asNotice(msg string) string {
+	msg = sentenceCase(strings.TrimSpace(msg))
+	if msg != "" && !strings.HasSuffix(msg, ".") {
+		msg += "."
+	}
+	return msg
 }
 
 // errSignIn is the single answer to every sign-in failure. Which one it was is

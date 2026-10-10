@@ -21,7 +21,7 @@
 {{if .Map.Lines}}
 <figure class="wf-fig">
   <figcaption><h2>Who called what</h2></figcaption>
-  <div class="table-wrap">
+  <div class="table-wrap mapframe">
   <svg class="agmap fleetmap" viewBox="0 0 {{.Map.W}} {{.Map.H}}" role="img" aria-label="{{.Map.Says}}">
     {{range .Map.Heads}}<text class="head" x="{{.X}}" y="20">{{.Label}}</text>{{end}}
     {{range .Map.Lines}}<line class="edge" x1="{{.X1}}" y1="{{.Y1}}" x2="{{.X2}}" y2="{{.Y2}}" stroke-width="{{printf "%.1f" .Width}}"><title>{{.Title}}</title></line>{{end}}
@@ -29,7 +29,7 @@
     <text class="label" x="{{.TX}}" y="{{.TY}}">{{.Label}}</text>{{end}}
   </svg>
   </div>
-  <p class="hint">{{.Map.Says}} Drawn from the signed log and the model ledger; every connection is also in the tables below.</p>
+  <p class="hint mapsays">{{.Map.Says}} <span class="drawnnote">Drawn from the signed log and the model ledger.</span> Every connection is also in the tables below.</p>
 </figure>
 {{else}}
 <p>Nothing called anything in the last {{.Days}} days that the log recorded.</p>
@@ -38,19 +38,25 @@
 {{range .Groups}}
 <h2>{{.Title}}</h2>
 {{if .Nodes}}
+{{/* Only the columns that apply to this kind: an app or a model route has
+  no standing or autonomy, and only Quilzo's own agents have a spend. */}}
+{{$standing := or (eq .Kind "agent") (eq .Kind "external agent") (eq .Kind "tool server")}}
+{{$own := eq .Kind "agent"}}
 <div class="table-wrap">
 <table>
-  <thead><tr><th scope="col">Name</th><th scope="col">Answered for by</th><th scope="col">Standing</th>
-    <th scope="col">Autonomy</th><th scope="col">Spent today</th><th scope="col">Last seen</th></tr></thead>
+  <thead><tr><th scope="col">Name</th><th scope="col">Answered for by</th>
+    {{if $standing}}<th scope="col">Standing</th>{{end}}
+    {{if $own}}<th scope="col">Autonomy</th><th scope="col">Spent today</th>{{end}}
+    <th scope="col">Last seen</th></tr></thead>
   <tbody>
   {{range .Nodes}}
   <tr>
     <th scope="row">{{.Name}}{{with .Detail}}<div class="hint">{{.}}</div>{{end}}
       {{range .Flags}}<div class="hint warn">{{.}}</div>{{end}}</th>
     <td>{{or .Owner "nobody"}}</td>
-    <td>{{.Standing}}</td>
-    <td>{{.Autonomy}}</td>
-    <td>{{.Spent}}</td>
+    {{if $standing}}<td>{{or .Standing "—"}}</td>{{end}}
+    {{if $own}}<td>{{or .Autonomy "—"}}</td>
+    <td>{{if .Spent}}{{.Spent}}{{else}}<span class="hint">nothing</span>{{end}}</td>{{end}}
     <td>{{if .Last.IsZero}}<span class="hint">not in this window</span>{{else}}{{when .Last.Unix}}{{end}}</td>
   </tr>
   {{end}}

@@ -51,7 +51,7 @@
       <form method="post" action="/apps/act">
         <input type="hidden" name="action" value="disconnect">
         <input type="hidden" name="grant" value="{{.ID}}">
-        <button type="submit" class="btn-tonal">Disconnect</button>
+        <button type="submit" class="danger">Disconnect</button>
       </form>
     </td>
   </tr>
@@ -75,7 +75,7 @@
     <form method="post" action="/apps/act" class="inline">
       <input type="hidden" name="action" value="remove-host">
       <input type="hidden" name="host" value="{{.}}">
-      <button type="submit" class="btn-tonal">Remove</button>
+      <button type="submit" class="danger">Remove</button>
     </form></li>
   {{end}}
 </ul>
@@ -107,7 +107,7 @@
       <form method="post" action="/apps/act">
         <input type="hidden" name="action" value="unregister">
         <input type="hidden" name="client" value="{{.ID}}">
-        <button type="submit" class="btn-tonal">Remove</button>
+        <button type="submit" class="danger">Remove</button>
       </form>
     </td>
   </tr>
