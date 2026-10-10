@@ -145,30 +145,49 @@ func (p *Page) AXTree(ctx context.Context) ([]AXNode, error) {
 	return r.Nodes, nil
 }
 
-// center is the middle of an element on the screen, after scrolling it
-// into view.
-func (p *Page) center(ctx context.Context, backend int64) (float64, float64, error) {
+// Box is where an element is on the screen, after scrolling it into view:
+// its left, top, right and bottom edges.
+func (p *Page) Box(ctx context.Context, backend int64) (x0, y0, x1, y1 float64, err error) {
 	_ = p.call(ctx, "DOM.scrollIntoViewIfNeeded", map[string]any{"backendNodeId": backend}, nil)
 	var q struct {
 		Quads [][]float64 `json:"quads"`
 	}
 	if err := p.call(ctx, "DOM.getContentQuads", map[string]any{"backendNodeId": backend}, &q); err != nil {
-		return 0, 0, err
+		return 0, 0, 0, 0, err
 	}
 	if len(q.Quads) == 0 || len(q.Quads[0]) < 8 {
-		return 0, 0, errors.New("the element is not on the screen")
+		return 0, 0, 0, 0, errors.New("the element is not on the screen")
 	}
 	c := q.Quads[0]
-	return (c[0] + c[2] + c[4] + c[6]) / 4, (c[1] + c[3] + c[5] + c[7]) / 4, nil
+	x0, y0, x1, y1 = c[0], c[1], c[0], c[1]
+	for i := 0; i < 8; i += 2 {
+		x0, x1 = min(x0, c[i]), max(x1, c[i])
+		y0, y1 = min(y0, c[i+1]), max(y1, c[i+1])
+	}
+	return x0, y0, x1, y1, nil
 }
+
+// ErrCovered is a click whose element has something else on top of it.
+var ErrCovered = errors.New("something else on the page covers it, so a click would land on that instead")
 
 // Click presses and releases the left button on the middle of an element,
 // as a person's pointer would: the page sees an ordinary click, with the
 // events a click makes, rather than a script calling click().
+//
+// What is under the pointer is asked first. A page that lays something
+// see-through over a button, so the click meant for one thing lands on
+// another, is the oldest trick there is against a pointer; the click is
+// refused instead, with ErrCovered.
 func (p *Page) Click(ctx context.Context, backend int64) error {
-	x, y, err := p.center(ctx, backend)
+	x0, y0, x1, y1, err := p.Box(ctx, backend)
 	if err != nil {
 		return err
+	}
+	x, y := (x0+x1)/2, (y0+y1)/2
+	if ok, err := p.under(ctx, backend, x, y); err != nil {
+		return err
+	} else if !ok {
+		return ErrCovered
 	}
 	for _, kind := range []string{"mouseMoved", "mousePressed", "mouseReleased"} {
 		ev := map[string]any{"type": kind, "x": x, "y": y}
@@ -182,9 +201,122 @@ func (p *Page) Click(ctx context.Context, backend int64) error {
 	return nil
 }
 
-// Type puts text into an element, as typing would, after focusing it.
+// under reports whether the point is on the element or inside it.
+func (p *Page) under(ctx context.Context, backend int64, x, y float64) (bool, error) {
+	var hit struct {
+		Backend int64 `json:"backendNodeId"`
+	}
+	if err := p.call(ctx, "DOM.getNodeForLocation", map[string]any{"x": int(x), "y": int(y),
+		"includeUserAgentShadowDOM": false, "ignorePointerEventsNone": false}, &hit); err != nil {
+		return false, err
+	}
+	if hit.Backend == backend {
+		return true, nil
+	}
+	world, err := p.Isolated(ctx)
+	if err != nil {
+		return false, err
+	}
+	el, err := p.Resolve(ctx, backend, world)
+	if err != nil {
+		return false, err
+	}
+	at, err := p.Resolve(ctx, hit.Backend, world)
+	if err != nil {
+		return false, err
+	}
+	var r struct {
+		Result struct {
+			Value bool `json:"value"`
+		} `json:"result"`
+	}
+	// Up from what is under the pointer, through shadow roots, to the
+	// element or to the top.
+	err = p.call(ctx, "Runtime.callFunctionOn", map[string]any{"objectId": el,
+		"functionDeclaration": `function(h){for(let n=h;n;n=n.parentNode||n.host){if(n===this)return true}return false}`,
+		"arguments":           []map[string]any{{"objectId": at}}, "returnByValue": true}, &r)
+	return r.Result.Value, err
+}
+
+// Isolated is a world of this program's own in the page's main frame: the
+// page's DOM, and none of the page's script. A function run there sees the
+// browser's own prototypes, which the page cannot have replaced, so what
+// it reports about the page is not what the page says about itself.
+func (p *Page) Isolated(ctx context.Context) (int64, error) {
+	var w struct {
+		ID int64 `json:"executionContextId"`
+	}
+	err := p.call(ctx, "Page.createIsolatedWorld", map[string]any{"frameId": p.Target, "worldName": "quilzo"}, &w)
+	return w.ID, err
+}
+
+// Resolve is an element as an object in a world (Isolated).
+func (p *Page) Resolve(ctx context.Context, backend, world int64) (string, error) {
+	var r struct {
+		Object struct {
+			ID string `json:"objectId"`
+		} `json:"object"`
+	}
+	if err := p.call(ctx, "DOM.resolveNode", map[string]any{"backendNodeId": backend, "executionContextId": world}, &r); err != nil {
+		return "", err
+	}
+	return r.Object.ID, nil
+}
+
+// Node is one element's accessibility node as it is now.
+func (p *Page) Node(ctx context.Context, backend int64) (AXNode, error) {
+	var r struct {
+		Nodes []AXNode `json:"nodes"`
+	}
+	if err := p.call(ctx, "Accessibility.getPartialAXTree", map[string]any{"backendNodeId": backend, "fetchRelatives": false}, &r); err != nil {
+		return AXNode{}, err
+	}
+	for _, n := range r.Nodes {
+		if n.Backend == backend {
+			return n, nil
+		}
+	}
+	return AXNode{}, errors.New("the element is no longer on the page")
+}
+
+// Press presses and releases a key on the focused element: Enter, to send
+// the form it is in.
+func (p *Page) Press(ctx context.Context, key string) error {
+	codes := map[string]int{"Enter": 13, "Tab": 9, "Escape": 27}
+	code, ok := codes[key]
+	if !ok {
+		return fmt.Errorf("%q is not a key this presses", key)
+	}
+	down := map[string]any{"type": "keyDown", "key": key, "code": key, "windowsVirtualKeyCode": code, "nativeVirtualKeyCode": code}
+	if key == "Enter" {
+		down["text"] = "\r"
+	}
+	if err := p.call(ctx, "Input.dispatchKeyEvent", down, nil); err != nil {
+		return err
+	}
+	return p.call(ctx, "Input.dispatchKeyEvent", map[string]any{"type": "keyUp", "key": key, "code": key,
+		"windowsVirtualKeyCode": code, "nativeVirtualKeyCode": code}, nil)
+}
+
+// Type puts text into an element in place of what it held, as selecting
+// it all and typing would, after focusing it.
 func (p *Page) Type(ctx context.Context, backend int64, text string) error {
 	if err := p.call(ctx, "DOM.focus", map[string]any{"backendNodeId": backend}, nil); err != nil {
+		return err
+	}
+	world, err := p.Isolated(ctx)
+	if err != nil {
+		return err
+	}
+	obj, err := p.Resolve(ctx, backend, world)
+	if err != nil {
+		return err
+	}
+	// Selected from a world of this program's own, so what is replaced is
+	// what the field holds and not what the page's script says it does.
+	if err := p.call(ctx, "Runtime.callFunctionOn", map[string]any{"objectId": obj,
+		"functionDeclaration": `function(){if(typeof this.select==='function'){this.select();return}` +
+			`const r=document.createRange();r.selectNodeContents(this);const s=getSelection();s.removeAllRanges();s.addRange(r)}`}, nil); err != nil {
 		return err
 	}
 	return p.call(ctx, "Input.insertText", map[string]any{"text": text}, nil)
