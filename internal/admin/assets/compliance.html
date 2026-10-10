@@ -1,4 +1,5 @@
 {{template "head" .}}
+<p class="hint"><a href="/security">Security</a></p>
 <h1>Inventory</h1>
 
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{end}}
@@ -24,7 +25,7 @@
 {{end}}{{else}}<p class="hint">{{.SelfUnavailable}}</p>{{end}}
 
 <h2>Cryptography</h2>
-<p class="lead">{{.Posture}}</p>
+<p class="lead">Every algorithm this program uses, what for, and whether it would survive a quantum computer.</p>
 
 {{if .Concerns}}
 <div class="card warn">
@@ -45,9 +46,9 @@
   <tbody>
   {{range .Crypto}}
   <tr>
-    <th scope="row"><code>{{.Name}}</code>
+    <th scope="row"><code class="cmd">{{.Name}}</code>
       <div class="hint">{{.Package}}</div></th>
-    <td>{{.Purpose}}{{if .Note}}<div class="hint">{{.Note}}</div>{{end}}</td>
+    <td>{{.Purpose}}{{if .Note}}<details class="duty-more"><summary>Why<span class="chev">{{icon "expand_more"}}</span></summary><p class="hint">{{.Note}}</p></details>{{end}}</td>
     <td class="hint">{{.Where}}</td>
     <td>{{.Quantum}}</td>
   </tr>
@@ -55,6 +56,9 @@
   </tbody>
 </table>
 </div>
+<details class="duty-more"><summary>Where this program stands, and why it matters<span class="chev">{{icon "expand_more"}}</span></summary>
+  <p>{{.Posture}}</p>
+</details>
 
 <h2>Bill of materials</h2>
 {{if .SBOM}}
@@ -82,5 +86,4 @@
 {{else}}
 <p>The bill of materials is not available in this build.</p>
 {{end}}
-<p class="hint"><a href="/security">Back to the posture dashboard.</a></p>
 {{template "foot" .}}

@@ -4,11 +4,12 @@
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
 {{else if .Empty}}
-<p class="notice warn"><strong>Nothing has been loaded, which is not the same
-  as nothing being wrong.</strong>
-  {{if .NoInventory}}There is no inventory of what is installed. {{end}}{{if .NoAdvisories}}There is no list of advisories. {{end}}
-  A queue needs both.</p>
-<pre class="code"><code>quilzo vuln load --advisories advisories.jsonl --inventory inventory.jsonl</code></pre>
+<h2>Nothing to rank yet</h2>
+<p>Nothing has been loaded, so an empty queue here does not mean nothing is
+  wrong. {{if .NoInventory}}There is no inventory of what is installed. {{end}}{{if .NoAdvisories}}There is no list of advisories. {{end}}The
+  queue needs both.</p>
+<p>Load both on the machine:</p>
+<pre class="code whole"><code>quilzo vuln load --advisories advisories.jsonl --inventory inventory.jsonl</code></pre>
 <p class="hint">Each file is one JSON object per line and is checked line by
   line as it is loaded; loading replaces what was there.</p>
 {{else}}
