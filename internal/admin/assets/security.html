@@ -75,18 +75,35 @@
 {{if .Report.Findings}}
 <h2>Findings</h2>
 <p class="help">Most serious first.</p>
-{{range .Report.Findings}}
+{{range .Report.Findings}}{{if not (or (eq (print .Severity) "low") (eq (print .Severity) "info"))}}
 <article class="finding {{.Severity}}">
   <h3><span class="pill {{.Severity}}">{{sentence .Severity}}</span> {{.Title}}</h3>
   <p>{{.Detail}}</p>
-  {{if .Fix}}<p class="fix"><span class="label">Fix</span> <code>{{.Fix}}</code></p>{{end}}
+  <div class="finding-foot">
+  {{if .Fix}}{{with fixparts .Fix}}<p class="fix"><span class="label">Fix</span> {{if .Cmd}}<code>{{.Cmd}}</code>{{end}}{{if .Note}} <span class="fix-note">{{range .Note}}{{if .Code}}<code>{{.Text}}</code>{{else}}{{.Text}}{{end}}{{end}}</span>{{end}}</p>{{end}}{{end}}
   <p class="meta">
     <a href="/security/rule/{{.Rule}}">{{.Rule}}</a>
     {{if .Controls}}· NIST {{range .Controls}}{{.}} {{end}}{{end}}
     {{if .OWASP}}· {{.OWASP}}{{end}}
   </p>
+  </div>
 </article>
-{{end}}
+{{end}}{{end}}
+{{if .Low}}<details class="finding-low"><summary>{{plural .Low "low finding" "low findings"}}<span class="chev">{{icon "expand_more"}}</span></summary>
+{{range .Report.Findings}}{{if or (eq (print .Severity) "low") (eq (print .Severity) "info")}}
+<article class="finding {{.Severity}}">
+  <h3><span class="pill {{.Severity}}">{{sentence .Severity}}</span> {{.Title}}</h3>
+  <p>{{.Detail}}</p>
+  <div class="finding-foot">
+  {{if .Fix}}{{with fixparts .Fix}}<p class="fix"><span class="label">Fix</span> {{if .Cmd}}<code>{{.Cmd}}</code>{{end}}{{if .Note}} <span class="fix-note">{{range .Note}}{{if .Code}}<code>{{.Text}}</code>{{else}}{{.Text}}{{end}}{{end}}</span>{{end}}</p>{{end}}{{end}}
+  <p class="meta">
+    <a href="/security/rule/{{.Rule}}">{{.Rule}}</a>
+    {{if .Controls}}· NIST {{range .Controls}}{{.}} {{end}}{{end}}
+    {{if .OWASP}}· {{.OWASP}}{{end}}
+  </p>
+  </div>
+</article>
+{{end}}{{end}}</details>{{end}}
 {{else}}
 <p class="notice ok">Nothing found at any severity. That is a statement about the {{.Report.Checked}} rules listed under <a href="/security/rules">what is checked</a>, and about nothing else.</p>
 {{end}}
