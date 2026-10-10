@@ -97,6 +97,9 @@ func (s *Session) Inherit(parent *Session) {
 // holds private material and has read somebody else's words, and why.
 func (s *Session) Breaks(a Action) (string, bool) {
 	if strings.TrimSpace(a.Tool) == "" {
+		if to, sends := browserSends(a); sends {
+			return s.breaksTo(to, "")
+		}
 		return "", false
 	}
 	return s.breaksTo(s.HostFor(a.Tool), a.Tool)

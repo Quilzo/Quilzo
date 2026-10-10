@@ -305,6 +305,10 @@ type Manifest struct {
 	// Program is the agent's own program, when it decides for itself. See
 	// program.go.
 	Program *Program `json:"program,omitempty"`
+
+	// Browser is what its browser may reach, when it holds the browser's
+	// capabilities. See browser.go.
+	Browser *Browser `json:"browser,omitempty"`
 }
 
 // writeOps are capabilities that change stored content.
@@ -461,6 +465,9 @@ func (m *Manifest) Validate(known map[string]bool) error {
 	if err := m.Program.validate(m.Name); err != nil {
 		return err
 	}
+	if err := m.validateBrowser(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -545,6 +552,10 @@ func (m Manifest) Narrow(by Manifest) Manifest {
 		}
 	}
 	out.Tools = tools
+
+	// The browser: the hosts both may reach, and sent to only where both
+	// may send.
+	out.Browser = narrowBrowser(m.Browser, by.Browser)
 
 	// Approval is sticky: a parent that needs one cannot delegate its way out.
 	if m.HumanApproval {

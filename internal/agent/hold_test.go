@@ -109,3 +109,32 @@ func TestAHeldApprovalStillGoesThroughTheGate(t *testing.T) {
 		t.Errorf("a withdrawn capability was performed after approval: %v", d.did)
 	}
 }
+
+// An action the performer says commits to something waits for a person,
+// even though the declaration does not ask about it.
+func TestAnActionThatCommitsWaitsForAPerson(t *testing.T) {
+	p := &scripted{plan: []Action{{Op: "read_page"}, {Op: "read_page", Input: map[string]any{"page": "pay"}}}}
+	d := &doer{}
+	var asked []Pending
+	r := Runner{Decide: p.decide, Perform: d.perform,
+		Weighs: func(a Action) string {
+			if a.Input["page"] == "pay" {
+				return `it is called "Pay now"`
+			}
+			return ""
+		},
+		Hold: func(_ context.Context, w Pending, _ func()) (Verdict, error) {
+			asked = append(asked, w)
+			return Verdict{N: w.N, Approve: false, By: "dana"}, nil
+		}}
+	tr, err := r.Run(context.Background(), NewSession(drafter(), nil), "pay the invoice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) != 1 || asked[0].N != 2 || !strings.Contains(asked[0].Why, "Pay now") {
+		t.Fatalf("asked %+v", asked)
+	}
+	if len(d.did) != 1 || !strings.Contains(tr.Steps[1].Why, "dana declined this") {
+		t.Errorf("did %v, steps %+v", d.did, tr.Steps)
+	}
+}

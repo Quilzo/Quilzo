@@ -218,6 +218,12 @@ type Runner struct {
 	// was cancelled) refuses the action, with the reason. Nil refuses
 	// straight away, because there is nobody to ask.
 	Hold func(ctx context.Context, w Pending, beat func()) (Verdict, error)
+	// Weighs says why an action commits to something a person should see
+	// first, beyond what the declaration asks about: a browser click that
+	// submits a form, or one on a button called Pay. Empty is an ordinary
+	// action. Such an action waits for a person in this process (Hold), or
+	// is refused when the run has nobody to ask.
+	Weighs func(Action) string
 }
 
 // holdFor asks a person about an action while the run waits in this
@@ -349,6 +355,27 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 				t.Stopped = fmt.Sprintf("waiting for a person to decide on %s",
 					from(action))
 				break
+			}
+		}
+
+		// What the action itself commits to, which only the performer can
+		// tell: a click that submits a form. Waits for a person in this
+		// process, since the page it would act on lives here.
+		if !approved && r.Weighs != nil && s.wouldAllow(action) {
+			if why := r.Weighs(action); why != "" {
+				// One question, with every reason: approving it settles the
+				// breaker as well, so the person sees that too.
+				if b, breaks := s.Breaks(action); breaks {
+					why += "; and " + b
+				}
+				w := Pending{N: turn, Action: action, Since: step.At, Why: why}
+				if approved, step.Why = r.holdFor(ctx, &t, s, w); !approved {
+					t.Steps = append(t.Steps, step)
+					seen = append(seen, Observation{From: "quilzo",
+						Body: "refused: " + step.Why, Trusted: true})
+					r.checkpoint(t, s)
+					continue
+				}
 			}
 		}
 
