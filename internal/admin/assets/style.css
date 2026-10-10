@@ -3280,8 +3280,12 @@ td.ev-value { min-width: 12rem; white-space: nowrap; }
 .param-id { font-size: .75rem; color: var(--on-surface-variant); }
 .ssp-form select { width: auto; min-width: 14rem; max-width: 100%; }
 .ssp-form + .hint { margin-top: 4px; }
-.jump-list { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin: 1rem 0; }
-.jump-list a { font: var(--label-lg); }
+.jump-list { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 1rem 0; }
+.jump-list .hint { margin-right: 8px; }
+/* Each a target a finger can find: the codes are two or three letters. */
+.jump-list a { font: var(--label-lg); display: inline-flex; align-items: center; justify-content: center;
+  min-width: 2.5rem; min-height: 2.5rem; padding: 0 .5rem; border-radius: var(--shape-full); text-decoration: none; }
+.jump-list a:hover { background: var(--surface-container-high); }
 .wf-fig .wfbars { max-width: 36rem; }
 .wf-tasks > span { display: inline-block; margin: 0 .75rem .25rem 0; white-space: nowrap; }
 .wf-machines td:nth-child(2), .wf-machines td:nth-child(6) { white-space: nowrap; }
