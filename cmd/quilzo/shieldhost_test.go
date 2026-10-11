@@ -126,7 +126,7 @@ func TestAPausedAgentIsRefusedAndStillEvaluated(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
 	admin := asAdmin("dana")
-	if err := declareAgent(root, writer("styler"), true, admin); err != nil {
+	if err := declareAgent(root, writer("styler"), true, true, admin); err != nil {
 		t.Fatal(err)
 	}
 	p := shield.Protection{Kind: shield.Agent, Target: "styler", Reason: "followed a planted instruction",

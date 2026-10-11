@@ -38,7 +38,7 @@ func TestAnAgentDeclaredFromAScreenIsValidatedStoredAndOnRecord(t *testing.T) {
 	root := demoStore(t)
 	dana := human("dana")
 
-	if err := declareAgent(root, reader("answers"), true, dana); err != nil {
+	if err := declareAgent(root, reader("answers"), true, true, dana); err != nil {
 		t.Fatal(err)
 	}
 	set, err := loadAgents(root)
@@ -49,27 +49,27 @@ func TestAnAgentDeclaredFromAScreenIsValidatedStoredAndOnRecord(t *testing.T) {
 	// A capability the machine interface does not offer is a typo or a wish.
 	bad := reader("other")
 	bad.Capabilities = append(bad.Capabilities, "shell_exec")
-	if err := declareAgent(root, bad, true, dana); err == nil {
+	if err := declareAgent(root, bad, true, true, dana); err == nil {
 		t.Error("a capability nothing offers was declared")
 	}
 	// Propose-only and holding a write reads as safe and is not.
 	bad = reader("other")
 	bad.Capabilities = append(bad.Capabilities, "write_page")
-	if err := declareAgent(root, bad, true, dana); err == nil {
+	if err := declareAgent(root, bad, true, true, dana); err == nil {
 		t.Error("a propose-only agent holding a write was declared")
 	}
 	// Declaring twice is not a way to replace one, and changing one that is
 	// not there is not a way to declare it.
-	if err := declareAgent(root, reader("answers"), true, dana); err == nil {
+	if err := declareAgent(root, reader("answers"), true, true, dana); err == nil {
 		t.Error("a second declaration of the same name was accepted")
 	}
-	if err := declareAgent(root, reader("ghost"), false, dana); err == nil {
+	if err := declareAgent(root, reader("ghost"), false, true, dana); err == nil {
 		t.Error("changing an undeclared agent declared it")
 	}
 	// A supervisor that hands work to nobody declared.
 	sup := reader("lead")
 	sup.Kind, sup.Delegates = agent.KindSupervisor, []string{"nobody"}
-	if err := declareAgent(root, sup, true, dana); err == nil {
+	if err := declareAgent(root, sup, true, true, dana); err == nil {
 		t.Error("an agent delegating to an undeclared one was declared")
 	}
 	// A model does not write its own permissions.
@@ -78,7 +78,7 @@ func TestAnAgentDeclaredFromAScreenIsValidatedStoredAndOnRecord(t *testing.T) {
 	wide := reader("answers")
 	wide.Autonomy = agent.AutonomyPublish
 	wide.Capabilities = append(wide.Capabilities, "publish")
-	if err := declareAgent(root, wide, false, ai); err == nil {
+	if err := declareAgent(root, wide, false, true, ai); err == nil {
 		t.Error("a model widened an agent's declaration")
 	}
 	if err := withdrawAgent(root, "answers", ai); err == nil {
@@ -91,7 +91,7 @@ func TestAnAgentDeclaredFromAScreenIsValidatedStoredAndOnRecord(t *testing.T) {
 
 	changed := reader("answers")
 	changed.Budget.Steps = 9
-	if err := declareAgent(root, changed, false, dana); err != nil {
+	if err := declareAgent(root, changed, false, true, dana); err != nil {
 		t.Fatal(err)
 	}
 	events, _ := audit.Read(auditPath(root))
@@ -110,13 +110,13 @@ func TestAnAgentOthersHandWorkToIsNotWithdrawnFromUnderThem(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
 	dana := human("dana")
-	if err := declareAgent(root, reader("answers"), true, dana); err != nil {
+	if err := declareAgent(root, reader("answers"), true, true, dana); err != nil {
 		t.Fatal(err)
 	}
 	sup, _ := agent.For(agent.KindSupervisor)
 	lead := sup.Manifest
 	lead.Name, lead.Delegates = "lead", []string{"answers"}
-	if err := declareAgent(root, lead, true, dana); err != nil {
+	if err := declareAgent(root, lead, true, true, dana); err != nil {
 		t.Fatal(err)
 	}
 	if err := withdrawAgent(root, "answers", dana); err == nil {
@@ -141,7 +141,7 @@ func TestARunIsKeptAndCanBeReadBack(t *testing.T) {
 	root := demoStore(t)
 	dana := human("dana")
 	dana.Role = "admin"
-	if err := declareAgent(root, reader("answers"), true, dana); err != nil {
+	if err := declareAgent(root, reader("answers"), true, true, dana); err != nil {
 		t.Fatal(err)
 	}
 	id, err := runAgentOnce(root, "answers", "", false, dana)
@@ -271,7 +271,7 @@ func waitingRun(t *testing.T) (root, id string) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	root = demoStore(t)
-	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, asker("tidy"), true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	id, err := runAgentOnce(root, "tidy", "", false, asAdmin("dana"))
@@ -391,7 +391,7 @@ func TestAnApprovalDoesNotOutliveTheCapability(t *testing.T) {
 	narrowed := asker("tidy")
 	narrowed.Capabilities, narrowed.AskFirst = []string{"list_pages"}, nil
 	narrowed.Autonomy = agent.AutonomyPropose
-	if err := declareAgent(root, narrowed, false, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, narrowed, false, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	rec, err := continueAgentRun(context.Background(), root, id,
@@ -438,7 +438,7 @@ func TestOnlyOneProcessContinuesARunAtATime(t *testing.T) {
 func TestAnInterruptedRunIsContinuedAndOthersAreNot(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
-	if err := declareAgent(root, reader("answers"), true, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, reader("answers"), true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	id, err := runAgentOnce(root, "answers", "", false, asAdmin("dana"))
@@ -482,7 +482,7 @@ func TestAnInterruptedRunIsContinuedAndOthersAreNot(t *testing.T) {
 func TestRunningAgainFromAStepIsANewRunThatSaysWhereItCameFrom(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
-	if err := declareAgent(root, reader("answers"), true, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, reader("answers"), true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	id, _ := runAgentOnce(root, "answers", "", false, asAdmin("dana"))
@@ -607,7 +607,7 @@ func TestAModelsWriteWaitsForAPersonAndThenIsExactlyWhatWasShown(t *testing.T) {
 	root := demoStore(t)
 	asked := standInModel(t)
 	declaredAutonomy(t, root)
-	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, asker("tidy"), true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	id, err := runAgentOnce(root, "tidy", "write a welcome page", true, asAdmin("dana"))
@@ -657,7 +657,7 @@ func TestADeclinedWriteLeavesTheDraftAlone(t *testing.T) {
 	root := demoStore(t)
 	standInModel(t)
 	declaredAutonomy(t, root)
-	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, asker("tidy"), true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	id, _ := runAgentOnce(root, "tidy", "write a welcome page", true, asAdmin("dana"))
@@ -685,7 +685,7 @@ func TestTheModelFlagWorksAfterTheAgentsName(t *testing.T) {
 	root := demoStore(t)
 	asked := standInModel(t)
 	declaredAutonomy(t, root)
-	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, asker("tidy"), true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("QUILZO_TOKEN", "")
@@ -726,7 +726,7 @@ func TestAnAgentsWriteIsMarkedAsModelWritten(t *testing.T) {
 	root := demoStore(t)
 	standInModel(t)
 	declaredAutonomy(t, root)
-	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, asker("tidy"), true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	id, err := runAgentOnce(root, "tidy", "write a welcome page", true, asAdmin("dana"))
@@ -766,7 +766,7 @@ func TestAModelDrivesOnlyAsFarAsEvaluationsEarned(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
 	standInModel(t)
-	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, asker("tidy"), true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	out, _ := executeAgentFrom(context.Background(), root, "tidy", "write a welcome page", true, asAdmin("dana"), nil)
@@ -808,7 +808,7 @@ func TestAutonomyEarnedInEvaluationsIsLostInBehaviour(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
 	standInModel(t)
-	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, asker("tidy"), true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	evaluated := func(at time.Time) {

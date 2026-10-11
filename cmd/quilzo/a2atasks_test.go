@@ -135,7 +135,7 @@ func TestAWaitingTaskIsCanceledAndAFinishedOneIsNot(t *testing.T) {
 func TestAStoreWithNoAccessPolicyTakesNoTasks(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
-	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, asker("tidy"), true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	var e *a2a.Error

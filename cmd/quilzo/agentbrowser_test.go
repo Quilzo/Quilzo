@@ -114,7 +114,7 @@ func shopRunWith(t *testing.T, follow bool) (root string, paid func() int) {
 		Capabilities: []string{"browser_open", "browser_read", "browser_click"}, Autonomy: agent.AutonomyDraft,
 		Browser: &agent.Browser{Write: []string{"shop.example.com"}},
 		Budget:  agent.Budget{Steps: 8, Tools: 1, Duration: agent.Duration(2 * time.Minute)}}
-	if err := declareAgent(root, m, true, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, m, true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	return root, func() int { mu.Lock(); defer mu.Unlock(); return n }

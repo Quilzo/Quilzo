@@ -23,7 +23,7 @@ func keptRunOf(t *testing.T) (root, id string) {
 	// several steps.
 	m := asker("tidy")
 	m.AskFirst = nil
-	if err := declareAgent(root, m, false, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	id, _, err := runAgentKept(context.Background(), root, "tidy", "tidy the about page", false, asAdmin("dana"))

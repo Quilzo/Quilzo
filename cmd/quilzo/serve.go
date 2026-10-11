@@ -254,7 +254,9 @@ func cmdServe(root string, args []string) error {
 			return out
 		},
 		Save: func(m agent.Manifest, isNew bool, by string) error {
-			return declareAgent(root, m, isNew, signedIn(by))
+			// An amendment through the screen is the person's own hands:
+			// the widening is gated at the CLI and recorded here.
+			return declareAgent(root, m, isNew, true, signedIn(by))
 		},
 		Remove: func(name, by string) error {
 			return withdrawAgent(root, name, signedIn(by))
