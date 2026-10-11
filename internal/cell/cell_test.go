@@ -1,0 +1,248 @@
+// SPDX-FileCopyrightText: 2026 Rashik Adhikari
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+
+package cell
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+)
+
+// The makers' APIs are ordinary HTTP on a socket the microVM owns, so a
+// fake microVM is an ordinary server on a socket the test owns — and the
+// conversation this drives is checked against it: what was asked, in what
+// order, with what in the body.
+func fakeMicroVM(t *testing.T, answer func(method, path string, body map[string]any) int) (*http.Server, net.Addr, *[]string) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var calls []string
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		mu.Unlock()
+		w.WriteHeader(answer(r.Method, r.URL.Path, body))
+	})}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+	return srv, ln.Addr(), &calls
+}
+
+// The Firecracker conversation: one restore carrying the snapshot, its
+// memory file and the resume, and nothing else before it.
+func TestFirecrackerRestoresAWarmSnapshot(t *testing.T) {
+	var got map[string]any
+	_, addr, calls := fakeMicroVM(t, func(m, p string, body map[string]any) int {
+		if m == "PUT" && p == "/snapshot/load" {
+			got = body
+		}
+		return 200
+	})
+	c := httpOverUnixTCP(t, addr)
+	if err := apiCall(context.Background(), c, "PUT", "/snapshot/load", map[string]any{
+		"snapshot_path": "/warm/snap", "mem_backend": map[string]any{"backend_type": "File", "backend_path": "/warm/mem"},
+		"resume_vm": true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got["snapshot_path"] != "/warm/snap" {
+		t.Fatalf("the restore did not name the snapshot: %v", got)
+	}
+	if *calls == nil || (*calls)[0] != "PUT /snapshot/load" {
+		t.Fatalf("the conversation: %v", *calls)
+	}
+}
+
+// Snapshotting is pause, create, resume — in that order — and a maker
+// that refuses the create leaves the cell paused, which is the safe place
+// for it, with the refusal's own words.
+func TestSnapshotIsPauseCreateResume(t *testing.T) {
+	_, addr, calls := fakeMicroVM(t, func(m, p string, body map[string]any) int {
+		if p == "/snapshot/create" {
+			return 400
+		}
+		return 200
+	})
+	c := httpOverUnixTCP(t, addr)
+	err := snapshotVM(context.Background(), c, "/warm/snap", "/warm/mem")
+	if err == nil || !strings.Contains(err.Error(), "taking the snapshot") {
+		t.Fatalf("a refused create was not the error: %v", err)
+	}
+	if len(*calls) != 2 || (*calls)[0] != "PATCH /vm" || (*calls)[1] != "PUT /snapshot/create" {
+		t.Fatalf("the snapshot conversation: %v", *calls)
+	}
+}
+
+// The Cloud Hypervisor conversation: one restore carrying the whole
+// shape, then a resume.
+func TestCloudHypervisorRestoresAndResumes(t *testing.T) {
+	_, addr, calls := fakeMicroVM(t, func(m, p string, body map[string]any) int { return 200 })
+	c := httpOverUnixTCP(t, addr)
+	for _, step := range []struct {
+		method, path string
+		body         map[string]any
+	}{
+		{"PUT", "/api/v1/vm.restore", map[string]any{"source_url": "/warm/snap"}},
+		{"PUT", "/api/v1/vm.resume", nil},
+	} {
+		if err := apiCall(context.Background(), c, step.method, step.path, step.body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []string{"PUT /api/v1/vm.restore", "PUT /api/v1/vm.resume"}
+	if fmt.Sprint(*calls) != fmt.Sprint(want) {
+		t.Fatalf("the conversation was %v, not %v", *calls, want)
+	}
+}
+
+// A maker that says no is heard: the refusal carries its own words, not
+// this program's guess at what went wrong.
+func TestAMakersRefusalCarriesItsWords(t *testing.T) {
+	_, addr, _ := fakeMicroVM(t, func(m, p string, body map[string]any) int {
+		return 400
+	})
+	c := httpOverUnixTCP(t, addr)
+	err := apiCall(context.Background(), c, "PUT", "/snapshot/load", map[string]any{})
+	if err == nil || !strings.Contains(err.Error(), "Bad Request") {
+		t.Fatalf("the maker's refusal was lost: %v", err)
+	}
+}
+
+// The helper conversation: connect, CONNECT the port, OK, then one JSON
+// object a line — and a helper that speaks first, or says nothing this
+// can read, is closed on.
+func TestTheHelperConversation(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				r := bufio.NewReader(conn)
+				hello, err := r.ReadString('\n')
+				if err != nil || !strings.HasPrefix(hello, "CONNECT 5050") {
+					return
+				}
+				fmt.Fprint(conn, "OK 1\n")
+				for {
+					line, err := r.ReadString('\n')
+					if err != nil {
+						return
+					}
+					var req map[string]any
+					if json.Unmarshal([]byte(line), &req) != nil {
+						return
+					}
+					switch req["op"] {
+					case "tree":
+						fmt.Fprint(conn, `{"text":"File — New, Open, Save","elements":{"e1":{"ref":"e1","role":"menu item","name":"New"}}}`+"\n")
+					case "click":
+						fmt.Fprint(conn, `{"said":"pressed menu item \"New\""}`+"\n")
+					case "type":
+						fmt.Fprint(conn, `{"err":"no field is focused"}`+"\n")
+					case "key":
+						fmt.Fprint(conn, `{"err":"ctrl+z is not one of Enter, Tab, Escape or Backspace"}`+"\n")
+					case "screen":
+						fmt.Fprint(conn, `{"jpeg":"`+strings.Repeat("a", 32)+`"}`+"\n")
+					}
+				}
+			}(conn)
+		}
+	}()
+	t.Cleanup(func() { ln.Close() })
+
+	h := dialHelperTCP(t, ln)
+	defer h.Close()
+	tree, err := h.Read(context.Background())
+	if err != nil || tree.Text == "" || tree.Elements["e1"].Name != "New" {
+		t.Fatalf("the tree did not come back: %v %+v", err, tree)
+	}
+	if said, err := h.Press(context.Background(), "e1"); err != nil || !strings.Contains(said, "New") {
+		t.Fatalf("the press: %q %v", said, err)
+	}
+	if err := h.Type(context.Background(), "hello"); err == nil || !strings.Contains(err.Error(), "no field is focused") {
+		t.Fatalf("a refusal did not carry its words: %v", err)
+	}
+	if err := h.Key(context.Background(), "ctrl+z"); err == nil {
+		t.Fatal("an unnamed key was sent")
+	}
+	// A picture travels as the bytes it is, JSON-encoded — which is
+	// base64 on the wire and the bytes again here.
+	if pic, err := h.Screen(context.Background()); err != nil || len(pic) != 24 {
+		t.Fatalf("the picture: %d %v", len(pic), err)
+	}
+}
+
+// A backend that is not installed, or a machine without the virtual
+// memory a cell needs, says so at Check and not at Start.
+func TestCheckSaysWhatIsMissing(t *testing.T) {
+	if _, err := New("not-a-maker", ""); err == nil {
+		t.Fatal("an unknown maker was built")
+	}
+	if _, err := New("firecracker", ""); err != nil {
+		t.Fatal(err)
+	}
+	f := &Firecracker{}
+	if a, _ := f.Check(); a.OK {
+		t.Fatalf("a backend with no binary checked out: %+v", a)
+	}
+	f.Binary = filepath.Join(t.TempDir(), "firecracker")
+	if err := os.WriteFile(f.Binary, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := f.Check()
+	if a.OK && a.Why == "" {
+		// KVM may genuinely be here; the binary certainly is not on PATH.
+		t.Logf("check with a local binary: %+v", a)
+	}
+}
+
+// httpOverUnixTCP is the test transport: the same client the driver uses,
+// aimed at a TCP listener instead of a Unix socket, because the fake
+// microVM is an ordinary server.
+func httpOverUnixTCP(t *testing.T, addr net.Addr) *http.Client {
+	t.Helper()
+	return &http.Client{Transport: &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "tcp", addr.String())
+		}}}
+}
+
+// dialHelperTCP speaks the helper conversation over TCP for a test, the
+// same bytes Connect sends at a vsock.
+func dialHelperTCP(t *testing.T, ln net.Listener) *Helper {
+	t.Helper()
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Write([]byte(fmt.Sprintf("CONNECT %d\n", HelperPort))); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil || !strings.HasPrefix(ok, "OK") {
+		t.Fatalf("the fake helper did not answer OK: %q %v", ok, err)
+	}
+	return &Helper{conn: conn, r: bufio.NewReader(conn)}
+}

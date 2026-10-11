@@ -676,6 +676,7 @@ var commandNeeds = map[string]need{
 	// Declaring what an outside client's browser may do is a grant: it
 	// widens what this install offers to a token's bearer.
 	"browser grant":  {action: auth.ActGrant},
+	"cell":           {action: auth.ActView},
 	"browser status": {action: auth.ActView},
 
 	// Suppressing a posture rule is accepting a risk on the organisation's
