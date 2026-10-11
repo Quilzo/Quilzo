@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
@@ -137,6 +138,9 @@ func (k *keptRun) finish(out agentOutcome) error {
 	if rec.Goal == "" {
 		rec.Goal = k.rec.Goal
 	}
+	if rec.Agent == "" {
+		rec.Agent = k.rec.Agent
+	}
 	rec.From, rec.Answers = k.rec.From, k.rec.Answers
 	rec.Eval, rec.Plant = k.rec.Eval, k.rec.Plant
 	k.rec = rec
@@ -192,52 +196,92 @@ func runAgentKeptBy(ctx context.Context, root, name, goal string, withModel, pro
 func continueAgentRun(ctx context.Context, root, id string, v *agent.Verdict,
 	caller *Caller) (agent.Record, error) {
 
-	var none agent.Record
-	if caller.Kind == audit.KindAI {
-		return none, fmt.Errorf("a person answers what an agent asks. A " +
-			"model that could would be approving itself")
-	}
-	release, err := holdAgentRun(root, id)
-	if err != nil {
-		return none, err
+	prior, release, err := prepareContinue(root, id, v, caller)
+	if err != nil || release == nil {
+		return prior, err
 	}
 	defer release()
+	return continueHeld(ctx, root, prior, v, caller)
+}
+
+// prepareContinue checks that a run may be taken on and claims it. A
+// question the run is waiting on in its own process is answered here, with
+// no claim, since that process holds the run: release is then nil.
+func prepareContinue(root, id string, v *agent.Verdict, caller *Caller) (agent.Record, func(), error) {
+	var none agent.Record
+	if caller.Kind == audit.KindAI {
+		return none, nil, fmt.Errorf("a person answers what an agent asks. A " +
+			"model that could would be approving itself")
+	}
 	prior, err := loadAgentRun(root, id)
 	if err != nil {
-		return none, err
+		return none, nil, err
+	}
+	// An evaluation's run read planted instructions and did nothing real;
+	// taken on, it would do for real what they asked.
+	if prior.Eval != "" {
+		return none, nil, fmt.Errorf("%s was made by an evaluation and is not continued, answered "+
+			"or run again; run the agent itself", id)
 	}
 	now := time.Now().UTC()
-	switch {
-	case v == nil && prior.OutcomeAt(now) != "interrupted":
-		return none, fmt.Errorf("%s was not interrupted; it is %s", id,
-			prior.OutcomeAt(now))
-	case v != nil && prior.Trace.Waiting == nil:
-		return none, agent.ErrNotWaiting
-	case prior.Trace.Waiting != nil && prior.Trace.Waiting.Live:
-		// A program's run, waiting in its own process: the answer is left
+	if w := prior.Trace.Waiting; w != nil && w.Live {
+		// Waiting in its own process, which holds it: the answer is left
 		// for that process, which goes on from there. See agenthold.go.
 		if v == nil {
-			return none, fmt.Errorf("%s is waiting for a person to decide; continuing it "+
+			return none, nil, fmt.Errorf("%s is waiting for a person to decide; continuing it "+
 				"without an answer would be one", id)
 		}
 		if err := answerLive(root, prior, *v, caller.Name, now); err != nil {
-			return none, err
+			return none, nil, err
 		}
-		did, w := "agent.approve", prior.Trace.Waiting
-		if !v.Approve {
-			did = "agent.decline"
+		if err := recordAnswer(root, caller, prior, *v); err != nil {
+			return none, nil, err
 		}
-		what := w.Action.Op
-		if what == "" {
-			what = w.Action.Tool
-		}
-		if err := recordE(root, caller.auditRecord(did, "/", audit.Success,
-			map[string]string{"agent": prior.Agent, "run": id,
-				"step": fmt.Sprint(w.N), "what": what})); err != nil {
-			return none, err
-		}
-		return prior, nil
+		return prior, nil, nil
 	}
+	release, err := holdAgentRun(root, id)
+	if err != nil {
+		return none, nil, err
+	}
+	if prior, err = loadAgentRun(root, id); err != nil {
+		release()
+		return none, nil, err
+	}
+	switch {
+	case v == nil && prior.OutcomeAt(now) != "interrupted":
+		release()
+		return none, nil, fmt.Errorf("%s was not interrupted; it is %s", id, prior.OutcomeAt(now))
+	case v != nil && prior.Trace.Waiting == nil:
+		release()
+		return none, nil, agent.ErrNotWaiting
+	case prior.Trace.Waiting != nil && prior.Trace.Waiting.Live:
+		release()
+		return none, nil, fmt.Errorf("%s began waiting in its own process just now; answer it again", id)
+	}
+	return prior, release, nil
+}
+
+// recordAnswer is the log's record of a person's answer to a run.
+func recordAnswer(root string, caller *Caller, prior agent.Record, v agent.Verdict) error {
+	did, w := "agent.approve", prior.Trace.Waiting
+	if !v.Approve {
+		did = "agent.decline"
+	}
+	what := w.Action.Op
+	if what == "" {
+		what = w.Action.Tool
+	}
+	return recordE(root, caller.auditRecord(did, "/", audit.Success,
+		map[string]string{"agent": prior.Agent, "run": prior.ID,
+			"step": fmt.Sprint(w.N), "what": what}))
+}
+
+// continueHeld runs a claimed run on from where it is.
+func continueHeld(ctx context.Context, root string, prior agent.Record, v *agent.Verdict,
+	caller *Caller) (agent.Record, error) {
+
+	var none agent.Record
+	now := time.Now().UTC()
 	k := &keptRun{root: root, rec: prior}
 	if v != nil {
 		v.By = caller.Name
@@ -246,22 +290,13 @@ func continueAgentRun(ctx context.Context, root, id string, v *agent.Verdict,
 	}
 	out, runErr := executeAgentFrom(ctx, root, prior.Agent, prior.Goal,
 		prior.Model != "", caller,
-		&agentResume{Prior: &prior, Verdict: v, Checkpoint: k.checkpoint, RunID: k.rec.ID})
+		&agentResume{Prior: &prior, Verdict: v, Checkpoint: k.checkpoint, RunID: k.rec.ID, Since: now,
+			Answered: func(a agent.Answer) { k.rec.Answers = append(k.rec.Answers, a) }})
 	if out.Manifest.Name == "" {
 		return none, runErr
 	}
 	if v != nil {
-		did, w := "agent.approve", prior.Trace.Waiting
-		if !v.Approve {
-			did = "agent.decline"
-		}
-		what := w.Action.Op
-		if what == "" {
-			what = w.Action.Tool
-		}
-		if err := recordE(root, caller.auditRecord(did, "/", audit.Success,
-			map[string]string{"agent": prior.Agent, "run": id,
-				"step": fmt.Sprint(w.N), "what": what})); err != nil {
+		if err := recordAnswer(root, caller, prior, *v); err != nil {
 			return none, err
 		}
 	}
@@ -274,6 +309,54 @@ func continueAgentRun(ctx context.Context, root, id string, v *agent.Verdict,
 	return k.rec, runErr
 }
 
+// continueAgentRunLive is continueAgentRun from the screen. A run of an
+// agent with a browser goes on in the background, so the person is on its
+// page when it asks them, as when it started (startAgentRunLive).
+func continueAgentRunLive(root, id string, caller *Caller) error {
+	prior, release, err := prepareContinue(root, id, nil, caller)
+	if err != nil || release == nil {
+		return err
+	}
+	set, _ := loadAgents(root)
+	m, ok := agent.Manifest{}, false
+	if set != nil {
+		m, ok = set.Agents[prior.Agent]
+	}
+	if !ok || !holdsBrowser(m) {
+		defer release()
+		ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
+		defer cancel()
+		_, err := continueHeld(ctx, root, prior, nil, caller)
+		return err
+	}
+	return goLive(time.Duration(m.Budget.Duration), func(ctx context.Context) {
+		defer release()
+		stop := keepClaimed(root, id)
+		defer stop()
+		_, _ = continueHeld(ctx, root, prior, nil, caller)
+	})
+}
+
+// keepClaimed keeps a claim on a run fresh while a stretch of it longer
+// than the claim's age goes on, and returns what stops doing so.
+func keepClaimed(root, id string) func() {
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				now := time.Now()
+				_ = os.Chtimes(filepath.Join(agentRunsDir(root), id+".lock"), now, now)
+			}
+		}
+	}()
+	return func() { close(done) }
+}
+
 // replayAgentRun runs a kept run again from after its first n steps, as a
 // new run. What those steps did stays done; what they returned is what the
 // model is shown.
@@ -283,34 +366,82 @@ func replayAgentRun(ctx context.Context, root, id string, n int,
 	if caller.Kind == audit.KindAI {
 		return "", fmt.Errorf("a person runs an agent again")
 	}
-	prior, err := loadAgentRun(root, id)
+	k, from, err := prepareReplay(root, id, n, caller)
 	if err != nil {
 		return "", err
 	}
-	cut, err := prior.Trace.Upto(n)
-	if err != nil {
-		return "", err
-	}
-	started := time.Now().UTC()
-	newID, err := newAgentRunID(started)
-	if err != nil {
-		return "", err
-	}
-	from := prior
-	from.Trace = cut
-	k := &keptRun{root: root, rec: agent.Record{ID: newID, Agent: prior.Agent,
-		Goal: prior.Goal, By: caller.Name, Model: prior.Model, Started: started,
-		From: fmt.Sprintf("%s@%d", id, n)}}
-	out, runErr := executeAgentFrom(ctx, root, prior.Agent, prior.Goal,
-		prior.Model != "", caller,
-		&agentResume{Prior: &from, Checkpoint: k.checkpoint, RunID: k.rec.ID})
+	out, runErr := executeAgentFrom(ctx, root, from.Agent, from.Goal,
+		from.Model != "", caller,
+		&agentResume{Prior: &from, Checkpoint: k.checkpoint, RunID: k.rec.ID, Since: k.rec.Started})
 	if out.Manifest.Name == "" {
 		return "", runErr
 	}
 	if err := k.finish(out); err != nil {
 		return "", err
 	}
-	return newID, runErr
+	return k.rec.ID, runErr
+}
+
+// prepareReplay is the new run a replay makes, and what it starts from.
+func prepareReplay(root, id string, n int, caller *Caller) (*keptRun, agent.Record, error) {
+	prior, err := loadAgentRun(root, id)
+	if err != nil {
+		return nil, prior, err
+	}
+	if prior.Eval != "" {
+		return nil, prior, fmt.Errorf("%s was made by an evaluation and is not run again; run the agent itself", id)
+	}
+	cut, err := prior.Trace.Upto(n)
+	if err != nil {
+		return nil, prior, err
+	}
+	started := time.Now().UTC()
+	newID, err := newAgentRunID(started)
+	if err != nil {
+		return nil, prior, err
+	}
+	from := prior
+	from.Trace = cut
+	k := &keptRun{root: root, rec: agent.Record{ID: newID, Agent: prior.Agent,
+		Goal: prior.Goal, By: caller.Name, Model: prior.Model, Started: started,
+		From: fmt.Sprintf("%s@%d", id, n)}}
+	return k, from, nil
+}
+
+// replayAgentRunLive is replayAgentRun from the screen: a run of an agent
+// with a browser goes on in the background, and its identifier comes back
+// at once.
+func replayAgentRunLive(root, id string, n int, caller *Caller) (string, error) {
+	if caller.Kind == audit.KindAI {
+		return "", fmt.Errorf("a person runs an agent again")
+	}
+	prior, err := loadAgentRun(root, id)
+	if err != nil {
+		return "", err
+	}
+	set, _ := loadAgents(root)
+	m, ok := agent.Manifest{}, false
+	if set != nil {
+		m, ok = set.Agents[prior.Agent]
+	}
+	if !ok || !holdsBrowser(m) {
+		ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
+		defer cancel()
+		return replayAgentRun(ctx, root, id, n, caller)
+	}
+	k, from, err := prepareReplay(root, id, n, caller)
+	if err != nil {
+		return "", err
+	}
+	k.rec.State = agent.Running
+	if err := writeAgentRun(root, k.rec); err != nil {
+		return "", err
+	}
+	return k.rec.ID, goLive(time.Duration(m.Budget.Duration), func(ctx context.Context) {
+		out, err := executeAgentFrom(ctx, root, from.Agent, from.Goal, from.Model != "", caller,
+			&agentResume{Prior: &from, Checkpoint: k.checkpoint, RunID: k.rec.ID, Since: k.rec.Started})
+		finishLive(k, out, err)
+	})
 }
 
 // pruneAgentRuns removes the oldest runs past the limit. Names sort by day
@@ -549,21 +680,68 @@ func startAgentRunLive(root, name, goal string, caller *Caller, m agent.Manifest
 	if mm, _ := agentRunModel(root, name); mm != nil {
 		k.rec.Model = mm.Name()
 	}
+	if liveRuns.Load() >= MaxLiveRuns {
+		return "", errTooManyLive
+	}
 	if err := writeAgentRun(root, k.rec); err != nil {
 		return "", err
 	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(m.Budget.Duration)+time.Minute)
-		defer cancel()
-		out, _ := executeAgentFrom(ctx, root, name, goal, true, caller,
-			&agentResume{Checkpoint: k.checkpoint, RunID: id,
+	err = goLive(time.Duration(m.Budget.Duration), func(ctx context.Context) {
+		out, err := executeAgentFrom(ctx, root, name, goal, true, caller,
+			&agentResume{Checkpoint: k.checkpoint, RunID: id, Since: started,
 				Answered: func(a agent.Answer) { k.rec.Answers = append(k.rec.Answers, a) }})
-		if out.Manifest.Name == "" {
-			out.Trace.Stopped = "it could not start"
-		}
-		_ = k.finish(out)
-	}()
+		finishLive(k, out, err)
+	})
+	if err != nil {
+		k.rec.State, k.rec.Trace.Stopped = "", err.Error()
+		_ = writeAgentRun(root, k.rec)
+		return "", err
+	}
 	return id, nil
+}
+
+// liveRuns counts the runs going on in the background in this process.
+var liveRuns atomic.Int64
+
+// MaxLiveRuns bounds them. Each is a model's decisions and, with a
+// browser, a place in line for one; a client that starts runs in a loop
+// is told to wait rather than given a process full of them.
+const MaxLiveRuns = 16
+
+var errTooManyLive = fmt.Errorf("%d runs are going on here already; start this one when one has finished", MaxLiveRuns)
+
+// goLive runs a stretch of a run in the background, bounded by its
+// budget's time, and keeps a fault in it from taking the server down.
+func goLive(budget time.Duration, run func(ctx context.Context)) error {
+	if liveRuns.Add(1) > MaxLiveRuns {
+		liveRuns.Add(-1)
+		return errTooManyLive
+	}
+	go func() {
+		defer liveRuns.Add(-1)
+		defer func() {
+			if p := recover(); p != nil {
+				fmt.Fprintf(os.Stderr, "a run stopped on a fault in Quilzo: %v\n", p)
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), budget+time.Minute)
+		defer cancel()
+		run(ctx)
+	}()
+	return nil
+}
+
+// finishLive writes how a background run ended, including one that could
+// not start, with why.
+func finishLive(k *keptRun, out agentOutcome, err error) {
+	if out.Manifest.Name == "" {
+		out.Trace.Agent, out.Trace.Goal = k.rec.Agent, k.rec.Goal
+		out.Trace.Stopped = "it could not start"
+		if err != nil {
+			out.Trace.Stopped += ": " + clip(err.Error(), 300)
+		}
+	}
+	_ = k.finish(out)
 }
 
 func agentRuns(root string, args []string) error {

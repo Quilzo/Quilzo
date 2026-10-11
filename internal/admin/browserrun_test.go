@@ -23,7 +23,7 @@ func TestABrowserRunShowsWhatItWouldPress(t *testing.T) {
 	why := `it presses button "Pay now" on shop.example.com, and it is called "Pay now"`
 	tr := agent.Trace{Agent: "buyer", Goal: "pay the invoice", Tainted: true,
 		Steps: []agent.Step{{N: 1, At: time.Now().Add(-time.Minute), Action: agent.Action{Op: "browser_open"}, Allowed: true, Result: "opened"}},
-		Waiting: &agent.Pending{N: 2, Since: time.Now(), Live: true, Why: why,
+		Waiting: &agent.Pending{N: 2, Since: time.Now().Add(-30 * time.Second), Live: true, Why: why,
 			Action: agent.Action{Op: "browser_click", Input: map[string]any{"ref": "e1"}}}}
 	rec := agent.Keep(id, "dana", "a-model", time.Now(), tr, agent.Receipt{Did: 1})
 	rec.State = agent.Running
@@ -31,7 +31,7 @@ func TestABrowserRunShowsWhatItWouldPress(t *testing.T) {
 	jpeg := []byte{0xFF, 0xD8, 0xFF, 0xE0, 'x'}
 	at := rec.Trace.Steps[0].At
 	frames := []RunFrame{{N: 1, Op: "browser_open", When: at.Add(time.Second)},
-		{N: 3, Op: "browser_click", When: at.Add(2 * time.Second), Asking: why}}
+		{N: 3, Op: "browser_click", When: time.Now().Add(-10 * time.Second), Asking: why}}
 	srv.Agents.Frames = func(run string) ([]RunFrame, bool) { return frames, true }
 	srv.Agents.Frame = func(run string, n int) ([]byte, error) {
 		if run != id || (n != 3 && n != 1 && n != 0) {

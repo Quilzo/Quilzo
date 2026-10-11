@@ -61,20 +61,37 @@ type runBrowser struct {
 	mu    sync.Mutex
 	pics  [][]byte
 	close []func()
+	// slot is this run's place among the browsers the machine allows,
+	// taken when its browser first starts and given back if it does not.
+	slot func()
+	// refused counts the requests refused per host, so a page that asks
+	// for thousands leaves a count in the log rather than thousands.
+	refused map[string]int
 }
+
+// MaxRefusedRecords is how many refused requests to one host are written
+// to the log one by one; the rest are counted, and the count written when
+// the browser closes.
+const MaxRefusedRecords = 20
 
 // newRunBrowser makes a run's browser, which starts when the agent first
 // opens a page. actor is what decides the run, for the record each request
 // leaves; chat says it takes pictures.
 func newRunBrowser(root string, m agent.Manifest, sess *agent.Session, caller *Caller, actor assist.Model,
 	runID string, chat bool) (*runBrowser, error) {
-	rb := &runBrowser{}
+	rb := &runBrowser{refused: map[string]int{}}
 	if runID != "" {
 		kr, err := loadKeyring(root)
 		if err != nil {
 			return nil, err
 		}
-		rb.frames = &runFrames{root: root, id: runID, kr: kr}
+		// A run continued keeps the pictures it took before, and goes on
+		// numbering after them.
+		kept, err := loadRunFrames(root, runID)
+		if err != nil {
+			return nil, err
+		}
+		rb.frames = &runFrames{root: root, id: runID, kr: kr, index: kept}
 	}
 	d := &browser.Driver{Session: sess,
 		Secret: func(name string) (string, error) { return readSecret(root, name) },
@@ -82,6 +99,13 @@ func newRunBrowser(root string, m agent.Manifest, sess *agent.Session, caller *C
 			host, method := "", r.Request.Method
 			if r.Request.URL != nil {
 				host = r.Request.URL.Hostname()
+			}
+			rb.mu.Lock()
+			rb.refused[host]++
+			n := rb.refused[host]
+			rb.mu.Unlock()
+			if n > MaxRefusedRecords {
+				return
 			}
 			record(root, actorRecord(caller, "agent.egress", audit.Denied, m, actor,
 				map[string]string{"run": runID, "agent": m.Name, "host": host, "method": method,
@@ -99,20 +123,60 @@ func newRunBrowser(root string, m agent.Manifest, sess *agent.Session, caller *C
 		}
 	}
 	d.Launch = func(ctx context.Context) (*cdp.Browser, error) {
-		release, err := takeBrowserSlot(ctx, root, runID, browserSessions(root))
-		if err != nil {
-			return nil, err
-		}
 		rb.mu.Lock()
-		rb.close = append(rb.close, release)
+		held := rb.slot != nil
 		rb.mu.Unlock()
-		if browserTestLaunch != nil {
-			return browserTestLaunch(ctx)
+		if !held {
+			// While it waits, the run's record says it is still going, so
+			// it is not taken for one that was cut off.
+			release, err := takeBrowserSlot(ctx, root, runID, browserSessions(root), func() { touchRun(root, runID) })
+			if err != nil {
+				return nil, err
+			}
+			rb.mu.Lock()
+			rb.slot = release
+			rb.mu.Unlock()
 		}
-		return rb.launch(ctx, root, m, caller, actor, runID, d)
+		var b *cdp.Browser
+		var err error
+		if browserTestLaunch != nil {
+			b, err = browserTestLaunch(ctx)
+		} else {
+			b, err = rb.launch(ctx, root, m, caller, actor, runID, d)
+		}
+		if err != nil {
+			// No browser, so no place held for one.
+			rb.mu.Lock()
+			release := rb.slot
+			rb.slot = nil
+			rb.mu.Unlock()
+			release()
+		}
+		return b, err
 	}
 	rb.driver = d
+	// How many more were refused than were written down, per host.
+	rb.close = append(rb.close, func() {
+		for host, n := range rb.refused {
+			if n > MaxRefusedRecords {
+				record(root, actorRecord(caller, "agent.egress", audit.Denied, m, actor,
+					map[string]string{"run": runID, "agent": m.Name, "host": host, "via": "browser",
+						"count": strconv.Itoa(n - MaxRefusedRecords), "why": "more requests to the same host, refused"}))
+			}
+		}
+	})
 	return rb, nil
+}
+
+// touchRun marks a kept run as still going, while it is inside a step and
+// nothing else writes its record.
+func touchRun(root, id string) {
+	if id == "" {
+		return
+	}
+	if rec, err := loadAgentRun(root, id); err == nil && rec.State == agent.Running {
+		_ = writeAgentRun(root, rec)
+	}
 }
 
 // pictures hands over the screenshots taken since the last decision.
@@ -131,11 +195,15 @@ func (rb *runBrowser) end() {
 		rb.frames.endLive()
 	}
 	rb.mu.Lock()
-	defer rb.mu.Unlock()
-	for i := len(rb.close) - 1; i >= 0; i-- {
-		rb.close[i]()
+	closers, slot := rb.close, rb.slot
+	rb.close, rb.slot = nil, nil
+	rb.mu.Unlock()
+	for i := len(closers) - 1; i >= 0; i-- {
+		closers[i]()
 	}
-	rb.close = nil
+	if slot != nil {
+		slot()
+	}
 }
 
 // launch starts Chromium in the run's box, behind the run's proxy.
@@ -159,9 +227,17 @@ func (rb *runBrowser) launch(ctx context.Context, root string, m agent.Manifest,
 	// The sockets and the box's own directory, like a program's, removed
 	// when the run ends.
 	host := &programRun{}
-	rb.mu.Lock()
-	rb.close = append(rb.close, host.close)
-	rb.mu.Unlock()
+	launched := false
+	defer func() {
+		if launched {
+			rb.mu.Lock()
+			rb.close = append(rb.close, host.close)
+			rb.mu.Unlock()
+		} else {
+			// Nothing started: nothing of it is kept.
+			host.close()
+		}
+	}()
 	sockDir, err := os.MkdirTemp("", "qzbrs-")
 	if err != nil {
 		return nil, err
@@ -218,6 +294,7 @@ func (rb *runBrowser) launch(ctx context.Context, root string, m agent.Manifest,
 		}
 		return nil, err
 	}
+	launched = true
 	return b, nil
 }
 
@@ -244,7 +321,7 @@ const browserSlotStale = 2 * time.Minute
 
 // takeBrowserSlot waits for one of the browsers this machine allows, for
 // as long as ctx lets it, and keeps it until released.
-func takeBrowserSlot(ctx context.Context, root, run string, max int) (func(), error) {
+func takeBrowserSlot(ctx context.Context, root, run string, max int, beat func()) (func(), error) {
 	dir := browserDir(root)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
@@ -261,7 +338,10 @@ func takeBrowserSlot(ctx context.Context, root, run string, max int) (func(), er
 			_ = json.Unmarshal(b, &slots)
 		}
 		for _, s := range slots {
-			if time.Since(s.Beat) < browserSlotStale {
+			// Stale when nothing has beaten for a while, or when it claims
+			// a time to come: a clock set back must not hold a slot for
+			// as long as it was set back by.
+			if age := time.Since(s.Beat); age < browserSlotStale && age > -time.Minute {
 				live = append(live, s)
 			}
 		}
@@ -273,6 +353,7 @@ func takeBrowserSlot(ctx context.Context, root, run string, max int) (func(), er
 		return ok, atomicfile.Write(path, b, 0o600)
 	}
 	key := run + "/" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	lastBeat := time.Now()
 	for {
 		ok, err := change(func(s []browserSlot) ([]browserSlot, bool) {
 			if len(s) >= max {
@@ -292,6 +373,10 @@ func takeBrowserSlot(ctx context.Context, root, run string, max int) (func(), er
 				"and none came free while this run waited", max)
 		case <-time.After(500 * time.Millisecond):
 		}
+		if beat != nil && time.Since(lastBeat) > 30*time.Second {
+			beat()
+			lastBeat = time.Now()
+		}
 	}
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
@@ -307,9 +392,12 @@ func takeBrowserSlot(ctx context.Context, root, run string, max int) (func(), er
 					for i := range s {
 						if s[i].Run == key {
 							s[i].Beat = time.Now().UTC()
+							return s, true
 						}
 					}
-					return s, true
+					// Dropped as stale (a clock that jumped, a process that
+					// was suspended): still running, so still counted.
+					return append(s, browserSlot{Run: key, Beat: time.Now().UTC()}), true
 				})
 			}
 		}
@@ -364,7 +452,9 @@ func frameAAD(id string, n int) []byte { return []byte("run-frame/" + id + "/" +
 func (f *runFrames) keep(fr browser.Frame) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if len(f.index) >= MaxRunFrames || len(fr.JPEG) == 0 {
+	// What a person is asked about is always kept; the pictures after
+	// each action stop at the bound.
+	if len(fr.JPEG) == 0 || (len(f.index) >= MaxRunFrames && fr.Asking == "") || len(f.index) >= 2*MaxRunFrames {
 		return
 	}
 	dir := runFramesDir(f.root, f.id)
@@ -471,7 +561,7 @@ func runFramePicture(root, id string, n int) ([]byte, error) {
 		if err != nil || !f.Sealed {
 			return b, err
 		}
-		kr, err := loadKeyring(root)
+		kr, err := frameKeyring(root)
 		if err != nil {
 			return nil, err
 		}
@@ -485,4 +575,28 @@ func runFramePicture(root, id string, n int) ([]byte, error) {
 		return kr.Open(s, frameAAD(id, n))
 	}
 	return nil, fmt.Errorf("%s kept no picture %d", id, n)
+}
+
+// frameKeyring is the store's keyring, opened at most once a minute for the
+// pictures a run's page shows: opening it can mean asking a key service,
+// and a page showing a run asks for every picture each time it refreshes.
+func frameKeyring(root string) (*vault.Keyring, error) {
+	frameKeys.mu.Lock()
+	defer frameKeys.mu.Unlock()
+	if frameKeys.root == root && time.Since(frameKeys.at) < time.Minute {
+		return frameKeys.kr, nil
+	}
+	kr, err := loadKeyring(root)
+	if err != nil {
+		return nil, err
+	}
+	frameKeys.root, frameKeys.kr, frameKeys.at = root, kr, time.Now()
+	return kr, nil
+}
+
+var frameKeys struct {
+	mu   sync.Mutex
+	root string
+	kr   *vault.Keyring
+	at   time.Time
 }
