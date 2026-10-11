@@ -154,6 +154,10 @@ func (n Native) command(ctx context.Context, spec initSpec, report *os.File, fil
 		Pdeathsig:                  syscall.SIGKILL,
 	}
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGKILL) }
+	// Once the box has ended, its output is waited for a little and no
+	// longer: a pipe something else still holds open must not keep the
+	// run waiting for ever.
+	cmd.WaitDelay = 5 * time.Second
 	return cmd, nil
 }
 

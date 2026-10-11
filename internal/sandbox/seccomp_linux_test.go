@@ -183,13 +183,14 @@ func TestAHardenedProcessIsConfined(t *testing.T) {
 	}
 	want := map[string]syscall.Errno{"unshare": syscall.EPERM, "ptrace": syscall.EPERM, "keyctl": syscall.EPERM,
 		"mount": syscall.EPERM, "io_uring": syscall.EPERM, "clone3": syscall.ENOSYS,
-		"packet socket": syscall.EAFNOSUPPORT, "raw socket": syscall.EPERM, "connect elsewhere": syscall.EACCES}
+		"packet socket": syscall.EAFNOSUPPORT, "raw socket": syscall.EPERM, "connect elsewhere": syscall.EACCES,
+		"unix socket": syscall.EAFNOSUPPORT}
 	for name, e := range want {
 		if got := syscall.Errno(r.Errnos[name]); got != e {
 			t.Errorf("%s: %v, want %v", name, got, e)
 		}
 	}
-	for _, name := range []string{"getpid", "tcp socket", "unix socket", "connect allowed"} {
+	for _, name := range []string{"getpid", "tcp socket", "socketpair", "connect allowed"} {
 		if !r.Allowed[name] {
 			t.Errorf("%s was refused", name)
 		}
@@ -248,6 +249,15 @@ func TestHardenedHelper(t *testing.T) {
 	try("tcp socket", sysSocket, syscall.AF_INET, syscall.SOCK_STREAM, 0)
 	try("unix socket", sysSocket, syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
 	try("getpid", syscall.SYS_GETPID)
+	// A pair of sockets joined to each other reaches nothing else, and
+	// stays allowed: runtimes use it to talk to their own children.
+	if fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0); err == nil {
+		r.Allowed["socketpair"] = true
+		syscall.Close(fds[0])
+		syscall.Close(fds[1])
+	} else {
+		r.Errnos["socketpair"] = int(err.(syscall.Errno))
+	}
 	dial := func(name, addr string) {
 		fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
 		if err != nil {

@@ -18,8 +18,8 @@ import (
 // a confined program has no business with and what a program trying to
 // leave its confinement reaches for first: tracing other processes,
 // loading kernel code, mounting, new namespaces, the keyring, io_uring
-// (which performs I/O this filter would never see) and the raw and packet
-// sockets that sit below every network rule. Everything else is allowed,
+// (which performs I/O this filter would never see), the raw and packet
+// sockets that sit below every network rule, and local sockets. Everything else is allowed,
 // because a program that cannot start is not confined, it is broken, and
 // somebody turns the confinement off.
 //
@@ -81,11 +81,18 @@ const (
 	sysOpenTreeAttr    = 467
 )
 
-// Address families a program may open a socket in: local sockets, the
-// internet ones (which inside the sandbox's own network reach only what
-// it was handed), and netlink, which the C library asks about the
-// interfaces with.
-var allowedFamilies = []uint32{syscall.AF_UNIX, syscall.AF_INET, syscall.AF_INET6, syscall.AF_NETLINK}
+// Address families a program may open a socket in: the internet ones
+// (which inside the sandbox's own network reach only what it was handed),
+// and netlink, which the C library asks about the interfaces with.
+//
+// Not local sockets. A socket on the machine's filesystem is a door past
+// every other rule here: Landlock does not decide connecting to one, and
+// on the other side are a desktop's message bus (which starts a command
+// outside every box when asked), an SSH or GPG agent, a container daemon.
+// Nothing confined needs one: the services a box is given reach it over
+// its own loopback, and socketpair, which only ever connects a process to
+// itself, is a separate call and stays allowed.
+var allowedFamilies = []uint32{syscall.AF_INET, syscall.AF_INET6, syscall.AF_NETLINK}
 
 // newNamespaces is every namespace flag clone takes: a confined program
 // does not make itself a new world to stand in.
