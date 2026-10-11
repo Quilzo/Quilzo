@@ -9,6 +9,16 @@ Unreleased
 
 ** Added
 
+*** `browser.cache` (off by default) replays a browser flow that worked
+    without a model call.  A remembered step passes every check a decided
+    one does — the manifest, the breaker, ask-first with the person — and
+    confirms itself by the page that follows it: the moment the page is not
+    the one the flow remembers, the model decides again and the memory is
+    dropped.  Signing in is never remembered.  What the cache holds is
+    sealed with the store's keyring, and each replay is written to the log
+    (`agent.cache`) with the digest of the page it ran against, so a
+    receipt can say which steps ran without a model.
+
 *** An agent's manifest may name a `dialect`: the vendor computer-use
     language its model answers in — `anthropic-computer`,
     `anthropic-browser`, `openai-computer` or `gemini-computer`.  The model

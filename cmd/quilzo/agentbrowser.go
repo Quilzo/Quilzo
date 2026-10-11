@@ -300,6 +300,21 @@ func (rb *runBrowser) launch(ctx context.Context, root string, m agent.Manifest,
 	return b, nil
 }
 
+// agentCachePath is where an agent's remembered browser flows sit: beside
+// its runs, one cache per agent, its inputs sealed with the store's
+// keyring when there is one.
+func agentCachePath(root, agent string) string {
+	return filepath.Join(root, "agentcache", agent+".json")
+}
+
+// browserCacheOn says whether this store replays remembered browser flows.
+func browserCacheOn(root string) bool {
+	if c, err := loadConfig(root); err == nil {
+		return c.Bool("browser.cache")
+	}
+	return false
+}
+
 // browserSessions is how many browsers may run at once here.
 func browserSessions(root string) int {
 	n := 2
