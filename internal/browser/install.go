@@ -153,11 +153,16 @@ func extract(body []byte, dir string) error {
 		return fmt.Errorf("the browser's archive cannot be read: %w", err)
 	}
 	for _, f := range zr.File {
-		name := filepath.FromSlash(f.Name)
-		if filepath.IsAbs(name) || strings.HasPrefix(filepath.Clean(name), "..") {
+		// Refused outright: an absolute name, or any ".." at all, which the
+		// pinned archive never has. Then the place it would land is checked
+		// to be under dir, whatever the name turned out to mean.
+		if strings.Contains(f.Name, "..") || filepath.IsAbs(filepath.FromSlash(f.Name)) {
 			return fmt.Errorf("the archive names %q, outside where it is unpacked", f.Name)
 		}
-		target := filepath.Join(dir, name)
+		target := filepath.Join(dir, filepath.FromSlash(f.Name))
+		if rel, err := filepath.Rel(dir, target); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("the archive names %q, outside where it is unpacked", f.Name)
+		}
 		mode := f.Mode()
 		switch {
 		case mode.IsDir():
