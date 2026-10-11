@@ -145,6 +145,88 @@ func (p *Page) AXTree(ctx context.Context) ([]AXNode, error) {
 	return r.Nodes, nil
 }
 
+// PersonClick presses the page at a point, as a person's own hand does
+// during a take-over: the pointer event at that point and nothing else.
+// No hit test, no element: what a person does is what lands, which is the
+// difference between this and Click, and the reason the two never share a
+// path.
+func (p *Page) PersonClick(ctx context.Context, x, y float64) error {
+	mouse := func(kind string, x, y float64) error {
+		ev := map[string]any{"type": kind, "x": x, "y": y}
+		if kind != "mouseMoved" {
+			ev["button"], ev["clickCount"] = "left", 1
+		}
+		return p.call(ctx, "Input.dispatchMouseEvent", ev, nil)
+	}
+	for _, step := range []struct {
+		kind string
+		x, y float64
+	}{{"mouseMoved", x, y}, {"mousePressed", x, y}, {"mouseReleased", x, y}} {
+		if err := mouse(step.kind, step.x, step.y); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// PersonType puts text wherever the page holds its focus, as typing does.
+func (p *Page) PersonType(ctx context.Context, text string) error {
+	if text == "" {
+		return nil
+	}
+	if len(text) > 4000 {
+		return errors.New("at most 4000 characters are typed at once")
+	}
+	return p.call(ctx, "Input.insertText", map[string]any{"text": text}, nil)
+}
+
+// PersonKey presses one key a person names: Enter, Tab, Escape or
+// Backspace. Anything else is refused rather than guessed at, because a
+// keystroke this cannot name exactly is one it cannot honestly say it
+// sent.
+func (p *Page) PersonKey(ctx context.Context, key string) error {
+	keys := map[string]struct {
+		code, text string
+	}{
+		"Enter":     {"Enter", "\r"},
+		"Tab":       {"Tab", "\t"},
+		"Escape":    {"Escape", ""},
+		"Backspace": {"Backspace", ""},
+	}
+	k, ok := keys[key]
+	if !ok {
+		return fmt.Errorf("%q is not one of Enter, Tab, Escape or Backspace", key)
+	}
+	for _, kind := range []string{"keyDown", "keyUp"} {
+		ev := map[string]any{"type": kind, "key": key, "code": k.code,
+			"windowsVirtualKeyCode": virtualKey(key), "nativeVirtualKeyCode": virtualKey(key)}
+		if kind == "keyDown" && k.text != "" {
+			ev["text"] = k.text
+			ev["unmodifiedText"] = k.text
+		}
+		if err := p.call(ctx, "Input.dispatchKeyEvent", ev, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// virtualKey is the Windows virtual-key code Chromium expects for the
+// four keys a person may press here.
+func virtualKey(key string) int {
+	switch key {
+	case "Enter":
+		return 13
+	case "Tab":
+		return 9
+	case "Escape":
+		return 27
+	case "Backspace":
+		return 8
+	}
+	return 0
+}
+
 // At is the deepest node under a point of the viewport, by its backend id.
 // The same question Click asks of its own aim, asked on its own, so a
 // coordinate somebody else chose can be resolved to an element before

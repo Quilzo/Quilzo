@@ -16,12 +16,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/actioncache"
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/agentbox"
 	"github.com/quilzo/quilzo/internal/agentmodel"
 	"github.com/quilzo/quilzo/internal/assist"
-	"github.com/quilzo/quilzo/internal/actioncache"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/browser"
 	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/otlp"
 	"github.com/quilzo/quilzo/internal/schema"
@@ -1104,7 +1105,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		if from.Eval == nil {
 			runner.Hold = programHold(root, runID, prog.done, func(line string) {
 				fmt.Fprintf(os.Stderr, "  %s%s%s\n", yellow, onOneLine(line), reset)
-			}, from.Answered)
+			}, from.Answered, nil)
 		}
 	}
 	// Its browser: performed here, in a box made when the agent first
@@ -1174,11 +1175,17 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	// What its browser or its commands ask a person waits in this process,
 	// where the page and the workspace are, as a program's does, rather
 	// than pausing the run to be picked up later by a process without them.
+	// A browser held here may also be taken over: what a person does to the
+	// page while it waits reaches it here, recorded as theirs.
 	if holdsLive(m) && from.Eval == nil {
 		runner.Pause = false
+		var hands func(browser.PersonInput, string)
+		if rb != nil {
+			hands = rb.personInput(root, m, from.RunID)
+		}
 		runner.Hold = programHold(root, from.RunID, nil, func(line string) {
 			fmt.Fprintf(os.Stderr, "  %s%s%s\n", yellow, onOneLine(line), reset)
-		}, from.Answered)
+		}, from.Answered, hands)
 	}
 	// What it remembers between runs, when it keeps any. Not for an
 	// evaluation, which measures and leaves nothing behind.
