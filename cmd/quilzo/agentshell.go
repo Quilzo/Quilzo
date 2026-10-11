@@ -58,8 +58,13 @@ func workspacesDir(root string) string { return filepath.Join(root, "workspaces"
 // or its own beside the store's other folders.
 func workspaceDir(root string, m agent.Manifest) (string, error) {
 	if m.Shell != nil && m.Shell.Workspace != "" {
-		ws := m.Shell.Workspace
-		store, err := filepath.Abs(root)
+		// Compared as the folders they are, links followed: a workspace
+		// that is a link to the store is the store.
+		ws, err := realPath(m.Shell.Workspace)
+		if err != nil {
+			return "", err
+		}
+		store, err := realPath(root)
 		if err != nil {
 			return "", err
 		}
@@ -80,6 +85,27 @@ func workspaceDir(root string, m agent.Manifest) (string, error) {
 		return "", err
 	}
 	return filepath.Join(abs, m.Name), nil
+}
+
+// realPath is a path with every link in it followed, as far as it exists;
+// what does not exist yet is joined on as written.
+func realPath(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	rest := ""
+	for cur := abs; ; {
+		if r, err := filepath.EvalSymlinks(cur); err == nil {
+			return filepath.Join(r, rest), nil
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return abs, nil
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = parent
+	}
 }
 
 // claimPath is where the claim on a workspace is kept, by the workspace's

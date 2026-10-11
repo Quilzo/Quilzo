@@ -158,6 +158,14 @@ func TestAWorkspaceIsNeverTheStore(t *testing.T) {
 			t.Errorf("%s was taken as a workspace", ws)
 		}
 	}
+	// Nor by a link to it.
+	link := filepath.Join(t.TempDir(), "looks-elsewhere")
+	if err := os.Symlink(abs, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspaceDir(root, agent.Manifest{Name: "x", Shell: &agent.Shell{Workspace: link}}); err == nil {
+		t.Error("a link to the store was taken as a workspace")
+	}
 	m := agent.Manifest{Name: "x", Shell: &agent.Shell{Workspace: filepath.Join(abs, "workspaces", "shared")}}
 	if _, err := workspaceDir(root, m); err != nil {
 		t.Errorf("a folder in the workspaces' own: %v", err)

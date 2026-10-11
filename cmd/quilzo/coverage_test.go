@@ -1060,6 +1060,13 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 				"administrator's decision, and a model changing what its own " +
 				"agent runs is the thing a declaration exists to stop",
 		},
+		"agent workspace.clear": {
+			Why: "emptying an agent's workspace removes what its runs built and is done on the " +
+				"machine that holds it, by the operator, with the claim taken so no run is " +
+				"working on it; the screen shows each command and its output, not the folder",
+			NoMCP: "a model emptying the workspace it works in is the destroying a declaration " +
+				"makes wait for a person; it is an operator's step, not an agent's",
+		},
 		"asset.remove": {
 			GUI: "/security/vulns",
 			NoMCP: "how exposed a machine is and what is lost with it is " +
