@@ -15,6 +15,7 @@ import (
 	"image/draw"
 	"image/jpeg"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -75,6 +76,9 @@ type Driver struct {
 	nmu     sync.Mutex
 	said    []string
 	refused map[string]int
+	// secrets are the credentials this run has typed, as they could
+	// appear in text; nothing the driver says or keeps carries them.
+	secrets []string
 }
 
 // Frame is a picture of the page.
@@ -92,7 +96,8 @@ type Frame struct {
 func Performs(a agent.Action) bool { return a.Tool == "" && a.Delegate == "" && agent.IsBrowser(a.Op) }
 
 // Perform wraps a run's performer: the browser's actions here, the rest
-// passed on.
+// passed on. Nothing it says carries a credential the run signed in with:
+// every answer and error is redacted on the way out (redact).
 func (d *Driver) Perform(next func(context.Context, agent.Action) (string, error)) func(context.Context, agent.Action) (string, error) {
 	return func(ctx context.Context, a agent.Action) (string, error) {
 		if !Performs(a) {
@@ -109,41 +114,122 @@ func (d *Driver) Perform(next func(context.Context, agent.Action) (string, error
 		}
 		if extra := d.happened(); extra != "" {
 			if err != nil {
-				return "", fmt.Errorf("%w\n%s", err, extra)
+				err = fmt.Errorf("%w\n%s", err, extra)
+			} else {
+				out += "\n" + extra
 			}
-			out += "\n" + extra
 		}
-		return out, err
+		if err != nil {
+			return "", redacted{err, d.redact(err.Error())}
+		}
+		return d.redact(out), nil
+	}
+}
+
+// redacted is an error with the run's credentials taken out of what it
+// says, still matching what it wraps.
+type redacted struct {
+	err error
+	msg string
+}
+
+func (r redacted) Error() string { return r.msg }
+func (r redacted) Unwrap() error { return r.err }
+
+// redact takes every credential this run has typed out of text, in the
+// forms an address would carry it as well as plain.
+func (d *Driver) redact(s string) string {
+	d.nmu.Lock()
+	defer d.nmu.Unlock()
+	for _, v := range d.secrets {
+		s = strings.ReplaceAll(s, v, "[credential]")
+	}
+	return s
+}
+
+// keepSecret remembers a credential's value so nothing says it.
+func (d *Driver) keepSecret(v string) {
+	if len(v) < 3 {
+		// Too short to take out of text without taking out words.
+		return
+	}
+	d.nmu.Lock()
+	defer d.nmu.Unlock()
+	for _, f := range []string{v, url.QueryEscape(v), url.PathEscape(v), strings.ReplaceAll(url.QueryEscape(v), "+", "%20")} {
+		if !slices.Contains(d.secrets, f) {
+			d.secrets = append(d.secrets, f)
+		}
 	}
 }
 
 // Weighs says why an action commits to something a person should see
-// first, and keeps a picture of it with the element outlined.
+// first, and keeps a picture of it with the element outlined. What it
+// cannot weigh (no page, an undeclared credential, a reference not on the
+// outline) it leaves to the action, which refuses it without asking.
 func (d *Driver) Weighs(a agent.Action) string {
 	if !Performs(a) {
 		return ""
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.page == nil {
+		return ""
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	switch a.Op {
 	case "browser_sign_in":
-		why := fmt.Sprintf("it signs in to %s with %s", d.host(ctx), str(a, "credential"))
-		if d.page != nil {
-			pw, _, _ := d.loginFields(ctx)
-			d.frame(ctx, a.Op, why, pw)
+		name := str(a, "credential")
+		cred, ok := d.decl().CredentialFor(name)
+		if !ok || d.host(ctx) != cred.Host {
+			return ""
 		}
+		why := fmt.Sprintf("it signs in to %s with %s", cred.Host, name)
+		pw, _ := d.passwordField(ctx)
+		d.frame(ctx, a.Op, why, pw)
 		return why
-	case "browser_click":
+	case "browser_click", "browser_choose":
 		if !d.read {
 			return ""
 		}
 		e, ok := d.outline.Elements[str(a, "ref")]
-		if ok && e.Consequential != "" {
-			why := fmt.Sprintf("it presses %s %q on %s, and %s", e.Role, e.Name, d.host(ctx), e.Consequential)
+		if !ok {
+			return ""
+		}
+		why := d.weigh(ctx, a.Op, e)
+		if why != "" {
+			why = d.redact(why)
 			d.frame(ctx, a.Op, why, e.Backend)
-			return why
+		}
+		return why
+	}
+	return ""
+}
+
+// weigh is why pressing or choosing in an element commits to something:
+// what it is called, what the page says it does, and, once the run holds
+// something private, whether it leads to another host.
+func (d *Driver) weigh(ctx context.Context, op string, e Element) string {
+	here := d.host(ctx)
+	what := fmt.Sprintf("it presses %s %q on %s, and ", e.Role, e.Name, here)
+	if op == "browser_choose" {
+		what = fmt.Sprintf("it chooses in %s %q on %s, and ", e.Role, e.Name, here)
+	}
+	facts, ferr := d.page.Facts(ctx, e.Backend)
+	switch {
+	case op == "browser_click" && e.Consequential != "":
+		return what + e.Consequential
+	case op == "browser_click" && ferr == nil && facts.Submits:
+		return what + "it submits a form"
+	case op == "browser_choose" && ferr == nil && (facts.FormMethod == "post" || facts.OnChange):
+		return what + "the list belongs to a form that sends, or acts as soon as it changes"
+	}
+	// A link elsewhere carries the model's choice of it to that host.
+	if op == "browser_click" && ferr == nil && facts.Href != "" {
+		if u, err := url.Parse(facts.Href); err == nil && u.Hostname() != "" && !strings.EqualFold(u.Hostname(), here) {
+			if why, breaks := d.Session.BreaksTo(strings.ToLower(u.Hostname())); breaks {
+				return what + "it leads to " + u.Hostname() + "; " + why
+			}
 		}
 	}
 	return ""
@@ -324,6 +410,7 @@ func (d *Driver) answerDialogs(b *cdp.Browser, p *cdp.Page) func() {
 }
 
 func (d *Driver) refusal(r Refusal) {
+	r.Why = d.redact(r.Why)
 	host := ""
 	if r.Request.URL != nil {
 		host = r.Request.URL.Hostname()
@@ -422,7 +509,7 @@ func (d *Driver) readPage(ctx context.Context, what string) (string, error) {
 	d.outline, d.read = Build(nodes), true
 	title, at := d.where(ctx)
 	if u, err := url.Parse(at); err == nil && u.Hostname() != "" {
-		d.Session.ReadWeb(strings.ToLower(u.Hostname()), at)
+		d.Session.ReadWeb(strings.ToLower(u.Hostname()), d.redact(at))
 	}
 	return fmt.Sprintf("%s%q at %s\n%s", what, title, at, d.outline.Text), nil
 }
@@ -484,8 +571,17 @@ func (d *Driver) typeInto(ctx context.Context, ref, text string) (string, error)
 	if len(text) > 4000 {
 		return "", errors.New("at most 4000 characters are typed at once")
 	}
-	if err := d.page.Type(ctx, e.Backend, text); err != nil {
-		return "", err
+	// Put in from a world of Quilzo's own where the field allows, so the
+	// text goes into this field and nowhere the page moves focus to; by
+	// keystrokes where it does not (a rich editor).
+	err = d.page.Fill(ctx, e.Backend, text, d.host(ctx), d.Plain)
+	if errors.Is(err, cdp.ErrNotHere) {
+		return "", fmt.Errorf("%s is not in the page itself; nothing was typed", ref)
+	}
+	if err != nil {
+		if err := d.page.Type(ctx, e.Backend, text); err != nil {
+			return "", err
+		}
 	}
 	return fmt.Sprintf("typed into %s %q", ref, e.Name), nil
 }
@@ -612,69 +708,88 @@ func (d *Driver) signIn(ctx context.Context, name string) (string, error) {
 	if i := strings.IndexByte(value, '\n'); i >= 0 {
 		user, pass = strings.TrimSpace(value[:i]), strings.TrimRight(value[i+1:], "\r\n")
 	}
-	pw, userField, err := d.loginFields(ctx)
+	d.keepSecret(pass)
+	pw, err := d.passwordField(ctx)
 	if err != nil {
 		return "", err
 	}
-	if user != "" {
-		if userField == 0 {
-			return "", errors.New("the page has a password field and no field for the user name")
+	// Each value goes in from Quilzo's own world, with the page's address
+	// checked in the same step: no keystroke, so nothing the page moves
+	// focus to receives it, and nothing if the page has moved off the host.
+	fill := func(field int64, v string) error {
+		if err := d.page.Fill(ctx, field, v, cred.Host, d.Plain); err != nil {
+			if errors.Is(err, cdp.ErrNotHere) {
+				return fmt.Errorf("%s is typed only into https://%s, and the page has moved", name, cred.Host)
+			}
+			return err
 		}
-		if err := d.page.Type(ctx, userField, user); err != nil {
+		return nil
+	}
+	if user != "" {
+		field, err := d.page.UserField(ctx, pw)
+		if err != nil {
+			return "", err
+		}
+		if field == 0 {
+			return "", errors.New("the page has a password field and no field for the user name with it")
+		}
+		if err := fill(field, user); err != nil {
 			return "", err
 		}
 	}
-	if err := d.page.Type(ctx, pw, pass); err != nil {
+	if err := fill(pw, pass); err != nil {
 		return "", err
 	}
 	// From here what the run reads is what this host shows somebody signed
 	// in, which is somebody's own: the breaker knows.
 	d.Session.HoldsPrivate("what " + cred.Host + " shows once signed in")
-	// Sent as a person sends a sign-in form: Enter in the password field.
+	// Sent as Enter in the password field would send it: by the form's
+	// own button. A field in no form is sent with Enter itself, which
+	// carries nothing secret.
 	settled := d.settling()
-	if err := d.page.Press(ctx, "Enter"); err != nil {
+	sent, err := d.page.Send(ctx, pw)
+	if err == nil && !sent {
+		if err = d.page.Call(ctx, "DOM.focus", map[string]any{"backendNodeId": pw}, nil); err == nil {
+			err = d.page.Press(ctx, "Enter")
+		}
+	}
+	if err != nil {
 		settled(context.Background())
 		return "", err
 	}
 	settled(ctx)
-	return d.readPage(ctx, fmt.Sprintf("[signed in to %s with %s] the page is now ", cred.Host, name))
+	// A page that is still there (a wrong code, a second step) keeps no
+	// password to show anybody, nor a "show password" button to show it.
+	_ = d.page.Clear(ctx, pw)
+	return d.readPage(ctx, fmt.Sprintf("[sent the sign-in to %s with %s] the page is now ", cred.Host, name))
 }
 
-// loginFields finds the page's password field and the field for the user
-// name before it, by the document itself rather than the outline, which
-// does not say which field is a password.
-func (d *Driver) loginFields(ctx context.Context) (pw, user int64, err error) {
+// passwordField is the page's password field, by the document itself
+// rather than the outline, which does not say which field is a password.
+func (d *Driver) passwordField(ctx context.Context) (int64, error) {
 	var doc struct {
 		Root struct {
 			NodeID int64 `json:"nodeId"`
 		} `json:"root"`
 	}
-	if err = d.page.Call(ctx, "DOM.getDocument", map[string]any{"depth": 0}, &doc); err != nil {
-		return 0, 0, err
+	if err := d.page.Call(ctx, "DOM.getDocument", map[string]any{"depth": 0}, &doc); err != nil {
+		return 0, err
 	}
-	find := func(sel string) (int64, error) {
-		var r struct {
-			NodeID int64 `json:"nodeId"`
-		}
-		if err := d.page.Call(ctx, "DOM.querySelector", map[string]any{"nodeId": doc.Root.NodeID, "selector": sel}, &r); err != nil || r.NodeID == 0 {
-			return 0, err
-		}
-		var desc struct {
-			Node struct {
-				Backend int64 `json:"backendNodeId"`
-			} `json:"node"`
-		}
-		if err := d.page.Call(ctx, "DOM.describeNode", map[string]any{"nodeId": r.NodeID}, &desc); err != nil {
-			return 0, err
-		}
-		return desc.Node.Backend, nil
+	var r struct {
+		NodeID int64 `json:"nodeId"`
 	}
-	if pw, err = find(`input[type=password]`); err != nil || pw == 0 {
-		return 0, 0, errors.New("the page has no password field")
+	if err := d.page.Call(ctx, "DOM.querySelector", map[string]any{"nodeId": doc.Root.NodeID, "selector": "input[type=password]"}, &r); err != nil || r.NodeID == 0 {
+		return 0, errors.New("the page has no password field")
 	}
-	user, _ = find(`input[autocomplete=username], input[type=email], input[name*=user i], input[id*=user i], ` +
-		`input[name*=login i], input[name*=email i], input[id*=email i], input[type=text]`)
-	return pw, user, nil
+	var desc struct {
+		Node struct {
+			Backend int64 `json:"backendNodeId"`
+		} `json:"node"`
+	}
+	if err := d.page.Call(ctx, "DOM.describeNode", map[string]any{"nodeId": r.NodeID}, &desc); err != nil {
+		return 0, err
+	}
+	return desc.Node.Backend, nil
 }
 
 // frame keeps a small picture of the page, with one element outlined when
@@ -705,8 +820,15 @@ func (d *Driver) frame(ctx context.Context, op, asking string, outline int64) {
 	if box != [4]float64{} {
 		b = outlined(b, box)
 	}
+	// Kept with the run's record: where the page was, without what an
+	// address can carry after it (a query, a fragment), which can be a
+	// code or a token.
 	_, at := d.where(fctx)
-	d.Frames(Frame{Op: op, At: at, JPEG: b, Asking: asking})
+	if u, err := url.Parse(at); err == nil {
+		u.RawQuery, u.Fragment, u.User = "", "", nil
+		at = u.String()
+	}
+	d.Frames(Frame{Op: op, At: d.redact(at), JPEG: b, Asking: d.redact(asking)})
 }
 
 // outlined draws a box round part of a picture, in red, thick enough to

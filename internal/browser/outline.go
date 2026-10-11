@@ -76,8 +76,11 @@ func Build(nodes []cdp.AXNode) Outline {
 	}
 	var b strings.Builder
 	n := 0
-	var walk func(id string, depth int, inForm bool)
-	walk = func(id string, depth int, inForm bool) {
+	// actedOnly is inside a control: its own words are already its name,
+	// so only controls nested in it are written, each with its reference,
+	// so the one under the pointer can be pressed by name.
+	var walk func(id string, depth int, inForm, actedOnly bool)
+	walk = func(id string, depth int, inForm, actedOnly bool) {
 		node, ok := byID[id]
 		if !ok {
 			return
@@ -86,6 +89,12 @@ func Build(nodes []cdp.AXNode) Outline {
 		name := clean(node.Name.String())
 		if role == "form" {
 			inForm = true
+		}
+		if actedOnly && !acted[role] {
+			for _, c := range node.ChildIDs {
+				walk(c, depth+1, inForm, true)
+			}
+			return
 		}
 		if !node.Ignored {
 			line := ""
@@ -125,16 +134,20 @@ func Build(nodes []cdp.AXNode) Outline {
 				}
 				if acted[role] {
 					// A control's own text is its name; its children add
-					// nothing but the same words again.
+					// nothing but the same words again, and only the
+					// controls inside it are written.
+					for _, c := range node.ChildIDs {
+						walk(c, depth+1, inForm, true)
+					}
 					return
 				}
 			}
 		}
 		for _, c := range node.ChildIDs {
-			walk(c, depth+1, inForm)
+			walk(c, depth+1, inForm, actedOnly)
 		}
 	}
-	walk(root.NodeID, 0, false)
+	walk(root.NodeID, 0, false, false)
 	o.Text = b.String()
 	if o.Omitted > 0 {
 		o.Text += fmt.Sprintf("… and %d more things, left out to keep this short\n", o.Omitted)
@@ -142,9 +155,14 @@ func Build(nodes []cdp.AXNode) Outline {
 	return o
 }
 
-// clean is a name as one line, not too long.
+// fakeRef is page text dressed as one of the outline's references.
+var fakeRef = regexp.MustCompile(`\[(e\d+)\]`)
+
+// clean is a name as one line, not too long, and never looking like a
+// reference: only a control the outline wrote has one.
 func clean(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
+	s = fakeRef.ReplaceAllString(s, "($1)")
 	if len(s) > 200 {
 		s = s[:200] + "…"
 	}
@@ -153,20 +171,33 @@ func clean(s string) string {
 
 // consequentialWords are what a control is called when pressing it does
 // something that cannot be taken back or that commits somebody: sends,
-// pays, deletes, agrees. Matched on whole words of the control's name, in
-// English for now; a site in another language is caught by the form rule
-// and by what its write hosts allow.
-var consequentialWords = regexp.MustCompile(`(?i)\b(send|submit|pay|purchase|buy|order|checkout|check out|book|reserve|delete|remove|erase|cancel|unsubscribe|confirm|publish|post|agree|accept|sign|transfer|withdraw|approve|place)\b`)
+// pays, deletes, agrees, signs in, saves. Matched on whole words of the
+// control's name, in English for now; a site in another language is caught
+// by the form rule and by what its write hosts allow.
+var consequentialWords = regexp.MustCompile(`(?i)\b(send|submit|pay|payment|purchase|buy|order|checkout|check out|` +
+	`book|reserve|delete|remove|erase|cancel|subscribe|unsubscribe|confirm|publish|post|agree|accept|sign|sign in|` +
+	`sign up|transfer|withdraw|approve|place|authori[sz]e|allow|donate|upgrade|renew|save|apply|grant|invite|share|` +
+	`deactivate)\b`)
+
+// entered are the roles a person types into or picks a value in: pressing
+// one commits to nothing.
+var entered = map[string]bool{"textbox": true, "searchbox": true, "spinbutton": true, "slider": true,
+	"combobox": true, "listbox": true}
 
 // Consequential says why acting on an element commits to something, or is
-// empty. A button inside a form submits it; a control named for sending,
-// paying, deleting or agreeing does what it says.
+// empty. A control named for sending, paying, deleting or agreeing does
+// what it says; a switch takes effect as it is pressed; a button inside a
+// form submits it. The driver asks the page itself as well (cdp.Facts),
+// which knows a button that sends a form from outside it.
 func Consequential(e Element, inForm bool) string {
-	if e.Role != "button" && e.Role != "link" && e.Role != "menuitem" {
+	if entered[e.Role] {
 		return ""
 	}
 	if m := consequentialWords.FindString(e.Name); m != "" {
 		return fmt.Sprintf("it is called %q", e.Name)
+	}
+	if e.Role == "switch" {
+		return "it is a switch, which usually takes effect as it is pressed"
 	}
 	if inForm && e.Role == "button" {
 		return "it submits a form"
