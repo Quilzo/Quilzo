@@ -263,6 +263,13 @@ func Key(name, goal string, seen []agent.Observation) string {
 	page := ""
 	for i := len(seen) - 1; i >= 0; i-- {
 		if seen[i].Err == nil && agent.IsBrowser(seen[i].From) && !seen[i].Trusted {
+			if seen[i].From == "browser_look" {
+				// A look leaves a placeholder — the address, and a note that
+				// a picture travelled — which names a page by address alone:
+				// two states of one address would share a key. The outline
+				// before it is the page this can key on.
+				continue
+			}
 			page = seen[i].Body
 			break
 		}
@@ -293,7 +300,11 @@ type Note func(Event)
 // only when nothing is remembered for the page in front of the run, and
 // every step — replayed or decided — is confirmed by the page that
 // follows it before the flow goes on.
-func Wrap(inner agent.Decide, s *Store, agentName string, note Note) agent.Decide {
+//
+// reset, when not nil, is called whenever a replay answers from memory:
+// whatever the inner decider was holding over from its last answer — a
+// dialect's open batch — belongs to a plan this flow is no longer on.
+func Wrap(inner agent.Decide, s *Store, agentName string, note Note, reset func()) agent.Decide {
 	var lastKey string
 	var lastAction agent.Action
 	var lastAfter string
@@ -329,6 +340,9 @@ func Wrap(inner agent.Decide, s *Store, agentName string, note Note) agent.Decid
 		key := Key(agentName, goal, seen)
 		if key != "" {
 			if a, after, ok := s.Lookup(key); ok {
+				if reset != nil {
+					reset()
+				}
 				lastKey, lastAction, lastAfter, replayed = key, a, after, true
 				if note != nil {
 					note(Event{Replay: true, Digest: key, Op: a.Op})

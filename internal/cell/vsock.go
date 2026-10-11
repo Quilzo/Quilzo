@@ -56,7 +56,7 @@ func Connect(ctx context.Context, socket string) (*Helper, error) {
 		conn.Close()
 		return nil, fmt.Errorf("the cell's vsock did not answer OK: %q %v", okLine, err)
 	}
-	return &Helper{conn: conn, r: bufio.NewReader(conn)}, nil
+	return &Helper{conn: conn, r: bufio.NewReaderSize(conn, MaxLine+2)}, nil
 }
 
 // Close ends the conversation.
@@ -67,25 +67,35 @@ func (h *Helper) Close() error { return h.conn.Close() }
 // picture is bounded in bytes, not lines.
 const MaxLine = 1 << 20
 
-// ask sends one request and reads one answer.
+// ask sends one request and reads one answer. Every ask carries its own
+// deadline — the one from its context when there is one, a bounded wait
+// when there is not — because the deadline set at connect was for the
+// handshake and is spent.
 func (h *Helper) ask(ctx context.Context, req, answer any) error {
 	b, err := json.Marshal(req)
 	if err != nil {
 		return err
 	}
-	if deadline, ok := ctx.Deadline(); ok {
-		_ = h.conn.SetDeadline(deadline)
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(30 * time.Second)
 	}
+	_ = h.conn.SetDeadline(deadline)
 	if _, err := h.conn.Write(append(b, '\n')); err != nil {
 		return err
 	}
-	line, err := h.r.ReadBytes('\n')
+	// Bounded as it reads: a helper that streams bytes with no end of line
+	// in them is a bug or a compromise, and either way it must not be able
+	// to ask this process for all its memory. The reader is sized to hold
+	// one whole bounded line, so ErrBufferFull is exactly the refusal.
+	line, err := h.r.ReadSlice('\n')
+	if err == bufio.ErrBufferFull {
+		return errors.New("the helper's answer is larger than this reads")
+	}
 	if err != nil {
 		return err
 	}
-	if len(line) > MaxLine {
-		return errors.New("the helper's answer is larger than this reads")
-	}
+
 	var said struct {
 		Err string `json:"err,omitempty"`
 	}

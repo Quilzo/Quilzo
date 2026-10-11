@@ -11,10 +11,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -177,9 +179,10 @@ func cmdBrowserGrant(root string, args []string) error {
 		if err := atomicfile.Write(grantsPath(root), b, 0o600); err != nil {
 			return err
 		}
+		closeGrantSessionsOf(name, "the grant was withdrawn", time.Now())
 		record(root, caller.auditRecord("browser.grant", "/mcp/browser/"+name, audit.Success,
 			map[string]string{"grant": name, "off": "1"}))
-		fmt.Printf("  %swithdrawn%s\n", green, reset)
+		fmt.Printf("  %swithdrawn, and any browser running on it closed%s\n", green, reset)
 		return nil
 	}
 	hosts := func(list string) []string {
@@ -193,6 +196,11 @@ func cmdBrowserGrant(root string, args []string) error {
 	}
 	g := browserGrant{Name: name, Read: hosts(*read), Write: hosts(*write),
 		Ops: hosts(*ops), Pictures: *pictures, Daily: *daily}
+	for _, op := range g.Ops {
+		if op != "browser_sign_in" && !slices.Contains(agent.BrowserCapabilities[:], op) {
+			return fmt.Errorf("%q is not a browser action a grant may offer", op)
+		}
+	}
 	if _, err := g.manifest(); err != nil {
 		return err
 	}
