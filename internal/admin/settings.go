@@ -335,6 +335,8 @@ func settingGroupLabel(key string) string {
 		return "Chatbots"
 	case "agents":
 		return "Agents"
+	case "browser":
+		return "Agents' browser"
 	case "a2a":
 		return "Other vendors' agents (A2A)"
 	case "mcp":
