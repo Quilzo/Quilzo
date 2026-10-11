@@ -178,6 +178,9 @@ func (n Native) Run(ctx context.Context, s Spec) (Result, error) {
 		}
 	}
 	ss := shimSpec{Program: s.Program, Args: s.Args, ReadWrite: append([]string{s.Workdir}, s.Write...), Limits: s.Limits, Files: len(s.Files)}
+	if s.ReadOnlyWorkdir {
+		ss.ReadWrite, ss.Read = append([]string(nil), s.Write...), []string{s.Workdir}
+	}
 	for _, p := range append(append([]string(nil), systemReads...), s.Read...) {
 		if _, err := os.Stat(p); err == nil {
 			ss.Read = append(ss.Read, p)

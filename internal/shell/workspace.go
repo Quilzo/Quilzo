@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 )
@@ -128,7 +129,9 @@ func (w *Workspace) Read(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	f, err := w.root.Open(c)
+	// Opened without waiting: a named pipe a command made would otherwise
+	// hold the read, and the run, until somebody wrote to it.
+	f, err := w.root.OpenFile(c, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return "", notThere(name, err)
 	}
@@ -139,6 +142,9 @@ func (w *Workspace) Read(name string) (string, error) {
 	}
 	if fi.IsDir() {
 		return "", fmt.Errorf("%s is a folder; file_list shows what it holds", name)
+	}
+	if !fi.Mode().IsRegular() {
+		return "", fmt.Errorf("%s is not a plain file", name)
 	}
 	if fi.Size() > MaxRead {
 		return "", fmt.Errorf("%s is %d bytes, more than the %d a read gives; read part of it with a command", name, fi.Size(), MaxRead)

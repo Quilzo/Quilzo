@@ -75,6 +75,10 @@ type Spec struct {
 	Workdir string
 	// Read are further paths it may read, beyond the system's own.
 	Read []string
+	// ReadOnlyWorkdir makes Workdir readable and not writable: a command
+	// that only reads gets its workspace so, and whatever it runs (a
+	// configured hook, a preprocessor) cannot change it either.
+	ReadOnlyWorkdir bool
 	// Write are further directories it may write, beyond Workdir: a
 	// command's scratch home, kept out of the workspace it works on.
 	Write    []string
