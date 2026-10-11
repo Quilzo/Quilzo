@@ -161,7 +161,8 @@ func agentUsage() error {
                          amendment that widens what it may do is refused until --widen, with the list
   sponsor NAME PERSON    who answers for it; it stops when they can no longer act here
   renew NAME [--for D]   another stretch before it has to be renewed (90 days unless said)
-  receipt RUN [-o FILE]  what a run did, from the log, with proofs anybody can check
+  receipt RUN [-o FILE] [--bundle F]  what a run did, from the log, with proofs anybody can check;
+                         --bundle writes one file that replays it: steps, pictures, proof
   verify-receipt FILE    check a receipt against the public keys you were given
   list                   what is declared here
   show NAME              one manifest in full
