@@ -157,7 +157,8 @@ func agentUsage() error {
   templates              the archetypes, and when to reach for each
   new NAME --kind KIND   declare one from a template
   draft "WHAT IT IS FOR" a model drafts one; the checker says what it could do; nothing is saved
-  declare FILE           save a declaration written out, checked again on the way in
+  declare FILE [--widen] save a declaration written out, checked again on the way in; an
+                         amendment that widens what it may do is refused until --widen, with the list
   sponsor NAME PERSON    who answers for it; it stops when they can no longer act here
   renew NAME [--for D]   another stretch before it has to be renewed (90 days unless said)
   receipt RUN [-o FILE]  what a run did, from the log, with proofs anybody can check

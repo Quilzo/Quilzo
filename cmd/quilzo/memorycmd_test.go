@@ -79,7 +79,7 @@ func rememberingAgent(t *testing.T, calls string) (string, *Caller, *Caller) {
 		Tools:   []agent.Tool{{Name: "lookup", Host: "api.example.com", Purpose: "look things up"}},
 		Budget:  agent.Budget{Steps: 10, Tools: 2, Duration: agent.Duration(time.Minute)},
 		Program: &agent.Program{Command: []string{os.Args[0], "agentbox-program-calls", calls}}}
-	if err := declareAgent(root, m, true, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, m, true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	return root, asAdmin("dana"), asAdmin("sam")
@@ -90,7 +90,7 @@ func setCalls(t *testing.T, root, calls string) {
 	set, _ := loadAgents(root)
 	m := set.Agents["helper"]
 	m.Program.Command[2] = calls
-	if err := declareAgent(root, m, false, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -73,7 +73,7 @@ func keeperRun(t *testing.T) string {
 		Capabilities: agent.ShellCapabilities, Autonomy: agent.AutonomyDraft,
 		Shell:  &agent.Shell{Programs: []string{"ls", "rm"}},
 		Budget: agent.Budget{Steps: 8, Tools: 1, Duration: agent.Duration(2 * time.Minute)}}
-	if err := declareAgent(root, m, true, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, m, true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	return root

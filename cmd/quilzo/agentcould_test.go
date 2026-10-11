@@ -26,7 +26,7 @@ func TestCouldAnswersAsTheRunEnforces(t *testing.T) {
 	m := set.Agents["tidy"]
 	m.Tools = []agent.Tool{{Name: "file_issue", Host: "tracker.example", Purpose: "file what it finds"}}
 	m.Retrieval = agent.Retrieval{Ref: "draft"}
-	if err := declareAgent(root, m, false, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	ask := func(what, page string, model bool, as *Caller) couldAnswer {
@@ -94,7 +94,7 @@ func TestCouldAsksAWriteOfTheDraft(t *testing.T) {
 	set, _ := loadAgents(root)
 	m := set.Agents["tidy"]
 	m.Retrieval = agent.Retrieval{Ref: "live"}
-	if err := declareAgent(root, m, false, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	a, err := could(root, "tidy", "write_page", "about", false, false, asAdmin("dana"))

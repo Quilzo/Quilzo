@@ -114,7 +114,7 @@ func programAgent(t *testing.T) string {
 		Tools:   []agent.Tool{{Name: "lookup", Host: "api.example.com", Purpose: "look things up"}},
 		Budget:  agent.Budget{Steps: 10, Tools: 2, Duration: agent.Duration(time.Minute)},
 		Program: &agent.Program{Command: []string{os.Args[0], "agentbox-program"}}}
-	if err := declareAgent(root, m, true, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, m, true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	return root
@@ -320,20 +320,20 @@ func TestOnlyAnAdministratorGivesAnAgentAProgram(t *testing.T) {
 	m.Program = &agent.Program{Command: []string{"/usr/bin/env"}}
 	ann := human("ann")
 	ann.Role, ann.Verified = auth.RolePublisher, true
-	if err := declareAgent(root, m, false, ann); err == nil || !strings.Contains(err.Error(), "administrator") {
+	if err := declareAgent(root, m, false, true, ann); err == nil || !strings.Contains(err.Error(), "administrator") {
 		t.Fatalf("a publisher gave an agent a program: %v", err)
 	}
-	if err := declareAgent(root, m, false, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err != nil {
 		t.Fatalf("an administrator: %v", err)
 	}
 	// Unchanged, it is not asked again: a publisher editing the rest of the
 	// declaration keeps the program an administrator set.
 	m.Purpose = "Tidy pages, carefully"
-	if err := declareAgent(root, m, false, ann); err != nil {
+	if err := declareAgent(root, m, false, true, ann); err != nil {
 		t.Fatalf("an unchanged program was asked about: %v", err)
 	}
 	m.Program = &agent.Program{Command: []string{"/usr/bin/env"}, Read: []string{root}}
-	if err := declareAgent(root, m, false, asAdmin("dana")); err == nil {
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err == nil {
 		t.Fatal("a program reading the store was declared")
 	}
 }
@@ -365,7 +365,7 @@ func TestAProgramThatReadTheDraftCannotSendItOut(t *testing.T) {
 	m := set.Agents["coder"]
 	m.AskFirst = nil
 	m.Program.Command = []string{os.Args[0], "agentbox-program-leak"}
-	if err := declareAgent(root, m, false, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	id, out, err := runAgentKeptBy(context.Background(), root, "coder", "send the about page", false, true, asAdmin("dana"))

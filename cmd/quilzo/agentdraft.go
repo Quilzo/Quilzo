@@ -365,10 +365,15 @@ func agentDraft(root string, args []string) error {
 // out, by agent draft or by hand, saved as the screen saves one, checked
 // again on the way in.
 func agentDeclareFile(root string, args []string) error {
-	if len(args) != 1 {
-		return errors.New("quilzo agent declare FILE")
+	fs := flag.NewFlagSet("agent declare", flag.ContinueOnError)
+	widen := fs.Bool("widen", false, "allow this amendment to widen what the agent may do, having read what it adds")
+	if err := fs.Parse(args); err != nil {
+		return err
 	}
-	body, err := os.ReadFile(args[0])
+	if fs.NArg() != 1 {
+		return errors.New("quilzo agent declare FILE [--widen]")
+	}
+	body, err := os.ReadFile(fs.Arg(0))
 	if err != nil {
 		return err
 	}
@@ -376,12 +381,20 @@ func agentDeclareFile(root string, args []string) error {
 	dec := json.NewDecoder(strings.NewReader(string(body)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&m); err != nil {
-		return fmt.Errorf("%s is not a declaration: %w", args[0], err)
+		return fmt.Errorf("%s is not a declaration: %w", fs.Arg(0), err)
 	}
 	if err := m.Validate(knownCapabilities(root)); err != nil {
 		return err
 	}
-	if err := declareAgent(root, m, true, resolveCaller(root, flagToken)); err != nil {
+	// A name already declared makes this an amendment, and an amendment
+	// that widens is gated: the exact list of what it adds, read before
+	// it is allowed.
+	set, err := loadAgents(root)
+	if err != nil {
+		return err
+	}
+	_, exists := set.Agents[m.Name]
+	if err := declareAgent(root, m, !exists, *widen, resolveCaller(root, flagToken)); err != nil {
 		return err
 	}
 	w.Human("declared %s; quilzo agent could %s OPERATION says what a run of it could do\n", m.Name, m.Name)

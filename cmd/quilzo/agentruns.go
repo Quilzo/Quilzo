@@ -550,7 +550,7 @@ func listAgentRuns(root, name string, limit int) ([]agent.Record, error) {
 // declareAgent stores a declaration after validating it against what the
 // machine interface actually offers. The one place a declaration is written
 // from a screen.
-func declareAgent(root string, m agent.Manifest, isNew bool, caller *Caller) error {
+func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller *Caller) error {
 	if caller.Kind == audit.KindAI {
 		return fmt.Errorf("an agent is declared by a person. A model that " +
 			"could declare one could write its own permissions")
@@ -565,6 +565,22 @@ func declareAgent(root string, m agent.Manifest, isNew bool, caller *Caller) err
 		return fmt.Errorf("an agent called %s is already declared", m.Name)
 	case !isNew && !exists:
 		return fmt.Errorf("no agent called %s is declared", m.Name)
+	}
+	// The amendment's reach, computed rather than summarised: what this
+	// agent may now do that it may not before, listed exactly, and gated
+	// where it widens. An amendment that reads as a review of the same
+	// agent and quietly grants a host, a program or a step of autonomy is
+	// the oldest trick on a tired reader, and the answer to it is the diff
+	// itself, in the reader's words.
+	var delta agent.Delta
+	if !isNew {
+		delta = agent.DeltaOf(set.Agents[m.Name], m)
+		if delta.Widens && !widen {
+			return fmt.Errorf(
+				"this amendment widens what %s may do, and widening is its own decision:\n  %s\n"+
+					"read the list, and declare it again with --widen when it is what you mean",
+				m.Name, strings.Join(delta.Added, "\n  "))
+		}
 	}
 	if err := m.Validate(knownCapabilities(root)); err != nil {
 		return err
@@ -602,10 +618,15 @@ func declareAgent(root string, m agent.Manifest, isNew bool, caller *Caller) err
 	if isNew {
 		did = "agent.declare"
 	}
-	return recordE(root, caller.auditRecord(did, "/", audit.Success,
-		map[string]string{"agent": m.Name, "kind": string(m.Kind),
-			"autonomy":     string(m.Autonomy),
-			"capabilities": strings.Join(m.Capabilities, " ")}))
+	detail := map[string]string{"agent": m.Name, "kind": string(m.Kind),
+		"autonomy":     string(m.Autonomy),
+		"capabilities": strings.Join(m.Capabilities, " ")}
+	if delta.Widens {
+		// The widening that was allowed, in the record, exactly as it was
+		// read: a log that says "3 things changed" is a log nobody audits.
+		detail["widened"] = clip(delta.Lines(), 2000)
+	}
+	return recordE(root, caller.auditRecord(did, "/", audit.Success, detail))
 }
 
 // withdrawAgent removes a declaration. What the agent did stays on record.

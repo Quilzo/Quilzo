@@ -28,7 +28,7 @@ func identityStore(t *testing.T) (root string, pol *auth.Policy) {
 	if err := saveJSON(policyPath(root), pol); err != nil {
 		t.Fatal(err)
 	}
-	if err := declareAgent(root, asker("tidy"), true, asAdmin("dana")); err != nil {
+	if err := declareAgent(root, asker("tidy"), true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	return root, pol
