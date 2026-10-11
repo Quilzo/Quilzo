@@ -62,7 +62,8 @@ type Browser struct {
 // has no business doing: phone home for updates, safe-browsing lists,
 // metrics, crash reports or sync; run extensions; keep passwords in the
 // desktop's keyring; play sound; open a window of its own, which would be
-// a page nobody attached to.
+// a page nobody attached to; or load a page ahead of time (prerender and
+// prefetch), which would be a request outside the page being watched.
 var hardening = []string{
 	"--no-first-run", "--no-default-browser-check",
 	"--disable-background-networking", "--disable-component-update", "--disable-sync",
@@ -70,7 +71,7 @@ var hardening = []string{
 	"--disable-client-side-phishing-detection", "--disable-breakpad", "--disable-crash-reporter",
 	"--metrics-recording-only", "--disable-background-timer-throttling",
 	"--password-store=basic", "--use-mock-keychain", "--mute-audio",
-	"--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication",
+	"--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication,Prerender2,SpeculationRulesPrefetchFuture,PrefetchProxy",
 	"--disable-dev-shm-usage", "--block-new-web-contents",
 }
 

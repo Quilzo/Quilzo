@@ -104,13 +104,23 @@ type Refusal struct {
 // every target the browser or the page starts is attached as it starts,
 // held before it runs anything, and let go only once its requests pass
 // here too. One that cannot be watched is never let go, and a page other
-// than this one is closed.
+// than this one is closed. A target attached twice (a service worker is,
+// from the browser and from the page) is watched on both, so it stays
+// watched when the page that attached it moves on.
+//
+// A WebSocket is the one thing the browser does not pause: neither request
+// interception nor blocking by address sees one. So the page gets none:
+// WebSocket, WebSocketStream and WebTransport are taken out of every page,
+// frame and worker before its own script runs, and one opened anyway is
+// reported. What it could carry is what the page's own script could put in
+// an address it is let read, which the rule already allows; what the agent
+// types is held by the breaker.
 func Guard(ctx context.Context, b *cdp.Browser, p *cdp.Page, rule Rule, proxyUser, proxyPass string, refused func(Refusal)) (func(), error) {
 	g := &guard{b: b, page: p, rule: rule, user: proxyUser, pass: proxyPass, refused: refused,
-		watched: map[string]bool{p.Session: true}, targets: map[string]bool{}}
+		watched: map[string]bool{p.Session: true}}
 	evs, cancel := b.SubscribeN(4096, func(e cdp.Event) bool {
 		switch e.Method {
-		case "Fetch.requestPaused", "Fetch.authRequired":
+		case "Fetch.requestPaused", "Fetch.authRequired", "Network.webSocketCreated":
 			return g.watching(e.SessionID)
 		case "Target.attachedToTarget", "Target.detachedFromTarget":
 			return true
@@ -140,7 +150,7 @@ func Guard(ctx context.Context, b *cdp.Browser, p *cdp.Page, rule Rule, proxyUse
 		wg.Wait()
 		g.wg.Wait()
 	}
-	if err := g.watch(ctx, p.Session); err != nil {
+	if err := g.watch(ctx, p.Session, "page"); err != nil {
 		end()
 		return nil, err
 	}
@@ -161,6 +171,11 @@ var autoAttach = map[string]any{
 	"filter": []map[string]any{{"type": "browser", "exclude": true}, {"type": "tab", "exclude": true}, {}},
 }
 
+// noSockets takes the ways to open a socket out of a page or worker, before
+// its own script runs, so they cannot be put back from there.
+const noSockets = `(() => { for (const k of ["WebSocket", "WebSocketStream", "WebTransport"]) {
+  try { Object.defineProperty(globalThis, k, {value: undefined, writable: false, configurable: false}); } catch (e) {} } })()`
+
 type guard struct {
 	b          *cdp.Browser
 	page       *cdp.Page
@@ -170,7 +185,6 @@ type guard struct {
 
 	mu      sync.Mutex
 	watched map[string]bool
-	targets map[string]bool
 	wg      sync.WaitGroup
 }
 
@@ -180,15 +194,38 @@ func (g *guard) watching(session string) bool {
 	return g.watched[session]
 }
 
-// watch pauses every request one target makes, from here on.
-func (g *guard) watch(ctx context.Context, session string) error {
+// watch pauses every request one target makes, from here on, and takes
+// sockets out of it.
+func (g *guard) watch(ctx context.Context, session, kind string) error {
 	g.mu.Lock()
 	g.watched[session] = true
 	g.mu.Unlock()
-	return g.b.Call(ctx, session, "Fetch.enable", map[string]any{
+	if err := g.b.Call(ctx, session, "Fetch.enable", map[string]any{
 		"patterns":           []map[string]any{{"urlPattern": "*", "requestStage": "Request"}},
 		"handleAuthRequests": true,
-	}, nil)
+	}, nil); err != nil {
+		return err
+	}
+	return g.noSockets(ctx, session, kind)
+}
+
+// noSockets takes sockets out of a target and reports any opened anyway.
+func (g *guard) noSockets(ctx context.Context, session, kind string) error {
+	// Told about every socket, so one that gets past is reported. Nothing
+	// is kept of the traffic itself.
+	if err := g.b.Call(ctx, session, "Network.enable", map[string]any{"maxTotalBufferSize": 0, "maxResourceBufferSize": 0}, nil); err != nil {
+		return err
+	}
+	switch kind {
+	case "page", "iframe":
+		// In every document the target loads from here on, before its
+		// script, and in the one it has now.
+		return g.b.Call(ctx, session, "Page.addScriptToEvaluateOnNewDocument",
+			map[string]any{"source": noSockets, "runImmediately": true}, nil)
+	default:
+		// A worker is held before it runs: this is its first script.
+		return g.b.Call(ctx, session, "Runtime.evaluate", map[string]any{"expression": noSockets}, nil)
+	}
 }
 
 func (g *guard) handle(ctx context.Context, e cdp.Event) {
@@ -207,12 +244,13 @@ func (g *guard) handle(ctx context.Context, e cdp.Event) {
 		}
 		// Each on its own, so the requests already paused are decided
 		// while a new target is set up.
+		parent := e.SessionID
 		g.wg.Add(1)
 		go func() {
 			defer g.wg.Done()
 			actx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
-			g.attached(actx, a.SessionID, a.TargetInfo.TargetID, a.TargetInfo.Type, a.TargetInfo.URL)
+			g.attached(actx, parent, a.SessionID, a.TargetInfo.TargetID, a.TargetInfo.Type, a.TargetInfo.URL)
 		}()
 	case "Target.detachedFromTarget":
 		var d struct {
@@ -223,42 +261,38 @@ func (g *guard) handle(ctx context.Context, e cdp.Event) {
 			delete(g.watched, d.SessionID)
 			g.mu.Unlock()
 		}
+	case "Network.webSocketCreated":
+		var w struct {
+			URL string `json:"url"`
+		}
+		if json.Unmarshal(e.Params, &w) == nil && g.refused != nil {
+			u, err := url.Parse(w.URL)
+			if err != nil {
+				u = &url.URL{}
+			}
+			g.refused(Refusal{Request: Request{URL: u, Method: "GET", Kind: "WebSocket"},
+				Why: "a page opened a WebSocket, which an agent's browser does not allow and cannot pause"})
+		}
 	default:
 		decide(ctx, g.b, e, g.rule, g.user, g.pass, g.refused)
 	}
 }
 
-// attached is a target the browser holds until this lets it run.
-func (g *guard) attached(ctx context.Context, session, target, kind, at string) {
+// attached is a target the browser holds until this lets it run. parent is
+// the session it was attached through, "" for the browser's own.
+func (g *guard) attached(ctx context.Context, parent, session, target, kind, at string) {
 	if kind == "page" {
 		if target != g.page.Target {
 			// A window this page did not get to be: there is one page,
 			// and it is the one attached on purpose.
 			_ = g.b.Call(ctx, "", "Target.closeTarget", map[string]any{"targetId": target}, nil)
 		}
-		// This page, attached twice: the first attachment watches it.
-		_ = g.b.Call(ctx, "", "Target.detachFromTarget", map[string]any{"sessionId": session}, nil)
+		// This page, attached again from the browser: the first
+		// attachment watches it.
+		_ = g.b.Call(ctx, parent, "Target.detachFromTarget", map[string]any{"sessionId": session}, nil)
 		return
 	}
-	// Attached both from the browser and from the page, a service worker
-	// is: once is enough, and the second is let go.
-	g.mu.Lock()
-	again := g.targets[target]
-	g.targets[target] = true
-	g.mu.Unlock()
-	if again {
-		_ = g.b.Call(ctx, "", "Target.detachFromTarget", map[string]any{"sessionId": session}, nil)
-		return
-	}
-	if kind == "worker" {
-		// A dedicated worker's requests are its page's, and paused there
-		// (TestNothingThePageStartsGoesUnwatched shows it); it has no
-		// interception of its own to turn on.
-		_ = g.b.Call(ctx, session, "Target.setAutoAttach", autoAttach, nil)
-		_ = g.b.Call(ctx, session, "Runtime.runIfWaitingForDebugger", nil, nil)
-		return
-	}
-	if err := g.watch(ctx, session); err != nil {
+	hold := func(err error) {
 		// Left held: what cannot be watched does not run.
 		if g.refused != nil {
 			u, _ := url.Parse(at)
@@ -268,11 +302,29 @@ func (g *guard) attached(ctx context.Context, session, target, kind, at string) 
 			g.refused(Refusal{Request: Request{URL: u, Kind: kind},
 				Why: fmt.Sprintf("a %s the page started could not be watched, so it was not run (%v)", kind, err)})
 		}
+	}
+	if kind == "worker" {
+		// A dedicated worker's requests are its page's, and paused there
+		// (TestNothingThePageStartsGoesUnwatched shows it); it has no
+		// interception of its own to turn on, and starts nothing.
+		if err := g.b.Call(ctx, session, "Runtime.evaluate", map[string]any{"expression": noSockets}, nil); err != nil {
+			hold(err)
+			return
+		}
+		_ = g.b.Call(ctx, session, "Runtime.runIfWaitingForDebugger", nil, nil)
 		return
 	}
-	// What it starts in turn is held the same way; a worker that starts
-	// nothing has no such command, which is fine.
-	_ = g.b.Call(ctx, session, "Target.setAutoAttach", autoAttach, nil)
+	if err := g.watch(ctx, session, kind); err != nil {
+		hold(err)
+		return
+	}
+	// What it starts in turn is held the same way. A frame can start
+	// frames, so one whose own starts cannot be held is not run either; a
+	// worker may not have the command at all.
+	if err := g.b.Call(ctx, session, "Target.setAutoAttach", autoAttach, nil); err != nil && kind == "iframe" {
+		hold(err)
+		return
+	}
 	_ = g.b.Call(ctx, session, "Runtime.runIfWaitingForDebugger", nil, nil)
 }
 
