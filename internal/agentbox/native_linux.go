@@ -172,7 +172,12 @@ func (n Native) Run(ctx context.Context, s Spec) (Result, error) {
 	if s.Workdir == "" || !filepath.IsAbs(s.Workdir) {
 		return Result{}, errors.New("a box needs its own working directory")
 	}
-	ss := shimSpec{Program: s.Program, Args: s.Args, ReadWrite: []string{s.Workdir}, Limits: s.Limits, Files: len(s.Files)}
+	for _, w := range s.Write {
+		if !filepath.IsAbs(w) {
+			return Result{}, fmt.Errorf("%q is not an absolute path to write", w)
+		}
+	}
+	ss := shimSpec{Program: s.Program, Args: s.Args, ReadWrite: append([]string{s.Workdir}, s.Write...), Limits: s.Limits, Files: len(s.Files)}
 	for _, p := range append(append([]string(nil), systemReads...), s.Read...) {
 		if _, err := os.Stat(p); err == nil {
 			ss.Read = append(ss.Read, p)
