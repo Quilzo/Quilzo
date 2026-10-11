@@ -693,6 +693,11 @@ var coverage = map[string]surfaces{
 	"browser": {Why: "a one-time download an operator makes, and a status line; which browser a run " +
 		"used is on the run's page",
 		NoMCP: "fetches and installs a program this store then runs"},
+	"cell": {Why: "whether this machine can run a desktop cell; a cell is driven by the " +
+		"operator's microVM binary over its socket, and nothing about one is " +
+		"changeable from a screen",
+		NoMCP: "drives a microVM on the machine it runs on; there is nothing to reach " +
+			"from another one"},
 	"secret": {Why: "a credential is given on standard input, where no browser history, " +
 		"screen or form field holds it on the way",
 		NoMCP: "keeps credentials; an agent that could set one could set the one it is about to be handed"},

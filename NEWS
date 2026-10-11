@@ -9,6 +9,19 @@ Unreleased
 
 ** Added
 
+*** Desktop cells, P4 of the computer-use plan, host side: `internal/cell`
+    drives a microVM (Firecracker or Cloud Hypervisor — whichever binary
+    the operator installed) over its own Unix socket, restores a warm
+    snapshot of a desktop in milliseconds, and speaks to the small helper
+    inside through the cell's vsock: the accessibility tree as an outline
+    with references, presses, typing, the four named keys, and a picture.
+    `quilzo cell status` says whether this machine can run one and what it
+    would restore (`cell.backend`, `cell.binary`, `cell.snapshot`,
+    `cell.memory`).  The image with its X server, accessibility tree and
+    apps is the operator's to warm; no host directory is mounted into a
+    cell, and its only door to the host is the vsock this program
+    connects to.
+
 *** The governed browser is offered over MCP, to other vendors' agents:
     `quilzo browser grant NAME --read HOST,… [--write HOST,…] [--daily N]
     [--pictures]` declares what an outside client — Claude Code, Codex,
