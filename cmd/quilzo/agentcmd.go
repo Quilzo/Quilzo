@@ -968,6 +968,10 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		decide = agentmodel.Decider{
 			Model:   model,
 			Session: sess,
+			// The dialect the manifest names, when the model was taught to
+			// answer in its maker's computer-use words: translated onto the
+			// same closed vocabulary before anything else happens to it.
+			Dialect: m.Dialect,
 			// Reported by the provider, not measured here. Fed to the session
 			// so the budget counts what the run actually cost.
 			Tokens:    sess.Tokens,
