@@ -4,9 +4,9 @@
 package agent
 
 import (
-	"fmt"
-	"encoding/hex"
 	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"regexp"
 	"time"
 )

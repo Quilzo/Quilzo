@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -54,37 +55,43 @@ func holdsLive(m agent.Manifest) bool { return holdsBrowser(m) || holdsShell(m) 
 
 func workspacesDir(root string) string { return filepath.Join(root, "workspaces") }
 
+// reWorkspaceAgent is what an agent's name must be to name folders here:
+// it becomes a path, so never "..", a dot name or a separator.
+var reWorkspaceAgent = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+
 // workspaceDir is where an agent's workspace is: the folder it declares,
 // or its own beside the store's other folders.
 func workspaceDir(root string, m agent.Manifest) (string, error) {
-	if m.Shell != nil && m.Shell.Workspace != "" {
-		// Compared as the folders they are, links followed: a workspace
-		// that is a link to the store is the store.
-		ws, err := realPath(m.Shell.Workspace)
-		if err != nil {
-			return "", err
-		}
-		store, err := realPath(root)
-		if err != nil {
-			return "", err
-		}
-		// The store holds keys and tokens: a workspace that is the store,
-		// holds it, or sits inside it outside the workspaces' own folder
-		// would hand a command all of that.
-		mine := workspacesDir(store) + string(filepath.Separator)
-		switch {
-		case ws == store || strings.HasPrefix(store+string(filepath.Separator), ws+string(filepath.Separator)):
-			return "", fmt.Errorf("%s's workspace %s holds the store; name a folder of its own", m.Name, ws)
-		case strings.HasPrefix(ws, store+string(filepath.Separator)) && !strings.HasPrefix(ws, mine):
-			return "", fmt.Errorf("%s's workspace %s is inside the store; name a folder of its own", m.Name, ws)
-		}
-		return ws, nil
+	if !reWorkspaceAgent.MatchString(m.Name) {
+		return "", fmt.Errorf("%q is not a name a workspace can be kept under: lower case letters, digits and hyphens", m.Name)
 	}
-	abs, err := filepath.Abs(workspacesDir(root))
+	store, err := realPath(root)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(abs, m.Name), nil
+	own := filepath.Join(store, "workspaces", m.Name)
+	if m.Shell == nil || m.Shell.Workspace == "" {
+		return own, nil
+	}
+	ws := filepath.Clean(m.Shell.Workspace)
+	// Reached as written, or not at all: a link anywhere on the way could
+	// point at the store, another agent's workspace, or a home folder.
+	real, err := realPath(ws)
+	if err != nil {
+		return "", err
+	}
+	if real != ws {
+		return "", fmt.Errorf("%s's workspace %s is reached through a link (it is %s); name the folder itself", m.Name, ws, real)
+	}
+	sep := string(filepath.Separator)
+	switch {
+	case ws == store || strings.HasPrefix(store+sep, ws+sep):
+		// The store holds keys and tokens.
+		return "", fmt.Errorf("%s's workspace %s holds the store; name a folder of its own", m.Name, ws)
+	case strings.HasPrefix(ws, store+sep) && ws != own:
+		return "", fmt.Errorf("%s's workspace %s is inside the store; inside it, an agent's workspace is %s", m.Name, ws, own)
+	}
+	return ws, nil
 }
 
 // realPath is a path with every link in it followed, as far as it exists;
@@ -159,12 +166,27 @@ func newRunShell(root string, m agent.Manifest, sess *agent.Session, caller *Cal
 		return fail(err)
 	}
 	rs.close = append(rs.close, func() { _ = w.Close() })
-	home, err := filepath.Abs(filepath.Join(workspacesDir(root), ".home", m.Name))
+	// Still the folder that was checked, now it is open.
+	if real, err := realPath(ws); err != nil || real != ws {
+		return fail(fmt.Errorf("%s's workspace %s changed as it was opened; nothing was run", m.Name, ws))
+	}
+	store, err := realPath(root)
 	if err != nil {
 		return fail(err)
 	}
+	// A home made fresh for this run, gone when it ends, so nothing a
+	// command plants there (a configuration, a startup file) reaches the
+	// next run; the agent's caches are kept beside it.
+	home := filepath.Join(store, "workspaces", ".home", m.Name, claimant)
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return fail(err)
+	}
+	rs.close = append(rs.close, func() { _ = removeAllForce(home) })
+	cache := filepath.Join(store, "workspaces", ".cache", m.Name)
+	// What an earlier run left in the workspace after reading what is not
+	// published is still private to this one (the breaker).
+	if from, ok := privateMarker(root, ws); ok {
+		sess.HoldsPrivate("what " + from + " left in the workspace after reading what is not published")
 	}
 	backend := testBackend
 	if backend == nil {
@@ -172,7 +194,7 @@ func newRunShell(root string, m agent.Manifest, sess *agent.Session, caller *Cal
 			return fail(err)
 		}
 	}
-	box := shell.Box{Backend: backend, RunID: runID, Agent: m.Name, Workspace: ws, Home: home}
+	box := shell.Box{Backend: backend, RunID: runID, Agent: m.Name, Workspace: ws, Home: home, Cache: cache}
 	decl := m.Shell
 	if decl != nil && len(decl.Hosts) > 0 && !decl.ReadOnly {
 		secret, err := randomSecret()
@@ -215,7 +237,17 @@ func newRunShell(root string, m agent.Manifest, sess *agent.Session, caller *Cal
 		box.Proxy = &agentbox.Service{Name: "proxy", Socket: sock, Port: agentbox.PortProxy}
 		box.ProxyURL = "http://run:" + secret + "@127.0.0.1:" + strconv.Itoa(int(agentbox.PortProxy))
 	}
-	rs.driver = &shell.Driver{Session: sess, Workspace: w, Box: box}
+	rs.driver = &shell.Driver{Session: sess, Workspace: w, Box: box,
+		Beat: func() { touchRun(root, runID) },
+		Wrote: func([]string) {
+			who := runID
+			if who == "" {
+				who = "a run"
+			} else {
+				who = "run " + who
+			}
+			markPrivate(root, ws, who)
+		}}
 	if runID != "" {
 		kr, err := loadKeyring(root)
 		if err != nil {
@@ -275,17 +307,16 @@ func outputAAD(id string, n int) []byte { return []byte("run-output/" + id + "/"
 func (o *runOutputs) keep(k shell.Kept) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if len(o.index) >= MaxRunOutputs {
-		return
-	}
 	dir := runOutputsDir(o.root, o.id)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return
 	}
 	n := len(o.index) + 1
 	e := runOutput{N: n, Command: shell.Line(k.Program, k.Args), Kind: k.Kind, Exit: k.Exit,
-		Took: k.Took.Round(time.Millisecond).String(), Total: k.Total, Digest: k.Digest, Changes: k.Changes, When: time.Now().UTC()}
-	if len(k.Output) > 0 {
+		Took: k.Took.Round(time.Millisecond).String(), Total: k.Total, Digest: k.Digest, Changes: capChanges(k.Changes), When: time.Now().UTC()}
+	// Past the bound, a command is still recorded (what ran, how it ended,
+	// the digest of what it printed); only its output is not kept.
+	if len(k.Output) > 0 && len(o.index) < MaxRunOutputs {
 		data, name := k.Output, fmt.Sprintf("%04d.out", n)
 		if o.kr != nil {
 			s, err := o.kr.Seal(data, outputAAD(o.id, n))
@@ -388,10 +419,22 @@ func agentWorkspace(root string, args []string) error {
 		defer claim.Release()
 		ents, _ := os.ReadDir(ws)
 		for _, e := range ents {
-			if err := os.RemoveAll(filepath.Join(ws, e.Name())); err != nil {
+			if err := removeAllForce(filepath.Join(ws, e.Name())); err != nil {
 				return err
 			}
 		}
+		// And what its runs kept beside it: homes, caches, and the note that
+		// something private was left there.
+		store, err := realPath(root)
+		if err != nil {
+			return err
+		}
+		for _, d := range []string{filepath.Join(store, "workspaces", ".home", m.Name), filepath.Join(store, "workspaces", ".cache", m.Name)} {
+			if err := removeAllForce(d); err != nil {
+				return err
+			}
+		}
+		_ = os.Remove(privatePath(root, ws))
 		caller := resolveCaller(root, "")
 		if err := recordE(root, caller.auditRecord("agent.workspace.cleared", "/agents", audit.Success,
 			map[string]string{"agent": m.Name, "removed": strconv.Itoa(len(ents))})); err != nil {
@@ -447,4 +490,65 @@ func stepEvidence(root, runID string, st agent.Step) map[string]string {
 		}
 	}
 	return d
+}
+
+// capChanges is what a step changed as the record keeps it: the first names
+// of each kind, and how many more.
+func capChanges(c shell.Changes) shell.Changes {
+	const keep = 100
+	cut := func(names []string) []string {
+		if len(names) <= keep {
+			return names
+		}
+		return append(append([]string(nil), names[:keep]...), fmt.Sprintf("… and %d more", len(names)-keep))
+	}
+	return shell.Changes{Added: cut(c.Added), Changed: cut(c.Changed), Removed: cut(c.Removed)}
+}
+
+// privatePath is where the note is kept that a workspace was written while
+// a run held something private.
+func privatePath(root, ws string) string {
+	sum := sha256.Sum256([]byte(ws))
+	return filepath.Join(workspacesDir(root), ".private", hex.EncodeToString(sum[:8]))
+}
+
+func markPrivate(root, ws, who string) {
+	p := privatePath(root, ws)
+	if os.MkdirAll(filepath.Dir(p), 0o700) == nil {
+		_ = atomicfile.Write(p, []byte(who+"\n"), 0o600)
+	}
+}
+
+// privateMarker says which run left something private in the workspace.
+func privateMarker(root, ws string) (string, bool) {
+	b, err := os.ReadFile(privatePath(root, ws))
+	if err != nil {
+		return "", false
+	}
+	who := strings.TrimSpace(string(b))
+	if who == "" {
+		who = "an earlier run"
+	}
+	return who, true
+}
+
+// removeAllForce removes a folder a command may have made hard to remove
+// (a folder with no permissions), never following a link out of it.
+func removeAllForce(dir string) error {
+	var open func(p string)
+	open = func(p string) {
+		fi, err := os.Lstat(p)
+		if err != nil || !fi.IsDir() {
+			return
+		}
+		_ = os.Chmod(p, 0o700)
+		ents, _ := os.ReadDir(p)
+		for _, e := range ents {
+			if e.IsDir() && e.Type()&os.ModeSymlink == 0 {
+				open(filepath.Join(p, e.Name()))
+			}
+		}
+	}
+	open(dir)
+	return os.RemoveAll(dir)
 }
