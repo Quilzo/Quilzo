@@ -309,6 +309,10 @@ type Manifest struct {
 	// Browser is what its browser may reach, when it holds the browser's
 	// capabilities. See browser.go.
 	Browser *Browser `json:"browser,omitempty"`
+
+	// Shell is its workspace and the commands it may run there, when it
+	// holds the workspace's capabilities. See shell.go.
+	Shell *Shell `json:"shell,omitempty"`
 }
 
 // writeOps are capabilities that change stored content.
@@ -468,6 +472,9 @@ func (m *Manifest) Validate(known map[string]bool) error {
 	if err := m.validateBrowser(); err != nil {
 		return err
 	}
+	if err := m.validateShell(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -556,6 +563,9 @@ func (m Manifest) Narrow(by Manifest) Manifest {
 	// The browser: the hosts both may reach, and sent to only where both
 	// may send.
 	out.Browser = narrowBrowser(m.Browser, by.Browser)
+	// And the workspace: the programs and hosts both name, every question
+	// either asks.
+	out.Shell = narrowShell(m.Shell, by.Shell)
 
 	// Approval is sticky: a parent that needs one cannot delegate its way out.
 	if m.HumanApproval {
