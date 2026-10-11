@@ -74,7 +74,10 @@ type Spec struct {
 	// and TMPDIR are inside it.
 	Workdir string
 	// Read are further paths it may read, beyond the system's own.
-	Read     []string
+	Read []string
+	// Write are further directories it may write, beyond Workdir: a
+	// command's scratch home, kept out of the workspace it works on.
+	Write    []string
 	Services []Service
 	Limits   sandbox.Limits
 	// Wall is how long it may run before it is stopped.
