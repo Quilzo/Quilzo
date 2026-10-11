@@ -73,13 +73,28 @@ var readers = map[string]bool{
 	"gofmt": true,
 }
 
-// shells run whatever they are given.
+// shells run whatever they are given: shells, and programs whose job is
+// to run another program.
 var shells = map[string]bool{"sh": true, "bash": true, "dash": true, "zsh": true, "fish": true, "ksh": true,
-	"env": true, "xargs": true, "nohup": true, "timeout": true, "nice": true, "sudo": true, "su": true, "doas": true}
+	"csh": true, "tcsh": true, "busybox": true, "toybox": true,
+	"env": true, "xargs": true, "nohup": true, "timeout": true, "nice": true, "sudo": true, "su": true, "doas": true,
+	"stdbuf": true, "setsid": true, "chrt": true, "ionice": true, "taskset": true, "flock": true, "unbuffer": true,
+	"script": true, "watch": true, "time": true, "command": true, "exec": true, "strace": true, "ltrace": true,
+	"gdb": true, "valgrind": true, "perf": true, "chroot": true, "unshare": true, "nsenter": true, "parallel": true,
+	"expect": true, "run-parts": true}
+
+// interpreters run a program; one given its code on the command line is
+// a shell by another name.
+var interpreters = map[string][]string{
+	"python": {"-c"}, "python3": {"-c"}, "python2": {"-c"}, "pypy3": {"-c"},
+	"node": {"-e", "--eval", "-p", "--print"}, "deno": {"eval"}, "bun": {"-e", "--eval"},
+	"perl": {"-e", "-E"}, "ruby": {"-e"}, "php": {"-r"}, "lua": {"-e"}, "Rscript": {"-e"}, "awk": {}, "gawk": {}, "mawk": {},
+}
 
 // netters reach the network and may write what they fetch.
 var netters = map[string]Kind{
-	"curl": network, "wget": fetches, "ssh": anything, "scp": fetches, "sftp": fetches, "ftp": fetches,
+	// curl writes as easily as it reads (-o, -D, -c, --output-dir, -K).
+	"curl": fetches, "wget": fetches, "ssh": anything, "scp": fetches, "sftp": fetches, "ftp": fetches,
 	"nc": connects, "ncat": connects, "telnet": connects, "rsync": fetches, "git-lfs": fetches,
 	"docker": anything, "podman": anything, "kubectl": anything, "gh": connects,
 }
@@ -98,9 +113,22 @@ func Classify(program string, args []string) Kind {
 	case readers[p]:
 		return classifyReader(p, args)
 	}
+	if flags, ok := interpreters[program]; ok {
+		// awk's program is always given inline, and can run commands.
+		if len(flags) == 0 || hasAny(args, flags...) || (p == "deno" && len(args) > 0 && args[0] == "eval") {
+			return anything
+		}
+		return writes
+	}
 	if k, ok := netters[p]; ok {
-		if p == "curl" && hasAny(args, "-o", "-O", "--output", "--remote-name", "-T", "--upload-file") {
-			return fetches
+		if p == "rsync" {
+			switch {
+			case hasAny(args, "-e", "--rsh", "--rsync-path"):
+				return anything
+			case hasAny(args, "--delete", "--delete-before", "--delete-during", "--delete-after", "--delete-delay",
+				"--delete-excluded", "--remove-source-files", "--del"):
+				return Kind{Writes: true, Network: true, Destroys: true}
+			}
 		}
 		return k
 	}
@@ -117,59 +145,116 @@ func Classify(program string, args []string) Kind {
 		if hasAny(args, "-i", "--in-place") || hasPrefix(args, "-i") {
 			return writes
 		}
+		// A sed script can also write (w) and run commands (e); a command
+		// taken as reading gets the workspace read-only and no network,
+		// so what it can do there is print.
 		return Kind{}
 	case "sort":
-		if hasAny(args, "-o", "--output") || hasPrefix(args, "-o", "--output=") {
+		switch {
+		case hasAny(args, "--compress-program"):
+			return anything
+		case hasAny(args, "-o", "--output") || hasPrefix(args, "-o"):
 			return writes
 		}
 		return Kind{}
 	case "find":
+		// find takes its options after its paths, and after "--" too.
+		all := withoutDashDash(args)
 		switch {
-		case hasAny(args, "-delete"):
+		case slices.Contains(all, "-delete"):
 			return destroys
-		case hasAny(args, "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"):
+		case slices.ContainsFunc(all, func(a string) bool {
+			return slices.Contains([]string{"-exec", "-execdir", "-ok", "-okdir"}, a)
+		}):
 			return anything
+		case slices.ContainsFunc(all, func(a string) bool { return strings.HasPrefix(a, "-fprint") || a == "-fls" }):
+			return writes
 		}
 		return Kind{}
+	case "tar", "zip", "unzip", "cpio", "7z", "patch", "install", "cp", "mv", "ln", "mkdir", "touch", "chmod", "chown":
+		return writes
 	}
 	return writes
 }
 
 func classifyReader(p string, args []string) Kind {
-	if p == "gofmt" && hasAny(args, "-w") {
-		return writes
+	switch p {
+	case "gofmt":
+		if hasAny(args, "-w") {
+			return writes
+		}
+	case "rg":
+		if hasAny(args, "--pre", "--hostname-bin", "--search-zip", "-z") {
+			return anything
+		}
+	case "tree":
+		if hasAny(args, "-o", "-R") {
+			return writes
+		}
+	case "xxd":
+		if hasAny(args, "-r", "-revert") || len(positional(args)) > 1 {
+			return writes
+		}
+	case "less", "more":
+		// LESSOPEN and a pager's own commands run programs.
+		return anything
 	}
 	return Kind{}
 }
 
+// gitValued are git's own options that take a value as the next argument.
+var gitValued = map[string]bool{"-C": true, "--git-dir": true, "--work-tree": true, "--namespace": true,
+	"--attr-source": true, "--super-prefix": true, "--list-cmds": true}
+
+// gitBare are git's own options that take no value.
+var gitBare = map[string]bool{"-p": true, "--paginate": true, "-P": true, "--no-pager": true, "--bare": true,
+	"--no-replace-objects": true, "--literal-pathspecs": true, "--glob-pathspecs": true, "--noglob-pathspecs": true,
+	"--icase-pathspecs": true, "--no-optional-locks": true, "--no-advice": true, "--version": true, "--help": true}
+
 // classifyGit reads a git command past its own options.
 func classifyGit(args []string) Kind {
-	sub, rest := "", args
+	sub, rest := "", []string(nil)
 	for i := 0; i < len(args); i++ {
 		a := args[i]
+		name, _, hasValue := strings.Cut(a, "=")
 		switch {
-		case a == "-c" || a == "--config-env" || strings.HasPrefix(a, "--exec-path") || strings.HasPrefix(a, "-c"):
-			// Configuration given on the command line can make git run
-			// anything (an alias, a pager, a command to connect with).
-			return anything
-		case a == "-C" || a == "--git-dir" || a == "--work-tree" || a == "--namespace":
-			i++
+		case gitValued[name]:
+			if !hasValue {
+				i++
+			}
+		case gitBare[a]:
 		case strings.HasPrefix(a, "-"):
+			// Configuration on the command line (-c, --config-env, --exec-path)
+			// can make git run anything; so can an option this does not know.
+			return anything
 		default:
 			sub, rest = a, args[i+1:]
 			i = len(args)
 		}
 	}
+	// What git runs on another machine, named here, it runs on this one.
+	if hasAny(rest, "--upload-pack", "--receive-pack", "--exec") || (sub == "clone" && hasAny(rest, "-u")) {
+		return anything
+	}
 	switch sub {
-	case "status", "log", "diff", "show", "blame", "ls-files", "ls-tree", "rev-parse", "grep", "describe",
-		"shortlog", "cat-file", "rev-list", "name-rev", "merge-base", "whatchanged", "count-objects", "help",
-		"version", "check-ignore", "var":
+	case "", "help", "version", "var", "check-ignore", "count-objects", "cat-file", "rev-list", "name-rev",
+		"merge-base", "whatchanged", "rev-parse", "describe", "shortlog", "ls-files", "ls-tree", "blame", "status":
+		return Kind{}
+	case "log", "diff", "show":
+		if hasAny(rest, "--output", "--ext-diff", "--textconv") {
+			return writes
+		}
+		return Kind{}
+	case "grep":
+		if hasAny(rest, "-O", "--open-files-in-pager") || hasPrefix(rest, "-O") {
+			return anything
+		}
 		return Kind{}
 	case "branch":
-		if hasAny(rest, "-d", "-D", "--delete", "-f", "--force", "-M") {
+		if hasAny(rest, "-d", "-D", "--delete", "-f", "--force", "-M", "-C", "--set-upstream-to", "-u", "--unset-upstream") {
 			return destroys
 		}
-		if len(positional(rest)) == 0 {
+		if len(positional(rest)) == 0 || hasAny(rest, "-l", "--list", "-a", "--all", "-r", "--remotes", "-v", "--verbose") {
 			return Kind{}
 		}
 		return writes
@@ -182,7 +267,8 @@ func classifyGit(args []string) Kind {
 		}
 		return writes
 	case "config":
-		if hasAny(rest, "--get", "--get-all", "--list", "-l", "--get-regexp") {
+		if hasAny(rest, "--get", "--get-all", "--list", "-l", "--get-regexp", "--show-origin") ||
+			(len(rest) > 0 && (rest[0] == "get" || rest[0] == "list")) {
 			return Kind{}
 		}
 		return writes
@@ -198,18 +284,26 @@ func classifyGit(args []string) Kind {
 		if len(rest) > 0 && rest[0] == "list" {
 			return Kind{}
 		}
+		if len(rest) > 0 && (rest[0] == "remove" || rest[0] == "prune") {
+			return destroys
+		}
 		return writes
 	case "remote":
-		if len(rest) == 0 || hasAny(rest, "-v", "--verbose") && len(positional(rest)) == 0 {
+		if len(rest) == 0 || (hasAny(rest, "-v", "--verbose") && len(positional(rest)) == 0) {
 			return Kind{}
 		}
-		if rest[0] == "show" || rest[0] == "update" || rest[0] == "prune" {
+		switch rest[0] {
+		case "show", "update", "prune":
 			return fetches
+		case "remove", "rm":
+			return destroys
 		}
 		return writes
-	case "fetch", "pull", "clone", "submodule", "ls-remote":
-		if sub == "ls-remote" {
-			return network
+	case "ls-remote":
+		return network
+	case "fetch", "pull", "clone", "submodule":
+		if hasAny(rest, "--prune", "-p", "--prune-tags", "--force", "-f") && sub != "clone" {
+			return Kind{Writes: true, Network: true, Destroys: true}
 		}
 		return fetches
 	case "push":
@@ -218,26 +312,39 @@ func classifyGit(args []string) Kind {
 			return Kind{Writes: true, Network: true, Destroys: true}
 		}
 		return fetches
-	case "reset":
+	case "reset", "rebase", "filter-branch", "filter-repo", "replace", "prune", "gc", "update-ref", "symbolic-ref",
+		"rm", "mv", "notes", "am", "cherry-pick", "revert", "merge":
+		switch sub {
+		case "rm", "mv", "notes", "am", "cherry-pick", "revert", "merge":
+			if !hasAny(rest, "--force", "-f", "--abort", "--quit", "--skip") {
+				return writes
+			}
+		case "update-ref", "symbolic-ref":
+			if !hasAny(rest, "-d", "--delete") && len(positional(rest)) < 2 {
+				return writes
+			}
+		}
 		return destroys
 	case "clean":
 		if hasAny(rest, "-n", "--dry-run") {
 			return Kind{}
 		}
 		return destroys
-	case "checkout", "restore":
+	case "checkout", "restore", "switch":
 		// Over the work tree's own changes, which nothing keeps.
-		if slices.Contains(rest, "--") || hasAny(rest, "-f", "--force", ".") || (sub == "restore" && len(positional(rest)) > 0) {
+		if slices.Contains(rest, "--") || slices.Contains(rest, ".") ||
+			hasAny(rest, "-f", "--force", "-B", "--discard-changes", "--overwrite-ignore", "-C", "--force-create") ||
+			(sub == "restore" && len(positional(rest)) > 0) {
 			return destroys
 		}
 		return writes
-	case "rebase", "filter-branch", "filter-repo", "replace", "prune", "gc", "reflog":
-		if sub == "reflog" && (len(rest) == 0 || rest[0] == "show") {
+	case "reflog":
+		if len(rest) == 0 || rest[0] == "show" || rest[0] == "list" {
 			return Kind{}
 		}
 		return destroys
 	case "commit":
-		if hasAny(rest, "--amend") {
+		if hasAny(rest, "--amend", "--fixup", "--squash") {
 			return destroys
 		}
 		return writes
@@ -249,10 +356,17 @@ func classifyGo(args []string) Kind {
 	if len(args) == 0 {
 		return Kind{}
 	}
+	// A tool named to run in the build's place runs whatever it is.
+	if hasAny(args[1:], "-vettool", "-toolexec", "-exec", "-overlay") {
+		return anything
+	}
 	switch args[0] {
 	case "version", "env", "list", "doc", "help", "vet":
 		if args[0] == "env" && hasAny(args[1:], "-w", "-u") {
 			return writes
+		}
+		if args[0] == "list" && hasAny(args[1:], "-m", "-u") {
+			return network
 		}
 		return Kind{}
 	case "get", "install":
@@ -308,25 +422,68 @@ func classifyPip(args []string) Kind {
 	return writes
 }
 
-// hasAny reports whether any argument is one of the flags.
+// hasAny reports whether any argument before "--" is one of the flags. A
+// long flag is matched as GNU and git parse them: whole, with "=value",
+// or by any unambiguous start ("--del" is "--delete"); short flags run
+// together are matched one by one ("-fd" is -f and -d). Matching more than
+// a program would is the safe way round: the command is asked about.
 func hasAny(args []string, flags ...string) bool {
 	for _, a := range args {
 		if a == "--" {
 			return false
 		}
-		if slices.Contains(flags, a) {
+		if matchFlag(a, flags) {
 			return true
 		}
-		// Short flags run together: -fd is -f and -d.
-		if len(a) > 2 && a[0] == '-' && a[1] != '-' {
-			for _, f := range flags {
-				if len(f) == 2 && f[0] == '-' && f[1] != '-' && strings.ContainsRune(a[1:], rune(f[1])) {
-					return true
-				}
+	}
+	return false
+}
+
+func matchFlag(a string, flags []string) bool {
+	if slices.Contains(flags, a) {
+		return true
+	}
+	if strings.HasPrefix(a, "--") && len(a) > 2 {
+		name, _, _ := strings.Cut(a, "=")
+		for _, f := range flags {
+			// Go's flag package, and others like it, take --w for -w.
+			if len(f) > 1 && f[0] == '-' && f[1] != '-' && name == "-"+f {
+				return true
+			}
+			if !strings.HasPrefix(f, "--") {
+				continue
+			}
+			if name == f || (len(name) >= 4 && strings.HasPrefix(f, name)) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(a) > 2 && a[0] == '-' {
+		// -o=value and -ovalue for a short flag that takes one, and short
+		// flags run together.
+		for _, f := range flags {
+			if len(f) == 2 && f[0] == '-' && f[1] != '-' && strings.ContainsRune(a[1:], rune(f[1])) {
+				return true
+			}
+			if len(f) > 2 && f[0] == '-' && f[1] != '-' && (a == f || strings.HasPrefix(a, f+"=")) {
+				return true
 			}
 		}
 	}
 	return false
+}
+
+// withoutDashDash is the arguments with "--" taken out, for a program
+// that reads its options wherever they are.
+func withoutDashDash(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if a != "--" {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 func hasPrefix(args []string, prefixes ...string) bool {
