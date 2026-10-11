@@ -63,9 +63,12 @@ type Box struct {
 	Backend agentbox.Backend
 	RunID   string
 	Agent   string
-	// Workspace is the folder commands work in; Home their scratch home,
-	// outside it, where caches go.
-	Workspace, Home string
+	// Workspace is the folder commands work in. Home is this run's scratch
+	// home, outside it and made fresh for the run; Cache the agent's caches
+	// (modules, builds), kept between runs and written only by a command
+	// that writes. A command that only reads gets a home of its own, made
+	// for it and removed after, and the caches to read.
+	Workspace, Home, Cache string
 	// Proxy is handed only to a command that reaches the network, and
 	// ProxyURL is what it is told to use.
 	Proxy    *agentbox.Service
@@ -115,12 +118,45 @@ func (b Box) Run(ctx context.Context, c Command) (Output, error) {
 	if mem <= 0 {
 		mem = 2048
 	}
-	tmp := filepath.Join(b.Home, "tmp")
+	if err := os.MkdirAll(b.Home, 0o700); err != nil {
+		return Output{}, err
+	}
+	home, write, read := b.Home, []string{b.Home}, []string(nil)
+	if c.Kind.Reads() {
+		// Nothing a reading command leaves behind outlives it: not in the
+		// workspace, not in a home a later command would read.
+		h, err := os.MkdirTemp(b.Home, ".read-")
+		if err != nil {
+			return Output{}, err
+		}
+		defer os.RemoveAll(h)
+		home, write = h, []string{h}
+	}
+	cache := b.Cache
+	if cache == "" {
+		cache = filepath.Join(home, ".cache")
+	}
+	if err := os.MkdirAll(cache, 0o700); err != nil {
+		return Output{}, err
+	}
+	if c.Kind.Reads() {
+		read = append(read, cache)
+	} else if b.Cache != "" {
+		write = append(write, cache)
+	}
+	tmp := filepath.Join(home, "tmp")
 	if err := os.MkdirAll(tmp, 0o700); err != nil {
 		return Output{}, err
 	}
+	buildCache := filepath.Join(cache, "go-build")
+	if c.Kind.Reads() {
+		buildCache = filepath.Join(home, "go-build")
+	}
 	env := []string{
-		"PATH=" + strings.Join(Path, ":"), "HOME=" + b.Home, "TMPDIR=" + tmp, "LANG=C.UTF-8",
+		"PATH=" + strings.Join(Path, ":"), "HOME=" + home, "TMPDIR=" + tmp, "LANG=C.UTF-8",
+		"GOCACHE=" + buildCache, "GOMODCACHE=" + filepath.Join(cache, "go-mod"),
+		"npm_config_cache=" + filepath.Join(cache, "npm"), "PIP_CACHE_DIR=" + filepath.Join(cache, "pip"),
+		"XDG_CACHE_HOME=" + filepath.Join(home, ".cache"), "PYTHONNOUSERSITE=1",
 		// Nobody is at a terminal: no prompts, no pager, no colour, and no
 		// tool fetching a newer version of itself.
 		"CI=1", "NO_COLOR=1", "TERM=dumb", "PAGER=cat", "GIT_PAGER=cat", "GIT_TERMINAL_PROMPT=0",
@@ -149,9 +185,9 @@ func (b Box) Run(ctx context.Context, c Command) (Output, error) {
 		// runs in turn (a repository's configured hook, a preprocessor, a
 		// sed script) cannot change it: the kind is enforced, as the
 		// network is.
-		Workdir: b.Workspace, ReadOnlyWorkdir: c.Kind.Reads(), Write: []string{b.Home}, Services: services,
+		Workdir: b.Workspace, ReadOnlyWorkdir: c.Kind.Reads(), Read: read, Write: write, Services: services,
 		Limits: sandbox.Limits{CPUSeconds: uint64(timeout/time.Second) + 1, DataBytes: uint64(mem) << 20,
-			FileBytes: 256 << 20, OpenFiles: 1024, Processes: 4096},
+			FileBytes: 256 << 20, OpenFiles: 1024, Processes: 512},
 		Wall:  timeout,
 		Stdin: strings.NewReader(""), Stdout: out, Stderr: out,
 	})

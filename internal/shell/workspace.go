@@ -5,7 +5,6 @@ package shell
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -90,11 +89,16 @@ func (w *Workspace) List(name string) ([]Item, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	f, err := w.root.Open(c)
+	// Opened without waiting, and only as a folder: a named pipe would hold
+	// the listing, and the run, until something wrote to it.
+	f, err := w.root.OpenFile(c, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, false, notThere(name, err)
 	}
 	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.IsDir() {
+		return nil, false, fmt.Errorf("%s is not a folder", name)
+	}
 	ents, err := f.ReadDir(MaxListed + 1)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, false, err
@@ -171,15 +175,42 @@ func (w *Workspace) Write(name, text string) error {
 	if len(text) > MaxWrite {
 		return fmt.Errorf("at most %d bytes are written at once", MaxWrite)
 	}
-	if dir := path.Dir(c); dir != "." {
+	// Git's own folder is not written by hand: a configured hook or monitor
+	// there is a program git runs, for any later command.
+	for _, part := range strings.Split(c, "/") {
+		if strings.EqualFold(part, ".git") {
+			return fmt.Errorf("%s is inside git's own folder, which is not written by hand", name)
+		}
+	}
+	// Nor through a link: what a person approved writing is the name they
+	// saw, not wherever a link a command left points.
+	dir := path.Dir(c)
+	for d := dir; d != "."; d = path.Dir(d) {
+		if fi, err := w.root.Lstat(d); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("%s is reached through a link (%s); write the file where it is", name, d)
+		}
+	}
+	if dir != "." {
 		if err := w.root.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
 	}
-	// Into a new file beside it, then over it, so a reader never sees half.
+	// Into a new file beside it, made fresh (never opening one a command
+	// left there, a link or a named pipe), then over it, so a reader never
+	// sees half.
 	tmp := c + ".quilzo-writing"
-	if err := w.root.WriteFile(tmp, []byte(text), 0o644); err != nil {
+	_ = w.root.Remove(tmp)
+	f, err := w.root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
 		return err
+	}
+	_, werr := f.Write([]byte(text))
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		_ = w.root.Remove(tmp)
+		return werr
 	}
 	if err := w.root.Rename(tmp, c); err != nil {
 		_ = w.root.Remove(tmp)
@@ -199,48 +230,95 @@ func notThere(name string, err error) error {
 	return err
 }
 
-// Index is what was in the workspace at a moment: each file's size and
-// when it last changed, enough to see what a command changed.
+// Index is what was in the workspace at a moment: each file's size, mode
+// and when it last changed, enough to see what a command changed.
 type Index struct {
 	Files map[string]stamp
 	Size  int64
-	// Cut says the scan stopped at MaxScanned files.
+	// Cut says the scan did not see everything: it stopped at MaxEntries,
+	// or a folder could not be read. A cut index is taken as over any
+	// quota, since its size is not known.
 	Cut bool
 }
 
 type stamp struct {
-	Size int64
-	Mod  time.Time
+	Size  int64
+	Mod   time.Time
+	Mode  fs.FileMode
+	Ident uint64 // inode and status-change time, which a command cannot set back
 }
+
+// MaxEntries bounds what a scan visits: files, folders and git's own,
+// every one counted.
+const MaxEntries = 400_000
 
 // Scan is the workspace's index now. Git's own folder is counted in the
 // size and left out of what changed: a commit changes it, and the files
 // the commit was about are what a person reads.
 func (w *Workspace) Scan() Index {
 	ix := Index{Files: map[string]stamp{}}
-	_ = fs.WalkDir(w.root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
+	seen := 0
+	var walk func(dir string)
+	walk = func(dir string) {
+		f, err := w.root.OpenFile(dir, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			return nil
-		}
-		fi, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		ix.Size += fi.Size()
-		if p == ".git" || strings.HasPrefix(p, ".git/") {
-			return nil
-		}
-		if len(ix.Files) >= MaxScanned {
 			ix.Cut = true
-			return fs.SkipAll
+			return
 		}
-		ix.Files[p] = stamp{Size: fi.Size(), Mod: fi.ModTime()}
-		return nil
-	})
+		defer f.Close()
+		for !ix.Cut {
+			// In batches, so a folder of millions of names is not read
+			// into memory whole before the count can stop it.
+			ents, err := f.ReadDir(1024)
+			for _, e := range ents {
+				seen++
+				if seen > MaxEntries {
+					ix.Cut = true
+					return
+				}
+				p := e.Name()
+				if dir != "." {
+					p = dir + "/" + p
+				}
+				if e.IsDir() {
+					walk(p)
+					continue
+				}
+				fi, err := e.Info()
+				if err != nil {
+					continue
+				}
+				ix.Size += fi.Size()
+				if p == ".git" || strings.HasPrefix(p, ".git/") || len(ix.Files) >= MaxScanned {
+					continue
+				}
+				ix.Files[p] = stamp{Size: fi.Size(), Mod: fi.ModTime(), Mode: fi.Mode(), Ident: ident(fi)}
+			}
+			if err != nil {
+				if !errors.Is(err, io.EOF) {
+					ix.Cut = true
+				}
+				return
+			}
+		}
+	}
+	walk(".")
 	return ix
+}
+
+// SizeOf is how much a folder holds, and whether that could be known.
+func SizeOf(dir string) (int64, bool) {
+	r, err := os.OpenRoot(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, true
+	}
+	if err != nil {
+		return 0, false
+	}
+	w := &Workspace{Dir: dir, root: r}
+	defer w.Close()
+	ix := w.Scan()
+	return ix.Size, !ix.Cut
 }
 
 // Changes are the files a step added, changed and removed.
@@ -303,65 +381,49 @@ func (now Index) Since(before Index) Changes {
 }
 
 // Claim is one run's hold on a workspace: a workspace is worked on by one
-// run at a time.
+// run at a time. The hold is a lock the kernel keeps on the claim file
+// while the run has it open, so two runs cannot both hold it, and a run
+// that dies lets go without anybody deciding it is gone.
 type Claim struct {
-	path string
-	run  string
+	f *os.File
 }
-
-type claimNote struct {
-	Run  string    `json:"run"`
-	Beat time.Time `json:"beat"`
-}
-
-// ClaimStale is how long a claim stands without its run renewing it.
-const ClaimStale = 5 * time.Minute
 
 // ClaimWorkspace takes the workspace for a run, or says which run has it.
-// The claim lives at path; Renew keeps it fresh and Release lets it go.
 func ClaimWorkspace(path, run string) (*Claim, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	for attempt := 0; attempt < 2; attempt++ {
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if err == nil {
-			b, _ := json.Marshal(claimNote{Run: run, Beat: time.Now().UTC()})
-			_, werr := f.Write(b)
-			if cerr := f.Close(); werr == nil {
-				werr = cerr
-			}
-			if werr != nil {
-				_ = os.Remove(path)
-				return nil, werr
-			}
-			return &Claim{path: path, run: run}, nil
-		}
-		if !errors.Is(err, fs.ErrExist) {
-			return nil, err
-		}
-		var n claimNote
-		if b, rerr := os.ReadFile(path); rerr == nil && json.Unmarshal(b, &n) == nil {
-			if age := time.Since(n.Beat); age < ClaimStale && age > -time.Minute && n.Run != run {
-				return nil, fmt.Errorf("the workspace is in use by run %s; one run works on it at a time", n.Run)
-			}
-		}
-		// Left by a run that is gone, or this run's own: taken over.
-		_ = os.Remove(path)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, err
 	}
-	return nil, errors.New("the workspace could not be claimed")
+	if err := tryLock(f); err != nil {
+		held, _ := os.ReadFile(path)
+		f.Close()
+		who := strings.TrimSpace(string(held))
+		if who == "" {
+			who = "another run"
+		} else {
+			who = "run " + who
+		}
+		return nil, fmt.Errorf("the workspace is in use by %s; one run works on it at a time", who)
+	}
+	// Who has it, for whoever is told it is taken.
+	_ = f.Truncate(0)
+	_, _ = f.WriteAt([]byte(run+"\n"), 0)
+	return &Claim{f: f}, nil
 }
 
-// Renew keeps the claim fresh.
-func (c *Claim) Renew() {
-	b, _ := json.Marshal(claimNote{Run: c.run, Beat: time.Now().UTC()})
-	_ = os.WriteFile(c.path, b, 0o600)
-}
+// Renew is kept for callers; the lock needs no renewing.
+func (c *Claim) Renew() {}
 
-// Release lets the workspace go, if this run still holds it.
+// Release lets the workspace go.
 func (c *Claim) Release() {
-	var n claimNote
-	if b, err := os.ReadFile(c.path); err == nil && json.Unmarshal(b, &n) == nil && n.Run == c.run {
-		_ = os.Remove(c.path)
+	if c == nil || c.f == nil {
+		return
 	}
+	_ = c.f.Truncate(0)
+	unlock(c.f)
+	_ = c.f.Close()
+	c.f = nil
 }
