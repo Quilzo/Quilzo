@@ -47,6 +47,8 @@ func (f *Firecracker) Start(ctx context.Context, m Machine, socket string) error
 		return err
 	}
 	dir := filepath.Dir(socket)
+	// A context of the caller's choosing governs the maker's lifetime —
+	// see the Cloud Hypervisor driver's note.
 	cmd := exec.CommandContext(ctx, f.Binary,
 		"--api-sock", socket,
 		"--seccomp-level", "2",
@@ -55,6 +57,7 @@ func (f *Firecracker) Start(ctx context.Context, m Machine, socket string) error
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting %s: %w", f.Binary, err)
 	}
+	go func() { _ = cmd.Wait() }()
 	// The socket appears when the process is ready to be spoken to; a
 	// process that never makes one is dead, and its own exit says so.
 	wait := time.NewTicker(50 * time.Millisecond)

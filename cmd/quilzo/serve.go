@@ -71,6 +71,11 @@ import (
 )
 
 func cmdServe(root string, args []string) error {
+	// Idle grant browsers close on a clock, not on traffic; the runs a
+	// restarted process left saying running are ended for what they are.
+	sweepCtx, sweepCancel := context.WithCancel(context.Background())
+	defer sweepCancel()
+	go GrantSweeper(sweepCtx, root)
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	openBrowser := fs.Bool("open", false,
 		"open the interface in a browser once the server is listening")

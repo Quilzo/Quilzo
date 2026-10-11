@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -193,6 +194,10 @@ type grantSession struct {
 	krun   *keptRun
 	steps  int
 	lastAt time.Time
+	// actMu keeps one caller's calls in order on one browser: two clients
+	// may arrive together, and a run whose steps interleave is a run whose
+	// record lies about what happened on which page.
+	actMu sync.Mutex
 }
 
 // grantIdle is how long a caller's browser waits for them before it
@@ -263,8 +268,9 @@ func grantSessionFor(root string, g browserGrant, m agent.Manifest, caller *Call
 }
 
 // grantSweep closes sessions nobody has called in a quarter of an hour.
-// Called from each request: cheap, and the only timer a server process
-// that may also be a CLI needs.
+// Called from each request and, when the server runs, from GrantSweeper's
+// ticker — traffic alone is not a clock, and a browser nobody is driving
+// holds one of the machine's few slots for nothing.
 func grantSweep(now time.Time) {
 	grantSessions.Lock()
 	defer grantSessions.Unlock()
@@ -273,6 +279,67 @@ func grantSweep(now time.Time) {
 			continue
 		}
 		closeGrantSession(s, "closed after "+grantIdle.String()+" with nobody on it", now)
+		delete(grantSessions.live, k)
+	}
+}
+
+// GrantSweeper closes idle grant browsers while the server runs, and
+// adopts the runs a restarted process left claiming to be live: their
+// browsers are gone with the process that held them, and a record that
+// says running forever says nothing.
+func GrantSweeper(ctx context.Context, root string) {
+	adoptGrantRuns(root, time.Now())
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			grantSweep(time.Now())
+			return
+		case <-t.C:
+			grantSweep(time.Now())
+		}
+	}
+}
+
+// adoptGrantRuns ends the kept runs of grant browsers whose serving
+// process has gone: state running, the machine interface as their model,
+// and a beat gone stale.
+func adoptGrantRuns(root string, now time.Time) {
+	entries, err := os.ReadDir(agentRunsDir(root))
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		id := strings.TrimSuffix(e.Name(), ".json")
+		if !agent.ValidRecordID(id) {
+			continue
+		}
+		rec, err := loadAgentRun(root, id)
+		if err != nil || rec.State != agent.Running || rec.Model != "mcp" {
+			continue
+		}
+		if now.Sub(rec.Beat) <= agent.StaleAfter {
+			continue
+		}
+		rec.State = ""
+		rec.Trace.Stopped = "the serving process it lived in ended, so its browser is gone; the caller starts again"
+		rec.Trace.Complete = true
+		_ = writeAgentRun(root, rec)
+	}
+}
+
+// closeGrantSessionsOf ends every live session under one grant, for the
+// administrator withdrawing it: a grant taken back must not leave a
+// browser running on the strength of it.
+func closeGrantSessionsOf(name, why string, now time.Time) {
+	grantSessions.Lock()
+	defer grantSessions.Unlock()
+	for k, s := range grantSessions.live {
+		if s.grant.Name != name {
+			continue
+		}
+		closeGrantSession(s, why, now)
 		delete(grantSessions.live, k)
 	}
 }
@@ -385,12 +452,14 @@ func browserGrantCall(ctx context.Context, root string, g browserGrant, m agent.
 	}()
 
 	if err := authorise(root, caller, auth.ActView, "/mcp/browser/"+grant); err != nil {
-		return "", err
+		// A denial, not a failure: this caller may not, and a failure rate
+		// that counts refusals is an alarm that cries wolf.
+		return "", &mcp.Refusal{Reason: err.Error()}
 	}
 	for _, o := range grantOperations(g) {
 		if o.Name == op && o.Writes {
 			if err := authorise(root, caller, auth.ActEditDraft, "/mcp/browser/"+grant); err != nil {
-				return "", err
+				return "", &mcp.Refusal{Reason: err.Error()}
 			}
 		}
 	}
@@ -414,6 +483,11 @@ func browserGrantCall(ctx context.Context, root string, g browserGrant, m agent.
 		return "", &mcp.Refusal{Reason: "the page has read somebody else's words and this would carry them to " +
 			"another host: " + b}
 	}
+
+	// What a person must see first, weighed from the page before anything
+	// global is locked: weighing asks the page, and a page that is slow
+	// must not hold up every other call this machine serves.
+	why := s.rb.driver.Weighs(action)
 
 	// The daily count and any hold live in the gateway's own state, under
 	// the grant's name: one place a person looks at what waits for them.
@@ -439,12 +513,10 @@ func browserGrantCall(ctx context.Context, root string, g browserGrant, m agent.
 			st.Days[day][key], grant)}
 	}
 
-	// What a person must see first: the press that commits to something,
-	// weighed from the page exactly as a run's is. The hold is the
-	// gateway's — same state, same once-within-the-hour rule, same
-	// approval screen — because a call that waits for a person over MCP
-	// waits the way every other one does.
-	if why := s.rb.driver.Weighs(action); why != "" {
+	// The hold is the gateway's — same state, same once-within-the-hour
+	// rule, same approval screen — because a call that waits for a person
+	// over MCP waits the way every other one does.
+	if why != "" {
 		id, ok, wwhy := decideHeld(st, "browser/"+grant, op, digest, tok,
 			map[string]any{"args": args, "why": why}, now)
 		held = id
@@ -470,6 +542,8 @@ func browserGrantCall(ctx context.Context, root string, g browserGrant, m agent.
 	}
 	gatewayMu.Unlock()
 
+	s.actMu.Lock()
+	defer s.actMu.Unlock()
 	out, perr := s.rb.driver.Perform(func(context.Context, agent.Action) (string, error) {
 		return "", errors.New("not the browser's")
 	})(ctx, action)

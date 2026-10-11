@@ -536,6 +536,14 @@ func (st *Site) inbox(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
 		return
 	}
+	// Under the shield like every other public surface an outsider can
+	// reach: an inbox is unauthenticated, and verifying what it is sent
+	// makes this server fetch from hosts the sender names — exactly the
+	// reflexive traffic an incident wants stopped.
+	if _, _, on := st.shielded("fediverse"); on {
+		st.resting(w, r, "The fediverse", time.Time{})
+		return
+	}
 
 	// Bounded before anything else, because everything else costs something.
 	//

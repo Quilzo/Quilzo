@@ -35,6 +35,9 @@ func (c *CloudHypervisor) Start(ctx context.Context, m Machine, socket string) e
 	if err := a.ok(); err != nil {
 		return err
 	}
+	// A context of the caller's choosing governs the maker's lifetime —
+	// a request-scoped context would end the cell with the request, so the
+	// caller that owns sessions passes one that lives as long as they do.
 	cmd := exec.CommandContext(ctx, c.Binary,
 		"--api-socket", "path="+socket,
 		"--seccomp", "true",
@@ -42,6 +45,9 @@ func (c *CloudHypervisor) Start(ctx context.Context, m Machine, socket string) e
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting %s: %w", c.Binary, err)
 	}
+	// Reaped whatever happens: a maker left un-waited is a zombie with the
+	// process's name on it.
+	go func() { _ = cmd.Wait() }()
 	wait := time.NewTicker(50 * time.Millisecond)
 	defer wait.Stop()
 	for i := 0; i < 100; i++ {
@@ -64,7 +70,9 @@ func (c *CloudHypervisor) Start(ctx context.Context, m Machine, socket string) e
 	if err := apiCall(ctx, hc, "PUT", "/api/v1/vm.restore", map[string]any{
 		"source_url": m.Snapshot,
 		"cpus":       map[string]any{"boot_vcpus": m.CPUs, "max_vcpus": m.CPUs},
-		"memory":     map[string]any{"size": m.MemoryMB, "shared": false},
+		// Cloud Hypervisor's memory size is bytes, not MiB; 2048 as bytes
+		// is two kilobytes of desktop, and the maker is right to refuse it.
+		"memory": map[string]any{"size": m.MemoryMB << 20, "shared": false},
 	}); err != nil {
 		_ = cmd.Process.Kill()
 		return fmt.Errorf("restoring the warm snapshot: %w", err)

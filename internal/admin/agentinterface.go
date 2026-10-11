@@ -298,6 +298,13 @@ func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// Under the shield with the machine interface it exists for: a token
+	// minted while the interface is off is a credential that starts working
+	// the moment the shield lifts, and issuing one then is quietly defying
+	// the switch. Revoking stays open, as ending things should.
+	if s.shieldedOff(w, "mcp") {
+		return
+	}
 	s.Interface.OAuth.Token(w, r)
 }
 
@@ -398,6 +405,10 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	cfg, oauth, _ := s.interfaceOn()
 	if !oauth {
 		http.NotFound(w, r)
+		return
+	}
+	// As the token endpoint: no new consents while the interface is off.
+	if s.shieldedOff(w, "mcp") {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")

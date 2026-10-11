@@ -181,6 +181,15 @@ type choice struct {
 
 // Decide returns the agent.Decide for this session.
 func (d Decider) Decide() agent.Decide {
+	decide, _ := d.DecideResettable()
+	return decide
+}
+
+// DecideResettable is Decide, with a second return that forgets a
+// dialect's open batch: for a cache that answers from memory instead of
+// asking the model, whose remembered step belongs to no batch anybody is
+// still working through.
+func (d Decider) DecideResettable() (agent.Decide, func()) {
 	v := d.vocabulary()
 	ops := v.ops
 
@@ -190,6 +199,9 @@ func (d Decider) Decide() agent.Decide {
 	// success of the one before, drops the rest.
 	var queued []agent.Action
 	var lastFrom string
+	reset := func() {
+		queued, lastFrom = nil, ""
+	}
 
 	// ranLast says the newest observation is the success of the action
 	// last handed over, which is the only thing that lets a batch go on.
@@ -271,7 +283,7 @@ func (d Decider) Decide() agent.Decide {
 			return agent.Action{}, fmt.Errorf("the model returned %d bytes for %s and the limit is %d", len(raw), a.Op, MaxAnswer)
 		}
 		return a, err
-	}
+	}, reset
 }
 
 // fromAction names an action as the run's observations name it, so a

@@ -930,6 +930,10 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	}
 	// The scripted walk: the plan is the manifest, so nothing a model says can
 	// change it. This is the default, and the only mode that costs nothing.
+	// forgetBatch, when a model's decider replaces it, forgets a dialect's
+	// open batch — handed to the action cache, which answers for whole
+	// plans and must not leave half of an old one behind.
+	var forgetBatch func()
 	decide := func(context.Context, string, []agent.Observation) (agent.Action, error) {
 		if i >= len(plan) {
 			return agent.Action{Say: "checked"}, nil
@@ -968,7 +972,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		// stages that do the work cannot choose anything.
 		delegateModel = model
 		tools, delegates := modelChoices(ctx, root, m, set)
-		decide = agentmodel.Decider{
+		decide, forgetBatch = agentmodel.Decider{
 			Model:   model,
 			Session: sess,
 			// The dialect the manifest names, when the model was taught to
@@ -987,7 +991,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				}
 				return rb.pictures()
 			},
-		}.Decide()
+		}.DecideResettable()
 	}
 
 	// The reviewer, when this store names one: a second model beside the
@@ -1168,7 +1172,11 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		if withModel && browserCacheOn(root) {
 			kr, _ := loadKeyring(root)
 			if cs, cerr := actioncache.Open(agentCachePath(root, m.Name), m.Name, kr); cerr == nil {
-				decide = actioncache.Wrap(decide, cs, m.Name, func(e actioncache.Event) {
+				// The runner above captured the decider as it stood when it
+				// was built, so the wrap is handed to it here rather than
+				// only to the local name — a cache that reassigned the
+				// variable nobody reads was a setting that did nothing.
+				runner.Decide = actioncache.Wrap(decide, cs, m.Name, func(e actioncache.Event) {
 					outcome, detail := audit.Success, map[string]string{
 						"run": from.RunID, "agent": m.Name, "op": e.Op, "digest": e.Digest}
 					if e.FellBack {
@@ -1176,7 +1184,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 							"the page was not the one the flow remembered, so the model decides"
 					}
 					record(root, actorRecord(caller, "agent.cache", outcome, m, delegateModel, detail))
-				})
+				}, forgetBatch)
 			}
 		}
 	}
