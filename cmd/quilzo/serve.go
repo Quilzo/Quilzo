@@ -37,6 +37,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/browser"
 	"github.com/quilzo/quilzo/internal/codescan"
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/compliance"
@@ -295,6 +296,16 @@ func cmdServe(root string, args []string) error {
 		},
 		Stop: func(id, by string) error {
 			return stopRun(root, id, signedIn(by), time.Now())
+		},
+		Person: func(id string, in admin.PersonInput, by string) error {
+			rec, err := loadAgentRun(root, id)
+			if err != nil {
+				return err
+			}
+			now := time.Now().UTC()
+			return appendPersonNote(root, rec, personNote{
+				PersonInput: browser.PersonInput{Click: in.Click, Type: in.Type, Key: in.Key},
+				By:          by, At: now}, now)
 		},
 		Outputs: func(id string) []admin.RunOutput {
 			kept, _ := loadRunOutputs(root, id)

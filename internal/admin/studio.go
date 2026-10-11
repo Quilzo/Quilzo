@@ -919,6 +919,14 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 			data["LiveView"] = "/agents/frame/" + rec.ID + "/live"
 		}
 	}
+	// A live question a browser run is waiting on can be taken over: the
+	// person's own hands on its page, while the question waits for its
+	// answer above.
+	if rec.Trace.Waiting != nil && rec.Trace.Waiting.Live && live &&
+		s.Agents.Person != nil && agent.IsBrowser(rec.Trace.Waiting.Action.Op) {
+		data["Takeover"] = true
+		data["LiveView"] = "/agents/frame/" + rec.ID + "/live"
+	}
 	data["CanStop"] = s.Agents.Stop != nil && rec.Eval == "" && (row.Outcome == "running" ||
 		(rec.Trace.Waiting != nil && rec.Trace.Waiting.Live && row.Outcome == "waiting"))
 	data["Answers"] = rec.Answers
@@ -969,6 +977,37 @@ func (s *Server) handleRunAct(w http.ResponseWriter, r *http.Request,
 			return
 		}
 		back(page, "Asked it to stop. It stops within a second, wherever it is.", s.Agents.Stop(id, p.Name))
+	case "person":
+		// A person's own hands on the page of a run they have taken over.
+		// The run's process performs what is left and records it as theirs;
+		// the page's rule still holds for their hands too.
+		if s.Agents.Person == nil {
+			http.NotFound(w, r)
+			return
+		}
+		var in PersonInput
+		x, xerr := strconv.ParseFloat(r.FormValue("x"), 64)
+		y, yerr := strconv.ParseFloat(r.FormValue("y"), 64)
+		switch {
+		case xerr == nil && yerr == nil:
+			if x < 0 || y < 0 || x > 100000 || y > 100000 {
+				back(page, "", fmt.Errorf("that point is not on the page"))
+				return
+			}
+			in.Click = []float64{x, y}
+		case r.FormValue("text") != "":
+			in.Type = r.FormValue("text")
+		case r.FormValue("key") != "":
+			in.Key = r.FormValue("key")
+		default:
+			back(page, "", fmt.Errorf("say what to do on the page: a point to press, text to type, or a key"))
+			return
+		}
+		if perr := s.Agents.Person(id, in, p.Name); perr != nil {
+			back(page, "", perr)
+			return
+		}
+		back(page, "Done on the page, as yours.", nil)
 	case "resume":
 		if s.Agents.Resume == nil {
 			http.NotFound(w, r)

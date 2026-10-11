@@ -61,10 +61,24 @@ type Agents struct {
 	Answer func(id string, step int, approve bool, by string) error
 	Resume func(id, by string) error
 	Replay func(id string, step int, by string) (string, error)
+	// Person leaves one thing a person did to the page of a run they are
+	// taking over, for the process holding it; nil when this build offers
+	// no take-over. A browser run only: a person's hands are on a page.
+	Person func(id string, in PersonInput, by string) error
+
 	// Draft asks a model for a declaration from a description, read
 	// through the checker; nil when this build drafts nothing. It saves
 	// nothing.
 	Draft func(description, by string) (AgentDraft, error)
+}
+
+// PersonInput is one thing a person did to a run's page while taking it
+// over: a point pressed, text typed where the page holds its focus, or
+// one named key.
+type PersonInput struct {
+	Click []float64
+	Type  string
+	Key   string
 }
 
 // AgentDraft is a declaration drafted from a description: what the reader

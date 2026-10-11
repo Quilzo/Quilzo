@@ -28,6 +28,50 @@
     <p class="actions">{{if not .Expired}}<button type="submit" name="verdict" value="approve">Let it go ahead</button>{{end}}
     <button type="submit" name="verdict" value="decline" class="danger">Decline</button></p>
   </form>
+  {{if .Takeover}}<details class="takeover">
+    <summary>Take the page over and do it yourself<span class="chev">{{icon "expand_more"}}</span></summary>
+    <p class="hint">Your hands go into the agent's page, and each thing you do is recorded as yours — never as the agent's or the model's. The page's rule still holds: this browser reaches only what <code>{{.R.Agent}}</code> declared. When you are done, answer the question above; decline it if you finished by hand.</p>
+    {{with .LiveView}}<img id="takeover-page" src="{{.}}" alt="What the agent's browser shows now, under your hands" style="max-width:100%;cursor:crosshair">{{end}}
+    <form method="post" action="/agents/act" class="takeover-form">
+      <input type="hidden" name="do" value="person"><input type="hidden" name="run" value="{{.R.ID}}">
+      <input type="hidden" name="x" value=""><input type="hidden" name="y" value="">
+      <p class="actions"><label>type <input type="text" name="text" maxlength="4000"></label> <button type="submit">Type</button>
+      <button type="submit" name="key" value="Enter">Enter</button>
+      <button type="submit" name="key" value="Tab">Tab</button>
+      <button type="submit" name="key" value="Escape">Esc</button>
+      <button type="submit" name="key" value="Backspace">Backspace</button></p>
+    </form>
+    <p class="hint">Click the picture to press there. The picture follows what you do.</p>
+    {{if .Nonce}}<script nonce="{{.Nonce}}">
+      (function () {
+        var page = document.getElementById("takeover-page");
+        var form = document.querySelector(".takeover-form");
+        if (!page || !form) return;
+        function send(body) {
+          fetch("/agents/act", {method: "POST", body: body, credentials: "same-origin"})
+            .then(function () {
+              setTimeout(function () {
+                page.src = page.src.split("?")[0].split("#")[0] + "?t=" + Date.now();
+              }, 400);
+            });
+        }
+        page.addEventListener("click", function (e) {
+          var r = page.getBoundingClientRect();
+          var b = new FormData(form);
+          b.set("x", Math.round((e.clientX - r.left) / r.width * 1280));
+          b.set("y", Math.round((e.clientY - r.top) / r.height * 800));
+          b.delete("text"); b.delete("key");
+          send(b);
+        });
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          send(new FormData(form));
+          var t = form.querySelector('input[name="text"]');
+          if (t && document.activeElement === t) t.value = "";
+        });
+      })();
+    </script>{{end}}
+  </details>{{end}}
 </section>
 {{else if eq .State "interrupted"}}<section class="notice warn" aria-labelledby="cut">
   <h2 id="cut">It was cut off</h2>
