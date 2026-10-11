@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -178,5 +179,62 @@ func TestALongOutputIsShownByItsEnds(t *testing.T) {
 	}
 	if int64(len(o.Kept)) != o.Total {
 		t.Errorf("kept %d of %d", len(o.Kept), o.Total)
+	}
+}
+
+// A command taken as only reading cannot write the workspace whatever it
+// runs in turn: a sed script's own w command, a repository's configured
+// hook.
+func TestAReadingCommandCannotWriteTheWorkspace(t *testing.T) {
+	b := testBox(t)
+	if err := os.WriteFile(filepath.Join(b.Workspace, "in.txt"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if sed, err := Find("sed"); err == nil {
+		o := run(t, b, sed, "-n", "w out.txt", "in.txt")
+		if _, err := os.Stat(filepath.Join(b.Workspace, "out.txt")); err == nil {
+			t.Errorf("sed, taken as reading, wrote the workspace: %s", o.Text)
+		}
+	}
+	git, err := Find("git")
+	if err != nil {
+		t.Skip("no git here")
+	}
+	if o := run(t, b, git, "init", "-q"); o.Exit != 0 {
+		t.Fatalf("git init: %s", o.Text)
+	}
+	hook := filepath.Join(b.Workspace, "hook.sh")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\ntouch "+filepath.Join(b.Workspace, "planted")+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(b.Workspace, ".git", "config")
+	f, err := os.OpenFile(cfg, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintf(f, "[core]\n\tfsmonitor = %s\n", hook)
+	f.Close()
+	run(t, b, git, "status")
+	if _, err := os.Stat(filepath.Join(b.Workspace, "planted")); err == nil {
+		t.Error("git status, taken as reading, let the repository's hook write the workspace")
+	}
+}
+
+// A named pipe in the workspace is not read: opening one would wait for
+// somebody to write to it, and the run with it.
+func TestANamedPipeIsNotRead(t *testing.T) {
+	w, dir := workspace(t)
+	if err := syscall.Mkfifo(filepath.Join(dir, "pipe"), 0o644); err != nil {
+		t.Skip(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := w.Read("pipe"); done <- err }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "not a plain file") {
+			t.Errorf("%v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("reading a named pipe hung")
 	}
 }

@@ -125,6 +125,15 @@ func (b Box) Run(ctx context.Context, c Command) (Output, error) {
 		// tool fetching a newer version of itself.
 		"CI=1", "NO_COLOR=1", "TERM=dumb", "PAGER=cat", "GIT_PAGER=cat", "GIT_TERMINAL_PROMPT=0",
 		"GIT_ASKPASS=/bin/false", "SSH_ASKPASS=/bin/false", "DEBIAN_FRONTEND=noninteractive", "GOTOOLCHAIN=local",
+		// Git takes no settings from the scratch home or the system, which
+		// an earlier command could have planted; it commits as the agent.
+		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_AUTHOR_NAME=agent " + b.Agent, "GIT_AUTHOR_EMAIL=" + b.Agent + "@agents.quilzo.invalid",
+		"GIT_COMMITTER_NAME=agent " + b.Agent, "GIT_COMMITTER_EMAIL=" + b.Agent + "@agents.quilzo.invalid",
+	}
+	if c.Kind.Reads() {
+		// Nothing written, not even git's own optional index refresh.
+		env = append(env, "GIT_OPTIONAL_LOCKS=0")
 	}
 	env = append(env, b.Env...)
 	var services []agentbox.Service
@@ -136,7 +145,11 @@ func (b Box) Run(ctx context.Context, c Command) (Output, error) {
 	out := &capture{h: sha256.New()}
 	res, err := b.Backend.Run(ctx, agentbox.Spec{
 		Run: b.RunID, Agent: b.Agent, Program: c.Path, Args: c.Args, Env: env,
-		Workdir: b.Workspace, Write: []string{b.Home}, Services: services,
+		// A command that only reads gets its workspace read-only, so what it
+		// runs in turn (a repository's configured hook, a preprocessor, a
+		// sed script) cannot change it: the kind is enforced, as the
+		// network is.
+		Workdir: b.Workspace, ReadOnlyWorkdir: c.Kind.Reads(), Write: []string{b.Home}, Services: services,
 		Limits: sandbox.Limits{CPUSeconds: uint64(timeout/time.Second) + 1, DataBytes: uint64(mem) << 20,
 			FileBytes: 256 << 20, OpenFiles: 1024, Processes: 4096},
 		Wall:  timeout,
