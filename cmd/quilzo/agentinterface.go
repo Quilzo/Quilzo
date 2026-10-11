@@ -175,9 +175,17 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 			}
 			return buildMCP(root, s, remoteCaller(tok), tplDir), nil
 		},
-		Offered: func(name string) bool { _, ok := gatewayOffered(root, name); return ok },
-		Tasks:   func() bool { return cc.get().Bool("a2a.tasks") },
-		A2A:     func(c *mcp.Caller) a2a.Host { return a2aHost(root, c) },
+		Offered:        func(name string) bool { _, ok := gatewayOffered(root, name); return ok },
+		BrowserOffered: func(name string) bool { _, _, ok := browserGrantOffered(root, name); return ok },
+		Browser: func(r *http.Request, c *mcp.Caller, name string) (*mcp.Server, error) {
+			tok, ok := c.Data.(auth.Token)
+			if !ok {
+				return nil, errors.New("the caller was not established")
+			}
+			return browserMCPServer(r, root, name, tok)
+		},
+		Tasks: func() bool { return cc.get().Bool("a2a.tasks") },
+		A2A:   func(c *mcp.Caller) a2a.Host { return a2aHost(root, c) },
 		Gateway: func(r *http.Request, c *mcp.Caller, name string) (*mcp.Server, error) {
 			tok, ok := c.Data.(auth.Token)
 			if !ok {

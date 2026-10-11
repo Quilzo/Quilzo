@@ -9,6 +9,19 @@ Unreleased
 
 ** Added
 
+*** The governed browser is offered over MCP, to other vendors' agents:
+    `quilzo browser grant NAME --read HOST,… [--write HOST,…] [--daily N]
+    [--pictures]` declares what an outside client — Claude Code, Codex,
+    anything that speaks MCP — may do at `/mcp/browser/NAME` on the admin,
+    reached with a token issued for that address.  Each call is a step of a
+    kept run: the same host rule on every request the page makes, the same
+    breaker, and a press that commits to something held for a person
+    exactly as a gateway tool is — approved once, within the hour, by
+    somebody else.  The browser is Quilzo's, in a box; the client never
+    holds its pipe, and nothing it sends is a selector or a script — it
+    names elements by the references of the outline it is given.  A grant
+    offers no credentials and no signing in.  `--off` withdraws one.
+
 *** A run waiting on a person over its browser can be taken over: on the
     run's page, "Take the page over and do it yourself" puts the person's
     own hands on the page — a click on the picture presses there, and text

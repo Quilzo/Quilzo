@@ -551,6 +551,8 @@ agents and integrations
   quilzo memory receipt [--about P] [-o F] what was forgotten, deleted or rewritten about you, proved
   quilzo agent program NAME [--backend B] [--read DIR] [--env K=V] -- COMMAND   what its program is
   quilzo browser status | install         the browser agents use, and fetching the pinned one
+  quilzo browser grant NAME [--read H,..] [--write H,..] [--ops O,..] [--daily N] [--pictures] | --off
+                                          the governed browser offered to an outside agent at /mcp/browser/NAME
   quilzo agent runs [NAME] | trace RUN     the runs that are kept, and one step by step
   quilzo eval keep RUN-ID [--finishes --uses a,b --avoids c]   a kept run as a test case
   quilzo eval run AGENT [--k 3] [--model] [--attempts N]   every case k times, and with instructions planted
