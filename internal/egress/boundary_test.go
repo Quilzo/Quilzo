@@ -38,6 +38,10 @@ func TestNothingReachesTheNetworkOutsideThisPackage(t *testing.T) {
 			"dialler, which the test below checks too",
 		"internal/logd/logd.go": "dials a unix socket, which does not leave " +
 			"the host and is not egress",
+		"internal/cell/cell.go": "speaks the microVM's own API over the unix " +
+			"socket it owns on this machine — a cell's only door to the host " +
+			"is that socket, and nothing in the guest is reached by it; the " +
+			"guest's own network is the microVM's, not this program's",
 		"internal/agentbox/forward.go": "joins a port inside an agent program's " +
 			"box to its run's service on a unix socket on this machine; nothing " +
 			"leaves the host here, and the run's proxy goes through egress.Allowed",

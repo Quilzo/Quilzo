@@ -291,6 +291,10 @@ func settingGroupLabel(key string) string {
 	switch key {
 	case "auth":
 		return "Signing in"
+	case "agent":
+		return "Agents and their models"
+	case "cell":
+		return "Desktop cells"
 	case "passkey":
 		return "Passkeys"
 	case "token":

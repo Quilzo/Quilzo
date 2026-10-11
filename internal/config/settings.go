@@ -667,6 +667,15 @@ var settings = []Setting{
 			"Raise it on a machine with the memory for more.",
 	},
 	{
+		Key: "agent.reviewer", Kind: Text, Default: "",
+		Summary: "a second model every action is offered to before it runs, by route name",
+		Why: "It sees the goal and the action and nothing of what the agent saw, so " +
+			"nothing a page planted can reach it. It can let an action through or stop " +
+			"the run with its reason for a person to read and continue from — never " +
+			"widen, never rewrite. It is the last defence, not the only one, and it " +
+			"costs one more model call per action: empty means none.",
+	},
+	{
 		Key: "cell.backend", Kind: Text, Default: "",
 		Summary: "the microVM desktop cells are driven through: firecracker or cloud-hypervisor",
 		Why: "A cell is a whole virtual machine, and the binary that runs one is the " +
