@@ -12,6 +12,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agentexec"
 	"github.com/quilzo/quilzo/internal/agentmodel"
 	"github.com/quilzo/quilzo/internal/assist"
+	decidepkg "github.com/quilzo/quilzo/internal/decide"
 	"github.com/quilzo/quilzo/internal/store"
 )
 
@@ -108,6 +109,17 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 				Call: newMCPClient(d.root),
 			},
 			d.next(m.Name),
+			// The deciders, for a delegate as for its parent: a typed
+			// question with a confidence, under the decider's own gate.
+			agentexec.Deciders{
+				Load: func() (*decidepkg.Set, error) {
+					return decidepkg.Load(decidersPath(d.root))
+				},
+				Model: func(name string) decidepkg.Model {
+					m, _ := deciderModel(d.root, name)
+					return m
+				},
+			},
 			child,
 		),
 		Record: func(rc agent.Receipt) {

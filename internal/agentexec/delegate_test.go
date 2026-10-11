@@ -250,7 +250,7 @@ func TestDispatchRoutesADelegation(t *testing.T) {
 	s := agent.NewSession(lead(), nil)
 	perform := Dispatch(
 		Reader{Store: st}, Writer{Store: st, Author: "agent/lead"},
-		Tools{}, delegates(r), s)
+		Tools{}, delegates(r), Deciders{}, s)
 
 	out, err := perform(context.Background(), agent.Action{
 		Delegate: "researcher", Say: "go",

@@ -149,6 +149,10 @@ func lastPartial(b []byte) []byte {
 // thing a person does to the page while taking it over.
 func programHold(root, id string, gone <-chan struct{}, said func(string), answered func(agent.Answer),
 	person func(browser.PersonInput, string)) func(context.Context, agent.Pending, func()) (agent.Verdict, error) {
+	// Where the last look at the person's hands ended, kept across the
+	// run's questions: a second question must not replay the first one's
+	// hands from the top of the file.
+	var read int64
 	return func(ctx context.Context, w agent.Pending, beat func()) (agent.Verdict, error) {
 		if !agent.ValidRecordID(id) {
 			return agent.Verdict{}, fmt.Errorf("%q is not a run", id)
@@ -167,7 +171,6 @@ func programHold(root, id string, gone <-chan struct{}, said func(string), answe
 		poll := time.NewTicker(holdPoll)
 		defer poll.Stop()
 		lastBeat := time.Now()
-		var read int64
 		for {
 			select {
 			case <-ctx.Done():

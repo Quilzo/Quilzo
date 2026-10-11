@@ -279,7 +279,7 @@ func TestDispatchRoutesAToolCall(t *testing.T) {
 	st := searchStore(t)
 	perform := Dispatch(
 		Reader{Store: st}, Writer{Store: st, Author: "agent/errands"},
-		Tools{Installed: installed("api.example.com"), Call: c}, Delegates{}, s)
+		Tools{Installed: installed("api.example.com"), Call: c}, Delegates{}, Deciders{}, s)
 
 	out, err := perform(context.Background(), agent.Action{Tool: "lookup"})
 	if err != nil {
