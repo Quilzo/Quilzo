@@ -20,6 +20,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agentbox"
 	"github.com/quilzo/quilzo/internal/agentmodel"
 	"github.com/quilzo/quilzo/internal/assist"
+	"github.com/quilzo/quilzo/internal/actioncache"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/otlp"
@@ -1127,6 +1128,27 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		defer rb.end()
 		runner.Perform = rb.driver.Perform(runner.Perform)
 		weighs = append(weighs, rb.driver.Weighs)
+		// The remembered flow: a step that worked on a page this run sees
+		// again is replayed without a model call, and confirmed by the page
+		// that follows it — every check a decided step passes, with the
+		// model only asked when the page is not the one remembered. Off
+		// until the store turns it on (browser.cache), because a step that
+		// runs without the model is a step somebody should decide to have;
+		// the record says which ran from memory.
+		if withModel && browserCacheOn(root) {
+			kr, _ := loadKeyring(root)
+			if cs, cerr := actioncache.Open(agentCachePath(root, m.Name), m.Name, kr); cerr == nil {
+				decide = actioncache.Wrap(decide, cs, m.Name, func(e actioncache.Event) {
+					outcome, detail := audit.Success, map[string]string{
+						"run": from.RunID, "agent": m.Name, "op": e.Op, "digest": e.Digest}
+					if e.FellBack {
+						outcome, detail["why"] = audit.Denied,
+							"the page was not the one the flow remembered, so the model decides"
+					}
+					record(root, actorRecord(caller, "agent.cache", outcome, m, delegateModel, detail))
+				})
+			}
+		}
 	}
 	// Its workspace and commands (agentshell.go): one run at a time on the
 	// workspace, each command in a box of its own.

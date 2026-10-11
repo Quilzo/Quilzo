@@ -667,6 +667,16 @@ var settings = []Setting{
 			"Raise it on a machine with the memory for more.",
 	},
 	{
+		Key: "browser.cache", Kind: Bool, Default: "false",
+		Summary: "whether a browser flow that worked is replayed without a model call",
+		Why: "A remembered step goes through every check a decided one does — the manifest, " +
+			"the breaker, ask-first — and is confirmed by the page that follows it, falling " +
+			"back to the model the moment the page is not the one remembered. What it changes " +
+			"is only who answers, and that is why it waits for a decision here: a step that " +
+			"runs without the model is a step somebody should have decided to have. The one " +
+			"action never remembered is signing in.",
+	},
+	{
 		Key: "network.mode", Kind: Text, Default: "open",
 		Summary: "whether this deployment may reach the network: open or offline",
 		Why: "offline refuses every connection that would leave this host, " +
