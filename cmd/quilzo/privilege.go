@@ -672,7 +672,10 @@ var commandNeeds = map[string]need{
 	"secret": {action: auth.ActToken},
 	// Fetching and installing a program this store then runs: whoever may
 	// mint a token. Looking at which browser would be used is reading.
-	"browser":        {action: auth.ActToken},
+	"browser": {action: auth.ActToken},
+	// Declaring what an outside client's browser may do is a grant: it
+	// widens what this install offers to a token's bearer.
+	"browser grant":  {action: auth.ActGrant},
 	"browser status": {action: auth.ActView},
 
 	// Suppressing a posture rule is accepting a risk on the organisation's

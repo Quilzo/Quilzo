@@ -5,13 +5,19 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/browser"
 	"github.com/quilzo/quilzo/internal/fetch"
 )
@@ -94,6 +100,111 @@ func cmdBrowser(root string, args []string) error {
 			map[string]string{"version": browser.Pinned.Version, "sha256": d.SHA256}))
 		fmt.Printf("%s\n  %sinstalled and checked%s\n", exe, green, reset)
 		return nil
+	case "grant", "grants":
+		return cmdBrowserGrant(root, args[1:])
 	}
-	return fmt.Errorf("unknown browser command %q; try status or install", args[0])
+	return fmt.Errorf("unknown browser command %q; try status, install or grant", args[0])
+}
+
+// cmdBrowserGrant declares what an outside MCP client's browser may do:
+// which hosts, which actions, how many calls a day. An offer that names no
+// host and no action is refused, as an agent's declaration is.
+func cmdBrowserGrant(root string, args []string) error {
+	if len(args) == 0 {
+		set, err := loadBrowserGrants(root)
+		if err != nil {
+			return err
+		}
+		if len(set) == 0 {
+			fmt.Printf("  no browser grants. `quilzo browser grant NAME --read HOST,…` declares one\n")
+			return nil
+		}
+		for _, name := range grantNames(root) {
+			g := set[name]
+			fmt.Printf("%s  %s%s reads %s", bold, name, reset, strings.Join(g.Read, ", "))
+			if len(g.Write) > 0 {
+				fmt.Printf(", acts on %s", strings.Join(g.Write, ", "))
+			}
+			if g.Pictures {
+				fmt.Printf(", with pictures")
+			}
+			if g.Daily > 0 {
+				fmt.Printf(", at most %d calls a caller a day", g.Daily)
+			}
+			fmt.Println()
+		}
+		fmt.Printf("  offered at /mcp/browser/NAME on the admin, to the bearer of a token issued for it\n")
+		return nil
+	}
+	name := args[0]
+	if name == "--off" {
+		return fmt.Errorf("say which grant: `quilzo browser grant NAME --off`")
+	}
+	if !grantName.MatchString(name) {
+		return fmt.Errorf("%q is not a name a grant may carry", name)
+	}
+	fs := flag.NewFlagSet("browser grant", flag.ContinueOnError)
+	read := fs.String("read", "", "hosts the browser may open and read, comma-separated")
+	write := fs.String("write", "", "hosts it may also act on, comma-separated")
+	ops := fs.String("ops", "", "actions offered (default: all but sign-in)")
+	pictures := fs.Bool("pictures", false, "allow browser_look, which carries a picture of the page")
+	daily := fs.Int("daily", 0, "calls one caller may make a day")
+	off := fs.Bool("off", false, "withdraw the grant")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	caller := resolveCaller(root, "")
+	if err := authorise(root, caller, auth.ActGrant, "/browser/grant"); err != nil {
+		return err
+	}
+	if *off {
+		set, err := loadBrowserGrants(root)
+		if err != nil {
+			return err
+		}
+		if _, ok := set[name]; !ok {
+			return fmt.Errorf("there is no browser grant called %s", name)
+		}
+		delete(set, name)
+		var f grantsFile
+		for _, g := range set {
+			f.Grants = append(f.Grants, g)
+		}
+		b, _ := json.MarshalIndent(f, "", "  ")
+		if err := os.MkdirAll(filepath.Dir(grantsPath(root)), 0o700); err != nil {
+			return err
+		}
+		if err := atomicfile.Write(grantsPath(root), b, 0o600); err != nil {
+			return err
+		}
+		record(root, caller.auditRecord("browser.grant", "/mcp/browser/"+name, audit.Success,
+			map[string]string{"grant": name, "off": "1"}))
+		fmt.Printf("  %swithdrawn%s\n", green, reset)
+		return nil
+	}
+	hosts := func(list string) []string {
+		var out []string
+		for _, h := range strings.Split(list, ",") {
+			if h = strings.TrimSpace(strings.ToLower(h)); h != "" {
+				out = append(out, h)
+			}
+		}
+		return out
+	}
+	g := browserGrant{Name: name, Read: hosts(*read), Write: hosts(*write),
+		Ops: hosts(*ops), Pictures: *pictures, Daily: *daily}
+	if _, err := g.manifest(); err != nil {
+		return err
+	}
+	if len(g.Ops) == 0 {
+		g.Ops = nil
+	}
+	if err := saveBrowserGrant(root, g); err != nil {
+		return err
+	}
+	record(root, caller.auditRecord("browser.grant", "/mcp/browser/"+name, audit.Success,
+		map[string]string{"grant": name, "reads": strconv.Itoa(len(g.Read)), "acts_on": strconv.Itoa(len(g.Write))}))
+	fmt.Printf("  %soffered at /mcp/browser/%s on the admin%s\n", green, name, reset)
+	fmt.Printf("  a token issued for that address reaches it: `quilzo token issue NAME --on /mcp/browser/%s`\n", name)
+	return nil
 }
