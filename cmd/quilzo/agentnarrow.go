@@ -130,7 +130,9 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 		// send to, and so no signing in. A read-only credential does not
 		// get forms sent on its say-so.
 		b.Browser = m.Browser.ReadOnly()
-		b.Shell = m.Shell.ReadOnlyCopy()
+		if m.Shell != nil || holdsShell(m) {
+			b.Shell = m.Shell.ReadOnlyCopy()
+		}
 	}
 	// A caller confined to part of the site confines the agent to it: a
 	// token issued --on /docs, or an agent granted a role on /docs only.

@@ -803,9 +803,16 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 	// An agent that proposes and does not write sends nothing through its
 	// browser either, however it came to propose: the caller, its standing
 	// or its evaluations. Nor does an evaluation, which changes nothing.
+	// An agent with the workspace's capabilities and no "shell" block has
+	// the empty declaration, which reading only must reach too.
+	if holdsShell(m) && m.Shell == nil {
+		m.Shell = &agent.Shell{}
+	}
 	if eval || m.Autonomy == agent.AutonomyPropose {
 		m.Browser = m.Browser.ReadOnly()
-		m.Shell = m.Shell.ReadOnlyCopy()
+		if m.Shell != nil {
+			m.Shell = m.Shell.ReadOnlyCopy()
+		}
 	}
 	if len(m.Capabilities) == 0 {
 		if earnedWhy != "" {

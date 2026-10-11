@@ -19,6 +19,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/agentbox"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/shell"
 )
 
 // keeperRun declares an agent with a workspace and a model that writes a
@@ -117,8 +118,15 @@ func TestAnAgentWorksInItsWorkspace(t *testing.T) {
 		t.Error("no step record names the output's digest")
 	}
 	// The workspace is let go when the run ends.
-	if _, err := os.Stat(claimPath(root, ws)); !os.IsNotExist(err) {
+	c, err := shell.ClaimWorkspace(claimPath(root, ws), "next")
+	if err != nil {
 		t.Errorf("the workspace is still claimed: %v", err)
+	} else {
+		c.Release()
+	}
+	// The run's home went with it.
+	if homes, _ := os.ReadDir(filepath.Join(root, "workspaces", ".home", "keeper")); len(homes) != 0 {
+		t.Errorf("the run's home outlived it: %v", homes)
 	}
 }
 
@@ -166,11 +174,61 @@ func TestAWorkspaceIsNeverTheStore(t *testing.T) {
 	if _, err := workspaceDir(root, agent.Manifest{Name: "x", Shell: &agent.Shell{Workspace: link}}); err == nil {
 		t.Error("a link to the store was taken as a workspace")
 	}
-	m := agent.Manifest{Name: "x", Shell: &agent.Shell{Workspace: filepath.Join(abs, "workspaces", "shared")}}
-	if _, err := workspaceDir(root, m); err != nil {
-		t.Errorf("a folder in the workspaces' own: %v", err)
+	// Inside the store, only an agent's own: not another's, not the homes
+	// or the claims.
+	for _, ws := range []string{"shared", ".home", ".claims", "other"} {
+		m := agent.Manifest{Name: "x", Shell: &agent.Shell{Workspace: filepath.Join(abs, "workspaces", ws)}}
+		if _, err := workspaceDir(root, m); err == nil {
+			t.Errorf("workspaces/%s was taken as x's workspace", ws)
+		}
+	}
+	if _, err := workspaceDir(root, agent.Manifest{Name: "x", Shell: &agent.Shell{Workspace: filepath.Join(abs, "workspaces", "x")}}); err != nil {
+		t.Errorf("x's own folder: %v", err)
+	}
+	// Reached through a link to somewhere that is not the store: refused
+	// all the same, since a link can be changed.
+	elsewhere := t.TempDir()
+	viaLink := filepath.Join(t.TempDir(), "via")
+	_ = os.Symlink(elsewhere, viaLink)
+	if _, err := workspaceDir(root, agent.Manifest{Name: "x", Shell: &agent.Shell{Workspace: viaLink}}); err == nil {
+		t.Error("a workspace reached through a link was taken")
+	}
+	// A name that would be a path is not one.
+	for _, name := range []string{"..", ".home", "a/b", ""} {
+		if _, err := workspaceDir(root, agent.Manifest{Name: name}); err == nil {
+			t.Errorf("an agent named %q has a workspace", name)
+		}
 	}
 	if got, _ := workspaceDir(root, agent.Manifest{Name: "x"}); got != filepath.Join(abs, "workspaces", "x") {
 		t.Errorf("the default is %s", got)
+	}
+}
+
+// Something private written into the workspace stays private to the next
+// run on it: the breaker remembers across runs.
+func TestAWorkspaceRemembersWhatWasPrivate(t *testing.T) {
+	root := keeperRun(t)
+	set, _ := loadAgents(root)
+	m := set.Agents["keeper"]
+	sess := agent.NewSession(m, nil)
+	sess.HoldsPrivate("a customer's address")
+	rs, err := newRunShell(root, m, sess, asAdmin("dana"), nil, "run-20261011-00000001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if _, err := rs.driver.Perform(nil)(ctx, agent.Action{Op: "file_write", Input: map[string]any{"path": "notes.md", "text": "Main Street 4"}}); err != nil {
+		t.Fatal(err)
+	}
+	rs.end()
+	next := agent.NewSession(m, nil)
+	rs2, err := newRunShell(root, m, next, asAdmin("dana"), nil, "run-20261011-00000002")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rs2.end()
+	if p := strings.Join(next.Private(), ","); !strings.Contains(p, "run-20261011-00000001") {
+		t.Errorf("the next run does not hold it: %q", p)
 	}
 }
