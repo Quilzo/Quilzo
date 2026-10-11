@@ -166,3 +166,30 @@ func TestAnAskFirstQuestionSaysWhatThePressDoes(t *testing.T) {
 	}
 	t.Errorf("the question was still on the record when the action ran: %d checkpoints", len(kept))
 }
+
+// A dialect is how a model answers about the browser, so naming one takes
+// a browser to answer about, and a dialect nobody can translate is not
+// declarable at all.
+func TestADialectMeansAModelThatAnswersAboutABrowser(t *testing.T) {
+	b := &Browser{Read: []string{"docs.example.com"}}
+	hold := []string{"browser_open", "browser_read"}
+	for _, d := range Dialects {
+		m := browsing(hold, b)
+		m.Dialect = d
+		if err := m.Validate(nil); err != nil {
+			t.Errorf("%s: %v", d, err)
+		}
+	}
+	m := browsing(hold, b)
+	m.Dialect = "vendor-nobody-translates"
+	if err := m.Validate(nil); err == nil || !strings.Contains(err.Error(), "not a dialect") {
+		t.Errorf("an unknown dialect was accepted: %v", err)
+	}
+	plain := Manifest{Name: "reader", Kind: KindRetrieval, Purpose: "read the store",
+		Capabilities: []string{"read_page"}, Autonomy: AutonomyPropose,
+		Budget: Budget{Steps: 10, Tools: 1, Duration: Duration(time.Minute)}}
+	plain.Dialect = Dialects[len(Dialects)-1]
+	if err := plain.Validate(nil); err == nil || !strings.Contains(err.Error(), "no browser capability") {
+		t.Errorf("a dialect on an agent with no browser was accepted: %v", err)
+	}
+}

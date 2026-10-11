@@ -69,6 +69,11 @@ type Driver struct {
 	stops   []func()
 	outline Outline
 	read    bool
+	// focus is the outline reference last pressed, kept for a model that
+	// types where it last pressed rather than naming a field. It is this
+	// program's own notion, cleared when a page is opened, and a type still
+	// re-checks the element it names before anything is typed.
+	focus string
 
 	// What happened on the page between actions: dialogs it showed and
 	// requests the rule refused. Its own lock, since the page does these
@@ -192,8 +197,19 @@ func (d *Driver) Weighs(a agent.Action) string {
 		if !d.read {
 			return ""
 		}
-		e, ok := d.outline.Elements[str(a, "ref")]
-		if !ok {
+		var e Element
+		var ok bool
+		if a.Op == "browser_click" && str(a, "ref") == "" {
+			// A point, from a vendor's adapter: weighed as the element it
+			// names, so what a person is shown is what will be pressed.
+			if x, y, is := at(a); !is {
+				return ""
+			} else if _, el, err := d.elementAt(ctx, x, y); err != nil {
+				return ""
+			} else {
+				e = el
+			}
+		} else if e, ok = d.outline.Elements[str(a, "ref")]; !ok {
 			return ""
 		}
 		why := d.weigh(ctx, a.Op, e)
@@ -270,11 +286,27 @@ func (d *Driver) perform(ctx context.Context, a agent.Action) (string, error) {
 		return d.look(ctx)
 	case "browser_type":
 		text, _ := a.Input["text"].(string)
-		return d.typeInto(ctx, str(a, "ref"), text)
+		ref := str(a, "ref")
+		if ref == "" {
+			// A model that types where it last pressed, not into a field it
+			// named: the focus is the element last pressed, re-checked as
+			// any reference is before anything is typed.
+			ref = d.focusAt()
+			if ref == "" {
+				return "", errors.New("no field is focused: name it by its reference, or press it first")
+			}
+		}
+		return d.typeInto(ctx, ref, text)
 	case "browser_choose":
 		return d.choose(ctx, str(a, "ref"), str(a, "option"))
 	case "browser_click":
-		return d.click(ctx, str(a, "ref"))
+		if ref := str(a, "ref"); ref != "" {
+			return d.click(ctx, ref)
+		}
+		if x, y, ok := at(a); ok {
+			return d.clickAt(ctx, x, y)
+		}
+		return d.click(ctx, "")
 	case "browser_sign_in":
 		return d.signIn(ctx, str(a, "credential"))
 	}
@@ -464,6 +496,7 @@ func (d *Driver) open(ctx context.Context, raw string) (string, error) {
 	if err := d.start(ctx); err != nil {
 		return "", err
 	}
+	d.focus = ""
 	nctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	note := ""
@@ -639,6 +672,7 @@ func (d *Driver) click(ctx context.Context, ref string) (string, error) {
 		return "", err
 	}
 	settled(ctx)
+	d.focus = ref
 	return d.readPage(ctx, fmt.Sprintf("pressed %s %q; the page is now ", e.Role, e.Name))
 }
 

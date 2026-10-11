@@ -145,6 +145,35 @@ func (p *Page) AXTree(ctx context.Context) ([]AXNode, error) {
 	return r.Nodes, nil
 }
 
+// At is the deepest node under a point of the viewport, by its backend id.
+// The same question Click asks of its own aim, asked on its own, so a
+// coordinate somebody else chose can be resolved to an element before
+// anything is pressed.
+func (p *Page) At(ctx context.Context, x, y float64) (int64, error) {
+	var hit struct {
+		Backend int64 `json:"backendNodeId"`
+	}
+	if err := p.call(ctx, "DOM.getNodeForLocation", map[string]any{"x": int(x), "y": int(y),
+		"includeUserAgentShadowDOM": false, "ignorePointerEventsNone": false}, &hit); err != nil {
+		return 0, err
+	}
+	return hit.Backend, nil
+}
+
+// Quads is where an element sits now, without scrolling it anywhere: what
+// Box measures after it has moved the page, measured where the page already
+// is, so asking cannot itself change what is where. An element with no
+// place on the page (hidden, or not rendered) has none.
+func (p *Page) Quads(ctx context.Context, backend int64) ([][]float64, error) {
+	var q struct {
+		Quads [][]float64 `json:"quads"`
+	}
+	if err := p.call(ctx, "DOM.getContentQuads", map[string]any{"backendNodeId": backend}, &q); err != nil {
+		return nil, err
+	}
+	return q.Quads, nil
+}
+
 // Box is where an element is on the screen, after scrolling it into view:
 // its left, top, right and bottom edges.
 func (p *Page) Box(ctx context.Context, backend int64) (x0, y0, x1, y1 float64, err error) {
