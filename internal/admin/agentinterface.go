@@ -56,6 +56,11 @@ type AgentInterface struct {
 	// and Gateway makes the server answering one caller for it.
 	Offered func(name string) bool
 	Gateway func(r *http.Request, c *mcp.Caller, name string) (*mcp.Server, error)
+	// BrowserOffered says a browser grant is offered under a name, and
+	// Browser makes the server answering one caller for it: Quilzo's own
+	// governed browser, at /mcp/browser/NAME.
+	BrowserOffered func(name string) bool
+	Browser        func(r *http.Request, c *mcp.Caller, name string) (*mcp.Server, error)
 	// Tasks says whether other agents may hand tasks over A2A 1.0, and A2A
 	// answers them for one caller.
 	Tasks func() bool
@@ -130,6 +135,42 @@ func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 		},
 		Build: func(r *http.Request, c *mcp.Caller) (*mcp.Server, error) {
 			return s.Interface.Gateway(r, c, name)
+		},
+		SameOrigin: func(o string) bool {
+			return o == own || (oauth && o == cfg.Issuer)
+		},
+	}
+	e.ServeHTTP(w, r)
+}
+
+// handleBrowserMCP offers Quilzo's own governed browser to another
+// vendor's agent at /mcp/browser/NAME: the same tokens and app
+// connections as the rest of the machine interface, one grant a person
+// declared, every call checked and recorded, and a press that commits to
+// something waiting for a person exactly as a gateway tool does.
+func (s *Server) handleBrowserMCP(w http.ResponseWriter, r *http.Request) {
+	cfg, oauth, on := s.interfaceOn()
+	name := strings.TrimPrefix(r.URL.Path, "/mcp/browser/")
+	if !on || s.Interface.Browser == nil || s.Interface.BrowserOffered == nil ||
+		!gatewayName.MatchString(name) || !s.Interface.BrowserOffered(name) {
+		http.NotFound(w, r)
+		return
+	}
+	if s.shieldedOff(w, "mcp") {
+		return
+	}
+	resource, metadata, scope := "", "", ""
+	if oauth {
+		resource, metadata, scope = cfg.Resource(), cfg.MetadataURL(), oauthas.DefaultScope
+	}
+	own := s.ownOrigin(r)
+	e := &mcp.Endpoint{
+		Metadata: metadata, DefaultScope: scope,
+		Authenticate: func(r *http.Request, token string) (*mcp.Caller, error) {
+			return s.interfaceCaller(r, token, resource)
+		},
+		Build: func(r *http.Request, c *mcp.Caller) (*mcp.Server, error) {
+			return s.Interface.Browser(r, c, name)
 		},
 		SameOrigin: func(o string) bool {
 			return o == own || (oauth && o == cfg.Issuer)
