@@ -725,6 +725,30 @@ func (s *Server) handleAgentFrame(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(b)
 }
 
+// handleAgentOutput is what one of a run's commands printed, kept:
+// /agents/output/ID/N. Plain text, never interpreted, kept by nothing on
+// the way.
+func (s *Server) handleAgentOutput(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.studioAllowed(w, r); !ok {
+		return
+	}
+	id, num, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/agents/output/"), "/")
+	n, err := strconv.Atoi(num)
+	if s.Agents == nil || s.Agents.Output == nil || !agent.ValidRecordID(id) || err != nil || n < 1 {
+		http.NotFound(w, r)
+		return
+	}
+	b, err := s.Agents.Output(id, n)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("Content-Disposition", "inline")
+	_, _ = w.Write(b)
+}
+
 func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.studioAllowed(w, r)
 	if !ok {
@@ -747,6 +771,10 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 	if s.Agents.Frames != nil {
 		frames, live = s.Agents.Frames(id)
 	}
+	var outputs []RunOutput
+	if s.Agents.Outputs != nil {
+		outputs = s.Agents.Outputs(id)
+	}
 	data := map[string]any{"Title": "Run of " + rec.Agent, "Principal": p,
 		"Nav": "agents", "R": rec, "Row": row,
 		"Started": rec.Started.Format("Mon 2 Jan 2006 15:04:05 UTC"),
@@ -763,8 +791,11 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		// slowest, for the timeline.
 		Took string
 		Bar  int
-		// Frame is the picture its browser kept after the step.
-		Frame string
+		// Frame is the picture its browser kept after the step; Output the
+		// whole of what its command printed, and how much.
+		Frame       string
+		Output      string
+		OutputBytes int64
 	}
 	var steps []stepRow
 	prev := rec.Started
@@ -787,6 +818,17 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		sr := stepRow{N: st.N, Allowed: st.Allowed, Why: st.Why,
 			Result: st.Result, Err: st.Err, Redirected: st.Redirected}
 		sr.Took = took[i].Round(time.Millisecond).String()
+		if st.Action.Op == "shell_run" {
+			var next time.Time
+			if i+1 < len(rec.Trace.Steps) {
+				next = rec.Trace.Steps[i+1].At
+			}
+			for _, o := range outputs {
+				if !o.When.Before(st.At) && (next.IsZero() || o.When.Before(next)) {
+					sr.Output, sr.OutputBytes = fmt.Sprintf("/agents/output/%s/%d", rec.ID, o.N), o.Total
+				}
+			}
+		}
 		if agent.IsBrowser(st.Action.Op) {
 			var next time.Time
 			if i+1 < len(rec.Trace.Steps) {

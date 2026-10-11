@@ -296,6 +296,19 @@ func cmdServe(root string, args []string) error {
 		Stop: func(id, by string) error {
 			return stopRun(root, id, signedIn(by), time.Now())
 		},
+		Outputs: func(id string) []admin.RunOutput {
+			kept, _ := loadRunOutputs(root, id)
+			out := make([]admin.RunOutput, 0, len(kept))
+			for _, o := range kept {
+				if o.File != "" {
+					out = append(out, admin.RunOutput{N: o.N, When: o.When, Total: o.Total})
+				}
+			}
+			return out
+		},
+		Output: func(id string, n int) ([]byte, error) {
+			return runOutputText(root, id, n)
+		},
 		Answer: func(id string, step int, approve bool, by string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
 			defer cancel()

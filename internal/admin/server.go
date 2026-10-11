@@ -1431,6 +1431,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/agents/runs", s.handleAgentRuns)
 	mux.HandleFunc("/agents/run/", s.handleAgentRun)
 	mux.HandleFunc("/agents/frame/", s.handleAgentFrame)
+	mux.HandleFunc("/agents/output/", s.handleAgentOutput)
 	mux.HandleFunc("/agents/evals", s.handleEvals)
 	mux.HandleFunc("/agents/evals/", s.handleEvals)
 	mux.HandleFunc("/agents/evals/act", s.handleEvalsAct)

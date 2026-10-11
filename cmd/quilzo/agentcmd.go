@@ -86,8 +86,9 @@ func knownCapabilities(root string) map[string]bool {
 	}
 	// A run's memory, which no other surface performs.
 	known["remember"], known["recall"] = true, true
-	// And its browser, performed by the run itself (agentbrowser.go).
-	for _, c := range agent.BrowserCapabilities {
+	// And its browser and workspace, performed by the run itself
+	// (agentbrowser.go, agentshell.go).
+	for _, c := range append(append([]string(nil), agent.BrowserCapabilities...), agent.ShellCapabilities...) {
 		known[c] = true
 	}
 	return known
@@ -120,6 +121,8 @@ func cmdAgent(root string, args []string) error {
 		return agentAnswer(root, args[0] == "approve", args[1:])
 	case "stop":
 		return agentStop(root, args[1:])
+	case "workspace":
+		return agentWorkspace(root, args[1:])
 	case "resume":
 		return agentResumeCmd(root, args[1:])
 	case "replay":
@@ -800,8 +803,9 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 	// An agent that proposes and does not write sends nothing through its
 	// browser either, however it came to propose: the caller, its standing
 	// or its evaluations. Nor does an evaluation, which changes nothing.
-	if m.Browser != nil && (eval || m.Autonomy == agent.AutonomyPropose) {
+	if eval || m.Autonomy == agent.AutonomyPropose {
 		m.Browser = m.Browser.ReadOnly()
+		m.Shell = m.Shell.ReadOnlyCopy()
 	}
 	if len(m.Capabilities) == 0 {
 		if earnedWhy != "" {
@@ -1095,12 +1099,13 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	// opens a page. The page lives in this process, so what a person is
 	// asked about waits here for them, as a program's does, rather than
 	// pausing the run to be picked up later by a process with no page.
-	if holdsBrowser(m) {
-		if from.RunID == "" && from.Eval == nil {
-			if from.RunID, err = newAgentRunID(time.Now().UTC()); err != nil {
-				return out, err
-			}
+	if holdsLive(m) && from.RunID == "" && from.Eval == nil {
+		if from.RunID, err = newAgentRunID(time.Now().UTC()); err != nil {
+			return out, err
 		}
+	}
+	var weighs []func(agent.Action) string
+	if holdsBrowser(m) {
 		pictures := false
 		if p, ok := delegateModel.(interface{ TakesPictures() bool }); ok {
 			pictures = p.TakesPictures()
@@ -1109,13 +1114,38 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 			return out, err
 		}
 		defer rb.end()
-		runner.Perform, runner.Weighs = rb.driver.Perform(runner.Perform), rb.driver.Weighs
-		if from.Eval == nil {
-			runner.Pause = false
-			runner.Hold = programHold(root, from.RunID, nil, func(line string) {
-				fmt.Fprintf(os.Stderr, "  %s%s%s\n", yellow, onOneLine(line), reset)
-			}, from.Answered)
+		runner.Perform = rb.driver.Perform(runner.Perform)
+		weighs = append(weighs, rb.driver.Weighs)
+	}
+	// Its workspace and commands (agentshell.go): one run at a time on the
+	// workspace, each command in a box of its own.
+	var rs *runShell
+	if holdsShell(m) {
+		if rs, err = newRunShell(root, m, sess, caller, delegateModel, from.RunID); err != nil {
+			return out, err
 		}
+		defer rs.end()
+		runner.Perform = rs.driver.Perform(runner.Perform)
+		weighs = append(weighs, rs.driver.Weighs)
+	}
+	if len(weighs) > 0 {
+		runner.Weighs = func(a agent.Action) string {
+			for _, w := range weighs {
+				if why := w(a); why != "" {
+					return why
+				}
+			}
+			return ""
+		}
+	}
+	// What its browser or its commands ask a person waits in this process,
+	// where the page and the workspace are, as a program's does, rather
+	// than pausing the run to be picked up later by a process without them.
+	if holdsLive(m) && from.Eval == nil {
+		runner.Pause = false
+		runner.Hold = programHold(root, from.RunID, nil, func(line string) {
+			fmt.Fprintf(os.Stderr, "  %s%s%s\n", yellow, onOneLine(line), reset)
+		}, from.Answered)
 	}
 	// What it remembers between runs, when it keeps any. Not for an
 	// evaluation, which measures and leaves nothing behind.
@@ -1138,7 +1168,14 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	}
 	recordSteps := func(t agent.Trace) {
 		for ; recorded < len(t.Steps); recorded++ {
-			record(root, actionRecord(caller, m, delegateModel, from.RunID, t.Steps[recorded]))
+			st := t.Steps[recorded]
+			r := actionRecord(caller, m, delegateModel, from.RunID, st)
+			// What the step saw or printed, by digest, so the signed log
+			// proves it and not only that it acted.
+			for k, v := range stepEvidence(root, from.RunID, st) {
+				r.Detail[k] = v
+			}
+			record(root, r)
 		}
 	}
 	if from.Eval != nil {
