@@ -133,3 +133,36 @@ func TestOneQuestionCarriesEveryReason(t *testing.T) {
 		t.Errorf("asked %+v", asked)
 	}
 }
+
+// A browser action the declaration asks first about is asked about with
+// what it commits to and what the breaker says, once; and the run's record
+// stops offering the question as soon as it is answered.
+func TestAnAskFirstQuestionSaysWhatThePressDoes(t *testing.T) {
+	m := browsing(BrowserCapabilities, &Browser{Read: []string{"docs.example.com"}})
+	m.AskFirst = []string{"browser_type"}
+	s := NewSession(m, nil)
+	s.ReadWeb("docs.example.com", "https://docs.example.com/")
+	s.HoldsPrivate("a customer's address")
+	p := &scripted{plan: []Action{{Op: "browser_type", Input: map[string]any{"ref": "e5", "text": "x"}}}}
+	var asked []Pending
+	var kept []Trace
+	r := Runner{Decide: p.decide, Perform: (&doer{}).perform,
+		Weighs:     func(Action) string { return `it types into "Pay now"` },
+		Checkpoint: func(t Trace) { kept = append(kept, t) },
+		Hold: func(_ context.Context, w Pending, _ func()) (Verdict, error) {
+			asked = append(asked, w)
+			return Verdict{N: w.N, Approve: true, By: "dana"}, nil
+		}}
+	if _, err := r.Run(context.Background(), s, "pay"); err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) != 1 || !strings.Contains(asked[0].Why, "Pay now") || !strings.Contains(asked[0].Why, "a customer's address") {
+		t.Fatalf("asked %+v", asked)
+	}
+	for i, k := range kept {
+		if k.Waiting == nil && i > 0 && kept[i-1].Waiting != nil && len(k.Steps) == 0 {
+			return // cleared before the step was taken
+		}
+	}
+	t.Errorf("the question was still on the record when the action ran: %d checkpoints", len(kept))
+}

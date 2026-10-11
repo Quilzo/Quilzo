@@ -246,7 +246,10 @@ func (r Runner) holdFor(ctx context.Context, t *Trace, s *Session, w Pending) (b
 	hctx, cancel := context.WithTimeout(ctx, time.Duration(s.Remaining().Duration))
 	v, err := r.Hold(hctx, w, func() { r.checkpoint(*t, s) })
 	cancel()
+	// Decided, one way or the other: the record stops offering the
+	// question now, not after the action it was about has run.
 	t.Waiting = nil
+	r.checkpoint(*t, s)
 	// The reason it waited goes with the refusal, so the program knows what
 	// a person was asked about and not only that they were.
 	because := ""
@@ -341,8 +344,20 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 		// refuse it, and asking would teach people to approve without
 		// reading.
 		if !approved && s.AsksFirst(action) && s.wouldAllow(action) {
+			// The question carries every reason there is to ask, so a
+			// person approving it has seen what the action commits to and
+			// what the breaker would say, and is not asked again.
+			var why []string
+			if r.Weighs != nil {
+				if w := r.Weighs(action); w != "" {
+					why = append(why, w)
+				}
+			}
+			if b, breaks := s.Breaks(action); breaks {
+				why = append(why, b)
+			}
 			if !r.Pause {
-				w := Pending{N: turn, Action: action, Since: step.At}
+				w := Pending{N: turn, Action: action, Since: step.At, Why: strings.Join(why, "; and ")}
 				if approved, step.Why = r.holdFor(ctx, &t, s, w); !approved {
 					t.Steps = append(t.Steps, step)
 					seen = append(seen, Observation{From: "quilzo",
@@ -351,7 +366,7 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 					continue
 				}
 			} else {
-				t.Waiting = &Pending{N: turn, Action: action, Since: step.At}
+				t.Waiting = &Pending{N: turn, Action: action, Since: step.At, Why: strings.Join(why, "; and ")}
 				t.Stopped = fmt.Sprintf("waiting for a person to decide on %s",
 					from(action))
 				break
