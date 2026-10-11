@@ -803,8 +803,11 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		}
 		data["Pending"] = pend
 		data["Live"] = wt.Live
+		// The picture taken for this question: its reason leads the
+		// question's (the breaker's may follow), and it was taken after
+		// the step began, so an earlier question's like it is not shown.
 		for i := len(frames) - 1; i >= 0; i-- {
-			if wt.Why != "" && frames[i].Asking == wt.Why {
+			if f := frames[i]; f.Asking != "" && strings.HasPrefix(wt.Why, f.Asking) && !f.When.Before(wt.Since) {
 				data["Picture"] = fmt.Sprintf("/agents/frame/%s/%d", rec.ID, frames[i].N)
 				break
 			}
@@ -821,7 +824,7 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 			data["LiveView"] = "/agents/frame/" + rec.ID + "/live"
 		}
 	}
-	data["CanStop"] = s.Agents.Stop != nil && (row.Outcome == "running" ||
+	data["CanStop"] = s.Agents.Stop != nil && rec.Eval == "" && (row.Outcome == "running" ||
 		(rec.Trace.Waiting != nil && rec.Trace.Waiting.Live && row.Outcome == "waiting"))
 	data["Answers"] = rec.Answers
 	data["CanReplay"] = s.Agents.Replay != nil && rec.Trace.Waiting == nil &&

@@ -45,30 +45,60 @@ func stopRun(root, id string, caller *Caller, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	switch o := rec.OutcomeAt(now); {
-	case o == "waiting" && (rec.Trace.Waiting == nil || !rec.Trace.Waiting.Live):
-		return fmt.Errorf("%s is not going on: it stopped to ask a person, and declining that is how it ends", id)
-	case o != "running" && o != "waiting":
-		return fmt.Errorf("%s is not going on; it is %s", id, o)
+	if rec.Eval != "" {
+		return fmt.Errorf("%s was made by an evaluation, which ends on its own", id)
 	}
-	b, err := json.Marshal(stopNote{By: caller.Name, At: now.UTC()})
-	if err != nil {
-		return err
-	}
-	if err := atomicfile.Write(stopPath(root, id), b, 0o600); err != nil {
+	if err := askToStop(root, rec, caller.Name, now); err != nil {
 		return err
 	}
 	return recordE(root, caller.auditRecord("agent.stop", "/", audit.Success,
 		map[string]string{"agent": rec.Agent, "run": id}))
 }
 
+// goingOn reports whether a run is being worked on by a process now: one
+// that can be asked to stop.
+func goingOn(rec agent.Record, now time.Time) bool {
+	switch rec.OutcomeAt(now) {
+	case "running":
+		return true
+	case "waiting":
+		return rec.Trace.Waiting != nil && rec.Trace.Waiting.Live
+	}
+	return false
+}
+
+// askToStop leaves the note a run's process stops on.
+func askToStop(root string, rec agent.Record, by string, now time.Time) error {
+	id := rec.ID
+	switch o := rec.OutcomeAt(now); {
+	case o == "waiting" && (rec.Trace.Waiting == nil || !rec.Trace.Waiting.Live):
+		return fmt.Errorf("%s is not going on: it stopped to ask a person, and declining that is how it ends", id)
+	case o != "running" && o != "waiting":
+		return fmt.Errorf("%s is not going on; it is %s", id, o)
+	}
+	b, err := json.Marshal(stopNote{By: by, At: now.UTC()})
+	if err != nil {
+		return err
+	}
+	return atomicfile.Write(stopPath(root, id), b, 0o600)
+}
+
 // watchStop is ctx, cancelled when a person asks the run to stop, and what
-// says who did once the run is over.
-func watchStop(ctx context.Context, root, id string) (context.Context, func() string) {
+// says who did once the run is over. since is when this stretch was asked
+// for: a note from before it is about an earlier one, and one from after
+// it, even before this began to watch, is about this.
+func watchStop(ctx context.Context, root, id string, since time.Time) (context.Context, func() string) {
 	ctx, cancel := context.WithCancel(ctx)
 	path := stopPath(root, id)
-	// A note left from before this stretch of the run is not about it.
-	_ = os.Remove(path)
+	if since.IsZero() {
+		since = time.Now()
+	}
+	if b, err := os.ReadFile(path); err == nil {
+		var n stopNote
+		if json.Unmarshal(b, &n) != nil || n.At.Before(since.Add(-time.Second)) {
+			_ = os.Remove(path)
+		}
+	}
 	done := make(chan struct{})
 	var by string
 	go func() {

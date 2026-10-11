@@ -20,6 +20,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/browser"
 	"github.com/quilzo/quilzo/internal/cdp"
 	"github.com/quilzo/quilzo/internal/evals"
 )
@@ -356,5 +357,155 @@ func TestAnAgentThatOnlyProposesSendsNothingThroughItsBrowser(t *testing.T) {
 	m, _, err = boundManifest(root, set, "buyer", true, false, asAdmin("dana"))
 	if err != nil || m.Browser.Writes("shop.example.com") || !m.Browser.Reads("shop.example.com") {
 		t.Errorf("a proposing agent's browser: %+v %v", m.Browser, err)
+	}
+}
+
+// A browser that fails to start gives its place back: with room for one,
+// a run whose launches keep failing does not shut out the next.
+func TestAFailedLaunchGivesItsPlaceBack(t *testing.T) {
+	root, _ := shopRun(t)
+	cfg, err := loadConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Set("browser.sessions", "1", "a test about places", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConfig(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+	working := browserTestLaunch
+	browserTestLaunch = func(context.Context) (*cdp.Browser, error) { return nil, fmt.Errorf("it would not start") }
+	set, _ := loadAgents(root)
+	m := set.Agents["buyer"]
+	rb, err := newRunBrowser(root, m, agent.NewSession(m, nil), asAdmin("dana"), nil, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rb.end()
+	open := agent.Action{Op: "browser_open", Input: map[string]any{"url": "https://shop.example.com/cart"}}
+	for i := 0; i < 3; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_, err := rb.driver.Perform(nil)(ctx, open)
+		cancel()
+		if err == nil || !strings.Contains(err.Error(), "would not start") {
+			t.Fatalf("attempt %d: %v", i+1, err)
+		}
+	}
+	browserTestLaunch = working
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	release, err := takeBrowserSlot(ctx, root, "another", 1, nil)
+	if err != nil {
+		t.Fatalf("the failed launches kept the only place: %v", err)
+	}
+	release()
+}
+
+// A run continued keeps the pictures it took, numbering on after them.
+func TestAContinuedRunKeepsItsPictures(t *testing.T) {
+	root := t.TempDir()
+	f := &runFrames{root: root, id: "run-20261010-0000abcd"}
+	f.keep(browser.Frame{Op: "browser_open", JPEG: []byte{0xFF, 0xD8, 1}})
+	f.keep(browser.Frame{Op: "browser_click", JPEG: []byte{0xFF, 0xD8, 2}})
+	kept, _ := loadRunFrames(root, f.id)
+	g := &runFrames{root: root, id: f.id, index: kept}
+	g.keep(browser.Frame{Op: "browser_read", JPEG: []byte{0xFF, 0xD8, 3}})
+	all, _ := loadRunFrames(root, f.id)
+	if len(all) != 3 || all[2].N != 3 {
+		t.Fatalf("%+v", all)
+	}
+	if b, _ := runFramePicture(root, f.id, 1); len(b) != 3 || b[2] != 1 {
+		t.Errorf("the first picture was replaced: %v", b)
+	}
+}
+
+// An evaluation's run is never taken on as a real one.
+func TestAnEvaluationsRunIsNotContinued(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	rec := agent.Keep("run-20261010-0000eeee", "dana", "a-model", time.Now(), agent.Trace{Agent: "buyer", Goal: "g",
+		Waiting: &agent.Pending{N: 1, Since: time.Now(), Action: agent.Action{Op: "browser_click"}}}, agent.Receipt{})
+	rec.Eval = "eval-20261010T000000"
+	if err := writeAgentRun(root, rec); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := continueAgentRun(context.Background(), root, rec.ID, &agent.Verdict{N: 1, Approve: true}, asAdmin("lee")); err == nil ||
+		!strings.Contains(err.Error(), "evaluation") {
+		t.Errorf("approving an evaluation's run: %v", err)
+	}
+	if _, err := replayAgentRun(context.Background(), root, rec.ID, 0, asAdmin("lee")); err == nil || !strings.Contains(err.Error(), "evaluation") {
+		t.Errorf("replaying an evaluation's run: %v", err)
+	}
+}
+
+// A request to stop made before the run's process began watching, but
+// after the run was asked for, still stops it.
+func TestAStopAskedForAsARunStartsIsNotLost(t *testing.T) {
+	root := t.TempDir()
+	id := "run-20261010-0000ffff"
+	if err := os.MkdirAll(agentRunsDir(root), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	since := time.Now()
+	b, _ := json.Marshal(stopNote{By: "lee", At: since.Add(time.Millisecond)})
+	if err := os.WriteFile(stopPath(root, id), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, stopped := watchStop(context.Background(), root, id, since)
+	select {
+	case <-ctx.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("the stop was lost")
+	}
+	if by := stopped(); by != "lee" {
+		t.Errorf("stopped by %q", by)
+	}
+	// One from an earlier stretch is not about this one.
+	b, _ = json.Marshal(stopNote{By: "sam", At: since.Add(-time.Hour)})
+	_ = os.WriteFile(stopPath(root, id), b, 0o600)
+	ctx, stopped = watchStop(context.Background(), root, id, since)
+	select {
+	case <-ctx.Done():
+		t.Error("an old stop stopped a new stretch")
+	case <-time.After(1500 * time.Millisecond):
+	}
+	stopped()
+}
+
+// Cancelled through A2A while it waits on a person, a browser run stops
+// in its process and stays stopped; nothing is paid.
+func TestCancellingABrowserRunStopsIt(t *testing.T) {
+	root, paid := shopRun(t)
+	id, err := runAgentOnce(root, "buyer", "pay the invoice", true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Minute)
+	for {
+		rec, _ := loadAgentRun(root, id)
+		if w := rec.Trace.Waiting; w != nil && w.Live {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the run never asked")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if _, err := cancelAgentRun(root, id, asAdmin("ana"), ""); err != nil {
+		t.Fatal(err)
+	}
+	var rec agent.Record
+	for time.Now().Before(deadline) {
+		rec, _ = loadAgentRun(root, id)
+		if !goingOn(rec, time.Now()) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	time.Sleep(time.Second)
+	rec, _ = loadAgentRun(root, id)
+	if rec.Trace.Stopped != "canceled by ana" || paid() != 0 || goingOn(rec, time.Now()) {
+		t.Errorf("paid %d\n%s", paid(), describeRun(rec.Trace))
 	}
 }

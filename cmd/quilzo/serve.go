@@ -304,15 +304,10 @@ func cmdServe(root string, args []string) error {
 			return err
 		},
 		Resume: func(id, by string) error {
-			ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
-			defer cancel()
-			_, err := continueAgentRun(ctx, root, id, nil, signedIn(by))
-			return err
+			return continueAgentRunLive(root, id, signedIn(by))
 		},
 		Replay: func(id string, step int, by string) (string, error) {
-			ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
-			defer cancel()
-			return replayAgentRun(ctx, root, id, step, signedIn(by))
+			return replayAgentRunLive(root, id, step, signedIn(by))
 		},
 	}
 

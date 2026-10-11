@@ -683,6 +683,9 @@ type agentResume struct {
 	// Answered records a person's answer to a question a program's run
 	// waited for in its process: see agenthold.go.
 	Answered func(agent.Answer)
+	// Since is when this stretch of the run was asked for: a request to
+	// stop it made after that is for it (agentstop.go).
+	Since time.Time
 }
 
 // narrowing is one thing that made a run's manifest narrower than its
@@ -846,7 +849,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	// (agentstop.go).
 	stoppedBy := func() string { return "" }
 	if from.RunID != "" && from.Eval == nil {
-		ctx, stoppedBy = watchStop(ctx, root, from.RunID)
+		ctx, stoppedBy = watchStop(ctx, root, from.RunID, from.Since)
 		defer stoppedBy()
 	}
 	sess := agent.NewSession(m, nil)
@@ -1169,6 +1172,9 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	if by := stoppedBy(); by != "" {
 		// Stopped on purpose, which is not the run failing.
 		trace.Stopped, trace.Waiting, runErr = "stopped by "+by, nil, nil
+		if strings.HasPrefix(by, "canceled by ") {
+			trace.Stopped = by
+		}
 	}
 	if prog != nil {
 		why := trace.Stopped

@@ -199,6 +199,26 @@ func taskOf(rec agent.Record, now time.Time) a2a.Task {
 // cancelAgentRun ends a run that is waiting for a person or was cut off.
 // app names the app that asked, when one did.
 func cancelAgentRun(root, id string, by *Caller, app string) (agent.Record, error) {
+	audited := func(rec agent.Record) error {
+		r := by.auditRecord("agent.canceled", "/agents", audit.Success, map[string]string{"agent": rec.Agent, "run": id})
+		if r.Kind == audit.KindAI {
+			// Whatever asked through the interface is named: the app, or the
+			// protocol when a person's own token was used.
+			r.Model = nonEmpty(app, "a2a client")
+		}
+		return recordE(root, r)
+	}
+	// A run going on in a process (a browser's, waiting on a person or
+	// not) is asked to stop there, and its process records how it ended:
+	// written from here, the next beat of that process would undo it.
+	if rec, err := loadAgentRun(root, id); err == nil && rec.Eval == "" && goingOn(rec, time.Now()) {
+		if err := askToStop(root, rec, "canceled by "+by.Name, time.Now()); err != nil {
+			return rec, err
+		}
+		rec.Trace.Waiting, rec.State = nil, ""
+		rec.Trace.Stopped = "canceled by " + by.Name
+		return rec, audited(rec)
+	}
 	release, err := holdAgentRun(root, id)
 	if err != nil {
 		return agent.Record{}, err
@@ -218,11 +238,5 @@ func cancelAgentRun(root, id string, by *Caller, app string) (agent.Record, erro
 	if err := writeAgentRun(root, rec); err != nil {
 		return rec, err
 	}
-	r := by.auditRecord("agent.canceled", "/agents", audit.Success, map[string]string{"agent": rec.Agent, "run": id})
-	if r.Kind == audit.KindAI {
-		// Whatever asked through the interface is named: the app, or the
-		// protocol when a person's own token was used.
-		r.Model = nonEmpty(app, "a2a client")
-	}
-	return rec, recordE(root, r)
+	return rec, audited(rec)
 }
