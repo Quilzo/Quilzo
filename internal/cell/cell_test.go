@@ -246,3 +246,64 @@ func dialHelperTCP(t *testing.T, ln net.Listener) *Helper {
 	}
 	return &Helper{conn: conn, r: bufio.NewReader(conn)}
 }
+
+// fakeUnixMicroVM serves the maker's API on a Unix socket, which is where
+// it really lives: the whole exported surface — snapshotting, stopping —
+// is exercised through its own front door.
+func fakeUnixMicroVM(t *testing.T, answer func(method, path string, body map[string]any) int) (string, *[]string) {
+	t.Helper()
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "vm.sock")
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var calls []string
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		mu.Unlock()
+		w.WriteHeader(answer(r.Method, r.URL.Path, body))
+	})}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+	return socket, &calls
+}
+
+// The operator's flow for warming a cell, Firecracker's shape: pause,
+// create, resume — and a maker that refuses leaves the refusal's words
+// and the cell paused, which is the safe place for it.
+func TestFirecrackerSnapshotThroughTheSocket(t *testing.T) {
+	socket, calls := fakeUnixMicroVM(t, func(m, p string, body map[string]any) int { return 200 })
+	if err := Snapshot(context.Background(), socket, "/warm/snap", "/warm/mem"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"PATCH /vm", "PUT /snapshot/create", "PATCH /vm"}
+	if fmt.Sprint(*calls) != fmt.Sprint(want) {
+		t.Fatalf("the conversation was %v, not %v", *calls, want)
+	}
+	if err := Stop(context.Background(), socket); err != nil {
+		t.Fatal(err)
+	}
+	if last := (*calls)[len(*calls)-1]; last != "PUT /actions" {
+		t.Fatalf("stop did not signal the guest: %v", *calls)
+	}
+}
+
+// The same flow, Cloud Hypervisor's shape.
+func TestCloudHypervisorSnapshotThroughTheSocket(t *testing.T) {
+	socket, calls := fakeUnixMicroVM(t, func(m, p string, body map[string]any) int { return 200 })
+	if err := SnapshotCH(context.Background(), socket, "/warm/snap"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"PUT /api/v1/vm.pause", "PUT /api/v1/vm.snapshot", "PUT /api/v1/vm.resume"}
+	if fmt.Sprint(*calls) != fmt.Sprint(want) {
+		t.Fatalf("the conversation was %v, not %v", *calls, want)
+	}
+	if err := StopCH(context.Background(), socket); err != nil {
+		t.Fatal(err)
+	}
+}
