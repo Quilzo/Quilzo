@@ -378,13 +378,33 @@ func (d Decider) vocabulary() vocab {
 
 var reChoiceName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)
 
+// deciderPrompt says how a model asks a typed question, when its agent
+// holds the capability: the answer comes with a confidence, and where it
+// says a person decides, the model does not act on it.
+func deciderPrompt(ops map[string]bool) string {
+	if !ops["decide"] && !ops["list_deciders"] {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nThe typed questions. ")
+	if ops["list_deciders"] {
+		b.WriteString(`{"op": "list_deciders"} says which exist, with their options. `)
+	}
+	if ops["decide"] {
+		b.WriteString(`{"op": "decide", "input": {"name": "the decider", "state": <any JSON: the ticket, the comment, the alert>}} answers it. ` +
+			"Each answer comes with a confidence. Where the answer says a person decides, " +
+			"it is not an answer: do not act on it, and do not present its value as one.")
+	}
+	return b.String()
+}
+
 // one line of operator text, for a prompt.
 func oneLine(s string, n int) string {
 	return clamp(strings.Join(strings.Fields(s), " "), n)
 }
 
 func (v vocab) prompt() string {
-	p := systemPrompt(v.ops) + browserPrompt(v.ops, v.browser) + shellPrompt(v.ops, v.shell)
+	p := systemPrompt(v.ops) + browserPrompt(v.ops, v.browser) + shellPrompt(v.ops, v.shell) + deciderPrompt(v.ops)
 	if len(v.tools) == 0 && len(v.delegates) == 0 {
 		return p
 	}

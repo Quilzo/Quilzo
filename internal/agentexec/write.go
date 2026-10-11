@@ -322,12 +322,13 @@ func (wr Writer) localeOf(page string) string {
 // Routing is by agent.IsWrite, the same classification the session gate uses.
 // Two ideas of what counts as a write is how an operation ends up dispatched to
 // the writer and checked as a read.
-func Dispatch(read Reader, write Writer, tools Tools, delegates Delegates,
+func Dispatch(read Reader, write Writer, tools Tools, delegates Delegates, deciders Deciders,
 	s *agent.Session) func(context.Context, agent.Action) (string, error) {
 	r := read.Perform(s)
 	w := write.Perform(s)
 	t := tools.Perform(s)
 	d := delegates.Perform(s)
+	dec := deciders.Perform(s)
 	return func(ctx context.Context, a agent.Action) (string, error) {
 		// Delegation first, for the reason the tool branch gives below and
 		// one more: a delegated action is not an operation this agent
@@ -346,6 +347,15 @@ func Dispatch(read Reader, write Writer, tools Tools, delegates Delegates,
 		// Session.Authorize; this is the matching half.
 		if strings.TrimSpace(a.Tool) != "" {
 			return t(ctx, a)
+		}
+		// The deciders, before the read/write split: a typed question is
+		// neither, and routing it into the reader would answer with the
+		// "not implemented here" that this branch exists to end.
+		switch a.Op {
+		case "decide":
+			return dec(ctx, a)
+		case "list_deciders":
+			return dec(ctx, a)
 		}
 		if agent.IsWrite(a.Op) {
 			return w(ctx, a)

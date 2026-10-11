@@ -46,6 +46,9 @@ func Performs() []string {
 		// Writes, from write.go. publish does not publish: it proposes.
 		"write_page",
 		"publish",
+		// The deciders, from deciders.go.
+		"decide",
+		"list_deciders",
 	}
 }
 

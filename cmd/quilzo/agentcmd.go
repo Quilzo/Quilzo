@@ -23,6 +23,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/browser"
+	decidepkg "github.com/quilzo/quilzo/internal/decide"
 	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/otlp"
 	"github.com/quilzo/quilzo/internal/schema"
@@ -1069,6 +1070,18 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				Run: delegation{
 					root: root, store: s, model: delegateModel,
 					parent: m.Name,
+				},
+			},
+			// The deciders: a typed question with a confidence, asked by
+			// the agent and answered under the decider's own gate, with an
+			// escalated answer saying so in words the model is told to obey.
+			agentexec.Deciders{
+				Load: func() (*decidepkg.Set, error) {
+					return decidepkg.Load(decidersPath(root))
+				},
+				Model: func(name string) decidepkg.Model {
+					m, _ := deciderModel(root, name)
+					return m
 				},
 			},
 			sess,
