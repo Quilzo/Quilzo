@@ -139,6 +139,15 @@ type Decider struct {
 	// takes a conversation (assist.Chatter); the gateway sends a picture
 	// to a route marked personal and to no other.
 	Pictures func() [][]byte
+
+	// Dialect, when set, is the vendor's computer-use dialect the model
+	// answers in (Anthropic's computer and browser toolsets, OpenAI's
+	// computer actions, Gemini's computer use): the model is prompted in
+	// its own maker's shape and its answer is translated onto the same
+	// closed vocabulary before anything else happens to it. A dialect
+	// widens nothing: a word the manifest does not hold is refused exactly
+	// as a native one is.
+	Dialect string
 }
 
 // ToolChoice is a tool a model may call, as the operator described it.
@@ -175,6 +184,23 @@ func (d Decider) Decide() agent.Decide {
 	v := d.vocabulary()
 	ops := v.ops
 
+	// A dialect's batch, when one is open: the actions the last answer
+	// carried that have not run yet. Performed one a turn, in order, while
+	// each succeeds — the first failure, and any turn that is not the
+	// success of the one before, drops the rest.
+	var queued []agent.Action
+	var lastFrom string
+
+	// ranLast says the newest observation is the success of the action
+	// last handed over, which is the only thing that lets a batch go on.
+	ranLast := func(seen []agent.Observation) bool {
+		if len(seen) == 0 || lastFrom == "" {
+			return false
+		}
+		o := seen[len(seen)-1]
+		return o.Err == nil && o.From == lastFrom
+	}
+
 	return func(ctx context.Context, goal string, seen []agent.Observation) (
 		agent.Action, error) {
 
@@ -188,13 +214,27 @@ func (d Decider) Decide() agent.Decide {
 			// asking a model to choose from nothing produces whatever it likes.
 			return agent.Action{Say: "this agent holds no capabilities"}, nil
 		}
+		if len(queued) > 0 {
+			if !ranLast(seen) {
+				queued = nil
+			} else {
+				next := queued[0]
+				queued = queued[1:]
+				lastFrom = fromAction(next)
+				return next, nil
+			}
+		}
 
+		prompt := v.prompt()
+		if dl, ok := dialectByName(d.Dialect); ok {
+			prompt += "\n\n" + dl.answer
+		}
 		var raw string
 		var err error
 		if pics := d.pictures(); len(pics) > 0 {
-			raw, err = d.chat(ctx, v.prompt(), userPrompt(goal, seen), pics)
+			raw, err = d.chat(ctx, prompt, userPrompt(goal, seen), pics)
 		} else {
-			raw, err = d.complete(ctx, v.prompt(), userPrompt(goal, seen))
+			raw, err = d.complete(ctx, prompt, userPrompt(goal, seen))
 		}
 		if err != nil {
 			return agent.Action{}, fmt.Errorf("the model could not be reached: %w", err)
@@ -214,7 +254,17 @@ func (d Decider) Decide() agent.Decide {
 					"is an operation and a few short values; something this "+
 					"size is not one", len(raw), limit)
 		}
-		a, err := v.parse(raw)
+		var a agent.Action
+		if d.Dialect != "" {
+			var batch []agent.Action
+			batch, err = v.adaptAll(raw, d.Dialect)
+			if err == nil && len(batch) > 0 {
+				a = batch[0]
+				queued, lastFrom = batch[1:], fromAction(a)
+			}
+		} else {
+			a, err = v.parse(raw)
+		}
 		// The larger limit is for a file's text only: an action of any other
 		// kind that size is one a person could not read when asked about it.
 		if err == nil && limit > MaxAnswer && a.Op != "file_write" && len(raw) > MaxAnswer {
@@ -222,6 +272,18 @@ func (d Decider) Decide() agent.Decide {
 		}
 		return a, err
 	}
+}
+
+// fromAction names an action as the run's observations name it, so a
+// dialect's batch can tell its own last step from anything else.
+func fromAction(a agent.Action) string {
+	switch {
+	case a.Delegate != "":
+		return "delegate/" + a.Delegate
+	case a.Tool != "":
+		return a.Tool
+	}
+	return a.Op
 }
 
 // complete asks the model, and tells the session what the call used and

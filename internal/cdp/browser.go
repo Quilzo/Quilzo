@@ -75,6 +75,16 @@ var hardening = []string{
 	"--disable-dev-shm-usage", "--block-new-web-contents",
 }
 
+// The window a browser is given when nothing names one: a screen most
+// sites lay out for and small enough to send a model. Exported because a
+// dialect whose models speak in a screen of their own (Gemini's are
+// normalized to a thousand by a thousand) scales through this, so both
+// sides of that scaling agree on what was scaled.
+const (
+	DefaultWidth  = 1280
+	DefaultHeight = 800
+)
+
 // Argv is the command line a browser is started with.
 func (o Options) Argv() ([]string, error) {
 	if !filepath.IsAbs(o.Path) {
@@ -85,7 +95,7 @@ func (o Options) Argv() ([]string, error) {
 	}
 	w, h := o.Width, o.Height
 	if w <= 0 || h <= 0 {
-		w, h = 1280, 800
+		w, h = DefaultWidth, DefaultHeight
 	}
 	argv := []string{o.Path, "--headless", "--remote-debugging-pipe",
 		"--user-data-dir=" + o.Profile, "--window-size=" + strconv.Itoa(w) + "," + strconv.Itoa(h)}

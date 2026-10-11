@@ -7,10 +7,26 @@ has the rest.
 Unreleased
 ==========
 
+** Added
+
+*** An agent's manifest may name a `dialect`: the vendor computer-use
+    language its model answers in — `anthropic-computer`,
+    `anthropic-browser`, `openai-computer` or `gemini-computer`.  The model
+    is prompted in its own maker's shape and its answer is translated onto
+    Quilzo's actions, which changes nothing about what it may do: a word
+    the manifest does not hold is refused in the manifest's own terms, and
+    a vendor gesture with no honest equivalent (a scroll, a right click, a
+    drag) is refused rather than approximated.  A click by coordinate
+    resolves to the outlined element at that point and is weighed as that
+    element's own press; typing goes to the field last pressed, re-checked
+    before anything is typed.  A model answering in a dialect may return
+    several actions at once, as its maker's runtime taught it; they run in
+    order, one a step, and the first failure drops the rest.
+
 ** Removed
 
-*** `quilzo telegram`, `quilzo slack` and `quilzo discord` are gone, with the
-    Telegram Mini App, its systemd unit, its Caddy host and port 8082.  Each
+*** `quilzo telegram`, `quilzo slack` and `quilzo discord` are gone, with
+    the Telegram Mini App, its systemd unit, its Caddy host and port 8082.  Each
     was a separate internet-facing process that could publish on behalf of an
     outside account, holding a bot token or signing secret, and each duplicated
     what the admin already does better: it can show what a publish will

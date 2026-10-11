@@ -54,6 +54,7 @@ package agent
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -313,6 +314,14 @@ type Manifest struct {
 	// Shell is its workspace and the commands it may run there, when it
 	// holds the workspace's capabilities. See shell.go.
 	Shell *Shell `json:"shell,omitempty"`
+
+	// Dialect is the vendor's computer-use dialect its model answers in,
+	// when the model was taught to speak one: "anthropic-computer",
+	// "anthropic-browser", "openai-computer" or "gemini-computer". The
+	// answer is translated onto this program's actions before anything
+	// else happens to it, and the dialect widens nothing a manifest may
+	// hold. Empty means the model answers in this program's own shape.
+	Dialect string `json:"dialect,omitempty"`
 }
 
 // writeOps are capabilities that change stored content.
@@ -475,8 +484,33 @@ func (m *Manifest) Validate(known map[string]bool) error {
 	if err := m.validateShell(); err != nil {
 		return err
 	}
+	if m.Dialect != "" {
+		known := false
+		for _, d := range Dialects {
+			known = known || d == m.Dialect
+		}
+		if !known {
+			return fmt.Errorf("%q is not a dialect this program can translate; use one of %s",
+				m.Dialect, strings.Join(Dialects, ", "))
+		}
+		if !slices.ContainsFunc(m.Capabilities, IsBrowser) {
+			return fmt.Errorf(
+				"%s declares the dialect %q and holds no browser capability: a "+
+					"dialect is how a model answers about the browser, and there "+
+					"is nothing else for it to answer about", m.Name, m.Dialect)
+		}
+	}
 
 	return nil
+}
+
+// Dialects are the vendor computer-use dialects a manifest may name in
+// Manifest.Dialect. The translations themselves are agentmodel's; this
+// list is here because manifest validation is, and a test holds the two
+// to the same set so a dialect cannot be declarable and unreadable at
+// once.
+var Dialects = []string{
+	"anthropic-computer", "anthropic-browser", "openai-computer", "gemini-computer",
 }
 
 // Narrow returns the manifest further restricted by another.

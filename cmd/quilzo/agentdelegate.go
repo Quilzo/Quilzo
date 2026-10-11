@@ -159,6 +159,7 @@ func (d delegation) decider(child *agent.Session, m agent.Manifest) (agent.Decid
 	return agentmodel.Decider{
 		Model:   d.model,
 		Session: child,
+		Dialect: m.Dialect,
 		Tokens:  child.Tokens,
 	}.Decide(), nil
 }
