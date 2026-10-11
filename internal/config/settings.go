@@ -667,6 +667,45 @@ var settings = []Setting{
 			"Raise it on a machine with the memory for more.",
 	},
 	{
+		Key: "cell.backend", Kind: Text, Default: "",
+		Summary: "the microVM desktop cells are driven through: firecracker or cloud-hypervisor",
+		Why: "A cell is a whole virtual machine, and the binary that runs one is the " +
+			"operator's to install: this program drives it over its socket and adds no " +
+			"boundary of its own. Empty means no desktop cells, and an agent offered " +
+			"one is told it is not held rather than given a browser in its place.",
+	},
+	{
+		Key: "cell.binary", Kind: Text, Default: "",
+		Summary: "the absolute path of the microVM binary a cell runs",
+		Why: "Absolute, because a relative path is read differently by every working " +
+			"directory this program runs from.",
+	},
+	{
+		Key: "cell.snapshot", Kind: Text, Default: "",
+		Summary: "the warm snapshot a session's cell is restored from",
+		Why: "A desktop takes minutes to boot and milliseconds to restore; a session " +
+			"steps into one that was already warm, made by the operator with the " +
+			"microVM's own snapshot of an image holding an X server, the accessibility " +
+			"tree and the apps.",
+	},
+	{
+		Key: "cell.memory", Kind: Text, Default: "",
+		Summary: "the memory file of that snapshot, where the maker keeps it apart",
+		Why: "Firecracker names two files for a snapshot; Cloud Hypervisor keeps one. " +
+			"Empty means the maker that needs one file.",
+	},
+	{
+		Key: "cell.cpus", Kind: Int, Default: "2",
+		Summary: "the CPUs the snapshot was taken at",
+		Why: "A restore names the shape the snapshot was taken at, and a maker refuses " +
+			"another shape; this says what to ask for.",
+	},
+	{
+		Key: "cell.memory_mb", Kind: Int, Default: "2048",
+		Summary: "the memory in MiB the snapshot was taken at",
+		Why:     "As cell.cpus: the shape is part of the snapshot, not a choice a session makes.",
+	},
+	{
 		Key: "browser.cache", Kind: Bool, Default: "false",
 		Summary: "whether a browser flow that worked is replayed without a model call",
 		Why: "A remembered step goes through every check a decided one does — the manifest, " +
