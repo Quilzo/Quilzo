@@ -9,6 +9,17 @@ Unreleased
 
 ** Added
 
+*** `agent.reviewer` (off by default) names a second model every action is
+    offered to before it runs.  It sees the goal a person set and the
+    action chosen, and nothing of what the agent saw — no page, no
+    document — so nothing a page planted can reach it.  It can let an
+    action through or stop the run with its reason, for a person to read
+    and continue from; it can never widen or rewrite one.  A reviewer that
+    cannot be reached fails closed: nothing runs.  It is the last defence,
+    not the only one — the manifest, the breaker and ask-first are
+    deterministic and come first — and it costs one more model call per
+    action, which is why it waits for a setting.
+
 *** Desktop cells, P4 of the computer-use plan, host side: `internal/cell`
     drives a microVM (Firecracker or Cloud Hypervisor — whichever binary
     the operator installed) over its own Unix socket, restores a warm

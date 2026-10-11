@@ -989,6 +989,22 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		}.Decide()
 	}
 
+	// The reviewer, when this store names one: a second model beside the
+	// first, asked about every action it chooses. It sees the goal and the
+	// action and nothing of what the agent saw; it lets an action through
+	// or stops the run with its reason. Unreachable fails closed.
+	if withModel {
+		if c, cerr := loadConfig(root); cerr == nil {
+			if route := c.Raw("agent.reviewer"); route != "" {
+				reviewer, why := agentRunModel(root, route)
+				if reviewer == nil {
+					return out, fmt.Errorf("the reviewer this store names (%s) could not be reached: %s", route, why)
+				}
+				decide = agentmodel.Reviewed(decide, reviewer)
+			}
+		}
+	}
+
 	runner := agent.Runner{
 		Decide:     decide,
 		OwnDomains: ownDomains(root),
