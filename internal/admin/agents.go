@@ -51,6 +51,10 @@ type Agents struct {
 	Frame  func(id string, n int) ([]byte, error)
 	// Stop asks a run that is going on to stop, wherever it is.
 	Stop func(id, by string) error
+	// Outputs are what a run's commands printed, kept, in order; Output is
+	// one of them, whole as kept. Nil when nothing is kept.
+	Outputs func(id string) []RunOutput
+	Output  func(id string, n int) ([]byte, error)
 	// Answer decides the action a run is waiting on, Resume continues one
 	// that was cut off, and Replay runs one again from after a step and
 	// returns the new run.
@@ -230,4 +234,11 @@ type RunFrame struct {
 	Op     string
 	When   time.Time
 	Asking string
+}
+
+// RunOutput is what one of a run's commands printed, kept.
+type RunOutput struct {
+	N     int
+	When  time.Time
+	Total int64
 }

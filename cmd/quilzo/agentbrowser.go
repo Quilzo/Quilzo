@@ -5,6 +5,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -439,8 +441,11 @@ type runFrame struct {
 	At     string    `json:"at,omitempty"`
 	Asking string    `json:"asking,omitempty"`
 	When   time.Time `json:"when"`
-	File   string    `json:"file"`
-	Sealed bool      `json:"sealed,omitempty"`
+	// Digest is the SHA-256 of the picture as taken, before any sealing:
+	// what the step's record names.
+	Digest string `json:"digest,omitempty"`
+	File   string `json:"file"`
+	Sealed bool   `json:"sealed,omitempty"`
 }
 
 func runFramesDir(root, id string) string { return filepath.Join(agentRunsDir(root), id+".frames") }
@@ -464,6 +469,8 @@ func (f *runFrames) keep(fr browser.Frame) {
 	n := len(f.index) + 1
 	e := runFrame{N: n, Op: fr.Op, At: clip(fr.At, 500), Asking: fr.Asking, When: time.Now().UTC(),
 		File: fmt.Sprintf("%04d.jpg", n)}
+	sum := sha256.Sum256(fr.JPEG)
+	e.Digest = "sha256:" + hex.EncodeToString(sum[:])
 	data := fr.JPEG
 	if f.kr != nil {
 		s, err := f.kr.Seal(data, frameAAD(f.id, n))

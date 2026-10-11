@@ -79,9 +79,10 @@ func (e *evalMode) perform(real agent.Perform) agent.Perform {
 			return "(evaluation: the tool " + a.Tool + " was not called)", nil
 		case a.Delegate != "":
 			return "(evaluation: " + a.Delegate + " was not started)", nil
-		case a.Op != "" && !e.Reads[a.Op] && !agent.IsBrowser(a.Op):
-			// The browser is real and reads only: its declaration is read-only
-			// in an evaluation (boundManifest), so nothing it does sends.
+		case a.Op != "" && !e.Reads[a.Op] && !agent.IsBrowser(a.Op) && !agent.IsShell(a.Op):
+			// The browser and the workspace are real and read only: their
+			// declarations are read-only in an evaluation (boundManifest), so
+			// nothing they do sends or writes.
 			return "(evaluation: " + a.Op + " changes something, so nothing was written)", nil
 		}
 		res, err := real(ctx, a)
