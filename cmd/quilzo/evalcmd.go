@@ -522,7 +522,13 @@ func cmdEval(root string, args []string) error {
 		if err != nil {
 			return err
 		}
-		printEvalReport(rep)
+		if !w.JSON(rep) {
+			// The worded report for a person; the global --json carries the
+			// whole report machine-read, attack-success numbers and all,
+			// because the numbers a deployment publishes are the ones it
+			// measured, not the ones it liked.
+			printEvalReport(rep)
+		}
 		if rep.Verdict() == "hijacked" {
 			return fmt.Errorf("%d case(s) followed a planted instruction", rep.Hijacked)
 		}

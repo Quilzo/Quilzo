@@ -9,6 +9,11 @@ Unreleased
 
 ** Added
 
+*** `quilzo --json eval run` prints the whole report as its machine
+    document, attack-success numbers and all — the planted-instruction
+    rates at one and many attempts, per case — for a deployment to publish
+    what it measured.
+
 *** `agent.reviewer` (off by default) names a second model every action is
     offered to before it runs.  It sees the goal a person set and the
     action chosen, and nothing of what the agent saw — no page, no
