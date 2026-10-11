@@ -6,6 +6,9 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -202,5 +205,78 @@ func TestAnAppsReceiptHoldsOnlyItsConnectionsCalls(t *testing.T) {
 	}
 	if _, err := buildAppReceipt(root, "gr_00000000000000cc", time.Now()); err == nil {
 		t.Fatal("a receipt for a connection that made no call")
+	}
+}
+
+// The replay bundle: one file, opened by itself, carrying the steps, the
+// pictures that asked, and the receipt with its proof — and nothing of
+// what it renders can be swapped without the receipt noticing.
+func TestAReplayBundleCarriesStepsPicturesAndProof(t *testing.T) {
+	root, id := keptRunOf(t)
+	out := filepath.Join(t.TempDir(), "replay.html")
+	if err := receiptBundle(root, id, out, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(body)
+	for _, want := range []string{
+		"<h1>A run of tidy</h1>",
+		"tidy the about page",
+		"<th>It tried</th>",
+		`<script type="application/json" id="receipt">`,
+		"quilzo agent verify-receipt",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the bundle does not carry %q", want)
+		}
+	}
+	// The receipt inside is the receipt the verifier checks.
+	var rf agentReceiptFile
+	i := strings.Index(page, `<script type="application/json" id="receipt">`)
+	if i < 0 {
+		t.Fatal("no receipt block")
+	}
+	if err := json.Unmarshal([]byte(page[i+len(`<script type="application/json" id="receipt">`):]), &rf); err != nil {
+		// the block runs to </script>; trim it
+		rest := page[i+len(`<script type="application/json" id="receipt">`):]
+		rest = rest[:strings.Index(rest, "</script>")]
+		if err := json.Unmarshal([]byte(rest), &rf); err != nil {
+			t.Fatalf("the embedded receipt does not parse: %v", err)
+		}
+	}
+	if rf.Run != id || len(rf.Entries) == 0 {
+		t.Fatalf("the embedded receipt: %+v", rf.Run)
+	}
+}
+
+// Whatever a run's goal or results hold is escaped: a page that planted
+// markup into a run cannot inject into the bundle an auditor opens.
+func TestAReplayBundleEscapesWhatTheRunCarries(t *testing.T) {
+	root := demoStore(t)
+	rec := agent.Record{ID: "run-20260101-00000000", Agent: "tidy",
+		Goal: "<script>alert(1)</script>", By: "dana", State: "",
+		Trace: agent.Trace{Steps: []agent.Step{{N: 1,
+			Action: agent.Action{Op: "read_page"}, Allowed: true,
+			Result: "<img src=x onerror=alert(2)>"}}},
+		Started: time.Now(), Beat: time.Now()}
+	if err := writeAgentRun(root, rec); err != nil {
+		t.Fatal(err)
+	}
+	// A receipt needs the run's records in the log; the bundle still
+	// renders what it has and carries whatever proof exists.
+	out := filepath.Join(t.TempDir(), "replay.html")
+	if err := receiptBundle(root, rec.ID, out, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := os.ReadFile(out)
+	page := string(body)
+	if strings.Contains(page, "<script>alert(1)</script>") || strings.Contains(page, "<img src=x onerror") {
+		t.Fatal("untrusted text reached the bundle as markup")
+	}
+	if !strings.Contains(page, "&lt;script&gt;") {
+		t.Error("the goal was not carried at all")
 	}
 }

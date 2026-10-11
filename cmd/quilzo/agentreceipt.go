@@ -66,7 +66,33 @@ type receiptEntry struct {
 
 // agentReceipt is `quilzo agent receipt RUN [-o FILE]`.
 func agentReceipt(root string, args []string) error {
-	return receiptCmd(root, "agent receipt", "RUN", args, buildReceipt)
+	fs := flag.NewFlagSet("agent receipt", flag.ContinueOnError)
+	outPath := fs.String("o", "", "write the receipt here instead of printing it")
+	bundle := fs.String("bundle", "", "write a self-contained replay of the run here: steps, pictures, proof")
+	if len(args) < 1 {
+		return fmt.Errorf("quilzo agent receipt RUN [-o FILE] [--bundle FILE]")
+	}
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if *bundle != "" {
+		if err := receiptBundle(root, args[0], *bundle, time.Now()); err != nil {
+			return err
+		}
+		rf, err := buildReceipt(root, args[0], time.Now())
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%d records of run %s, each with its proof, against a head of %d signed by %s\n",
+			len(rf.Entries), rf.Run, rf.Head.Size, rf.Head.KeyID)
+		fmt.Printf("  the replay is %s; it opens by itself and carries the receipt inside\n", *bundle)
+		return nil
+	}
+	rest := []string{args[0]}
+	if *outPath != "" {
+		rest = append(rest, "-o", *outPath)
+	}
+	return receiptCmd(root, "agent receipt", "RUN", rest, buildReceipt)
 }
 
 // appReceipt is `quilzo apps receipt CONNECTION [-o FILE]`: every call an
