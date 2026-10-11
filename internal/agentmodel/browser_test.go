@@ -5,6 +5,7 @@ package agentmodel
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -114,5 +115,37 @@ func TestAPagesWordsInAnErrorAreFenced(t *testing.T) {
 	q := userPrompt("x", []agent.Observation{{From: "quilzo", Trusted: true, Err: errors.New("budget spent")}})
 	if strings.Contains(q, "UNTRUSTED") {
 		t.Errorf("Quilzo's own words were fenced:\n%s", q)
+	}
+}
+
+// A model holding the workspace is told how each action takes its input,
+// what it may run and what waits; a command's arguments arrive as a list,
+// exactly; a file's text arrives whole.
+func TestTheModelIsToldHowToUseItsWorkspace(t *testing.T) {
+	sess := agent.NewSession(agent.Manifest{Name: "coder", Kind: agent.KindTask, Purpose: "x",
+		Capabilities: agent.ShellCapabilities, Autonomy: agent.AutonomyDraft,
+		Shell:  &agent.Shell{Programs: []string{"git", "go"}, Hosts: []string{"github.com"}, Ask: []string{"network"}},
+		Budget: agent.Budget{Steps: 10, Tools: 1, Duration: agent.Duration(time.Minute)}}, nil)
+	m := &fakeModel{reply: `{"op":"shell_run","input":{"program":"git","args":["commit","-m","fix the  thing"]}}`}
+	a, err := Decider{Model: m, Session: sess}.Decide()(context.Background(), "commit", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args, _ := a.Input["args"].([]any)
+	if a.Op != "shell_run" || len(args) != 3 || args[2] != "fix the  thing" {
+		t.Errorf("%+v", a)
+	}
+	for _, want := range []string{`"program": "git"`, "git, go", "may reach github.com", "no network at all", "no pipes",
+		"deletes or rewrites history", "reaches the network"} {
+		if !strings.Contains(m.system, want) {
+			t.Errorf("the prompt does not say %q", want)
+		}
+	}
+	text := strings.Repeat("line of the file\n", 600)
+	body, _ := json.Marshal(map[string]any{"op": "file_write", "input": map[string]any{"path": "big.txt", "text": text}})
+	m.reply = string(body)
+	a, err = Decider{Model: m, Session: sess}.Decide()(context.Background(), "write", nil)
+	if err != nil || a.Input["text"] != text {
+		t.Errorf("the file's text did not arrive whole: %d bytes, %v", len(a.Input["text"].(string)), err)
 	}
 }

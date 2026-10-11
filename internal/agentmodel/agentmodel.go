@@ -83,6 +83,11 @@ const (
 	MaxEarlierPage = 1 << 10
 )
 
+// MaxWorkspaceShown is how much of the latest workspace result reaches the
+// model: a file read whole up to 64 KB, a command's output as it was shown
+// (its start and end), a folder's listing.
+var MaxWorkspaceShown = map[string]int{"file_read": 64 << 10, "shell_run": 12 << 10, "file_list": 16 << 10, "file_write": 2 << 10}
+
 // MaxObservations is how many recent observations are shown.
 //
 // The last few, not all of them. A loop that has run twenty turns has twenty
@@ -90,8 +95,16 @@ const (
 // the last — which is the cost curve that turns a stuck agent into an invoice.
 const MaxObservations = 6
 
-// MaxAnswer bounds what is read back from the model before parsing.
-const MaxAnswer = 8 << 10
+// MaxAnswer bounds what is read back from the model before parsing, and
+// MaxWriteAnswer for an agent that writes files, whose answer can carry
+// one whole (up to a megabyte).
+const (
+	MaxAnswer      = 8 << 10
+	MaxWriteAnswer = 1<<20 + 8<<10
+)
+
+// MaxArgs bounds a command's arguments.
+const MaxArgs = 256
 
 // Decider builds an agent.Decide backed by a model.
 type Decider struct {
@@ -147,6 +160,7 @@ type vocab struct {
 	tools     map[string]ToolChoice
 	delegates map[string]DelegateChoice
 	browser   *agent.Browser
+	shell     *agent.Shell
 }
 
 // choice is what the model is asked to return.
@@ -185,7 +199,11 @@ func (d Decider) Decide() agent.Decide {
 		if err != nil {
 			return agent.Action{}, fmt.Errorf("the model could not be reached: %w", err)
 		}
-		if len(raw) > MaxAnswer {
+		limit := MaxAnswer
+		if ops["file_write"] {
+			limit = MaxWriteAnswer
+		}
+		if len(raw) > limit {
 			// Refused, not truncated. Cutting it at the limit and parsing the
 			// remains produces "unexpected end of JSON input", which sends
 			// whoever reads it looking for a malformed answer rather than an
@@ -194,7 +212,7 @@ func (d Decider) Decide() agent.Decide {
 			return agent.Action{}, fmt.Errorf(
 				"the model returned %d bytes and the limit is %d. An action "+
 					"is an operation and a few short values; something this "+
-					"size is not one", len(raw), MaxAnswer)
+					"size is not one", len(raw), limit)
 		}
 		return v.parse(raw)
 	}
@@ -274,7 +292,7 @@ func (d Decider) vocabulary() vocab {
 	for _, c := range m.Capabilities {
 		v.ops[c] = true
 	}
-	v.browser = m.Browser
+	v.browser, v.shell = m.Browser, m.Shell
 	for _, t := range d.Tools {
 		if _, ok := d.Session.ToolFor(t.Name); ok && reChoiceName.MatchString(t.Name) {
 			v.tools[t.Name] = t
@@ -298,7 +316,7 @@ func oneLine(s string, n int) string {
 }
 
 func (v vocab) prompt() string {
-	p := systemPrompt(v.ops) + browserPrompt(v.ops, v.browser)
+	p := systemPrompt(v.ops) + browserPrompt(v.ops, v.browser) + shellPrompt(v.ops, v.shell)
 	if len(v.tools) == 0 && len(v.delegates) == 0 {
 		return p
 	}
@@ -423,7 +441,18 @@ func parse(raw string, ops map[string]bool) (agent.Action, error) {
 				"manifest's, and nothing it returns can add to it",
 			clamp(op, 60), strings.Join(sorted(ops), ", "))
 	}
-	return agent.Action{Op: op, Input: bounded(c.Input)}, nil
+	in := bounded(c.Input)
+	if op == "file_write" {
+		// A file's text is its own: kept whole and exactly, up to what a
+		// write may be, not cut to an input's usual few thousand characters.
+		if text, ok := c.Input["text"].(string); ok && len(text) <= MaxWriteAnswer {
+			if in == nil {
+				in = map[string]any{}
+			}
+			in["text"] = text
+		}
+	}
+	return agent.Action{Op: op, Input: in}, nil
 }
 
 // bounded caps what an input may carry into an operation.
@@ -447,6 +476,19 @@ func bounded(in map[string]any) map[string]any {
 			out[clamp(k, 64)] = clamp(t, 4096)
 		case float64, bool:
 			out[clamp(k, 64)] = t
+		case []any:
+			// One list: a command's arguments, each text, kept as given (an
+			// argument's spaces are part of it).
+			if k != "args" {
+				continue
+			}
+			var args []any
+			for _, a := range t {
+				if s, ok := a.(string); ok && len(args) < MaxArgs {
+					args = append(args, s[:min(len(s), 4096)])
+				}
+			}
+			out[k] = args
 		case map[string]any:
 			// One shape of object, under the names a write carries a page
 			// in, and flat. Without it a model could be granted write_page
@@ -621,6 +663,57 @@ A press that pays, sends, deletes, agrees or submits a form waits for a person t
 	return b.String()
 }
 
+// shellPrompt says how the workspace's actions take their input, to a model
+// that holds them, what it may run, and what waits for a person.
+func shellPrompt(ops map[string]bool, decl *agent.Shell) string {
+	lines := map[string]string{
+		"file_list":  `{"op": "file_list", "input": {"path": "."}} lists a folder of the workspace`,
+		"file_read":  `{"op": "file_read", "input": {"path": "go.mod"}} reads a file (up to 256 KB of text)`,
+		"file_write": `{"op": "file_write", "input": {"path": "docs/notes.md", "text": "..."}} writes a file whole, replacing what it held`,
+		"shell_run": `{"op": "shell_run", "input": {"program": "git", "args": ["status"]}} runs one program with its arguments, ` +
+			`in the workspace; there is no shell, so no pipes, redirections or variables`,
+	}
+	var held []string
+	for _, op := range agent.ShellCapabilities {
+		if ops[op] {
+			held = append(held, "  "+lines[op])
+		}
+	}
+	if len(held) == 0 {
+		return ""
+	}
+	if decl == nil {
+		decl = &agent.Shell{}
+	}
+	var b strings.Builder
+	b.WriteString(`
+
+The workspace: a folder kept between runs. Paths are inside it.
+`)
+	b.WriteString(strings.Join(held, "\n"))
+	if ops["shell_run"] {
+		fmt.Fprintf(&b, "\nPrograms it may run, and no others: %s.", strings.Join(decl.Programs, ", "))
+		if len(decl.Hosts) > 0 && !decl.ReadOnly {
+			fmt.Fprintf(&b, "\nA command that reaches the network (git fetch, go mod download and the like) may reach %s; "+
+				"every other command has no network at all.", strings.Join(decl.Hosts, ", "))
+		} else {
+			b.WriteString("\nNo command may reach the network.")
+		}
+		b.WriteString("\nA command that deletes or rewrites history waits for a person to approve it")
+		if decl.Asks("network") {
+			b.WriteString(", and so does one that reaches the network")
+		}
+		if decl.Asks("write") {
+			b.WriteString(", and so does one that changes the workspace")
+		}
+		b.WriteString(". You are shown the start and the end of what a command prints.")
+	}
+	if decl.ReadOnly {
+		b.WriteString("\nThis run only reads: only commands that read run, and nothing is written.")
+	}
+	return b.String()
+}
+
 // userPrompt states the goal, then the observations, fenced.
 func userPrompt(goal string, seen []agent.Observation) string {
 	var b strings.Builder
@@ -643,12 +736,20 @@ func userPrompt(goal string, seen []agent.Observation) string {
 	b.WriteString("What has happened so far, oldest first:\n")
 	for i, o := range from {
 		limit := MaxObservation
-		if agent.IsBrowser(o.From) {
+		latest := i == len(from)-1
+		switch {
+		case agent.IsBrowser(o.From):
 			// The page as it is now is what the next action is chosen
 			// on, so it is shown whole; a page left behind is a reminder.
 			limit = MaxEarlierPage
-			if i == len(from)-1 {
+			if latest {
 				limit = MaxPage
+			}
+		case agent.IsShell(o.From):
+			// So is the file just read, or what a command just printed.
+			limit = MaxEarlierPage
+			if latest {
+				limit = MaxWorkspaceShown[o.From]
 			}
 		}
 		if o.Err != nil && o.Trusted {
