@@ -111,6 +111,9 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 		// host it may reach.
 		Browser: m.Browser,
 
+		// And its workspace, the same way.
+		Shell: m.Shell,
+
 		// Memory is the agent's, and a token says nothing about it.
 		Memory: agent.Memory{
 			Episodic: true, Semantic: true, Procedural: true,
@@ -127,6 +130,7 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 		// send to, and so no signing in. A read-only credential does not
 		// get forms sent on its say-so.
 		b.Browser = m.Browser.ReadOnly()
+		b.Shell = m.Shell.ReadOnlyCopy()
 	}
 	// A caller confined to part of the site confines the agent to it: a
 	// token issued --on /docs, or an agent granted a role on /docs only.

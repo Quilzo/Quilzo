@@ -322,7 +322,7 @@ func continueAgentRunLive(root, id string, caller *Caller) error {
 	if set != nil {
 		m, ok = set.Agents[prior.Agent]
 	}
-	if !ok || !holdsBrowser(m) {
+	if !ok || !holdsLive(m) {
 		defer release()
 		ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
 		defer cancel()
@@ -424,7 +424,7 @@ func replayAgentRunLive(root, id string, n int, caller *Caller) (string, error) 
 	if set != nil {
 		m, ok = set.Agents[prior.Agent]
 	}
-	if !ok || !holdsBrowser(m) {
+	if !ok || !holdsLive(m) {
 		ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
 		defer cancel()
 		return replayAgentRun(ctx, root, id, n, caller)
@@ -482,8 +482,10 @@ func pruneRunsIn(dir string, max int) error {
 		if err := os.Remove(filepath.Join(dir, a.name)); err != nil {
 			return err
 		}
-		// And the pictures its browser kept, which go with it.
+		// And the pictures its browser kept and what its commands printed,
+		// which go with it.
 		_ = os.RemoveAll(filepath.Join(dir, strings.TrimSuffix(a.name, ".json")+".frames"))
+		_ = os.RemoveAll(filepath.Join(dir, strings.TrimSuffix(a.name, ".json")+".shell"))
 	}
 	return nil
 }
@@ -655,7 +657,7 @@ func runAgentOnce(root, name, goal string, withModel bool,
 			"asked of it chooses something")
 	}
 	if set, lerr := loadAgents(root); lerr == nil && withModel {
-		if m, ok := set.Agents[name]; ok && holdsBrowser(m) {
+		if m, ok := set.Agents[name]; ok && holdsLive(m) {
 			cancel()
 			return startAgentRunLive(root, name, goal, caller, m)
 		}
