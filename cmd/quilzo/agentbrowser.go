@@ -76,6 +76,36 @@ type runBrowser struct {
 // the browser closes.
 const MaxRefusedRecords = 20
 
+// personInput performs one thing a person did to the page while taking
+// the run's browser over, and records it as theirs — never the model's,
+// never the agent's. What a person typed is recorded by length and digest
+// and not by its words: people type passwords, and the log does not take
+// them.
+func (rb *runBrowser) personInput(root string, m agent.Manifest, runID string) func(browser.PersonInput, string) {
+	return func(in browser.PersonInput, by string) {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		kind, what := "press", ""
+		switch {
+		case len(in.Click) == 2:
+			what = fmt.Sprintf("at (%d, %d)", int(in.Click[0]), int(in.Click[1]))
+		case in.Type != "":
+			sum := sha256.Sum256([]byte(in.Type))
+			kind = "type"
+			what = fmt.Sprintf("%d characters (sha256:%s)", len(in.Type), hex.EncodeToString(sum[:8]))
+		case in.Key != "":
+			kind, what = "key", in.Key
+		}
+		detail := map[string]string{"run": runID, "agent": m.Name, "kind": kind, "what": what}
+		outcome := audit.Success
+		if err := rb.driver.Person(ctx, in); err != nil {
+			outcome, detail["why"] = audit.Failure, clip(err.Error(), 300)
+		}
+		record(root, audit.Record{Action: "agent.person", Resource: "/agents/runs/" + runID,
+			Outcome: outcome, Principal: by, Kind: audit.KindHuman, Verified: true, Detail: detail})
+	}
+}
+
 // newRunBrowser makes a run's browser, which starts when the agent first
 // opens a page. actor is what decides the run, for the record each request
 // leaves; chat says it takes pictures.

@@ -2372,6 +2372,10 @@ th[scope="row"] { font-weight: 500; }
 
 /* What an agent is asking to do, field by field: the name above, the text
    below it as written, line breaks kept. */
+.takeover { margin-top: 12px; border-top: 1px solid var(--outline-variant, #ccc); padding-top: 8px; }
+.takeover-form input[type="text"] { width: min(24ch, 60vw); }
+.takeover img { border: 1px solid var(--outline-variant, #ccc); }
+.takeover button { margin-right: 4px; }
 .ask-fields { margin: 0 0 12px; display: grid; gap: 8px; }
 .ask-fields > div {
   background: var(--surface-container-lowest); border: 1px solid var(--outline-variant);

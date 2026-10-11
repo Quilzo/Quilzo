@@ -4,6 +4,7 @@
 package browser
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -169,4 +170,59 @@ func pointer() agent.Manifest {
 		Capabilities: agent.BrowserCapabilities, Autonomy: agent.AutonomyDraft,
 		Browser: &agent.Browser{Read: []string{"127.0.0.1"}, Pictures: true},
 		Budget:  agent.Budget{Steps: 40, Duration: agent.Duration(5 * time.Minute)}}
+}
+
+// A person taking over works the page with their own hands: a press at a
+// point, typing where the page holds focus, one named key. What they do is
+// what lands — no hit test, no element — and nothing of it is weighed or
+// gated, because the person is not the agent; the page's own rule still
+// binds their hands.
+func TestAPersonTakesThePageOver(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			fmt.Fprintf(w, `<!doctype html><title>Over</title>`+
+				`<form action="/go"><input id=q name=q aria-label="Ask" style="position:absolute;left:40px;top:20px;width:200px;height:30px"></form>`)
+		case "/go":
+			fmt.Fprintf(w, `<!doctype html><title>Done</title><h1>You said %s</h1>`, r.URL.Query().Get("q"))
+		}
+	})}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+
+	s := agent.NewSession(pointer(), nil)
+	d, _ := newDriver(t, s)
+	must(t, d, act("browser_open", "url", "http://"+ln.Addr().String()+"/"))
+	must(t, d, act("browser_read"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	// A press on the field, then typing, then Enter: the person's own
+	// submit, by their own key.
+	if err := d.Person(ctx, PersonInput{Click: []float64{100, 35}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Person(ctx, PersonInput{Type: "hello by hand"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Person(ctx, PersonInput{Key: "Enter"}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(600 * time.Millisecond)
+	out := must(t, d, act("browser_read"))
+	if !strings.Contains(out, "You said hello by hand") {
+		t.Errorf("the person's hands did not reach the page:\n%s", out)
+	}
+	// A key this cannot name exactly is refused rather than guessed at.
+	if err := d.Person(ctx, PersonInput{Key: "ctrl+z"}); err == nil {
+		t.Error("an unnamed key was sent")
+	}
+	// Nothing to do is an error, not a silent no-op.
+	if err := d.Person(ctx, PersonInput{}); err == nil {
+		t.Error("empty input was accepted")
+	}
 }

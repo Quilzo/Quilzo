@@ -9,6 +9,17 @@ Unreleased
 
 ** Added
 
+*** A run waiting on a person over its browser can be taken over: on the
+    run's page, "Take the page over and do it yourself" puts the person's
+    own hands on the page — a click on the picture presses there, and text
+    or Enter, Tab, Esc and Backspace go to where the page holds its focus.
+    Each thing done is recorded in the log as that person's (`agent.person`),
+    never as the agent's or the model's, and what a person typed is kept by
+    length and digest and not by its words.  The page's rule still holds
+    for their hands: the browser reaches only what the agent declared.
+    The question they took it over for still wants its answer, so the run
+    is declined or let go ahead when they are done.
+
 *** `browser.cache` (off by default) replays a browser flow that worked
     without a model call.  A remembered step passes every check a decided
     one does — the manifest, the breaker, ask-first with the person — and
