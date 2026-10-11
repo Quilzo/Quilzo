@@ -82,3 +82,36 @@ func TestAShellIsNarrowedLikeEverythingElse(t *testing.T) {
 		t.Error("the read-only copy changed the declaration")
 	}
 }
+
+// An agent holding file_write with no "shell" block reads only when its
+// run may only read, like one with a block.
+func TestNoShellBlockStillReadsOnly(t *testing.T) {
+	var none *Shell
+	if ro := none.ReadOnlyCopy(); ro == nil || !ro.ReadOnly {
+		t.Errorf("read-only of no declaration: %+v", ro)
+	}
+	if got := narrowShell(&Shell{ReadOnly: true}, nil); got == nil || !got.ReadOnly {
+		t.Errorf("narrowed with no declaration: %+v", got)
+	}
+	if narrowShell(nil, nil) != nil {
+		t.Error("two absent declarations made one")
+	}
+}
+
+// A file's whole text is not kept in the run's record: its size and digest
+// are.
+func TestAFilesTextIsNotKeptWhole(t *testing.T) {
+	text := strings.Repeat("<", MaxStored*3)
+	tr := Trace{Agent: "coder", Steps: []Step{{N: 1, Action: Action{Op: "file_write", Input: map[string]any{"path": "a", "text": text}}}},
+		Waiting: &Pending{N: 2, Action: Action{Op: "file_write", Input: map[string]any{"path": "b", "text": text}}}}
+	rec := Keep("run-1", "dana", "", time.Now(), tr, Receipt{})
+	for _, a := range []Action{rec.Trace.Steps[0].Action, rec.Trace.Waiting.Action} {
+		kept, _ := a.Input["text"].(string)
+		if len(kept) > 200 || !strings.Contains(kept, "sha256:") || a.Input["path"] == nil {
+			t.Errorf("kept %q", kept)
+		}
+	}
+	if tr.Steps[0].Action.Input["text"] != text {
+		t.Error("keeping the record changed the run's own action")
+	}
+}

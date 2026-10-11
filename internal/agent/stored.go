@@ -4,6 +4,9 @@
 package agent
 
 import (
+	"fmt"
+	"encoding/hex"
+	"crypto/sha256"
 	"regexp"
 	"time"
 )
@@ -83,12 +86,37 @@ func Keep(id, by, model string, started time.Time, t Trace, r Receipt) Record {
 		if len(kept.Steps[i].Result) > MaxStored {
 			kept.Steps[i].Result = kept.Steps[i].Result[:MaxStored] + "…"
 		}
+		kept.Steps[i].Action = keptAction(kept.Steps[i].Action)
+	}
+	if kept.Waiting != nil {
+		w := *kept.Waiting
+		w.Action = keptAction(w.Action)
+		kept.Waiting = &w
 	}
 	if len(kept.Answer) > MaxStored {
 		kept.Answer = kept.Answer[:MaxStored] + "…"
 	}
 	return Record{ID: id, Agent: t.Agent, Kind: r.Kind, Goal: t.Goal, By: by,
 		Model: model, Started: started.UTC(), Trace: kept, Receipt: r}
+}
+
+// keptAction is an action as a run's record keeps it: a file's whole text
+// (up to a megabyte, which a few writes would make a record too large to
+// read back) kept as its size and digest. A question about a write is
+// always answered live, in the process holding the whole action.
+func keptAction(a Action) Action {
+	text, ok := a.Input["text"].(string)
+	if a.Op != "file_write" || !ok || len(text) <= MaxStored {
+		return a
+	}
+	in := make(map[string]any, len(a.Input))
+	for k, v := range a.Input {
+		in[k] = v
+	}
+	sum := sha256.Sum256([]byte(text))
+	in["text"] = fmt.Sprintf("[%d bytes, sha256:%s]", len(text), hex.EncodeToString(sum[:]))
+	a.Input = in
+	return a
 }
 
 // Outcome is a run in a word, for a list.

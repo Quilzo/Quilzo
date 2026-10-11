@@ -7,6 +7,7 @@ package shell
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -49,17 +50,17 @@ func TestTheWorkspacesActionsAreDone(t *testing.T) {
 	if err != nil || !strings.Contains(out, "added notes/today.md") {
 		t.Fatalf("%q %v", out, err)
 	}
-	if out, err := do(t, d, "file_list", map[string]any{"path": "notes"}); err != nil || !strings.Contains(out, "today.md (16 bytes)") {
-		t.Errorf("%q %v", out, err)
-	}
 	if d.Session.Tainted() {
 		t.Error("tainted before anything was read")
 	}
-	if out, err := do(t, d, "file_read", map[string]any{"path": "notes/today.md"}); err != nil || out != "Ship the shell.\n" {
+	if out, err := do(t, d, "file_list", map[string]any{"path": "notes"}); err != nil || !strings.Contains(out, "today.md (16 bytes)") {
 		t.Errorf("%q %v", out, err)
 	}
 	if !d.Session.Tainted() {
-		t.Error("reading the workspace did not taint the run")
+		t.Error("listing the workspace did not taint the run: names are words too")
+	}
+	if out, err := do(t, d, "file_read", map[string]any{"path": "notes/today.md"}); err != nil || out != "Ship the shell.\n" {
+		t.Errorf("%q %v", out, err)
 	}
 	out, err = do(t, d, "shell_run", map[string]any{"program": "cat", "args": []any{"notes/today.md"}})
 	if err != nil || !strings.Contains(out, "exit 0") || !strings.Contains(out, "Ship the shell.") {
@@ -154,5 +155,29 @@ func TestWhatACommandCommitsToIsWeighed(t *testing.T) {
 	w, _ := testDriver(t, &agent.Shell{Programs: []string{"make"}, Ask: []string{"write"}})
 	if why := w.Weighs(agent.Action{Op: "file_write", Input: map[string]any{"path": "x.go"}}); !strings.Contains(why, "writes x.go") {
 		t.Errorf("a write asked about: %q", why)
+	}
+}
+
+// A command that goes over the workspace's quota while it runs is stopped
+// then, not found afterwards; and a reading command leaves nothing in the
+// run's home for a later one to find.
+func TestACommandIsStoppedWhenItGoesOverTheQuota(t *testing.T) {
+	if _, err := Find("sh"); err != nil {
+		t.Skip(err)
+	}
+	d, _ := testDriver(t, &agent.Shell{Programs: []string{"sh", "sed"}, QuotaMB: 1})
+	start := time.Now()
+	out, err := do(t, d, "shell_run", map[string]any{"program": "sh",
+		"args": []any{"-c", "head -c 3000000 /dev/zero > big; sleep 60"}})
+	if err != nil || !strings.Contains(out, "went over the workspace's 1 MiB") || time.Since(start) > 30*time.Second {
+		t.Errorf("%q %v after %v", out, err, time.Since(start))
+	}
+	_ = d.Workspace.Write("in.txt", "hello\n")
+	if _, err := Find("sed"); err == nil {
+		planted := d.Box.Home + "/planted"
+		_, _ = do(t, d, "shell_run", map[string]any{"program": "sed", "args": []any{"-n", "w " + planted, "in.txt"}})
+		if _, err := os.Stat(planted); err == nil {
+			t.Error("a reading command wrote the run's home")
+		}
 	}
 }

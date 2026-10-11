@@ -102,7 +102,9 @@ func (s *Shell) Quota() int {
 // ReadOnlyCopy is the declaration for a run that may only read.
 func (s *Shell) ReadOnlyCopy() *Shell {
 	if s == nil {
-		return nil
+		// No declaration is the empty one, and reading only holds for it
+		// too: an agent may hold file_write with no "shell" block.
+		return &Shell{ReadOnly: true}
 	}
 	c := *s
 	c.Programs, c.Hosts, c.Ask = slices.Clone(s.Programs), nil, slices.Clone(s.Ask)
@@ -190,8 +192,16 @@ func (m *Manifest) validateShell() error {
 // hosts both name, every question either asks, the shorter limits, and the
 // workspace only when both say the same.
 func narrowShell(m, by *Shell) *Shell {
-	if m == nil || by == nil {
+	if m == nil && by == nil {
 		return nil
+	}
+	// A side with no declaration is the empty one: it narrows the other to
+	// nothing it may run, and keeps reading only when it says so.
+	if m == nil {
+		m = &Shell{}
+	}
+	if by == nil {
+		by = &Shell{}
 	}
 	out := &Shell{Workspace: m.Workspace, ReadOnly: m.ReadOnly || by.ReadOnly}
 	for _, p := range by.Programs {
@@ -209,9 +219,7 @@ func narrowShell(m, by *Shell) *Shell {
 			out.Ask = append(out.Ask, a)
 		}
 	}
-	if by.Workspace != m.Workspace {
-		out.Workspace = m.Workspace
-	}
+
 	out.Timeout = Duration(min(int64(m.CommandTimeout()), int64(by.CommandTimeout())))
 	out.MemoryMB, out.QuotaMB = min(m.Memory(), by.Memory()), min(m.Quota(), by.Quota())
 	slices.Sort(out.Programs)

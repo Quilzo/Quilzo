@@ -4,9 +4,11 @@
 package shell
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -107,30 +109,91 @@ func TestWhatChangedIsSeen(t *testing.T) {
 	}
 }
 
-// A workspace is worked on by one run at a time; a claim left by a run
-// that is gone is taken over.
+// A workspace is worked on by one run at a time: of many claiming at
+// once exactly one has it, it is free again once let go, and a run that
+// dies lets go without anybody deciding it is gone.
 func TestOneRunWorksOnAWorkspaceAtATime(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "claims", "ws.claim")
-	a, err := ClaimWorkspace(p, "run-a")
-	if err != nil {
-		t.Fatal(err)
+	var mu sync.Mutex
+	var won []*Claim
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if c, err := ClaimWorkspace(p, fmt.Sprintf("run-%d", i)); err == nil {
+				mu.Lock()
+				won = append(won, c)
+				mu.Unlock()
+			}
+		}(i)
 	}
-	if _, err := ClaimWorkspace(p, "run-b"); err == nil || !strings.Contains(err.Error(), "run-a") {
-		t.Errorf("a second run claimed it: %v", err)
+	wg.Wait()
+	if len(won) != 1 {
+		t.Fatalf("%d runs hold the workspace at once", len(won))
 	}
-	a.Release()
+	if _, err := ClaimWorkspace(p, "run-late"); err == nil || !strings.Contains(err.Error(), "in use by run") {
+		t.Errorf("claimed while held: %v", err)
+	}
+	won[0].Release()
 	b, err := ClaimWorkspace(p, "run-b")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Gone, as far as anybody can tell.
-	old := time.Now().Add(-2 * ClaimStale)
-	_ = os.WriteFile(p, []byte(`{"run":"run-b","beat":"`+old.UTC().Format(time.RFC3339)+`"}`), 0o600)
+	// Gone without letting go: the kernel lets go for it.
+	b.f.Close()
 	if _, err := ClaimWorkspace(p, "run-c"); err != nil {
-		t.Errorf("a stale claim was not taken over: %v", err)
+		t.Errorf("a dead run's claim was kept: %v", err)
 	}
-	b.Release() // not run-b's any more: left alone
-	if _, err := os.Stat(p); err != nil {
-		t.Error("a run let go of a claim it no longer held")
+}
+
+// Writing is never redirected: not by a link or a named pipe left at the
+// file's temporary name, not through a linked folder, and git's own folder
+// is not written by hand.
+func TestAWriteGoesWhereItSays(t *testing.T) {
+	w, dir := workspace(t)
+	_ = os.MkdirAll(filepath.Join(dir, "scripts"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "scripts", "test.sh"), []byte("echo ok"), 0o755)
+	if err := os.Symlink("scripts/test.sh", filepath.Join(dir, "n.quilzo-writing")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Write("n", "planted"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "scripts", "test.sh")); string(b) != "echo ok" {
+		t.Errorf("the write went through a link to another file: %q", b)
+	}
+	if err := os.Symlink("scripts", filepath.Join(dir, "docs")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Write("docs/new.md", "x"); err == nil || !strings.Contains(err.Error(), "through a link") {
+		t.Errorf("wrote through a linked folder: %v", err)
+	}
+	for _, name := range []string{".git/config", ".GIT/hooks/pre-commit", "sub/.git/config"} {
+		if err := w.Write(name, "[core]\n\tfsmonitor = sh -c x\n"); err == nil {
+			t.Errorf("wrote %s", name)
+		}
+	}
+}
+
+// A scan that cannot see a folder, or stops at its bound, says so, and a
+// changed mode is a change.
+func TestAScanSaysWhatItCouldNotSee(t *testing.T) {
+	w, dir := workspace(t)
+	_ = w.Write("build.sh", "echo")
+	before := w.Scan()
+	if before.Cut {
+		t.Fatal("an ordinary workspace was cut")
+	}
+	_ = os.Chmod(filepath.Join(dir, "build.sh"), 0o755)
+	if c := w.Scan().Since(before); strings.Join(c.Changed, ",") != "build.sh" {
+		t.Errorf("a changed mode was not seen: %+v", c)
+	}
+	_ = os.MkdirAll(filepath.Join(dir, "locked"), 0o755)
+	_ = w.Write("locked/big.bin", strings.Repeat("x", 1000))
+	_ = os.Chmod(filepath.Join(dir, "locked"), 0)
+	t.Cleanup(func() { os.Chmod(filepath.Join(dir, "locked"), 0o755) })
+	if os.Getuid() != 0 && !w.Scan().Cut {
+		t.Error("a folder it could not read was taken as empty")
 	}
 }
