@@ -149,3 +149,21 @@ func TestTheModelIsToldHowToUseItsWorkspace(t *testing.T) {
 		t.Errorf("the file's text did not arrive whole: %d bytes, %v", len(a.Input["text"].(string)), err)
 	}
 }
+
+// The larger answer is for a file's text: any other action that size is
+// refused, since a person could not read it when asked.
+func TestOnlyAFileWriteMayBeLarge(t *testing.T) {
+	sess := agent.NewSession(agent.Manifest{Name: "coder", Kind: agent.KindTask, Purpose: "x",
+		Capabilities: agent.ShellCapabilities, Autonomy: agent.AutonomyDraft,
+		Shell:  &agent.Shell{Programs: []string{"curl"}, Hosts: []string{"api.example.com"}},
+		Budget: agent.Budget{Steps: 10, Tools: 1, Duration: agent.Duration(time.Minute)}}, nil)
+	args := []string{}
+	for i := 0; i < 100; i++ {
+		args = append(args, strings.Repeat("h", 100))
+	}
+	body, _ := json.Marshal(map[string]any{"op": "shell_run", "input": map[string]any{"program": "curl", "args": args}})
+	m := &fakeModel{reply: string(body)}
+	if _, err := (Decider{Model: m, Session: sess}).Decide()(context.Background(), "x", nil); err == nil || !strings.Contains(err.Error(), "the limit is") {
+		t.Errorf("a %d-byte command was accepted: %v", len(body), err)
+	}
+}

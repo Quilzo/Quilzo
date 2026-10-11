@@ -214,7 +214,13 @@ func (d Decider) Decide() agent.Decide {
 					"is an operation and a few short values; something this "+
 					"size is not one", len(raw), limit)
 		}
-		return v.parse(raw)
+		a, err := v.parse(raw)
+		// The larger limit is for a file's text only: an action of any other
+		// kind that size is one a person could not read when asked about it.
+		if err == nil && limit > MaxAnswer && a.Op != "file_write" && len(raw) > MaxAnswer {
+			return agent.Action{}, fmt.Errorf("the model returned %d bytes for %s and the limit is %d", len(raw), a.Op, MaxAnswer)
+		}
+		return a, err
 	}
 }
 

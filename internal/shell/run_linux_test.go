@@ -37,6 +37,15 @@ func TestMain(m *testing.M) {
 			c.Close()
 			fmt.Println("connected")
 			os.Exit(0)
+		case "unix":
+			c, err := net.DialTimeout("unix", os.Args[2], 2*time.Second)
+			if err != nil {
+				fmt.Println("refused:", err)
+				os.Exit(1)
+			}
+			c.Close()
+			fmt.Println("connected")
+			os.Exit(0)
 		case "write":
 			if err := os.WriteFile(os.Args[2], []byte("x"), 0o644); err != nil {
 				fmt.Println("refused:", err)
@@ -236,5 +245,52 @@ func TestANamedPipeIsNotRead(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("reading a named pipe hung")
+	}
+}
+
+// A socket on the machine's filesystem is not reachable from a box: on the
+// other side of one may be a message bus that runs commands outside every
+// box, an SSH agent, a container daemon.
+func TestABoxReachesNoLocalSocket(t *testing.T) {
+	b := testBox(t)
+	sock := filepath.Join(t.TempDir(), "host.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Skip(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	if o := run(t, b, os.Args[0], "unix", sock); o.Exit == 0 || !strings.Contains(o.Text, "refused") {
+		t.Errorf("a box connected to %s: %s", sock, o.Text)
+	}
+}
+
+// A named pipe left at a write's temporary name, or listed, holds nothing.
+func TestANamedPipeHoldsNoWriteOrListing(t *testing.T) {
+	w, dir := workspace(t)
+	if err := syscall.Mkfifo(filepath.Join(dir, "p.quilzo-writing"), 0o644); err != nil {
+		t.Skip(err)
+	}
+	_ = syscall.Mkfifo(filepath.Join(dir, "q"), 0o644)
+	done := make(chan error, 2)
+	go func() { done <- w.Write("p", "x") }()
+	go func() { _, _, err := w.List("q"); done <- err }()
+	for i := 0; i < 2; i++ {
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Fatal("a named pipe held a write or a listing")
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "p")); string(b) != "x" {
+		t.Errorf("the write did not land: %q", b)
 	}
 }
