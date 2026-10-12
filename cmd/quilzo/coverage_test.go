@@ -698,6 +698,11 @@ var coverage = map[string]surfaces{
 		"changeable from a screen",
 		NoMCP: "drives a microVM on the machine it runs on; there is nothing to reach " +
 			"from another one"},
+	"desktop": {Why: "the person's own desktop, under their consent; the weakest " +
+		"isolation of all the tiers and deliberately last, off for runs by " +
+		"design, with nothing a screen changes",
+		NoMCP: "a person's consent dialog on the machine their desktop is on; it " +
+			"cannot be reached or answered from another one"},
 	"secret": {Why: "a credential is given on standard input, where no browser history, " +
 		"screen or form field holds it on the way",
 		NoMCP: "keeps credentials; an agent that could set one could set the one it is about to be handed"},
