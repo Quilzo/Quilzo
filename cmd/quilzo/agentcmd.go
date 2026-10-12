@@ -89,9 +89,15 @@ func knownCapabilities(root string) map[string]bool {
 	}
 	// A run's memory, which no other surface performs.
 	known["remember"], known["recall"] = true, true
-	// And its browser and workspace, performed by the run itself
-	// (agentbrowser.go, agentshell.go).
-	for _, c := range append(append([]string(nil), agent.BrowserCapabilities...), agent.ShellCapabilities...) {
+	// And its browser, workspace and desktop cell, performed by the run
+	// itself (agentbrowser.go, agentshell.go, agentcell.go).
+	for _, c := range agent.BrowserCapabilities {
+		known[c] = true
+	}
+	for _, c := range agent.ShellCapabilities {
+		known[c] = true
+	}
+	for _, c := range agent.CellCapabilities {
 		known[c] = true
 	}
 	return known
@@ -1201,6 +1207,24 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		runner.Perform = rs.driver.Perform(runner.Perform)
 		weighs = append(weighs, rs.driver.Weighs)
 	}
+	// Its desktop cell (agentcell.go): a microVM from the warm snapshot,
+	// worked through the same governed shape as the browser. Nothing is
+	// brought up until the agent first touches the desktop, and a machine
+	// set up for none says so at the first step.
+	if holdsCell(m) {
+		cellPictures := false
+		if p, ok := delegateModel.(interface{ TakesPictures() bool }); ok {
+			cellPictures = p.TakesPictures()
+		}
+		rcell, cerr := newRunCell(root, m, sess, caller, delegateModel, from.RunID, cellPictures)
+		if cerr != nil {
+			return out, cerr
+		}
+		defer rcell.end()
+		runner.Perform = rcell.driver.Perform(runner.Perform)
+		weighs = append(weighs, rcell.driver.Weighs)
+	}
+
 	if len(weighs) > 0 {
 		runner.Weighs = func(a agent.Action) string {
 			for _, w := range weighs {
@@ -1211,12 +1235,13 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 			return ""
 		}
 	}
-	// What its browser or its commands ask a person waits in this process,
-	// where the page and the workspace are, as a program's does, rather
-	// than pausing the run to be picked up later by a process without them.
+	// What its browser, its commands or its desktop ask a person waits in
+	// this process, where the page, the workspace and the cell are, as a
+	// program's does, rather than pausing the run to be picked up later by
+	// a process without them.
 	// A browser held here may also be taken over: what a person does to the
 	// page while it waits reaches it here, recorded as theirs.
-	if holdsLive(m) && from.Eval == nil {
+	if (holdsLive(m) || holdsCell(m)) && from.Eval == nil {
 		runner.Pause = false
 		var hands func(browser.PersonInput, string)
 		if rb != nil {

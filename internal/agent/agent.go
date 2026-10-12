@@ -315,6 +315,10 @@ type Manifest struct {
 	// holds the workspace's capabilities. See shell.go.
 	Shell *Shell `json:"shell,omitempty"`
 
+	// Cell is what its desktop cell may do, when it holds the desktop's
+	// capabilities. See cell.go.
+	Cell *Cell `json:"cell,omitempty"`
+
 	// Dialect is the vendor's computer-use dialect its model answers in,
 	// when the model was taught to speak one: "anthropic-computer",
 	// "anthropic-browser", "openai-computer" or "gemini-computer". The
@@ -484,6 +488,9 @@ func (m *Manifest) Validate(known map[string]bool) error {
 	if err := m.validateShell(); err != nil {
 		return err
 	}
+	if err := m.validateCell(); err != nil {
+		return err
+	}
 	if m.Dialect != "" {
 		known := false
 		for _, d := range Dialects {
@@ -600,6 +607,7 @@ func (m Manifest) Narrow(by Manifest) Manifest {
 	// And the workspace: the programs and hosts both name, every question
 	// either asks.
 	out.Shell = narrowShell(m.Shell, by.Shell)
+	out.Cell = narrowCell(m.Cell, by.Cell)
 
 	// Approval is sticky: a parent that needs one cannot delegate its way out.
 	if m.HumanApproval {

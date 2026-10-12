@@ -51,7 +51,9 @@ func holdsShell(m agent.Manifest) bool {
 
 // holdsLive reports whether a run of the agent asks people in its own
 // process: its browser's page or its workspace's commands live there.
-func holdsLive(m agent.Manifest) bool { return holdsBrowser(m) || holdsShell(m) }
+func holdsLive(m agent.Manifest) bool {
+	return holdsBrowser(m) || holdsShell(m) || holdsCell(m)
+}
 
 func workspacesDir(root string) string { return filepath.Join(root, "workspaces") }
 

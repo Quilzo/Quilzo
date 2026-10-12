@@ -56,6 +56,9 @@ type Backend interface {
 	// Start brings one up from the configured warm snapshot and returns
 	// the socket to drive it with.
 	Start(ctx context.Context, c Machine, socket string) error
+	// Stop ends one: the maker's own shutdown signal, which the guest's
+	// init answers by ending, taking the process with it.
+	Stop(ctx context.Context, socket string) error
 }
 
 // Availability is what a machine has for cells.

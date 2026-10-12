@@ -285,7 +285,8 @@ func TestFirecrackerSnapshotThroughTheSocket(t *testing.T) {
 	if fmt.Sprint(*calls) != fmt.Sprint(want) {
 		t.Fatalf("the conversation was %v, not %v", *calls, want)
 	}
-	if err := Stop(context.Background(), socket); err != nil {
+	f := &Firecracker{}
+	if err := f.Stop(context.Background(), socket); err != nil {
 		t.Fatal(err)
 	}
 	if last := (*calls)[len(*calls)-1]; last != "PUT /actions" {
@@ -303,7 +304,8 @@ func TestCloudHypervisorSnapshotThroughTheSocket(t *testing.T) {
 	if fmt.Sprint(*calls) != fmt.Sprint(want) {
 		t.Fatalf("the conversation was %v, not %v", *calls, want)
 	}
-	if err := StopCH(context.Background(), socket); err != nil {
+	ch := &CloudHypervisor{}
+	if err := ch.Stop(context.Background(), socket); err != nil {
 		t.Fatal(err)
 	}
 }

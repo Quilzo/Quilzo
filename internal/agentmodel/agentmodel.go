@@ -170,6 +170,7 @@ type vocab struct {
 	delegates map[string]DelegateChoice
 	browser   *agent.Browser
 	shell     *agent.Shell
+	cell      *agent.Cell
 }
 
 // choice is what the model is asked to return.
@@ -372,7 +373,7 @@ func (d Decider) vocabulary() vocab {
 	for _, c := range m.Capabilities {
 		v.ops[c] = true
 	}
-	v.browser, v.shell = m.Browser, m.Shell
+	v.browser, v.shell, v.cell = m.Browser, m.Shell, m.Cell
 	for _, t := range d.Tools {
 		if _, ok := d.Session.ToolFor(t.Name); ok && reChoiceName.MatchString(t.Name) {
 			v.tools[t.Name] = t
@@ -389,6 +390,38 @@ func (d Decider) vocabulary() vocab {
 }
 
 var reChoiceName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)
+
+// cellPrompt says how a model works a desktop cell, when its agent holds
+// one: the same shape as the browser, said in the desktop's words.
+func cellPrompt(ops map[string]bool, c *agent.Cell) string {
+	var held []string
+	for _, op := range agent.CellCapabilities {
+		if ops[op] {
+			held = append(held, op)
+		}
+	}
+	if len(held) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nThe desktop cell. A whole desktop in a machine of its own, worked through its outline, where each thing you may act on has a reference such as [e3]. A reference is good only for the outline read last.\n")
+	for _, op := range held {
+		switch op {
+		case "desktop_read":
+			b.WriteString("  {\"op\": \"desktop_read\"} reads the screen's outline again, as it is now\n")
+		case "desktop_press":
+			b.WriteString("  {\"op\": \"desktop_press\", \"input\": {\"ref\": \"e3\"}} presses a button or menu item, and answers with the screen it led to\n")
+		case "desktop_type":
+			b.WriteString("  {\"op\": \"desktop_type\", \"input\": {\"text\": \"...\"}} types into the field last pressed\n")
+		case "desktop_key":
+			b.WriteString("  {\"op\": \"desktop_key\", \"input\": {\"key\": \"Enter\"}} presses one of Enter, Tab, Escape or Backspace\n")
+		case "desktop_look":
+			b.WriteString("  {\"op\": \"desktop_look\"} sends you a picture of the screen, for when its outline is not enough\n")
+		}
+	}
+	b.WriteString("  A press that pays, sends, deletes or submits waits for a person to approve it.\n")
+	return b.String()
+}
 
 // deciderPrompt says how a model asks a typed question, when its agent
 // holds the capability: the answer comes with a confidence, and where it
@@ -416,7 +449,8 @@ func oneLine(s string, n int) string {
 }
 
 func (v vocab) prompt() string {
-	p := systemPrompt(v.ops) + browserPrompt(v.ops, v.browser) + shellPrompt(v.ops, v.shell) + deciderPrompt(v.ops)
+	p := systemPrompt(v.ops) + browserPrompt(v.ops, v.browser) + shellPrompt(v.ops, v.shell) +
+		cellPrompt(v.ops, v.cell) + deciderPrompt(v.ops)
 	if len(v.tools) == 0 && len(v.delegates) == 0 {
 		return p
 	}
