@@ -95,7 +95,7 @@ func SnapshotCH(ctx context.Context, socket, snapshot string) error {
 	return apiCall(ctx, hc, "PUT", "/api/v1/vm.resume", nil)
 }
 
-// StopCH ends the cell: the maker's shutdown, which ends its process.
-func StopCH(ctx context.Context, socket string) error {
+// Stop ends the cell: the maker's shutdown, which ends its process.
+func (c *CloudHypervisor) Stop(ctx context.Context, socket string) error {
 	return apiCall(ctx, httpOverUnix(socket), "PUT", "/api/v1/vm.shutdown", nil)
 }

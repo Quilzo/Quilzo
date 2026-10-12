@@ -125,6 +125,11 @@ type Element struct {
 	Ref  string `json:"ref"`
 	Role string `json:"role"`
 	Name string `json:"name"`
+	// Consequential is the helper's word for what pressing it commits to,
+	// from the app's own name for it — "pays", "sends", "deletes" — in the
+	// browser's spirit: the thing a person must see first. Empty is an
+	// ordinary press.
+	Consequential string `json:"consequential,omitempty"`
 }
 
 // Read asks for the tree as it is now.

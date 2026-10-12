@@ -119,6 +119,6 @@ func snapshotVM(ctx context.Context, c *http.Client, snap, memory string) error 
 
 // Stop ends a cell: the maker's own shutdown signal, which the guest's
 // init answers by ending, taking the process with it.
-func Stop(ctx context.Context, socket string) error {
+func (f *Firecracker) Stop(ctx context.Context, socket string) error {
 	return apiCall(ctx, httpOverUnix(socket), "PUT", "/actions", map[string]any{"action_type": "SendCtrlAltDel"})
 }
