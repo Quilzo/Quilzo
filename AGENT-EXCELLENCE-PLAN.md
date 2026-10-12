@@ -138,12 +138,22 @@ reversibility and incremental autonomy — not capability.
     signing. Deferred deliberately: a trust feature that cannot be tested
     is a liability, not a feature.
 
+### Found already built, and better than planned
+
+- **WebMCP publication by Quilzo's own sites** (the P5 leftover this plan
+  had written off): it exists, declaratively — `site.webmcp` (on by
+  default) marks the site's search, chatbots and forms as tools a
+  visitor's browser agent can use, with `toolautosubmit` only for what
+  reads, the visitor submitting what sends, sensitive and account forms
+  not offered at all, and an origin-trial token while Chrome waits.
+  Attributes on HTML the site already serves, no script, nothing for a
+  page to exploit — better than the script-based registration this plan
+  sketched. What remains is nothing: the admin's own pages publish no
+  tools, because the admin is a person's interface and an agent's tools
+  there would be the wrong direction of trust.
+
 ### Deliberately not built
 
-- **WebMCP publication by Quilzo's own sites** (P5 leftover): the API is
-  still an origin trial whose consumers are Chrome-flag experiments.
-  Publishing tools nobody can call is decoration; when the trial ships,
-  the admin's read-only tools (search, page read) are a day's work.
 - **CaMeL's full label algebra on structured tools**: Quilzo's
   taint/breaker is the practical core of it; the reviewer covers the
   judgement gap. The remaining algebra is research, not product.
