@@ -554,6 +554,7 @@ agents and integrations
   quilzo browser grant NAME [--read H,..] [--write H,..] [--ops O,..] [--daily N] [--pictures] | --off
                                           the governed browser offered to an outside agent at /mcp/browser/NAME
   quilzo cell status                     whether this machine can run a desktop cell, and what it would restore
+  quilzo desktop status | consent        whether a person's own desktop can be reached, and asking them for it
   quilzo agent runs [NAME] | trace RUN     the runs that are kept, and one step by step
   quilzo eval keep RUN-ID [--finishes --uses a,b --avoids c]   a kept run as a test case
   quilzo eval run AGENT [--k 3] [--model] [--attempts N]   every case k times, and with instructions planted
@@ -857,6 +858,8 @@ func main() {
 		err = cmdBrowser(root, cmdArgs)
 	case "cell":
 		err = cmdCell(root, cmdArgs)
+	case "desktop":
+		err = cmdDesktop(root, cmdArgs)
 	case "lock", "locks":
 		err = cmdLock(root, cmdArgs)
 	case "review":
