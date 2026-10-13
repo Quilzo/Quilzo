@@ -40,6 +40,7 @@ func clean(t *testing.T) State {
 		t.Fatal(err)
 	}
 	ts.Tokens[0].CreatedAt = ago(24 * time.Hour)
+	ts.Tokens[0].ExpiresAt = in(29 * 24 * time.Hour)
 	ts.Tokens[0].LastUsed = ago(time.Hour)
 
 	return State{
