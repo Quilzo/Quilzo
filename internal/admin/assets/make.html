@@ -23,7 +23,7 @@
   <p>{{.Card.Purpose}}</p>
   <p><span class="tag {{if eq .Card.Risk "high"}}tag-bad{{else}}tag-warn{{end}}">risk {{.Card.Risk}}</span> asked by {{.RequestedBy}}, {{.When}}</p>
   {{if .Card.Because}}<ul>{{range .Card.Because}}<li>Two people approve it because {{.}}.</li>{{end}}</ul>{{end}}
-  <details><summary>What it would change ({{len .Plan.Steps}})</summary><ul>{{range .Plan.Steps}}<li>{{.Action}} {{.Ref.Kind}} <code>{{.Ref.Name}}</code></li>{{end}}</ul></details>
+  <details><summary>What it would change ({{len .Plan.Steps}})<span class="chev">{{icon "expand_more"}}</span></summary><ul>{{range .Plan.Steps}}<li>{{.Action}} {{.Ref.Kind}} <code>{{.Ref.Name}}</code></li>{{end}}</ul></details>
   {{if .Mine}}<p class="hint">You asked for this, so somebody else approves it.</p>{{else}}
   <div class="confirmactions">
     <form method="post" action="/make/act"><input type="hidden" name="do" value="approve"><input type="hidden" name="id" value="{{.ID}}"><button type="submit">Approve and install</button></form>
@@ -41,7 +41,7 @@
     <td>{{len .Owns}}</td>
     <td>{{range $i, $b := .By}}{{if $i}} and {{end}}{{$b}}{{end}}</td>
     <td class="when">{{.At.Format "2 Jan 2006"}}</td>
-    <td><details><summary>Change</summary><div class="confirmactions">
+    <td><details><summary>Change<span class="chev">{{icon "expand_more"}}</span></summary><div class="confirmactions">
       {{if .History}}<form method="post" action="/make/act"><input type="hidden" name="do" value="rollback"><input type="hidden" name="name" value="{{.Name}}"><button type="submit" class="btn-tonal">Go back to {{(index .History 0).Version}}</button></form>{{end}}
       <form method="post" action="/make/act"><input type="hidden" name="do" value="remove"><input type="hidden" name="name" value="{{.Name}}"><button type="submit" class="btn-danger">Remove it and its {{len .Owns}} blocks</button></form>
     </div></details></td>
