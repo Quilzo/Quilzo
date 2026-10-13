@@ -131,6 +131,21 @@
 </table></div>
 <p class="hint"><a href="/agents/runs?agent={{.M.Name}}">Every run of {{.M.Name}}</a></p>{{end}}
 
+{{with .Earned}}<h2>What it has earned</h2>
+<p>It stops asking about a kind of action after {{.After}} approvals of it in a row, while its evaluations still earn it its autonomy. A decline sends that kind back to asking; the reviewer refusing, or the exfiltration breaker stopping, anything it does sends every kind back. Sending, paying, deleting and publishing always ask.</p>
+{{if not .Counts}}<p class="notice warn" role="note">Nothing it earned counts now: {{.WhyNot}}.</p>{{end}}
+{{if .Rows}}<div class="table-wrap"><table class="earned-table">
+  <thead><tr><th scope="col">Kind of action</th><th scope="col">Record</th></tr></thead>
+  <tbody>{{range .Rows}}<tr><th scope="row"><code>{{.Class}}</code></th>
+    <td><span class="wf-word {{if .Earned}}good{{else}}info{{end}}">{{.State}}</span>
+      <svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.Bar}}" height="8" rx="4"></rect></svg>
+      {{if .Dropped}}<div class="hint">{{.Dropped}}</div>{{end}}</td></tr>{{end}}</tbody>
+</table></div>
+<form method="post" action="/agents/act"><input type="hidden" name="do" value="unearn"><input type="hidden" name="name" value="{{$.M.Name}}">
+  <p class="actions"><button type="submit" class="danger">Make it ask about everything again</button></p></form>
+{{else}}<p class="hint">Nothing approved yet.</p>{{end}}
+{{end}}
+
 <h2>The declaration</h2>
 <p class="hint">This is the agent: one document, reviewable as text. The form
   above edits it and the map is drawn from it.</p>

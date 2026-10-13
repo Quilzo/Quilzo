@@ -557,6 +557,7 @@ agents and integrations
   quilzo desktop status | consent        whether a person's own desktop can be reached, and asking them for it
   quilzo agent runs [NAME] | trace RUN     the runs that are kept, and one step by step
   quilzo agent cost [--by agent|person|goal|day]  what runs cost, in tokens and money
+  quilzo agent earned NAME [--reset]       which kinds of action it runs without asking, and why
   quilzo eval keep RUN-ID [--finishes --uses a,b --avoids c]   a kept run as a test case
   quilzo eval run AGENT [--k 3] [--model] [--attempts N]   every case k times, and with instructions planted
   quilzo eval cases AGENT | show AGENT | add AGENT --goal G ... | remove AGENT CASE

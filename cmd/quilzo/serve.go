@@ -328,6 +328,27 @@ func cmdServe(root string, args []string) error {
 		Output: func(id string, n int) ([]byte, error) {
 			return runOutputText(root, id, n)
 		},
+		Earned: func(name string) (admin.EarnedView, error) {
+			set, err := loadAgents(root)
+			if err != nil {
+				return admin.EarnedView{}, err
+			}
+			t, err := loadTrack(root, name)
+			if err != nil {
+				return admin.EarnedView{}, err
+			}
+			ok, why := evalsStillEarn(root, name, time.Now().UTC())
+			v := admin.EarnedView{After: set.Agents[name].EarnAfter, Counts: ok, WhyNot: why}
+			for _, r := range t.Classes {
+				v.Classes = append(v.Classes, *r)
+			}
+			sort.Slice(v.Classes, func(i, j int) bool { return v.Classes[i].Class < v.Classes[j].Class })
+			return v, nil
+		},
+		Unearn: func(name, by string) error {
+			unearnHook(root, name, signedIn(by))("reset by a person")
+			return nil
+		},
 		Bundle: func(id string) ([]byte, error) {
 			return bundleHTML(root, id, time.Now().UTC())
 		},

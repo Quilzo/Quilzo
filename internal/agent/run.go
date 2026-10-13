@@ -131,6 +131,9 @@ type Step struct {
 	// Confidence is how sure the step's answer was, when it was a
 	// decider's: of several questions, the least sure.
 	Confidence *float64 `json:",omitempty"`
+	// Earned says the step ran without asking because the agent had
+	// earned that, and how.
+	Earned string `json:",omitempty"`
 }
 
 // Trace is what a run produced, and is the audit record.
@@ -233,6 +236,40 @@ type Runner struct {
 	// action. Such an action waits for a person in this process (Hold), or
 	// is refused when the run has nobody to ask.
 	Weighs func(Action) string
+	// Earned says whether a kind of action (EarnClass) has earned running
+	// without asking, with the line its step records; empty asks. Nil asks
+	// every time. The exfiltration breaker is never earned away.
+	Earned func(class string) string
+	// Unearn is told when the reviewer refuses an action or the breaker
+	// stops one: every kind the agent had earned goes back to asking.
+	Unearn func(why string)
+}
+
+// earnedFor is the line a step records when its kind of action has earned
+// running without asking, or empty.
+func (r Runner) earnedFor(s *Session, a Action, why string) string {
+	if r.Earned == nil || s.Manifest().EarnAfter == 0 {
+		return ""
+	}
+	writes := false
+	if a.Tool != "" {
+		if t, ok := s.ToolFor(a.Tool); ok {
+			writes = t.Writes
+		}
+	}
+	if !Earnable(a, why, WaitAsk, writes) {
+		return ""
+	}
+	if _, breaks := s.Breaks(a); breaks {
+		return ""
+	}
+	return r.Earned(EarnClass(a, why))
+}
+
+func (r Runner) unearn(why string) {
+	if r.Unearn != nil {
+		r.Unearn(why)
+	}
 }
 
 // holdFor asks a person about an action while the run waits in this
@@ -374,6 +411,7 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 				return t, err
 			}
 			action = held.Action
+			r.unearn("the reviewer refused " + from(action) + ": " + held.Why)
 			if s.wouldAllow(action) {
 				w := Pending{N: turn, Action: action, Since: time.Now(), Kind: WaitReview,
 					Why: "the reviewer refused it: " + held.Why}
@@ -422,8 +460,12 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 			}
 			if b, breaks := s.Breaks(action); breaks {
 				why = append(why, b)
+				r.unearn("the exfiltration breaker stopped " + from(action))
 			}
-			if !r.Pause {
+			if note := r.earnedFor(s, action, strings.Join(why, "; and ")); note != "" {
+				step.Earned = note
+				approved = true
+			} else if !r.Pause {
 				w := Pending{N: turn, Action: action, Since: step.At, Why: strings.Join(why, "; and ")}
 				if approved, step.Why = r.holdFor(ctx, &t, s, w); !approved {
 					t.Steps = append(t.Steps, priced(step))
@@ -450,9 +492,12 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 				// breaker as well, so the person sees that too.
 				if b, breaks := s.Breaks(action); breaks {
 					why += "; and " + b
+					r.unearn("the exfiltration breaker stopped " + from(action))
 				}
 				w := Pending{N: turn, Action: action, Since: step.At, Why: why}
-				if approved, step.Why = r.holdFor(ctx, &t, s, w); !approved {
+				if note := r.earnedFor(s, action, why); note != "" {
+					step.Earned, approved = note, true
+				} else if approved, step.Why = r.holdFor(ctx, &t, s, w); !approved {
 					t.Steps = append(t.Steps, priced(step))
 					seen = append(seen, Observation{From: "quilzo",
 						Body: "refused: " + step.Why, Trusted: true})
@@ -467,6 +512,7 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 		// for a call the declaration allows anyway, as with asking first.
 		if !approved && s.wouldAllow(action) {
 			if why, breaks := s.Breaks(action); breaks {
+				r.unearn("the exfiltration breaker stopped " + from(action))
 				if !r.Pause {
 					w := Pending{N: turn, Action: action, Since: step.At, Why: why}
 					if approved, step.Why = r.holdFor(ctx, &t, s, w); !approved {

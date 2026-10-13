@@ -306,7 +306,11 @@ func recordAnswer(root string, caller *Caller, prior agent.Record, v agent.Verdi
 		detail["answers"] = clip(strings.Join(pairs, " "), 500)
 		did = "agent.answer"
 	}
-	return recordE(root, caller.auditRecord(did, "/", audit.Success, detail))
+	if err := recordE(root, caller.auditRecord(did, "/", audit.Success, detail)); err != nil {
+		return err
+	}
+	earnOnAnswer(root, caller, prior, v)
+	return nil
 }
 
 // continueHeld runs a claimed run on from where it is.

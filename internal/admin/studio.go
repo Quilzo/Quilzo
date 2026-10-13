@@ -377,6 +377,30 @@ func (s *Server) handleAgentEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	data["Title"] = name
 	s.editData(data, m, false, declared)
+	if s.Agents.Earned != nil && m.EarnAfter > 0 {
+		if ev, eerr := s.Agents.Earned(name); eerr == nil {
+			type row struct {
+				Class, State, Dropped string
+				Earned                bool
+				Bar                   int
+			}
+			var rows []row
+			for _, c := range ev.Classes {
+				x := row{Class: c.Class, Earned: !c.Earned.IsZero()}
+				if x.Earned {
+					x.State, x.Bar = "earned "+c.Earned.Format("2 Jan 2006")+"; runs without asking", 100
+				} else {
+					x.State = fmt.Sprintf("%d of %d approvals", c.Approvals, ev.After)
+					x.Bar = 100 * c.Approvals / ev.After
+				}
+				if !c.Dropped.IsZero() {
+					x.Dropped = "dropped back " + c.Dropped.Format("2 Jan 2006") + ": " + c.Why
+				}
+				rows = append(rows, x)
+			}
+			data["Earned"] = map[string]any{"After": ev.After, "Counts": ev.Counts, "WhyNot": ev.WhyNot, "Rows": rows}
+		}
+	}
 	if s.Agents.Runs != nil {
 		if runs, rerr := s.Agents.Runs(name); rerr == nil {
 			if len(runs) > 5 {
@@ -568,6 +592,12 @@ func (s *Server) handleAgentsAct(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		back(page, "Saved from the text.", nil)
+	case "unearn":
+		if !exists || s.Agents.Unearn == nil {
+			http.NotFound(w, r)
+			return
+		}
+		back(page, "It asks about every kind of action again.", s.Agents.Unearn(name, p.Name))
 	case "remove":
 		if !exists || s.Agents.Remove == nil {
 			http.NotFound(w, r)

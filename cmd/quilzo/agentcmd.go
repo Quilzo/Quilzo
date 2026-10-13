@@ -126,6 +126,8 @@ func cmdAgent(root string, args []string) error {
 		return agentRuns(root, args[1:])
 	case "cost":
 		return agentCost(root, args[1:])
+	case "earned":
+		return agentEarned(root, args[1:])
 	case "trace":
 		return agentTrace(root, args[1:])
 	case "approve", "decline":
@@ -179,6 +181,7 @@ func agentUsage() error {
   check                  re-validate every manifest against this build
   run NAME ["goal"]      exercise one against its manifest, and record it
   runs [NAME]            the runs that are kept, newest first
+  earned NAME [--reset]  which kinds of action it has earned running without asking
   cost [--by agent|person|goal|day] [--since D] [NAME]
                          what runs cost, in tokens and money, grouped
   trace RUN              one run, step by step
@@ -1163,6 +1166,13 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	// A run here can be held for a person and continued: every run made
 	// through this function is kept, which is what makes that possible.
 	runner.Pause, runner.Checkpoint = true, from.Checkpoint
+	// What the agent has earned by its record lets a kind of action skip
+	// asking, and trouble drops it. Not in an evaluation, which measures
+	// the agent rather than relying on it.
+	if from.Eval == nil && m.EarnAfter > 0 {
+		runner.Earned = earnedHook(root, m.Name)
+		runner.Unearn = unearnHook(root, m.Name, caller)
+	}
 
 	// Or the agent's own program decides, in its box. A program cannot be
 	// held for a person and picked up later, since it will have ended, so

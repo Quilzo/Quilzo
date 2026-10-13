@@ -324,6 +324,11 @@ type Manifest struct {
 	// stops there and is continued afterwards; see durable.go.
 	AskFirst []string `json:"ask_first,omitempty"`
 
+	// EarnAfter lets a kind of action stop asking a person after this many
+	// approvals of it in a row, while the agent's evaluations still earn it
+	// its autonomy. Zero, the default, asks every time. See earn.go.
+	EarnAfter int `json:"earn_after,omitempty"`
+
 	// Program is the agent's own program, when it decides for itself. See
 	// program.go.
 	Program *Program `json:"program,omitempty"`
@@ -415,6 +420,11 @@ func (m *Manifest) ValidateWith(known map[string]bool, customKinds map[Kind]bool
 					"A safeguard on something it cannot do reads as one and "+
 					"is not", m.Name, a)
 		}
+	}
+
+	if m.EarnAfter != 0 && (m.EarnAfter < MinEarnAfter || m.EarnAfter > MaxEarnAfter) {
+		return fmt.Errorf("%s earns its way out of asking after %d approvals; it is %d to %d, or 0 to ask every time",
+			m.Name, m.EarnAfter, MinEarnAfter, MaxEarnAfter)
 	}
 
 	// The autonomy level and the capability list have to agree. Declaring
@@ -656,6 +666,13 @@ func (m Manifest) Narrow(by Manifest) Manifest {
 	}
 	sort.Strings(ask)
 	out.AskFirst = ask
+	// Earning is the declaration's (by) to give, and the bounding side
+	// (m) may only make it slower: a higher threshold there wins, and zero
+	// there says nothing about it.
+	out.EarnAfter = by.EarnAfter
+	if out.EarnAfter > 0 && m.EarnAfter > out.EarnAfter {
+		out.EarnAfter = m.EarnAfter
+	}
 	return out
 }
 
