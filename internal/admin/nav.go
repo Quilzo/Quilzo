@@ -73,6 +73,7 @@ var destinations = []destination{
 	// Everything waiting for a person, from every part of the program, so
 	// nothing waits unseen because it waited somewhere nobody opened.
 	{"approvals", "Approvals", "/approvals", "Content", "agents", auth.ActView},
+	{"make", "Make", "/make", "Content", "make", auth.ActGrant},
 	{"records", "Data", "/records", "Content", "types", auth.ActView},
 	{"types", "Types", "/types", "Content", "types", auth.ActView},
 	{"structure", "Structure", "/structure", "Content", "structure", auth.ActView},
@@ -207,7 +208,7 @@ var docSections = map[string]bool{
 	// One page per screen, named by the destination table above.
 	"agent-interface": true, "agents": true, "api": true, "assistant": true, "automations": true, "cases": true,
 	"chatbots": true, "collect": true, "design": true, "detection": true, "fleet": true, "forms": true,
-	"growth": true, "integrations": true, "languages": true, "logging": true, "media": true, "members": true,
+	"growth": true, "integrations": true, "languages": true, "logging": true, "make": true, "media": true, "members": true,
 	"memory": true, "models": true, "pages": true, "passkeys": true, "people": true, "provenance": true,
 	"provisioning": true, "publishing": true, "security": true, "settings": true, "shield": true, "sso": true,
 	"start": true, "structure": true, "transfer": true, "types": true, "vulnerabilities": true, "workforce": true,

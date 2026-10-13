@@ -200,6 +200,7 @@ func cmdServe(root string, args []string) error {
 	srv.Boards = boardsHooks(root)
 	srv.SCIM = scimHooks(root)
 	srv.Memory = memoryAdmin(root)
+	srv.Features = featureHooks(root, signedIn)
 	// Events other systems push, the moment they happen.
 	inb := newInboundServer(root)
 	srv.Inbound = inb

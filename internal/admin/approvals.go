@@ -215,6 +215,7 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 		items = append(items, s.runApprovals(now)...)
 	}
 	items = append(items, s.otherApprovals(p, now)...)
+	items = append(items, s.featureApprovals(p)...)
 	only := r.URL.Query().Get("commits")
 	counts := map[string]int{}
 	for _, it := range items {
@@ -275,7 +276,7 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 		Count int
 	}
 	var chips []chip
-	for _, c := range []string{"answers", "pays", "deletes", "publishes", "sends", "writes", "acts", "reads"} {
+	for _, c := range []string{"answers", "installs", "pays", "deletes", "publishes", "sends", "writes", "acts", "reads"} {
 		if counts[c] > 0 {
 			chips = append(chips, chip{c, counts[c]})
 		}

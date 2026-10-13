@@ -268,6 +268,8 @@ type Server struct {
 	// Approvals is dual authorisation: how many people must agree before
 	// anything is published, and who has.
 	Approvals *Approvals
+	// Features reach the feature packages (internal/feature).
+	Features *FeatureHooks
 	// Listings are the declared queries a page can embed.
 	Listings *Listings
 	// Notes are the remarks people leave on a draft.
@@ -1271,6 +1273,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/experiments/change", s.handleExperimentChange)
 	mux.HandleFunc("/approvals", s.handleApprovals)
 	mux.HandleFunc("/approvals/act", s.handleApprovalsAct)
+	mux.HandleFunc("/make", s.handleMake)
+	mux.HandleFunc("/make/check", s.handleMakeCheck)
+	mux.HandleFunc("/make/act", s.handleMakeAct)
 	mux.HandleFunc("/decisions", s.handleDeciders)
 	mux.HandleFunc("/decisions/", s.handleDecider)
 	mux.HandleFunc("/decisions/save", s.handleDeciderSave)

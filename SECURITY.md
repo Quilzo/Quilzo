@@ -111,6 +111,12 @@ vulnerability:
   accepted without a fresh proof from the key it is bound to, for a grant it
   does not carry, after it was withdrawn, or for an agent whose sponsor can
   no longer act here.
+- **A feature is what its card says.** Any way an installed feature stores,
+  collects, shows or sends something its permission card did not list,
+  installs on one person's approval when the card asked for two, changes or
+  removes a block it did not make, publishes a page, or installs bytes other
+  than the ones that were checked; or a signed package accepted without its
+  signature checking out.
 - **A person's desktop is not used.** Any way a run reaches a person's keyboard
   or pointer. Desktop consent hands the session straight back.
 

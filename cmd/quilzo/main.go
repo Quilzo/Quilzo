@@ -378,6 +378,16 @@ languages
   quilzo lang check                        which translations are stale or missing
   quilzo lang translated PAGE LOCALE       record what it was translated from
 
+features (one package of blocks, installed as one decision)
+  quilzo feature example > FILE.json       a complete package to edit: a lab sample tracker
+  quilzo feature check FILE [--keys K]     what it would store, show, send and change; installs nothing
+  quilzo feature install FILE [--keys K]   install it; one that holds personal data or sends waits for a second person
+  quilzo feature approve | decline ID      the second person decides
+  quilzo feature pending | list | show NAME   what is waiting, and what is installed
+  quilzo feature remove | rollback NAME    take it back, or go back a version
+  quilzo feature export NAME [--sign]      the installed package, signed with the log's keys
+  quilzo feature capture NAME --page P ... a package from blocks that already exist
+
 content types
   quilzo ext list | add | remove | pin | test   run your own code, sandboxed
   quilzo records collections               what data this application holds
@@ -1051,6 +1061,8 @@ func main() {
 		err = cmdEnv(root, cmdArgs)
 	case "ext", "extensions":
 		err = cmdExt(root, cmdArgs)
+	case "feature":
+		err = cmdFeature(root, cmdArgs)
 	case "scan":
 		err = cmdScan(root, cmdArgs)
 	case "csp":

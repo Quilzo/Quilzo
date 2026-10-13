@@ -354,3 +354,78 @@ func headMessage(h Head) []byte {
 	writeField(&b, h.At)
 	return b.Bytes()
 }
+
+// Statement is a signature by the log's keys over something that is not a
+// head: an exported feature package, say. Each kind of statement signs
+// under its own context, so a signature made for one can never be shown as
+// a signature over another, and none of them as a signature over a head.
+type Statement struct {
+	KeyID      string   `json:"key_id"`
+	Ed25519    string   `json:"ed25519"`
+	MLDSA      string   `json:"mldsa,omitempty"`
+	Algorithms []string `json:"algorithms"`
+}
+
+// statementMessage is the bytes a statement's signatures cover.
+func statementMessage(context string, msg []byte) []byte {
+	var b bytes.Buffer
+	b.WriteString("quilzo/statement/v1")
+	b.WriteByte(0)
+	writeField(&b, context)
+	writeField(&b, string(msg))
+	return b.Bytes()
+}
+
+// SignStatement signs msg under context with both keys, or Ed25519 alone in
+// a build whose module has no ML-DSA, and says which.
+func (s *HeadSigner) SignStatement(context string, msg []byte) (Statement, error) {
+	if context == "" || context == signatureContext || len(context) > 255 {
+		return Statement{}, fmt.Errorf("a statement needs its own context of at most 255 bytes, not the head's")
+	}
+	m := statementMessage(context, msg)
+	st := Statement{
+		KeyID:      s.Verifier().KeyID(),
+		Ed25519:    base64.StdEncoding.EncodeToString(ed25519.Sign(s.ed, m)),
+		Algorithms: []string{"ed25519"},
+	}
+	if s.ml == nil {
+		return st, nil
+	}
+	sig, err := s.ml.SignDeterministic(m, &mldsa.Options{Context: context})
+	if err != nil {
+		return Statement{}, fmt.Errorf("the ML-DSA signature failed: %w", err)
+	}
+	st.MLDSA = base64.StdEncoding.EncodeToString(sig)
+	st.Algorithms = append(st.Algorithms, "ml-dsa-65")
+	return st, nil
+}
+
+// VerifyStatement checks a statement. Both signatures are required unless
+// the verifier was told to accept a single one, as for heads.
+func (v *HeadVerifier) VerifyStatement(context string, msg []byte, st Statement) error {
+	if st.KeyID != v.KeyID() {
+		return fmt.Errorf("this was signed by key %s and the key given is %s", st.KeyID, v.KeyID())
+	}
+	m := statementMessage(context, msg)
+	edSig, err := base64.StdEncoding.DecodeString(st.Ed25519)
+	if err != nil || !ed25519.Verify(v.ed, m, edSig) {
+		return fmt.Errorf("the Ed25519 signature does not verify")
+	}
+	if st.MLDSA == "" {
+		if v.AcceptSingle && len(st.Algorithms) == 1 && st.Algorithms[0] == "ed25519" {
+			return nil
+		}
+		return fmt.Errorf("this carries Ed25519 alone; both signatures are required")
+	}
+	if v.ml == nil {
+		return fmt.Errorf("the key given has no ML-DSA half, so the ML-DSA signature cannot be checked")
+	}
+	mlSig, err := base64.StdEncoding.DecodeString(st.MLDSA)
+	if err != nil {
+		return fmt.Errorf("the ML-DSA signature is not base64: %w", err)
+	}
+	if err := mldsa.Verify(v.ml, m, mlSig, &mldsa.Options{Context: context}); err != nil {
+		return fmt.Errorf("the ML-DSA signature does not verify: %w", err)
+	}
+	return nil
+}
