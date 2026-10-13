@@ -371,7 +371,7 @@ func wireDurable(srv *Server, st *studio) *[]string {
 	cut.State, cut.Beat = agent.Running, time.Now().Add(-time.Hour)
 	st.runs[cut.ID] = cut
 
-	srv.Agents.Answer = func(id string, step int, approve bool, by string) error {
+	srv.Agents.Answer = func(id string, step int, approve bool, answers map[string]string, by string) error {
 		*calls = append(*calls, fmt.Sprintf("answer %s %d %v %s", id, step, approve, by))
 		r := st.runs[id]
 		if r.Trace.Waiting == nil || r.Trace.Waiting.N != step {
@@ -742,5 +742,63 @@ func TestWhatRunsCostIsShownStepByStepAndInAll(t *testing.T) {
 	}
 	if code := get(t, srv, "/agents/cost", "").Code; code == http.StatusOK {
 		t.Error("the cost view was served to nobody signed in")
+	}
+}
+
+// A decider's escalation is shown as its question, with the model's guess
+// beside it, and answered field by field from the run's page.
+func TestADecidersQuestionIsAnsweredFromTheRunsPage(t *testing.T) {
+	srv, token := setup(t)
+	st := wireStudio(srv)
+	calls := wireDurable(srv, st)
+	var got map[string]string
+	srv.Agents.Answer = func(id string, step int, approve bool, answers map[string]string, by string) error {
+		got = answers
+		*calls = append(*calls, fmt.Sprintf("answer %s %d %v %s", id, step, approve, by))
+		return nil
+	}
+	const id = "run-20261013-000000d1"
+	tr := agent.Trace{Agent: "triage", Goal: "triage ticket 7",
+		Waiting: &agent.Pending{N: 1, Since: time.Now(), Kind: agent.WaitQuestion,
+			Action: agent.Action{Op: "decide"},
+			Why:    "refunds was not sure enough (eligible 0.41, under 0.80); a person answers",
+			Questions: []agent.Question{{Decider: "refunds", Name: "eligible", Kind: "yesno",
+				Ask: "Is this order eligible for a refund?", Guess: "yes", Confidence: 0.41, Threshold: 0.8}}}}
+	st.runs[id] = agent.Keep(id, "dana", "a-model", time.Now(), tr, agent.Receipt{})
+
+	body := get(t, srv, "/agents/run/"+id, token).Body.String()
+	whole(t, body)
+	for _, want := range []string{"A question for a person", "Is this order eligible for a refund?",
+		`name="a.eligible"`, "The model guessed <strong>yes</strong>, 0.41 sure"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the run's page does not show %q", want)
+		}
+	}
+	_, loc := studioAct(t, srv, token, url.Values{"do": {"answer"}, "run": {id}, "step": {"1"},
+		"verdict": {"answer"}, "a.eligible": {"no"}})
+	if !strings.Contains(loc, "m=Step+1+is+answered") || got["eligible"] != "no" {
+		t.Fatalf("the answer went to %s as %v", loc, got)
+	}
+}
+
+// The replay bundle is a download under a policy that runs nothing, and
+// only for whoever may see the agents.
+func TestTheReplayBundleIsADownloadThatRunsNothing(t *testing.T) {
+	srv, token := setup(t)
+	wireStudio(srv)
+	srv.Agents.Bundle = func(id string) ([]byte, error) {
+		return []byte("<!doctype html><p>run " + id + "</p>"), nil
+	}
+	w := get(t, srv, "/agents/bundle/run-20261013-000000e1", token)
+	h := w.Header()
+	if w.Code != http.StatusOK || !strings.Contains(h.Get("Content-Disposition"), "attachment") ||
+		!strings.Contains(h.Get("Content-Security-Policy"), "sandbox") || h.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("the bundle was served as %d with %v", w.Code, h)
+	}
+	if code := get(t, srv, "/agents/bundle/../../etc", token).Code; code == http.StatusOK {
+		t.Error("a path that is not a run was served")
+	}
+	if code := get(t, srv, "/agents/bundle/run-20261013-000000e1", "").Code; code == http.StatusOK {
+		t.Error("the bundle was served to nobody signed in")
 	}
 }

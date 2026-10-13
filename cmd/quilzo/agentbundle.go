@@ -34,9 +34,20 @@ const maxBundleFrames = 24
 
 // receiptBundle writes the bundle of one run.
 func receiptBundle(root, run, outPath string, now time.Time) error {
-	rec, err := loadAgentRun(root, run)
+	b, err := bundleHTML(root, run, now)
 	if err != nil {
 		return err
+	}
+	// Pictures of pages a person may have been signed in to: readable by
+	// whoever made the bundle, until they choose to hand it on.
+	return atomicfile.Write(outPath, b, 0o600)
+}
+
+// bundleHTML is the replay bundle's bytes.
+func bundleHTML(root, run string, now time.Time) ([]byte, error) {
+	rec, err := loadAgentRun(root, run)
+	if err != nil {
+		return nil, err
 	}
 	// The receipt is the run's proof; a run whose records are not in the
 	// log — moved in by hand, or pruned — still gets its replay, saying so.
@@ -142,7 +153,5 @@ func receiptBundle(root, run, outPath string, now time.Time) error {
 	}
 	fmt.Fprintf(&b, "</body>\n</html>\n")
 
-	// Pictures of pages a person may have been signed in to: readable by
-	// whoever made the bundle, until they choose to hand it on.
-	return atomicfile.Write(outPath, []byte(b.String()), 0o600)
+	return []byte(b.String()), nil
 }

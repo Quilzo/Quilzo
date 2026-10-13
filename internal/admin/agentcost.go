@@ -6,6 +6,7 @@ package admin
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
@@ -80,4 +81,29 @@ func (s *Server) handleAgentCost(w http.ResponseWriter, r *http.Request) {
 	data["TotalCost"] = agent.MoneyText(rep.Total.Cost, currency)
 	data["Since"] = rep.Since.Format("2 Jan 2006")
 	s.render(w, r, "agent_cost.html", data)
+}
+
+// handleAgentBundle is a run's replay bundle, as a file to save and hand
+// on: /agents/bundle/ID. Served as a download and under a policy that runs
+// nothing, because it carries words the pages a run read wrote.
+func (s *Server) handleAgentBundle(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.studioAllowed(w, r); !ok {
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/agents/bundle/")
+	if s.Agents == nil || s.Agents.Bundle == nil || !agent.ValidRecordID(id) {
+		http.NotFound(w, r)
+		return
+	}
+	b, err := s.Agents.Bundle(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("Content-Disposition", `attachment; filename="`+id+`.html"`)
+	h.Set("Content-Security-Policy", "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox")
+	h.Set("X-Content-Type-Options", "nosniff")
+	w.Write(b)
 }

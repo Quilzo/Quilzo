@@ -1430,6 +1430,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/agents/act", s.handleAgentsAct)
 	mux.HandleFunc("/agents/runs", s.handleAgentRuns)
 	mux.HandleFunc("/agents/cost", s.handleAgentCost)
+	mux.HandleFunc("/agents/bundle/", s.handleAgentBundle)
 	mux.HandleFunc("/agents/run/", s.handleAgentRun)
 	mux.HandleFunc("/agents/frame/", s.handleAgentFrame)
 	mux.HandleFunc("/agents/output/", s.handleAgentOutput)

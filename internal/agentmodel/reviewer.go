@@ -49,8 +49,9 @@ func Reviewed(inner agent.Decide, model assist.Model) agent.Decide {
 			return agent.Action{}, fmt.Errorf("the reviewer could not be reached, so nothing runs: %w", rerr)
 		}
 		if !ok {
-			return agent.Action{}, fmt.Errorf(
-				"the reviewer refused this action, so the run stops for a person to look: %s", why)
+			// A hold on the exact action, for a person to let through or
+			// not: the run waits on it as on anything that asks first.
+			return agent.Action{}, &agent.Held{Action: a, Why: why}
 		}
 		return a, nil
 	}

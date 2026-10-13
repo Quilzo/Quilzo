@@ -93,6 +93,10 @@ type Session struct {
 	// cost is what the run's model calls cost, in millionths of the
 	// gateway's currency, as the gateway priced them.
 	cost int64
+	// conf is how sure the last action's answer was, for its step, and
+	// confSet whether anything said.
+	conf    float64
+	confSet bool
 
 	// refusals is every refusal this session made, for the audit record. Kept
 	// rather than only counted: "the agent was refused 12 times" is a number,
@@ -187,6 +191,33 @@ func (s *Session) Charge(micros int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cost += micros
+}
+
+// NoteConfidence records how sure an action's answer was, a decider's, for
+// the step it becomes. Of several, the least sure is kept.
+func (s *Session) NoteConfidence(c float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.confSet || c < s.conf {
+		s.conf, s.confSet = c, true
+	}
+}
+
+// takeConfidence is what NoteConfidence kept, once.
+func (s *Session) takeConfidence() (float64, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.conf, s.confSet
+	s.conf, s.confSet = 0, false
+	return c, ok
+}
+
+// chargeStep counts a step the run took before it stopped to ask, when the
+// step is kept on its continuation.
+func (s *Session) chargeStep() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.steps++
 }
 
 // Cost is what the run's model calls have cost so far.

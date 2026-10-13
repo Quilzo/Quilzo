@@ -11,8 +11,25 @@
 {{if .R.From}}<p class="hint">Run again from an earlier run: <code>{{.R.From}}</code>. What that run had already done stayed done.</p>{{end}}
 {{with .LiveView}}<figure class="shot"><img src="{{.}}" alt="What the agent's browser shows now">
   <figcaption>What its browser shows now. This page looks again every two seconds while the run works.</figcaption></figure>{{end}}
-{{if .Pending}}<section class="notice warn" aria-labelledby="asks">
-  <h2 id="asks">It is asking before step {{.Pending.N}}</h2>
+{{if and .Pending (eq .WaitKind "question")}}<section class="notice warn" aria-labelledby="asks">
+  <h2 id="asks">A question for a person, at step {{.Pending.N}}</h2>
+  <p>{{.Pending.Why}}. The run goes on with your answer, and never with the model's.</p>
+  {{if .Live}}<p><strong>The run is waiting on this now,</strong> and goes on as soon as you answer.</p>{{end}}
+  <form method="post" action="/agents/act" class="question-form">
+    <input type="hidden" name="do" value="answer"><input type="hidden" name="run" value="{{.R.ID}}"><input type="hidden" name="step" value="{{.Pending.N}}">
+    {{range .Questions}}<fieldset>
+      <legend>{{.Ask}} <span class="hint">({{.Decider}}: {{.Name}})</span></legend>
+      {{if eq .Kind "choice"}}{{$q := .}}{{range .Options}}<label><input type="radio" name="a.{{$q.Name}}" value="{{.}}" required> {{.}}</label> {{end}}
+      {{else if eq .Kind "yesno"}}<label><input type="radio" name="a.{{.Name}}" value="yes" required> yes</label> <label><input type="radio" name="a.{{.Name}}" value="no"> no</label>
+      {{else}}<label>A number from 0 to 1 <input type="number" name="a.{{.Name}}" min="0" max="1" step="0.01" required></label>{{end}}
+      <p class="hint">The model guessed <strong>{{.Guess}}</strong>, {{.ConfidenceText}} sure; the decider asks for {{.ThresholdText}}.</p>
+    </fieldset>{{end}}
+    <p class="actions">{{if not .Expired}}<button type="submit" name="verdict" value="answer">Answer</button>{{end}}
+    <button type="submit" name="verdict" value="decline" class="danger" formnovalidate>Decline to answer</button></p>
+  </form>
+</section>
+{{else if .Pending}}<section class="notice warn" aria-labelledby="asks">
+  <h2 id="asks">{{if eq .WaitKind "review"}}The reviewer stopped step {{.Pending.N}}{{else}}It is asking before step {{.Pending.N}}{{end}}</h2>
   <p>{{.R.Agent}} wants to use the {{.Pending.Kind}} <code>{{.Pending.What}}</code>{{if .Pending.Input}} with:{{else}}, with nothing given.{{end}}</p>
   {{if .Pending.Why}}<p><strong>It was stopped because</strong> {{.Pending.Why}}.</p>{{end}}
   {{if .Pending.Fields}}<dl class="ask-fields">{{range .Pending.Fields}}<div><dt>{{.Name}}</dt><dd>{{.Value}}</dd></div>{{end}}</dl>
@@ -75,6 +92,7 @@
     {{if $.CanReplay}}<td>{{if ne .What "finished"}}<form method="post" action="/agents/act"><input type="hidden" name="do" value="replay"><input type="hidden" name="run" value="{{$.R.ID}}"><input type="hidden" name="step" value="{{.N}}">
       <button type="submit" class="quiet">Run again from here<span class="visually-hidden">, after step {{.N}}</span></button></form>{{end}}</td>{{end}}
   </tr>{{end}}</tbody></table></div>
+<p class="hint"><a href="/agents/bundle/{{.R.ID}}">Save the replay bundle</a>: one file with its steps, the pictures a person was asked about, and its receipt with proofs.</p>
 {{if .Spent}}<p class="hint">The run spent {{.Spent}}, at the gateway's prices. <a href="/agents/cost">What agents cost</a></p>{{end}}
 {{if .Answers}}<p class="hint">{{range .Answers}}Step {{.N}} was {{if .Approve}}let go ahead{{else}}declined{{end}} by {{.By}}. {{end}}</p>{{end}}
 <p class="hint">What came back is shown as text and is not interpreted. Long results are cut.</p>

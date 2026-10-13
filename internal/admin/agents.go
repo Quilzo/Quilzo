@@ -61,7 +61,10 @@ type Agents struct {
 	// Answer decides the action a run is waiting on, Resume continues one
 	// that was cut off, and Replay runs one again from after a step and
 	// returns the new run.
-	Answer func(id string, step int, approve bool, by string) error
+	Answer func(id string, step int, approve bool, answers map[string]string, by string) error
+	// Bundle is a run's replay bundle: one HTML file of its steps, the
+	// pictures a person was asked about, and its receipt with proofs.
+	Bundle func(id string) ([]byte, error)
 	Resume func(id, by string) error
 	Replay func(id string, step int, by string) (string, error)
 	// Person leaves one thing a person did to the page of a run they are

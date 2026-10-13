@@ -3298,3 +3298,6 @@ td .duty-more { margin: 4px 0 0; }
 .step-cost { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .cost-table td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .cost-table tfoot th, .cost-table tfoot td { font-weight: 600; border-top: 1px solid var(--outline-variant); }
+.question-form fieldset { border: 1px solid var(--outline-variant); border-radius: 8px; padding: .5rem .75rem; margin: 0 0 .75rem; }
+.question-form legend { font-weight: 600; padding: 0 .25rem; }
+.question-form label { display: inline-flex; align-items: center; gap: .35rem; margin-right: .75rem; min-height: 40px; }

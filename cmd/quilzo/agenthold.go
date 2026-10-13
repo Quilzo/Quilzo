@@ -37,10 +37,11 @@ import (
 // heldAnswer is a person's answer to a live question, left for the process
 // that asked it.
 type heldAnswer struct {
-	N       int       `json:"n"`
-	Approve bool      `json:"approve"`
-	By      string    `json:"by"`
-	At      time.Time `json:"at"`
+	N       int               `json:"n"`
+	Approve bool              `json:"approve"`
+	By      string            `json:"by"`
+	At      time.Time         `json:"at"`
+	Answers map[string]string `json:"answers,omitempty"`
 }
 
 func heldAnswerPath(root, id string) string {
@@ -202,9 +203,9 @@ func programHold(root, id string, gone <-chan struct{}, said func(string), answe
 				continue
 			}
 			if answered != nil {
-				answered(agent.Answer{N: a.N, Approve: a.Approve, By: a.By, At: a.At})
+				answered(agent.Answer{N: a.N, Approve: a.Approve, By: a.By, At: a.At, Answers: a.Answers})
 			}
-			return agent.Verdict{N: a.N, Approve: a.Approve, By: a.By}, nil
+			return agent.Verdict{N: a.N, Approve: a.Approve, By: a.By, Answers: a.Answers}, nil
 		}
 	}
 }
@@ -223,7 +224,10 @@ func answerLive(root string, rec agent.Record, v agent.Verdict, by string, now t
 		return fmt.Errorf("%s was waiting in a process that has ended, so nothing would act on "+
 			"this answer; run it again", rec.ID)
 	}
-	b, err := json.Marshal(heldAnswer{N: v.N, Approve: v.Approve, By: by, At: now})
+	if err := checkAnswers(w, v); err != nil {
+		return err
+	}
+	b, err := json.Marshal(heldAnswer{N: v.N, Approve: v.Approve, By: by, At: now, Answers: v.Answers})
 	if err != nil {
 		return err
 	}
