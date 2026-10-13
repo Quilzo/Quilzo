@@ -51,17 +51,23 @@ func cellStatus(root string) error {
 	} else {
 		fmt.Printf("  %sno %s cells on this machine: %s%s\n", yellow, b.Name(), a.Why, reset)
 	}
-	snap, mem := c.Raw("cell.snapshot"), c.Raw("cell.memory")
+	snap, mem, vsock := c.Raw("cell.snapshot"), c.Raw("cell.memory"), c.Raw("cell.vsock")
 	if snap != "" {
-		m := cell.Machine{Snapshot: snap, Memory: mem, CPUs: c.Int("cell.cpus"), MemoryMB: c.Int("cell.memory_mb")}
-		fmt.Printf("  warm snapshot %s", m.Snapshot)
-		if m.Memory != "" {
-			fmt.Printf(" (memory %s)", m.Memory)
+		fmt.Printf("  warm snapshot %s", snap)
+		if mem != "" {
+			fmt.Printf(" (memory %s)", mem)
 		}
-		fmt.Printf(", taken at %d CPUs and %d MiB: a restore names the shape it was taken at\n", m.CPUs, m.MemoryMB)
+		fmt.Println()
 	} else {
 		fmt.Println("  no warm snapshot named (cell.snapshot): a session has nothing to restore")
 	}
+	if vsock != "" {
+		fmt.Printf("  the helper is reached through %s, the vsock the snapshot binds\n", vsock)
+	} else {
+		fmt.Println("  no vsock named (cell.vsock): the helper in a restored cell cannot be reached")
+	}
+	fmt.Printf("  %sexperimental: the helper inside the image is the operator's to build, and the%s\n", dim, reset)
+	fmt.Printf("  %smicroVM runs as this program's user, without Firecracker's jailer%s\n", dim, reset)
 	caller := resolveCaller(root, "")
 	record(root, caller.auditRecord("cell.status", "/", audit.Success,
 		map[string]string{"backend": backend, "ok": fmt.Sprintf("%v", a.OK)}))

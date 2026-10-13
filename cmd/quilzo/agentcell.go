@@ -95,20 +95,28 @@ func newRunCell(root string, m agent.Manifest, sess *agent.Session, caller *Call
 		if err := os.MkdirAll(cellDir(root), 0o700); err != nil {
 			return nil, err
 		}
-		socket := filepath.Join(cellDir(root), runID+".sock")
+		// One cell at a time: every restore of the snapshot binds the same
+		// vsock path.
+		release, err := holdCell(cellDir(root))
+		if err != nil {
+			return nil, err
+		}
+		socket := filepath.Join(cellDir(root), "vm-"+randomHex(8)+".sock")
 		cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 		if err := b.Start(cctx, machine, socket); err != nil {
+			release()
 			return nil, err
 		}
 		rc.stops = append(rc.stops, func() {
 			sctx, scancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer scancel()
 			_ = b.Stop(sctx, socket)
+			release()
 		})
 		hctx, hcancel := context.WithTimeout(ctx, 10*time.Second)
 		defer hcancel()
-		return cell.Connect(hctx, socket)
+		return cell.Connect(hctx, machine.Vsock)
 	}
 	rc.driver = d
 	return rc, nil
@@ -130,14 +138,17 @@ func cellBackendFor(root string) (cell.Backend, cell.Machine, error) {
 	if err != nil {
 		return nil, cell.Machine{}, err
 	}
+	m := cell.Machine{
+		Snapshot: c.Raw("cell.snapshot"),
+		Memory:   c.Raw("cell.memory"),
+		Vsock:    c.Raw("cell.vsock"),
+	}
+	if !filepath.IsAbs(m.Vsock) {
+		return nil, cell.Machine{}, errors.New("cell.vsock names no absolute path, so the helper in a restored cell cannot be reached")
+	}
 	a, _ := b.Check()
 	if !a.OK {
 		return nil, cell.Machine{}, fmt.Errorf("this machine cannot run a cell: %s", a.Why)
 	}
-	return b, cell.Machine{
-		Snapshot: c.Raw("cell.snapshot"),
-		Memory:   c.Raw("cell.memory"),
-		CPUs:     c.Int("cell.cpus"),
-		MemoryMB: c.Int("cell.memory_mb"),
-	}, nil
+	return b, m, nil
 }

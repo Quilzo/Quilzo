@@ -257,3 +257,38 @@ func answerAllAsked(t *testing.T, root, name string, approve bool, by string) ch
 	}()
 	return done
 }
+
+// One cell runs at a time on a machine: every restore of the warm snapshot
+// binds the same vsock, so a second run is told plainly rather than
+// colliding with the first.
+func TestOneCellRunsAtATime(t *testing.T) {
+	dir := t.TempDir()
+	release, err := holdCell(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := holdCell(dir); err == nil || !strings.Contains(err.Error(), "one runs at a time") {
+		t.Fatalf("a second cell was held: %v", err)
+	}
+	release()
+	again, err := holdCell(dir)
+	if err != nil {
+		t.Fatalf("the cell was not free after its run: %v", err)
+	}
+	again()
+}
+
+// The helper is reached through the vsock the snapshot binds, which the
+// settings name; a machine whose settings do not is told so before any
+// microVM is started.
+func TestACellNeedsTheSnapshotsVsock(t *testing.T) {
+	root := demoStore(t)
+	for _, kv := range [][2]string{{"cell.backend", "firecracker"}, {"cell.binary", "/opt/firecracker/firecracker"}} {
+		if err := cmdConfig(root, []string{"set", kv[0], kv[1]}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := cellBackendFor(root); err == nil || !strings.Contains(err.Error(), "cell.vsock") {
+		t.Fatalf("a cell without its vsock was offered: %v", err)
+	}
+}

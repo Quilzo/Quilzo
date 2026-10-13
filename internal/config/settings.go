@@ -677,11 +677,13 @@ var settings = []Setting{
 	},
 	{
 		Key: "cell.backend", Kind: Text, Default: "",
-		Summary: "the microVM desktop cells are driven through: firecracker or cloud-hypervisor",
+		Summary: "the microVM desktop cells are driven through: firecracker or cloud-hypervisor (experimental)",
 		Why: "A cell is a whole virtual machine, and the binary that runs one is the " +
 			"operator's to install: this program drives it over its socket and adds no " +
-			"boundary of its own. Empty means no desktop cells, and an agent offered " +
-			"one is told it is not held rather than given a browser in its place.",
+			"boundary of its own. The binary runs as this program's user, without " +
+			"Firecracker's jailer, and the helper inside the image is the operator's to " +
+			"build. Empty means no desktop cells, and an agent offered one is told it is " +
+			"not held rather than given a browser in its place.",
 	},
 	{
 		Key: "cell.binary", Kind: Text, Default: "",
@@ -704,15 +706,11 @@ var settings = []Setting{
 			"Empty means the maker that needs one file.",
 	},
 	{
-		Key: "cell.cpus", Kind: Int, Default: "2",
-		Summary: "the CPUs the snapshot was taken at",
-		Why: "A restore names the shape the snapshot was taken at, and a maker refuses " +
-			"another shape; this says what to ask for.",
-	},
-	{
-		Key: "cell.memory_mb", Kind: Int, Default: "2048",
-		Summary: "the memory in MiB the snapshot was taken at",
-		Why:     "As cell.cpus: the shape is part of the snapshot, not a choice a session makes.",
+		Key: "cell.vsock", Kind: Text, Default: "",
+		Summary: "the Unix socket the warm snapshot's vsock binds, to reach the helper in the cell",
+		Why: "The vsock device is part of the snapshot: a restore binds the path it was " +
+			"warmed with, so this names that path rather than choosing one. One cell runs " +
+			"at a time on a machine for the same reason.",
 	},
 	{
 		Key: "browser.cache", Kind: Bool, Default: "false",

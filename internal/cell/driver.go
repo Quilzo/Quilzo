@@ -10,8 +10,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/browser"
 )
 
 // The governed cell driver: an agent works a desktop cell through the
@@ -66,11 +68,13 @@ type Driver struct {
 	// this run's model reads text only.
 	Picture func(jpeg []byte)
 
-	mu    sync.Mutex
-	conn  Conn
-	tree  Tree
-	read  bool
-	focus string
+	mu   sync.Mutex
+	conn Conn
+	tree Tree
+	read bool
+	// focus is the element the last press landed on, as the outline named
+	// it then; nothing after a key that moves focus.
+	focus *Element
 }
 
 // Performs reports whether the driver performs an action.
@@ -132,18 +136,23 @@ func (d *Driver) perform(ctx context.Context, a agent.Action) (string, error) {
 		if !d.read {
 			return "", errors.New("read the screen first (desktop_read): a reference names an element of the outline read last")
 		}
+		pressed, known := d.tree.Elements[ref]
 		said, err := d.conn.Press(ctx, ref)
 		if err != nil {
 			return "", err
 		}
-		d.focus, d.read = ref, false
+		d.focus, d.read = nil, false
+		if known {
+			d.focus = &pressed
+		}
+		word := d.treeWord(ref)
 		out, rerr := d.readTree(ctx)
 		if rerr != nil {
 			return said, rerr
 		}
 		// What the helper said happened goes with what was pressed: a
 		// model that has paid is told it paid, in the desktop's own word.
-		what := "pressed " + d.treeWord(ref)
+		what := "pressed " + word
 		if said != "" && said != "pressed" {
 			what += " — " + said
 		}
@@ -153,20 +162,35 @@ func (d *Driver) perform(ctx context.Context, a agent.Action) (string, error) {
 		if text == "" {
 			return "", errors.New("desktop_type carries the text to type")
 		}
-		if d.focus == "" {
+		if d.focus == nil {
 			return "", errors.New("nothing is focused: press a field first, by its reference")
+		}
+		if !typedInto[role(d.focus.Role)] {
+			return "", fmt.Errorf("%s %q is not a field to type into", d.focus.Role, d.focus.Name)
 		}
 		if len(text) > 4000 {
 			return "", errors.New("at most 4000 characters are typed at once")
 		}
+		// A line break or a tab in typed text is a key press by another
+		// name: Enter sends, Tab moves focus. Keys are desktop_key's.
+		if strings.ContainsFunc(text, controlRune) {
+			return "", errors.New("typed text carries no line breaks, tabs or other control characters; press keys with desktop_key")
+		}
 		if err := d.conn.Type(ctx, text); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("typed into %s", d.treeWord(d.focus)), nil
+		return fmt.Sprintf("typed into %s %q", d.focus.Role, d.focus.Name), nil
 	case "desktop_key":
 		key := str(a, "key")
+		if !keys[key] {
+			return "", fmt.Errorf("%q is not one of Enter, Tab, Escape or Backspace", key)
+		}
 		if err := d.conn.Key(ctx, key); err != nil {
 			return "", err
+		}
+		// Focus is where the host last saw it only until a key moves it.
+		if key != "Backspace" {
+			d.focus = nil
 		}
 		return "pressed " + key, nil
 	case "desktop_look":
@@ -207,28 +231,89 @@ func (d *Driver) treeWord(ref string) string {
 	return ref
 }
 
-// Weighs says why a press commits to something a person should see first,
-// from the tree's own word for what it is. What it cannot weigh (no
-// outline read, no word) it leaves to the action, which refuses it
-// without asking.
+// Weighs says why a press or a key commits to something a person should
+// see first. A press is weighed by this program from the element's role
+// and name, by the browser's rule, and by the helper's word for it as
+// well: the helper runs inside the cell, where what the screen shows may
+// have been planted, so it can add a reason to ask and never remove one.
+// Enter is always weighed, because it does whatever the focused control's
+// default is. What cannot be weighed (no outline read, a reference the
+// outline never gave) the action refuses without asking.
 func (d *Driver) Weighs(a agent.Action) string {
-	if !Performs(a) || a.Op != "desktop_press" {
+	if !Performs(a) {
 		return ""
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if !d.read {
+	var why string
+	switch {
+	case a.Op == "desktop_key" && str(a, "key") == "Enter":
+		where := "the focused control"
+		if d.focus != nil {
+			where = fmt.Sprintf("%s %q", d.focus.Role, d.focus.Name)
+		}
+		why = fmt.Sprintf("it presses Enter in %s, which sends or confirms whatever that control's default is", where)
+	case a.Op == "desktop_press" && d.read:
+		e, ok := d.tree.Elements[str(a, "ref")]
+		if !ok {
+			return ""
+		}
+		because := browser.Consequential(browser.Element{Role: role(e.Role), Name: e.Name}, false)
+		// The helper's word is shown as the cell's, bounded: it can add a
+		// reason to ask and is never the only thing a person reads.
+		if marked := strings.TrimSpace(e.Consequential); marked != "" {
+			if r := []rune(marked); len(r) > 80 {
+				marked = string(r[:80])
+			}
+			if because != "" {
+				because += "; "
+			}
+			because += "the cell marks it: " + marked
+		}
+		if because == "" {
+			return ""
+		}
+		why = fmt.Sprintf("it presses %s %q in the cell, and %s", e.Role, e.Name, because)
+	default:
 		return ""
 	}
-	e, ok := d.tree.Elements[str(a, "ref")]
-	if !ok || e.Consequential == "" {
-		return ""
-	}
-	why := fmt.Sprintf("it presses %s %q in the cell, and %s", e.Role, e.Name, e.Consequential)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	d.frame(ctx, a.Op, why)
 	return why
+}
+
+// keys are the four a model may press, as a person's are.
+var keys = map[string]bool{"Enter": true, "Tab": true, "Escape": true, "Backspace": true}
+
+// typedInto are the roles text is typed into.
+var typedInto = map[string]bool{"textbox": true, "searchbox": true, "spinbutton": true, "combobox": true}
+
+// role is an element's role in the browser's words. The helper is asked
+// for those; the accessibility toolkit's own names for the same roles are
+// understood as well, so a helper that passes them through is not
+// misread.
+func role(r string) string {
+	switch strings.ToLower(strings.TrimSpace(r)) {
+	case "push button", "button":
+		return "button"
+	case "toggle button", "switch":
+		return "switch"
+	case "text", "entry", "password text", "textbox":
+		return "textbox"
+	case "spin button", "spinbutton":
+		return "spinbutton"
+	case "combo box", "combobox":
+		return "combobox"
+	case "check box", "checkbox":
+		return "checkbox"
+	}
+	return strings.ToLower(strings.TrimSpace(r))
+}
+
+// controlRune is a rune that acts rather than reads when typed.
+func controlRune(r rune) bool {
+	return unicode.IsControl(r) || r == '\u2028' || r == '\u2029'
 }
 
 // frame keeps a picture of the screen. Best effort: a screen that cannot
