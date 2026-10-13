@@ -5,7 +5,9 @@ package portal
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"path/filepath"
@@ -273,4 +275,24 @@ func fmtString(v any) string {
 		return s
 	}
 	return strings.TrimSpace(fmt.Sprint(v))
+}
+
+// A bus that claims header fields or a body larger than any message this
+// program reads is refused before anything is allocated for them.
+func TestAnOversizedMessageIsRefusedBeforeItIsRead(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		bodyLen, fieldsLen uint32
+	}{
+		{"fields", 0, 1 << 30},
+		{"body", 1 << 30, 8},
+	} {
+		head := []byte{'l', 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0}
+		binary.LittleEndian.PutUint32(head[4:8], tc.bodyLen)
+		binary.LittleEndian.PutUint32(head[12:16], tc.fieldsLen)
+		c := &conn{r: bufio.NewReader(bytes.NewReader(head))}
+		if _, err := c.read(); err == nil || !strings.Contains(err.Error(), "over what this reads") {
+			t.Errorf("%s: an oversized message was not refused: %v", tc.name, err)
+		}
+	}
 }

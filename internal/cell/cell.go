@@ -10,21 +10,21 @@
 // binary the operator installed — holding an X server, the accessibility
 // tree and the apps, restored from a warm snapshot somebody made of it in
 // that state. Nothing of the host is mounted into it; its disc and its
-// network are files and taps this program's driver asks the microVM to
-// attach, and its only door to the host is a vsock this program connects
-// to. Restoring takes milliseconds, which is the point: a session does not
+// network are what the operator gave it when warming it, and its only
+// door to the host is a vsock this program connects to. Restoring takes milliseconds, which is the point: a session does not
 // boot a desktop, it steps into one that was already warm.
 //
 // # What this package is, and is not
 //
-// It is the host side, complete: the microVM's API over its Unix socket,
-// the vsock conversation with the helper inside, and the messages that
-// conversation carries. It is not the image: an X server, AT-SPI and the
-// apps are the operator's to build into the snapshot, and this program's
-// `Check` says whether what it needs of them is here. Nor is it a
-// sandbox claim: the isolation is the microVM's, and this package adds
-// no boundary of its own — a cell is offered to an agent only under the
-// same manifest, breaker and ask-first as every other capability.
+// It is the host side: the microVM's API over its Unix socket, the vsock
+// conversation with the helper inside, and the messages that conversation
+// carries. It is not the image: an X server, AT-SPI, the apps and the
+// helper that answers on HelperPort are the operator's to build into the
+// snapshot, and none of them ships with this program, which is why cells
+// are experimental. Nor is it a sandbox claim: the isolation is the
+// microVM's, the maker runs as this program's user without Firecracker's
+// jailer, and a cell is offered to an agent only under the same manifest,
+// breaker and ask-first as every other capability.
 package cell
 
 import (
@@ -53,11 +53,12 @@ type Backend interface {
 	// Check says whether this machine can run one: the binary, and the
 	// virtual memory it needs.
 	Check() (Availability, error)
-	// Start brings one up from the configured warm snapshot and returns
-	// the socket to drive it with.
+	// Start brings one up from the configured warm snapshot, driven
+	// through socket. The context bounds the start; the process runs until
+	// Stop.
 	Start(ctx context.Context, c Machine, socket string) error
-	// Stop ends one: the maker's own shutdown signal, which the guest's
-	// init answers by ending, taking the process with it.
+	// Stop ends one: the maker's own shutdown, and the process killed
+	// when it has not ended within a grace.
 	Stop(ctx context.Context, socket string) error
 }
 
@@ -67,26 +68,20 @@ type Availability struct {
 	Why string
 }
 
-// A Machine is one cell to bring up: the pieces the microVM attaches, by
-// path, and the shape it is given.
+// A Machine is one cell to bring up: the warm snapshot it is restored
+// from, by path. The shape, the disc and the vsock are the snapshot's own;
+// neither maker takes another shape at restore.
 type Machine struct {
-	// Kernel and Image are the disc the snapshot was made against; both
-	// makers want them named, and neither will start from a snapshot whose
-	// pieces have moved since it was taken.
-	Kernel string
-	Image  string
 	// Snapshot is the warm snapshot to restore: the microVM's own files,
 	// made by this program's Snapshot when the operator warmed the cell.
 	Snapshot string
 	// Memory is the memory file of that snapshot, where the maker keeps it
 	// apart from the description.
 	Memory string
-	// Vsock is the Unix socket this program will connect to the helper
-	// through; the microVM binds its end when it restores.
+	// Vsock is the Unix socket the snapshot's vsock device binds when it is
+	// restored, which this program connects to the helper through. It is
+	// the path the cell was configured with when it was warmed.
 	Vsock string
-	// CPUs and MemoryMB are the shape the snapshot was taken at; a restore
-	// that names another shape is refused by the maker, and by this.
-	CPUs, MemoryMB int
 }
 
 // reName is what a backend may be called in a setting.

@@ -5,21 +5,20 @@ package cell
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
-	"time"
 )
 
 // Firecracker drives AWS's microVM: HTTP over the socket its process
-// owns, a fixed set of PUTs before one InstanceStart, snapshots at
-// PUT /snapshot/create and PUT /snapshot/load. Driven as the jailer's
-// user or not at all: the binary the operator names is run once per cell
-// with the socket beside it, and this program speaks only to the socket.
+// owns, snapshots at PUT /snapshot/create and PUT /snapshot/load. The
+// binary runs as this program's user with Firecracker's default seccomp
+// filters, once per cell, with the socket beside it. It does not run
+// under the jailer, which Firecracker's production guidance asks for.
 type Firecracker struct {
 	Binary string
+	procs  vmms
 }
 
 func (f *Firecracker) Name() string { return "firecracker" }
@@ -38,55 +37,31 @@ func (f *Firecracker) Check() (Availability, error) {
 }
 
 // Start runs one Firecracker on the socket and restores the warm snapshot
-// into it, resumed. The conversation is the maker's own order, and the
-// maker's own refusals: a snapshot whose shape or files disagree with
-// what is named here is refused by Firecracker, not papered over here.
+// into it, resumed. A snapshot whose files disagree with what is named
+// here is refused by Firecracker, not papered over here.
 func (f *Firecracker) Start(ctx context.Context, m Machine, socket string) error {
 	a, _ := f.Check()
 	if err := a.ok(); err != nil {
 		return err
 	}
-	dir := filepath.Dir(socket)
-	// A context of the caller's choosing governs the maker's lifetime —
-	// see the Cloud Hypervisor driver's note.
-	cmd := exec.CommandContext(ctx, f.Binary,
-		"--api-sock", socket,
-		"--seccomp-level", "2",
-	)
-	cmd.Dir = dir
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("starting %s: %w", f.Binary, err)
+	return f.start(ctx, m, socket)
+}
+
+func (f *Firecracker) start(ctx context.Context, m Machine, socket string) error {
+	if m.Snapshot == "" || m.Memory == "" {
+		return errors.New("firecracker restores a snapshot from two files: set cell.snapshot and cell.memory")
 	}
-	go func() { _ = cmd.Wait() }()
-	// The socket appears when the process is ready to be spoken to; a
-	// process that never makes one is dead, and its own exit says so.
-	wait := time.NewTicker(50 * time.Millisecond)
-	defer wait.Stop()
-	for i := 0; i < 100; i++ {
-		if _, err := os.Stat(socket); err == nil {
-			break
-		}
-		if i == 99 {
-			_ = cmd.Process.Kill()
-			return fmt.Errorf("%s made no socket to be driven through", f.Binary)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-wait.C:
-		}
+	if _, err := f.procs.launch(ctx, f.Binary, []string{"--api-sock", socket}, socket); err != nil {
+		return err
 	}
-	c := httpOverUnix(socket)
-	if err := apiCall(ctx, c, "PUT", "/snapshot/load", map[string]any{
+	if err := apiCall(ctx, httpOverUnix(socket), "PUT", "/snapshot/load", map[string]any{
 		"snapshot_path": m.Snapshot,
 		"mem_backend":   map[string]any{"backend_type": "File", "backend_path": m.Memory},
 		"resume_vm":     true,
 	}); err != nil {
-		_ = cmd.Process.Kill()
+		f.procs.forget(socket)
 		return fmt.Errorf("restoring the warm snapshot: %w", err)
 	}
-	// The vsock: bound by the load where the snapshot says, and this
-	// program connects to the path named in the machine.
 	return nil
 }
 
@@ -117,8 +92,10 @@ func snapshotVM(ctx context.Context, c *http.Client, snap, memory string) error 
 	return apiCall(ctx, c, "PATCH", "/vm", map[string]any{"state": "Resumed"})
 }
 
-// Stop ends a cell: the maker's own shutdown signal, which the guest's
-// init answers by ending, taking the process with it.
+// Stop ends a cell: Ctrl+Alt+Del to the guest, whose init answers by
+// ending, and the process killed when it has not.
 func (f *Firecracker) Stop(ctx context.Context, socket string) error {
-	return apiCall(ctx, httpOverUnix(socket), "PUT", "/actions", map[string]any{"action_type": "SendCtrlAltDel"})
+	return f.procs.stop(ctx, socket, func(ctx context.Context) error {
+		return apiCall(ctx, httpOverUnix(socket), "PUT", "/actions", map[string]any{"action_type": "SendCtrlAltDel"})
+	})
 }

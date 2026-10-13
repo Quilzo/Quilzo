@@ -266,6 +266,14 @@ func (c *conn) read() (message, error) {
 	bodyLen := binary.LittleEndian.Uint32(head[4:8])
 	serial := binary.LittleEndian.Uint32(head[8:12])
 	fieldsLen := binary.LittleEndian.Uint32(head[12:16])
+	// Header fields are a few short strings: a path, a name, a signature.
+	// A length beyond that is refused before it is allocated.
+	if fieldsLen > 1<<16 {
+		return message{}, fmt.Errorf("the bus sent %d bytes of header fields, over what this reads", fieldsLen)
+	}
+	if bodyLen > 1<<22 {
+		return message{}, fmt.Errorf("the bus sent a %d byte body, over what this reads", bodyLen)
+	}
 	fields := make([]byte, int(fieldsLen))
 	if _, err := ioReadFull(c.r, fields); err != nil {
 		return message{}, err
@@ -279,9 +287,6 @@ func (c *conn) read() (message, error) {
 		if _, err := ioReadFull(c.r, make([]byte, pad)); err != nil {
 			return message{}, err
 		}
-	}
-	if bodyLen > 1<<22 {
-		return message{}, fmt.Errorf("the bus sent a %d byte body, over what this reads", bodyLen)
 	}
 	m.body = make([]byte, int(bodyLen))
 	if _, err := ioReadFull(c.r, m.body); err != nil {

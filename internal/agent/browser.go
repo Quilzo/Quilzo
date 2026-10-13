@@ -225,6 +225,8 @@ func browserSends(a Action) (string, bool) {
 		return "the address it opens", true
 	case "browser_type":
 		return "the page open in its browser", true
+	case "desktop_type":
+		return "an app in its desktop cell", true
 	}
 	return "", false
 }

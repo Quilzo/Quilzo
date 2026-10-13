@@ -111,6 +111,29 @@ func TestTheBreakerWatchesWhatABrowserSends(t *testing.T) {
 	}
 }
 
+// Typing into an app in a desktop cell is sending as typing into a page
+// is: held once the run has read somebody's words and holds something
+// private. Reading the cell's screen and pressing in it are not.
+func TestTheBreakerWatchesWhatADesktopCellIsTyped(t *testing.T) {
+	m := Manifest{Name: "clerk", Kind: KindTask, Purpose: "work the ledger app",
+		Capabilities: CellCapabilities[:], Cell: &Cell{Pictures: true}, Autonomy: AutonomyDraft}
+	s := NewSession(m, nil)
+	typed := Action{Op: "desktop_type", Input: map[string]any{"text": "4210.00"}}
+	if _, breaks := s.Breaks(typed); breaks {
+		t.Fatal("a clean run was held")
+	}
+	s.ReadFiles("a desktop cell's screen")
+	s.HoldsPrivate("a customer's address")
+	if why, breaks := s.Breaks(typed); !breaks || !strings.Contains(why, "desktop cell") {
+		t.Fatalf("typing into the cell was not held: %q", why)
+	}
+	for _, op := range []string{"desktop_read", "desktop_press", "desktop_key", "desktop_look"} {
+		if _, breaks := s.Breaks(Action{Op: op}); breaks {
+			t.Errorf("%s was held", op)
+		}
+	}
+}
+
 // Weighed and breaking at once is asked about once, with both reasons.
 func TestOneQuestionCarriesEveryReason(t *testing.T) {
 	m := browsing(BrowserCapabilities, &Browser{Read: []string{"docs.example.com"}})

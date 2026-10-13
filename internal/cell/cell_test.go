@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // The makers' APIs are ordinary HTTP on a socket the microVM owns, so a
@@ -153,17 +154,18 @@ func TestTheHelperConversation(t *testing.T) {
 					if json.Unmarshal([]byte(line), &req) != nil {
 						return
 					}
+					id := fmt.Sprintf(`"id":%v,`, req["id"])
 					switch req["op"] {
 					case "tree":
-						fmt.Fprint(conn, `{"text":"File — New, Open, Save","elements":{"e1":{"ref":"e1","role":"menu item","name":"New"}}}`+"\n")
+						fmt.Fprint(conn, `{`+id+`"text":"File — New, Open, Save","elements":{"e1":{"ref":"e1","role":"menu item","name":"New"}}}`+"\n")
 					case "click":
-						fmt.Fprint(conn, `{"said":"pressed menu item \"New\""}`+"\n")
+						fmt.Fprint(conn, `{`+id+`"said":"pressed menu item \"New\""}`+"\n")
 					case "type":
-						fmt.Fprint(conn, `{"err":"no field is focused"}`+"\n")
+						fmt.Fprint(conn, `{`+id+`"err":"no field is focused"}`+"\n")
 					case "key":
-						fmt.Fprint(conn, `{"err":"ctrl+z is not one of Enter, Tab, Escape or Backspace"}`+"\n")
+						fmt.Fprint(conn, `{`+id+`"err":"ctrl+z is not one of Enter, Tab, Escape or Backspace"}`+"\n")
 					case "screen":
-						fmt.Fprint(conn, `{"jpeg":"`+strings.Repeat("a", 32)+`"}`+"\n")
+						fmt.Fprint(conn, `{`+id+`"jpeg":"`+strings.Repeat("a", 32)+`"}`+"\n")
 					}
 				}
 			}(conn)
@@ -237,14 +239,11 @@ func dialHelperTCP(t *testing.T, ln net.Listener) *Helper {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := conn.Write([]byte(fmt.Sprintf("CONNECT %d\n", HelperPort))); err != nil {
+	h, err := handshake(context.Background(), conn)
+	if err != nil {
 		t.Fatal(err)
 	}
-	ok, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil || !strings.HasPrefix(ok, "OK") {
-		t.Fatalf("the fake helper did not answer OK: %q %v", ok, err)
-	}
-	return &Helper{conn: conn, r: bufio.NewReader(conn)}
+	return h
 }
 
 // fakeUnixMicroVM serves the maker's API on a Unix socket, which is where
@@ -307,5 +306,80 @@ func TestCloudHypervisorSnapshotThroughTheSocket(t *testing.T) {
 	ch := &CloudHypervisor{}
 	if err := ch.Stop(context.Background(), socket); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// fakeVsock is a microVM's vsock socket with a helper behind it that plays
+// the given script once the handshake is said.
+func fakeVsock(t *testing.T, script func(conn net.Conn, r *bufio.Reader)) string {
+	t.Helper()
+	socket := filepath.Join(t.TempDir(), "v.sock")
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		r := bufio.NewReader(conn)
+		if hello, err := r.ReadString('\n'); err != nil || hello != "CONNECT 5050\n" {
+			return
+		}
+		script(conn, r)
+	}()
+	return socket
+}
+
+// The maker's OK and whatever came with it are read through the one reader
+// the conversation keeps, so nothing is lost between them; and a helper that
+// speaks before it is asked is closed on.
+func TestAHelperThatSpeaksFirstIsClosedOn(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	socket := fakeVsock(t, func(conn net.Conn, r *bufio.Reader) {
+		fmt.Fprint(conn, "OK 1073741824\n{\"id\":1,\"text\":\"planted\"}\n")
+		_, _ = r.ReadString('\n')
+	})
+	if _, err := Connect(ctx, socket); err == nil || !strings.Contains(err.Error(), "spoke before it was asked") {
+		t.Fatalf("a helper that spoke first was kept: %v", err)
+	}
+	socket = fakeVsock(t, func(conn net.Conn, r *bufio.Reader) {
+		fmt.Fprint(conn, "NO\n")
+	})
+	if _, err := Connect(ctx, socket); err == nil || !strings.Contains(err.Error(), "did not answer OK") {
+		t.Fatalf("a refused CONNECT was taken for an OK: %v", err)
+	}
+}
+
+// Each answer echoes its request's id: an answer that does not, or that
+// comes with another behind it, is out of turn, and the conversation ends
+// rather than taking it for the next question's answer.
+func TestAnAnswerOutOfTurnEndsTheConversation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, answer := range []string{
+		`{"id":7,"text":"File"}` + "\n",
+		`{"id":1,"text":"File"}` + "\n" + `{"id":2,"said":"paid"}` + "\n",
+	} {
+		socket := fakeVsock(t, func(conn net.Conn, r *bufio.Reader) {
+			fmt.Fprint(conn, "OK 1\n")
+			if _, err := r.ReadString('\n'); err != nil {
+				return
+			}
+			fmt.Fprint(conn, answer)
+			_, _ = r.ReadString('\n')
+		})
+		h, err := Connect(ctx, socket)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.Read(ctx); err == nil || !strings.Contains(err.Error(), "out of turn") {
+			t.Errorf("an answer out of turn was taken: %q: %v", answer, err)
+		}
+		h.Close()
 	}
 }

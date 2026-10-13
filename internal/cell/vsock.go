@@ -5,6 +5,7 @@ package cell
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,8 +21,9 @@ import (
 // and the port, as both makers' devices expect, and the bytes after that
 // are the helper's. The conversation is one JSON object a line, a request
 // and an answer, and this program is always the one asking: the helper
-// answers, it never tells. A helper that speaks first is a helper that is
-// not this program's, and the connection is closed on it.
+// answers, it never tells. Each request carries an id and its answer
+// echoes it, so an answer out of turn cannot be taken for the next one;
+// a helper that speaks first, or out of turn, is closed on.
 
 // HelperPort is the vsock port the helper in the image listens on. Part
 // of the image's contract, written here so both sides of the conversation
@@ -32,6 +34,7 @@ const HelperPort = 5050
 type Helper struct {
 	conn net.Conn
 	r    *bufio.Reader
+	next uint64
 }
 
 // Connect reaches the helper through the microVM's vsock: connect to the
@@ -42,6 +45,12 @@ func Connect(ctx context.Context, socket string) (*Helper, error) {
 	if err != nil {
 		return nil, fmt.Errorf("the cell's vsock: %w", err)
 	}
+	return handshake(ctx, conn)
+}
+
+// handshake says which port and reads the maker's OK, through the reader
+// the conversation keeps, so nothing read with the OK is lost.
+func handshake(ctx context.Context, conn net.Conn) (*Helper, error) {
 	deadline, ok := ctx.Deadline()
 	if !ok {
 		deadline = time.Now().Add(10 * time.Second)
@@ -51,12 +60,20 @@ func Connect(ctx context.Context, socket string) (*Helper, error) {
 		conn.Close()
 		return nil, fmt.Errorf("saying which port: %w", err)
 	}
-	okLine, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil || len(okLine) < 2 || okLine[:2] != "OK" {
+	r := bufio.NewReaderSize(conn, MaxLine+2)
+	okLine, err := r.ReadSlice('\n')
+	if err != nil || !bytes.HasPrefix(okLine, []byte("OK ")) {
 		conn.Close()
+		if len(okLine) > 64 {
+			okLine = okLine[:64]
+		}
 		return nil, fmt.Errorf("the cell's vsock did not answer OK: %q %v", okLine, err)
 	}
-	return &Helper{conn: conn, r: bufio.NewReaderSize(conn, MaxLine+2)}, nil
+	if r.Buffered() > 0 {
+		conn.Close()
+		return nil, errors.New("the helper spoke before it was asked")
+	}
+	return &Helper{conn: conn, r: r}, nil
 }
 
 // Close ends the conversation.
@@ -71,7 +88,14 @@ const MaxLine = 1 << 20
 // deadline — the one from its context when there is one, a bounded wait
 // when there is not — because the deadline set at connect was for the
 // handshake and is spent.
-func (h *Helper) ask(ctx context.Context, req, answer any) error {
+func (h *Helper) ask(ctx context.Context, req map[string]any, answer any) error {
+	if h.r.Buffered() > 0 {
+		h.conn.Close()
+		return errors.New("the helper spoke out of turn")
+	}
+	h.next++
+	id := h.next
+	req["id"] = id
 	b, err := json.Marshal(req)
 	if err != nil {
 		return err
@@ -90,17 +114,23 @@ func (h *Helper) ask(ctx context.Context, req, answer any) error {
 	// one whole bounded line, so ErrBufferFull is exactly the refusal.
 	line, err := h.r.ReadSlice('\n')
 	if err == bufio.ErrBufferFull {
+		h.conn.Close()
 		return errors.New("the helper's answer is larger than this reads")
 	}
 	if err != nil {
 		return err
 	}
-
 	var said struct {
+		ID  uint64 `json:"id"`
 		Err string `json:"err,omitempty"`
 	}
 	if err := json.Unmarshal(line, &said); err != nil {
+		h.conn.Close()
 		return fmt.Errorf("the helper said nothing this can read")
+	}
+	if said.ID != id || h.r.Buffered() > 0 {
+		h.conn.Close()
+		return errors.New("the helper answered out of turn")
 	}
 	if said.Err != "" {
 		return errors.New(said.Err)
