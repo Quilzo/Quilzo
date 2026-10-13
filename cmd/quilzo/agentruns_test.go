@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
-	"github.com/quilzo/quilzo/internal/decide"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/decide"
 	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/shield"
