@@ -20,7 +20,13 @@ Cloud Hypervisor over their sockets, the vsock helper protocol), the
 optional deny-only action reviewer, and JSON attack numbers from
 evaluations. The audit's findings — an inert cache, grant-session races, a
 machine-wide lock held across page I/O, cell protocol bounds, shield gaps —
-are fixed with the tests that would have caught them.
+are fixed with the tests that would have caught them, and so are a second
+review's: a microVM killed as it started, a vsock handshake that dropped
+bytes, presses weighed only by the helper inside the cell, a cache shared
+between people, a diff gate blind to a dozen kinds of widening, an
+unreachable take-over, and a bundle that gave a reader the pictures.
+Desktop cells stay experimental: the helper inside the image is the
+operator's to build, and the microVM runs without the jailer.
 
 Three things this branch adds beyond the original plan, each stolen
 honestly from the ecosystem and done Quilzo's way:
@@ -132,11 +138,12 @@ reversibility and incremental autonomy — not capability.
     atomic checkout and coalesced wakeups as declaration fields; two runs
     structurally cannot both write page X; scheduled runs default one
     autonomy notch below interactive ones.
-12. **The person's own desktop (P6), when it can be verified** — xdg
-    RemoteDesktop portals need a stdlib D-Bus client (~1k lines) and a
-    desktop session to test against; macOS and Windows helpers need
-    signing. Deferred deliberately: a trust feature that cannot be tested
-    is a liability, not a feature.
+12. **The person's own desktop (P6), when it can be verified** — the
+    stdlib D-Bus client and the xdg RemoteDesktop consent are built:
+    `quilzo desktop consent` shows the desktop's own dialog and gives the
+    session straight back. No run may use a person's desktop until it can
+    be tested against a real desktop session; macOS and Windows helpers
+    need signing.
 
 ### Found already built, and better than planned
 

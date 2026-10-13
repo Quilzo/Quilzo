@@ -25,24 +25,27 @@ Unreleased
     deterministic and come first — and it costs one more model call per
     action, which is why it waits for a setting.
 
-*** Desktop cells, P4 of the computer-use plan, host side: `internal/cell`
-    drives a microVM (Firecracker or Cloud Hypervisor — whichever binary
-    the operator installed) over its own Unix socket, restores a warm
-    snapshot of a desktop in milliseconds, and speaks to the small helper
-    inside through the cell's vsock: the accessibility tree as an outline
-    with references, presses, typing, the four named keys, and a picture.
-    `quilzo cell status` says whether this machine can run one and what it
-    would restore (`cell.backend`, `cell.binary`, `cell.snapshot`,
-    `cell.memory`).  The image with its X server, accessibility tree and
-    apps is the operator's to warm; no host directory is mounted into a
-    cell, and its only door to the host is the vsock this program
-    connects to.
+*** Desktop cells, experimental: `internal/cell` drives a microVM
+    (Firecracker or Cloud Hypervisor, whichever binary the operator
+    installed) over its own Unix socket, restores a warm snapshot of a
+    desktop, and speaks to a helper inside through the snapshot's vsock:
+    the accessibility tree as an outline with references, presses, typing
+    into fields, the four named keys, and a picture.  A press is weighed
+    by this program from the element's role and name, Enter always asks,
+    and typing into a cell is under the exfiltration breaker.  `quilzo cell
+    status` says whether this machine can run one and what it would
+    restore (`cell.backend`, `cell.binary`, `cell.snapshot`, `cell.memory`,
+    `cell.vsock`).  One cell runs at a time.  The image, with its X server,
+    accessibility tree, apps and the helper, is the operator's to build,
+    and the microVM runs as this program's user without Firecracker's
+    jailer.
 
 *** The governed browser is offered over MCP, to other vendors' agents:
     `quilzo browser grant NAME --read HOST,… [--write HOST,…] [--daily N]
     [--pictures]` declares what an outside client — Claude Code, Codex,
     anything that speaks MCP — may do at `/mcp/browser/NAME` on the admin,
-    reached with a token issued for that address.  Each call is a step of a
+    reached with any token whose access reaches that path: a reader's to
+    read the page, an author's to act on it.  Each call is a step of a
     kept run: the same host rule on every request the page makes, the same
     breaker, and a press that commits to something held for a person
     exactly as a gateway tool is — approved once, within the hour, by
@@ -68,7 +71,9 @@ Unreleased
     confirms itself by the page that follows it: the moment the page is not
     the one the flow remembers, the model decides again and the memory is
     dropped.  Signing in is never remembered.  What the cache holds is
-    sealed with the store's keyring, and each replay is written to the log
+    sealed with the store's keyring and kept per person, so a run for one
+    person never types what a run for another typed, and each replay is
+    written to the log
     (`agent.cache`) with the digest of the page it ran against, so a
     receipt can say which steps ran without a model.
 
@@ -85,6 +90,32 @@ Unreleased
     before anything is typed.  A model answering in a dialect may return
     several actions at once, as its maker's runtime taught it; they run in
     order, one a step, and the first failure drops the rest.
+
+*** `quilzo agent declare FILE` amends an agent that is already declared.
+    An amendment that widens what it may do is refused until `--widen`,
+    with the exact list: capabilities, hosts, programs, tools, sign-ins,
+    what stopped asking a person, budgets, what it reads and remembers,
+    autonomy and kind.  The widening allowed is written to the log as it
+    was read.
+
+*** `quilzo agent receipt RUN --bundle FILE` writes one HTML file of the
+    run's steps, the pictures a person was asked about, and the receipt
+    with its proofs.  It needs the access the agents screen needs, since it
+    carries the run's pictures, and nothing in it runs.
+
+*** `quilzo agent template save FILE` adds an archetype of the store's
+    own, a kind with a starting declaration, and `quilzo agent new NAME
+    --kind KIND` knows it.  A template validates as written, never claims
+    a built-in kind or the supervisor's, and is not removed while agents
+    of its kind are declared.
+
+*** An agent holding `decide` asks a declared decider a typed question
+    inside its run.  An answer under the decider's confidence threshold
+    says a person decides and carries no value to act on.
+
+*** `quilzo desktop consent` asks the desktop's own portal for the
+    person's keyboard and pointer and gives the session straight back.
+    No run may use a person's desktop.
 
 ** Removed
 
