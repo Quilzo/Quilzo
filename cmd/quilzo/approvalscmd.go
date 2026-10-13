@@ -87,6 +87,20 @@ func waitingFor(root string, c *Caller, now time.Time) ([]waitingItem, error) {
 				Why: "for " + h.Principal + ", held until a second person decides", Commits: "acts",
 				Since: h.Asked, Decide: "quilzo integrations approve " + h.ID})
 		}
+		if pend, err := pendingFeatures(root); err == nil {
+			for _, p := range pend {
+				if strings.EqualFold(p.RequestedBy, c.Name) {
+					continue
+				}
+				what := "install feature " + p.Name + " " + p.Version
+				if p.Rollback {
+					what = "roll feature " + p.Name + " back to " + p.Version
+				}
+				out = append(out, waitingItem{Source: "feature", Agent: p.Name, What: what,
+					Why:     "risk " + p.Card.Risk + ": " + strings.Join(p.Card.Because, "; ") + "; asked by " + p.RequestedBy,
+					Commits: "installs", Since: p.At, Decide: "quilzo feature approve " + p.ID})
+			}
+		}
 		if list, err := listIncidents(root); err == nil {
 			for _, inc := range list {
 				for _, a := range inc.Acts {

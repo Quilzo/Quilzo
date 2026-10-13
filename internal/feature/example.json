@@ -1,0 +1,46 @@
+{
+  "format": 1,
+  "name": "lab-samples",
+  "version": "1.0.0",
+  "title": "Lab sample tracker",
+  "purpose": "Keep track of the lab's samples, and show members which ones are available.",
+  "types": [
+    {
+      "name": "sample",
+      "description": "One physical sample in the lab",
+      "fields": [
+        {"name": "code", "kind": "text", "required": true, "max_len": 40, "label": "Sample code"},
+        {"name": "material", "kind": "text", "label": "What it is"},
+        {"name": "status", "kind": "choice", "required": true, "choices": ["available", "checked-out", "used-up"]},
+        {"name": "holder_email", "kind": "email", "label": "Who has it"},
+        {"name": "received", "kind": "date", "label": "Received on"}
+      ]
+    }
+  ],
+  "collections": [
+    {"name": "samples", "type": "sample"}
+  ],
+  "listings": [
+    {
+      "name": "available_samples",
+      "label": "Available samples",
+      "collection": "samples",
+      "where": [{"field": "status", "match": "is", "value": "available"}],
+      "fields": ["code", "material", "received"],
+      "sort": "code",
+      "rows": 50
+    }
+  ],
+  "pages": [
+    {
+      "name": "samples",
+      "body": {
+        "title": "Samples",
+        "members_only": true,
+        "sections": [
+          {"listing": {"name": "available_samples"}}
+        ]
+      }
+    }
+  ]
+}

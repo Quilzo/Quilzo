@@ -697,8 +697,10 @@ var coverage = map[string]surfaces{
 	"oidc":     {GUI: "/integrations", NoMCP: "points sign-in at an identity provider; changing it changes who can become an administrator"},
 	"saml":     {GUI: "/sso", NoMCP: "trusts an identity provider's key, and whoever holds that key can sign anybody in as anybody; that is a person's decision, made by checking a fingerprint"},
 	"ext":      {GUI: "/integrations", NoMCP: "registers a process this store executes. Arbitrary code execution, reached by asking"},
-	"webhook":  {GUI: "/integrations", NoMCP: "adds an outbound destination for content, which is exfiltration with a configuration screen"},
-	"vault":    {GUI: "/security/integrity", NoMCP: "handles key material"},
+	"feature": {GUI: "/make", NoMCP: "installing a feature is a person's decision, one or two of " +
+		"them; a model may draft a package, and checking one is the command line's and the screen's"},
+	"webhook": {GUI: "/integrations", NoMCP: "adds an outbound destination for content, which is exfiltration with a configuration screen"},
+	"vault":   {GUI: "/security/integrity", NoMCP: "handles key material"},
 	"browser": {Why: "a one-time download an operator makes, and a status line; which browser a run " +
 		"used is on the run's page",
 		NoMCP: "fetches and installs a program this store then runs"},

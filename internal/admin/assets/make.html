@@ -1,0 +1,52 @@
+{{template "head" .}}
+<h1>Make</h1>
+<p class="lead">A feature is one package: the types, records, listings, forms, pages, menus, chatbots, agents and webhooks it needs. Check what it would store, show, send and change, install it as one decision, and take it back as one.</p>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Secrets}}<section aria-labelledby="make-secrets" class="card"><h2 id="make-secrets">Webhook secrets</h2>
+<p>Each receiving server checks the signature with its secret. Copy them now; Quilzo shows them once.</p>
+<ul>{{range .Secrets}}<li><code>{{.}}</code></li>{{end}}</ul>
+<p><a href="/make">Done</a></p></section>{{else if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<section aria-labelledby="make-add">
+<h2 id="make-add">Add a feature</h2>
+<form method="post" action="/make/check" enctype="multipart/form-data" class="param-form">
+  <label for="make-file">Package file</label><input id="make-file" type="file" name="package" accept="application/json,.json">
+  <label for="make-text">Or paste it</label><textarea id="make-text" name="text" rows="6" spellcheck="false" placeholder="{&quot;format&quot;: 1, &quot;name&quot;: &quot;lab-samples&quot;, …}"></textarea>
+  <div class="auto-controls"><button type="submit" class="btn-tonal">Check it</button></div>
+</form>
+<p class="hint">Checking installs nothing. A complete example to start from: <code>quilzo feature example &gt; lab.json</code>. Pages a feature adds go to the draft, so publishing them stays the usual review.</p>
+</section>
+{{if .Pending}}<section aria-labelledby="make-waiting">
+<h2 id="make-waiting">Waiting for a second person</h2>
+{{range .Pending}}<article class="card">
+  <h3>{{.Card.Title}} {{.Version}}{{if .Rollback}} <span class="tag tag-changed">going back</span>{{end}}</h3>
+  <p>{{.Card.Purpose}}</p>
+  <p><span class="tag {{if eq .Card.Risk "high"}}tag-bad{{else}}tag-warn{{end}}">risk {{.Card.Risk}}</span> asked by {{.RequestedBy}}, {{.When}}</p>
+  {{if .Card.Because}}<ul>{{range .Card.Because}}<li>Two people approve it because {{.}}.</li>{{end}}</ul>{{end}}
+  <details><summary>What it would change ({{len .Plan.Steps}})</summary><ul>{{range .Plan.Steps}}<li>{{.Action}} {{.Ref.Kind}} <code>{{.Ref.Name}}</code></li>{{end}}</ul></details>
+  {{if .Mine}}<p class="hint">You asked for this, so somebody else approves it.</p>{{else}}
+  <div class="confirmactions">
+    <form method="post" action="/make/act"><input type="hidden" name="do" value="approve"><input type="hidden" name="id" value="{{.ID}}"><button type="submit">Approve and install</button></form>
+    <form method="post" action="/make/act"><input type="hidden" name="do" value="decline"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="btn-text">Decline</button></form>
+  </div>{{end}}
+</article>{{end}}
+</section>{{end}}
+<section aria-labelledby="make-installed">
+<h2 id="make-installed">Installed</h2>
+{{if .Installed}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Feature</th><th scope="col">Version</th><th scope="col">Blocks</th><th scope="col">Approved by</th><th scope="col">Installed</th><th scope="col"><span class="visually-hidden">Change</span></th></tr></thead>
+  <tbody>{{range .Installed}}<tr>
+    <th scope="row">{{.Title}}<div class="hint"><code>{{.Name}}</code></div></th>
+    <td>{{.Version}}</td>
+    <td>{{len .Owns}}</td>
+    <td>{{range $i, $b := .By}}{{if $i}} and {{end}}{{$b}}{{end}}</td>
+    <td class="when">{{.At.Format "2 Jan 2006"}}</td>
+    <td><details><summary>Change</summary><div class="confirmactions">
+      {{if .History}}<form method="post" action="/make/act"><input type="hidden" name="do" value="rollback"><input type="hidden" name="name" value="{{.Name}}"><button type="submit" class="btn-tonal">Go back to {{(index .History 0).Version}}</button></form>{{end}}
+      <form method="post" action="/make/act"><input type="hidden" name="do" value="remove"><input type="hidden" name="name" value="{{.Name}}"><button type="submit" class="btn-danger">Remove it and its {{len .Owns}} blocks</button></form>
+    </div></details></td>
+  </tr>{{end}}</tbody></table></div>{{else}}<p>No feature is installed yet.</p>{{end}}
+</section>
+<p class="hint">On the machine: <code>quilzo feature check FILE</code>, <code>feature install FILE</code>, <code>feature approve ID</code>, <code>feature export NAME --sign</code>, <code>feature capture NAME --page P …</code>.</p>
+{{end}}
+{{template "foot" .}}

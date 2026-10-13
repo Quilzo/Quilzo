@@ -9,6 +9,18 @@ Unreleased
 
 ** Added
 
+*** Features as packages (/make, `quilzo feature`): one file declares the
+    types, collections, listings, forms, pages, menus, chatbots, agents and
+    webhooks a piece of work needs.  `feature check` shows its permission
+    card, worked out from the package: what it stores and whether that is
+    about people, what it collects, shows and sends, and what its agents
+    may do.  One that holds personal data, collects from the public, sends
+    outside or adds an agent that acts without asking waits for a second
+    administrator.  A feature only changes what it made, never publishes,
+    and can be rolled back or removed as one.  `feature export --sign`
+    signs it with the log's keys; `feature install --keys` checks them.
+    `feature capture` packages blocks built by hand.
+
 *** Approvals (/approvals, `quilzo approvals`) lists everything waiting for
     the person looking: what agent runs ask, questions they need answered,
     actions the reviewer stopped, tool calls held for a second person, acts

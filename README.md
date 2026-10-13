@@ -232,6 +232,15 @@ Help link opens its own.
 
 <p align="center"><img src="docs/screenshots/gateway.png" alt="A call through the MCP gateway waiting for a person: the tool, who it is for, the app, and its arguments, with Approve and Decline" width="860"></p>
 
+### Make features
+
+| Feature | What it does | How |
+|---|---|---|
+| **Features as packages** | One file declares the types, records, listings, forms, pages, menus, chatbots, agents and webhooks a piece of work needs, each checked by its own rules; pages go to the draft, never live. | `quilzo feature example`, `feature check FILE`; Make screen |
+| **Permission card** | Worked out from the package: what it stores and whether that is about people, what it collects, shows and sends, what its agents may do. | `quilzo feature check FILE` |
+| **Two people when it matters** | Personal data, public forms, anything sent outside, or an agent acting without asking needs a second administrator; a feature only changes what it made. | `quilzo feature install`, `feature approve ID`; Approvals |
+| **Roll back, remove, share** | Upgrades remove what a version dropped; roll back or remove as one; export signed with the log's keys, install checking them; package blocks built by hand. | `quilzo feature rollback\|remove NAME`, `feature export NAME --sign`, `feature install FILE --keys K`, `feature capture` |
+
 ### Security operations
 
 <p align="center"><img src="docs/screenshots/findings.png" alt="The Findings queue ranked by severity, age, recurrence and ownership" width="860"></p>

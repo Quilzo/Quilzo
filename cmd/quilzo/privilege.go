@@ -709,10 +709,19 @@ var commandNeeds = map[string]need{
 	// A webhook is an outbound credential and a data flow to somewhere else.
 	// Registering an extension is registering code that runs beside the
 	// content store. Admin, and the reading subcommands narrow it.
-	"ext":        {action: auth.ActGrant},
-	"extensions": {action: auth.ActGrant},
-	"ext list":   {action: auth.ActView},
-	"ext test":   {action: auth.ActView},
+	// A feature is a set of blocks installed as one decision: types, pages,
+	// agents, webhooks. Installing one is an administrator's act, as each of
+	// those is; reading what is installed or checking a package is not.
+	"feature":         {action: auth.ActGrant},
+	"feature example": {action: auth.ActView},
+	"feature check":   {action: auth.ActView},
+	"feature pending": {action: auth.ActView},
+	"feature list":    {action: auth.ActView},
+	"feature show":    {action: auth.ActView},
+	"ext":             {action: auth.ActGrant},
+	"extensions":      {action: auth.ActGrant},
+	"ext list":        {action: auth.ActView},
+	"ext test":        {action: auth.ActView},
 
 	"webhook":  {action: auth.ActGrant},
 	"webhooks": {action: auth.ActGrant},
