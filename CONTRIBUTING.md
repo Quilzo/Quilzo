@@ -4,16 +4,6 @@ This project is looking for maintainers, not just patches. If you want commit
 access, the path is written down in [GOVERNANCE.md](GOVERNANCE.md) and it is
 short.
 
-## The name, if you are reading older material
-
-The project and the command are both **Quilzo**. Earlier releases shipped the
-binary as `scrivet`, an old working name, and that is gone: the command, the
-store directory, the environment variables, the token prefix and the agent
-tool names are all `quilzo` now. There is no compatibility path — a store
-created by the old binary is not found by this one, and tokens have to be
-reissued. Pre-1.0, one name is worth more than a migration shim nobody would
-delete later.
-
 ## Try it first, in about two minutes
 
 You need Go 1.27 or later and nothing else. There are no dependencies to fetch.

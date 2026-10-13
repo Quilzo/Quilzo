@@ -35,8 +35,8 @@ the wait.
 **Changes to the structural claims** — the properties in the README and
 [SECURITY.md](SECURITY.md), the zero-dependency rule, or the licence — need
 explicit agreement from every maintainer, not silence. These are the reasons
-somebody would choose this over an established CMS. Removing one is allowed;
-removing one quietly is not.
+somebody would choose Quilzo. Removing one is allowed; removing one quietly is
+not.
 
 **Disagreement** that a discussion does not resolve goes to a simple majority of
 maintainers. If it is tied, the change does not happen. A tie means the project
@@ -106,8 +106,9 @@ steward a community; there is no shortcut that skips having one.
 
 ## Code of conduct
 
-The [Contributor Covenant](CODE_OF_CONDUCT.md) applies. Reports go through
-GitHub's private reporting to the maintainers.
+The [Contributor Covenant](CODE_OF_CONDUCT.md) applies. Reports go privately to
+the maintainers through this repository's "Report a vulnerability" form, titled
+"Conduct report".
 
 While there is one maintainer, a report about that maintainer has nowhere
 independent to go. That is a real gap and it is named here rather than papered
