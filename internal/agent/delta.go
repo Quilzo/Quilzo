@@ -165,6 +165,9 @@ func DeltaOf(old, new Manifest) Delta {
 	for _, c := range unasked {
 		add("stopped asking a person before " + c)
 	}
+	if new.EarnAfter > 0 && (old.EarnAfter == 0 || new.EarnAfter < old.EarnAfter) {
+		add(fmt.Sprintf("may stop asking about a kind of action after %d approvals of it in a row", new.EarnAfter))
+	}
 	if old.HumanApproval && !new.HumanApproval {
 		add("what it does no longer waits for a person's approval to become public")
 	}

@@ -802,3 +802,36 @@ func TestTheReplayBundleIsADownloadThatRunsNothing(t *testing.T) {
 		t.Error("the bundle was served to nobody signed in")
 	}
 }
+
+// An agent that earns its way out of asking shows each kind of action's
+// record on its page, says when its evaluations stop anything counting,
+// and can be sent back to asking about everything.
+func TestTheAgentsPageShowsWhatItHasEarned(t *testing.T) {
+	srv, token := setup(t)
+	st := wireStudio(srv)
+	m := agent.Manifest{Name: "tidy", Kind: agent.KindTask, Purpose: "tidy pages",
+		Capabilities: []string{"write_page"}, AskFirst: []string{"write_page"}, EarnAfter: 4,
+		Autonomy: agent.AutonomyDraft, Budget: agent.Budget{Steps: 4, Tools: 1, Duration: agent.Duration(time.Minute)}}
+	st.declared["tidy"] = m
+	var reset string
+	srv.Agents.Earned = func(name string) (EarnedView, error) {
+		return EarnedView{After: 4, Counts: false, WhyNot: "it followed a planted instruction in 1 case(s) of its last evaluation",
+			Classes: []agent.EarnRecord{
+				{Class: "write_page returns", Approvals: 4, Earned: time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)},
+				{Class: "write_page pricing", Approvals: 1, Dropped: time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC), Why: "sam declined it"},
+			}}, nil
+	}
+	srv.Agents.Unearn = func(name, by string) error { reset = name + " by " + by; return nil }
+	body := get(t, srv, "/agents/edit/tidy", token).Body.String()
+	whole(t, body)
+	for _, want := range []string{"What it has earned", "write_page returns", "earned 9 Oct 2026",
+		"1 of 4 approvals", "sam declined it", "Nothing it earned counts now"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the agent's page does not show %q", want)
+		}
+	}
+	_, loc := studioAct(t, srv, token, url.Values{"do": {"unearn"}, "name": {"tidy"}})
+	if reset != "tidy by editor" || !strings.Contains(loc, "asks+about+every") {
+		t.Fatalf("the reset went to %s and did %q", loc, reset)
+	}
+}

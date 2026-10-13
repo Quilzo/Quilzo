@@ -62,6 +62,11 @@ type Agents struct {
 	// that was cut off, and Replay runs one again from after a step and
 	// returns the new run.
 	Answer func(id string, step int, approve bool, answers map[string]string, by string) error
+	// Earned is what an agent has earned by its record: each kind of
+	// action, how far towards earning it, whether its evaluations still let
+	// it count, and why not. Unearn sends everything back to asking.
+	Earned func(name string) (EarnedView, error)
+	Unearn func(name, by string) error
 	// Bundle is a run's replay bundle: one HTML file of its steps, the
 	// pictures a person was asked about, and its receipt with proofs.
 	Bundle func(id string) ([]byte, error)
@@ -261,4 +266,12 @@ type RunOutput struct {
 	N     int
 	When  time.Time
 	Total int64
+}
+
+// EarnedView is an agent's earning, for its page.
+type EarnedView struct {
+	After   int
+	Counts  bool
+	WhyNot  string
+	Classes []agent.EarnRecord
 }

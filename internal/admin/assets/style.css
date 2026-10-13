@@ -3304,3 +3304,4 @@ td .duty-more { margin: 4px 0 0; }
 .approval-group { margin-block: 1.5rem; }
 .approval-group h2 .count { font-size: .8em; color: var(--on-surface-variant); }
 .approvals-table td { vertical-align: top; }
+.earned-table td { vertical-align: top; }
