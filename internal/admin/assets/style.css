@@ -3295,3 +3295,6 @@ td.ev-value { min-width: 12rem; white-space: nowrap; }
 .wf-tasks > span { display: inline-block; margin: 0 .75rem .25rem 0; white-space: nowrap; }
 .wf-machines td:nth-child(2), .wf-machines td:nth-child(6) { white-space: nowrap; }
 td .duty-more { margin: 4px 0 0; }
+.step-cost { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cost-table td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cost-table tfoot th, .cost-table tfoot td { font-weight: 600; border-top: 1px solid var(--outline-variant); }

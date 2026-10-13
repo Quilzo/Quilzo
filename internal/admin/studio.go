@@ -599,12 +599,22 @@ func (s *Server) handleAgentsAct(w http.ResponseWriter, r *http.Request) {
 
 // runRow is one kept run in a list.
 type runRow struct {
+	// Cost is what the run spent at the gateway's prices, when anything was priced.
+	Cost                                                  string
 	ID, Agent, Goal, By, Model, When, Outcome, Tone, Took string
 	// ModelLabel is Model as a person reads it: a gateway route
 	// "gateway:agent:help-desk" is "help-desk (gateway)".
 	ModelLabel                  string
 	Did, Refused, Failed, Steps int
 	Tainted                     bool
+}
+
+// agentCurrency is the gateway's currency, or empty.
+func (s *Server) agentCurrency() string {
+	if s.Agents == nil || s.Agents.Currency == nil {
+		return ""
+	}
+	return s.Agents.Currency()
 }
 
 func runRows(in []agent.Record, now time.Time) []runRow {
@@ -616,6 +626,9 @@ func runRows(in []agent.Record, now time.Time) []runRow {
 			Refused: r.Receipt.Refused, Failed: r.Receipt.Failed,
 			Steps: len(r.Trace.Steps), Tainted: r.Trace.Tainted,
 			Took: r.Trace.Spent.Elapsed.Round(time.Millisecond).String()}
+		if r.Trace.Spent.Cost > 0 {
+			row.Cost = agent.MoneyText(r.Trace.Spent.Cost, "")
+		}
 		row.Tone = map[string]string{"complete": "good", "refused": "warning",
 			"failed": "critical", "stopped": "serious", "waiting": "warning",
 			"running": "info", "interrupted": "serious"}[row.Outcome]
@@ -796,6 +809,8 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		Frame       string
 		Output      string
 		OutputBytes int64
+		// Spend is what the step cost, when anything was metered.
+		Spend string
 	}
 	var steps []stepRow
 	prev := rec.Started
@@ -817,6 +832,9 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 	for i, st := range rec.Trace.Steps {
 		sr := stepRow{N: st.N, Allowed: st.Allowed, Why: st.Why,
 			Result: st.Result, Err: st.Err, Redirected: st.Redirected}
+		if st.Tokens > 0 || st.Cost > 0 {
+			sr.Spend = fmt.Sprintf("%d tokens · %s", st.Tokens, agent.MoneyText(st.Cost, s.agentCurrency()))
+		}
 		sr.Took = took[i].Round(time.Millisecond).String()
 		if st.Action.Op == "shell_run" {
 			var next time.Time
@@ -872,6 +890,9 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		steps = append(steps, sr)
 	}
 	data["Steps"] = steps
+	if sp := rec.Trace.Spent; sp.Tokens > 0 || sp.Cost > 0 {
+		data["Spent"] = fmt.Sprintf("%d tokens · %s", sp.Tokens, agent.MoneyText(sp.Cost, s.agentCurrency()))
+	}
 	data["State"] = rec.OutcomeAt(now)
 	if s.Evals != nil && rec.Eval == "" && rec.Trace.Waiting == nil && rec.OutcomeAt(now) != agent.Running {
 		data["Keep"] = keepData(rec)

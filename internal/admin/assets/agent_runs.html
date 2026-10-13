@@ -4,7 +4,7 @@
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
 <p class="lead">Every run of a declared agent, kept: what it was asked, each
   thing it tried, whether that was allowed, and what came back.</p>
-{{if .Only}}<p class="hint"><a href="/agents/runs">Every agent's runs</a></p>{{end}}
+<p class="hint">{{if .Only}}<a href="/agents/runs">Every agent's runs</a> · {{end}}<a href="/agents/cost">What they cost</a></p>
 {{if .Total}}
 <nav class="chips" aria-label="Outcome">
   <a href="/agents/runs{{if .Only}}?agent={{.Only}}{{end}}"{{if not .Outcome}} class="on" aria-current="true"{{end}}>{{plural .Total "run" "runs"}}</a>
@@ -17,7 +17,7 @@
 {{end}}
 {{end}}
 {{if .Runs}}<div class="table-wrap"><table class="wf-people runs-table">
-  <thead><tr><th scope="col">What it was asked</th><th scope="col">Agent</th><th scope="col">Outcome</th><th scope="col">Did</th><th scope="col">Refused</th><th scope="col">Failed</th><th scope="col">Chosen by</th><th scope="col">When</th></tr></thead>
+  <thead><tr><th scope="col">What it was asked</th><th scope="col">Agent</th><th scope="col">Outcome</th><th scope="col">Did</th><th scope="col">Refused</th><th scope="col">Failed</th><th scope="col">Chosen by</th><th scope="col">Cost</th><th scope="col">When</th></tr></thead>
   <tbody>{{range .Runs}}<tr>
     <th scope="row"><a href="/agents/run/{{.ID}}">{{if .Goal}}{{.Goal}}{{else}}{{.ID}}{{end}}</a>
       <div class="hint">by {{.By}}{{if .Tainted}} · read stored content{{end}}</div></th>
@@ -25,6 +25,7 @@
     <td><span class="wf-word {{.Tone}}">{{.Outcome}}</span></td>
     <td>{{.Did}}</td><td>{{.Refused}}</td><td>{{.Failed}}</td>
     <td>{{if .Model}}<span title="{{.Model}}">{{.ModelLabel}}</span>{{else}}<span class="hint">the declaration, walked</span>{{end}}</td>
+    <td class="num">{{if .Cost}}{{.Cost}}{{else}}<span class="hint">—</span>{{end}}</td>
     <td class="when">{{.When}}</td>
   </tr>{{end}}</tbody></table></div>
 {{if .More}}<p class="hint">{{.More}} older runs are not shown.</p>{{end}}

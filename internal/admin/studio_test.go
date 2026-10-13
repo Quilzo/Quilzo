@@ -709,3 +709,38 @@ func TestTakingAWaitingPageOverReachesIt(t *testing.T) {
 		t.Errorf("an oversized typing went through: %s", loc)
 	}
 }
+
+// What a run cost is shown beside each step and in all, and the cost view
+// groups the kept runs by what is asked for.
+func TestWhatRunsCostIsShownStepByStepAndInAll(t *testing.T) {
+	srv, token := setup(t)
+	st := wireStudio(srv)
+	srv.Agents.Currency = func() string { return "EUR" }
+	now := time.Now().UTC()
+	tr := agent.Trace{Agent: "helper", Goal: "Refund order 12", Complete: true,
+		Steps: []agent.Step{
+			{N: 1, Action: agent.Action{Op: "search"}, Allowed: true, Result: "ok", Tokens: 120, Cost: 2_400},
+			{N: 2, Action: agent.Action{Say: "done"}, Allowed: true, Tokens: 30, Cost: 600},
+		},
+		Spent: agent.Spend{Tokens: 150, Cost: 3_000, Metered: true}}
+	st.runs["run-20261013-000000c1"] = agent.Keep("run-20261013-000000c1", "dana", "gateway:fast", now, tr,
+		agent.Receipt{Agent: "helper", Kind: agent.KindRetrieval, Did: 1})
+	tr2 := tr
+	tr2.Goal = "Refund order 98"
+	st.runs["run-20261013-000000c2"] = agent.Keep("run-20261013-000000c2", "sam", "gateway:fast", now, tr2,
+		agent.Receipt{Agent: "helper", Kind: agent.KindRetrieval, Did: 1})
+
+	body := get(t, srv, "/agents/run/run-20261013-000000c1", token).Body.String()
+	whole(t, body)
+	if !strings.Contains(body, "120 tokens · 0.0024 EUR") || !strings.Contains(body, "150 tokens · 0.0030 EUR") {
+		t.Errorf("the run page does not say what the steps and the run cost")
+	}
+	body = get(t, srv, "/agents/cost?by=goal", token).Body.String()
+	whole(t, body)
+	if !strings.Contains(body, "refund order #") || !strings.Contains(body, "0.0060 EUR") {
+		t.Errorf("the cost view does not group the two refunds as one kind of goal")
+	}
+	if code := get(t, srv, "/agents/cost", "").Code; code == http.StatusOK {
+		t.Error("the cost view was served to nobody signed in")
+	}
+}

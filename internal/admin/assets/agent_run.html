@@ -64,16 +64,18 @@
 
 <h2>Step by step</h2>
 {{if .Steps}}<div class="table-wrap"><table class="run-steps">
-  <thead><tr><th scope="col">#</th><th scope="col">It tried</th><th scope="col">Outcome</th><th scope="col">Time</th><th scope="col">What came back</th>{{if .CanReplay}}<th scope="col"><span class="visually-hidden">Run again</span></th>{{end}}</tr></thead>
+  <thead><tr><th scope="col">#</th><th scope="col">It tried</th><th scope="col">Outcome</th><th scope="col">Time</th><th scope="col">Cost</th><th scope="col">What came back</th>{{if .CanReplay}}<th scope="col"><span class="visually-hidden">Run again</span></th>{{end}}</tr></thead>
   <tbody>{{range .Steps}}<tr>
     <th scope="row">{{.N}}</th>
     <td><code>{{.What}}</code>{{if .Kind}}<br><span class="hint">{{.Kind}}</span>{{end}}{{if .Input}}<br><span class="hint">with</span> <code>{{.Input}}</code>{{end}}</td>
     <td><span class="wf-word {{.Tone}}">{{.Word}}</span>{{if .Why}}<br><span class="hint">{{.Why}}</span>{{end}}{{if .Redirected}}<br><span class="hint">sent instead to {{.Redirected}}</span>{{end}}</td>
     <td class="step-time"><span class="wf-points">{{.Took}}</span>{{if .Bar}}<svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.Bar}}" height="8" rx="4"></rect></svg>{{end}}</td>
+    <td class="step-cost">{{if .Spend}}{{.Spend}}{{else}}<span class="hint">—</span>{{end}}</td>
     <td>{{if .Frame}}<a href="{{.Frame}}"><img src="{{.Frame}}" alt="The page after step {{.N}}" width="160" loading="lazy"></a><br>{{end}}{{if .Err}}<span class="hint">{{.Err}}</span>{{end}}{{if .Output}}<a href="{{.Output}}">The whole output</a> <span class="hint">({{bytes .OutputBytes}})</span><br>{{end}}{{if .Result}}<details><summary>Show<span class="chev">{{icon "expand_more"}}</span></summary><pre class="code"><code>{{.Result}}</code></pre></details>{{end}}</td>
     {{if $.CanReplay}}<td>{{if ne .What "finished"}}<form method="post" action="/agents/act"><input type="hidden" name="do" value="replay"><input type="hidden" name="run" value="{{$.R.ID}}"><input type="hidden" name="step" value="{{.N}}">
       <button type="submit" class="quiet">Run again from here<span class="visually-hidden">, after step {{.N}}</span></button></form>{{end}}</td>{{end}}
   </tr>{{end}}</tbody></table></div>
+{{if .Spent}}<p class="hint">The run spent {{.Spent}}, at the gateway's prices. <a href="/agents/cost">What agents cost</a></p>{{end}}
 {{if .Answers}}<p class="hint">{{range .Answers}}Step {{.N}} was {{if .Approve}}let go ahead{{else}}declined{{end}} by {{.By}}. {{end}}</p>{{end}}
 <p class="hint">What came back is shown as text and is not interpreted. Long results are cut.</p>
 {{else}}<p>It took no step.</p>{{end}}

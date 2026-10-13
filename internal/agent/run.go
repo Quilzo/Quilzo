@@ -122,6 +122,12 @@ type Step struct {
 	// would leave no trace of the attempt. internal/agentwatch reads the
 	// audit log for patterns like this.
 	Redirected string
+	// Tokens and Cost are what this step cost: the model's choice of it,
+	// and whatever the action itself charged (a decider's question, a
+	// reviewer's look), in tokens and in millionths of the gateway's
+	// currency. Zero when nothing was metered.
+	Tokens int   `json:",omitempty"`
+	Cost   int64 `json:",omitempty"`
 }
 
 // Trace is what a run produced, and is the audit record.
@@ -279,7 +285,7 @@ var ErrNoDecide = errors.New("this runner has no Decide function")
 // it did, there would be two places that decide what an agent may do, and the
 // history of this project is that the two disagree.
 func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error) {
-	return r.run(ctx, s, Trace{Agent: s.Manifest().Name, Goal: goal}, nil, nil)
+	return r.run(ctx, s, Trace{Agent: s.Manifest().Name, Goal: goal}, nil, nil, Pending{})
 }
 
 // run is the loop, from the start or from where an earlier run stopped.
@@ -288,7 +294,7 @@ func (r Runner) Run(ctx context.Context, s *Session, goal string) (Trace, error)
 // already chosen — the one a person has just approved — which goes through
 // the same gate as any other and is not asked about twice.
 func (r Runner) run(ctx context.Context, s *Session, t Trace,
-	seen []Observation, first *Action) (Trace, error) {
+	seen []Observation, first *Action, held Pending) (Trace, error) {
 
 	goal := t.Goal
 	if r.Decide == nil {
@@ -316,6 +322,18 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 			return t, err
 		}
 
+		// What this turn spends, from here to wherever its step is kept. An
+		// action approved after a pause carries what choosing it cost
+		// before the pause.
+		tokens0, cost0 := s.TokensUsed(), s.Cost()
+		if first != nil {
+			tokens0, cost0 = tokens0-held.Tokens, cost0-held.Cost
+		}
+		priced := func(st Step) Step {
+			st.Tokens, st.Cost = s.TokensUsed()-tokens0, s.Cost()-cost0
+			return st
+		}
+
 		var action Action
 		var err error
 		approved := first != nil
@@ -335,7 +353,7 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 			t.Complete = true
 			step.Allowed = true
 			step.Result = "done"
-			t.Steps = append(t.Steps, step)
+			t.Steps = append(t.Steps, priced(step))
 			break
 		}
 
@@ -359,14 +377,15 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 			if !r.Pause {
 				w := Pending{N: turn, Action: action, Since: step.At, Why: strings.Join(why, "; and ")}
 				if approved, step.Why = r.holdFor(ctx, &t, s, w); !approved {
-					t.Steps = append(t.Steps, step)
+					t.Steps = append(t.Steps, priced(step))
 					seen = append(seen, Observation{From: "quilzo",
 						Body: "refused: " + step.Why, Trusted: true})
 					r.checkpoint(t, s)
 					continue
 				}
 			} else {
-				t.Waiting = &Pending{N: turn, Action: action, Since: step.At, Why: strings.Join(why, "; and ")}
+				t.Waiting = &Pending{N: turn, Action: action, Since: step.At, Why: strings.Join(why, "; and "),
+					Tokens: s.TokensUsed() - tokens0, Cost: s.Cost() - cost0}
 				t.Stopped = fmt.Sprintf("waiting for a person to decide on %s",
 					from(action))
 				break
@@ -385,7 +404,7 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 				}
 				w := Pending{N: turn, Action: action, Since: step.At, Why: why}
 				if approved, step.Why = r.holdFor(ctx, &t, s, w); !approved {
-					t.Steps = append(t.Steps, step)
+					t.Steps = append(t.Steps, priced(step))
 					seen = append(seen, Observation{From: "quilzo",
 						Body: "refused: " + step.Why, Trusted: true})
 					r.checkpoint(t, s)
@@ -402,13 +421,14 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 				if !r.Pause {
 					w := Pending{N: turn, Action: action, Since: step.At, Why: why}
 					if approved, step.Why = r.holdFor(ctx, &t, s, w); !approved {
-						t.Steps = append(t.Steps, step)
+						t.Steps = append(t.Steps, priced(step))
 						seen = append(seen, Observation{From: "quilzo", Body: "refused: " + step.Why, Trusted: true})
 						r.checkpoint(t, s)
 						continue
 					}
 				} else {
-					t.Waiting = &Pending{N: turn, Action: action, Since: step.At, Why: why}
+					t.Waiting = &Pending{N: turn, Action: action, Since: step.At, Why: why,
+						Tokens: s.TokensUsed() - tokens0, Cost: s.Cost() - cost0}
 					t.Stopped = "waiting for a person: " + why
 					break
 				}
@@ -440,7 +460,7 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 		if err != nil {
 			step.Allowed = false
 			step.Why = err.Error()
-			t.Steps = append(t.Steps, step)
+			t.Steps = append(t.Steps, priced(step))
 
 			// Refused, and the model is told so. Telling it is the point: an
 			// agent that learns it may not publish can finish the work it is
@@ -466,7 +486,7 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 		step.Allowed = true
 		if r.Perform == nil {
 			step.Err = "nothing to perform actions with"
-			t.Steps = append(t.Steps, step)
+			t.Steps = append(t.Steps, priced(step))
 			t.Stopped = "this runner has no Perform function"
 			break
 		}
@@ -494,7 +514,7 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 				From: from(action), Body: out, Trusted: false,
 			})
 		}
-		t.Steps = append(t.Steps, step)
+		t.Steps = append(t.Steps, priced(step))
 		r.checkpoint(t, s)
 	}
 

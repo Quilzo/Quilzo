@@ -124,6 +124,8 @@ func cmdAgent(root string, args []string) error {
 		return agentCheckRun(root, args[1:])
 	case "runs":
 		return agentRuns(root, args[1:])
+	case "cost":
+		return agentCost(root, args[1:])
 	case "trace":
 		return agentTrace(root, args[1:])
 	case "approve", "decline":
@@ -175,6 +177,8 @@ func agentUsage() error {
   check                  re-validate every manifest against this build
   run NAME ["goal"]      exercise one against its manifest, and record it
   runs [NAME]            the runs that are kept, newest first
+  cost [--by agent|person|goal|day] [--since D] [NAME]
+                         what runs cost, in tokens and money, grouped
   trace RUN              one run, step by step
   approve RUN STEP       agree to the action a run is waiting on
   decline RUN STEP       refuse it, and let the run carry on without

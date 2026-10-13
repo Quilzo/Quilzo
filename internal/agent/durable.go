@@ -55,6 +55,10 @@ type Pending struct {
 	// to that process rather than continuing the run from its record, and
 	// a run whose process has gone can no longer be answered.
 	Live bool `json:",omitempty"`
+	// Tokens and Cost are what choosing this action cost before the run
+	// stopped to ask, kept so the step it becomes is priced whole.
+	Tokens int   `json:",omitempty"`
+	Cost   int64 `json:",omitempty"`
 }
 
 // PendingTTL is how long a question stays answerable. After that whatever
@@ -122,6 +126,7 @@ func (s *Session) carry(prior Trace) {
 		s.steps++
 	}
 	s.tokens += prior.Spent.Tokens
+	s.cost += prior.Spent.Cost
 	if prior.Tainted {
 		s.tainted = true
 	}
@@ -200,7 +205,7 @@ func (r Runner) Continue(ctx context.Context, s *Session, prior Trace,
 				"to continue")
 		}
 		carry()
-		return r.run(ctx, s, t, seen, nil)
+		return r.run(ctx, s, t, seen, nil, Pending{})
 	case prior.Waiting == nil:
 		return prior, ErrNotWaiting
 	case v.N != prior.Waiting.N:
@@ -219,14 +224,15 @@ func (r Runner) Continue(ctx context.Context, s *Session, prior Trace,
 			why = v.By + " declined this"
 		}
 		t.Steps = append(t.Steps, Step{N: prior.Waiting.N,
-			Action: prior.Waiting.Action, Why: why, At: now})
+			Action: prior.Waiting.Action, Why: why, At: now,
+			Tokens: prior.Waiting.Tokens, Cost: prior.Waiting.Cost})
 		seen = append(seen, Observation{From: "quilzo",
 			Body: "refused: " + why, Trusted: true})
 		r.checkpoint(t, s)
-		return r.run(ctx, s, t, seen, nil)
+		return r.run(ctx, s, t, seen, nil, Pending{})
 	}
 	a := prior.Waiting.Action
-	return r.run(ctx, s, t, seen, &a)
+	return r.run(ctx, s, t, seen, &a, *prior.Waiting)
 }
 
 // Upto is a trace cut back to its first n steps, for running again from
