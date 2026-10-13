@@ -1,0 +1,27 @@
+{{template "head" .}}
+<p class="hint"><a href="/agents">Agents</a> › <a href="/agents/runs">Runs</a></p>
+<h1>What agents cost</h1>
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">Tokens and money for the runs kept since {{.Since}}, at the gateway's prices. Each step records what choosing it and doing it cost, so a run is the sum of its steps.</p>
+<nav class="chips" aria-label="Group by">
+  {{range .Groups}}<a href="/agents/cost?by={{.}}&amp;days={{$.Days}}"{{if eq $.By .}} class="on" aria-current="true"{{end}}>by {{.}}</a>{{end}}
+</nav>
+<nav class="chips" aria-label="Period">
+  <a href="/agents/cost?by={{.By}}&amp;days=7"{{if eq .Days 7}} class="on" aria-current="true"{{end}}>7 days</a>
+  <a href="/agents/cost?by={{.By}}&amp;days=30"{{if eq .Days 30}} class="on" aria-current="true"{{end}}>30 days</a>
+  <a href="/agents/cost?by={{.By}}&amp;days=90"{{if eq .Days 90}} class="on" aria-current="true"{{end}}>90 days</a>
+</nav>
+{{if .Rows}}<div class="table-wrap"><table class="cost-table">
+  <thead><tr><th scope="col">{{if eq .By "goal"}}Kind of goal{{else if eq .By "person"}}Started by{{else if eq .By "day"}}Day{{else}}Agent{{end}}</th><th scope="col">Runs</th><th scope="col">Steps</th><th scope="col">Tokens</th><th scope="col">Cost</th><th scope="col">Per run</th></tr></thead>
+  <tbody>{{range .Rows}}<tr>
+    <th scope="row">{{if .Href}}<a href="{{.Href}}">{{.Key}}</a>{{else}}{{.Key}}{{end}}{{if .Unpriced}}<div class="hint">{{plural .Unpriced "run a model decided was" "runs a model decided were"}} not priced</div>{{end}}</th>
+    <td class="num">{{.Runs}}</td><td class="num">{{.Steps}}</td><td class="num">{{.Tokens}}</td>
+    <td class="num">{{.Cost}}<svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.Bar}}" height="8" rx="4"></rect></svg></td>
+    <td class="num">{{.PerRun}}</td>
+  </tr>{{end}}</tbody>
+  <tfoot><tr><th scope="row">All</th><td class="num">{{.Total.Runs}}</td><td class="num">{{.Total.Steps}}</td><td class="num">{{.Total.Tokens}}</td><td class="num">{{.TotalCost}}</td><td></td></tr></tfoot>
+</table></div>
+<p class="hint">Evaluation runs are left out. A run a model decided with no price shows as not priced: a local model, or a route the gateway has no prices for.</p>
+{{else}}<p>No runs kept since {{.Since}}.</p>{{end}}
+{{end}}
+{{template "foot" .}}

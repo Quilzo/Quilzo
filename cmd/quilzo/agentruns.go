@@ -839,6 +839,13 @@ func printAgentRun(r agent.Record) {
 		// came back is content.
 		fmt.Printf("  %2d  %-20s %-8s %s\n", st.N, what, word,
 			truncate(printable(said), 100))
+		if st.Tokens > 0 || st.Cost > 0 {
+			fmt.Printf("      %s%d tokens, %s%s\n", dim, st.Tokens, formatCost(st.Cost, ""), reset)
+		}
+	}
+	if sp := r.Trace.Spent; sp.Tokens > 0 || sp.Cost > 0 {
+		fmt.Printf("  %sspent %d tokens and %s over %d steps%s\n", dim, sp.Tokens,
+			formatCost(sp.Cost, ""), len(r.Trace.Steps), reset)
 	}
 	for _, a := range r.Answers {
 		word := "declined"

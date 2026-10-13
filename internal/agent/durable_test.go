@@ -342,3 +342,77 @@ func TestAskingFirstIsOnlyDeclaredAboutWhatIsHeldAndNarrowingKeepsIt(t *testing.
 		t.Errorf("ask-first names something no longer held: %v", got)
 	}
 }
+
+// pricedDecider charges a fixed price for each choice it makes, as a
+// metered model does.
+type pricedDecider struct {
+	scripted
+	s      **Session
+	tokens int
+	micros int64
+}
+
+func (p *pricedDecider) decide(ctx context.Context, goal string, seen []Observation) (Action, error) {
+	(*p.s).Tokens(p.tokens)
+	(*p.s).Charge(p.micros)
+	return p.scripted.decide(ctx, goal, seen)
+}
+
+// Each step carries what it cost, and the step a person approved after a
+// pause carries what choosing it cost before the pause.
+func TestEveryStepCarriesItsCostAcrossAPause(t *testing.T) {
+	var s *Session
+	p := &pricedDecider{scripted: scripted{plan: []Action{{Op: "read_page"}, write}},
+		s: &s, tokens: 100, micros: 2_000}
+	r := Runner{Decide: p.decide, Perform: (&doer{}).perform, Pause: true}
+	s = NewSession(drafter(), nil)
+	first, err := r.Run(context.Background(), s, "tidy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := first.Steps[0]; got.Tokens != 100 || got.Cost != 2_000 {
+		t.Fatalf("the first step cost %d tokens and %d", got.Tokens, got.Cost)
+	}
+	if first.Waiting == nil || first.Waiting.Cost != 2_000 {
+		t.Fatalf("the question did not keep what choosing it cost: %+v", first.Waiting)
+	}
+	s = NewSession(drafter(), nil)
+	tr, err := r.Continue(context.Background(), s, first, &Verdict{N: 2, Approve: true, By: "dana"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tr.Steps[1]; got.Action.Op != "write_page" || got.Cost != 2_000 || got.Tokens != 100 {
+		t.Fatalf("the approved step was priced %d tokens and %d", got.Tokens, got.Cost)
+	}
+	var sum int64
+	for _, st := range tr.Steps {
+		sum += st.Cost
+	}
+	if sum != tr.Spent.Cost {
+		t.Errorf("the steps add up to %d and the run spent %d", sum, tr.Spent.Cost)
+	}
+}
+
+// A run that stops to ask keeps what it spent: its money budget is not
+// refilled by the pause.
+func TestAPauseDoesNotRefillTheMoneyBudget(t *testing.T) {
+	m := drafter()
+	m.Budget.Money = "0.003"
+	var s *Session
+	p := &pricedDecider{scripted: scripted{plan: []Action{{Op: "read_page"}, write, {Op: "read_page"}}},
+		s: &s, micros: 2_000}
+	r := Runner{Decide: p.decide, Perform: (&doer{}).perform, Pause: true}
+	s = NewSession(m, nil)
+	first, err := r.Run(context.Background(), s, "tidy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s = NewSession(m, nil)
+	tr, err := r.Continue(context.Background(), s, first, &Verdict{N: 2, Approve: true, By: "dana"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(tr.Stopped, "budget") {
+		t.Fatalf("spending 0.006 against a 0.003 budget went on after the pause: %q", tr.Stopped)
+	}
+}

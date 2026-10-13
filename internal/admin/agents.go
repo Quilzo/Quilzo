@@ -42,8 +42,11 @@ type Agents struct {
 	// A run that ended badly is still kept, and still returns one.
 	Run func(name, goal string, model bool, by string) (string, error)
 	// Runs lists kept runs, newest first, of one agent or all of them.
-	Runs   func(name string) ([]agent.Record, error)
-	RunGet func(id string) (agent.Record, error)
+	Runs func(name string) ([]agent.Record, error)
+	// Currency is the gateway's, for what runs cost; empty when it prices
+	// nothing.
+	Currency func() string
+	RunGet   func(id string) (agent.Record, error)
 	// Frames are the pictures a run's browser kept, in order, and whether
 	// there is one of what it shows now; Frame is one picture's bytes, 0
 	// being the one of now. Nil when nothing is kept.

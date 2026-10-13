@@ -283,6 +283,7 @@ func cmdServe(root string, args []string) error {
 			}
 			return d, nil
 		},
+		Currency: func() string { return gatewayCurrency(root) },
 		Runs: func(name string) ([]agent.Record, error) {
 			return listAgentRuns(root, name, 0)
 		},
