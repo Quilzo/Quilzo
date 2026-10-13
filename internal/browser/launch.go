@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 // Package browser is an agent's browser: Chromium inside the agent's box,
 // driven from outside it, by Quilzo, over a pipe only Quilzo holds.

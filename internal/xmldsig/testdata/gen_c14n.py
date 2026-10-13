@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Rashik Adhikari
-# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+# SPDX-License-Identifier: Apache-2.0
 
 """Writes c14n/expected.json: libxml2's exclusive canonical form (through
 lxml) of every element of every document in c14n/, with and without an

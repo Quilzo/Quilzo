@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 // Package evals measures an agent the way it will be used: on the same
 // tasks, many times, and with somebody trying to steer it.

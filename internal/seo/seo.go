@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 // Package seo produces the two artefacts that decide whether a migration keeps
 // its search rankings: a sitemap and a redirect map.

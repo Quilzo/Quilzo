@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 // Command genlifecycle refreshes internal/lifecycle/lifecycle.json from
 // endoflife.date, whose data is MIT-licensed, for the operating systems a

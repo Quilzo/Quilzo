@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 // Package gate is the list of checks that stand between a draft and the
 // public, in one place so that every surface runs the same ones.

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 // Package ssf receives security events from other systems under OpenID
 // Shared Signals: the Shared Signals Framework 1.0, CAEP 1.0 and RISC 1.0,

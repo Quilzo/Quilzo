@@ -140,7 +140,7 @@ get deleted in review.
 explains, and the override is explicit and recorded. A warning nobody reads is a
 feature nobody has.
 
-## Signing off: DCO, and a CLA
+## Signing off
 
 Every commit in a pull request needs a `Signed-off-by` line:
 
@@ -148,118 +148,12 @@ Every commit in a pull request needs a `Signed-off-by` line:
 git commit -s -m "your message"
 ```
 
-That certifies the [Developer Certificate of Origin](https://developercertificate.org/)
-— you wrote it or have the right to submit it under the project's licence.
+That certifies the [Developer Certificate of Origin](https://developercertificate.org/):
+you wrote it or have the right to submit it under the project's licence.
 
-**Code contributions also need a contributor licence agreement.** See
-[CLA.md](CLA.md), which is the whole story: which Harmony agreement, which
-options, what it costs you, and the two things about it that are still
-unfinished.
-
-The short version. Quilzo is dual-licensed — AGPL-3.0-or-later or a commercial
-licence, at the user's choice ([LICENSING.md](LICENSING.md)). A DCO grants the
-right to submit under the project's licence and nothing beyond it, so it cannot
-support offering somebody else's contribution under commercial terms. The
-agreement supplies that, and two things bound it: **your copyright stays yours**
-— it is Harmony's licence variant, not the assignment one — and whatever you
-contribute is *also* licensed under the AGPL, permanently, to everyone. There is
-no version of this where your code exists only inside a closed product.
-
-If that trade is not one you want to make, say so rather than sign. Bug reports,
-reproductions, design review and adversarial testing need no agreement at all,
-and several of the more useful contributions to this project have been of exactly
-that kind.
-
-### What this section said until September 2026, and why it changed
-
-Until the commercial licence was added, this section was headed *"DCO, not a
-CLA"* and said:
-
-> **There is deliberately no contributor licence agreement.** Copyright stays
-> with whoever wrote the code. The maintainer holds copyright in the code they
-> wrote and is not seeking to hold yours: there is no CLA waiting behind the DCO
-> and no copyright assignment.
-
-Three of those four claims survive. Copyright still stays with whoever wrote the
-code, the maintainer still is not seeking to hold yours, and there is still no
-copyright assignment. The one that does not survive is *"no CLA waiting behind
-the DCO"* — there is one now, and there was not when that sentence was written.
-
-It is quoted rather than edited down because somebody may have decided to
-contribute on the strength of it. **Nothing already contributed is affected**: a
-CLA cannot reach backwards any more than a licence change can, which is the
-position [LICENSING.md](LICENSING.md#the-apache-20-window) takes about the Apache-2.0 window and has to be the
-position here too.
-
-This is the second time this section has been corrected, and the paragraph below
-is the first. Both are kept. A file that documents its own retractions once looks
-scrupulous; one that does it twice is starting to describe a pattern, and the
-pattern is the useful thing to be able to see.
-
-### What this section used to say before that, and why it said less
-
-Until August 2026 this section said something stronger, and it is quoted rather
-than deleted because somebody may have decided to contribute on the strength of
-it:
-
-> There is deliberately no contributor licence agreement. A CLA would assign
-> your copyright to whoever holds the project, and that party could then
-> relicense the whole thing — including away from AGPL. Under a DCO, copyright
-> stays with each contributor, so no single person can ever take Quilzo closed
-> or move it to a permissive licence.
-
-The second sentence was true. The third was true only of code somebody else had
-written, and at the time nobody else had written any — so the guarantee was real
-for future contributors and empty for the project as it actually stood. That was
-demonstrated rather than argued: on 22 August 2026 the maintainer relicensed the
-project to Apache-2.0, which they could do precisely because they were still the
-only human author, and reverted it about eighty minutes later. [LICENSING.md](LICENSING.md#the-apache-20-window)
-records the window, including the part of it that does not revert.
-
-So the promise was not broken by a loophole. It was made in a form that did not
-yet bind anyone, and saying "no single person can ever" while being the single
-person who could was overclaiming. This paragraph exists so the record shows
-that rather than the sentence quietly disappearing.
-
-What the DCO guaranteed, and what it does now that a CLA sits alongside it:
-
-- **Still true:** your copyright stays yours. There is no assignment, and you
-  keep every right you had — including the right to relicense your own
-  contribution to anybody else, or use it in your own proprietary work.
-- **No longer true:** *"nobody can relicense code you wrote without asking
-  you."* The CLA is that asking, done once and in advance, and it covers the
-  commercial licence. This bullet said the opposite until September 2026 and is
-  corrected rather than removed, because it is precisely the sentence somebody
-  would have relied on.
-- **Bounded by:** the guarantee back. Whatever the commercial licence does with
-  your contribution, that contribution stays licensed under AGPL-3.0-or-later to
-  everybody, permanently. [CLA.md](CLA.md) is where that is stated as a term
-  rather than an intention.
-- **Still does not:** make a *further* licence change unilateral for code you
-  wrote. The CLA permits offering your contribution under other terms; it is not
-  an assignment, so it does not make you a bystander to what the project is.
-
-Every release made under a licence stays available under it. A licence change
-decides what happens next; it cannot retract what was already granted, in
-either direction.
-
-### About the licence, honestly
-
-Quilzo is **AGPL-3.0-or-later, or a commercial licence at the user's choice**.
-Three consequences worth knowing before you spend time:
-
-- If you run a modified Quilzo as a service for other people, those people can
-  have your source. That is the point of choosing Affero.
-- **Some employers forbid contributing to AGPL projects.** Google's open source
-  policy is explicit about this and others follow it. Please check before
-  contributing on work time or from a work account. This is a real cost of the
-  licence and pretending otherwise wastes your time, not ours.
-- **Some of the same employers separately forbid signing CLAs**, and a few
-  require every one to go through legal. Adding the commercial licence made this
-  project harder to contribute to on work time, not easier, and that cost lands
-  on contributors rather than on the maintainer. It is listed here next to the
-  other one because two barriers is a different proposition from one, and you
-  should find that out from this page rather than from your employer's counsel.
+Contributions are licensed under the [Apache License 2.0](LICENSE), as its
+section 5 provides. There is no contributor licence agreement and no copyright
+assignment: your copyright stays yours.
 
 ## Where to start
 

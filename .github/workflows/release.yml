@@ -119,6 +119,8 @@ jobs:
             bin/quilzo.cdx.json
             bin/quilzo.crypto.json
             bin/SHA256SUMS
+            LICENSE
+            NOTICE
           body: |
             Every artefact here carries its SHA-256 in `SHA256SUMS`, and the
             bill of materials was produced by this binary rather than from the

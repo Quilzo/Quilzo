@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Rashik Adhikari
-# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+# SPDX-License-Identifier: Apache-2.0
 
 """Render the Incubator proposal as the plain text an ASF list will accept.
 
@@ -161,7 +161,7 @@ def render(body):
 
 def build():
     src = SOURCE.read_text()
-    marker = "## Licensing, first"
+    marker = "## Licensing\n"
     if marker not in src:
         raise SystemExit(f"{SOURCE} has no {marker!r} section to start from")
     return render(marker + src.split(marker, 1)[1])

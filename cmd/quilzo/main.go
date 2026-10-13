@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 // Command quilzo is the whole CMS: the command line, the admin interface, the
 // public site and the agent interface, in one binary.
@@ -1054,21 +1054,9 @@ func main() {
 	case "version", "--version", "-V":
 		fmt.Printf("quilzo %s\n", version)
 		fmt.Println("Copyright (C) 2026 Rashik Adhikari")
-		fmt.Println("License AGPLv3+: GNU AGPL version 3 or later " +
-			"<https://gnu.org/licenses/agpl.html>.")
-		fmt.Println("This is free software: you are free to change and " +
-			"redistribute it.")
+		fmt.Println("Licensed under the Apache License, Version 2.0 " +
+			"<https://www.apache.org/licenses/LICENSE-2.0>.")
 		fmt.Println("There is NO WARRANTY, to the extent permitted by law.")
-		// A dual-licensed program that names only the free licence in
-		// `--version` is telling an operator the terms they hold are the
-		// only terms available. The AGPL line stays first and unqualified,
-		// because it is the licence this copy came under and almost every
-		// copy is that one.
-		fmt.Println()
-		fmt.Println("Also available under a commercial licence, for use " +
-			"that cannot comply with")
-		fmt.Println("the AGPL. Same program either way; nothing is held " +
-			"back. See LICENSING.md.")
 	case "help", "-h", "--help":
 		usage()
 	default:

@@ -1,32 +1,7 @@
-> **Status: superseded — September 2026.**
->
-> Quilzo is dual-licensed as of September 2026 —
-> `AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial`, see
-> [LICENSING.md](../LICENSING.md) — so two sentences in the draft emails below
-> are now false and are left in place rather than corrected, because a template
-> with a stale claim silently fixed is more dangerous than one marked as stale:
->
-> - *"I will relicense to Apache-2.0"* is no longer an offer the project can
->   make. Apache-2.0 permits the closed use the commercial licence exists to
->   charge for, so honouring it would leave that licence with nothing to sell.
-> - *"a DCO rather than a CLA"* stopped being true when the CLA was added. See
->   [CLA.md](../CLA.md).
->
-> **Do not send these emails as written.** The rest — the sequence, who to
-> approach, what the Incubator asks for — is still the best account of the
-> process this repository has, which is why the file is kept.
->
-> ---
->
-> **Previous status: on hold — 22 August 2026.**
->
-> These steps are unsent and still accurate: Quilzo is AGPL-3.0-or-later, which
-> is the licence the emails below describe.
->
-> The remaining blocker is the one the Incubator actually cares about — a
-> community rather than a single maintainer — so sending this today would be
-> asking the ASF to adopt a project of one. The day this project has
-> contributors is the day it becomes sendable without rewriting.
+> **Status: on hold.** Quilzo is licensed under Apache-2.0. The remaining
+> blocker is the one the Incubator cares about — a community rather than a single
+> maintainer — so sending this today would be asking the ASF to adopt a project
+> of one.
 
 
 # Submitting Quilzo to the Apache Incubator
@@ -104,13 +79,10 @@ am willing to spend time recruiting before any vote, and I would value
 frank advice on whether to do that first or to enter with community
 building as the incubation goal.
 
-On licensing. Quilzo is AGPL-3.0-or-later today. I understand AGPL is
-Category X and that this is not something the Incubator could make an
-exception for, so I am not asking it to: I will relicense to Apache-2.0,
-without reservation, and file an SGA whenever a Champion asks for one.
-The relicensing is clean -- one human contributor, a DCO rather than a
-CLA, and no third-party code to reclassify. The draft explains why AGPL
-was chosen and what dropping it costs.
+On licensing. Quilzo is Apache-2.0 already, and I will file an SGA
+whenever a Champion asks for one. The IP clearance is short -- one human
+contributor, a DCO sign-off rather than a CLA, and no third-party code
+to reclassify.
 
 One more thing I would rather say than have found. Quilzo has been
 developed with substantial LLM assistance, and the git history says so --

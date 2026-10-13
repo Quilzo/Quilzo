@@ -14,8 +14,7 @@
 
 <p align="center">
   <a href="https://github.com/quilzo/quilzo/actions/workflows/ci.yml"><img src="https://github.com/quilzo/quilzo/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue" alt="licence: AGPL-3.0-or-later"></a>
-  <a href="LICENSING.md"><img src="https://img.shields.io/badge/or-commercial-blue" alt="or commercial"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-Apache--2.0-blue" alt="licence: Apache-2.0"></a>
   <a href="go.mod"><img src="https://img.shields.io/badge/dependencies-0-brightgreen" alt="dependencies: 0"></a>
   <a href="#measured-not-asserted"><img src="https://img.shields.io/badge/AgentDojo%20attacks%20refused-26%2F26-brightgreen" alt="AgentDojo attacks refused: 26/26"></a>
 </p>
@@ -366,7 +365,6 @@ Choose something else if:
   through MCP servers you approve and pin. There is no marketplace.
 - **You need commercial support or a 1.0.** There is one maintainer and no 1.0
   yet. [GOVERNANCE.md](GOVERNANCE.md) says what it takes to change that.
-- **Your employer forbids AGPL code.** Some do. See [Licence](#licence).
 
 ## Install
 
@@ -411,18 +409,9 @@ Every screen in the admin has a Help link to its own section.
 
 ## Licence
 
-Two licences, and you choose: `AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial`.
-
-**AGPL-3.0-or-later unless you have signed the other one.** It needs no
-permission, key or conversation. You may host Quilzo, modify it, charge for it
-and build a business on it. If you run a modified Quilzo as a service for other
-people, those people can have the source.
-
-The commercial licence is for organisations that cannot take AGPL code, and for
-vendors embedding Quilzo in a product they will not release under the AGPL. It
-changes your terms and not the program: **there is one Quilzo**, with no feature
-held back for paying licensees. [LICENSING.md](LICENSING.md) has the detail and
-the project's licensing history.
+[Apache License 2.0](LICENSE). Use it, modify it, embed it and sell it,
+in the open or in a closed product, under the terms in [LICENSE](LICENSE)
+and [NOTICE](NOTICE).
 
 ## Contributing
 
@@ -432,6 +421,6 @@ substance and you can have commit access; the bar is written down in
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the two-minute path from clone to a running
 system, the one rule that will surprise you (no dependencies), and how review
-works. Contributions need a sign-off and a [contributor licence
-agreement](CLA.md); copyright stays with you. Security reports go through
+works. Contributions are made under the Apache License 2.0 with a sign-off;
+copyright stays with you. Security reports go through
 [SECURITY.md](SECURITY.md), privately.

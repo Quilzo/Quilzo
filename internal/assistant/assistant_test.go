@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 package assistant
 
@@ -634,7 +634,7 @@ func TestAnFAQsQuestionFindsItsAnswer(t *testing.T) {
 			map[string]any{"faq": map[string]any{"items": []any{
 				map[string]any{"q": "What happens when an agent wants to publish?",
 					"a": "It stops and asks. A person sees the exact page it wants to write, and nothing is written until they agree."},
-				map[string]any{"q": "Is it free?", "a": "Yes, under the AGPL."},
+				map[string]any{"q": "Is it free?", "a": "Yes, under the Apache License 2.0."},
 			}}},
 		}},
 	}

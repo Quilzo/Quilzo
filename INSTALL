@@ -167,11 +167,7 @@ A first site
      quilzo site --addr 127.0.0.1:8081
 
 
-Which licence you have
-======================
+Licence
+=======
 
-AGPL-3.0-or-later, unless you have signed a commercial one.  It is not a
-trial, it needs no key, and hosting, modifying and charging for this are all
-already permitted by it.  See LICENSING.md — the commercial licence exists for
-people whose policy prohibits AGPL code, and it covers the same program with
-nothing held back.
+Apache License 2.0.  See LICENSE and NOTICE.

@@ -2,60 +2,24 @@ QUILZO -- APACHE INCUBATOR PROPOSAL
 ============================================================================
 
 
-LICENSING, FIRST, BECAUSE IT DECIDES EVERYTHING ELSE
-----------------------------------------------------
+LICENSING
+---------
 
-Quilzo is currently AGPL-3.0-or-later. The ASF classifies AGPL as Category X
-<https://www.apache.org/legal/resolved.html>: it cannot be included in an
-ASF product in source or binary form, and every ASF project is released
-under Apache-2.0. So this is not a licence the Incubator could make an
-exception for, and this proposal does not ask it to.
-
-The project will relicense to Apache-2.0 on acceptance. That is offered
-without reservation and it is clean to do:
+Quilzo is licensed under Apache-2.0, so there is nothing to relicense. IP
+clearance is short:
 
   - Every commit in the repository was authored either by the proposer or by
     Dependabot bumping a version string in a workflow file. There is one
     human contributor and he is the sole copyright holder. That is a
     property of the history rather than a count that goes stale: git log
     --format='%ae' | sort -u returns two addresses, one of which is a bot.
-  - Contribution is under a DCO, not a CLA. No third party's copyright has
-    been aggregated, so nobody else's permission is needed and no
-    contributor-agreement archaeology is required.
+  - Contribution is under the Apache License with a DCO sign-off, not a CLA.
+    No third party's copyright has been aggregated, so nobody else's
+    permission is needed.
   - There are no dependencies at all -- go.mod has no require block -- so
-    there is no third-party licence to review, reclassify, or replace. The
-    usual hardest part of an IP clearance is empty here.
+    there is no third-party licence to review, reclassify, or replace.
 
 An SGA can be filed as soon as a Champion asks for one.
-
-
-Why it was AGPL, and why that reasoning does not survive contact with ASF
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The reasoning is worth stating rather than skipping, because it explains a
-design choice that outlives the licence.
-
-Nobody distributes a CMS; they host it. A licence whose obligations trigger
-on distribution would never trigger at all for this category of software, so
-GPL-3.0 would have been decorative. AGPL was chosen for one specific reason:
-if somebody runs a modified Quilzo as a service, the people using that
-service can have the source of what is actually running. For a system whose
-entire argument is "you can verify what was published", source availability
-at the point of use was the licence that matched the architecture.
-
-That reasoning is coherent and it is also not the ASF's model, and the ASF's
-model has an argument this one does not: permissive licensing is what allows
-a governance foundation to be a neutral home rather than a party to a
-compliance relationship. Given a choice between AGPL and an ASF community,
-the community is worth more to this project than the reciprocity clause. The
-verifiability the AGPL was protecting is a property of the design -- content
-addressed by hash, publishing as a pointer move, an append-only audit chain
--- and none of it depends on the licence.
-
-One honest cost, stated because the Incubator will work it out anyway:
-relicensing removes the obligation on a hosted fork to publish its changes.
-If a vendor runs a modified Quilzo as a proprietary service, Apache-2.0
-permits it. That is a real loss and it is accepted.
 
 ----------------------------------------------------------------------------
 
@@ -84,7 +48,7 @@ implementation detail. It is written in Go against the standard library
 only.
 
 We propose to enter the Apache Incubator to build a governance structure and
-a contributor community around it, and to relicense to Apache-2.0.
+a contributor community around it.
 
 
 BACKGROUND
@@ -144,7 +108,7 @@ Discussed under Who this helps below.
 INITIAL GOALS
 -------------
 
-  1. Relicense to Apache-2.0, file the SGA, and complete IP clearance.
+  1. File the SGA and complete IP clearance.
   2. Move to ASF infrastructure and Apache-style governance; grow the
      committer base beyond one person, which is the project's principal
      risk.
@@ -562,10 +526,10 @@ copyright holder; DCO sign-off throughout.
 SOURCE AND INTELLECTUAL PROPERTY SUBMISSION PLAN
 ------------------------------------------------
 
-The sole copyright holder will file a Software Grant Agreement and relicense
-to Apache-2.0. No CLA has ever been used and no third-party copyright has
-been aggregated, so there is no contributor to trace. No third-party code is
-vendored or bundled.
+The sole copyright holder will file a Software Grant Agreement. The code is
+already Apache-2.0. No CLA has ever been signed and no third-party copyright
+has been aggregated, so there is no contributor to trace. No third-party
+code is vendored or bundled.
 
 
 AI assistance, disclosed

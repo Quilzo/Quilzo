@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 // Package scim lets a company's identity provider keep Quilzo's people in
 // step with its own: SCIM 2.0 (RFC 7643, RFC 7644), as Okta and Microsoft
