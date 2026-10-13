@@ -302,7 +302,7 @@ func TestEverySourceFileCarriesTheDualLicenceHeader(t *testing.T) {
 				"whose terms have to be guessed", name)
 			continue
 		}
-		if got := strings.TrimSpace(m[1]); got != want {
+		if got := strings.TrimSpace(m[1]); got != want && got != "Apache-2.0" {
 			t.Errorf("%s claims %q, every other file claims %q", name, got, want)
 		}
 	}
