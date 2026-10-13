@@ -560,6 +560,7 @@ agents and integrations
   quilzo eval keep RUN-ID [--finishes --uses a,b --avoids c]   a kept run as a test case
   quilzo eval run AGENT [--k 3] [--model] [--attempts N]   every case k times, and with instructions planted
   quilzo eval cases AGENT | show AGENT | add AGENT --goal G ... | remove AGENT CASE
+  quilzo approvals                         everything waiting for you to decide, and the command for each
   quilzo agent approve RUN STEP            let the action a run is waiting on go ahead
   quilzo agent answer RUN STEP NAME=VALUE  answer the decider's question a run is waiting on
   quilzo agent decline RUN STEP            refuse it; the run carries on without
@@ -1056,6 +1057,8 @@ func main() {
 		err = cmdConfig(root, cmdArgs)
 	case "verify":
 		err = cmdVerify(root)
+	case "approvals":
+		err = cmdApprovals(root, cmdArgs)
 	// --version and --help as well as the subcommands.
 	//
 	// The GNU Coding Standards ask for both as options, and the reason is not

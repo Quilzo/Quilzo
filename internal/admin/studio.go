@@ -811,6 +811,8 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		OutputBytes int64
 		// Spend is what the step cost, when anything was metered.
 		Spend string
+		// Sure is a decider's confidence in its answer, when the step had one.
+		Sure string
 	}
 	var steps []stepRow
 	prev := rec.Started
@@ -832,6 +834,9 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 	for i, st := range rec.Trace.Steps {
 		sr := stepRow{N: st.N, Allowed: st.Allowed, Why: st.Why,
 			Result: st.Result, Err: st.Err, Redirected: st.Redirected}
+		if st.Confidence != nil {
+			sr.Sure = fmt.Sprintf("%.2f sure", *st.Confidence)
+		}
 		if st.Tokens > 0 || st.Cost > 0 {
 			sr.Spend = fmt.Sprintf("%d tokens · %s", st.Tokens, agent.MoneyText(st.Cost, s.agentCurrency()))
 		}

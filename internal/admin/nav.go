@@ -70,6 +70,9 @@ var groups = []string{
 // destinations is every screen, in the default order.
 var destinations = []destination{
 	{"pages", "Pages", "/", "Content", "pages", auth.ActView},
+	// Everything waiting for a person, from every part of the program, so
+	// nothing waits unseen because it waited somewhere nobody opened.
+	{"approvals", "Approvals", "/approvals", "Content", "agents", auth.ActView},
 	{"records", "Data", "/records", "Content", "types", auth.ActView},
 	{"types", "Types", "/types", "Content", "types", auth.ActView},
 	{"structure", "Structure", "/structure", "Content", "structure", auth.ActView},

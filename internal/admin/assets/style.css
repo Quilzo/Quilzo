@@ -3301,3 +3301,6 @@ td .duty-more { margin: 4px 0 0; }
 .question-form fieldset { border: 1px solid var(--outline-variant); border-radius: 8px; padding: .5rem .75rem; margin: 0 0 .75rem; }
 .question-form legend { font-weight: 600; padding: 0 .25rem; }
 .question-form label { display: inline-flex; align-items: center; gap: .35rem; margin-right: .75rem; min-height: 40px; }
+.approval-group { margin-block: 1.5rem; }
+.approval-group h2 .count { font-size: .8em; color: var(--on-surface-variant); }
+.approvals-table td { vertical-align: top; }

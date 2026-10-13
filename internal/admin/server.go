@@ -1269,6 +1269,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/personalise", s.handlePersonalise)
 	mux.HandleFunc("/personalise/change", s.handlePersonaliseChange)
 	mux.HandleFunc("/experiments/change", s.handleExperimentChange)
+	mux.HandleFunc("/approvals", s.handleApprovals)
+	mux.HandleFunc("/approvals/act", s.handleApprovalsAct)
 	mux.HandleFunc("/decisions", s.handleDeciders)
 	mux.HandleFunc("/decisions/", s.handleDecider)
 	mux.HandleFunc("/decisions/save", s.handleDeciderSave)
