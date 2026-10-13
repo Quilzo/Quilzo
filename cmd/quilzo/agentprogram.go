@@ -520,7 +520,7 @@ func agentProgramCmd(root string, args []string) error {
 		detail["program"] = clip(strings.Join(command, " "), 300)
 		detail["backend"] = p.Backend
 	}
-	if err := m.Validate(knownCapabilities(root)); err != nil {
+	if err := m.ValidateWith(knownCapabilities(root), customKinds(root)); err != nil {
 		return err
 	}
 	set.Agents[name] = m

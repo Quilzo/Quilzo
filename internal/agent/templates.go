@@ -329,12 +329,21 @@ var templates = map[Kind]Template{
 // For returns the template for a kind.
 func For(k Kind) (Template, bool) { t, ok := templates[k]; return t, ok }
 
-// New returns a validated manifest for a kind, under a name.
+// New returns a validated manifest for a built-in kind, under a name.
 func New(k Kind, name string, known map[string]bool) (Manifest, error) {
 	t, ok := templates[k]
 	if !ok {
 		return Manifest{}, errUnknownKind(k)
 	}
+	return From(t, name, known)
+}
+
+// From returns a validated manifest from any template — a built-in kind's
+// or one a person authored — under a name. The only way a kind exists
+// beyond the built-in set: somebody wrote a template for it, which is
+// checked where the template is loaded, so a name that reaches this far
+// is a kind with defaults somebody stood behind.
+func From(t Template, name string, known map[string]bool) (Manifest, error) {
 	m := t.Manifest
 	m.Name = name
 	// Copied rather than shared: the template's slices would otherwise be
@@ -343,7 +352,9 @@ func New(k Kind, name string, known map[string]bool) (Manifest, error) {
 	m.Capabilities = append([]string(nil), t.Manifest.Capabilities...)
 	m.Tools = append([]Tool(nil), t.Manifest.Tools...)
 	m.Delegates = append([]string(nil), t.Manifest.Delegates...)
-	if err := m.Validate(known); err != nil {
+	// The template's own kind is the one kind it may make: a built-in's is
+	// known already, and a store's own is known because its template is.
+	if err := m.ValidateWith(known, map[Kind]bool{t.Manifest.Kind: true}); err != nil {
 		return Manifest{}, err
 	}
 	return m, nil

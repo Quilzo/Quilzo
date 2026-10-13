@@ -109,7 +109,7 @@ func cmdAgent(root string, args []string) error {
 	}
 	switch args[0] {
 	case "templates":
-		return agentTemplates()
+		return agentTemplates(root)
 	case "list":
 		return agentList(root)
 	case "show":
@@ -184,7 +184,11 @@ func agentUsage() error {
 kinds: %s`, strings.Join(agent.KindNames(), ", "))
 }
 
-func agentTemplates() error {
+func agentTemplates(root string) error {
+	set, terr := loadCustomTemplates(root)
+	if terr != nil {
+		return terr
+	}
 	for _, t := range agent.Catalogue() {
 		m := t.Manifest
 		fmt.Printf("  %s%-12s%s %s\n", bold, m.Kind, reset, t.Summary)
@@ -202,8 +206,27 @@ func agentTemplates() error {
 		}
 		fmt.Println()
 	}
+	if len(set) > 0 {
+		fmt.Printf("  %sand this store's own:%s\n\n", bold, reset)
+		var kinds []string
+		for k := range set {
+			kinds = append(kinds, string(k))
+		}
+		sort.Strings(kinds)
+		for _, k := range kinds {
+			t := set[agent.Kind(k)]
+			fmt.Printf("  %s%-12s%s %s\n", bold, k, reset, t.Summary)
+			if t.When != "" {
+				fmt.Printf("      %s%s%s\n", dim, indented(t.When, 66, "      "), reset)
+			}
+			fmt.Printf("      %scapabilities%s %s   %sautonomy%s %s\n", dim, reset,
+				strings.Join(t.Manifest.Capabilities, ", "), dim, reset, t.Manifest.Autonomy)
+			fmt.Println()
+		}
+	}
 	fmt.Printf("  %severy template validates as written, and is the narrow "+
-		"answer — widen what you need%s\n", dim, reset)
+		"answer — widen what you need. `quilzo agent template save FILE` "+
+		"declares a kind of this store's own%s\n", dim, reset)
 	return nil
 }
 
@@ -245,8 +268,9 @@ func agentNew(root string, args []string) error {
 		}
 	}
 	if kind == "" {
-		return fmt.Errorf("which kind? one of %s\n  quilzo agent templates — "+
-			"what each one is for", strings.Join(agent.KindNames(), ", "))
+		return fmt.Errorf("which kind? one of %s, or a kind this store's "+
+			"templates declare\n  quilzo agent templates — what each one is for",
+			strings.Join(agent.KindNames(), ", "))
 	}
 
 	set, err := loadAgents(root)
@@ -258,8 +282,18 @@ func agentNew(root string, args []string) error {
 			"`quilzo agent show %s` to see it", name, name)
 	}
 
-	m, err := agent.New(agent.Kind(kind), name, knownCapabilities(root))
-	if err != nil {
+	// The built-in kinds first; a kind this store's templates declare is
+	// as real as one shipped here, and comes the same way.
+	custom, cerr := loadCustomTemplates(root)
+	if cerr != nil {
+		return cerr
+	}
+	var m agent.Manifest
+	if t, ok := custom[agent.Kind(kind)]; ok {
+		if m, err = agent.From(t, name, knownCapabilities(root)); err != nil {
+			return err
+		}
+	} else if m, err = agent.New(agent.Kind(kind), name, knownCapabilities(root)); err != nil {
 		return err
 	}
 	set.Agents[name] = m
@@ -355,10 +389,11 @@ func agentCheck(root string) error {
 	}
 	sort.Strings(names)
 
+	customKinds := customKinds(root)
 	bad := 0
 	for _, n := range names {
 		m := set.Agents[n]
-		if verr := m.Validate(known); verr != nil {
+		if verr := m.ValidateWith(known, customKinds); verr != nil {
 			bad++
 			fmt.Printf("  %s%s%s %v\n", red, n, reset, verr)
 			continue
@@ -748,7 +783,7 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 	// written when an operation existed and no longer does describes a
 	// permission nothing grants, and running it would report a clean result
 	// for an agent that cannot work.
-	if err := m.Validate(knownCapabilities(root)); err != nil {
+	if err := m.ValidateWith(knownCapabilities(root), customKinds(root)); err != nil {
 		return m, nil, err
 	}
 	note := func(by, why string, before agent.Manifest) {

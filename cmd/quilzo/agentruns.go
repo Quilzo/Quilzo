@@ -582,7 +582,7 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 				m.Name, strings.Join(delta.Added, "\n  "))
 		}
 	}
-	if err := m.Validate(knownCapabilities(root)); err != nil {
+	if err := m.ValidateWith(knownCapabilities(root), customKinds(root)); err != nil {
 		return err
 	}
 	for _, d := range m.Delegates {
