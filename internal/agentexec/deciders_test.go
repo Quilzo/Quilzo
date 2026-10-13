@@ -5,6 +5,7 @@ package agentexec
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -92,20 +93,22 @@ func TestAnAgentAsksATypedQuestionAndGetsATypedAnswer(t *testing.T) {
 	}
 }
 
-// An escalated answer says so in words the model is told to obey, and it
-// is not dressed up as an answer.
-func TestAnEscalatedAnswerSaysAPersonDecides(t *testing.T) {
+// An escalated answer is the run's question for a person, typed as the
+// decider asked it, and nothing of it reaches the model as an answer.
+func TestAnEscalatedAnswerIsAQuestionForAPerson(t *testing.T) {
 	perform, _ := decidersFor(t, &flipModel{})
 	out, err := perform(context.Background(), agent.Action{Op: "decide",
 		Input: map[string]any{"name": "triage", "state": "something ambiguous"}})
-	if err != nil {
-		t.Fatal(err)
+	var esc *agent.Escalation
+	if !errors.As(err, &esc) {
+		t.Fatalf("the escalation was not a question: %v %q", err, out)
 	}
-	if !strings.Contains(out, "a person decides") || !strings.Contains(out, "do not act on this answer") {
-		t.Fatalf("the escalation did not say what it is:\n%s", out)
+	if out != "" || strings.Contains(esc.Why, "billing") || strings.Contains(esc.Why, "support") {
+		t.Fatalf("an escalated answer leaked a value to act on: %q %q", out, esc.Why)
 	}
-	if strings.Contains(out, "queue: billing") || strings.Contains(out, "queue: support") {
-		t.Fatalf("an escalated answer leaked a value to act on:\n%s", out)
+	q := esc.Questions[0]
+	if q.Name != "queue" || q.Kind != "choice" || len(q.Options) == 0 || q.Threshold == 0 {
+		t.Fatalf("the question is not the decider's, typed: %+v", q)
 	}
 }
 
@@ -115,11 +118,9 @@ func TestWithNoModelEveryQuestionEscalates(t *testing.T) {
 	perform, _ := decidersFor(t, nil)
 	out, err := perform(context.Background(), agent.Action{Op: "decide",
 		Input: map[string]any{"name": "triage", "state": "x"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, "a person decides") {
-		t.Fatalf("without a model nothing should be decided:\n%s", out)
+	var esc *agent.Escalation
+	if !errors.As(err, &esc) || out != "" {
+		t.Fatalf("without a model nothing should be decided: %v %q", err, out)
 	}
 }
 

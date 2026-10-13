@@ -128,6 +128,9 @@ type Step struct {
 	// currency. Zero when nothing was metered.
 	Tokens int   `json:",omitempty"`
 	Cost   int64 `json:",omitempty"`
+	// Confidence is how sure the step's answer was, when it was a
+	// decider's: of several questions, the least sure.
+	Confidence *float64 `json:",omitempty"`
 }
 
 // Trace is what a run produced, and is the audit record.
@@ -237,12 +240,19 @@ type Runner struct {
 // refused. The run's record carries the question while it waits, marked
 // live, so the run's page and `quilzo agent approve` can answer it.
 func (r Runner) holdFor(ctx context.Context, t *Trace, s *Session, w Pending) (bool, string) {
+	_, ok, why := r.holdVerdict(ctx, t, s, w)
+	return ok, why
+}
+
+// holdVerdict is holdFor with the person's verdict, for a question whose
+// answers the run goes on with.
+func (r Runner) holdVerdict(ctx context.Context, t *Trace, s *Session, w Pending) (Verdict, bool, string) {
 	what := from(w.Action)
 	if r.Hold == nil {
 		if w.Why != "" {
-			return false, w.Why
+			return Verdict{}, false, w.Why
 		}
-		return false, fmt.Sprintf("%s asks a person first, and this run has nobody to ask", what)
+		return Verdict{}, false, fmt.Sprintf("%s asks a person first, and this run has nobody to ask", what)
 	}
 	w.Live = true
 	t.Waiting = &w
@@ -264,16 +274,30 @@ func (r Runner) holdFor(ctx context.Context, t *Trace, s *Session, w Pending) (b
 	}
 	switch {
 	case err != nil:
-		return false, fmt.Sprintf("%s waited for a person and was not decided (%v)%s", what, err, because)
+		return v, false, fmt.Sprintf("%s waited for a person and was not decided (%v)%s", what, err, because)
 	case v.N != w.N:
-		return false, fmt.Sprintf("the answer was for step %d and this is step %d", v.N, w.N)
+		return v, false, fmt.Sprintf("the answer was for step %d and this is step %d", v.N, w.N)
 	case !v.Approve:
 		if v.By != "" {
-			return false, v.By + " declined this" + because
+			return v, false, v.By + " declined this" + because
 		}
-		return false, "a person declined this" + because
+		return v, false, "a person declined this" + because
 	}
-	return true, ""
+	return v, true, ""
+}
+
+// answered is a person's answer to a question as the text the run goes on
+// with, or why it is not one.
+func answered(w Pending, v Verdict) (string, string) {
+	text, err := AnswerQuestions(w.Questions, v.Answers)
+	if err != nil {
+		return "", err.Error()
+	}
+	by := v.By
+	if by == "" {
+		by = "a person"
+	}
+	return by + " answered what the decider was not sure of:\n" + text, ""
 }
 
 // ErrNoDecide is returned when a runner has no way to decide anything.
@@ -340,10 +364,35 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 		if approved {
 			action, first = *first, nil
 		} else if action, err = r.Decide(ctx, goal, seen); err != nil {
-			t.Stopped = "the model could not be asked: " + err.Error()
-			t.Spent = spendOf(s)
-			r.record(t, s)
-			return t, err
+			// The reviewer's refusal is a hold on the exact action, for a
+			// person to let through; anything else ends the run.
+			var held *Held
+			if !errors.As(err, &held) {
+				t.Stopped = "the model could not be asked: " + err.Error()
+				t.Spent = spendOf(s)
+				r.record(t, s)
+				return t, err
+			}
+			action = held.Action
+			if s.wouldAllow(action) {
+				w := Pending{N: turn, Action: action, Since: time.Now(), Kind: WaitReview,
+					Why: "the reviewer refused it: " + held.Why}
+				if r.Pause {
+					w.Tokens, w.Cost = s.TokensUsed()-tokens0, s.Cost()-cost0
+					t.Waiting = &w
+					t.Stopped = "waiting for a person: the reviewer refused " + from(action)
+					break
+				}
+				refused := Step{N: turn, Action: action, At: w.Since}
+				if ok, why := r.holdFor(ctx, &t, s, w); !ok {
+					refused.Why = why
+					t.Steps = append(t.Steps, priced(refused))
+					seen = append(seen, Observation{From: "quilzo", Body: "refused: " + why, Trusted: true})
+					r.checkpoint(t, s)
+					continue
+				}
+				approved = true
+			}
 		}
 
 		step := Step{N: turn, Action: action, At: time.Now()}
@@ -492,6 +541,38 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 		}
 
 		out, perr := r.Perform(ctx, action)
+		if c, ok := s.takeConfidence(); ok {
+			step.Confidence = &c
+		}
+		// A decider not sure enough: the run asks a person its question and
+		// goes on with their answer, never with the unsure one.
+		var esc *Escalation
+		if perr != nil && errors.As(perr, &esc) {
+			w := Pending{N: turn, Action: action, Since: step.At, Kind: WaitQuestion,
+				Why: esc.Why, Questions: esc.Questions}
+			if r.Pause {
+				w.Tokens, w.Cost = s.TokensUsed()-tokens0, s.Cost()-cost0
+				t.Waiting = &w
+				t.Stopped = "waiting for a person to answer: " + esc.Why
+				break
+			}
+			v, ok, why := r.holdVerdict(ctx, &t, s, w)
+			text := ""
+			if ok {
+				if text, why = answered(w, v); text == "" {
+					ok = false
+				}
+			}
+			if !ok {
+				step.Result = "nobody answered, so nothing the decider said is to be acted on: " + why
+			} else {
+				step.Result = text
+			}
+			seen = append(seen, Observation{From: from(action), Body: step.Result, Trusted: true})
+			t.Steps = append(t.Steps, priced(step))
+			r.checkpoint(t, s)
+			continue
+		}
 		if perr != nil {
 			step.Err = perr.Error()
 			seen = append(seen, Observation{

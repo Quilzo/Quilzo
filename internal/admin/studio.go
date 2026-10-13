@@ -919,6 +919,19 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		}
 		data["Pending"] = pend
 		data["Live"] = wt.Live
+		data["WaitKind"] = wt.Kind
+		if wt.Kind == agent.WaitQuestion {
+			type qrow struct {
+				agent.Question
+				ConfidenceText, ThresholdText string
+			}
+			var qs []qrow
+			for _, q := range wt.Questions {
+				qs = append(qs, qrow{Question: q, ConfidenceText: fmt.Sprintf("%.2f", q.Confidence),
+					ThresholdText: fmt.Sprintf("%.2f", q.Threshold)})
+			}
+			data["Questions"] = qs
+		}
 		// The picture taken for this question: its reason leads the
 		// question's (the breaker's may follow), and it was taken after
 		// the step began, so an earlier question's like it is not shown.
@@ -979,15 +992,28 @@ func (s *Server) handleRunAct(w http.ResponseWriter, r *http.Request,
 			return
 		}
 		verdict := r.FormValue("verdict")
-		if err != nil || (verdict != "approve" && verdict != "decline") {
+		if err != nil || (verdict != "approve" && verdict != "decline" && verdict != "answer") {
 			back(page, "", fmt.Errorf("say which step, and whether it may go ahead"))
 			return
 		}
-		if aerr := s.Agents.Answer(id, step, verdict == "approve", p.Name); aerr != nil {
+		// A decider's question is answered field by field: a.NAME is the
+		// answer to the question called NAME.
+		var answers map[string]string
+		if verdict == "answer" {
+			answers = map[string]string{}
+			for k, vs := range r.PostForm {
+				if name, ok := strings.CutPrefix(k, "a."); ok && len(vs) > 0 && len(answers) < 16 {
+					answers[name] = clipText(vs[0], 200)
+				}
+			}
+		}
+		if aerr := s.Agents.Answer(id, step, verdict != "decline", answers, p.Name); aerr != nil {
 			back(page, "", aerr)
 			return
 		}
-		if verdict == "approve" {
+		if verdict == "answer" {
+			back(page, fmt.Sprintf("Step %d is answered, and the run goes on with your answer.", step), nil)
+		} else if verdict == "approve" {
 			back(page, fmt.Sprintf("Step %d went ahead, as it was shown.", step), nil)
 		} else {
 			back(page, fmt.Sprintf("Step %d was declined, and the agent was told.", step), nil)

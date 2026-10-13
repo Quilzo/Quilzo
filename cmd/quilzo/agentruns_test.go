@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/decide"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/provenance"
@@ -881,5 +882,69 @@ func TestAPauseJudgedAMistakeCostsNothing(t *testing.T) {
 	}
 	if lost, _ := trustLost(root, "other"); !lost.IsZero() {
 		t.Fatal("another agent's pause was held against it")
+	}
+}
+
+// The whole of an escalation, against a real store: a decider the model
+// asks is not sure, the run stops with its question, a person answers it
+// in its shape, and the run goes on with the person's answer.
+func TestADecidersEscalationIsAnsweredAndTheRunGoesOn(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	declaredAutonomy(t, root)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		body := string(b)
+		choice := `{"op":"done","say":"triaged"}`
+		switch {
+		case strings.Contains(body, "Is this order eligible"):
+			// The decider's own question: an answer nobody could be sure of.
+			choice = `{"eligible":{"value":"yes","confidence":0.3}}`
+		case strings.Contains(body, "Nothing has been done yet"):
+			choice = `{"op":"decide","input":{"name":"refunds","state":"order 7 arrived broken"}}`
+		}
+		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"role": "assistant", "content": choice}}}})
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(out)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("QUILZO_MODEL_URL", srv.URL+"/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+	if err := decide.Save(decidersPath(root), &decide.Set{Deciders: []decide.Decider{{
+		Name: "refunds", Title: "Refunds", MinConfidence: 0.8, Samples: 1,
+		Questions: []decide.Question{{Name: "eligible", Ask: "Is this order eligible for a refund?", Kind: decide.YesNo}}}}}); err != nil {
+		t.Fatal(err)
+	}
+	m := asker("triage")
+	m.Capabilities, m.AskFirst = []string{"decide"}, nil
+	if err := declareAgent(root, m, true, true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	id, err := runAgentOnce(root, "triage", "triage ticket 7", true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := loadAgentRun(root, id)
+	w := rec.Trace.Waiting
+	if w == nil || w.Kind != agent.WaitQuestion || len(w.Questions) != 1 || w.Questions[0].Kind != "yesno" {
+		t.Fatalf("the escalation did not stop the run with its question: %+v %q", w, rec.Trace.Stopped)
+	}
+	if _, err := continueAgentRun(context.Background(), root, id,
+		&agent.Verdict{N: w.N, Approve: true, Answers: map[string]string{"eligible": "perhaps"}}, asAdmin("sam")); err == nil {
+		t.Fatal("an answer outside the question's shape was taken")
+	}
+	done, err := continueAgentRun(context.Background(), root, id,
+		&agent.Verdict{N: w.N, Approve: true, Answers: map[string]string{"eligible": "no"}}, asAdmin("sam"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := done.Trace.Steps[w.N-1]
+	if !strings.Contains(st.Result, "sam answered") || !strings.Contains(st.Result, "eligible: no") {
+		t.Fatalf("the run did not go on with the person's answer: %+v", st)
+	}
+	if !done.Trace.Complete || len(done.Answers) == 0 || done.Answers[len(done.Answers)-1].Answers["eligible"] != "no" {
+		t.Errorf("the run's record does not keep what was answered: %+v", done.Answers)
 	}
 }

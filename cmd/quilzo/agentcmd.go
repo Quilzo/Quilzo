@@ -130,6 +130,8 @@ func cmdAgent(root string, args []string) error {
 		return agentTrace(root, args[1:])
 	case "approve", "decline":
 		return agentAnswer(root, args[0] == "approve", args[1:])
+	case "answer":
+		return agentAnswerQuestion(root, args[1:])
 	case "stop":
 		return agentStop(root, args[1:])
 	case "workspace":
@@ -182,6 +184,7 @@ func agentUsage() error {
   trace RUN              one run, step by step
   approve RUN STEP       agree to the action a run is waiting on
   decline RUN STEP       refuse it, and let the run carry on without
+  answer RUN STEP NAME=VALUE...  answer the decider's question a run is waiting on
   resume RUN             continue a run that was interrupted
   replay RUN STEP        run it again from after that step, as a new run
 
@@ -1397,8 +1400,36 @@ func printPending(id string, w *agent.Pending) {
 	if what == "" {
 		what = w.Action.Tool
 	}
+	if w.Kind == agent.WaitQuestion {
+		fmt.Printf("\n  %swaiting for a person to answer%s  step %d: %s\n", bold, reset, w.N, printable(w.Why))
+		var names []string
+		for _, q := range w.Questions {
+			fmt.Printf("    %s%s%s  %s\n", bold, q.Name, reset, printable(q.Ask))
+			shape := q.Kind
+			switch q.Kind {
+			case "choice":
+				shape = "one of " + strings.Join(q.Options, ", ")
+			case "yesno":
+				shape = "yes or no"
+			case "score":
+				shape = "a number from 0 to 1"
+			}
+			fmt.Printf("      %s%s; the model guessed %q at %.2f, under %.2f%s\n", dim, shape,
+				printable(q.Guess), q.Confidence, q.Threshold, reset)
+			names = append(names, q.Name+"=…")
+		}
+		fmt.Printf("    quilzo agent answer %s %d %s\n", id, w.N, strings.Join(names, " "))
+		fmt.Printf("    quilzo agent decline %s %d\n", id, w.N)
+		return
+	}
+	if w.Kind == agent.WaitReview {
+		what += ", which the reviewer refused"
+	}
 	fmt.Printf("\n  %swaiting for a person%s  step %d wants %s\n", bold, reset,
 		w.N, what)
+	if w.Why != "" {
+		fmt.Printf("    %s%s%s\n", dim, printable(w.Why), reset)
+	}
 	if len(w.Action.Input) > 0 {
 		if b, err := json.Marshal(w.Action.Input); err == nil {
 			fmt.Printf("    with %s\n", truncate(string(b), 600))

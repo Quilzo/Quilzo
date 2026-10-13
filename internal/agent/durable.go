@@ -59,6 +59,12 @@ type Pending struct {
 	// stopped to ask, kept so the step it becomes is priced whole.
 	Tokens int   `json:",omitempty"`
 	Cost   int64 `json:",omitempty"`
+	// Kind says what the person is asked: whether an action may go ahead
+	// (empty), a decider's question (question), or an action the reviewer
+	// refused (review). See escalation.go.
+	Kind string `json:",omitempty"`
+	// Questions are what a person answers for a question.
+	Questions []Question `json:",omitempty"`
 }
 
 // PendingTTL is how long a question stays answerable. After that whatever
@@ -72,6 +78,8 @@ type Verdict struct {
 	Approve bool
 	// By is who decided. Shown to the model on a refusal, and recorded.
 	By string
+	// Answers are a person's answers to a question, by its name.
+	Answers map[string]string `json:",omitempty"`
 }
 
 // ErrNotWaiting is returned for a verdict on a run with no question open.
@@ -218,6 +226,29 @@ func (r Runner) Continue(ctx context.Context, s *Session, prior Trace,
 	}
 
 	carry()
+	if w := prior.Waiting; w.Kind == WaitQuestion {
+		// The decider was asked, and charged, before the run stopped; the
+		// person's answer is what it returns.
+		by := v.By
+		if by == "" {
+			by = "a person"
+		}
+		st := Step{N: w.N, Action: w.Action, Allowed: true, At: now, Tokens: w.Tokens, Cost: w.Cost}
+		if v.Approve {
+			text, err := AnswerQuestions(w.Questions, v.Answers)
+			if err != nil {
+				return prior, err
+			}
+			st.Result = by + " answered what the decider was not sure of:\n" + text
+		} else {
+			st.Result = by + " declined to answer, so nothing the decider said is to be acted on"
+		}
+		t.Steps = append(t.Steps, st)
+		s.chargeStep()
+		seen = append(seen, Observation{From: from(w.Action), Body: st.Result, Trusted: true})
+		r.checkpoint(t, s)
+		return r.run(ctx, s, t, seen, nil, Pending{})
+	}
 	if !v.Approve {
 		why := "a person declined this"
 		if v.By != "" {

@@ -63,6 +63,8 @@ type Answer struct {
 	Approve bool      `json:"approve"`
 	By      string    `json:"by"`
 	At      time.Time `json:"at"`
+	// Answers are what a person answered a decider's question with.
+	Answers map[string]string `json:"answers,omitempty"`
 }
 
 // Running is the state of a run a process is working on.

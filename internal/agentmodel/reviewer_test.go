@@ -25,8 +25,9 @@ func TestTheReviewerSeesTheActionAndTheGoalAndNothingElse(t *testing.T) {
 	if err == nil || a.Op != "" {
 		t.Fatalf("a refusal the reviewer made was let through: %+v %v", a, err)
 	}
-	if !strings.Contains(err.Error(), "the reviewer refused") || !strings.Contains(err.Error(), "paying is not what was asked") {
-		t.Errorf("the refusal lost the reviewer's reason: %v", err)
+	var held *agent.Held
+	if !errors.As(err, &held) || held.Action.Op != "browser_click" || !strings.Contains(held.Why, "paying is not what was asked") {
+		t.Errorf("the refusal is not a hold on the action with the reviewer's reason: %v", err)
 	}
 	// The reviewer was shown the goal and the action, and nothing of the
 	// page: what the page planted reached the model and did not reach it.

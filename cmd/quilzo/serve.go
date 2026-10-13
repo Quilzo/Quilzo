@@ -328,11 +328,14 @@ func cmdServe(root string, args []string) error {
 		Output: func(id string, n int) ([]byte, error) {
 			return runOutputText(root, id, n)
 		},
-		Answer: func(id string, step int, approve bool, by string) error {
+		Bundle: func(id string) ([]byte, error) {
+			return bundleHTML(root, id, time.Now().UTC())
+		},
+		Answer: func(id string, step int, approve bool, answers map[string]string, by string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
 			defer cancel()
 			_, err := continueAgentRun(ctx, root, id,
-				&agent.Verdict{N: step, Approve: approve}, signedIn(by))
+				&agent.Verdict{N: step, Approve: approve, Answers: answers}, signedIn(by))
 			return err
 		},
 		Resume: func(id, by string) error {

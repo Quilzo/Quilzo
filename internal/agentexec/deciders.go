@@ -101,13 +101,26 @@ func (dd Deciders) ask(ctx context.Context, s *agent.Session, a agent.Action) (s
 	// back: the breaker should know that from here on.
 	s.ReadFiles("the state given to the decider " + name)
 
+	// An escalation is the run's question for a person, with every answer
+	// the decider was not sure of, in the shape it was asked: the run goes
+	// on with what the person says, never with the unsure answer.
+	threshold := d.MinConfidence
+	if threshold == 0 {
+		threshold = 0.8
+	}
+	var questions []agent.Question
 	var out strings.Builder
-	escalated := false
 	for _, ans := range res.Answers {
+		s.NoteConfidence(ans.Confidence)
 		if ans.Escalate {
-			escalated = true
-			fmt.Fprintf(&out, "%s: a person decides (confidence %.2f is under the %.2f threshold) — do not act on this answer\n",
-				ans.Question, ans.Confidence, d.MinConfidence)
+			q := agent.Question{Decider: d.Name, Name: ans.Question, Guess: ans.Value,
+				Confidence: ans.Confidence, Threshold: threshold}
+			for _, dq := range d.Questions {
+				if dq.Name == ans.Question {
+					q.Ask, q.Kind, q.Options = dq.Ask, string(dq.Kind), dq.Options
+				}
+			}
+			questions = append(questions, q)
 			continue
 		}
 		fmt.Fprintf(&out, "%s: %v (confidence %.2f)\n", ans.Question, ans.Value, ans.Confidence)
@@ -115,8 +128,14 @@ func (dd Deciders) ask(ctx context.Context, s *agent.Session, a agent.Action) (s
 			fmt.Fprintf(&out, "  %s\n", clip(ans.Why, 300))
 		}
 	}
-	if escalated {
-		out.WriteString("escalated: a person decides; ask something else or finish\n")
+	if len(questions) > 0 {
+		var low []string
+		for _, q := range questions {
+			low = append(low, fmt.Sprintf("%s %.2f", q.Name, q.Confidence))
+		}
+		return "", &agent.Escalation{Questions: questions,
+			Why: fmt.Sprintf("%s was not sure enough (%s, under %.2f); a person answers",
+				d.Name, strings.Join(low, ", "), threshold)}
 	}
 	return strings.TrimRight(out.String(), "\n"), nil
 }

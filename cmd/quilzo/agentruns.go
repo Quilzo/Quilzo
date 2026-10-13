@@ -239,6 +239,11 @@ func prepareContinue(root, id string, v *agent.Verdict, caller *Caller) (agent.R
 		}
 		return prior, nil, nil
 	}
+	if v != nil && prior.Trace.Waiting != nil {
+		if err := checkAnswers(prior.Trace.Waiting, *v); err != nil {
+			return none, nil, err
+		}
+	}
 	release, err := holdAgentRun(root, id)
 	if err != nil {
 		return none, nil, err
@@ -261,6 +266,23 @@ func prepareContinue(root, id string, v *agent.Verdict, caller *Caller) (agent.R
 	return prior, release, nil
 }
 
+// checkAnswers refuses a verdict that does not fit what the run asks: a
+// decider's question needs every answer, each in its shape; anything else
+// takes none.
+func checkAnswers(w *agent.Pending, v agent.Verdict) error {
+	if w.Kind != agent.WaitQuestion {
+		if len(v.Answers) > 0 {
+			return fmt.Errorf("step %d asks whether it may go ahead, not a question to answer", w.N)
+		}
+		return nil
+	}
+	if !v.Approve {
+		return nil
+	}
+	_, err := agent.AnswerQuestions(w.Questions, v.Answers)
+	return err
+}
+
 // recordAnswer is the log's record of a person's answer to a run.
 func recordAnswer(root string, caller *Caller, prior agent.Record, v agent.Verdict) error {
 	did, w := "agent.approve", prior.Trace.Waiting
@@ -271,9 +293,20 @@ func recordAnswer(root string, caller *Caller, prior agent.Record, v agent.Verdi
 	if what == "" {
 		what = w.Action.Tool
 	}
-	return recordE(root, caller.auditRecord(did, "/", audit.Success,
-		map[string]string{"agent": prior.Agent, "run": prior.ID,
-			"step": fmt.Sprint(w.N), "what": what}))
+	detail := map[string]string{"agent": prior.Agent, "run": prior.ID,
+		"step": fmt.Sprint(w.N), "what": what}
+	if w.Kind != "" {
+		detail["kind"] = w.Kind
+	}
+	if len(v.Answers) > 0 {
+		var pairs []string
+		for _, q := range w.Questions {
+			pairs = append(pairs, q.Name+"="+v.Answers[q.Name])
+		}
+		detail["answers"] = clip(strings.Join(pairs, " "), 500)
+		did = "agent.answer"
+	}
+	return recordE(root, caller.auditRecord(did, "/", audit.Success, detail))
 }
 
 // continueHeld runs a claimed run on from where it is.
@@ -286,7 +319,7 @@ func continueHeld(ctx context.Context, root string, prior agent.Record, v *agent
 	if v != nil {
 		v.By = caller.Name
 		k.rec.Answers = append(append([]agent.Answer(nil), prior.Answers...),
-			agent.Answer{N: v.N, Approve: v.Approve, By: caller.Name, At: now})
+			agent.Answer{N: v.N, Approve: v.Approve, By: caller.Name, At: now, Answers: v.Answers})
 	}
 	out, runErr := executeAgentFrom(ctx, root, prior.Agent, prior.Goal,
 		prior.Model != "", caller,
@@ -879,6 +912,34 @@ func runAndStep(args []string, usage string) (string, int, error) {
 		return "", 0, fmt.Errorf("%q is not a step", args[1])
 	}
 	return args[0], n, nil
+}
+
+// agentAnswerQuestion is `quilzo agent answer RUN STEP NAME=VALUE...`: a
+// person's answers to the decider's question a run is waiting on.
+func agentAnswerQuestion(root string, args []string) error {
+	if len(args) < 3 {
+		return fmt.Errorf("usage: quilzo agent answer RUN STEP NAME=VALUE...")
+	}
+	id, n, err := runAndStep(args[:2], "answer RUN STEP NAME=VALUE...")
+	if err != nil {
+		return err
+	}
+	answers := map[string]string{}
+	for _, kv := range args[2:] {
+		name, value, ok := strings.Cut(kv, "=")
+		if !ok || strings.TrimSpace(name) == "" {
+			return fmt.Errorf("%q is not NAME=VALUE", kv)
+		}
+		answers[strings.TrimSpace(name)] = value
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
+	defer cancel()
+	rec, err := continueAgentRun(ctx, root, id,
+		&agent.Verdict{N: n, Approve: true, Answers: answers}, resolveCaller(root, ""))
+	if rec.ID != "" {
+		printAgentRun(rec)
+	}
+	return err
 }
 
 func agentAnswer(root string, approve bool, args []string) error {
