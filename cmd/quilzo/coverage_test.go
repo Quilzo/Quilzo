@@ -644,6 +644,11 @@ var coverage = map[string]surfaces{
 			"other capability boundary into a suggestion — this is the same " +
 			"reason auth and token are off this surface, and it is the more " +
 			"important instance of it"},
+	"agent template": {Why: "archetypes of this store's own — a kind " +
+		"somebody wrote, which `quilzo agent new --kind` knows the minute " +
+		"it is saved",
+		NoMCP: "writing an archetype shapes every agent made from it, which " +
+			"is an administrator's decision on the machine the store is on"},
 	"integrations": {GUI: "/integrations",
 		NoMCP: "a model reaching other people's systems through a list a " +
 			"model can edit is the loop this whole design exists to keep open"},

@@ -51,7 +51,7 @@ func a2aAgents(root string) []string {
 	known := knownCapabilities(root)
 	var out []string
 	for name, m := range set.Agents {
-		if m.Validate(known) == nil {
+		if m.ValidateWith(known, customKinds(root)) == nil {
 			out = append(out, name)
 		}
 	}

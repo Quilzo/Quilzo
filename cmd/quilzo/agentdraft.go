@@ -117,7 +117,7 @@ func draftAgent(ctx context.Context, root, description, name string, caller *Cal
 		return draftOutcome{}, err
 	}
 	out := draftOutcome{Manifest: m, Notes: left}
-	if err := m.Validate(known); err != nil {
+	if err := m.ValidateWith(known, customKinds(root)); err != nil {
 		out.Invalid = err.Error()
 		return out, nil
 	}
@@ -383,7 +383,7 @@ func agentDeclareFile(root string, args []string) error {
 	if err := dec.Decode(&m); err != nil {
 		return fmt.Errorf("%s is not a declaration: %w", fs.Arg(0), err)
 	}
-	if err := m.Validate(knownCapabilities(root)); err != nil {
+	if err := m.ValidateWith(knownCapabilities(root), customKinds(root)); err != nil {
 		return err
 	}
 	// A name already declared makes this an amendment, and an amendment

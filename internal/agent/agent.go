@@ -105,6 +105,27 @@ func (k Kind) Valid() bool {
 	return false
 }
 
+// ValidWith says whether a kind is one of this program's, or one the
+// store's own templates declare: a kind a person wrote a template for is
+// as real as one shipped here, and nothing downstream special-cases a
+// kind except the supervisor's, which no template may claim.
+func (k Kind) ValidWith(custom map[Kind]bool) bool {
+	if k.Valid() {
+		return true
+	}
+	if k == KindSupervisor {
+		// Never, from a template: the supervisor's powers — naming
+		// delegates — are checked by kind, and a kind nobody compiled
+		// must not unlock them.
+		return false
+	}
+	return custom != nil && custom[k]
+}
+
+// CustomKindPattern is what a person's kind may be named, so a kind is a
+// label and not a slot some other code keys on.
+const CustomKindPattern = `^[a-z][a-z-]{2,31}$`
+
 // Autonomy is how far an agent gets without a person.
 //
 // A ladder, like the role ladder, and for the same reason: a total order is
@@ -348,11 +369,20 @@ func IsWrite(op string) bool { return writeOps[op] }
 // below. A manifest that is quietly corrected is one whose author believes
 // something false about what they deployed.
 func (m *Manifest) Validate(known map[string]bool) error {
+	return m.ValidateWith(known, nil)
+}
+
+// ValidateWith is Validate, knowing the kinds this store's own templates
+// declare.
+func (m *Manifest) ValidateWith(known map[string]bool, customKinds map[Kind]bool) error {
 	if strings.TrimSpace(m.Name) == "" {
 		return fmt.Errorf("an agent needs a name, so a log entry can say which one acted")
 	}
-	if !m.Kind.Valid() {
-		return fmt.Errorf("%q is not an agent kind; use one of %s",
+	if !m.Kind.ValidWith(customKinds) {
+		if m.Kind == KindSupervisor {
+			return fmt.Errorf("%q is not a kind a template may declare: a supervisor's powers are checked by kind, and this program's own template is the only source of one", m.Kind)
+		}
+		return fmt.Errorf("%q is not an agent kind; use one of %s, or a kind one of this store's templates declares",
 			m.Kind, kindList())
 	}
 	if strings.TrimSpace(m.Purpose) == "" {
