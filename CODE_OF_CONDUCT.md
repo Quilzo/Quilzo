@@ -1,7 +1,9 @@
 # Contributor Code of Conduct
 
 This project uses the Contributor Covenant 2.1, unmodified except for the
-reporting channel.
+reporting channel: this repository's private "Report a vulnerability" form,
+with "Conduct report" as its title. Only the maintainers and the reporter can
+read it.
 
 While Quilzo has only one maintainer, a report about that maintainer has
 nowhere independent to go. That gap is named in GOVERNANCE.md rather than
@@ -48,8 +50,8 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement at GitHub's private reporting on this repository —
-https://github.com/quilzo/quilzo/security/advisories/new. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement through this repository's private reporting form, titled "Conduct report":
+https://github.com/Quilzo/Quilzo/security/advisories/new. All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 

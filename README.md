@@ -368,31 +368,25 @@ Choose something else if:
 
 ## Install
 
-**From source**: the quickstart above. `go.mod` has no `require` block, so there
-is nothing to download but the Go toolchain.
+No release is published yet. Build from source, as in the quickstart above:
+`go.mod` has no `require` block, so there is nothing to download but the Go
+toolchain.
 
-**A release binary**: Linux, macOS and Windows, amd64 and arm64:
-
-```bash
-curl -LO https://github.com/Quilzo/Quilzo/releases/latest/download/quilzo-linux-amd64
-curl -LO https://github.com/Quilzo/Quilzo/releases/latest/download/SHA256SUMS
-sha256sum -c --ignore-missing SHA256SUMS
-gh attestation verify quilzo-linux-amd64 --repo Quilzo/Quilzo
-sudo install -m 0755 quilzo-linux-amd64 /usr/local/bin/quilzo
-```
-
-**A container**: built on `gcr.io/distroless/static-debian12:nonroot`: the
-binary, CA certificates and a passwd entry. No shell and no package manager.
+**A container**, built from this repository on
+`gcr.io/distroless/static-debian12:nonroot`: the binary, CA certificates and a
+passwd entry. No shell and no package manager.
 
 ```bash
-docker run --rm -v quilzo:/srv ghcr.io/quilzo/quilzo --root /srv/store init
-docker run --rm -v quilzo:/srv ghcr.io/quilzo/quilzo --root /srv/store demo
-docker run -p 8081:8081 -v quilzo:/srv \
-  ghcr.io/quilzo/quilzo --root /srv/store site --addr 0.0.0.0:8081
+docker build -t quilzo .
+docker run --rm -v quilzo:/srv quilzo --root /srv/store init
+docker run --rm -v quilzo:/srv quilzo --root /srv/store demo
+docker run -p 8081:8081 -v quilzo:/srv quilzo --root /srv/store site --addr 0.0.0.0:8081
 ```
 
-[INSTALL](INSTALL) covers running it for real: the admin on loopback, the site on
-the interface that faces the internet, and what each process may touch.
+Each release will publish signed binaries for Linux, macOS and Windows on amd64
+and arm64, and a container image. [INSTALL](INSTALL) says how to check them, and
+covers running Quilzo for real: the admin on loopback, the site on the
+interface that faces the internet, and what each process may touch.
 
 ## Documentation
 

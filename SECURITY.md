@@ -86,8 +86,26 @@ vulnerability:
   reaches a model route that may not receive it.
 - **The shield cannot be turned on the inside.** Any way a playbook blocks an
   internal network, locks every administrator out, or protects without ending.
+- **A browser reaches only what it declares.** Any request an agent's browser
+  makes to a host its declaration does not name, any press or typing that acts
+  on a host it may only read, or any password it types reaching a page, a
+  model or a record.
+- **A command does only its kind.** Any command classed as reading that changes
+  the workspace, any command that reaches the network without being classed and
+  held as reaching it, or any command that leaves its box or outlives it.
+- **A remembered step is held like a decided one.** Any step replayed from the
+  action cache that skips the declaration, the breaker or asking first, or that
+  replays what was typed in a run for another person.
+- **A widening is read before it is allowed.** Any amendment to a declaration
+  that lets an agent do more without `--widen` or a person's own hands on the
+  agents screen, or a widening allowed and missing from the log.
+- **A person's desktop is not used.** Any way a run reaches a person's keyboard
+  or pointer. Desktop consent hands the session straight back.
 
-These are on `main` and not yet in a release: report against `main`.
+Desktop cells are experimental. Their host side is in scope: anything inside a
+cell reaching the host other than through its vsock, or a press or key that
+commits to something going ahead without a person. The image and the helper
+inside it are the operator's.
 
 ### What the extension boundary actually is
 
@@ -143,23 +161,7 @@ it.
 
 ## Supported versions
 
-Until 1.0 the most recent release line is the supported one. That is v0.3.x.
-
-v0.2.x is the previous line and had the security fixes made since v0.2.1
-backported to it, as v0.2.2, on the `release-v0.2` branch. It is where to be if
-v0.3 is too new for you; it is not where to stay.
-
-v0.1.x is not supported and cannot usefully be. v0.2.0 was itself a security
-release — an attribute-context escape, a replayable inbox request, an
-unenforced `--own-only`, twenty of twenty-three agent operations checking no
-authority — and a patch on top of v0.1.0 would leave every one of those. The
-fix for v0.1.x is to move forward, not to wait for one.
-
-Backporting is not a promise that everything reaches the release line. Some
-fixes are for code added after it, so the defect is not there to fix; and a
-check whose subject does not exist is left out rather than wired to fire on
-nothing, because a table saying a gate ran is worse than a table without it.
-The release line's own NEWS names each omission and why.
+No release is published yet. Report against `main`, where fixes land.
 
 ## Our own claims, tested
 
@@ -178,3 +180,7 @@ a report is most useful when it makes one of those tests fail. Relevant places:
 - `cmd/quilzo/mcpgateway_test.go` — the MCP gateway
 - `internal/memory`, `internal/pii` — governed memory and the privacy guard
 - `internal/shield/guardrails_test.go` — what a playbook may never do
+- `internal/browser`, `internal/cdp` — the agent's browser and its request rule
+- `internal/shell` — workspace commands, their kinds and their box
+- `internal/actioncache` — remembered steps
+- `internal/cell`, `internal/portal` — desktop cells and desktop consent

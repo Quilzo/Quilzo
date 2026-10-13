@@ -1862,67 +1862,9 @@ OIDC discovery walk.
 
 ## Getting started
 
-### With a release binary
-
-One static file, nothing to install alongside it. linux, macOS and Windows, on
-amd64 and arm64.
-
-```bash
-curl -LO https://github.com/Quilzo/Quilzo/releases/latest/download/quilzo-linux-amd64
-curl -LO https://github.com/Quilzo/Quilzo/releases/latest/download/SHA256SUMS
-sha256sum -c --ignore-missing SHA256SUMS
-sudo install -m 0755 quilzo-linux-amd64 /usr/local/bin/quilzo
-```
-
-The checksum proves the file matches the list. It does not prove the list came
-from here, and if you fetched both from the same place you have checked that a
-page agrees with itself. The attestation is the one that answers the other
-question:
-
-```bash
-gh attestation verify quilzo-linux-amd64 --repo Quilzo/Quilzo
-```
-
-That succeeds only if this repository's release workflow built the file, from a
-tag, and it says which tag. Each release also carries `quilzo.cdx.json`, a
-CycloneDX 1.6 bill of materials generated **by the binary** rather than read
-from the source tree — so it describes the file you downloaded rather than what
-HEAD would build today. It lists one component: the Go toolchain.
-
-### With Docker
-
-The image is `gcr.io/distroless/static-debian12:nonroot`: the binary, CA
-certificates and a passwd entry. No shell, no package manager, no interpreter,
-no libc. It runs as nonroot. amd64 and arm64.
-
-```bash
-docker run --rm -v quilzo:/srv ghcr.io/quilzo/quilzo --root /srv/store init
-docker run --rm -v quilzo:/srv ghcr.io/quilzo/quilzo --root /srv/store demo
-docker run -p 8081:8081 -v quilzo:/srv \
-  ghcr.io/quilzo/quilzo --root /srv/store site --addr 0.0.0.0:8081
-```
-
-Then <http://127.0.0.1:8081>. `demo` publishes, so there is nothing else to run.
-
-**One volume, mounted at `/srv` rather than at the store.** `quilzo demo` writes
-templates beside the working directory rather than into the store, so a
-deployment that keeps only `/srv/store` loses them and `site` exits with `no
-template directory at templates`. Both live under `/srv`, so that is what is
-kept.
-
-This needs v0.2.0 or later. The v0.1.0 image declared `VOLUME /srv/store`,
-which Docker satisfies with a throwaway volume when you mount the parent — so
-the store silently vanished between commands — and it shipped no
-`/srv/templates` for a volume to be seeded from, so mounting one there was
-created owned by root and unwritable by a container running as nonroot. On
-v0.1.0 the working incantation is `-v quilzo:/srv -v quilzo-store:/srv/store`.
-
-Published on each tagged release, with a build-provenance attestation binding
-the image to the workflow run that produced it:
-
-```bash
-gh attestation verify oci://ghcr.io/quilzo/quilzo:latest --repo quilzo/quilzo
-```
+No release is published yet: build from source, or build the container image
+from this repository. Each release will publish signed binaries and an image;
+[INSTALL](../INSTALL) says how to check them.
 
 ### From source
 
@@ -1938,6 +1880,28 @@ export PATH="$PWD:$PATH"   # so the `quilzo` commands below just work
 mkdir mysite && cd mysite
 quilzo init
 ```
+
+### With Docker
+
+The image is `gcr.io/distroless/static-debian12:nonroot`: the binary, CA
+certificates and a passwd entry. No shell, no package manager, no interpreter,
+no libc. It runs as nonroot.
+
+```bash
+docker build -t quilzo .
+docker run --rm -v quilzo:/srv quilzo --root /srv/store init
+docker run --rm -v quilzo:/srv quilzo --root /srv/store demo
+docker run -p 8081:8081 -v quilzo:/srv \
+  quilzo --root /srv/store site --addr 0.0.0.0:8081
+```
+
+Then <http://127.0.0.1:8081>. `demo` publishes, so there is nothing else to run.
+
+**One volume, mounted at `/srv` rather than at the store.** `quilzo demo` writes
+templates beside the working directory rather than into the store, so a
+deployment that keeps only `/srv/store` loses them and `site` exits with `no
+template directory at templates`. Both live under `/srv`, so that is what is
+kept.
 
 ### Getting a token
 

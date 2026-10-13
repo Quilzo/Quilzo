@@ -435,10 +435,6 @@ func TestNoDocumentAsksForAnImageTagWithAVeePrefix(t *testing.T) {
 			if m == "" {
 				continue
 			}
-			// INSTALL names the wrong form once, to say it is wrong.
-			if strings.Contains(line, "is not a thing that exists") {
-				continue
-			}
 			t.Errorf("%s asks for %q. Image tags drop the v: the git tag "+
 				"v0.1.0 publishes 0.1.0, 0.1 and latest, so this reference "+
 				"404s and the 404 looks like the image being private",
