@@ -61,6 +61,14 @@ type AgentInterface struct {
 	// governed browser, at /mcp/browser/NAME.
 	BrowserOffered func(name string) bool
 	Browser        func(r *http.Request, c *mcp.Caller, name string) (*mcp.Server, error)
+	// Credential accepts an agent credential with its proof in place of a
+	// token at a browser grant: the agent, within its sponsor's authority,
+	// on the one grant it carries. url is the request's own address, which
+	// the proof must name. Nil accepts none.
+	Credential func(r *http.Request, token, url, grant string) (auth.Token, error)
+	// CredentialKeys is the public half of the key credentials are issued
+	// with, as a JSON Web Key Set, for anybody checking one.
+	CredentialKeys func() ([]byte, error)
 	// Tasks says whether other agents may hand tasks over A2A 1.0, and A2A
 	// answers them for one caller.
 	Tasks func() bool
@@ -167,6 +175,17 @@ func (s *Server) handleBrowserMCP(w http.ResponseWriter, r *http.Request) {
 	e := &mcp.Endpoint{
 		Metadata: metadata, DefaultScope: scope,
 		Authenticate: func(r *http.Request, token string) (*mcp.Caller, error) {
+			// An agent credential is a compact JWS; a token is not.
+			if s.Interface.Credential != nil && strings.Count(token, ".") == 2 && strings.HasPrefix(token, "eyJ") {
+				tok, err := s.Interface.Credential(r, token, own+r.URL.Path, name)
+				if err != nil {
+					if s.Throttle != nil {
+						s.Throttle.Fail(throttle.Subject{Source: sourceOf(r)})
+					}
+					return nil, err
+				}
+				return &mcp.Caller{Principal: tok.Principal, Client: tok.Client, Data: tok}, nil
+			}
 			return s.interfaceCaller(r, token, resource)
 		},
 		Build: func(r *http.Request, c *mcp.Caller) (*mcp.Server, error) {
@@ -804,4 +823,21 @@ func (s *Server) handleAppsAct(w http.ResponseWriter, r *http.Request) {
 	default:
 		back("That is not something this screen does.", "")
 	}
+}
+
+// handleCredentialKeys publishes the public keys agent credentials are
+// issued with, so anybody can check one: /.well-known/agent-credentials.json.
+func (s *Server) handleCredentialKeys(w http.ResponseWriter, r *http.Request) {
+	if s.Interface == nil || s.Interface.CredentialKeys == nil {
+		http.NotFound(w, r)
+		return
+	}
+	b, err := s.Interface.CredentialKeys()
+	if err != nil {
+		http.Error(w, "the keys could not be read", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/jwk-set+json")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.Write(b)
 }

@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -590,5 +591,59 @@ func TestTasksAreTakenOnlyWhenTurnedOnWithAToken(t *testing.T) {
 	r.on = false
 	if w := post(r.token); w.Code != 404 {
 		t.Fatalf("with the interface off: %d", w.Code)
+	}
+}
+
+// At a browser grant, an agent credential goes to the credential check
+// with the request's own address, and a token to the token store; a
+// refused credential is refused, and the issuer's keys are published.
+func TestABrowserGrantTakesAnAgentCredentialInPlaceOfAToken(t *testing.T) {
+	r := newIfaceRig(t)
+	r.oauth = false
+	var checked []string
+	r.srv.Interface.BrowserOffered = func(name string) bool { return name == "shop" }
+	r.srv.Interface.Browser = func(req *http.Request, c *mcp.Caller, name string) (*mcp.Server, error) {
+		s := mcp.NewServer("quilzo-browser-"+name, "test")
+		s.Authorise = func(mcp.Operation) error { return nil }
+		s.Register(mcp.Operation{Name: "whoami", NeedsRole: "reader", Summary: "who"},
+			func(map[string]any) (any, error) { return "you are " + c.Principal + " via " + c.Client, nil })
+		return s, nil
+	}
+	r.srv.Interface.Credential = func(req *http.Request, token, url, grant string) (auth.Token, error) {
+		checked = append(checked, url+" "+grant)
+		if token == "eyJbad.x.y" {
+			return auth.Token{}, errors.New("the agent credential is refused: its signature does not verify")
+		}
+		return auth.Token{Principal: "lee", Client: "agent:buyer", Role: auth.RoleAuthor}, nil
+	}
+	r.srv.Interface.CredentialKeys = func() ([]byte, error) { return []byte(`{"keys":[]}`), nil }
+	call := func(bearer string) *httptest.ResponseRecorder {
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"quilzo_read","arguments":{"operation":"whoami"},` +
+			`"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`
+		req := httptest.NewRequest("POST", "/mcp/browser/shop", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+		req.Header.Set("Mcp-Method", "tools/call")
+		req.Header.Set("Mcp-Name", "quilzo_read")
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		w := httptest.NewRecorder()
+		r.srv.Handler().ServeHTTP(w, req)
+		return w
+	}
+	if w := call("eyJgood.x.y"); w.Code != 200 || !strings.Contains(w.Body.String(), "you are lee via agent:buyer") {
+		t.Fatalf("the credential was not taken: %d %s", w.Code, w.Body.String())
+	}
+	if len(checked) != 1 || !strings.HasSuffix(checked[0], "/mcp/browser/shop shop") {
+		t.Fatalf("the credential was checked as %v", checked)
+	}
+	if w := call("eyJbad.x.y"); w.Code == 200 {
+		t.Fatal("a refused credential was let in")
+	}
+	if w := call(r.token); w.Code != 200 || len(checked) != 2 {
+		t.Fatalf("a token did not go to the token store: %d, %v", w.Code, checked)
+	}
+	if w := r.do(t, "GET", "/.well-known/agent-credentials.json", "", nil, nil); w.Code != 200 ||
+		w.Header().Get("Content-Type") != "application/jwk-set+json" {
+		t.Fatalf("the issuer's keys are not published: %d %v", w.Code, w.Header())
 	}
 }

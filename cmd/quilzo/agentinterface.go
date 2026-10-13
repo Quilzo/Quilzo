@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -177,6 +178,15 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 		},
 		Offered:        func(name string) bool { _, ok := gatewayOffered(root, name); return ok },
 		BrowserOffered: func(name string) bool { _, _, ok := browserGrantOffered(root, name); return ok },
+		Credential: func(r *http.Request, token, url, grant string) (auth.Token, error) {
+			return credentialCaller(root, r, token, url, grant)
+		},
+		CredentialKeys: func() ([]byte, error) {
+			if _, err := credIssuer(root); err != nil {
+				return nil, err
+			}
+			return os.ReadFile(credKeysPath(root))
+		},
 		Browser: func(r *http.Request, c *mcp.Caller, name string) (*mcp.Server, error) {
 			tok, ok := c.Data.(auth.Token)
 			if !ok {
