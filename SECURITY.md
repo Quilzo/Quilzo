@@ -99,6 +99,18 @@ vulnerability:
 - **A widening is read before it is allowed.** Any amendment to a declaration
   that lets an agent do more without `--widen` or a person's own hands on the
   agents screen, or a widening allowed and missing from the log.
+- **What earns its way out of asking can lose it.** Any action that sends,
+  pays, deletes, publishes or signs in going ahead without a person because
+  of an earned record, an earned kind of action skipping the exfiltration
+  breaker, or an earned record surviving a decline, a reviewer refusal, a
+  breaker trip or a regressed evaluation.
+- **Approving together stays honest.** Any way the approvals screen lets an
+  action through that differs from what each waiting run showed, or batches
+  one that writes, sends, pays, deletes or publishes.
+- **An agent credential is its holder's alone.** Any way a credential is
+  accepted without a fresh proof from the key it is bound to, for a grant it
+  does not carry, after it was withdrawn, or for an agent whose sponsor can
+  no longer act here.
 - **A person's desktop is not used.** Any way a run reaches a person's keyboard
   or pointer. Desktop consent hands the session straight back.
 

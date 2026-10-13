@@ -9,6 +9,37 @@ Unreleased
 
 ** Added
 
+*** Approvals (/approvals, `quilzo approvals`) lists everything waiting for
+    the person looking: what agent runs ask, questions they need answered,
+    actions the reviewer stopped, tool calls held for a second person, acts
+    a case waits to have approved, a change waiting for review, memories
+    held until confirmed.  Each says what deciding commits to.  Several runs
+    waiting on the same action that only reads or acts can be let through
+    together; anything that writes, sends, pays, deletes or publishes, and
+    every question, is decided on its own.
+
+*** A decider less sure than its declaration demands stops the run with its
+    question, typed as it was asked, the model's guess and confidence beside
+    it.  The run goes on with the person's answer (`quilzo agent answer RUN
+    STEP NAME=VALUE`, or the run's page).  The reviewer's refusal is a hold
+    on the exact action, and letting it through performs that action.
+    Steps a decider answered show how sure it was.
+
+*** Every step records what it cost in tokens and money; `quilzo agent cost
+    --by agent|person|goal|day` and /agents/cost group the kept runs.  A run
+    that paused for a person no longer starts its money budget again.
+
+*** `earn_after` lets a kind of action stop asking after that many
+    approvals in a row while evaluations still earn the agent its autonomy;
+    a decline, the reviewer, the breaker or a regressed evaluation sends it
+    back.  Sending, paying, deleting, publishing and signing in always ask.
+    `quilzo agent earned NAME [--reset]` and the agent's page show it.
+
+*** `quilzo agent credential issue|list|revoke|verify|keys`: a signed W3C
+    Verifiable Credential another vendor's agent presents at a browser
+    grant, bound to its own key and proved on every request; the issuer's
+    keys are at /.well-known/agent-credentials.json.
+
 *** `quilzo --json eval run` prints the whole report as its machine
     document, attack-success numbers and all — the planted-instruction
     rates at one and many attempts, per case — for a deployment to publish
