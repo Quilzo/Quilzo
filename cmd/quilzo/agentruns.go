@@ -872,6 +872,9 @@ func printAgentRun(r agent.Record) {
 		// came back is content.
 		fmt.Printf("  %2d  %-20s %-8s %s\n", st.N, what, word,
 			truncate(printable(said), 100))
+		if st.Confidence != nil {
+			fmt.Printf("      %s%.2f sure%s\n", dim, *st.Confidence, reset)
+		}
 		if st.Tokens > 0 || st.Cost > 0 {
 			fmt.Printf("      %s%d tokens, %s%s\n", dim, st.Tokens, formatCost(st.Cost, ""), reset)
 		}

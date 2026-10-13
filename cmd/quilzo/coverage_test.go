@@ -621,6 +621,10 @@ var coverage = map[string]surfaces{
 	"lang":     {GUI: "/languages", MCP: []string{"check_translations"}},
 	"scan":     {GUI: "/security/scan", MCP: []string{"scan_content"}},
 	"verify":   {GUI: "/security/integrity", MCP: []string{"verify_store"}},
+	"approvals": {GUI: "/approvals",
+		NoMCP: "what waits is decided by a person, and an app reading the queue " +
+			"of approvals is a model reading what it and others are waiting to " +
+			"have approved; the machine interface answers none of it either"},
 	"transfer": {GUI: "/transfer",
 		NoMCP: "a transfer manifest names the people accountable for moving " +
 			"content between networks, and an agent that could write one " +

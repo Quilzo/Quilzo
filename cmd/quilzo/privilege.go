@@ -131,10 +131,13 @@ var commandNeeds = map[string]need{
 	"integrations approve": {action: auth.ActGrant},
 	"integrations decline": {action: auth.ActGrant},
 	"integration":          {action: auth.ActView},
-	"agent templates":      {action: auth.ActView},
-	"agent list":           {action: auth.ActView},
-	"agent show":           {action: auth.ActView},
-	"agent check":          {action: auth.ActView},
+	// Each part of the list is filtered by what the caller may decide; the
+	// list itself needs only that they are somebody here.
+	"approvals":       {action: auth.ActView},
+	"agent templates": {action: auth.ActView},
+	"agent list":      {action: auth.ActView},
+	"agent show":      {action: auth.ActView},
+	"agent check":     {action: auth.ActView},
 	// Running one acts under the agent's manifest, and the least it can do is
 	// read the store. Author rather than view: a run writes an audit record
 	// attributed to the caller, and an entry somebody could create without

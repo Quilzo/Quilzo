@@ -1,0 +1,27 @@
+{{template "head" .}}
+<h1>Approvals</h1>
+<p class="lead">Everything waiting for you to decide: what agents asked, calls held for a second person, changes waiting for review, acts on other tools, and memories held until somebody confirms them.</p>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Chips}}<nav class="chips" aria-label="What deciding commits to">
+  <a href="/approvals"{{if not .Only}} class="on" aria-current="true"{{end}}>everything <span class="count">{{.Total}}</span></a>
+  {{range .Chips}}<a href="/approvals?commits={{.Name}}"{{if eq $.Only .Name}} class="on" aria-current="true"{{end}}><span class="cap">{{.Name}}</span> <span class="count">{{.Count}}</span></a>{{end}}
+</nav>{{end}}
+{{range .Groups}}<section class="approval-group" aria-label="{{.Name}}">
+  <h2>{{.Name}} <span class="count">{{len .Items}}</span></h2>
+  {{range .Batches}}<form method="post" action="/approvals/act" class="notice">
+    <input type="hidden" name="batch" value="{{.Key}}">{{range .Runs}}<input type="hidden" name="run" value="{{.RunID}}:{{.Step}}">{{end}}
+    <p><strong>{{.Count}} runs wait on the same action:</strong> <code>{{.Title}}</code>, which {{.Commits}}. Each was asked with the same input for the same reason.</p>
+    <p class="actions"><button type="submit">Let all {{.Count}} go ahead</button></p>
+  </form>{{end}}
+  <div class="table-wrap"><table class="approvals-table">
+    <thead><tr><th scope="col">Waiting on</th><th scope="col">Commits to</th><th scope="col">Why</th><th scope="col">Since</th></tr></thead>
+    <tbody>{{range .Items}}<tr>
+      <th scope="row"><a href="{{.Href}}">{{.Title}}</a>{{if .Live}}<div class="hint">waiting in its own process now</div>{{end}}{{if .Expired}}<div class="hint">asked too long ago to agree to</div>{{end}}</th>
+      <td><span class="wf-word {{if or (eq .Commits "pays") (eq .Commits "deletes") (eq .Commits "publishes")}}critical{{else if or (eq .Commits "sends") (eq .Commits "writes") (eq .Commits "answers")}}warning{{else}}info{{end}}">{{.Commits}}</span>{{if .Confidence}}<div class="hint">{{.Confidence}} sure</div>{{end}}</td>
+      <td>{{.Detail}}</td>
+      <td class="when">{{.When}}</td>
+    </tr>{{end}}</tbody></table></div>
+</section>{{else}}<p>Nothing is waiting for you.</p>{{end}}
+<p class="hint">Several runs waiting on the same action that only reads or acts can be let through together. Anything that writes, sends, pays, deletes or publishes, and every question, is decided on its own page.</p>
+{{template "foot" .}}

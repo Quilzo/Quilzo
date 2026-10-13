@@ -85,7 +85,7 @@
   <tbody>{{range .Steps}}<tr>
     <th scope="row">{{.N}}</th>
     <td><code>{{.What}}</code>{{if .Kind}}<br><span class="hint">{{.Kind}}</span>{{end}}{{if .Input}}<br><span class="hint">with</span> <code>{{.Input}}</code>{{end}}</td>
-    <td><span class="wf-word {{.Tone}}">{{.Word}}</span>{{if .Why}}<br><span class="hint">{{.Why}}</span>{{end}}{{if .Redirected}}<br><span class="hint">sent instead to {{.Redirected}}</span>{{end}}</td>
+    <td><span class="wf-word {{.Tone}}">{{.Word}}</span>{{if .Sure}}<br><span class="hint">{{.Sure}}</span>{{end}}{{if .Why}}<br><span class="hint">{{.Why}}</span>{{end}}{{if .Redirected}}<br><span class="hint">sent instead to {{.Redirected}}</span>{{end}}</td>
     <td class="step-time"><span class="wf-points">{{.Took}}</span>{{if .Bar}}<svg class="wf-meter" viewBox="0 0 100 8" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"></rect><rect class="fill" width="{{.Bar}}" height="8" rx="4"></rect></svg>{{end}}</td>
     <td class="step-cost">{{if .Spend}}{{.Spend}}{{else}}<span class="hint">—</span>{{end}}</td>
     <td>{{if .Frame}}<a href="{{.Frame}}"><img src="{{.Frame}}" alt="The page after step {{.N}}" width="160" loading="lazy"></a><br>{{end}}{{if .Err}}<span class="hint">{{.Err}}</span>{{end}}{{if .Output}}<a href="{{.Output}}">The whole output</a> <span class="hint">({{bytes .OutputBytes}})</span><br>{{end}}{{if .Result}}<details><summary>Show<span class="chev">{{icon "expand_more"}}</span></summary><pre class="code"><code>{{.Result}}</code></pre></details>{{end}}</td>
