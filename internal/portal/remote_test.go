@@ -296,3 +296,38 @@ func TestAnOversizedMessageIsRefusedBeforeItIsRead(t *testing.T) {
 		}
 	}
 }
+
+// A character is sent as its X keysym, Latin-1 as itself and the rest of
+// Unicode above 0x01000000; control characters and keys that are neither
+// the four named nor a character are refused before anything is sent.
+func TestTypingIsKeysymsAndNothingElse(t *testing.T) {
+	newFakeBus(t, DeviceKeyboard, false)
+	d, err := Consent(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	ctx := context.Background()
+	if got := keysymOf('é'); got != 0xe9 {
+		t.Errorf("é is keysym %#x", got)
+	}
+	if got := keysymOf('€'); got != 0x010020ac {
+		t.Errorf("€ is keysym %#x", got)
+	}
+	if err := d.Type(ctx, "héllo €"); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"line\n", "tab\t", "\x1b[A"} {
+		if err := d.Type(ctx, bad); err == nil {
+			t.Errorf("%q was typed with a key inside it", bad)
+		}
+	}
+	if err := d.Key(ctx, KeyReturn); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []int32{0xffe3 /* Control_L */, 0xffbe /* F1 */, 0xffeb /* Super_L */, 0x0a} {
+		if err := d.Key(ctx, bad); err == nil {
+			t.Errorf("keysym %#x was pressed", bad)
+		}
+	}
+}

@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // The RemoteDesktop portal: the person's consent, then their pointer and
@@ -149,27 +151,56 @@ func (d *Desktop) MoveTo(ctx context.Context, x, y float64) error {
 	return d.notify(ctx, "NotifyPointerMotionAbsolute", "da{sv}dd", x, y)
 }
 
-// Type puts text where the desktop holds its focus.
+// Type puts text where the desktop holds its focus. A character is its
+// keysym: Latin-1 as itself, the rest of Unicode at 0x01000000 above its
+// code point, as X defines them. Control characters are keys, not text,
+// and are refused.
 func (d *Desktop) Type(ctx context.Context, text string) error {
 	if d.devices&DeviceKeyboard == 0 {
 		return errors.New("the person allowed no keyboard")
 	}
 	for _, r := range text {
-		if err := d.notify(ctx, "NotifyKeyboardKeysym", "ia{sv}u", int32(r), pressedState); err != nil {
-			return err
+		if unicode.IsControl(r) || r == utf8.RuneError {
+			return errors.New("typed text carries no control characters; press keys by name")
 		}
-		if err := d.notify(ctx, "NotifyKeyboardKeysym", "ia{sv}u", int32(r), releasedState); err != nil {
+	}
+	for _, r := range text {
+		if err := d.Key(ctx, keysymOf(r)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// Key presses one key by its keysym: the four the governed surfaces
-// name, plus letters and digits as they are.
+// keysymOf is a printable character's X keysym.
+func keysymOf(r rune) int32 {
+	if r <= 0xff {
+		return int32(r)
+	}
+	return 0x01000000 | int32(r)
+}
+
+// The four named keys, by keysym.
+const (
+	KeyReturn    int32 = 0xff0d
+	KeyTab       int32 = 0xff09
+	KeyEscape    int32 = 0xff1b
+	KeyBackSpace int32 = 0xff08
+)
+
+// Key presses one key by its keysym: the four the governed surfaces name,
+// or a printable character. Anything else, a modifier or a function key,
+// is refused rather than pressed.
 func (d *Desktop) Key(ctx context.Context, keysym int32) error {
 	if d.devices&DeviceKeyboard == 0 {
 		return errors.New("the person allowed no keyboard")
+	}
+	switch {
+	case keysym == KeyReturn, keysym == KeyTab, keysym == KeyEscape, keysym == KeyBackSpace:
+	case keysym >= 0x20 && keysym <= 0xff && keysym != 0x7f:
+	case keysym > 0x01000100 && keysym <= 0x0110ffff && !unicode.IsControl(rune(keysym&0xffffff)):
+	default:
+		return fmt.Errorf("keysym %#x is not one of the four named keys or a character", keysym)
 	}
 	if err := d.notify(ctx, "NotifyKeyboardKeysym", "ia{sv}u", keysym, pressedState); err != nil {
 		return err

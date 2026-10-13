@@ -8,9 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"os"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/atomicfile"
 )
 
 // A run's replay bundle: one self-contained HTML file of everything a
@@ -59,6 +60,9 @@ func receiptBundle(root, run, outPath string, now time.Time) error {
 	var b strings.Builder
 	esc := html.EscapeString
 	fmt.Fprintf(&b, "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n")
+	// The file carries words pages wrote; nothing in it runs, whatever
+	// they say.
+	fmt.Fprintf(&b, "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'\">\n")
 	fmt.Fprintf(&b, "<title>Run %s — %s</title>\n", esc(run), esc(rec.Agent))
 	fmt.Fprintf(&b, "<style>\nbody{font:15px/1.55 system-ui,sans-serif;max-width:72ch;margin:2rem auto;padding:0 1rem;color:#1a1a1a}\n")
 	fmt.Fprintf(&b, "h1{font-size:1.3rem}table{border-collapse:collapse;width:100%%;font-size:13px}\n")
@@ -138,5 +142,7 @@ func receiptBundle(root, run, outPath string, now time.Time) error {
 	}
 	fmt.Fprintf(&b, "</body>\n</html>\n")
 
-	return os.WriteFile(outPath, []byte(b.String()), 0o644)
+	// Pictures of pages a person may have been signed in to: readable by
+	// whoever made the bundle, until they choose to hand it on.
+	return atomicfile.Write(outPath, []byte(b.String()), 0o600)
 }

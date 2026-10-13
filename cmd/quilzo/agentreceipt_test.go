@@ -17,6 +17,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 func keptRunOf(t *testing.T) (root, id string) {
@@ -278,5 +279,35 @@ func TestAReplayBundleEscapesWhatTheRunCarries(t *testing.T) {
 	}
 	if !strings.Contains(page, "&lt;script&gt;") {
 		t.Error("the goal was not carried at all")
+	}
+}
+
+// The bundle opens the pictures a run kept, which the admin shows only to
+// whoever may change the agents; a reader may take the receipt and not
+// the pictures.
+func TestABundleNeedsWhatThePicturesNeed(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, id := keptRunOf(t)
+	if err := cmdAuth(root, []string{"grant", "rae", "reader"}); err != nil {
+		t.Fatal(err)
+	}
+	toks, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, _, err := toks.Issue("rae", "rae", auth.RoleReader, "/", time.Hour, auth.RoleReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), toks); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", secret)
+	out := filepath.Join(t.TempDir(), "replay.html")
+	if err := agentReceipt(root, []string{id, "--bundle", out}); err == nil || !strings.Contains(err.Error(), "agents screen") {
+		t.Fatalf("a reader made a bundle of the run's pictures: %v", err)
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Error("a refused bundle was written")
 	}
 }

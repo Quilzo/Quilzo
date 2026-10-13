@@ -17,6 +17,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // What an agent did, in a form somebody else can check.
@@ -76,6 +77,11 @@ func agentReceipt(root string, args []string) error {
 		return err
 	}
 	if *bundle != "" {
+		// The bundle opens the pictures the run kept, which the admin shows
+		// only to whoever may change the agents: the same holds here.
+		if err := authorise(root, resolveCaller(root, flagToken), auth.ActGrant, "/"); err != nil {
+			return fmt.Errorf("a bundle carries the pictures the run kept, which need the access the agents screen needs: %w", err)
+		}
 		if err := receiptBundle(root, args[0], *bundle, time.Now()); err != nil {
 			return err
 		}

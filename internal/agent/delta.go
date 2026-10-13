@@ -85,21 +85,21 @@ func DeltaOf(old, new Manifest) Delta {
 
 	// The workspace's reach: programs, hosts, and what stopped asking.
 	if old.Shell != nil || new.Shell != nil {
-		os_, ns := old.Shell, new.Shell
-		if os_ == nil {
-			os_ = &Shell{}
+		oldShell, newShell := old.Shell, new.Shell
+		if oldShell == nil {
+			oldShell = &Shell{}
 		}
-		if ns == nil {
-			ns = &Shell{}
+		if newShell == nil {
+			newShell = &Shell{}
 		}
-		for _, p := range hostsGained(os_.Programs, ns.Programs) {
+		for _, p := range hostsGained(oldShell.Programs, newShell.Programs) {
 			add("may now run " + p)
 		}
-		for _, h := range hostsGained(os_.Hosts, ns.Hosts) {
+		for _, h := range hostsGained(oldShell.Hosts, newShell.Hosts) {
 			add("commands may now reach " + h)
 		}
 		for _, k := range []string{"network", "write"} {
-			if asks(os_, k) && !asks(ns, k) {
+			if asks(oldShell, k) && !asks(newShell, k) {
 				add("stopped asking a person before a command that " + k + "s")
 			}
 		}
