@@ -493,7 +493,7 @@ func (s *Server) handleAgentsAct(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	do := r.FormValue("do")
-	if do == "answer" || do == "resume" || do == "replay" || do == "stop" {
+	if do == "answer" || do == "resume" || do == "replay" || do == "stop" || do == "person" {
 		s.handleRunAct(w, r, p, do, back)
 		return
 	}
@@ -985,27 +985,39 @@ func (s *Server) handleRunAct(w http.ResponseWriter, r *http.Request,
 			http.NotFound(w, r)
 			return
 		}
-		var in PersonInput
+		// A point is one press. Text and a key may come together, from the
+		// form's key buttons with something in the box: typed, then pressed.
+		var ins []PersonInput
 		x, xerr := strconv.ParseFloat(r.FormValue("x"), 64)
 		y, yerr := strconv.ParseFloat(r.FormValue("y"), 64)
+		text, key := r.FormValue("text"), r.FormValue("key")
 		switch {
 		case xerr == nil && yerr == nil:
 			if x < 0 || y < 0 || x > 100000 || y > 100000 {
 				back(page, "", fmt.Errorf("that point is not on the page"))
 				return
 			}
-			in.Click = []float64{x, y}
-		case r.FormValue("text") != "":
-			in.Type = r.FormValue("text")
-		case r.FormValue("key") != "":
-			in.Key = r.FormValue("key")
+			ins = append(ins, PersonInput{Click: []float64{x, y}})
+		case text != "" || key != "":
+			if len(text) > 4000 {
+				back(page, "", fmt.Errorf("at most 4000 characters are typed at once"))
+				return
+			}
+			if text != "" {
+				ins = append(ins, PersonInput{Type: text})
+			}
+			if key != "" {
+				ins = append(ins, PersonInput{Key: key})
+			}
 		default:
 			back(page, "", fmt.Errorf("say what to do on the page: a point to press, text to type, or a key"))
 			return
 		}
-		if perr := s.Agents.Person(id, in, p.Name); perr != nil {
-			back(page, "", perr)
-			return
+		for _, in := range ins {
+			if perr := s.Agents.Person(id, in, p.Name); perr != nil {
+				back(page, "", perr)
+				return
+			}
 		}
 		back(page, "Done on the page, as yours.", nil)
 	case "resume":

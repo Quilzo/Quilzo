@@ -30,7 +30,7 @@ func TestAFlowThatWorkedIsReplayedWithoutTheModel(t *testing.T) {
 		{Op: "browser_click", Input: map[string]any{"ref": "e3"}},
 		{Op: "browser_read"},
 	})
-	d := Wrap(model.decide, s, "buyer", nil, nil)
+	d := Wrap(model.decide, s, "buyer", "dana", nil, nil)
 	goal := "buy paper"
 	home := page("browser_open", "the shop front, [e3] button \"Buy\"")
 
@@ -53,7 +53,7 @@ func TestAFlowThatWorkedIsReplayedWithoutTheModel(t *testing.T) {
 	// Second run, same goal, same first page: both steps come from the
 	// cache and the model is not asked at all.
 	fresh := countingDecider(nil)
-	d = Wrap(fresh.decide, s, "buyer", nil, nil)
+	d = Wrap(fresh.decide, s, "buyer", "dana", nil, nil)
 	if a, err = d(context.Background(), goal, []agent.Observation{home}); err != nil || a.Op != "browser_click" || a.Input["ref"] != "e3" {
 		t.Fatalf("the replay did not give the remembered click: %+v %v", a, err)
 	}
@@ -70,7 +70,7 @@ func TestAFlowThatWorkedIsReplayedWithoutTheModel(t *testing.T) {
 func TestAReplayThatDoesNotLandFallsBackToTheModel(t *testing.T) {
 	s := open(t, filepath.Join(t.TempDir(), "cache.json"))
 	model := countingDecider([]agent.Action{{Op: "browser_click", Input: map[string]any{"ref": "e3"}}})
-	d := Wrap(model.decide, s, "buyer", nil, nil)
+	d := Wrap(model.decide, s, "buyer", "dana", nil, nil)
 	home := page("browser_open", "the shop front")
 	_, _ = d(context.Background(), "buy", []agent.Observation{home})
 	list := page("browser_click", "the cart")
@@ -79,7 +79,7 @@ func TestAReplayThatDoesNotLandFallsBackToTheModel(t *testing.T) {
 	// Same first page, but the click lands somewhere new.
 	fresh := countingDecider([]agent.Action{{Op: "browser_read"}})
 	var events []Event
-	d = Wrap(fresh.decide, s, "buyer", func(e Event) { events = append(events, e) }, nil)
+	d = Wrap(fresh.decide, s, "buyer", "dana", func(e Event) { events = append(events, e) }, nil)
 	if a, err := d(context.Background(), "buy", []agent.Observation{home}); err != nil || a.Op != "browser_click" {
 		t.Fatalf("the replay did not come first: %+v %v", a, err)
 	}
@@ -98,7 +98,7 @@ func TestAReplayThatDoesNotLandFallsBackToTheModel(t *testing.T) {
 	// And the stale entry is gone: the next run on the same page asks the
 	// model, not the memory.
 	again := countingDecider([]agent.Action{{Op: "browser_read"}})
-	d = Wrap(again.decide, s, "buyer", nil, nil)
+	d = Wrap(again.decide, s, "buyer", "dana", nil, nil)
 	if a, err := d(context.Background(), "buy", []agent.Observation{home}); err != nil || a.Op != "browser_read" || again.calls != 1 {
 		t.Fatalf("a dropped entry was replayed: %+v %v calls=%d", a, err, again.calls)
 	}
@@ -110,13 +110,13 @@ func TestAReplayThatDoesNotLandFallsBackToTheModel(t *testing.T) {
 func TestARefusedReplayIsDroppedNotLooped(t *testing.T) {
 	s := open(t, filepath.Join(t.TempDir(), "cache.json"))
 	model := countingDecider([]agent.Action{{Op: "browser_click", Input: map[string]any{"ref": "e3"}}})
-	d := Wrap(model.decide, s, "buyer", nil, nil)
+	d := Wrap(model.decide, s, "buyer", "dana", nil, nil)
 	home := page("browser_open", "the shop front")
 	_, _ = d(context.Background(), "buy", []agent.Observation{home})
 	_, _ = d(context.Background(), "buy", []agent.Observation{home, page("browser_click", "the cart")})
 
 	fresh := countingDecider([]agent.Action{{Op: "browser_read"}})
-	d = Wrap(fresh.decide, s, "buyer", nil, nil)
+	d = Wrap(fresh.decide, s, "buyer", "dana", nil, nil)
 	if a, err := d(context.Background(), "buy", []agent.Observation{home}); err != nil || a.Op != "browser_click" {
 		t.Fatalf("%+v %v", a, err)
 	}
@@ -135,13 +135,13 @@ func TestSigningInIsNeverRemembered(t *testing.T) {
 	}
 	s := open(t, filepath.Join(t.TempDir(), "cache.json"))
 	model := countingDecider([]agent.Action{{Op: "browser_sign_in", Input: map[string]any{"credential": "shop"}}})
-	d := Wrap(model.decide, s, "buyer", nil, nil)
+	d := Wrap(model.decide, s, "buyer", "dana", nil, nil)
 	home := page("browser_open", "the sign-in page")
 	_, _ = d(context.Background(), "buy", []agent.Observation{home})
 	_, _ = d(context.Background(), "buy", []agent.Observation{home, page("browser_sign_in", "signed in")})
 
 	fresh := countingDecider([]agent.Action{{Op: "browser_read"}})
-	d = Wrap(fresh.decide, s, "buyer", nil, nil)
+	d = Wrap(fresh.decide, s, "buyer", "dana", nil, nil)
 	if a, err := d(context.Background(), "buy", []agent.Observation{home}); err != nil || a.Op != "browser_read" || fresh.calls != 1 {
 		t.Fatalf("a sign-in was replayed from memory: %+v %v", a, err)
 	}
@@ -151,21 +151,21 @@ func TestSigningInIsNeverRemembered(t *testing.T) {
 // page has nothing to remember against, and nothing a page said is taken
 // as this program's own words.
 func TestKeysComeFromThePageAndNothingElse(t *testing.T) {
-	if Key("buyer", "buy", nil) != "" {
+	if Key("buyer", "dana", "buy", nil) != "" {
 		t.Error("no observations at all made a key")
 	}
-	if Key("buyer", "buy", []agent.Observation{page("read_page", "a draft")}) != "" {
+	if Key("buyer", "dana", "buy", []agent.Observation{page("read_page", "a draft")}) != "" {
 		t.Error("a store observation keyed a decision")
 	}
-	if Key("buyer", "buy", []agent.Observation{{From: "quilzo", Body: "refused", Trusted: true}}) != "" {
+	if Key("buyer", "dana", "buy", []agent.Observation{{From: "quilzo", Body: "refused", Trusted: true}}) != "" {
 		t.Error("this program's own words keyed a decision")
 	}
-	if Key("buyer", "buy", []agent.Observation{page("browser_open", "a page")}) == "" {
+	if Key("buyer", "dana", "buy", []agent.Observation{page("browser_open", "a page")}) == "" {
 		t.Error("a page did not key a decision")
 	}
-	a := Key("buyer", "buy", []agent.Observation{page("browser_open", "a page")})
-	b := Key("buyer", "sell", []agent.Observation{page("browser_open", "a page")})
-	c := Key("buyer", "buy", []agent.Observation{page("browser_open", "another page")})
+	a := Key("buyer", "dana", "buy", []agent.Observation{page("browser_open", "a page")})
+	b := Key("buyer", "dana", "sell", []agent.Observation{page("browser_open", "a page")})
+	c := Key("buyer", "dana", "buy", []agent.Observation{page("browser_open", "another page")})
 	if a == b || b == c || a == c {
 		t.Error("different goals and pages made one key")
 	}
@@ -268,14 +268,14 @@ func open(t *testing.T, path string) *Store {
 func TestAReplayForgetsWhatTheDeciderWasHoldingOver(t *testing.T) {
 	s := open(t, filepath.Join(t.TempDir(), "cache.json"))
 	model := countingDecider([]agent.Action{{Op: "browser_click", Input: map[string]any{"ref": "e3"}}})
-	d := Wrap(model.decide, s, "buyer", nil, nil)
+	d := Wrap(model.decide, s, "buyer", "dana", nil, nil)
 	home := page("browser_open", "the shop front")
 	_, _ = d(context.Background(), "buy", []agent.Observation{home})
 	_, _ = d(context.Background(), "buy", []agent.Observation{home, page("browser_click", "the cart")})
 
 	held := "stale batch"
 	fresh := countingDecider(nil)
-	d = Wrap(fresh.decide, s, "buyer", nil, func() { held = "forgotten" })
+	d = Wrap(fresh.decide, s, "buyer", "dana", nil, func() { held = "forgotten" })
 	if a, err := d(context.Background(), "buy", []agent.Observation{home}); err != nil || a.Op != "browser_click" {
 		t.Fatalf("the replay did not come first: %+v %v", a, err)
 	}
@@ -291,7 +291,7 @@ func TestALookDoesNotKeyAMemory(t *testing.T) {
 		page("browser_open", "the outline of the page"),
 		{From: "browser_look", Body: "a screenshot of https://shop.example.com/ is with this message"},
 	}
-	if key := Key("buyer", "buy", seen); key == "" {
+	if key := Key("buyer", "dana", "buy", seen); key == "" {
 		t.Fatal("no key at all was made")
 	}
 	two := []agent.Observation{
@@ -304,7 +304,32 @@ func TestALookDoesNotKeyAMemory(t *testing.T) {
 		{From: "browser_look", Body: "a screenshot of https://shop.example.com/ is with this message"},
 		page("browser_read", "the outline, as it first was"),
 	}
-	if Key("buyer", "buy", one) == Key("buyer", "buy", two) {
+	if Key("buyer", "dana", "buy", one) == Key("buyer", "dana", "buy", two) {
 		t.Error("two states of one address shared a key through a look's placeholder")
+	}
+}
+
+// What a run typed is the person's it ran for: the same goal on the same
+// form, run for somebody else, is decided afresh and never types the first
+// person's words.
+func TestOnePersonsFlowIsNotReplayedForAnother(t *testing.T) {
+	s := open(t, filepath.Join(t.TempDir(), "cache.json"))
+	form := page("browser_open", "the delivery form, [e2] textbox \"Address\"")
+	typed := agent.Action{Op: "browser_type", Input: map[string]any{"ref": "e2", "text": "12 Elm Street"}}
+	d := Wrap(countingDecider([]agent.Action{typed}).decide, s, "buyer", "dana", nil, nil)
+	if _, err := d(context.Background(), "fill in my address", []agent.Observation{form}); err != nil {
+		t.Fatal(err)
+	}
+	after := page("browser_type", "the delivery form, [e2] textbox \"Address\" 12 Elm Street")
+	_, _ = d(context.Background(), "fill in my address", []agent.Observation{form, after})
+
+	other := countingDecider([]agent.Action{{Op: "browser_read"}})
+	d = Wrap(other.decide, s, "buyer", "sam", nil, nil)
+	a, err := d(context.Background(), "fill in my address", []agent.Observation{form})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Op == "browser_type" || other.calls != 1 {
+		t.Fatalf("another person's run replayed what was typed for dana: %+v", a)
 	}
 }

@@ -256,10 +256,13 @@ func Caches(op string) bool {
 	return agent.IsBrowser(op)
 }
 
-// Key is what a decision was made on: the agent, the goal, and the page.
-// Empty when there is no page to key against, which is the first turn and
-// every turn of a run that never opens one.
-func Key(name, goal string, seen []agent.Observation) string {
+// Key is what a decision was made on: the agent, the person the run is
+// for, the goal, and the page. The person is in it because what a run typed
+// is that person's: the same goal on the same form, run for somebody else,
+// must not type the first person's words. Empty when there is no page to
+// key against, which is the first turn and every turn of a run that never
+// opens one.
+func Key(name, person, goal string, seen []agent.Observation) string {
 	page := ""
 	for i := len(seen) - 1; i >= 0; i-- {
 		if seen[i].Err == nil && agent.IsBrowser(seen[i].From) && !seen[i].Trusted {
@@ -277,7 +280,7 @@ func Key(name, goal string, seen []agent.Observation) string {
 	if page == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(name + "\x00" + goal + "\x00" + page))
+	sum := sha256.Sum256([]byte(name + "\x00" + person + "\x00" + goal + "\x00" + page))
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
@@ -304,7 +307,7 @@ type Note func(Event)
 // reset, when not nil, is called whenever a replay answers from memory:
 // whatever the inner decider was holding over from its last answer — a
 // dialect's open batch — belongs to a plan this flow is no longer on.
-func Wrap(inner agent.Decide, s *Store, agentName string, note Note, reset func()) agent.Decide {
+func Wrap(inner agent.Decide, s *Store, agentName, person string, note Note, reset func()) agent.Decide {
 	var lastKey string
 	var lastAction agent.Action
 	var lastAfter string
@@ -337,7 +340,7 @@ func Wrap(inner agent.Decide, s *Store, agentName string, note Note, reset func(
 			lastKey, lastAfter, replayed = "", "", false
 		}
 
-		key := Key(agentName, goal, seen)
+		key := Key(agentName, person, goal, seen)
 		if key != "" {
 			if a, after, ok := s.Lookup(key); ok {
 				if reset != nil {

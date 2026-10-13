@@ -135,7 +135,8 @@ func cmdBrowserGrant(root string, args []string) error {
 			}
 			fmt.Println()
 		}
-		fmt.Printf("  offered at /mcp/browser/NAME on the admin, to the bearer of a token issued for it\n")
+		fmt.Printf("  offered at /mcp/browser/NAME on the admin, to any token that reaches that path:\n")
+		fmt.Printf("  a reader's to read the page, an author's to act on it\n")
 		return nil
 	}
 	name := args[0]
@@ -213,6 +214,7 @@ func cmdBrowserGrant(root string, args []string) error {
 	record(root, caller.auditRecord("browser.grant", "/mcp/browser/"+name, audit.Success,
 		map[string]string{"grant": name, "reads": strconv.Itoa(len(g.Read)), "acts_on": strconv.Itoa(len(g.Write))}))
 	fmt.Printf("  %soffered at /mcp/browser/%s on the admin%s\n", green, name, reset)
-	fmt.Printf("  a token issued for that address reaches it: `quilzo token issue NAME --on /mcp/browser/%s`\n", name)
+	fmt.Printf("  any token that reaches that path may use it, a reader's to read and an author's to act;\n")
+	fmt.Printf("  one for it alone: `quilzo token issue NAME --on /mcp/browser/%s`\n", name)
 	return nil
 }

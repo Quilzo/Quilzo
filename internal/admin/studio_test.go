@@ -680,3 +680,32 @@ func TestADescribedAgentIsShownWithWhatItCouldDoAndNotSaved(t *testing.T) {
 		t.Fatal("a drafting error is not shown")
 	}
 }
+
+// A person taking a waiting run's page over reaches it: the point, the
+// text or the key arrives as theirs, by the name signed in.
+func TestTakingAWaitingPageOverReachesIt(t *testing.T) {
+	srv, token := setup(t)
+	wireStudio(srv)
+	var got []string
+	srv.Agents.Person = func(id string, in PersonInput, by string) error {
+		got = append(got, fmt.Sprintf("%s %v %q %q %s", id, in.Click, in.Type, in.Key, by))
+		return nil
+	}
+	const id = "run-20260930-000000aa"
+	for _, v := range []url.Values{
+		{"do": {"person"}, "run": {id}, "x": {"120"}, "y": {"48"}},
+		{"do": {"person"}, "run": {id}, "text": {"hello"}},
+		{"do": {"person"}, "run": {id}, "key": {"Enter"}},
+	} {
+		if _, loc := studioAct(t, srv, token, v); !strings.Contains(loc, "m=Done+on+the+page") {
+			t.Fatalf("taking over went to %s", loc)
+		}
+	}
+	if len(got) != 3 || !strings.HasSuffix(got[0], "editor") || !strings.Contains(got[1], `"hello"`) {
+		t.Fatalf("what the person did arrived as %v", got)
+	}
+	if _, loc := studioAct(t, srv, token, url.Values{"do": {"person"}, "run": {id},
+		"text": {strings.Repeat("a", 4001)}}); !strings.Contains(loc, "e=") || len(got) != 3 {
+		t.Errorf("an oversized typing went through: %s", loc)
+	}
+}
