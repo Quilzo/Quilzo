@@ -128,6 +128,8 @@ func cmdAgent(root string, args []string) error {
 		return agentCost(root, args[1:])
 	case "earned":
 		return agentEarned(root, args[1:])
+	case "credential":
+		return agentCredentialCmd(root, args[1:])
 	case "trace":
 		return agentTrace(root, args[1:])
 	case "approve", "decline":
@@ -182,6 +184,9 @@ func agentUsage() error {
   run NAME ["goal"]      exercise one against its manifest, and record it
   runs [NAME]            the runs that are kept, newest first
   earned NAME [--reset]  which kinds of action it has earned running without asking
+  credential issue NAME --grant browser:G [--act] (--holder did:key:… | --generate FILE) [--for D]
+                         a signed credential another vendor's agent presents for one grant;
+                         credential list | revoke ID | verify FILE | keys
   cost [--by agent|person|goal|day] [--since D] [NAME]
                          what runs cost, in tokens and money, grouped
   trace RUN              one run, step by step

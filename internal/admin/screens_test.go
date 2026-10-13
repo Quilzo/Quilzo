@@ -200,8 +200,9 @@ var notAScreen = map[string]string{
 	"/.well-known/oauth-protected-resource":     "is JSON for programs (RFC 9728), 404 until the interface and the admin's address are set",
 	"/.well-known/oauth-protected-resource/mcp": "is JSON for programs (RFC 9728), 404 until the interface and the admin's address are set",
 	"/.well-known/oauth-authorization-server":   "is JSON for programs (RFC 8414), 404 until the interface and the admin's address are set",
-	"/oauth/token":  "is posted to by an app's program, never opened",
-	"/oauth/revoke": "is posted to by an app's program, never opened",
+	"/.well-known/agent-credentials.json":       "is a JSON Web Key Set for programs checking agent credentials, 404 until the interface is set",
+	"/oauth/token":                              "is posted to by an app's program, never opened",
+	"/oauth/revoke":                             "is posted to by an app's program, never opened",
 	"/apps/receipt": "is a file to keep, the receipt of one connection's calls, " +
 		"linked from Connected apps beside each connection; with no id it " +
 		"sends the person back there. agentinterface_test.go downloads one",
