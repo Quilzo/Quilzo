@@ -132,7 +132,217 @@ func DeltaOf(old, new Manifest) Delta {
 	if new.Budget.Duration > old.Budget.Duration {
 		add(fmt.Sprintf("time budget raised from %s to %s", old.Budget.Duration, new.Budget.Duration))
 	}
+	// Zero tokens and no money leave only the gateway's shared budgets, so
+	// dropping a cap is the largest raise of all.
+	if raised(int64(old.Budget.Tokens), int64(new.Budget.Tokens)) {
+		add(fmt.Sprintf("token budget raised from %s to %s", capWord(int64(old.Budget.Tokens), old.Budget.Tokens), capWord(int64(new.Budget.Tokens), new.Budget.Tokens)))
+	}
+	om, oerr := old.Budget.MoneyMicros()
+	nm, nerr := new.Budget.MoneyMicros()
+	if oerr == nil && nerr == nil && raised(om, nm) {
+		add(fmt.Sprintf("money budget raised from %s to %s", capWord(om, old.Budget.Money), capWord(nm, new.Budget.Money)))
+	}
+
+	// What stopped waiting for a person.
+	held := map[string]bool{}
+	for _, c := range new.Capabilities {
+		held[c] = true
+	}
+	for _, t := range new.Tools {
+		held[t.Name] = true
+	}
+	stillAsks := map[string]bool{}
+	for _, c := range new.AskFirst {
+		stillAsks[c] = true
+	}
+	var unasked []string
+	for _, c := range old.AskFirst {
+		if held[c] && !stillAsks[c] {
+			unasked = append(unasked, c)
+		}
+	}
+	sort.Strings(unasked)
+	for _, c := range unasked {
+		add("stopped asking a person before " + c)
+	}
+	if old.HumanApproval && !new.HumanApproval {
+		add("what it does no longer waits for a person's approval to become public")
+	}
+
+	// Tools: a new one, a new host for one, or one that now writes.
+	oldTools := map[string]Tool{}
+	for _, t := range old.Tools {
+		oldTools[t.Name] = t
+	}
+	for _, t := range sortedTools(new.Tools) {
+		was, had := oldTools[t.Name]
+		switch {
+		case !had:
+			add("may now call " + t.Name + " at " + t.Host)
+		case was.Host != t.Host:
+			add(t.Name + " now reaches " + t.Host + " instead of " + was.Host)
+		}
+		if t.Writes && (!had || !was.Writes) {
+			add(t.Name + " may now change things at " + t.Host)
+		}
+		if t.Secret != "" && (!had || was.Secret != t.Secret) {
+			add(t.Name + " may now use the secret " + t.Secret)
+		}
+	}
+
+	// Signing in with a sealed secret, and pictures of a desktop.
+	var oc2, nc2 []string
+	if old.Browser != nil {
+		for _, c := range old.Browser.Credentials {
+			oc2 = append(oc2, c.Secret+" on "+c.Host)
+		}
+	}
+	if new.Browser != nil {
+		for _, c := range new.Browser.Credentials {
+			nc2 = append(nc2, c.Secret+" on "+c.Host)
+		}
+	}
+	for _, c := range hostsGained(oc2, nc2) {
+		add("may now sign in with " + c)
+	}
+	if new.Cell != nil && new.Cell.Pictures && (old.Cell == nil || !old.Cell.Pictures) {
+		add("may now be shown pictures of the desktop")
+	}
+
+	// What it reads: each list narrows, and an empty one does not.
+	or, nr := old.Retrieval, new.Retrieval
+	if nr.Ref != or.Ref {
+		add(fmt.Sprintf("now reads %s rather than %s", refWord(nr.Ref), refWord(or.Ref)))
+	}
+	for _, w := range listWidens("content types", or.Types, nr.Types) {
+		add(w)
+	}
+	for _, w := range listWidens("languages", or.Locales, nr.Locales) {
+		add(w)
+	}
+	if or.Path != nr.Path && !within(or.Path, nr.Path) {
+		add(fmt.Sprintf("may now read %s rather than only %s", pathWord(nr.Path), pathWord(or.Path)))
+	}
+	if nr.KeepInstructions && !or.KeepInstructions {
+		add("is now shown sentences addressed to an AI in what it reads")
+	}
+
+	// What it remembers.
+	for _, tier := range []struct {
+		name     string
+		was, now bool
+	}{{"what happened (episodic)", old.Memory.Episodic, new.Memory.Episodic},
+		{"what it concluded (semantic)", old.Memory.Semantic, new.Memory.Semantic},
+		{"procedures (procedural)", old.Memory.Procedural, new.Memory.Procedural}} {
+		if tier.now && !tier.was {
+			add("now remembers " + tier.name)
+		}
+	}
+	if new.Memory.Any() && new.Memory.Retain > old.Memory.Retain {
+		add(fmt.Sprintf("keeps what it remembers for %s rather than %s", new.Memory.Retain, old.Memory.Retain))
+	}
+
+	// Its own program: another command, another image, more to read or
+	// to carry in its environment.
+	if old.Program != nil || new.Program != nil {
+		op, np := old.Program, new.Program
+		if op == nil {
+			op = &Program{}
+		}
+		if np == nil {
+			np = &Program{}
+		}
+		if strings.Join(np.Command, "\x00") != strings.Join(op.Command, "\x00") && len(np.Command) > 0 {
+			add("now runs " + strings.Join(np.Command, " "))
+		}
+		if np.Image != op.Image && np.Image != "" {
+			add("its program now runs in " + np.Image)
+		}
+		for _, r := range hostsGained(op.Read, np.Read) {
+			add("its program may now read " + r)
+		}
+		var oenv, nenv []string
+		for k, v := range op.Env {
+			oenv = append(oenv, k+"="+v)
+		}
+		for k, v := range np.Env {
+			nenv = append(nenv, k+"="+v)
+		}
+		for _, e := range hostsGained(oenv, nenv) {
+			k, _, _ := strings.Cut(e, "=")
+			add("its program's environment now sets " + k)
+		}
+		if np.MemoryMB > op.MemoryMB || np.CPUSeconds > op.CPUSeconds {
+			add("its program may use more memory or CPU time")
+		}
+	}
+
+	// The workspace: another folder, or more room in it.
+	if old.Shell != nil && new.Shell != nil {
+		if new.Shell.Workspace != old.Shell.Workspace {
+			add(fmt.Sprintf("its workspace is now %q rather than %q", new.Shell.Workspace, old.Shell.Workspace))
+		}
+		if new.Shell.Timeout > old.Shell.Timeout || new.Shell.MemoryMB > old.Shell.MemoryMB || new.Shell.QuotaMB > old.Shell.QuotaMB {
+			add("its commands may run longer, or use more memory or disc")
+		}
+	}
+
+	// A kind is a label except the supervisor's, and a label that changes
+	// changes what a reader thinks they approved.
+	if new.Kind != old.Kind {
+		add(fmt.Sprintf("is now of kind %s rather than %s", new.Kind, old.Kind))
+	}
 	return d
+}
+
+// raised says whether a cap went up, zero being no cap at all.
+func raised(old, new int64) bool {
+	if old == 0 {
+		return false
+	}
+	return new == 0 || new > old
+}
+
+func capWord(n int64, s any) string {
+	if n == 0 {
+		return "no cap"
+	}
+	return fmt.Sprint(s)
+}
+
+func sortedTools(ts []Tool) []Tool {
+	out := append([]Tool(nil), ts...)
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func refWord(ref string) string {
+	if ref == "" {
+		return "the live site"
+	}
+	return "ref " + ref
+}
+
+func pathWord(p string) string {
+	if p == "" {
+		return "everything"
+	}
+	return p
+}
+
+// listWidens names what a restricting list now admits that it did not.
+func listWidens(what string, old, new []string) []string {
+	if len(old) == 0 {
+		return nil
+	}
+	if len(new) == 0 {
+		return []string{"may now read all " + what + ", not only " + strings.Join(old, ", ")}
+	}
+	var out []string
+	for _, x := range hostsGained(old, new) {
+		out = append(out, "may now read "+what+" "+x)
+	}
+	return out
 }
 
 func hostsGained(oldList, newList []string) []string {

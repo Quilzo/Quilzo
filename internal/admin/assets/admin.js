@@ -21,7 +21,8 @@
 //   * on a phone, a table of four columns or more reads as a stack of cards,
 //     each value under its column's name, instead of hiding the columns
 //     that matter past the edge of the screen. Without the script the table
-//     scrolls sideways, with a shadow at the edge that says it does.
+//     scrolls sideways, with a shadow at the edge that says it does;
+//   * on a run's page taken over, a click on the live picture presses there.
 //
 // The palette is a native <dialog> with the ARIA combobox pattern: the
 // input owns a listbox, arrow keys move the active option, Enter opens it,
@@ -425,6 +426,45 @@
       });
     });
     t.classList.add("stacks");
+  });
+
+  // A run's page taken over (agent_run.html): a click on the live picture
+  // presses there, in the picture's own pixels, which are the page's; text
+  // and keys are posted without leaving the page, and the picture follows.
+  // Without this, text and keys are posted by the form and the page comes
+  // back; only pressing a point needs it.
+  document.querySelectorAll(".takeover").forEach(function (box) {
+    var page = box.querySelector("img.takeover-page");
+    var form = box.querySelector("form.takeover-form");
+    if (!page || !form) return;
+    page.setAttribute("data-live", "");
+    var hint = box.querySelector("[data-takeover-hint]");
+    if (hint) hint.hidden = false;
+    function send(body) {
+      fetch(form.action, {method: "POST", body: new URLSearchParams(body), credentials: "same-origin"})
+        .then(function () {
+          setTimeout(function () {
+            page.src = page.src.split("?")[0] + "?t=" + Date.now();
+          }, 400);
+        });
+    }
+    page.addEventListener("click", function (e) {
+      var r = page.getBoundingClientRect();
+      if (!r.width || !r.height || !page.naturalWidth) return;
+      var b = new FormData(form);
+      b.delete("text");
+      b.set("x", Math.round((e.clientX - r.left) / r.width * page.naturalWidth));
+      b.set("y", Math.round((e.clientY - r.top) / r.height * page.naturalHeight));
+      send(b);
+    });
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var b = new FormData(form);
+      if (e.submitter && e.submitter.name) b.set(e.submitter.name, e.submitter.value);
+      send(b);
+      var t = form.querySelector('input[name="text"]');
+      if (t) t.value = "";
+    });
   });
 
   // The shortcut, shown where people look for search, in their platform's

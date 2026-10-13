@@ -2374,7 +2374,8 @@ th[scope="row"] { font-weight: 500; }
    below it as written, line breaks kept. */
 .takeover { margin-top: 12px; border-top: 1px solid var(--outline-variant, #ccc); padding-top: 8px; }
 .takeover-form input[type="text"] { width: min(24ch, 60vw); }
-.takeover img { border: 1px solid var(--outline-variant, #ccc); }
+.takeover img { border: 1px solid var(--outline-variant, #ccc); max-width: 100%; }
+.takeover img.takeover-page[data-live] { cursor: crosshair; }
 .takeover button { margin-right: 4px; }
 .ask-fields { margin: 0 0 12px; display: grid; gap: 8px; }
 .ask-fields > div {

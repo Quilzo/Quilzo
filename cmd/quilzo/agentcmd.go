@@ -1219,7 +1219,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				// was built, so the wrap is handed to it here rather than
 				// only to the local name — a cache that reassigned the
 				// variable nobody reads was a setting that did nothing.
-				runner.Decide = actioncache.Wrap(decide, cs, m.Name, func(e actioncache.Event) {
+				runner.Decide = actioncache.Wrap(decide, cs, m.Name, caller.Name, func(e actioncache.Event) {
 					outcome, detail := audit.Success, map[string]string{
 						"run": from.RunID, "agent": m.Name, "op": e.Op, "digest": e.Digest}
 					if e.FellBack {
