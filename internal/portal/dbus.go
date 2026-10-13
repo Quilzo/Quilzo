@@ -435,6 +435,8 @@ func (e *encoder) dictSVArray(pairs ...struct {
 type decoder struct {
 	b   []byte
 	pos int
+	// depth is how many containers deep the value being read is.
+	depth int
 }
 
 func (d *decoder) more() bool { return d.pos < len(d.b) }
@@ -491,6 +493,13 @@ func (d *decoder) value(sig string) (any, error) {
 	if sig == "" {
 		return nil, errors.New("an empty signature where a value was")
 	}
+	// The specification's own limit on nesting, so a message of variants
+	// inside variants cannot take the stack.
+	if d.depth >= maxDepth {
+		return nil, errors.New("a value nested deeper than the bus allows")
+	}
+	d.depth++
+	defer func() { d.depth-- }()
 	switch sig[0] {
 	case 's', 'o':
 		return d.string()
@@ -552,6 +561,10 @@ func (d *decoder) value(sig string) (any, error) {
 	}
 	return nil, fmt.Errorf("a value this cannot read: signature %q", sig)
 }
+
+// maxDepth is the D-Bus specification's limit on nesting, arrays and
+// variants together.
+const maxDepth = 64
 
 // Pair is one dict entry, the only map shape the portal needs.
 type Pair struct {

@@ -331,3 +331,16 @@ func TestTypingIsKeysymsAndNothingElse(t *testing.T) {
 		}
 	}
 }
+
+// Variants inside variants, as deep as a message can hold them, are
+// refused at the bus's own nesting limit rather than followed down.
+func TestADeeplyNestedValueIsRefused(t *testing.T) {
+	var b []byte
+	for i := 0; i < 10000; i++ {
+		b = append(b, 1, 'v', 0)
+	}
+	d := &decoder{b: b}
+	if _, err := d.value("v"); err == nil || !strings.Contains(err.Error(), "nested deeper") {
+		t.Fatalf("a value nested ten thousand deep was read: %v", err)
+	}
+}
