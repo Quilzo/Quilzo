@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 // Signs one element of a SAML document with the JDK's own XML Signature
 // implementation (javax.xml.crypto.dsig, the Apache Santuario lineage that

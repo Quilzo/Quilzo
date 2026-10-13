@@ -1,3 +1,5 @@
 .git
 .github
 *.md
+!internal/admin/assets/fonts/README.md
+!internal/admin/assets/icons/README.md

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 package main
 
@@ -88,103 +88,43 @@ func read(t *testing.T, name string) string {
 	return string(b)
 }
 
-// The licence the README claims is the licence in the file.
+// The licence every document states is the licence in the file.
 //
-// Added when the project relicensed from AGPL-3.0-or-later to Apache-2.0 in
-// August 2026, because that change touched five files and the failure mode is
-// obvious in hindsight: one of them keeps saying the old thing, and the one
-// that keeps saying it is the one somebody quotes.
-//
-// A licence claim is the highest-consequence sentence in a repository. Somebody
-// decides whether they may use, embed or contribute to this on the strength of
-// it, and a stale one is not a documentation bug — it is a person acting on
-// terms that do not apply.
+// A licence claim is the sentence somebody decides on whether they may use,
+// embed or contribute to this, and a stale one is a person acting on terms
+// that do not apply.
 func TestTheReadmeClaimsTheLicenceThisRepositoryCarries(t *testing.T) {
 	licence := read(t, "LICENSE")
-	readme := read(t, "README.md")
-	notice := read(t, "NOTICE")
-	licensing := read(t, "LICENSING.md")
-
-	apache := strings.Contains(licence, "Apache License") &&
-		strings.Contains(licence, "Version 2.0, January 2004")
-	affero := strings.Contains(licence, "GNU AFFERO GENERAL PUBLIC LICENSE")
-
-	switch {
-	case apache && affero:
-		t.Fatal("LICENSE contains both an Apache and an Affero header; the " +
-			"relicensing left the file half-written")
-	case !apache && !affero:
-		t.Fatal("LICENSE is neither Apache-2.0 nor AGPL; this test cannot " +
-			"check a claim about a licence it does not recognise")
+	if !strings.Contains(licence, "Apache License") ||
+		!strings.Contains(licence, "Version 2.0, January 2004") {
+		t.Fatal("LICENSE is not the Apache License 2.0")
 	}
-
-	want, wrong := "Apache-2.0", "AGPL-3.0-or-later"
-	if affero {
-		want, wrong = wrong, want
-	}
-	for _, file := range []struct{ name, body string }{
-		{"README.md", readme}, {"NOTICE", notice},
-	} {
-		if !strings.Contains(file.body, want) {
-			t.Errorf("LICENSE is %s and %s never says so", want, file.name)
+	states := map[string]bool{"README.md": true, "NOTICE": true, "AUTHORS": true,
+		"CONTRIBUTING.md": true, "GOVERNANCE.md": true, "INSTALL": true, "docs/cms.md": true}
+	for _, name := range []string{"README.md", "NOTICE", "AUTHORS", "CONTRIBUTING.md",
+		"GOVERNANCE.md", "INSTALL", "docs/cms.md", "NEWS", "SECURITY.md"} {
+		body := read(t, name)
+		if states[name] && !strings.Contains(body, "Apache") {
+			t.Errorf("%s does not say the licence is Apache-2.0", name)
+		}
+		for _, stale := range []string{"AGPL", "Affero", "LicenseRef-Quilzo-Commercial",
+			"LICENSING.md", "CLA.md"} {
+			if strings.Contains(body, stale) {
+				t.Errorf("%s still mentions %q, from a licence arrangement this "+
+					"repository no longer has", name, stale)
+			}
 		}
 	}
 
-	// The badge is the version most people read, and it is the one most likely
-	// to be left behind because it is a URL rather than a sentence.
+	// The badge is the version most people read, and the one most likely to
+	// be left behind because it is a URL rather than a sentence.
 	badge := regexp.MustCompile(`licence-([A-Za-z0-9.\-]+)-blue`).
-		FindStringSubmatch(readme)
+		FindStringSubmatch(read(t, "README.md"))
 	if badge == nil {
 		t.Fatal("the README has no licence badge to check")
 	}
-	if got := strings.ReplaceAll(badge[1], "--", "-"); got != want {
-		t.Errorf("the README badge says %q and LICENSE is %s", got, want)
-	}
-
-	// A licence change does not retract what was already granted, and saying so
-	// is the difference between a licence change and a claim to have revoked
-	// one. This runs in whichever direction the project is currently facing.
-	//
-	// On the licensing page, which is where the history is kept. NOTICE is
-	// the short file a packager copies, and says where to look.
-	if !strings.Contains(licensing, wrong) {
-		t.Errorf("LICENSING.md does not mention %s at all. This project has "+
-			"been released under it, that grant is irrevocable, and a "+
-			"licensing page that omits a licence it once carried reads as a "+
-			"claim that it never applied", wrong)
-	}
-	if !strings.Contains(notice, "LICENSING.md") {
-		t.Error("NOTICE no longer says where the licensing history is kept")
-	}
-}
-
-// The Apache-2.0 window on 22 August 2026 stays written down.
-//
-// For about eighty minutes this project was public under Apache-2.0, and then it
-// was not. That grant does not revert: anyone who took a copy in that window
-// holds permissive terms to those commits permanently.
-//
-// This test exists because that is precisely the sort of fact that gets tidied
-// away later — it is embarrassing, it is brief, and deleting the paragraph makes
-// the history look cleaner than it was. Someone auditing where this code may
-// have gone needs it to still be there.
-//
-// It is kept in LICENSING.md. It used to be in NOTICE as well, at length, and
-// was cut from there in September 2026: nothing requires a project to carry
-// the record in that file, and one place is easier to keep true than two.
-func TestTheApacheWindowStaysRecorded(t *testing.T) {
-	notice := read(t, "LICENSING.md")
-	for _, required := range []string{
-		"Apache-2.0", // the licence that applied
-		"656bc88",    // where it started
-		"67a85b8",    // where it stopped
-		"irrevocable",
-	} {
-		if !strings.Contains(notice, required) {
-			t.Errorf("LICENSING.md no longer records %q. The window was real and the "+
-				"grant it made cannot be withdrawn, so the record of it is the "+
-				"only honest thing left to keep", required)
-		}
+	if got := strings.ReplaceAll(badge[1], "--", "-"); got != "Apache-2.0" {
+		t.Errorf("the README badge says %q and LICENSE is Apache-2.0", got)
 	}
 }
 
@@ -262,24 +202,12 @@ func TestBothCopiesOfTheProposalAgreeOnTheBenchmark(t *testing.T) {
 	}
 }
 
-// The SPDX expression is the licence claim most likely to be read by a machine,
-// and the one most likely to disagree with itself.
+// Every source file says its licence, and says the same one.
 //
-// A single-licensed project can afford to state its licence once, in LICENSE,
-// and let every file inherit it. A dual-licensed one cannot: a file with no
-// header sits in a repository that says two things, and "which of the two"
-// is not a question the file answers. That matters most in the case nobody
-// plans for, where somebody vendors one file into another codebase and the
-// only licence information that travels with it is the header it did or did
-// not have.
-//
-// So the expression is checked for presence and for being *the same
-// expression*. Two files claiming `AGPL-3.0-or-later OR LicenseRef-Commercial`
-// and `AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial` would both look
-// right in review and refer to different documents, one of which does not
-// exist.
-func TestEverySourceFileCarriesTheDualLicenceHeader(t *testing.T) {
-	const want = "AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial"
+// A file vendored into another codebase carries only its header, so the
+// header has to be there and has to be the identifier LICENSE states.
+func TestEverySourceFileCarriesTheLicenceHeader(t *testing.T) {
+	const want = "Apache-2.0"
 
 	out, err := exec.Command("git", "ls-files",
 		"*.go", "*.py", "*.mjs").Output()
@@ -297,57 +225,70 @@ func TestEverySourceFileCarriesTheDualLicenceHeader(t *testing.T) {
 		body := read(t, name)
 		m := id.FindStringSubmatch(body)
 		if m == nil {
-			t.Errorf("%s has no SPDX-License-Identifier. In a repository "+
-				"offering two licences, a file that names neither is a file "+
-				"whose terms have to be guessed", name)
+			t.Errorf("%s has no SPDX-License-Identifier", name)
 			continue
 		}
-		if got := strings.TrimSpace(m[1]); got != want && got != "Apache-2.0" {
+		if got := strings.TrimSpace(m[1]); got != want {
 			t.Errorf("%s claims %q, every other file claims %q", name, got, want)
 		}
 	}
 }
 
-// Both halves of the expression resolve to a document.
-//
-// `LicenseRef-` is SPDX's escape hatch for a licence that is not on its list,
-// and the whole point of using it rather than inventing a bare name is that a
-// scanner can follow it to a file. An identifier that resolves to nothing is
-// worse than no identifier: it reports as handled.
-func TestBothLicencesInTheExpressionExist(t *testing.T) {
-	for name, mustSay := range map[string]string{
-		"LICENSES/AGPL-3.0-or-later.txt":            "GNU AFFERO GENERAL PUBLIC LICENSE",
-		"LICENSES/LicenseRef-Quilzo-Commercial.txt": "commercial licence",
-		"LICENSING.md": "AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial",
-		"CLA.md":       "Harmony",
-	} {
-		if body := read(t, name); !strings.Contains(body, mustSay) {
-			t.Errorf("%s does not contain %q", name, mustSay)
+// The licence text is Apache's own, and the copy a REUSE scanner follows the
+// identifier to is the same text, with no other licence beside it.
+func TestTheLicenceTextIsOneText(t *testing.T) {
+	if read(t, "LICENSES/Apache-2.0.txt") != read(t, "LICENSE") {
+		t.Error("LICENSES/Apache-2.0.txt differs from LICENSE. The licence " +
+			"text is not ours to edit, and two copies of it must be one copy")
+	}
+	entries, err := os.ReadDir("LICENSES")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Name() != "Apache-2.0.txt" {
+			t.Errorf("LICENSES/%s is a licence no file in this repository is under", e.Name())
 		}
-	}
-
-	// The AGPL half must be the same text as LICENSE, not a paraphrase of it
-	// or a copy that drifted. This is the only licence in the pair whose
-	// wording is not the project's to choose.
-	if read(t, "LICENSES/AGPL-3.0-or-later.txt") != read(t, "LICENSE") {
-		t.Error("LICENSES/AGPL-3.0-or-later.txt differs from LICENSE. The " +
-			"AGPL text is not ours to edit, and two copies of it in one " +
-			"repository must be one copy")
-	}
-
-	// A reader who finds only LICENSE has been told half the arrangement.
-	if !strings.Contains(read(t, "README.md"), "LICENSING.md") {
-		t.Error("the README never points at LICENSING.md, so the second " +
-			"licence is discoverable only by reading source headers")
 	}
 }
 
-// Dual licensing is one exception away from open core, and the exception
-// always looks reasonable at the time.
+// Every copy carries the licence and the notices.
 //
-// LICENSING.md and GOVERNANCE.md both promise there is one program: no feature
-// held back, no separate build, no code path that branches on which licence the
-// operator holds. That promise is prose, and prose does not fail a build.
+// A binary is a copy of the Go standard library, the endoflife.date data, the
+// Go vulnerability records, the typeface and the icons as well as of Quilzo,
+// and their licences ask for their notices to go with it. So NOTICE names each
+// of them, and the release and the container image carry LICENSE and NOTICE.
+func TestEveryCopyCarriesTheLicenceAndNotices(t *testing.T) {
+	notice := read(t, "NOTICE")
+	for _, embedded := range []string{"Go standard library", "internal/admin/assets/fonts",
+		"internal/admin/assets/icons", "internal/icons", "internal/lifecycle",
+		"internal/selfvuln", "internal/fedramp"} {
+		if !strings.Contains(notice, embedded) {
+			t.Errorf("NOTICE does not name %s, which the binary carries", embedded)
+		}
+	}
+	release := read(t, ".github/workflows/release.yml")
+	for _, f := range []string{"            LICENSE\n", "            NOTICE\n"} {
+		if !strings.Contains(release, f) {
+			t.Errorf("the release does not publish %s beside the binaries", strings.TrimSpace(f))
+		}
+	}
+	if !strings.Contains(read(t, "Dockerfile"), "/src/LICENSE /src/NOTICE /usr/share/doc/quilzo/") {
+		t.Error("the container image does not carry LICENSE and NOTICE")
+	}
+	// The image's binary is built from what .dockerignore lets in, and the
+	// typeface's and icons' READMEs say what was changed.
+	ignore := read(t, ".dockerignore")
+	for _, f := range []string{"internal/admin/assets/fonts/README.md", "internal/admin/assets/icons/README.md"} {
+		if !strings.Contains(ignore, "!"+f) {
+			t.Errorf(".dockerignore leaves %s out of the image's binary", f)
+		}
+	}
+}
+
+// GOVERNANCE.md promises there is no open-core tier: no feature held back,
+// no separate build, no code path that branches on which licence the operator
+// holds. That promise is prose, and prose does not fail a build.
 //
 // This checks the part a test can reach — that nothing in the tree reads a
 // licence tier and decides what to do about it. It cannot prove the commitment
@@ -378,46 +319,10 @@ func TestNothingBranchesOnWhichLicenceTheOperatorHolds(t *testing.T) {
 		}
 		body := read(t, name)
 		for _, m := range tiering.FindAllString(body, -1) {
-			t.Errorf("%s contains %q. LICENSING.md and GOVERNANCE.md both "+
-				"promise one program with no code path branching on the "+
-				"operator's licence. If this is that path, the promise is "+
-				"broken; if it is not, it needs a different name", name, m)
-		}
-	}
-}
-
-// The decision this reversed stays quoted.
-//
-// GOVERNANCE.md ruled dual licensing out, deliberately and with a reason, and
-// then the project did it anyway. CONTRIBUTING.md promised there was no CLA
-// waiting behind the DCO, and then one arrived. Both are reversals of positions
-// somebody could have acted on.
-//
-// This is the same test as TestTheApacheWindowStaysRecorded and exists for the
-// same reason: a retraction is exactly the sort of paragraph that gets tidied
-// away later, because it is unflattering and the file reads more cleanly
-// without it. A reader deciding whether to trust a commitment in one of these
-// files needs to be able to see which commitments have already been withdrawn.
-func TestTheReversedDecisionsStayRecorded(t *testing.T) {
-	for _, want := range []struct{ file, phrase, why string }{
-		{"GOVERNANCE.md", "ruled out by choice rather than by arithmetic",
-			"the paragraph that ruled dual licensing out"},
-		{"GOVERNANCE.md", "no open-core tier",
-			"the commitment that was kept, which is what makes the other " +
-				"reversal defensible rather than drift"},
-		{"CONTRIBUTING.md", "no CLA waiting behind the DCO",
-			"the promise the CLA withdrew"},
-		{"CONTRIBUTING.md", "No longer true",
-			"the bullet that said nobody could relicense your code without " +
-				"asking, corrected rather than deleted"},
-		{"LICENSING.md", "there was no contributor licence agreement",
-			"the same withdrawal, on the page that states the licence"},
-	} {
-		if !strings.Contains(read(t, want.file), want.phrase) {
-			t.Errorf("%s no longer contains %q — %s. A project that "+
-				"documents a reversal and then removes the documentation has "+
-				"done the reversal twice",
-				want.file, want.phrase, want.why)
+			t.Errorf("%s contains %q. GOVERNANCE.md promises one program "+
+				"with no code path branching on the operator's licence. If "+
+				"this is that path, the promise is broken; if it is not, it "+
+				"needs a different name", name, m)
 		}
 	}
 }

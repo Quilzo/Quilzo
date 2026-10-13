@@ -2069,8 +2069,6 @@ deterministic. And rollback is a pointer move, not a rebuild.
 - You need a plugin that already exists. There is no plugin runtime and there
   will not be one; extensions are out-of-process, sandboxed, and pinned by
   digest.
-- Your employer forbids AGPL. Some do, Google explicitly. Better said here than
-  discovered after you have written the patch.
 - You need per-visitor personalisation or a shopping cart. Products, catalogue
   and structured data yes; a cart holding a card, no — that needs a threat model
   this process does not have.
@@ -2082,44 +2080,8 @@ deterministic. And rollback is a pointer move, not a rebuild.
 
 ## Licence
 
-Two licences, and you choose. `AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial`
-— alternatives, not conditions to satisfy together. See [LICENSE](../LICENSE),
-and [LICENSING.md](../LICENSING.md).
-
-**AGPL-3.0-or-later unless you have signed the other one.** That is the default,
-it is not a trial, and it needs no permission, key or conversation. Affero
-specifically, because nobody distributes a CMS — they host it. A licence whose
-obligations trigger on distribution would never trigger at all for the software
-this is. Running a modified Quilzo as a service for other people means those
-people can have the source.
-
-The commercial licence exists for one situation: you cannot comply with the
-AGPL, or you are not permitted to. That is mostly organisations whose policy
-prohibits AGPL code outright — [Google publishes
-theirs](https://opensource.google/documentation/reference/using/agpl-policy)
-and others copy it — and vendors embedding this in a product they will not
-release under the AGPL. Hosting, modifying, charging for it and building a
-business on it are all already permitted by the AGPL and need nothing further.
-
-**There is one Quilzo.** No feature is withheld for paying licensees, there is
-no separate enterprise build, and nothing in this repository branches on which
-licence the operator holds. The commercial licence changes your terms, not the
-program. [LICENSING.md](../LICENSING.md) states that as a commitment and
-[docs_claims_test.go](../docs_claims_test.go) checks the parts of it a test can
-reach.
-
-This was an addition rather than a relicensing: no permission anybody held was
-withdrawn by it. Contributions now need [a contributor licence
-agreement](../CLA.md), which the DCO alone did not provide, and that page is candid
-about what it costs a contributor.
-
-There was a brief Apache-2.0 window on 22 August 2026, reverted the same
-morning. That grant does not retract for anyone who took a copy during it —
-[LICENSING.md](../LICENSING.md#the-apache-20-window) has the commits, the times, and what it means.
-
-One thing to know before you spend time: **some employers forbid contributing to
-AGPL projects**, Google's policy explicitly. That is a real cost of the licence
-and it is better said here than discovered later.
+[Apache License 2.0](../LICENSE). See [NOTICE](../NOTICE) for the third-party
+material it carries.
 
 ## Contributing
 

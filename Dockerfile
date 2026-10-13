@@ -39,6 +39,9 @@ RUN mkdir -p /out/store /out/templates
 # Run.
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/quilzo /usr/local/bin/quilzo
+# The licence and the notices of the third-party material in the binary go
+# with every copy of it.
+COPY --from=build /src/LICENSE /src/NOTICE /usr/share/doc/quilzo/
 COPY --from=build --chown=65532:65532 /out/store /srv/store
 # The working directory is also seeded, and both are chowned, and neither of
 # those is decoration.

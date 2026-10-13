@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 // Package oauthas lets an AI app connect to Quilzo's agent interface on a
 // person's behalf: an OAuth 2.1 authorization server for exactly one

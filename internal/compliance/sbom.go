@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 package compliance
 
@@ -92,7 +92,7 @@ func (c Component) LicenseNames() []string {
 }
 
 // Licence is the SPDX expression this program is published under.
-const Licence = "AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial"
+const Licence = "Apache-2.0"
 
 // Hash identifies a component's bytes.
 type Hash struct {

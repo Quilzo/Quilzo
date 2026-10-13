@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Rashik Adhikari
-# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+# SPDX-License-Identifier: Apache-2.0
 
 """Regenerate corpus.json from a real AgentDojo install.
 

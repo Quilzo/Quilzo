@@ -1,41 +1,57 @@
 Quilzo
-Copyright (C) 2026 Rashik Adhikari
+Copyright 2026 Rashik Adhikari
 
-SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
-
-This program is free software: you can redistribute it and/or modify it under
-the terms of the GNU Affero General Public License as published by the Free
-Software Foundation, either version 3 of the License, or (at your option) any
-later version.
-
-This program is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE.  See the GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License along
-with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-It is also available under a commercial licence, as an alternative and by signed
-agreement only. LICENSING.md says which applies to you, why the base licence is
-the Affero one, and what the project's licensing history is.
+Licensed under the Apache License, Version 2.0 (SPDX-License-Identifier:
+Apache-2.0). See LICENSE.
 
 
 Third-party material
 --------------------
 
-The program links nothing outside the Go standard library: go.mod has no
-require block and there is no go.sum. It does carry the following material
-by others, each under its own licence.
+Quilzo's source and its binaries carry the following material by others,
+each under its own licence.
+
+* The Go standard library and runtime, compiled into every Quilzo binary,
+  are by the Go Authors (https://go.dev), under the BSD 3-Clause licence:
+
+    Copyright 2009 The Go Authors.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are
+    met:
+
+       * Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+       * Redistributions in binary form must reproduce the above
+    copyright notice, this list of conditions and the following disclaimer
+    in the documentation and/or other materials provided with the
+    distribution.
+       * Neither the name of Google LLC nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 * Quilzo UI, the interface typeface (internal/admin/assets/fonts), is a
   Modified Version of Google Sans Flex, Copyright 2015 The Google Sans Flex
   Authors (https://github.com/googlefonts/googlesans-flex), under the SIL Open
   Font License 1.1. The licence and what was changed are beside the file, in
-  OFL.txt and README.md.
+  OFL.txt and README.md, and both are carried in the binary.
 
-* The interface icons (internal/admin/assets/icons) are Material Symbols by
-  Google (https://github.com/google/material-design-icons), used unmodified
-  under the Apache License 2.0, whose text is beside them in LICENSE.
+* The interface icons (internal/admin/assets/icons and internal/icons) are
+  Material Symbols by Google LLC
+  (https://github.com/google/material-design-icons), under the Apache License
+  2.0, whose text is beside them in LICENSE. Only each icon's SVG path is kept.
 
 * Operating-system and product lifecycle dates (internal/lifecycle) come from
   endoflife.date (https://endoflife.date), under the MIT licence:
@@ -71,15 +87,7 @@ by others, each under its own licence.
 * The FedRAMP 20x Key Security Indicators (internal/fedramp/ksi.json) are taken
   from FedRAMP's consolidated rules (https://github.com/FedRAMP/rules),
   published by the FedRAMP programme of the U.S. General Services
-  Administration. That repository states no licence; the version and date of
-  the rules used are recorded in the file.
-
-* CODE_OF_CONDUCT.md is the Contributor Covenant 2.1
-  (https://www.contributor-covenant.org), under CC BY 4.0, and CLA.md selects
-  from the Harmony contributor agreements 1.0, under CC BY 3.0. Each says so
-  where it is used.
-
-Building and releasing use other people's tools, which are not part of the
-program: the Go toolchain, GitHub Actions pinned by commit in
-.github/workflows, govulncheck in CI, and the distroless base image the
-container is built on (gcr.io/distroless/static-debian12).
+  Administration. That repository states no licence. They are used on the
+  basis that they are a work of the United States Government, which is not
+  subject to copyright in the United States (17 U.S.C. 105). The version and date of the rules used are
+  recorded in the file.

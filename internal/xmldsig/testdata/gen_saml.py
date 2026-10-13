@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Rashik Adhikari
-# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+# SPDX-License-Identifier: Apache-2.0
 
 """Writes testdata/saml: SAML responses shaped the way five identity
 providers shape theirs, signed by the JDK's XML Signature implementation

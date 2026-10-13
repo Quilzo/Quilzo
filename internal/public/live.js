@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Quilzo-Commercial
+// SPDX-License-Identifier: Apache-2.0
 //
 // New posts under a page, as they arrive. Each list marked data-live opens
 // one event stream; when the stream says the thread changed, the page is
