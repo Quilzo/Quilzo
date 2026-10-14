@@ -4,7 +4,7 @@
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
 <p class="lead">Every run of a declared agent, kept: what it was asked, each
   thing it tried, whether that was allowed, and what came back.</p>
-<p class="hint">{{if .Only}}<a href="/agents/runs">Every agent's runs</a> · {{end}}<a href="/agents/cost">What they cost</a></p>
+<p class="hint">{{if .Only}}<a href="/agents/runs">Every agent's runs</a> · {{end}}<a href="/agents/cost">What they cost</a>{{if .Only}} · <a href="/agents/learning?agent={{.Only}}">What it is learning</a>{{else}} · <a href="/agents/learning">What they are learning</a>{{end}}</p>
 {{if .Total}}
 <nav class="chips" aria-label="Outcome">
   <a href="/agents/runs{{if .Only}}?agent={{.Only}}{{end}}"{{if not .Outcome}} class="on" aria-current="true"{{end}}>{{plural .Total "run" "runs"}}</a>

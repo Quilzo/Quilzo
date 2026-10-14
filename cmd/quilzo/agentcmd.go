@@ -128,6 +128,8 @@ func cmdAgent(root string, args []string) error {
 		return agentCost(root, args[1:])
 	case "earned":
 		return agentEarned(root, args[1:])
+	case "lessons":
+		return agentLessons(root, args[1:])
 	case "credential":
 		return agentCredentialCmd(root, args[1:])
 	case "trace":
@@ -697,6 +699,8 @@ type agentOutcome struct {
 	// to its error stream, when a program decided.
 	Program    agentbox.Result
 	ProgramErr string
+	// Lessons are the lessons its model read, by id.
+	Lessons []string
 }
 
 // agentRunModel is the model an agent's run asks: through the gateway when
@@ -1030,7 +1034,13 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		// stages that do the work cannot choose anything.
 		delegateModel = model
 		tools, delegates := modelChoices(ctx, root, m, set)
+		playbook, playbookIDs := lessonsPlaybook(root, name, out.Model)
+		if from.Eval != nil && from.Eval.Lesson != "" {
+			playbook = append(playbook, from.Eval.Lesson)
+		}
+		out.Lessons = playbookIDs
 		decide, forgetBatch = agentmodel.Decider{
+			Playbook: playbook,
 			Model:   model,
 			Session: sess,
 			// The dialect the manifest names, when the model was taught to
@@ -1385,6 +1395,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	}
 	recordSteps(trace)
 	rc := trace.Receipt(sess)
+	trace.Lessons = out.Lessons
 	out.Manifest, out.Trace, out.Receipt, out.Started = m, trace, rc, started
 
 	// Traces, when a collector is configured.

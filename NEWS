@@ -9,6 +9,18 @@ Unreleased
 
 ** Added
 
+*** Agents learn from their mistakes.  `quilzo agent lessons reflect RUN`
+    has a model write a candidate lesson ("when X, do Y") from a run that
+    went wrong; `lessons try NAME ID` runs the agent's evaluations with its
+    playbook and with the lesson added, under the model its runs use; a
+    person adopts it for that model only if it helped and planted
+    instructions steered no more cases.  Runs then read their adopted
+    lessons as advice, and each run's record names them.  A lesson naming a
+    host, an address or something shaped like a credential is refused, and
+    one written from a run that read somebody else's words is adopted only
+    by somebody who says they read it.  Agents › Runs › What it is learning
+    shows the agent week by week and its lessons.
+
 *** REST APIs as tools.  `quilzo integrations import openapi.json --uses
     A,B` declares an API's named operations as an integration of kind http,
     switched off: each operation is a tool with the same allow-list, pins,

@@ -50,6 +50,7 @@ import (
 	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/incident"
 	"github.com/quilzo/quilzo/internal/indicator"
+	"github.com/quilzo/quilzo/internal/lessons"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
@@ -349,6 +350,14 @@ func cmdServe(root string, args []string) error {
 		Unearn: func(name, by string) error {
 			unearnHook(root, name, signedIn(by))("reset by a person")
 			return nil
+		},
+		Lessons: func(name string) ([]lessons.Lesson, error) { return loadLessons(root, name) },
+		AdoptLesson: func(name, id string, taintedOK bool, by string) error {
+			_, err := adoptLesson(root, name, id, taintedOK, signedIn(by))
+			return err
+		},
+		RetireLesson: func(name, id, why, by string) error {
+			return retireLesson(root, name, id, why, signedIn(by))
 		},
 		Bundle: func(id string) ([]byte, error) {
 			return bundleHTML(root, id, time.Now().UTC())

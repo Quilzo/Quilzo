@@ -152,6 +152,9 @@ type Trace struct {
 	// Waiting is the action this run stopped at for a person to decide.
 	// See durable.go.
 	Waiting *Pending `json:",omitempty"`
+	// Lessons are the lessons the run's model read (internal/lessons), by
+	// id, so a run's record says what advice it was given.
+	Lessons []string `json:",omitempty"`
 }
 
 // Spend is what the run cost.

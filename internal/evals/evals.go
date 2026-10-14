@@ -452,6 +452,9 @@ type Run func(goal, plant string) (id string, t agent.Trace, err error)
 type Options struct {
 	K, Attempts int
 	Plants      []string
+	// Lesson is a candidate lesson the agent's model reads on top of its
+	// playbook, when the evaluation is that lesson's trial.
+	Lesson string
 }
 
 // Evaluate runs every case k times clean and, when a model chooses, once
