@@ -295,6 +295,8 @@ func settingGroupLabel(key string) string {
 		return "Agents and their models"
 	case "models":
 		return "Models for agents built elsewhere"
+	case "today":
+		return "The first screen after signing in"
 	case "cell":
 		return "Desktop cells"
 	case "passkey":

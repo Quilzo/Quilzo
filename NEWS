@@ -9,6 +9,17 @@ Unreleased
 
 ** Added
 
+*** A brief on Today: a few sentences on what matters most, written by the
+    configured model below what is waiting.  The model never writes a
+    figure: it refers to each by a placeholder and Quilzo puts in the
+    figure, as a link to its records; a sentence with a number of its own,
+    a link or markup is left out.  It is given counts, kinds of decision and
+    agents' names, never anything somebody else wrote.  Written on a
+    person's first visit of the day and again when the figures change, at
+    most every half hour, through the model gateway and charged to their
+    budget; it says which model wrote it and when.  An auditor is not given
+    one.  `quilzo config set today.brief false` turns briefs off.
+
 *** Today, the first screen after signing in.  What is waiting for you to
     decide, from every part of the program (the same items as Approvals),
     with questions first, then what cannot be taken back, then the oldest;
@@ -16,8 +27,7 @@ Unreleased
     the draft and not published, agent runs going, finished and gone wrong
     in the last day, visitors waiting for a reply, findings to triage and
     cases open.  Each count links to the records it counts, and the same
-    grant check as the menu decides which are shown.  Nothing on it is
-    generated.  Signing in with a token, an identity provider or a passkey
+    grant check as the menu decides which are shown.  Signing in with a token, an identity provider or a passkey
     lands on it; "Start on Pages after signing in instead" keeps the old
     start, in your browser.
 

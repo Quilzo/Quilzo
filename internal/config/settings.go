@@ -520,6 +520,17 @@ var settings = []Setting{
 		},
 	},
 	{
+		Key: "today.brief", Kind: Bool, Default: "true",
+		Summary: "write a few sentences at the top of Today with the configured model",
+		Why: "Today lists what waits for each person and counts what is happening. " +
+			"The brief says what matters most in a few sentences. The model is " +
+			"given counts, kinds of decision and agents' names, never anything " +
+			"somebody else wrote, and never writes a figure: each one is put in " +
+			"here, as a link to its records. It is written once a day per person, " +
+			"again when the figures change, and charged to that person's budget. " +
+			"Nothing is written while no model is set up.",
+	},
+	{
 		Key: "models.remote", Kind: Bool, Default: "false",
 		Summary:  "serve the model gateway at /v1 on the admin, for agents built anywhere",
 		Controls: []string{"AC-17", "AC-3"},

@@ -271,6 +271,10 @@ type Server struct {
 	Approvals *Approvals
 	// Features reach the feature packages (internal/feature).
 	Features *FeatureHooks
+	// Brief writes the few sentences at the top of Today (brief.go), and
+	// briefs keeps each person's for the day.
+	Brief  *Brief
+	briefs *briefCache
 	// AppRoles are the roles the installed features declare for the people
 	// who work in them, which People and Provisioning can grant.
 	AppRoles func() ([]auth.AppRole, error)
@@ -559,7 +563,7 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 	if err != nil {
 		return nil, fmt.Errorf("admin templates: %w", err)
 	}
-	return &Server{Store: s, Policy: p, Tokens: ts, Layouts: layouts,
+	return &Server{Store: s, Policy: p, Tokens: ts, Layouts: layouts, briefs: &briefCache{},
 		Records: collection.NewCache(), tpl: t, flashKey: newFlashKey()}, nil
 }
 
