@@ -6,7 +6,9 @@ package admin
 import (
 	"bytes"
 	"errors"
+	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -18,6 +20,9 @@ import (
 
 type featureCalls struct {
 	installed []string
+	rows      []string
+	drafted   []string
+	fromName  string
 	decided   []string
 	removed   []string
 	secrets   []string
@@ -40,9 +45,21 @@ func wireFeatures(srv *Server) *featureCalls {
 			}
 			return p, p.MakeCard(), p.MakePlan(feature.State{}, nil), nil
 		},
-		Install: func(body []byte, by string) (string, []string, error) {
+		Install: func(body []byte, rows, by string) (string, []string, error) {
 			c.installed = append(c.installed, by)
+			c.rows = append(c.rows, rows)
 			return "", c.secrets, nil
+		},
+		Draft: func(description, by string) ([]byte, []string, string, error) {
+			c.drafted = append(c.drafted, description)
+			if strings.Contains(description, "broken") {
+				return []byte(`{"format":1,"name":"x"}`), nil, "the package is not usable: a title is required", nil
+			}
+			return feature.Example(), []string{`left out "agents": a draft holds content blocks only`}, "", nil
+		},
+		FromData: func(name string, data []byte, by string) ([]byte, string, int, string, []string, error) {
+			c.fromName = name
+			return feature.Example(), "0123456789abcdef01234567", 3, "samples", nil, nil
 		},
 		Decide: func(id string, approve bool, by string) error {
 			c.decided = append(c.decided, id+" "+by)
@@ -178,5 +195,64 @@ func TestMakeIsForAdministrators(t *testing.T) {
 	}
 	srv.Features.Check = func([]byte) (*feature.Package, feature.Card, feature.Plan, error) {
 		return nil, feature.Card{}, feature.Plan{}, errors.New("unused")
+	}
+}
+
+// A description becomes a draft shown as any package is, with what was left
+// out; a draft that does not pass is shown with its problems and no
+// install button.
+func TestMakeDraftsFromADescriptionAndShowsWhatWasLeftOut(t *testing.T) {
+	srv, token := setup(t)
+	calls := wireFeatures(srv)
+	res := postForm(t, srv, "/make/draft", token, url.Values{"description": {"track lab samples"}}.Encode())
+	body := res.Body.String()
+	if res.Code != http.StatusOK || !strings.Contains(body, "Ask for it to be installed") ||
+		!strings.Contains(body, "a draft holds content blocks only") {
+		t.Fatalf("draft page %d", res.Code)
+	}
+	whole(t, body)
+	res = postForm(t, srv, "/make/draft", token, url.Values{"description": {"something broken"}}.Encode())
+	body = res.Body.String()
+	if strings.Contains(body, `name="do" value="install"`) || !strings.Contains(body, "a title is required") ||
+		!strings.Contains(body, "Check it again") {
+		t.Error("a draft that does not pass was offered for install")
+	}
+	whole(t, body)
+	if len(calls.drafted) != 2 {
+		t.Errorf("drafted %v", calls.drafted)
+	}
+}
+
+// A spreadsheet's rows travel to the install by the id they were kept
+// under, and nothing else is accepted in their place.
+func TestMakeFromASpreadsheetCarriesItsRowsToTheInstall(t *testing.T) {
+	srv, token := setup(t)
+	calls := wireFeatures(srv)
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile("data", "lab samples.csv")
+	fw.Write([]byte("code\nS-1\n"))
+	mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/make/from", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	body := res.Body.String()
+	if res.Code != http.StatusOK || !strings.Contains(body, "0123456789abcdef01234567") ||
+		!strings.Contains(body, "records from the file go into") {
+		t.Fatalf("from page %d: %.300s", res.Code, body)
+	}
+	if calls.fromName != "lab samples" {
+		t.Errorf("named %q", calls.fromName)
+	}
+	p, _ := feature.Decode(bytes.NewReader(feature.Example()))
+	digest, _ := p.Digest()
+	postFormLoc(t, srv, token, "/make/act", url.Values{"do": {"install"}, "body": {string(feature.Example())},
+		"digest": {digest}, "rows": {"../../../etc/passwd"}})
+	postFormLoc(t, srv, token, "/make/act", url.Values{"do": {"install"}, "body": {string(feature.Example())},
+		"digest": {digest}, "rows": {"0123456789abcdef01234567"}})
+	if len(calls.rows) != 1 || calls.rows[0] != "0123456789abcdef01234567" {
+		t.Errorf("rows reached the install as %v", calls.rows)
 	}
 }

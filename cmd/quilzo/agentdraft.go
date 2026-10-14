@@ -50,6 +50,12 @@ type draftOutcome struct {
 var draftModelSeam func(root string) (assist.Model, string)
 
 func draftModel(root string, caller *Caller) (assist.Model, string) {
+	return draftModelFor(root, caller, "studio:draft")
+}
+
+// draftModelFor is the model a draft is asked of, charged at the gateway to
+// consumer.
+func draftModelFor(root string, caller *Caller, consumer string) (assist.Model, string) {
 	if draftModelSeam != nil {
 		return draftModelSeam(root)
 	}
@@ -58,7 +64,7 @@ func draftModel(root string, caller *Caller) (assist.Model, string) {
 		return nil, "the model gateway could not be read: " + err.Error()
 	}
 	if gw != nil {
-		return gw.For("studio:draft", caller.Name), ""
+		return gw.For(consumer, caller.Name), ""
 	}
 	m, err := directModel(root)
 	if err != nil {

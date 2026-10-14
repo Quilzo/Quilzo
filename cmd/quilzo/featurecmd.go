@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -95,9 +96,13 @@ func cmdFeature(root string, args []string) error {
 		return featureExport(root, rest)
 	case "capture":
 		return featureCapture(root, rest)
+	case "draft":
+		return featureDraftCmd(root, rest)
+	case "from":
+		return featureFromCmd(root, rest)
 	default:
-		return fmt.Errorf("unknown feature command %q; try example, check, install, approve, decline, pending, "+
-			"list, show, remove, rollback, export or capture", args[0])
+		return fmt.Errorf("unknown feature command %q; try example, draft, from, check, install, approve, decline, "+
+			"pending, list, show, remove, rollback, export or capture", args[0])
 	}
 }
 
@@ -365,17 +370,42 @@ func featureInstall(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("feature install", flag.ContinueOnError)
 	keys := fs.String("keys", "", "the publisher's head.pub.json, to check a signed package")
+	rowsPath := fs.String("rows", "", "records to import into one of its collections, as quilzo feature from writes them")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo feature install FILE [--keys head.pub.json]")
+		return errors.New("usage: quilzo feature install FILE [--keys head.pub.json] [--rows ROWS.json]")
 	}
-	return installFeatureFile(root, pos[0], *keys, resolveCaller(root, flagToken))
+	return installFeatureFile(root, pos[0], *keys, *rowsPath, resolveCaller(root, flagToken))
+}
+
+// readRows reads a rows file: {"collection": NAME, "records": [...]}.
+func readRows(path string) (*feature.Rows, error) {
+	if path == "" {
+		return nil, nil
+	}
+	b, err := readBounded(path, 64<<20)
+	if err != nil {
+		return nil, err
+	}
+	var r feature.Rows
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&r); err != nil {
+		return nil, fmt.Errorf("%s is not a rows file: %w", path, err)
+	}
+	if len(r.Records) == 0 {
+		return nil, fmt.Errorf("%s holds no records", path)
+	}
+	if len(r.Records) > feature.MaxRows {
+		return nil, fmt.Errorf("%s holds %d records; at most %d", path, len(r.Records), feature.MaxRows)
+	}
+	return &r, nil
 }
 
 // installFeatureFile installs a package file for a person.
-func installFeatureFile(root, path, keys string, caller *Caller) error {
+func installFeatureFile(root, path, keys, rowsPath string, caller *Caller) error {
 	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 		return fmt.Errorf("features are installed and changed by administrators: %w", err)
 	}
@@ -386,7 +416,11 @@ func installFeatureFile(root, path, keys string, caller *Caller) error {
 	if err != nil {
 		return err
 	}
-	o, err := requestFeature(root, p, body, caller, false)
+	rows, err := readRows(rowsPath)
+	if err != nil {
+		return err
+	}
+	o, err := requestFeature(root, p, body, caller, false, rows)
 	return printOutcome(p, o, err, caller)
 }
 
@@ -399,13 +433,20 @@ type featureOutcome struct {
 	// Secrets are new webhooks' signing secrets, to show once to the
 	// person who installed it and nowhere else.
 	Secrets []string
+	// Imported is how many records came in with it.
+	Imported int
 }
 
 // requestFeature installs at once when one approval is enough, and otherwise
 // leaves the request for a second person. It prints nothing: the screen
 // calls it too, and a secret printed here would land in the server's log.
-func requestFeature(root string, p *feature.Package, body []byte, caller *Caller, rollback bool) (featureOutcome, error) {
+func requestFeature(root string, p *feature.Package, body []byte, caller *Caller, rollback bool, rows *feature.Rows) (featureOutcome, error) {
 	var out featureOutcome
+	if rows != nil {
+		if err := p.CheckRows(rows.Collection, rows.Records); err != nil {
+			return out, err
+		}
+	}
 	st, installed, err := featureState(root)
 	if err != nil {
 		return out, err
@@ -428,6 +469,9 @@ func requestFeature(root string, p *feature.Package, body []byte, caller *Caller
 	}
 	if out.Card.Approvers < 2 {
 		out.Secrets, err = applyFeature(root, p, digest, out.Plan, caller, []string{caller.Name})
+		if err == nil && rows != nil {
+			out.Imported, err = putCheckedRecords(root, rows.Collection, rows.Records, caller)
+		}
 		return out, err
 	}
 	id := make([]byte, 6)
@@ -438,6 +482,12 @@ func requestFeature(root string, p *feature.Package, body []byte, caller *Caller
 		RequestedBy: caller.Name, At: time.Now().UTC(), Card: out.Card, Plan: out.Plan, Rollback: rollback}
 	if err := os.MkdirAll(filepath.Dir(featurePendingPath(root, pend.ID)), 0o700); err != nil {
 		return out, err
+	}
+	if rows != nil {
+		pend.Rows, pend.RowsCollection = len(rows.Records), rows.Collection
+		if err := saveJSON(featurePendingPath(root, pend.ID)+".rows", rows); err != nil {
+			return out, err
+		}
 	}
 	if err := saveJSON(featurePendingPath(root, pend.ID), pend); err != nil {
 		return out, err
@@ -466,6 +516,9 @@ func printOutcome(p *feature.Package, o featureOutcome, err error, caller *Calle
 		return nil
 	}
 	w.Human("installed %s %s; its pages are in the draft, and publishing them is the usual review\n", p.Name, p.Version)
+	if o.Imported > 0 {
+		w.Human("imported %d record(s)\n", o.Imported)
+	}
 	for _, sec := range o.Secrets {
 		w.Human("webhook secret, shown once: %s\n", sec)
 	}
@@ -538,6 +591,7 @@ func decideFeature(root, id string, approve bool, caller *Caller) error {
 		if err := os.Remove(featurePendingPath(root, id)); err != nil {
 			return err
 		}
+		_ = os.Remove(featurePendingPath(root, id) + ".rows")
 		record(root, caller.auditRecord("feature.declined", "/", audit.Success, map[string]string{
 			"feature": pend.Name, "version": pend.Version, "request": id, "by": caller.Name}))
 		w.Human("declined %s %s\n", pend.Name, pend.Version)
@@ -575,6 +629,18 @@ func decideFeature(root, id string, approve bool, caller *Caller) error {
 		w.Human("webhook secret, shown once: %s\n", sec)
 	}
 	_ = os.Remove(featurePendingPath(root, id))
+	if pend.Rows > 0 {
+		var rows feature.Rows
+		if err := loadJSON(featurePendingPath(root, id)+".rows", &rows); err != nil {
+			return fmt.Errorf("%s is installed, and its records could not be read: %w", p.Name, err)
+		}
+		n, err := putCheckedRecords(root, rows.Collection, rows.Records, caller)
+		if err != nil {
+			return fmt.Errorf("%s is installed, and its records were not imported: %w", p.Name, err)
+		}
+		_ = os.Remove(featurePendingPath(root, id) + ".rows")
+		w.Human("imported %d record(s) into %s\n", n, rows.Collection)
+	}
 	w.Human("installed %s %s, asked for by %s and approved by %s; its pages are in the draft\n",
 		p.Name, p.Version, pend.RequestedBy, caller.Name)
 	return nil
@@ -928,6 +994,9 @@ func pendingFeatures(root string) ([]feature.Pending, error) {
 	var out []feature.Pending
 	for _, e := range ents {
 		var p feature.Pending
+		if !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
 		if loadJSON(filepath.Join(dir, e.Name()), &p) != nil || time.Since(p.At) > feature.PendingTTL {
 			continue
 		}
@@ -1078,7 +1147,7 @@ func rollbackFeature(root, name string, caller *Caller) (*feature.Package, featu
 	if err := p.Validate(featureChecks(root)); err != nil {
 		return nil, featureOutcome{}, fmt.Errorf("version %s no longer passes the checks: %w", p.Version, err)
 	}
-	o, err := requestFeature(root, p, body, caller, true)
+	o, err := requestFeature(root, p, body, caller, true, nil)
 	return p, o, err
 }
 
@@ -1318,7 +1387,7 @@ func featureHooks(root string, signedIn func(string) *Caller) *admin.FeatureHook
 			}
 			return p, p.MakeCard(), p.MakePlan(st, owned), nil
 		},
-		Install: func(body []byte, by string) (string, []string, error) {
+		Install: func(body []byte, rowsID, by string) (string, []string, error) {
 			caller := signedIn(by)
 			if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 				return "", nil, err
@@ -1327,11 +1396,44 @@ func featureHooks(root string, signedIn func(string) *Caller) *admin.FeatureHook
 			if err != nil {
 				return "", nil, err
 			}
-			o, err := requestFeature(root, p, body, caller, false)
+			var rows *feature.Rows
+			if rowsID != "" {
+				if rows, err = readRows(featureDraftRowsPath(root, rowsID)); err != nil {
+					return "", nil, fmt.Errorf("the spreadsheet's records are no longer here; read the file again: %w", err)
+				}
+			}
+			o, err := requestFeature(root, p, body, caller, false, rows)
+			if err == nil && rowsID != "" {
+				_ = os.Remove(featureDraftRowsPath(root, rowsID))
+			}
 			if o.Waiting != nil {
 				return o.Waiting.ID, nil, err
 			}
 			return "", o.Secrets, err
+		},
+		Draft: func(description, by string) ([]byte, []string, string, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), featureDraftTimeout)
+			defer cancel()
+			d, err := draftFeature(ctx, root, description, signedIn(by))
+			if err != nil {
+				return nil, nil, "", err
+			}
+			return d.Body, d.Notes, d.Invalid, nil
+		},
+		FromData: func(name string, data []byte, by string) ([]byte, string, int, string, []string, error) {
+			in, err := feature.Infer(name, data)
+			if err != nil {
+				return nil, "", 0, "", nil, err
+			}
+			body, err := json.MarshalIndent(in.Package, "", "  ")
+			if err != nil {
+				return nil, "", 0, "", nil, err
+			}
+			id, err := keepDraftRows(root, &feature.Rows{Collection: in.Collection, Records: in.Rows})
+			if err != nil {
+				return nil, "", 0, "", nil, err
+			}
+			return append(body, '\n'), id, len(in.Rows), in.Collection, in.Notes, nil
 		},
 		Decide: func(id string, approve bool, by string) error {
 			return decideFeature(root, id, approve, signedIn(by))
@@ -1345,4 +1447,36 @@ func featureHooks(root string, signedIn func(string) *Caller) *admin.FeatureHook
 			return "", err
 		},
 	}
+}
+
+// featureDraftRowsPath is where a spreadsheet's rows wait between reading
+// it on the Make screen and installing the feature.
+func featureDraftRowsPath(root, id string) string {
+	return filepath.Join(featuresDir(root), "drafts", id+".rows.json")
+}
+
+// keepDraftRows keeps rows under a new id, readable only here, and clears
+// out rows nobody installed within a day.
+func keepDraftRows(root string, rows *feature.Rows) (string, error) {
+	dir := filepath.Join(featuresDir(root), "drafts")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if ents, err := os.ReadDir(dir); err == nil {
+		for _, e := range ents {
+			if fi, err := e.Info(); err == nil && time.Since(fi.ModTime()) > 24*time.Hour {
+				_ = os.Remove(filepath.Join(dir, e.Name()))
+			}
+		}
+	}
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	id := hex.EncodeToString(b)
+	body, err := json.Marshal(rows)
+	if err != nil {
+		return "", err
+	}
+	return id, atomicfile.Write(featureDraftRowsPath(root, id), body, 0o600)
 }

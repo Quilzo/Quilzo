@@ -336,33 +336,58 @@ func recordsImport(root string, args []string) error {
 		return fmt.Errorf("%s holds no records", args[1])
 	}
 
-	s, err := open(root)
+	n, err := putCheckedRecords(root, args[0], rows, resolveCaller(root, ""))
 	if err != nil {
 		return err
 	}
-	caller := resolveCaller(root, "")
+	w.Human("imported %d record(s) into %s\n", n, args[0])
+	return nil
+}
+
+// putCheckedRecords writes many records in one commit, each checked against
+// the collection's type first. One that does not satisfy it refuses the
+// whole import: a half-imported file is harder to put right than none.
+func putCheckedRecords(root, name string, rows []map[string]any, caller *Caller) (int, error) {
+	check := recordGate(root)
+	var bad []string
+	for i, f := range rows {
+		if err := check(name, f); err != nil {
+			bad = append(bad, fmt.Sprintf("record %d: %v", i+1, err))
+			if len(bad) == 5 {
+				bad = append(bad, "and perhaps more")
+				break
+			}
+		}
+	}
+	if len(bad) > 0 {
+		return 0, fmt.Errorf("nothing was imported into %s; these do not satisfy its type:\n  %s",
+			name, strings.Join(bad, "\n  "))
+	}
+	s, err := open(root)
+	if err != nil {
+		return 0, err
+	}
 	tree, err := draftTree(s)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	batch := make([]collection.Record, 0, len(rows))
 	for _, f := range rows {
 		batch = append(batch, collection.Record{Fields: f})
 	}
-	next, out, err := collection.PutMany(s, tree, args[0], batch, time.Now())
+	next, out, err := collection.PutMany(s, tree, name, batch, time.Now())
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if err := commitTree(root, s, next,
-		fmt.Sprintf("records: import %d into %s", len(out), args[0]),
+		fmt.Sprintf("records: import %d into %s", len(out), name),
 		caller.Name); err != nil {
-		return err
+		return 0, err
 	}
-	record(root, caller.auditRecord("records.import", "/"+args[0],
+	record(root, caller.auditRecord("records.import", "/"+name,
 		audit.Success, map[string]string{
-			"collection": args[0], "count": fmt.Sprintf("%d", len(out))}))
-	w.Human("imported %d record(s) into %s\n", len(out), args[0])
-	return nil
+			"collection": name, "count": fmt.Sprintf("%d", len(out))}))
+	return len(out), nil
 }
 
 // typed turns a command-line value into the type it looks like.

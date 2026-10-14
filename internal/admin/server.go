@@ -1275,6 +1275,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/approvals/act", s.handleApprovalsAct)
 	mux.HandleFunc("/make", s.handleMake)
 	mux.HandleFunc("/make/check", s.handleMakeCheck)
+	mux.HandleFunc("/make/draft", s.handleMakeDraft)
+	mux.HandleFunc("/make/from", s.handleMakeFrom)
 	mux.HandleFunc("/make/act", s.handleMakeAct)
 	mux.HandleFunc("/decisions", s.handleDeciders)
 	mux.HandleFunc("/decisions/", s.handleDecider)

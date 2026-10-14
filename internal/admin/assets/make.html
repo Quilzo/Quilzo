@@ -7,6 +7,23 @@
 <p>Each receiving server checks the signature with its secret. Copy them now; Quilzo shows them once.</p>
 <ul>{{range .Secrets}}<li><code>{{.}}</code></li>{{end}}</ul>
 <p><a href="/make">Done</a></p></section>{{else if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<section aria-labelledby="make-describe">
+<h2 id="make-describe">Describe it</h2>
+<form method="post" action="/make/draft" class="param-form">
+  <label for="make-describe-text">What should it do? {{template "req"}}</label><textarea id="make-describe-text" name="description" rows="3" maxlength="2000" required placeholder="Track the lab's samples, who has each one, and show members which are available"></textarea>
+  <div class="auto-controls"><button type="submit" class="btn-tonal">Draft it</button></div>
+</form>
+<p class="hint">A model drafts types, records, listings, forms, pages, menus and chatbots, and nothing that reaches another server. You read the draft before anything is installed.</p>
+</section>
+<section aria-labelledby="make-data">
+<h2 id="make-data">From a spreadsheet</h2>
+<form method="post" action="/make/from" enctype="multipart/form-data" class="param-form">
+  <label for="make-data-file">CSV or JSON file {{template "req"}}</label><input id="make-data-file" type="file" name="data" accept=".csv,text/csv,application/json,.json" required>
+  <label for="make-data-name">Call it</label><input id="make-data-name" name="name" maxlength="60" placeholder="The file's name">
+  <div class="auto-controls"><button type="submit" class="btn-tonal">Read it</button></div>
+</form>
+<p class="hint">Each column's kind comes from its values. Its rows are imported with the feature, once it is approved; the package itself carries no data.</p>
+</section>
 <section aria-labelledby="make-add">
 <h2 id="make-add">Add a feature</h2>
 <form method="post" action="/make/check" enctype="multipart/form-data" class="param-form">

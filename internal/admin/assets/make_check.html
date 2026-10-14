@@ -1,13 +1,15 @@
 {{template "head" .}}
 <p><a href="/make">Make</a></p>
+{{if .Package}}
 <h1>{{.Card.Title}} <span class="tag">{{.Card.Version}}</span></h1>
 <p class="lead">{{.Card.Purpose}}</p>
-{{if .Card.MadeBy}}<p class="hint">Made by {{.Card.MadeBy}}.</p>{{end}}
+{{if .Card.MadeBy}}<p class="hint">Made by {{.Card.MadeBy}}{{with .Package.Made}}{{if .From}}, from: “{{.From}}”{{end}}{{end}}. Read it before you install it.</p>{{end}}
+{{if .Notes}}<div class="notice"><p>Left out of the draft, or decided for it:</p><ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
 <p><span class="tag {{if eq .Card.Risk "high"}}tag-bad{{else if eq .Card.Risk "medium"}}tag-warn{{else}}tag-ok{{end}}">risk {{.Card.Risk}}</span>
 {{if eq .Card.Approvers 2}} Two different people approve it.{{else}} One administrator approves it.{{end}}</p>
 {{if .Card.Because}}<ul>{{range .Card.Because}}<li>Two people, because {{.}}.</li>{{end}}</ul>{{end}}
-{{define "cardlines"}}{{range .}}<li>{{.Text}}{{if eq .Flag "personal"}} <span class="tag tag-warn">personal data</span>{{else if eq .Flag "special"}} <span class="tag tag-bad">special category</span>{{else if eq .Flag "sends"}} <span class="tag tag-warn">sends</span>{{else if eq .Flag "acts"}} <span class="tag tag-bad">acts on its own</span>{{end}}</li>{{end}}{{end}}
 {{if .Card.Stores}}<h2>Stores</h2><ul>{{template "cardlines" .Card.Stores}}</ul>{{end}}
+{{if .RowCount}}<p>With it, <strong>{{.RowCount}}</strong> records from the file go into <code>{{.Into}}</code>, each checked against its type.</p>{{end}}
 {{if .Card.Collects}}<h2>Collects</h2><ul>{{template "cardlines" .Card.Collects}}</ul>{{end}}
 {{if .Card.Shows}}<h2>Shows</h2><ul>{{template "cardlines" .Card.Shows}}</ul>{{end}}
 {{if .Card.Sends}}<h2>Sends</h2><ul>{{template "cardlines" .Card.Sends}}</ul>{{end}}
@@ -20,8 +22,18 @@
 </table></div>
 {{if .Plan.Conflicts}}<div class="notice bad" role="alert"><p>It cannot be installed: a feature only changes what it made.</p><ul>{{range .Plan.Conflicts}}<li>{{.}}</li>{{end}}</ul></div>
 {{else}}<form method="post" action="/make/act">
-  <input type="hidden" name="do" value="install"><input type="hidden" name="digest" value="{{.Digest}}"><input type="hidden" name="body" value="{{.Body}}">
+  <input type="hidden" name="do" value="install"><input type="hidden" name="digest" value="{{.Digest}}"><input type="hidden" name="body" value="{{.Body}}">{{if .Rows}}<input type="hidden" name="rows" value="{{.Rows}}">{{end}}
   <div class="confirmactions"><button type="submit">{{if eq .Card.Approvers 2}}Ask for it to be installed{{else}}Install it{{end}}</button><a href="/make">Cancel</a></div>
 </form>
 <p class="hint">Digest <code>{{.Digest}}</code>: what is installed is exactly what you read here.</p>{{end}}
+{{else}}
+<h1>Not ready to install</h1>
+<div class="notice bad" role="alert"><p>{{.Invalid}}</p></div>
+{{if .Notes}}<div class="notice"><p>Left out of the draft:</p><ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
+<form method="post" action="/make/check" class="param-form">
+  <label for="check-text">Edit the package</label><textarea id="check-text" name="text" rows="18" spellcheck="false">{{.Body}}</textarea>
+  <div class="auto-controls"><button type="submit" class="btn-tonal">Check it again</button></div>
+</form>
+{{end}}
 {{template "foot" .}}
+{{define "cardlines"}}{{range .}}<li>{{.Text}}{{if eq .Flag "personal"}} <span class="tag tag-warn">personal data</span>{{else if eq .Flag "special"}} <span class="tag tag-bad">special category</span>{{else if eq .Flag "sends"}} <span class="tag tag-warn">sends</span>{{else if eq .Flag "acts"}} <span class="tag tag-bad">acts on its own</span>{{end}}</li>{{end}}{{end}}

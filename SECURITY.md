@@ -116,7 +116,8 @@ vulnerability:
   installs on one person's approval when the card asked for two, changes or
   removes a block it did not make, publishes a page, or installs bytes other
   than the ones that were checked; or a signed package accepted without its
-  signature checking out.
+  signature checking out. A drafted package holding an agent, a webhook or a
+  link to another site, or records imported that do not satisfy their type.
 - **A person's desktop is not used.** Any way a run reaches a person's keyboard
   or pointer. Desktop consent hands the session straight back.
 

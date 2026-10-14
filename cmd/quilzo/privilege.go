@@ -718,10 +718,14 @@ var commandNeeds = map[string]need{
 	"feature pending": {action: auth.ActView},
 	"feature list":    {action: auth.ActView},
 	"feature show":    {action: auth.ActView},
-	"ext":             {action: auth.ActGrant},
-	"extensions":      {action: auth.ActGrant},
-	"ext list":        {action: auth.ActView},
-	"ext test":        {action: auth.ActView},
+	// Drafting asks a model, which costs what an author's drafting costs;
+	// reading a file into a package changes nothing here.
+	"feature draft": {action: auth.ActEditDraft},
+	"feature from":  {action: auth.ActView},
+	"ext":           {action: auth.ActGrant},
+	"extensions":    {action: auth.ActGrant},
+	"ext list":      {action: auth.ActView},
+	"ext test":      {action: auth.ActView},
 
 	"webhook":  {action: auth.ActGrant},
 	"webhooks": {action: auth.ActGrant},

@@ -35,16 +35,26 @@ type FeatureHooks struct {
 	// Check reads a package: its card and its plan, changing nothing.
 	Check func(body []byte) (*feature.Package, feature.Card, feature.Plan, error)
 	// Install installs for a person, or leaves it waiting; the id is the
-	// waiting request's, empty when it went in at once. Secrets are new
-	// webhooks' signing secrets, shown once on the response and never in a
+	// waiting request's, empty when it went in at once. rows names records
+	// kept from a spreadsheet to import with it. Secrets are new webhooks'
+	// signing secrets, shown once on the response and never in a
 	// redirect, a log or a later page.
-	Install  func(body []byte, by string) (string, []string, error)
+	Install func(body []byte, rows, by string) (string, []string, error)
+	// Draft asks a model for a package from a description; invalid says
+	// why the draft would not install yet.
+	Draft func(description, by string) (body []byte, notes []string, invalid string, err error)
+	// FromData makes a package from a spreadsheet or JSON list, keeping
+	// its rows under an id until the install.
+	FromData func(name string, data []byte, by string) (body []byte, rows string, count int, into string, notes []string, err error)
 	Decide   func(id string, approve bool, by string) error
 	Remove   func(name, by string) error
 	Rollback func(name, by string) (string, error)
 }
 
-var reFeatureName = regexp.MustCompile(`^[a-z][a-z0-9-]{1,62}$`)
+var (
+	reFeatureName = regexp.MustCompile(`^[a-z][a-z0-9-]{1,62}$`)
+	reRowsID      = regexp.MustCompile(`^[0-9a-f]{24}$`)
+)
 
 func (s *Server) handleMake(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.requireAuth(w, r)
@@ -115,14 +125,107 @@ func (s *Server) handleMakeCheck(w http.ResponseWriter, r *http.Request) {
 		makeBack(w, r, "", errors.New("choose a package file, or paste one"))
 		return
 	}
-	pkg, card, plan, err := s.Features.Check(body)
+	s.renderCheck(w, r, p, body, nil, "", "", 0, "")
+}
+
+// handleMakeDraft asks a model for a package from a description and shows
+// it as any other package is shown: its card, its plan, what was left out.
+func (s *Server) handleMakeDraft(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "post", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.can(w, r, p, auth.ActGrant, "/") {
+		return
+	}
+	if s.Features == nil || s.Features.Draft == nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	body, notes, invalid, err := s.Features.Draft(r.FormValue("description"), p.Name)
 	if err != nil {
 		makeBack(w, r, "", err)
 		return
 	}
-	digest, _ := pkg.Digest()
-	s.render(w, r, "make_check.html", map[string]any{"Title": "Check " + pkg.Title, "Nav": "make",
-		"Principal": p, "Package": pkg, "Card": card, "Plan": plan, "Digest": digest, "Body": string(body)})
+	s.renderCheck(w, r, p, body, notes, invalid, "", 0, "")
+}
+
+// handleMakeFrom makes a package from an uploaded spreadsheet.
+func (s *Server) handleMakeFrom(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "post", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.can(w, r, p, auth.ActGrant, "/") {
+		return
+	}
+	if s.Features == nil || s.Features.FromData == nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<20)
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		makeBack(w, r, "", errors.New("choose a CSV or JSON file"))
+		return
+	}
+	f, hdr, err := r.FormFile("data")
+	if err != nil {
+		makeBack(w, r, "", errors.New("choose a CSV or JSON file"))
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(f, 64<<20))
+	f.Close()
+	if err != nil {
+		makeBack(w, r, "", err)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		name = strings.TrimSuffix(hdr.Filename, filepathExt(hdr.Filename))
+	}
+	body, rows, count, into, notes, err := s.Features.FromData(name, data, p.Name)
+	if err != nil {
+		makeBack(w, r, "", err)
+		return
+	}
+	s.renderCheck(w, r, p, body, notes, "", rows, count, into)
+}
+
+func filepathExt(name string) string {
+	if i := strings.LastIndexByte(name, '.'); i > 0 {
+		return name[i:]
+	}
+	return ""
+}
+
+// renderCheck shows a package's card and plan, or why it cannot install.
+func (s *Server) renderCheck(w http.ResponseWriter, r *http.Request, p principal, body []byte, notes []string,
+	invalid, rows string, count int, into string) {
+	data := map[string]any{"Title": "Check a feature", "Nav": "make", "Principal": p, "Notes": notes,
+		"Body": string(body), "Rows": rows, "RowCount": count, "Into": into}
+	if invalid == "" {
+		pkg, card, plan, err := s.Features.Check(body)
+		if err != nil {
+			invalid = err.Error()
+		} else {
+			digest, _ := pkg.Digest()
+			data["Package"], data["Card"], data["Plan"], data["Digest"] = pkg, card, plan, digest
+			data["Title"] = "Check " + pkg.Title
+		}
+	}
+	data["Invalid"] = invalid
+	s.render(w, r, "make_check.html", data)
 }
 
 // handleMakeAct installs a checked package, or decides, removes or rolls
@@ -156,7 +259,12 @@ func (s *Server) handleMakeAct(w http.ResponseWriter, r *http.Request) {
 			makeBack(w, r, "", errors.New("the package changed after it was checked; check it again"))
 			return
 		}
-		id, secrets, err := s.Features.Install(body, p.Name)
+		rows := r.FormValue("rows")
+		if rows != "" && !reRowsID.MatchString(rows) {
+			makeBack(w, r, "", errors.New("those records are not ones this screen kept"))
+			return
+		}
+		id, secrets, err := s.Features.Install(body, rows, p.Name)
 		switch {
 		case err != nil:
 			makeBack(w, r, "", err)
