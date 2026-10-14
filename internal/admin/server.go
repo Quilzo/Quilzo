@@ -58,6 +58,8 @@ import (
 	"fmt"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/clientip"
+	"github.com/quilzo/quilzo/internal/dpop"
+	"github.com/quilzo/quilzo/internal/federate"
 	"github.com/quilzo/quilzo/internal/fedramp"
 	"github.com/quilzo/quilzo/internal/icons"
 	"github.com/quilzo/quilzo/internal/throttle"
@@ -279,6 +281,12 @@ type Server struct {
 	// people pin (ask.go); asks holds each person's latest answer.
 	Ask  *Ask
 	asks *askCache
+	// Federation admits the jobs other issuers vouch for at the token
+	// exchange (tokenexchange.go); proofs and admitted remember the DPoP
+	// proofs and identity tokens already used.
+	Federation *Federation
+	proofs     *dpop.Replays
+	admitted   *federate.Replays
 	// AppRoles are the roles the installed features declare for the people
 	// who work in them, which People and Provisioning can grant.
 	AppRoles func() ([]auth.AppRole, error)
@@ -568,6 +576,7 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 		return nil, fmt.Errorf("admin templates: %w", err)
 	}
 	return &Server{Store: s, Policy: p, Tokens: ts, Layouts: layouts, briefs: &briefCache{}, asks: &askCache{},
+		proofs: &dpop.Replays{}, admitted: &federate.Replays{},
 		Records: collection.NewCache(), tpl: t, flashKey: newFlashKey()}, nil
 }
 
@@ -1229,7 +1238,7 @@ func (s *Server) readOnlyTokens(next http.Handler) http.Handler {
 		// themselves; reading through the interface is a POST, and refusing
 		// every POST would refuse a read-only token's reads.
 		switch r.URL.Path {
-		case "/mcp", "/oauth/token", "/oauth/revoke", "/v1/chat/completions", "/v1/responses", "/v1/messages":
+		case "/mcp", "/oauth/token", "/oauth/revoke", "/token/exchange", "/v1/chat/completions", "/v1/responses", "/v1/messages":
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -1506,6 +1515,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleServerMetadata)
 	mux.HandleFunc("/oauth/authorize", s.handleAuthorize)
 	mux.HandleFunc("/oauth/token", s.handleOAuthToken)
+	mux.HandleFunc("/token/exchange", s.handleTokenExchange)
 	mux.HandleFunc("/oauth/revoke", s.handleOAuthRevoke)
 	mux.HandleFunc("/apps", s.handleApps)
 	mux.HandleFunc("/apps/act", s.handleAppsAct)

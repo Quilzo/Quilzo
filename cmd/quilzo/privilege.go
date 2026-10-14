@@ -275,7 +275,9 @@ var commandNeeds = map[string]need{
 	"geo status": {action: auth.ActView},
 	"geo help":   {action: auth.ActView},
 	// Grant: provisioning decides who holds which role.
-	"scim":        {action: auth.ActGrant},
+	"scim": {action: auth.ActGrant},
+	// Deciding which other issuers' jobs get tokens here is granting access.
+	"trust":       {action: auth.ActGrant},
 	"scim status": {action: auth.ActGrant},
 	// Publish: a board is a place on the site where people other than its
 	// staff put words. Moderating one is editing what the site shows.
@@ -799,6 +801,10 @@ var commandNeeds = map[string]need{
 	"auth list":    {action: auth.ActView},
 	"token list":   {action: auth.ActView},
 	"vault status": {action: auth.ActView},
+	// A program's own key and its proofs are made on the program's machine
+	// from a file given as an argument; neither opens the store.
+	"token keygen": {why: "writes a new key to a file given as an argument and never opens the store"},
+	"token proof":  {why: "signs a proof with a key file given as an argument and never opens the store"},
 }
 
 // Which page a command is about, so that a binding scoped to part of the site

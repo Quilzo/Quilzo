@@ -16,6 +16,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/a2a"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/dpop"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/oauthas"
 	"github.com/quilzo/quilzo/internal/throttle"
@@ -103,7 +104,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	own := s.ownOrigin(r)
 	e := &mcp.Endpoint{
-		Metadata: metadata, DefaultScope: scope,
+		Metadata: metadata, DefaultScope: scope, DPoP: dpop.AlgorithmNames(),
 		Authenticate: func(r *http.Request, token string) (*mcp.Caller, error) {
 			return s.interfaceCaller(r, token, resource)
 		},
@@ -137,7 +138,7 @@ func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 	}
 	own := s.ownOrigin(r)
 	e := &mcp.Endpoint{
-		Metadata: metadata, DefaultScope: scope,
+		Metadata: metadata, DefaultScope: scope, DPoP: dpop.AlgorithmNames(),
 		Authenticate: func(r *http.Request, token string) (*mcp.Caller, error) {
 			return s.interfaceCaller(r, token, resource)
 		},
@@ -217,19 +218,19 @@ func (s *Server) handleA2A(w http.ResponseWriter, r *http.Request) {
 	if oauth {
 		resource = cfg.Resource()
 	}
-	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !ok || strings.TrimSpace(token) == "" || len(r.Header.Values("Authorization")) != 1 || r.URL.Query().Has("access_token") {
-		challenge := `Bearer realm="quilzo"`
-		if oauth {
-			challenge += `, resource_metadata="` + cfg.MetadataURL() + `"`
-		}
-		w.Header().Set("WWW-Authenticate", challenge)
+	token, _ := authzToken(r)
+	extra := ""
+	if oauth {
+		extra = `, resource_metadata="` + cfg.MetadataURL() + `"`
+	}
+	if token == "" || len(r.Header.Values("Authorization")) != 1 || r.URL.Query().Has("access_token") {
+		tokenChallenge(w, extra, nil)
 		http.Error(w, "a bearer token in the Authorization header", http.StatusUnauthorized)
 		return
 	}
-	c, err := s.interfaceCaller(r, strings.TrimSpace(token), resource)
+	c, err := s.interfaceCaller(r, token, resource)
 	if err != nil {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="quilzo", error="invalid_token"`)
+		tokenChallenge(w, "", err)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
@@ -251,7 +252,19 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 			return nil, errors.New("too many failed attempts from this address. " + d.Why)
 		}
 	}
-	tok, err := s.Tokens.AuthenticateFor(token, resource, time.Now())
+	var tok *auth.Token
+	var err error
+	if _, scheme := authzToken(r); scheme == "DPoP" {
+		// A token bound to a key, with the proof that this request was made
+		// by the key: checked before the token is looked at, so a request
+		// with a stolen token and no key costs a signature check.
+		var thumb string
+		if thumb, err = s.proofOf(r, token); err == nil {
+			tok, err = s.Tokens.AuthenticateProved(token, resource, thumb, time.Now())
+		}
+	} else {
+		tok, err = s.Tokens.AuthenticateFor(token, resource, time.Now())
+	}
 	if err != nil {
 		if s.Throttle != nil {
 			if d, alert := s.Throttle.Fail(sub); alert && s.OnAuthFailure != nil {

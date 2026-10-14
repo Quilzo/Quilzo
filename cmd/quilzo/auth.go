@@ -640,6 +640,10 @@ recovered from this machine.
 		return tokenExchange(root, args[1:])
 	case "stale":
 		return tokenStale(root, args[1:])
+	case "keygen":
+		return tokenKeygen(args[1:])
+	case "proof":
+		return tokenProof(args[1:])
 	default:
 		return fmt.Errorf("unknown token command %q", args[0])
 	}
@@ -680,6 +684,8 @@ func tokenIssue(root string, args []string) error {
 		"refuse every write regardless of role")
 	forAPI := fs.Bool("api", false,
 		"short-lived and read-only: the shape an integration should hold")
+	keyFile := fs.String("key", "", "bind it to this public key (a JWK file, from quilzo token keygen): "+
+		"accepted only with a DPoP proof made by the key")
 	rest, flags := leadingArgs(args, 1)
 	if err := fs.Parse(flags); err != nil {
 		return err
@@ -755,6 +761,12 @@ func tokenIssue(root string, args []string) error {
 			life, max, life)
 	}
 
+	thumb := ""
+	if *keyFile != "" {
+		if thumb, err = publicKeyThumbprint(*keyFile); err != nil {
+			return err
+		}
+	}
 	ts, err := loadTokens(root)
 	if err != nil {
 		return err
@@ -763,6 +775,12 @@ func tokenIssue(root string, args []string) error {
 		*on, life, auth.Role(*as), scope)
 	if err != nil {
 		return err
+	}
+	if thumb != "" {
+		if err := ts.BindKey(tok.ID, thumb); err != nil {
+			return err
+		}
+		tok.Key = thumb
 	}
 	if err := saveJSON(tokensPath(root), ts); err != nil {
 		return err
@@ -784,6 +802,13 @@ func tokenIssue(root string, args []string) error {
 	fmt.Printf("%s%s%s\n", bold, secret, reset)
 	fmt.Printf("\n  %sid %s · %s on %s · expires %s%s\n", dim, tok.ID, tok.Role,
 		tok.Resource, time.Unix(tok.ExpiresAt, 0).UTC().Format("2006-01-02"), reset)
+	if tok.Key != "" {
+		fmt.Printf("  %sbound to key %s: send it as Authorization: DPoP, with a proof the key makes for "+
+			"each request, to /mcp, /v1 or /a2a; it is refused everywhere else%s\n", dim, tok.Key, reset)
+	} else if tok.Role.AtLeast(auth.RolePublisher) && !tok.Scope.ReadOnly && life > shortLived {
+		fmt.Printf("  %sfrom another machine, publishing and administering with it need it bound to a key "+
+			"(--key) or exchanged for a short session first; reading and drafting work as it is%s\n", dim, reset)
+	}
 	if fromPolicy {
 		fmt.Printf("  %sthe role is what %s holds in the policy; --role narrows "+
 			"it%s\n", dim, tok.Principal, reset)

@@ -212,6 +212,7 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 	srv.ModelDoor = modelDoor(root, cc)
 	srv.Brief = todayBrief(root, cc)
 	srv.Ask = todayAsk(root, cc)
+	srv.Federation = federation(root)
 }
 
 // appCallRecord is the record of one call at the agent interface. It is
@@ -247,7 +248,34 @@ func appCallRecord(c *mcp.Caller, tool, op string, rerr *mcp.Error) audit.Record
 // acting, because that is what calls an interface built for agents.
 func remoteCaller(tok auth.Token) *Caller {
 	return &Caller{Name: tok.Principal, Role: tok.Role, Scope: tok.Resource, Limits: tok.Scope,
-		Kind: audit.KindAI, Model: "mcp-client", Verified: true, Remote: true, Grant: tok.Grant}
+		Kind: audit.KindAI, Model: "mcp-client", Verified: true, Remote: true, Grant: tok.Grant,
+		Bound: tok.Key != "", Life: time.Unix(tok.ExpiresAt, 0).Sub(time.Unix(tok.CreatedAt, 0))}
+}
+
+// shortLived is how long a bearer token may last and still do what is
+// risky from another machine: an app's consented access token, a session
+// exchanged for minutes, a CI job's token.
+const shortLived = time.Hour
+
+// riskyNeedsProof refuses a risky operation to a token that is worth
+// stealing. What a stolen bearer token can do is what its holder could:
+// publishing, rolling back, granting, managing tokens and agents and
+// installing are the acts somebody else should not be able to replay
+// from a copied token. Those need the token bound to the program's key
+// and proved on the request, or a token short enough that a copy expires
+// before it is found. Reading and drafting do not: they are what most
+// clients do, with tokens they cannot bind.
+func riskyNeedsProof(root string, c *Caller, need auth.Role) error {
+	if !need.AtLeast(auth.RolePublisher) || c.Bound || (c.Life > 0 && c.Life <= shortLived) {
+		return nil
+	}
+	if !mustConfig(root).Bool("token.proof_for_risky") {
+		return nil
+	}
+	return fmt.Errorf("this needs %s, and from another machine that takes a token bound to the program's key "+
+		"(DPoP) or one that lasts an hour or less; this is a bearer token that lasts %s. Exchange it for a "+
+		"fifteen-minute session at /token/exchange, connect as an app, or bind a key: quilzo token keygen, "+
+		"then quilzo token issue --key", need, c.Life.Round(time.Hour))
 }
 
 // remoteRefusal is what the agent interface adds to the command line's
@@ -266,7 +294,7 @@ func remoteRefusal(root string, c *Caller, need auth.Role) error {
 		return &mcp.ScopeError{Scope: oauthas.ScopeFor(need),
 			Reason: fmt.Sprintf("this app was given %s access, and this needs %s", c.Role, need)}
 	}
-	return nil
+	return riskyNeedsProof(root, c, need)
 }
 
 // interfaceAddress says where the interface is, for messages.

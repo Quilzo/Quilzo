@@ -151,6 +151,15 @@ vulnerability:
 - **A collection is reached only through a grant on it.** Any way somebody
   granted one collection, or a section of pages, reads, writes or learns the
   name of another collection through any interface.
+- **A program's credential is what it was given and no more.** Any way a job
+  is admitted by a trust whose issuer, audience or pinned claims its identity
+  token does not satisfy, or exchanges one token twice; any way an exchanged
+  token is wider, or lasts longer, than what it came from or what the trust
+  says; any way a token bound to a key is accepted without a fresh proof made
+  by that key, or a proof is accepted for another request, another address
+  or a second time; or any way a bearer token that lasts more than an hour
+  publishes, rolls back, grants, manages tokens or agents, or installs from
+  another machine while token.proof_for_risky is on.
 - **A brief carries no figure, link or words the model was not given.** Any
   way the text on Today's brief shows a number, a link or markup the model
   wrote, or anything from what somebody else wrote: an agent's question, a
