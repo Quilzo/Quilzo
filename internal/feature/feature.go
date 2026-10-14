@@ -27,7 +27,9 @@
 // # What it cannot do
 //
 // A package never publishes: its pages go to the draft, and going live is
-// the review it always was. It never grants access, never carries a secret
+// the review it always was. It never grants access: the roles it declares
+// for the people who work in it reach only its own blocks, and hold nobody
+// until a person who may grant access assigns them. It never carries a secret
 // (a webhook's signing secret is made at install), and never overwrites a
 // block it did not create: a name another feature or a person already uses
 // is a conflict, refused, so removing a feature can never remove somebody
@@ -89,6 +91,8 @@ type Package struct {
 	Chatbots    []assistant.Assistant `json:"chatbots,omitempty"`
 	Agents      []agent.Manifest      `json:"agents,omitempty"`
 	Webhooks    []Webhook             `json:"webhooks,omitempty"`
+	// Roles are for the people who work in the feature (see roles.go).
+	Roles []Role `json:"roles,omitempty"`
 
 	// Signature, when present, is over the package's digest by the
 	// installation that exported it.
@@ -301,6 +305,7 @@ func (p *Package) Validate(c Checks) error {
 			}
 		}
 	}
+	p.validateRoles(bad, unique)
 	if len(errs) > 0 {
 		sort.Strings(errs)
 		return fmt.Errorf("the package is not usable:\n  %s", strings.Join(errs, "\n  "))
@@ -311,7 +316,7 @@ func (p *Package) Validate(c Checks) error {
 // Blocks counts what the package declares.
 func (p *Package) Blocks() int {
 	return len(p.Types) + len(p.Collections) + len(p.Listings) + len(p.Forms) + len(p.Pages) +
-		len(p.Menus) + len(p.Chatbots) + len(p.Agents) + len(p.Webhooks)
+		len(p.Menus) + len(p.Chatbots) + len(p.Agents) + len(p.Webhooks) + len(p.Roles)
 }
 
 // Digest is the SHA-256 of the package without its signature, as JSON in
@@ -370,6 +375,11 @@ func (p *Package) Refs() []Ref {
 	}
 	for _, h := range p.Webhooks {
 		add("webhook", h.URL)
+	}
+	// A role's name is its feature's and its own, because who holds it is
+	// recorded by that name and another feature may have a role of the same.
+	for _, r := range p.Roles {
+		add("role", p.FullName(r))
 	}
 	return out
 }

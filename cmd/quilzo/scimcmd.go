@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -62,20 +63,28 @@ func scimAuthenticate(root, token string) bool {
 	return subtle.ConstantTimeCompare([]byte(got), []byte(strings.TrimSpace(string(want)))) == 1
 }
 
-// validMapping reports whether a group may be mapped to this: a role or a job.
-func validMapping(to string) error {
+// validMapping reports whether a group may be mapped to this: a role, a
+// permission, a job, or a role an installed feature declares.
+func validMapping(root, to string) error {
 	if _, ok := auth.JobNamed(to); ok {
+		return nil
+	}
+	if _, ok := auth.PermissionNamed(to); ok {
 		return nil
 	}
 	if auth.Role(to).Valid() {
 		return nil
 	}
+	if auth.IsAppRoleName(to) {
+		_, err := appRoleNamed(root, to)
+		return err
+	}
 	var jobs []string
 	for _, j := range auth.Jobs {
 		jobs = append(jobs, j.Name)
 	}
-	return fmt.Errorf("%q is neither a role (reader, author, publisher, admin) nor a job (%s)",
-		to, strings.Join(jobs, ", "))
+	return fmt.Errorf("%q is not a role (reader, author, publisher, admin), a permission, a job (%s) "+
+		"or a role an installed feature declares (APP/ROLE)", to, strings.Join(jobs, ", "))
 }
 
 // scimSync makes a person's provisioned access match what provisioning
@@ -110,6 +119,14 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 	}
 
 	var want []auth.Binding
+	// Read only when a group means one, so a feature whose package cannot
+	// be read stops nobody else's provisioning.
+	var roles []auth.AppRole
+	if slices.ContainsFunc(grants, auth.IsAppRoleName) && !suspended {
+		if roles, err = appRoles(root); err != nil {
+			return err
+		}
+	}
 	if suspended {
 		for _, who := range spellings {
 			want = append(want, auth.Binding{Principal: who, Role: auth.RoleReader, Resource: "/", Deny: true,
@@ -125,12 +142,17 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 				want = append(want, auth.Binding{Principal: name, Role: auth.Role(g), Resource: "/"})
 			} else if perm, ok := auth.PermissionNamed(g); ok {
 				want = append(want, auth.Binding{Principal: name, Permission: perm.Action, Resource: "/"})
+			} else if i := slices.IndexFunc(roles, func(r auth.AppRole) bool { return r.Name == g }); i >= 0 {
+				for _, b := range roles[i].Bindings {
+					want = append(want, auth.Binding{Principal: name, Role: b.Role, Permission: b.Permission,
+						Resource: b.Resource, Via: auth.ViaApp(g)})
+				}
 			}
 		}
 	}
 	same := func(a, b auth.Binding) bool {
 		return a.Principal == b.Principal && a.Role == b.Role && a.Permission == b.Permission &&
-			a.Resource == b.Resource && a.Deny == b.Deny
+			a.Resource == b.Resource && a.Deny == b.Deny && a.Via == b.Via
 	}
 
 	// Keep what provisioning made and still wants, so a grant's date is the
@@ -335,7 +357,7 @@ func cmdSCIM(root string, args []string) error {
 		if len(args) != 3 {
 			return scimUsage()
 		}
-		if err := validMapping(args[2]); err != nil {
+		if err := validMapping(root, args[2]); err != nil {
 			return err
 		}
 		if err := store.Update(func(st *scim.State) error { st.Mapping[args[1]] = args[2]; return nil }); err != nil {
@@ -374,7 +396,7 @@ func scimHooks(root string) *admin.SCIMAdmin {
 			return terr == nil, copyOf, err
 		},
 		Map: func(group, to, by string) error {
-			if err := validMapping(to); err != nil {
+			if err := validMapping(root, to); err != nil {
 				return err
 			}
 			if err := store.Update(func(st *scim.State) error { st.Mapping[group] = to; return nil }); err != nil {

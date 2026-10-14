@@ -34,8 +34,8 @@ func TestTheExampleIsAUsablePackage(t *testing.T) {
 	if err := p.Validate(checks); err != nil {
 		t.Fatal(err)
 	}
-	if got := len(p.Refs()); got != p.Blocks() || got != 4 {
-		t.Errorf("refs %d, blocks %d; want 4 each", got, p.Blocks())
+	if got := len(p.Refs()); got != p.Blocks() || got != 6 {
+		t.Errorf("refs %d, blocks %d; want 6 each", got, p.Blocks())
 	}
 }
 
@@ -180,7 +180,7 @@ func TestThePlanRefusesWhatSomebodyElseMade(t *testing.T) {
 
 	// First install: everything is added.
 	pl := p.MakePlan(State{}, nil)
-	if len(pl.Conflicts) != 0 || len(pl.Steps) != 4 {
+	if len(pl.Conflicts) != 0 || len(pl.Steps) != 6 {
 		t.Fatalf("first install %+v", pl)
 	}
 	for _, s := range pl.Steps {
@@ -212,7 +212,7 @@ func TestThePlanRefusesWhatSomebodyElseMade(t *testing.T) {
 		got[s.Ref.String()] = s.Action
 	}
 	want := map[string]string{"type sample": Change, "collection samples": Keep, "form old_form": Remove,
-		"listing available_samples": Add, "page samples": Add}
+		"listing available_samples": Add, "page samples": Add, "role lab-samples/technician": Add}
 	for k, v := range want {
 		if got[k] != v {
 			t.Errorf("%s: %s, want %s", k, got[k], v)

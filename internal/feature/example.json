@@ -42,5 +42,25 @@
         ]
       }
     }
+  ],
+  "roles": [
+    {
+      "name": "technician",
+      "title": "Lab technician",
+      "summary": "Records samples as they arrive, are checked out and are used up.",
+      "grants": [
+        {"collection": "samples", "may": "write"},
+        {"page": "samples", "may": "read"}
+      ]
+    },
+    {
+      "name": "manager",
+      "title": "Lab manager",
+      "summary": "Keeps the sample records and publishes the samples page.",
+      "grants": [
+        {"collection": "samples", "may": "write"},
+        {"page": "samples", "may": "publish"}
+      ]
+    }
   ]
 }

@@ -9,6 +9,21 @@ Unreleased
 
 ** Added
 
+*** Roles for the people who work in an app.  A feature package can
+    declare roles over its own collections, pages and agents: read or write
+    a collection's records; read, write or publish a page; run an agent or
+    approve what it waits for.  The lab sample example declares a
+    technician and a manager.  The card lists them, and nobody holds one
+    until somebody who may grant access gives it to them: `quilzo auth grant
+    tess lab-samples/technician`, on the People screen, or by mapping an
+    identity provider group to it.  A role is the bindings it stands for,
+    marked with the role, so `auth explain` names it, and it is removed
+    whole and never half of it by hand.  An upgrade that changes a role
+    changes what its holders may do, and needs somebody who may grant
+    access when anybody holds it; a version that drops a role, or removing
+    the feature, takes it from everybody.  `feature show` says who holds
+    each.  A model drafting a feature does not write roles.
+
 *** Access per collection of records.  Each collection is checked as
     itself, at /@data/NAME, on the command line, the Data screen, the agent
     interface (list_collections, list_records, write_record) and the content
@@ -266,6 +281,12 @@ Unreleased
 
 ** Fixed
 
+*** Signing in with an identity provider or a passkey gives a session the
+    highest role the person holds anywhere.  It took the role they held
+    over the whole site, so an analyst, administrator of /@security alone,
+    got a reader's session that refused them the security screens, as did
+    anybody granted only part of the store.  The session's role is a cap;
+    the policy still decides where it reaches.
 *** What an app did through the agent interface, and what an agent did
     under its own identity, is recorded in that act's own audit record:
     granting, assistants, deciders, automations, findings and every other

@@ -163,7 +163,7 @@ func TestAFeatureNeverTakesABlockItDidNotMake(t *testing.T) {
 	mine := writePackage(t, func(p *feature.Package) {
 		withoutAddress(p)
 		p.Name, p.Title = "mine", "Mine"
-		p.Collections, p.Listings, p.Pages = nil, nil, nil
+		p.Collections, p.Listings, p.Pages, p.Roles = nil, nil, nil, nil
 	})
 	if err := installFeatureFile(root, mine, "", "", asAdmin("dana")); err != nil {
 		t.Fatal(err)

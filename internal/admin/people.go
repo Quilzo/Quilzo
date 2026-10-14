@@ -6,6 +6,7 @@ package admin
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -40,6 +41,10 @@ type bindingView struct {
 	auth.Binding
 	Live  bool
 	Until string
+	// AppRole is the role an app declares that this row stands for, and
+	// Parts what it grants: a role is shown and removed as one.
+	AppRole string
+	Parts   []string
 }
 
 func viewBinding(b auth.Binding) bindingView {
@@ -102,6 +107,17 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 			who = &person{Name: b.Principal, IsSelf: b.Principal == p.Name}
 			byName[b.Principal] = who
 		}
+		part := fmt.Sprintf("%s on %s", b.What(), b.Resource)
+		if role, ok := b.AppRoleOf(); ok {
+			if i := slices.IndexFunc(who.Bindings, func(v bindingView) bool { return v.AppRole == role }); i >= 0 {
+				who.Bindings[i].Parts = append(who.Bindings[i].Parts, part)
+				continue
+			}
+			v := viewBinding(b)
+			v.AppRole, v.Parts = role, []string{part}
+			who.Bindings = append(who.Bindings, v)
+			continue
+		}
 		who.Bindings = append(who.Bindings, viewBinding(b))
 	}
 
@@ -140,10 +156,12 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 		seen := map[string]bool{}
 		for _, b := range who.Bindings {
 			label := b.What()
-			if b.Deny {
+			if b.AppRole != "" {
+				label = b.AppRole
+			} else if b.Deny {
 				label = "deny " + label
 			}
-			if b.Resource != "/" {
+			if b.Resource != "/" && b.AppRole == "" {
 				label += " on " + b.Resource
 			}
 			if b.OwnOnly {
@@ -189,10 +207,33 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 
 	s.render(w, r, "people.html", map[string]any{
 		"Nav": "people", "Title": "People", "Principal": p, "People": people,
-		"Roles": auth.Roles, "Jobs": auth.Jobs, "Permissions": auth.Permissions, "ActiveWithin": activeWithin.String(),
-		"Known": names, "Message": r.URL.Query().Get("m"),
+		"Roles": auth.Roles, "Jobs": auth.Jobs, "Permissions": auth.Permissions, "AppRoles": s.appRoles(),
+		"ActiveWithin": activeWithin.String(),
+		"Known":        names, "Message": r.URL.Query().Get("m"),
 		"Error": r.URL.Query().Get("e"),
 	})
+}
+
+// appRoles is the roles the installed features declare, or none when they
+// cannot be read: the screen still grants everything else.
+func (s *Server) appRoles() []auth.AppRole {
+	if s.AppRoles == nil {
+		return nil
+	}
+	roles, err := s.AppRoles()
+	if err != nil {
+		return nil
+	}
+	return roles
+}
+
+func (s *Server) appRoleNamed(name string) (auth.AppRole, bool) {
+	for _, r := range s.appRoles() {
+		if r.Name == name {
+			return r, true
+		}
+	}
+	return auth.AppRole{}, false
 }
 
 // handlePeopleGrant adds or changes what somebody may do.
@@ -243,6 +284,26 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 		}
 		bindings[0].Role, bindings[0].Permission = "", perm.Action
 		role = auth.Role(perm.Action)
+	}
+	// A role an app declares is the bindings it stands for, on its own
+	// blocks, granted together.
+	if name, isApp := strings.CutPrefix(string(role), "app:"); isApp {
+		ar, ok := s.appRoleNamed(name)
+		if !ok || base.Deny {
+			s.peopleBack(w, r, "That role cannot be granted like that: a role an app declares is never a deny.")
+			return
+		}
+		if err := s.Policy.Assign(who, ar, base); err != nil {
+			s.peopleBack(w, r, err.Error())
+			return
+		}
+		if err := s.save(); err != nil {
+			s.peopleBack(w, r, err.Error())
+			return
+		}
+		s.audit("access.grant", "/"+who, map[string]string{"role": ar.Name, "resource": "its feature", "by": p.Name})
+		s.peopleBack(w, r, fmt.Sprintf("%s is now %s: %s", who, ar.Name, strings.Join(ar.Grants, "; ")))
+		return
 	}
 	// A job is the bindings it stands for, each on its own area.
 	if name, isJob := strings.CutPrefix(string(role), "job:"); isJob {
@@ -306,7 +367,12 @@ func (s *Server) handlePeopleRevoke(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	n := s.Policy.RevokeNamed(who, string(role), on)
+	var n int
+	if name, isApp := strings.CutPrefix(string(role), "app:"); isApp {
+		n = s.Policy.RevokeAppRole(who, name)
+	} else {
+		n = s.Policy.RevokeNamed(who, string(role), on)
+	}
 	if n == 0 {
 		s.peopleBack(w, r, "no such binding")
 		return

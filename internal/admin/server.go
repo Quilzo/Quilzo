@@ -271,6 +271,9 @@ type Server struct {
 	Approvals *Approvals
 	// Features reach the feature packages (internal/feature).
 	Features *FeatureHooks
+	// AppRoles are the roles the installed features declare for the people
+	// who work in them, which People and Provisioning can grant.
+	AppRoles func() ([]auth.AppRole, error)
 	// Listings are the declared queries a page can embed.
 	Listings *Listings
 	// Notes are the remarks people leave on a draft.

@@ -257,7 +257,30 @@ func featureState(root string) (feature.State, map[string]*feature.Installed, er
 			st.Owner[r] = name
 		}
 	}
+	// A role lives in the package that declared it, so what it is now is
+	// read from the version installed.
+	for _, in := range installed {
+		if !ownsKind(in, "role") {
+			continue
+		}
+		p, _, err := loadFeaturePackage(root, in.Name, in.Digest)
+		if err != nil {
+			return st, nil, fmt.Errorf("the roles of %s cannot be read: %w", in.Name, err)
+		}
+		for _, r := range p.Roles {
+			put("role", p.FullName(r), r)
+		}
+	}
 	return st, installed, nil
+}
+
+func ownsKind(in *feature.Installed, kind string) bool {
+	for _, r := range in.Owns {
+		if r.Kind == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func loadInstalledFeatures(root string) (map[string]*feature.Installed, error) {
@@ -341,6 +364,10 @@ func printFeatureCard(c feature.Card) {
 	section("Sends", c.Sends)
 	section("Agents", c.Agents)
 	section("Chatbots", c.Chatbots)
+	section("Roles for the people who work in it", c.Roles)
+	if len(c.Roles) > 0 {
+		w.Human("    %snobody holds a role until somebody who grants access gives it to them%s\n", dim, reset)
+	}
 	who := "one person approves it"
 	if c.Approvers == 2 {
 		who = "two different people approve it"
@@ -658,6 +685,14 @@ var reFeatureID = regexp.MustCompile(`^[0-9a-f]{12}$`)
 // one that sends to another system is an administrator's, as declaring
 // either on its own would be.
 func featureNeeds(root string, caller *Caller, p *feature.Package) error {
+	if held, err := heldRolesChanged(root, p); err != nil {
+		return err
+	} else if len(held) > 0 {
+		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+			return fmt.Errorf("%s changes what people holding %s may do, which is granting access: %w",
+				p.Name, strings.Join(held, ", "), err)
+		}
+	}
 	for _, m := range p.Agents {
 		if err := manageAgent(root, caller, m.Name); err != nil {
 			return fmt.Errorf("%s declares the agent %s, and that takes managing it: %w", p.Name, m.Name, err)
@@ -939,6 +974,11 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 			return nil, err
 		}
 	}
+	// Roles: whoever holds one that changed holds what it grants now, and
+	// one the feature no longer declares is held by nobody.
+	if err := reassignRoles(root, p, act, removing("role"), caller); err != nil {
+		return nil, err
+	}
 
 	now := time.Now().UTC()
 	in := &feature.Installed{Name: p.Name, Version: p.Version, Digest: digest, Title: p.Title, At: now, By: by, Owns: p.Refs()}
@@ -1083,7 +1123,17 @@ func featureShow(root string, args []string) error {
 	}
 	printFeatureCard(card)
 	w.Human("\n  %sOwns%s\n", bold, reset)
+	pol, _ := loadPolicy(root)
 	for _, r := range in.Owns {
+		if r.Kind == "role" && pol != nil {
+			who := holders(pol, r.Name)
+			if len(who) == 0 {
+				w.Human("    %s  %sheld by nobody%s\n", r, dim, reset)
+			} else {
+				w.Human("    %s  %sheld by %s%s\n", r, dim, strings.Join(who, ", "), reset)
+			}
+			continue
+		}
 		w.Human("    %s\n", r)
 	}
 	w.Human("\n  installed %s by %s\n", in.At.Format("2 Jan 2006 15:04"), strings.Join(in.By, " and "))

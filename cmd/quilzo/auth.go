@@ -152,7 +152,7 @@ func cmdAuth(root string, args []string) error {
 	case "explain":
 		return authExplain(root, args[1:])
 	case "roles":
-		return authRoles()
+		return authRoles(root)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown auth command %q\n\n", args[0])
 		return authUsage()
@@ -162,9 +162,9 @@ func cmdAuth(root string, args []string) error {
 func authUsage() error {
 	fmt.Print(`quilzo auth — who can do what
 
-  grant <principal> <role|permission|job> [--on /path] [--note "..."]
+  grant <principal> <role|permission|job|APP/ROLE> [--on /path] [--note "..."]
   deny <principal> <role|permission> [--on /path] [--note "..."]
-  revoke <principal> <role|permission> [--on /path]
+  revoke <principal> <role|permission|job|APP/ROLE> [--on /path]
   list
   explain <principal> <action> [--on /path]
   roles
@@ -185,6 +185,10 @@ Permissions for working with agents, each also granted on its own. Agents are
 		fmt.Printf("  %-17s %s (with the %s role already)\n", pm.Action, pm.Summary, need)
 	}
 	fmt.Print(`
+An installed feature can declare roles for the people who work in it, over
+its own records, pages and agents: grant lab-samples/technician gives somebody
+what that role grants, and nothing else. quilzo auth roles lists them.
+
 A grant on /blog covers everything under it. A deny wins wherever it sits, so
 "publisher everywhere except /legal" is two bindings rather than a broad grant
 you meant to narrow later.
@@ -192,7 +196,7 @@ you meant to narrow later.
 	return nil
 }
 
-func authRoles() error {
+func authRoles(root string) error {
 	fmt.Printf("%sroles%s\n", bold, reset)
 	for _, r := range auth.Roles {
 		fmt.Printf("  %-10s %s\n", r, r.Describe())
@@ -206,9 +210,19 @@ func authRoles() error {
 	for _, pm := range auth.Permissions {
 		fmt.Printf("  %-17s %s\n", pm.Action, pm.Summary)
 	}
-	fmt.Printf("\n  %sthat is the whole model — four roles, five permissions and the\n"+
-		"  jobs that bundle them, and no custom roles, because that is how a role\n"+
-		"  surface stops being reviewable%s\n", dim, reset)
+	if roles, err := appRoles(root); err == nil && len(roles) > 0 {
+		fmt.Printf("\n%sroles the installed features declare%s\n", bold, reset)
+		for _, r := range roles {
+			fmt.Printf("  %-28s %s\n", r.Name, r.Title)
+			for _, g := range r.Grants {
+				fmt.Printf("  %-28s %s%s%s\n", "", dim, g, reset)
+			}
+		}
+	}
+	fmt.Printf("\n  %sthat is the whole model — four roles, five permissions, the jobs\n"+
+		"  that bundle them, and roles a feature declares over its own records,\n"+
+		"  pages and agents. Nothing else, because that is how a role surface\n"+
+		"  stops being reviewable%s\n", dim, reset)
 	return nil
 }
 
@@ -281,6 +295,10 @@ func authGrant(root string, args []string) error {
 	bindings := []auth.Binding{{Principal: rest[0], Role: auth.Role(rest[1]), Resource: *on}}
 	if perm, ok := auth.PermissionNamed(rest[1]); ok {
 		bindings[0].Role, bindings[0].Permission = "", perm.Action
+	}
+	if auth.IsAppRoleName(rest[1]) {
+		return grantAppRole(root, p, rest[0], rest[1], *on, *deny, auth.Binding{
+			GrantedBy: grantedBy(root, *by), Note: *note, Expires: expires})
 	}
 	if job, ok := auth.JobNamed(rest[1]); ok {
 		if *on != "/" || *deny {
@@ -415,7 +433,9 @@ func authRevoke(root string, args []string) error {
 		return err
 	}
 	var n int
-	if job, ok := auth.JobNamed(rest[1]); ok {
+	if auth.IsAppRoleName(rest[1]) {
+		n = p.RevokeAppRole(rest[0], rest[1])
+	} else if job, ok := auth.JobNamed(rest[1]); ok {
 		for _, jb := range job.Bindings {
 			n += p.Revoke(rest[0], jb.Role, jb.Resource)
 		}
@@ -491,10 +511,44 @@ func authList(root string) error {
 				fmt.Printf("  %sexpired %s%s", red, expiryText(b.Expires), reset)
 			}
 		}
+		if r, ok := b.AppRoleOf(); ok {
+			fmt.Printf("  %sas %s%s", dim, r, reset)
+		}
 		if b.Note != "" {
 			fmt.Printf("  %s%s%s", dim, b.Note, reset)
 		}
 		fmt.Println()
+	}
+	return nil
+}
+
+// grantAppRole gives somebody a role an installed feature declares.
+func grantAppRole(root string, p *auth.Policy, who, name, on string, deny bool, base auth.Binding) error {
+	if on != "/" || deny {
+		return fmt.Errorf("%s is a role a feature declares over its own blocks: it takes no --on and cannot be a deny", name)
+	}
+	r, err := appRoleNamed(root, name)
+	if err != nil {
+		return err
+	}
+	if err := p.Assign(who, r, base); err != nil {
+		return err
+	}
+	if err := saveJSON(policyPath(root), p); err != nil {
+		return err
+	}
+	caller := resolveCaller(root, "")
+	record(root, audit.Record{
+		Action: "auth.granted", Resource: "/", Outcome: audit.Success,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
+		Detail: map[string]string{"subject": who, "role": name, "deny": "false", "expires": expiryText(base.Expires)},
+	})
+	fmt.Printf("granted %s to %s: %s\n", name, who, r.Title)
+	for _, g := range r.Grants {
+		fmt.Printf("  %s%s%s\n", dim, g, reset)
+	}
+	if base.Expires != 0 {
+		fmt.Printf("  %suntil %s%s\n", dim, expiryText(base.Expires), reset)
 	}
 	return nil
 }

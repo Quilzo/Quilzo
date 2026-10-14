@@ -250,3 +250,39 @@ func TestTheDataScreenShowsOnlyTheCollectionsGranted(t *testing.T) {
 		t.Errorf("a write to the granted collection was refused")
 	}
 }
+
+// A role an installed feature declares is offered, granted and removed on
+// the People screen as one thing, and shown as the role it is.
+func TestARoleInAnAppIsGrantedAndRemovedAsOne(t *testing.T) {
+	srv, token := setup(t)
+	srv.AppRoles = func() ([]auth.AppRole, error) {
+		return []auth.AppRole{{Name: "lab-samples/technician", Title: "Lab technician",
+			Grants: []string{"reads and writes the records in \"samples\"", "reads the page \"samples\""},
+			Bindings: []auth.Binding{{Role: auth.RoleAuthor, Resource: auth.DataResource("samples")},
+				{Role: auth.RoleReader, Resource: "/samples"}}}}, nil
+	}
+	if !strings.Contains(get(t, srv, "/people", token).Body.String(), `value="app:lab-samples/technician"`) {
+		t.Error("the role is not offered")
+	}
+	if w := postForm(t, srv, "/people/grant", token, "principal=tess&role=app:lab-samples/technician&resource=/"); w.Code != http.StatusSeeOther {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if !srv.Policy.Holds("tess", "lab-samples/technician") ||
+		!srv.Policy.Evaluate("tess", auth.ActEditDraft, auth.DataResource("samples")).Allowed ||
+		srv.Policy.Evaluate("tess", auth.ActEditDraft, "/samples").Allowed {
+		t.Fatal("the grant is not the role")
+	}
+	body := get(t, srv, "/people", token).Body.String()
+	if strings.Count(body, `lab-samples/technician <span class="hint">role in an app</span>`) != 1 ||
+		!strings.Contains(body, "<code>author on /@data/samples</code>, <code>reader on /samples</code>") {
+		t.Errorf("the role is not shown as one row")
+	}
+	if w := postForm(t, srv, "/people/grant", token, "principal=tess&role=app:lab-samples/cleaner&resource=/"); w.Code != http.StatusSeeOther ||
+		len(srv.Policy.Snapshot()) != 3 {
+		t.Errorf("a role nobody declares was granted: %+v", srv.Policy.Snapshot())
+	}
+	postForm(t, srv, "/people/revoke", token, "principal=tess&role=app:lab-samples/technician&resource=/@data/samples")
+	if srv.Policy.Holds("tess", "lab-samples/technician") || srv.Policy.Evaluate("tess", auth.ActView, "/samples").Allowed {
+		t.Error("removing the role left part of it")
+	}
+}

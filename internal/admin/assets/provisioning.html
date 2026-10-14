@@ -39,6 +39,7 @@
     <select id="to" name="to">
       <optgroup label="A role over the whole site">{{range .Roles}}<option value="{{.}}">{{.}}</option>{{end}}</optgroup>
       <optgroup label="A job">{{range .Jobs}}<option value="{{.Name}}">{{.Name}}: {{.Summary}}</option>{{end}}</optgroup>
+      {{if .AppRoles}}<optgroup label="A role in an app">{{range .AppRoles}}<option value="{{.Name}}">{{.Name}}: {{.Title}}</option>{{end}}</optgroup>{{end}}
     </select></div>
   <button type="submit">Save</button>
 </form>

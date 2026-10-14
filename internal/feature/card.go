@@ -44,6 +44,9 @@ type Card struct {
 	Sends    []Line `json:"sends,omitempty"`
 	Agents   []Line `json:"agents,omitempty"`
 	Chatbots []Line `json:"chatbots,omitempty"`
+	// Roles are the roles people can be given in it. None is held by anybody
+	// until somebody who may grant access assigns it.
+	Roles []Line `json:"roles,omitempty"`
 
 	// Risk is low, medium or high.
 	Risk string `json:"risk"`
@@ -233,6 +236,12 @@ func (p *Package) MakeCard() Card {
 			text += ", offered on every page"
 		}
 		c.Chatbots = append(c.Chatbots, Line{Text: text, Flag: "public"})
+	}
+
+	for _, r := range p.Roles {
+		ar := p.AppRole(r)
+		text := fmt.Sprintf("Role %q, %s: %s", ar.Name, r.Title, strings.Join(ar.Grants, "; "))
+		c.Roles = append(c.Roles, Line{Text: text})
 	}
 
 	for why := range because {
