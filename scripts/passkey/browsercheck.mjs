@@ -27,13 +27,17 @@ if (!base || !token) {
 
 const DEBUG_PORT = 9333;
 const { spawn } = await import("node:child_process");
+const { mkdtempSync } = await import("node:fs");
+const { tmpdir } = await import("node:os");
+const { join } = await import("node:path");
+const profile = mkdtempSync(join(tmpdir(), "quilzo-passkey-chrome-"));
 
 const chrome = spawn("/usr/bin/chromium", [
   "--headless=new",
   `--remote-debugging-port=${DEBUG_PORT}`,
   "--no-sandbox",
   "--disable-gpu",
-  "--user-data-dir=/tmp/claude-1000/passkey-chrome-profile",
+  `--user-data-dir=${profile}`,
   "about:blank",
 ], { stdio: ["ignore", "ignore", "pipe"] });
 
