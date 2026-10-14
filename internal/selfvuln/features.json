@@ -302,6 +302,9 @@
   "net/http/httptest": [
    "*"
   ],
+  "net/mail": [
+   "*"
+  ],
   "net/netip": [
    "*"
   ],

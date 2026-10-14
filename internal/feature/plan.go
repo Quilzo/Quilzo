@@ -195,6 +195,10 @@ type Pending struct {
 	Plan        Plan      `json:"plan"`
 	// Rollback marks a request to go back to an earlier version.
 	Rollback bool `json:"rollback,omitempty"`
+	// Rows is how many records are imported into RowsCollection once it
+	// is approved, from a file kept beside the request.
+	Rows           int    `json:"rows,omitempty"`
+	RowsCollection string `json:"rows_collection,omitempty"`
 }
 
 // PendingTTL is how long a request waits before it lapses.

@@ -77,7 +77,7 @@ func owns(t *testing.T, root, name string) map[string]bool {
 // one who asked cannot approve it, and a model cannot either.
 func TestAFeatureHoldingPersonalDataNeedsASecondPerson(t *testing.T) {
 	root := featureSite(t)
-	if err := installFeatureFile(root, writePackage(t, nil), "", asAdmin("dana")); err != nil {
+	if err := installFeatureFile(root, writePackage(t, nil), "", "", asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	if owns(t, root, "lab-samples") != nil {
@@ -145,10 +145,10 @@ func TestAPlainFeatureInstallsAtOnceForAnAdministrator(t *testing.T) {
 	path := writePackage(t, withoutAddress)
 	reader := human("rae")
 	reader.Role = "reader"
-	if err := installFeatureFile(root, path, "", reader); err == nil {
+	if err := installFeatureFile(root, path, "", "", reader); err == nil {
 		t.Fatal("a reader installed a feature")
 	}
-	if err := installFeatureFile(root, path, "", asAdmin("dana")); err != nil {
+	if err := installFeatureFile(root, path, "", "", asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	if owns(t, root, "lab-samples")["type sample"] != true {
@@ -165,10 +165,10 @@ func TestAFeatureNeverTakesABlockItDidNotMake(t *testing.T) {
 		p.Name, p.Title = "mine", "Mine"
 		p.Collections, p.Listings, p.Pages = nil, nil, nil
 	})
-	if err := installFeatureFile(root, mine, "", asAdmin("dana")); err != nil {
+	if err := installFeatureFile(root, mine, "", "", asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
-	err := installFeatureFile(root, writePackage(t, withoutAddress), "", asAdmin("dana"))
+	err := installFeatureFile(root, writePackage(t, withoutAddress), "", "", asAdmin("dana"))
 	if err == nil || !strings.Contains(err.Error(), "the feature mine") {
 		t.Fatalf("took another feature's type: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestAFeatureNeverTakesABlockItDidNotMake(t *testing.T) {
 // longer declares; a rollback puts the earlier version back.
 func TestAnUpgradeRemovesWhatItDroppedAndARollbackRestoresIt(t *testing.T) {
 	root := featureSite(t)
-	if err := installFeatureFile(root, writePackage(t, withoutAddress), "", asAdmin("dana")); err != nil {
+	if err := installFeatureFile(root, writePackage(t, withoutAddress), "", "", asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	v2 := writePackage(t, func(p *feature.Package) {
@@ -191,7 +191,7 @@ func TestAnUpgradeRemovesWhatItDroppedAndARollbackRestoresIt(t *testing.T) {
 		p.Listings = nil
 		p.Pages[0].Body["sections"] = []any{}
 	})
-	if err := installFeatureFile(root, v2, "", asAdmin("dana")); err != nil {
+	if err := installFeatureFile(root, v2, "", "", asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	if owns(t, root, "lab-samples")["listing available_samples"] {
@@ -217,7 +217,7 @@ func TestAnUpgradeRemovesWhatItDroppedAndARollbackRestoresIt(t *testing.T) {
 // Removing a feature takes back everything it made and leaves the rest.
 func TestRemovingAFeatureTakesBackOnlyWhatItMade(t *testing.T) {
 	root := featureSite(t)
-	if err := installFeatureFile(root, writePackage(t, withoutAddress), "", asAdmin("dana")); err != nil {
+	if err := installFeatureFile(root, writePackage(t, withoutAddress), "", "", asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := draftPages(root)
@@ -244,7 +244,7 @@ func TestRemovingAFeatureTakesBackOnlyWhatItMade(t *testing.T) {
 // published keys, and the slightest change to it does not.
 func TestASignedExportChecksOutAndATamperedOneDoesNot(t *testing.T) {
 	root := featureSite(t)
-	if err := installFeatureFile(root, writePackage(t, withoutAddress), "", asAdmin("dana")); err != nil {
+	if err := installFeatureFile(root, writePackage(t, withoutAddress), "", "", asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	out := filepath.Join(t.TempDir(), "signed.json")
@@ -270,7 +270,7 @@ func TestASignedExportChecksOutAndATamperedOneDoesNot(t *testing.T) {
 // can install.
 func TestCaptureMakesAPackageFromExistingBlocks(t *testing.T) {
 	root := featureSite(t)
-	if err := installFeatureFile(root, writePackage(t, withoutAddress), "", asAdmin("dana")); err != nil {
+	if err := installFeatureFile(root, writePackage(t, withoutAddress), "", "", asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	out := filepath.Join(t.TempDir(), "captured.json")
@@ -280,7 +280,7 @@ func TestCaptureMakesAPackageFromExistingBlocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	other := featureSite(t)
-	if err := installFeatureFile(other, out, "", asAdmin("sam")); err != nil {
+	if err := installFeatureFile(other, out, "", "", asAdmin("sam")); err != nil {
 		t.Fatalf("the captured package does not install elsewhere: %v", err)
 	}
 	if !owns(t, other, "inventory")["page samples"] {
@@ -300,7 +300,7 @@ func TestAFeaturesAgentsArriveInTheOrderTheyDependOn(t *testing.T) {
 		withoutAddress(p)
 		p.Agents = []agent.Manifest{boss, asker("helper")}
 	})
-	if err := installFeatureFile(root, path, "", asAdmin("dana")); err != nil {
+	if err := installFeatureFile(root, path, "", "", asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	set, _ := loadAgents(root)
@@ -319,7 +319,7 @@ func TestAFeaturesAgentsArriveInTheOrderTheyDependOn(t *testing.T) {
 		withoutAddress(p)
 		p.Agents = []agent.Manifest{a, b}
 	})
-	if err := installFeatureFile(other, circle, "", asAdmin("dana")); err == nil {
+	if err := installFeatureFile(other, circle, "", "", asAdmin("dana")); err == nil {
 		t.Fatal("agents in a circle were installed")
 	}
 	if owns(t, other, "lab-samples") != nil {

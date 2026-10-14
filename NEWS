@@ -21,6 +21,21 @@ Unreleased
     signs it with the log's keys; `feature install --keys` checks them.
     `feature capture` packages blocks built by hand.
 
+*** Make a feature from a sentence or a spreadsheet.  `quilzo feature draft
+    "…"` (and Make › Describe it) has a model draft a package; the reader
+    keeps content blocks only, never an agent, a webhook or a link to
+    another site, and a draft that fails the checks is shown its failures
+    once.  `quilzo feature from FILE.csv` (and Make › From a spreadsheet)
+    infers a type from the values, with a collection, a listing and a page;
+    `feature install --rows` imports the rows with it, after approval when
+    it needs a second person.  Neither installs anything by itself.
+
+** Fixed
+
+*** `quilzo records import` now checks every record against its
+    collection's type, as adding one record does; one that does not fit
+    imports nothing.
+
 *** Approvals (/approvals, `quilzo approvals`) lists everything waiting for
     the person looking: what agent runs ask, questions they need answered,
     actions the reviewer stopped, tool calls held for a second person, acts

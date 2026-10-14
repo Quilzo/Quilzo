@@ -138,7 +138,9 @@ type Signature struct {
 var (
 	reName    = regexp.MustCompile(`^[a-z][a-z0-9-]{1,62}$`)
 	reVersion = regexp.MustCompile(`^[0-9]{1,6}(\.[0-9]{1,6}){0,2}$`)
-	rePage    = regexp.MustCompile(`^[a-z0-9][a-z0-9/_-]{0,127}$`)
+	// rePage is a page's name as the store has it: lower-case words joined
+	// by hyphens, in folders.
+	rePage = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$`)
 )
 
 // Decode reads a package strictly: unknown fields are refused, because a
@@ -250,7 +252,7 @@ func (p *Package) Validate(c Checks) error {
 	pages := map[string]any{}
 	for _, pg := range p.Pages {
 		unique("page", pg.Name)
-		if !rePage.MatchString(pg.Name) {
+		if !rePage.MatchString(pg.Name) || len(pg.Name) > 128 {
 			bad("page name %q is not usable", pg.Name)
 		}
 		if pg.Body == nil {

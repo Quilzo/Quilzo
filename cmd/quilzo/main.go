@@ -380,8 +380,10 @@ languages
 
 features (one package of blocks, installed as one decision)
   quilzo feature example > FILE.json       a complete package to edit: a lab sample tracker
+  quilzo feature draft "…" [-o FILE]       a model drafts a package from a sentence; content blocks only
+  quilzo feature from FILE.csv [-o FILE]   a package from a spreadsheet or JSON list, and its rows to import
   quilzo feature check FILE [--keys K]     what it would store, show, send and change; installs nothing
-  quilzo feature install FILE [--keys K]   install it; one that holds personal data or sends waits for a second person
+  quilzo feature install FILE [--keys K] [--rows R]   install it; personal data or sending waits for a second person
   quilzo feature approve | decline ID      the second person decides
   quilzo feature pending | list | show NAME   what is waiting, and what is installed
   quilzo feature remove | rollback NAME    take it back, or go back a version
