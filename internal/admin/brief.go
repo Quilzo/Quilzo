@@ -258,10 +258,16 @@ func (s *Server) briefAllowed(p principal) bool {
 	if s.Brief == nil || s.Brief.Model == nil || s.briefs == nil {
 		return false
 	}
+	return !s.evidenceOnly(p)
+}
+
+// evidenceOnly is whether somebody's only access is to read the evidence
+// and the log.
+func (s *Server) evidenceOnly(p principal) bool {
 	if s.Policy == nil {
-		return true
+		return false
 	}
-	held, evidenceOnly := 0, true
+	held, only := 0, true
 	for _, b := range s.Policy.Snapshot() {
 		if b.Principal != p.Name || b.Deny || !b.Live(time.Now()) {
 			continue
@@ -269,10 +275,10 @@ func (s *Server) briefAllowed(p principal) bool {
 		held++
 		if b.Permission != "" || b.Role != auth.RoleReader ||
 			(b.Resource != auth.AreaCompliance && b.Resource != auth.AreaLog) {
-			evidenceOnly = false
+			only = false
 		}
 	}
-	return held == 0 || !evidenceOnly
+	return held > 0 && only
 }
 
 // briefFor is a person's brief: the one kept for today, or a new one being

@@ -275,6 +275,10 @@ type Server struct {
 	// briefs keeps each person's for the day.
 	Brief  *Brief
 	briefs *briefCache
+	// Ask answers a question on Today with a view, and keeps the views
+	// people pin (ask.go); asks holds each person's latest answer.
+	Ask  *Ask
+	asks *askCache
 	// AppRoles are the roles the installed features declare for the people
 	// who work in them, which People and Provisioning can grant.
 	AppRoles func() ([]auth.AppRole, error)
@@ -563,7 +567,7 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 	if err != nil {
 		return nil, fmt.Errorf("admin templates: %w", err)
 	}
-	return &Server{Store: s, Policy: p, Tokens: ts, Layouts: layouts, briefs: &briefCache{},
+	return &Server{Store: s, Policy: p, Tokens: ts, Layouts: layouts, briefs: &briefCache{}, asks: &askCache{},
 		Records: collection.NewCache(), tpl: t, flashKey: newFlashKey()}, nil
 }
 
@@ -1305,6 +1309,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/experiments/change", s.handleExperimentChange)
 	mux.HandleFunc("/today", s.handleToday)
 	mux.HandleFunc("/today/start", s.handleTodayStart)
+	mux.HandleFunc("/today/ask", s.handleTodayAsk)
+	mux.HandleFunc("/today/pin", s.handleTodayPin)
 	mux.HandleFunc("/approvals", s.handleApprovals)
 	mux.HandleFunc("/approvals/act", s.handleApprovalsAct)
 	mux.HandleFunc("/research", s.handleResearch)

@@ -3315,3 +3315,15 @@ td .duty-more { margin: 4px 0 0; }
 .report-body a.value { font-variant-numeric: tabular-nums; text-decoration-style: dotted; }
 .report-body .cite { color: var(--primary); cursor: help; }
 .report-body blockquote, td blockquote { margin: .5rem 0; padding-left: .8rem; border-left: 3px solid var(--outline-variant); }
+
+/* -- today: views --------------------------------------------------------------
+ * An answer to a question asked on Today, and the ones somebody kept: cards
+ * drawn by this program from the records, never markup a model wrote.
+ */
+.view-cards { display: grid; gap: 1rem; margin: .5rem 0 1rem; }
+.view-card { background: var(--surface-container-low); border: 1px solid var(--outline-variant);
+  border-radius: var(--shape-sm); padding: .75rem 1rem; }
+.view-figure { margin: .2rem 0 0; font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.view-bar { display: block; width: 200px; height: .75rem; }
+.view-bar rect { fill: var(--primary); }
+.view-kept { margin: 0 0 1.5rem; }

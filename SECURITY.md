@@ -155,6 +155,11 @@ vulnerability:
   way the text on Today's brief shows a number, a link or markup the model
   wrote, or anything from what somebody else wrote: an agent's question, a
   visitor's message, a finding's title or a log line.
+- **An answer on Today shows only what its asker may read.** Any way a card
+  in an answer or a kept view shows a record, a collection or an agent run
+  its person may not read at the time it is drawn, or carries markup or a
+  value the model wrote; or any way a record's contents reach the model
+  answering the question.
 - **A role an app declares reaches only that app's blocks.** Any way a role
   in a feature package grants anything beyond the package's own collections,
   pages and agents, or more than reading, writing or publishing them and

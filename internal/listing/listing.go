@@ -371,6 +371,35 @@ func Resolve(l *Listing, idx *collection.Index, args map[string]string) (Result,
 			l.Name, l.Collection, idx.Collection)
 	}
 
+	q, ok, err := l.query(args)
+	if err != nil || !ok {
+		return Result{}, err
+	}
+
+	rows := l.Rows
+	if rows <= 0 {
+		rows = DefaultRows
+	}
+	q.Limit = rows
+
+	found, total := idx.Query(q)
+	out := Result{Total: total, Truncated: total > len(found)}
+	for _, r := range found {
+		out.Rows = append(out.Rows, project(l, r))
+	}
+	if len(l.Agg) > 0 {
+		// The matched set, unsorted and unwindowed. The walk is the one Total
+		// already pays for; asking for it again is a second pass over records
+		// already in memory, and only when a listing declares an aggregate.
+		out.Agg = aggregate(l.Agg, idx.Matching(q))
+	}
+	return out, nil
+}
+
+// query is the filter a listing's conditions make, with its parameters
+// resolved; false when a parameter with no default has no value, which
+// matches nothing.
+func (l *Listing) query(args map[string]string) (collection.Query, bool, error) {
 	// Resolve every parameter first, so a bad value is refused before any
 	// filtering happens rather than half way through.
 	values := map[string]any{}
@@ -384,13 +413,13 @@ func Resolve(l *Listing, idx *collection.Index, args map[string]string) (Result,
 				// missing must not silently widen to the whole collection,
 				// which is the Drupal default and is how a filtered page
 				// becomes an unfiltered one.
-				return Result{}, nil
+				return collection.Query{}, false, nil
 			}
 			raw = p.Default
 		}
 		v, err := coerce(p.Kind, raw)
 		if err != nil {
-			return Result{}, fmt.Errorf("%s %w", p.Name, err)
+			return collection.Query{}, false, fmt.Errorf("%s %w", p.Name, err)
 		}
 		values[p.Name] = v
 	}
@@ -412,24 +441,34 @@ func Resolve(l *Listing, idx *collection.Index, args map[string]string) (Result,
 		}
 	}
 
-	rows := l.Rows
-	if rows <= 0 {
-		rows = DefaultRows
-	}
-	q.Limit = rows
+	return q, true, nil
+}
 
-	found, total := idx.Query(q)
-	out := Result{Total: total, Truncated: total > len(found)}
-	for _, r := range found {
-		out.Rows = append(out.Rows, project(l, r))
+// CountBy is how many of the records a listing matches have each value of
+// a field, over everything that matched rather than one page of rows, and
+// how many matched in all. A record without the field is counted under "".
+func CountBy(l *Listing, idx *collection.Index, field string, args map[string]string) (map[string]int, int, error) {
+	if err := l.Validate(); err != nil {
+		return nil, 0, err
 	}
-	if len(l.Agg) > 0 {
-		// The matched set, unsorted and unwindowed. The walk is the one Total
-		// already pays for; asking for it again is a second pass over records
-		// already in memory, and only when a listing declares an aggregate.
-		out.Agg = aggregate(l.Agg, idx.Matching(q))
+	if idx == nil || idx.Collection != l.Collection {
+		return nil, 0, fmt.Errorf("%q has no index of %q to read", l.Name, l.Collection)
 	}
-	return out, nil
+	q, ok, err := l.query(args)
+	if err != nil || !ok {
+		return nil, 0, err
+	}
+	out := map[string]int{}
+	matched := idx.Matching(q)
+	for _, r := range matched {
+		v, has := r.Fields[field]
+		key := ""
+		if has && v != nil {
+			key = fmt.Sprint(v)
+		}
+		out[key]++
+	}
+	return out, len(matched), nil
 }
 
 // project trims a record to the fields the listing exposes.
