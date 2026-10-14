@@ -233,6 +233,11 @@ type Runner struct {
 	// was cancelled) refuses the action, with the reason. Nil refuses
 	// straight away, because there is nobody to ask.
 	Hold func(ctx context.Context, w Pending, beat func()) (Verdict, error)
+	// Asks says why an action waits for a person as if its declaration
+	// asked first, beyond what it does: a payment beyond the agent's
+	// mandates. Empty is an ordinary action. It pauses the run like asking
+	// first, so it can be decided later from anywhere.
+	Asks func(Action) string
 	// Weighs says why an action commits to something a person should see
 	// first, beyond what the declaration asks about: a browser click that
 	// submits a form, or one on a button called Pay. Empty is an ordinary
@@ -451,11 +456,18 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 		// declaration would allow anyway: one it refuses needs no person to
 		// refuse it, and asking would teach people to approve without
 		// reading.
-		if !approved && s.AsksFirst(action) && s.wouldAllow(action) {
+		asks := ""
+		if r.Asks != nil && !approved {
+			asks = r.Asks(action)
+		}
+		if !approved && (s.AsksFirst(action) || asks != "") && s.wouldAllow(action) {
 			// The question carries every reason there is to ask, so a
 			// person approving it has seen what the action commits to and
 			// what the breaker would say, and is not asked again.
 			var why []string
+			if asks != "" {
+				why = append(why, asks)
+			}
 			if r.Weighs != nil {
 				if w := r.Weighs(action); w != "" {
 					why = append(why, w)
@@ -589,7 +601,13 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 			break
 		}
 
-		out, perr := r.Perform(ctx, action)
+		pctx := ctx
+		if approved && step.Earned == "" {
+			// A person decided this step: what performs it may need to know,
+			// as a payment outside every mandate does.
+			pctx = WithPersonApproval(ctx)
+		}
+		out, perr := r.Perform(pctx, action)
 		if c, ok := s.takeConfidence(); ok {
 			step.Confidence = &c
 		}
@@ -752,4 +770,19 @@ func personalIn(text string, own []string) string {
 	}
 	sort.Strings(kinds)
 	return strings.Join(kinds, ", ")
+}
+
+type approvalKey struct{}
+
+// WithPersonApproval marks ctx as performing an action a person decided.
+func WithPersonApproval(ctx context.Context) context.Context {
+	return context.WithValue(ctx, approvalKey{}, true)
+}
+
+// ApprovedByPerson reports whether the action being performed under ctx
+// was decided by a person, rather than allowed by its declaration or
+// earned.
+func ApprovedByPerson(ctx context.Context) bool {
+	v, _ := ctx.Value(approvalKey{}).(bool)
+	return v
 }

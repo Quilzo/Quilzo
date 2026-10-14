@@ -32,6 +32,12 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 		return "acts"
 	}
 	if a.Tool != "" {
+		// A tool call that pays says so in why (internal/spend): paying is
+		// what it commits to, whatever else it changes, and paying is never
+		// earned away.
+		if strings.HasPrefix(why, PaysPrefix) {
+			return "pays"
+		}
 		if writes {
 			return "writes"
 		}
@@ -73,3 +79,6 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 	}
 	return "acts"
 }
+
+// PaysPrefix begins the reason a paying tool call waits for a person.
+const PaysPrefix = "it pays "

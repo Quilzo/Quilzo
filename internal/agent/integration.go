@@ -186,6 +186,98 @@ type Operation struct {
 	// Body is the JSON Schema of a JSON request body, when the call sends
 	// one; a model's arguments carry it as "body".
 	Body json.RawMessage `json:"body,omitempty"`
+	// Pays marks a call that spends money (see internal/spend).
+	Pays *Pays `json:"pays,omitempty"`
+}
+
+// Pays says where in a paying call's arguments the amount, the currency and
+// the payee are: a parameter's name, body.FIELD for a field of its JSON
+// body, or =VALUE for a value the call always has. A payment is then read
+// from the call and checked against the agent's mandates by code, never
+// taken from a model's account of it.
+type Pays struct {
+	Amount string `json:"amount"`
+	// Minor says the amount is in the currency's minor units, cents, as
+	// most payment APIs take it.
+	Minor    bool   `json:"minor,omitempty"`
+	Currency string `json:"currency"`
+	// Payee is who is paid; empty is the integration's host.
+	Payee string `json:"payee,omitempty"`
+}
+
+// Read finds a paying call's amount, currency and payee in its arguments.
+func (p Pays) Read(args map[string]any, host string) (amount any, currency, payee string, err error) {
+	get := func(ref string) (any, bool) {
+		if v, fixed := strings.CutPrefix(ref, "="); fixed {
+			return v, true
+		}
+		if field, inBody := strings.CutPrefix(ref, "body."); inBody {
+			var cur any = args["body"]
+			for _, k := range strings.Split(field, ".") {
+				m, ok := cur.(map[string]any)
+				if !ok {
+					return nil, false
+				}
+				cur, ok = m[k]
+				if !ok {
+					return nil, false
+				}
+			}
+			return cur, true
+		}
+		v, ok := args[ref]
+		return v, ok
+	}
+	amount, ok := get(p.Amount)
+	if !ok {
+		return nil, "", "", fmt.Errorf("the call names no amount in %s", p.Amount)
+	}
+	c, ok := get(p.Currency)
+	cs, _ := c.(string)
+	if !ok || cs == "" {
+		return nil, "", "", fmt.Errorf("the call names no currency in %s", p.Currency)
+	}
+	payee = host
+	if p.Payee != "" {
+		v, ok := get(p.Payee)
+		ps, _ := v.(string)
+		if !ok || strings.TrimSpace(ps) == "" {
+			return nil, "", "", fmt.Errorf("the call names no payee in %s", p.Payee)
+		}
+		payee = strings.TrimSpace(ps)
+	}
+	return amount, strings.ToUpper(strings.TrimSpace(cs)), payee, nil
+}
+
+// check holds a payment declaration to an operation's own arguments.
+func (p Pays) check(o Operation) error {
+	declared := func(ref string) bool {
+		if v, fixed := strings.CutPrefix(ref, "="); fixed {
+			return strings.TrimSpace(v) != ""
+		}
+		if _, inBody := strings.CutPrefix(ref, "body."); inBody {
+			return len(o.Body) > 0
+		}
+		for _, prm := range o.Params {
+			if prm.Name == ref {
+				return true
+			}
+		}
+		return false
+	}
+	switch {
+	case !o.Writes():
+		return fmt.Errorf("%s pays and is a %s; paying changes something", o.Name, o.Method)
+	case p.Amount == "" || strings.HasPrefix(p.Amount, "=") || !declared(p.Amount):
+		return fmt.Errorf("%s pays and its amount is not one of its parameters or body fields", o.Name)
+	case p.Currency == "" || !declared(p.Currency):
+		return fmt.Errorf("%s pays and its currency is not one of its arguments, or a fixed code such as =USD", o.Name)
+	case strings.HasPrefix(p.Currency, "=") && !reCurrencyCode.MatchString(strings.TrimPrefix(p.Currency, "=")):
+		return fmt.Errorf("%s pays in %q, which is not a three-letter currency code", o.Name, strings.TrimPrefix(p.Currency, "="))
+	case p.Payee != "" && !declared(p.Payee):
+		return fmt.Errorf("%s pays someone named in %s, which is not one of its arguments", o.Name, p.Payee)
+	}
+	return nil
 }
 
 // OperationParam is one parameter, in the path or the query.
@@ -201,14 +293,25 @@ type OperationParam struct {
 // anything but a read.
 func (o Operation) Writes() bool { return o.Method != "GET" && o.Method != "HEAD" }
 
+// Operation is the declared operation a tool name is, when it is one.
+func (in Integration) Operation(tool string) (Operation, bool) {
+	for _, o := range in.Operations {
+		if o.Name == tool {
+			return o, true
+		}
+	}
+	return Operation{}, false
+}
+
 // MaxOperations bounds a REST integration, so a person can read it.
 const MaxOperations = 200
 
 var (
-	reOperation = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
-	reParam     = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,63}$`)
-	reHeader    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]{0,63}$`)
-	rePlace     = regexp.MustCompile(`\{([^{}/]+)\}`)
+	reOperation    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
+	reParam        = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,63}$`)
+	reHeader       = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]{0,63}$`)
+	reCurrencyCode = regexp.MustCompile(`^[A-Z]{3}$`)
+	rePlace        = regexp.MustCompile(`\{([^{}/]+)\}`)
 )
 
 // forbiddenAuthHeaders are headers an API key may not be sent as: they
@@ -273,6 +376,11 @@ func (in *Integration) checkOperations() error {
 		}
 		for p := range placed {
 			return fmt.Errorf("%s: %s's path names {%s}, which it does not declare", in.Name, o.Name, p)
+		}
+		if o.Pays != nil {
+			if err := o.Pays.check(o); err != nil {
+				return fmt.Errorf("%s: %w", in.Name, err)
+			}
 		}
 		if len(o.Body) > 0 {
 			if !o.Writes() {

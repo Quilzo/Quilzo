@@ -151,6 +151,12 @@ vulnerability:
 - **A collection is reached only through a grant on it.** Any way somebody
   granted one collection, or a section of pages, reads, writes or learns the
   name of another collection through any interface.
+- **An agent pays only within what a person allowed.** Any way a paying
+  call goes ahead without a mandate that covers its payee, currency, tool,
+  amount and what is left of the budget, or a person's approval of that one
+  payment; any way a model grants, widens or revokes a mandate; any way a
+  payment is earned away from asking; or any way a paid call leaves no
+  receipt.
 - **A program's credential is what it was given and no more.** Any way a job
   is admitted by a trust whose issuer, audience or pinned claims its identity
   token does not satisfy, or exchanges one token twice; any way an exchanged

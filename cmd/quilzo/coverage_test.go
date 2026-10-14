@@ -533,6 +533,10 @@ var coverage = map[string]surfaces{
 		NoMCP: "where sign-ins are said to come from decides which of them are " +
 			"stepped up; a model must not be able to name a network an office",
 	},
+	"spend": {
+		Why:   "mandates are granted where the agent is declared and run; the approvals screen shows each payment that waits",
+		NoMCP: "letting an agent spend money is a person's decision on a surface no agent drives",
+	},
 	"trust": {
 		Why:   "a trust is declared with the repository it admits, in the same terminal as the workflow that uses it",
 		NoMCP: "which other issuers' jobs get tokens here is granting access, an administrator's to decide",
