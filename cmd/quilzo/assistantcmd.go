@@ -105,7 +105,7 @@ func saveAssistant(root string, caller *Caller, action, name string,
 	}
 	record(root, audit.Record{
 		Action: "assistant." + action, Resource: "/ask/" + name,
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified, Detail: map[string]string{"assistant": name},
 	})
 	return nil

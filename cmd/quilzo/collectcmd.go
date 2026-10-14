@@ -227,7 +227,7 @@ func sourceAdd(root string, args []string) error {
 	}
 	record(root, audit.Record{Action: "source.added",
 		Resource: "/sources/" + s.Issuer + "/" + s.Stream,
-		Outcome:  audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome:  audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified})
 	if !w.JSON(map[string]any{"source": s.Issuer + "/" + s.Stream,
 		"mapped": batch.Mapped, "records": batch.Records}) {
@@ -555,7 +555,7 @@ func collectAll(root string, names []string, caller *Caller,
 		}
 		record(root, audit.Record{Action: "collect.run",
 			Resource: "/collect/" + c.name(), Outcome: outcome,
-			Principal: caller.Name, Kind: caller.Kind,
+			Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 			Verified: caller.Kind != audit.KindUnknown,
 			Detail: map[string]string{"records": fmt.Sprint(st.Records),
 				"stored": fmt.Sprint(st.Stored), "missed": fmt.Sprint(st.Missed),
@@ -693,7 +693,7 @@ func collectFile(root string, args []string) error {
 	}
 	record(root, audit.Record{Action: "collect.file",
 		Resource: "/collect/" + name, Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"records": fmt.Sprint(st.Records),
 			"stored": fmt.Sprint(st.Stored), "missed": fmt.Sprint(st.Missed)}})
 	if w.JSON(statusWithoutDigests([]collectStatus{st})[0]) {
@@ -816,7 +816,7 @@ func collectAuto(root string, args []string) error {
 		return err
 	}
 	record(root, audit.Record{Action: "collect.schedule", Resource: "/collect",
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified,
 		Detail:   map[string]string{"every": every.String()}})
 	if !w.JSON(map[string]any{"every": every.String()}) {

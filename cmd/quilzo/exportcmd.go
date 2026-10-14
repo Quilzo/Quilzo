@@ -171,7 +171,7 @@ func cmdExport(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "export", Resource: "/" + *ref, Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"format": string(format), "pages": fmt.Sprintf("%d", len(pages)),
 			"records": fmt.Sprintf("%d", records),
@@ -239,7 +239,7 @@ func cmdSiem(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "auditlog.export", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"format": string(format),
 			"events": fmt.Sprintf("%d", res.Count),

@@ -280,7 +280,7 @@ func vaultEnable(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "vault.enable", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"kek_id": *id},
 	})
 
@@ -330,7 +330,7 @@ func vaultRotate(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "vault.rotate", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"kek_id": *id, "previous": previous},
 	})
 
@@ -391,7 +391,7 @@ func vaultRewrap(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "vault.rewrap", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"kek_id": kr.Active,
 			"moved":  fmt.Sprint(done.Moved),

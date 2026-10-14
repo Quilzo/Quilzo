@@ -98,7 +98,7 @@ func detectPack(root string, args []string) error {
 		added++
 	}
 	record(root, audit.Record{Action: "detect.pack", Resource: "/detections",
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified, Detail: map[string]string{
 			"added": fmt.Sprint(added), "kept": fmt.Sprint(kept)}})
 	if w.JSON(map[string]any{"added": added, "kept": kept, "dir": dir}) {

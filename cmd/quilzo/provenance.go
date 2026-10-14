@@ -384,7 +384,7 @@ func provBackfill(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "provenance.backfill", Resource: "/" + *ref,
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified,
 		Detail: map[string]string{
 			"ref": *ref, "inferred": fmt.Sprintf("%d", n),

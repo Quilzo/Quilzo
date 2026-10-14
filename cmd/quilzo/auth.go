@@ -303,7 +303,7 @@ func authGrant(root string, args []string) error {
 		Action:    "auth." + verb,
 		Resource:  *on,
 		Outcome:   audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"subject": rest[0], "role": rest[1], "deny": fmt.Sprintf("%t", *deny),
 			"expires": expiryText(expires),
@@ -415,7 +415,7 @@ func authRevoke(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "auth.revoke", Resource: *on, Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"subject": rest[0], "bindings_removed": fmt.Sprintf("%d", n),
 		},
@@ -701,7 +701,7 @@ func tokenIssue(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "token.issue", Resource: tok.Resource, Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			// The id, never the secret. The audit package refuses Detail keys
 			// containing "token" or "secret" for exactly this reason, and the
@@ -802,7 +802,7 @@ func tokenExchange(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "token.exchange", Resource: t.Resource, Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"session_id": t.ID, "parent_id": t.Parent, "role": string(t.Role),
 			"expires": time.Unix(t.ExpiresAt, 0).UTC().Format(time.RFC3339),
@@ -864,7 +864,7 @@ func tokenRevoke(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "token.revoke", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"revoked_id":        args[0],
 			"sessions_cascaded": fmt.Sprintf("%d", sessions),

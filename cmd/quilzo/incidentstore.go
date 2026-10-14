@@ -223,7 +223,7 @@ func declareIncident(root string, caller *Caller, title string,
 	}
 	if err := recordE(root, audit.Record{Action: "incident.declared",
 		Resource: "/incidents/" + i.ID, Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"grade": string(i.Grade),
 			"regimes":  strings.Join(i.Regimes, ","),
 			"findings": fmt.Sprint(len(i.Findings))}}); err != nil {
@@ -310,7 +310,7 @@ func actOnIncident(root, id string, caller *Caller, a incident.Action,
 	}
 	return i, recordE(root, audit.Record{Action: "incident." + a.Do,
 		Resource: "/incidents/" + i.ID, Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: detail})
 }
 
@@ -347,7 +347,7 @@ func incidentRegimes(root string, args []string) error {
 	}
 	record(root, audit.Record{Action: "incident.regimes",
 		Resource: "/incidents", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"regimes": strings.Join(set, ",")}})
 	if !w.JSON(map[string]any{"regimes": set}) {
 		w.Human("new incidents start under %s%s%s\n", bold,

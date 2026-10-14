@@ -81,7 +81,7 @@ func scheduleAdd(root string, args []string) error {
 
 	record(root, audit.Record{
 		Action: "schedule.add", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"scheduled": draft, "at": when.UTC().Format(time.RFC3339),
 			"note": truncate(*note, 200),
@@ -134,7 +134,7 @@ func scheduleCancel(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "schedule.cancel", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"cancelled": args[0]},
 	})
 	w.Human("cancelled\n")

@@ -274,7 +274,7 @@ func approveAct(root, id string, caller *Caller, actID int, now time.Time) (int,
 	}
 	if err := recordE(root, audit.Record{Action: "incident.act-approve",
 		Resource: "/incidents/" + id, Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"action": name, "subject": target,
 			"act": strconv.Itoa(actID)}}); err != nil {
 		return 0, err
@@ -369,7 +369,7 @@ func undoAct(root, id string, caller *Caller, actID int, why string,
 	}
 	if err := recordE(root, audit.Record{Action: "incident.act-undo",
 		Resource: "/incidents/" + id, Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"action": a.Name, "subject": act.Target,
 			"act": strconv.Itoa(actID)}}); err != nil {
 		return 0, err
@@ -474,7 +474,7 @@ func actionAdd(root string, args []string) error {
 	}
 	record(root, audit.Record{Action: "action.installed",
 		Resource: "/actions/" + a.Name, Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"host": a.Host}})
 	if !w.JSON(a) {
 		w.Human("%s%s%s is installed: %s\n", bold, a.Name, reset,
@@ -501,7 +501,7 @@ func actionRemove(root string, args []string) error {
 	}
 	record(root, audit.Record{Action: "action.removed",
 		Resource: "/actions/" + args[0], Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified})
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified})
 	if !w.JSON(map[string]any{"removed": args[0]}) {
 		w.Human("removed. Its credential is still held until it is " +
 			"replaced or the store's secrets are cleared\n")

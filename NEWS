@@ -239,10 +239,12 @@ Unreleased
 ** Fixed
 
 *** What an app did through the agent interface, and what an agent did
-    under its own identity, is recorded again in that act's own audit
-    record.  The record named no model, which the log refuses for an AI
-    act, so only the interface's mcp.call record was kept.  It now names
-    the app (mcp-client) or the agent as its model.
+    under its own identity, is recorded in that act's own audit record:
+    granting, assistants, deciders, automations, findings and every other
+    command an app can reach.  The record named no model, which the log
+    refuses for an AI act, so only the interface's mcp.call record was
+    kept.  It now names the app (mcp-client) or the agent as its model,
+    and a test reads the source for any record that does not.
 *** `quilzo records import` now checks every record against its
     collection's type, as adding one record does; one that does not fit
     imports nothing.

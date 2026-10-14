@@ -157,7 +157,7 @@ func cmdIdentity(root string, args []string) error {
 		}
 		record(root, audit.Record{Action: "identity." + args[0],
 			Resource: "/identity", Outcome: audit.Success,
-			Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+			Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 			Detail: map[string]string{"subject": args[1]}})
 		if !w.JSON(map[string]any{args[0]: args[1]}) {
 			w.Human("%s %s\n", args[0]+"ed", args[1])

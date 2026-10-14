@@ -199,7 +199,7 @@ func roomOpen(root string, args []string) error {
 	}
 	record(root, audit.Record{
 		Action: "room.opened", Resource: "/room/" + r.ID,
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Kind != audit.KindUnknown,
 		Detail: map[string]string{"room": r.ID, "kind": string(r.Kind),
 			"purpose": r.Purpose},

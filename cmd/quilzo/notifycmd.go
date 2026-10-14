@@ -182,7 +182,7 @@ func notifyAdd(root string, args []string) error {
 	// No address in the record. The audit log is exported.
 	record(root, audit.Record{
 		Action: "notify.added", Resource: "/notify/" + id.String(),
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Kind != audit.KindUnknown,
 		Detail: map[string]string{
 			"contact": id.String(), "channel": *channel,
@@ -238,7 +238,7 @@ func notifyObject(root string, args []string) error {
 	}
 	record(root, audit.Record{
 		Action: "notify.objected", Resource: "/notify/" + id.String(),
-		Outcome: audit.Denied, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Denied, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Kind != audit.KindUnknown,
 		Detail: map[string]string{
 			"contact": id.String(), "kinds": *kinds,
@@ -297,7 +297,7 @@ func notifyErase(root string, args []string) error {
 	}
 	record(root, audit.Record{
 		Action: "notify.erased", Resource: "/notify/" + id.String(),
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Kind != audit.KindUnknown,
 		Detail:   map[string]string{"contact": id.String()},
 	})
@@ -838,7 +838,7 @@ func notifyPublish(root string, args []string) error {
 
 	record(root, audit.Record{
 		Action: "notice.public", Resource: "/" + name,
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Kind != audit.KindUnknown,
 		Detail: map[string]string{
 			"notice": n.ID, "notice_of": string(n.Kind), "page": name,

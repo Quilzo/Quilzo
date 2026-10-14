@@ -142,7 +142,7 @@ func anchorSubmit(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "anchor.submit", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"fingerprint": fp,
 			"calendars":   fmt.Sprintf("%d", len(proofs)),

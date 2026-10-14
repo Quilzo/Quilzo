@@ -180,7 +180,7 @@ func oidcConfigure(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "oidc.configure", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"issuer": cfg.Issuer, "client": cfg.ClientID, "claim": cfg.Claim,
 			"provider": cfg.Provider, "domains": strings.Join(cfg.Domains, ","),

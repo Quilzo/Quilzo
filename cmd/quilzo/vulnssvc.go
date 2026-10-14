@@ -97,7 +97,7 @@ func setAssetTag(root string, caller *Caller, tag vuln.AssetTag) error {
 	}
 	return recordE(root, audit.Record{Action: "vuln.asset.tagged",
 		Resource: "/vuln/assets", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"match": tag.Match,
 			"exposure": tag.Exposure, "impact": tag.Impact}})
 }
@@ -135,7 +135,7 @@ func removeAssetTag(root string, caller *Caller, match string) error {
 	}
 	return recordE(root, audit.Record{Action: "vuln.asset.untagged",
 		Resource: "/vuln/assets", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"match": match}})
 }
 
@@ -164,7 +164,7 @@ func vulnTree(root string, args []string) error {
 		return err
 	}
 	record(root, audit.Record{Action: "vuln.ssvc.tree", Resource: "/vuln",
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified,
 		Detail:   map[string]string{"rows": fmt.Sprint(len(tree))}})
 	if !w.JSON(map[string]any{"rows": len(tree)}) {

@@ -504,7 +504,7 @@ func estateScores(root string, args []string) error {
 	scores := e.Scores(now)
 	record(root, audit.Record{
 		Action: "estate.scores", Resource: "/workforce", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"listed": fmt.Sprint(min(*limit, len(scores)))},
 	})
 	if *limit > 0 && len(scores) > *limit {

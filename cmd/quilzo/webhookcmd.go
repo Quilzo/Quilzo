@@ -114,7 +114,7 @@ func hookAdd(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "webhook.add", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		// The URL, never the shared value. The audit package refuses any Detail
 		// key containing "secret", which is what stops this being added later
 		// by somebody being helpful.
@@ -159,7 +159,7 @@ func hookRemove(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "webhook.remove", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"endpoint": args[0]},
 	})
 	w.Human("removed\n")

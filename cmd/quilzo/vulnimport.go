@@ -366,7 +366,7 @@ func vulnImport(root string, args []string) error {
 		detail["asset"] = *where
 	}
 	record(root, audit.Record{Action: "vuln.imported", Resource: "/vuln",
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified, Detail: detail})
 	if err := tallyVulns(root, now); err != nil {
 		return err

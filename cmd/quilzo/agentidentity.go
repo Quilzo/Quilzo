@@ -72,7 +72,7 @@ func agentGrants(root, name string) (*Caller, error) {
 	if len(mine) == 0 {
 		return nil, nil
 	}
-	c := &Caller{Name: principal, Kind: audit.KindAI, Verified: true, Scope: "/"}
+	c := &Caller{Name: principal, Kind: audit.KindAI, Model: "agent", Verified: true, Scope: "/"}
 	for _, r := range roleOrder {
 		if pol.Evaluate(principal, r.act, "/").Allowed {
 			c.Role = r.role

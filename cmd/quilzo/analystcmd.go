@@ -374,7 +374,7 @@ func analystEval(root string, args []string) error {
 		return err
 	}
 	record(root, audit.Record{Action: "analyst.evaluated", Resource: "/agents",
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified, Detail: map[string]string{
 			"cases": fmt.Sprint(rep.Cases), "k": fmt.Sprint(rep.K),
 			"reliable": fmt.Sprint(rep.Reliable), "wrong": fmt.Sprint(rep.Wrong),

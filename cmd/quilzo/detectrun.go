@@ -318,7 +318,7 @@ func detectPass(root, rulesAt string, since time.Duration, caller *Caller, sp *s
 	}
 	record(root, audit.Record{
 		Action: "detect.run", Resource: "/findings", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"rules": strconv.Itoa(len(rules)), "events": strconv.Itoa(events),
 			"matches": strconv.Itoa(matches), "opened": strconv.Itoa(opened),
