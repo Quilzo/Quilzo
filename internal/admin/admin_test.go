@@ -928,6 +928,28 @@ func TestTheSessionRoleComesFromThePolicy(t *testing.T) {
 	if got := srv.roleFor("stranger"); got != auth.RoleReader {
 		t.Errorf("an unknown principal got %q", got)
 	}
+	// The highest role held anywhere: an analyst administers /@security and
+	// nothing over the site, and a reader's session would refuse them the
+	// very screens their grant is for. A deny counts as it does anywhere.
+	for _, b := range append(auth.Jobs[0].Bindings,
+		auth.Binding{Role: auth.RoleAuthor, Resource: auth.DataResource("samples")}) {
+		who := "ana"
+		if b.Role == auth.RoleAuthor {
+			who = "tech"
+		}
+		b.Principal = who
+		srv.Policy.Grant(b)
+	}
+	if got := srv.roleFor("ana"); got != auth.RoleAdmin {
+		t.Errorf("an analyst's session got %q", got)
+	}
+	if got := srv.roleFor("tech"); got != auth.RoleAuthor {
+		t.Errorf("somebody who writes one collection got %q", got)
+	}
+	srv.Policy.Grant(auth.Binding{Principal: "tech", Role: auth.RoleAuthor, Resource: auth.AreaData, Deny: true})
+	if got := srv.roleFor("tech"); got != auth.RoleReader {
+		t.Errorf("a denied grant still raised the session to %q", got)
+	}
 }
 
 // Without a provider configured the routes must not exist, rather than

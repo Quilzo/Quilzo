@@ -151,6 +151,12 @@ vulnerability:
 - **A collection is reached only through a grant on it.** Any way somebody
   granted one collection, or a section of pages, reads, writes or learns the
   name of another collection through any interface.
+- **A role an app declares reaches only that app's blocks.** Any way a role
+  in a feature package grants anything beyond the package's own collections,
+  pages and agents, or more than reading, writing or publishing them and
+  running or approving its agents; any way a package grants a role to
+  somebody, or widens a role people hold without somebody who may grant
+  access; or any way a role's holder keeps part of it after it is removed.
 - **A person's desktop is not used.** Any way a run reaches a person's keyboard
   or pointer. Desktop consent hands the session straight back.
 

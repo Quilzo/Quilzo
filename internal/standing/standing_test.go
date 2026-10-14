@@ -189,6 +189,9 @@ func TestEveryPackageWithASituationalRoleIsRegistered(t *testing.T) {
 		"posture": "a severity is not a role",
 		"oscal": "a role in an OSCAL document names who is responsible " +
 			"for a control in that document; it confers nothing here",
+		"feature": "a role a feature declares is standing: it is granted " +
+			"as auth bindings, held until revoked, and confers nothing " +
+			"those bindings do not",
 	}
 	var missing []string
 	err := filepath.WalkDir("..", func(path string, d os.DirEntry,

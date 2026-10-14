@@ -359,21 +359,11 @@ func (s *Server) knownPrincipal(name string) bool {
 // a promotion. Evaluate is asked rather than the bindings read directly, so a
 // deny is honoured here exactly as it is everywhere else.
 func (s *Server) roleFor(name string) auth.Role {
-	// Highest first, taking the first that is permitted. Asking Evaluate rather
-	// than reading the bindings means a deny is honoured here exactly as it is
-	// everywhere else, and inheritance is not reimplemented.
-	for _, probe := range []struct {
-		role auth.Role
-		act  auth.Action
-	}{
-		{auth.RoleAdmin, auth.ActGrant},
-		{auth.RolePublisher, auth.ActPublish},
-		{auth.RoleAuthor, auth.ActEditDraft},
-		{auth.RoleReader, auth.ActView},
-	} {
-		if s.Policy.Evaluate(name, probe.act, "/").Allowed {
-			return probe.role
-		}
+	// The highest role they hold anywhere, which is a cap on the session and
+	// not a grant: the policy still decides where it reaches (see
+	// auth.Policy.Highest).
+	if r := s.Policy.Highest(name); r != auth.RoleNone {
+		return r
 	}
 	return auth.RoleReader
 }

@@ -53,7 +53,7 @@ func (s *Server) handleProvisioning(w http.ResponseWriter, r *http.Request) {
 func (s *Server) renderProvisioning(w http.ResponseWriter, r *http.Request, p principal, token string) {
 	data := map[string]any{"Title": "Provisioning", "Nav": "provisioning", "Principal": p,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"), "Token": token,
-		"Roles": auth.Roles, "Jobs": auth.Jobs}
+		"Roles": auth.Roles, "Jobs": auth.Jobs, "AppRoles": s.appRoles()}
 	if s.SCIM == nil || s.SCIM.Status == nil {
 		data["Unavailable"] = "This build was started without provisioning."
 		s.render(w, r, "provisioning.html", data)

@@ -66,9 +66,24 @@ Never add agents, webhooks, tools, hosts, URLs to other servers, secrets or acce
 		b.WriteString("\nSection kinds this site renders: " + strings.Join(sectionKinds, ", ") + ".\n")
 	}
 	b.WriteString("\nAn example of a complete answer:\n")
-	b.Write(bytes.TrimSpace(example))
+	b.Write(draftExample())
 	b.WriteString("\n")
 	return b.String()
+}
+
+// draftExample is the example without its roles: a draft never holds
+// access, so the model is not shown how to write it.
+func draftExample() []byte {
+	var p Package
+	if err := json.Unmarshal(example, &p); err != nil {
+		return bytes.TrimSpace(example)
+	}
+	p.Roles = nil
+	b, err := json.MarshalIndent(&p, "", "  ")
+	if err != nil {
+		return bytes.TrimSpace(example)
+	}
+	return b
 }
 
 // ReadDraft reads a model's answer into a package, keeping only what a
@@ -107,7 +122,7 @@ func ReadDraft(answer string, sectionKinds map[string]bool, by, from, model stri
 	}
 	sort.Strings(dropped)
 	for _, k := range dropped {
-		notes = append(notes, fmt.Sprintf("left out %q: a draft holds content blocks only; a person adds agents, webhooks and access", k))
+		notes = append(notes, fmt.Sprintf("left out %q: a draft holds content blocks only; a person adds agents, webhooks and roles", k))
 	}
 	var d draftedJSON
 	if err := json.Unmarshal(raw, &d); err != nil {

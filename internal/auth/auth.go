@@ -182,6 +182,10 @@ type Binding struct {
 	GrantedBy string `json:"granted_by,omitempty"`
 	GrantedAt int64  `json:"granted_at,omitempty"`
 	Note      string `json:"note,omitempty"`
+	// Via is what the binding was granted as, when it was granted as part of
+	// something larger: "app:PKG/ROLE" for a role an app declares (see
+	// approle.go). Such a binding changes with the role and goes with it.
+	Via string `json:"via,omitempty"`
 }
 
 // Live reports whether a binding is in force at a moment.
@@ -434,8 +438,8 @@ func (p *Policy) Evaluate(principal string, action Action, resource string) Deci
 
 	if permission != nil && !best.AtLeast(required) {
 		return Decision{Allowed: true, Role: best, Binding: permission, Trail: trail,
-			Reason: fmt.Sprintf("%s holds %s, granted at %s", principal, permissionText(permission),
-				normalise(permission.Resource))}
+			Reason: fmt.Sprintf("%s holds %s, granted at %s%s", principal, permissionText(permission),
+				normalise(permission.Resource), asText(permission))}
 	}
 	if best == RoleNone {
 		return Decision{Allowed: false, Role: RoleNone, Trail: trail,
@@ -457,8 +461,8 @@ func (p *Policy) Evaluate(principal string, action Action, resource string) Deci
 	// easy path.
 	return Decision{Allowed: true, Role: best, Binding: bestBinding, Trail: trail,
 		OwnsRequired: bestBinding.OwnOnly,
-		Reason: fmt.Sprintf("%s is %s on %s, granted at %s",
-			principal, best, target, normalise(bestBinding.Resource))}
+		Reason: fmt.Sprintf("%s is %s on %s, granted at %s%s",
+			principal, best, target, normalise(bestBinding.Resource), asText(bestBinding))}
 }
 
 // Anywhere reports whether a principal may perform an action on anything at
@@ -500,6 +504,34 @@ func (p *Policy) Anywhere(principal string, action Action) bool {
 		}
 	}
 	return false
+}
+
+// Highest is the highest role a principal holds anywhere: on the site, a
+// part of it, an area, a collection. It is what a session they sign in to
+// carries, because a session's role is a cap and the policy still decides
+// where it reaches. Capping by the role held over the whole site gave an
+// analyst, administrator of /@security only, a reader's session, which
+// their own grant could then never be used through; so too a technician
+// who writes one collection.
+//
+// Asked of Evaluate for each binding, so a deny counts as it does anywhere.
+func (p *Policy) Highest(principal string) Role {
+	p.mu.RLock()
+	var held []Binding
+	for _, b := range p.Bindings {
+		if b.Principal == principal && !b.Deny && b.Role != "" {
+			held = append(held, b)
+		}
+	}
+	p.mu.RUnlock()
+	defining := map[Role]Action{RoleAdmin: ActGrant, RolePublisher: ActPublish, RoleAuthor: ActEditDraft, RoleReader: ActView}
+	best := RoleNone
+	for _, b := range held {
+		if b.Role.AtLeast(best) && b.Role != best && p.Evaluate(principal, defining[b.Role], b.Resource).Allowed {
+			best = b.Role
+		}
+	}
+	return best
 }
 
 // EvaluateOwned is Evaluate for a caller that knows who created the resource.
@@ -564,7 +596,7 @@ func (p *Policy) Grant(b Binding) error {
 	}
 	for _, e := range p.Bindings {
 		if e.Principal == b.Principal && e.Role == b.Role && e.Permission == b.Permission &&
-			e.Resource == b.Resource && e.Deny == b.Deny {
+			e.Resource == b.Resource && e.Deny == b.Deny && e.Via == b.Via {
 			return fmt.Errorf("that binding already exists")
 		}
 	}
@@ -578,7 +610,8 @@ func (p *Policy) Revoke(principal string, role Role, resource string) int {
 }
 
 // RevokeNamed removes the bindings of a role or a permission, by its name,
-// and reports how many went.
+// and reports how many went. A binding that came with an app role is left:
+// it goes when the role does, so nobody is left holding half of one.
 func (p *Policy) RevokeNamed(principal, what, resource string) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -587,7 +620,7 @@ func (p *Policy) RevokeNamed(principal, what, resource string) int {
 	kept := p.Bindings[:0]
 	removed := 0
 	for _, b := range p.Bindings {
-		if b.Principal == principal && b.What() == what && normalise(b.Resource) == resource {
+		if b.Principal == principal && b.Via == "" && b.What() == what && normalise(b.Resource) == resource {
 			removed++
 			continue
 		}

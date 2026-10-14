@@ -105,6 +105,12 @@ func (p *Package) Block(r Ref) any {
 				return h
 			}
 		}
+	case "role":
+		for _, ro := range p.Roles {
+			if p.FullName(ro) == r.Name {
+				return ro
+			}
+		}
 	}
 	return nil
 }

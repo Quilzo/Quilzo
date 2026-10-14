@@ -27,16 +27,19 @@
         <optgroup label="Over the site, or part of it">{{range .Roles}}<option value="{{.}}">{{.}}</option>{{end}}</optgroup>
         <optgroup label="A job, over its own areas">{{range .Jobs}}<option value="job:{{.Name}}">{{.Name}}: {{.Summary}}</option>{{end}}</optgroup>
         <optgroup label="One permission, for working with agents">{{range .Permissions}}<option value="permission:{{.Action}}">{{.Action}}: {{.Summary}}</option>{{end}}</optgroup>
+        {{if .AppRoles}}<optgroup label="A role in an app, over what the app made">{{range .AppRoles}}<option value="app:{{.Name}}">{{.Name}}: {{.Title}}</option>{{end}}</optgroup>{{end}}
       </select>
       <p id="role-help" class="hint"><strong>A job</strong> is the access a kind of work needs and nothing more:
         an <em>analyst</em> works in security operations, <em>compliance</em> in the
         posture and frameworks, <em>support</em> in the inbox and members&rsquo;
         posts. None of them can grant access or open a page. <strong>A permission</strong>
         is one thing about agents, granted alone: approve on <code>/@agents/newsletter</code>
-        decides what the newsletter agent waits for, and nothing else.</p></div>
+        decides what the newsletter agent waits for, and nothing else. <strong>A role in an app</strong>
+        is declared by the feature that made the app, over its own records, pages and agents:
+        a lab technician records samples and reaches nothing else.</p></div>
     <div class="field"><label for="g-on">Where (path)</label>
       <input id="g-on" name="resource" value="/" spellcheck="false" aria-describedby="on-help">
-      <p id="on-help" class="hint">For example /docs, or /@agents/NAME for one agent. A job ignores this: it is its own areas.</p></div>
+      <p id="on-help" class="hint">For example /docs, /@data/NAME for one collection, or /@agents/NAME for one agent. A job or a role in an app ignores this: it is its own areas.</p></div>
     <div class="field"><label for="g-until">Until</label>
       <input id="g-until" name="until" type="date" aria-describedby="until-help">
       <p id="until-help" class="hint">Empty lasts until it is removed.</p></div>
@@ -73,10 +76,10 @@
     {{range .Bindings}}
     <tr>
       <th scope="row">
-        {{if .Deny}}<span class="tag tag-bad">deny</span> {{end}}{{.What}}{{if .Permission}} <span class="hint">permission</span>{{end}}
+        {{if .AppRole}}{{.AppRole}} <span class="hint">role in an app</span>{{else}}{{if .Deny}}<span class="tag tag-bad">deny</span> {{end}}{{.What}}{{if .Permission}} <span class="hint">permission</span>{{end}}{{end}}
       </th>
       <td>
-        <code>{{.Resource}}</code>
+        {{if .AppRole}}{{range $i, $p := .Parts}}{{if $i}}, {{end}}<code>{{$p}}</code>{{end}}{{else}}<code>{{.Resource}}</code>{{end}}
         {{if .OwnOnly}} <span class="tag tag-warn">own-only: never enforced,
           ignored</span>{{end}}
         {{if .Expires}}{{if .Live}}<div class="hint">until {{.Until}}</div>{{else}}<div class="hint"><span class="tag tag-bad">expired</span> {{.Until}}</div>{{end}}{{end}}
@@ -85,7 +88,7 @@
       <td class="right">
         <form method="post" action="/people/revoke" class="inline">
           <input type="hidden" name="principal" value="{{$who}}">
-          <input type="hidden" name="role" value="{{.What}}">
+          <input type="hidden" name="role" value="{{if .AppRole}}app:{{.AppRole}}{{else}}{{.What}}{{end}}">
           <input type="hidden" name="resource" value="{{.Resource}}">
           <button type="submit" class="danger">Remove</button>
         </form>
