@@ -21,7 +21,7 @@ func TestARunRemembersOnlyTheKindsItKeeps(t *testing.T) {
 	s := agent.NewSession(m, nil)
 	var kept []string
 	perform := WithMemory(Memory{About: "dana",
-		Remember: func(kind, text string, held bool, sources, tier string) (memory.Entry, error) {
+		Remember: func(kind, text string, held bool, sources, tier, key string) (memory.Entry, error) {
 			kept = append(kept, kind+":"+text+":"+tier)
 			return memory.Entry{ID: "m_1", Held: held}, nil
 		},
@@ -56,7 +56,7 @@ func TestWhatARunLearnsIsAsTrustedAsWhatItRead(t *testing.T) {
 		}
 		tier := ""
 		perform := WithMemory(Memory{About: "dana",
-			Remember: func(_, _ string, _ bool, _, t string) (memory.Entry, error) {
+			Remember: func(_, _ string, _ bool, _, t, _ string) (memory.Entry, error) {
 				tier = t
 				return memory.Entry{ID: "m_new"}, nil
 			},

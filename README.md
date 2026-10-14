@@ -185,6 +185,7 @@ Help link opens its own.
 | **Per person, per agent** | What an agent learns in a run is about the person who started it, and only their runs recall it; procedures are the agent's own. | `memory` in the declaration; `remember` and `recall` capabilities |
 | **Trust tiers** | Each memory records whether it came from what the person said, from published pages, or from what nobody reviewed; the last is kept 30 days at most. | Automatic |
 | **Held when tainted** | Anything learnt after reading somebody else's words waits for a person and lapses in two weeks: a planted instruction cannot steer every later run. | `quilzo memory list --held`, `memory confirm ID` |
+| **Facts that change** | A fact remembered with a key replaces the older one about the same thing, which is kept with when it stopped being true; a held fact replaces nothing until confirmed. Recall fuses words and vectors with recency, the same under any model, within a budget. | `key` on `remember`; `quilzo memory history AGENT KEY` |
 | **Seen, rewritten, forgotten** | Everybody sees what agents remember about them, rewrites it, deletes it, or has every agent forget them, with a receipt proved against the log. Identity-provider deletion erases it. | Memory screen; `quilzo memory edit ID TEXT`, `memory forget`, `memory receipt` |
 
 ### Models and privacy

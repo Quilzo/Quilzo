@@ -175,11 +175,11 @@ func TestAProcedureIsAboutNobody(t *testing.T) {
 	root := t.TempDir()
 	m := agent.Manifest{Name: "helper", Memory: agent.Memory{Procedural: true, Semantic: true, Retain: agent.Duration(time.Hour)}}
 	mem := runMemory(root, m, asAdmin("dana"), "run-1")
-	p, err := mem.Remember(memory.Procedural, "refunds over 100 go to finance", false, "", memory.TierPerson)
+	p, err := mem.Remember(memory.Procedural, "refunds over 100 go to finance", false, "", memory.TierPerson, "")
 	if err != nil || p.About != "" {
 		t.Fatalf("%+v %v", p, err)
 	}
-	f, err := mem.Remember(memory.Semantic, "Dana prefers Spanish", false, "", memory.TierPerson)
+	f, err := mem.Remember(memory.Semantic, "Dana prefers Spanish", false, "", memory.TierPerson, "")
 	if err != nil || f.About != "dana" || f.Run != "run-1" || f.By != "dana" {
 		t.Fatalf("%+v %v", f, err)
 	}

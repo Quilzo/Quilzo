@@ -35,13 +35,13 @@ func runMemory(root string, m agent.Manifest, caller *Caller, runID string) agen
 	store := memoryStore(root)
 	who := caller.Name
 	return agentexec.Memory{About: who,
-		Remember: func(kind, text string, held bool, sources, tier string) (memory.Entry, error) {
+		Remember: func(kind, text string, held bool, sources, tier, key string) (memory.Entry, error) {
 			about := who
 			if kind == memory.Procedural {
 				about = ""
 			}
 			e, err := store.Remember(memory.Entry{Agent: m.Name, About: about, Kind: kind, Text: text,
-				Run: runID, By: who, Held: held, Sources: sources, Tier: tier}, time.Duration(m.Memory.Retain), time.Now())
+				Run: runID, By: who, Held: held, Sources: sources, Tier: tier, Key: key}, time.Duration(m.Memory.Retain), time.Now())
 			if err == nil {
 				record(root, actorRecord(caller, "memory.remembered", audit.Success, m, programOrModel(m),
 					map[string]string{"agent": m.Name, "run": runID, "memory": e.ID, "kind": kind,
@@ -128,6 +128,12 @@ func cmdMemory(root string, args []string) error {
 			if words := memory.TierWords[e.Tier]; words != "" {
 				tier = ", " + words
 			}
+			if e.Key != "" {
+				state += " " + e.Key
+			}
+			if !e.Current(time.Now()) {
+				state += dim + " replaced " + e.ValidUntil.Format("2 Jan 2006") + reset
+			}
 			w.Human("%s%s%s%s  %s, %s, about %s%s, until %s\n    %s\n", bold, e.ID, reset, state, e.Agent, e.Kind, about,
 				tier, e.Expires.Format("2 Jan 2006"), clip(e.Text, 300))
 			if e.Held && e.Sources != "" {
@@ -163,6 +169,45 @@ func cmdMemory(root string, args []string) error {
 			return err
 		}
 		w.Human("%sed %s\n", strings.TrimSuffix(args[0], "e"), e.ID)
+		return nil
+	case "history":
+		fs := flag.NewFlagSet("memory history", flag.ContinueOnError)
+		about := fs.String("about", "", "about one person (yourself, unless you administer)")
+		pos, flags := leadingArgs(args[1:], 2)
+		if err := fs.Parse(flags); err != nil {
+			return err
+		}
+		if len(pos) != 2 {
+			return errors.New("usage: quilzo memory history AGENT KEY [--about P]")
+		}
+		if *about == "" || !admin {
+			if *about != "" && *about != caller.Name {
+				return errors.New("you see what agents remember about you; an administrator sees anybody's")
+			}
+			*about = caller.Name
+		}
+		list, err := store.History(pos[0], *about, pos[1])
+		if err != nil {
+			return err
+		}
+		if w.JSON(list) {
+			return nil
+		}
+		if len(list) == 0 {
+			w.Human("%s keeps no fact %s about %s\n", pos[0], pos[1], *about)
+			return nil
+		}
+		for _, e := range list {
+			until := "now"
+			if !e.ValidUntil.IsZero() {
+				until = e.ValidUntil.Format("2 Jan 2006 15:04")
+			}
+			held := ""
+			if e.Held {
+				held = yellow + " held" + reset
+			}
+			w.Human("%s → %s%s  %s\n", e.Created.Format("2 Jan 2006 15:04"), until, held, clip(e.Text, 200))
+		}
 		return nil
 	case "edit":
 		if len(args) < 3 {

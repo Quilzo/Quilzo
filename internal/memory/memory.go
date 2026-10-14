@@ -57,6 +57,8 @@ import (
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/plaintext"
+	"github.com/quilzo/quilzo/internal/search"
+	"github.com/quilzo/quilzo/internal/vector"
 )
 
 // The kinds, the manifest's tiers.
@@ -144,6 +146,40 @@ type Entry struct {
 	// Digest is the text's, for telling the same memory learnt twice
 	// apart from a new one. It stays in this store, never in the log.
 	Digest string `json:"digest"`
+
+	// Key names what a fact is about, such as "shipping_city", so a newer
+	// fact about the same thing closes the older one instead of sitting
+	// beside it. A closed fact is kept, with when it stopped being true and
+	// what replaced it, so "what changed when" has an answer; it is not
+	// recalled. A held fact closes nothing until a person confirms it: a
+	// planted instruction cannot retire a true fact by being learnt.
+	Key        string    `json:"key,omitempty"`
+	ValidUntil time.Time `json:"valid_until,omitzero"`
+	Replaces   string    `json:"replaces,omitempty"`
+	ReplacedBy string    `json:"replaced_by,omitempty"`
+}
+
+// Current reports whether an entry is still true at now.
+func (e Entry) Current(now time.Time) bool { return e.ValidUntil.IsZero() || now.Before(e.ValidUntil) }
+
+var reKey = regexp.MustCompile(`^[a-z][a-z0-9_]{0,59}$`)
+
+// closeFacts closes every current fact with e's key about the same person,
+// other than e, as replaced by e. The caller holds the lock.
+func closeFacts(f *file, e *Entry, now time.Time) {
+	if e.Key == "" {
+		return
+	}
+	for i := range f.Entries {
+		o := &f.Entries[i]
+		if o.ID == e.ID || o.Key != e.Key || o.About != e.About || o.Agent != e.Agent || o.Held || !o.Current(now) {
+			continue
+		}
+		o.ValidUntil, o.ReplacedBy = now.UTC(), e.ID
+		if e.Replaces == "" {
+			e.Replaces = o.ID
+		}
+	}
 }
 
 // Store is every agent's memory, a file per agent under Dir.
@@ -235,6 +271,10 @@ func (s *Store) Remember(e Entry, retain time.Duration, now time.Time) (Entry, e
 		return Entry{}, fmt.Errorf("memory is kept for a declared time, at most %d days", int(MaxRetain.Hours()/24))
 	case e.Tier != "" && tierRank[e.Tier] == 0:
 		return Entry{}, fmt.Errorf("%q is not a tier: person, published or unreviewed", e.Tier)
+	case e.Key != "" && e.Kind != Semantic:
+		return Entry{}, errors.New("only a fact has a key; episodes and procedures are not replaced")
+	case e.Key != "" && !reKey.MatchString(e.Key):
+		return Entry{}, fmt.Errorf("%q is not a key: lower-case words joined by underscores", e.Key)
 	}
 	expires := func(held bool) time.Time {
 		keep := keepFor(e.Tier, retain)
@@ -267,6 +307,9 @@ func (s *Store) Remember(e Entry, retain time.Duration, now time.Time) (Entry, e
 		}
 	}
 	e.ID, e.Expires = newID(), expires(e.Held)
+	if !e.Held {
+		closeFacts(&f, &e, now)
+	}
 	f.Entries = append(f.Entries, e)
 	// Bounded: the oldest about the same person goes first, then the
 	// oldest of all.
@@ -302,44 +345,90 @@ func (s *Store) Recall(agent, about, query string, kinds map[string]bool, limit 
 	if err != nil {
 		return nil, err
 	}
-	words := strings.Fields(strings.ToLower(query))
-	type scored struct {
-		e Entry
-		n int
-	}
-	var hits []scored
+	var cands []Entry
 	for _, e := range f.Entries {
-		if e.Held || !now.Before(e.Expires) || !kinds[e.Kind] {
+		if e.Held || !now.Before(e.Expires) || !kinds[e.Kind] || !e.Current(now) {
 			continue
 		}
 		if e.About != "" && e.About != about {
 			continue
 		}
-		n := 0
-		text := strings.ToLower(e.Text)
-		for _, w := range words {
-			if strings.Contains(text, w) {
-				n++
-			}
-		}
-		if len(words) > 0 && n == 0 {
-			continue
-		}
-		hits = append(hits, scored{e, n})
+		cands = append(cands, e)
 	}
-	sort.SliceStable(hits, func(i, j int) bool {
-		if hits[i].n != hits[j].n {
-			return hits[i].n > hits[j].n
-		}
-		return hits[i].e.Created.After(hits[j].e.Created)
-	})
 	var out []Entry
-	for _, h := range hits {
-		if len(out) == limit {
+	chars := 0
+	for _, e := range rank(cands, query) {
+		if len(out) == limit || chars+len(e.Text) > RecallChars {
 			break
 		}
-		out = append(out, h.e)
+		out = append(out, e)
+		chars += len(e.Text)
 	}
+	return out, nil
+}
+
+// RecallChars bounds what one recall returns, in characters: memory is
+// context a model reads, and a recall that fills it crowds out the task.
+const RecallChars = 6000
+
+// rrfK is reciprocal rank fusion's constant, from Cormack et al. (2009).
+const rrfK = 60
+
+// rank orders what may be recalled for a query: words (BM25) and vectors
+// fused by reciprocal rank, with how recent each is as a lighter third
+// list, and only what matched the query at all. With no query, the most
+// recent first. Text is what is ranked, whatever model the agent uses, so
+// a change of model changes nothing that was learnt.
+func rank(cands []Entry, query string) []Entry {
+	recent := append([]Entry(nil), cands...)
+	sort.SliceStable(recent, func(i, j int) bool { return recent[i].Created.After(recent[j].Created) })
+	if strings.TrimSpace(query) == "" {
+		return recent
+	}
+	pages := make(map[string]any, len(cands))
+	for _, e := range cands {
+		pages[e.ID] = map[string]any{"text": e.Text, "key": strings.ReplaceAll(e.Key, "_", " ")}
+	}
+	score := map[string]float64{}
+	for i, r := range search.Build("memory", pages).Search(query, len(cands)) {
+		score[r.Page] += 1 / float64(rrfK+i+1)
+	}
+	idx := vector.Build("memory", pages, search.Tokenise)
+	if near, err := idx.Nearest(idx.Embed(query, search.Tokenise), len(cands), ""); err == nil {
+		for i, n := range near {
+			if n.Score > 0 {
+				score[n.Page] += 1 / float64(rrfK+i+1)
+			}
+		}
+	}
+	var out []Entry
+	for i, e := range recent {
+		if score[e.ID] == 0 {
+			continue
+		}
+		score[e.ID] += 0.5 / float64(rrfK+i+1)
+		out = append(out, e)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return score[out[i].ID] > score[out[j].ID] })
+	return out
+}
+
+// History is every fact with a key about a person, current or not, oldest
+// first: what was believed, and when it changed.
+func (s *Store) History(agent, about, key string) ([]Entry, error) {
+	s.mu.Lock()
+	f, err := s.load(agent)
+	s.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	var out []Entry
+	for _, e := range f.Entries {
+		if e.Key == key && e.About == about {
+			out = append(out, e)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Created.Before(out[j].Created) })
 	return out, nil
 }
 
@@ -399,6 +488,12 @@ var ErrNoEntry = errors.New("no memory has that id")
 
 // change finds one entry by id, across agents, and changes or removes it.
 func (s *Store) change(id string, fn func(*Entry) (keep bool, err error)) (Entry, error) {
+	return s.changeIn(id, func(_ *file, e *Entry) (bool, error) { return fn(e) })
+}
+
+// changeIn is change with the entry's whole file, for a change to one
+// entry that changes others with it.
+func (s *Store) changeIn(id string, fn func(f *file, e *Entry) (keep bool, err error)) (Entry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	agents, err := s.agents("")
@@ -415,7 +510,7 @@ func (s *Store) change(id string, fn func(*Entry) (keep bool, err error)) (Entry
 				continue
 			}
 			e := f.Entries[i]
-			keep, err := fn(&f.Entries[i])
+			keep, err := fn(&f, &f.Entries[i])
 			if err != nil {
 				return e, err
 			}
@@ -446,7 +541,7 @@ func (s *Store) Get(id string) (Entry, error) {
 
 // Confirm lets a held entry be recalled: a person has read it.
 func (s *Store) Confirm(id, by string, now time.Time, retain time.Duration) (Entry, error) {
-	return s.change(id, func(e *Entry) (bool, error) {
+	return s.changeIn(id, func(f *file, e *Entry) (bool, error) {
 		if !e.Held {
 			return true, errors.New("that memory is not held")
 		}
@@ -454,6 +549,9 @@ func (s *Store) Confirm(id, by string, now time.Time, retain time.Duration) (Ent
 		if retain > 0 && retain <= MaxRetain {
 			e.Expires = e.Created.Add(keepFor(e.Tier, retain))
 		}
+		// Confirmed, it is a fact like any other: it replaces what it says
+		// changed.
+		closeFacts(f, e, now)
 		return true, nil
 	})
 }

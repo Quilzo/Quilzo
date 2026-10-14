@@ -742,6 +742,19 @@ To write a page, give its name and its fields:
 A field's value is text, a number, or true or false. Nothing nested.
 `)
 	}
+	if ops["remember"] {
+		b.WriteString(`
+To remember a fact about the person you are working for, name what it is about,
+so a newer fact about the same thing replaces it:
+{"op": "remember", "input": {"text": "Dana now ships to Porto", "kind": "semantic", "key": "shipping_city"}}
+kind is semantic for a fact, episodic for what happened, procedural for how to do something.
+`)
+	}
+	if ops["recall"] {
+		b.WriteString(`
+To recall what is remembered: {"op": "recall", "input": {"query": "what you need to know"}}
+`)
+	}
 	b.WriteString(`
 Rules:
 - Choose exactly one operation, from that list. There are no others. Asking for

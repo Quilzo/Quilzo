@@ -559,6 +559,7 @@ agents and integrations
   quilzo memory list [--agent A] [--held]  what agents remember about you (anybody, for an administrator)
   quilzo memory confirm|delete ID          let a held memory be recalled, or remove one
   quilzo memory edit ID TEXT               rewrite what is remembered about you, as you say it
+  quilzo memory history AGENT KEY [--about P]   what a fact was, and when it changed
   quilzo memory forget [--about P]         every agent forgets you (or P, for an administrator)
   quilzo memory receipt [--about P] [-o F] what was forgotten, deleted or rewritten about you, proved
   quilzo agent program NAME [--backend B] [--read DIR] [--env K=V] -- COMMAND   what its program is
