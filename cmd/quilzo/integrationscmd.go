@@ -67,6 +67,8 @@ func cmdIntegrations(root string, args []string) error {
 		return integrationsGateway(root, args[1:])
 	case "held":
 		return integrationsHeld(root)
+	case "import":
+		return integrationsImport(root, args[1:])
 	case "approve", "decline":
 		if len(args) != 2 {
 			return fmt.Errorf("quilzo integrations %s ID", args[0])
@@ -78,7 +80,7 @@ func cmdIntegrations(root string, args []string) error {
 		return nil
 	default:
 		return fmt.Errorf(
-			"unknown integrations command %q; try list, tools, pin, call, gateway, held, approve or decline", args[0])
+			"unknown integrations command %q; try list, import, tools, pin, call, gateway, held, approve or decline", args[0])
 	}
 }
 
@@ -238,10 +240,15 @@ func oneIntegration(root, name string) (agent.Integration, error) {
 // with every address check fetch makes.
 var mcpTransport func(ctx context.Context, url string, body []byte, headers map[string]string) (*fetch.Result, error)
 
+// restTransport stands in for the network for REST calls in tests; nil is
+// the network, with every address check.
+var restTransport func(ctx context.Context, method, url string, body []byte, headers map[string]string) (*fetch.Result, error)
+
 // newMCPClient builds the client, with the vault if there is one.
 func newMCPClient(root string) *mcpclient.Client {
 	return &mcpclient.Client{
-		Do: mcpTransport,
+		Do:       mcpTransport,
+		DoMethod: restTransport,
 		Secrets: func(name string) (string, error) {
 			return readSecret(root, name)
 		},

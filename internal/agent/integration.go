@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/netip"
 	"regexp"
@@ -163,6 +164,146 @@ type Integration struct {
 	// Uses and pinned, each call checked, recorded and counted, with
 	// Quilzo's credential and never the caller's. Nil offers nothing.
 	Gateway *GatewayPolicy `json:"gateway,omitempty"`
+
+	// Operations are a REST integration's calls, each a tool by its name:
+	// a method, a path under the endpoint, and the parameters it takes.
+	// Declared here, usually imported from an OpenAPI description, and
+	// pinned like an MCP server's tools, so editing one is a change a
+	// person pins again.
+	Operations []Operation `json:"operations,omitempty"`
+	// Auth is how a REST integration presents its secret: "bearer", the
+	// default, or "header:NAME" for an API key in a header of its own.
+	Auth string `json:"auth,omitempty"`
+}
+
+// Operation is one call a REST integration makes.
+type Operation struct {
+	Name        string           `json:"name"`
+	Method      string           `json:"method"`
+	Path        string           `json:"path"`
+	Description string           `json:"description,omitempty"`
+	Params      []OperationParam `json:"params,omitempty"`
+	// Body is the JSON Schema of a JSON request body, when the call sends
+	// one; a model's arguments carry it as "body".
+	Body json.RawMessage `json:"body,omitempty"`
+}
+
+// OperationParam is one parameter, in the path or the query.
+type OperationParam struct {
+	Name        string `json:"name"`
+	In          string `json:"in"`
+	Required    bool   `json:"required,omitempty"`
+	Type        string `json:"type,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// Writes reports whether an operation changes something on the far side:
+// anything but a read.
+func (o Operation) Writes() bool { return o.Method != "GET" && o.Method != "HEAD" }
+
+// MaxOperations bounds a REST integration, so a person can read it.
+const MaxOperations = 200
+
+var (
+	reOperation = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
+	reParam     = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,63}$`)
+	reHeader    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]{0,63}$`)
+	rePlace     = regexp.MustCompile(`\{([^{}/]+)\}`)
+)
+
+// forbiddenAuthHeaders are headers an API key may not be sent as: they
+// would change where the request goes or how it is read.
+var forbiddenAuthHeaders = map[string]bool{"host": true, "cookie": true, "content-length": true,
+	"content-type": true, "transfer-encoding": true, "connection": true, "accept": true}
+
+// checkOperations holds a REST integration's operations to what can be
+// called safely and read by a person.
+func (in *Integration) checkOperations() error {
+	if len(in.Operations) == 0 {
+		return fmt.Errorf("%s is a REST integration with no operations; import them with quilzo integrations import", in.Name)
+	}
+	if len(in.Operations) > MaxOperations {
+		return fmt.Errorf("%s declares %d operations; at most %d", in.Name, len(in.Operations), MaxOperations)
+	}
+	names := map[string]Operation{}
+	for _, o := range in.Operations {
+		if !reOperation.MatchString(o.Name) {
+			return fmt.Errorf("%s: %q is not an operation name: letters, digits and underscores", in.Name, o.Name)
+		}
+		if _, twice := names[o.Name]; twice {
+			return fmt.Errorf("%s declares the operation %s twice", in.Name, o.Name)
+		}
+		names[o.Name] = o
+		switch o.Method {
+		case "GET", "POST", "PUT", "PATCH", "DELETE":
+		default:
+			return fmt.Errorf("%s: %s uses %q; GET, POST, PUT, PATCH or DELETE", in.Name, o.Name, o.Method)
+		}
+		if !strings.HasPrefix(o.Path, "/") || strings.ContainsAny(o.Path, "?#\\ ") || strings.Contains(o.Path, "..") {
+			return fmt.Errorf("%s: %s's path %q is not a path under the endpoint", in.Name, o.Name, o.Path)
+		}
+		placed := map[string]bool{}
+		for _, m := range rePlace.FindAllStringSubmatch(o.Path, -1) {
+			placed[m[1]] = true
+		}
+		seen := map[string]bool{}
+		for _, p := range o.Params {
+			if !reParam.MatchString(p.Name) || p.Name == "body" {
+				return fmt.Errorf("%s: %s has a parameter %q that cannot be named that", in.Name, o.Name, p.Name)
+			}
+			if seen[p.In+" "+p.Name] {
+				return fmt.Errorf("%s: %s declares %s twice", in.Name, o.Name, p.Name)
+			}
+			seen[p.In+" "+p.Name] = true
+			switch p.In {
+			case "path":
+				if !placed[p.Name] {
+					return fmt.Errorf("%s: %s declares the path parameter %s, which its path does not use", in.Name, o.Name, p.Name)
+				}
+				delete(placed, p.Name)
+			case "query":
+			default:
+				return fmt.Errorf("%s: %s's parameter %s is in %q; parameters are in the path or the query", in.Name, o.Name, p.Name, p.In)
+			}
+			switch p.Type {
+			case "", "string", "integer", "number", "boolean":
+			default:
+				return fmt.Errorf("%s: %s's parameter %s is a %q; string, integer, number or boolean", in.Name, o.Name, p.Name, p.Type)
+			}
+		}
+		for p := range placed {
+			return fmt.Errorf("%s: %s's path names {%s}, which it does not declare", in.Name, o.Name, p)
+		}
+		if len(o.Body) > 0 {
+			if !o.Writes() {
+				return fmt.Errorf("%s: %s is a %s and declares a body", in.Name, o.Name, o.Method)
+			}
+			if len(o.Body) > 32<<10 || !json.Valid(o.Body) {
+				return fmt.Errorf("%s: %s's body schema is not JSON of at most 32 KiB", in.Name, o.Name)
+			}
+		}
+	}
+	for _, u := range in.Uses {
+		o, ok := names[u]
+		if !ok {
+			return fmt.Errorf("%s uses %q, which it does not declare as an operation", in.Name, u)
+		}
+		if o.Writes() && !in.Writes {
+			return fmt.Errorf("%s uses %s, a %s that changes something on the far side; mark the integration \"writes\": true",
+				in.Name, o.Name, o.Method)
+		}
+	}
+	switch {
+	case in.Auth == "" || in.Auth == "bearer":
+	case strings.HasPrefix(in.Auth, "header:"):
+		h := strings.TrimPrefix(in.Auth, "header:")
+		if !reHeader.MatchString(h) || forbiddenAuthHeaders[strings.ToLower(h)] {
+			return fmt.Errorf("%s sends its secret in %q, which cannot carry one", in.Name, h)
+		}
+	default:
+		return fmt.Errorf("%s authenticates with %q; bearer or header:NAME", in.Name, in.Auth)
+	}
+	return nil
 }
 
 // GatewayPolicy is how an integration is offered through the gateway.
@@ -284,8 +425,8 @@ func (in *Integration) Validate() error {
 	}
 	if g := in.Gateway; g != nil {
 		switch {
-		case in.Kind != IntegrationMCP:
-			return fmt.Errorf("%s is a %s integration; only an MCP server is offered through the gateway", in.Name, in.Kind)
+		case in.Kind != IntegrationMCP && in.Kind != IntegrationHTTP:
+			return fmt.Errorf("%s is a %s integration; only an MCP server or a REST API is offered through the gateway", in.Name, in.Kind)
 		case g.Role != "reader" && g.Role != "author" && g.Role != "publisher":
 			return fmt.Errorf("%s is offered to %q; the gateway's roles are reader, author and publisher", in.Name, g.Role)
 		case in.Writes && g.Role == "reader":
@@ -301,31 +442,27 @@ func (in *Integration) Validate() error {
 		}
 	}
 
-	// Only the kind something calls.
-	//
-	// http and process are declarable, digest-pinned, gated behind
-	// AllowProcess, rendered on the integrations screen and listed by the
-	// CLI — and nothing executes either. internal/mcpclient is the only
-	// caller, and its permits() refuses anything that is not an MCP server:
-	// "%s is a %s integration, not an MCP server". So declaring one produced
-	// a validated, displayed, switchable integration that could not be
-	// called, and AllowProcess was presented on two surfaces as a live
-	// control over behaviour that does not exist.
-	//
-	// The digest is the part that makes this worth refusing rather than
-	// leaving. It is validated as syntax and never compared against a file,
-	// so the supply-chain pin — the one control that would matter if a
-	// process integration ever ran — is already decoration. Wiring execution
-	// later means writing that check; allowing the declaration now means
-	// somebody may already be relying on a pin nothing verifies.
-	if in.Kind != IntegrationMCP {
+	// Only the kinds something calls: an MCP server, and a REST API whose
+	// operations are declared. A process integration is declarable and
+	// refused, because nothing in this build runs one: the digest it
+	// declares is checked for shape and never against a file, so a pin
+	// there would be a supply-chain control that does not run.
+	switch in.Kind {
+	case IntegrationMCP:
+		if len(in.Operations) > 0 || in.Auth != "" {
+			return fmt.Errorf("%s is an MCP server; operations and auth belong to a REST integration", in.Name)
+		}
+	case IntegrationHTTP:
+		if err := in.checkOperations(); err != nil {
+			return err
+		}
+	default:
 		return fmt.Errorf(
 			"%s is a %s integration and nothing in this build calls one. "+
-				"Only mcp is executed: internal/mcpclient is the single "+
-				"caller and refuses every other kind. The digest a process "+
-				"integration declares is checked for shape and never "+
-				"against a file, so a pin here would be a supply-chain "+
-				"control that does not run", in.Name, in.Kind)
+				"An MCP server or a REST API is executed; the digest a process "+
+				"integration declares is checked for shape and never against a "+
+				"file, so a pin here would be a supply-chain control that does "+
+				"not run", in.Name, in.Kind)
 	}
 	return nil
 }

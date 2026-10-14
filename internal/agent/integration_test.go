@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -318,5 +319,62 @@ func TestAServerOnTheOwnNetworkIsDeclaredNarrowly(t *testing.T) {
 	}
 	if got := in.Where(); got != "tools.corp.example:8443/mcp" {
 		t.Errorf("a declaration inside the network reads as %q", got)
+	}
+}
+
+func restIntegration() Integration {
+	return Integration{
+		Name: "billing", Kind: IntegrationHTTP, Purpose: "Read invoices", Endpoint: "api.billing.example",
+		Uses: []string{"getInvoice"},
+		Operations: []Operation{{Name: "getInvoice", Method: "GET", Path: "/invoices/{id}",
+			Params: []OperationParam{{Name: "id", In: "path"}}}},
+	}
+}
+
+// A REST integration is called only through operations it declares, each
+// of which must mean what it appears to.
+func TestARESTIntegrationsOperationsMustMeanWhatTheySay(t *testing.T) {
+	in := restIntegration()
+	if err := in.Validate(); err != nil {
+		t.Fatalf("a plain REST integration was refused: %v", err)
+	}
+	for name, mutate := range map[string]func(*Integration){
+		"no operations":                     func(i *Integration) { i.Operations = nil },
+		"a path placeholder it never names": func(i *Integration) { i.Operations[0].Params = nil },
+		"a path parameter the path lacks": func(i *Integration) {
+			i.Operations[0].Params = append(i.Operations[0].Params, OperationParam{Name: "x", In: "path"})
+		},
+		"a header parameter": func(i *Integration) {
+			i.Operations[0].Params = append(i.Operations[0].Params, OperationParam{Name: "X-Role", In: "header"})
+		},
+		"a body on a read":         func(i *Integration) { i.Operations[0].Body = json.RawMessage(`{"type":"object"}`) },
+		"a path that climbs":       func(i *Integration) { i.Operations[0].Path = "/../admin/{id}" },
+		"a query in the path":      func(i *Integration) { i.Operations[0].Path = "/invoices/{id}?all=1" },
+		"a method nothing uses":    func(i *Integration) { i.Operations[0].Method = "TRACE" },
+		"using what it lacks":      func(i *Integration) { i.Uses = []string{"deleteEverything"} },
+		"a secret in Host":         func(i *Integration) { i.Auth = "header:Host" },
+		"an unknown way to log in": func(i *Integration) { i.Auth = "basic" },
+		"a write it does not admit": func(i *Integration) {
+			i.Operations = append(i.Operations, Operation{Name: "dropInvoice", Method: "DELETE", Path: "/invoices"})
+			i.Uses = append(i.Uses, "dropInvoice")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			in := restIntegration()
+			mutate(&in)
+			if err := in.Validate(); err == nil {
+				t.Fatal("accepted")
+			}
+		})
+	}
+	mcp := restIntegration()
+	mcp.Kind = IntegrationMCP
+	if err := mcp.Validate(); err == nil {
+		t.Error("an MCP server was given operations")
+	}
+	in.Auth = "header:X-API-Key"
+	in.Gateway = &GatewayPolicy{Role: "reader"}
+	if err := in.Validate(); err != nil {
+		t.Errorf("a REST integration offered through the gateway was refused: %v", err)
 	}
 }

@@ -138,7 +138,7 @@ func gatewayOffered(root, name string) (agent.Integration, bool) {
 	}
 	for _, in := range set.Declared {
 		if in.Name == name {
-			return in, in.Enabled && in.Kind == agent.IntegrationMCP && in.Gateway != nil
+			return in, in.Enabled && (in.Kind == agent.IntegrationMCP || in.Kind == agent.IntegrationHTTP) && in.Gateway != nil
 		}
 	}
 	return agent.Integration{}, false

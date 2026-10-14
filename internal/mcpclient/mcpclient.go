@@ -88,6 +88,10 @@ type Client struct {
 	// test hands the server in directly.
 	Do func(ctx context.Context, url string, body []byte, headers map[string]string) (*fetch.Result, error)
 
+	// DoMethod performs one REST call; nil is Fetch's, with every address
+	// check. A test hands the server in directly.
+	DoMethod func(ctx context.Context, method, url string, body []byte, headers map[string]string) (*fetch.Result, error)
+
 	id atomic.Int64
 
 	mu       sync.Mutex
@@ -220,6 +224,9 @@ func (c *Client) Call(ctx context.Context, in agent.Integration, tool string,
 			return "", err
 		}
 	}
+	if in.Kind == agent.IntegrationHTTP {
+		return c.restCall(ctx, in, tool, args)
+	}
 	raw, err := c.send(ctx, in, "tools/call", map[string]any{
 		"name": tool, "arguments": args,
 	})
@@ -256,6 +263,9 @@ func (c *Client) checkPin(ctx context.Context, in agent.Integration, tool, pin s
 // Definitions are a server's tools with their definitions' digests and
 // this install's pins, kept for a few minutes.
 func (c *Client) Definitions(ctx context.Context, in agent.Integration) ([]Tool, error) {
+	if in.Kind == agent.IntegrationHTTP {
+		return restTools(in), nil
+	}
 	key := in.Name + "|" + in.URL()
 	c.mu.Lock()
 	if d, ok := c.defs[key]; ok && c.now().Before(d.until) {
@@ -282,6 +292,9 @@ func (c *Client) Definitions(ctx context.Context, in agent.Integration) ([]Tool,
 // against what they agreed to is exactly how tool poisoning is noticed, and a
 // list that quietly hides the new tool is a list that hides the problem.
 func (c *Client) Tools(ctx context.Context, in agent.Integration) ([]Tool, error) {
+	if in.Kind == agent.IntegrationHTTP {
+		return restTools(in), nil
+	}
 	raw, err := c.send(ctx, in, "tools/list", map[string]any{})
 	if err != nil {
 		return nil, err
@@ -325,8 +338,8 @@ func (c *Client) permits(in agent.Integration, tool string) error {
 		return fmt.Errorf(
 			"%s is declared and not enabled, so nothing may call it", in.Name)
 	}
-	if in.Kind != agent.IntegrationMCP {
-		return fmt.Errorf("%s is a %s integration, not an MCP server",
+	if in.Kind != agent.IntegrationMCP && in.Kind != agent.IntegrationHTTP {
+		return fmt.Errorf("%s is a %s integration, not an MCP server or a REST API",
 			in.Name, in.Kind)
 	}
 	for _, u := range in.Uses {
