@@ -5,6 +5,7 @@ package agentexec
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -58,6 +59,9 @@ const MaxToolArgs = 32
 // MaxToolValue bounds one argument's length.
 const MaxToolValue = 4 << 10
 
+// MaxToolBody bounds a JSON body, as an integration's body schema is.
+const MaxToolBody = 32 << 10
+
 // Caller performs one tool call on one integration.
 //
 // An interface rather than *mcpclient.Client, because this package must not
@@ -78,6 +82,16 @@ type Tools struct {
 	// Call reaches the far side. Nil means nothing does, which is the state
 	// this package was in.
 	Call Caller
+	// Pay charges a paying call against the agent's mandates before it is
+	// made, and settles its receipt with what the far side answered. Nil
+	// means this build cannot check a payment, and a paying call is refused.
+	Pay Payer
+}
+
+// Payer checks and records the payments tool calls make (internal/spend).
+type Payer interface {
+	Charge(ctx context.Context, agentName string, in agent.Integration, op agent.Operation,
+		args map[string]any) (settle func(error), err error)
 }
 
 // Perform is the agent.Perform for tool actions on a session.
@@ -131,9 +145,24 @@ func (t Tools) Perform(s *agent.Session) func(context.Context, agent.Action) (st
 				s.Manifest().Name, name, declared.Host, in.Name, in.Endpoint)
 		}
 
-		args, err := boundArgs(a.Input)
+		op, isOp := in.Operation(name)
+		args, err := boundArgs(a.Input, isOp && len(op.Body) > 0)
 		if err != nil {
 			return "", err
+		}
+		// A paying call is charged before it is made: within a mandate, or
+		// on a person's approval of this step, and never otherwise.
+		if isOp && op.Pays != nil {
+			if t.Pay == nil {
+				return "", fmt.Errorf("%q pays, and this build has no way to check a payment", name)
+			}
+			settle, err := t.Pay.Charge(ctx, s.Manifest().Name, in, op, args)
+			if err != nil {
+				return "", err
+			}
+			out, cerr := t.Call.Call(ctx, in, name, args)
+			settle(cerr)
+			return out, cerr
 		}
 		return t.Call.Call(ctx, in, name, args)
 	}
@@ -162,7 +191,7 @@ func sameHost(declared, endpoint string) bool {
 // Scalars only. A nested structure is where a model spends this process's
 // memory and where a far side's parser is most likely to disagree with this
 // one about what it received — and no tool this program ships needs one.
-func boundArgs(in map[string]any) (map[string]any, error) {
+func boundArgs(in map[string]any, body bool) (map[string]any, error) {
 	if len(in) > MaxToolArgs {
 		return nil, fmt.Errorf(
 			"a tool call may carry %d arguments and this one has %d",
@@ -185,6 +214,18 @@ func boundArgs(in map[string]any) (map[string]any, error) {
 			}
 			out[k] = val
 		case bool, float64, int:
+			out[k] = val
+		case map[string]any:
+			// A JSON body, for an operation that declares one: the one
+			// structured argument, bounded as a whole.
+			if k != "body" || !body {
+				return nil, fmt.Errorf(
+					"the argument %q is an object; only an operation that declares a body takes one, as body", k)
+			}
+			raw, err := json.Marshal(val)
+			if err != nil || len(raw) > MaxToolBody {
+				return nil, fmt.Errorf("the body is more than %d bytes of JSON", MaxToolBody)
+			}
 			out[k] = val
 		default:
 			return nil, fmt.Errorf(

@@ -1128,6 +1128,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 					return *set, nil
 				},
 				Call: newMCPClient(root),
+				Pay:  payer{root: root, run: func() string { return from.RunID }},
 			},
 			// The delegate surface, which had no executor either.
 			//
@@ -1225,6 +1226,9 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 			return out, err
 		}
 	}
+	// A payment beyond the agent's mandates waits for a person as asking
+	// first does: the run pauses and is decided from anywhere.
+	runner.Asks = paymentAsks(root, m.Name)
 	var weighs []func(agent.Action) string
 	if holdsBrowser(m) {
 		pictures := false

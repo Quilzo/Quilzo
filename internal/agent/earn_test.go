@@ -155,3 +155,26 @@ func TestTheBreakerIsNeverEarnedAway(t *testing.T) {
 		t.Errorf("the breaker's trip did not drop what was earned: %q", dropped)
 	}
 }
+
+// A payment that Asks holds pauses the run for a person, as asking first
+// does, and an agent that has earned everything still cannot pay without
+// one.
+func TestAPaymentBeyondItsMandatePausesTheRunAndIsNeverEarned(t *testing.T) {
+	m := Manifest{Name: "buyer", Kind: KindTask, Purpose: "pays invoices", Autonomy: AutonomyDraft,
+		Tools:     []Tool{{Name: "pay_invoice", Host: "pay.example.com", Purpose: "pay", Writes: true}},
+		Budget:    Budget{Steps: 5, Tools: 5, Duration: Duration(time.Minute)},
+		EarnAfter: 3}
+	pay := Action{Tool: "pay_invoice", Input: map[string]any{"amount": 9000}}
+	d := &doer{}
+	p := &scripted{plan: []Action{pay}}
+	r := Runner{Decide: p.decide, Perform: d.perform, Pause: true,
+		Asks:   func(a Action) string { return PaysPrefix + "90.00 USD to acct_x; no mandate covers it" },
+		Earned: func(string) string { return "ran without asking: earned" }}
+	tr, err := r.Run(context.Background(), NewSession(m, nil), "pay the invoice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr.Waiting == nil || !strings.HasPrefix(tr.Waiting.Why, PaysPrefix) || len(d.did) != 0 {
+		t.Fatalf("a payment beyond the mandate did not wait for a person: %+v %v", tr.Waiting, d.did)
+	}
+}

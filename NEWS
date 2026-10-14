@@ -9,6 +9,19 @@ Unreleased
 
 ** Added
 
+*** Agents that pay, within mandates.  A REST operation that spends money
+    declares "pays": where its amount, currency and payee are, a
+    parameter, body.FIELD or =VALUE.  `quilzo spend grant AGENT` gives an
+    agent a mandate: a currency, named payees, a limit per payment, a
+    budget and an end date, granted by a person who may approve its
+    actions.  A payment within a mandate granted --without-asking goes
+    ahead and is debited; one within a mandate that asks, or beyond every
+    mandate, waits for a person, and a person may approve one on its own.
+    Amounts are read exactly in each currency's decimal places.  Every
+    payment leaves a receipt (`quilzo spend receipts`), a failed one still
+    counts, and paying is never earned away from asking.  An agent's call
+    may now send a JSON body to an operation that declares one.
+
 *** Features from a repository.  A pull request's CI posts a package to
     /features/check and gets the card and the plan, with both as Markdown
     for a comment; the CI that runs on merge posts it to /features/install

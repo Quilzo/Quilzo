@@ -107,6 +107,7 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 					return *set, lerr
 				},
 				Call: newMCPClient(d.root),
+				Pay:  payer{root: d.root},
 			},
 			d.next(m.Name),
 			// The deciders, for a delegate as for its parent: a typed
