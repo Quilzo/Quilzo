@@ -9,6 +9,17 @@ Unreleased
 
 ** Added
 
+*** REST APIs as tools.  `quilzo integrations import openapi.json --uses
+    A,B` declares an API's named operations as an integration of kind http,
+    switched off: each operation is a tool with the same allow-list, pins,
+    gateway, approvals and audit as an MCP server's.  A call is built only
+    from what the operation declares, refused if it carries anything else,
+    sent over https to the declared host with the credential added (bearer,
+    or a named header), and its answer cut off at 32 KiB.  A REST API can be
+    offered to other agents through /mcp/gateway/NAME.  The same command
+    reads an MCP registry server.json into an MCP server declaration;
+    without --uses it lists what is on offer and declares nothing.
+
 *** Features as packages (/make, `quilzo feature`): one file declares the
     types, collections, listings, forms, pages, menus, chatbots, agents and
     webhooks a piece of work needs.  `feature check` shows its permission
@@ -29,12 +40,6 @@ Unreleased
     infers a type from the values, with a collection, a listing and a page;
     `feature install --rows` imports the rows with it, after approval when
     it needs a second person.  Neither installs anything by itself.
-
-** Fixed
-
-*** `quilzo records import` now checks every record against its
-    collection's type, as adding one record does; one that does not fit
-    imports nothing.
 
 *** Approvals (/approvals, `quilzo approvals`) lists everything waiting for
     the person looking: what agent runs ask, questions they need answered,
@@ -174,6 +179,12 @@ Unreleased
 *** `quilzo desktop consent` asks the desktop's own portal for the
     person's keyboard and pointer and gives the session straight back.
     No run may use a person's desktop.
+
+** Fixed
+
+*** `quilzo records import` now checks every record against its
+    collection's type, as adding one record does; one that does not fit
+    imports nothing.
 
 ** Removed
 

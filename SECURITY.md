@@ -118,6 +118,12 @@ vulnerability:
   than the ones that were checked; or a signed package accepted without its
   signature checking out. A drafted package holding an agent, a webhook or a
   link to another site, or records imported that do not satisfy their type.
+- **A REST operation sends what it declares.** Any way a call through a REST
+  integration reaches a host other than the declared one, carries a
+  parameter or header its operation does not declare, follows a redirect,
+  sends its credential anywhere but the declared host, or runs after its
+  declaration changed without being pinned again; or an import that fetches
+  anything a document refers to.
 - **A person's desktop is not used.** Any way a run reaches a person's keyboard
   or pointer. Desktop consent hands the session straight back.
 

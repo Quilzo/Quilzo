@@ -587,6 +587,7 @@ agents and integrations
   quilzo agents                            what models have been doing, and
                                             which are not accepting refusals
   quilzo integrations list|tools|call      outside systems this install may reach
+  quilzo integrations import FILE [--uses A,B]   an OpenAPI 3 document or an MCP registry server.json, declared switched off
   quilzo integrations pin NAME [TOOL...]   approve what a tool is; a server's change to it is refused until pinned again
   quilzo integrations gateway NAME --role R [--daily N] [--ask T,...] | --off
                                            offer an MCP server to other systems' agents through Quilzo, checked and recorded

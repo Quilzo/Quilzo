@@ -43,7 +43,8 @@ func TestAToolTheServerOffersIsNotTherebyAToolThisMayCall(t *testing.T) {
 	}
 }
 
-// A declared-but-disabled integration is off, and so is a non-MCP one.
+// A declared-but-disabled integration is off, and so is one of a kind
+// nothing calls.
 func TestOnlyEnabledMCPIntegrationsAreCallable(t *testing.T) {
 	c := &Client{}
 	off := integration("create_issue")
@@ -52,9 +53,9 @@ func TestOnlyEnabledMCPIntegrationsAreCallable(t *testing.T) {
 		t.Error("a declared integration nobody enabled was callable")
 	}
 	wrong := integration("create_issue")
-	wrong.Kind = agent.IntegrationHTTP
+	wrong.Kind = agent.IntegrationProcess
 	if err := c.permits(wrong, "create_issue"); err == nil {
-		t.Error("an HTTP integration was called as an MCP server")
+		t.Error("a process integration was called")
 	}
 }
 
