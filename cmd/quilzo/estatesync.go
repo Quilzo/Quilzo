@@ -285,7 +285,7 @@ func estateSync(root string, now time.Time, caller *Caller,
 	}
 	record(root, audit.Record{
 		Action: "estate.sync", Resource: "/workforce", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"tools": fmt.Sprint(len(rep.Tools)), "failed": fmt.Sprint(failedTools),
 			"found": fmt.Sprint(rep.Found), "reminded": fmt.Sprint(rep.Reminded),
@@ -426,7 +426,7 @@ func cmdEstateAuto(root string, args []string) error {
 	}
 	record(root, audit.Record{
 		Action: "estate.schedule", Resource: "/workforce",
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified,
 		Detail: map[string]string{"every": s.Every.String(),
 			"remind": fmt.Sprint(s.Remind)},

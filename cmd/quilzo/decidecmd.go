@@ -84,7 +84,7 @@ func changeDeciders(root string, caller *Caller, change, name string,
 		return err
 	}
 	record(root, audit.Record{Action: "decider." + change, Resource: "/decide/" + name,
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified, Detail: map[string]string{"decider": name}})
 	return nil
 }

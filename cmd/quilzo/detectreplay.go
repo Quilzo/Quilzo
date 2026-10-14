@@ -271,7 +271,7 @@ func detectLearn(root string, args []string) error {
 	}
 	record(root, audit.Record{
 		Action: "detect.learn", Resource: "/detections/" + f.Source,
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified,
 		Detail: map[string]string{"finding": f.ID, "rule": f.Source,
 			"verdict": string(f.State)},

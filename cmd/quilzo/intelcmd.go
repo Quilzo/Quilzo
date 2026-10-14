@@ -249,7 +249,7 @@ func takeIndicators(root string, caller *Caller, in []indicator.Indicator,
 	}
 	return res, recordE(root, audit.Record{Action: "intel.added",
 		Resource: "/intel", Outcome: audit.Success, Principal: caller.Name,
-		Kind: caller.Kind, Verified: caller.Verified,
+		Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"taken": fmt.Sprint(res.Taken),
 			"known": fmt.Sprint(res.Known), "refused": fmt.Sprint(rep.Never()),
 			"unread": fmt.Sprint(rep.Unread), "hits": fmt.Sprint(res.Hits),
@@ -277,7 +277,7 @@ func removeIndicator(root string, caller *Caller, id string) error {
 	}
 	return recordE(root, audit.Record{Action: "intel.removed",
 		Resource: "/intel/" + id, Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified})
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified})
 }
 
 func cmdIntel(root string, args []string) error {

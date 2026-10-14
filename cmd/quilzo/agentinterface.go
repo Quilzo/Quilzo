@@ -245,7 +245,7 @@ func appCallRecord(c *mcp.Caller, tool, op string, rerr *mcp.Error) audit.Record
 // acting, because that is what calls an interface built for agents.
 func remoteCaller(tok auth.Token) *Caller {
 	return &Caller{Name: tok.Principal, Role: tok.Role, Scope: tok.Resource, Limits: tok.Scope,
-		Kind: audit.KindAI, Verified: true, Remote: true, Grant: tok.Grant}
+		Kind: audit.KindAI, Model: "mcp-client", Verified: true, Remote: true, Grant: tok.Grant}
 }
 
 // remoteRefusal is what the agent interface adds to the command line's

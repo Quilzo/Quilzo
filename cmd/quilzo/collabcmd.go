@@ -334,7 +334,7 @@ func reviewApprove(root string, args []string) error {
 	// so "approved" can never be separated from "approved *this*".
 	record(root, audit.Record{
 		Action: "review.approve", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			// "approved" rather than "content": the audit package refuses any
 			// Detail key containing "content", "body", "key" or "secret",
@@ -433,7 +433,7 @@ func reviewRequire(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "review.policy", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"required":     fmt.Sprintf("%d", n),
 			"approvers":    strings.Join(pol.Approvers, ","),

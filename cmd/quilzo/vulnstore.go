@@ -254,7 +254,7 @@ func vulnLoad(root string, args []string) error {
 		detail["components"] = fmt.Sprint(components)
 	}
 	record(root, audit.Record{Action: "vuln.loaded", Resource: "/vuln",
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified, Detail: detail})
 	if err := tallyVulns(root, time.Now().UTC()); err != nil {
 		return err

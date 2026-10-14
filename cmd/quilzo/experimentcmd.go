@@ -82,7 +82,7 @@ func changeExperiments(root string, caller *Caller, change, name string,
 		return err
 	}
 	record(root, audit.Record{Action: "experiment." + change, Resource: "/experiment/" + name,
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified, Detail: map[string]string{"experiment": name}})
 	return nil
 }

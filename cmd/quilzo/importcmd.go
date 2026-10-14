@@ -167,7 +167,7 @@ func cmdImport(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "import", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"source": string(src), "pages": fmt.Sprintf("%d", len(rep.Pages)),
 			"skipped":   fmt.Sprintf("%d", len(rep.Skipped)),
@@ -831,7 +831,7 @@ func importRecords(root string, s *store.Store, rep *importer.Report,
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "import", Resource: "/" + rep.Collection, Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"source": string(rep.Source), "collection": rep.Collection,
 			"records": fmt.Sprintf("%d", len(written)),

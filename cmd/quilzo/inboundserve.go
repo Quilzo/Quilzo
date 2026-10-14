@@ -74,7 +74,7 @@ func detectInServer(root string, sp *spool.Spool) {
 	}
 	if err != nil {
 		record(root, audit.Record{Action: "detect.run", Resource: "/findings", Outcome: audit.Failure,
-			Principal: caller.Name, Kind: caller.Kind, Verified: true,
+			Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: true,
 			Detail: map[string]string{"error": onOneLine(err.Error())}})
 		return
 	}

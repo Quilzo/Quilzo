@@ -91,7 +91,7 @@ func changeRules(root string, caller *Caller, change, name string, edit func(*pe
 		return err
 	}
 	record(root, audit.Record{Action: "personalise." + change, Resource: "/personalise/" + name,
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified, Detail: map[string]string{"rule": name}})
 	return nil
 }

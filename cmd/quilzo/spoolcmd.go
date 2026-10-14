@@ -172,7 +172,7 @@ func anchorSealed(root string, caller *Caller,
 	for _, name := range names {
 		record(root, audit.Record{
 			Action: "spool.sealed", Resource: "/spool/" + name,
-			Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+			Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 			Verified: caller.Kind != audit.KindUnknown,
 			Detail: map[string]string{
 				"segment": name, "sha256": after[name],
@@ -299,7 +299,7 @@ func spoolRetain(root string, args []string) error {
 	}
 	record(root, audit.Record{
 		Action: "spool.retained", Resource: "/spool",
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Kind != audit.KindUnknown,
 		Detail:   detailOfRetention(gone, plan),
 	})
@@ -371,7 +371,7 @@ func spoolHold(root string, args []string) error {
 	}
 	record(root, audit.Record{
 		Action: "spool.held", Resource: "/spool/" + h.Name,
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Kind != audit.KindUnknown,
 		Detail:   map[string]string{"hold": h.Name, "why": h.Why},
 	})
@@ -404,7 +404,7 @@ func spoolLift(root string, args []string) error {
 	}
 	record(root, audit.Record{
 		Action: "spool.lifted", Resource: "/spool/" + pos[0],
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Kind != audit.KindUnknown,
 		Detail:   map[string]string{"hold": pos[0]},
 	})

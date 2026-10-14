@@ -211,7 +211,7 @@ func changeGateway(root, change, name string, edit func(*gateway.Config) error) 
 		return err
 	}
 	record(root, audit.Record{Action: "gateway." + change, Resource: "/gateway/" + name,
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified, Detail: map[string]string{"name": name}})
 	return nil
 }

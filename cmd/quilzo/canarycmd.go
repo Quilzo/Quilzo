@@ -125,7 +125,7 @@ func canaryPlant(root string, args []string) error {
 	// The id and the placement, never the value. See the file comment.
 	record(root, audit.Record{
 		Action: "canary.planted", Resource: "/canary/" + c.ID,
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Kind != audit.KindUnknown,
 		Detail: map[string]string{
 			"canary": c.ID, "kind": string(c.Kind), "where": c.Where,

@@ -350,7 +350,7 @@ func connectSecret(root string, args []string) error {
 	// looks like a credential, which is the belt to this braces.
 	record(root, audit.Record{
 		Action: "connect.secret", Resource: "/connect/" + name,
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Kind != audit.KindUnknown,
 		Detail:   map[string]string{"name": name, "sealed": fmt.Sprint(sealed)},
 	})
@@ -592,7 +592,7 @@ func runConnector(root string, m connector.Manifest, names []string, full,
 		record(root, audit.Record{
 			Action: "connect.run", Resource: "/connect/" + key,
 			Outcome: outcomeOfRun(r.Err), Principal: caller.Name,
-			Kind: caller.Kind, Verified: caller.Kind != audit.KindUnknown,
+			Kind: caller.Kind, Model: caller.Model, Verified: caller.Kind != audit.KindUnknown,
 			Detail: map[string]string{
 				"connector": m.Name, "endpoint": e.Name, "host": m.Host,
 				"records": fmt.Sprint(len(r.Result.Records)),
@@ -791,7 +791,7 @@ func connectAdd(root string, args []string) error {
 	}
 	record(root, audit.Record{
 		Action: "connect.add", Resource: "/connect/" + m.Name,
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Kind != audit.KindUnknown,
 		Detail: map[string]string{"connector": m.Name, "region": chosen,
 			"host": m.Host},

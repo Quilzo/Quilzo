@@ -94,7 +94,7 @@ func fediverseInit(root string) error {
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "fediverse.key", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Verified: caller.Verified,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
 			"algorithm": "RSA", "bits": "2048", "path": path,
 		},

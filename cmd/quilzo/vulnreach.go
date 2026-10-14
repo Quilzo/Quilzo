@@ -158,7 +158,7 @@ func vulnReach(root string, args []string) error {
 	}
 	f := reach.Measure(results)
 	record(root, audit.Record{Action: "vuln.reach", Resource: "/vuln",
-		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified, Detail: map[string]string{
 			"asset": asset.String(), "assessed": fmt.Sprint(f.Total),
 			"not_referenced":      fmt.Sprint(f.Cleared),
