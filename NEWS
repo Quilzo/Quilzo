@@ -9,6 +9,24 @@ Unreleased
 
 ** Added
 
+*** Permissions for working with agents.  Five decisions that were each
+    given to the nearest role, and all but two meant "administrator of
+    everything", are permissions of their own: run-agents, approve,
+    manage-agents, use-models and install-features.  With none granted, each
+    comes with the role it always did.  Each can also be granted alone on
+    part of the store (/@agents for every agent, /@agents/NAME for one), on
+    the People screen or with `quilzo auth grant mo approve --on
+    /@agents/newsletter`; it ends, can be denied, and `auth explain` names
+    it.  Approval follows ownership: an agent's sponsor, and whoever holds
+    approve on the agent or on the page its action would change, decide what
+    it waits for, see those runs on Approvals and open and decide them
+    without the rest of the agents studio.  Naming a sponsor stays an
+    administrator's, and a package that declares agents or webhooks needs
+    managing those agents, or an administrator, besides install-features.
+    A token caps a permission granted alone by its path and limits, so a
+    reader's own token can use what they were granted; identity provider
+    groups named after a permission grant it.
+
 *** Research projects whose every claim can be checked.  `quilzo research`
     keeps a question, a plan registered before the data is analysed (its
     SHA-256 signed with the log's keys; later changes are amendments with a

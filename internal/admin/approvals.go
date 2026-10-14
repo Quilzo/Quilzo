@@ -55,6 +55,26 @@ func batchKey(agentName string, w *agent.Pending) string {
 }
 
 // runApprovals are the questions agent runs are waiting on.
+// runApprovalsFor is what runs wait for that a person may decide: all of
+// it for whoever may approve over every agent, and otherwise what the
+// command line says they may (their agents', or on what they own).
+func (s *Server) runApprovalsFor(p principal, now time.Time) []approvalItem {
+	all := s.runApprovals(now)
+	if s.Policy == nil || s.Policy.Evaluate(p.Name, auth.ActApprove, auth.AreaAgents).Allowed {
+		return all
+	}
+	if s.Agents == nil || s.Agents.MayApprove == nil || s.Agents.RunGet == nil {
+		return nil
+	}
+	var out []approvalItem
+	for _, it := range all {
+		if rec, err := s.Agents.RunGet(it.RunID); err == nil && s.Agents.MayApprove(rec, p.Name) {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
 func (s *Server) runApprovals(now time.Time) []approvalItem {
 	if s.Agents == nil || s.Agents.Runs == nil {
 		return nil
@@ -125,7 +145,7 @@ func (s *Server) runApprovals(now time.Time) []approvalItem {
 func (s *Server) otherApprovals(p principal, now time.Time) []approvalItem {
 	var out []approvalItem
 	admin := s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed
-	if admin && s.Integrations != nil && s.Integrations.Held != nil {
+	if s.Policy.Evaluate(p.Name, auth.ActApprove, "/").Allowed && s.Integrations != nil && s.Integrations.Held != nil {
 		if held, err := s.Integrations.Held(); err == nil {
 			for _, h := range held {
 				if h.For == p.Name {
@@ -211,9 +231,7 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{"Title": "Approvals", "Nav": "approvals", "Principal": p,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e")}
 	var items []approvalItem
-	if s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed {
-		items = append(items, s.runApprovals(now)...)
-	}
+	items = append(items, s.runApprovalsFor(p, now)...)
 	items = append(items, s.otherApprovals(p, now)...)
 	items = append(items, s.featureApprovals(p)...)
 	only := r.URL.Query().Get("commits")
@@ -297,9 +315,6 @@ func (s *Server) handleApprovalsAct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "post", http.StatusMethodNotAllowed)
 		return
 	}
-	if !s.can(w, r, p, auth.ActGrant, "/") {
-		return
-	}
 	back := func(msg string, err error) {
 		v := "m=" + url.QueryEscape(msg)
 		if err != nil {
@@ -323,7 +338,7 @@ func (s *Server) handleApprovalsAct(w http.ResponseWriter, r *http.Request) {
 	}
 	done, failed := 0, 0
 	var why error
-	for _, it := range s.runApprovals(now) {
+	for _, it := range s.runApprovalsFor(p, now) {
 		if it.Batch != key || !wanted[it.RunID+":"+strconv.Itoa(it.Step)] || !agent.Batchable(it.Commits) {
 			continue
 		}

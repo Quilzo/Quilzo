@@ -96,13 +96,13 @@ func a2aHost(root string, c *mcp.Caller) a2a.Host {
 	return a2a.Host{
 		Agents: func() []string { return a2aAgents(root) },
 		Send: func(r *http.Request, name, text string) (a2a.Task, error) {
-			// What running an agent needs anywhere: authoring, and for an
-			// app, a connection given at least that.
+			// What running an agent needs anywhere: run-agents on it, and
+			// for an app, a connection given at least authoring.
 			if err := remoteRefusal(root, caller, auth.RoleAuthor); err != nil {
 				note("SendMessage", name, "", err)
 				return a2a.Task{}, a2a.Errorf(CodeRefused, err.Error())
 			}
-			if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
+			if err := authorise(root, caller, auth.ActRunAgents, auth.AgentResource(name)); err != nil {
 				note("SendMessage", name, "", err)
 				return a2a.Task{}, a2a.Errorf(CodeRefused, err.Error())
 			}

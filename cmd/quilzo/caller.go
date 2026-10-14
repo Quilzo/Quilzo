@@ -214,7 +214,8 @@ func authorise(root string, c *Caller, action auth.Action, resource string) erro
 	if err != nil {
 		return err
 	}
-	if d := p.Evaluate(c.Name, action, resource); !d.Allowed {
+	d := p.Evaluate(c.Name, action, resource)
+	if !d.Allowed {
 		return fmt.Errorf("%s", d.Reason)
 	}
 
@@ -231,7 +232,7 @@ func authorise(root string, c *Caller, action auth.Action, resource string) erro
 	// interface and the content API were each doing a different subset of the
 	// same three and one of the gaps was a privilege escalation. This surface
 	// had them all; being right is not the same as being the only one right.
-	return auth.CheckCredential(c.Role, c.Scope, c.Limits, action, resource)
+	return auth.CheckGranted(d, c.Role, c.Scope, c.Limits, action, resource)
 }
 
 // auditRecord builds a record carrying whatever was actually established.

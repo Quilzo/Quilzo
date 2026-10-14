@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	stdpath "path"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -87,15 +88,24 @@ var commandNeeds = map[string]need{
 	"transfer":   {action: auth.ActView},
 	"compliance": {action: auth.ActView},
 	"agents":     {action: auth.ActView},
-	// Declaring what a model may do is deciding a blast radius, which is an
-	// administrative act rather than an editorial one. Reading the list and
-	// the templates is not, so those step down from it.
-	"agent": {action: auth.ActGrant},
+	// Declaring what a model may do is deciding a blast radius, which is
+	// the manage-agents permission, an administrator's unless it is granted
+	// on its own (auth's permission.go). Reading the list and the templates
+	// is not, so those step down from it.
+	"agent": {action: auth.ActManageAgents},
+	// Deciding what a run waits for, or going on with one that stopped, is
+	// checked by the command against the run's agent: its sponsor, or the
+	// approve permission on it or on what it would change; run-agents to
+	// resume. The table cannot know which agent a run is of.
+	"agent approve": {action: auth.ActView},
+	"agent decline": {action: auth.ActView},
+	"agent answer":  {action: auth.ActView},
+	"agent resume":  {action: auth.ActView},
 	// Authoring an archetype shapes every agent made from it.
 	"agent template save":   {action: auth.ActGrant},
 	"agent template remove": {action: auth.ActGrant},
 	"agent template list":   {action: auth.ActView},
-	"eval":                  {action: auth.ActGrant},
+	"eval":                  {action: auth.ActManageAgents},
 	// Pairing with a peer, and adopting what it sent into the draft. ActGrant
 	// rather than ActEditDraft: adding a peer decides which other store this
 	// one will accept content from, which is a trust decision and outlives
@@ -127,9 +137,9 @@ var commandNeeds = map[string]need{
 	// Offering a company's MCP server to other systems' agents, and
 	// deciding the calls a person approves one by one.
 	"integrations gateway": {action: auth.ActGrant},
-	"integrations held":    {action: auth.ActGrant},
-	"integrations approve": {action: auth.ActGrant},
-	"integrations decline": {action: auth.ActGrant},
+	"integrations held":    {action: auth.ActApprove},
+	"integrations approve": {action: auth.ActApprove},
+	"integrations decline": {action: auth.ActApprove},
 	"integration":          {action: auth.ActView},
 	// Each part of the list is filtered by what the caller may decide; the
 	// list itself needs only that they are somebody here.
@@ -142,7 +152,7 @@ var commandNeeds = map[string]need{
 	// read the store. Author rather than view: a run writes an audit record
 	// attributed to the caller, and an entry somebody could create without
 	// being able to change anything would be a way to write the log.
-	"agent run": {action: auth.ActEditDraft},
+	"agent run": {action: auth.ActRunAgents},
 	// Renewing is its sponsor's or an administrator's; the command checks
 	// which, because the table cannot know who the sponsor is.
 	"agent renew": {action: auth.ActEditDraft},
@@ -153,7 +163,7 @@ var commandNeeds = map[string]need{
 	"agent could":    {action: auth.ActView},
 	// Drafting asks a model, which is spent and recorded under the person,
 	// and saves nothing; declaring saves, as agent new does.
-	"agent draft": {action: auth.ActEditDraft},
+	"agent draft": {action: auth.ActUseModels},
 	// Each memory is checked against whom it is about; seeing your own needs
 	// only that you are somebody here.
 	"memory": {action: auth.ActView},
@@ -188,7 +198,7 @@ var commandNeeds = map[string]need{
 	"records get":         {action: auth.ActView},
 	"records collections": {action: auth.ActView},
 	"import":              {action: auth.ActEditDraft},
-	"assist":              {action: auth.ActEditDraft},
+	"assist":              {action: auth.ActUseModels},
 	"media":               {action: auth.ActEditDraft},
 	"lang":                {action: auth.ActEditDraft},
 	"locales":             {action: auth.ActEditDraft},
@@ -712,7 +722,7 @@ var commandNeeds = map[string]need{
 	// A feature is a set of blocks installed as one decision: types, pages,
 	// agents, webhooks. Installing one is an administrator's act, as each of
 	// those is; reading what is installed or checking a package is not.
-	"feature":         {action: auth.ActGrant},
+	"feature":         {action: auth.ActInstall},
 	"feature example": {action: auth.ActView},
 	"feature check":   {action: auth.ActView},
 	"feature pending": {action: auth.ActView},
@@ -720,7 +730,7 @@ var commandNeeds = map[string]need{
 	"feature show":    {action: auth.ActView},
 	// Drafting asks a model, which costs what an author's drafting costs;
 	// reading a file into a package changes nothing here.
-	"feature draft": {action: auth.ActEditDraft},
+	"feature draft": {action: auth.ActUseModels},
 	"feature from":  {action: auth.ActView},
 	// A research project is drafts and computations in a box: an author's
 	// work. Registering or amending a plan is refused to a model inside the
@@ -1274,6 +1284,9 @@ var commandAreas = map[string]string{
 	// A receipt is records from the log, with their proofs: read where the
 	// log is read.
 	"agent receipt": auth.AreaLog, "apps receipt": auth.AreaLog,
+	// The agents, which a permission on /@agents covers; a command naming one
+	// agent is asked about that agent (commandArea).
+	"agent": auth.AreaAgents, "eval": auth.AreaAgents,
 	"inbox":      auth.AreaInbox,
 	"board list": auth.AreaBoards, "board held": auth.AreaBoards, "board recent": auth.AreaBoards,
 	"board approve": auth.AreaBoards, "board delete": auth.AreaBoards,
@@ -1281,6 +1294,11 @@ var commandAreas = map[string]string{
 
 // commandArea is the area a command works in, if it works in one.
 func commandArea(cmd string, args []string) (string, bool) {
+	// Running one agent is asked about that agent, so a permission granted
+	// on it alone is enough.
+	if cmd == "agent" && len(args) > 1 && args[0] == "run" && reAgentArg.MatchString(args[1]) {
+		return auth.AgentResource(args[1]), true
+	}
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		if a, ok := commandAreas[cmd+" "+args[0]]; ok {
 			return a, true
@@ -1302,6 +1320,9 @@ func lookupNeed(cmd string, args []string) (need, bool) {
 	n, ok := commandNeeds[cmd]
 	return n, ok
 }
+
+// reAgentArg is an agent's name as a command takes it.
+var reAgentArg = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // tokenFromArgs finds --token before the subcommand's own flag parsing runs,
 // because the authorisation decision happens before that.

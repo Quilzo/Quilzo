@@ -139,7 +139,7 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 	for _, who := range byName {
 		seen := map[string]bool{}
 		for _, b := range who.Bindings {
-			label := string(b.Role)
+			label := b.What()
 			if b.Deny {
 				label = "deny " + label
 			}
@@ -189,7 +189,7 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 
 	s.render(w, r, "people.html", map[string]any{
 		"Nav": "people", "Title": "People", "Principal": p, "People": people,
-		"Roles": auth.Roles, "Jobs": auth.Jobs, "ActiveWithin": activeWithin.String(),
+		"Roles": auth.Roles, "Jobs": auth.Jobs, "Permissions": auth.Permissions, "ActiveWithin": activeWithin.String(),
 		"Known": names, "Message": r.URL.Query().Get("m"),
 		"Error": r.URL.Query().Get("e"),
 	})
@@ -234,6 +234,16 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 		Expires:   expires,
 	}
 	bindings := []auth.Binding{base}
+	// A permission, granted alone.
+	if name, isPerm := strings.CutPrefix(string(role), "permission:"); isPerm {
+		perm, ok := auth.PermissionNamed(name)
+		if !ok {
+			s.peopleBack(w, r, "That is not a permission.")
+			return
+		}
+		bindings[0].Role, bindings[0].Permission = "", perm.Action
+		role = auth.Role(perm.Action)
+	}
 	// A job is the bindings it stands for, each on its own area.
 	if name, isJob := strings.CutPrefix(string(role), "job:"); isJob {
 		job, ok := auth.JobNamed(name)
@@ -296,7 +306,7 @@ func (s *Server) handlePeopleRevoke(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	n := s.Policy.Revoke(who, role, on)
+	n := s.Policy.RevokeNamed(who, string(role), on)
 	if n == 0 {
 		s.peopleBack(w, r, "no such binding")
 		return

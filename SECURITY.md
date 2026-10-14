@@ -143,6 +143,11 @@ vulnerability:
   values.json without the check flagging it, a citation is kept for a work no
   index returned, a computation reads the network or a file it was not given,
   or a model registers or amends a plan.
+- **A permission reaches only what it was granted on.** Any way a permission
+  granted on one agent or part of the store decides, runs or changes another,
+  a model approves what an agent waits for, somebody who may manage an agent
+  names its sponsor, or a package installs agents or webhooks for somebody
+  who could not declare them.
 - **A person's desktop is not used.** Any way a run reaches a person's keyboard
   or pointer. Desktop consent hands the session straight back.
 
@@ -214,7 +219,7 @@ a report is most useful when it makes one of those tests fail. Relevant places:
 
 - `internal/tmpl` — the template language and its fuzz target
 - `internal/a11y`, `internal/codescan` — the scanners
-- `internal/auth` — roles, scopes, throttling
+- `internal/auth` — roles, permissions, scopes, throttling
 - `cmd/quilzo/gate_test.go` — every write surface consults the type gate
 - `internal/admin/roles_test.go` — every role can do its own job and no more
 - `internal/agent` — the gate, narrowing, the breaker and receipts
@@ -224,6 +229,7 @@ a report is most useful when it makes one of those tests fail. Relevant places:
 - `cmd/quilzo/mcpgateway_test.go` — the MCP gateway
 - `internal/modelapi`, `cmd/quilzo/modeldoor_test.go`, `internal/admin/modeldoor_test.go` — the model door
 - `internal/research`, `cmd/quilzo/researchcmd_test.go` — research projects, claims and citations
+- `cmd/quilzo/agentpermissions_test.go`, `internal/auth/permission_test.go` — who approves, runs and manages agents
 - `internal/memory`, `internal/pii` — governed memory and the privacy guard
 - `internal/shield/guardrails_test.go` — what a playbook may never do
 - `internal/browser`, `internal/cdp` — the agent's browser and its request rule

@@ -102,6 +102,7 @@ func programLeakMain() {
 func programAgent(t *testing.T) string {
 	t.Helper()
 	root, _ := identityStore(t)
+	letApprove(t, root, "lee")
 	n := agentbox.Native{Exe: os.Args[0], Init: []string{"agentbox-init"}, Shim: []string{"agentbox-shim"}}
 	if a := n.Check(); !a.OK {
 		t.Skip("no box here: " + a.Why)
@@ -385,5 +386,21 @@ func TestAProgramThatReadTheDraftCannotSendItOut(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("the refused connection is not recorded with the breaker's reason")
+	}
+}
+
+// letApprove lets somebody decide what every agent waits for, and nothing
+// else.
+func letApprove(t *testing.T, root, who string) {
+	t.Helper()
+	pol, err := loadPolicy(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pol.Grant(auth.Binding{Principal: who, Permission: auth.ActApprove, Resource: auth.AreaAgents}); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(policyPath(root), pol); err != nil {
+		t.Fatal(err)
 	}
 }

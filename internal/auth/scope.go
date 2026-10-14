@@ -286,3 +286,19 @@ func CheckCredential(role Role, resource string, scope Scope, action Action,
 	}
 	return nil
 }
+
+// CheckGranted is CheckCredential for a decision already made: a grant of a
+// permission on its own (permission.go) is capped by a credential that
+// reaches any role at all, its path and its limits, rather than by the
+// rung the permission follows when nobody granted it. Otherwise a reader
+// given approve on one agent could never use it through their own token,
+// whose role is reader. Everything else is capped as CheckCredential caps.
+func CheckGranted(d Decision, role Role, resource string, scope Scope, action Action, target string) error {
+	if d.Binding != nil && d.Binding.Permission == action && IsPermission(action) {
+		if !role.Valid() {
+			return fmt.Errorf("this credential carries no role, and %s needs one", action)
+		}
+		return CheckCredential(RoleAdmin, resource, scope, action, target)
+	}
+	return CheckCredential(role, resource, scope, action, target)
+}

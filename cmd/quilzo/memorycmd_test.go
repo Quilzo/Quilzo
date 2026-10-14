@@ -67,6 +67,7 @@ func programCallsMain(spec string) {
 func rememberingAgent(t *testing.T, calls string) (string, *Caller, *Caller) {
 	t.Helper()
 	root, _ := identityStore(t) // dana and sam both administer
+	letApprove(t, root, "lee")
 	n := agentbox.Native{Exe: os.Args[0], Init: []string{"agentbox-init"}, Shim: []string{"agentbox-shim"}}
 	if a := n.Check(); !a.OK {
 		t.Skip("no box here: " + a.Why)

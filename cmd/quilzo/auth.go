@@ -162,9 +162,9 @@ func cmdAuth(root string, args []string) error {
 func authUsage() error {
 	fmt.Print(`quilzo auth — who can do what
 
-  grant <principal> <role> [--on /path] [--note "..."]
-  deny <principal> <role> [--on /path] [--note "..."]
-  revoke <principal> <role> [--on /path]
+  grant <principal> <role|permission|job> [--on /path] [--note "..."]
+  deny <principal> <role|permission> [--on /path] [--note "..."]
+  revoke <principal> <role|permission> [--on /path]
   list
   explain <principal> <action> [--on /path]
   roles
@@ -174,6 +174,15 @@ Four roles, in order. Each includes the ones below it:
 `)
 	for _, r := range auth.Roles {
 		fmt.Printf("  %-10s %s\n", r, r.Describe())
+	}
+	fmt.Print(`
+Permissions for working with agents, each also granted on its own. Agents are
+/@agents, one agent /@agents/NAME:
+
+`)
+	for _, pm := range auth.Permissions {
+		need, _ := auth.Needs(pm.Action)
+		fmt.Printf("  %-17s %s (with the %s role already)\n", pm.Action, pm.Summary, need)
 	}
 	fmt.Print(`
 A grant on /blog covers everything under it. A deny wins wherever it sits, so
@@ -193,9 +202,13 @@ func authRoles() error {
 		need, _ := auth.Needs(a)
 		fmt.Printf("  %-14s %s\n", a, need)
 	}
-	fmt.Printf("\n  %sthat is the whole model — there are no custom roles and no\n"+
-		"  permission assembly, because that is how a role surface stops being\n"+
-		"  reviewable%s\n", dim, reset)
+	fmt.Printf("\n%spermissions that can also be granted on their own%s\n", bold, reset)
+	for _, pm := range auth.Permissions {
+		fmt.Printf("  %-17s %s\n", pm.Action, pm.Summary)
+	}
+	fmt.Printf("\n  %sthat is the whole model — four roles, five permissions and the\n"+
+		"  jobs that bundle them, and no custom roles, because that is how a role\n"+
+		"  surface stops being reviewable%s\n", dim, reset)
 	return nil
 }
 
@@ -266,6 +279,9 @@ func authGrant(root string, args []string) error {
 	// A job is the bindings it stands for, each on its own area. See
 	// auth.Jobs: granting one is granting exactly those.
 	bindings := []auth.Binding{{Principal: rest[0], Role: auth.Role(rest[1]), Resource: *on}}
+	if perm, ok := auth.PermissionNamed(rest[1]); ok {
+		bindings[0].Role, bindings[0].Permission = "", perm.Action
+	}
 	if job, ok := auth.JobNamed(rest[1]); ok {
 		if *on != "/" || *deny {
 			return fmt.Errorf("%s is a job, which is its own areas: it takes no --on and cannot be a deny", job.Name)
@@ -404,7 +420,7 @@ func authRevoke(root string, args []string) error {
 			n += p.Revoke(rest[0], jb.Role, jb.Resource)
 		}
 	} else {
-		n = p.Revoke(rest[0], auth.Role(rest[1]), *on)
+		n = p.RevokeNamed(rest[0], rest[1], *on)
 	}
 	if n == 0 {
 		return fmt.Errorf("no binding matched %s %s on %s", rest[0], rest[1], *on)
@@ -467,7 +483,7 @@ func authList(root string) error {
 			by = dim + "unrecorded" + reset
 		}
 		fmt.Printf("  %-18s %-10s %-16s %-14s %s",
-			b.Principal, b.Role, b.Resource, by, mark)
+			b.Principal, b.What(), b.Resource, by, mark)
 		if b.Expires != 0 {
 			if b.Live(time.Now()) {
 				fmt.Printf("  %suntil %s%s", dim, expiryText(b.Expires), reset)
@@ -527,7 +543,7 @@ func authExplain(root string, args []string) error {
 	fmt.Printf("  %s\n", d.Reason)
 	if d.Binding != nil {
 		fmt.Printf("  %sdeciding binding: %s %s on %s%s\n",
-			dim, d.Binding.Principal, d.Binding.Role, d.Binding.Resource, reset)
+			dim, d.Binding.Principal, d.Binding.What(), d.Binding.Resource, reset)
 	}
 	if len(d.Trail) > 0 {
 		fmt.Printf("\n  %sconsidered:%s\n", bold, reset)

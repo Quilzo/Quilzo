@@ -90,9 +90,13 @@ func TestThePrivilegeTableHasNoEntriesForCommandsThatDoNotExist(t *testing.T) {
 // needing grant. Accepting a security risk on the organisation's behalf was
 // one forgotten table row away from being readable by anyone.
 func TestReadOnlySubcommandsAreMoreNarrowThanTheirParents(t *testing.T) {
-	rank := map[auth.Action]int{
-		auth.ActView: 1, auth.ActEditDraft: 2, auth.ActPublish: 3,
-		auth.ActRollback: 3, auth.ActGrant: 4, auth.ActToken: 4,
+	// An action ranks as the role it needs when nothing is granted alone:
+	// a permission is no narrower than the rung it follows.
+	order := map[auth.Role]int{auth.RoleReader: 1, auth.RoleAuthor: 2, auth.RolePublisher: 3, auth.RoleAdmin: 4}
+	rank := map[auth.Action]int{}
+	for _, a := range auth.Actions() {
+		need, _ := auth.Needs(a)
+		rank[a] = order[need]
 	}
 	for key, n := range commandNeeds {
 		base, _, isSub := strings.Cut(key, " ")

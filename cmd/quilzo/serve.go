@@ -362,6 +362,9 @@ func cmdServe(root string, args []string) error {
 		Bundle: func(id string) ([]byte, error) {
 			return bundleHTML(root, id, time.Now().UTC())
 		},
+		MayApprove: func(rec agent.Record, by string) bool {
+			return mayApprove(root, signedIn(by), rec) == nil
+		},
 		Answer: func(id string, step int, approve bool, answers map[string]string, by string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
 			defer cancel()

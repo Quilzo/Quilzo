@@ -221,7 +221,7 @@ func agentCredentialCmd(root string, args []string) error {
 
 // revokeCredential withdraws a credential in force.
 func revokeCredential(root string, caller *Caller, id string) error {
-	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+	if err := authorise(root, caller, auth.ActManageAgents, auth.AreaAgents); err != nil {
 		return err
 	}
 	found := false
@@ -259,7 +259,7 @@ func issueCredential(root string, caller *Caller, args []string) (string, error)
 	if caller.Kind == audit.KindAI {
 		return "", errors.New("a credential is issued by a person: a model that could issue one could give itself a way in")
 	}
-	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+	if err := manageAgent(root, caller, name); err != nil {
 		return "", fmt.Errorf("issuing a credential is an administrator's: %w", err)
 	}
 	set, err := loadAgents(root)

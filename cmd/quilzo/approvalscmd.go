@@ -36,45 +36,49 @@ type waitingItem struct {
 func waitingFor(root string, c *Caller, now time.Time) ([]waitingItem, error) {
 	var out []waitingItem
 	admin := authorise(root, c, auth.ActGrant, "/") == nil
-	if admin {
-		runs, err := listAgentRuns(root, "", 0)
-		if err != nil {
-			return nil, err
+	// A run's question is listed for whoever may decide it, which is its
+	// sponsor and whoever holds approve on it, not only administrators.
+	runs, err := listAgentRuns(root, "", 0)
+	if err != nil {
+		return nil, err
+	}
+	declared, _ := loadAgents(root)
+	for _, rec := range runs {
+		w := rec.Trace.Waiting
+		if w == nil || rec.Eval != "" || now.Sub(w.Since) > agent.PendingTTL || mayApprove(root, c, rec) != nil {
+			continue
 		}
-		declared, _ := loadAgents(root)
-		for _, rec := range runs {
-			w := rec.Trace.Waiting
-			if w == nil || rec.Eval != "" || now.Sub(w.Since) > agent.PendingTTL {
-				continue
-			}
-			if w.Live && (rec.State != agent.Running || now.Sub(rec.Beat) > agent.StaleAfter) {
-				continue
-			}
-			writes := false
-			if declared != nil {
-				if m, ok := declared.Agents[rec.Agent]; ok {
-					for _, t := range m.Tools {
-						writes = writes || (t.Name == w.Action.Tool && t.Writes)
-					}
+		if w.Live && (rec.State != agent.Running || now.Sub(rec.Beat) > agent.StaleAfter) {
+			continue
+		}
+		writes := false
+		if declared != nil {
+			if m, ok := declared.Agents[rec.Agent]; ok {
+				for _, t := range m.Tools {
+					writes = writes || (t.Name == w.Action.Tool && t.Writes)
 				}
 			}
-			what := w.Action.Op
-			if what == "" {
-				what = w.Action.Tool
-			}
-			it := waitingItem{Source: "run", Agent: rec.Agent, What: what, Why: w.Why, Since: w.Since,
-				Commits: agent.CommitOf(w.Action, w.Why, w.Kind, writes),
-				Decide:  fmt.Sprintf("quilzo agent approve %s %d", rec.ID, w.N)}
-			if w.Kind == agent.WaitQuestion {
-				var names []string
-				for _, q := range w.Questions {
-					names = append(names, q.Name+"=…")
-				}
-				it.What = "answer " + strings.Join(names, " ")
-				it.Decide = fmt.Sprintf("quilzo agent answer %s %d %s", rec.ID, w.N, strings.Join(names, " "))
-			}
-			out = append(out, it)
 		}
+		what := w.Action.Op
+		if what == "" {
+			what = w.Action.Tool
+		}
+		it := waitingItem{Source: "run", Agent: rec.Agent, What: what, Why: w.Why, Since: w.Since,
+			Commits: agent.CommitOf(w.Action, w.Why, w.Kind, writes),
+			Decide:  fmt.Sprintf("quilzo agent approve %s %d", rec.ID, w.N)}
+		if w.Kind == agent.WaitQuestion {
+			var names []string
+			for _, q := range w.Questions {
+				names = append(names, q.Name+"=…")
+			}
+			it.What = "answer " + strings.Join(names, " ")
+			it.Decide = fmt.Sprintf("quilzo agent answer %s %d %s", rec.ID, w.N, strings.Join(names, " "))
+		}
+		out = append(out, it)
+	}
+	// A held tool call through the gateway is decided by whoever holds
+	// approve over the store, a feature by whoever may install one.
+	if authorise(root, c, auth.ActApprove, "/") == nil {
 		held, err := heldCalls(root, now)
 		if err != nil {
 			return nil, err
@@ -87,6 +91,8 @@ func waitingFor(root string, c *Caller, now time.Time) ([]waitingItem, error) {
 				Why: "for " + h.Principal + ", held until a second person decides", Commits: "acts",
 				Since: h.Asked, Decide: "quilzo integrations approve " + h.ID})
 		}
+	}
+	if authorise(root, c, auth.ActInstall, "/") == nil {
 		if pend, err := pendingFeatures(root); err == nil {
 			for _, p := range pend {
 				if strings.EqualFold(p.RequestedBy, c.Name) {
@@ -101,6 +107,8 @@ func waitingFor(root string, c *Caller, now time.Time) ([]waitingItem, error) {
 					Commits: "installs", Since: p.At, Decide: "quilzo feature approve " + p.ID})
 			}
 		}
+	}
+	if admin {
 		if list, err := listIncidents(root); err == nil {
 			for _, inc := range list {
 				for _, a := range inc.Acts {

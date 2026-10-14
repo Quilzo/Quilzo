@@ -301,6 +301,7 @@ Help link opens its own.
 | Feature | What it does | How |
 |---|---|---|
 | **Roles, jobs, areas** | Reader, author, publisher and admin on any subtree; analyst, compliance, support and auditor jobs that must end; denies that win. | `quilzo auth grant\|deny\|explain` |
+| **Permissions for agents** | Run, approve, manage agents, use models and install features, each also granted alone on one agent or part of the store; an agent's sponsor and the owner of what it changes approve its actions, not only administrators. | `quilzo auth grant mo approve --on /@agents/NAME`; People and Approvals screens |
 | **Single sign-on** | OIDC (Google Workspace, Microsoft Entra, any issuer) and SAML (presets for Okta, Entra, Google, JumpCloud, OneLogin, PingOne, AD FS and Keycloak), which can be required, with named break-glass accounts. | `quilzo oidc configure`, `quilzo saml add`; Single sign-on screen |
 | **Provisioning** | SCIM from Okta, Entra and others, with their groups mapped to roles and jobs; deactivation suspends a person at once, and deletion erases what agents remember about them. | `quilzo scim`; Provisioning screen |
 | **Passkeys and sessions** | Passkeys, idle and absolute session limits, tokens that expire or are exchanged for short sessions, a break-glass when every admin token is lost. | Passkeys screen; `quilzo token issue\|exchange`, `auth recover` |

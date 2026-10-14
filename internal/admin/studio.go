@@ -233,11 +233,30 @@ func (s *Server) studioAllowed(w http.ResponseWriter, r *http.Request) (principa
 	if !ok {
 		return p, false
 	}
-	if !s.can(w, r, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActManageAgents, auth.AreaAgents) {
 		return p, false
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	return p, true
+}
+
+// runAllowed opens one run to whoever manages agents and to whoever may
+// decide what it waits for, who has to see it to decide.
+func (s *Server) runAllowed(w http.ResponseWriter, r *http.Request, id string) (principal, bool) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return p, false
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	if s.Policy == nil || s.Policy.Evaluate(p.Name, auth.ActManageAgents, auth.AreaAgents).Allowed {
+		return p, true
+	}
+	if s.Agents != nil && s.Agents.RunGet != nil && s.Agents.MayApprove != nil && agent.ValidRecordID(id) {
+		if rec, err := s.Agents.RunGet(id); err == nil && s.Agents.MayApprove(rec, p.Name) {
+			return p, true
+		}
+	}
+	return p, s.can(w, r, p, auth.ActManageAgents, auth.AreaAgents)
 }
 
 // editData fills the builder page for one manifest, saved or not.
@@ -488,7 +507,15 @@ func (s *Server) handleAgentsAct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "use the form", http.StatusMethodNotAllowed)
 		return
 	}
-	p, ok := s.studioAllowed(w, r)
+	// Deciding what a run waits for is open to whoever may decide it; the
+	// rest of the studio to whoever manages agents.
+	var p principal
+	var ok bool
+	if r.FormValue("do") == "answer" {
+		p, ok = s.runAllowed(w, r, r.FormValue("run"))
+	} else {
+		p, ok = s.studioAllowed(w, r)
+	}
 	if !ok {
 		return
 	}
@@ -742,10 +769,10 @@ func (s *Server) handleAgentRuns(w http.ResponseWriter, r *http.Request) {
 
 // handleAgentFrame is a picture a run's browser kept: /agents/frame/ID/N.
 func (s *Server) handleAgentFrame(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.studioAllowed(w, r); !ok {
+	id, num, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/agents/frame/"), "/")
+	if _, ok := s.runAllowed(w, r, id); !ok {
 		return
 	}
-	id, num, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/agents/frame/"), "/")
 	n, err := strconv.Atoi(num)
 	if num == "live" {
 		n, err = 0, nil
@@ -772,10 +799,10 @@ func (s *Server) handleAgentFrame(w http.ResponseWriter, r *http.Request) {
 // /agents/output/ID/N. Plain text, never interpreted, kept by nothing on
 // the way.
 func (s *Server) handleAgentOutput(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.studioAllowed(w, r); !ok {
+	id, num, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/agents/output/"), "/")
+	if _, ok := s.runAllowed(w, r, id); !ok {
 		return
 	}
-	id, num, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/agents/output/"), "/")
 	n, err := strconv.Atoi(num)
 	if s.Agents == nil || s.Agents.Output == nil || !agent.ValidRecordID(id) || err != nil || n < 1 {
 		http.NotFound(w, r)
@@ -793,11 +820,11 @@ func (s *Server) handleAgentOutput(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.studioAllowed(w, r)
+	id := strings.TrimPrefix(r.URL.Path, "/agents/run/")
+	p, ok := s.runAllowed(w, r, id)
 	if !ok {
 		return
 	}
-	id := strings.TrimPrefix(r.URL.Path, "/agents/run/")
 	if s.Agents == nil || s.Agents.RunGet == nil || !agent.ValidRecordID(id) {
 		http.NotFound(w, r)
 		return

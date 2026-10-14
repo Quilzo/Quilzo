@@ -406,10 +406,10 @@ func cmdEval(root string, args []string) error {
 	}
 	caller := resolveCaller(root, flagToken)
 	// Changing a test set or running one is changing how an agent is
-	// judged, which is the studio's: administrators.
+	// judged, which is for whoever manages agents.
 	admin := func() error {
-		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
-			return fmt.Errorf("evaluations are kept by an administrator: %w", err)
+		if err := authorise(root, caller, auth.ActManageAgents, auth.AreaAgents); err != nil {
+			return fmt.Errorf("evaluations are kept by whoever manages agents: %w", err)
 		}
 		return nil
 	}

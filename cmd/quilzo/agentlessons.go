@@ -18,7 +18,6 @@ import (
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
-	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/lessons"
 )
@@ -226,8 +225,8 @@ func reflectOnRun(ctx context.Context, root, runID string, caller *Caller) (less
 	if err != nil {
 		return l, err
 	}
-	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
-		return l, fmt.Errorf("writing an agent's lessons is an administrator's: %w", err)
+	if err := manageAgent(root, caller, rec.Agent); err != nil {
+		return l, fmt.Errorf("writing an agent's lessons takes managing it: %w", err)
 	}
 	why := lessons.WentWrong(rec.Trace)
 	if why == "" {
@@ -289,8 +288,8 @@ func tryLesson(root, name, id string, k int, caller *Caller) (lessons.Trial, err
 	if caller.Kind == audit.KindAI {
 		return t, errors.New("a lesson is tried by a person")
 	}
-	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
-		return t, fmt.Errorf("trying a lesson runs the evaluations twice, which is an administrator's: %w", err)
+	if err := manageAgent(root, caller, name); err != nil {
+		return t, fmt.Errorf("trying a lesson runs the agent's evaluations twice, which takes managing it: %w", err)
 	}
 	all, err := loadLessons(root, name)
 	if err != nil {
@@ -337,8 +336,8 @@ func adoptLesson(root, name, id string, taintedOK bool, caller *Caller) (lessons
 	if caller.Kind == audit.KindAI {
 		return l, errors.New("a lesson is adopted by a person. A model may write one; it may not adopt one")
 	}
-	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
-		return l, fmt.Errorf("adopting a lesson is an administrator's: %w", err)
+	if err := manageAgent(root, caller, name); err != nil {
+		return l, fmt.Errorf("adopting a lesson takes managing the agent: %w", err)
 	}
 	err := changeLessons(root, name, func(all []lessons.Lesson) ([]lessons.Lesson, error) {
 		i, err := findLesson(all, id)
@@ -375,8 +374,8 @@ func retireLesson(root, name, id, why string, caller *Caller) error {
 	if caller.Kind == audit.KindAI {
 		return errors.New("a lesson is retired by a person")
 	}
-	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
-		return fmt.Errorf("retiring a lesson is an administrator's: %w", err)
+	if err := manageAgent(root, caller, name); err != nil {
+		return fmt.Errorf("retiring a lesson takes managing the agent: %w", err)
 	}
 	if strings.TrimSpace(why) == "" {
 		return errors.New("say why it is retired with --why")

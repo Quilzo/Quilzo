@@ -406,8 +406,8 @@ func readRows(path string) (*feature.Rows, error) {
 
 // installFeatureFile installs a package file for a person.
 func installFeatureFile(root, path, keys, rowsPath string, caller *Caller) error {
-	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
-		return fmt.Errorf("features are installed and changed by administrators: %w", err)
+	if err := authorise(root, caller, auth.ActInstall, "/"); err != nil {
+		return fmt.Errorf("features are installed and changed by whoever may install them: %w", err)
 	}
 	if caller.Kind == audit.KindAI {
 		return errors.New("a feature is installed by a person. A model may draft a package; it may not install one")
@@ -442,6 +442,9 @@ type featureOutcome struct {
 // calls it too, and a secret printed here would land in the server's log.
 func requestFeature(root string, p *feature.Package, body []byte, caller *Caller, rollback bool, rows *feature.Rows) (featureOutcome, error) {
 	var out featureOutcome
+	if err := featureNeeds(root, caller, p); err != nil {
+		return out, err
+	}
 	if rows != nil {
 		if err := p.CheckRows(rows.Collection, rows.Records); err != nil {
 			return out, err
@@ -562,8 +565,8 @@ func featureDecide(root string, args []string, approve bool) error {
 
 // decideFeature approves or declines a waiting install.
 func decideFeature(root, id string, approve bool, caller *Caller) error {
-	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
-		return fmt.Errorf("features are installed and changed by administrators: %w", err)
+	if err := authorise(root, caller, auth.ActInstall, "/"); err != nil {
+		return fmt.Errorf("features are installed and changed by whoever may install them: %w", err)
 	}
 	verb := "approve"
 	if !approve {
@@ -650,7 +653,28 @@ var reFeatureID = regexp.MustCompile(`^[0-9a-f]{12}$`)
 
 // applyFeature performs a plan. Everything is checked before anything is
 // written; the writes then go in dependency order, removals last.
+// featureNeeds is what a package asks of whoever installs it beyond
+// installing features: a package that declares agents is managing them, and
+// one that sends to another system is an administrator's, as declaring
+// either on its own would be.
+func featureNeeds(root string, caller *Caller, p *feature.Package) error {
+	for _, m := range p.Agents {
+		if err := manageAgent(root, caller, m.Name); err != nil {
+			return fmt.Errorf("%s declares the agent %s, and that takes managing it: %w", p.Name, m.Name, err)
+		}
+	}
+	if len(p.Webhooks) > 0 {
+		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+			return fmt.Errorf("%s sends to other systems, which is an administrator's decision: %w", p.Name, err)
+		}
+	}
+	return nil
+}
+
 func applyFeature(root string, p *feature.Package, digest string, plan feature.Plan, caller *Caller, by []string) ([]string, error) {
+	if err := featureNeeds(root, caller, p); err != nil {
+		return nil, err
+	}
 	act := map[feature.Ref]string{}
 	for _, s := range plan.Steps {
 		act[s.Ref] = s.Action
@@ -1079,8 +1103,8 @@ func featureRemove(root string, args []string) error {
 }
 
 func removeFeature(root, name string, caller *Caller) error {
-	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
-		return fmt.Errorf("features are installed and changed by administrators: %w", err)
+	if err := authorise(root, caller, auth.ActInstall, "/"); err != nil {
+		return fmt.Errorf("features are installed and changed by whoever may install them: %w", err)
 	}
 	if caller.Kind == audit.KindAI {
 		return errors.New("a feature is removed by a person")
@@ -1123,8 +1147,8 @@ func featureRollback(root string, args []string) error {
 }
 
 func rollbackFeature(root, name string, caller *Caller) (*feature.Package, featureOutcome, error) {
-	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
-		return nil, featureOutcome{}, fmt.Errorf("features are installed and changed by administrators: %w", err)
+	if err := authorise(root, caller, auth.ActInstall, "/"); err != nil {
+		return nil, featureOutcome{}, fmt.Errorf("features are installed and changed by whoever may install them: %w", err)
 	}
 	if caller.Kind == audit.KindAI {
 		return nil, featureOutcome{}, errors.New("a feature is rolled back by a person")
@@ -1389,7 +1413,7 @@ func featureHooks(root string, signedIn func(string) *Caller) *admin.FeatureHook
 		},
 		Install: func(body []byte, rowsID, by string) (string, []string, error) {
 			caller := signedIn(by)
-			if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+			if err := authorise(root, caller, auth.ActInstall, "/"); err != nil {
 				return "", nil, err
 			}
 			p, body, err := readFeatureBytes(root, body, "")

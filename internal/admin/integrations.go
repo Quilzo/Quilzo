@@ -363,8 +363,16 @@ func (s *Server) handleExtensionSave(w http.ResponseWriter, r *http.Request) {
 // handleGatewayHeld approves or declines a call through the gateway that
 // a person approves call by call.
 func (s *Server) handleGatewayHeld(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.integrationWriter(w, r)
-	if !ok {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	p, ok := s.requireAuth(w, r)
+	if !ok || !s.can(w, r, p, auth.ActApprove, "/") {
+		return
+	}
+	if s.Integrations == nil {
+		s.unwired(w, r, p, "Integrations", "webhooks, extensions and log forwarding")
 		return
 	}
 	if s.Integrations.Decide == nil {
