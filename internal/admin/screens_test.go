@@ -210,6 +210,8 @@ var notAScreen = map[string]string{
 	"/.well-known/agent-credentials.json":       "is a JSON Web Key Set for programs checking agent credentials, 404 until the interface is set",
 	"/oauth/token":                              "is posted to by an app's program, never opened",
 	"/token/exchange":                           "is posted to by a program or a CI job exchanging a token, never opened",
+	"/features/check":                           "is posted to by a pull request's CI with a package, never opened",
+	"/features/install":                         "is posted to by the CI that runs on merge, never opened",
 	"/oauth/revoke":                             "is posted to by an app's program, never opened",
 	"/apps/receipt": "is a file to keep, the receipt of one connection's calls, " +
 		"linked from Connected apps beside each connection; with no id it " +

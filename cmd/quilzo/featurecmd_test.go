@@ -6,14 +6,17 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/schema"
 )
@@ -328,5 +331,53 @@ func TestAFeaturesAgentsArriveInTheOrderTheyDependOn(t *testing.T) {
 	types, _ := schema.Load(other)
 	if _, ok := types.Registry.Get("sample"); ok {
 		t.Error("the refused feature's type was written")
+	}
+}
+
+// A program, such as a CI job, checks a package with any token that may
+// read, and installs it only with a token that may install and is short or
+// bound to a key; a package that needs two people waits for a person, with
+// the job as the one who asked.
+func TestAProgramChecksAndInstallsAFeatureUnderTheSameRules(t *testing.T) {
+	root := featureSite(t)
+	if err := cmdAuth(root, []string{"grant", "ci:docs", "author"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdAuth(root, []string{"grant", "ci:docs", "install-features"}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	token := func(who string, role auth.Role, life time.Duration) auth.Token {
+		return auth.Token{Principal: who, Role: role, Resource: "/", CreatedAt: now.Unix(), ExpiresAt: now.Add(life).Unix()}
+	}
+	prog := featureProgram(root)
+	plain, _ := os.ReadFile(writePackage(t, withoutAddress))
+	personal, _ := os.ReadFile(writePackage(t, func(p *feature.Package) { p.Version = "1.1.0" }))
+
+	reader := token("rae", auth.RoleReader, time.Hour)
+	if _, card, plan, err := prog.Check(plain, reader); err != nil || card.Name != "lab-samples" || len(plan.Steps) == 0 {
+		t.Fatalf("a reader could not check: %v", err)
+	}
+	if _, _, err := prog.Install(plain, reader); !errors.Is(err, admin.ErrForbidden) {
+		t.Errorf("a reader installed: %v", err)
+	}
+	week := token("dana", auth.RoleAdmin, 7*24*time.Hour)
+	if _, _, err := prog.Install(plain, week); !errors.Is(err, admin.ErrForbidden) || !strings.Contains(err.Error(), "DPoP") {
+		t.Errorf("a week-long bearer token installed from another machine: %v", err)
+	}
+	job := token("ci:docs", auth.RoleAuthor, 15*time.Minute)
+	if waiting, _, err := prog.Install(plain, job); err != nil || waiting != "" {
+		t.Fatalf("the job could not install a plain feature: %q %v", waiting, err)
+	}
+	if owns(t, root, "lab-samples") == nil {
+		t.Fatal("not installed")
+	}
+	waiting, _, err := prog.Install(personal, job)
+	if err != nil || waiting == "" {
+		t.Fatalf("a feature holding personal data did not wait: %q %v", waiting, err)
+	}
+	pend, _ := pendingFeatures(root)
+	if len(pend) != 1 || pend[0].RequestedBy != "ci:docs" {
+		t.Errorf("%+v", pend)
 	}
 }
