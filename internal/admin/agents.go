@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
-	"github.com/quilzo/quilzo/internal/lessons"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/lessons"
 )
 
 // The agents screen: what a model in this store is allowed to do.

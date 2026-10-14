@@ -1041,8 +1041,8 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		out.Lessons = playbookIDs
 		decide, forgetBatch = agentmodel.Decider{
 			Playbook: playbook,
-			Model:   model,
-			Session: sess,
+			Model:    model,
+			Session:  sess,
 			// The dialect the manifest names, when the model was taught to
 			// answer in its maker's computer-use words: translated onto the
 			// same closed vocabulary before anything else happens to it.
