@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,8 @@ import (
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // waitingRunWithPolicy is a run waiting for a person, in a store where dana
@@ -146,5 +149,47 @@ func TestRunningIsAskedAboutTheAgent(t *testing.T) {
 	}
 	if n, _ := lookupNeed("assist", nil); n.action != auth.ActUseModels {
 		t.Errorf("assist needs %s", n.action)
+	}
+}
+
+// Records are asked about their collection: on the command line, and for
+// an agent or an app through the agent interface.
+func TestRecordsAreAskedAboutTheirCollection(t *testing.T) {
+	root, pol := identityStore(t)
+	pol.Grant(auth.Binding{Principal: "tech", Role: auth.RoleAuthor, Resource: auth.DataResource("samples")})
+	saveJSON(policyPath(root), pol)
+	for _, c := range []string{"samples", "payroll"} {
+		if _, err := putCheckedRecords(root, c, []map[string]any{{"name": c}}, asAdmin("dana")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, ok := commandArea("records", []string{"list", "samples"}); !ok || got != "/@data/samples" {
+		t.Errorf("%q %v", got, ok)
+	}
+	if got, _ := commandArea("records", []string{"collections"}); got != auth.AreaData {
+		t.Errorf("%q", got)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tech := &Caller{Name: "tech", Role: auth.RoleAuthor, Kind: audit.KindHuman, Verified: true}
+	srv := buildMCP(root, s, tech, "templates")
+	call := func(tool, op string, args map[string]any) string {
+		params, _ := json.Marshal(map[string]any{"name": tool, "arguments": map[string]any{"operation": op, "arguments": args}})
+		b, _ := json.Marshal(srv.Handle(mcp.Request{JSONRPC: "2.0", ID: json.RawMessage("1"), Method: "tools/call", Params: params}))
+		return string(b)
+	}
+	if got := call("quilzo_read", "list_collections", map[string]any{}); !strings.Contains(got, "samples") || strings.Contains(got, "payroll") {
+		t.Errorf("tech was listed %s", got)
+	}
+	if got := call("quilzo_read", "list_records", map[string]any{"collection": "payroll"}); !strings.Contains(got, "no binding gives tech") {
+		t.Errorf("tech read payroll: %s", got)
+	}
+	if got := call("quilzo_write", "write_record", map[string]any{"collection": "payroll", "fields": map[string]any{"name": "x"}}); !strings.Contains(got, "no binding gives tech") {
+		t.Errorf("tech wrote payroll: %s", got)
+	}
+	if got := call("quilzo_write", "write_record", map[string]any{"collection": "samples", "fields": map[string]any{"name": "x"}}); strings.Contains(got, "no binding") || strings.Contains(got, `"error"`) {
+		t.Errorf("tech could not write samples: %s", got)
 	}
 }

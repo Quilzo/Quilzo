@@ -120,6 +120,9 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			return fmt.Errorf("the machine interface is turned off until about %s: %s",
 				p.Until.UTC().Format("15:04 UTC"), p.Reason)
 		}
+		if op.Area != "" {
+			return authoriseUnder(root, caller, action, op.Area)
+		}
 		return authorise(root, caller, action, "/")
 	}
 

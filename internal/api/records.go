@@ -57,9 +57,8 @@ func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, Error{Error: "GET only"})
 		return
 	}
-	if err := s.may(r, auth.ActView, "/"); err != nil {
-		writeError(w, http.StatusForbidden, Error{Error: "not permitted",
-			Detail: err.Error()})
+	if tokenFrom(r) == nil {
+		writeError(w, http.StatusForbidden, Error{Error: "not permitted", Detail: "not authenticated"})
 		return
 	}
 	tree, err := s.Records.Tree()
@@ -84,6 +83,11 @@ func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
 		// A token scoped to particular types does not see the others, for the
 		// same reason it does not see their pages.
 		if tok != nil && !tok.Scope.AllowsType(n) {
+			continue
+		}
+		// Only the collections this caller may read, each asked about
+		// itself (auth.DataResource).
+		if s.may(r, auth.ActView, auth.DataResource(n)) != nil {
 			continue
 		}
 		c, _ := collection.Count(s.Store, tree, n)
@@ -134,7 +138,7 @@ func (s *Server) records(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listRecords(w http.ResponseWriter, r *http.Request, name string) {
-	if err := s.may(r, auth.ActView, "/"+name); err != nil {
+	if err := s.may(r, auth.ActView, auth.DataResource(name)); err != nil {
 		writeError(w, http.StatusForbidden, Error{Error: "not permitted",
 			Detail: err.Error()})
 		return
@@ -208,7 +212,7 @@ func (s *Server) listRecords(w http.ResponseWriter, r *http.Request, name string
 }
 
 func (s *Server) getRecord(w http.ResponseWriter, r *http.Request, name, id string) {
-	if err := s.may(r, auth.ActView, "/"+name); err != nil {
+	if err := s.may(r, auth.ActView, auth.DataResource(name)); err != nil {
 		writeError(w, http.StatusForbidden, Error{Error: "not permitted",
 			Detail: err.Error()})
 		return
@@ -246,7 +250,7 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 		})
 		return
 	}
-	if err := s.may(r, auth.ActEditDraft, "/"+name); err != nil {
+	if err := s.may(r, auth.ActEditDraft, auth.DataResource(name)); err != nil {
 		writeError(w, http.StatusForbidden, Error{Error: "not permitted",
 			Detail: err.Error()})
 		return
@@ -366,7 +370,7 @@ func (s *Server) deleteRecord(w http.ResponseWriter, r *http.Request, name, id s
 			Error: "this API is read-only"})
 		return
 	}
-	if err := s.may(r, auth.ActEditDraft, "/"+name); err != nil {
+	if err := s.may(r, auth.ActEditDraft, auth.DataResource(name)); err != nil {
 		writeError(w, http.StatusForbidden, Error{Error: "not permitted",
 			Detail: err.Error()})
 		return

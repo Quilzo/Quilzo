@@ -243,7 +243,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	// -- records ------------------------------------------------------------
 
 	srv.Register(mcp.Operation{
-		Name: "list_collections", NeedsRole: "reader",
+		Name: "list_collections", NeedsRole: "reader", Area: auth.AreaData,
 		Summary:  "the record collections in this store and how many each holds",
 		Keywords: []string{"records", "collections", "data", "rows", "list"},
 	}, func(map[string]any) (any, error) {
@@ -258,16 +258,24 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		if len(names) == 0 {
 			return "no collections; records are created by writing one", nil
 		}
+		// Only the collections this caller may read: one they may not is
+		// not named, as a page out of reach is not.
 		var b strings.Builder
 		for _, n := range names {
+			if authorise(root, caller, auth.ActView, auth.DataResource(n)) != nil {
+				continue
+			}
 			count, _ := collection.Count(s, tree, n)
 			fmt.Fprintf(&b, "%s %d\n", n, count)
+		}
+		if b.Len() == 0 {
+			return "no collections you may read", nil
 		}
 		return strings.TrimSpace(b.String()), nil
 	})
 
 	srv.Register(mcp.Operation{
-		Name: "list_records", NeedsRole: "reader",
+		Name: "list_records", NeedsRole: "reader", Area: auth.AreaData,
 		Summary: "read records from a collection, filtered",
 		Detail: "This is a scan with a filter, not an index. It is fine for the " +
 			"collections one node holds and it is not a query planner, so do " +
@@ -281,6 +289,9 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		Keywords: []string{"records", "query", "search", "rows", "find", "data"},
 	}, func(a map[string]any) (any, error) {
 		name, _ := a["collection"].(string)
+		if err := authorise(root, caller, auth.ActView, auth.DataResource(name)); err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
 		tree, err := draftTree(s)
 		if err != nil {
 			return nil, err
@@ -313,13 +324,13 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"fields":     "object of field names to values",
 			"id":         "optional; omit to create a new record",
 		},
-		Writes: true, NeedsRole: "author",
+		Writes: true, NeedsRole: "author", Area: auth.AreaData,
 		Keywords: []string{"record", "write", "create", "update", "data", "row"},
 	}, func(a map[string]any) (any, error) {
-		if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
+		name, _ := a["collection"].(string)
+		if err := authorise(root, caller, auth.ActEditDraft, auth.DataResource(name)); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
-		name, _ := a["collection"].(string)
 		fields, _ := a["fields"].(map[string]any)
 		if len(fields) == 0 {
 			return nil, &mcp.Refusal{Reason: "no fields given; nothing to write"}

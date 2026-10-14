@@ -753,6 +753,16 @@ func (s *Server) can(w http.ResponseWriter, r *http.Request, p principal,
 	return false
 }
 
+// allows is can without an answer written: whether a person, through this
+// session, may act on a resource, for deciding what a screen shows.
+func (s *Server) allows(p principal, act auth.Action, resource string) bool {
+	if s.Policy == nil {
+		return true
+	}
+	d := s.Policy.Evaluate(p.Name, act, resource)
+	return d.Allowed && auth.CheckGranted(d, p.Role, p.Scope, p.Limits, act, resource) == nil
+}
+
 // Asking the authorisation question about the page, and not about the site.
 //
 // # What was wrong

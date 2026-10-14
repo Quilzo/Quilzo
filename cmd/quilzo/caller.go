@@ -253,6 +253,21 @@ func (c *Caller) auditRecord(action, resource string, outcome audit.Outcome,
 	}
 }
 
+// authoriseUnder is authorise for anywhere inside an area: whether the
+// caller may act on the area or on something in it. What it is used for
+// checks the one resource it then touches.
+func authoriseUnder(root string, c *Caller, action auth.Action, area string) error {
+	err := authorise(root, c, action, area)
+	if err == nil {
+		return nil
+	}
+	p, perr := loadPolicy(root)
+	if perr == nil && c.Verified && p.AnywhereUnder(c.Name, action, area) {
+		return nil
+	}
+	return err
+}
+
 // conflictError turns a compare-and-swap refusal into something a person can
 // act on, and leaves anything else alone.
 //

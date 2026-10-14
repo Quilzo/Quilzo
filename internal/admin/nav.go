@@ -282,14 +282,7 @@ type navItem struct {
 // and which screen they are on. All three are per-request, and none of them is
 // cached — the alternative is a cache whose staleness is a permission.
 func (s *Server) navigation(r *http.Request, p principal, current string) []navGroup {
-	allowed := make([]destination, 0, len(destinations))
-	for _, d := range destinations {
-		if s.Policy != nil && !s.Policy.Evaluate(p.Name, d.Needs, d.resource()).Allowed {
-			continue
-		}
-		allowed = append(allowed, d)
-	}
-	ordered := applyOrder(allowed, storedOrder(r))
+	ordered := applyOrder(visibleTo(s, p), storedOrder(r))
 
 	byGroup := map[string][]navItem{}
 	hasCurrent := map[string]bool{}
@@ -493,6 +486,7 @@ var screenAreas = map[string]string{
 	"automations": auth.AreaSecurity, "signins": auth.AreaSecurity, "feeds": auth.AreaSecurity,
 	"shield":   auth.AreaSecurity,
 	"agents":   auth.AreaAgents,
+	"records":  auth.AreaData,
 	"security": auth.AreaCompliance, "logs": auth.AreaLog,
 	"inbox": auth.AreaInbox, "boards": auth.AreaBoards,
 }
@@ -505,11 +499,16 @@ func (d destination) resource() string {
 	return "/"
 }
 
+// underAnywhere are the screens that show part of their area to somebody
+// granted that part: Data, to somebody who may read one collection.
+var underAnywhere = map[string]bool{"records": true}
+
 // visibleTo is the destinations a principal may use.
 func visibleTo(s *Server, p principal) []destination {
 	out := make([]destination, 0, len(destinations))
 	for _, d := range destinations {
-		if s.Policy != nil && !s.Policy.Evaluate(p.Name, d.Needs, d.resource()).Allowed {
+		if s.Policy != nil && !s.Policy.Evaluate(p.Name, d.Needs, d.resource()).Allowed &&
+			!(underAnywhere[d.Key] && s.Policy.AnywhereUnder(p.Name, d.Needs, d.resource())) {
 			continue
 		}
 		out = append(out, d)

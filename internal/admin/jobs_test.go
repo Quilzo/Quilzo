@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collection"
 )
 
 // asJob signs in as somebody holding one job and nothing else.
@@ -211,5 +212,41 @@ func TestAPermissionWorksThroughThePersonsOwnSession(t *testing.T) {
 	}
 	if w := get(t, srv, "/make", capped); w.Code != http.StatusForbidden {
 		t.Errorf("an administrator's reader credential opened Make: %d", w.Code)
+	}
+}
+
+// The Data screen shows somebody granted one collection that collection,
+// and refuses their writes to another; it is in their menu.
+func TestTheDataScreenShowsOnlyTheCollectionsGranted(t *testing.T) {
+	srv, _ := setup(t)
+	tree := ""
+	for _, c := range []string{"samples", "payroll"} {
+		next, _, err := collection.Put(srv.Store, tree, c, collection.Record{ID: strings.Repeat("b", 32),
+			Fields: map[string]any{"name": c}}, time.Now(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tree = next
+	}
+	var wrote []string
+	srv.Data = &Data{Tree: func() (string, error) { return tree, nil },
+		Commit: func(next, msg, by string) error { wrote = append(wrote, msg); return nil }}
+	srv.Policy.Grant(auth.Binding{Principal: "tech", Role: auth.RoleAuthor, Resource: auth.DataResource("samples")})
+	tok, _, err := srv.Tokens.Issue("tech", "tech", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := get(t, srv, "/records", tok).Body.String()
+	if !strings.Contains(body, "samples") || strings.Contains(body, "payroll") || !strings.Contains(body, `href="/records"`) {
+		t.Errorf("the Data screen shows the wrong collections")
+	}
+	if get(t, srv, "/records?c=payroll", tok).Body.String() == "" {
+		t.Fatal("no answer")
+	}
+	if w := postForm(t, srv, "/records/save", tok, "collection=payroll&fields=%7B%22name%22%3A%22x%22%7D"); w.Code != http.StatusForbidden {
+		t.Errorf("a write to another collection answered %d", w.Code)
+	}
+	if w := postForm(t, srv, "/records/save", tok, "collection=samples&fields=%7B%22name%22%3A%22x%22%7D"); w.Code == http.StatusForbidden {
+		t.Errorf("a write to the granted collection was refused")
 	}
 }

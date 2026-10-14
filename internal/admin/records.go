@@ -47,7 +47,10 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActView, "/") {
+	// Somebody who may read one collection opens this screen and sees that
+	// one; somebody who may read none is refused, as before.
+	if s.Policy != nil && !s.Policy.AnywhereUnder(p.Name, auth.ActView, auth.AreaData) {
+		s.can(w, r, p, auth.ActView, auth.AreaData)
 		return
 	}
 	if s.Data == nil {
@@ -72,12 +75,21 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 		Count int
 	}
 	var colls []collRow
+	mayRead := map[string]bool{}
 	for _, n := range names {
+		if !s.allows(p, auth.ActView, auth.DataResource(n)) {
+			continue
+		}
 		c, _ := collection.Count(s.Store, tree, n)
 		colls = append(colls, collRow{n, c})
+		mayRead[n] = true
 	}
 
 	selected := strings.TrimSpace(r.URL.Query().Get("c"))
+	if selected != "" && !mayRead[selected] {
+		// One out of reach is answered as one that does not exist.
+		selected = ""
+	}
 	if selected == "" && len(colls) > 0 {
 		selected = colls[0].Name
 	}
@@ -86,7 +98,7 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 		"Title": "Data", "Principal": p, "Nav": "records",
 		"Collections": colls, "Selected": selected,
 		"Message":  r.URL.Query().Get("m"),
-		"CanWrite": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
+		"CanWrite": selected != "" && s.allows(p, auth.ActEditDraft, auth.DataResource(selected)),
 	}
 
 	// What a new record of this collection's type starts as.
@@ -202,7 +214,7 @@ func columnsOf(recs []collection.Record) []string {
 
 // handleRecordSave writes one record from the form.
 func (s *Server) handleRecordSave(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.postFrom(w, r, auth.ActEditDraft)
+	p, ok := s.postFromData(w, r, auth.ActEditDraft)
 	if !ok {
 		return
 	}
@@ -253,7 +265,7 @@ func (s *Server) handleRecordSave(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRecordDelete(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.postFrom(w, r, auth.ActEditDraft)
+	p, ok := s.postFromData(w, r, auth.ActEditDraft)
 	if !ok {
 		return
 	}
@@ -287,4 +299,33 @@ func (s *Server) handleRecordDelete(w http.ResponseWriter, r *http.Request) {
 func (s *Server) recordsBack(w http.ResponseWriter, r *http.Request, coll, msg string) {
 	http.Redirect(w, r, "/records?c="+urlQueryEscape(coll)+"&m="+
 		urlQueryEscape(msg), http.StatusSeeOther)
+}
+
+// postFromData is postFrom for a form that names a collection: asked about
+// that collection rather than the site.
+func (s *Server) postFromData(w http.ResponseWriter, r *http.Request, act auth.Action) (principal, bool) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return principal{}, false
+	}
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return principal{}, false
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return principal{}, false
+	}
+	coll := strings.TrimSpace(r.FormValue("collection"))
+	if collection.ValidName(coll) != nil {
+		coll = ""
+	}
+	resource := auth.AreaData
+	if coll != "" {
+		resource = auth.DataResource(coll)
+	}
+	if !s.can(w, r, p, act, resource) {
+		return principal{}, false
+	}
+	return p, true
 }

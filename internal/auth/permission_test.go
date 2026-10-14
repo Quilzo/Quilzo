@@ -135,3 +135,25 @@ func TestATokenCapsAPermissionByItsPathAndLimits(t *testing.T) {
 		t.Error("an administrator's reader token approved")
 	}
 }
+
+// A collection is its own resource: covered by a role on the site, not by a
+// section of pages that shares its name.
+func TestACollectionIsCheckedAsItsOwnResource(t *testing.T) {
+	p := &Policy{}
+	p.Grant(Binding{Principal: "ed", Role: RoleAuthor, Resource: "/"})
+	p.Grant(Binding{Principal: "sam", Role: RoleAuthor, Resource: "/samples"})
+	p.Grant(Binding{Principal: "tech", Role: RoleAuthor, Resource: DataResource("samples")})
+	if !p.Evaluate("ed", ActEditDraft, DataResource("samples")).Allowed {
+		t.Error("an author over the site lost the data")
+	}
+	if p.Evaluate("sam", ActView, DataResource("samples")).Allowed {
+		t.Error("a section of pages reached the collection of the same name")
+	}
+	if !p.Evaluate("tech", ActEditDraft, DataResource("samples")).Allowed || p.Evaluate("tech", ActView, DataResource("hr")).Allowed ||
+		p.Evaluate("tech", ActView, "/").Allowed {
+		t.Error("a grant on one collection reached more than it")
+	}
+	if !p.AnywhereUnder("tech", ActView, AreaData) || p.AnywhereUnder("sam", ActView, AreaData) {
+		t.Error("AnywhereUnder")
+	}
+}
