@@ -241,10 +241,21 @@ func (c *Caller) auditRecord(action, resource string, outcome audit.Outcome,
 		// flag, so a reader scanning entries sees it without checking a field.
 		detail["identity"] = "unverified: " + c.Why
 	}
-	return audit.Record{
+	rec := audit.Record{
 		Action: action, Resource: resource, Outcome: outcome,
 		Principal: c.Name, Kind: c.Kind, Verified: c.Verified, Detail: detail,
 	}
+	if c.Kind == audit.KindAI {
+		// An app at the agent interface, or an agent acting under its own
+		// identity, does not say which model it runs, and the log refuses an
+		// AI act with no model named, so the act went unrecorded. It stands
+		// in for its model, as the interface's own records do.
+		rec.Model = "agent"
+		if c.Remote {
+			rec.Model = "mcp-client"
+		}
+	}
+	return rec
 }
 
 // conflictError turns a compare-and-swap refusal into something a person can

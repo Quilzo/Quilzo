@@ -9,6 +9,24 @@ Unreleased
 
 ** Added
 
+*** Research projects whose every claim can be checked.  `quilzo research`
+    keeps a question, a plan registered before the data is analysed (its
+    SHA-256 signed with the log's keys; later changes are amendments with a
+    reason, made by a person), and computations: a Python, R or Julia script
+    run in a box with no network on copies of the inputs named, recorded by
+    the digests of its code, inputs, outputs and environment, with the
+    numbers it wrote to values.json.  `research rerun` repeats one and says
+    whether every number and file came out the same.  A report states a
+    number only as {{claim}}, pinned to a computation, and cites only works
+    an open index returned (OpenAlex, Crossref, arXiv, by DOI, PubMed ID or
+    arXiv ID); `research check` flags every number written in the prose,
+    every unresolved citation, every cited sentence its source does not
+    support, and every claim that did not reproduce.  `research report`
+    writes it with references and a provenance table.  Agents work on a
+    project through research_* operations and cannot register or amend a
+    plan.  The Research screen shows the report with each number linked to
+    its computation.
+
 *** A model gateway for agents built anywhere.  With models.remote on, the
     admin answers OpenAI's chat completions and responses and Anthropic's
     messages at /v1, through the model gateway: an agent made with ADK,
@@ -220,6 +238,11 @@ Unreleased
 
 ** Fixed
 
+*** What an app did through the agent interface, and what an agent did
+    under its own identity, is recorded again in that act's own audit
+    record.  The record named no model, which the log refuses for an AI
+    act, so only the interface's mcp.call record was kept.  It now names
+    the app (mcp-client) or the agent as its model.
 *** `quilzo records import` now checks every record against its
     collection's type, as adding one record does; one that does not fit
     imports nothing.

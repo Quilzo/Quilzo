@@ -1,0 +1,36 @@
+{{/*
+  Research projects: each question, whether its plan was registered before
+  the data was analysed, and how many claims and sources its report rests on.
+*/}}
+{{template "head" .}}
+<h1>Research</h1>
+
+<p class="lead">Projects whose every number is linked to the code that produced
+  it, and whose every citation is a work an open index returned. A plan is
+  registered before the data is analysed; any later change is an amendment
+  with its reason.</p>
+
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+{{if .Projects}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Project</th><th scope="col">Plan</th>
+    <th scope="col">Claims</th><th scope="col">Sources</th></tr></thead>
+  <tbody>
+  {{range .Projects}}
+  <tr>
+    <th scope="row"><a href="/research/{{.Name}}">{{.Name}}</a><div class="hint">{{.Question}}</div></th>
+    <td>{{if .Registered}}{{if .Plan.BeforeData}}<span class="tag tag-ok">registered before the data</span>{{else}}<span class="tag tag-warn">registered after the data</span>{{end}}<div class="hint">{{.Plan.Registered.Format "2 Jan 2006"}}{{with .Amendments}}, amended {{plural (len .) "time" "times"}}{{end}}</div>{{else}}<span class="tag tag-warn">not registered</span>{{end}}</td>
+    <td>{{len .Claims}}</td>
+    <td>{{len .Sources}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p>No projects yet. Start one with <code>quilzo research new NAME --question "…"</code>,
+  or let an agent holding the <code>research_*</code> operations work on one.</p>
+{{end}}
+{{end}}
+{{template "foot" .}}

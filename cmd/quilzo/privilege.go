@@ -722,10 +722,19 @@ var commandNeeds = map[string]need{
 	// reading a file into a package changes nothing here.
 	"feature draft": {action: auth.ActEditDraft},
 	"feature from":  {action: auth.ActView},
-	"ext":           {action: auth.ActGrant},
-	"extensions":    {action: auth.ActGrant},
-	"ext list":      {action: auth.ActView},
-	"ext test":      {action: auth.ActView},
+	// A research project is drafts and computations in a box: an author's
+	// work. Registering or amending a plan is refused to a model inside the
+	// command, and reading is a reader's.
+	"research":        {action: auth.ActEditDraft},
+	"research list":   {action: auth.ActView},
+	"research show":   {action: auth.ActView},
+	"research search": {action: auth.ActView},
+	"research check":  {action: auth.ActView},
+	"research report": {action: auth.ActView},
+	"ext":             {action: auth.ActGrant},
+	"extensions":      {action: auth.ActGrant},
+	"ext list":        {action: auth.ActView},
+	"ext test":        {action: auth.ActView},
 
 	"webhook":  {action: auth.ActGrant},
 	"webhooks": {action: auth.ActGrant},
