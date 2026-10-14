@@ -124,6 +124,10 @@ vulnerability:
   sends its credential anywhere but the declared host, or runs after its
   declaration changed without being pinned again; or an import that fetches
   anything a document refers to.
+- **A fact is replaced only by a fact that may replace it.** Any way a memory
+  learnt after reading somebody else's words closes a fact before a person
+  confirms it, a fact about one person closes one about another, or a
+  replaced fact is recalled.
 - **A person's desktop is not used.** Any way a run reaches a person's keyboard
   or pointer. Desktop consent hands the session straight back.
 

@@ -18,8 +18,9 @@ import (
 // recalled is private to that person.
 type Memory struct {
 	// Remember keeps an entry; the host knows whose run this is. tier is
-	// how far it can be trusted (memory.TierPerson and the others).
-	Remember func(kind, text string, held bool, sources, tier string) (memory.Entry, error)
+	// how far it can be trusted (memory.TierPerson and the others); key,
+	// for a fact, names what it is about, so a newer one replaces it.
+	Remember func(kind, text string, held bool, sources, tier, key string) (memory.Entry, error)
 	// Recall is what the run's person's memory holds for a query.
 	Recall func(query string, kinds map[string]bool) ([]memory.Entry, error)
 	// About names the person, for what the run now holds in private.
@@ -62,7 +63,11 @@ func WithMemory(m Memory, s *agent.Session,
 			var b strings.Builder
 			for _, e := range found {
 				s.UsedMemory(true, e.ID)
-				fmt.Fprintf(&b, "- (%s, %s", e.Kind, e.Created.Format("2 Jan 2006"))
+				if e.Key != "" {
+					fmt.Fprintf(&b, "- (%s %s, true since %s", e.Kind, e.Key, e.Created.Format("2 Jan 2006"))
+				} else {
+					fmt.Fprintf(&b, "- (%s, %s", e.Kind, e.Created.Format("2 Jan 2006"))
+				}
 				if w := memory.TierWords[e.Tier]; w != "" {
 					b.WriteString(", " + w)
 				}
@@ -78,16 +83,20 @@ func WithMemory(m Memory, s *agent.Session,
 			return "", fmt.Errorf("%s does not keep %s memory", s.Manifest().Name, kind)
 		}
 		text, _ := a.Input["text"].(string)
+		key, _ := a.Input["key"].(string)
 		held := s.Tainted()
 		sources := ""
 		if held {
 			sources = agent.Provenance(s.Sources(), s.Omitted())
 		}
-		e, err := m.Remember(kind, text, held, sources, tierOf(s))
+		e, err := m.Remember(kind, text, held, sources, tierOf(s), key)
 		if err != nil {
 			return "", err
 		}
 		s.UsedMemory(false, e.ID)
+		if e.Replaces != "" {
+			return fmt.Sprintf("remembered as %s, replacing %s, which is no longer true", e.ID, e.Replaces), nil
+		}
 		if e.Held {
 			return fmt.Sprintf("remembered as %s, and held: it was learnt after reading content somebody "+
 				"else may have written, so it is not recalled until a person confirms it", e.ID), nil

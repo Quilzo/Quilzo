@@ -19,6 +19,15 @@ Unreleased
     offered to other agents through /mcp/gateway/NAME.  The same command
     reads an MCP registry server.json into an MCP server declaration;
     without --uses it lists what is on offer and declares nothing.
+*** Facts with time.  An agent remembers a fact with a key ("shipping_city"),
+    and a newer fact with the same key replaces the older one, which is
+    kept with when it stopped being true and what replaced it; `quilzo
+    memory history AGENT KEY` shows the chain.  A fact learnt after reading
+    somebody else's words replaces nothing until a person confirms it.
+    Recall ranks by words and vectors fused by reciprocal rank, with
+    recency, over the text itself, so it works the same whichever model
+    an agent uses; it returns only what matches and stops at 6,000
+    characters.
 
 *** Features as packages (/make, `quilzo feature`): one file declares the
     types, collections, listings, forms, pages, menus, chatbots, agents and
