@@ -41,6 +41,24 @@
 </div>
 {{end}}
 
+{{if .Door}}
+<h2>Agents built elsewhere</h2>
+{{if .DoorOn}}
+<p>Agents made with any framework reach these routes at <code>{{.Origin}}/v1</code>,
+  in OpenAI's shape or Anthropic's, with a Quilzo token as their key. Each call
+  is charged to the token's person against their budget, masked like every
+  other, and recorded.</p>
+<dl class="kv">
+  <dt>OpenAI's clients</dt><dd>base address <code>{{.Origin}}/v1</code></dd>
+  <dt>Anthropic's clients</dt><dd>base address <code>{{.Origin}}</code></dd>
+  <dt>Model</dt><dd><code>quilzo</code>, or <code>agent/NAME</code> to bring that agent's memory</dd>
+</dl>
+{{else}}
+<p class="hint">Off. Turn on <code>models.remote</code> under <a href="/settings">Settings</a> to let
+  agents made with any framework use these routes, with a Quilzo token as their key.</p>
+{{end}}
+{{end}}
+
 <form method="post" action="/models/change" class="card">
   <input type="hidden" name="op" value="route-add">
   <h3>Add a route</h3>

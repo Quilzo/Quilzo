@@ -9,6 +9,23 @@ Unreleased
 
 ** Added
 
+*** A model gateway for agents built anywhere.  With models.remote on, the
+    admin answers OpenAI's chat completions and responses and Anthropic's
+    messages at /v1, through the model gateway: an agent made with ADK,
+    Agent Framework, LangChain, CrewAI, OpenAI's Agents SDK or either
+    provider's SDK changes its base address and uses a Quilzo token as its
+    key.  Each call is charged to the token's person against their budget
+    (door:NAME, or agent:NAME, and person:NAME), masked like every other,
+    cleaned of invisible characters, and recorded as model.door, refusals
+    included; it takes a token that may draft, in a store with an access
+    policy.  Naming agent/NAME as the model brings that agent's memory: what
+    it keeps about the person is recalled into the conversation, and the
+    model is offered quilzo_remember, which Quilzo performs before answering.
+    What an agent built elsewhere remembers is kept as unreviewed, and held
+    until a person confirms it when the conversation carried a tool's
+    results or a picture.  The Models screen shows the addresses; the
+    shield can close it (models).
+
 *** Agents learn from their mistakes.  `quilzo agent lessons reflect RUN`
     has a model write a candidate lesson ("when X, do Y") from a run that
     went wrong; `lessons try NAME ID` runs the agent's evaluations with its

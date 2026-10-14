@@ -6,17 +6,15 @@ package agentbox
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/modelapi"
 )
 
 // The services handed into a box, on this side of it.
@@ -101,18 +99,9 @@ type Models struct {
 	Name string
 }
 
-type chatRequest struct {
-	Model      string               `json:"model"`
-	Messages   []assist.ChatMessage `json:"messages"`
-	Tools      []assist.ChatTool    `json:"tools"`
-	ToolChoice json.RawMessage      `json:"tool_choice"`
-	MaxTokens  int                  `json:"max_tokens"`
-	Stream     bool                 `json:"stream"`
-}
-
-// whole reports whether a request needs the conversation as it is: it
-// carries a picture, offers a tool, or continues one.
-func (r chatRequest) whole() bool {
+// whole reports whether a conversation needs to go as it is: it carries a
+// picture, offers a tool, or continues one.
+func whole(r assist.ChatRequest) bool {
 	if len(r.Tools) > 0 {
 		return true
 	}
@@ -135,55 +124,31 @@ func (h *Models) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/models":
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"object": "list",
-			"data": []any{map[string]any{"id": name, "object": "model", "owned_by": "quilzo"}}})
+		modelapi.WriteModels(w, []string{name})
 		return
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions":
 	default:
 		writeError(w, http.StatusNotFound, "this endpoint answers POST /v1/chat/completions and GET /v1/models")
 		return
 	}
-	var req chatRequest
-	// Room for a few screens: a picture is a few hundred kilobytes once
-	// encoded, and assist.ChatRequest.Check bounds how many there may be.
-	if err := json.NewDecoder(io.LimitReader(r.Body, 24<<20)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "the request is not a chat completion: "+err.Error())
+	req, err := modelapi.ReadOpenAI(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var text, finish string
-	var calls []assist.ToolCall
-	var in, out int
-	if req.whole() {
+	var reply assist.ChatReply
+	if whole(req.Chat) {
 		if h.Chat == nil {
 			writeError(w, http.StatusBadRequest, "this run's model takes text only: pictures and tools are not passed on")
 			return
 		}
-		creq := assist.ChatRequest{Messages: req.Messages, Tools: req.Tools, MaxTokens: req.MaxTokens}
-		if len(req.ToolChoice) > 0 {
-			// A choice naming one function is read as "required", which
-			// is what it asks for in every case this endpoint can honour.
-			var s string
-			if json.Unmarshal(req.ToolChoice, &s) == nil {
-				creq.ToolChoice = s
-			} else {
-				creq.ToolChoice = "required"
-			}
-		}
-		if err := creq.Check(); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		reply, err := h.Chat(r.Context(), creq)
-		if err != nil {
+		if reply, err = h.Chat(r.Context(), req.Chat); err != nil {
 			writeError(w, http.StatusTooManyRequests, err.Error())
 			return
 		}
-		text, calls, finish = reply.Message.Text(), reply.Message.ToolCalls, reply.Finish
-		in, out = reply.Usage.In, reply.Usage.Out
 	} else {
 		var system, rest strings.Builder
-		for _, m := range req.Messages {
+		for _, m := range req.Chat.Messages {
 			t := m.Text()
 			if m.Role == "system" || m.Role == "developer" {
 				system.WriteString(t + "\n")
@@ -195,55 +160,15 @@ func (h *Models) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "a conversation needs at least one message that is not a system prompt")
 			return
 		}
-		var err error
-		if text, in, out, err = h.Complete(r.Context(), system.String(), rest.String()); err != nil {
+		text, in, out, err := h.Complete(r.Context(), system.String(), rest.String())
+		if err != nil {
 			writeError(w, http.StatusTooManyRequests, err.Error())
 			return
 		}
+		reply = assist.ChatReply{Message: assist.ChatMessage{Role: "assistant",
+			Content: []assist.Part{{Type: "text", Text: text}}}, Usage: assist.Usage{In: in, Out: out}}
 	}
-	if finish == "" {
-		finish = "stop"
-		if len(calls) > 0 {
-			finish = "tool_calls"
-		}
-	}
-	id := fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano())
-	usage := map[string]int{"prompt_tokens": in, "completion_tokens": out, "total_tokens": in + out}
-	message := map[string]any{"role": "assistant", "content": text}
-	if len(calls) > 0 {
-		message["tool_calls"] = calls
-		if text == "" {
-			message["content"] = nil
-		}
-	}
-	if req.Stream {
-		// The whole answer in one chunk: honest about having it all at once,
-		// and enough for every client that asked for a stream. A stream's
-		// tool calls carry their position.
-		delta := map[string]any{"role": "assistant", "content": message["content"]}
-		if len(calls) > 0 {
-			indexed := make([]map[string]any, len(calls))
-			for i, c := range calls {
-				indexed[i] = map[string]any{"index": i, "id": c.ID, "type": c.Type, "function": c.Function}
-			}
-			delta["tool_calls"] = indexed
-		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		chunk := map[string]any{"id": id, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": name,
-			"choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}},
-			"usage":   usage}
-		b, _ := json.Marshal(chunk)
-		fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", b)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "object": "chat.completion", "created": time.Now().Unix(),
-		"model": name, "usage": usage,
-		"choices": []any{map[string]any{"index": 0, "finish_reason": finish, "message": message}}})
+	modelapi.WriteOpenAI(w, name, reply, req.Stream)
 }
 
-func writeError(w http.ResponseWriter, code int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": msg, "type": "quilzo"}})
-}
+func writeError(w http.ResponseWriter, code int, msg string) { modelapi.OpenAIError(w, code, msg) }

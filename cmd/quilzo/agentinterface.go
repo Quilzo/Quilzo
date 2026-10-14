@@ -209,6 +209,7 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 			record(root, appCallRecord(c, tool, op, rerr))
 		},
 	}
+	srv.ModelDoor = modelDoor(root, cc)
 }
 
 // appCallRecord is the record of one call at the agent interface. It is

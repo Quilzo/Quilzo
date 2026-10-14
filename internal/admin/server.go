@@ -409,6 +409,9 @@ type Server struct {
 	// Interface is the agent interface at /mcp, with the OAuth server apps
 	// connect through. Nil serves neither. See agentinterface.go.
 	Interface *AgentInterface
+	// ModelDoor is the model gateway at /v1, for agents built anywhere.
+	// See modeldoor.go.
+	ModelDoor *ModelDoor
 	// Memory is what agents remember, for the people it is about.
 	Memory *MemoryAdmin
 	// Reports receives the admin pages' policy violations, which browsers
@@ -1188,12 +1191,12 @@ func (s *Server) readOnlyTokens(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		// The agent interface and the OAuth endpoints read their own bearer
-		// tokens and refuse a read-only one's writes themselves; reading
-		// through the interface is a POST, and refusing every POST would
-		// refuse a read-only token's reads.
+		// The agent interface, the OAuth endpoints and the model door read
+		// their own bearer tokens and refuse a read-only one's writes
+		// themselves; reading through the interface is a POST, and refusing
+		// every POST would refuse a read-only token's reads.
 		switch r.URL.Path {
-		case "/mcp", "/oauth/token", "/oauth/revoke":
+		case "/mcp", "/oauth/token", "/oauth/revoke", "/v1/chat/completions", "/v1/responses", "/v1/messages":
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -1454,6 +1457,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/mcp/gateway/", s.handleGateway)
 	mux.HandleFunc("/mcp/browser/", s.handleBrowserMCP)
 	mux.HandleFunc("/a2a", s.handleA2A)
+	// The model gateway, for agents built anywhere. See modeldoor.go.
+	mux.HandleFunc("/v1/chat/completions", s.handleModelDoor)
+	mux.HandleFunc("/v1/responses", s.handleModelDoor)
+	mux.HandleFunc("/v1/messages", s.handleModelDoor)
+	mux.HandleFunc("/v1/models", s.handleModelDoor)
 	mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", s.handleResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleServerMetadata)

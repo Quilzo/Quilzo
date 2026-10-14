@@ -520,6 +520,25 @@ var settings = []Setting{
 		},
 	},
 	{
+		Key: "models.remote", Kind: Bool, Default: "false",
+		Summary:  "serve the model gateway at /v1 on the admin, for agents built anywhere",
+		Controls: []string{"AC-17", "AC-3"},
+		Why: "Agents built with any framework talk to their model in OpenAI's or " +
+			"Anthropic's shape. On, the admin answers both at /v1 through the " +
+			"model gateway: the provider's key stays here, and every call is " +
+			"charged to the person whose Quilzo token it carries, against their " +
+			"budget, through the privacy guard, on the ledger and in the audit " +
+			"log. Naming one of this store's agents as the model brings its " +
+			"memory. Off by default because a door reached from outside that " +
+			"spends money is a decision.",
+		Weaker: func(v string) (bool, string) {
+			if b, err := strconv.ParseBool(v); err == nil && b {
+				return true, "the model gateway answers at /v1; every call still needs a token that may draft, and is budgeted and recorded"
+			}
+			return false, ""
+		},
+	},
+	{
 		Key: "admin.behind_tls_proxy", Kind: Bool, Default: "false",
 		Summary: "the admin is served over HTTPS by something in front of it",
 		Why: "Whether the session cookie is marked Secure. It was decided by " +

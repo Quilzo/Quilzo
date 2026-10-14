@@ -331,17 +331,20 @@ func buildFleet(root string, days int, now time.Time) (fleet.View, error) {
 				to := "host:" + e.Detail["host"]
 				touch(to, "host", e.Detail["host"], at)
 				edges.Add("agent:"+e.Detail["agent"], to, at)
-			case "mcp.call", "mcp.gateway":
+			case "mcp.call", "mcp.gateway", "model.door":
 				from := "app:" + e.Model
 				if e.Model == "" {
 					from = "person:" + person
 				}
-				to := "quilzo"
-				if e.Action == "mcp.gateway" {
+				to, label := "quilzo", "Quilzo's interface"
+				switch e.Action {
+				case "mcp.gateway":
 					to = "tool:" + e.Detail["integration"]
+				case "model.door":
+					to, label = "models", "Quilzo's model gateway"
 				}
 				touch(from, fleet.KindApp, e.Model, at)
-				touch(to, fleet.KindQuilzo, "Quilzo's interface", at)
+				touch(to, fleet.KindQuilzo, label, at)
 				edges.Add(from, to, at)
 				if person != "" && e.Model != "" {
 					touch("person:"+person, fleet.KindPerson, person, at)

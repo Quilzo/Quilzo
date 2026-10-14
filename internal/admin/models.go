@@ -53,6 +53,9 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data["Cfg"], data["Health"], data["Spend"] = cfg, health, spend
+	if d := s.ModelDoor; d != nil && d.Enabled != nil {
+		data["Door"], data["DoorOn"], data["Origin"] = true, d.Enabled(), s.ownOrigin(r)
+	}
 	data["Currency"] = ""
 	if cfg != nil {
 		data["Currency"] = cfg.Currency

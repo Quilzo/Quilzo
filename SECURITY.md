@@ -133,6 +133,11 @@ vulnerability:
   without a person adopting it for that model after a trial that helped,
   adopted while making planted instructions steer more cases, or carries a
   host, an address or a credential into a prompt.
+- **The model door spends only for who may use it.** Any way a call at `/v1`
+  reaches a model without a token whose person may draft, is charged to
+  anyone but that token's person, goes unrecorded, recalls one person's
+  memory into another's conversation, or keeps what an agent remembers there
+  unheld after the conversation carried a tool's results or a picture.
 - **A person's desktop is not used.** Any way a run reaches a person's keyboard
   or pointer. Desktop consent hands the session straight back.
 
@@ -212,6 +217,7 @@ a report is most useful when it makes one of those tests fail. Relevant places:
 - `internal/agentbox` — the box an agent's program runs in
 - `internal/oauthas`, `cmd/quilzo/agentinterface_test.go` — connected apps
 - `cmd/quilzo/mcpgateway_test.go` — the MCP gateway
+- `internal/modelapi`, `cmd/quilzo/modeldoor_test.go`, `internal/admin/modeldoor_test.go` — the model door
 - `internal/memory`, `internal/pii` — governed memory and the privacy guard
 - `internal/shield/guardrails_test.go` — what a playbook may never do
 - `internal/browser`, `internal/cdp` — the agent's browser and its request rule
