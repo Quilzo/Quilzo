@@ -138,6 +138,11 @@ vulnerability:
   anyone but that token's person, goes unrecorded, recalls one person's
   memory into another's conversation, or keeps what an agent remembers there
   unheld after the conversation carried a tool's results or a picture.
+- **A report states only what was computed and cited.** Any way a number
+  reaches a research report's rendered text other than from a computation's
+  values.json without the check flagging it, a citation is kept for a work no
+  index returned, a computation reads the network or a file it was not given,
+  or a model registers or amends a plan.
 - **A person's desktop is not used.** Any way a run reaches a person's keyboard
   or pointer. Desktop consent hands the session straight back.
 
@@ -218,6 +223,7 @@ a report is most useful when it makes one of those tests fail. Relevant places:
 - `internal/oauthas`, `cmd/quilzo/agentinterface_test.go` — connected apps
 - `cmd/quilzo/mcpgateway_test.go` — the MCP gateway
 - `internal/modelapi`, `cmd/quilzo/modeldoor_test.go`, `internal/admin/modeldoor_test.go` — the model door
+- `internal/research`, `cmd/quilzo/researchcmd_test.go` — research projects, claims and citations
 - `internal/memory`, `internal/pii` — governed memory and the privacy guard
 - `internal/shield/guardrails_test.go` — what a playbook may never do
 - `internal/browser`, `internal/cdp` — the agent's browser and its request rule

@@ -127,6 +127,13 @@ var Purposes = []Purpose{
 			"what happens when no guardrail is set",
 	},
 	{
+		Name: "research",
+		What: "resolving a citation, and searching for works, in open scholarly indexes: " +
+			"OpenAlex, Crossref and arXiv",
+		Without: "research projects cite nothing new and search nothing; what is cited " +
+			"already, and every computation, still works",
+	},
+	{
 		Name: "fleet",
 		What: "reading another vendor's agent card (A2A) when somebody registers that agent, " +
 			"and again when the fleet is checked, to see whether it changed",

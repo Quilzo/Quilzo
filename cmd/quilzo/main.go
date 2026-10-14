@@ -390,6 +390,22 @@ features (one package of blocks, installed as one decision)
   quilzo feature export NAME [--sign]      the installed package, signed with the log's keys
   quilzo feature capture NAME --page P ... a package from blocks that already exist
 
+research (every number linked to the code that produced it, every citation real)
+  quilzo research new NAME --question "…"  start a project
+  quilzo research add NAME FILE… [--to D]  put code and data in it
+  quilzo research plan NAME PLAN.md        the analysis plan; once registered, changes are amendments (--why)
+  quilzo research register NAME            seal the plan before the data is analysed, signed
+  quilzo research run NAME SCRIPT [--input F]…   Python, R or Julia in a box with no network
+  quilzo research rerun NAME RUN           run it again on the same code and inputs: does it reproduce?
+  quilzo research claim NAME [VALUE…] --run RUN   pin a computation's numbers as claims
+  quilzo research search "WORDS"           find works in OpenAlex
+  quilzo research cite NAME doi:…|pmid:…|arxiv:…   add a work only if an open index has it
+  quilzo research quote NAME KEY "…"       a passage a sentence citing it rests on
+  quilzo research write NAME REPORT.md     the report: {{claim}} for numbers, [@key] for citations
+  quilzo research check NAME               every number linked, every citation supporting its sentence
+  quilzo research report NAME [-o FILE]    the report with references and where each number came from
+  quilzo research list | show NAME
+
 content types
   quilzo ext list | add | remove | pin | test   run your own code, sandboxed
   quilzo records collections               what data this application holds
@@ -1071,6 +1087,8 @@ func main() {
 		err = cmdExt(root, cmdArgs)
 	case "feature":
 		err = cmdFeature(root, cmdArgs)
+	case "research":
+		err = cmdResearch(root, cmdArgs)
 	case "scan":
 		err = cmdScan(root, cmdArgs)
 	case "csp":

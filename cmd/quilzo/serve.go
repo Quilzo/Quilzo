@@ -688,6 +688,7 @@ func cmdServe(root string, args []string) error {
 	}
 	srv.Assistants = assistantsCapability(root)
 	srv.Models = gatewayCapability(root)
+	srv.Research = researchScreens(root)
 	srv.Deciders = decidersCapability(root)
 	srv.Analytics = analyticsCapability(root)
 	srv.Experiments = experimentsCapability(root)

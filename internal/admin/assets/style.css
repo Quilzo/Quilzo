@@ -3305,3 +3305,13 @@ td .duty-more { margin: 4px 0 0; }
 .approval-group h2 .count { font-size: .8em; color: var(--on-surface-variant); }
 .approvals-table td { vertical-align: top; }
 .earned-table td { vertical-align: top; }
+
+/* -- research --------------------------------------------------------------- */
+/* The rendered report: every number a link to the computation it came from,
+   every citation saying what it cites, and an untraced number marked where
+   it sits. */
+.report-body { max-width: 75ch; }
+.report-body h3 { margin-top: 1.25rem; }
+.report-body a.value { font-variant-numeric: tabular-nums; text-decoration-style: dotted; }
+.report-body .cite { color: var(--primary); cursor: help; }
+.report-body blockquote, td blockquote { margin: .5rem 0; padding-left: .8rem; border-left: 3px solid var(--outline-variant); }

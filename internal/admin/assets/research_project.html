@@ -1,0 +1,109 @@
+{{/*
+  One research project: the report with every number a link to the
+  computation it came from, what the check found, the plan and its
+  amendments, the computations, and the works cited.
+*/}}
+{{template "head" .}}
+{{with .Project}}
+<p class="hint"><a href="/research">Research</a></p>
+<h1>{{.Name}}</h1>
+<p class="lead">{{.Question}}</p>
+{{end}}
+
+<h2>Report</h2>
+{{if eq .Problems 0}}<p class="notice ok" role="status">Every number is linked to a computation, and every citation resolved and supports its sentence.</p>
+{{else}}<p class="notice bad" role="alert">{{plural .Problems "problem" "problems"}} to fix before this is final.</p>{{end}}
+{{if .Findings}}
+<ul class="findings">
+  {{range .Findings}}<li>{{if .Problem}}<span class="tag tag-bad">problem</span>{{else}}<span class="tag tag-warn">note</span>{{end}} {{if .Line}}Line {{.Line}}: {{end}}{{.What}}</li>{{end}}
+</ul>
+{{end}}
+
+{{if .Project.Report}}
+<article class="card report-body" aria-label="The report, rendered">
+{{range .Blocks}}
+  {{if .Code}}<pre class="code"><code>{{(index .Pieces 0).Text}}</code></pre>
+  {{else if .Heading}}<h3>{{range .Pieces}}{{template "research-piece" .}}{{end}}</h3>
+  {{else}}<p>{{range .Pieces}}{{template "research-piece" .}}{{end}}</p>{{end}}
+{{end}}
+{{with .References}}
+  <h3>References</h3>
+  <ol>{{range $i, $r := .}}<li id="ref-{{$i}}">{{$r}}</li>{{end}}</ol>
+{{end}}
+</article>
+{{else}}
+<p>No report yet. Write one with <code>quilzo research write {{.Project.Name}} REPORT.md</code>:
+  <code>{{"{{"}}name{{"}}"}}</code> for a claim's number, <code>[@key]</code> for a citation.</p>
+{{end}}
+
+{{with .Project}}
+<h2>Plan</h2>
+{{if .Registered}}
+<dl class="kv">
+  <dt>Registered</dt><dd>{{.Plan.Registered.Format "2 January 2006 15:04"}} by {{.Plan.By}},
+    {{if .Plan.BeforeData}}before the data was analysed{{else}}<span class="tag tag-warn">after the data was first analysed</span>{{end}}</dd>
+  <dt>SHA-256</dt><dd><code>{{.Plan.Digest}}</code></dd>
+  {{with .Plan.Signature}}<dt>Signed</dt><dd>with the log's key <code>{{.KeyID}}</code> ({{range $i, $a := .Algorithms}}{{if $i}}, {{end}}{{$a}}{{end}})</dd>{{end}}
+</dl>
+{{range .Amendments}}<p class="hint">Amended {{.At.Format "2 Jan 2006"}} by {{.By}}{{if .AfterData}}, after the data was analysed{{end}}: {{.Why}}</p>{{end}}
+{{else if .Plan.Text}}<p><span class="tag tag-warn">not registered</span> Register it before the data is analysed: <code>quilzo research register {{.Name}}</code>.</p>
+{{else}}<p>No plan yet.</p>{{end}}
+{{with .Plan.Text}}<details class="describe"><summary>The plan<span class="chev">{{icon "expand_more"}}</span></summary><pre class="code whole">{{.}}</pre></details>{{end}}
+
+<h2>Claims</h2>
+{{if .Claims}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Claim</th><th scope="col">Value</th><th scope="col">From</th></tr></thead>
+  <tbody>{{range .Claims}}<tr><th scope="row"><code>{{.Name}}</code></th><td>{{measure .Value .Unit}}</td><td><a href="#{{.Run}}"><code>{{.Run}}</code></a></td></tr>{{end}}</tbody>
+</table>
+</div>
+{{else}}<p>No claims yet: pin a computation's values with <code>quilzo research claim</code>.</p>{{end}}
+{{end}}
+
+<h2>Computations</h2>
+{{if .Runs}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Computation</th><th scope="col">Code and inputs</th><th scope="col">Environment</th><th scope="col">Values</th></tr></thead>
+  <tbody>
+  {{range .Runs}}
+  <tr id="{{.ID}}">
+    <th scope="row"><code>{{.ID}}</code><div class="hint">{{.Started.Format "2 Jan 2006 15:04"}}, {{.Took}}</div>
+      {{if not .OK}}<span class="tag tag-bad">failed</span>{{end}}
+      {{if .Reproduces}}<span class="tag tag-ok">reproduced</span>{{else if .DidNotReproduce}}<span class="tag tag-bad">did not reproduce</span>{{end}}
+      {{if .Rerun}}<div class="hint">re-run of <a href="#{{.Rerun}}">{{.Rerun}}</a>{{if .Differs}}: {{range $i, $d := .Differs}}{{if $i}}; {{end}}{{$d}}{{end}}{{end}}</div>{{end}}</th>
+    <td><code>{{.Code.Path}}</code> <span class="mono hint">{{slice .Code.Digest 0 12}}</span>
+      {{range .Inputs}}<div><code>{{.Path}}</code> <span class="mono hint">{{slice .Digest 0 12}}</span></div>{{end}}</td>
+    <td>{{.Environment.Interpreter}} {{.Environment.Version}}<div class="hint">{{.Environment.Box}} box, no network</div></td>
+    <td>{{range .Values}}<div><code>{{.Name}}</code> {{measure .Value .Unit}}</div>{{else}}<span class="hint">none</span>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}<p>No computations yet: <code>quilzo research run {{.Project.Name}} SCRIPT</code>.</p>{{end}}
+
+<h2>Sources</h2>
+{{with .Project.Sources}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Cited as</th><th scope="col">Work</th><th scope="col">Resolved</th></tr></thead>
+  <tbody>
+  {{range .}}
+  <tr>
+    <th scope="row"><code>[@{{.Key}}]</code></th>
+    <td>{{.Title}}{{if .Year}} ({{.Year}}){{end}}{{with .URL}}<div class="hint"><a href="{{.}}" rel="noopener noreferrer">{{.}}</a></div>{{end}}
+      {{if or .Abstract .Passages}}<details class="describe"><summary>What a citation is checked against<span class="chev">{{icon "expand_more"}}</span></summary>
+        {{with .Abstract}}<p>{{.}}</p>{{end}}{{range .Passages}}<blockquote>{{.Text}}<div class="hint">quoted by {{.By}}</div></blockquote>{{end}}</details>
+      {{else}}<div class="hint">nothing held to check a citation against</div>{{end}}</td>
+    <td>{{.Resolver}}<div class="hint">{{.Resolved.Format "2 Jan 2006"}}</div></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}<p>No sources yet: <code>quilzo research cite {{.Project.Name}} doi:…</code>.</p>{{end}}
+{{template "foot" .}}
+
+{{define "research-piece"}}{{if eq .Kind "value"}}<a class="value" href="#{{.Ref}}" title="{{.Title}}">{{.Text}}</a>{{else if eq .Kind "cite"}}<span class="cite" title="{{.Title}}">{{.Text}}</span>{{else if eq .Kind "unlinked"}}<span class="tag tag-bad" title="{{.Title}}">{{.Text}}</span>{{else if eq .Kind "stated"}}<span title="{{.Title}}">{{.Text}}</span>{{else if eq .Kind "code"}}<code>{{.Text}}</code>{{else}}{{.Text}}{{end}}{{end}}

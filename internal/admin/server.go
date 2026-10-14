@@ -85,6 +85,7 @@ import (
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/render"
+	"github.com/quilzo/quilzo/internal/research"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -409,6 +410,9 @@ type Server struct {
 	// Interface is the agent interface at /mcp, with the OAuth server apps
 	// connect through. Nil serves neither. See agentinterface.go.
 	Interface *AgentInterface
+	// Research is research projects. Nil says so on the screen. See
+	// research.go.
+	Research *Research
 	// ModelDoor is the model gateway at /v1, for agents built anywhere.
 	// See modeldoor.go.
 	ModelDoor *ModelDoor
@@ -499,6 +503,8 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 			return template.URL("data:image/svg+xml," + url.PathEscape(MarkSVG("#0842a0")))
 		},
 		"pct": func(f float64) float64 { return f * 100 },
+		// measure is a research value as a report states it.
+		"measure": research.Format,
 		// sentence capitalises the first letter, for a word stored in
 		// lower case and shown on its own: a severity, a state.
 		"sentence": func(v any) string {
@@ -1276,6 +1282,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/experiments/change", s.handleExperimentChange)
 	mux.HandleFunc("/approvals", s.handleApprovals)
 	mux.HandleFunc("/approvals/act", s.handleApprovalsAct)
+	mux.HandleFunc("/research", s.handleResearch)
+	mux.HandleFunc("/research/", s.handleResearch)
 	mux.HandleFunc("/make", s.handleMake)
 	mux.HandleFunc("/make/check", s.handleMakeCheck)
 	mux.HandleFunc("/make/draft", s.handleMakeDraft)
