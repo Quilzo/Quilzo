@@ -71,8 +71,8 @@ func doorStatus(err error) int {
 // doorToken is the token a request carries: as OpenAI's clients send a
 // key, or as Anthropic's do.
 func doorToken(r *http.Request) string {
-	if t, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
-		return strings.TrimSpace(t)
+	if t, _ := authzToken(r); t != "" {
+		return t
 	}
 	return strings.TrimSpace(r.Header.Get("X-Api-Key"))
 }
@@ -93,12 +93,13 @@ func (s *Server) handleModelDoor(w http.ResponseWriter, r *http.Request) {
 	}
 	token := doorToken(r)
 	if token == "" {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="quilzo"`)
+		tokenChallenge(w, "", nil)
 		fail(w, http.StatusUnauthorized, "a Quilzo token is needed, as the API key: Authorization: Bearer, or x-api-key")
 		return
 	}
 	c, err := s.interfaceCaller(r, token, "")
 	if err != nil {
+		tokenChallenge(w, "", err)
 		fail(w, http.StatusUnauthorized, err.Error())
 		return
 	}

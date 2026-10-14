@@ -758,6 +758,12 @@ type Token struct {
 	// "Chrome on Windows|GB", so a session carried somewhere else — a
 	// cookie copied by malware — can be noticed (see BindSession).
 	Bound string `json:"bound,omitempty"`
+
+	// Key binds the token to a key, by the key's RFC 7638 thumbprint: it is
+	// accepted only with a fresh proof made by that key (internal/dpop), at
+	// the surfaces that check one, and refused everywhere else, so the
+	// token copied without its key is useless.
+	Key string `json:"key,omitempty"`
 }
 
 // BindSession records where a session was issued to.
@@ -1033,12 +1039,24 @@ func (ts *TokenStore) issue(name, principal string, role Role,
 // could widen would be an escalation path dressed as convenience.
 func (ts *TokenStore) Exchange(parentSecret string, role Role, resource string,
 	ttl time.Duration, now time.Time) (secret string, t Token, err error) {
+	return ts.ExchangeProved(parentSecret, role, resource, ttl, "", now)
+}
+
+// ExchangeProved is Exchange for a request that carried a proof made by the
+// key with this thumbprint, or none: a parent bound to a key is exchanged
+// only with a proof by that key, and the session is bound to the key that
+// proved, when one did.
+func (ts *TokenStore) ExchangeProved(parentSecret string, role Role, resource string,
+	ttl time.Duration, thumbprint string, now time.Time) (secret string, t Token, err error) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 
 	parent, err := ts.authenticate(parentSecret, now)
 	if err == nil && parent.Audience != "" {
 		err = audienceError(parent.Audience)
+	}
+	if err == nil && parent.Key != "" && subtle.ConstantTimeCompare([]byte(parent.Key), []byte(thumbprint)) != 1 {
+		err = ErrKeyBound
 	}
 	if err != nil {
 		return "", Token{}, err
@@ -1117,6 +1135,7 @@ func (ts *TokenStore) Exchange(parentSecret string, role Role, resource string,
 		// session the call is already the intersection rather than a choice
 		// about which one wins.
 		Scope: parent.Scope.Narrow(Scope{}),
+		Key:   thumbprint,
 	}
 	ts.pruneSessions(now)
 	ts.Tokens = append(ts.Tokens, t)
@@ -1140,6 +1159,9 @@ func (ts *TokenStore) AuthenticateFor(secret, resource string, now time.Time) (*
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	t, err := ts.authenticate(secret, now)
+	if err == nil && t.Key != "" {
+		return nil, ErrKeyBound
+	}
 	if err == nil && t.Audience != "" && (resource == "" || t.Audience != resource) {
 		return nil, audienceError(t.Audience)
 	}
@@ -1153,12 +1175,85 @@ func (ts *TokenStore) AuthenticateFor(secret, resource string, now time.Time) (*
 	return t, err
 }
 
+// ErrKeyBound is a token bound to a key presented without a proof made by
+// the key.
+var ErrKeyBound = errors.New("this token is bound to a key and is accepted only with a DPoP proof " +
+	"made by that key, at /mcp, /v1 and /a2a")
+
+// AuthenticateProved is AuthenticateFor for a request that carried a proof,
+// already checked, made by the key with this thumbprint: the token must be
+// bound to that key.
+func (ts *TokenStore) AuthenticateProved(secret, resource, thumbprint string, now time.Time) (*Token, error) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	t, err := ts.authenticate(secret, now)
+	switch {
+	case err != nil:
+		return nil, err
+	case t.Key == "":
+		return nil, errors.New("this token is not bound to a key; present it as a Bearer token")
+	case subtle.ConstantTimeCompare([]byte(t.Key), []byte(thumbprint)) != 1:
+		return nil, errors.New("the proof was made by another key than the one this token is bound to")
+	case t.Audience != "" && (resource == "" || t.Audience != resource):
+		return nil, audienceError(t.Audience)
+	case t.StepUp != "":
+		return t, ErrStepUp
+	}
+	return t, nil
+}
+
+// BindKey binds an unbound token to a key, by its thumbprint.
+func (ts *TokenStore) BindKey(id, thumbprint string) error {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if thumbprint == "" {
+		return errors.New("a key's thumbprint is needed")
+	}
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == id {
+			if ts.Tokens[i].Key != "" {
+				return errors.New("this token is already bound to a key")
+			}
+			ts.Tokens[i].Key = thumbprint
+			return nil
+		}
+	}
+	return fmt.Errorf("no token %s", id)
+}
+
 // ErrAudience is a token presented somewhere other than the one resource it
 // was issued for.
 var ErrAudience = errors.New("this token was issued for one resource only")
 
 func audienceError(aud string) error {
 	return fmt.Errorf("%w (%s) and is not accepted here", ErrAudience, aud)
+}
+
+// MaxFederatedTTL is the longest a token exchanged for another issuer's
+// assertion may last: a job's identity is for the job.
+const MaxFederatedTTL = time.Hour
+
+// IssueFederated mints a token for a program another issuer vouched for,
+// such as a CI job: short, named for the trust that admitted it, and bound
+// to a key when the request proved one.
+func (ts *TokenStore) IssueFederated(name, principal string, role Role, resource string, scope Scope,
+	ttl time.Duration, thumbprint string, now time.Time) (string, Token, error) {
+	if ttl <= 0 || ttl > MaxFederatedTTL {
+		return "", Token{}, fmt.Errorf("a federated token lasts more than nothing and at most %s", MaxFederatedTTL)
+	}
+	secret, t, err := ts.issue(name, principal, role, resource, ttl, RoleAdmin, scope, false)
+	if err != nil {
+		return "", Token{}, err
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == t.ID {
+			ts.Tokens[i].ExpiresAt, ts.Tokens[i].Key = now.Add(ttl).Unix(), thumbprint
+			t = ts.Tokens[i]
+		}
+	}
+	return secret, t, nil
 }
 
 // IssueForGrant mints an access token for an app a person consented to,

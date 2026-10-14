@@ -9,6 +9,24 @@ Unreleased
 
 ** Added
 
+*** Short-lived and bound credentials for programs.  A CI job exchanges
+    the identity token its platform signs for each run for a short Quilzo
+    token, so no secret is kept in the repository: `quilzo trust add
+    docs-ci --github octo/docs --ref refs/heads/main --as ci:docs --role
+    author --on /docs` declares which issuer, audience and claims are
+    admitted and what the job gets, for at most an hour; GitLab and any
+    other issuer with a discovery document work the same way.  POST
+    /token/exchange is RFC 8693 token exchange: a job's identity token, or a
+    Quilzo token for a narrower one that lasts fifteen minutes.  A token can
+    be bound to a program's key (`quilzo token keygen`, `token issue
+    --key`, or a DPoP proof at the exchange): it is then accepted only with
+    a fresh proof made by that key, RFC 9449, at /mcp, /v1 and /a2a, and
+    refused everywhere else.  From another machine, publishing, rolling
+    back, granting, managing tokens and agents and installing need a token
+    bound to a key or one that lasts an hour or less; reading and drafting
+    take any token (token.proof_for_risky).  New tokens last a week by
+    default and ninety days at most (token.ttl.default, token.ttl.max).
+
 *** Ask Today a question, and keep the answer.  Somebody who may use the
     store's models asks in their own words, and the answer is cards Quilzo
     draws: a figure, a table, bars, what is waiting, agent runs.  The model

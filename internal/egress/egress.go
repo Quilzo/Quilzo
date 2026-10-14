@@ -101,6 +101,14 @@ var Purposes = []Purpose{
 			"verified because their sender's key cannot be fetched",
 	},
 	{
+		Name: "trust",
+		What: "reading the signing keys of an issuer a trust names, such as " +
+			"GitHub Actions or GitLab CI, to check the identity token a job " +
+			"exchanges for a short Quilzo token",
+		Without: "no job can exchange its identity token; programs use tokens " +
+			"issued here",
+	},
+	{
 		Name:    "webhook",
 		What:    "notifying an endpoint that something was published or proposed",
 		Without: "webhooks are not delivered. Nothing is queued or retried",

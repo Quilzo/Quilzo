@@ -109,6 +109,9 @@ type Endpoint struct {
 	Metadata string
 	// DefaultScope is the scope named in a 401.
 	DefaultScope string
+	// DPoP, when set, is the signature algorithms a key-bound token's proof
+	// may use, offered in the challenge beside Bearer.
+	DPoP string
 	// Authenticate resolves the bearer token. An error is a 401.
 	Authenticate func(r *http.Request, token string) (*Caller, error)
 	// Build makes the server that answers one caller.
@@ -417,7 +420,10 @@ func bearer(r *http.Request) (string, bool) {
 	}
 	scheme, token, ok := strings.Cut(strings.TrimSpace(h[0]), " ")
 	token = strings.TrimSpace(token)
-	if !ok || !strings.EqualFold(scheme, "Bearer") || token == "" || strings.ContainsAny(token, " \t") {
+	// A token bound to a key comes under the DPoP scheme; Authenticate
+	// checks its proof.
+	if !ok || !(strings.EqualFold(scheme, "Bearer") || strings.EqualFold(scheme, "DPoP")) || token == "" ||
+		strings.ContainsAny(token, " \t") {
 		return "", false
 	}
 	return token, true
@@ -441,6 +447,9 @@ func (e *Endpoint) challenge(w http.ResponseWriter, code, why string) {
 		v += " " + strings.Join(params, ", ")
 	}
 	w.Header().Set("WWW-Authenticate", v)
+	if e.DPoP != "" {
+		w.Header().Add("WWW-Authenticate", `DPoP algs="`+e.DPoP+`"`)
+	}
 	msg := "a bearer token is needed"
 	if why != "" {
 		msg = "the token was refused: " + why

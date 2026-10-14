@@ -136,25 +136,44 @@ var settings = []Setting{
 
 	// -- tokens ---------------------------------------------------------------
 	{
-		Key: "token.ttl.default", Kind: Duration, Default: "720h",
+		Key: "token.ttl.default", Kind: Duration, Default: "168h",
 		Summary:  "how long a new token lasts when no --ttl is given",
 		Controls: []string{"IA-5(1)", "AC-2"},
-		Why: "Thirty days. Long enough that people are not reissuing weekly, " +
-			"short enough that a credential leaked into a shell history stops " +
-			"working within a quarter.",
-		Weaker: atMostDur(365*24*time.Hour, "a %s default means a leaked "+
+		Why: "A week. A program that runs for longer exchanges its token for a " +
+			"short one, or a CI job exchanges its platform's identity token and " +
+			"keeps no token at all, so a token leaked into a log or a shell " +
+			"history stops working within days.",
+		Weaker: atMostDur(90*24*time.Hour, "a %s default means a leaked "+
 			"token stays useful for that long, and nobody rotates what has "+
 			"not expired"),
 	},
 	{
-		Key: "token.ttl.max", Kind: Duration, Default: "8760h",
+		Key: "token.ttl.max", Kind: Duration, Default: "2160h",
 		Summary:  "the longest life any token may be issued with",
 		Params:   []string{"ia-05_odp.01"},
 		Controls: []string{"IA-5(1)"},
-		Why: "A ceiling on --ttl, so a long-lived credential is a decision " +
-			"somebody made against a limit rather than a number typed once.",
+		Why: "Ninety days: a ceiling on --ttl, so a long-lived credential is a " +
+			"decision somebody made against a limit rather than a number typed once.",
 		Weaker: atMostDur(365*24*time.Hour, "%s is longer than a year, which "+
 			"is longer than most people stay in a role"),
+	},
+	{
+		Key: "token.proof_for_risky", Kind: Bool, Default: "true",
+		Summary:  "from another machine, risky acts need a key-bound token or a short one",
+		Controls: []string{"IA-5", "SC-23"},
+		Why: "A bearer token works for whoever holds a copy. Through the agent " +
+			"interface, the MCP gateway and A2A, publishing, rolling back, " +
+			"granting, managing tokens and agents and installing need a token " +
+			"bound to the program's key and proved on each request (DPoP), or " +
+			"one that lasts an hour or less: an app's consented token, an " +
+			"exchanged session, a CI job's token. Reading and drafting take a " +
+			"bearer token, as most clients send.",
+		Weaker: func(v string) (bool, string) {
+			if b, err := strconv.ParseBool(v); err == nil && !b {
+				return true, "a long-lived bearer token copied from a log or a crash dump can publish and administer from anywhere"
+			}
+			return false, ""
+		},
 	},
 	{
 		Key: "token.api.ttl.default", Kind: Duration, Default: "1h",

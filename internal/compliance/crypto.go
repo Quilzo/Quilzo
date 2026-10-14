@@ -123,9 +123,14 @@ func Inventory() []Algorithm {
 		},
 		{
 			Name: "ECDSA over P-256/384/521", Package: "crypto/ecdsa, crypto/elliptic",
-			Purpose: "verifying ID token signatures from an identity provider",
-			Where:   "oidc", Use: Verified, Quantum: Broken,
-			Note: "Same position as RSA: verified, never generated.",
+			Purpose: "verifying ID tokens, CI jobs' identity tokens and DPoP proofs; " +
+				"signing DPoP proofs with a program's own key",
+			Where: "oidc, federate, dpop", Use: Generated, Quantum: Broken,
+			Note: "Verified for identity tokens and proofs of possession. Generated " +
+				"only on a program's side: `quilzo token keygen` makes a P-256 key that " +
+				"stays with the program, and `quilzo token proof` signs a DPoP proof " +
+				"with it. The store keeps the key's thumbprint, never the key. P-256 " +
+				"because ES256 is what DPoP clients and libraries implement.",
 		},
 		{
 			Name: "Ed25519", Package: "crypto/ed25519",

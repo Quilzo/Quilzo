@@ -56,6 +56,11 @@ type Caller struct {
 	// agentinterface.go.
 	Remote bool
 	Grant  string
+	// Bound is whether the token was bound to a key and proved by it, and
+	// Life how long the token was issued to last: together, how much a copy
+	// of it would be worth to somebody else.
+	Bound bool
+	Life  time.Duration
 	// Model is what an AI caller's acts are recorded as having been decided
 	// by: the app at the agent interface (mcp-client), which does not say
 	// which model it runs, or an agent acting under its own identity.

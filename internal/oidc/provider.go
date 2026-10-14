@@ -350,6 +350,17 @@ type jwk struct {
 	Y   string `json:"y"`
 }
 
+// PublicKey reads one public JWK: an RSA key of at least 2048 bits, or an
+// EC key on P-256, P-384 or P-521. It is the reading a key set gets, for a
+// key that arrives on its own, such as the one in a DPoP proof's header.
+func PublicKey(raw []byte) (crypto.PublicKey, error) {
+	var k jwk
+	if err := json.Unmarshal(raw, &k); err != nil {
+		return nil, fmt.Errorf("the key is not a JWK: %w", err)
+	}
+	return k.public()
+}
+
 func (k jwk) public() (crypto.PublicKey, error) {
 	switch k.Kty {
 	case "RSA":

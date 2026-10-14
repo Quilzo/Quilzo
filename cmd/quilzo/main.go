@@ -520,7 +520,10 @@ access
   quilzo auth list | roles
   quilzo token issue NAME --principal WHO  an API credential, shown once
   quilzo token exchange                    trade a stored token for a short session
+  quilzo token keygen FILE | proof --key FILE --url URL   a program's key, and a DPoP proof
   quilzo token list | revoke ID | stale
+  quilzo trust add NAME --github OWNER/REPO --as WHO --role ROLE | list | remove NAME
+                                           CI jobs exchange their identity token, no stored secret
 
 encryption at rest
   quilzo vault status                      whether objects are sealed on disk
@@ -1077,6 +1080,8 @@ func main() {
 		err = cmdAuth(root, cmdArgs)
 	case "token":
 		err = cmdToken(root, cmdArgs)
+	case "trust":
+		err = cmdTrust(root, cmdArgs)
 	case "a11y":
 		err = cmdA11y(root, cmdArgs)
 	case "records", "record":
