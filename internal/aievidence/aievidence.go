@@ -78,7 +78,7 @@ type Inputs struct {
 type Counts struct {
 	Runs, ModelRuns, Actions, Refused, Approved, Declined, Canceled int
 	Paused, Flagged, Remembered, Confirmed, Forgotten, Masked       int
-	GatewayCalls, AppCalls, Tasks, Receipts                         int
+	GatewayCalls, AppCalls, Tasks, Receipts, ModelCalls             int
 	First                                                           time.Time
 }
 
@@ -125,6 +125,8 @@ func Count(events []audit.Event, from, to time.Time) Counts {
 			c.GatewayCalls++
 		case "mcp.call":
 			c.AppCalls++
+		case "model.door":
+			c.ModelCalls++
 		case "a2a.task":
 			c.Tasks++
 		case "shield.responded":

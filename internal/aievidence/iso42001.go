@@ -86,7 +86,7 @@ func Annex(in Inputs) []Item {
 			"receipts of runs, app connections and forgotten memory can be checked by anybody against published keys"),
 		s("A.9.2", "Processes for responsible use of AI systems",
 			"the exfiltration breaker, the privacy guard and approvals stand between an agent and anything leaving",
-			fmt.Sprintf("%d calls through the MCP gateway, %d through the agent interface and %d tasks from other agents, all checked and recorded", c.GatewayCalls, c.AppCalls, c.Tasks)),
+			fmt.Sprintf("%d calls through the MCP gateway, %d through the agent interface, %d model calls from agents built elsewhere and %d tasks from other agents, all checked and recorded", c.GatewayCalls, c.AppCalls, c.ModelCalls, c.Tasks)),
 		y("A.9.3", "Objectives for responsible use of AI system", "the objectives"),
 		s("A.9.4", "Intended use of the AI system", "each agent's purpose is declared and its manifest enforced; other uses are refused"),
 		s("A.10.2", "Allocating responsibilities", fmt.Sprintf("a sponsor for every agent, and for each of the %d other vendors' agents registered here", len(in.External))),

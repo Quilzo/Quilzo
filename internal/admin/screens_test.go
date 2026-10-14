@@ -197,6 +197,13 @@ var notAScreen = map[string]string{
 		"agentinterface_test.go posts to it",
 	"/mcp": "is the agent interface: JSON-RPC posted by programs with a " +
 		"bearer token, 404 while the interface is off",
+	"/v1/chat/completions": "is the model door for programs with a bearer token, 404 while it is off. " +
+		"modeldoor_test.go posts to it",
+	"/v1/responses": "is the model door for programs with a bearer token, 404 while it is off. " +
+		"modeldoor_test.go posts to it",
+	"/v1/messages": "is the model door for programs with a bearer token, 404 while it is off. " +
+		"modeldoor_test.go posts to it",
+	"/v1/models":                                "is JSON for programs with a bearer token, 404 while the model door is off",
 	"/.well-known/oauth-protected-resource":     "is JSON for programs (RFC 9728), 404 until the interface and the admin's address are set",
 	"/.well-known/oauth-protected-resource/mcp": "is JSON for programs (RFC 9728), 404 until the interface and the admin's address are set",
 	"/.well-known/oauth-authorization-server":   "is JSON for programs (RFC 8414), 404 until the interface and the admin's address are set",

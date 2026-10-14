@@ -60,20 +60,10 @@ func WithMemory(m Memory, s *agent.Session,
 			// holds it, and the exfiltration breaker knows. Which memory it
 			// used goes on the receipt, by id.
 			s.HoldsPrivate("what " + s.Manifest().Name + " remembers about " + m.About)
-			var b strings.Builder
 			for _, e := range found {
 				s.UsedMemory(true, e.ID)
-				if e.Key != "" {
-					fmt.Fprintf(&b, "- (%s %s, true since %s", e.Kind, e.Key, e.Created.Format("2 Jan 2006"))
-				} else {
-					fmt.Fprintf(&b, "- (%s, %s", e.Kind, e.Created.Format("2 Jan 2006"))
-				}
-				if w := memory.TierWords[e.Tier]; w != "" {
-					b.WriteString(", " + w)
-				}
-				fmt.Fprintf(&b, ") %s\n", e.Text)
 			}
-			return b.String(), nil
+			return Recalled(found), nil
 		}
 		kind, _ := a.Input["kind"].(string)
 		if kind == "" {
@@ -103,6 +93,24 @@ func WithMemory(m Memory, s *agent.Session,
 		}
 		return "remembered as " + e.ID, nil
 	}
+}
+
+// Recalled is what was recalled as a model reads it: each entry with its
+// kind, since when it is true, and how far it can be trusted.
+func Recalled(found []memory.Entry) string {
+	var b strings.Builder
+	for _, e := range found {
+		if e.Key != "" {
+			fmt.Fprintf(&b, "- (%s %s, true since %s", e.Kind, e.Key, e.Created.Format("2 Jan 2006"))
+		} else {
+			fmt.Fprintf(&b, "- (%s, %s", e.Kind, e.Created.Format("2 Jan 2006"))
+		}
+		if w := memory.TierWords[e.Tier]; w != "" {
+			b.WriteString(", " + w)
+		}
+		fmt.Fprintf(&b, ") %s\n", e.Text)
+	}
+	return b.String()
 }
 
 // tierOf is how far what a run learns now can be trusted, from what it has

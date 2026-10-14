@@ -111,6 +111,7 @@ var Features = map[string]string{
 	"search-answers": "AI answers in site search",
 	"api":            "the content API",
 	"mcp":            "the machine interface",
+	"models":         "the model gateway for agents built anywhere, at /v1",
 	"scim":           "provisioning from the identity provider",
 	"uploads":        "media uploads",
 	"import":         "importing content",
