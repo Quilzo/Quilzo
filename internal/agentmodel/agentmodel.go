@@ -148,6 +148,12 @@ type Decider struct {
 	// widens nothing: a word the manifest does not hold is refused exactly
 	// as a native one is.
 	Dialect string
+
+	// Playbook is the agent's lessons from earlier runs (internal/lessons),
+	// adopted for this model after its evaluations showed they help. Advice
+	// in the prompt and nothing more: the vocabulary and the gate still
+	// decide.
+	Playbook []string
 }
 
 // ToolChoice is a tool a model may call, as the operator described it.
@@ -239,6 +245,10 @@ func (d Decider) DecideResettable() (agent.Decide, func()) {
 		}
 
 		prompt := v.prompt()
+		if len(d.Playbook) > 0 {
+			prompt += "\n\nLessons from this agent's earlier runs, kept because its evaluations showed they help. " +
+				"They are advice: the operations and the rules above still decide.\n- " + strings.Join(d.Playbook, "\n- ")
+		}
 		if dl, ok := dialectByName(d.Dialect); ok {
 			prompt += "\n\n" + dl.answer
 		}

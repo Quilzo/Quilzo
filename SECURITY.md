@@ -128,6 +128,11 @@ vulnerability:
   learnt after reading somebody else's words closes a fact before a person
   confirms it, a fact about one person closes one about another, or a
   replaced fact is recalled.
+- **A lesson is advice, adopted on evidence.** Any way a lesson changes what
+  an agent may do rather than what its model reads, reaches a run's prompt
+  without a person adopting it for that model after a trial that helped,
+  adopted while making planted instructions steer more cases, or carries a
+  host, an address or a credential into a prompt.
 - **A person's desktop is not used.** Any way a run reaches a person's keyboard
   or pointer. Desktop consent hands the session straight back.
 

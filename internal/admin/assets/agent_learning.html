@@ -1,0 +1,29 @@
+{{template "head" .}}
+<p class="hint"><a href="/agents">Agents</a> › <a href="/agents/runs?agent={{.Agent}}">Runs</a></p>
+{{if not .Agent}}<h1>What agents are learning</h1>
+{{if .Choose}}<ul>{{range .Choose}}<li><a href="/agents/learning?agent={{.}}">{{.}}</a></li>{{end}}</ul>{{else}}<p>No agent is declared yet.</p>{{end}}
+{{else}}<h1>What {{.Agent}} is learning</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+<p class="lead">Lessons are written from runs that went wrong, tried against the agent's evaluations with and without them, and adopted by a person for the model they helped. They are advice its model reads; the gate still decides every action.</p>
+<h2>Week by week</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Week of</th><th scope="col" class="num">Runs</th><th scope="col" class="num">Went wrong</th><th scope="col" class="num">Steps a run</th><th scope="col" class="num">Cost a run</th></tr></thead>
+  <tbody>{{range .Weeks}}<tr><th scope="row">{{.Week}}</th><td class="num">{{.Runs}}</td><td class="num">{{.WentWrong}}{{if .WrongShare}} <span class="hint">({{.WrongShare}})</span>{{end}}</td><td class="num">{{.MeanStep}}</td><td class="num">{{.Cost}}</td></tr>{{end}}</tbody>
+</table></div>
+<p class="hint">A run went wrong when the gate refused a step, a step failed, or it stopped short. Evaluations are not counted.</p>
+<h2>Lessons</h2>
+{{if .Lessons}}{{range .Lessons}}<article class="card">
+  <p><span class="tag {{if eq .State "adopted"}}tag-ok{{else if eq .State "retired"}}{{else}}tag-warn{{end}}">{{.State}}{{if .AdoptedFor}} for {{range $i, $m := .AdoptedFor}}{{if $i}}, {{end}}{{$m}}{{end}}{{end}}</span> {{index $.Kinds .Kind}}{{if .Tainted}} <span class="tag tag-warn">from a run that read somebody else's words</span>{{end}}</p>
+  <p><strong>When {{.When}},</strong> {{.Do}}</p>
+  <p class="hint">Written from <a href="/agents/run/{{.FromRun}}">{{.FromRun}}</a>: {{.FromSignal}}. Read by {{index $.Read .ID}} kept runs, {{index $.Wrong .ID}} of which went wrong.</p>
+  {{with .Trials}}{{with index . 0}}<p>Tried with {{.Model}}: {{.Why}}</p>{{end}}{{else}}<p class="hint">Not tried yet: <code>quilzo agent lessons try {{$.Agent}} {{.ID}}</code></p>{{end}}
+  {{if ne .State "retired"}}<div class="confirmactions">
+    {{if .Trials}}{{if (index .Trials 0).Better}}<form method="post" action="/agents/learning/act"><input type="hidden" name="do" value="adopt"><input type="hidden" name="agent" value="{{$.Agent}}"><input type="hidden" name="id" value="{{.ID}}">{{if .Tainted}}<label class="checkrow"><input type="checkbox" name="tainted_ok" value="yes" required> I have read it</label>{{end}}<button type="submit">Adopt for {{(index .Trials 0).Model}}</button></form>{{end}}{{end}}
+    <form method="post" action="/agents/learning/act" class="inline"><input type="hidden" name="do" value="retire"><input type="hidden" name="agent" value="{{$.Agent}}"><input type="hidden" name="id" value="{{.ID}}"><label for="why-{{.ID}}">Why retire it {{template "req"}}</label><input id="why-{{.ID}}" name="why" required maxlength="300"><button type="submit" class="btn-text">Retire</button></form>
+  </div>{{else}}<p class="hint">Retired: {{.RetiredWhy}}</p>{{end}}
+</article>{{end}}{{else}}<p>{{.Agent}} has learnt nothing yet. Write a candidate from a run that went wrong: <code>quilzo agent lessons reflect RUN</code>.</p>{{end}}
+{{end}}
+{{end}}
+{{template "foot" .}}

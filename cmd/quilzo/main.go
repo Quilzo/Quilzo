@@ -571,6 +571,10 @@ agents and integrations
   quilzo agent runs [NAME] | trace RUN     the runs that are kept, and one step by step
   quilzo agent cost [--by agent|person|goal|day]  what runs cost, in tokens and money
   quilzo agent earned NAME [--reset]       which kinds of action it runs without asking, and why
+  quilzo agent lessons NAME                what it learnt from its mistakes, tried, adopted or retired
+  quilzo agent lessons reflect RUN         a model writes a candidate lesson from a run that went wrong
+  quilzo agent lessons try NAME ID [--k N] its evaluations with and without the lesson, under its model
+  quilzo agent lessons adopt|retire NAME ID   adopt one that helped, for that model; or retire one
   quilzo agent credential issue|list|revoke|verify|keys   signed credentials other vendors' agents present
   quilzo eval keep RUN-ID [--finishes --uses a,b --avoids c]   a kept run as a test case
   quilzo eval run AGENT [--k 3] [--model] [--attempts N]   every case k times, and with instructions planted

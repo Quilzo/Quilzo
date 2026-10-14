@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/lessons"
 	"github.com/quilzo/quilzo/internal/auth"
 )
 
@@ -67,6 +68,11 @@ type Agents struct {
 	// it count, and why not. Unearn sends everything back to asking.
 	Earned func(name string) (EarnedView, error)
 	Unearn func(name, by string) error
+	// Lessons are what an agent learnt from its mistakes (internal/lessons);
+	// AdoptLesson and RetireLesson are a person's decisions about one.
+	Lessons      func(name string) ([]lessons.Lesson, error)
+	AdoptLesson  func(name, id string, taintedOK bool, by string) error
+	RetireLesson func(name, id, why, by string) error
 	// Bundle is a run's replay bundle: one HTML file of its steps, the
 	// pictures a person was asked about, and its receipt with proofs.
 	Bundle func(id string) ([]byte, error)
