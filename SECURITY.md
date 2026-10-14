@@ -148,6 +148,9 @@ vulnerability:
   a model approves what an agent waits for, somebody who may manage an agent
   names its sponsor, or a package installs agents or webhooks for somebody
   who could not declare them.
+- **A collection is reached only through a grant on it.** Any way somebody
+  granted one collection, or a section of pages, reads, writes or learns the
+  name of another collection through any interface.
 - **A person's desktop is not used.** Any way a run reaches a person's keyboard
   or pointer. Desktop consent hands the session straight back.
 

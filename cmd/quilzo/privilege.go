@@ -12,6 +12,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collection"
 )
 
 // What every command needs before it is allowed to run.
@@ -1299,6 +1300,16 @@ func commandArea(cmd string, args []string) (string, bool) {
 	if cmd == "agent" && len(args) > 1 && args[0] == "run" && reAgentArg.MatchString(args[1]) {
 		return auth.AgentResource(args[1]), true
 	}
+	// A command on one collection's records is asked about that collection;
+	// listing the collections, about them all.
+	if cmd == "records" || cmd == "record" {
+		switch {
+		case len(args) > 1 && recordVerbs[args[0]] && collection.ValidName(args[1]) == nil:
+			return auth.DataResource(args[1]), true
+		default:
+			return auth.AreaData, true
+		}
+	}
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		if a, ok := commandAreas[cmd+" "+args[0]]; ok {
 			return a, true
@@ -1320,6 +1331,9 @@ func lookupNeed(cmd string, args []string) (need, bool) {
 	n, ok := commandNeeds[cmd]
 	return n, ok
 }
+
+// recordVerbs are the records subcommands that name a collection first.
+var recordVerbs = map[string]bool{"list": true, "get": true, "add": true, "delete": true, "import": true}
 
 // reAgentArg is an agent's name as a command takes it.
 var reAgentArg = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)

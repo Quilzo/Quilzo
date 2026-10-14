@@ -9,6 +9,16 @@ Unreleased
 
 ** Added
 
+*** Access per collection of records.  Each collection is checked as
+    itself, at /@data/NAME, on the command line, the Data screen, the agent
+    interface (list_collections, list_records, write_record) and the content
+    API, so `quilzo auth grant tech author --on /@data/samples` lets
+    somebody, or an agent, work on the samples and nothing else, and see
+    only the collections they may read.  A role over the site covers every
+    collection as before.  The content API asked about /NAME, the namespace
+    of pages, so a grant on a section of pages reached the collection of the
+    same name; it no longer does.
+
 *** Permissions for working with agents.  Five decisions that were each
     given to the nearest role, and all but two meant "administrator of
     everything", are permissions of their own: run-agents, approve,

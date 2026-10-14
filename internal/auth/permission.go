@@ -118,3 +118,38 @@ func grantsPermission(b *Binding, action Action, target string, liveAt int64) bo
 func permissionText(b *Binding) string {
 	return fmt.Sprintf("the %s permission on %s", b.Permission, normalise(b.Resource))
 }
+
+// AreaData is the records an application holds, and DataResource one
+// collection of them: a role on /@data/samples reads, or writes, the
+// samples and nothing else. A role on the whole site covers every
+// collection, as it always did; a role on a section of pages covers none,
+// because a page section and a collection that happen to share a name are
+// not the same thing.
+const AreaData = "/@data"
+
+// DataResource is the resource one collection is checked against.
+func DataResource(collection string) string { return AreaData + "/" + collection }
+
+// AnywhereUnder reports whether a principal may perform an action on an
+// area or on anything inside it: whether a screen for the area has
+// anything to show them.
+func (p *Policy) AnywhereUnder(principal string, action Action, area string) bool {
+	if p.Evaluate(principal, action, area).Allowed {
+		return true
+	}
+	p.mu.RLock()
+	var inside []string
+	for i := range p.Bindings {
+		b := &p.Bindings[i]
+		if b.Principal == principal && !b.Deny && covers(area, b.Resource) {
+			inside = append(inside, b.Resource)
+		}
+	}
+	p.mu.RUnlock()
+	for _, r := range inside {
+		if p.Evaluate(principal, action, r).Allowed {
+			return true
+		}
+	}
+	return false
+}

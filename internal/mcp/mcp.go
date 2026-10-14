@@ -122,6 +122,11 @@ type Operation struct {
 	Writes    bool
 	NeedsRole string
 	Keywords  []string
+	// Area, when set, is the area an operation's handler checks a resource
+	// inside of (one collection, say): the check before it runs asks only
+	// that the caller may act somewhere in the area, and the handler asks
+	// about the one it was given.
+	Area string
 }
 
 // Handler performs an operation. Returning an error whose message begins with a
