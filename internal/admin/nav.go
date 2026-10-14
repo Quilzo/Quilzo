@@ -69,6 +69,9 @@ var groups = []string{
 
 // destinations is every screen, in the default order.
 var destinations = []destination{
+	// What is waiting and what is happening, for everybody who signs in;
+	// where a sign-in lands unless somebody chose Pages.
+	{"today", "Today", "/today", "Content", "today", auth.ActView},
 	{"pages", "Pages", "/", "Content", "pages", auth.ActView},
 	// Everything waiting for a person, from every part of the program, so
 	// nothing waits unseen because it waited somewhere nobody opened.
@@ -214,7 +217,7 @@ var docSections = map[string]bool{
 	"growth": true, "integrations": true, "languages": true, "logging": true, "make": true, "media": true, "members": true,
 	"memory": true, "models": true, "pages": true, "passkeys": true, "people": true, "provenance": true,
 	"provisioning": true, "publishing": true, "research": true, "security": true, "settings": true, "shield": true, "sso": true,
-	"start": true, "structure": true, "transfer": true, "types": true, "vulnerabilities": true, "workforce": true,
+	"start": true, "structure": true, "today": true, "transfer": true, "types": true, "vulnerabilities": true, "workforce": true,
 
 	// Guides no screen owns, because they explain a concept or a surface
 	// rather than a destination. Named individually so that one quietly
@@ -507,7 +510,7 @@ var underAnywhere = map[string]bool{"records": true}
 func visibleTo(s *Server, p principal) []destination {
 	out := make([]destination, 0, len(destinations))
 	for _, d := range destinations {
-		if s.Policy != nil && !s.Policy.Evaluate(p.Name, d.Needs, d.resource()).Allowed &&
+		if d.Key != "today" && s.Policy != nil && !s.Policy.Evaluate(p.Name, d.Needs, d.resource()).Allowed &&
 			!(underAnywhere[d.Key] && s.Policy.AnywhereUnder(p.Name, d.Needs, d.resource())) {
 			continue
 		}

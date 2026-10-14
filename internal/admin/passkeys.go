@@ -587,7 +587,7 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 	if s.OnSignIn != nil {
 		s.OnSignIn(cred.Principal, tok.ID)
 	}
-	next := "/"
+	next := startPath(r)
 	s.signInDone(r, tok.ID)
 	if stepped != nil {
 		_, _ = s.Tokens.Revoke(stepped.TokenID)

@@ -1,0 +1,32 @@
+{{template "head" .}}
+<h1>Today</h1>
+<p class="lead">{{.Date}}. What is waiting for you, then what is happening in the parts of the store you work in.</p>
+
+<section aria-labelledby="waiting">
+<h2 id="waiting">Waiting for you{{if .WaitingTotal}} <span class="count">{{.WaitingTotal}}</span>{{end}}</h2>
+{{if .Waiting}}<div class="table-wrap"><table class="approvals-table">
+  <thead><tr><th scope="col">Waiting on</th><th scope="col">From</th><th scope="col">Commits to</th><th scope="col">Since</th></tr></thead>
+  <tbody>{{range .Waiting}}<tr>
+    <th scope="row"><a href="{{.Href}}">{{.Title}}</a>{{if .Expired}}<div class="hint">asked too long ago to agree to</div>{{end}}</th>
+    <td>{{.Agent}}</td>
+    <td><span class="wf-word {{if or (eq .Commits "pays") (eq .Commits "deletes") (eq .Commits "publishes")}}critical{{else if or (eq .Commits "sends") (eq .Commits "writes") (eq .Commits "answers")}}warning{{else}}info{{end}}">{{.Commits}}</span></td>
+    <td class="when">{{.When}}</td>
+  </tr>{{end}}</tbody></table></div>
+{{if .MoreWaiting}}<p><a href="/approvals">{{.MoreWaiting}} more on Approvals</a></p>{{else}}<p class="hint">Questions first, then what cannot be taken back, then the oldest. <a href="/approvals">Approvals</a> groups them by agent.</p>{{end}}
+{{else}}<p>Nothing is waiting for you.</p>{{end}}
+</section>
+
+<section aria-labelledby="happening">
+<h2 id="happening">In your parts of the store</h2>
+{{if .Lines}}<dl class="stats-row">{{range .Lines}}<div{{if .Warn}} class="serious"{{end}}><dt>{{.Text}}</dt><dd><a href="{{.Href}}">{{.N}}</a></dd></div>{{end}}</dl>
+<p class="hint">Counted now, from the records each figure links to.</p>
+{{else}}<p>Nothing to report in what you can open.</p>{{end}}
+</section>
+
+<form method="post" action="/today/start" class="inline">
+  {{if .StartsHere}}<input type="hidden" name="to" value="pages">
+  <button type="submit" class="quiet">Start on Pages after signing in instead</button>
+  {{else}}<input type="hidden" name="to" value="today">
+  <button type="submit" class="quiet">Start here after signing in</button>{{end}}
+</form>
+{{template "foot" .}}

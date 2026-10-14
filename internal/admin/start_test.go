@@ -26,7 +26,8 @@ func TestSigningInTheFirstTimeLandsOnGettingStarted(t *testing.T) {
 	}
 }
 
-// And having finished with it, they land on their work instead.
+// And having finished with it, they land on Today, or on Pages when they
+// chose to start there.
 //
 // The redirect hangs off signing in rather than off "/", which was the first
 // attempt: making the landing page answer differently depending on a cookie
@@ -34,17 +35,21 @@ func TestSigningInTheFirstTimeLandsOnGettingStarted(t *testing.T) {
 // redirect instead of the thing they asked for.
 func TestSigningInAfterwardsLandsOnTheWork(t *testing.T) {
 	srv, token := setup(t)
+	for start, want := range map[string]string{"": "/today", "pages": "/"} {
+		r := httptest.NewRequest(http.MethodPost, "/signin",
+			strings.NewReader("token="+token))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Set("Sec-Fetch-Site", "same-origin")
+		r.AddCookie(&http.Cookie{Name: StartDismissedCookie, Value: "1"})
+		if start != "" {
+			r.AddCookie(&http.Cookie{Name: StartCookie, Value: start})
+		}
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, r)
 
-	r := httptest.NewRequest(http.MethodPost, "/signin",
-		strings.NewReader("token="+token))
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r.Header.Set("Sec-Fetch-Site", "same-origin")
-	r.AddCookie(&http.Cookie{Name: StartDismissedCookie, Value: "1"})
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, r)
-
-	if got := w.Header().Get("Location"); got != "/" {
-		t.Errorf("a returning person was sent to %q, want /", got)
+		if got := w.Header().Get("Location"); got != want {
+			t.Errorf("a returning person starting at %q was sent to %q, want %s", start, got, want)
+		}
 	}
 }
 
