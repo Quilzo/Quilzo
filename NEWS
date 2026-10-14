@@ -9,6 +9,15 @@ Unreleased
 
 ** Added
 
+*** Features from a repository.  A pull request's CI posts a package to
+    /features/check and gets the card and the plan, with both as Markdown
+    for a comment; the CI that runs on merge posts it to /features/install
+    and the feature is installed, or waits for a second person in Approvals
+    with the job as the one who asked.  The job holds no secret: it uses a
+    token exchanged for its identity token.  The same card, plan and rules
+    as the Make screen apply, and installing from another machine takes a
+    token that is short or bound to a key.
+
 *** Short-lived and bound credentials for programs.  A CI job exchanges
     the identity token its platform signs for each run for a short Quilzo
     token, so no secret is kept in the repository: `quilzo trust add

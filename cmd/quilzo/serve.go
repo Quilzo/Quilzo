@@ -202,6 +202,7 @@ func cmdServe(root string, args []string) error {
 	srv.SCIM = scimHooks(root)
 	srv.Memory = memoryAdmin(root)
 	srv.Features = featureHooks(root, signedIn)
+	srv.FeatureProgram = featureProgram(root)
 	srv.AppRoles = func() ([]auth.AppRole, error) { return appRoles(root) }
 	// Events other systems push, the moment they happen.
 	inb := newInboundServer(root)

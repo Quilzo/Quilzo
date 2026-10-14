@@ -1447,19 +1447,7 @@ func featureHooks(root string, signedIn func(string) *Caller) *admin.FeatureHook
 		},
 		Pending: func() ([]feature.Pending, error) { return pendingFeatures(root) },
 		Check: func(body []byte) (*feature.Package, feature.Card, feature.Plan, error) {
-			p, _, err := readFeatureBytes(root, body, "")
-			if err != nil {
-				return nil, feature.Card{}, feature.Plan{}, err
-			}
-			st, installed, err := featureState(root)
-			if err != nil {
-				return nil, feature.Card{}, feature.Plan{}, err
-			}
-			var owned []feature.Ref
-			if in := installed[p.Name]; in != nil {
-				owned = in.Owns
-			}
-			return p, p.MakeCard(), p.MakePlan(st, owned), nil
+			return checkFeature(root, body)
 		},
 		Install: func(body []byte, rowsID, by string) (string, []string, error) {
 			caller := signedIn(by)
@@ -1519,6 +1507,64 @@ func featureHooks(root string, signedIn func(string) *Caller) *admin.FeatureHook
 				return o.Waiting.ID, err
 			}
 			return "", err
+		},
+	}
+}
+
+// checkFeature reads a package and works out its card and its plan against
+// what is installed, changing nothing.
+func checkFeature(root string, body []byte) (*feature.Package, feature.Card, feature.Plan, error) {
+	p, _, err := readFeatureBytes(root, body, "")
+	if err != nil {
+		return nil, feature.Card{}, feature.Plan{}, err
+	}
+	st, installed, err := featureState(root)
+	if err != nil {
+		return nil, feature.Card{}, feature.Plan{}, err
+	}
+	var owned []feature.Ref
+	if in := installed[p.Name]; in != nil {
+		owned = in.Owns
+	}
+	return p, p.MakeCard(), p.MakePlan(st, owned), nil
+}
+
+// programCaller is a program presenting a token over HTTP, such as a CI job:
+// a service, held to its token's role, path and limits.
+func programCaller(tok auth.Token) *Caller {
+	return &Caller{Name: tok.Principal, Role: tok.Role, Scope: tok.Resource, Limits: tok.Scope,
+		Kind: audit.KindService, Verified: true, Remote: true, Bound: tok.Key != "",
+		Life: time.Unix(tok.ExpiresAt, 0).Sub(time.Unix(tok.CreatedAt, 0))}
+}
+
+// featureProgram checks and installs packages for a program's token, under
+// the same card, plan and approvals as the Make screen.
+func featureProgram(root string) *admin.FeatureProgram {
+	forbidden := func(err error) error { return fmt.Errorf("%w: %v", admin.ErrForbidden, err) }
+	return &admin.FeatureProgram{
+		Check: func(body []byte, tok auth.Token) (*feature.Package, feature.Card, feature.Plan, error) {
+			if err := authorise(root, programCaller(tok), auth.ActView, "/"); err != nil {
+				return nil, feature.Card{}, feature.Plan{}, forbidden(err)
+			}
+			return checkFeature(root, body)
+		},
+		Install: func(body []byte, tok auth.Token) (string, []string, error) {
+			caller := programCaller(tok)
+			if err := authorise(root, caller, auth.ActInstall, "/"); err != nil {
+				return "", nil, forbidden(fmt.Errorf("features are installed by whoever may install them: %w", err))
+			}
+			if err := riskyNeedsProof(root, caller, auth.RoleAdmin); err != nil {
+				return "", nil, forbidden(err)
+			}
+			p, body, err := readFeatureBytes(root, body, "")
+			if err != nil {
+				return "", nil, err
+			}
+			o, err := requestFeature(root, p, body, caller, false, nil)
+			if o.Waiting != nil {
+				return o.Waiting.ID, nil, err
+			}
+			return "", o.Secrets, err
 		},
 	}
 }
