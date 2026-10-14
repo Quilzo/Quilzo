@@ -187,3 +187,29 @@ func TestAPermissionIsGrantedAndRemovedOnThePeopleScreen(t *testing.T) {
 		t.Error("the permission was not removed")
 	}
 }
+
+// A permission granted alone works through the person's own session, whose
+// credential carries only their role; an administrator's credential capped
+// to reader does not gain what their role gives.
+func TestAPermissionWorksThroughThePersonsOwnSession(t *testing.T) {
+	srv, _ := setup(t)
+	srv.Policy.Grant(auth.Binding{Principal: "ria", Role: auth.RoleReader, Resource: "/"})
+	srv.Policy.Grant(auth.Binding{Principal: "ria", Permission: auth.ActInstall, Resource: "/"})
+	tok, _, err := srv.Tokens.Issue("ria", "ria", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := get(t, srv, "/make", tok); w.Code == http.StatusForbidden {
+		t.Errorf("install-features did not open Make: %d", w.Code)
+	}
+	if w := get(t, srv, "/people", tok); w.Code != http.StatusForbidden {
+		t.Errorf("install-features opened People: %d", w.Code)
+	}
+	capped, _, err := srv.Tokens.Issue("capped", "editor", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := get(t, srv, "/make", capped); w.Code != http.StatusForbidden {
+		t.Errorf("an administrator's reader credential opened Make: %d", w.Code)
+	}
+}
