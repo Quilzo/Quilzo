@@ -76,7 +76,7 @@ func (s *Server) handleAssist(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	if !s.can(w, r, p, auth.ActUseModels, "/") {
 		return
 	}
 

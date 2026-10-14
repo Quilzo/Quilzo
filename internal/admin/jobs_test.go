@@ -160,3 +160,30 @@ func TestTheAuditorJobIsOnlyGrantedUntilADay(t *testing.T) {
 		t.Error("an auditor with an end day was not granted")
 	}
 }
+
+// A permission is granted from the People screen like a role, shown as a
+// permission, and removed the same way.
+func TestAPermissionIsGrantedAndRemovedOnThePeopleScreen(t *testing.T) {
+	srv, token := setup(t)
+	w := postForm(t, srv, "/people/grant", token, "principal=ria&role=permission:approve&resource=/@agents/newsletter")
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if !srv.Policy.Evaluate("ria", auth.ActApprove, auth.AgentResource("newsletter")).Allowed ||
+		srv.Policy.Evaluate("ria", auth.ActView, "/").Allowed {
+		t.Fatal("the grant was not one permission on one agent")
+	}
+	body := get(t, srv, "/people", token).Body.String()
+	if !strings.Contains(body, `approve <span class="hint">permission</span>`) || !strings.Contains(body, "<code>/@agents/newsletter</code>") ||
+		!strings.Contains(body, "permission:install-features") {
+		t.Errorf("the screen does not show or offer permissions")
+	}
+	postForm(t, srv, "/people/grant", token, "principal=ria&role=permission:fly&resource=/")
+	if srv.Policy.Evaluate("ria", auth.ActInstall, "/").Allowed {
+		t.Error("a made-up permission granted something")
+	}
+	postForm(t, srv, "/people/revoke", token, "principal=ria&role=approve&resource=/@agents/newsletter")
+	if srv.Policy.Evaluate("ria", auth.ActApprove, auth.AgentResource("newsletter")).Allowed {
+		t.Error("the permission was not removed")
+	}
+}

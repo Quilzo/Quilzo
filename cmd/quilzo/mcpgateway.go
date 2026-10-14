@@ -337,10 +337,10 @@ func tellHeld(root, integration, tool, id string, tok auth.Token) {
 }
 
 // gatewayDecide approves or declines a held call. Somebody other than the
-// person it acts for decides, and an administrator.
+// person it acts for decides, holding approve over the store.
 func gatewayDecide(root, id string, approve bool, by *Caller, now time.Time) error {
-	if err := authorise(root, by, auth.ActGrant, "/"); err != nil {
-		return fmt.Errorf("deciding what other systems' agents may do is an administrator's: %w", err)
+	if err := authorise(root, by, auth.ActApprove, "/"); err != nil {
+		return fmt.Errorf("deciding what other systems' agents may do takes the approve permission: %w", err)
 	}
 	gatewayMu.Lock()
 	defer gatewayMu.Unlock()

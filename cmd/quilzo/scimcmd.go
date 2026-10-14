@@ -123,11 +123,14 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 				}
 			} else if auth.Role(g).Valid() {
 				want = append(want, auth.Binding{Principal: name, Role: auth.Role(g), Resource: "/"})
+			} else if perm, ok := auth.PermissionNamed(g); ok {
+				want = append(want, auth.Binding{Principal: name, Permission: perm.Action, Resource: "/"})
 			}
 		}
 	}
 	same := func(a, b auth.Binding) bool {
-		return a.Principal == b.Principal && a.Role == b.Role && a.Resource == b.Resource && a.Deny == b.Deny
+		return a.Principal == b.Principal && a.Role == b.Role && a.Permission == b.Permission &&
+			a.Resource == b.Resource && a.Deny == b.Deny
 	}
 
 	// Keep what provisioning made and still wants, so a grant's date is the

@@ -217,6 +217,15 @@ func prepareContinue(root, id string, v *agent.Verdict, caller *Caller) (agent.R
 	if err != nil {
 		return none, nil, err
 	}
+	// Deciding follows ownership (agentpermissions.go); going on with a run
+	// that was interrupted is starting it again.
+	if v != nil {
+		if err := mayApprove(root, caller, prior); err != nil {
+			return none, nil, err
+		}
+	} else if err := authorise(root, caller, auth.ActRunAgents, auth.AgentResource(prior.Agent)); err != nil {
+		return none, nil, err
+	}
 	// An evaluation's run read planted instructions and did nothing real;
 	// taken on, it would do for real what they asked.
 	if prior.Eval != "" {

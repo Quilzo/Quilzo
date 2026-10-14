@@ -65,7 +65,9 @@ func agentGrants(root, name string) (*Caller, error) {
 	principal := agent.Principal(name)
 	var mine []auth.Binding
 	for _, b := range pol.Snapshot() {
-		if b.Principal == principal {
+		// A permission is something it may do besides its role, not where
+		// its run is bounded.
+		if b.Principal == principal && b.Permission == "" {
 			mine = append(mine, b)
 		}
 	}
@@ -101,6 +103,11 @@ func agentGrants(root, name string) (*Caller, error) {
 // agentIdentityCmd is `quilzo agent sponsor NAME PERSON` and `quilzo agent
 // renew NAME`.
 func agentIdentityCmd(root, verb string, args []string) error {
+	return agentIdentityCmdAs(root, verb, args, resolveCaller(root, flagToken))
+}
+
+// agentIdentityCmdAs is agentIdentityCmd for a caller already known.
+func agentIdentityCmdAs(root, verb string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("agent "+verb, flag.ContinueOnError)
 	lifetime := fs.Duration("for", agent.DefaultLifetime, "how long until somebody has to renew it again")
 	want := 1
@@ -117,7 +124,6 @@ func agentIdentityCmd(root, verb string, args []string) error {
 		return err
 	}
 	name := args[0]
-	caller := resolveCaller(root, flagToken)
 	if caller.Kind == audit.KindAI {
 		return errors.New("who answers for an agent is a person's decision")
 	}

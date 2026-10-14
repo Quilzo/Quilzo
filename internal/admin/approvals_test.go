@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // waitingRun keeps a run waiting at step 2 on an action, for a reason.
@@ -107,5 +108,49 @@ func TestCommitClassesAreReadFromTheActionAndItsReason(t *testing.T) {
 	}
 	if agent.CommitOf(agent.Action{Tool: "crm"}, "", "", true) != "writes" {
 		t.Error("a tool that writes was not counted as writing")
+	}
+}
+
+// Somebody who may decide one agent's runs, and is not an administrator,
+// is shown what that agent waits for, opens the run and decides it; another
+// agent's runs are neither shown nor theirs to decide.
+func TestAnApproverSeesAndDecidesOnlyTheirAgentsRuns(t *testing.T) {
+	srv, _ := setup(t)
+	st := wireStudio(srv)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "ria", Role: auth.RoleReader, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := srv.Tokens.Issue("ria", "ria", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Agents.MayApprove = func(rec agent.Record, by string) bool { return by == "ria" && rec.Agent == "newsletter" }
+	var answered []string
+	srv.Agents.Answer = func(id string, step int, approve bool, answers map[string]string, by string) error {
+		answered = append(answered, id+" "+by)
+		return nil
+	}
+	look := agent.Action{Op: "read_page", Input: map[string]any{"page": "x"}}
+	waitingRun(st, "run-20261014-000000b1", "newsletter", look, "it asks first", time.Now())
+	waitingRun(st, "run-20261014-000000b2", "payroll", look, "it asks first", time.Now())
+
+	body := get(t, srv, "/approvals", tok).Body.String()
+	if !strings.Contains(body, "newsletter") || strings.Contains(body, "payroll") {
+		t.Errorf("ria is shown the wrong runs:\n%s", body)
+	}
+	if w := get(t, srv, "/agents/run/run-20261014-000000b1", tok); w.Code != 200 {
+		t.Errorf("ria could not open the run she decides: %d", w.Code)
+	}
+	if w := get(t, srv, "/agents/run/run-20261014-000000b2", tok); w.Code == 200 {
+		t.Error("ria opened another agent's run")
+	}
+	if w := get(t, srv, "/agents", tok); w.Code == 200 {
+		t.Error("deciding one agent's runs opened the agents studio")
+	}
+	for _, id := range []string{"run-20261014-000000b1", "run-20261014-000000b2"} {
+		studioAct(t, srv, tok, url.Values{"do": {"answer"}, "run": {id}, "step": {"2"}, "verdict": {"decline"}})
+	}
+	if len(answered) != 1 || answered[0] != "run-20261014-000000b1 ria" {
+		t.Errorf("answered %v", answered)
 	}
 }

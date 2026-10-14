@@ -124,6 +124,13 @@ var needs = map[Action]Role{
 	ActRollback:  RolePublisher,
 	ActGrant:     RoleAdmin,
 	ActToken:     RoleAdmin,
+	// The permissions (permission.go), each at the rung it followed before
+	// it could be granted on its own.
+	ActRunAgents:    RoleAuthor,
+	ActApprove:      RoleAdmin,
+	ActManageAgents: RoleAdmin,
+	ActUseModels:    RoleAuthor,
+	ActInstall:      RoleAdmin,
 }
 
 // Actions lists every action, for help and for the explain command.
@@ -147,9 +154,12 @@ func Needs(a Action) (Role, bool) { r, ok := needs[a]; return r, ok }
 // Binding grants — or denies — a role to a principal on a resource subtree.
 type Binding struct {
 	Principal string `json:"principal"`
-	Role      Role   `json:"role"`
-	Resource  string `json:"resource"` // "/" is the whole site
-	Deny      bool   `json:"deny,omitempty"`
+	Role      Role   `json:"role,omitempty"`
+	// Permission, in place of a role, grants one permission and nothing
+	// else (see permission.go).
+	Permission Action `json:"permission,omitempty"`
+	Resource   string `json:"resource"` // "/" is the whole site
+	Deny       bool   `json:"deny,omitempty"`
 	// OwnOnly restricts this binding to content the principal created.
 	//
 	// This is the answer to "do we need a contributor role", and the answer is
@@ -358,6 +368,15 @@ func (p *Policy) Evaluate(principal string, action Action, resource string) Deci
 		if b.Principal != principal || !b.Deny || !covers(b.Resource, target) || !b.Live(now) {
 			continue
 		}
+		// A denied permission stops that one action, and only it.
+		if b.Permission != "" {
+			if b.Permission == action {
+				trail = append(trail, "DENY "+permissionText(b)+" — matches")
+				return Decision{Allowed: false, Role: RoleNone, Binding: b, Trail: trail,
+					Reason: fmt.Sprintf("denied %s, which covers %s", permissionText(b), target)}
+			}
+			continue
+		}
 		// A deny of role R blocks every action needing R *or more*. Denying
 		// "author" therefore also stops publishing, because leaving the higher
 		// rung open would be a hole shaped exactly like the thing the deny was
@@ -377,9 +396,17 @@ func (p *Policy) Evaluate(principal string, action Action, resource string) Deci
 		}
 	}
 
+	var permission *Binding
 	for i := range p.Bindings {
 		b := &p.Bindings[i]
 		if b.Principal != principal || b.Deny {
+			continue
+		}
+		if b.Permission != "" {
+			if b.Permission == action && grantsPermission(b, action, target, now.Unix()) && permission == nil {
+				permission = b
+				trail = append(trail, "grant "+permissionText(b)+" — covers "+target)
+			}
 			continue
 		}
 		if !b.Live(now) {
@@ -405,6 +432,11 @@ func (p *Policy) Evaluate(principal string, action Action, resource string) Deci
 		}
 	}
 
+	if permission != nil && !best.AtLeast(required) {
+		return Decision{Allowed: true, Role: best, Binding: permission, Trail: trail,
+			Reason: fmt.Sprintf("%s holds %s, granted at %s", principal, permissionText(permission),
+				normalise(permission.Resource))}
+	}
 	if best == RoleNone {
 		return Decision{Allowed: false, Role: RoleNone, Trail: trail,
 			Reason: fmt.Sprintf("no binding gives %s any role on %s", principal, target)}
@@ -518,15 +550,20 @@ func (p *Policy) Grant(b Binding) error {
 	if strings.TrimSpace(b.Principal) == "" {
 		return fmt.Errorf("a binding needs a principal")
 	}
-	if !b.Role.Valid() {
-		return fmt.Errorf("%q is not a role; use one of %s", b.Role, roleList())
+	switch {
+	case b.Permission != "" && b.Role != "":
+		return fmt.Errorf("a binding grants a role or a permission, not both")
+	case b.Permission != "" && !IsPermission(b.Permission):
+		return fmt.Errorf("%q is not a permission; use one of %s", b.Permission, permissionList())
+	case b.Permission == "" && !b.Role.Valid():
+		return fmt.Errorf("%q is not a role; use one of %s, or a permission: %s", b.Role, roleList(), permissionList())
 	}
 	b.Resource = normalise(b.Resource)
 	if b.GrantedAt == 0 {
 		b.GrantedAt = time.Now().Unix()
 	}
 	for _, e := range p.Bindings {
-		if e.Principal == b.Principal && e.Role == b.Role &&
+		if e.Principal == b.Principal && e.Role == b.Role && e.Permission == b.Permission &&
 			e.Resource == b.Resource && e.Deny == b.Deny {
 			return fmt.Errorf("that binding already exists")
 		}
@@ -537,6 +574,12 @@ func (p *Policy) Grant(b Binding) error {
 
 // Revoke removes matching bindings and reports how many went.
 func (p *Policy) Revoke(principal string, role Role, resource string) int {
+	return p.RevokeNamed(principal, string(role), resource)
+}
+
+// RevokeNamed removes the bindings of a role or a permission, by its name,
+// and reports how many went.
+func (p *Policy) RevokeNamed(principal, what, resource string) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -544,7 +587,7 @@ func (p *Policy) Revoke(principal string, role Role, resource string) int {
 	kept := p.Bindings[:0]
 	removed := 0
 	for _, b := range p.Bindings {
-		if b.Principal == principal && b.Role == role && normalise(b.Resource) == resource {
+		if b.Principal == principal && b.What() == what && normalise(b.Resource) == resource {
 			removed++
 			continue
 		}
@@ -569,6 +612,14 @@ func (p *Policy) Principals() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func permissionList() string {
+	names := make([]string, 0, len(Permissions))
+	for _, p := range Permissions {
+		names = append(names, string(p.Action))
+	}
+	return strings.Join(names, ", ")
 }
 
 func roleList() string {

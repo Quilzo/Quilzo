@@ -73,7 +73,7 @@ var destinations = []destination{
 	// Everything waiting for a person, from every part of the program, so
 	// nothing waits unseen because it waited somewhere nobody opened.
 	{"approvals", "Approvals", "/approvals", "Content", "agents", auth.ActView},
-	{"make", "Make", "/make", "Content", "make", auth.ActGrant},
+	{"make", "Make", "/make", "Content", "make", auth.ActInstall},
 	// Beside the data it analyses: projects whose every number is linked
 	// to the code that produced it.
 	{"research", "Research", "/research", "Content", "research", auth.ActView},
@@ -89,7 +89,7 @@ var destinations = []destination{
 	{"design", "Design", "/design", "Content", "design", auth.ActEditDraft},
 	{"sections", "Sections", "/sections", "Content", "pages", auth.ActEditDraft},
 	{"languages", "Languages", "/languages", "Content", "languages", auth.ActView},
-	{"assist", "Assistant", "/assist", "Content", "assistant", auth.ActEditDraft},
+	{"assist", "Assistant", "/assist", "Content", "assistant", auth.ActUseModels},
 	// Beside Assistant, which drafts pages for the people editing them. This
 	// is the other side: chatbots the site offers its visitors, answering
 	// from what is published.
@@ -139,7 +139,7 @@ var destinations = []destination{
 	{"signins", "Sign-ins", "/security/signins", "Security operations", "automations", auth.ActGrant},
 	{"feeds", "Feeds", "/security/feeds", "Security operations", "collect", auth.ActGrant},
 
-	{"agents", "Agents", "/agents", "Administration", "agents", auth.ActGrant},
+	{"agents", "Agents", "/agents", "Administration", "agents", auth.ActManageAgents},
 	// Beside Agents: every agent, Quilzo's and other vendors', the apps and
 	// tool servers and model routes, who called what, and the AI use
 	// nobody registered.
@@ -492,6 +492,7 @@ var screenAreas = map[string]string{
 	"indicators": auth.AreaSecurity, "vulns": auth.AreaSecurity, "workforce": auth.AreaSecurity,
 	"automations": auth.AreaSecurity, "signins": auth.AreaSecurity, "feeds": auth.AreaSecurity,
 	"shield":   auth.AreaSecurity,
+	"agents":   auth.AreaAgents,
 	"security": auth.AreaCompliance, "logs": auth.AreaLog,
 	"inbox": auth.AreaInbox, "boards": auth.AreaBoards,
 }

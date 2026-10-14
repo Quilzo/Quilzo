@@ -84,9 +84,9 @@ func doorAllowed(root string, caller *Caller) error {
 		return &admin.ModelRefusal{Code: http.StatusForbidden, Why: "the model door serves only a store with an " +
 			"access policy: grant somebody a role first (quilzo auth grant)"}
 	}
-	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
+	if err := authorise(root, caller, auth.ActUseModels, "/"); err != nil {
 		return &admin.ModelRefusal{Code: http.StatusForbidden,
-			Why: "using this store's models takes a token that may draft: " + err.Error()}
+			Why: "using this store's models takes the use-models permission: " + err.Error()}
 	}
 	return nil
 }

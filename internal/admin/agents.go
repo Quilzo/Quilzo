@@ -48,6 +48,10 @@ type Agents struct {
 	// nothing.
 	Currency func() string
 	RunGet   func(id string) (agent.Record, error)
+	// MayApprove says whether a person may decide what a run waits for: its
+	// agent's sponsor, or the approve permission on the agent or on what it
+	// would change. The command line decides it, as it enforces it.
+	MayApprove func(rec agent.Record, by string) bool
 	// Frames are the pictures a run's browser kept, in order, and whether
 	// there is one of what it shows now; Frame is one picture's bytes, 0
 	// being the one of now. Nil when nothing is kept.

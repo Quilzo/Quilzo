@@ -61,7 +61,7 @@ func (s *Server) handleMake(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActInstall, "/") {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -102,7 +102,7 @@ func (s *Server) handleMakeCheck(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "post", http.StatusMethodNotAllowed)
 		return
 	}
-	if !s.can(w, r, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActInstall, "/") {
 		return
 	}
 	if s.Features == nil {
@@ -139,7 +139,7 @@ func (s *Server) handleMakeDraft(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "post", http.StatusMethodNotAllowed)
 		return
 	}
-	if !s.can(w, r, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActInstall, "/") {
 		return
 	}
 	if s.Features == nil || s.Features.Draft == nil {
@@ -166,7 +166,7 @@ func (s *Server) handleMakeFrom(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "post", http.StatusMethodNotAllowed)
 		return
 	}
-	if !s.can(w, r, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActInstall, "/") {
 		return
 	}
 	if s.Features == nil || s.Features.FromData == nil {
@@ -239,7 +239,7 @@ func (s *Server) handleMakeAct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "post", http.StatusMethodNotAllowed)
 		return
 	}
-	if !s.can(w, r, p, auth.ActGrant, "/") {
+	if !s.can(w, r, p, auth.ActInstall, "/") {
 		return
 	}
 	if s.Features == nil {
@@ -329,7 +329,7 @@ func makeBack(w http.ResponseWriter, r *http.Request, msg string, err error) {
 // featureApprovals are installs waiting for a second person, for the
 // approvals screen.
 func (s *Server) featureApprovals(p principal) []approvalItem {
-	if s.Features == nil || s.Features.Pending == nil || !s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed {
+	if s.Features == nil || s.Features.Pending == nil || !s.Policy.Evaluate(p.Name, auth.ActInstall, "/").Allowed {
 		return nil
 	}
 	pend, err := s.Features.Pending()

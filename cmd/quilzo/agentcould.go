@@ -60,7 +60,7 @@ func callerFor(root, person string) (*Caller, error) {
 		}
 	}
 	for _, b := range pol.Snapshot() {
-		if b.Principal == person && !b.Deny && pol.Evaluate(person, auth.ActView, b.Resource).Allowed {
+		if b.Principal == person && !b.Deny && b.Permission == "" && pol.Evaluate(person, auth.ActView, b.Resource).Allowed {
 			c.Role, c.Scope = b.Role, b.Resource
 			return c, nil
 		}
