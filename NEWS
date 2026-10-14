@@ -9,6 +9,18 @@ Unreleased
 
 ** Added
 
+*** Today, the first screen after signing in.  What is waiting for you to
+    decide, from every part of the program (the same items as Approvals),
+    with questions first, then what cannot be taken back, then the oldest;
+    and a count for each part of the store you can open: pages changed in
+    the draft and not published, agent runs going, finished and gone wrong
+    in the last day, visitors waiting for a reply, findings to triage and
+    cases open.  Each count links to the records it counts, and the same
+    grant check as the menu decides which are shown.  Nothing on it is
+    generated.  Signing in with a token, an identity provider or a passkey
+    lands on it; "Start on Pages after signing in instead" keeps the old
+    start, in your browser.
+
 *** Roles for the people who work in an app.  A feature package can
     declare roles over its own collections, pages and agents: read or write
     a collection's records; read, write or publish a page; run an agent or

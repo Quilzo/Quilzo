@@ -410,7 +410,7 @@ func (s *Server) passStepUp(w http.ResponseWriter, r *http.Request, p principal,
 		}
 	}
 	s.audit("session.stepup-passed", "/", map[string]string{"by": p.Name, "session": p.TokenID, "how": how})
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, startPath(r), http.StatusSeeOther)
 }
 
 // -- sign-ins -------------------------------------------------------------------

@@ -207,6 +207,23 @@ func (s *Server) otherApprovals(p principal, now time.Time) []approvalItem {
 	return out
 }
 
+// waitingItems is everything waiting that a person may decide, as Approvals
+// and Today both list it.
+func (s *Server) waitingItems(p principal, now time.Time) []approvalItem {
+	var items []approvalItem
+	items = append(items, s.runApprovalsFor(p, now)...)
+	items = append(items, s.otherApprovals(p, now)...)
+	items = append(items, s.featureApprovals(p)...)
+	for i := range items {
+		items[i].When = agoText(now.Sub(items[i].Since))
+	}
+	return items
+}
+
+// commitsOrder is what deciding commits to, most urgent first: a question
+// holds a run up, and paying, deleting and publishing cannot be taken back.
+var commitsOrder = []string{"answers", "installs", "pays", "deletes", "publishes", "sends", "writes", "acts", "reads"}
+
 // approvalGroup is the waiting items of one agent or source.
 type approvalGroup struct {
 	Name  string
@@ -230,10 +247,7 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	data := map[string]any{"Title": "Approvals", "Nav": "approvals", "Principal": p,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e")}
-	var items []approvalItem
-	items = append(items, s.runApprovalsFor(p, now)...)
-	items = append(items, s.otherApprovals(p, now)...)
-	items = append(items, s.featureApprovals(p)...)
+	items := s.waitingItems(p, now)
 	only := r.URL.Query().Get("commits")
 	counts := map[string]int{}
 	for _, it := range items {
@@ -247,9 +261,6 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		items = kept
-	}
-	for i := range items {
-		items[i].When = agoText(now.Sub(items[i].Since))
 	}
 	byName := map[string]*approvalGroup{}
 	var order []string
@@ -294,7 +305,7 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 		Count int
 	}
 	var chips []chip
-	for _, c := range []string{"answers", "installs", "pays", "deletes", "publishes", "sends", "writes", "acts", "reads"} {
+	for _, c := range commitsOrder {
 		if counts[c] > 0 {
 			chips = append(chips, chip{c, counts[c]})
 		}

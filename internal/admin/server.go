@@ -1299,6 +1299,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/personalise", s.handlePersonalise)
 	mux.HandleFunc("/personalise/change", s.handlePersonaliseChange)
 	mux.HandleFunc("/experiments/change", s.handleExperimentChange)
+	mux.HandleFunc("/today", s.handleToday)
+	mux.HandleFunc("/today/start", s.handleTodayStart)
 	mux.HandleFunc("/approvals", s.handleApprovals)
 	mux.HandleFunc("/approvals/act", s.handleApprovalsAct)
 	mux.HandleFunc("/research", s.handleResearch)
@@ -1719,7 +1721,7 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/start", http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, startPath(r), http.StatusSeeOther)
 }
 
 // signInReasons is every message the sign-in form will show from its address.
@@ -3826,7 +3828,7 @@ func ranAgo(at string) string {
 // than where a day's work begins.
 func landing(ds []destination) string {
 	for _, d := range ds {
-		if d.Key != "logs" && d.Path != "/" {
+		if d.Key != "logs" && d.Key != "today" && d.Path != "/" {
 			return d.Path
 		}
 	}

@@ -388,7 +388,7 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, ho
 		http.Redirect(w, r, "/signin/verify", http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, startPath(r), http.StatusSeeOther)
 }
 
 // suspended reports whether provisioning has suspended somebody: a deny on

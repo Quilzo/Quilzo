@@ -24,7 +24,7 @@ import (
 // iconSymbol is which Material Symbol stands for which screen, for whoever
 // adds a screen and needs to fetch its icon.
 var iconSymbol = map[string]string{
-	"pages": "description", "records": "database", "types": "category",
+	"today": "today", "pages": "description", "records": "database", "types": "category",
 	"structure": "account_tree", "listings": "view_list", "forms": "assignment",
 	"media": "photo_library", "design": "palette", "sections": "dashboard_customize",
 	"languages": "translate", "assist": "edit_note", "assistants": "smart_toy",

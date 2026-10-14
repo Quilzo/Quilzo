@@ -312,7 +312,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/signin/verify", http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, startPath(r), http.StatusSeeOther)
 }
 
 // oidcTTL is the provider's own session length or session.max, whichever

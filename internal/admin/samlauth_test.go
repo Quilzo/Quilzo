@@ -249,7 +249,7 @@ func TestASAMLSignInMakesASession(t *testing.T) {
 	srv, _ := samlServer(t, nil)
 	id, relay, cookie := start(t, srv)
 	w := postACS(t, srv, relay, response(t, resp{who: "dana.reyes@northwind.example", inResponseTo: id}), cookie)
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/" {
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/today" {
 		t.Fatalf("%d %s\n%s", w.Code, w.Header().Get("Location"), w.Body.String())
 	}
 	c := sessionOf(w)

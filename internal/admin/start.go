@@ -218,7 +218,7 @@ func (s *Server) handleStartDone(w http.ResponseWriter, r *http.Request) {
 		MaxAge: 365 * 24 * 3600, HttpOnly: true,
 		SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil || s.behindTLSProxy(),
 	})
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, startPath(r), http.StatusSeeOther)
 }
 
 // startDismissed reports whether this person has finished with the screen.
