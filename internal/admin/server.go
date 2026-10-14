@@ -726,7 +726,15 @@ func (s *Server) can(w http.ResponseWriter, r *http.Request, p principal,
 	// publish on the command line and could POST /people/grant here to make
 	// anybody an admin, because Evaluate was asked about the person and never
 	// about the credential.
-	if err := auth.CheckCredential(p.Role, p.Scope, p.Limits, act, resource); err != nil {
+	//
+	// A permission granted on its own (auth's permission.go) is capped by the
+	// credential's path and limits rather than its role, as on the command
+	// line, so the decision is made first and then capped: a reader holding
+	// approve on one agent uses it through their own session, and an
+	// administrator's reader-capped credential still cannot, because their
+	// approve comes from the role.
+	d := s.Policy.Evaluate(p.Name, act, resource)
+	if err := auth.CheckGranted(d, p.Role, p.Scope, p.Limits, act, resource); err != nil {
 		s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden,
 			"Title": "Not permitted", "Principal": p,
 			"Heading": "This credential cannot do that",
@@ -734,8 +742,6 @@ func (s *Server) can(w http.ResponseWriter, r *http.Request, p principal,
 		})
 		return false
 	}
-
-	d := s.Policy.Evaluate(p.Name, act, resource)
 	if d.Allowed {
 		return true
 	}
