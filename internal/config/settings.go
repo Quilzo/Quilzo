@@ -531,6 +531,16 @@ var settings = []Setting{
 			"Nothing is written while no model is set up.",
 	},
 	{
+		Key: "today.ask", Kind: Bool, Default: "true",
+		Summary: "let people ask Today a question and keep the answer as a view",
+		Why: "Somebody who may use the store's models asks in their own words, and " +
+			"the answer is cards Quilzo draws: a figure, a table, bars, what is " +
+			"waiting, agent runs. The model is told the collections they may read, " +
+			"by their fields, and chooses the cards; it never sees a record, and " +
+			"every value is read from what they may open. Charged to their budget. " +
+			"Nothing is asked while no model is set up.",
+	},
+	{
 		Key: "models.remote", Kind: Bool, Default: "false",
 		Summary:  "serve the model gateway at /v1 on the admin, for agents built anywhere",
 		Controls: []string{"AC-17", "AC-3"},

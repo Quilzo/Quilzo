@@ -9,6 +9,17 @@ Unreleased
 
 ** Added
 
+*** Ask Today a question, and keep the answer.  Somebody who may use the
+    store's models asks in their own words, and the answer is cards Quilzo
+    draws: a figure, a table, bars, what is waiting, agent runs.  The model
+    is told the collections they may read, by their fields and choices, and
+    the agents they manage, and chooses the cards and what each counts in
+    JSON; it never sees a record.  Each card is checked as a listing is and
+    filled in from what the person may read, and says in words what it
+    counted.  "Keep on Today" pins the answer as a view, drawn again on
+    every visit with the access the person has then.  Charged to their
+    budget; `quilzo config set today.ask false` turns asking off.
+
 *** A brief on Today: a few sentences on what matters most, written by the
     configured model below what is waiting.  The model never writes a
     figure: it refers to each by a placeholder and Quilzo puts in the

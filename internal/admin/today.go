@@ -151,7 +151,23 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var answer *shownView
+	if a := s.lastAsked(p); a != nil {
+		v := s.drawView(p, "", a.Title, a.Question, a.Cards, now)
+		v.Notes, v.Problem = a.Notes, a.Problem
+		answer = &v
+	}
+	var views []shownView
+	canKeep := s.Ask != nil && s.Ask.Load != nil && s.Ask.Save != nil
+	if canKeep {
+		kept, _ := s.Ask.Load(p.Name)
+		for _, v := range kept {
+			views = append(views, s.drawView(p, v.ID, v.Title, v.Question, v.Cards, now))
+		}
+	}
+
 	s.render(w, r, "today.html", map[string]any{
+		"CanAsk": s.askAllowed(p), "Answer": answer, "Views": views, "CanKeep": canKeep,
 		"Title": "Today", "Nav": "today", "Principal": p,
 		"Waiting": waiting, "WaitingTotal": total, "MoreWaiting": total - len(waiting),
 		"Brief": s.briefFor(p, briefFacts(all, lines, now), now),
