@@ -79,7 +79,7 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 		}
 		return a.Since.Compare(b.Since)
 	})
-	total := len(waiting)
+	all, total := waiting, len(waiting)
 	if len(waiting) > todayWaitingShown {
 		waiting = waiting[:todayWaitingShown]
 	}
@@ -154,6 +154,7 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "today.html", map[string]any{
 		"Title": "Today", "Nav": "today", "Principal": p,
 		"Waiting": waiting, "WaitingTotal": total, "MoreWaiting": total - len(waiting),
+		"Brief": s.briefFor(p, briefFacts(all, lines, now), now),
 		"Lines": lines, "StartsHere": startPath(r) == "/today",
 		"Date": now.Format("Monday 2 January"),
 	})

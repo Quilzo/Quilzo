@@ -151,6 +151,10 @@ vulnerability:
 - **A collection is reached only through a grant on it.** Any way somebody
   granted one collection, or a section of pages, reads, writes or learns the
   name of another collection through any interface.
+- **A brief carries no figure, link or words the model was not given.** Any
+  way the text on Today's brief shows a number, a link or markup the model
+  wrote, or anything from what somebody else wrote: an agent's question, a
+  visitor's message, a finding's title or a log line.
 - **A role an app declares reaches only that app's blocks.** Any way a role
   in a feature package grants anything beyond the package's own collections,
   pages and agents, or more than reading, writing or publishing them and

@@ -210,6 +210,7 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 		},
 	}
 	srv.ModelDoor = modelDoor(root, cc)
+	srv.Brief = todayBrief(root, cc)
 }
 
 // appCallRecord is the record of one call at the agent interface. It is

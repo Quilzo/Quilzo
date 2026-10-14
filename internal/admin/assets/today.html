@@ -16,6 +16,12 @@
 {{else}}<p>Nothing is waiting for you.</p>{{end}}
 </section>
 
+{{with .Brief}}<section aria-labelledby="brief">
+<h2 id="brief">In brief</h2>
+{{if .Parts}}<p>{{range .Parts}}{{if .Fact}}<a href="{{.Fact.Href}}">{{.Fact.N}}</a>{{else}}{{.Text}}{{end}}{{end}}</p>{{end}}
+<p class="hint">{{if .Parts}}Written by {{.Model}} at {{.At}}{{if .Stale}} from the figures as they were then{{else}} from the figures on this page{{end}}{{if .Writing}}; a new one is being written{{end}}. Every figure in it is a link to its records, and none was written by the model.{{else}}Being written by {{.Model}}; <a href="/today">show it</a> in a moment.{{end}}</p>
+</section>{{end}}
+
 <section aria-labelledby="happening">
 <h2 id="happening">In your parts of the store</h2>
 {{if .Lines}}<dl class="stats-row">{{range .Lines}}<div{{if .Warn}} class="serious"{{end}}><dt>{{.Text}}</dt><dd><a href="{{.Href}}">{{.N}}</a></dd></div>{{end}}</dl>
