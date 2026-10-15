@@ -102,7 +102,7 @@ Checking the build
 
      make check
 
-That runs the whole test suite: one hundred and eighty-one packages, including several that
+That runs the whole test suite: one hundred and eighty-two packages, including several that
 walk this program's own source and fail when a capability exists in one
 interface and not the others.
 
@@ -118,6 +118,21 @@ A first site
      quilzo add index=templates/sections.json -m "first page"
      quilzo publish
      quilzo site --addr 127.0.0.1:8081
+
+
+Selling to agents
+=================
+
+The UCP merchant surface (`quilzo config set commerce.on true`) is meant to
+be reached over HTTPS with TLS 1.3 or better, which is the protocol's
+transport requirement and the property of whatever terminates TLS in front
+of `quilzo site` -- a proxy, a load balancer. Serving /ucp/ on plaintext
+exposes agent signatures and purchase mandates on the wire. The pieces an
+operator supplies: a merchant key (`quilzo commerce keygen`), the payee as
+a payment mandate must name it (`commerce.payee`), the Web Bot Auth keys of
+the agents to serve (`commerce.agents`), and the issuer keys whose AP2
+mandates are accepted (`commerce.issuers`). `quilzo commerce status` says
+what is missing.
 
 
 Licence

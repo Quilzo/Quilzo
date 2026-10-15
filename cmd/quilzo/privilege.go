@@ -281,6 +281,13 @@ var commandNeeds = map[string]need{
 	"spend":          {action: auth.ActView},
 	"spend list":     {action: auth.ActView},
 	"spend receipts": {action: auth.ActView},
+	// The shop's side of the counter: making the signing key is granting
+	// what orders will be believed, and reading the order book is reading
+	// customers' purchases.
+	"commerce":        {action: auth.ActGrant},
+	"commerce keygen": {action: auth.ActGrant},
+	"commerce status": {action: auth.ActView},
+	"commerce orders": {action: auth.ActView},
 	// Deciding which other issuers' jobs get tokens here is granting access.
 	"trust":       {action: auth.ActGrant},
 	"scim status": {action: auth.ActGrant},

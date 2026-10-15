@@ -11,17 +11,20 @@ import (
 	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/experiment"
 	"github.com/quilzo/quilzo/internal/listen"
+	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/personalise"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/vector"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/api"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/commerce"
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/crawl"
 	"github.com/quilzo/quilzo/internal/public"
@@ -518,4 +521,119 @@ func crawlGate(cfg *config.Config) (*public.CrawlGate, error) {
 				"keys of the crawlers you mean to charge, or unset the price")
 	}
 	return &public.CrawlGate{Keys: keys, Price: price}, nil
+}
+
+// commerceService builds the UCP merchant surface from configuration.
+//
+// Called only when commerce.on is set, and it refuses a half-configured
+// shop rather than serving one: a surface that answered no agent, or a
+// checkout with nothing to sign it, or a payee a mandate could not be
+// checked against, would each look configured from the outside and be
+// unable to do the one thing it exists for.
+func commerceService(root string, cfg *config.Config, st *public.Site) (*commerce.Service, error) {
+	if st.Catalogue == "" || st.Listings == nil || st.Listings.Set == nil {
+		return nil, fmt.Errorf(
+			"commerce.on is set and no catalogue is served, so there is " +
+				"nothing for an agent to buy. Name a listing with " +
+				"site.catalogue, or turn commerce off")
+	}
+	// The payee, exactly as a payment mandate must name it.
+	name, website := "", strings.TrimSpace(cfg.Raw("commerce.payee"))
+	if i := strings.Index(website, "|"); i >= 0 {
+		name, website = strings.TrimSpace(website[:i]), strings.TrimSpace(website[i+1:])
+	}
+	if name == "" || !strings.HasPrefix(website, "https://") {
+		return nil, fmt.Errorf(
+			"commerce.payee is not name|https://website, so no payment " +
+				"mandate could be checked against this shop")
+	}
+	// The merchant key, without which a checkout cannot be signed and a
+	// mandate has nothing to bind to.
+	merchant, err := commerce.LoadMerchantKey(filepath.Join(root, "commerce", "merchant.json"))
+	if err != nil {
+		return nil, fmt.Errorf(
+			"commerce.on is set and the merchant key could not be read: %w. "+
+				"Make one with `quilzo commerce keygen`", err)
+	}
+	// The agents this shop serves, by their Web Bot Auth keys.
+	var agents []crawl.Key
+	for _, entry := range strings.Split(cfg.Raw("commerce.agents"), ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		parts := strings.SplitN(entry, ":", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf(
+				"commerce.agents entry %q is not name:keyid:publickey", entry)
+		}
+		key, err := crawl.ParseKey(strings.TrimSpace(parts[0]),
+			strings.TrimSpace(parts[1]), strings.TrimSpace(parts[2]))
+		if err != nil {
+			return nil, fmt.Errorf("commerce.agents: %w", err)
+		}
+		agents = append(agents, key)
+	}
+	// The issuers whose mandates are accepted, by their ECDSA keys.
+	var issuers []commerce.IssuerKey
+	for _, entry := range strings.Split(cfg.Raw("commerce.issuers"), ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		parts := strings.SplitN(entry, ":", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf(
+				"commerce.issuers entry %q is not name:keyid:publickey", entry)
+		}
+		key, err := commerce.ParseIssuerKey(strings.TrimSpace(parts[0]),
+			strings.TrimSpace(parts[1]), strings.TrimSpace(parts[2]))
+		if err != nil {
+			return nil, fmt.Errorf("commerce.issuers: %w", err)
+		}
+		issuers = append(issuers, key)
+	}
+	svc := &commerce.Service{
+		PayeeName: name, PayeeWebsite: website,
+		Merchant: merchant, Agents: agents, Issuers: issuers,
+		Path: commerce.OrdersPath(root),
+		// The catalogue, re-resolved on every read so a published price
+		// change reaches the next cart without a restart — the same rule the
+		// catalogue feed itself follows.
+		Rows: func() ([]listing.Row, error) {
+			l, ok := st.Listings.Set.Get(st.Catalogue)
+			if !ok {
+				return nil, fmt.Errorf("the catalogue listing does not exist")
+			}
+			idx, err := st.Listings.Index.For(st.Listings.Store, st.Listings.At(),
+				l.Collection)
+			if err != nil {
+				return nil, err
+			}
+			res, err := listing.Resolve(l, idx, nil)
+			if err != nil {
+				return nil, err
+			}
+			return res.Rows, nil
+		},
+		Limit: throttle.New(throttle.Policy{
+			Ceiling: 240, Base: time.Second, Max: 15 * time.Minute,
+			Window: time.Hour, Alert: 5,
+		}),
+		// An audit record per event, without the mandate contents: the order
+		// keeps those, and a log that outlives it should not.
+		Audit: func(event, detail string) {
+			record(root, audit.Record{
+				Action: event, Resource: "/ucp", Outcome: audit.Success,
+				Principal: detail,
+				// A shopping agent: verified by its Web Bot Auth key,
+				// which is exactly a service's proof of itself.
+				Kind: audit.KindService, Verified: true,
+			})
+		},
+	}
+	if err := svc.Init(); err != nil {
+		return nil, err
+	}
+	return svc, nil
 }

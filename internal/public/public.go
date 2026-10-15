@@ -46,6 +46,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/a2a"
+	"github.com/quilzo/quilzo/internal/commerce"
 	"github.com/quilzo/quilzo/internal/compress"
 	"github.com/quilzo/quilzo/internal/crawl"
 	"github.com/quilzo/quilzo/internal/etag"
@@ -218,6 +219,14 @@ type Site struct {
 	// private.
 	Catalogue string
 
+	// Commerce is the UCP merchant surface — carts, checkout sessions and
+	// orders over the same catalogue — when the operator has turned it on.
+	// Nil means /ucp/ and /.well-known/ucp 404, which is where every
+	// deployment starts: taking orders from agents is a decision, and one
+	// made by configuring keys and turning this on, never by this program
+	// on an operator's behalf. See commerce.go.
+	Commerce *commerce.Service
+
 	// AgentCard builds this deployment's A2A discovery document, or is nil
 	// when the operator has not turned one on. A function rather than a value
 	// because the manifests it describes can change without a restart, and a
@@ -311,6 +320,11 @@ func (st *Site) Handler() http.Handler {
 	// forbids.
 	mux.HandleFunc("/search", st.searchPage)
 	mux.HandleFunc("/catalogue.json", st.catalogue)
+	// The UCP merchant surface, when the operator has turned it on: the
+	// discovery document, and the carts and checkouts under /ucp/. See
+	// commerce.go — a second, narrow write capability, not a widening of
+	// the catalogue's.
+	st.commerceRoutes(mux)
 	// Both feed formats through one handler, which picks by suffix: the rows
 	// and their order come from the same listing, so a reader and a program
 	// cannot see different journals.

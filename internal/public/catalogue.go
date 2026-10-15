@@ -30,11 +30,11 @@ import (
 //
 // # What it deliberately does not do
 //
-// No prices are computed, no stock is reserved, no order is taken. Quilzo holds
-// what was published and can prove it; a catalogue is a statement about
-// content, and the moment it becomes a transaction this process needs
-// credentials it currently does not have. The public server's one write
-// capability is appending a form submission, and this does not change that.
+// No prices are computed, no stock is reserved, no order is taken: this
+// route is a statement about content, read-only and cacheable. The
+// transactional surface over the same listing is internal/commerce — a
+// separate route set with its own gate — so this feed's honesty costs
+// nothing there and their authority contaminates nothing here.
 
 // catalogue serves a declared listing as a machine-readable feed.
 //

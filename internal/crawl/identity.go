@@ -74,6 +74,16 @@ type Identity struct {
 	Use Use
 	// Signed is when the signature was made.
 	Signed time.Time
+	// KeyID is the keyid the signature named. The name above is this
+	// deployment's label for it; the keyid is what the wider world calls
+	// it, and a caller recording who acted wants both.
+	KeyID string
+	// BodySigned says the signature covered the request body — RFC 9421
+	// over a Content-Digest of it, as the Web Bot Auth drafts recommend for
+	// requests that change something. A signature over the destination
+	// alone identifies the caller; one over the body as well binds the
+	// caller to what it asked for.
+	BodySigned bool
 }
 
 // Verify checks a Web Bot Auth signature and returns who signed it.
@@ -123,7 +133,8 @@ func Verify(r *http.Request, keys []Key, now time.Time) (*Identity, error) {
 			break
 		}
 	}
-	return &Identity{Name: name, Use: declaredUse(r), Signed: signed.Created}, nil
+	return &Identity{Name: name, Use: declaredUse(r), Signed: signed.Created,
+		KeyID: signed.KeyID, BodySigned: signed.CoversBody()}, nil
 }
 
 // declaredUse reads what the crawler says it wants the content for.

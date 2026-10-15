@@ -526,6 +526,8 @@ access
                                            what an agent may pay, within limits a person sets, and what it paid
   quilzo trust add NAME --github OWNER/REPO --as WHO --role ROLE | list | remove NAME
                                            CI jobs exchange their identity token, no stored secret
+  quilzo commerce keygen | orders | status
+                                           the shop's signing key, and what agents have ordered
 
 encryption at rest
   quilzo vault status                      whether objects are sealed on disk
@@ -1086,6 +1088,8 @@ func main() {
 		err = cmdTrust(root, cmdArgs)
 	case "spend":
 		err = cmdSpend(root, cmdArgs)
+	case "commerce":
+		err = cmdCommerce(root, cmdArgs)
 	case "a11y":
 		err = cmdA11y(root, cmdArgs)
 	case "records", "record":

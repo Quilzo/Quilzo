@@ -51,12 +51,17 @@ import (
 //
 // # What it does not pretend to do
 //
-// There is no cart, no checkout, no payment and no stock reservation. The 2026
-// shopping agents discover products and hand the purchase back to the
-// merchant, and what a shop needs from a CMS is a catalogue that says what is
-// for sale and where a person completes the purchase. The moment this took an
-// order it would need credentials it does not have, and a demonstration
-// implying otherwise would be selling something this is not.
+// The demonstration itself still has no cart and no checkout: it is a
+// content model, and the shop's selling surface is a separate capability
+// (internal/commerce, on with commerce.on) that serves this catalogue over
+// UCP to agents that identify themselves with Web Bot Auth. The 2026
+// shopping agents that arrive there find products, prices and availability
+// from these records — the cart is priced by the shop from what was
+// published, never from what the agent says — and an order is recorded
+// under whatever mandate was presented and verified. What neither the
+// demonstration nor the capability pretends to do is capture money: taking
+// payment is a processor's job, and an order says which authorisation was
+// presented, not that anybody was paid.
 func Marginalia() *Site {
 	s := &Site{
 		Name: "Marginalia",

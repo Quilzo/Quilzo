@@ -9,6 +9,31 @@ Unreleased
 
 ** Added
 
+*** A shop that sells to other people's agents.  A site with a catalogue
+    can serve the UCP merchant surface (envelope 2026-08-25) alongside it:
+    discovery at /.well-known/ucp, search, lookup and one-product reads
+    over the same listing /catalogue.json serves, carts the shop prices
+    from its published records on every turn, and checkout sessions signed
+    with the shop's ECDSA key (`quilzo commerce keygen` makes it).  Agents
+    identify themselves with Web Bot Auth signatures from keys configured
+    in commerce.agents; RFC 9421 signatures with Ed25519, and a completion
+    must sign its body's Content-Digest.  An AP2 mandate presented at
+    completion is verified in code — an SD-JWT whose issuer key is
+    configured in commerce.issuers, whose checkout_hash binds it to this
+    shop's signed checkout, whose payee, amount and currency match the
+    order — and a mandate is spent once: a second presentation is refused.
+    No money is captured: an order is a record (orders.json, `quilzo
+    commerce orders` reads it) naming the agent, the platform it claims,
+    the mandates' digests and what was ordered; prices come only from the
+    records, so no request can carry one.  Every request carries the
+    binding's two mandatory headers, Request-Id and UCP-Agent, or is
+    refused; state changes need an Idempotency-Key, replayed answers on
+    retry and 409 on a key reused with a different body, per the spec.
+    Carts and sessions belong to the agent that made them: another
+    configured agent finds them absent, not forbidden.  Everything is off until
+    `quilzo config set commerce.on true`, with commerce.payee naming the
+    shop as a payment mandate's payee must.
+
 *** Agents that pay, within mandates.  A REST operation that spends money
     declares "pays": where its amount, currency and payee are, a
     parameter, body.FIELD or =VALUE.  `quilzo spend grant AGENT` gives an

@@ -924,6 +924,56 @@ var settings = []Setting{
 			"to read and act on. Empty means none is asked for.",
 	},
 	{
+		Key: "commerce.on", Kind: Bool, Default: "false",
+		Summary: "agents may buy from this site's catalogue over the UCP " +
+			"surface at /ucp/",
+		Why: "Off, because taking orders is a decision an operator makes " +
+			"with keys in hand, not a state a program should default a " +
+			"shop into. On, the site serves the UCP discovery document and " +
+			"endpoints: agents identified with Web Bot Auth keys from " +
+			"commerce.agents build carts the site prices from its records, " +
+			"and complete checkouts under AP2 mandates signed by issuers " +
+			"from commerce.issuers. Orders are recorded, not paid: the " +
+			"money is the operator's to take, and the order says which " +
+			"mandates were presented and verified.",
+	},
+	{
+		Key: "commerce.agents", Kind: Text, Default: "",
+		Summary: "shopping agents this shop serves: name:keyid:publickey, " +
+			"comma-separated, Ed25519",
+		Why: "The same rule as crawl.keys, for a different set of machines: " +
+			"an agent is identified when its RFC 9421 Web Bot Auth " +
+			"signature verifies against a key configured here, and never " +
+			"by what it says about itself. Keys are supplied rather than " +
+			"fetched, because a verifier that resolves keys by following a " +
+			"link in the request fetches whatever an attacker names. Empty " +
+			"with commerce.on means the surface answers no agent, which is " +
+			"a safe combination and a pointless one.",
+	},
+	{
+		Key: "commerce.issuers", Kind: Text, Default: "",
+		Summary: "whose mandates this shop accepts: name:keyid:publickey, " +
+			"comma-separated, ECDSA P-256",
+		Why: "An AP2 mandate is an SD-JWT signed by whoever issued it — an " +
+			"agent platform, a credential provider — and a shop that " +
+			"verified any issuer's signature would be trusting every " +
+			"issuer, including the ones that only claim to be one. These " +
+			"are the ECDSA public keys whose mandates verify here. Empty " +
+			"means no mandate verifies, so checkouts complete only as " +
+			"orders with no payment authorisation recorded.",
+	},
+	{
+		Key: "commerce.payee", Kind: Text, Default: "",
+		Summary: "this shop's name and website as a payment mandate's payee " +
+			"must name it: name|https://example.com",
+		Why: "A payment mandate pays a named payee, and the check is " +
+			"equality, not substring: a mandate paying 'Marginalia Ltd' is " +
+			"not one paying 'Marginalia'. Both halves are needed because " +
+			"names repeat across the web and the website is what " +
+			"distinguishes them. Empty means payment mandates cannot be " +
+			"checked, so none is accepted.",
+	},
+	{
 		Key: "licence.contact", Kind: Text, Default: "",
 		Summary: "where to ask about terms this licence refuses",
 		Why: "The part that makes a refusal a negotiation rather than a " +

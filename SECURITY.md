@@ -157,6 +157,17 @@ vulnerability:
   payment; any way a model grants, widens or revokes a mandate; any way a
   payment is earned away from asking; or any way a paid call leaves no
   receipt.
+- **A shop sells only what its records say, to agents it can name.** Any
+  way a price, a total or an availability on the UCP surface comes from a
+  request rather than the published records; any way a cart, checkout or
+  order is served to a request whose Web Bot Auth signature does not verify
+  against a configured key, or a completion whose signature does not cover
+  the body's digest; any way an order completes under a mandate whose
+  issuer key is not configured, whose checkout_hash is not the hash of this
+  shop's signed checkout for that session, or whose payee, amount or
+  currency differ from the order; any way one mandate presentation
+  completes two orders; or any way an order is recorded that the order book
+  does not show.
 - **A program's credential is what it was given and no more.** Any way a job
   is admitted by a trust whose issuer, audience or pinned claims its identity
   token does not satisfy, or exchanges one token twice; any way an exchanged

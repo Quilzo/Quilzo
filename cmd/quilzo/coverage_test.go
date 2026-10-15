@@ -537,6 +537,15 @@ var coverage = map[string]surfaces{
 		Why:   "mandates are granted where the agent is declared and run; the approvals screen shows each payment that waits",
 		NoMCP: "letting an agent spend money is a person's decision on a surface no agent drives",
 	},
+	"commerce": {
+		Why: "the key that signs checkouts is made once at setup and the " +
+			"order book is read from the terminal, like the spending book; " +
+			"an admin screen for orders arrives with the shop pack",
+		NoMCP: "this is the shop's side of the counter: configuring which " +
+			"agents are served and which issuers' mandates are accepted is " +
+			"granting access, and reading the orders is reading customers' " +
+			"purchases. Neither is an agent's to do",
+	},
 	"trust": {
 		Why:   "a trust is declared with the repository it admits, in the same terminal as the workflow that uses it",
 		NoMCP: "which other issuers' jobs get tokens here is granting access, an administrator's to decide",

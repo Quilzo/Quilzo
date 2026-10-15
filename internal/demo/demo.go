@@ -34,11 +34,12 @@
 //
 // # What it is honest about
 //
-// There is no cart, no checkout, no payment and no stock reservation. The 2026
-// shopping agents discover products and hand the purchase back to the merchant,
-// so what a shop needs from a CMS is a catalogue saying what is for sale and
-// where a person completes the purchase — not a transaction. The moment this
-// took an order it would need credentials it does not have.
+// The demonstration itself is a catalogue: no cart and no checkout live in
+// the content model. Selling is a separate capability (internal/commerce,
+// on with commerce.on) that serves this same catalogue over UCP to agents
+// identified with Web Bot Auth, prices their carts from these records, and
+// records orders under presented AP2 mandates — without capturing money,
+// which stays a processor's job.
 //
 // Every part of it was built through the admin interface before it was written
 // down here, which is the only way to be sure it can be. Four bugs were found

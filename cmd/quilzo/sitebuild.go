@@ -395,6 +395,21 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 			st.Crawl = gate
 		}
 
+		// Selling to other people's agents, when the operator has turned it
+		// on and supplied everything it needs.
+		//
+		// Everything this feature depends on is checked here rather than at
+		// the first cart: a shop that took an order and could not record it,
+		// or served agents it could not name, would be discovering its
+		// configuration from a customer. See internal/commerce.
+		if cfg.Bool("commerce.on") {
+			svc, cerr := commerceService(root, cfg, st)
+			if cerr != nil {
+				return nil, cerr
+			}
+			st.Commerce = svc
+		}
+
 		// The share sheet, when an operator has pointed it at a form.
 		//
 		// Validated here rather than at the first share: a target whose form

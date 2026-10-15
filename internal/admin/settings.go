@@ -327,6 +327,8 @@ func settingGroupLabel(key string) string {
 		return "Federation"
 	case "crawl":
 		return "Crawlers and AI"
+	case "commerce":
+		return "Selling to agents"
 	case "share":
 		return "Share target"
 	case "telemetry":
