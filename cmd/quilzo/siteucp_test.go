@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/render"
 )
 
@@ -18,6 +19,7 @@ import (
 // search, a lookup, all from the records the site publishes.
 func TestTheDemoShopAnswersOverUCP(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	w = out.New(false)
 	root := t.TempDir()
 	if err := cmdInit(root); err != nil {
 		t.Fatal(err)
@@ -33,14 +35,8 @@ func TestTheDemoShopAnswersOverUCP(t *testing.T) {
 	if cfg, err := loadConfig(root); err != nil || !cfg.Bool("ucp.catalogue") || cfg.Raw("site.base_url") != demoSiteURL {
 		t.Fatalf("the demonstration did not turn UCP on at its own address: %v", err)
 	}
-	// An operator's own address, once set, is the one every URL is built on.
 	if err := cmdConfig(root, []string{"set", "site.base_url", "https://marginalia.example"}); err != nil {
 		t.Fatal(err)
-	}
-	if err := cmdDemo(root, []string{"--publish=false", "--templates", filepath.Join(root, "templates")}); err == nil {
-		if cfg, _ := loadConfig(root); cfg.Raw("site.base_url") != "https://marginalia.example" {
-			t.Errorf("installing the demonstration again replaced the operator's address")
-		}
 	}
 	st, err := siteFor(root, &Design{Layouts: render.OneLayout(
 		`<!doctype html><html lang="en"><head><title>{{ page.title }}</title></head><body>{{ page.body }}</body></html>`)}, siteOpts{})
@@ -84,6 +80,32 @@ func TestTheDemoShopAnswersOverUCP(t *testing.T) {
 	}
 }
 
+// An operator who set the site's address before installing the
+// demonstration keeps it: the demonstration fills in only an address that
+// is missing.
+func TestTheDemoKeepsAnOperatorsAddress(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	w = out.New(false)
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConfig(root, []string{"set", "site.base_url", "https://marginalia.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdDemo(root, []string{"--templates", filepath.Join(root, "templates")}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Raw("site.base_url") != "https://marginalia.example" || !cfg.Bool("ucp.catalogue") {
+		t.Errorf("the demonstration replaced the operator's address (%q) or did not turn UCP on",
+			cfg.Raw("site.base_url"))
+	}
+}
+
 // Each configuration that would look switched on and answer nothing useful
 // is refused at startup.
 func TestAUCPCatalogueThatCannotWorkIsRefusedAtStartup(t *testing.T) {
@@ -99,6 +121,7 @@ func TestAUCPCatalogueThatCannotWorkIsRefusedAtStartup(t *testing.T) {
 		}
 	}
 	t.Setenv("HOME", t.TempDir())
+	w = out.New(false)
 	root := t.TempDir()
 	if err := cmdInit(root); err != nil {
 		t.Fatal(err)
