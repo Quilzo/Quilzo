@@ -358,7 +358,7 @@ func (s *Site) addProducts() {
 			2800, "MG-NB-A5-LIN", "desk", "linen", "in_stock", "",
 			"210 × 148 × 18mm",
 			"Keep it dry. The linen marks and the marks stay; people seem to like that.",
-			"https://marginalia.example/guarantee", "", "2024-03-04"},
+			"https://marginalia.quilzo.io/guarantee", "", "2024-03-04"},
 
 		{"pocket-notebook", "Pocket notebook", "notebook-pocket",
 			"An illustration of a small teal pocket notebook",
@@ -378,7 +378,7 @@ func (s *Site) addProducts() {
 			4200, "MG-PN-BRS", "desk", "brass", "low_stock", "",
 			"135 × 9mm, 42g",
 			"Do not polish it unless you want to start again.",
-			"https://marginalia.example/guarantee", "", "2024-09-12"},
+			"https://marginalia.quilzo.io/guarantee", "", "2024-09-12"},
 
 		{"copper-pen", "Copper pen", "pen-copper",
 			"An illustration of a slim copper pen lying on the diagonal",
@@ -388,7 +388,7 @@ func (s *Site) addProducts() {
 			4600, "MG-PN-CPR", "desk", "copper", "made_to_order",
 			"Made in batches; about three weeks.", "135 × 9mm, 47g",
 			"Do not polish it unless you want to start again.",
-			"https://marginalia.example/guarantee", "", "2025-02-20"},
+			"https://marginalia.quilzo.io/guarantee", "", "2025-02-20"},
 
 		{"correspondence-cards", "Correspondence cards, boxed", "cards-correspondence",
 			"An illustration of a bordered green correspondence card with two ruled lines",
@@ -398,7 +398,7 @@ func (s *Site) addProducts() {
 				"certification is linked below.",
 			3200, "MG-CD-CORR", "correspondence", "paper", "in_stock", "",
 			"A6, 105 × 148mm", "", "",
-			"https://marginalia.example/recycled-certification", "2024-06-01"},
+			"https://marginalia.quilzo.io/recycled-certification", "2024-06-01"},
 
 		{"plain-cards", "Plain cards, boxed", "cards-plain",
 			"An illustration of a bordered blue plain card",
@@ -502,14 +502,17 @@ func (s *Site) addStockists() {
 	for _, x := range []struct {
 		slug, shop, city, country, addr, url, since string
 	}{
-		{"choosing-keeping", "Choosing Keeping", "London",
-			"United Kingdom", "21 Tower Street, London WC2H 9NS",
-			"https://example.com/choosing-keeping", "2024-05-02"},
-		{"papier-tigre", "Papier Tigre", "Paris", "France",
-			"5 Rue des Filles du Calvaire, 75003 Paris",
-			"https://example.com/papier-tigre", "2024-09-19"},
-		{"analogue-life", "Analogue Life", "Nagoya", "Japan",
-			"Aichi, Nagoya", "https://example.com/analogue-life", "2025-03-11"},
+		// Shops of the demonstration's own world, at addresses under
+		// quilzo.io: an example that names a real business, or sends a
+		// reader to somebody else's site, is an endorsement nobody gave.
+		{"reading-room", "The Reading Room", "Kathmandu",
+			"Nepal", "4 Lantern Lane, Kathmandu",
+			"https://readingroom.quilzo.io", "2024-05-02"},
+		{"paper-house", "Paper House", "Lisbon", "Portugal",
+			"18 Inkwell Row, Lisbon",
+			"https://paperhouse.quilzo.io", "2024-09-19"},
+		{"ink-corner", "Ink Corner", "Kyoto", "Japan",
+			"7 Quill Street, Kyoto", "https://inkcorner.quilzo.io", "2025-03-11"},
 	} {
 		s.Records["stockists"] = append(s.Records["stockists"],
 			collection.Record{Fields: map[string]any{
