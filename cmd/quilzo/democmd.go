@@ -40,6 +40,10 @@ import (
 // running it into somebody's site would overwrite the parts of their setup that
 // share a name with the parts of this one. The store it wants is an empty one.
 
+// demoSiteURL is where the demonstration tells its reader to run the site,
+// and so the address it is configured with when it has none.
+const demoSiteURL = "http://127.0.0.1:8081"
+
 func cmdDemo(root string, args []string) error {
 	fs := flag.NewFlagSet("demo", flag.ContinueOnError)
 	// The name, so the demonstration can be the starting point for a real site
@@ -254,6 +258,17 @@ func cmdDemo(root string, args []string) error {
 			changed = cfg.Set("site.catalogue", d.Catalogue,
 				"the demonstration's machine-readable catalogue", "demo") == nil ||
 				changed
+			// And the same catalogue over UCP, the way shopping agents search
+			// a shop. UCP builds every URL from the site's own address, so a
+			// demonstration without one gets the address it is told to run
+			// at below; an operator's own address is never replaced.
+			if cfg.Raw("site.base_url") == "" {
+				changed = cfg.Set("site.base_url", demoSiteURL,
+					"where the demonstration site runs", "demo") == nil || changed
+			}
+			changed = cfg.Set("ucp.catalogue", "true",
+				"the demonstration's catalogue, searchable by shopping agents", "demo") == nil ||
+				changed
 		}
 		if changed {
 			_ = saveConfig(root, cfg)
@@ -301,6 +316,8 @@ func cmdDemo(root string, args []string) error {
 	w.Human("\n  %sthings worth trying%s\n", bold, reset)
 	w.Human("    /catalogue.json          %severything for sale, as a "+
 		"shopping agent reads it%s\n", dim, reset)
+	w.Human("    /.well-known/ucp         %sthe same catalogue, searchable by "+
+		"shopping agents over UCP%s\n", dim, reset)
 	w.Human("    /ranges?range=archive    %sa listing with a parameter%s\n",
 		dim, reset)
 	w.Human("    /available               %sfiltered on the data, not on "+

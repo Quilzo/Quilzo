@@ -5,6 +5,7 @@ package listing
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -435,4 +436,46 @@ func TestTheSectionKindIsInTheCatalogue(t *testing.T) {
 	}
 	t.Errorf("this package reads a %q section and the catalogue does not "+
 		"offer one, so nothing can add one", SectionKind)
+}
+
+// Every reaches past the listing's row limit and past one page of the store,
+// in the listing's order, and stops at the caller's cap while still saying
+// how many matched.
+func TestEveryReadsTheWholeListingInOrder(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := collection.MaxLimit + 25
+	recs := make([]collection.Record, n)
+	for i := range recs {
+		recs[i] = collection.Record{Fields: map[string]any{
+			"slug": fmt.Sprintf("p%05d", i), "rank": float64(n - i)}}
+	}
+	tree, _, err := collection.PutMany(st, "", "products", recs, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, err := collection.Build(st, tree, "products", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := &Listing{Name: "catalogue", Collection: "products", Rows: 20,
+		Sort: "rank", Fields: []string{"slug", "rank"}}
+	rows, total, err := Every(l, idx, nil, n+100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != n || total != n {
+		t.Fatalf("read %d of %d (total %d); the listing's row limit or the store's page cut it", len(rows), n, total)
+	}
+	for i := 1; i < len(rows); i++ {
+		if rows[i-1]["rank"].(float64) > rows[i]["rank"].(float64) {
+			t.Fatalf("row %d is out of the listing's order", i)
+		}
+	}
+	rows, total, err = Every(l, idx, nil, 30)
+	if err != nil || len(rows) != 30 || total != n {
+		t.Errorf("capped at 30: %d rows, total %d, %v", len(rows), total, err)
+	}
 }

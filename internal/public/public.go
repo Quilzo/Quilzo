@@ -62,6 +62,7 @@ import (
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/tmpl"
+	"github.com/quilzo/quilzo/internal/ucp"
 	"github.com/quilzo/quilzo/internal/webfont"
 )
 
@@ -218,6 +219,12 @@ type Site struct {
 	// private.
 	Catalogue string
 
+	// UCP serves the catalogue to shopping agents over the Universal
+	// Commerce Protocol, or is nil when the operator has not turned it on;
+	// nil means /.well-known/ucp and /ucp/ answer nothing. It reads the
+	// listing Catalogue names and offers nothing else. See ucp.go.
+	UCP *ucp.Catalog
+
 	// AgentCard builds this deployment's A2A discovery document, or is nil
 	// when the operator has not turned one on. A function rather than a value
 	// because the manifests it describes can change without a restart, and a
@@ -311,6 +318,7 @@ func (st *Site) Handler() http.Handler {
 	// forbids.
 	mux.HandleFunc("/search", st.searchPage)
 	mux.HandleFunc("/catalogue.json", st.catalogue)
+	st.ucpRoutes(mux)
 	// Both feed formats through one handler, which picks by suffix: the rows
 	// and their order come from the same listing, so a reader and a program
 	// cannot see different journals.
