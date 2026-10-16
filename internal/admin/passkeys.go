@@ -138,13 +138,18 @@ func (p *Passkeys) find(id []byte) (int, bool) {
 
 // party describes this server as a relying party, derived from the request.
 //
+// Behind a proxy that terminates TLS the request arrives as plain HTTP while
+// the browser is on HTTPS; admin.behind_tls_proxy says so, the same setting
+// that marks the session cookie Secure, and without it passkeys would be
+// refused in every deployment that is not on this machine.
+//
 // Derived rather than configured because the admin does not otherwise know its
 // own public address, and a wrong constant would be a passkey that registers
 // and never works. It is safe to derive: the browser reports the origin it
 // actually used, and an attacker who controls the Host header changes what
 // this server expects without changing what the browser says, so the two stop
 // matching and the ceremony is refused either way.
-func partyFor(r *http.Request) (webauthn.Party, error) {
+func (s *Server) partyFor(r *http.Request) (webauthn.Party, error) {
 	host := r.Host
 	if host == "" {
 		return webauthn.Party{}, fmt.Errorf("this request names no host")
@@ -155,7 +160,7 @@ func partyFor(r *http.Request) (webauthn.Party, error) {
 	}
 
 	scheme := "http"
-	if r.TLS != nil {
+	if r.TLS != nil || s.behindTLSProxy() {
 		scheme = "https"
 	}
 	// A browser will not run WebAuthn outside a secure context, and says so in
@@ -239,7 +244,7 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 	// the button, because a browser's refusal here is silent and looks like
 	// nothing happened.
 	unavailable := ""
-	if _, perr := partyFor(r); perr != nil {
+	if _, perr := s.partyFor(r); perr != nil {
 		unavailable = asNotice(perr.Error())
 	}
 
@@ -310,6 +315,32 @@ func (s *Server) enrolment() webauthn.Enrolment {
 	return s.Passkeys.Enrol
 }
 
+// mayEnrol says whether a session may add a passkey to its person.
+//
+// A passkey signs its person in with everything the policy grants them, so
+// adding one is as strong an act as the person can perform, and only a
+// session that already has all of that may do it: the person's own role,
+// over the whole store, with no limits on the token. A session from a token
+// narrowed to a part of the store, a lesser role or reading only could
+// otherwise enrol a key of its own and sign in as the whole person — and
+// keep that key after the token was revoked.
+func (s *Server) mayEnrol(who principal) error {
+	full := s.roleFor(who.Name)
+	if who.Role != full || (who.Scope != "" && who.Scope != "/") || !who.Limits.Empty() {
+		return fmt.Errorf("a passkey signs %s in with everything they hold, so it is added from a "+
+			"session with all of it; this one carries less (%s on %s). Sign in with %s's own "+
+			"credentials to add one", who.Name, who.Role, orRoot(who.Scope), who.Name)
+	}
+	return nil
+}
+
+func orRoot(scope string) string {
+	if scope == "" {
+		return "/"
+	}
+	return scope
+}
+
 func (s *Server) handlePasskeyChallenge(w http.ResponseWriter, r *http.Request) {
 	who, ok := s.requireAuth(w, r)
 	if !ok {
@@ -325,7 +356,12 @@ func (s *Server) handlePasskeyChallenge(w http.ResponseWriter, r *http.Request) 
 		writeJSONError(w, http.StatusServiceUnavailable, errNoPasskeyStore)
 		return
 	}
-	party, err := partyFor(r)
+	if err := s.mayEnrol(who); err != nil {
+		s.audit("passkey.enrol-refused", "/", map[string]string{"by": who.Name, "session": who.TokenID})
+		writeJSONError(w, http.StatusForbidden, err)
+		return
+	}
+	party, err := s.partyFor(r)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err)
 		return
@@ -368,7 +404,12 @@ func (s *Server) handlePasskeyRegister(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusServiceUnavailable, errNoPasskeyStore)
 		return
 	}
-	party, err := partyFor(r)
+	if err := s.mayEnrol(who); err != nil {
+		s.audit("passkey.enrol-refused", "/", map[string]string{"by": who.Name, "session": who.TokenID})
+		writeJSONError(w, http.StatusForbidden, err)
+		return
+	}
+	party, err := s.partyFor(r)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err)
 		return
@@ -423,6 +464,10 @@ func (s *Server) handlePasskeyRegister(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err)
 		return
 	}
+	// Recorded with the session that added it, so a key added from a
+	// session that should not have been trusted can be found again.
+	s.audit("passkey.enrolled", "/", map[string]string{"by": who.Name, "session": who.TokenID,
+		"label": cred.Label})
 	writeJSON(w, map[string]any{"ok": true})
 }
 
@@ -441,7 +486,7 @@ func (s *Server) handlePasskeySignIn(w http.ResponseWriter, r *http.Request) {
 	s.passkeyPolicy(w, n)
 
 	unavailable := ""
-	if _, perr := partyFor(r); perr != nil {
+	if _, perr := s.partyFor(r); perr != nil {
 		unavailable = asNotice(perr.Error())
 	}
 	s.render(w, r, "passkeysignin.html", map[string]any{
@@ -465,7 +510,7 @@ func (s *Server) handlePasskeySignInChallenge(w http.ResponseWriter, r *http.Req
 		writeJSONError(w, http.StatusServiceUnavailable, errNoPasskeyStore)
 		return
 	}
-	party, err := partyFor(r)
+	party, err := s.partyFor(r)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err)
 		return
@@ -490,7 +535,7 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusServiceUnavailable, errNoPasskeyStore)
 		return
 	}
-	party, err := partyFor(r)
+	party, err := s.partyFor(r)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err)
 		return
@@ -643,12 +688,21 @@ func (s *Server) handlePasskeyRemove(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no such passkey", http.StatusNotFound)
 		return
 	}
+	// Taking a key away is as strong an act as adding one: a narrowed
+	// session that could remove its person's passkeys could leave them
+	// locked out of the way they sign in.
+	if err := s.mayEnrol(who); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	label := s.Passkeys.Credentials[idx].Label
 	s.Passkeys.Credentials = append(s.Passkeys.Credentials[:idx],
 		s.Passkeys.Credentials[idx+1:]...)
 	if err := s.savePasskeys(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.audit("passkey.removed", "/", map[string]string{"by": who.Name, "session": who.TokenID, "label": label})
 	http.Redirect(w, r, "/passkeys", http.StatusSeeOther)
 }
 
