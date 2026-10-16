@@ -444,6 +444,45 @@ func (l *Listing) query(args map[string]string) (collection.Query, bool, error) 
 	return q, true, nil
 }
 
+// Every is every row a listing matches, in the listing's order, up to max.
+//
+// A listing's own row limit is how many a page shows. A machine searching a
+// shop's catalogue is not showing a page: a product past row twenty is still
+// for sale, and a search that could not find it would tell an agent the shop
+// does not have it. The total is how many matched, so a caller that hit max
+// can say so rather than present a part as the whole.
+func Every(l *Listing, idx *collection.Index, args map[string]string, max int) ([]Row, int, error) {
+	if err := l.Validate(); err != nil {
+		return nil, 0, err
+	}
+	if idx == nil || idx.Collection != l.Collection {
+		return nil, 0, fmt.Errorf("%q has no index of %q to read", l.Name, l.Collection)
+	}
+	q, ok, err := l.query(args)
+	if err != nil || !ok {
+		return nil, 0, err
+	}
+	var out []Row
+	total := 0
+	// Paged at the store's own ceiling, so the order is the one Query keeps
+	// (sorted, ties by id) and no single call asks for more than it allows.
+	for q.Offset = 0; len(out) < max; q.Offset += collection.MaxLimit {
+		q.Limit = collection.MaxLimit
+		found, n := idx.Query(q)
+		total = n
+		for _, r := range found {
+			if len(out) == max {
+				break
+			}
+			out = append(out, project(l, r))
+		}
+		if len(found) < collection.MaxLimit {
+			break
+		}
+	}
+	return out, total, nil
+}
+
 // CountBy is how many of the records a listing matches have each value of
 // a field, over everything that matched rather than one page of rows, and
 // how many matched in all. A record without the field is counted under "".

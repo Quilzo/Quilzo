@@ -637,6 +637,31 @@ var settings = []Setting{
 			"one on purpose.",
 	},
 	{
+		Key: "ucp.catalogue", Kind: Bool, Default: "false",
+		Summary: "serve the catalogue listing to shopping agents over UCP, at " +
+			"/.well-known/ucp and /ucp/catalog/",
+		Why: "The Universal Commerce Protocol is how shopping agents search a " +
+			"shop and look products up. On, the site answers its catalog search, " +
+			"lookup and product operations over the listing site.catalogue names " +
+			"— the same products and prices as /catalogue.json, read the same " +
+			"way, so nothing becomes public that was not. Reads only: no carts, " +
+			"checkout or orders, which need a buyer, delivery and a payment " +
+			"provider this program does not have; an agent buys from the " +
+			"product's page. Off by default because publishing to agents is a " +
+			"shop's decision. Needs site.base_url to be the site's https address.",
+	},
+	{
+		Key: "ucp.requests.per_hour", Kind: Int, Default: "600",
+		Summary:  "how many UCP catalogue requests one address may make in an hour, after a burst of a tenth of that",
+		Controls: []string{"SC-5"},
+		Why: "Ten a minute on average, sixty at once: an agent paging through " +
+			"a search is never held back, and a script reading the whole shop " +
+			"on repeat is. Counted per address, so platforms behind one address " +
+			"share it — raise it for a shop that a large platform reads often.",
+		Weaker: atMost(6000, "%s catalogue requests an hour lets one address "+
+			"read a large catalogue many times over"),
+	},
+	{
 		Key: "marking.levels", Kind: Text, Default: "",
 		Summary: "classification levels this deployment uses, lowest first",
 		Why: "Empty means this deployment does not mark, which is the " +

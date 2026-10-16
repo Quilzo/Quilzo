@@ -338,6 +338,7 @@ reference.
 | **Design** | Starters, sections, themes from one colour with contrast checked, design tokens in and out. | `quilzo template\|section\|theme`; Design screen |
 | **Media** | Uploads checked, renditions, crops that keep the original, captions required for video, C2PA provenance, generated images marked. | `quilzo media` |
 | **People on the site** | Forms with retention and erasure, member accounts with passkeys and recovery codes, boards with moderation, cookieless analytics, A/B experiments, personalisation by what the request says. | `quilzo form\|member\|board\|analytics\|experiment\|personalise` |
+| **Selling to shopping agents** | The catalogue listing as a machine-readable feed, and over the Universal Commerce Protocol: shopping agents search it, look products up and read prices from the published records. Read-only: an agent buys from the product's page. | `site.catalogue`, `ucp.catalogue`; `/catalogue.json`, `/.well-known/ucp` |
 | **Languages** | Locales, stale and missing translations. | `quilzo lang` |
 | **Out and in** | Export to Markdown (Hugo, Astro, Eleventy, Jekyll), WordPress WXR, lossless JSON and RO-Crate; import from WordPress; replicas; the permanent web (IPFS); the fediverse (ActivityPub). | `quilzo export\|import\|peer\|ipfs\|fediverse` |
 | **API** | A content API, read-only or writable with If-Match, and a playground in the admin. | `quilzo site --api`; API screen |

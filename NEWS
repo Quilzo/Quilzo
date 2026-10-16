@@ -9,6 +9,15 @@ Unreleased
 
 ** Added
 
+*** The catalogue for shopping agents, over UCP.  With ucp.catalogue on,
+    the site serves the Universal Commerce Protocol (version 2026-08-25):
+    its profile at /.well-known/ucp, and catalog search, lookup and
+    product at /ucp/catalog/.  The same listing and prices as
+    /catalogue.json, every product in it rather than the listing's first
+    page, read fresh on each request.  Reads only: there are no carts,
+    checkout or orders, and an agent buys from the product's page.  Each
+    address has ucp.requests.per_hour.  The demonstration shop turns it on.
+
 *** Agents that pay, within mandates.  A REST operation that spends money
     declares "pays": where its amount, currency and payee are, a
     parameter, body.FIELD or =VALUE.  `quilzo spend grant AGENT` gives an

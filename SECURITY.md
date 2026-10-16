@@ -181,6 +181,10 @@ vulnerability:
   running or approving its agents; any way a package grants a role to
   somebody, or widens a role people hold without somebody who may grant
   access; or any way a role's holder keeps part of it after it is removed.
+- **Shopping agents read the catalogue and nothing else.** Any way a request
+  to /ucp/ or /.well-known/ucp reads a record, field or listing that
+  /catalogue.json does not publish, changes anything on the site, or is
+  answered with a price the published records do not carry.
 - **A person's desktop is not used.** Any way a run reaches a person's keyboard
   or pointer. Desktop consent hands the session straight back.
 

@@ -395,6 +395,19 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 			st.Crawl = gate
 		}
 
+		// The catalogue over UCP, when the operator has turned it on.
+		//
+		// Checked here rather than at the first request, so a setting that
+		// cannot work is reported once at startup instead of as answers no
+		// agent can use.
+		if cfg.Bool("ucp.catalogue") {
+			cat, uerr := ucpCatalogue(cfg, st)
+			if uerr != nil {
+				return nil, uerr
+			}
+			st.UCP = cat
+		}
+
 		// The share sheet, when an operator has pointed it at a form.
 		//
 		// Validated here rather than at the first share: a target whose form
