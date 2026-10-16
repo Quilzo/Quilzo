@@ -105,6 +105,18 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	// just happened, not what happened first.
 	rows := make([]logRow, 0, len(events))
 	actions := map[string]int{}
+	// Each pseudonym resolved once for the page: resolving one costs a
+	// keyed hash per known person, and a page of the log names the same few
+	// people thousands of times.
+	resolved := map[string]string{}
+	resolve := func(p string) string {
+		if name, ok := resolved[p]; ok {
+			return name
+		}
+		name := s.ResolvePrincipal(p)
+		resolved[p] = name
+		return name
+	}
 	for i := len(events) - 1; i >= 0; i-- {
 		e := events[i]
 		actions[e.Action]++
@@ -123,7 +135,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 			Who: e.Principal, Failed: e.Outcome == audit.Denied,
 		}
 		if s.ResolvePrincipal != nil {
-			if name := s.ResolvePrincipal(e.Principal); name != "" {
+			if name := resolve(e.Principal); name != "" {
 				row.Who, row.Resolved = name, true
 			}
 			// Details naming a person are pseudonymised like the principal,
@@ -134,7 +146,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 				if !audit.IdentityKeys[k] {
 					continue
 				}
-				if name := s.ResolvePrincipal(v); name != "" {
+				if name := resolve(v); name != "" {
 					if named == nil {
 						named = make(map[string]string, len(e.Detail))
 						for k2, v2 := range e.Detail {

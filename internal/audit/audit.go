@@ -68,6 +68,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/atomicfile"
 )
 
 // Kind distinguishes the three sorts of actor. AU-3(f).
@@ -176,6 +178,12 @@ type Log struct {
 	seq  int64
 	src  string
 	mode os.FileMode
+	// size is how long the file was when this handle last read or wrote
+	// it. A different size at the next append means another writer has
+	// been, and the chain is picked up from the file again.
+	size int64
+	// torn says the file ends part way through a line.
+	torn bool
 }
 
 // Options configures a Log.
@@ -252,16 +260,101 @@ func New(opt Options) (*Log, error) {
 	}
 
 	// Resume from the existing chain so appending after a restart continues it
-	// rather than starting a second one.
-	events, err := Read(opt.Path)
-	if err != nil {
+	// rather than starting a second one. Only the last entry is read: every
+	// audited action opens a log, and reading the whole file each time made
+	// every action cost more the longer the installation had run.
+	if err := l.resync(); err != nil {
 		return nil, err
 	}
-	if n := len(events); n > 0 {
-		l.last = events[n-1].Hash
-		l.seq = events[n-1].Seq
-	}
 	return l, nil
+}
+
+// resync picks the chain up from the file: the last complete entry's hash
+// and sequence, and the file's size.
+func (l *Log) resync() error {
+	last, size, torn, err := tail(l.path)
+	if err != nil {
+		return err
+	}
+	l.last, l.seq, l.size, l.torn = "", 0, size, torn
+	if last != nil {
+		l.last, l.seq = last.Hash, last.Seq
+	}
+	return nil
+}
+
+// tail reads the last complete entry of a log, the file's size, and whether
+// the file ends part way through a line, as a writer that died mid-write
+// leaves it.
+//
+// It reads backwards from the end in growing windows, so its cost is the
+// length of the last line, not of the log. A last complete line that is not
+// an entry is an error, as it is to Read: the chain cannot be continued
+// from something that is not part of it.
+func tail(path string) (*Event, int64, bool, error) {
+	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return nil, 0, false, nil
+	}
+	if err != nil {
+		return nil, 0, false, err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, 0, false, err
+	}
+	size := fi.Size()
+	if size == 0 {
+		return nil, 0, false, nil
+	}
+	const maxLine = 4 << 20
+	for window := int64(64 << 10); ; window *= 4 {
+		if window > size {
+			window = size
+		}
+		buf := make([]byte, window)
+		if _, err := f.ReadAt(buf, size-window); err != nil && err != io.EOF {
+			return nil, size, false, err
+		}
+		torn := buf[len(buf)-1] != '\n'
+		body := buf
+		if i := strings.LastIndexByte(string(body), '\n'); i >= 0 {
+			body = body[:i]
+		} else if window == size {
+			// One line, never finished: nothing complete to continue from.
+			return nil, size, true, nil
+		} else {
+			continue
+		}
+		// The last non-blank complete line in the window, if its start is in
+		// the window too.
+		for len(body) > 0 {
+			start := strings.LastIndexByte(string(body), '\n') + 1
+			if start == 0 && window < size {
+				break // the line may begin before the window
+			}
+			line := strings.TrimSpace(string(body[start:]))
+			if line == "" {
+				if start == 0 {
+					return nil, size, torn, nil
+				}
+				body = body[:start-1]
+				continue
+			}
+			var e Event
+			if err := json.Unmarshal([]byte(line), &e); err != nil {
+				return nil, size, torn, fmt.Errorf("the last entry is not readable: %w", err)
+			}
+			return &e, size, torn, nil
+		}
+		if window == size {
+			return nil, size, torn, nil
+		}
+		if window >= maxLine*2 {
+			return nil, size, torn, fmt.Errorf("the last entry is longer than an entry may be")
+		}
+	}
 }
 
 // Pseudonymous reports whether identifiers are being protected.
@@ -429,6 +522,33 @@ func (l *Log) Append(r Record) (*Event, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	// One writer at a time on the file, across every handle and process: the
+	// admin, the site and the command line all append to this log, each
+	// action through a handle of its own. Two writers that read the same
+	// last entry would both write the next sequence number after it, forking
+	// the chain, and a writer that read another's half-written line lost its
+	// own record.
+	unlock, err := atomicfile.Lock(l.path + ".lock")
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	if fi, serr := os.Stat(l.path); serr == nil && fi.Size() != l.size {
+		if err := l.resync(); err != nil {
+			return nil, err
+		}
+	}
+	// A line a writer died part way through is closed off, so this entry
+	// starts on a line of its own. The broken line stays, and Read and Verify
+	// report it: a crash leaves a visible mark rather than none, and the
+	// chain carries on from the last entry that was whole.
+	if l.torn {
+		if err := l.write([]byte("\n")); err != nil {
+			return nil, err
+		}
+		l.torn = false
+	}
+
 	l.seq++
 	e := &Event{
 		Seq: l.seq, At: time.Now().UTC().Format(time.RFC3339Nano),
@@ -449,25 +569,35 @@ func (l *Log) Append(r Record) (*Event, error) {
 		return nil, err
 	}
 
-	// Append-only, and fsynced. An audit record still in a buffer when the
-	// process dies is a record of an event that is now invisible.
-	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, l.mode)
-	if err != nil {
+	if err := l.write(append(line, '\n')); err != nil {
 		l.seq--
 		return nil, err
 	}
-	defer f.Close()
-	if _, err := f.Write(append(line, '\n')); err != nil {
-		l.seq--
-		return nil, err
-	}
-	if err := f.Sync(); err != nil {
-		l.seq--
-		return nil, err
-	}
-
 	l.last = e.Hash
 	return e, nil
+}
+
+// write appends bytes to the log file, fsynced: an audit record still in a
+// buffer when the process dies is a record of an event that is now
+// invisible. Called with the file lock held.
+func (l *Log) write(b []byte) error {
+	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, l.mode)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.Write(b); err != nil {
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	l.size = fi.Size()
+	return nil
 }
 
 // Read loads every event.
