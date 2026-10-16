@@ -524,6 +524,8 @@ access
   quilzo token list | revoke ID | stale
   quilzo spend grant AGENT --currency USD --per 50 --budget 500 --payee P --purpose WHY | list | revoke ID | receipts
                                            what an agent may pay, within limits a person sets, and what it paid
+  quilzo evolve run --program F --evaluator F [--input F]... [--eval-input F]...
+                                           search over programs, against an evaluator they cannot reach
   quilzo trust add NAME --github OWNER/REPO --as WHO --role ROLE | list | remove NAME
                                            CI jobs exchange their identity token, no stored secret
 
@@ -1086,6 +1088,8 @@ func main() {
 		err = cmdTrust(root, cmdArgs)
 	case "spend":
 		err = cmdSpend(root, cmdArgs)
+	case "evolve":
+		err = cmdEvolve(root, cmdArgs)
 	case "a11y":
 		err = cmdA11y(root, cmdArgs)
 	case "records", "record":

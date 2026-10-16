@@ -537,6 +537,14 @@ var coverage = map[string]surfaces{
 		Why:   "mandates are granted where the agent is declared and run; the approvals screen shows each payment that waits",
 		NoMCP: "letting an agent spend money is a person's decision on a surface no agent drives",
 	},
+	"evolve": {
+		Why: "a search is started and watched in the terminal, like a research " +
+			"run, and its journal and programs are files in the store",
+		NoMCP: "a search spends model budget and runs programs in the box, " +
+			"and the programs and evaluator are files an operator chose. " +
+			"Letting an agent start one is a decision that comes with the " +
+			"research integration, made once, not a default of this surface",
+	},
 	"trust": {
 		Why:   "a trust is declared with the repository it admits, in the same terminal as the workflow that uses it",
 		NoMCP: "which other issuers' jobs get tokens here is granting access, an administrator's to decide",

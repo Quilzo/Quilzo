@@ -237,3 +237,45 @@ func (c *capture) result() (text string, kept []byte, total int64, digest string
 	}
 	return strings.ToValidUTF8(text, "�"), c.head, c.total, digest
 }
+
+// QuotaEvery is how often RunWithin measures what a command has written.
+var QuotaEvery = 2 * time.Second
+
+// RunWithin runs a command as Run does, and stops it when its workspace and
+// home together grow past quota bytes.
+//
+// Measured while it runs, because the limit on each file says nothing about
+// how many files there are, and a program that fills the disk stops the
+// audit log and the store writing too: found afterwards is found too late.
+// A directory the command made unreadable to measure counts as over.
+func (b Box) RunWithin(ctx context.Context, c Command, quota int64) (Output, error) {
+	cctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	watched := make(chan struct{})
+	go func() {
+		defer close(watched)
+		tick := time.NewTicker(QuotaEvery)
+		defer tick.Stop()
+		for {
+			select {
+			case <-cctx.Done():
+				return
+			case <-tick.C:
+				ws, ok1 := SizeOf(b.Workspace)
+				home, ok2 := SizeOf(b.Home)
+				if !ok1 || !ok2 || ws+home > quota {
+					cancel(fmt.Errorf("it went over its %d MiB of disk", quota>>20))
+					return
+				}
+			}
+		}
+	}()
+	out, err := b.Run(cctx, c)
+	cancel(nil)
+	<-watched
+	if cause := context.Cause(cctx); cause != nil && cause != context.Canceled && ctx.Err() == nil {
+		out.Stopped = cause.Error()
+		err = nil
+	}
+	return out, err
+}
