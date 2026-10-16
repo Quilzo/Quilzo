@@ -63,6 +63,11 @@ type Project struct {
 	Claims []Claim `json:"claims,omitempty"`
 	// Sources are the works a report may cite.
 	Sources []Source `json:"sources,omitempty"`
+	// Ideas are the hypotheses a model has proposed here, with their
+	// critiques; Matches the pairwise judgements between them. See
+	// ideas.go.
+	Ideas   []Idea  `json:"ideas,omitempty"`
+	Matches []Match `json:"matches,omitempty"`
 	// Report is the draft report, in the ledger's markup (see report.go).
 	Report       string    `json:"report,omitempty"`
 	ReportBy     string    `json:"report_by,omitempty"`
@@ -132,6 +137,9 @@ type Run struct {
 	// it wrote down.
 	Outputs []File  `json:"outputs,omitempty"`
 	Values  []Value `json:"values,omitempty"`
+	// Idea is the hypothesis this computation executes, when it executes
+	// one: the ideation side of the project, followed into work.
+	Idea string `json:"idea,omitempty"`
 	// Rerun is the computation this one repeated, and Reproduced whether
 	// it gave the same numbers and files from the same code and inputs.
 	Rerun      string   `json:"rerun,omitempty"`
@@ -340,6 +348,9 @@ func (s *Store) Load(name string) (Project, error) {
 	if err := json.Unmarshal(b, &p); err != nil {
 		return Project{}, fmt.Errorf("%s: %w", name, err)
 	}
+	if err := p.CheckIdeas(); err != nil {
+		return Project{}, fmt.Errorf("%s: %w", name, err)
+	}
 	return p, nil
 }
 
@@ -367,11 +378,29 @@ func (s *Store) Create(p Project) error {
 func (s *Store) Change(name string, f func(*Project) error) (Project, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if !ValidName(name) {
+		return Project{}, fmt.Errorf("%q is not a project's name", name)
+	}
+	// A lock on the file as well as the mutex: every command and every MCP
+	// call makes its own Store, so the mutex alone serialises nothing
+	// between them, and two processes changing a project at once would
+	// each save over the other.
+	if err := os.MkdirAll(filepath.Dir(s.projectPath(name)), 0o700); err != nil {
+		return Project{}, err
+	}
+	unlock, err := atomicfile.Lock(s.projectPath(name) + ".lock")
+	if err != nil {
+		return Project{}, err
+	}
+	defer unlock()
 	p, err := s.Load(name)
 	if err != nil {
 		return p, err
 	}
 	if err := f(&p); err != nil {
+		return p, err
+	}
+	if err := p.CheckIdeas(); err != nil {
 		return p, err
 	}
 	return p, s.save(p)

@@ -142,7 +142,8 @@ vulnerability:
   reaches a research report's rendered text other than from a computation's
   values.json without the check flagging it, a citation is kept for a work no
   index returned, a computation reads the network or a file it was not given,
-  or a model registers or amends a plan.
+  or a model registers or amends a plan, records a verdict on an idea, or has
+  an idea judged that was held for addressing the judge.
 - **A permission reaches only what it was granted on.** Any way a permission
   granted on one agent or part of the store decides, runs or changes another,
   a model approves what an agent waits for, somebody who may manage an agent

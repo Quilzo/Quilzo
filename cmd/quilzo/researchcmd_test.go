@@ -87,7 +87,7 @@ func TestAReportStatesOnlyNumbersItsCodeProduced(t *testing.T) {
 		t.Fatalf("the registration does not verify: %v", err)
 	}
 
-	r, err := researchRunScript(context.Background(), root, "fever", "analysis.py", []string{"data/trial.csv"}, "", dana)
+	r, err := researchRunScript(context.Background(), root, "fever", "analysis.py", []string{"data/trial.csv"}, "", dana, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestARerunThatDiffersIsAProblem(t *testing.T) {
 	if _, err := researchAdd(root, "fever", []string{noisy}, "", dana); err != nil {
 		t.Fatal(err)
 	}
-	r, err := researchRunScript(context.Background(), root, "fever", "noisy.py", nil, "", dana)
+	r, err := researchRunScript(context.Background(), root, "fever", "noisy.py", nil, "", dana, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestARerunThatDiffersIsAProblem(t *testing.T) {
 	}
 	// Changing the data under a computation stops its re-run.
 	os.WriteFile(filepath.Join(researchStore(root).Work("fever"), "data", "trial.csv"), []byte("arm,fever\n"), 0o600)
-	first, err := researchRunScript(context.Background(), root, "fever", "analysis.py", []string{"data/trial.csv"}, "", dana)
+	first, err := researchRunScript(context.Background(), root, "fever", "analysis.py", []string{"data/trial.csv"}, "", dana, "")
 	if err != nil {
 		t.Fatal(err)
 	}

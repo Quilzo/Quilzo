@@ -9,6 +9,21 @@ Unreleased
 
 ** Added
 
+*** Ideas in research projects.  `quilzo research ideas NAME --count 3`
+    asks a model for hypotheses the project could test, a sceptical
+    critique of each, and judges them in pairs, each pair both ways round
+    so a judge that prefers whatever it read first decides nothing.
+    Standings come from a Bradley-Terry fit of the matches, the same
+    whatever order they were played in, and an idea is ranked once it has
+    played three.  Each idea is shown beside what computations made of it
+    (`research run --idea ID`) and the verdict a person records from the
+    claims they produced (`--verdict ID --outcome
+    supported|refuted|inconclusive --claim NAME`).  Ideas proposed after
+    the data was first seen say so; an idea whose text addresses the judge
+    is held, never judged; a model never writes the plan.  Judging uses the
+    gateway consumer research:ideas:judge, so it can be a different model
+    from the one proposing.  On the Research screen and as research_ideas
+    over MCP.
 *** Evolve: search over programs, against an evaluator they cannot reach.
     `quilzo evolve run --program seed.py --evaluator evaluator.py
     --input data.csv --eval-input cases.csv` searches for a better

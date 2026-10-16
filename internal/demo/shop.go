@@ -71,6 +71,7 @@ func Marginalia() *Site {
 		Records:   map[string][]collection.Record{},
 		Catalogue: "catalogue",
 		Examples:  packingExample,
+		Research:  []ResearchProject{repeatOrders},
 	}
 	s.addMedia()
 	s.addTypes()
