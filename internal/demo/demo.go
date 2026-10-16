@@ -128,6 +128,11 @@ type Site struct {
 	// ClaimRules is what this site refuses to say without substantiation.
 	// Empty for a demonstration that has no claims to make.
 	ClaimRules brand.Rules
+
+	// Examples are files written beside the templates, by path under the
+	// examples folder: what a feature that works on files rather than on
+	// the store, such as evolve, is tried with.
+	Examples map[string]string
 }
 
 // Template and CSS, read from the embedded copies.

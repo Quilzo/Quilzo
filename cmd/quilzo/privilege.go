@@ -743,7 +743,11 @@ var commandNeeds = map[string]need{
 	// A research project is drafts and computations in a box: an author's
 	// work. Registering or amending a plan is refused to a model inside the
 	// command, and reading is a reader's.
-	"research":        {action: auth.ActEditDraft},
+	"research": {action: auth.ActEditDraft},
+	// A search spends the store's models, so it is gated by who may; it
+	// also runs code in the box, which evolveRun checks as edit-draft.
+	"evolve":          {action: auth.ActEditDraft},
+	"evolve run":      {action: auth.ActUseModels},
 	"research list":   {action: auth.ActView},
 	"research show":   {action: auth.ActView},
 	"research search": {action: auth.ActView},

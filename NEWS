@@ -9,6 +9,25 @@ Unreleased
 
 ** Added
 
+*** Evolve: search over programs, against an evaluator they cannot reach.
+    `quilzo evolve run --program seed.py --evaluator evaluator.py
+    --input data.csv --eval-input cases.csv` searches for a better
+    program: a model proposes SEARCH/REPLACE diffs to the program it is
+    shown first (the seed may mark what evolves with # EVOLVE-BLOCK
+    markers), the changed program runs in the agent box with no network
+    and bounded time, memory, files and disk, and the evaluator scores it
+    in a box of its own, receiving only the files the candidate wrote in
+    output/ and writing output/metrics.json, one flat object of numbers.
+    The candidate cannot read the evaluator or its cases, or write its
+    metrics; a run that goes over a limit is not scored.  Selection is
+    deterministic code, weights from --weight NAME=NUMBER (negative to
+    minimise) or the plain mean.  Because the search adapts to its
+    evaluator's cases, --test-input and --test-eval-input give a test set,
+    scored once on the final population and never used to choose.  Every
+    generation is journalled before the population changes, with the seed
+    and model on its first line, and every program that ran is kept by its
+    digest.  Programs and their output reach the model fenced as data.
+    Needs use-models; costs the model gateway as consumer "evolve".
 *** The catalogue for shopping agents, over UCP.  With ucp.catalogue on,
     the site serves the Universal Commerce Protocol (version 2026-08-25):
     its profile at /.well-known/ucp, and catalog search, lookup and

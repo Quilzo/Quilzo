@@ -151,6 +151,13 @@ vulnerability:
 - **A collection is reached only through a grant on it.** Any way somebody
   granted one collection, or a section of pages, reads, writes or learns the
   name of another collection through any interface.
+- **A searched program cannot reach its evaluator.** Any way a candidate
+  in an evolve search reads the evaluator's code or inputs, writes its
+  metrics, or learns anything from the evaluator's side beyond the numbers
+  the search records; any way the model is shown the evaluator; any way a
+  program that went over its box's limits is still scored; any way a test
+  set score chooses a program; or any way a generation happens that the
+  journal does not show.
 - **An agent pays only within what a person allowed.** Any way a paying
   call goes ahead without a mandate that covers its payee, currency, tool,
   amount and what is left of the budget, or a person's approval of that one

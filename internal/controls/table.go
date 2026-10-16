@@ -233,8 +233,8 @@ var table = []Implementation{
 		Customer:  "Configures the keyring and keeps its key off the machine's disk or in a key manager.",
 		Where:     []string{"quilzo vault", "internal/vault"}},
 	{Control: "SC-39", Title: "Process Isolation", Responsibility: Quilzo,
-		Statement: "The public site, the admin and the log collector are separate processes; an extension runs as a child process with an empty environment, a time limit and, on Linux 5.13 or later, a Landlock sandbox that limits what it can read and, from kernel ABI 4, whether it can open TCP connections.",
-		Where:     []string{"internal/sandbox", "internal/ext"}},
+		Statement: "The public site, the admin and the log collector are separate processes; an extension runs as a child process with an empty environment, a time limit and, on Linux 5.13 or later, a Landlock sandbox that limits what it can read and, from kernel ABI 4, whether it can open TCP connections. An evolve search runs each candidate and its evaluator in separate agent boxes, with only the candidate's output files crossing between them.",
+		Where:     []string{"internal/sandbox", "internal/ext", "internal/evolve"}},
 
 	// -- system and information integrity ------------------------------------
 	{Control: "SI-2", Title: "Flaw Remediation", Responsibility: Shared,

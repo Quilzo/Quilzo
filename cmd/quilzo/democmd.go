@@ -61,6 +61,8 @@ func cmdDemo(root string, args []string) error {
 		"where to write page.html and site.css")
 	publish := fs.Bool("publish", true,
 		"publish the draft, so the site serves immediately")
+	exDir := fs.String("examples", "",
+		"where to write the example files features are tried with (default: examples, beside the templates)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -289,6 +291,28 @@ func cmdDemo(root string, args []string) error {
 		}
 	}
 
+	// Beside the templates unless told otherwise, so the two folders a
+	// demonstration writes outside the store are always found together.
+	if *exDir == "" {
+		*exDir = filepath.Join(filepath.Dir(*tplDir), "examples")
+	}
+	// The example files, beside the templates. Paths come from the
+	// demonstration itself, and each is checked to stay under the folder all
+	// the same, since it becomes a path on somebody's disk.
+	for rel, body := range d.Examples {
+		path := filepath.Join(*exDir, filepath.FromSlash(rel))
+		if r, rerr := filepath.Rel(*exDir, path); rerr != nil || r == ".." ||
+			strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("the example %s is not under %s", rel, *exDir)
+		}
+		if merr := os.MkdirAll(filepath.Dir(path), 0o700); merr != nil {
+			return merr
+		}
+		if werr := os.WriteFile(path, []byte(body), 0o600); werr != nil {
+			return werr
+		}
+	}
+
 	if *publish {
 		if _, perr := site.Publish(s, ""); perr != nil {
 			return fmt.Errorf("publishing: %w", perr)
@@ -326,6 +350,11 @@ func cmdDemo(root string, args []string) error {
 		"window has not opened%s\n", dim, reset)
 	w.Human("    /wholesale               %sthe one thing the public server "+
 		"may write%s\n", dim, reset)
+	if len(d.Examples) > 0 {
+		w.Human("\n  %sand on files%s\n", bold, reset)
+		w.Human("    %s/evolve/  %sa program search, judged where the programs cannot reach (README.txt)%s\n",
+			*exDir, dim, reset)
+	}
 	w.Human("\n  %sand the gate%s\n", bold, reset)
 	w.Human("    quilzo brand check       %severy claim, and what backs it "+
 		"up%s\n", dim, reset)
