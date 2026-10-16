@@ -397,6 +397,16 @@ Unreleased
 
 ** Fixed
 
+*** A passkey is added or removed only from a session that holds the
+    whole person: their own role, over the whole store, with no limits on
+    the token.  Any signed-in session could add one, including one from a
+    token narrowed to part of the store, a lesser role or reading only,
+    and the passkey then signed in as the person's full self and outlived
+    the token.  Refusals, enrolments and removals are in the audit log.
+    Passkeys now also work behind a proxy that terminates TLS when
+    admin.behind_tls_proxy is set, as the session cookie and single
+    sign-on already did.
+
 *** Signing in with an identity provider or a passkey gives a session the
     highest role the person holds anywhere.  It took the role they held
     over the whole site, so an analyst, administrator of /@security alone,
