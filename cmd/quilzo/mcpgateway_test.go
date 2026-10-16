@@ -102,7 +102,9 @@ func TestTheGatewayOffersOnlyWhatWasApprovedToWhomItWasOffered(t *testing.T) {
 			t.Fatalf("%+v", e.Detail)
 		}
 		for _, v := range e.Detail {
-			if strings.Contains(v, "Printer") || strings.Contains(v, "7946") {
+			// The whole number, with its spaces: four digits alone turn up
+			// by chance in a hex pseudonym or digest, and did.
+			if strings.Contains(v, "Printer") || strings.Contains(v, "+44 20 7946") {
 				t.Fatalf("the arguments reached the log: %v", e.Detail)
 			}
 		}
