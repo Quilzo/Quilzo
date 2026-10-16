@@ -67,6 +67,9 @@ func (s *Server) handleResearch(w http.ResponseWriter, r *http.Request) {
 	}
 	data["Title"] = proj.Name
 	data["Project"], data["Runs"], data["Findings"] = proj, runs, findings
+	if len(proj.Ideas) > 0 {
+		data["Standings"] = proj.Standings(runs)
+	}
 	data["Blocks"], data["Cited"], data["References"] = blocks, cited, refs
 	data["Problems"] = research.Problems(findings)
 	s.render(w, r, "research_project.html", data)

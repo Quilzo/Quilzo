@@ -86,6 +86,16 @@ func cmdResearch(root string, args []string) error {
 	switch args[0] {
 	case "list":
 		return researchList(root, caller())
+	case "ideas":
+		pos, flags := leadingArgs(rest, 1)
+		var o ideasOptions
+		if err := ideaFlagSet(&o).Parse(flags); err != nil {
+			return err
+		}
+		if len(pos) != 1 {
+			return usage("ideas NAME [--count N | --play | --verdict ID --outcome OUTCOME [--claim NAME]… [--note TEXT]]")
+		}
+		return researchIdeas(root, pos[0], o, caller())
 	case "new":
 		pos, flags := leadingArgs(rest, 1)
 		fs := flag.NewFlagSet("research new", flag.ContinueOnError)
@@ -163,13 +173,14 @@ func cmdResearch(root string, args []string) error {
 		fs := flag.NewFlagSet("research run", flag.ContinueOnError)
 		var inputs multiFlag
 		fs.Var(&inputs, "input", "a file in the project the script reads (repeat for each)")
+		idea := fs.String("idea", "", "the idea this computation executes, by id (quilzo research ideas lists them)")
 		if err := fs.Parse(flags); err != nil {
 			return err
 		}
 		if len(pos) != 2 {
-			return usage("run NAME SCRIPT [--input FILE]…")
+			return usage("run NAME SCRIPT [--input FILE]… [--idea ID]")
 		}
-		r, err := researchRunScript(context.Background(), root, pos[0], pos[1], inputs, "", caller())
+		r, err := researchRunScript(context.Background(), root, pos[0], pos[1], inputs, "", caller(), *idea)
 		if err != nil {
 			return err
 		}
@@ -426,6 +437,15 @@ func researchShow(root, name string, caller *Caller) error {
 	for _, s := range p.Sources {
 		fmt.Printf("source [@%s] %s\n", s.Key, research.Reference(s))
 	}
+	if len(p.Ideas) > 0 {
+		decided := 0
+		for _, i := range p.Ideas {
+			if i.Verdict != nil {
+				decided++
+			}
+		}
+		fmt.Printf("ideas: %d, %d with a verdict (quilzo research ideas %s)\n", len(p.Ideas), decided, p.Name)
+	}
 	fmt.Printf("report: %d problem(s)\n", research.Problems(fs))
 	return nil
 }
@@ -597,14 +617,30 @@ func newResearchRunID(at time.Time) (string, error) {
 // re-run (of) runs the code the earlier computation kept, on inputs that
 // must not have changed since.
 func researchRunScript(ctx context.Context, root, name, script string, inputs []string, of string,
-	caller *Caller) (research.Run, error) {
+	caller *Caller, idea string) (research.Run, error) {
 
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
 		return research.Run{}, err
 	}
 	st := researchStore(root)
-	if _, err := st.Load(name); err != nil {
+	project, err := st.Load(name)
+	if err != nil {
 		return research.Run{}, err
+	}
+	// The idea a run executes must be one this project proposed: a link to
+	// an id nobody proposed would hang an outcome on nothing.
+	if idea != "" {
+		found := false
+		for _, i := range project.Ideas {
+			if i.ID == idea {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return research.Run{}, fmt.Errorf("%q is not an idea of %s; quilzo research ideas %s lists them",
+				idea, name, name)
+		}
 	}
 	work := st.Work(name)
 	var earlier research.Run
@@ -716,7 +752,8 @@ func researchRunScript(ctx context.Context, root, name, script string, inputs []
 	}
 	r := research.Run{ID: id, Project: name, By: caller.Name, Started: started.UTC(),
 		Took: time.Since(started).Round(time.Millisecond).String(), Code: research.File{Path: script, Digest: codeDigest, Bytes: codeBytes},
-		Environment: env, Exit: out.Exit, Stopped: out.Stopped, Log: out.Text, LogDigest: out.Digest, Rerun: of}
+		Environment: env, Exit: out.Exit, Stopped: out.Stopped, Log: out.Text, LogDigest: out.Digest, Rerun: of,
+		Idea: idea}
 	for _, in := range ins {
 		r.Inputs = append(r.Inputs, in.file)
 	}
@@ -773,6 +810,9 @@ func researchRunScript(ctx context.Context, root, name, script string, inputs []
 	}
 	d := map[string]string{"run": r.ID, "code": r.Code.Digest, "exit": strconv.Itoa(r.Exit),
 		"values": strconv.Itoa(len(r.Values)), "environment": env.Digest()}
+	if idea != "" {
+		d["idea"] = idea
+	}
 	action := "research.ran"
 	if of != "" {
 		action, d["rerun"], d["reproduced"] = "research.reran", of, strconv.FormatBool(*r.Reproduced)
@@ -819,7 +859,11 @@ func compareRuns(a, b research.Run) (bool, []string) {
 }
 
 func researchRerun(ctx context.Context, root, name, id string, caller *Caller) (research.Run, error) {
-	return researchRunScript(ctx, root, name, "", nil, id, caller)
+	earlier, err := researchStore(root).LoadRun(name, id)
+	if err != nil {
+		return research.Run{}, err
+	}
+	return researchRunScript(ctx, root, name, "", nil, id, caller, earlier.Idea)
 }
 
 func printRun(r research.Run) {

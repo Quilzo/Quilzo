@@ -61,6 +61,25 @@
 {{else}}<p>No claims yet: pin a computation's values with <code>quilzo research claim</code>.</p>{{end}}
 {{end}}
 
+{{with .Standings}}
+<h2>Ideas</h2>
+<p class="hint">Proposed by a model and judged in pairs both ways round; an idea is ranked once it has played three matches. A rating is what judges thought of the text; what computations and a person made of it is beside it.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Idea</th><th scope="col">Standing</th><th scope="col">Tested</th><th scope="col">Verdict</th></tr></thead>
+  <tbody>{{range .}}<tr>
+    <th scope="row">{{.Title}} <code class="hint">{{.ID}}</code>
+      {{if .AfterData}}<div><span class="tag tag-warn">proposed after the data was seen</span></div>{{end}}
+      {{if .Held}}<div><span class="tag tag-bad">held</span> {{range $i, $h := .Held}}{{if $i}}; {{end}}{{$h}}{{end}}</div>{{end}}
+      <div class="hint">{{.Hypothesis}}</div></th>
+    <td>{{if .Ranked}}{{printf "%.0f" .Rating}}{{else}}<span class="hint">provisional</span>{{end}} <span class="hint">· played {{.Played}}</span></td>
+    <td>{{if .Outcome.Tested}}{{.Outcome.Runs}} run, {{.Outcome.OK}} finished{{if .Outcome.Failed}}, {{.Outcome.Failed}} failed{{end}}{{if .Outcome.DidNotRepro}}, <span class="tag tag-bad">{{.Outcome.DidNotRepro}} did not reproduce</span>{{end}}{{else}}<span class="hint">untested</span>{{end}}</td>
+    <td>{{with .Verdict}}<span class="tag {{if eq .Outcome "supported"}}tag-ok{{else if eq .Outcome "refuted"}}tag-bad{{else}}tag-warn{{end}}">{{.Outcome}}</span> <span class="hint">by {{.By}}</span>{{else}}<span class="hint">none yet</span>{{end}}</td>
+  </tr>{{end}}</tbody>
+</table>
+</div>
+{{end}}
+
 <h2>Computations</h2>
 {{if .Runs}}
 <div class="table-wrap">

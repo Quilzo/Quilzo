@@ -82,8 +82,53 @@ func registerResearchOps(srv *mcp.Server, root string, caller *Caller) {
 		for _, f := range fs {
 			found = append(found, finding{f.Problem, f.Line, f.What})
 		}
-		return asJSON(map[string]any{"project": p, "computations": runs, "check": found,
+		// The ideas have their own operation: a project's full record of
+		// them and their matches can run to megabytes, which is not what
+		// a caller asking about the project needs in its context.
+		ideas := len(p.Ideas)
+		p.Ideas, p.Matches = nil, nil
+		return asJSON(map[string]any{"project": p, "ideas": ideas, "computations": runs, "check": found,
 			"rendered": research.Markdown(p, runs)})
+	})
+
+	srv.Register(mcp.Operation{
+		Name: "research_ideas", NeedsRole: "reader",
+		Summary: "a research project's ideas: each hypothesis with its standing, what computations made of it, and a person's verdict",
+		Detail: "Ideas are proposed by a model and judged in pairs both ways round; an idea is ranked only after " +
+			"it has played three matches. A rating says what judges thought of the text, not whether it is true: " +
+			"read it beside the computations that tested the idea and the verdict a person recorded. Text here " +
+			"was written by a model.",
+		Args:     map[string]string{"name": "the project"},
+		Keywords: []string{"research", "hypotheses", "ideas", "tournament", "ranking"},
+	}, func(a map[string]any) (any, error) {
+		if err := authorise(root, caller, auth.ActView, "/"); err != nil {
+			return refuse(err)
+		}
+		st := researchStore(root)
+		proj, err := st.Load(str(a, "name"))
+		if err != nil {
+			return refuse(err)
+		}
+		runs, _ := st.Runs(proj.Name)
+		type idea struct {
+			ID         string            `json:"id"`
+			Title      string            `json:"title"`
+			Hypothesis string            `json:"hypothesis"`
+			Critique   string            `json:"critique,omitempty"`
+			Rating     float64           `json:"rating"`
+			Played     int               `json:"played"`
+			Ranked     bool              `json:"ranked"`
+			AfterData  bool              `json:"after_data,omitempty"`
+			Held       []string          `json:"held,omitempty"`
+			Tested     research.Outcome  `json:"tested"`
+			Verdict    *research.Verdict `json:"verdict,omitempty"`
+		}
+		out := []idea{}
+		for _, s := range proj.Standings(runs) {
+			out = append(out, idea{s.ID, s.Title, clampString(s.Hypothesis, 600), clampString(s.Critique, 400),
+				s.Rating, s.Played, s.Ranked, s.AfterData, s.Held, s.Outcome, s.Verdict})
+		}
+		return asJSON(map[string]any{"project": proj.Name, "matches": len(proj.Matches), "ideas": out})
 	})
 
 	srv.Register(mcp.Operation{
@@ -131,7 +176,8 @@ func registerResearchOps(srv *mcp.Server, root string, caller *Caller) {
 			`{"name": 0.42} or {"name": {"value": 0.42, "unit": "%"}}. Those are the only numbers a ` +
 			"report may state; pin them with research_claim.",
 		Args: map[string]string{"name": "the project", "script": "its path in the project",
-			"inputs": "optional comma-separated paths of the files it reads"},
+			"inputs": "optional comma-separated paths of the files it reads",
+			"idea":   "optional: the idea this computation tests, by id (research_ideas lists them)"},
 		Keywords: []string{"compute", "analysis", "python", "statistics", "reproducible", "run"},
 	}, func(a map[string]any) (any, error) {
 		var inputs []string
@@ -142,7 +188,8 @@ func registerResearchOps(srv *mcp.Server, root string, caller *Caller) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), researchTimeout+time.Minute)
 		defer cancel()
-		r, err := researchRunScript(ctx, root, str(a, "name"), str(a, "script"), inputs, "", caller)
+		r, err := researchRunScript(ctx, root, str(a, "name"), str(a, "script"), inputs, "",
+			caller, str(a, "idea"))
 		if err != nil {
 			return refuse(err)
 		}

@@ -395,7 +395,9 @@ research (every number linked to the code that produced it, every citation real)
   quilzo research add NAME FILE… [--to D]  put code and data in it
   quilzo research plan NAME PLAN.md        the analysis plan; once registered, changes are amendments (--why)
   quilzo research register NAME            seal the plan before the data is analysed, signed
-  quilzo research run NAME SCRIPT [--input F]…   Python, R or Julia in a box with no network
+  quilzo research ideas NAME [--count N | --play]   hypotheses a model proposes, judged in pairs both ways round
+  quilzo research ideas NAME --verdict ID --outcome supported|refuted|inconclusive [--claim C]…   your verdict, once it ran
+  quilzo research run NAME SCRIPT [--input F]… [--idea ID]   Python, R or Julia in a box with no network
   quilzo research rerun NAME RUN           run it again on the same code and inputs: does it reproduce?
   quilzo research claim NAME [VALUE…] --run RUN   pin a computation's numbers as claims
   quilzo research search "WORDS"           find works in OpenAlex

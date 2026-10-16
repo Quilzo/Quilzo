@@ -746,9 +746,12 @@ var commandNeeds = map[string]need{
 	"research": {action: auth.ActEditDraft},
 	// A search spends the store's models, so it is gated by who may; it
 	// also runs code in the box, which evolveRun checks as edit-draft.
-	"evolve":          {action: auth.ActEditDraft},
-	"evolve run":      {action: auth.ActUseModels},
-	"research list":   {action: auth.ActView},
+	"evolve":        {action: auth.ActEditDraft},
+	"evolve run":    {action: auth.ActUseModels},
+	"research list": {action: auth.ActView},
+	// Listing ideas reads; a round and a verdict are checked again inside,
+	// for use-models and edit-draft.
+	"research ideas":  {action: auth.ActView},
 	"research show":   {action: auth.ActView},
 	"research search": {action: auth.ActView},
 	"research check":  {action: auth.ActView},

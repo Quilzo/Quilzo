@@ -714,7 +714,7 @@ var coverage = map[string]surfaces{
 	"saml":     {GUI: "/sso", NoMCP: "trusts an identity provider's key, and whoever holds that key can sign anybody in as anybody; that is a person's decision, made by checking a fingerprint"},
 	"ext":      {GUI: "/integrations", NoMCP: "registers a process this store executes. Arbitrary code execution, reached by asking"},
 	"research": {GUI: "/research", MCP: []string{"research_projects", "research_project", "research_search",
-		"research_cite", "research_run", "research_claim", "research_write"}},
+		"research_cite", "research_run", "research_claim", "research_write", "research_ideas"}},
 	"feature": {GUI: "/make", NoMCP: "installing a feature is a person's decision, one or two of " +
 		"them; a model may draft a package, and checking one is the command line's and the screen's"},
 	"webhook": {GUI: "/integrations", NoMCP: "adds an outbound destination for content, which is exfiltration with a configuration screen"},

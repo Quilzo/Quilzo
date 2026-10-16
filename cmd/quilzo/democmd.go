@@ -18,6 +18,7 @@ import (
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/research"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -313,6 +314,15 @@ func cmdDemo(root string, args []string) error {
 		}
 	}
 
+	// The research projects, each with its files and a plan not yet
+	// registered: registering is a person's commitment, made after reading
+	// the plan, so the demonstration leaves it for them.
+	for _, rp := range d.Research {
+		if rerr := demoResearch(root, rp); rerr != nil {
+			return fmt.Errorf("the research project %s: %w", rp.Name, rerr)
+		}
+	}
+
 	if *publish {
 		if _, perr := site.Publish(s, ""); perr != nil {
 			return fmt.Errorf("publishing: %w", perr)
@@ -355,6 +365,11 @@ func cmdDemo(root string, args []string) error {
 		w.Human("    %s/evolve/  %sa program search, judged where the programs cannot reach (README.txt)%s\n",
 			*exDir, dim, reset)
 	}
+	for _, rp := range d.Research {
+		w.Human("\n  %sand a research project%s\n", bold, reset)
+		w.Human("    quilzo research run %s analysis.py --input data/orders.csv\n", rp.Name)
+		w.Human("    quilzo research ideas %s --count 3   %shypotheses, judged both ways round%s\n", rp.Name, dim, reset)
+	}
 	w.Human("\n  %sand the gate%s\n", bold, reset)
 	w.Human("    quilzo brand check       %severy claim, and what backs it "+
 		"up%s\n", dim, reset)
@@ -375,4 +390,31 @@ func recordCount(d *demo.Site) int {
 		n += len(recs)
 	}
 	return n
+}
+
+// demoResearch starts one of the demonstration's research projects: the
+// project, its files in its folder, and its plan.
+func demoResearch(root string, rp demo.ResearchProject) error {
+	st := researchStore(root)
+	now := time.Now().UTC()
+	if err := st.Create(research.Project{Name: rp.Name, Question: rp.Question, By: "demo", Created: now}); err != nil {
+		return err
+	}
+	for rel, body := range rp.Files {
+		dst := filepath.Join(st.Work(rp.Name), filepath.FromSlash(rel))
+		if r, err := filepath.Rel(st.Work(rp.Name), dst); err != nil || strings.HasPrefix(r, "..") {
+			return fmt.Errorf("%s is not inside the project", rel)
+		}
+		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+			return err
+		}
+		if err := os.WriteFile(dst, []byte(body), 0o600); err != nil {
+			return err
+		}
+	}
+	_, err := st.Change(rp.Name, func(p *research.Project) error {
+		_, err := research.SetPlan(p, rp.Plan, "demo", "", now)
+		return err
+	})
+	return err
 }

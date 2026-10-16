@@ -133,6 +133,9 @@ type Site struct {
 	// examples folder: what a feature that works on files rather than on
 	// the store, such as evolve, is tried with.
 	Examples map[string]string
+
+	// Research are the research projects it starts.
+	Research []ResearchProject
 }
 
 // Template and CSS, read from the embedded copies.
