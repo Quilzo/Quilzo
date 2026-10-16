@@ -9,6 +9,26 @@ Unreleased
 
 ** Added
 
+*** Evolve: search over programs, against an evaluator they cannot reach.
+    `quilzo evolve run --program seed.py --evaluator evaluator.py
+    --input data.csv --eval-input heldout.csv` searches for a better
+    program: a model proposes SEARCH/REPLACE diffs (the seed may mark what
+    evolves with # EVOLVE-BLOCK markers), the changed program runs in the
+    agent box with no network and bounded time and memory, and a sealed
+    evaluator scores it — in its own box, receiving only what the candidate
+    wrote under output/, with its own inputs from --eval-input, writing
+    output/metrics.json, a flat object of numbers.  Neither AlphaEvolve
+    nor its open reimplementation isolates the evaluator; a candidate here
+    cannot read its code, see its held-out cases, or forge its scores,
+    because there is no path from one box to the other.  Selection is
+    deterministic code — weights from --weight NAME=NUMBER or the plain
+    mean — and every generation is journalled: the model's answer parsed
+    or refused, the program's digest, the box's exit, the metrics, whether
+    it was kept.  A seed that does not run is refused rather than searched
+    from; program output shown to the model is capped, delimited and named
+    as data, never instructions; the same --seed walks the same search.
+    Costs the model gateway, as consumer "evolve".
+
 *** Agents that pay, within mandates.  A REST operation that spends money
     declares "pays": where its amount, currency and payee are, a
     parameter, body.FIELD or =VALUE.  `quilzo spend grant AGENT` gives an
