@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -309,7 +310,9 @@ for i in range(17):
     open("output/f%d" % i, "w").write("x")
 json.dump({"value": 1000}, open("output/result.json", "w"))
 `},
-		"its output area locked": {"output area could not be read", `import json, os
+		// Whichever notices first: the measuring while it runs, or the
+		// reading of its output after it stops.
+		"its output area locked": {"output area could not be read|could not be measured", `import json, os
 json.dump({"value": 1000}, open("output/result.json", "w"))
 os.makedirs("output/stuck/deeper")
 os.chmod("output/stuck", 0)
@@ -337,7 +340,7 @@ time.sleep(5)
 			err := evolveRun(root, []string{"--program", prog, "--evaluator", eval, "--generations", "1",
 				"--population", "2", "--timeout", "30s", "--disk", "1", "--out", out}, asAdmin("dana"))
 			if err == nil || !strings.Contains(err.Error(), "seed program did not run") ||
-				!strings.Contains(err.Error(), why) {
+				!slices.ContainsFunc(strings.Split(why, "|"), func(w string) bool { return strings.Contains(err.Error(), w) }) {
 				t.Fatalf("a seed over its limits was searched from, or refused for another reason: %v", err)
 			}
 			if kept, _ := os.ReadFile(out); string(kept) != "somebody's program" {
