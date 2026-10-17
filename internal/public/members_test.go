@@ -34,6 +34,8 @@ type device struct {
 	key   *ecdsa.PrivateKey
 	id    []byte
 	count uint32
+	// flags replaces present-and-verified when it is not zero.
+	flags byte
 }
 
 func newDevice(t *testing.T) *device {
@@ -49,7 +51,11 @@ func newDevice(t *testing.T) *device {
 
 func (d *device) authData() []byte {
 	sum := sha256.Sum256([]byte("example.org"))
-	out := append(append([]byte{}, sum[:]...), 0x05)
+	flags := byte(0x05)
+	if d.flags != 0 {
+		flags = d.flags
+	}
+	out := append(append([]byte{}, sum[:]...), flags)
 	return binary.BigEndian.AppendUint32(out, d.count)
 }
 

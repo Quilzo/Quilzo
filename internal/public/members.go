@@ -335,7 +335,7 @@ func (st *Site) signupFinish(w http.ResponseWriter, r *http.Request) {
 	cred, err := st.Members.Party.Register(in.Challenge, in.Registration)
 	if err != nil {
 		st.audit("member.signup", "", r, false)
-		jsonError(w, http.StatusUnprocessableEntity, "That passkey could not be checked. Start again.")
+		jsonError(w, http.StatusUnprocessableEntity, passkeyRefusal(err, "That passkey could not be checked. Start again."))
 		return
 	}
 	if st.Members.Mode == "invite" {
@@ -402,12 +402,19 @@ func (st *Site) signinFinish(w http.ResponseWriter, r *http.Request) {
 		refuse("")
 		return
 	}
-	count, err := st.Members.Party.Verify(cred, in.Challenge, in.Assertion)
+	used, err := st.Members.Party.Verify(cred, in.Challenge, in.Assertion)
+	if errors.Is(err, webauthn.ErrUserNotVerified) && !m.Disabled {
+		// Said as itself, because the signature verified: this is the
+		// member's own key, and they need to know what it is missing.
+		st.audit("member.signin", m.ID, r, false)
+		jsonError(w, http.StatusUnauthorized, noUserVerification)
+		return
+	}
 	if err != nil || m.Disabled {
 		refuse(m.ID)
 		return
 	}
-	_ = st.Members.Store.Used(m.ID, credID, count)
+	_ = st.Members.Store.Used(m.ID, used)
 	token, err := st.Members.Store.StartSession(m.ID)
 	if err != nil {
 		refuse(m.ID)
@@ -459,7 +466,7 @@ func (st *Site) passkeyFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	cred, err := st.Members.Party.Register(in.Challenge, in.Registration)
 	if err != nil {
-		jsonError(w, http.StatusUnprocessableEntity, "That passkey could not be checked. Start again.")
+		jsonError(w, http.StatusUnprocessableEntity, passkeyRefusal(err, "That passkey could not be checked. Start again."))
 		return
 	}
 	cred.Label = clipLabel(in.Label)
@@ -469,6 +476,22 @@ func (st *Site) passkeyFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	st.audit("member.passkey-added", m.ID, r, true)
 	replyJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// noUserVerification is what a member hears when their passkey was only
+// touched. A passkey here is both factors at once only when the device asks
+// for its PIN, fingerprint or face, and a browser that is asked to will
+// offer to set one up.
+const noUserVerification = "Your passkey has to ask for your PIN, fingerprint or face, " +
+	"and this one did not. Set one up on it (your browser offers to) and try again."
+
+// passkeyRefusal is the member's answer to a passkey that was not accepted:
+// what to do when it lacked user verification, otherwise the general one.
+func passkeyRefusal(err error, general string) string {
+	if errors.Is(err, webauthn.ErrUserNotVerified) {
+		return noUserVerification
+	}
+	return general
 }
 
 func clipLabel(s string) string {

@@ -391,12 +391,20 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, ho
 	http.Redirect(w, r, startPath(r), http.StatusSeeOther)
 }
 
-// suspended reports whether provisioning has suspended somebody: a deny on
-// the whole site, which a sign-in must not route around by minting a
+// suspended reports whether somebody is suspended: a live deny of the
+// reader role on the whole site, which is what provisioning writes and what
+// refuses every action, so a sign-in must not route around it by minting a
 // session that every screen would then refuse.
+//
+// Narrower denies are not a suspension. A deny of publishing on "/" still
+// leaves the person reading and writing, an own-only deny leaves what other
+// people made, and an expired deny refuses nothing; refusing those at sign-in
+// would lock out somebody the policy lets in and tell them the wrong reason.
 func (s *Server) suspended(principal string) bool {
+	now := time.Now()
 	for _, b := range s.Policy.Snapshot() {
-		if b.Deny && b.Resource == "/" && strings.EqualFold(b.Principal, principal) {
+		if b.Deny && b.Resource == "/" && b.Role == auth.RoleReader && b.Permission == "" &&
+			!b.OwnOnly && b.Live(now) && strings.EqualFold(b.Principal, principal) {
 			return true
 		}
 	}

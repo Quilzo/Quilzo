@@ -151,7 +151,10 @@
             // Discoverable, so signing in needs no username: the credential
             // itself says who it belongs to.
             residentKey: "preferred",
-            userVerification: "preferred"
+            // Required, as the server requires it: the browser then offers
+            // to set a PIN on a security key that has none, instead of
+            // making a passkey the server turns away.
+            userVerification: "required"
           },
           excludeCredentials: exclude,
           timeout: 120000,
