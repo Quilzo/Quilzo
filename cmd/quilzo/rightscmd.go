@@ -45,6 +45,39 @@ type Use struct {
 func assetUses(s *store.Store, lib *medialib.Library, ref string) (
 	map[string]*Use, error) {
 
+	content, err := contentAt(s, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	uses := map[string]*Use{}
+	for where, fields := range content {
+		for _, id := range assetIDsIn(fields) {
+			u, seen := uses[id]
+			if !seen {
+				f, ferr := lib.Stat(id)
+				if ferr != nil {
+					// A value shaped like an address that the library does not
+					// hold is not a media reference — it is a hash of
+					// something else, and treating it as a missing asset would
+					//report a false alarm on every content hash somebody stores.
+					continue
+				}
+				u = &Use{File: f}
+				uses[id] = u
+			}
+			u.Where = append(u.Where, where)
+		}
+	}
+	for _, u := range uses {
+		sort.Strings(u.Where)
+	}
+	return uses, nil
+}
+
+// contentAt is every page and every record at a ref or commit: a page under
+// its name, a record as collection/id.
+func contentAt(s *store.Store, ref string) (map[string]map[string]any, error) {
 	commit := s.GetRef(ref)
 	if commit == "" {
 		commit = ref
@@ -88,30 +121,7 @@ func assetUses(s *store.Store, lib *medialib.Library, ref string) (
 			}
 		}
 	}
-
-	uses := map[string]*Use{}
-	for where, fields := range content {
-		for _, id := range assetIDsIn(fields) {
-			u, seen := uses[id]
-			if !seen {
-				f, ferr := lib.Stat(id)
-				if ferr != nil {
-					// A value shaped like an address that the library does not
-					// hold is not a media reference — it is a hash of
-					// something else, and treating it as a missing asset would
-					//report a false alarm on every content hash somebody stores.
-					continue
-				}
-				u = &Use{File: f}
-				uses[id] = u
-			}
-			u.Where = append(u.Where, where)
-		}
-	}
-	for _, u := range uses {
-		sort.Strings(u.Where)
-	}
-	return uses, nil
+	return content, nil
 }
 
 // assetIDsIn collects every value in one piece of content that could be an
