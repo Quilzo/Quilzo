@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -31,8 +32,8 @@ import (
 // at nothing, content with a date after which it stops being served, and a form
 // the public process can write to and cannot read.
 //
-// So this installs Gram: the demonstration in internal/demo, which was built
-// through the admin interface before it was written down.
+// So this installs Marginalia: the demonstration in internal/demo, which was
+// built through the admin interface before it was written down.
 //
 // # It refuses to run over anything
 //
@@ -40,12 +41,20 @@ import (
 // listings, menus, vocabularies, forms, a media library and a draft, and
 // running it into somebody's site would overwrite the parts of their setup that
 // share a name with the parts of this one. The store it wants is an empty one.
+//
+// # It can be taken back out
+//
+// The install writes down what it wrote, and `quilzo demo remove` takes back
+// exactly that, keeping anything somebody changed since. See demoremove.go.
 
 // demoSiteURL is where the demonstration tells its reader to run the site,
 // and so the address it is configured with when it has none.
 const demoSiteURL = "http://127.0.0.1:8081"
 
 func cmdDemo(root string, args []string) error {
+	if len(args) > 0 && args[0] == "remove" {
+		return demoRemove(root, args[1:])
+	}
 	fs := flag.NewFlagSet("demo", flag.ContinueOnError)
 	// The name, so the demonstration can be the starting point for a real site
 	// rather than something to find and rename afterwards.
@@ -72,15 +81,14 @@ func cmdDemo(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if s.GetRef(site.RefDraft) != "" || s.GetRef(site.RefLive) != "" {
-		return fmt.Errorf(
-			"this store already has content, and the demonstration would " +
-				"write over the content types, listings, menus and forms that " +
-				"share a name with its own.\n  Run it in an empty directory:\n" +
-				"    mkdir shop && cd shop && quilzo init && quilzo demo")
-	}
-
 	d := demo.Marginalia()
+	if err := demoInstallable(root, s, d); err != nil {
+		return err
+	}
+	// What this writes, kept as it is written, so `quilzo demo remove` can
+	// take back exactly that and nothing anybody added.
+	m := &demoManifest{At: time.Now().UTC(), By: resolveCaller(root, "").Name,
+		Config: map[string]demoSetting{}}
 	if given := strings.TrimSpace(*siteName); given != "" {
 		// Renamed rather than assigned. The name is the index page's title and
 		// the header wordmark as well as a configuration value, and setting
@@ -114,6 +122,7 @@ func cmdDemo(root string, args []string) error {
 			return fmt.Errorf("storing %s: %w", a.Name, perr)
 		}
 		addresses[a.Name] = f.ID
+		m.Media = append(m.Media, f.ID)
 	}
 	if rerr := d.Resolve(addresses); rerr != nil {
 		return rerr
@@ -157,9 +166,9 @@ func cmdDemo(root string, args []string) error {
 			"which is a bug in it and not in your store:\n  %v", lines)
 	}
 	// An empty base, stated rather than defaulted. This command has already
-	// refused to run unless both refs are unset, so there is provably nothing
-	// to collide with — which is the one case where an empty base is a decision
-	// and not an omission.
+	// refused to run unless the draft and the live site are empty, so there is
+	// provably nothing to collide with — which is the one case where an empty
+	// base is a decision and not an omission.
 	if _, serr := site.SaveDraftFrom(s, d.Pages, "the Marginalia demonstration",
 		"demo", ""); serr != nil {
 		return serr
@@ -252,44 +261,52 @@ func cmdDemo(root string, args []string) error {
 	// The name, in configuration rather than a flag, so the accessibility gate
 	// and the exports render the same page the server does.
 	if cfg, cerr := loadConfig(root); cerr == nil {
-		changed := cfg.Set("site.name", d.Name, "the demonstration site",
-			"demo") == nil
+		changed := false
+		set := func(key, value, reason string) {
+			was := cfg.Raw(key)
+			if cfg.Set(key, value, reason, "demo") == nil {
+				changed = true
+				m.Config[key] = demoSetting{Was: was, Set: cfg.Raw(key)}
+			}
+		}
+		set("site.name", d.Name, "the demonstration site")
 		// The catalogue feed, when the demonstration publishes one. Set here
 		// rather than left to the reader, because a shop whose machine-readable
 		// catalogue 404s demonstrates the opposite of the point.
 		if d.Catalogue != "" {
-			changed = cfg.Set("site.catalogue", d.Catalogue,
-				"the demonstration's machine-readable catalogue", "demo") == nil ||
-				changed
+			set("site.catalogue", d.Catalogue,
+				"the demonstration's machine-readable catalogue")
 			// And the same catalogue over UCP, the way shopping agents search
 			// a shop. UCP builds every URL from the site's own address, so a
 			// demonstration without one gets the address it is told to run
 			// at below; an operator's own address is never replaced.
 			if cfg.Raw("site.base_url") == "" {
-				changed = cfg.Set("site.base_url", demoSiteURL,
-					"where the demonstration site runs", "demo") == nil || changed
+				set("site.base_url", demoSiteURL, "where the demonstration site runs")
 			}
-			changed = cfg.Set("ucp.catalogue", "true",
-				"the demonstration's catalogue, searchable by shopping agents", "demo") == nil ||
-				changed
+			set("ucp.catalogue", "true",
+				"the demonstration's catalogue, searchable by shopping agents")
 		}
-		if changed {
-			_ = saveConfig(root, cfg)
+		if changed && saveConfig(root, cfg) != nil {
+			m.Config = map[string]demoSetting{}
 		}
 	}
 
 	// The template and the stylesheet, beside the store where `quilzo site`
 	// looks for them.
-	if merr := os.MkdirAll(*tplDir, 0o700); merr != nil {
-		return merr
+	tplAbs, err := filepath.Abs(*tplDir)
+	if err != nil {
+		return err
 	}
-	for path, body := range map[string]string{
-		filepath.Join(*tplDir, "page.html"): d.Template,
-		filepath.Join(*tplDir, "site.css"):  d.CSS,
-	} {
-		if werr := os.WriteFile(path, []byte(body), 0o600); werr != nil {
+	made, err := madeDirs(tplAbs, tplAbs)
+	if err != nil {
+		return err
+	}
+	m.Templates = demoFolder{Dir: tplAbs, Made: made, Files: map[string]string{}}
+	for name, body := range map[string]string{"page.html": d.Template, "site.css": d.CSS} {
+		if werr := os.WriteFile(filepath.Join(tplAbs, name), []byte(body), 0o600); werr != nil {
 			return werr
 		}
+		m.Templates.Files[name] = demoDigest([]byte(body))
 	}
 
 	// Beside the templates unless told otherwise, so the two folders a
@@ -300,18 +317,30 @@ func cmdDemo(root string, args []string) error {
 	// The example files, beside the templates. Paths come from the
 	// demonstration itself, and each is checked to stay under the folder all
 	// the same, since it becomes a path on somebody's disk.
+	exAbs, err := filepath.Abs(*exDir)
+	if err != nil {
+		return err
+	}
+	m.Examples = demoFolder{Dir: exAbs, Files: map[string]string{}}
 	for rel, body := range d.Examples {
-		path := filepath.Join(*exDir, filepath.FromSlash(rel))
-		if r, rerr := filepath.Rel(*exDir, path); rerr != nil || r == ".." ||
+		path := filepath.Join(exAbs, filepath.FromSlash(rel))
+		if r, rerr := filepath.Rel(exAbs, path); rerr != nil || r == ".." ||
 			strings.HasPrefix(r, ".."+string(filepath.Separator)) {
 			return fmt.Errorf("the example %s is not under %s", rel, *exDir)
 		}
-		if merr := os.MkdirAll(filepath.Dir(path), 0o700); merr != nil {
+		made, merr := madeDirs(exAbs, filepath.Dir(path))
+		if merr != nil {
 			return merr
+		}
+		for _, dir := range made {
+			if !slices.Contains(m.Examples.Made, dir) {
+				m.Examples.Made = append(m.Examples.Made, dir)
+			}
 		}
 		if werr := os.WriteFile(path, []byte(body), 0o600); werr != nil {
 			return werr
 		}
+		m.Examples.Files[rel] = demoDigest([]byte(body))
 	}
 
 	// The research projects, each with its files and a plan not yet
@@ -327,6 +356,10 @@ func cmdDemo(root string, args []string) error {
 		if _, perr := site.Publish(s, ""); perr != nil {
 			return fmt.Errorf("publishing: %w", perr)
 		}
+	}
+	if rerr := recordDemo(root, s, d, m); rerr != nil {
+		return fmt.Errorf("the demonstration is installed, and the record that "+
+			"`quilzo demo remove` takes it back with could not be written: %w", rerr)
 	}
 
 	// In the log, because this writes more of a store in one command than
@@ -375,6 +408,9 @@ func cmdDemo(root string, args []string) error {
 		"up%s\n", dim, reset)
 	w.Human("    %stake guarantee_terms off the brass pen and publishing "+
 		"stops%s\n", dim, reset)
+	w.Human("\n  %sand when you are done with it%s\n", bold, reset)
+	w.Human("    quilzo demo remove       %swhat taking it out would remove; "+
+		"anything you changed stays%s\n", dim, reset)
 	return nil
 }
 

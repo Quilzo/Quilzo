@@ -123,6 +123,7 @@ importing
 
 templates and design
   quilzo demo                              a whole example application, in one go
+  quilzo demo remove [--yes]               take it back out; anything changed stays
   quilzo template list | show NAME         ready-made starting points
   quilzo template use NAME [--dir DIR]     write it, its theme and sample content
   quilzo template layouts                  which layouts a page may name
