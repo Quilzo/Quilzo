@@ -247,7 +247,8 @@ var QuotaEvery = 2 * time.Second
 // Measured while it runs, because the limit on each file says nothing about
 // how many files there are, and a program that fills the disk stops the
 // audit log and the store writing too: found afterwards is found too late.
-// A directory the command made unreadable to measure counts as over.
+// A directory the command made unreadable to measure stops it too, and says
+// so: its use cannot be shown to be within the quota.
 func (b Box) RunWithin(ctx context.Context, c Command, quota int64) (Output, error) {
 	cctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
@@ -263,7 +264,11 @@ func (b Box) RunWithin(ctx context.Context, c Command, quota int64) (Output, err
 			case <-tick.C:
 				ws, ok1 := SizeOf(b.Workspace)
 				home, ok2 := SizeOf(b.Home)
-				if !ok1 || !ok2 || ws+home > quota {
+				if !ok1 || !ok2 {
+					cancel(fmt.Errorf("it made its files unreadable, so its use of its %d MiB of disk could not be measured", quota>>20))
+					return
+				}
+				if ws+home > quota {
 					cancel(fmt.Errorf("it went over its %d MiB of disk", quota>>20))
 					return
 				}
