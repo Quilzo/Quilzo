@@ -14,12 +14,20 @@ Unreleased
     with --yes removes it: its pages, records, types, listings, forms,
     menus, vocabularies, claim rules, images, settings, research project,
     template and example files.  Each goes only while it is still what the
-    demonstration installed.  A page or record somebody edited or added, a
-    form holding enquiries from the public, an image or template content
-    still uses, and a file somebody changed all stay, and are listed.  The
-    removal is published only when the draft holds nothing the live site
-    does not, through the same gates as `quilzo publish`.  An emptied store
-    takes the demonstration again.  Needs publish; a model cannot do it.
+    demonstration installed and nothing that stays uses it.  A page or
+    record somebody edited or added, a form holding enquiries from the
+    public, a listing a page still shows, an image content or the site's
+    icon still uses, the template and site name while pages are left, and
+    a file somebody changed all stay, and are listed.  The removal is
+    published as one commit through the same gates as `quilzo publish`; if
+    publishing is refused, everything the live site reads is put back and
+    running it again finishes the job.  It is refused while the draft holds
+    unpublished work.  The record it works from, demo.json, is checked
+    against the digest the audit log holds for it, and a changed one is
+    refused.  An emptied store takes the demonstration again; the install
+    refuses a store, template or examples folder already holding anything
+    it would write over.  Needs publish; a model cannot do it.
+
 *** Ideas in research projects.  `quilzo research ideas NAME --count 3`
     asks a model for hypotheses the project could test, a sceptical
     critique of each, and judges them in pairs, each pair both ways round

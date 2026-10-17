@@ -4,7 +4,9 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -20,6 +22,7 @@ import (
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/taxonomy"
 )
@@ -82,6 +85,37 @@ func recordsIn(t *testing.T, root, coll string) []collection.Record {
 	return recs
 }
 
+// addOwnPage drafts a page of a person's own, says who wrote it, and
+// publishes the draft, as somebody building their site would.
+func addOwnPage(t *testing.T, root, tpl, name string, body map[string]any) {
+	t.Helper()
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages, err := draftPages(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages[name] = body
+	if err := saveDraft(root, s, pages, "our page", "rae", ""); err != nil {
+		t.Fatal(err)
+	}
+	publishOurs(t, root, tpl, name)
+}
+
+func publishOurs(t *testing.T, root, tpl string, pages ...string) {
+	t.Helper()
+	for _, name := range pages {
+		if err := cmdProvenance(root, []string{"set", name, "--source", "humanEdits", "--author", "rae"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := cmdPublish(root, []string{"--templates", tpl}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Installed and taken straight back out, the store is as empty as a new
 // one: nothing of the demonstration is left in it or beside it, the live site
 // no longer serves it, the settings are what they were — and so it can be
@@ -94,12 +128,16 @@ func TestTheDemonstrationComesBackOutWhole(t *testing.T) {
 		t.Fatal("the demonstration installed no pages, so there is nothing to test")
 	}
 
-	// Without --yes it says what it would do, and does nothing.
+	// Without --yes it says what it would do, and writes nothing at all.
+	listing, _ := os.ReadDir(root)
 	if err := removeDemo(root, false, resolveCaller(root, "")); err != nil {
 		t.Fatal(err)
 	}
 	if len(pagesIn(t, root, site.RefDraft)) != len(before) || gone(t, demoManifestPath(root)) {
 		t.Fatal("asking what removal would do removed something")
+	}
+	if after, _ := os.ReadDir(root); len(after) != len(listing) {
+		t.Error("asking what removal would do wrote into the store")
 	}
 
 	if err := removeDemo(root, true, resolveCaller(root, "")); err != nil {
@@ -151,7 +189,7 @@ func TestTheDemonstrationComesBackOutWhole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"site.name", "site.catalogue", "site.base_url", "ucp.catalogue"} {
+	for _, key := range demoSettings {
 		def, _ := config.Lookup(key)
 		if cfg.Raw(key) != def.Default {
 			t.Errorf("%s is %q, not back to %q", key, cfg.Raw(key), def.Default)
@@ -170,7 +208,7 @@ func TestTheDemonstrationComesBackOutWhole(t *testing.T) {
 	evs, _ := audit.Read(auditPath(root))
 	found := false
 	for _, e := range evs {
-		found = found || (e.Action == "demo.remove" && e.Outcome == audit.Success)
+		found = found || (e.Action == "demo.remove" && e.Outcome == audit.Success && e.Detail["manifest"] == "none")
 	}
 	if !found {
 		t.Error("the removal is not in the audit log")
@@ -182,11 +220,12 @@ func TestTheDemonstrationComesBackOutWhole(t *testing.T) {
 	}
 }
 
-// What somebody changed or added is theirs, and stays: an edited page, a
-// page and a record they wrote, an enquiry from the public, and a file they
-// edited. So do the things those still need — the type their record
-// satisfies, the image it shows, the template their pages render through —
-// and nothing unpublished is published.
+// What somebody changed or added is theirs, and stays: an edited page, a page
+// and a record they wrote, an enquiry from the public, and a file they edited.
+// So does what those still use: the type their record satisfies, the image it
+// shows, the template and the name their pages render with, the vocabulary
+// they are tagged from — and their pages are told apart from records even
+// when a page's name has a slash in it.
 func TestWhatSomebodyChangedOrAddedStays(t *testing.T) {
 	root, tpl, ex := installedDemo(t)
 	s, err := open(root)
@@ -197,9 +236,8 @@ func TestWhatSomebodyChangedOrAddedStays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	names := keysOf(pages)
 	edited := ""
-	for _, name := range names {
+	for _, name := range keysOf(pages) {
 		if body, ok := pages[name].(map[string]any); ok {
 			if title, ok := body["title"].(string); ok {
 				body["title"] = title + " (ours)"
@@ -211,11 +249,11 @@ func TestWhatSomebodyChangedOrAddedStays(t *testing.T) {
 	if edited == "" {
 		t.Fatal("no demonstration page has a title to edit")
 	}
-	pages["our-notes"] = map[string]any{"title": "Our notes", "body": "Written by us."}
+	pages["blog/notes"] = map[string]any{"title": "Our notes", "body": "Written by us.",
+		"terms": map[string]any{"materials": []any{"paper"}}}
 	if err := saveDraft(root, s, pages, "our edits", "rae", ""); err != nil {
 		t.Fatal(err)
 	}
-
 	products := recordsIn(t, root, "products")
 	if len(products) == 0 {
 		t.Fatal("the demonstration has no products")
@@ -229,6 +267,7 @@ func TestWhatSomebodyChangedOrAddedStays(t *testing.T) {
 		t.Fatal(err)
 	}
 	image, _ := ours["image"].(string)
+	publishOurs(t, root, tpl, edited, "blog/notes")
 
 	subs, err := openSubmissions(root)
 	if err != nil {
@@ -242,21 +281,21 @@ func TestWhatSomebodyChangedOrAddedStays(t *testing.T) {
 	if err := os.WriteFile(readme, []byte("our notes on the example\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	liveBefore := s.GetRef(site.RefLive)
 
 	if err := removeDemo(root, true, resolveCaller(root, "")); err != nil {
 		t.Fatal(err)
 	}
 
-	left := pagesIn(t, root, site.RefDraft)
-	if _, ok := left[edited]; !ok {
-		t.Errorf("the edited page %s was removed", edited)
-	}
-	if _, ok := left["our-notes"]; !ok {
-		t.Error("a page somebody wrote was removed")
-	}
-	if len(left) != 2 {
-		t.Errorf("the draft holds %v; the demonstration's own pages should be gone", keysOf(left))
+	for _, ref := range []string{site.RefDraft, site.RefLive} {
+		left := pagesIn(t, root, ref)
+		if len(left) != 2 {
+			t.Errorf("%s holds %v; only the edited page and ours should be", ref, keysOf(left))
+		}
+		for _, want := range []string{edited, "blog/notes"} {
+			if _, ok := left[want]; !ok {
+				t.Errorf("%s lost %s", ref, want)
+			}
+		}
 	}
 	if got := recordsIn(t, root, "products"); len(got) != 1 || got[0].Fields["slug"] != "our-own-notebook" {
 		t.Errorf("products left: %d; only the one somebody added should be", len(got))
@@ -270,6 +309,11 @@ func TestWhatSomebodyChangedOrAddedStays(t *testing.T) {
 	} else if _, ok := types.Registry.Get(typ); !ok {
 		t.Errorf("type %s went while a record still satisfies it", typ)
 	}
+	vocab := &taxonomy.Set{}
+	_ = loadJSON(vocabPath(root), vocab)
+	if _, ok := vocab.Get("materials"); !ok {
+		t.Error("a vocabulary went while a page that stays is tagged from it")
+	}
 	forms, _ := loadForms(root)
 	if len(forms.Forms) != 1 || forms.Forms[0].Name != "wholesale" {
 		t.Errorf("forms left: %v; the one holding an enquiry should stay", forms.Forms)
@@ -279,6 +323,9 @@ func TestWhatSomebodyChangedOrAddedStays(t *testing.T) {
 	}
 	if gone(t, filepath.Join(tpl, "page.html")) {
 		t.Error("the template went while pages still render through it")
+	}
+	if cfg, _ := loadConfig(root); cfg.Raw("site.name") == "" {
+		t.Error("the site's name went while pages still render with it")
 	}
 	if gone(t, readme) {
 		t.Error("an example somebody edited was removed")
@@ -291,13 +338,9 @@ func TestWhatSomebodyChangedOrAddedStays(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		id := strings.TrimPrefix(image, "/media/")
-		if _, err := lib.Stat(id); err != nil {
+		if _, err := lib.Stat(strings.TrimPrefix(image, "/media/")); err != nil {
 			t.Errorf("the image a kept record shows was removed: %v", err)
 		}
-	}
-	if s.GetRef(site.RefLive) != liveBefore {
-		t.Error("unpublished edits were published by removing the demonstration")
 	}
 	if gone(t, demoManifestPath(root)) {
 		t.Fatal("the record of what is left was dropped, so a later removal cannot finish")
@@ -309,6 +352,152 @@ func TestWhatSomebodyChangedOrAddedStays(t *testing.T) {
 	}
 	if len(pagesIn(t, root, site.RefDraft)) != 2 {
 		t.Error("a second removal took somebody's page")
+	}
+}
+
+// Removing while the draft holds unpublished work is refused, because
+// publishing the removal would publish that work too.
+func TestUnpublishedWorkStopsTheRemoval(t *testing.T) {
+	root, _, _ := installedDemo(t)
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages, _ := draftPages(root)
+	pages["draft-only"] = map[string]any{"title": "Not ready", "body": "Half written."}
+	if err := saveDraft(root, s, pages, "unfinished", "rae", ""); err != nil {
+		t.Fatal(err)
+	}
+	draft := s.GetRef(site.RefDraft)
+	if err := removeDemo(root, true, resolveCaller(root, "")); !errors.Is(err, errDraftAhead) {
+		t.Fatalf("a removal over unpublished work answered %v", err)
+	}
+	if s.GetRef(site.RefDraft) != draft || gone(t, demoManifestPath(root)) {
+		t.Error("a refused removal changed something")
+	}
+}
+
+// A refused publish leaves the live site whole: what it reads beside the
+// store is put back, and once publishing can go ahead the same command
+// finishes the job.
+func TestARefusedPublishPutsEverythingBack(t *testing.T) {
+	root, _, _ := installedDemo(t)
+	listingsBefore, _ := os.ReadFile(listingPath(root))
+	p, _, err := shield.Apply(root, shield.Protection{Kind: shield.Freeze, Reason: "testing",
+		By: "rae", Until: time.Now().Add(time.Hour)}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := removeDemo(root, true, resolveCaller(root, "")); err == nil {
+		t.Fatal("the removal reported success while publishing was frozen")
+	}
+	if after, _ := os.ReadFile(listingPath(root)); string(after) != string(listingsBefore) {
+		t.Error("the listings were taken while the live site still shows them")
+	}
+	if len(pagesIn(t, root, site.RefLive)) == 0 {
+		t.Error("the live site lost its pages")
+	}
+	if _, err := shield.Lift(root, p.ID, "rae", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeDemo(root, true, resolveCaller(root, "")); err != nil {
+		t.Fatalf("the removal did not finish once publishing could: %v", err)
+	}
+	if len(pagesIn(t, root, site.RefLive)) != 0 || !gone(t, demoManifestPath(root)) {
+		t.Error("the second run left the demonstration behind")
+	}
+}
+
+// Things already gone are not waited for: taken by hand, they drop out of
+// the record, and the store takes the demonstration again.
+func TestWhatIsAlreadyGoneDropsOut(t *testing.T) {
+	root, tpl, ex := installedDemo(t)
+	set, _ := loadListings(root)
+	_ = set.Remove("search")
+	if err := saveJSON(listingPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(researchStore(root).Dir, "repeat-orders")); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeDemo(root, true, resolveCaller(root, "")); err != nil {
+		t.Fatal(err)
+	}
+	if !gone(t, demoManifestPath(root)) {
+		t.Error("the record outlived everything in it")
+	}
+	if err := cmdDemo(root, []string{"--templates", tpl, "--examples", ex}); err != nil {
+		t.Fatalf("the store does not take the demonstration again: %v", err)
+	}
+}
+
+// The site's icon is an image too.
+func TestTheSitesIconStays(t *testing.T) {
+	root, _, _ := installedDemo(t)
+	m, err := trustedManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	icon := m.Media[0]
+	if err := cmdConfig(root, []string{"set", "site.icon", icon}); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeDemo(root, true, resolveCaller(root, "")); err != nil {
+		t.Fatal(err)
+	}
+	lib, _ := openMedia(root)
+	if _, err := lib.Stat(icon); err != nil {
+		t.Errorf("the site's icon was removed: %v", err)
+	}
+}
+
+// A demo.json somebody changed is not acted on.
+func TestAChangedRecordIsNotTrusted(t *testing.T) {
+	root, _, _ := installedDemo(t)
+	body, err := os.ReadFile(demoManifestPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	_ = json.Unmarshal(body, &m)
+	m["config"] = map[string]any{"publish.require_a11y": map[string]any{"was": "false", "set": "true"}}
+	changed, _ := json.Marshal(m)
+	if err := os.WriteFile(demoManifestPath(root), changed, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pagesBefore := len(pagesIn(t, root, site.RefLive))
+	if err := removeDemo(root, true, resolveCaller(root, "")); err == nil ||
+		!strings.Contains(err.Error(), "not the record") {
+		t.Fatalf("a changed record answered %v", err)
+	}
+	if len(pagesIn(t, root, site.RefLive)) != pagesBefore {
+		t.Error("a changed record was acted on")
+	}
+}
+
+// With --json, standard output is one document, the publishing included.
+func TestTheRemovalSaysOneDocument(t *testing.T) {
+	root, _, _ := installedDemo(t)
+	r, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, savedW := os.Stdout, w
+	os.Stdout = pw
+	w = out.New(true)
+	runErr := removeDemo(root, true, resolveCaller(root, ""))
+	pw.Close()
+	os.Stdout, w = saved, savedW
+	got, _ := io.ReadAll(r)
+	if runErr != nil {
+		t.Fatal(runErr)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(got, &doc); err != nil {
+		t.Fatalf("standard output is not one JSON document: %v\n%s", err, got)
+	}
+	if doc["published"] == "" || doc["kept"] == nil {
+		t.Errorf("the document leaves out what happened: %s", got)
 	}
 }
 
@@ -335,7 +524,8 @@ func TestRemovingTheDemonstrationIsAPersonsDecision(t *testing.T) {
 	}
 }
 
-// The demonstration does not install twice, nor over anything somebody made.
+// The demonstration does not install twice, over anything somebody made,
+// or over a template somebody already has.
 func TestTheDemonstrationRefusesAStoreWithSomethingInIt(t *testing.T) {
 	root, tpl, ex := installedDemo(t)
 	err := cmdDemo(root, []string{"--templates", tpl, "--examples", ex})
@@ -352,6 +542,49 @@ func TestTheDemonstrationRefusesAStoreWithSomethingInIt(t *testing.T) {
 	}
 	if err := cmdDemo(mine, []string{"--templates", filepath.Join(mine, "tpl")}); err == nil {
 		t.Fatal("the demonstration wrote over a menu somebody made")
+	}
+
+	theirs := t.TempDir()
+	if err := cmdInit(theirs); err != nil {
+		t.Fatal(err)
+	}
+	own := filepath.Join(theirs, "tpl")
+	if err := os.MkdirAll(own, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(own, "page.html"), []byte("ours"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdDemo(theirs, []string{"--templates", own}); err == nil {
+		t.Fatal("the demonstration wrote over somebody's template")
+	}
+	if b, _ := os.ReadFile(filepath.Join(own, "page.html")); string(b) != "ours" {
+		t.Error("somebody's template was changed")
+	}
+}
+
+// An install that stops part of the way still leaves the record, so what it
+// did write can be taken back.
+func TestAFailedInstallCanBeTakenBack(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	w = out.New(false)
+	base := t.TempDir()
+	root := filepath.Join(base, "st")
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	blocked := filepath.Join(base, "examples")
+	if err := os.WriteFile(blocked, []byte("a file where a folder goes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdDemo(root, []string{"--templates", filepath.Join(base, "templates"), "--examples", blocked}); err == nil {
+		t.Fatal("the install went ahead with nowhere to put its examples")
+	}
+	if err := removeDemo(root, true, resolveCaller(root, "")); err != nil {
+		t.Fatalf("what a failed install wrote cannot be taken back: %v", err)
+	}
+	if len(pagesIn(t, root, site.RefDraft)) != 0 {
+		t.Error("a failed install's pages were left")
 	}
 }
 

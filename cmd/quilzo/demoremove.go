@@ -14,6 +14,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -26,7 +27,7 @@ import (
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/demo"
 	"github.com/quilzo/quilzo/internal/feature"
-	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/research"
 	"github.com/quilzo/quilzo/internal/schema"
@@ -46,8 +47,27 @@ import (
 // So the install writes down what it wrote (demo.json, beside the store), and
 // `quilzo demo remove` takes back exactly that, each thing only while it is
 // still what the demonstration put there. Anything somebody changed since is
-// theirs now: kept, and listed. Pages and records a person added, what the
-// public sent through a form, and files somebody edited are never touched.
+// theirs now: kept, and listed. So is anything their own content still uses.
+// Pages and records a person added, what the public sent through a form, and
+// files somebody edited are never touched.
+//
+// # demo.json is not trusted on its own say
+//
+// It sits in the store, so whoever can write the store can write it. Its
+// digest goes into the audit log when the install writes it, and a removal
+// refuses a manifest whose digest is not the last one the log recorded. In a
+// deployment where a separate account writes the log, that is a check the
+// store's own account cannot forge. Beyond that, a removal only ever touches
+// what this program's demonstration can have written: its four settings, its
+// research projects by name, and its template and example files by name.
+//
+// # The live site never serves half a demonstration
+//
+// Listings, forms, menus and types apply to the live site the moment they
+// change. So the draft's removal is published as that exact commit, through
+// the same gates as `quilzo publish`, and if publishing is refused those
+// changes are put back. Removing is refused while the draft holds work that is
+// not published, because publishing the removal would publish it too.
 //
 // It says what it would do and changes nothing until it is run with --yes.
 
@@ -55,6 +75,13 @@ import (
 const demoManifestFormat = 1
 
 func demoManifestPath(root string) string { return filepath.Join(root, "demo.json") }
+
+// demoSettings are the only settings the demonstration changes, and so the
+// only ones a removal puts back.
+var demoSettings = []string{"site.base_url", "site.catalogue", "site.name", "ucp.catalogue"}
+
+// demoTemplateFiles are the only files it writes into the template folder.
+var demoTemplateFiles = []string{"page.html", "site.css"}
 
 // demoManifest is what an install wrote.
 type demoManifest struct {
@@ -104,6 +131,12 @@ type demoFolder struct {
 	Made []string `json:"made,omitempty"`
 }
 
+func (m *demoManifest) empty() bool {
+	return len(m.Tree)+len(m.Blocks)+len(m.Bound)+len(m.Vocabularies)+len(m.Media)+
+		len(m.Config)+len(m.Research)+len(m.Templates.Files)+len(m.Examples.Files) == 0 &&
+		m.Brand == ""
+}
+
 func demoDigest(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
@@ -142,58 +175,72 @@ func madeDirs(base, dir string) ([]string, error) {
 	return made, os.MkdirAll(dir, 0o700)
 }
 
-// folderDigests is every file under dir with its digest. Lock files are left
-// out: they are how a store guards a write, not what it holds.
+// folderDigests is every file under dir with its digest, read through a root
+// so nothing outside dir is read. Lock files are left out: they are how a
+// store guards a write, not what it holds.
 func folderDigests(dir string) (map[string]string, error) {
+	r, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
 	out := map[string]string{}
-	err := filepath.WalkDir(dir, func(p string, e fs.DirEntry, err error) error {
+	err = fs.WalkDir(r.FS(), ".", func(p string, e fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if e.IsDir() {
-			return nil
-		}
-		rel, rerr := filepath.Rel(dir, p)
-		if rerr != nil {
-			return rerr
-		}
-		rel = filepath.ToSlash(rel)
-		if strings.HasSuffix(rel, ".lock") {
+		if e.IsDir() || strings.HasSuffix(p, ".lock") {
 			return nil
 		}
 		if !e.Type().IsRegular() {
-			out[rel] = "not a regular file"
+			out[p] = "not a regular file"
 			return nil
 		}
-		b, rerr := os.ReadFile(p)
+		b, rerr := r.ReadFile(p)
 		if rerr != nil {
 			return rerr
 		}
-		out[rel] = demoDigest(b)
+		out[p] = demoDigest(b)
 		return nil
 	})
 	return out, err
 }
 
-// recordDemo writes the manifest, once the install has written everything
-// else. m arrives holding what only the install knows: the media, settings
-// and folders it wrote.
-func recordDemo(root string, s *store.Store, d *demo.Site, m *demoManifest) error {
+// saveDemoManifest writes the manifest and returns the digest the audit log
+// records for it.
+func saveDemoManifest(root string, m *demoManifest) (string, error) {
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	if err := atomicfile.Write(demoManifestPath(root), b, 0o600); err != nil {
+		return "", err
+	}
+	return demoDigest(b), nil
+}
+
+// recordDemo works out what the install wrote and saves it, returning the
+// manifest's digest. It runs when the install finishes, and when it fails
+// part of the way, so what a failed install left can be taken back too. m
+// arrives holding what only the install knows: the media, settings and files
+// it wrote.
+func recordDemo(root string, s *store.Store, d *demo.Site, m *demoManifest) (string, error) {
 	m.Format = demoManifestFormat
 	m.Name = d.Name
-	if c, err := s.GetCommit(s.GetRef(site.RefDraft)); err == nil {
-		tree, terr := s.GetNested(c.Tree)
-		if terr != nil {
-			return terr
+	m.Tree = map[string]string{}
+	if cid := s.GetRef(site.RefDraft); cid != "" {
+		c, err := s.GetCommit(cid)
+		if err != nil {
+			return "", err
 		}
-		m.Tree = tree
-	} else {
-		return err
+		if m.Tree, err = s.GetNested(c.Tree); err != nil {
+			return "", err
+		}
 	}
 
 	st, _, err := featureState(root)
 	if err != nil {
-		return err
+		return "", err
 	}
 	m.Blocks = map[string]string{}
 	add := func(kind, name string) {
@@ -218,73 +265,120 @@ func recordDemo(root string, s *store.Store, d *demo.Site, m *demoManifest) erro
 			add("menu", mn.Name)
 		}
 	}
+	types, err := schema.Load(root)
+	if err != nil {
+		return "", err
+	}
 	m.Bound = map[string]string{}
 	for page, typ := range d.Bind {
-		m.Bound[page] = typ
+		if types.Bound[page] == typ {
+			m.Bound[page] = typ
+		}
 	}
 
 	vocab := &taxonomy.Set{}
 	if err := loadJSON(vocabPath(root), vocab); err != nil {
-		return err
+		return "", err
 	}
 	m.Vocabularies = map[string]string{}
-	for _, v := range vocab.Vocabularies {
-		b, _ := json.Marshal(v)
-		m.Vocabularies[v.Name] = blockDigest(b)
+	if d.Vocabularies != nil {
+		for _, v := range d.Vocabularies.Vocabularies {
+			if got, ok := vocab.Get(v.Name); ok {
+				b, _ := json.Marshal(got)
+				m.Vocabularies[v.Name] = blockDigest(b)
+			}
+		}
 	}
 
 	if len(d.ClaimRules.Terms) > 0 {
-		b, err := os.ReadFile(brandPath(root))
-		if err != nil {
-			return err
+		if b, err := os.ReadFile(brandPath(root)); err == nil {
+			m.Brand = demoDigest(b)
 		}
-		m.Brand = demoDigest(b)
 	}
 
 	rs := researchStore(root)
 	m.Research = map[string]map[string]string{}
 	for _, rp := range d.Research {
 		files, err := folderDigests(filepath.Join(rs.Dir, rp.Name))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
 		if err != nil {
-			return err
+			return "", err
 		}
 		m.Research[rp.Name] = files
 	}
-
-	b, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return err
-	}
-	return atomicfile.Write(demoManifestPath(root), b, 0o600)
+	return saveDemoManifest(root, m)
 }
 
-// demoInstallable refuses a store that already holds content the install
-// would collide with.
+// trustedManifest reads demo.json and checks it is the one the audit log
+// last recorded.
+func trustedManifest(root string) (*demoManifest, error) {
+	body, err := os.ReadFile(demoManifestPath(root))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, errors.New("there is no record of a demonstration installed in this store, " +
+			"so there is nothing this can take back. A demonstration installed " +
+			"before Quilzo kept that record is removed by hand, or by starting " +
+			"again in an empty directory")
+	}
+	if err != nil {
+		return nil, err
+	}
+	events, err := audit.Read(auditPath(root))
+	if err != nil {
+		return nil, fmt.Errorf("the audit log could not be read, and it is what shows "+
+			"demo.json is the one the install wrote: %w", err)
+	}
+	want := ""
+	for i := len(events) - 1; i >= 0; i-- {
+		e := events[i]
+		if e.Action != "demo.install" && e.Action != "demo.remove" {
+			continue
+		}
+		if d, ok := e.Detail["manifest"]; ok {
+			want = d
+			break
+		}
+	}
+	if want == "" || want != demoDigest(body) {
+		return nil, errBlocked{fmt.Errorf("%s is not the record the demonstration wrote: "+
+			"its digest is not the one the audit log holds for it, so nothing in it is "+
+			"trusted and nothing was removed", demoManifestPath(root))}
+	}
+	var m demoManifest
+	if err := json.Unmarshal(body, &m); err != nil {
+		return nil, fmt.Errorf("%s could not be read: %w", demoManifestPath(root), err)
+	}
+	if m.Format != demoManifestFormat {
+		return nil, fmt.Errorf("%s is format %d, and this program reads format %d",
+			demoManifestPath(root), m.Format, demoManifestFormat)
+	}
+	return &m, nil
+}
+
+// demoInstallable refuses a store, or folders, already holding anything the
+// install would write over.
 //
 // Content rather than refs: a store the demonstration was installed in and
 // then removed from has refs pointing at empty trees, and is as empty as a
 // new one.
-func demoInstallable(root string, s *store.Store, d *demo.Site) error {
+func demoInstallable(root string, s *store.Store, d *demo.Site, tplDir, exDir string) error {
 	if _, err := os.Lstat(demoManifestPath(root)); err == nil {
 		return errors.New("the demonstration is already installed here.\n" +
-			"  quilzo demo remove      says what taking it out would remove\n" +
+			"  quilzo demo remove        says what taking it out would remove\n" +
 			"  quilzo demo remove --yes  takes it out")
 	}
 	full := false
 	for _, ref := range []string{site.RefDraft, site.RefLive} {
-		cid := s.GetRef(ref)
-		if cid == "" {
-			continue
-		}
-		c, err := s.GetCommit(cid)
+		tree, err := treeOf(s, ref)
 		if err != nil {
 			return err
 		}
-		tree, err := s.GetNested(c.Tree)
+		paths, err := s.GetNested(tree)
 		if err != nil {
 			return err
 		}
-		full = full || len(tree) > 0
+		full = full || len(paths) > 0
 	}
 	listings, err := loadListings(root)
 	if err != nil {
@@ -316,6 +410,21 @@ func demoInstallable(root string, s *store.Store, d *demo.Site) error {
 			full = true
 		}
 	}
+	for page := range d.Bind {
+		if _, taken := types.Bound[page]; taken {
+			full = true
+		}
+	}
+	for c := range d.BindCollection {
+		if _, taken := types.Collections[c]; taken {
+			full = true
+		}
+	}
+	for _, rp := range d.Research {
+		if _, err := os.Lstat(filepath.Join(researchStore(root).Dir, rp.Name)); err == nil {
+			full = true
+		}
+	}
 	if full {
 		return errors.New(
 			"this store already has content, and the demonstration would " +
@@ -323,19 +432,33 @@ func demoInstallable(root string, s *store.Store, d *demo.Site) error {
 				"share a name with its own.\n  Run it in an empty directory:\n" +
 				"    mkdir shop && cd shop && quilzo init && quilzo demo")
 	}
+	for _, name := range demoTemplateFiles {
+		if _, err := os.Lstat(filepath.Join(tplDir, name)); err == nil {
+			return fmt.Errorf("%s already has a %s, which the demonstration would "+
+				"write over.\n  Give it a folder of its own: quilzo demo --templates DIR",
+				tplDir, name)
+		}
+	}
+	for rel := range d.Examples {
+		if _, err := os.Lstat(filepath.Join(exDir, filepath.FromSlash(rel))); err == nil {
+			return fmt.Errorf("%s already has %s, which the demonstration would "+
+				"write over.\n  Give it a folder of its own: quilzo demo --examples DIR",
+				exDir, rel)
+		}
+	}
 	return nil
 }
 
 // demoRemoval is what removing the demonstration would do, worked out
 // against what the store holds now.
 type demoRemoval struct {
-	m     *demoManifest
-	draft string // the draft commit this was worked out against
+	m           *demoManifest
+	draft, live string // the commits this was worked out against
 
-	paths     []string // tree paths to delete
-	pages     []string // the pages among them
-	records   int
-	remaining map[string]string // the draft's tree once they are gone
+	paths   []string // tree paths to delete
+	pages   []string // the pages among them
+	records int
+	left    int // pages left once they are gone
 
 	unbind      []string // page bindings
 	collections []string
@@ -347,13 +470,16 @@ type demoRemoval struct {
 	brand       bool
 	settings    []string
 	research    []string
+	media       []string
+	templates   []string
+	examples    []string
 
-	// publish is whether the removal is published as well: only when the
-	// draft held nothing the live site does not, so publishing it publishes
-	// the removal and nothing somebody has not finished.
+	// publish is whether the removal is published: whenever there is a live
+	// site, which then shows exactly the draft once the removal is in it.
 	publish bool
 
-	keep []string // what stays, and why
+	keep []string     // what stays, and why
+	kept demoManifest // what stays on record, for a later run
 }
 
 func (p *demoRemoval) keepf(format string, a ...any) {
@@ -372,9 +498,21 @@ func treeOf(s *store.Store, ref string) (string, error) {
 	return c.Tree, nil
 }
 
+// errDraftAhead is a draft holding work the live site does not have.
+var errDraftAhead = errBlocked{errors.New(
+	"the draft holds changes the live site does not have, and publishing the " +
+		"removal would publish them too. Publish them first (quilzo publish), " +
+		"then remove the demonstration")}
+
 // planDemoRemoval works out the removal. It writes nothing.
 func planDemoRemoval(root string, s *store.Store, m *demoManifest) (*demoRemoval, error) {
-	p := &demoRemoval{m: m, draft: s.GetRef(site.RefDraft)}
+	p := &demoRemoval{m: m, draft: s.GetRef(site.RefDraft), live: s.GetRef(site.RefLive)}
+	p.kept = demoManifest{Format: m.Format, Name: m.Name, At: m.At, By: m.By,
+		Tree: map[string]string{}, Blocks: map[string]string{}, Bound: map[string]string{},
+		Vocabularies: map[string]string{}, Config: map[string]demoSetting{},
+		Research:  map[string]map[string]string{},
+		Templates: demoFolder{Dir: m.Templates.Dir, Made: m.Templates.Made, Files: map[string]string{}},
+		Examples:  demoFolder{Dir: m.Examples.Dir, Made: m.Examples.Made, Files: map[string]string{}}}
 
 	draftTree, err := treeOf(s, site.RefDraft)
 	if err != nil {
@@ -384,33 +522,62 @@ func planDemoRemoval(root string, s *store.Store, m *demoManifest) (*demoRemoval
 	if err != nil {
 		return nil, err
 	}
+	if p.draft == "" {
+		draftTree = liveTree
+	}
 	now, err := s.GetNested(draftTree)
 	if err != nil {
 		return nil, err
 	}
-	p.remaining = map[string]string{}
-	for path, oid := range now {
-		p.remaining[path] = oid
+	live, err := s.GetNested(liveTree)
+	if err != nil {
+		return nil, err
 	}
-	paths := make([]string, 0, len(m.Tree))
-	for path := range m.Tree {
-		paths = append(paths, path)
+
+	// The draft may differ from the live site only by the demonstration's
+	// own paths already taken out of it, by a removal whose publishing was
+	// refused. Anything else is somebody's unpublished work.
+	if p.live != "" {
+		for path := range joinKeys(now, live) {
+			d, inDraft := now[path]
+			l := live[path]
+			if inDraft && d == l {
+				continue
+			}
+			if !inDraft && m.Tree[path] != "" && m.Tree[path] == l {
+				continue
+			}
+			return nil, errDraftAhead
+		}
 	}
-	sort.Strings(paths)
-	for _, path := range paths {
+
+	rootEntries := map[string]string{}
+	if draftTree != "" {
+		if rootEntries, err = s.GetTree(draftTree); err != nil {
+			return nil, err
+		}
+	}
+	isPage := func(path string) bool {
+		oid, atRoot := rootEntries[path]
+		return atRoot && !s.IsTree(oid)
+	}
+
+	remaining := maps.Clone(now)
+	for _, path := range slices.Sorted(maps.Keys(m.Tree)) {
 		cur, ok := now[path]
 		switch {
 		case !ok:
 			// Gone already: somebody removed it, which is what was wanted.
 		case cur == m.Tree[path]:
 			p.paths = append(p.paths, path)
-			delete(p.remaining, path)
-			if _, _, isRecord := collection.IsCollectionPath(path); isRecord {
-				p.records++
-			} else {
+			delete(remaining, path)
+			if isPage(path) {
 				p.pages = append(p.pages, path)
+			} else {
+				p.records++
 			}
 		default:
+			p.kept.Tree[path] = m.Tree[path]
 			if coll, id, isRecord := collection.IsCollectionPath(path); isRecord {
 				p.keepf("record %s/%s: changed since it was installed", coll, short(id))
 			} else {
@@ -418,7 +585,14 @@ func planDemoRemoval(root string, s *store.Store, m *demoManifest) (*demoRemoval
 			}
 		}
 	}
-	p.publish = liveTree != "" && liveTree == draftTree && len(p.paths) > 0
+	p.publish = p.live != "" && !maps.Equal(remaining, live)
+
+	// What is left once the removal is in: the draft, and so the live site.
+	pagesLeft, recordsLeft, err := contentIn(s, remaining, isPage)
+	if err != nil {
+		return nil, err
+	}
+	p.left = len(pagesLeft)
 
 	st, _, err := featureState(root)
 	if err != nil {
@@ -440,30 +614,24 @@ func planDemoRemoval(root string, s *store.Store, m *demoManifest) (*demoRemoval
 	for kind := range blocks {
 		sort.Strings(blocks[kind])
 	}
+	keepBlock := func(kind, name, format string, a ...any) {
+		p.kept.Blocks[blockKey(kind, name)] = m.Blocks[blockKey(kind, name)]
+		p.keepf(kind+" "+name+": "+format, a...)
+	}
 
 	// Types, the pages bound to them and the collections typed by them.
 	types, err := schema.Load(root)
 	if err != nil {
 		return nil, err
 	}
-	bound := map[string]string{}
-	for page, typ := range types.Bound {
-		bound[page] = typ
-	}
-	colls := map[string]string{}
-	for c, typ := range types.Collections {
-		colls[c] = typ
-	}
-	pages := make([]string, 0, len(m.Bound))
-	for page := range m.Bound {
-		pages = append(pages, page)
-	}
-	sort.Strings(pages)
-	for _, page := range pages {
+	bound := maps.Clone(types.Bound)
+	colls := maps.Clone(types.Collections)
+	for _, page := range slices.Sorted(maps.Keys(m.Bound)) {
 		if bound[page] != m.Bound[page] {
 			continue
 		}
-		if _, still := p.remaining[page]; still {
+		if _, still := remaining[page]; still {
+			p.kept.Bound[page] = m.Bound[page]
 			continue
 		}
 		p.unbind = append(p.unbind, page)
@@ -474,17 +642,17 @@ func planDemoRemoval(root string, s *store.Store, m *demoManifest) (*demoRemoval
 			continue
 		}
 		if !unchanged("collection", name) {
-			p.keepf("collection %s: its type was changed since it was installed", name)
+			keepBlock("collection", name, "its type was changed since it was installed")
 			continue
 		}
 		left := 0
-		for path := range p.remaining {
+		for path := range remaining {
 			if c, _, ok := collection.IsCollectionPath(path); ok && c == name {
 				left++
 			}
 		}
 		if left > 0 {
-			p.keepf("collection %s: still holds %d record(s) the demonstration did not write", name, left)
+			keepBlock("collection", name, "still holds %d record(s) the demonstration did not write", left)
 			continue
 		}
 		p.collections = append(p.collections, name)
@@ -495,7 +663,7 @@ func planDemoRemoval(root string, s *store.Store, m *demoManifest) (*demoRemoval
 			continue
 		}
 		if !unchanged("type", name) {
-			p.keepf("type %s: changed since it was installed", name)
+			keepBlock("type", name, "changed since it was installed")
 			continue
 		}
 		var users []string
@@ -511,16 +679,21 @@ func planDemoRemoval(root string, s *store.Store, m *demoManifest) (*demoRemoval
 		}
 		if len(users) > 0 {
 			sort.Strings(users)
-			p.keepf("type %s: still used by %s", name, strings.Join(users, ", "))
+			keepBlock("type", name, "still used by %s", strings.Join(users, ", "))
 			continue
 		}
 		p.types = append(p.types, name)
 	}
 
-	// Listings, forms and menus.
-	subs, err := openSubmissions(root)
-	if err != nil {
-		return nil, err
+	// Listings, forms and menus, unless a page that stays shows one.
+	shown := map[string][]string{}
+	for page, body := range pagesLeft {
+		for _, name := range listing.On(body) {
+			shown[blockKey("listing", name)] = append(shown[blockKey("listing", name)], page)
+		}
+		for _, name := range stringsUnder(body, "form", 0) {
+			shown[blockKey("form", name)] = append(shown[blockKey("form", name)], page)
+		}
 	}
 	for _, kind := range []string{"listing", "form", "menu"} {
 		for _, name := range blocks[kind] {
@@ -528,7 +701,12 @@ func planDemoRemoval(root string, s *store.Store, m *demoManifest) (*demoRemoval
 				continue
 			}
 			if !unchanged(kind, name) {
-				p.keepf("%s %s: changed since it was installed", kind, name)
+				keepBlock(kind, name, "changed since it was installed")
+				continue
+			}
+			if by := shown[blockKey(kind, name)]; len(by) > 0 {
+				sort.Strings(by)
+				keepBlock(kind, name, "still shown by %s", strings.Join(by, ", "))
 				continue
 			}
 			switch kind {
@@ -537,10 +715,10 @@ func planDemoRemoval(root string, s *store.Store, m *demoManifest) (*demoRemoval
 			case "form":
 				// What the public sent is personal data somebody is
 				// answerable for, and the form is how it is read.
-				if got, lerr := subs.List(name); lerr != nil {
-					return nil, lerr
-				} else if len(got) > 0 {
-					p.keepf("form %s: holds %d submission(s) from the public", name, len(got))
+				if n, err := submissionsFor(root, name); err != nil {
+					return nil, err
+				} else if n > 0 {
+					keepBlock(kind, name, "holds %d submission(s) from the public", n)
 					continue
 				}
 				p.forms = append(p.forms, name)
@@ -551,37 +729,32 @@ func planDemoRemoval(root string, s *store.Store, m *demoManifest) (*demoRemoval
 	}
 
 	// Vocabularies, unless content that stays is tagged from one.
-	content, err := treeContent(s, p.remaining)
-	if err != nil {
-		return nil, err
-	}
 	vocab := &taxonomy.Set{}
 	if err := loadJSON(vocabPath(root), vocab); err != nil {
 		return nil, err
 	}
-	names := make([]string, 0, len(m.Vocabularies))
-	for name := range m.Vocabularies {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
+	for _, name := range slices.Sorted(maps.Keys(m.Vocabularies)) {
 		v, ok := vocab.Get(name)
 		if !ok {
 			continue
 		}
 		b, _ := json.Marshal(v)
 		if blockDigest(b) != m.Vocabularies[name] {
+			p.kept.Vocabularies[name] = m.Vocabularies[name]
 			p.keepf("vocabulary %s: changed since it was installed", name)
 			continue
 		}
 		var tagged []string
-		for where, body := range content {
-			if len(taxonomy.Of(body, name)) > 0 {
-				tagged = append(tagged, where)
+		for _, content := range []map[string]map[string]any{pagesLeft, recordsLeft} {
+			for where, body := range content {
+				if len(taxonomy.Of(body, name)) > 0 {
+					tagged = append(tagged, where)
+				}
 			}
 		}
 		if len(tagged) > 0 {
 			sort.Strings(tagged)
+			p.kept.Vocabularies[name] = m.Vocabularies[name]
 			p.keepf("vocabulary %s: still used by %s", name, strings.Join(tagged, ", "))
 			continue
 		}
@@ -594,93 +767,330 @@ func planDemoRemoval(root string, s *store.Store, m *demoManifest) (*demoRemoval
 			if demoDigest(b) == m.Brand {
 				p.brand = true
 			} else {
+				p.kept.Brand = m.Brand
 				p.keepf("the claim rules: changed since they were installed")
 			}
 		}
 	}
 
-	// Settings, back to what they were, unless somebody has set them since.
-	if cfg, err := loadConfig(root); err == nil {
-		keys := make([]string, 0, len(m.Config))
-		for key := range m.Config {
-			keys = append(keys, key)
+	// Settings, back to what they were: only the demonstration's own, only
+	// while nobody has set them since, only while nothing left depends on
+	// them, and never to a value weaker than the shipped default.
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return nil, err
+	}
+	catalogue := cfg.Raw("site.catalogue")
+	catalogueGone := slices.Contains(p.listings, catalogue) || !exists("listing", catalogue)
+	for _, key := range demoSettings {
+		set, ok := m.Config[key]
+		if !ok {
+			continue
 		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			if _, known := config.Lookup(key); !known {
-				continue
-			}
-			if cfg.Raw(key) != m.Config[key].Set {
-				p.keepf("setting %s: changed since it was installed", key)
+		def, known := config.Lookup(key)
+		if !known {
+			continue
+		}
+		keepSetting := func(format string, a ...any) {
+			p.kept.Config[key] = set
+			p.keepf("setting "+key+": "+format, a...)
+		}
+		switch {
+		case cfg.Raw(key) != set.Set:
+			keepSetting("changed since it was installed")
+		case (key == "site.name" || key == "site.base_url") && p.left > 0:
+			keepSetting("%d page(s) left still use it", p.left)
+		case (key == "site.catalogue" || key == "ucp.catalogue") && !catalogueGone:
+			keepSetting("the catalogue listing %s stays", catalogue)
+		default:
+			if weaker, _ := def.IsWeaker(set.Was); weaker {
+				keepSetting("putting back %q would be weaker than the default", set.Was)
 				continue
 			}
 			p.settings = append(p.settings, key)
 		}
 	}
 
-	// Research projects, unless somebody has worked in one.
+	// Research projects, only the demonstration's own, unless somebody has
+	// worked in one. The research folder itself must be a folder, not a link
+	// somewhere else.
 	rs := researchStore(root)
-	projects := make([]string, 0, len(m.Research))
-	for name := range m.Research {
-		projects = append(projects, name)
+	ownProjects := map[string]bool{}
+	for _, rp := range demo.Marginalia().Research {
+		ownProjects[rp.Name] = true
 	}
-	sort.Strings(projects)
-	for _, name := range projects {
-		if !research.ValidName(name) {
+	researchDir := false
+	if info, err := os.Lstat(rs.Dir); err == nil && info.IsDir() {
+		researchDir = true
+	}
+	for _, name := range slices.Sorted(maps.Keys(m.Research)) {
+		dir := filepath.Join(rs.Dir, name)
+		info, err := os.Lstat(dir)
+		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
-		dir := filepath.Join(rs.Dir, name)
-		if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
+		if !ownProjects[name] || !research.ValidName(name) || !researchDir || err != nil || !info.IsDir() {
+			p.kept.Research[name] = m.Research[name]
+			p.keepf("research project %s: not one the demonstration can have made here", name)
 			continue
 		}
 		now, err := folderDigests(dir)
 		if err != nil || !maps.Equal(now, m.Research[name]) {
+			p.kept.Research[name] = m.Research[name]
 			p.keepf("research project %s: has work in it since it was installed", name)
 			continue
 		}
 		p.research = append(p.research, name)
 	}
+
+	// Files outside the store. The template stays while any page is left to
+	// render through it.
+	if p.left > 0 {
+		for _, rel := range slices.Sorted(maps.Keys(m.Templates.Files)) {
+			p.kept.Templates.Files[rel] = m.Templates.Files[rel]
+		}
+		if len(m.Templates.Files) > 0 {
+			p.keepf("the template in %s: %d page(s) left still render through it", m.Templates.Dir, p.left)
+		}
+	} else {
+		p.templates = m.Templates.plan(demoTemplateFiles, &p.kept.Templates, p.keepf, "the template file")
+	}
+	var exampleNames []string
+	for rel := range demo.Marginalia().Examples {
+		exampleNames = append(exampleNames, rel)
+	}
+	p.examples = m.Examples.plan(exampleNames, &p.kept.Examples, p.keepf, "the example")
+
+	// Images nothing left points at: not content, not the site's icon, not a
+	// template file that stays. An image stays with its narrower copies when
+	// anything uses any of them.
+	used := map[string]bool{}
+	for _, content := range []map[string]map[string]any{pagesLeft, recordsLeft} {
+		for _, fields := range content {
+			for _, id := range media.IDsIn(fields) {
+				used[id] = true
+			}
+		}
+	}
+	if id, ok := media.IDIn(cfg.Raw("site.icon")); ok {
+		used[id] = true
+	}
+	for rel := range p.kept.Templates.Files {
+		for _, id := range m.Templates.idsIn(rel) {
+			used[id] = true
+		}
+	}
+	if len(m.Media) > 0 {
+		lib, err := openMedia(root)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range m.Media {
+			f, serr := lib.Stat(id)
+			if serr != nil {
+				continue
+			}
+			inUse := used[id]
+			for _, r := range f.Renditions {
+				inUse = inUse || used[r.ID]
+			}
+			if inUse {
+				p.kept.Media = append(p.kept.Media, id)
+				p.keepf("image %s: still used by the site", f.Name)
+				continue
+			}
+			p.media = append(p.media, id)
+		}
+	}
 	return p, nil
 }
 
-// treeContent is the pages and records at these tree paths: a page by its
-// name, a record as collection/id.
-func treeContent(s *store.Store, tree map[string]string) (map[string]map[string]any, error) {
-	out := map[string]map[string]any{}
+// contentIn is the pages and records at these tree paths: a page by its name,
+// a record as collection/id.
+func contentIn(s *store.Store, tree map[string]string, isPage func(string) bool) (
+	pages, records map[string]map[string]any, err error) {
+
+	pages, records = map[string]map[string]any{}, map[string]map[string]any{}
 	for path, oid := range tree {
 		if c, id, ok := collection.IsCollectionPath(path); ok {
 			var r collection.Record
 			if err := s.GetBlob(oid, &r); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
-			out[c+"/"+id] = r.Fields
+			records[c+"/"+id] = r.Fields
 			continue
 		}
-		if strings.Contains(path, "/") {
+		if !isPage(path) {
 			continue
 		}
 		var body any
 		if err := s.GetBlob(oid, &body); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		if m, ok := body.(map[string]any); ok {
-			out[path] = m
+		m, _ := body.(map[string]any)
+		if m == nil {
+			m = map[string]any{}
+		}
+		pages[path] = m
+	}
+	return pages, records, nil
+}
+
+// stringsUnder collects every string held under key, at any depth.
+func stringsUnder(v any, key string, depth int) []string {
+	if depth > 16 {
+		return nil
+	}
+	var out []string
+	switch t := v.(type) {
+	case map[string]any:
+		for k, vv := range t {
+			if s, ok := vv.(string); ok && k == key && s != "" {
+				out = append(out, s)
+				continue
+			}
+			out = append(out, stringsUnder(vv, key, depth+1)...)
+		}
+	case []any:
+		for _, item := range t {
+			out = append(out, stringsUnder(item, key, depth+1)...)
 		}
 	}
-	return out, nil
+	return out
+}
+
+// submissionsFor counts what the public sent through a form, without making
+// the submissions folder when there is none.
+func submissionsFor(root, name string) (int, error) {
+	if _, err := os.Stat(submissionDir(root)); errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	subs, err := openSubmissions(root)
+	if err != nil {
+		return 0, err
+	}
+	got, err := subs.List(name)
+	return len(got), err
+}
+
+func joinKeys(a, b map[string]string) map[string]bool {
+	out := map[string]bool{}
+	for k := range a {
+		out[k] = true
+	}
+	for k := range b {
+		out[k] = true
+	}
+	return out
+}
+
+// plan picks the files in this folder that go: those among the names this
+// program writes there and still as the install wrote them. The rest stay on
+// record in kept.
+func (f demoFolder) plan(names []string, kept *demoFolder, keepf func(string, ...any), what string) []string {
+	var gone []string
+	known := map[string]bool{}
+	for _, n := range names {
+		known[n] = true
+	}
+	r, rerr := f.openRoot()
+	if r != nil {
+		defer r.Close()
+	}
+	for _, rel := range slices.Sorted(maps.Keys(f.Files)) {
+		if rerr != nil || !known[rel] {
+			kept.Files[rel] = f.Files[rel]
+			keepf("%s %s: not one this program writes there", what, rel)
+			continue
+		}
+		info, err := r.Lstat(filepath.FromSlash(rel))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil || !info.Mode().IsRegular() {
+			kept.Files[rel] = f.Files[rel]
+			keepf("%s %s: no longer a plain file", what, rel)
+			continue
+		}
+		b, err := r.ReadFile(filepath.FromSlash(rel))
+		if err != nil || demoDigest(b) != f.Files[rel] {
+			kept.Files[rel] = f.Files[rel]
+			keepf("%s %s: changed since it was installed", what, rel)
+			continue
+		}
+		gone = append(gone, rel)
+	}
+	return gone
+}
+
+// openRoot opens the folder for reading and removing within it only. A
+// relative or missing folder opens nothing.
+func (f demoFolder) openRoot() (*os.Root, error) {
+	if f.Dir == "" || !filepath.IsAbs(f.Dir) {
+		return nil, fmt.Errorf("%q is not a folder this program wrote", f.Dir)
+	}
+	return os.OpenRoot(f.Dir)
+}
+
+// reMediaID is a media id as it appears in a template or stylesheet.
+var reMediaID = regexp.MustCompile(`[0-9a-f]{64}`)
+
+// idsIn is every media id a file in this folder names.
+func (f demoFolder) idsIn(rel string) []string {
+	r, err := f.openRoot()
+	if err != nil {
+		return nil
+	}
+	defer r.Close()
+	b, err := r.ReadFile(filepath.FromSlash(rel))
+	if err != nil {
+		return nil
+	}
+	return reMediaID.FindAllString(string(b), -1)
+}
+
+// take removes the files planned, then the folders the install made once
+// they are empty, all within the folder.
+func (f demoFolder) take(files []string) (gone int) {
+	r, err := f.openRoot()
+	if err != nil {
+		return 0
+	}
+	defer r.Close()
+	for _, rel := range files {
+		if r.Remove(filepath.FromSlash(rel)) == nil {
+			gone++
+		}
+	}
+	// Deepest first, and only while empty: Remove refuses a folder with
+	// anything in it, which is the rule wanted.
+	made := slices.Clone(f.Made)
+	sort.Slice(made, func(i, j int) bool {
+		return strings.Count(made[i], "/") > strings.Count(made[j], "/")
+	})
+	for _, rel := range made {
+		if rel != "." && !strings.HasPrefix(rel, "..") {
+			_ = r.Remove(filepath.FromSlash(rel))
+		}
+	}
+	if slices.Contains(made, ".") {
+		_ = os.Remove(f.Dir)
+	}
+	return gone
 }
 
 // demoRemove is `quilzo demo remove [--yes]`.
 func demoRemove(root string, args []string) error {
 	flags := flag.NewFlagSet("demo remove", flag.ContinueOnError)
 	yes := flags.Bool("yes", false, "remove it; without this, only say what would go")
+	dry := flags.Bool("dry-run", false, "only say what would go, even with --yes")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() > 0 {
-		return errors.New("usage: quilzo demo remove [--yes]")
+		return errors.New("usage: quilzo demo remove [--yes | --dry-run]")
 	}
-	return removeDemo(root, *yes, resolveCaller(root, flagToken))
+	return removeDemo(root, *yes && !*dry, resolveCaller(root, flagToken))
 }
 
 // removeDemo says what removing the demonstration would take, and with yes
@@ -693,36 +1103,20 @@ func removeDemo(root string, yes bool, caller *Caller) error {
 	if caller.Kind == audit.KindAI {
 		return errors.New("the demonstration is removed by a person")
 	}
-
-	body, err := os.ReadFile(demoManifestPath(root))
-	if errors.Is(err, fs.ErrNotExist) {
-		return errors.New("there is no record of a demonstration installed in this store, " +
-			"so there is nothing this can take back. A demonstration installed " +
-			"before Quilzo kept that record is removed by hand, or by starting " +
-			"again in an empty directory")
-	}
+	m, err := trustedManifest(root)
 	if err != nil {
 		return err
 	}
-	var m demoManifest
-	if err := json.Unmarshal(body, &m); err != nil {
-		return fmt.Errorf("%s could not be read: %w", demoManifestPath(root), err)
-	}
-	if m.Format != demoManifestFormat {
-		return fmt.Errorf("%s is format %d, and this program reads format %d",
-			demoManifestPath(root), m.Format, demoManifestFormat)
-	}
-
 	s, err := open(root)
 	if err != nil {
 		return err
 	}
-	p, err := planDemoRemoval(root, s, &m)
+	p, err := planDemoRemoval(root, s, m)
 	if err != nil {
 		return err
 	}
 	if !yes {
-		if w.JSON(p.summary(false, nil, nil)) {
+		if w.JSON(p.summary(false, "", 0, 0)) {
 			return nil
 		}
 		p.print(false)
@@ -732,38 +1126,221 @@ func removeDemo(root string, yes bool, caller *Caller) error {
 	return p.apply(root, s, caller)
 }
 
-// apply carries the removal out.
-func (p *demoRemoval) apply(root string, s *store.Store, caller *Caller) error {
-	m := p.m
+// sideFiles are the files beside the store a removal changes before it
+// publishes, kept so a refused publish can put them back.
+func sideFiles(root string) []string {
+	return []string{filepath.Join(root, "types.json"), listingPath(root), formsPath(root),
+		menuPath(root), vocabPath(root), brandPath(root)}
+}
 
-	// The draft first, against the commit the plan was worked out from: a
-	// draft that moved in between was worked out wrongly.
+// apply carries the removal out.
+func (p *demoRemoval) apply(root string, s *store.Store, caller *Caller) (err error) {
+	m := p.m
+	detail := map[string]string{"name": m.Name}
+	wrote := false
+	// Every way out after the first write is in the log, the failures too.
+	defer func() {
+		if !wrote {
+			return
+		}
+		outcome := audit.Success
+		if err != nil {
+			outcome = audit.Failure
+			detail["error"] = err.Error()
+		}
+		record(root, caller.auditRecord("demo.remove", "/", outcome, detail))
+	}()
+
+	// The draft first, against the commits the plan was worked out from.
+	commit := p.draft
 	if len(p.paths) > 0 {
 		changes := make([]store.Change, 0, len(p.paths))
 		for _, path := range p.paths {
 			changes = append(changes, store.Change{Path: path, Delete: true})
 		}
 		err := s.WithRefLock(func() error {
-			if s.GetRef(site.RefDraft) != p.draft {
-				return errors.New("the draft changed while this was working, so nothing was " +
-					"removed. Run it again")
+			if s.GetRef(site.RefDraft) != p.draft || s.GetRef(site.RefLive) != p.live {
+				return errors.New("the site changed while this was working, so nothing " +
+					"was removed. Run it again")
 			}
 			base, err := treeOf(s, site.RefDraft)
 			if err != nil {
 				return err
 			}
+			if p.draft == "" {
+				if base, err = treeOf(s, site.RefLive); err != nil {
+					return err
+				}
+			}
 			next, err := s.PutNested(base, changes)
 			if err != nil {
 				return err
 			}
-			return commitTreeNoLock(s, next, "remove the "+m.Name+" demonstration", caller.Name)
+			if err := commitTreeNoLock(s, next, "remove the "+m.Name+" demonstration", caller.Name); err != nil {
+				return err
+			}
+			commit = s.GetRef(site.RefDraft)
+			return nil
 		})
 		if err != nil {
 			return err
 		}
+		wrote = true
+		detail["pages"] = strings.Join(p.pages, ",")
+		detail["records"] = fmt.Sprint(p.records)
 	}
 
-	// Types and bindings.
+	// What the live site reads beside the store, kept as it was until the
+	// removal is published.
+	saved := map[string][]byte{}
+	for _, path := range sideFiles(root) {
+		if b, err := os.ReadFile(path); err == nil {
+			saved[path] = b
+		}
+	}
+	restore := func() {
+		for _, path := range sideFiles(root) {
+			if b, ok := saved[path]; ok {
+				_ = atomicfile.Write(path, b, 0o600)
+			} else {
+				_ = os.Remove(path)
+			}
+		}
+	}
+	if err := p.applySideFiles(root); err != nil {
+		restore()
+		return err
+	}
+	if len(p.types)+len(p.collections)+len(p.unbind)+len(p.listings)+len(p.forms)+
+		len(p.menus)+len(p.vocab) > 0 || p.brand {
+		wrote = true
+	}
+
+	// Published as that exact commit, through every gate. Refused, the live
+	// site keeps the demonstration whole and the record stays as it was.
+	published := ""
+	if p.publish {
+		wrote = true
+		args := []string{}
+		if m.Templates.Dir != "" {
+			args = append(args, "--templates", m.Templates.Dir)
+		}
+		if perr := cmdPublish(root, append(args, commit)); perr != nil {
+			restore()
+			detail["published"] = "refused"
+			return errBlocked{fmt.Errorf("the demonstration was taken out of the draft, "+
+				"and publishing that was refused, so the live site still serves all of "+
+				"it: %w\n  Once publishing can go ahead, run quilzo demo remove --yes again", perr)}
+		}
+		published = s.GetRef(site.RefLive)
+		detail["published"] = short(published)
+	}
+
+	// Now nothing live uses the rest.
+	if len(p.pages) > 0 {
+		if idx, err := loadProvenance(root); err == nil {
+			changed := false
+			for _, page := range p.pages {
+				if _, has := idx.Records[page]; has {
+					delete(idx.Records, page)
+					changed = true
+				}
+			}
+			if changed {
+				if err := saveJSON(provPath(root), idx); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	images := 0
+	if len(p.media) > 0 {
+		wrote = true
+		lib, err := openMedia(root)
+		if err != nil {
+			return err
+		}
+		for _, id := range p.media {
+			f, serr := lib.Stat(id)
+			if serr != nil {
+				continue
+			}
+			if err := lib.Remove(id); err != nil {
+				return err
+			}
+			for _, r := range f.Renditions {
+				_ = lib.Remove(r.ID)
+			}
+			images++
+		}
+		detail["images"] = fmt.Sprint(images)
+	}
+	if len(p.settings) > 0 {
+		wrote = true
+		if err := p.applySettings(root, caller); err != nil {
+			return err
+		}
+		detail["settings"] = strings.Join(p.settings, ",")
+	}
+	if len(p.research) > 0 {
+		wrote = true
+		r, err := os.OpenRoot(researchStore(root).Dir)
+		if err != nil {
+			return err
+		}
+		for _, name := range p.research {
+			if err := r.RemoveAll(name); err != nil {
+				r.Close()
+				return err
+			}
+		}
+		r.Close()
+		detail["research"] = strings.Join(p.research, ",")
+	}
+	files := 0
+	if len(p.templates)+len(p.examples) > 0 {
+		wrote = true
+		files = m.Templates.take(p.templates) + m.Examples.take(p.examples)
+		detail["files"] = fmt.Sprint(files)
+	}
+
+	// What was not taken stays on record, so running this again after undoing
+	// an edit takes the rest. Its digest goes in the log, or it is not trusted.
+	wrote = true
+	if p.kept.empty() {
+		if err := os.Remove(demoManifestPath(root)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		detail["manifest"] = "none"
+	} else {
+		digest, err := saveDemoManifest(root, &p.kept)
+		if err != nil {
+			return err
+		}
+		detail["manifest"] = digest
+	}
+	detail["kept"] = fmt.Sprint(len(p.keep))
+
+	if w.JSON(p.summary(true, published, images, files)) {
+		return nil
+	}
+	p.print(true)
+	w.Human("  %-14s %d\n  %-14s %d\n", "images", images, "files", files)
+	switch {
+	case published != "":
+		w.Human("\n  published: the live site no longer serves it\n")
+		if images > 0 {
+			w.Human("  %sthe images are deleted, so a rollback brings the pages back without them%s\n", dim, reset)
+		}
+	case p.live == "":
+		w.Human("\n  nothing was live, so there was nothing to publish\n")
+	}
+	return nil
+}
+
+// applySideFiles removes the types, bindings, listings, forms, menus,
+// vocabularies and claim rules the plan took.
+func (p *demoRemoval) applySideFiles(root string) error {
 	if len(p.unbind)+len(p.collections)+len(p.types) > 0 {
 		types, err := schema.Load(root)
 		if err != nil {
@@ -782,8 +1359,6 @@ func (p *demoRemoval) apply(root string, s *store.Store, caller *Caller) error {
 			return err
 		}
 	}
-
-	// Listings, forms, menus and vocabularies.
 	if len(p.listings) > 0 {
 		set, err := loadListings(root)
 		if err != nil {
@@ -801,9 +1376,13 @@ func (p *demoRemoval) apply(root string, s *store.Store, caller *Caller) error {
 		if err != nil {
 			return err
 		}
-		set.Forms = slices.DeleteFunc(set.Forms, func(f form.Form) bool {
-			return slices.Contains(p.forms, f.Name)
-		})
+		kept := set.Forms[:0]
+		for _, f := range set.Forms {
+			if !slices.Contains(p.forms, f.Name) {
+				kept = append(kept, f)
+			}
+		}
+		set.Forms = kept
 		if err := saveJSON(formsPath(root), set); err != nil {
 			return err
 		}
@@ -837,376 +1416,74 @@ func (p *demoRemoval) apply(root string, s *store.Store, caller *Caller) error {
 			return err
 		}
 	}
+	return nil
+}
 
-	// Published, when publishing it publishes nothing but the removal. The
-	// same command as `quilzo publish`, so every gate runs.
-	published := false
-	var publishErr error
-	if p.publish {
-		args := []string{}
-		if m.Templates.Dir != "" {
-			args = append(args, "--templates", m.Templates.Dir)
-		}
-		w.Human("publishing the removal, through the same gates as quilzo publish\n")
-		if publishErr = cmdPublish(root, args); publishErr == nil {
-			published = true
-		}
-	}
-
-	// What is left, now the live site is what it is going to be.
-	draftContent, err := contentAt(s, site.RefDraft)
+// applySettings puts the demonstration's settings back, each recorded the way
+// `quilzo config set` records it. No reason is given, so a value weaker than
+// the default is refused rather than accepted in the remover's name.
+func (p *demoRemoval) applySettings(root string, caller *Caller) error {
+	cfg, err := loadConfig(root)
 	if err != nil {
 		return err
 	}
-	liveContent := map[string]map[string]any{}
-	if s.GetRef(site.RefLive) != "" {
-		if liveContent, err = contentAt(s, site.RefLive); err != nil {
-			return err
+	type change struct{ key, from, to string }
+	var done []change
+	for _, key := range p.settings {
+		was, from := p.m.Config[key].Was, cfg.Raw(key)
+		if def, _ := config.Lookup(key); was == def.Default {
+			err = cfg.Unset(key)
+		} else {
+			err = cfg.Set(key, was, "", caller.Name)
 		}
-	}
-	pagesLeft := 0
-	for where := range draftContent {
-		if !strings.Contains(where, "/") {
-			pagesLeft++
-		}
-	}
-	for where := range liveContent {
-		if !strings.Contains(where, "/") {
-			pagesLeft++
-		}
-	}
-
-	// The provenance of pages no longer anywhere.
-	if idx, err := loadProvenance(root); err == nil {
-		changed := false
-		for _, page := range p.pages {
-			_, inDraft := draftContent[page]
-			_, inLive := liveContent[page]
-			if _, has := idx.Records[page]; has && !inDraft && !inLive {
-				delete(idx.Records, page)
-				changed = true
-			}
-		}
-		if changed {
-			if err := saveJSON(provPath(root), idx); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Images nothing left points at, with the narrower copies made of them.
-	used := map[string]bool{}
-	for _, content := range []map[string]map[string]any{draftContent, liveContent} {
-		for _, fields := range content {
-			for _, id := range media.IDsIn(fields) {
-				used[id] = true
-			}
-		}
-	}
-	var keptMedia []string
-	images := 0
-	if len(m.Media) > 0 {
-		lib, err := openMedia(root)
 		if err != nil {
-			return err
+			return fmt.Errorf("setting %s: %w", key, err)
 		}
-		for _, id := range m.Media {
-			f, serr := lib.Stat(id)
-			if serr != nil {
-				continue
-			}
-			if used[id] {
-				keptMedia = append(keptMedia, id)
-				p.keepf("image %s: still used by the site", f.Name)
-				continue
-			}
-			if err := lib.Remove(id); err != nil {
-				return err
-			}
-			for _, r := range f.Renditions {
-				_ = lib.Remove(r.ID)
-			}
-			images++
-		}
+		done = append(done, change{key, from, cfg.Raw(key)})
 	}
-
-	// Settings.
-	if len(p.settings) > 0 {
-		cfg, err := loadConfig(root)
-		if err != nil {
-			return err
-		}
-		for _, key := range p.settings {
-			was := m.Config[key].Was
-			if def, _ := config.Lookup(key); was == def.Default {
-				err = cfg.Unset(key)
-			} else {
-				err = cfg.Set(key, was, "the demonstration was removed", caller.Name)
-			}
-			if err != nil {
-				return fmt.Errorf("setting %s: %w", key, err)
-			}
-		}
-		if err := saveConfig(root, cfg); err != nil {
-			return err
-		}
+	if err := saveConfig(root, cfg); err != nil {
+		return err
 	}
-
-	// Research projects.
-	rs := researchStore(root)
-	for _, name := range p.research {
-		if err := os.RemoveAll(filepath.Join(rs.Dir, name)); err != nil {
-			return err
-		}
+	for _, c := range done {
+		record(root, caller.auditRecord("config.set", "/", audit.Success, map[string]string{
+			"setting": c.key, "from": c.from, "to": c.to, "by": "demo remove"}))
 	}
-
-	// Files outside the store. The template stays while any page is left
-	// to render through it.
-	known := demo.Marginalia()
-	var tplGone, tplKept []string
-	if pagesLeft == 0 {
-		tplGone, tplKept = m.Templates.take(map[string]bool{"page.html": true, "site.css": true})
-	} else if len(m.Templates.Files) > 0 {
-		p.keepf("the template in %s: %d page(s) still render through it", m.Templates.Dir, pagesLeft)
-		tplKept = slices.Sorted(maps.Keys(m.Templates.Files))
-	}
-	names := map[string]bool{}
-	for rel := range known.Examples {
-		names[rel] = true
-	}
-	exGone, exKept := m.Examples.take(names)
-	for _, rel := range exKept {
-		p.keepf("the example %s: changed since it was installed", rel)
-	}
-	if pagesLeft == 0 {
-		for _, rel := range tplKept {
-			p.keepf("the template file %s: changed since it was installed", rel)
-		}
-	}
-
-	// What was not taken stays on record, so running this again after
-	// publishing or undoing an edit takes the rest.
-	rest := m.without(p, keptMedia, tplKept, exKept)
-	if rest == nil {
-		if err := os.Remove(demoManifestPath(root)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-	} else {
-		b, err := json.MarshalIndent(rest, "", "  ")
-		if err != nil {
-			return err
-		}
-		if err := atomicfile.Write(demoManifestPath(root), b, 0o600); err != nil {
-			return err
-		}
-	}
-
-	files := len(tplGone) + len(exGone)
-	record(root, caller.auditRecord("demo.remove", "/", audit.Success, map[string]string{
-		"name":      m.Name,
-		"pages":     fmt.Sprint(len(p.pages)),
-		"records":   fmt.Sprint(p.records),
-		"images":    fmt.Sprint(images),
-		"files":     fmt.Sprint(files),
-		"kept":      fmt.Sprint(len(p.keep)),
-		"published": fmt.Sprint(published),
-	}))
-
-	if w.JSON(p.summary(true, &published, &images)) {
-		return publishBlocked(publishErr)
-	}
-	p.print(true)
-	w.Human("  %d image(s), %d file(s) beside the store\n", images, files)
-	switch {
-	case published:
-		w.Human("\n  published: the live site no longer serves it\n")
-		if images > 0 {
-			w.Human("  %sthe images are deleted, so a rollback brings the pages back without them%s\n", dim, reset)
-		}
-	case publishErr != nil:
-		w.Human("\n  %sthe removal is in the draft, and publishing it was refused:%s %v\n",
-			yellow, reset, publishErr)
-	case p.publish:
-	case s.GetRef(site.RefLive) != "" && len(p.pages) > 0:
-		w.Human("\n  the removal is in the draft. The live site serves the demonstration until it is published:\n    quilzo publish\n")
-	}
-	return publishBlocked(publishErr)
+	return nil
 }
 
-// publishBlocked reports a refused publish as a failure of the command, so a
-// script removing the demonstration does not read success while the live
-// site still serves it.
-func publishBlocked(err error) error {
-	if err == nil {
-		return nil
+func orEmpty(s []string) []string {
+	if s == nil {
+		return []string{}
 	}
-	return errBlocked{fmt.Errorf("the demonstration was removed from the draft; publishing the removal was refused: %w", err)}
-}
-
-// take removes the files still as the install wrote them, among the names
-// this program writes there, then the folders the install made once they are
-// empty. It returns what went and what stayed.
-func (f demoFolder) take(known map[string]bool) (gone, kept []string) {
-	if f.Dir == "" || !filepath.IsAbs(f.Dir) {
-		return nil, slices.Sorted(maps.Keys(f.Files))
-	}
-	inside := func(rel string) (string, bool) {
-		path := filepath.Join(f.Dir, filepath.FromSlash(rel))
-		r, err := filepath.Rel(f.Dir, path)
-		if err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
-			return "", false
-		}
-		return path, true
-	}
-	for _, rel := range slices.Sorted(maps.Keys(f.Files)) {
-		path, ok := inside(rel)
-		if !ok || !known[rel] {
-			kept = append(kept, rel)
-			continue
-		}
-		info, err := os.Lstat(path)
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil || !info.Mode().IsRegular() {
-			kept = append(kept, rel)
-			continue
-		}
-		b, err := os.ReadFile(path)
-		if err != nil || demoDigest(b) != f.Files[rel] {
-			kept = append(kept, rel)
-			continue
-		}
-		if os.Remove(path) != nil {
-			kept = append(kept, rel)
-			continue
-		}
-		gone = append(gone, rel)
-	}
-	// Deepest first, and only while empty: os.Remove refuses a folder with
-	// anything in it, which is the rule wanted.
-	made := slices.Clone(f.Made)
-	sort.Slice(made, func(i, j int) bool {
-		return strings.Count(made[i], "/") > strings.Count(made[j], "/") ||
-			(strings.Count(made[i], "/") == strings.Count(made[j], "/") && made[i] == ".")
-	})
-	for _, rel := range made {
-		if rel == "." {
-			continue
-		}
-		if path, ok := inside(rel); ok {
-			_ = os.Remove(path)
-		}
-	}
-	if slices.Contains(made, ".") {
-		_ = os.Remove(f.Dir)
-	}
-	return gone, kept
-}
-
-// without is the manifest less what a removal took, or nil when it took
-// everything.
-func (m *demoManifest) without(p *demoRemoval, media, tplKept, exKept []string) *demoManifest {
-	rest := *m
-	rest.Tree = map[string]string{}
-	for path, oid := range m.Tree {
-		if cur, ok := p.remaining[path]; ok && cur != "" && !slices.Contains(p.paths, path) {
-			rest.Tree[path] = oid
-		}
-	}
-	gone := map[string]bool{}
-	for _, n := range p.collections {
-		gone[blockKey("collection", n)] = true
-	}
-	for _, n := range p.types {
-		gone[blockKey("type", n)] = true
-	}
-	for _, n := range p.listings {
-		gone[blockKey("listing", n)] = true
-	}
-	for _, n := range p.forms {
-		gone[blockKey("form", n)] = true
-	}
-	for _, n := range p.menus {
-		gone[blockKey("menu", n)] = true
-	}
-	rest.Blocks = map[string]string{}
-	for k, v := range m.Blocks {
-		if !gone[k] {
-			rest.Blocks[k] = v
-		}
-	}
-	rest.Bound = map[string]string{}
-	for page, typ := range m.Bound {
-		if !slices.Contains(p.unbind, page) {
-			rest.Bound[page] = typ
-		}
-	}
-	rest.Vocabularies = map[string]string{}
-	for k, v := range m.Vocabularies {
-		if !slices.Contains(p.vocab, k) {
-			rest.Vocabularies[k] = v
-		}
-	}
-	if p.brand {
-		rest.Brand = ""
-	}
-	rest.Media = media
-	rest.Config = map[string]demoSetting{}
-	for k, v := range m.Config {
-		if !slices.Contains(p.settings, k) {
-			rest.Config[k] = v
-		}
-	}
-	rest.Research = map[string]map[string]string{}
-	for k, v := range m.Research {
-		if !slices.Contains(p.research, k) {
-			rest.Research[k] = v
-		}
-	}
-	keepFiles := func(f demoFolder, kept []string) demoFolder {
-		out := demoFolder{Dir: f.Dir, Made: f.Made, Files: map[string]string{}}
-		for _, rel := range kept {
-			out.Files[rel] = f.Files[rel]
-		}
-		return out
-	}
-	rest.Templates = keepFiles(m.Templates, tplKept)
-	rest.Examples = keepFiles(m.Examples, exKept)
-
-	if len(rest.Tree)+len(rest.Blocks)+len(rest.Bound)+len(rest.Vocabularies)+
-		len(rest.Media)+len(rest.Config)+len(rest.Research)+
-		len(rest.Templates.Files)+len(rest.Examples.Files) == 0 && rest.Brand == "" {
-		return nil
-	}
-	return &rest
+	return s
 }
 
 // summary is the removal as data, for --json.
-func (p *demoRemoval) summary(done bool, published *bool, images *int) map[string]any {
+func (p *demoRemoval) summary(done bool, published string, images, files int) map[string]any {
 	out := map[string]any{
-		"removed":       done,
-		"name":          p.m.Name,
-		"pages":         p.pages,
-		"records":       p.records,
-		"types":         p.types,
-		"collections":   p.collections,
-		"listings":      p.listings,
-		"forms":         p.forms,
-		"menus":         p.menus,
-		"vocabularies":  p.vocab,
-		"claim_rules":   p.brand,
-		"settings":      p.settings,
-		"research":      p.research,
-		"publishes":     p.publish,
-		"kept":          p.keep,
-		"images_listed": len(p.m.Media),
+		"removed":      done,
+		"name":         p.m.Name,
+		"pages":        orEmpty(p.pages),
+		"records":      p.records,
+		"types":        orEmpty(p.types),
+		"collections":  orEmpty(p.collections),
+		"listings":     orEmpty(p.listings),
+		"forms":        orEmpty(p.forms),
+		"menus":        orEmpty(p.menus),
+		"vocabularies": orEmpty(p.vocab),
+		"claim_rules":  p.brand,
+		"settings":     orEmpty(p.settings),
+		"research":     orEmpty(p.research),
+		"images":       orEmpty(p.media),
+		"templates":    orEmpty(p.templates),
+		"examples":     orEmpty(p.examples),
+		"publishes":    p.publish,
+		"kept":         orEmpty(p.keep),
 	}
-	if published != nil {
-		out["published"] = *published
-	}
-	if images != nil {
-		out["images"] = *images
+	if done {
+		out["published"] = published
+		out["images_removed"] = images
+		out["files_removed"] = files
 	}
 	return out
 }
@@ -1216,7 +1493,14 @@ func (p *demoRemoval) print(done bool) {
 	if done {
 		verb = "removed"
 	}
-	w.Human("%s%s%s: %s\n", bold, p.m.Name, reset, verb)
+	nothing := len(p.paths)+len(p.types)+len(p.collections)+len(p.listings)+len(p.forms)+
+		len(p.menus)+len(p.vocab)+len(p.settings)+len(p.research)+len(p.media)+
+		len(p.templates)+len(p.examples) == 0 && !p.brand && !p.publish
+	if nothing {
+		w.Human("%s%s%s: nothing is left that it can take\n", bold, p.m.Name, reset)
+	} else {
+		w.Human("%s%s%s: %s\n", bold, p.m.Name, reset, verb)
+	}
 	line := func(what string, names []string) {
 		if len(names) > 0 {
 			w.Human("  %-14s %s\n", what, strings.Join(names, ", "))
@@ -1237,12 +1521,13 @@ func (p *demoRemoval) print(done bool) {
 	}
 	line("settings", p.settings)
 	line("research", p.research)
-	if !done {
-		w.Human("  %-14s %d, unless something left still uses one\n", "images", len(p.m.Media))
-		w.Human("  %-14s the template, unless a page is left to render through it; the example files\n", "files")
-		if p.publish {
-			w.Human("  and publishes the removal: the draft holds nothing the live site does not\n")
-		}
+	line("template", p.templates)
+	line("examples", p.examples)
+	if !done && len(p.media) > 0 {
+		w.Human("  %-14s %d\n", "images", len(p.media))
+	}
+	if !done && p.publish {
+		w.Human("  and publishes the removal, through the same gates as quilzo publish\n")
 	}
 	if len(p.keep) > 0 {
 		w.Human("\n  %skept, because somebody changed or uses them:%s\n", bold, reset)
