@@ -51,7 +51,7 @@ import (
 // and so the address it is configured with when it has none.
 const demoSiteURL = "http://127.0.0.1:8081"
 
-func cmdDemo(root string, args []string) error {
+func cmdDemo(root string, args []string) (err error) {
 	if len(args) > 0 && args[0] == "remove" {
 		return demoRemove(root, args[1:])
 	}
@@ -77,18 +77,44 @@ func cmdDemo(root string, args []string) error {
 		return err
 	}
 
+	// Beside the templates unless told otherwise, so the two folders a
+	// demonstration writes outside the store are always found together.
+	if *exDir == "" {
+		*exDir = filepath.Join(filepath.Dir(*tplDir), "examples")
+	}
+	tplAbs, err := filepath.Abs(*tplDir)
+	if err != nil {
+		return err
+	}
+	exAbs, err := filepath.Abs(*exDir)
+	if err != nil {
+		return err
+	}
+
 	s, err := open(root)
 	if err != nil {
 		return err
 	}
 	d := demo.Marginalia()
-	if err := demoInstallable(root, s, d); err != nil {
+	if err := demoInstallable(root, s, d, tplAbs, exAbs); err != nil {
 		return err
 	}
 	// What this writes, kept as it is written, so `quilzo demo remove` can
-	// take back exactly that and nothing anybody added.
+	// take back exactly that and nothing anybody added — including when the
+	// install stops part of the way.
 	m := &demoManifest{At: time.Now().UTC(), By: resolveCaller(root, "").Name,
 		Config: map[string]demoSetting{}}
+	started := false
+	defer func() {
+		if err == nil || !started {
+			return
+		}
+		detail := map[string]string{"error": err.Error()}
+		if digest, rerr := recordDemo(root, s, d, m); rerr == nil {
+			detail["manifest"] = digest
+		}
+		record(root, resolveCaller(root, "").auditRecord("demo.install", "/", audit.Failure, detail))
+	}()
 	if given := strings.TrimSpace(*siteName); given != "" {
 		// Renamed rather than assigned. The name is the index page's title and
 		// the header wordmark as well as a configuration value, and setting
@@ -108,6 +134,7 @@ func cmdDemo(root string, args []string) error {
 		return fmt.Errorf("opening the media library: %w", err)
 	}
 	addresses := map[string]string{}
+	started = true
 	for _, a := range d.Media {
 		f, aerr := media.Accept(a.Name+".png", a.Bytes, time.Now())
 		if aerr != nil {
@@ -293,10 +320,6 @@ func cmdDemo(root string, args []string) error {
 
 	// The template and the stylesheet, beside the store where `quilzo site`
 	// looks for them.
-	tplAbs, err := filepath.Abs(*tplDir)
-	if err != nil {
-		return err
-	}
 	made, err := madeDirs(tplAbs, tplAbs)
 	if err != nil {
 		return err
@@ -309,18 +332,9 @@ func cmdDemo(root string, args []string) error {
 		m.Templates.Files[name] = demoDigest([]byte(body))
 	}
 
-	// Beside the templates unless told otherwise, so the two folders a
-	// demonstration writes outside the store are always found together.
-	if *exDir == "" {
-		*exDir = filepath.Join(filepath.Dir(*tplDir), "examples")
-	}
 	// The example files, beside the templates. Paths come from the
 	// demonstration itself, and each is checked to stay under the folder all
 	// the same, since it becomes a path on somebody's disk.
-	exAbs, err := filepath.Abs(*exDir)
-	if err != nil {
-		return err
-	}
 	m.Examples = demoFolder{Dir: exAbs, Files: map[string]string{}}
 	for rel, body := range d.Examples {
 		path := filepath.Join(exAbs, filepath.FromSlash(rel))
@@ -357,7 +371,8 @@ func cmdDemo(root string, args []string) error {
 			return fmt.Errorf("publishing: %w", perr)
 		}
 	}
-	if rerr := recordDemo(root, s, d, m); rerr != nil {
+	digest, rerr := recordDemo(root, s, d, m)
+	if rerr != nil {
 		return fmt.Errorf("the demonstration is installed, and the record that "+
 			"`quilzo demo remove` takes it back with could not be written: %w", rerr)
 	}
@@ -365,13 +380,17 @@ func cmdDemo(root string, args []string) error {
 	// In the log, because this writes more of a store in one command than
 	// anything else here does. Somebody reading the history later should not
 	// have to infer a whole application from a scatter of commits.
-	record(root, resolveCaller(root, "").auditRecord("demo.install", "/",
+	if aerr := recordE(root, resolveCaller(root, "").auditRecord("demo.install", "/",
 		audit.Success, map[string]string{
 			"pages":     fmt.Sprint(len(d.Pages)),
 			"records":   fmt.Sprint(recordCount(d)),
 			"media":     fmt.Sprint(len(d.Media)),
 			"published": fmt.Sprint(*publish),
-		}))
+			"manifest":  digest,
+		})); aerr != nil {
+		return fmt.Errorf("the demonstration is installed, and the audit record "+
+			"that `quilzo demo remove` trusts its record by could not be written: %w", aerr)
+	}
 
 	w.Human("%s%s is installed.%s %s\n\n", bold, d.Name, reset, d.Summary)
 	w.Human("  %d page(s), %d record(s), %d image(s), %d listing(s), %d form(s)\n",

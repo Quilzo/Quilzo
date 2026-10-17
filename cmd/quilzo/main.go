@@ -1701,7 +1701,9 @@ func cmdPublish(root string, args []string) error {
 					"--no-a11y-check if this store is not what renders the "+
 					"pages", cerr)}
 		} else if n := a11y.BlockingCount(reports); n > 0 {
-			printA11y(reports)
+			if w.Mode != out.JSON {
+				printA11y(reports)
+			}
 			if !*force {
 				// A refusal is an audit event in its own right. AU-3 wants the
 				// outcome, and "someone tried to publish inaccessible content"
@@ -1721,7 +1723,7 @@ func cmdPublish(root string, args []string) error {
 					"--force-inaccessible needs --reason. An override without a stated " +
 						"justification is indistinguishable from not checking")
 			}
-			fmt.Printf("  %soverriding %d blocking failure(s): %s%s\n",
+			w.Human("  %soverriding %d blocking failure(s): %s%s\n",
 				yellow, n, *reason, reset)
 		}
 	}
@@ -1755,7 +1757,7 @@ func cmdPublish(root string, args []string) error {
 					return errBlocked{fmt.Errorf("%s\n  quilzo review status",
 						d.Reason)}
 				}
-				fmt.Printf("  %s%s%s\n", green, d.Reason, reset)
+				w.Human("  %s%s%s\n", green, d.Reason, reset)
 			}
 		}
 	}
@@ -1765,7 +1767,7 @@ func cmdPublish(root string, args []string) error {
 		return err
 	}
 	if len(pub.Changes) == 0 && pub.Previous == pub.Published {
-		fmt.Println("already live")
+		w.Human("already live\n")
 		return nil
 	}
 	record(root, caller.auditRecord("publish", "/", audit.Success,
@@ -1784,13 +1786,13 @@ func cmdPublish(root string, args []string) error {
 		changed = append(changed, c.Path)
 	}
 	fireWebhooks(root, "published", pub.Published, changed)
-	fmt.Printf("live is now %s  (%d change(s))\n", onOneLine(short(pub.Published)), len(pub.Changes))
+	w.Human("live is now %s  (%d change(s))\n", onOneLine(short(pub.Published)), len(pub.Changes))
 	if pub.Previous != "" {
-		fmt.Printf("  %sprevious %s is still stored; `quilzo rollback` moves the "+
+		w.Human("  %sprevious %s is still stored; `quilzo rollback` moves the "+
 			"pointer back%s\n", dim, short(pub.Previous), reset)
 	}
 	// Said plainly because it is the one thing a pointer cannot fix.
-	fmt.Printf("  %srolling back restores the content, not the fact that it was "+
+	w.Human("  %srolling back restores the content, not the fact that it was "+
 		"published%s\n", dim, reset)
 	return nil
 }
