@@ -142,16 +142,17 @@ func TestAStepUpThatCannotBeRecordedRefusesTheSignIn(t *testing.T) {
 	}
 }
 
-// The emailed code: it proves the session once, a wrong one does not, five
-// wrong ones burn it, and asking for more than three in ten minutes is
-// refused, so nobody's mailbox can be filled from here.
-func TestTheEmailedCodeProvesTheSessionOnce(t *testing.T) {
+// A held session is confirmed with a passkey or a fresh single sign-on and
+// never with a code sent by email: the code's routes are gone, the page
+// offers no email, and three failed passkey confirmations raise
+// verification-failing for the automations.
+func TestConfirmingASessionNeverUsesEmail(t *testing.T) {
 	srv, _ := setup(t)
 	if err := srv.Policy.Grant(auth.Binding{Principal: "ada@example.com", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	var sent []string
-	srv.StepUpMail = func(to, code string) error { sent = append(sent, to+":"+code); return nil }
+	var signals []string
+	srv.SignInSignal = func(who, kind, _ string) { signals = append(signals, who+" "+kind) }
 	secret, tok, err := srv.Tokens.IssueSession("s", "ada@example.com", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
 	if err != nil {
 		t.Fatal(err)
@@ -159,8 +160,8 @@ func TestTheEmailedCodeProvesTheSessionOnce(t *testing.T) {
 	if err := srv.Tokens.RequireStepUp(tok.ID, "Sydney"); err != nil {
 		t.Fatal(err)
 	}
-	as := func(path, body string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	as := func(method, path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(""))
 		r.AddCookie(&http.Cookie{Name: "quilzo_token", Value: secret})
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		r.Header.Set("Sec-Fetch-Site", "same-origin")
@@ -168,51 +169,22 @@ func TestTheEmailedCodeProvesTheSessionOnce(t *testing.T) {
 		srv.Handler().ServeHTTP(w, r)
 		return w
 	}
-	stepped := func() bool {
-		for _, x := range srv.Tokens.Snapshot() {
-			if x.ID == tok.ID {
-				return x.StepUp != ""
-			}
+	page := as(http.MethodGet, "/signin/verify").Body.String()
+	if strings.Contains(page, "email") || strings.Contains(page, "verify/code") {
+		t.Errorf("the confirm page offers email:\n%s", page)
+	}
+	for _, path := range []string{"/signin/verify/code", "/signin/verify/check"} {
+		if w := as(http.MethodPost, path); w.Code != http.StatusNotFound {
+			t.Errorf("%s still answers %d (%s)", path, w.Code, w.Header().Get("Location"))
 		}
-		return false
 	}
-	as("/signin/verify/code", "")
-	if len(sent) != 1 || !strings.HasPrefix(sent[0], "ada@example.com:") {
-		t.Fatalf("sent %v", sent)
+	for i := 0; i < 3; i++ {
+		r := httptest.NewRequest(http.MethodPost, "/signin/passkey/verify", nil)
+		r.AddCookie(&http.Cookie{Name: "quilzo_token", Value: secret})
+		srv.stepUpFailed(r)
 	}
-	code := strings.TrimPrefix(sent[0], "ada@example.com:")
-	wrong := "000000"
-	if code == wrong {
-		wrong = "111111"
-	}
-	as("/signin/verify/check", "code="+wrong)
-	if !stepped() {
-		t.Fatal("a wrong code let the session in")
-	}
-	as("/signin/verify/check", "code="+code)
-	if stepped() {
-		t.Fatal("the right code did not")
-	}
-	// It worked once; stepped up again, the same code does nothing.
-	srv.Tokens.RequireStepUp(tok.ID, "again")
-	as("/signin/verify/check", "code="+code)
-	if !stepped() {
-		t.Fatal("a used code worked a second time")
-	}
-	// Burned after five wrong tries, even when the sixth is right.
-	as("/signin/verify/code", "")
-	code = strings.TrimPrefix(sent[len(sent)-1], "ada@example.com:")
-	for i := 0; i < 5; i++ {
-		as("/signin/verify/check", "code="+wrong)
-	}
-	as("/signin/verify/check", "code="+code)
-	if !stepped() {
-		t.Error("a code was accepted after five wrong tries")
-	}
-	as("/signin/verify/code", "")
-	as("/signin/verify/code", "")
-	if len(sent) != 3 {
-		t.Errorf("%d codes were sent; the fourth in ten minutes should be refused", len(sent))
+	if len(signals) != 1 || signals[0] != "ada@example.com verification-failing" {
+		t.Errorf("signals %v", signals)
 	}
 }
 

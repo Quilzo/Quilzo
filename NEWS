@@ -450,6 +450,15 @@ Unreleased
     added a Content-Digest of their own, because the unsigned header was
     the one read.
 
+*** "Confirm it's you" no longer sends a code by email.  NIST SP
+    800-63B-4 forbids email for this (3.1.3.1: email shall not be used
+    for out-of-band authentication), and whoever can read a person's mail
+    could pass it.  A session the automations hold back is confirmed with
+    the person's passkey, by signing in again through single sign-on, or
+    by another administrator from Sign-ins.  Three failed passkey
+    confirmations from such a session raise verification-failing for the
+    automations, as three wrong codes did.
+
 *** Agents do nothing while their actions cannot be recorded.  With the
     log writer down, the audit key unreadable, the log's disk nearly full
     or the last record refused, an agent's run used to go on acting with

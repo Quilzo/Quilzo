@@ -27,15 +27,10 @@
       <p>The quickest way, and the one a stolen password cannot pass.</p>
       <p class="actions"><a class="btn" href="/signin/passkey">Use my passkey</a></p>
     </div>{{end}}
-    {{if .Mail}}<div class="card">
-      <h2>Get a code by email</h2>
-      {{if .Sent}}<p>A six-digit code has gone to your address. It works once, for ten minutes.</p>
-      <form method="post" action="/signin/verify/check" class="stack">
-        <label for="code">Code {{template "req"}}</label>
-        <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
-        <button type="submit">Confirm</button>
-      </form>{{else}}<p>We will send a code to the address you sign in as.</p>
-      <form method="post" action="/signin/verify/code"><button type="submit" class="btn-tonal">Send me a code</button></form>{{end}}
+    {{if .SingleSignOn}}<div class="card">
+      <h2>Sign in again with single sign-on</h2>
+      <p>Your organisation's sign-in proves it is you, and this session ends when the new one begins.</p>
+      <form method="post" action="/signout" class="inline"><button type="submit" class="btn-tonal">Sign in again</button></form>
     </div>{{end}}
     <div class="card">
       <h2>Ask an administrator</h2>
