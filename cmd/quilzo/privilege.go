@@ -439,13 +439,6 @@ var commandNeeds = map[string]need{
 	"vendor show":      {action: auth.ActView},
 	"vendor reconcile": {action: auth.ActView},
 
-	// An answer on a security questionnaire is a representation made under
-	// contract: the same authority as publishing. Filling one reads and
-	// writes nothing here.
-	"attest":        {action: auth.ActPublish},
-	"attest claims": {action: auth.ActView},
-	"attest fill":   {action: auth.ActView},
-
 	// Granting an outside firm access to this organisation's evidence is a
 	// commercial decision with a contract behind it, and issuing a package
 	// hands it over: both are publishes. Checking a package reads a file

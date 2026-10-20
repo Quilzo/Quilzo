@@ -19,12 +19,11 @@ import (
 //
 // # Why this is here and not another egress.Client
 //
-// Five surfaces in this program talk to something over HTTP without going
-// through Get: the assistant posts to a model, the Telegram bot calls the Bot
-// API and long-polls it, the exporter posts spans to a collector, and the
-// timestamp client posts an RFC 3161 request to an authority. None of them can
-// use Get, because Get is a GET and these are POSTs of protocol-specific
-// bodies. All five built their client with egress.Client, which enforces the
+// Surfaces in this program talk to something over HTTP without going
+// through Get: the assistant posts to a model, the exporter posts spans to a
+// collector, and the timestamp client posts an RFC 3161 request to an
+// authority. None of them can use Get, because Get is a GET and these are
+// POSTs of protocol-specific bodies. Each built its client with egress.Client, which enforces the
 // deployment's network mode and nothing else.
 //
 // The mode is the wrong half on its own. Two things were missing from every
@@ -33,12 +32,10 @@ import (
 // # Redirects
 //
 // Go's default client follows up to ten, to wherever it is sent, and none of
-// these four protocols redirect: an authority answers a timestamp request, a
-// collector answers 200, the Bot API answers JSON. Following one is all risk
-// and no function — and for Telegram the risk is concrete, because the bot
-// token is a path segment, so a redirect hands the credential to whoever the
-// redirect names. Go strips the Authorization header across hosts; it cannot
-// strip a URL.
+// these protocols redirect: an authority answers a timestamp request, a
+// collector answers 200, a model API answers JSON. Following one is all risk
+// and no function. Go strips the Authorization header across hosts; it cannot
+// strip a credential carried in the URL.
 //
 // So these clients refuse redirects outright. That is a rule a correct server
 // can always satisfy, which is the test this package applies elsewhere before
@@ -61,7 +58,7 @@ import (
 
 // Reach decides whether one address may be connected to, and says why not.
 //
-// A function rather than a flag because these five do not want the same
+// A function rather than a flag because these callers do not want the same
 // answer. An authority is a public service and has no business on a private
 // address; a collector is usually a process on the same machine and has no
 // business on the public internet. A single rule would be wrong for one of

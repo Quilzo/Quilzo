@@ -9,13 +9,12 @@ import "strings"
 //
 // # Why this is here rather than in each interface
 //
-// Because the answer has to be the same everywhere, and it was not. The
-// Telegram editor knew that "image" and "poster" want a picture and that "src"
-// wants a video, so it offered a picker; the browser did not know, so it
-// offered a text box and somebody attaching a photograph typed a
-// sixty-four-character hash by hand. One interface had the table and the other
-// had the gap, which is the shape of drift this project keeps finding: two
-// halves of one capability, each correct on its own.
+// Because the answer has to be the same everywhere. An interface that does not
+// know that "image" and "poster" want a picture and that "src" wants a video
+// offers a text box, and somebody attaching a photograph types a
+// sixty-four-character hash by hand. A table kept in each interface is the
+// shape of drift this project keeps finding: two halves of one capability,
+// each correct on its own.
 //
 // It belongs in this package because a section is where the field lives. The
 // catalogue already says what fields a kind has; this says what two of them

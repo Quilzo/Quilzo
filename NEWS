@@ -463,17 +463,6 @@ Unreleased
     collection's type, as adding one record does; one that does not fit
     imports nothing.
 
-** Removed
-
-*** `quilzo telegram`, `quilzo slack` and `quilzo discord` are gone, with
-    the Telegram Mini App, its systemd unit, its Caddy host and port 8082.  Each
-    was a separate internet-facing process that could publish on behalf of an
-    outside account, holding a bot token or signing secret, and each duplicated
-    what the admin already does better: it can show what a publish will
-    change, and a chat window cannot.  Pages are written and published in the
-    admin, through the CLI, or by an agent over MCP.  Slack's audit log is
-    still a SIEM source; that reads a file and opens nothing.
-
 
 v0.3.0 — 20 September 2026
 ==========================
@@ -896,10 +885,6 @@ feature release.
 
 ** Not in this release, and why
 
-*** The Slack signing secret was also the editor's signing key.  There is no
-    Slack surface in v0.2.x; it was added afterwards, so the reuse cannot
-    happen here.
-
 *** Tool calls and delegation.  An agent's declared tool host was a field the
     model filled in, and a tool call did not taint the run.  Neither exists in
     v0.2.x: Manifest.Tools and Manifest.Delegates were both added afterwards.
@@ -1098,16 +1083,6 @@ dependency count is anything but zero.
     Script, event handlers, executable URL schemes and external stylesheets
     are removed; anything that could not be translated is named with the
     shape it should become, and the layout is not written while any remain.
-
-** Publishing from Telegram
-
-*** quilzo telegram serve is a third process: a Mini App that turns a form in
-    a Telegram chat into a published page.  It serves script-src 'none'.
-
-*** Files sent to the bot — photographs, video, audio, voice notes — go into
-    the media library, validated by decoding exactly as an upload is.  An
-    image with no description is asked about, because one that has none does
-    not publish.
 
 ** The assistant
 

@@ -1,11 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
 // SPDX-License-Identifier: Apache-2.0
 
-// Package room is conversation, built so that what was said stays said.
-//
-// Distinct from internal/chat, which is the inbound side of a messenger
-// integration — a Telegram or Slack bot taking commands. This is the
-// organisation's own conversation.
+// Package room is the organisation's own conversation, built so that what
+// was said stays said.
 //
 // # An edit is an append, not a rewrite
 //

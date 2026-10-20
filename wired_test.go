@@ -15,14 +15,12 @@ import (
 
 // Every package is reached by something other than its own tests.
 //
-// internal/slack and internal/discord were complete, correct and reachable by
-// nobody. A signature verifier with a real test suite, no CLI command, no
-// route, and nothing importing it: about six hundred lines that had never run
-// outside a test. internal/chat was built as the layer beneath them and only
-// Telegram ever arrived there.
+// A package can be complete, correct and reachable by nobody: a signature
+// verifier with a real test suite, no CLI command, no route, and nothing
+// importing it, hundreds of lines that never run outside a test.
 //
-// Nothing failed. Both packages compile, both are covered, and `go vet` has no
-// opinion about a package nobody imports — which is why this survived. It is
+// Nothing fails. Such a package compiles, is covered, and `go vet` has no
+// opinion about a package nobody imports — which is how one survives. It is
 // the same shape as the federation loops, whose comment records the same
 // discovery: "Both were built and neither was reachable — a followed site that
 // confirmed nothing and posted nothing — until this started them."

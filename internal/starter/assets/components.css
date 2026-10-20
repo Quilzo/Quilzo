@@ -93,11 +93,10 @@ h1, h2, h3, h4, h5, h6 {
 }
 /* The token is the ceiling, not the size.
    The scale tokens are a hierarchy for a wide column, and applied directly they
-   produce a 42px heading in a 390px phone viewport — which is what a Mini App
-   is. So each heading grows with the viewport up to its token and no further:
+   produce a 42px heading in a 390px phone viewport. So each heading grows with the viewport up to its token and no further:
    --scale still decides how dramatic the hierarchy is on a desktop, and a
    narrow screen gets something readable rather than something shouted.
-   Found by photographing this at 390px for a Telegram submission. */
+   Found by photographing this at 390px. */
 h1 { font-size: clamp(1.75rem, 1.15rem + 2.6vw, var(--text-3xl));
      line-height: 1.08; font-weight: 800; letter-spacing: var(--tracking-display); }
 h2 { font-size: clamp(1.4rem, 1.1rem + 1.4vw, var(--text-2xl));

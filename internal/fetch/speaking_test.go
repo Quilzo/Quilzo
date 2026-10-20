@@ -14,11 +14,9 @@ import (
 
 // A redirect is refused rather than followed.
 //
-// None of the four protocols on the other end of these clients redirects, so
-// following one is all risk and no function. For Telegram it is a credential
-// leak and not an abstract risk: the bot token is a path segment of every
-// call, so a redirect hands the credential to whoever the redirect names. Go
-// strips the Authorization header across hosts and cannot strip a URL.
+// None of the protocols on the other end of these clients redirects, so
+// following one is all risk and no function. Go strips the Authorization
+// header across hosts and cannot strip a credential carried in the URL.
 func TestAProtocolClientRefusesToFollowARedirect(t *testing.T) {
 	var landed bool
 	elsewhere := httptest.NewServer(http.HandlerFunc(

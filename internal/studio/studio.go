@@ -21,11 +21,9 @@
 //	that header is that the site has no scripts rather than that it has some
 //	the CSP catches".
 //
-//	A separate server. Which is the pattern this codebase already reaches for:
-//	internal/telegram/miniapp.go is "its own server rather than a route on the
-//	admin or the public site, because it has a different exposure and therefore
-//	needs a different policy". A capture surface is authenticated, writable and
-//	full of script — three properties neither of the others has.
+//	A separate server, because it has a different exposure and therefore needs
+//	a different policy. A capture surface is authenticated, writable and full
+//	of script — three properties neither of the others has.
 //
 // So: a fourth server, and the admin's claim stays exactly true.
 //

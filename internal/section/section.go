@@ -224,9 +224,8 @@ var kinds = []Kind{
 		Stub: map[string]any{
 			"title": "Pictures", "shape": "square",
 			// No image. A stub pointing at a placeholder path publishes a
-			// broken picture, which is worse than an empty section — found by
-			// driving the Telegram editor and publishing what it produced.
-			// The picker is how a file gets attached.
+			// broken picture, which is worse than an empty section. The
+			// picker is how a file gets attached.
 			"items": []any{
 				map[string]any{"image": "",
 					"alt":     "Describe what is in the picture, for somebody who cannot see it",
