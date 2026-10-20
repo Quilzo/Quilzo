@@ -107,13 +107,29 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 		}
 		switch op {
 		case "route-add":
+			params := gateway.RouteParams{MaxTokens: strings.TrimSpace(r.FormValue("max_tokens_field")),
+				Timeout: strings.TrimSpace(r.FormValue("timeout")), AutoToolChoice: r.FormValue("auto_tool_choice") == "yes"}
+			for _, f := range []struct {
+				field string
+				into  **float64
+			}{{"temperature", &params.Temperature}, {"top_p", &params.TopP}} {
+				if raw := strings.TrimSpace(r.FormValue(f.field)); raw != "" {
+					v, err := strconv.ParseFloat(raw, 64)
+					if err != nil {
+						back("e", f.field+" is a number")
+						return
+					}
+					*f.into = &v
+				}
+			}
 			kept = append(kept, gateway.Route{Name: name,
 				URL:      strings.TrimSpace(r.FormValue("url")),
 				Model:    strings.TrimSpace(r.FormValue("model")),
 				KeyEnv:   strings.TrimSpace(r.FormValue("key_env")),
 				PriceIn:  strings.TrimSpace(r.FormValue("price_in")),
 				PriceOut: strings.TrimSpace(r.FormValue("price_out")),
-				Personal: r.FormValue("personal") == "yes"})
+				Personal: r.FormValue("personal") == "yes",
+				Params:   params})
 		case "route-first":
 			if found == nil {
 				back("e", "there is no route called "+name)

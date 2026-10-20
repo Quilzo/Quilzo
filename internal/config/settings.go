@@ -756,8 +756,11 @@ var settings = []Setting{
 		Why: "It sees the goal and the action and nothing of what the agent saw, so " +
 			"nothing a page planted can reach it. It can let an action through or stop " +
 			"the run with its reason for a person to read and continue from — never " +
-			"widen, never rewrite. It is the last defence, not the only one, and it " +
-			"costs one more model call per action: empty means none.",
+			"widen, never rewrite. It is asked through the route named and no other, " +
+			"never a fallback, so it is a second model only when that route is one: " +
+			"name a route other than the one the agents try first, preferably another " +
+			"provider's. It is the last defence, not the only one, and it costs one " +
+			"more model call per action: empty means none.",
 	},
 	{
 		Key: "cell.backend", Kind: Text, Default: "",

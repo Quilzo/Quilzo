@@ -100,6 +100,30 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "agent.reviewer-not-second",
+		Title:    "The reviewer is not a second model",
+		Severity: Medium,
+		Controls: []string{"SI-4", "AC-5"},
+		Why: "The reviewer is offered every action an agent chooses so that a model " +
+			"steered by something it read is checked by one that read nothing. Named as " +
+			"the route every caller tries first, it is usually the agents' own model, and " +
+			"an injection that steered one steers the other; named as a route that is not " +
+			"declared, every run that uses a model stops.",
+		Check: func(s State) []Finding {
+			switch {
+			case s.AI.ReviewerMissing:
+				return []Finding{{Resource: "setting/agent.reviewer",
+					Detail: "agent.reviewer names " + s.AI.Reviewer + ", and no route by that name is declared",
+					Fix:    "quilzo gateway status  # then quilzo config set agent.reviewer ROUTE"}}
+			case s.AI.ReviewerFirst:
+				return []Finding{{Resource: "setting/agent.reviewer",
+					Detail: "agent.reviewer names " + s.AI.Reviewer + ", the route every agent tries first",
+					Fix:    "quilzo config set agent.reviewer ANOTHER-ROUTE  # a different model, preferably another provider"}}
+			}
+			return nil
+		},
+	},
+	{
 		ID:       "model.personal-data-leaves",
 		Title:    "A model provider outside the organisation receives personal data",
 		Severity: Medium,

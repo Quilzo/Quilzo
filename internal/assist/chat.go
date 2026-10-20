@@ -151,9 +151,12 @@ type ChatRequest struct {
 	Messages []ChatMessage
 	Tools    []ChatTool
 	// ToolChoice is "auto", "none" or "required"; empty leaves it to the
-	// server.
-	ToolChoice string
-	MaxTokens  int
+	// server. ToolChoiceName, with "required", is the one tool the model
+	// must call, passed on as the named choice it is rather than widened
+	// to any tool.
+	ToolChoice     string
+	ToolChoiceName string
+	MaxTokens      int
 }
 
 // ChatReply is the model's turn.
@@ -196,6 +199,15 @@ func (r ChatRequest) Check() error {
 	case "", "auto", "none", "required":
 	default:
 		return fmt.Errorf("tool_choice is auto, none or required, not %q", r.ToolChoice)
+	}
+	if r.ToolChoiceName != "" {
+		named := false
+		for _, t := range r.Tools {
+			named = named || t.Function.Name == r.ToolChoiceName
+		}
+		if r.ToolChoice != "required" || !named {
+			return fmt.Errorf("the tool a request names as its choice, %q, is one of the tools it offers", r.ToolChoiceName)
+		}
 	}
 	images := 0
 	for _, m := range r.Messages {
@@ -263,20 +275,23 @@ func (h *HTTPModel) Chat(ctx context.Context, req ChatRequest) (ChatReply, error
 		return ChatReply{}, err
 	}
 	payload := map[string]any{
-		"model":       h.Model,
-		"messages":    req.Messages,
-		"temperature": 0.2,
-		"stream":      false,
+		"model":    h.Model,
+		"messages": req.Messages,
+		"stream":   false,
 	}
 	if len(req.Tools) > 0 {
 		payload["tools"] = req.Tools
-		if req.ToolChoice != "" {
+		switch {
+		case req.ToolChoice == "required" && h.Params.AutoToolChoice:
+			payload["tool_choice"] = "auto"
+		case req.ToolChoiceName != "":
+			payload["tool_choice"] = map[string]any{"type": "function",
+				"function": map[string]string{"name": req.ToolChoiceName}}
+		case req.ToolChoice != "":
 			payload["tool_choice"] = req.ToolChoice
 		}
 	}
-	if req.MaxTokens > 0 {
-		payload["max_tokens"] = req.MaxTokens
-	}
+	h.Params.apply(payload, req.MaxTokens)
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return ChatReply{}, err
@@ -301,7 +316,7 @@ func (h *HTTPModel) Chat(ctx context.Context, req ChatRequest) (ChatReply, error
 		if len(snippet) > 300 {
 			snippet = snippet[:300]
 		}
-		return ChatReply{}, fmt.Errorf("model returned %d: %s", resp.StatusCode, snippet)
+		return ChatReply{}, &StatusError{Code: resp.StatusCode, Body: snippet}
 	}
 	var out struct {
 		Choices []struct {

@@ -60,6 +60,27 @@ type openaiRequest struct {
 	Stream              bool                 `json:"stream"`
 }
 
+// readToolChoice reads a tool choice as OpenAI's chat completions and
+// Responses APIs write it: a word, or an object naming one function, in
+// either API's shape. A named choice stays named: widening it to "any
+// tool" would let the model call a tool the caller did not ask for.
+func readToolChoice(raw json.RawMessage) (choice, name string) {
+	if json.Unmarshal(raw, &choice) == nil {
+		return choice, ""
+	}
+	var named struct {
+		Name     string `json:"name"`
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
+	_ = json.Unmarshal(raw, &named)
+	if named.Function.Name != "" {
+		return "required", named.Function.Name
+	}
+	return "required", named.Name
+}
+
 // ReadOpenAI reads a chat completion request.
 func ReadOpenAI(r io.Reader) (Request, error) {
 	var in openaiRequest
@@ -72,14 +93,7 @@ func ReadOpenAI(r io.Reader) (Request, error) {
 		out.Chat.MaxTokens = in.MaxCompletionTokens
 	}
 	if len(in.ToolChoice) > 0 {
-		// A choice naming one function is read as "required", which is
-		// what it asks for in every case this can honour.
-		var s string
-		if json.Unmarshal(in.ToolChoice, &s) == nil {
-			out.Chat.ToolChoice = s
-		} else {
-			out.Chat.ToolChoice = "required"
-		}
+		out.Chat.ToolChoice, out.Chat.ToolChoiceName = readToolChoice(in.ToolChoice)
 	}
 	if err := out.Chat.Check(); err != nil {
 		return Request{}, err
@@ -161,6 +175,7 @@ type anthropicRequest struct {
 	Tools      []anthropicTool    `json:"tools"`
 	ToolChoice *struct {
 		Type string `json:"type"`
+		Name string `json:"name"`
 	} `json:"tool_choice"`
 	MaxTokens int  `json:"max_tokens"`
 	Stream    bool `json:"stream"`
@@ -328,8 +343,10 @@ func ReadAnthropic(r io.Reader) (Request, error) {
 		switch c.Type {
 		case "auto", "none":
 			out.Chat.ToolChoice = c.Type
-		case "any", "tool":
+		case "any":
 			out.Chat.ToolChoice = "required"
+		case "tool":
+			out.Chat.ToolChoice, out.Chat.ToolChoiceName = "required", c.Name
 		default:
 			return Request{}, fmt.Errorf("tool_choice is auto, any, tool or none, not %q", c.Type)
 		}
@@ -592,12 +609,7 @@ func ReadResponses(r io.Reader) (Request, error) {
 			Function: assist.ToolFunction{Name: t.Name, Description: t.Description, Parameters: t.Parameters}})
 	}
 	if len(in.ToolChoice) > 0 {
-		var choice string
-		if json.Unmarshal(in.ToolChoice, &choice) == nil {
-			out.Chat.ToolChoice = choice
-		} else {
-			out.Chat.ToolChoice = "required"
-		}
+		out.Chat.ToolChoice, out.Chat.ToolChoiceName = readToolChoice(in.ToolChoice)
 	}
 	if err := out.Chat.Check(); err != nil {
 		return Request{}, err

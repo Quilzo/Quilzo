@@ -250,6 +250,9 @@ func configSet(root string, args []string) error {
 	}
 	caller := resolveCaller(root, "")
 	before := c.Raw(key)
+	if err := checkSetting(root, key, value); err != nil {
+		return err
+	}
 
 	if err := c.Set(key, value, reason, caller.Name); err != nil {
 		var need *config.ErrNeedsAcceptance
@@ -339,4 +342,22 @@ var _ = json.Marshal
 // for one call in a branch.
 func errorsAs(err error, target **config.ErrNeedsAcceptance) bool {
 	return errors.As(err, target)
+}
+
+// checkSetting refuses a value that names something this store does not
+// have, which a setting's own kind cannot know: a reviewer naming a route
+// that is not declared would stop every run that uses a model.
+func checkSetting(root, key, value string) error {
+	if key != "agent.reviewer" || value == "" {
+		return nil
+	}
+	gw, _, err := modelGateway(root)
+	if err != nil {
+		return fmt.Errorf("the model gateway could not be read: %w", err)
+	}
+	if gw == nil || !gw.HasRoute(value) {
+		return fmt.Errorf("agent.reviewer names a route of the model gateway, and no route called %s is "+
+			"declared: quilzo gateway status", value)
+	}
+	return nil
 }

@@ -36,10 +36,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -71,6 +73,85 @@ type Route struct {
 	// with placeholders before a prompt leaves, and put back in the answer.
 	// Card numbers and credentials are replaced for every route.
 	Personal bool `json:"personal,omitempty"`
+	// Params are what this route's model is sent beside the conversation.
+	Params RouteParams `json:"params,omitempty"`
+}
+
+// RouteParams are the request fields one route needs. Nothing beyond the
+// conversation and the caller's own limit is sent unless a route says so,
+// because current frontier models refuse fields older ones accepted (see
+// assist.Params).
+type RouteParams struct {
+	// MaxTokens names the output-limit field: max_tokens, the default, or
+	// max_completion_tokens for OpenAI's reasoning models.
+	MaxTokens string `json:"max_tokens,omitempty"`
+	// Temperature and TopP are sent on every call through this route,
+	// and are not sent at all when empty.
+	Temperature *float64 `json:"temperature,omitempty"`
+	TopP        *float64 `json:"top_p,omitempty"`
+	// Timeout is how long one call may take, such as "300s" for a model
+	// that reasons at length; empty is the default of two minutes.
+	Timeout string `json:"timeout,omitempty"`
+	// AutoToolChoice sends "auto" where a caller forces a tool, for a model
+	// that answers a forced choice with an error.
+	AutoToolChoice bool `json:"auto_tool_choice,omitempty"`
+}
+
+// Check refuses parameters that could not be sent.
+func (p RouteParams) Check() error {
+	switch p.MaxTokens {
+	case "", "max_tokens", "max_completion_tokens":
+	default:
+		return fmt.Errorf("max_tokens names the output-limit field: max_tokens or max_completion_tokens, not %q", p.MaxTokens)
+	}
+	// Written so that NaN, which compares false with everything, is refused
+	// too: it could not be written back as JSON.
+	if p.Temperature != nil && !(*p.Temperature >= 0 && *p.Temperature <= 2) {
+		return fmt.Errorf("temperature is between 0 and 2")
+	}
+	if p.TopP != nil && !(*p.TopP > 0 && *p.TopP <= 1) {
+		return fmt.Errorf("top_p is more than 0 and at most 1")
+	}
+	if p.Timeout != "" {
+		d, err := time.ParseDuration(p.Timeout)
+		if err != nil || d < time.Second || d > 30*time.Minute {
+			return fmt.Errorf("timeout is a duration from 1s to 30m, such as 300s")
+		}
+	}
+	return nil
+}
+
+// String says what the route sends beyond the conversation, for the pages
+// and commands that list routes; empty when it sends nothing more.
+func (p RouteParams) String() string {
+	var parts []string
+	if p.MaxTokens != "" {
+		parts = append(parts, p.MaxTokens)
+	}
+	if p.Temperature != nil {
+		parts = append(parts, "temperature "+strconv.FormatFloat(*p.Temperature, 'g', -1, 64))
+	}
+	if p.TopP != nil {
+		parts = append(parts, "top_p "+strconv.FormatFloat(*p.TopP, 'g', -1, 64))
+	}
+	if p.Timeout != "" {
+		parts = append(parts, p.Timeout+" a call")
+	}
+	if p.AutoToolChoice {
+		parts = append(parts, "auto tool choice")
+	}
+	return strings.Join(parts, ", ")
+}
+
+// Model is the route's parameters as the model client takes them, and the
+// time one call may take (zero is the client's default).
+func (p RouteParams) Model() (assist.Params, time.Duration) {
+	var d time.Duration
+	if p.Timeout != "" {
+		d, _ = time.ParseDuration(p.Timeout)
+	}
+	return assist.Params{MaxTokensField: p.MaxTokens, Temperature: p.Temperature, TopP: p.TopP,
+		AutoToolChoice: p.AutoToolChoice}, d
 }
 
 // Budget bounds one caller.
@@ -105,9 +186,12 @@ type Config struct {
 }
 
 var (
-	reName   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
-	reEnv    = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
-	reWho    = regexp.MustCompile(`^(\*|[a-z][a-z0-9-]*(:[a-z0-9][a-z0-9-]{0,62})?|person:[A-Za-z0-9._@+-]{1,254})$`)
+	reName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
+	reEnv  = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
+	// A caller is a kind and a name. The name may be what single sign-on
+	// gives a person, an email address, so door:dana@quilzo.io and
+	// today:dana@quilzo.io can carry a budget as person: always could.
+	reWho    = regexp.MustCompile(`^(\*|[a-z][a-z0-9-]*(:[A-Za-z0-9._@+-]{1,254})?)$`)
 	reModelN = regexp.MustCompile(`^[A-Za-z0-9._:/@-]{1,120}$`)
 )
 
@@ -133,6 +217,9 @@ func (c Config) Validate() error {
 		if r.KeyEnv != "" && !reEnv.MatchString(r.KeyEnv) {
 			return fmt.Errorf("route %s: %q is not an environment variable name; "+
 				"the key itself is never written here", r.Name, r.KeyEnv)
+		}
+		if err := r.Params.Check(); err != nil {
+			return fmt.Errorf("route %s: %w", r.Name, err)
 		}
 		in, out, err := r.prices()
 		if err != nil {
@@ -288,28 +375,56 @@ func (g *Gateway) For(consumer string, also ...string) Model {
 	return &bound{g: g, consumers: append([]string{consumer}, also...)}
 }
 
+// ForRoute is For through one route and no other: no fallback, so a call
+// is answered by the model that route names or not at all. A reviewer
+// meant to be a second model is only that if it cannot fall back to the
+// first.
+func (g *Gateway) ForRoute(route, consumer string, also ...string) Model {
+	return &bound{g: g, consumers: append([]string{consumer}, also...), only: route}
+}
+
+// HasRoute reports whether a route is declared.
+func (g *Gateway) HasRoute(name string) bool {
+	for _, r := range g.cfg.Routes {
+		if r.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// FirstRoute is the route every caller tries first.
+func (g *Gateway) FirstRoute() string {
+	if len(g.cfg.Routes) == 0 {
+		return ""
+	}
+	return g.cfg.Routes[0].Name
+}
+
 type bound struct {
 	g         *Gateway
 	consumers []string
+	// only, when set, is the one route this binding may use.
+	only string
 }
 
 func (b *bound) Name() string { return "gateway:" + b.consumers[0] }
 
 func (b *bound) Complete(ctx context.Context, system, user string) (string, error) {
-	out, _, _, err := b.g.complete(ctx, b.consumers, system, user)
+	out, _, _, err := b.g.complete(ctx, b.consumers, b.only, system, user)
 	return out, err
 }
 
 // CompleteMetered is Complete with what the call used.
 func (b *bound) CompleteMetered(ctx context.Context, system, user string) (string, assist.Usage, error) {
-	out, u, _, err := b.g.complete(ctx, b.consumers, system, user)
+	out, u, _, err := b.g.complete(ctx, b.consumers, b.only, system, user)
 	return out, u, err
 }
 
 // CompleteCosted is Complete with what the call used and what it cost, in
 // millionths of the configuration's currency.
 func (b *bound) CompleteCosted(ctx context.Context, system, user string) (string, assist.Usage, int64, error) {
-	out, u, cost, err := b.g.complete(ctx, b.consumers, system, user)
+	out, u, cost, err := b.g.complete(ctx, b.consumers, b.only, system, user)
 	return out, u, int64(cost), err
 }
 
@@ -397,7 +512,7 @@ func (g *Gateway) model(r Route) (Model, error) {
 	return m, nil
 }
 
-func (g *Gateway) complete(ctx context.Context, consumers []string, system, user string) (string, assist.Usage, Money, error) {
+func (g *Gateway) complete(ctx context.Context, consumers []string, only, system, user string) (string, assist.Usage, Money, error) {
 	consumer, also := consumers[0], consumers[1:]
 	in := len(system) + len(user)
 	if err := g.admit(consumers, in); err != nil {
@@ -411,7 +526,7 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, system, user
 		return "", assist.Usage{}, 0, ErrNoRoute
 	}
 	var errs []string
-	for _, r := range g.cfg.Routes {
+	for _, r := range g.routesFor(only) {
 		g.mu.Lock()
 		down := g.now().Before(g.downTil[r.Name])
 		g.mu.Unlock()
@@ -452,16 +567,13 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, system, user
 		}
 		took := g.now().Sub(start)
 		if err != nil {
-			if kind := Trouble(err); kind != "" && g.OnTrouble != nil {
-				g.OnTrouble(kind, r.Name)
-			}
-			g.failed(r.Name)
+			kind := g.failure(ctx, r.Name, err)
 			g.ledger.record(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name,
-				Model: r.Model, In: in, Millis: took.Milliseconds(), Outcome: "failed"})
-			errs = append(errs, r.Name+": "+err.Error())
-			if ctx.Err() != nil {
-				break
+				Model: r.Model, In: in, Millis: took.Milliseconds(), Outcome: kind.outcome()})
+			if kind != unavailable {
+				return "", assist.Usage{}, 0, err
 			}
+			errs = append(errs, r.Name+": "+err.Error())
 			continue
 		}
 		g.mu.Lock()
@@ -475,7 +587,80 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, system, user
 			Masked: masked, Outcome: "ok"})
 		return out, used, cost, nil
 	}
+	if only != "" && len(errs) == 0 {
+		return "", assist.Usage{}, 0, fmt.Errorf("%w: the route %s is not declared", ErrNoRoute, only)
+	}
 	return "", assist.Usage{}, 0, fmt.Errorf("%w: %s", ErrNoRoute, strings.Join(errs, "; "))
+}
+
+// routesFor are the routes a call may try: all of them in order, or the
+// one a binding is pinned to.
+func (g *Gateway) routesFor(only string) []Route {
+	if only == "" {
+		return g.cfg.Routes
+	}
+	for _, r := range g.cfg.Routes {
+		if r.Name == only {
+			return []Route{r}
+		}
+	}
+	return nil
+}
+
+// failureKind is what a failed call says about its route.
+type failureKind int
+
+const (
+	// unavailable is the route's own trouble: no answer, a timeout, a 408
+	// or 429, a 5xx, a key or an account the provider refused. It counts
+	// towards the route's rest, and the call moves on to the next route.
+	unavailable failureKind = iota
+	// refused is the request's trouble: a 400, 413 or 422 that every route
+	// would answer alike. It goes back to the caller, rests nothing, and
+	// is not sent to the other routes.
+	refused
+	// cancelled is the caller going away. It says nothing about the route.
+	cancelled
+)
+
+func (k failureKind) outcome() string {
+	switch k {
+	case refused:
+		return "refused"
+	case cancelled:
+		return "cancelled"
+	}
+	return "failed"
+}
+
+// failure classifies a failed call, tells the shield what it should know,
+// and rests the route when the failure was the route's.
+//
+// Any error used to count towards the rest every caller shares, so
+// somebody allowed at the model door could keep a route resting with
+// requests it would refuse anyway, pushing everyone onto a dearer route
+// or another jurisdiction, and the same bad request was sent to every
+// route in turn.
+func (g *Gateway) failure(ctx context.Context, route string, err error) failureKind {
+	if ctx.Err() != nil {
+		return cancelled
+	}
+	kind := unavailable
+	trouble := Trouble(err)
+	var se *assist.StatusError
+	if errors.As(err, &se) && trouble == "" {
+		switch se.Code {
+		case http.StatusBadRequest, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity:
+			kind = refused
+		}
+	}
+	if trouble != "" && g.OnTrouble != nil {
+		g.OnTrouble(trouble, route)
+	}
+	if kind == unavailable {
+		g.failed(route)
+	}
+	return kind
 }
 
 func (g *Gateway) failed(route string) {
@@ -579,7 +764,10 @@ func OpenLedger(path string, now time.Time) (*Ledger, error) {
 }
 
 func (l *Ledger) keep(u Usage) {
-	if u.Outcome == "ok" || u.Outcome == "failed" {
+	// Every call that sent a prompt counts against its callers, whatever
+	// came back: a request the provider refused, or one the caller gave up
+	// on, still sent what it sent.
+	if u.Outcome == "ok" || u.Outcome == "failed" || u.Outcome == "refused" || u.Outcome == "cancelled" {
 		for _, who := range u.payers() {
 			if u.At.UTC().Format("2006-01-02") == l.day {
 				l.used[who] += u.In + u.Out
@@ -714,7 +902,7 @@ func (l *Ledger) Summary(cfg Config, now time.Time) []Spend {
 			switch u.Outcome {
 			case "ok":
 				s.Calls++
-			case "failed":
+			case "failed", "refused", "cancelled":
 				s.Failed++
 			case "over-budget":
 				s.Refused++

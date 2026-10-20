@@ -337,6 +337,12 @@ type AIFacts struct {
 	// were registered.
 	ShadowAI     map[string]int `json:"shadow_ai,omitempty"`
 	CardsChanged []string       `json:"cards_changed,omitempty"`
+	// Reviewer is the route agent.reviewer names; ReviewerFirst says it is
+	// the route every caller tries first, which is usually the agents' own;
+	// ReviewerMissing that no route by that name is declared.
+	Reviewer        string `json:"reviewer,omitempty"`
+	ReviewerFirst   bool   `json:"reviewer_first,omitempty"`
+	ReviewerMissing bool   `json:"reviewer_missing,omitempty"`
 }
 
 // AgentProgramFact is an agent's program and its backend's standing here.

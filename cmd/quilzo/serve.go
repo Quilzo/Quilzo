@@ -184,7 +184,16 @@ func cmdServe(root string, args []string) error {
 
 	srv.Settings = &admin.Settings{
 		Load: func() (*config.Config, error) { return loadConfig(root) },
-		Save: func(c *config.Config) error { return saveConfig(root, c) },
+		Save: func(c *config.Config) error {
+			// A changed setting that names something this store lacks is
+			// refused here as on the command line (checkSetting).
+			if prev, err := loadConfig(root); err == nil && prev.Raw("agent.reviewer") != c.Raw("agent.reviewer") {
+				if err := checkSetting(root, "agent.reviewer", c.Raw("agent.reviewer")); err != nil {
+					return err
+				}
+			}
+			return saveConfig(root, c)
+		},
 	}
 	// Content types, re-read per call for the same reason CheckTypes is: a type
 	// added from the CLI while this is running must take effect immediately.

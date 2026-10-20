@@ -65,6 +65,12 @@ func doorStatus(err error) int {
 	case errors.Is(err, gateway.ErrPictureNotAllowed):
 		return http.StatusBadRequest
 	}
+	// A request the provider refused as malformed comes back unwrapped
+	// (see gateway's refused), and is the caller's to fix.
+	var se *assist.StatusError
+	if errors.As(err, &se) && se.Code >= 400 && se.Code < 500 {
+		return se.Code
+	}
 	return http.StatusBadGateway
 }
 

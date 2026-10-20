@@ -25,7 +25,7 @@
   {{range $i, $h := .Health}}
   <tr>
     <th scope="row">{{$h.Route.Name}}<div class="hint mono">{{$h.Route.URL}}</div></th>
-    <td><code>{{$h.Route.Model}}</code></td>
+    <td><code>{{$h.Route.Model}}</code>{{with $h.Route.Params.String}}<div class="hint">{{.}}</div>{{end}}</td>
     <td>{{if $h.Route.KeyEnv}}<code>${{$h.Route.KeyEnv}}</code>{{if not $h.KeySet}} <span class="tag tag-bad">not set</span>{{end}}{{else}}<span class="hint">none — this network only</span>{{end}}</td>
     <td>{{if $h.Route.Personal}}<span class="tag tag-warn">sent</span>{{else}}<span class="tag tag-ok">masked</span>{{end}}</td>
     <td>{{if or $h.Route.PriceIn $h.Route.PriceOut}}{{or $h.Route.PriceIn "0"}} in, {{or $h.Route.PriceOut "0"}} out{{with $.Cfg}} {{.Currency}}{{end}}{{else}}<span class="hint">free</span>{{end}}</td>
@@ -81,6 +81,21 @@
     <p id="rkey-help" class="help">The name of the environment variable holding the key — never the key itself. Leave empty for a model on this network.</p></div>
   <div class="field"><label><input type="checkbox" name="personal" value="yes" aria-describedby="rpersonal-help"> It may receive personal data</label>
     <p id="rpersonal-help" class="help">Only for a model on this machine or network, or a provider with an agreement to process personal data for you. Otherwise email addresses, telephone numbers and bank accounts are replaced before a prompt leaves and put back in the answer. Card numbers and keys are replaced for every route.</p></div>
+  <details class="astable"><summary>What this model is sent<span class="chev">{{icon "expand_more"}}</span></summary>
+  <p class="help" id="rparams-help">Current frontier models refuse fields older ones took, so nothing beyond the conversation is sent unless set here.</p>
+  <div class="field"><label for="rmaxfield">Output-limit field</label>
+    <select id="rmaxfield" name="max_tokens_field" aria-describedby="rparams-help">
+      <option value="">max_tokens</option><option value="max_completion_tokens">max_completion_tokens</option></select></div>
+  <div class="numrow">
+    <div class="field"><label for="rtemp">Temperature</label>
+      <input id="rtemp" name="temperature" inputmode="decimal" placeholder="none"></div>
+    <div class="field"><label for="rtopp">Top p</label>
+      <input id="rtopp" name="top_p" inputmode="decimal" placeholder="none"></div>
+    <div class="field"><label for="rtimeout">Time a call may take</label>
+      <input id="rtimeout" name="timeout" placeholder="120s"></div>
+  </div>
+  <div class="field"><label><input type="checkbox" name="auto_tool_choice" value="yes"> Send auto where a caller forces a tool</label></div>
+  </details>
   <button type="submit">Add route</button>
 </form>
 
