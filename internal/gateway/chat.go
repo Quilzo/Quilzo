@@ -39,7 +39,7 @@ var ErrPictureNotAllowed = errors.New("a picture cannot be checked for personal 
 // ChatCosted is Chat with what the call cost, in millionths of the
 // configuration's currency.
 func (b *bound) ChatCosted(ctx context.Context, req assist.ChatRequest) (assist.ChatReply, int64, error) {
-	r, cost, err := b.g.chat(ctx, b.consumers, req)
+	r, cost, err := b.g.chat(ctx, b.consumers, b.only, req)
 	return r, int64(cost), err
 }
 
@@ -56,11 +56,11 @@ func (b *bound) TakesPictures() bool {
 }
 
 func (b *bound) Chat(ctx context.Context, req assist.ChatRequest) (assist.ChatReply, error) {
-	r, _, err := b.g.chat(ctx, b.consumers, req)
+	r, _, err := b.g.chat(ctx, b.consumers, b.only, req)
 	return r, err
 }
 
-func (g *Gateway) chat(ctx context.Context, consumers []string, req assist.ChatRequest) (assist.ChatReply, Money, error) {
+func (g *Gateway) chat(ctx context.Context, consumers []string, only string, req assist.ChatRequest) (assist.ChatReply, Money, error) {
 	if err := req.Check(); err != nil {
 		return assist.ChatReply{}, 0, err
 	}
@@ -77,7 +77,7 @@ func (g *Gateway) chat(ctx context.Context, consumers []string, req assist.ChatR
 		return assist.ChatReply{}, 0, ErrNoRoute
 	}
 	var errs []string
-	for _, r := range g.cfg.Routes {
+	for _, r := range g.routesFor(only) {
 		g.mu.Lock()
 		down := g.now().Before(g.downTil[r.Name])
 		g.mu.Unlock()
@@ -116,16 +116,13 @@ func (g *Gateway) chat(ctx context.Context, consumers []string, req assist.ChatR
 		}
 		took := g.now().Sub(start)
 		if err != nil {
-			if kind := Trouble(err); kind != "" && g.OnTrouble != nil {
-				g.OnTrouble(kind, r.Name)
-			}
-			g.failed(r.Name)
+			kind := g.failure(ctx, r.Name, err)
 			g.ledger.record(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name,
-				Model: r.Model, In: in, Millis: took.Milliseconds(), Outcome: "failed"})
-			errs = append(errs, r.Name+": "+err.Error())
-			if ctx.Err() != nil {
-				break
+				Model: r.Model, In: in, Millis: took.Milliseconds(), Outcome: kind.outcome()})
+			if kind != unavailable {
+				return assist.ChatReply{}, 0, err
 			}
+			errs = append(errs, r.Name+": "+err.Error())
 			continue
 		}
 		g.mu.Lock()
@@ -138,6 +135,9 @@ func (g *Gateway) chat(ctx context.Context, consumers []string, req assist.ChatR
 			TokensIn: reply.Usage.In, TokensOut: reply.Usage.Out, Estimated: !reply.Usage.Reported,
 			Cost: cost, Masked: masked, Outcome: "ok"})
 		return reply, cost, nil
+	}
+	if only != "" && len(errs) == 0 {
+		return assist.ChatReply{}, 0, fmt.Errorf("%w: the route %s is not declared", ErrNoRoute, only)
 	}
 	return assist.ChatReply{}, 0, fmt.Errorf("%w: %s", ErrNoRoute, strings.Join(errs, "; "))
 }

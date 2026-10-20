@@ -708,6 +708,29 @@ type agentOutcome struct {
 	Lessons []string
 }
 
+// reviewerModel is the second model an agent's actions are offered to:
+// the route the store names and no other, charged as the agent's reviewer
+// and to the person who started the run.
+//
+// It used to be asked for like an agent called by the route's name, which
+// walked the whole fallback chain from the first route, usually the model
+// the agent itself runs on; an injection that steered the actor was then
+// judged by the same model. Pinned, a reviewer that cannot be reached
+// stops the run rather than being quietly replaced.
+func reviewerModel(root, route, agentName string, payers ...string) (assist.Model, string) {
+	gw, _, err := modelGateway(root)
+	if err != nil {
+		return nil, "the model gateway could not be read: " + err.Error()
+	}
+	if gw == nil {
+		return nil, "a reviewer is a route of the model gateway, and this store declares none"
+	}
+	if !gw.HasRoute(route) {
+		return nil, "no route called " + route + " is declared"
+	}
+	return gw.ForRoute(route, "reviewer:"+agentName, payers...), ""
+}
+
 // agentRunModel is the model an agent's run asks: through the gateway when
 // one is declared, so the run is budgeted and recorded like every other
 // caller, and the one configured endpoint otherwise.
@@ -1021,11 +1044,8 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 			return out, errors.New("an evaluation decides with a model; a program is run on its own")
 		}
 	}
+	payers := personConsumer(caller)
 	if withModel {
-		var payers []string
-		if caller != nil && caller.Verified && !strings.HasPrefix(caller.Name, agent.PrincipalPrefix) {
-			payers = append(payers, "person:"+caller.Name)
-		}
 		model, why := agentRunModel(root, name, payers...)
 		if model == nil {
 			return out, fmt.Errorf(
@@ -1071,15 +1091,20 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	// first, asked about every action it chooses. It sees the goal and the
 	// action and nothing of what the agent saw; it lets an action through
 	// or stops the run with its reason. Unreachable fails closed.
+	// Settings that cannot be read stop the run too: whether a reviewer
+	// is named is then not known, and running without one would be the
+	// open way to fail.
 	if withModel {
-		if c, cerr := loadConfig(root); cerr == nil {
-			if route := c.Raw("agent.reviewer"); route != "" {
-				reviewer, why := agentRunModel(root, route)
-				if reviewer == nil {
-					return out, fmt.Errorf("the reviewer this store names (%s) could not be reached: %s", route, why)
-				}
-				decide = agentmodel.Reviewed(decide, reviewer)
+		c, cerr := loadConfig(root)
+		if cerr != nil {
+			return out, fmt.Errorf("the settings could not be read, so whether a reviewer is named is not known: %w", cerr)
+		}
+		if route := c.Raw("agent.reviewer"); route != "" {
+			reviewer, why := reviewerModel(root, route, name, payers...)
+			if reviewer == nil {
+				return out, fmt.Errorf("the reviewer this store names (%s) could not be reached: %s", route, why)
 			}
+			decide = agentmodel.Reviewed(decide, reviewer)
 		}
 	}
 

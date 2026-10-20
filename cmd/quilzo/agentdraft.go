@@ -17,6 +17,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assist"
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/memory"
 	"github.com/quilzo/quilzo/internal/plaintext"
 )
@@ -64,7 +65,7 @@ func draftModelFor(root string, caller *Caller, consumer string) (assist.Model, 
 		return nil, "the model gateway could not be read: " + err.Error()
 	}
 	if gw != nil {
-		return gw.For(consumer, caller.Name), ""
+		return gw.For(consumer, personConsumer(caller)...), ""
 	}
 	m, err := directModel(root)
 	if err != nil {
@@ -405,4 +406,18 @@ func agentDeclareFile(root string, args []string) error {
 	}
 	w.Human("declared %s; quilzo agent could %s OPERATION says what a run of it could do\n", m.Name, m.Name)
 	return nil
+}
+
+// personConsumer is the person a model call is charged to beside its own
+// caller, so a budget set on person:NAME bounds everything they set off:
+// drafts, features, research ideas and reflections as well as runs. A
+// caller known not to be a person (a service, a model, an agent acting as
+// itself) is charged to nobody else; one whose kind was not recorded is
+// charged as a person, since charging too many budgets is the safe side.
+func personConsumer(caller *Caller) []string {
+	if caller == nil || !caller.Verified || caller.Kind == audit.KindAI || caller.Kind == audit.KindService ||
+		strings.HasPrefix(caller.Name, agent.PrincipalPrefix) {
+		return nil
+	}
+	return []string{"person:" + caller.Name}
 }

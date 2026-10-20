@@ -74,7 +74,18 @@ func modelGateway(root string) (*gateway.Gateway, *gateway.Config, error) {
 				return nil, fmt.Errorf("%s is not set", r.KeyEnv)
 			}
 		}
-		return assist.NewHTTPModelAt(r.URL, key, r.Model)
+		m, err := assist.NewHTTPModelAt(r.URL, key, r.Model)
+		if err != nil {
+			return nil, err
+		}
+		// What this route's model is sent beside the conversation, and how
+		// long a call through it may take: see gateway.RouteParams.
+		var timeout time.Duration
+		m.Params, timeout = r.Params.Model()
+		if timeout > 0 {
+			m.Client.Timeout = timeout
+		}
+		return m, nil
 	}, ledger)
 	// The shield: a route it cut is not used, and what the gateway sees
 	// that a person must know (a spent budget, a provider refusing a route
@@ -160,8 +171,12 @@ func gatewayStatus(root string) error {
 		if h.Route.Personal {
 			privacy = "may receive personal data"
 		}
-		w.Human("  %s  %s %s  %s%s; %s%s\n", h.Route.Name, h.Route.URL, h.Route.Model,
-			dim, key, privacy, reset)
+		sends := ""
+		if p := h.Route.Params.String(); p != "" {
+			sends = "; sends " + p
+		}
+		w.Human("  %s  %s %s  %s%s; %s%s%s\n", h.Route.Name, h.Route.URL, h.Route.Model,
+			dim, key, privacy, sends, reset)
 	}
 	w.Human("%stoday%s\n", bold, reset)
 	for _, s := range spend {
@@ -219,6 +234,7 @@ func changeGateway(root, change, name string, edit func(*gateway.Config) error) 
 func gatewayRoute(root string, args []string) error {
 	if len(args) < 2 || (args[0] != "add" && args[0] != "remove") {
 		return fmt.Errorf("usage: quilzo gateway route add NAME --url U --model M [--key-env VAR] [--personal]\n" +
+			"         [--max-tokens-field max_completion_tokens] [--temperature T] [--top-p P] [--timeout 300s] [--auto-tool-choice]\n" +
 			"       quilzo gateway route remove NAME")
 	}
 	verb, name := args[0], args[1]
@@ -230,7 +246,16 @@ func gatewayRoute(root string, args []string) error {
 	priceOut := fs.String("price-out", "", "what a million output tokens cost here, like 0.60")
 	first := fs.Bool("first", false, "try this route before the others")
 	personal := fs.Bool("personal", false, "it may receive personal data: on this machine, or under an agreement to process it")
+	maxField := fs.String("max-tokens-field", "", "the output-limit field this model takes: max_tokens (the default) or max_completion_tokens")
+	temperature := fs.String("temperature", "", "a temperature sent on every call; empty sends none, which current frontier models require")
+	topP := fs.String("top-p", "", "a top_p sent on every call; empty sends none")
+	timeout := fs.String("timeout", "", "how long one call may take, such as 300s for a model that reasons at length")
+	autoTool := fs.Bool("auto-tool-choice", false, "send auto where a caller forces a tool, for a model that refuses a forced choice")
 	if err := fs.Parse(args[2:]); err != nil {
+		return err
+	}
+	params, err := routeParams(*maxField, *temperature, *topP, *timeout, *autoTool)
+	if err != nil {
 		return err
 	}
 	return changeGateway(root, "route."+verb, name, func(c *gateway.Config) error {
@@ -248,7 +273,7 @@ func gatewayRoute(root string, args []string) error {
 			return nil
 		}
 		r := gateway.Route{Name: name, URL: *u, Model: *model, KeyEnv: *keyEnv, PriceIn: *priceIn, PriceOut: *priceOut,
-			Personal: *personal}
+			Personal: *personal, Params: params}
 		if *first {
 			c.Routes = append([]gateway.Route{r}, kept...)
 		} else {
@@ -256,6 +281,26 @@ func gatewayRoute(root string, args []string) error {
 		}
 		return c.Validate()
 	})
+}
+
+// routeParams reads a route's request fields as people type them.
+func routeParams(maxField, temperature, topP, timeout string, autoTool bool) (gateway.RouteParams, error) {
+	p := gateway.RouteParams{MaxTokens: maxField, Timeout: timeout, AutoToolChoice: autoTool}
+	for _, f := range []struct {
+		raw  string
+		into **float64
+		name string
+	}{{temperature, &p.Temperature, "temperature"}, {topP, &p.TopP, "top_p"}} {
+		if strings.TrimSpace(f.raw) == "" {
+			continue
+		}
+		v, err := strconv.ParseFloat(strings.TrimSpace(f.raw), 64)
+		if err != nil {
+			return p, fmt.Errorf("%s is a number, not %q", f.name, f.raw)
+		}
+		*f.into = &v
+	}
+	return p, p.Check()
 }
 
 func gatewayBudget(root string, args []string) error {

@@ -434,6 +434,55 @@ Unreleased
     answers an error the identity provider sends again, and a deleted
     user or group stays until it can be removed properly.
 
+*** Model calls work with 2026's frontier models.  Every call sent a
+    temperature of 0.2, which Claude's current models answer with an
+    error, so each call through such a route failed, rested the route and
+    moved to the next one without anybody being told why.  Nothing beyond
+    the conversation and the caller's own limit is sent now unless the
+    route asks for it: `quilzo gateway route add` takes --temperature,
+    --top-p, --max-tokens-field max_completion_tokens (for OpenAI's
+    reasoning models), --timeout for a model that reasons at length, and
+    --auto-tool-choice for a model that refuses a forced tool choice.  The
+    Models screen has the same fields under "What this model is sent", and
+    the list of routes and `quilzo gateway status` show them.
+
+*** A request every route would refuse is no longer sent to each in
+    turn, and no longer rests a route.  A provider's 400, 413 or 422 goes
+    back to the caller, and the model door answers it with that status
+    rather than 502; a timeout, a rate limit, an outage, a refused key or
+    an account out of credit still rests the route and moves on, and a
+    caller giving up rests nothing.  Somebody allowed at the model door
+    could otherwise keep a route resting for everyone with requests it
+    refuses anyway.  These calls count against their callers' budgets.
+
+*** The reviewer is a second model.  agent.reviewer names a route, and
+    the review used to walk the whole fallback chain from the first route,
+    usually the model the agent itself runs on.  It is now asked through
+    the route named and no other, so a reviewer that cannot be reached
+    stops the run instead of being replaced by the agent's own model.
+    `quilzo config set agent.reviewer` and the Settings screen refuse a
+    route that is not declared, and the posture check
+    agent.reviewer-not-second reports a reviewer on the first route or on
+    one that has been removed.  Reviews are charged as reviewer:AGENT and
+    to the person who started the run.  The action the reviewer is shown
+    is fenced with a marker new for every review, so text the agent chose
+    cannot close the fence and go on as the reviewer's own prompt; and
+    settings that cannot be read stop a run instead of letting it run
+    without its reviewer.
+
+*** A tool choice naming one tool is passed on as that tool.  The model
+    door read OpenAI's {"type":"function","function":{"name":...}},
+    the Responses API's {"type":"function","name":...} and Anthropic's
+    {"type":"tool","name":...} as "any tool", so the model could call one
+    the caller had not asked for.  A choice of a tool the request does not
+    offer is refused.
+
+*** Drafts, features, evolution, research ideas and reflections are
+    charged to the person who asked for them, as person:NAME, so a budget
+    set on a person bounds those as well as agent runs.  A budget may name
+    a caller by the email address single sign-on gives them
+    (door:dana@quilzo.io).
+
 *** Quilzo reads its own audit log on the server's timer.  The rules about
     Quilzo itself, what agents did and the correlations across them ran
     only when somebody ran `quilzo detect run`, a feed pushed events or a

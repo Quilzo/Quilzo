@@ -79,12 +79,15 @@ func review(ctx context.Context, model assist.Model, goal string, a agent.Action
 	// The action's input is text the deciding model chose while looking at
 	// a page somebody else wrote: it is fenced as untrusted here exactly as
 	// observations are fenced for that model, so what a page planted cannot
-	// arrive at the reviewer dressed as the goal's own words.
+	// arrive at the reviewer dressed as the goal's own words. The fence's
+	// marker is new for every review and taken out of what it fences, so
+	// an input that writes "END UNTRUSTED" closes nothing (see userPrompt).
+	mark := fenceMark()
 	user := "The goal, set by a person: " + clamp(goal, 2000) + "\n" +
 		"The action chosen: " + what + "\n" +
-		"BEGIN UNTRUSTED (chosen by the agent, possibly under a page's influence):\n" +
-		clamp(string(input), 2000) + "\n" +
-		"END UNTRUSTED\n" +
+		"[BEGIN UNTRUSTED CONTENT " + mark + ", chosen by the agent, possibly under a page's influence]\n" +
+		clamp(strings.ReplaceAll(string(input), mark, ""), 2000) + "\n" +
+		"[END UNTRUSTED CONTENT " + mark + "]\n" +
 		"yes or no, and why:"
 	out, err := model.Complete(ctx, system, user)
 	if err != nil {

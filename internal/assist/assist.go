@@ -391,7 +391,57 @@ type HTTPModel struct {
 	APIKey  string
 	Model   string
 	Client  *http.Client
+	// Params are what this endpoint is sent beside the conversation.
+	Params Params
 }
+
+// Params are the request fields a route sends beside the conversation.
+//
+// Nothing is sent that a route has not asked for, because the frontier
+// models of 2026 refuse fields older ones took: Claude's current models
+// answer 400 to any temperature, top_p or top_k; OpenAI's reasoning models
+// refuse a temperature other than 1, and max_tokens; and the newest Claude
+// models refuse a forced tool choice. A hard-coded temperature made every
+// call to such a model fail, put the route to rest, and moved traffic to the
+// next route without anybody being told why.
+type Params struct {
+	// MaxTokensField names the output limit: max_tokens, the default, or
+	// max_completion_tokens.
+	MaxTokensField string
+	// Temperature and TopP are sent only when set.
+	Temperature *float64
+	TopP        *float64
+	// AutoToolChoice sends "auto" where a request would force a tool, for
+	// a model that refuses a forced choice.
+	AutoToolChoice bool
+}
+
+// apply puts a route's fields into a request.
+func (p Params) apply(payload map[string]any, maxTokens int) {
+	if p.Temperature != nil {
+		payload["temperature"] = *p.Temperature
+	}
+	if p.TopP != nil {
+		payload["top_p"] = *p.TopP
+	}
+	if maxTokens > 0 {
+		field := p.MaxTokensField
+		if field == "" {
+			field = "max_tokens"
+		}
+		payload[field] = maxTokens
+	}
+}
+
+// StatusError is what a provider answered when it did not answer 200,
+// kept with its status so a caller can tell a route that is unavailable
+// from a request every route would refuse.
+type StatusError struct {
+	Code int
+	Body string
+}
+
+func (e *StatusError) Error() string { return fmt.Sprintf("model returned %d: %s", e.Code, e.Body) }
 
 func (h *HTTPModel) Name() string { return h.Model }
 
@@ -527,11 +577,9 @@ func (h *HTTPModel) CompleteMetered(ctx context.Context, system, user string) (s
 			{"role": "system", "content": system},
 			{"role": "user", "content": user},
 		},
-		// Low but not zero: content writing benefits from a little variation, and
-		// the validator is what keeps output in bounds rather than determinism.
-		"temperature": 0.2,
-		"stream":      false,
+		"stream": false,
 	}
+	h.Params.apply(payload, 0)
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", Usage{}, err
@@ -564,7 +612,7 @@ func (h *HTTPModel) CompleteMetered(ctx context.Context, system, user string) (s
 		if len(snippet) > 300 {
 			snippet = snippet[:300]
 		}
-		return "", Usage{}, fmt.Errorf("model returned %d: %s", resp.StatusCode, snippet)
+		return "", Usage{}, &StatusError{Code: resp.StatusCode, Body: snippet}
 	}
 
 	var out struct {

@@ -766,6 +766,18 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 			}
 		}
 	}
+	if c, err := loadConfig(root); err == nil {
+		if route := c.Raw("agent.reviewer"); route != "" {
+			facts.Reviewer, facts.ReviewerMissing = route, true
+			if _, cfg, err := modelGateway(root); err == nil && cfg != nil {
+				for i, r := range cfg.Routes {
+					if r.Name == route {
+						facts.ReviewerMissing, facts.ReviewerFirst = false, i == 0
+					}
+				}
+			}
+		}
+	}
 	for _, r := range agentwatch.Flagged(agentwatch.Look(events, time.Now())) {
 		facts.Flagged = append(facts.Flagged, r.Principal)
 	}
