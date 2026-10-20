@@ -323,3 +323,33 @@ func authorisesTheSite(fd *ast.FuncDecl) string {
 	})
 	return out
 }
+
+// Publishing asks about every page the publish would change, and an export
+// about every page it holds, so a deny on one page is not passed over by
+// the check on the whole site.
+func TestPublishAndExportAskAboutEachPage(t *testing.T) {
+	srv, token := setup(t)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "editor", Role: auth.RolePublisher,
+		Resource: "/about", Deny: true}); err != nil {
+		t.Fatal(err)
+	}
+	w := postForm(t, srv, "/publish", token, "reason=go")
+	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "about") {
+		t.Errorf("a publish changing a page the editor may not publish answered %d", w.Code)
+	}
+	if srv.Store.GetRef(site.RefLive) != "" {
+		t.Fatal("it was published")
+	}
+
+	if err := srv.Policy.Grant(auth.Binding{Principal: "editor", Role: auth.RoleReader,
+		Resource: "/about", Deny: true}); err != nil {
+		t.Fatal(err)
+	}
+	srv.Transfer = &Transfer{Pages: func() (map[string]any, error) {
+		return map[string]any{"index": map[string]any{"title": "Home"}, "about": map[string]any{"title": "About"}}, nil
+	}}
+	w = postForm(t, srv, "/transfer/export", token, "format=json")
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "not+yours") && !strings.Contains(loc, "not%20yours") {
+		t.Errorf("an export went round a deny: %d %s", w.Code, loc)
+	}
+}

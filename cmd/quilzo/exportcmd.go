@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/export"
 	"github.com/quilzo/quilzo/internal/out"
@@ -48,6 +49,10 @@ func cmdExport(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	caller := resolveCaller(root, flagToken)
+	if err := everyPage(root, caller, pages); err != nil {
+		return err
+	}
 
 	head := s.GetRef(*ref)
 
@@ -68,6 +73,14 @@ func cmdExport(root string, args []string) error {
 		names, err := collection.Names(s, tree)
 		if err != nil {
 			return err
+		}
+		// Every collection is in the export, so every one must be the
+		// caller's to read: access is given per collection, and a check on
+		// "/" does not see a deny on one.
+		for _, name := range names {
+			if err := authorise(root, caller, auth.ActView, auth.DataResource(name)); err != nil {
+				return fmt.Errorf("the export holds every collection, and %s is not yours to read: %w", name, err)
+			}
 		}
 		for _, name := range names {
 			// Paged to the end, not one page of it. A listing has a maximum
@@ -168,7 +181,6 @@ func cmdExport(root string, args []string) error {
 		}
 	}
 
-	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "export", Resource: "/" + *ref, Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
