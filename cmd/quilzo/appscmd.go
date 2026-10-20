@@ -34,7 +34,7 @@ func (f fileTokens) RevokeGrant(id string) error {
 	if ts.RevokeGrant(id) == 0 {
 		return nil
 	}
-	return saveJSON(tokensPath(f.root), ts)
+	return saveTokens(f.root, ts)
 }
 
 func appsServer(root string, by *Caller) *oauthas.Server {

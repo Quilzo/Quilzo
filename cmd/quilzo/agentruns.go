@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -662,17 +663,19 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 			return err
 		}
 	}
-	set.Agents[m.Name] = m
-	// A new agent is answered for by whoever declared it, until somebody
-	// names another sponsor.
-	if _, has := set.Identities[m.Name]; isNew && !has {
-		id, err := agent.NewIdentity(caller.Name, caller.Name, 0, time.Now())
-		if err != nil {
-			return err
+	if err := updateAgents(root, func(set *agentSet) error {
+		set.Agents[m.Name] = m
+		// A new agent is answered for by whoever declared it, until
+		// somebody names another sponsor.
+		if _, has := set.Identities[m.Name]; isNew && !has {
+			id, err := agent.NewIdentity(caller.Name, caller.Name, 0, time.Now())
+			if err != nil {
+				return err
+			}
+			set.Identities[m.Name] = id
 		}
-		set.Identities[m.Name] = id
-	}
-	if err := saveJSON(agentsPath(root), set); err != nil {
+		return nil
+	}); err != nil {
 		return err
 	}
 	did := "agent.changed"
@@ -710,9 +713,17 @@ func withdrawAgent(root, name string, caller *Caller) error {
 			}
 		}
 	}
-	delete(set.Agents, name)
-	delete(set.Identities, name)
-	if err := saveJSON(agentsPath(root), set); err != nil {
+	if err := updateAgents(root, func(set *agentSet) error {
+		for other, m := range set.Agents {
+			if slices.Contains(m.Delegates, name) {
+				return fmt.Errorf("%s hands work to %s. Change that first, "+
+					"or it would be left delegating to nothing", other, name)
+			}
+		}
+		delete(set.Agents, name)
+		delete(set.Identities, name)
+		return nil
+	}); err != nil {
 		return err
 	}
 	// What it remembered goes with it: memory nobody can recall is personal

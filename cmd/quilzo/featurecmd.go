@@ -860,11 +860,8 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 		bots.Remove(name)
 	}
 
-	// Webhooks: a new endpoint gets its own secret, shown once.
-	hooks, err := loadHooks(root)
-	if err != nil {
-		return nil, err
-	}
+	// Webhooks: a new endpoint gets its own secret, shown once. The changes
+	// are worked out here and made below to the endpoints as stored then.
 	var secrets []string
 	// Each endpoint a package adds, changes or takes away is recorded on its
 	// own, as `quilzo webhook add` records one: an endpoint is somewhere this
@@ -872,6 +869,8 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 	// reason for that to go unseen by whoever watches webhooks.
 	type hookChange struct{ action, url, types string }
 	var hookChanges []hookChange
+	var addHooks []webhook.Endpoint
+	changeHooks := map[string]feature.Webhook{}
 	for _, h := range p.Webhooks {
 		switch act[feature.Ref{Kind: "webhook", Name: h.URL}] {
 		case feature.Add:
@@ -879,29 +878,17 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 			if err != nil {
 				return nil, err
 			}
-			hooks.Endpoints = append(hooks.Endpoints, webhook.Endpoint{URL: h.URL, Secret: secret, Types: h.Types, Note: h.Note})
+			addHooks = append(addHooks, webhook.Endpoint{URL: h.URL, Secret: secret, Types: h.Types, Note: h.Note})
 			secrets = append(secrets, h.URL+"  "+secret)
 			hookChanges = append(hookChanges, hookChange{"webhook.add", h.URL, strings.Join(h.Types, ",")})
 		case feature.Change:
-			for i := range hooks.Endpoints {
-				if hooks.Endpoints[i].URL == h.URL {
-					hooks.Endpoints[i].Types, hooks.Endpoints[i].Note = h.Types, h.Note
-				}
-			}
+			changeHooks[h.URL] = h
 			hookChanges = append(hookChanges, hookChange{"webhook.change", h.URL, strings.Join(h.Types, ",")})
 		}
 	}
-	for _, url := range removing("webhook") {
+	goneHooks := removing("webhook")
+	for _, url := range goneHooks {
 		hookChanges = append(hookChanges, hookChange{"webhook.remove", url, ""})
-	}
-	if gone := removing("webhook"); len(gone) > 0 {
-		kept := hooks.Endpoints[:0]
-		for _, e := range hooks.Endpoints {
-			if !slices.Contains(gone, e.URL) {
-				kept = append(kept, e)
-			}
-		}
-		hooks.Endpoints = kept
 	}
 
 	// Every agent's delegates exist, or arrive with the package, before
@@ -947,8 +934,31 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 	for _, step := range []struct {
 		path string
 		v    any
-	}{{listingPath(root), listings}, {formsPath(root), forms}, {menuPath(root), menus}, {hooksPath(root), hooks}} {
+	}{{listingPath(root), listings}, {formsPath(root), forms}, {menuPath(root), menus}} {
 		if err := saveJSON(step.path, step.v); err != nil {
+			return nil, err
+		}
+	}
+	if len(addHooks) > 0 || len(changeHooks) > 0 || len(goneHooks) > 0 {
+		if err := updateHooks(root, func(f *hookFile) error {
+			kept := f.Endpoints[:0]
+			for _, e := range f.Endpoints {
+				if slices.Contains(goneHooks, e.URL) {
+					continue
+				}
+				if h, ok := changeHooks[e.URL]; ok {
+					e.Types, e.Note = h.Types, h.Note
+				}
+				kept = append(kept, e)
+			}
+			for _, e := range addHooks {
+				if !slices.ContainsFunc(kept, func(x webhook.Endpoint) bool { return x.URL == e.URL }) {
+					kept = append(kept, e)
+				}
+			}
+			f.Endpoints = kept
+			return nil
+		}); err != nil {
 			return nil, err
 		}
 	}

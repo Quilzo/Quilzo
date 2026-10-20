@@ -322,7 +322,7 @@ func fullyWired(t *testing.T) (*Server, string) {
 				Succeeded: true,
 			}}, nil
 		},
-		SaveWebhooks: func([]webhook.Endpoint) error { return nil },
+		UpdateWebhooks: func(func([]webhook.Endpoint) ([]webhook.Endpoint, error)) error { return nil },
 		Extensions: func() ([]ext.Manifest, error) {
 			return []ext.Manifest{{
 				Name: "house-style", Version: "1.0.0",

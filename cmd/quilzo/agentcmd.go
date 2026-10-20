@@ -313,8 +313,13 @@ func agentNew(root string, args []string) error {
 	} else if m, err = agent.New(agent.Kind(kind), name, knownCapabilities(root)); err != nil {
 		return err
 	}
-	set.Agents[name] = m
-	if err := saveJSON(agentsPath(root), set); err != nil {
+	if err := updateAgents(root, func(set *agentSet) error {
+		if _, exists := set.Agents[name]; exists {
+			return fmt.Errorf("an agent called %q was declared here just now", name)
+		}
+		set.Agents[name] = m
+		return nil
+	}); err != nil {
 		return err
 	}
 

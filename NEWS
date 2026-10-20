@@ -416,6 +416,24 @@ Unreleased
 
 ** Fixed
 
+*** Writes that happen at the same time no longer undo each other's
+    security decisions.  A sign-in in the admin could write back a token
+    that the command line had just revoked; a publish sending webhooks
+    could put back an endpoint removed while it was sending; provisioning
+    requests arriving together, or the admin and the command line, could
+    each lose the other's grant or revocation; a run could bring back a
+    person's memory that had just been forgotten.  The policy, the agents'
+    declarations, the webhooks and each agent's memory are now changed
+    under the file's own lock on what is stored at that moment, and the
+    tokens are written merged with what is stored, so a revocation is
+    never lost.
+
+*** Provisioning that cannot take somebody's access away says so.  A
+    deactivation, a deletion, a rename or a group change whose access
+    could not be removed answered success, and the person kept it; it now
+    answers an error the identity provider sends again, and a deleted
+    user or group stays until it can be removed properly.
+
 *** Quilzo reads its own audit log on the server's timer.  The rules about
     Quilzo itself, what agents did and the correlations across them ran
     only when somebody ran `quilzo detect run`, a feed pushed events or a

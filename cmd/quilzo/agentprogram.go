@@ -523,8 +523,20 @@ func agentProgramCmd(root string, args []string) error {
 	if err := m.ValidateWith(knownCapabilities(root), customKinds(root)); err != nil {
 		return err
 	}
-	set.Agents[name] = m
-	if err := saveJSON(agentsPath(root), set); err != nil {
+	// Only the program is changed, on the manifest as stored now, so an
+	// edit somebody else made to the rest of it meanwhile is kept.
+	if err := updateAgents(root, func(set *agentSet) error {
+		stored, ok := set.Agents[name]
+		if !ok {
+			return fmt.Errorf("no agent called %s is declared", name)
+		}
+		stored.Program = m.Program
+		if err := stored.ValidateWith(knownCapabilities(root), customKinds(root)); err != nil {
+			return err
+		}
+		set.Agents[name] = stored
+		return nil
+	}); err != nil {
 		return err
 	}
 	if err := recordE(root, caller.auditRecord("agent.program-set", "/", audit.Success, detail)); err != nil {

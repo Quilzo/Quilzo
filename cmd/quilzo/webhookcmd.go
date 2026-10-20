@@ -97,17 +97,15 @@ func hookAdd(root string, args []string) error {
 		e.Types = append(e.Types, t)
 	}
 
-	f := &hookFile{}
-	if err := loadJSON(hooksPath(root), f); err != nil {
-		return err
-	}
-	for _, existing := range f.Endpoints {
-		if existing.URL == e.URL {
-			return fmt.Errorf("%s is already configured", e.URL)
+	if err := updateHooks(root, func(f *hookFile) error {
+		for _, existing := range f.Endpoints {
+			if existing.URL == e.URL {
+				return fmt.Errorf("%s is already configured", e.URL)
+			}
 		}
-	}
-	f.Endpoints = append(f.Endpoints, e)
-	if err := saveJSON(hooksPath(root), f); err != nil {
+		f.Endpoints = append(f.Endpoints, e)
+		return nil
+	}); err != nil {
 		return err
 	}
 
@@ -136,24 +134,22 @@ func hookRemove(root string, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: quilzo webhook remove <url>")
 	}
-	f := &hookFile{}
-	if err := loadJSON(hooksPath(root), f); err != nil {
-		return err
-	}
-	kept := f.Endpoints[:0]
-	found := false
-	for _, e := range f.Endpoints {
-		if e.URL == args[0] {
-			found = true
-			continue
+	if err := updateHooks(root, func(f *hookFile) error {
+		kept := f.Endpoints[:0]
+		found := false
+		for _, e := range f.Endpoints {
+			if e.URL == args[0] {
+				found = true
+				continue
+			}
+			kept = append(kept, e)
 		}
-		kept = append(kept, e)
-	}
-	if !found {
-		return fmt.Errorf("no endpoint at %s", args[0])
-	}
-	f.Endpoints = kept
-	if err := saveJSON(hooksPath(root), f); err != nil {
+		if !found {
+			return fmt.Errorf("no endpoint at %s", args[0])
+		}
+		f.Endpoints = kept
+		return nil
+	}); err != nil {
 		return err
 	}
 	caller := resolveCaller(root, "")
@@ -286,22 +282,35 @@ func notifyProposed(root string, prop *collab.Proposal) {
 	}
 
 	s := sender{fetch.For("webhook")}
-	changed := false
+	var sent []webhook.Delivery
 	for _, e := range f.Endpoints {
 		if !e.Wants("proposed") {
 			continue
 		}
 		deliveries := webhook.Send(s, e, ev, time.Now())
-		f.Deliveries = append(f.Deliveries, deliveries[len(deliveries)-1])
-		changed = true
+		sent = append(sent, deliveries[len(deliveries)-1])
 	}
-	if !changed {
+	recordDeliveries(root, sent)
+}
+
+// recordDeliveries adds what was sent to the delivery history as it is
+// stored now. Only the history: the endpoints are left as they are on
+// disk, because sending takes seconds per endpoint, and writing back the
+// list read before sending would put back an endpoint removed meanwhile,
+// or a secret replaced, and keep it receiving signed events.
+func recordDeliveries(root string, sent []webhook.Delivery) {
+	if len(sent) == 0 {
 		return
 	}
-	if n := len(f.Deliveries); n > 100 {
-		f.Deliveries = f.Deliveries[n-100:]
-	}
-	_ = saveJSON(hooksPath(root), f)
+	_ = updateHooks(root, func(f *hookFile) error {
+		f.Deliveries = append(f.Deliveries, sent...)
+		// Keep the last hundred, so a failure is visible without the file
+		// growing without bound.
+		if n := len(f.Deliveries); n > 100 {
+			f.Deliveries = f.Deliveries[n-100:]
+		}
+		return nil
+	})
 }
 
 var hooksMu sync.Mutex
@@ -335,22 +344,18 @@ func fireWebhooks(root, eventType, commit string, pages []string,
 	}
 
 	s := sender{fetch.For("webhook")}
+	var sent []webhook.Delivery
 	for _, e := range f.Endpoints {
 		if !e.Wants(eventType) {
 			continue
 		}
 		deliveries := webhook.Send(s, e, ev, time.Now())
 		last := deliveries[len(deliveries)-1]
-		f.Deliveries = append(f.Deliveries, last)
+		sent = append(sent, last)
 		if !last.Succeeded {
 			fmt.Fprintf(os.Stderr, "%swebhook to %s failed after %d attempt(s)%s\n",
 				yellow, e.URL, len(deliveries), reset)
 		}
 	}
-	// Keep the last hundred, so a failure is visible without the file growing
-	// without bound.
-	if n := len(f.Deliveries); n > 100 {
-		f.Deliveries = f.Deliveries[n-100:]
-	}
-	_ = saveJSON(hooksPath(root), f)
+	recordDeliveries(root, sent)
 }

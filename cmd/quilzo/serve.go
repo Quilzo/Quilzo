@@ -143,8 +143,8 @@ func cmdServe(root string, args []string) error {
 	// Persistence and auditing for the changes the admin can now make.
 	// Without these an access change lives until the process restarts, and the
 	// administrator has already been told it worked.
-	srv.SavePolicy = func(p *auth.Policy) error {
-		return saveJSON(policyPath(root), p)
+	srv.UpdatePolicy = func(change func(*auth.Policy) error) (*auth.Policy, error) {
+		return updatePolicy(root, change)
 	}
 	// Passkeys, kept beside the tokens they mint a session as. Loaded here
 	// rather than lazily so that a store which cannot be read is a startup
@@ -171,7 +171,7 @@ func cmdServe(root string, args []string) error {
 	srv.Passkeys = pk
 
 	srv.SaveTokens = func(t *auth.TokenStore) error {
-		return saveJSON(tokensPath(root), t)
+		return saveTokens(root, t)
 	}
 	srv.Audit = func(action, resource string, detail map[string]string) {
 		by := detail["by"]
@@ -454,13 +454,15 @@ func cmdServe(root string, args []string) error {
 			}
 			return f.Endpoints, f.Deliveries, nil
 		},
-		SaveWebhooks: func(e []webhook.Endpoint) error {
-			f, err := loadHooks(root)
-			if err != nil {
-				return err
-			}
-			f.Endpoints = e
-			return saveJSON(hooksPath(root), f)
+		UpdateWebhooks: func(change func([]webhook.Endpoint) ([]webhook.Endpoint, error)) error {
+			return updateHooks(root, func(f *hookFile) error {
+				eps, err := change(f.Endpoints)
+				if err != nil {
+					return err
+				}
+				f.Endpoints = eps
+				return nil
+			})
 		},
 		Extensions: func() ([]ext.Manifest, error) {
 			f, err := loadExts(root)
@@ -1241,7 +1243,7 @@ func cmdServe(root string, args []string) error {
 			srv.OIDC.HostedDomains = cfg.Domains
 		}
 		srv.SaveTokens = func(ts *auth.TokenStore) error {
-			return saveJSON(tokensPath(root), ts)
+			return saveTokens(root, ts)
 		}
 		srv.OnSignIn = func(principal, tokenID string) {
 			record(root, audit.Record{
@@ -1333,7 +1335,7 @@ func cmdServe(root string, args []string) error {
 		},
 	}
 	if srv.SaveTokens == nil {
-		srv.SaveTokens = func(ts *auth.TokenStore) error { return saveJSON(tokensPath(root), ts) }
+		srv.SaveTokens = func(ts *auth.TokenStore) error { return saveTokens(root, ts) }
 	}
 
 	// The same content gates `quilzo publish` runs, built here because this is

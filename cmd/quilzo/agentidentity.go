@@ -171,8 +171,13 @@ func agentIdentityCmdAs(root, verb string, args []string, caller *Caller) error 
 	if err != nil {
 		return err
 	}
-	set.Identities[name] = id
-	if err := saveJSON(agentsPath(root), set); err != nil {
+	if err := updateAgents(root, func(set *agentSet) error {
+		if _, ok := set.Agents[name]; !ok {
+			return fmt.Errorf("no agent called %s is declared", name)
+		}
+		set.Identities[name] = id
+		return nil
+	}); err != nil {
 		return err
 	}
 	detail["until"] = id.Expires.UTC().Format(time.RFC3339)

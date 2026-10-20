@@ -402,8 +402,13 @@ type Server struct {
 	// does not offer them. See passkeys.go for why this is the one screen in
 	// the program that serves a script.
 	Passkeys *Passkeys
-	// SavePolicy persists an access change made from the admin.
-	SavePolicy func(*auth.Policy) error
+	// UpdatePolicy applies an access change to the policy as it is stored
+	// now, under its lock, and returns the policy as written. The change is
+	// made to the stored copy rather than to the one this server read at the
+	// start of the request, so a revocation made on the command line or by
+	// provisioning in between is never written back over. Nil changes only
+	// the copy in memory, which is what a test without a store wants.
+	UpdatePolicy func(change func(*auth.Policy) error) (*auth.Policy, error)
 	// Audit records an action. The admin does not open the audit log itself:
 	// it does not know where the log lives, and since the writer was separated
 	// out it must not.

@@ -297,7 +297,7 @@ func authGrant(root string, args []string) error {
 		bindings[0].Role, bindings[0].Permission = "", perm.Action
 	}
 	if auth.IsAppRoleName(rest[1]) {
-		return grantAppRole(root, p, rest[0], rest[1], *on, *deny, auth.Binding{
+		return grantAppRole(root, rest[0], rest[1], *on, *deny, auth.Binding{
 			GrantedBy: grantedBy(root, *by), Note: *note, Expires: expires})
 	}
 	if job, ok := auth.JobNamed(rest[1]); ok {
@@ -313,13 +313,16 @@ func authGrant(root string, args []string) error {
 			bindings = append(bindings, jb)
 		}
 	}
-	for _, b := range bindings {
-		b.Deny, b.GrantedBy, b.Note, b.Expires = *deny, grantedBy(root, *by), *note, expires
-		if err := p.Grant(b); err != nil {
-			return err
+	by2 := grantedBy(root, *by)
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		for _, b := range bindings {
+			b.Deny, b.GrantedBy, b.Note, b.Expires = *deny, by2, *note, expires
+			if err := p.Grant(b); err != nil {
+				return err
+			}
 		}
-	}
-	if err := saveJSON(policyPath(root), p); err != nil {
+		return nil
+	}); err != nil {
 		return err
 	}
 
@@ -428,24 +431,23 @@ func authRevoke(root string, args []string) error {
 		return fmt.Errorf("usage: quilzo auth revoke <principal> <role> [--on /path]")
 	}
 
-	p, err := loadPolicy(root)
-	if err != nil {
-		return err
-	}
 	var n int
-	if auth.IsAppRoleName(rest[1]) {
-		n = p.RevokeAppRole(rest[0], rest[1])
-	} else if job, ok := auth.JobNamed(rest[1]); ok {
-		for _, jb := range job.Bindings {
-			n += p.Revoke(rest[0], jb.Role, jb.Resource)
+	p, err := updatePolicy(root, func(p *auth.Policy) error {
+		if auth.IsAppRoleName(rest[1]) {
+			n = p.RevokeAppRole(rest[0], rest[1])
+		} else if job, ok := auth.JobNamed(rest[1]); ok {
+			for _, jb := range job.Bindings {
+				n += p.Revoke(rest[0], jb.Role, jb.Resource)
+			}
+		} else {
+			n = p.RevokeNamed(rest[0], rest[1], *on)
 		}
-	} else {
-		n = p.RevokeNamed(rest[0], rest[1], *on)
-	}
-	if n == 0 {
-		return fmt.Errorf("no binding matched %s %s on %s", rest[0], rest[1], *on)
-	}
-	if err := saveJSON(policyPath(root), p); err != nil {
+		if n == 0 {
+			return fmt.Errorf("no binding matched %s %s on %s", rest[0], rest[1], *on)
+		}
+		return nil
+	})
+	if err != nil {
 		return err
 	}
 	caller := resolveCaller(root, "")
@@ -523,7 +525,7 @@ func authList(root string) error {
 }
 
 // grantAppRole gives somebody a role an installed feature declares.
-func grantAppRole(root string, p *auth.Policy, who, name, on string, deny bool, base auth.Binding) error {
+func grantAppRole(root, who, name, on string, deny bool, base auth.Binding) error {
 	if on != "/" || deny {
 		return fmt.Errorf("%s is a role a feature declares over its own blocks: it takes no --on and cannot be a deny", name)
 	}
@@ -531,10 +533,7 @@ func grantAppRole(root string, p *auth.Policy, who, name, on string, deny bool, 
 	if err != nil {
 		return err
 	}
-	if err := p.Assign(who, r, base); err != nil {
-		return err
-	}
-	if err := saveJSON(policyPath(root), p); err != nil {
+	if _, err := updatePolicy(root, func(p *auth.Policy) error { return p.Assign(who, r, base) }); err != nil {
 		return err
 	}
 	caller := resolveCaller(root, "")
@@ -782,7 +781,7 @@ func tokenIssue(root string, args []string) error {
 		}
 		tok.Key = thumb
 	}
-	if err := saveJSON(tokensPath(root), ts); err != nil {
+	if err := saveTokens(root, ts); err != nil {
 		return err
 	}
 
@@ -878,7 +877,7 @@ func tokenExchange(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := saveJSON(tokensPath(root), ts); err != nil {
+	if err := saveTokens(root, ts); err != nil {
 		return err
 	}
 
@@ -954,7 +953,7 @@ func tokenRevoke(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := saveJSON(tokensPath(root), ts); err != nil {
+	if err := saveTokens(root, ts); err != nil {
 		return err
 	}
 	caller := resolveCaller(root, "")

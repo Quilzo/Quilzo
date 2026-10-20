@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -30,11 +31,19 @@ import (
 // hashed — and a screen that redisplays it turns every glance at the page into
 // an exposure.
 
+var (
+	errAlreadyRegistered = errors.New("already registered")
+	errNoEndpoint        = errors.New("no such endpoint")
+)
+
 // Integrations gives the admin what this store connects to.
 type Integrations struct {
 	// Webhooks and their delivery history.
-	Webhooks     func() ([]webhook.Endpoint, []webhook.Delivery, error)
-	SaveWebhooks func([]webhook.Endpoint) error
+	Webhooks func() ([]webhook.Endpoint, []webhook.Delivery, error)
+	// UpdateWebhooks changes the endpoints as they are stored now, under the
+	// file's lock: a change worked out from a list read earlier would put
+	// back an endpoint removed in between, and keep sending it signed events.
+	UpdateWebhooks func(change func([]webhook.Endpoint) ([]webhook.Endpoint, error)) error
 	// Extensions are the sandboxed processes this store will run.
 	Extensions     func() ([]ext.Manifest, error)
 	SaveExtensions func([]ext.Manifest) error
@@ -176,7 +185,7 @@ func (s *Server) handleWebhookSave(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if s.Integrations.Webhooks == nil || s.Integrations.SaveWebhooks == nil {
+	if s.Integrations.Webhooks == nil || s.Integrations.UpdateWebhooks == nil {
 		s.intRedirect(w, r, "", "webhooks are not wired up in this build")
 		return
 	}
@@ -190,17 +199,6 @@ func (s *Server) handleWebhookSave(w http.ResponseWriter, r *http.Request) {
 			"by anyone on the path.")
 		return
 	}
-	endpoints, _, err := s.Integrations.Webhooks()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	for _, e := range endpoints {
-		if e.URL == target {
-			s.intRedirect(w, r, "", target+" is already registered")
-			return
-		}
-	}
 	secret, err := webhook.NewSecret()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -213,7 +211,18 @@ func (s *Server) handleWebhookSave(w http.ResponseWriter, r *http.Request) {
 			e.Types = append(e.Types, t)
 		}
 	}
-	if err := s.Integrations.SaveWebhooks(append(endpoints, e)); err != nil {
+	if err := s.Integrations.UpdateWebhooks(func(endpoints []webhook.Endpoint) ([]webhook.Endpoint, error) {
+		for _, x := range endpoints {
+			if x.URL == target {
+				return nil, errAlreadyRegistered
+			}
+		}
+		return append(endpoints, e), nil
+	}); err != nil {
+		if errors.Is(err, errAlreadyRegistered) {
+			s.intRedirect(w, r, "", target+" is already registered")
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -239,13 +248,8 @@ func (s *Server) handleWebhookRemove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if s.Integrations.Webhooks == nil || s.Integrations.SaveWebhooks == nil {
+	if s.Integrations.Webhooks == nil || s.Integrations.UpdateWebhooks == nil {
 		s.intRedirect(w, r, "", "webhooks are not wired up in this build")
-		return
-	}
-	endpoints, _, err := s.Integrations.Webhooks()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	target := r.FormValue("url")
@@ -254,24 +258,30 @@ func (s *Server) handleWebhookRemove(w http.ResponseWriter, r *http.Request) {
 	// afterwards, which is what makes people leave it on instead.
 	disable := r.FormValue("disable") != ""
 
-	kept := make([]webhook.Endpoint, 0, len(endpoints))
-	found := false
-	for _, e := range endpoints {
-		if e.URL != target {
-			kept = append(kept, e)
-			continue
+	err := s.Integrations.UpdateWebhooks(func(endpoints []webhook.Endpoint) ([]webhook.Endpoint, error) {
+		kept := make([]webhook.Endpoint, 0, len(endpoints))
+		found := false
+		for _, e := range endpoints {
+			if e.URL != target {
+				kept = append(kept, e)
+				continue
+			}
+			found = true
+			if disable {
+				e.Disabled = !e.Disabled
+				kept = append(kept, e)
+			}
 		}
-		found = true
-		if disable {
-			e.Disabled = !e.Disabled
-			kept = append(kept, e)
+		if !found {
+			return nil, errNoEndpoint
 		}
-	}
-	if !found {
+		return kept, nil
+	})
+	if errors.Is(err, errNoEndpoint) {
 		s.intRedirect(w, r, "", "there is no endpoint "+target)
 		return
 	}
-	if err := s.Integrations.SaveWebhooks(kept); err != nil {
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
