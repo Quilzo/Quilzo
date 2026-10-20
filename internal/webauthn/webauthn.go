@@ -13,6 +13,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -52,6 +53,16 @@ import (
 // an enterprise with a hardware inventory asks. Asking it here would mean
 // shipping and maintaining a root list to reject somebody's phone, and the
 // phone is the point.
+//
+// # Two factors, every time
+//
+// A key that is only touched proves possession and nothing else: whoever
+// holds the phone or the security key is the person. So every registration
+// and every sign-in here must carry user verification, the authenticator's
+// own PIN, fingerprint or face, and there is no setting that turns it off.
+// That is what makes a passkey multi-factor in itself and, with the origin
+// binding checked below, phishing-resistant multi-factor, at no extra step
+// for anybody using Touch ID, Windows Hello or a phone's screen lock.
 
 // COSE algorithm identifiers, which is how a browser reports what it signed
 // with. Named because a bare -7 in a comparison is unreadable.
@@ -63,9 +74,19 @@ const (
 
 // Authenticator data flags, from the WebAuthn specification.
 const (
-	flagUserPresent  = 0x01
-	flagUserVerified = 0x04
+	flagUserPresent    = 0x01
+	flagUserVerified   = 0x04
+	flagBackupEligible = 0x08
+	flagBackupState    = 0x10
 )
+
+// ErrUserNotVerified is the refusal of a passkey used without its PIN,
+// fingerprint or face. Its own error, so a caller can say what to do about
+// it instead of the single answer every other sign-in failure gets: the
+// person holds a real key and needs telling how to make it work.
+var ErrUserNotVerified = errors.New("this passkey was only touched, and a passkey here " +
+	"also has to ask for the PIN, fingerprint or face that unlocks it. Set one on the " +
+	"key (the browser offers to) and try again")
 
 // authDataMinimum is rpIdHash (32) + flags (1) + signCount (4).
 const authDataMinimum = 37
@@ -104,6 +125,23 @@ type Credential struct {
 	// retrospectively: the authenticator only says at registration.
 	AAGUID     string `json:"aaguid,omitempty"`
 	Identified bool   `json:"identified,omitempty"`
+
+	// UserVerified says the authenticator has verified its user on this
+	// credential: the WebAuthn credential record's uvInitialized. Register
+	// sets it, and a stored credential without it gains it at its first
+	// sign-in, which has to verify. It also says the backup flags below were
+	// read, because the same ceremony records both; without it they are
+	// unknown, not false.
+	UserVerified bool `json:"user_verified,omitempty"`
+	// BackupEligible says the credential can be copied to other devices,
+	// a synced passkey, as the authenticator reported when it was first
+	// recorded. A property of the credential that does not change, and the
+	// one a policy needing a key that exists in one place has to read.
+	BackupEligible bool `json:"backup_eligible,omitempty"`
+	// BackupState says the credential is copied somewhere now, as of its
+	// last use. Unlike eligibility it moves, so it is brought up to date at
+	// every sign-in.
+	BackupState bool `json:"backup_state,omitempty"`
 }
 
 // Registration is what a browser sends after creating a credential.
@@ -141,11 +179,6 @@ type Party struct {
 	// authenticator, no attestation, the phone included. A deployment at AAL3
 	// fills it in — see attestation.go for what that does and does not prove.
 	Enrol Enrolment
-	// RequireUserVerification demands a PIN, fingerprint or face rather than
-	// mere presence. Off by default: presence alone still proves possession
-	// and origin, and demanding verification from an authenticator that cannot
-	// do it locks somebody out of their own account.
-	RequireUserVerification bool
 }
 
 // clientData is the browser's account of what it was asked to do.
@@ -174,8 +207,16 @@ func (p Party) Register(challenge string, reg Registration) (Credential, error) 
 		challenge); err != nil {
 		return Credential{}, err
 	}
-	count, err := p.checkAuthenticatorData(raw["authenticator data"])
+	count, flags, err := p.checkAuthenticatorData(raw["authenticator data"])
 	if err != nil {
+		return Credential{}, err
+	}
+	// Nothing signs a registration's flags when no attestation is asked for,
+	// so this refuses an authenticator that did not verify its user rather
+	// than proving one did. The proof is at every sign-in, where the flags
+	// are signed; refusing here as well means a key that cannot verify is
+	// turned away while somebody is adding it, not at their next sign-in.
+	if err := userVerified(flags); err != nil {
 		return Credential{}, err
 	}
 
@@ -210,14 +251,18 @@ func (p Party) Register(challenge string, reg Registration) (Credential, error) 
 		ID: raw["credential id"], PublicKey: raw["public key"],
 		Algorithm: reg.Algorithm, SignCount: count,
 		AAGUID: id.String(), Identified: identified,
+		UserVerified:   true,
+		BackupEligible: flags&flagBackupEligible != 0,
+		BackupState:    flags&flagBackupState != 0,
 	}, nil
 }
 
 // Verify checks an assertion against a stored credential.
 //
-// Returns the authenticator's new signature counter, which the caller must
-// store: the clone check below is only as good as the number it compares to.
-func (p Party) Verify(cred Credential, challenge string, a Assertion) (uint32, error) {
+// Returns the credential as it now stands, which the caller must store: its
+// new signature counter, without which the clone check below compares
+// against a number that never moves, and its backup state as of this use.
+func (p Party) Verify(cred Credential, challenge string, a Assertion) (Credential, error) {
 	raw, err := decodeAll(map[string]string{
 		"credential id":      a.ID,
 		"client data":        a.ClientDataJSON,
@@ -225,7 +270,7 @@ func (p Party) Verify(cred Credential, challenge string, a Assertion) (uint32, e
 		"signature":          a.Signature,
 	})
 	if err != nil {
-		return 0, err
+		return Credential{}, err
 	}
 
 	// The credential the browser used has to be the one being checked.
@@ -233,18 +278,18 @@ func (p Party) Verify(cred Credential, challenge string, a Assertion) (uint32, e
 	// other -- the caller looked one up by id, and nothing tied the answer to
 	// what actually signed.
 	if subtle.ConstantTimeCompare(raw["credential id"], cred.ID) != 1 {
-		return 0, fmt.Errorf(
+		return Credential{}, fmt.Errorf(
 			"this assertion was made with a different credential than the one " +
 				"it names")
 	}
 
 	if err := p.checkClientData(raw["client data"], "webauthn.get",
 		challenge); err != nil {
-		return 0, err
+		return Credential{}, err
 	}
-	count, err := p.checkAuthenticatorData(raw["authenticator data"])
+	count, flags, err := p.checkAuthenticatorData(raw["authenticator data"])
 	if err != nil {
-		return 0, err
+		return Credential{}, err
 	}
 
 	// What WebAuthn signs: the authenticator data, then a hash of the client
@@ -256,10 +301,18 @@ func (p Party) Verify(cred Credential, challenge string, a Assertion) (uint32, e
 
 	key, err := x509.ParsePKIXPublicKey(cred.PublicKey)
 	if err != nil {
-		return 0, fmt.Errorf("the stored public key cannot be read: %w", err)
+		return Credential{}, fmt.Errorf("the stored public key cannot be read: %w", err)
 	}
 	if err := verifySignature(key, cred.Algorithm, signed, raw["signature"]); err != nil {
-		return 0, err
+		return Credential{}, err
+	}
+
+	// After the signature, so the flags being judged are the ones the
+	// authenticator signed, and so the particular refusal below, which tells
+	// somebody what to fix, is only ever given to the holder of a key that
+	// is registered here.
+	if err := userVerified(flags); err != nil {
+		return Credential{}, err
 	}
 
 	// A counter that has not advanced is the one signal WebAuthn gives that a
@@ -270,13 +323,42 @@ func (p Party) Verify(cred Credential, challenge string, a Assertion) (uint32, e
 	// Only meaningful when the authenticator keeps a counter at all. Many do
 	// not, and report zero forever -- refusing those would refuse most phones.
 	if cred.SignCount != 0 && count != 0 && count <= cred.SignCount {
-		return 0, fmt.Errorf(
+		return Credential{}, fmt.Errorf(
 			"this authenticator's counter went from %d to %d, which it cannot "+
 				"do unless the credential exists in two places. Refusing, and "+
 				"the key should be removed and registered again",
 			cred.SignCount, count)
 	}
-	return count, nil
+
+	used := cred
+	used.SignCount = count
+	used.BackupState = flags&flagBackupState != 0
+	// A credential recorded before its flags were read gets them now, from
+	// an assertion that verified its user and was signed, which is better
+	// evidence than an unsigned registration would have been.
+	if !cred.UserVerified {
+		used.UserVerified = true
+		used.BackupEligible = flags&flagBackupEligible != 0
+	}
+	return used, nil
+}
+
+// userVerified refuses a ceremony in which the authenticator did not verify
+// its user.
+//
+// NIST SP 800-63B-4 §3.1.7.2: where a multi-factor authenticator reports
+// whether its activation factor was used and says it was not, the
+// authentication "SHALL be treated as single-factor". A passkey here is
+// taken as both factors at once: an administrator's is let through a
+// lockdown and exempts its address from the shield, and a member's is the
+// whole of their sign-in. A key that was only touched has earned neither. So
+// no verification, no passkey, for administrators and members alike, with
+// nothing to configure.
+func userVerified(flags byte) error {
+	if flags&flagUserVerified == 0 {
+		return ErrUserNotVerified
+	}
+	return nil
 }
 
 // checkClientData is the phishing defence, and every line of it is load-bearing.
@@ -322,10 +404,10 @@ func (p Party) checkClientData(body []byte, wantType, challenge string) error {
 }
 
 // checkAuthenticatorData verifies what the authenticator itself asserted, and
-// returns its signature counter.
-func (p Party) checkAuthenticatorData(data []byte) (uint32, error) {
+// returns its signature counter and flags.
+func (p Party) checkAuthenticatorData(data []byte) (uint32, byte, error) {
 	if len(data) < authDataMinimum {
-		return 0, fmt.Errorf(
+		return 0, 0, fmt.Errorf(
 			"the authenticator data is %d bytes and the fixed part is %d",
 			len(data), authDataMinimum)
 	}
@@ -335,7 +417,7 @@ func (p Party) checkAuthenticatorData(data []byte) (uint32, error) {
 	// a different site.
 	want := sha256.Sum256([]byte(p.ID))
 	if subtle.ConstantTimeCompare(data[:32], want[:]) != 1 {
-		return 0, fmt.Errorf(
+		return 0, 0, fmt.Errorf(
 			"this credential is bound to a different site than %q", p.ID)
 	}
 
@@ -343,17 +425,19 @@ func (p Party) checkAuthenticatorData(data []byte) (uint32, error) {
 	// User presence: somebody touched it. Without this a key plugged into a
 	// compromised machine can be used silently, whenever the attacker likes.
 	if flags&flagUserPresent == 0 {
-		return 0, fmt.Errorf("the authenticator does not report that anybody " +
+		return 0, 0, fmt.Errorf("the authenticator does not report that anybody " +
 			"was present, so this may be a key being used without its owner")
 	}
-	if p.RequireUserVerification && flags&flagUserVerified == 0 {
-		return 0, fmt.Errorf(
-			"this server requires a PIN, fingerprint or face and the " +
-				"authenticator reported only that a key was touched")
+	// A credential that cannot be copied is not copied anywhere. The
+	// specification has a verifier refuse the pair, and recording it would
+	// leave a backup state that contradicts the eligibility beside it.
+	if flags&flagBackupEligible == 0 && flags&flagBackupState != 0 {
+		return 0, 0, fmt.Errorf("the authenticator says this credential is " +
+			"backed up and that it cannot be, which is not a state a real one reports")
 	}
 
 	return uint32(data[33])<<24 | uint32(data[34])<<16 |
-		uint32(data[35])<<8 | uint32(data[36]), nil
+		uint32(data[35])<<8 | uint32(data[36]), flags, nil
 }
 
 // matchAlgorithm refuses a key whose type is not the one the browser claimed.

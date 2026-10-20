@@ -107,7 +107,9 @@
         publicKey: {
           challenge: toBytes(start.challenge),
           rpId: start.rpId,
-          userVerification: "preferred",
+          // The server refuses a key that was only touched, so the browser
+          // is told to ask for the PIN, fingerprint or face every time.
+          userVerification: "required",
           timeout: 120000
         }
       });

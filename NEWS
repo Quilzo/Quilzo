@@ -416,6 +416,26 @@ Unreleased
 
 ** Fixed
 
+*** A passkey has to ask for the PIN, fingerprint or face that unlocks
+    it.  A key that was only touched signed an administrator or a member
+    in, and an administrator's sign-in was still taken as a strong one: let
+    through a lockdown, with its address exempted from the shield.  Adding
+    a passkey and signing in with one now ask the browser to verify the
+    person, and an answer without it is refused with what to set up; no
+    setting turns this off.  A passkey already registered keeps working
+    when it signs in with its PIN, fingerprint or face.  Each passkey
+    records whether it can be synced to other devices and whether it is,
+    the second brought up to date at every sign-in, and an administrator's
+    passkey sign-in is in the audit log with both.
+
+*** Somebody suspended by provisioning is refused at the passkey sign-in,
+    as single sign-on refuses them, and the refusal is in the audit log.
+    Their passkey still made a session, which every screen then refused,
+    and exempted their address from the shield.  A suspension is a live
+    deny of everything on the whole site; a deny of publishing, of one
+    permission or of a person's own work, or one that has ended, no longer
+    refuses a single sign-on or passkey sign-in as if it were one.
+
 *** A passkey is added or removed only from a session that holds the
     whole person: their own role, over the whole store, with no limits on
     the token.  Any signed-in session could add one, including one from a

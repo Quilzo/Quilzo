@@ -109,7 +109,9 @@
           { type: "public-key", alg: -8 },
           { type: "public-key", alg: -257 }
         ],
-        authenticatorSelection: { residentKey: "required", userVerification: "preferred" },
+        // Verification required, as the site requires it: the browser then
+        // offers to set a PIN on a key that has none.
+        authenticatorSelection: { residentKey: "required", userVerification: "required" },
         excludeCredentials: (start.exclude || []).map(function (id) {
           return { type: "public-key", id: toBytes(id) };
         }),
@@ -191,7 +193,7 @@
           publicKey: {
             challenge: toBytes(start.challenge),
             rpId: start.rpId,
-            userVerification: "preferred",
+            userVerification: "required",
             timeout: 120000
           }
         });

@@ -36,6 +36,8 @@ type fakeAuthenticator struct {
 	id    []byte
 	rpID  string
 	count uint32
+	// flags replaces present-and-verified when it is not zero.
+	flags byte
 }
 
 func newFake(t *testing.T, id string) *fakeAuthenticator {
@@ -50,7 +52,11 @@ func newFake(t *testing.T, id string) *fakeAuthenticator {
 func (f *fakeAuthenticator) authData() []byte {
 	sum := sha256.Sum256([]byte(f.rpID))
 	out := append([]byte{}, sum[:]...)
-	out = append(out, 0x01|0x04)
+	flags := byte(0x01 | 0x04)
+	if f.flags != 0 {
+		flags = f.flags
+	}
+	out = append(out, flags)
 	return binary.BigEndian.AppendUint32(out, f.count)
 }
 

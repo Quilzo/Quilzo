@@ -6,9 +6,11 @@ package admin
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -577,21 +579,46 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 	// Checked against the site this credential was registered for, not the one
 	// this request claims to be.
 	party.ID = cred.RelyingParty
-	count, err := party.Verify(cred.Credential, c.value, body.Assertion)
+	used, err := party.Verify(cred.Credential, c.value, body.Assertion)
+	if errors.Is(err, webauthn.ErrUserNotVerified) {
+		// The one failure that is said as itself: the signature verified,
+		// so this is the key's own holder, and what they need is to know
+		// the key has to ask for a PIN, fingerprint or face.
+		writeJSONError(w, http.StatusUnauthorized, err)
+		return
+	}
 	if err != nil {
 		writeJSONError(w, http.StatusUnauthorized, errSignIn)
 		return
 	}
 
 	// The counter has to be written back, or the clone check compares against
-	// a number that never moves and stops meaning anything.
-	s.Passkeys.Credentials[idx].SignCount = count
-	s.Passkeys.Credentials[idx].LastUsed = time.Now().Unix()
+	// a number that never moves and stops meaning anything; the flags, so
+	// the record says whether the key is synced as of its last use.
+	stored := &s.Passkeys.Credentials[idx]
+	stored.SignCount = used.SignCount
+	stored.UserVerified = used.UserVerified
+	stored.BackupEligible = used.BackupEligible
+	stored.BackupState = used.BackupState
+	stored.LastUsed = time.Now().Unix()
 	if err := s.savePasskeys(); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err)
 		return
 	}
 
+	// Suspended by provisioning, or denied the whole site by hand: refused
+	// here as single sign-on refuses it, before a session exists. Asked first
+	// because a suspension is a deny binding, which also makes the person
+	// known to the policy, and the session minted below would otherwise go
+	// to somebody every screen then refuses, with their address exempted
+	// from the shield on the way.
+	if s.suspended(cred.Principal) {
+		s.audit("session.refused", "/", map[string]string{"by": cred.Principal,
+			"how": "passkey", "why": "suspended"})
+		writeJSONError(w, http.StatusForbidden, fmt.Errorf(
+			"%s is suspended here, so no passkey signs them in", cred.Principal))
+		return
+	}
 	if !s.knownPrincipal(cred.Principal) {
 		writeJSONError(w, http.StatusForbidden, fmt.Errorf(
 			"%s holds a passkey and no role. An administrator can grant one: "+
@@ -629,6 +656,12 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// With what the authenticator said, so the log answers which sign-ins
+	// came from a synced passkey and which from a key that exists once.
+	s.audit("session.start", "/", map[string]string{"by": cred.Principal, "session": tok.ID,
+		"how": "passkey", "label": cred.Label, "user_verified": strconv.FormatBool(used.UserVerified),
+		"backup_eligible": strconv.FormatBool(used.BackupEligible),
+		"backed_up":       strconv.FormatBool(used.BackupState)})
 	if s.OnSignIn != nil {
 		s.OnSignIn(cred.Principal, tok.ID)
 	}

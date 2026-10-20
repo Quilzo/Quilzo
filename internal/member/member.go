@@ -262,8 +262,10 @@ func (s *Store) ByCredential(credID []byte) (Member, webauthn.Credential, error)
 	return Member{}, webauthn.Credential{}, ErrNotFound
 }
 
-// Used records a passkey's use: its new counter and when.
-func (s *Store) Used(id string, credID []byte, count uint32) error {
+// Used records a passkey's use: the credential as the sign-in left it (its
+// counter, and what its authenticator said about verifying and backing up)
+// and when. Only those fields, so a label renamed meanwhile stays renamed.
+func (s *Store) Used(id string, cred webauthn.Credential) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m, err := s.read(id)
@@ -272,9 +274,13 @@ func (s *Store) Used(id string, credID []byte, count uint32) error {
 	}
 	now := s.now()
 	for i := range m.Passkeys {
-		if string(m.Passkeys[i].ID) == string(credID) {
-			m.Passkeys[i].SignCount = count
-			m.Passkeys[i].LastUsed = now.Unix()
+		if string(m.Passkeys[i].ID) == string(cred.ID) {
+			k := &m.Passkeys[i]
+			k.SignCount = cred.SignCount
+			k.UserVerified = cred.UserVerified
+			k.BackupEligible = cred.BackupEligible
+			k.BackupState = cred.BackupState
+			k.LastUsed = now.Unix()
 		}
 	}
 	m.LastSeen = now

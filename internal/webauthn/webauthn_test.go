@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -141,12 +142,12 @@ func TestARealPasskeyRegistersAndSignsIn(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.count++
-	count, err := party().Verify(cred, ch, a.assert(t, ch))
+	used, err := party().Verify(cred, ch, a.assert(t, ch))
 	if err != nil {
 		t.Fatalf("a genuine passkey was refused: %v", err)
 	}
-	if count != a.count {
-		t.Errorf("the counter came back %d, want %d", count, a.count)
+	if used.SignCount != a.count {
+		t.Errorf("the counter came back %d, want %d", used.SignCount, a.count)
 	}
 }
 
@@ -222,17 +223,137 @@ func TestAnAssertionWithNobodyPresentIsRefused(t *testing.T) {
 	}
 }
 
-// Requiring verification means requiring it.
-func TestUserVerificationIsEnforcedWhenRequired(t *testing.T) {
+// A key that was only touched proves possession and nothing else, so a
+// sign-in with it is single-factor and is refused, with the error that says
+// what to do about it. No party can be configured to accept it.
+func TestASignInWithoutUserVerificationIsRefused(t *testing.T) {
 	a, cred := registered(t)
 	ch, _ := webauthn.NewChallenge()
 
-	p := party()
-	p.RequireUserVerification = true
 	a.flags = 0x01 // present, not verified
 	a.count++
-	if _, err := p.Verify(cred, ch, a.assert(t, ch)); err == nil {
-		t.Fatal("a touch-only assertion was accepted where a PIN was required")
+	_, err := party().Verify(cred, ch, a.assert(t, ch))
+	if !errors.Is(err, webauthn.ErrUserNotVerified) {
+		t.Fatalf("a touch-only assertion answered %v, want the refusal that asks for a PIN", err)
+	}
+}
+
+// Refused while the key is being added, not first at the next sign-in.
+func TestARegistrationWithoutUserVerificationIsRefused(t *testing.T) {
+	a := newAuthenticator(t)
+	a.flags = 0x01 // present, not verified
+	ch, _ := webauthn.NewChallenge()
+	_, err := party().Register(ch, a.register(t, ch))
+	if !errors.Is(err, webauthn.ErrUserNotVerified) {
+		t.Fatalf("a touch-only registration answered %v, want the refusal that asks for a PIN", err)
+	}
+}
+
+// The refusal that tells somebody to set a PIN is for the holder of a key
+// registered here. Anybody else, unverified as well, hears only that the
+// signature failed.
+func TestTheUserVerificationRefusalComesOnlyAfterTheSignature(t *testing.T) {
+	_, cred := registered(t)
+	other := newAuthenticator(t)
+	other.flags = 0x01
+	other.count = cred.SignCount + 1
+	ch, _ := webauthn.NewChallenge()
+
+	_, err := party().Verify(cred, ch, other.assert(t, ch))
+	if err == nil {
+		t.Fatal("an assertion signed by a different key was accepted")
+	}
+	if errors.Is(err, webauthn.ErrUserNotVerified) {
+		t.Fatal("a key that is not this credential's was told to set a PIN, so " +
+			"the flags were judged before anything proved who sent them")
+	}
+}
+
+// A synced passkey and a device-bound one are told apart at registration.
+func TestTheBackupFlagsAreRecordedAtRegistration(t *testing.T) {
+	for _, c := range []struct {
+		why                string
+		flags              byte
+		eligible, backedUp bool
+	}{
+		{"a security key", 0x01 | 0x04, false, false},
+		{"a synced passkey", 0x01 | 0x04 | 0x08 | 0x10, true, true},
+		{"eligible, not yet synced", 0x01 | 0x04 | 0x08, true, false},
+	} {
+		a := newAuthenticator(t)
+		a.flags = c.flags
+		ch, _ := webauthn.NewChallenge()
+		cred, err := party().Register(ch, a.register(t, ch))
+		if err != nil {
+			t.Fatalf("%s: %v", c.why, err)
+		}
+		if !cred.UserVerified || cred.BackupEligible != c.eligible || cred.BackupState != c.backedUp {
+			t.Errorf("%s was recorded as verified %v, eligible %v, backed up %v",
+				c.why, cred.UserVerified, cred.BackupEligible, cred.BackupState)
+		}
+	}
+}
+
+// Backup state moves, so the record follows it; eligibility does not.
+func TestTheBackupStateIsKeptCurrentAtEachSignIn(t *testing.T) {
+	a := newAuthenticator(t)
+	a.flags = 0x01 | 0x04 | 0x08
+	ch, _ := webauthn.NewChallenge()
+	cred, err := party().Register(ch, a.register(t, ch))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cred.BackupState {
+		t.Fatal("a credential not yet backed up was recorded as backed up")
+	}
+
+	a.flags = 0x01 | 0x04 | 0x08 | 0x10
+	a.count++
+	next, _ := webauthn.NewChallenge()
+	used, err := party().Verify(cred, next, a.assert(t, next))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !used.BackupState || !used.BackupEligible {
+		t.Errorf("after a sign-in reporting a backup, the record says eligible %v, backed up %v",
+			used.BackupEligible, used.BackupState)
+	}
+}
+
+// A credential kept from before user verification was required keeps
+// working only with it, and gains the flags it never had recorded.
+func TestACredentialRecordedBeforeItsFlagsKeepsWorkingOnlyWithUserVerification(t *testing.T) {
+	a, cred := registered(t)
+	cred.UserVerified, cred.BackupEligible, cred.BackupState = false, false, false
+
+	a.flags = 0x01 | 0x08 | 0x10 // touched, not verified
+	a.count++
+	ch, _ := webauthn.NewChallenge()
+	if _, err := party().Verify(cred, ch, a.assert(t, ch)); !errors.Is(err, webauthn.ErrUserNotVerified) {
+		t.Fatalf("an older credential signed in without user verification: %v", err)
+	}
+
+	a.flags = 0x01 | 0x04 | 0x08 | 0x10
+	a.count++
+	next, _ := webauthn.NewChallenge()
+	used, err := party().Verify(cred, next, a.assert(t, next))
+	if err != nil {
+		t.Fatalf("an older credential with user verification was refused: %v", err)
+	}
+	if !used.UserVerified || !used.BackupEligible || !used.BackupState {
+		t.Errorf("an older credential's first verified sign-in recorded verified %v, eligible %v, backed up %v",
+			used.UserVerified, used.BackupEligible, used.BackupState)
+	}
+}
+
+// Backed up but not eligible to be is a contradiction the specification has a
+// verifier refuse, rather than store.
+func TestABackupStateWithoutEligibilityIsRefused(t *testing.T) {
+	a := newAuthenticator(t)
+	a.flags = 0x01 | 0x04 | 0x10
+	ch, _ := webauthn.NewChallenge()
+	if _, err := party().Register(ch, a.register(t, ch)); err == nil {
+		t.Fatal("a registration claiming a backup it is not eligible for was accepted")
 	}
 }
 
