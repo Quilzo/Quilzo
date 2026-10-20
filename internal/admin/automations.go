@@ -4,13 +4,8 @@
 package admin
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/hex"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/clientip"
-	"math/big"
 	"net/http"
 	"net/url"
 	"sort"
@@ -214,39 +209,32 @@ func stepUpOpen(path string) bool {
 
 // -- confirm it's you ---------------------------------------------------------
 
-type stepCode struct {
-	hash    string
-	expires time.Time
-	tries   int
-	// sent counts codes sent to this session in the window, so asking for
-	// codes cannot be used to fill somebody's mailbox.
-	sent  int
-	since time.Time
-}
-
+// stepUpFails counts failed passkey confirmations by a session asked to
+// confirm it is its person: the third raises verification-failing, which
+// the automations hear as a person is told nothing could be proved.
 var (
-	stepCodesMu sync.Mutex
-	stepCodes   = map[string]*stepCode{}
+	stepUpFailsMu sync.Mutex
+	stepUpFails   = map[string]int{}
 )
 
-const (
-	stepCodeTTL   = 10 * time.Minute
-	stepCodeTries = 5
-	stepCodeSends = 3
-)
-
-// purgeCodes forgets expired codes, so the table holds only live ones.
-func purgeCodes(now time.Time) {
-	for id, c := range stepCodes {
-		if now.After(c.expires) && now.Sub(c.since) > stepCodeTTL {
-			delete(stepCodes, id)
-		}
+// stepUpFailed notes a failed confirmation from the session r carries, if
+// it is one asked to confirm.
+func (s *Server) stepUpFailed(r *http.Request) {
+	p, err := s.authenticate(r)
+	if err != nil || p.StepUp == "" {
+		return
 	}
-}
-
-func codeHash(session, code string) string {
-	sum := sha256.Sum256([]byte(session + ":" + code))
-	return hex.EncodeToString(sum[:])
+	stepUpFailsMu.Lock()
+	stepUpFails[p.TokenID]++
+	third := stepUpFails[p.TokenID] == 3
+	if len(stepUpFails) > 10000 {
+		stepUpFails = map[string]int{p.TokenID: stepUpFails[p.TokenID]}
+	}
+	stepUpFailsMu.Unlock()
+	s.audit("session.stepup-failed", "/", map[string]string{"by": p.Name, "session": p.TokenID})
+	if third && s.SignInSignal != nil {
+		s.SignInSignal(p.Name, "verification-failing", "three failed passkey confirmations from a session asked to confirm it is them")
+	}
 }
 
 func (s *Server) verifyPrincipal(w http.ResponseWriter, r *http.Request) (principal, bool) {
@@ -287,91 +275,9 @@ func (s *Server) handleStepUp(w http.ResponseWriter, r *http.Request) {
 	}
 	s.render(w, r, "verify.html", map[string]any{
 		"Title": "Confirm it's you", "Who": p.Name, "Reason": p.StepUp,
-		"Passkey": s.hasPasskey(p.Name), "Mail": s.StepUpMail != nil && strings.Contains(p.Name, "@"),
-		"Sent": r.URL.Query().Get("sent") != "", "Error": r.URL.Query().Get("e"),
+		"Passkey": s.hasPasskey(p.Name), "SingleSignOn": s.OIDC != nil || len(s.ssoChoices()) > 0,
+		"Error": r.URL.Query().Get("e"),
 	})
-}
-
-// handleStepUpCode sends a six-digit code to the person's own address.
-func (s *Server) handleStepUpCode(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "POST only", http.StatusMethodNotAllowed)
-		return
-	}
-	p, ok := s.verifyPrincipal(w, r)
-	if !ok {
-		return
-	}
-	if s.StepUpMail == nil || !strings.Contains(p.Name, "@") {
-		http.Redirect(w, r, "/signin/verify?e="+url.QueryEscape("No mail is set up to send a code."), http.StatusSeeOther)
-		return
-	}
-	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
-	if err != nil {
-		http.Error(w, "no randomness", http.StatusInternalServerError)
-		return
-	}
-	code := fmt.Sprintf("%06d", n.Int64())
-	now := time.Now()
-	stepCodesMu.Lock()
-	purgeCodes(now)
-	c := stepCodes[p.TokenID]
-	if c == nil || now.Sub(c.since) > stepCodeTTL {
-		c = &stepCode{since: now}
-		stepCodes[p.TokenID] = c
-	}
-	if c.sent >= stepCodeSends {
-		stepCodesMu.Unlock()
-		http.Redirect(w, r, "/signin/verify?sent=1&e="+url.QueryEscape("Three codes have been sent in the last ten minutes. Use the newest one, or wait."), http.StatusSeeOther)
-		return
-	}
-	c.sent++
-	c.hash, c.expires, c.tries = codeHash(p.TokenID, code), now.Add(stepCodeTTL), 0
-	stepCodesMu.Unlock()
-	if err := s.StepUpMail(p.Name, code); err != nil {
-		http.Redirect(w, r, "/signin/verify?e="+url.QueryEscape("The code could not be sent: "+err.Error()), http.StatusSeeOther)
-		return
-	}
-	s.audit("session.stepup-code-sent", "/", map[string]string{"by": p.Name, "session": p.TokenID})
-	http.Redirect(w, r, "/signin/verify?sent=1", http.StatusSeeOther)
-}
-
-// handleStepUpCheck takes the code. Five tries, ten minutes, once.
-func (s *Server) handleStepUpCheck(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "POST only", http.StatusMethodNotAllowed)
-		return
-	}
-	p, ok := s.verifyPrincipal(w, r)
-	if !ok {
-		return
-	}
-	got := strings.TrimSpace(r.FormValue("code"))
-	stepCodesMu.Lock()
-	c := stepCodes[p.TokenID]
-	good := false
-	if c != nil && time.Now().Before(c.expires) && c.tries < stepCodeTries {
-		c.tries++
-		good = c.hash != "" && subtle.ConstantTimeCompare([]byte(c.hash), []byte(codeHash(p.TokenID, got))) == 1
-		if good {
-			// Used: it works once. The record stays for its window, so the
-			// limit on sending counts across a success too.
-			c.hash = ""
-		}
-	}
-	stepCodesMu.Unlock()
-	if !good {
-		s.audit("session.stepup-code-wrong", "/", map[string]string{"by": p.Name, "session": p.TokenID})
-		stepCodesMu.Lock()
-		third := c != nil && c.tries == 3
-		stepCodesMu.Unlock()
-		if third && s.SignInSignal != nil {
-			s.SignInSignal(p.Name, "verification-failing", "three wrong codes from a session asked to confirm it is them")
-		}
-		http.Redirect(w, r, "/signin/verify?sent=1&e="+url.QueryEscape("That code is wrong or has expired."), http.StatusSeeOther)
-		return
-	}
-	s.passStepUp(w, r, p, "code")
 }
 
 // handleStepUpReport is the person saying the sign-in was not them. The

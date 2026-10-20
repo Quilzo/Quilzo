@@ -181,11 +181,11 @@ type Server struct {
 	// Feeds is the Feeds screen. See feeds.go.
 	Feeds *FeedsAdmin
 	// SignInRisk judges each sign-in as it is made (see automations.go);
-	// Automations are the rules and their history; StepUpMail sends a
-	// person the code that proves a stepped-up session is theirs.
+	// Automations are the rules and their history. A session they hold
+	// back is confirmed with a passkey or a fresh single sign-on, never a
+	// code sent by email (SP 800-63B-4 3.1.3.1 forbids email for this).
 	SignInRisk  func(SignInFacts) SignInVerdict
 	Automations *AutomationsAdmin
-	StepUpMail  func(to, code string) error
 	// SessionPlace says where a request comes from, for binding sessions;
 	// SessionMovedTo puts a session seen elsewhere to the rules; Reported
 	// is a person saying a sign-in was not them; SignInSignal raises one
@@ -1346,8 +1346,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/inbox", s.handleInbox)
 	mux.HandleFunc("/members", s.handleMembers)
 	mux.HandleFunc("/signin/verify", s.handleStepUp)
-	mux.HandleFunc("/signin/verify/code", s.handleStepUpCode)
-	mux.HandleFunc("/signin/verify/check", s.handleStepUpCheck)
 	mux.HandleFunc("/signin/verify/report", s.handleStepUpReport)
 	mux.HandleFunc("/security/signins", s.handleSignIns)
 	mux.HandleFunc("/security/signins/act", s.handleSignInsAct)

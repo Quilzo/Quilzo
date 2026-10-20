@@ -230,14 +230,6 @@ func cmdServe(root string, args []string) error {
 			return desc
 		},
 	}
-	if m, err := loadMailConfig(root); err == nil && m != nil {
-		srv.StepUpMail = func(to, code string) error {
-			return m.SendPlain(to, "Your Quilzo sign-in code: "+code,
-				"Somebody is signing in to Quilzo as you, and was asked to confirm it.\n\n"+
-					"The code is "+code+". It works once, for ten minutes.\n\n"+
-					"If this was not you, do not use it, and tell your security team.")
-		}
-	}
 	srv.Agents = &admin.Agents{
 		Identities: func() (map[string]agent.Identity, error) {
 			set, err := loadAgents(root)

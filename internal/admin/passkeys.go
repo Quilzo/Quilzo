@@ -571,6 +571,7 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		// The same answer as a bad signature, and deliberately: telling a
 		// stranger that a credential is unknown is telling them which ones are
 		// not.
+		s.stepUpFailed(r)
 		writeJSONError(w, http.StatusUnauthorized, errSignIn)
 		return
 	}
@@ -588,6 +589,7 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		s.stepUpFailed(r)
 		writeJSONError(w, http.StatusUnauthorized, errSignIn)
 		return
 	}
