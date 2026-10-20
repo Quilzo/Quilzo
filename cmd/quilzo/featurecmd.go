@@ -1567,9 +1567,9 @@ func checkFeature(root string, body []byte) (*feature.Package, feature.Card, fea
 // programCaller is a program presenting a token over HTTP, such as a CI job:
 // a service, held to its token's role, path and limits.
 func programCaller(tok auth.Token) *Caller {
+	life, bound := tok.Assurance()
 	return &Caller{Name: tok.Principal, Role: tok.Role, Scope: tok.Resource, Limits: tok.Scope,
-		Kind: audit.KindService, Verified: true, Remote: true, Bound: tok.Key != "",
-		Life: time.Unix(tok.ExpiresAt, 0).Sub(time.Unix(tok.CreatedAt, 0))}
+		Kind: audit.KindService, Verified: true, Remote: true, Bound: bound, Life: life}
 }
 
 // featureProgram checks and installs packages for a program's token, under

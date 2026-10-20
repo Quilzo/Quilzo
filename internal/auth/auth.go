@@ -764,6 +764,27 @@ type Token struct {
 	// the surfaces that check one, and refused everywhere else, so the
 	// token copied without its key is useless.
 	Key string `json:"key,omitempty"`
+
+	// Inherits, on a session exchanged from a token bound to no key, is how
+	// long that token was issued to last, in seconds. Whoever holds the
+	// parent can mint another session at will, so a session is worth as
+	// much to a thief as the token it came from: Assurance judges it by
+	// this rather than by its own minutes, and a key that proved the
+	// exchange does not make it bound, since whoever copied the parent
+	// chose that key. Zero when the parent was bound, whose own key had to
+	// prove the exchange.
+	Inherits int64 `json:"inherits,omitempty"`
+}
+
+// Assurance is what a copy of this token would be worth to whoever took
+// it: how long it lasts, and whether every request with it must be proved
+// by a key its rightful holder chose. A session exchanged from an unbound
+// token is judged by that token (see Inherits).
+func (t Token) Assurance() (life time.Duration, bound bool) {
+	if t.Parent != "" && t.Inherits > 0 {
+		return time.Duration(t.Inherits) * time.Second, false
+	}
+	return time.Unix(t.ExpiresAt, 0).Sub(time.Unix(t.CreatedAt, 0)), t.Key != ""
 }
 
 // BindSession records where a session was issued to.
@@ -1136,6 +1157,13 @@ func (ts *TokenStore) ExchangeProved(parentSecret string, role Role, resource st
 		// about which one wins.
 		Scope: parent.Scope.Narrow(Scope{}),
 		Key:   thumbprint,
+	}
+	// A parent bound to no key gives its sessions no more assurance than
+	// it has: exchanging a copied bearer token, with a key of the copier's
+	// choosing, must not produce what passes for a proved or short-lived
+	// credential where acts are risky.
+	if parent.Key == "" {
+		t.Inherits = parent.ExpiresAt - parent.CreatedAt
 	}
 	ts.pruneSessions(now)
 	ts.Tokens = append(ts.Tokens, t)

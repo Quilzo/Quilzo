@@ -428,6 +428,19 @@ Unreleased
     goes on.  What people do in the admin and on the command line still
     goes ahead with the failure reported, as before.
 
+*** Exchanging a copied token no longer gets round proof of possession.
+    From another machine, publishing, rolling back, granting, managing
+    tokens and agents and installing take a token bound to a key or one
+    that lasts an hour or less.  A long-lived bearer token exchanged at
+    /token/exchange gave a fifteen-minute session that passed as short,
+    and an exchange proved with any key gave one that passed as bound,
+    so whoever copied the token could do all of it.  A session now counts
+    as the token it was exchanged from: from an unbound token it is as
+    long-lived and as unbound as that token, whatever key proved the
+    exchange; from a bound token, whose own key must prove the exchange,
+    it is short and bound.  An app's consented token, a CI job's own
+    token (quilzo trust) and key-bound tokens work as before.
+
 *** Writes that happen at the same time no longer undo each other's
     security decisions.  A sign-in in the admin could write back a token
     that the command line had just revoked; a publish sending webhooks

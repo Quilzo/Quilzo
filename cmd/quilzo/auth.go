@@ -806,7 +806,7 @@ func tokenIssue(root string, args []string) error {
 			"each request, to /mcp, /v1 or /a2a; it is refused everywhere else%s\n", dim, tok.Key, reset)
 	} else if tok.Role.AtLeast(auth.RolePublisher) && !tok.Scope.ReadOnly && life > shortLived {
 		fmt.Printf("  %sfrom another machine, publishing and administering with it need it bound to a key "+
-			"(--key) or exchanged for a short session first; reading and drafting work as it is%s\n", dim, reset)
+			"(--key), and a session exchanged from it counts as it does; reading and drafting work as it is%s\n", dim, reset)
 	}
 	if fromPolicy {
 		fmt.Printf("  %sthe role is what %s holds in the policy; --role narrows "+
