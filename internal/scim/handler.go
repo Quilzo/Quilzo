@@ -8,8 +8,8 @@ import (
 	"github.com/quilzo/quilzo/internal/clientip"
 	"net/http"
 	"regexp"
-	"strconv"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/throttle"
