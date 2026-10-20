@@ -416,6 +416,31 @@ Unreleased
 
 ** Fixed
 
+*** Quilzo reads its own audit log on the server's timer.  The rules about
+    Quilzo itself, what agents did and the correlations across them ran
+    only when somebody ran `quilzo detect run`, a feed pushed events or a
+    scheduled collection brought some in, so an installation that collects
+    from nowhere ran none of them.  Every quarter of an hour in which the
+    log has grown, the rules run, and what they raise goes to the
+    automations.
+
+*** A new store starts with the shipped detection rules, and a server
+    whose store has no rules directory installs them when it starts.  They
+    are files in the store as before, the organisation's to tune or switch
+    off; a store that has its own rules keeps exactly those.
+
+*** Making somebody an administrator is detected on every path: the
+    People screen, `quilzo auth grant`, and provisioning from an identity
+    provider, which now records each role it gives and takes away
+    (scim.granted, scim.revoked).
+
+*** `quilzo token exchange --json` is recorded; the session a script asked
+    for left no record.
+
+*** A webhook a feature package adds, changes or removes is recorded on
+    its own, with where it sends, and feature.installed records how risky
+    its card said the install was and how many people it took.
+
 *** A deny or a grant on part of the site holds on the machine interface.
     Its page operations asked about the whole site, so somebody denied
     /legal could list, read, search, compare, write and export it over MCP,

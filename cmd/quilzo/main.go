@@ -1204,6 +1204,9 @@ func cmdInit(root string) error {
 		fmt.Printf("created %s\n", s.Root())
 		fmt.Printf("  %scontent is immutable and addressed by hash; publishing "+
 			"moves a pointer%s\n", dim, reset)
+		if err := ensureRules(root, "init"); err != nil {
+			return err
+		}
 	} else {
 		fmt.Printf("reusing %s\n", s.Root())
 	}

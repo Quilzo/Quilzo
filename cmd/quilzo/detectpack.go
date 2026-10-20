@@ -82,20 +82,9 @@ func detectPack(root string, args []string) error {
 		// the server does not find.
 		dir = filepath.Join(root, "detections")
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	added, kept, err := installPack(dir)
+	if err != nil {
 		return err
-	}
-	added, kept := 0, 0
-	for _, f := range files {
-		dest := filepath.Join(dir, f.Name)
-		if _, err := os.Stat(dest); err == nil {
-			kept++
-			continue
-		}
-		if err := atomicfile.Write(dest, f.Body, 0o600); err != nil {
-			return err
-		}
-		added++
 	}
 	record(root, audit.Record{Action: "detect.pack", Resource: "/detections",
 		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
@@ -109,5 +98,55 @@ func detectPack(root string, args []string) error {
 	w.Human("  %sthey run on the next quilzo detect run. A rule for a "+
 		"platform you do not collect matches nothing and costs nothing%s\n",
 		dim, reset)
+	return nil
+}
+
+// installPack copies the shipped rules and correlations into dir, leaving
+// any file already there alone.
+func installPack(dir string) (added, kept int, err error) {
+	files, err := detect.Pack()
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return 0, 0, err
+	}
+	for _, f := range files {
+		dest := filepath.Join(dir, f.Name)
+		if _, err := os.Stat(dest); err == nil {
+			kept++
+			continue
+		}
+		if err := atomicfile.Write(dest, f.Body, 0o600); err != nil {
+			return added, kept, err
+		}
+		added++
+	}
+	return added, kept, nil
+}
+
+// ensureRules gives a store the shipped rules when it has none of its own.
+//
+// The rules about Quilzo itself (an administrator made, break-glass used,
+// the audit log moved, a setting weakened, an agent allowed to publish)
+// used to run only after somebody learned to type `quilzo detect pack
+// install`, so an installation set up the obvious way watched nothing,
+// while the page about watching itself said it read its log continuously.
+// A store with no rules directory now starts with the pack, copied as
+// files so the rules are still the organisation's to review, tune or
+// switch off on the record. A store that has a rules directory keeps
+// exactly what is in it.
+func ensureRules(root, by string) error {
+	dir := filepath.Join(root, "detections")
+	if dirExists(dir) {
+		return nil
+	}
+	added, _, err := installPack(dir)
+	if err != nil {
+		return fmt.Errorf("the detection rules could not be installed: %w", err)
+	}
+	record(root, audit.Record{Action: "detect.pack", Resource: "/detections",
+		Outcome: audit.Success, Principal: by, Kind: audit.KindService, Verified: true,
+		Detail: map[string]string{"added": fmt.Sprint(added), "reason": "the store had no rules"}})
 	return nil
 }

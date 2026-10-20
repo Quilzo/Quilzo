@@ -882,18 +882,10 @@ func tokenExchange(root string, args []string) error {
 		return err
 	}
 
-	if w.JSON(map[string]any{
-		"token": secret, "id": t.ID, "role": string(t.Role),
-		"resource": t.Resource, "expires_at": t.ExpiresAt,
-		"expires_in_seconds": t.ExpiresAt - time.Now().Unix(),
-		"parent":             t.Parent,
-	}) {
-		return nil
-	}
-
 	// An exchange is a privileged action too: it mints a live credential. The
 	// parent is recorded, so a compromised long-lived token can be traced to
-	// every session it produced rather than only to itself.
+	// every session it produced rather than only to itself. Recorded before
+	// anything is printed, so the JSON that scripts ask for is recorded too.
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "token.exchange", Resource: t.Resource, Outcome: audit.Success,
@@ -903,6 +895,15 @@ func tokenExchange(root string, args []string) error {
 			"expires": time.Unix(t.ExpiresAt, 0).UTC().Format(time.RFC3339),
 		},
 	})
+
+	if w.JSON(map[string]any{
+		"token": secret, "id": t.ID, "role": string(t.Role),
+		"resource": t.Resource, "expires_at": t.ExpiresAt,
+		"expires_in_seconds": t.ExpiresAt - time.Now().Unix(),
+		"parent":             t.Parent,
+	}) {
+		return nil
+	}
 
 	fmt.Printf("%s%s%s\n", bold, secret, reset)
 	fmt.Printf("\n  %s%s on %s · expires in %s · from %s (%s)%s\n", dim,

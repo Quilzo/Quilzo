@@ -116,3 +116,25 @@ func storeSelfEvents(root string, sp *spool.Spool, now time.Time) ([]telemetry.E
 	}
 	return stored, atomicfile.Write(selfCursorPath(root), b, 0o600)
 }
+
+// selfLogGrew reports whether the audit log holds anything the rules have
+// not read, other than the records of their own runs, which would
+// otherwise make every pass the reason for the next.
+func selfLogGrew(root string) (bool, error) {
+	events, err := audit.Read(auditPath(root))
+	if err != nil {
+		return false, err
+	}
+	var cur selfCursor
+	if b, rerr := os.ReadFile(selfCursorPath(root)); rerr == nil {
+		if jerr := json.Unmarshal(b, &cur); jerr != nil {
+			return false, fmt.Errorf("self.json: %w", jerr)
+		}
+	}
+	for i := len(events) - 1; i >= 0 && events[i].Seq > cur.Seq; i-- {
+		if events[i].Action != "detect.run" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
