@@ -123,6 +123,9 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 			},
 			child,
 		),
+		// A delegate's actions are refused while the log could not hold
+		// them, as its parent's are (auditReady).
+		Admit: func(agent.Action) error { return auditReady(d.root) },
 		Record: func(rc agent.Receipt) {
 			detail := rc.Detail()
 			// The half that makes this delegation with accountability rather

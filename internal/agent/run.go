@@ -251,6 +251,12 @@ type Runner struct {
 	// Unearn is told when the reviewer refuses an action or the breaker
 	// stops one: every kind the agent had earned goes back to asking.
 	Unearn func(why string)
+	// Admit is asked just before an allowed action is performed, for a
+	// reason outside the declaration: the host's audit log cannot take the
+	// action's record. An error refuses the action and ends the run, with
+	// the error as why it stopped, since every action after it would be
+	// refused for the same reason. Nil admits everything.
+	Admit func(Action) error
 }
 
 // earnedFor is the line a step records when its kind of action has earned
@@ -599,6 +605,15 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 			t.Steps = append(t.Steps, priced(step))
 			t.Stopped = "this runner has no Perform function"
 			break
+		}
+
+		if r.Admit != nil {
+			if err := r.Admit(action); err != nil {
+				step.Allowed, step.Why = false, err.Error()
+				t.Steps = append(t.Steps, priced(step))
+				t.Stopped = err.Error()
+				break
+			}
 		}
 
 		pctx := ctx

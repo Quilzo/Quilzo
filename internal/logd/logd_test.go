@@ -312,3 +312,19 @@ func TestOwnershipIsCheckedRatherThanAssumed(t *testing.T) {
 		t.Errorf("separation was reported absent when it holds: %s", why)
 	}
 }
+
+// A writer that listens is reachable, and asking leaves nothing in the
+// log; a socket nobody listens on is not.
+func TestReachableAsksWithoutWriting(t *testing.T) {
+	sock, _, path := writer(t)
+	if err := Reachable(sock); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if events, _ := audit.Read(path); len(events) != 0 {
+		t.Errorf("asking wrote %d record(s)", len(events))
+	}
+	if err := Reachable(filepath.Join(t.TempDir(), "log.sock")); err == nil {
+		t.Error("a writer that is not there was reachable")
+	}
+}
