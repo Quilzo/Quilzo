@@ -201,6 +201,25 @@ func (s *Store) path(agent string) (string, error) {
 	return filepath.Join(s.Dir, agent+".json"), nil
 }
 
+// lockAgent takes the lock on one agent's memory, across processes, for a
+// read, a change and a write.
+//
+// The mutex beside it serialises one Store, and the host makes a Store per
+// call, so it serialised nothing: a run that read an agent's memory before
+// somebody had it forget a person, and wrote after, put the forgotten
+// entries back while the receipt said they were gone. That is an erasure
+// undone (GDPR Article 17), so every change holds the file's own lock.
+func (s *Store) lockAgent(agent string) (func(), error) {
+	p, err := s.path(agent)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
+		return nil, err
+	}
+	return atomicfile.Lock(p + ".lock")
+}
+
 func (s *Store) load(agent string) (file, error) {
 	var f file
 	p, err := s.path(agent)
@@ -286,6 +305,11 @@ func (s *Store) Remember(e Entry, retain time.Duration, now time.Time) (Entry, e
 	e.Digest, e.Created = digest(e.Text), now.UTC()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	unlock, err := s.lockAgent(e.Agent)
+	if err != nil {
+		return Entry{}, err
+	}
+	defer unlock()
 	f, err := s.load(e.Agent)
 	if err != nil {
 		return Entry{}, err
@@ -501,28 +525,42 @@ func (s *Store) changeIn(id string, fn func(f *file, e *Entry) (keep bool, err e
 		return Entry{}, err
 	}
 	for _, a := range agents {
-		f, err := s.load(a)
-		if err != nil {
-			return Entry{}, err
-		}
-		for i := range f.Entries {
-			if f.Entries[i].ID != id {
-				continue
-			}
-			e := f.Entries[i]
-			keep, err := fn(&f, &f.Entries[i])
-			if err != nil {
-				return e, err
-			}
-			if !keep {
-				f.Entries = append(f.Entries[:i], f.Entries[i+1:]...)
-			} else {
-				e = f.Entries[i]
-			}
-			return e, s.save(a, f)
+		e, found, err := s.changeAgent(a, id, fn)
+		if found || err != nil {
+			return e, err
 		}
 	}
 	return Entry{}, ErrNoEntry
+}
+
+// changeAgent is changeIn within one agent's memory, under its lock.
+func (s *Store) changeAgent(a, id string, fn func(f *file, e *Entry) (keep bool, err error)) (Entry, bool, error) {
+	unlock, err := s.lockAgent(a)
+	if err != nil {
+		return Entry{}, false, err
+	}
+	defer unlock()
+	f, err := s.load(a)
+	if err != nil {
+		return Entry{}, false, err
+	}
+	for i := range f.Entries {
+		if f.Entries[i].ID != id {
+			continue
+		}
+		e := f.Entries[i]
+		keep, err := fn(&f, &f.Entries[i])
+		if err != nil {
+			return e, true, err
+		}
+		if !keep {
+			f.Entries = append(f.Entries[:i], f.Entries[i+1:]...)
+		} else {
+			e = f.Entries[i]
+		}
+		return e, true, s.save(a, f)
+	}
+	return Entry{}, false, nil
 }
 
 // Get is one entry.
@@ -609,23 +647,39 @@ func (s *Store) remove(only string, match func(Entry) bool) ([]string, error) {
 	}
 	var gone []string
 	for _, a := range agents {
-		f, err := s.load(a)
+		ids, err := s.removeIn(a, match)
+		gone = append(gone, ids...)
 		if err != nil {
 			return gone, err
 		}
-		kept := f.Entries[:0]
-		for _, e := range f.Entries {
-			if match(e) {
-				gone = append(gone, e.ID)
-				continue
-			}
-			kept = append(kept, e)
+	}
+	return gone, nil
+}
+
+// removeIn is remove within one agent's memory, under its lock.
+func (s *Store) removeIn(a string, match func(Entry) bool) ([]string, error) {
+	unlock, err := s.lockAgent(a)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	f, err := s.load(a)
+	if err != nil {
+		return nil, err
+	}
+	var gone []string
+	kept := f.Entries[:0]
+	for _, e := range f.Entries {
+		if match(e) {
+			gone = append(gone, e.ID)
+			continue
 		}
-		if len(kept) != len(f.Entries) {
-			f.Entries = kept
-			if err := s.save(a, f); err != nil {
-				return gone, err
-			}
+		kept = append(kept, e)
+	}
+	if len(kept) != len(f.Entries) {
+		f.Entries = kept
+		if err := s.save(a, f); err != nil {
+			return gone, err
 		}
 	}
 	return gone, nil

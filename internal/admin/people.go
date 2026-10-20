@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -293,11 +294,7 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 			s.peopleBack(w, r, "That role cannot be granted like that: a role an app declares is never a deny.")
 			return
 		}
-		if err := s.Policy.Assign(who, ar, base); err != nil {
-			s.peopleBack(w, r, err.Error())
-			return
-		}
-		if err := s.save(); err != nil {
+		if err := s.changePolicy(func(p *auth.Policy) error { return p.Assign(who, ar, base) }); err != nil {
 			s.peopleBack(w, r, err.Error())
 			return
 		}
@@ -324,13 +321,14 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 		}
 		role, on = auth.Role(job.Name), "its areas"
 	}
-	for _, b := range bindings {
-		if err := s.Policy.Grant(b); err != nil {
-			s.peopleBack(w, r, err.Error())
-			return
+	if err := s.changePolicy(func(p *auth.Policy) error {
+		for _, b := range bindings {
+			if err := p.Grant(b); err != nil {
+				return err
+			}
 		}
-	}
-	if err := s.save(); err != nil {
+		return nil
+	}); err != nil {
 		s.peopleBack(w, r, err.Error())
 		return
 	}
@@ -339,6 +337,9 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 	})
 	s.peopleBack(w, r, fmt.Sprintf("%s is now %s on %s", who, role, on))
 }
+
+// errNoSuchBinding is a revocation that matched nothing.
+var errNoSuchBinding = errors.New("no such binding")
 
 // handlePeopleRevoke removes a binding.
 func (s *Server) handlePeopleRevoke(w http.ResponseWriter, r *http.Request) {
@@ -368,16 +369,22 @@ func (s *Server) handlePeopleRevoke(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var n int
-	if name, isApp := strings.CutPrefix(string(role), "app:"); isApp {
-		n = s.Policy.RevokeAppRole(who, name)
-	} else {
-		n = s.Policy.RevokeNamed(who, string(role), on)
-	}
-	if n == 0 {
-		s.peopleBack(w, r, "no such binding")
-		return
-	}
-	if err := s.save(); err != nil {
+	if err := s.changePolicy(func(pol *auth.Policy) error {
+		// Asked again of the policy as stored, as the one read at the start
+		// of the request may be missing another administrator's removal.
+		if who == p.Name && role == auth.RoleAdmin && lastAdminIn(pol, who) {
+			return errLastAdmin
+		}
+		if name, isApp := strings.CutPrefix(string(role), "app:"); isApp {
+			n = pol.RevokeAppRole(who, name)
+		} else {
+			n = pol.RevokeNamed(who, string(role), on)
+		}
+		if n == 0 {
+			return errNoSuchBinding
+		}
+		return nil
+	}); err != nil {
 		s.peopleBack(w, r, err.Error())
 		return
 	}
@@ -455,17 +462,25 @@ func (s *Server) peopleBack(w http.ResponseWriter, r *http.Request, msg string) 
 }
 
 // lastAdmin reports whether this principal is the only one who can grant.
-func (s *Server) lastAdmin(who string) bool {
-	for _, other := range s.Policy.Principals() {
+func (s *Server) lastAdmin(who string) bool { return lastAdminIn(s.Policy, who) }
+
+// lastAdminIn reports whether who is the only principal a policy lets
+// administer the whole store.
+func lastAdminIn(p *auth.Policy, who string) bool {
+	for _, other := range p.Principals() {
 		if other == who {
 			continue
 		}
-		if s.Policy.Evaluate(other, auth.ActGrant, "/").Allowed {
+		if p.Evaluate(other, auth.ActGrant, "/").Allowed {
 			return false
 		}
 	}
 	return true
 }
+
+// errLastAdmin is removing the last binding that administers the store.
+var errLastAdmin = errors.New("that is the last administrator binding, and removing it would leave " +
+	"nobody able to administer this store")
 
 func urlQueryEscape(s string) string {
 	var b strings.Builder
@@ -486,23 +501,35 @@ func urlQueryEscape(s string) string {
 	return b.String()
 }
 
-// save persists whatever the host gave it a way to persist.
+// save persists the credentials, merged by the host with what is stored,
+// so a token revoked elsewhere stays revoked (auth.TokenStore.MergeInto).
 //
-// Both are optional so a test can construct a server without them, and both
-// failing loudly matters more than either succeeding quietly: an access change
-// that is not written is an access change that disappears at the next restart,
+// Only the credentials. Writing the policy back from here too meant every
+// sign-in and every revoked session rewrote who may do what from a copy
+// read at the start of the request; a change to the policy goes through
+// changePolicy instead. Failing loudly matters more than succeeding
+// quietly: a change that is not written disappears at the next restart,
 // and the administrator has already been told it worked.
 func (s *Server) save() error {
-	if s.SavePolicy != nil {
-		if err := s.SavePolicy(s.Policy); err != nil {
-			return fmt.Errorf("the change was not saved: %w", err)
-		}
-	}
 	if s.SaveTokens != nil {
 		if err := s.SaveTokens(s.Tokens); err != nil {
 			return fmt.Errorf("the change was not saved: %w", err)
 		}
 	}
+	return nil
+}
+
+// changePolicy makes an access change to the policy as stored now, and
+// takes the result as this server's policy.
+func (s *Server) changePolicy(change func(*auth.Policy) error) error {
+	if s.UpdatePolicy == nil {
+		return change(s.Policy)
+	}
+	pol, err := s.UpdatePolicy(change)
+	if err != nil {
+		return err
+	}
+	s.Policy = pol
 	return nil
 }
 

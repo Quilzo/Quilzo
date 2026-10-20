@@ -63,10 +63,6 @@ func cmdRecover(root string, args []string) error {
 		}
 	}
 
-	pol, err := loadPolicy(root)
-	if err != nil {
-		return err
-	}
 	toks, err := loadTokens(root)
 	if err != nil {
 		return err
@@ -125,12 +121,9 @@ func cmdRecover(root string, args []string) error {
 
 	// The grant, and a token to use it with. Both, because granting a role to
 	// somebody who then cannot authenticate is the lockout this exists to end.
-	if err := pol.Grant(auth.Binding{
-		Principal: principal, Role: auth.RoleAdmin, Resource: "/",
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		return p.Grant(auth.Binding{Principal: principal, Role: auth.RoleAdmin, Resource: "/"})
 	}); err != nil {
-		return err
-	}
-	if err := saveJSON(policyPath(root), pol); err != nil {
 		return err
 	}
 
@@ -150,7 +143,7 @@ func cmdRecover(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := saveJSON(tokensPath(root), toks); err != nil {
+	if err := saveTokens(root, toks); err != nil {
 		return err
 	}
 

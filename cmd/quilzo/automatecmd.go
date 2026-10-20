@@ -187,7 +187,7 @@ func automationActions(root string) map[string]automate.Action {
 		if n == 0 {
 			return 0, nil
 		}
-		return n, saveJSON(tokensPath(root), ts)
+		return n, saveTokens(root, ts)
 	}
 	acts := map[string]automate.Action{
 		"step-up": {ID: "step-up", Name: "Make them prove it is them",

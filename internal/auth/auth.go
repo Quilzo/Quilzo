@@ -1531,3 +1531,56 @@ func (ts *TokenStore) Replace(tokens []Token) {
 	defer ts.mu.Unlock()
 	ts.Tokens = tokens
 }
+
+// MergeInto folds ts into stored, the store as it is on disk now, so that
+// writing stored undoes nothing another writer did since ts was read.
+//
+// Two copies of the store meet whenever two processes, or two requests, each
+// read it, change it and write it: a sign-in in the admin that read the file
+// before a revocation on the command line wrote back the token as unrevoked.
+// The store's own rules make a union safe. A token is only ever added, a
+// revocation only ever sets a flag, and only sessions that ended long ago
+// are removed, by a sweep that runs again here. So a token either copy has
+// is kept, a token revoked in either stays revoked, a key bound in either
+// stays bound, and the last use is the later one; for everything else ts,
+// the copy being written, says what was meant.
+func (ts *TokenStore) MergeInto(stored *TokenStore, now time.Time) {
+	ts.mu.Lock()
+	mine := append([]Token(nil), ts.Tokens...)
+	ended := append([]Ended(nil), ts.Ended...)
+	ts.mu.Unlock()
+
+	stored.mu.Lock()
+	defer stored.mu.Unlock()
+	at := make(map[string]int, len(stored.Tokens))
+	for i, t := range stored.Tokens {
+		at[t.ID] = i
+	}
+	for _, m := range mine {
+		i, ok := at[m.ID]
+		if !ok {
+			stored.Tokens = append(stored.Tokens, m)
+			continue
+		}
+		s := stored.Tokens[i]
+		m.Revoked = m.Revoked || s.Revoked
+		if m.Bound == "" {
+			m.Bound = s.Bound
+		}
+		if s.LastUsed > m.LastUsed {
+			m.LastUsed = s.LastUsed
+		}
+		stored.Tokens[i] = m
+	}
+	seen := make(map[string]bool, len(stored.Ended))
+	for _, e := range stored.Ended {
+		seen[e.Print] = true
+	}
+	for _, e := range ended {
+		if !seen[e.Print] {
+			stored.Ended = append(stored.Ended, e)
+			seen[e.Print] = true
+		}
+	}
+	stored.pruneSessions(now)
+}

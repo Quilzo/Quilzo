@@ -137,7 +137,7 @@ func resolveCaller(root, explicitToken string) *Caller {
 
 	// Using a token records that it was used, which is what makes `token stale`
 	// able to find credentials nobody needs any more.
-	_ = saveJSON(tokensPath(root), toks)
+	_ = saveTokens(root, toks)
 
 	kind := audit.KindService
 	if strings.EqualFold(tok.Name, "cli") || strings.Contains(tok.Name, "@") {

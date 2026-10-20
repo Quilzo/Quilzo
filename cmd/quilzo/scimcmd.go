@@ -156,62 +156,70 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 	}
 
 	// Keep what provisioning made and still wants, so a grant's date is the
-	// day it was first made and an unchanged sync writes nothing.
-	satisfied := make([]bool, len(want))
-	changed := false
-	// What provisioning gave and took, recorded one by one below: the role
+	// day it was first made and an unchanged sync writes nothing. Worked out
+	// on the policy as stored now, under its lock: an identity provider sends
+	// requests in parallel, and the admin and the command line write the same
+	// file, so a revocation decided from an earlier copy could be undone.
+	// What provisioning gave and took is recorded one by one below: the role
 	// is what a rule about somebody being made an administrator reads, and
 	// a group mapped to admin is a way to make one.
 	var granted, revoked []auth.Binding
-	kept := p.Bindings[:0]
-	for _, b := range p.Bindings {
-		if b.GrantedBy != scimBy || !strings.EqualFold(b.Principal, name) {
-			kept = append(kept, b)
-			continue
-		}
-		keep := false
-		for i, x := range want {
-			if !satisfied[i] && same(b, x) {
-				satisfied[i], keep = true, true
-				break
-			}
-		}
-		if keep {
-			kept = append(kept, b)
-		} else {
-			changed = true
-			revoked = append(revoked, b)
-		}
-	}
-	p.Bindings = kept
-	for i, x := range want {
-		if satisfied[i] {
-			continue
-		}
-		// Somebody already granted it by hand, which stands for both.
-		dup := false
+	p, err = updatePolicy(root, func(p *auth.Policy) error {
+		granted, revoked = nil, nil
+		satisfied := make([]bool, len(want))
+		changed := false
+		kept := p.Bindings[:0]
 		for _, b := range p.Bindings {
-			if same(b, x) {
-				dup = true
+			if b.GrantedBy != scimBy || !strings.EqualFold(b.Principal, name) {
+				kept = append(kept, b)
+				continue
+			}
+			keep := false
+			for i, x := range want {
+				if !satisfied[i] && same(b, x) {
+					satisfied[i], keep = true, true
+					break
+				}
+			}
+			if keep {
+				kept = append(kept, b)
+			} else {
+				changed = true
+				revoked = append(revoked, b)
 			}
 		}
-		if dup {
-			continue
+		p.Bindings = kept
+		for i, x := range want {
+			if satisfied[i] {
+				continue
+			}
+			// Somebody already granted it by hand, which stands for both.
+			dup := false
+			for _, b := range p.Bindings {
+				if same(b, x) {
+					dup = true
+				}
+			}
+			if dup {
+				continue
+			}
+			if x.Note == "" {
+				x.Note = "provisioned from the identity provider's groups"
+			}
+			x.GrantedBy = scimBy
+			if err := p.Grant(x); err != nil {
+				return err
+			}
+			changed = true
+			granted = append(granted, x)
 		}
-		if x.Note == "" {
-			x.Note = "provisioned from the identity provider's groups"
+		if !changed {
+			return atomicfile.ErrUnchanged
 		}
-		x.GrantedBy = scimBy
-		if err := p.Grant(x); err != nil {
-			return err
-		}
-		changed = true
-		granted = append(granted, x)
-	}
-	if changed {
-		if err := saveJSON(policyPath(root), p); err != nil {
-			return err
-		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	for _, set := range []struct {
 		action string
@@ -240,7 +248,7 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 		}
 	}
 	if ended > 0 {
-		if err := saveJSON(tokensPath(root), ts); err != nil {
+		if err := saveTokens(root, ts); err != nil {
 			return err
 		}
 		record(root, audit.Record{Action: "scim.sessions-ended", Resource: "/",

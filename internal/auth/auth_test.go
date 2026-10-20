@@ -691,3 +691,43 @@ func TestAppTokensAreBoundedAndSweptAway(t *testing.T) {
 		t.Fatalf("an app's token long expired was kept: %d", n)
 	}
 }
+
+// Writing a copy of the token store read before a revocation does not undo
+// it, and a token either copy added is kept.
+func TestMergingTokenStoresNeverUndoesARevocation(t *testing.T) {
+	now := time.Now()
+	stored := &TokenStore{}
+	_, kept, err := stored.Issue("ci", "dana", RoleAdmin, "/", time.Hour, RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The admin read the store, then the command line revoked the token and
+	// issued another.
+	mine := &TokenStore{Tokens: append([]Token(nil), stored.Tokens...)}
+	if _, err := stored.Revoke(kept.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, other, err := stored.Issue("cli", "sam", RoleAdmin, "/", time.Hour, RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Meanwhile the admin signed somebody in.
+	_, session, err := mine.IssueSession("session", "rae", RoleReader, "/", time.Hour, RoleReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine.MergeInto(stored, now)
+	byID := map[string]Token{}
+	for _, tk := range stored.Snapshot() {
+		byID[tk.ID] = tk
+	}
+	if !byID[kept.ID].Revoked {
+		t.Error("the admin's stale copy brought a revoked token back to life")
+	}
+	if _, ok := byID[other.ID]; !ok {
+		t.Error("a token issued elsewhere was lost")
+	}
+	if _, ok := byID[session.ID]; !ok {
+		t.Error("the admin's new session was lost")
+	}
+}

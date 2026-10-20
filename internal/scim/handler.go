@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"slices"
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/throttle"
@@ -252,7 +253,9 @@ func (h *Handler) users(w http.ResponseWriter, r *http.Request, id string) {
 			return
 		}
 		h.audit("scim.user-created", made.UserName, true)
-		h.sync(made.ID)
+		// What a new user is given failing to apply leaves them with less,
+		// so it is recorded and the creation stands.
+		_ = h.sync(made.ID)
 		reply(w, http.StatusCreated, h.userJSON(made))
 	case id != "":
 		h.user(w, r, id)
@@ -297,6 +300,18 @@ func (h *Handler) user(w http.ResponseWriter, r *http.Request, id string) {
 			}
 			changes = op.userChanges()
 		}
+		// A renamed person's access moves with them, and the old name loses
+		// it before the rename is kept: a revocation that cannot be made then
+		// fails the request, which the identity provider sends again, rather
+		// than leaving the old name holding access nobody can see.
+		if v, ok := changes["userName"].(string); ok && validUserName(v) &&
+			!strings.EqualFold(strings.TrimSpace(v), found.UserName) && h.Sync != nil {
+			if err := h.Sync(found.UserName, nil, false); err != nil {
+				h.audit("scim.sync-failed", found.UserName, false)
+				fail(w, http.StatusInternalServerError, "", "the old name's access could not be taken away")
+				return
+			}
+		}
 		var after User
 		err := h.Store.Update(func(st *State) error {
 			u, ok := st.User(id)
@@ -319,29 +334,49 @@ func (h *Handler) user(w http.ResponseWriter, r *http.Request, id string) {
 			after = *u
 			return nil
 		})
-		if err == ErrConflict {
-			fail(w, http.StatusConflict, "uniqueness", "a user with that userName exists")
-			return
-		}
 		if err != nil {
+			// The rename did not happen, so the old name gets back what it
+			// holds if it lost it above.
+			_ = h.sync(id)
+			if err == ErrConflict {
+				fail(w, http.StatusConflict, "uniqueness", "a user with that userName exists")
+				return
+			}
 			fail(w, http.StatusInternalServerError, "", "that user could not be changed")
 			return
-		}
-		// A renamed person's access moves with them: the old name loses it.
-		if !strings.EqualFold(after.UserName, found.UserName) && h.Sync != nil {
-			_ = h.Sync(found.UserName, nil, false)
 		}
 		action := "scim.user-changed"
 		if found.Active && !after.Active {
 			action = "scim.user-deactivated"
 		}
 		h.audit(action, after.UserName, true)
-		h.sync(id)
+		if err := h.sync(id); err != nil {
+			fail(w, http.StatusInternalServerError, "", "the change was kept but could not be applied; send it again")
+			return
+		}
 		reply(w, http.StatusOK, h.userJSON(after))
 	case http.MethodDelete:
+		// Suspended first, and only then forgotten: a deletion whose access
+		// could not be taken away fails, and the identity provider sends it
+		// again to a user who is still here.
+		if h.Sync != nil {
+			if err := h.Sync(found.UserName, nil, true); err != nil {
+				h.audit("scim.sync-failed", found.UserName, false)
+				fail(w, http.StatusInternalServerError, "", "that user's access could not be taken away")
+				return
+			}
+		}
+		var gone User
+		var groups []string
 		err := h.Store.Update(func(st *State) error {
 			for i := range st.Users {
 				if st.Users[i].ID == id {
+					gone = st.Users[i]
+					for _, g := range st.Groups {
+						if slices.Contains(g.Members, id) {
+							groups = append(groups, g.ID)
+						}
+					}
 					st.Users = append(st.Users[:i], st.Users[i+1:]...)
 					st.removeMember(id)
 					return nil
@@ -353,8 +388,25 @@ func (h *Handler) user(w http.ResponseWriter, r *http.Request, id string) {
 			fail(w, http.StatusNotFound, "", "no such user")
 			return
 		}
+		// And told again now they are gone, which is what has the host
+		// forget them: what agents remember about a person deleted by the
+		// identity provider is erased. When that cannot be done they are put
+		// back, so the provider's repeat finds them and the erasure happens.
 		if h.Sync != nil {
-			_ = h.Sync(found.UserName, nil, true)
+			if err := h.Sync(found.UserName, nil, true); err != nil {
+				h.audit("scim.sync-failed", found.UserName, false)
+				_ = h.Store.Update(func(st *State) error {
+					st.Users = append(st.Users, gone)
+					for i := range st.Groups {
+						if slices.Contains(groups, st.Groups[i].ID) {
+							st.Groups[i].Members = append(st.Groups[i].Members, id)
+						}
+					}
+					return nil
+				})
+				fail(w, http.StatusInternalServerError, "", "that user could not be forgotten")
+				return
+			}
 		}
 		h.audit("scim.user-deleted", found.UserName, true)
 		w.WriteHeader(http.StatusNoContent)
@@ -421,7 +473,7 @@ func (h *Handler) groups(w http.ResponseWriter, r *http.Request, id string) {
 			return
 		}
 		h.audit("scim.group-created", made.DisplayName, true)
-		h.sync(touched...)
+		_ = h.sync(touched...)
 		var out map[string]any
 		_ = h.Store.Read(func(st *State) { out = h.groupJSON(made, st) })
 		reply(w, http.StatusCreated, out)
@@ -494,7 +546,10 @@ func (h *Handler) group(w http.ResponseWriter, r *http.Request, id string) {
 		h.audit("scim.group-changed", after.DisplayName, true)
 		// Everybody who was in it or is now: a rename changes what the
 		// group means, and membership changes who it means it for.
-		h.sync(unique(append(before.Members, after.Members...))...)
+		if err := h.sync(unique(append(before.Members, after.Members...))...); err != nil {
+			fail(w, http.StatusInternalServerError, "", "the change was kept but could not be applied; send it again")
+			return
+		}
 		var out map[string]any
 		_ = h.Store.Read(func(st *State) { out = h.groupJSON(after, st) })
 		reply(w, http.StatusOK, out)
@@ -512,8 +567,17 @@ func (h *Handler) group(w http.ResponseWriter, r *http.Request, id string) {
 			fail(w, http.StatusNotFound, "", "no such group")
 			return
 		}
+		if err := h.sync(before.Members...); err != nil {
+			// Put back, so the identity provider's repeat finds the group
+			// and its members lose what it gave them then.
+			_ = h.Store.Update(func(st *State) error {
+				st.Groups = append(st.Groups, before)
+				return nil
+			})
+			fail(w, http.StatusInternalServerError, "", "the group's members could not lose what it gave them")
+			return
+		}
 		h.audit("scim.group-deleted", before.DisplayName, true)
-		h.sync(before.Members...)
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		fail(w, http.StatusMethodNotAllowed, "", "not on a group")
@@ -532,10 +596,16 @@ func unique(ids []string) []string {
 	return out
 }
 
-// sync tells the host what each of these users should now hold.
-func (h *Handler) sync(ids ...string) {
+// sync tells the host what each of these users should now hold, and says
+// whether any of it could not be applied.
+//
+// A failure is answered, not only recorded, wherever it would leave
+// somebody holding access they were meant to lose: the identity provider
+// then sends the request again, and a sync works out what each user should
+// hold from the state as it stands, so a repeat is safe.
+func (h *Handler) sync(ids ...string) error {
 	if h.Sync == nil {
-		return
+		return nil
 	}
 	type want struct {
 		name   string
@@ -550,11 +620,16 @@ func (h *Handler) sync(ids ...string) {
 			}
 		}
 	})
+	var first error
 	for _, x := range wants {
 		if err := h.Sync(x.name, x.grants, !x.active); err != nil {
 			h.audit("scim.sync-failed", x.name, false)
+			if first == nil {
+				first = err
+			}
 		}
 	}
+	return first
 }
 
 func (h *Handler) audit(action, subject string, ok bool) {
@@ -571,7 +646,7 @@ func (h *Handler) SyncAll() {
 			ids = append(ids, u.ID)
 		}
 	})
-	h.sync(ids...)
+	_ = h.sync(ids...)
 }
 
 // -- PATCH ------------------------------------------------------------------

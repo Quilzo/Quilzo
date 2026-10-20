@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/feature"
@@ -114,34 +115,33 @@ func holders(pol *auth.Policy, role string) []string {
 // an install: a changed role grants its holders what it grants now, and a
 // role the feature no longer declares is taken from everybody.
 func reassignRoles(root string, pkg *feature.Package, act map[feature.Ref]string, removed []string, caller *Caller) error {
-	pol, err := loadPolicy(root)
-	if err != nil {
-		return err
-	}
 	type change struct {
 		role, what string
 		who        []string
 	}
 	var changes []change
-	for _, r := range pkg.Roles {
-		name := pkg.FullName(r)
-		if act[feature.Ref{Kind: "role", Name: name}] != feature.Change {
-			continue
+	if _, err := updatePolicy(root, func(pol *auth.Policy) error {
+		changes = nil
+		for _, r := range pkg.Roles {
+			name := pkg.FullName(r)
+			if act[feature.Ref{Kind: "role", Name: name}] != feature.Change {
+				continue
+			}
+			ar := pkg.AppRole(r)
+			if who := pol.Reassign(name, &ar); len(who) > 0 {
+				changes = append(changes, change{name, "changed", who})
+			}
 		}
-		ar := pkg.AppRole(r)
-		if who := pol.Reassign(name, &ar); len(who) > 0 {
-			changes = append(changes, change{name, "changed", who})
+		for _, name := range removed {
+			if who := pol.Reassign(name, nil); len(who) > 0 {
+				changes = append(changes, change{name, "removed", who})
+			}
 		}
-	}
-	for _, name := range removed {
-		if who := pol.Reassign(name, nil); len(who) > 0 {
-			changes = append(changes, change{name, "removed", who})
+		if len(changes) == 0 {
+			return atomicfile.ErrUnchanged
 		}
-	}
-	if len(changes) == 0 {
 		return nil
-	}
-	if err := saveJSON(policyPath(root), pol); err != nil {
+	}); err != nil {
 		return err
 	}
 	for _, c := range changes {

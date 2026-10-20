@@ -5,6 +5,7 @@ package scim
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -230,5 +231,40 @@ func TestTheDiscoveryEndpointsAnswer(t *testing.T) {
 	}
 	if code, out := f.do(t, http.MethodGet, `/Users?filter=name.givenName%20sw%20%22A%22`, ""); code != 400 || out["scimType"] != "invalidFilter" {
 		t.Errorf("an unsupported filter answered %d %v", code, out)
+	}
+}
+
+// When access cannot be taken away, provisioning says so and keeps what
+// it would need to try again: a deleted user is still there for the
+// repeat, a deactivation is answered with an error, and a deleted group
+// comes back so its members can lose what it gave them.
+func TestProvisioningThatCannotRemoveAccessFailsAndCanBeRepeated(t *testing.T) {
+	f := newFixture(t)
+	_, u := f.do(t, http.MethodPost, "/Users", `{"userName":"ada@example.com","active":true}`)
+	id := u["id"].(string)
+	_, g := f.do(t, http.MethodPost, "/Groups", `{"displayName":"Editors","members":[{"value":"`+id+`"}]}`)
+	gid := g["id"].(string)
+
+	working := f.h.Sync
+	f.h.Sync = func(string, []string, bool) error { return errors.New("the policy could not be written") }
+	if code, _ := f.do(t, http.MethodPatch, "/Users/"+id, `{"Operations":[{"op":"replace","value":{"active":false}}]}`); code != http.StatusInternalServerError {
+		t.Errorf("a deactivation that could not be applied answered %d", code)
+	}
+	if code, _ := f.do(t, http.MethodDelete, "/Groups/"+gid, ""); code != http.StatusInternalServerError {
+		t.Errorf("a group deletion that could not be applied answered %d", code)
+	}
+	if code, _ := f.do(t, http.MethodDelete, "/Users/"+id, ""); code != http.StatusInternalServerError {
+		t.Errorf("a user deletion that could not be applied answered %d", code)
+	}
+
+	f.h.Sync = working
+	if code, _ := f.do(t, http.MethodDelete, "/Groups/"+gid, ""); code != http.StatusNoContent {
+		t.Errorf("the repeated group deletion found nothing to delete: %d", code)
+	}
+	if code, _ := f.do(t, http.MethodDelete, "/Users/"+id, ""); code != http.StatusNoContent {
+		t.Errorf("the repeated user deletion found nothing to delete: %d", code)
+	}
+	if !f.suspended["ada@example.com"] || len(f.held["ada@example.com"]) != 0 {
+		t.Errorf("after the repeats the person still holds %v (suspended %v)", f.held, f.suspended)
 	}
 }
