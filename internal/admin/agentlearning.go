@@ -156,13 +156,13 @@ func (s *Server) handleAgentLearningAct(w http.ResponseWriter, r *http.Request) 
 	}
 	switch r.FormValue("do") {
 	case "adopt":
-		if err := s.Agents.AdoptLesson(name, id, r.FormValue("tainted_ok") == "yes", p.Name); err != nil {
+		if err := s.Agents.AdoptLesson(name, id, r.FormValue("tainted_ok") == "yes", p.actor()); err != nil {
 			back("", err)
 			return
 		}
 		back("Adopted. Runs with that model now read it.", nil)
 	case "retire":
-		if err := s.Agents.RetireLesson(name, id, r.FormValue("why"), p.Name); err != nil {
+		if err := s.Agents.RetireLesson(name, id, r.FormValue("why"), p.actor()); err != nil {
 			back("", err)
 			return
 		}

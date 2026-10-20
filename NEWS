@@ -416,6 +416,29 @@ Unreleased
 
 ** Fixed
 
+*** What an agent waits for is decided by the session, not the person.
+    A session made from a read-only token approves nothing, and one capped
+    at reader or confined to part of the site approves only what that
+    credential could.  The admin rebuilt every session as an administrator
+    with no limits before asking, so a narrow credential could let a held
+    payment or publish go ahead whenever its holder could elsewhere.
+
+*** The person who started an agent run does not let its risky steps go
+    ahead while somebody else could: a step that pays, publishes, deletes,
+    sends or writes to another system waits for another person who may
+    approve it.  Declining, answering a question and approving a change to
+    a draft are as before.  When nobody else could decide, the person who
+    started it still may; the audit record says the approval was made
+    alone, and posture counts them (approval.alone).
+
+*** A person approves anything a model wrote before it is published, and
+    no setting turns that off; `quilzo review require --human-for-ai` is
+    gone.  The person whose agent run wrote a draft approves it only when
+    nobody else may publish, and is then recorded as approving alone.
+
+*** `quilzo review approve` takes the publish permission, as the review
+    screen already did; a reader's approval counted towards publishing.
+
 *** A passkey has to ask for the PIN, fingerprint or face that unlocks
     it.  A key that was only touched signed an administrator or a member
     in, and an administrator's sign-in was still taken as a strong one: let

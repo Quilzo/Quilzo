@@ -32,7 +32,7 @@ func wireStudio(srv *Server) *studio {
 	srv.Agents = &Agents{
 		Load:  func() (map[string]agent.Manifest, error) { return st.declared, nil },
 		Known: func() []string { return known },
-		Save: func(m agent.Manifest, isNew bool, by string) error {
+		Save: func(m agent.Manifest, isNew bool, _ Actor) error {
 			set := map[string]bool{}
 			for _, k := range known {
 				set[k] = true
@@ -43,11 +43,12 @@ func wireStudio(srv *Server) *studio {
 			st.declared[m.Name] = m
 			return nil
 		},
-		Remove: func(name, by string) error {
+		Remove: func(name string, _ Actor) error {
 			delete(st.declared, name)
 			return nil
 		},
-		Run: func(name, goal string, model bool, by string) (string, error) {
+		Run: func(name, goal string, model bool, act Actor) (string, error) {
+			by := act.Name
 			st.asked = append(st.asked, fmt.Sprintf("%s|%s|%v|%s", name, goal, model, by))
 			id := fmt.Sprintf("run-20260930-%08x", len(st.runs)+1)
 			tr := agent.Trace{Agent: name, Goal: goal, Complete: true,
@@ -371,7 +372,8 @@ func wireDurable(srv *Server, st *studio) *[]string {
 	cut.State, cut.Beat = agent.Running, time.Now().Add(-time.Hour)
 	st.runs[cut.ID] = cut
 
-	srv.Agents.Answer = func(id string, step int, approve bool, answers map[string]string, by string) error {
+	srv.Agents.Answer = func(id string, step int, approve bool, answers map[string]string, act Actor) error {
+		by := act.Name
 		*calls = append(*calls, fmt.Sprintf("answer %s %d %v %s", id, step, approve, by))
 		r := st.runs[id]
 		if r.Trace.Waiting == nil || r.Trace.Waiting.N != step {
@@ -382,11 +384,13 @@ func wireDurable(srv *Server, st *studio) *[]string {
 		st.runs[id] = r
 		return nil
 	}
-	srv.Agents.Resume = func(id, by string) error {
+	srv.Agents.Resume = func(id string, act Actor) error {
+		by := act.Name
 		*calls = append(*calls, "resume "+id+" "+by)
 		return nil
 	}
-	srv.Agents.Replay = func(id string, step int, by string) (string, error) {
+	srv.Agents.Replay = func(id string, step int, act Actor) (string, error) {
+		by := act.Name
 		*calls = append(*calls, fmt.Sprintf("replay %s %d %s", id, step, by))
 		r := st.runs[id]
 		r.ID, r.From = "run-20260930-000000cc", fmt.Sprintf("%s@%d", id, step)
@@ -646,7 +650,8 @@ func TestADescribedAgentIsShownWithWhatItCouldDoAndNotSaved(t *testing.T) {
 		t.Fatal("a describe box with nothing to draft")
 	}
 	var asked string
-	srv.Agents.Draft = func(desc, by string) (AgentDraft, error) {
+	srv.Agents.Draft = func(desc string, act Actor) (AgentDraft, error) {
+		by := act.Name
 		asked = desc + "|" + by
 		return AgentDraft{
 			Manifest: agent.Manifest{Name: "faq-helper", Kind: agent.KindTask, Purpose: "keep the FAQ tidy",
@@ -675,7 +680,7 @@ func TestADescribedAgentIsShownWithWhatItCouldDoAndNotSaved(t *testing.T) {
 	if len(st.declared) != 0 {
 		t.Fatal("drafting saved it")
 	}
-	srv.Agents.Draft = func(string, string) (AgentDraft, error) { return AgentDraft{}, errors.New("no model is configured") }
+	srv.Agents.Draft = func(string, Actor) (AgentDraft, error) { return AgentDraft{}, errors.New("no model is configured") }
 	if body := postForm(t, srv, "/agents/new", token, url.Values{"describe": {"x"}}.Encode()).Body.String(); !strings.Contains(body, "no model is configured") {
 		t.Fatal("a drafting error is not shown")
 	}
@@ -752,7 +757,8 @@ func TestADecidersQuestionIsAnsweredFromTheRunsPage(t *testing.T) {
 	st := wireStudio(srv)
 	calls := wireDurable(srv, st)
 	var got map[string]string
-	srv.Agents.Answer = func(id string, step int, approve bool, answers map[string]string, by string) error {
+	srv.Agents.Answer = func(id string, step int, approve bool, answers map[string]string, act Actor) error {
+		by := act.Name
 		got = answers
 		*calls = append(*calls, fmt.Sprintf("answer %s %d %v %s", id, step, approve, by))
 		return nil
@@ -821,7 +827,7 @@ func TestTheAgentsPageShowsWhatItHasEarned(t *testing.T) {
 				{Class: "write_page pricing", Approvals: 1, Dropped: time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC), Why: "sam declined it"},
 			}}, nil
 	}
-	srv.Agents.Unearn = func(name, by string) error { reset = name + " by " + by; return nil }
+	srv.Agents.Unearn = func(name string, act Actor) error { by := act.Name; reset = name + " by " + by; return nil }
 	body := get(t, srv, "/agents/edit/tidy", token).Body.String()
 	whole(t, body)
 	for _, want := range []string{"What it has earned", "write_page returns", "earned 9 Oct 2026",

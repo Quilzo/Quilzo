@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
@@ -152,7 +153,11 @@ func loadApprovalPolicy(root string) (collab.Policy, error) {
 	// is what keeps this from turning a single-person install into one that
 	// cannot publish at all — the reason the absent-file case below defaults
 	// to nothing rather than to collab.NewPolicy.
-	p := collab.Policy{}
+	// A person approves what a model wrote before it is published, always.
+	// It needs nobody else on an installation run by one person, since the
+	// person whose run wrote it may approve it alone (agentpermissions.go),
+	// and there is no setting that turns it off.
+	p := collab.Policy{RequireHumanForAI: true}
 	if cfg, err := loadConfig(root); err == nil && cfg != nil {
 		p.Required = cfg.Int("review.required_approvals")
 		p.RequiredHumans = atoiOr(cfg.Raw("approval.required_humans"), 0)
@@ -175,7 +180,6 @@ func loadApprovalPolicy(root string) (collab.Policy, error) {
 	if onDisk.RequiredHumans > 0 {
 		p.RequiredHumans = onDisk.RequiredHumans
 	}
-	p.RequireHumanForAI = p.RequireHumanForAI || onDisk.RequireHumanForAI
 	return p, nil
 }
 
@@ -320,6 +324,16 @@ func reviewApprove(root string, args []string) error {
 		return err
 	}
 	caller := resolveCaller(root, "")
+	// An approval counts towards publishing, so it takes what publishing
+	// takes, through the caller's own credential, as the admin's review
+	// screen already required. Anybody's approval used to count here.
+	if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
+		return fmt.Errorf("approving a change for publication takes the publish permission: %w", err)
+	}
+	alone, err := secondPersonForDraft(root, s, *prop, caller.Name)
+	if err != nil {
+		return errBlocked{err}
+	}
 
 	if err := prop.Approve(caller.Name, *note, time.Now()); err != nil {
 		return errBlocked{err}
@@ -344,6 +358,7 @@ func reviewApprove(root string, args []string) error {
 			// eventually carries the thing it was named after.
 			"approved": prop.Content, "author": prop.Author,
 			"author_kind": prop.AuthorKind, "note": truncate(*note, 200),
+			"alone": strconv.FormatBool(alone),
 		},
 	})
 
@@ -397,8 +412,6 @@ func reviewRequire(root string, args []string) error {
 	approvers := fs.String("approvers", "",
 		"comma-separated principals whose approval counts; empty means anybody "+
 			"who can publish")
-	humanForAI := fs.Bool("human-for-ai", true,
-		"an AI-authored change always needs a human approver")
 	people := fs.Int("humans", 0,
 		"how many of the approvals must come from people, not machines")
 	if err := fs.Parse(flags); err != nil {
@@ -419,7 +432,7 @@ func reviewRequire(root string, args []string) error {
 			*people, n)
 	}
 	pol := collab.Policy{
-		Required: n, RequiredHumans: *people, RequireHumanForAI: *humanForAI,
+		Required: n, RequiredHumans: *people, RequireHumanForAI: true,
 	}
 	for _, a := range strings.Split(*approvers, ",") {
 		if a = strings.TrimSpace(a); a != "" {
@@ -435,31 +448,27 @@ func reviewRequire(root string, args []string) error {
 		Action: "review.policy", Resource: "/", Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{
-			"required":     fmt.Sprintf("%d", n),
-			"approvers":    strings.Join(pol.Approvers, ","),
-			"human_for_ai": fmt.Sprintf("%t", *humanForAI),
+			"required":  fmt.Sprintf("%d", n),
+			"approvers": strings.Join(pol.Approvers, ","),
 		},
 	})
 
 	if w.JSON(pol) {
 		return nil
 	}
-	if n == 0 && !*humanForAI {
-		w.Human("%sdual authorization is off%s\n", yellow, reset)
-		w.Human("  %sanybody who can publish, can publish anything%s\n", dim, reset)
+	if n == 0 {
+		w.Human("publishing needs no approvals, except a person's on anything a model wrote\n")
 		return nil
 	}
 	w.Human("publishing now needs %d approval(s)\n", n)
 	if len(pol.Approvers) > 0 {
 		w.Human("  %sfrom: %s%s\n", dim, strings.Join(pol.Approvers, ", "), reset)
 	}
-	if *humanForAI {
-		if pol.RequiredHumans > 0 {
-			w.Human("  %sat least %d of them from people, not machines%s\n",
-				dim, pol.RequiredHumans, reset)
-		}
-		w.Human("  %sand a human on anything a model wrote%s\n", dim, reset)
+	if pol.RequiredHumans > 0 {
+		w.Human("  %sat least %d of them from people, not machines%s\n",
+			dim, pol.RequiredHumans, reset)
 	}
+	w.Human("  %sand a person on anything a model wrote%s\n", dim, reset)
 	w.Human("  %san author can never approve their own change%s\n", dim, reset)
 	return nil
 }

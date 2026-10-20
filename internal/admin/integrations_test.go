@@ -22,7 +22,8 @@ func TestAHeldGatewayCallIsDecidedOnTheScreen(t *testing.T) {
 			return []GatewayHeld{{ID: "gq_0123456789ab", Integration: "tracker", Tool: "create_issue", For: "rae",
 				App: "https://app.example.com/meta", Args: `{"title":"Printer on fire"}`, Asked: time.Now()}}, nil
 		},
-		Decide: func(id string, approve bool, by string) error {
+		Decide: func(id string, approve bool, act Actor) error {
+			by := act.Name
 			decided = append(decided, fmt.Sprintf("%s %v %s", id, approve, by))
 			return nil
 		},

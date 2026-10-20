@@ -54,21 +54,30 @@ func batchKey(agentName string, w *agent.Pending) string {
 	return fmt.Sprintf("%s|%s|%s|%s|%s|%s", agentName, w.Kind, w.Action.Op, w.Action.Tool, in, w.Why)
 }
 
-// runApprovals are the questions agent runs are waiting on.
-// runApprovalsFor is what runs wait for that a person may decide: all of
-// it for whoever may approve over every agent, and otherwise what the
-// command line says they may (their agents', or on what they own).
+// runApprovalsFor is what runs wait for that this session may decide.
+//
+// Asked of the command line for every item, administrators included,
+// because what decides it is more than a role: the session's own limits,
+// sponsorship, the approve permission on an agent or on what it would
+// change, and whether the person started the run whose risky step it is
+// (agentpermissions.go). An item the person could not decide is not shown
+// as if they could.
 func (s *Server) runApprovalsFor(p principal, now time.Time) []approvalItem {
 	all := s.runApprovals(now)
-	if s.Policy == nil || s.Policy.Evaluate(p.Name, auth.ActApprove, auth.AreaAgents).Allowed {
-		return all
+	// A read-only credential decides nothing, so it is offered nothing to
+	// decide.
+	if p.Limits.ReadOnly {
+		return nil
 	}
 	if s.Agents == nil || s.Agents.MayApprove == nil || s.Agents.RunGet == nil {
+		if s.allows(p, auth.ActApprove, auth.AreaAgents) {
+			return all
+		}
 		return nil
 	}
 	var out []approvalItem
 	for _, it := range all {
-		if rec, err := s.Agents.RunGet(it.RunID); err == nil && s.Agents.MayApprove(rec, p.Name) {
+		if rec, err := s.Agents.RunGet(it.RunID); err == nil && s.Agents.MayApprove(rec, p.actor()) {
 			out = append(out, it)
 		}
 	}
@@ -353,7 +362,7 @@ func (s *Server) handleApprovalsAct(w http.ResponseWriter, r *http.Request) {
 		if it.Batch != key || !wanted[it.RunID+":"+strconv.Itoa(it.Step)] || !agent.Batchable(it.Commits) {
 			continue
 		}
-		if err := s.Agents.Answer(it.RunID, it.Step, true, nil, p.Name); err != nil {
+		if err := s.Agents.Answer(it.RunID, it.Step, true, nil, p.actor()); err != nil {
 			failed++
 			why = err
 			continue

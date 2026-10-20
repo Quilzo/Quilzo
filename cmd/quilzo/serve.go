@@ -191,11 +191,7 @@ func cmdServe(root string, args []string) error {
 	// The agent declarations, read-only. This process owns the file; the admin
 	// shows what is in it and does not write manifests, because declaring one
 	// is an administrative act better done where a diff is in front of you.
-	signedIn := func(by string) *Caller {
-		// Signed in to the admin as an administrator: a person, verified.
-		return &Caller{Name: by, Kind: audit.KindHuman, Verified: true,
-			Role: auth.RoleAdmin}
-	}
+	signedIn := sessionCaller
 	srv.Inbox = inboxHooks(root)
 	srv.Members = membersHooks(root)
 	srv.Boards = boardsHooks(root)
@@ -257,18 +253,18 @@ func cmdServe(root string, args []string) error {
 			sort.Strings(out)
 			return out
 		},
-		Save: func(m agent.Manifest, isNew bool, by string) error {
+		Save: func(m agent.Manifest, isNew bool, by admin.Actor) error {
 			// An amendment through the screen is the person's own hands:
 			// the widening is gated at the CLI and recorded here.
 			return declareAgent(root, m, isNew, true, signedIn(by))
 		},
-		Remove: func(name, by string) error {
+		Remove: func(name string, by admin.Actor) error {
 			return withdrawAgent(root, name, signedIn(by))
 		},
-		Run: func(name, goal string, model bool, by string) (string, error) {
+		Run: func(name, goal string, model bool, by admin.Actor) (string, error) {
 			return runAgentOnce(root, name, goal, model, signedIn(by))
 		},
-		Draft: func(description, by string) (admin.AgentDraft, error) {
+		Draft: func(description string, by admin.Actor) (admin.AgentDraft, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
 			out, err := draftAgent(ctx, root, description, "", signedIn(by))
@@ -306,7 +302,7 @@ func cmdServe(root string, args []string) error {
 		Frame: func(id string, n int) ([]byte, error) {
 			return runFramePicture(root, id, n)
 		},
-		Stop: func(id, by string) error {
+		Stop: func(id string, by admin.Actor) error {
 			return stopRun(root, id, signedIn(by), time.Now())
 		},
 		Person: func(id string, in admin.PersonInput, by string) error {
@@ -349,35 +345,35 @@ func cmdServe(root string, args []string) error {
 			sort.Slice(v.Classes, func(i, j int) bool { return v.Classes[i].Class < v.Classes[j].Class })
 			return v, nil
 		},
-		Unearn: func(name, by string) error {
+		Unearn: func(name string, by admin.Actor) error {
 			unearnHook(root, name, signedIn(by))("reset by a person")
 			return nil
 		},
 		Lessons: func(name string) ([]lessons.Lesson, error) { return loadLessons(root, name) },
-		AdoptLesson: func(name, id string, taintedOK bool, by string) error {
+		AdoptLesson: func(name, id string, taintedOK bool, by admin.Actor) error {
 			_, err := adoptLesson(root, name, id, taintedOK, signedIn(by))
 			return err
 		},
-		RetireLesson: func(name, id, why, by string) error {
+		RetireLesson: func(name, id, why string, by admin.Actor) error {
 			return retireLesson(root, name, id, why, signedIn(by))
 		},
 		Bundle: func(id string) ([]byte, error) {
 			return bundleHTML(root, id, time.Now().UTC())
 		},
-		MayApprove: func(rec agent.Record, by string) bool {
+		MayApprove: func(rec agent.Record, by admin.Actor) bool {
 			return mayApprove(root, signedIn(by), rec) == nil
 		},
-		Answer: func(id string, step int, approve bool, answers map[string]string, by string) error {
+		Answer: func(id string, step int, approve bool, answers map[string]string, by admin.Actor) error {
 			ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
 			defer cancel()
 			_, err := continueAgentRun(ctx, root, id,
 				&agent.Verdict{N: step, Approve: approve, Answers: answers}, signedIn(by))
 			return err
 		},
-		Resume: func(id, by string) error {
+		Resume: func(id string, by admin.Actor) error {
 			return continueAgentRunLive(root, id, signedIn(by))
 		},
-		Replay: func(id string, step int, by string) (string, error) {
+		Replay: func(id string, step int, by admin.Actor) (string, error) {
 			return replayAgentRunLive(root, id, step, signedIn(by))
 		},
 	}
@@ -424,11 +420,11 @@ func cmdServe(root string, args []string) error {
 	}}
 	srv.Fleet = &admin.Fleet{
 		View: func(days int) (fleet.View, error) { return buildFleet(root, days, time.Now()) },
-		Register: func(cardURL, name, by string) error {
+		Register: func(cardURL, name string, by admin.Actor) error {
 			_, err := fleetRegister(root, cardURL, name, signedIn(by), time.Now())
 			return err
 		},
-		Remove: func(name, by string) error { return fleetUnregister(root, name, signedIn(by)) },
+		Remove: func(name string, by admin.Actor) error { return fleetUnregister(root, name, signedIn(by)) },
 		Check:  func() ([]string, error) { return fleetCheck(root, time.Now()) },
 	}
 	srv.Integrations = &admin.Integrations{
@@ -441,7 +437,7 @@ func cmdServe(root string, args []string) error {
 			}
 			return out, err
 		},
-		Decide: func(id string, approve bool, by string) error {
+		Decide: func(id string, approve bool, by admin.Actor) error {
 			return gatewayDecide(root, id, approve, signedIn(by), time.Now())
 		},
 		Declared: func() (agent.Integrations, error) {
@@ -831,6 +827,9 @@ func cmdServe(root string, args []string) error {
 		},
 		Notify: func(prop *collab.Proposal) {
 			notifyProposed(root, prop)
+		},
+		SecondPerson: func(prop collab.Proposal, by string) (bool, error) {
+			return secondPersonForDraft(root, s, prop, by)
 		},
 	}
 	srv.Listings = &admin.Listings{
@@ -1266,8 +1265,8 @@ func cmdServe(root string, args []string) error {
 	// the screen and the command line both read.
 	srv.Evals = &admin.Evals{
 		Cases: func(name string) ([]evals.Case, error) { return loadEvalCases(root, name) },
-		Add: func(name string, c evals.Case, by string) (evals.Case, error) {
-			c.By = by
+		Add: func(name string, c evals.Case, by admin.Actor) (evals.Case, error) {
+			c.By = by.Name
 			c, err := addEvalCase(root, name, c)
 			if err == nil {
 				record(root, signedIn(by).auditRecord("agent.case-added", "/agents/"+name, audit.Success,
@@ -1275,7 +1274,7 @@ func cmdServe(root string, args []string) error {
 			}
 			return c, err
 		},
-		Remove: func(name, id, by string) error {
+		Remove: func(name, id string, by admin.Actor) error {
 			if err := removeEvalCase(root, name, id); err != nil {
 				return err
 			}
@@ -1283,7 +1282,7 @@ func cmdServe(root string, args []string) error {
 				map[string]string{"agent": name, "case": id}))
 			return nil
 		},
-		Start: func(name string, k int, model bool, by string) error {
+		Start: func(name string, k int, model bool, by admin.Actor) error {
 			if _, running := evalRunning(root, name); running {
 				return fmt.Errorf("%s is being evaluated already", name)
 			}
@@ -1409,6 +1408,16 @@ func cmdServe(root string, args []string) error {
 	// as the connection takes, and a deadline on it would refuse the
 	// operation on exactly the slow link that needs longest.
 	return listen.Uploads().Serve(httpSrv)
+}
+
+// sessionCaller is a person signed in to the admin, verified, with the
+// limits of the credential their session was made from. They cap what the
+// session may do on the command line's side exactly as they do there, so a
+// read-only or reader-capped session decides nothing its credential could
+// not, whatever its holder could do with another.
+func sessionCaller(by admin.Actor) *Caller {
+	return &Caller{Name: by.Name, Kind: audit.KindHuman, Verified: true,
+		Role: by.Role, Scope: by.Scope, Limits: by.Limits}
 }
 
 // retentionJob sweeps submissions past the retention their form declares.

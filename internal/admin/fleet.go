@@ -21,8 +21,8 @@ type Fleet struct {
 	View func(days int) (fleet.View, error)
 	// Register adds another vendor's agent by its card; Remove takes one
 	// away; Check reads every card again.
-	Register func(cardURL, name, by string) error
-	Remove   func(name, by string) error
+	Register func(cardURL, name string, by Actor) error
+	Remove   func(name string, by Actor) error
 	Check    func() ([]string, error)
 }
 
@@ -210,13 +210,13 @@ func (s *Server) handleFleetAct(w http.ResponseWriter, r *http.Request) {
 			back("e", "registering is not wired up in this build")
 			return
 		}
-		if err := s.Fleet.Register(strings.TrimSpace(r.FormValue("card")), strings.TrimSpace(r.FormValue("name")), p.Name); err != nil {
+		if err := s.Fleet.Register(strings.TrimSpace(r.FormValue("card")), strings.TrimSpace(r.FormValue("name")), p.actor()); err != nil {
 			back("e", err.Error())
 			return
 		}
 		back("m", "registered; you answer for it here")
 	case "remove":
-		if err := s.Fleet.Remove(r.FormValue("name"), p.Name); err != nil {
+		if err := s.Fleet.Remove(r.FormValue("name"), p.actor()); err != nil {
 			back("e", err.Error())
 			return
 		}

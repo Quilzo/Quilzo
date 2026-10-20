@@ -60,7 +60,7 @@ type Integrations struct {
 	// Held are calls through the MCP gateway waiting for a person, and
 	// Decide approves or declines one; nil when nothing is held here.
 	Held   func() ([]GatewayHeld, error)
-	Decide func(id string, approve bool, by string) error
+	Decide func(id string, approve bool, by Actor) error
 }
 
 // GatewayHeld is a call through the gateway waiting for a person.
@@ -380,7 +380,7 @@ func (s *Server) handleGatewayHeld(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, approve := r.FormValue("id"), r.FormValue("decision") == "approve"
-	if err := s.Integrations.Decide(id, approve, p.Name); err != nil {
+	if err := s.Integrations.Decide(id, approve, p.actor()); err != nil {
 		s.intRedirect(w, r, "", err.Error())
 		return
 	}

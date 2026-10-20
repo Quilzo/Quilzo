@@ -28,7 +28,8 @@ func TestApprovalsListsWhatWaitsAndBatchesOnlyWhatIsHonest(t *testing.T) {
 	srv, token := setup(t)
 	st := wireStudio(srv)
 	var answered []string
-	srv.Agents.Answer = func(id string, step int, approve bool, answers map[string]string, by string) error {
+	srv.Agents.Answer = func(id string, step int, approve bool, answers map[string]string, act Actor) error {
+		by := act.Name
 		answered = append(answered, fmt.Sprintf("%s %d %v %s", id, step, approve, by))
 		return nil
 	}
@@ -124,9 +125,13 @@ func TestAnApproverSeesAndDecidesOnlyTheirAgentsRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv.Agents.MayApprove = func(rec agent.Record, by string) bool { return by == "ria" && rec.Agent == "newsletter" }
+	srv.Agents.MayApprove = func(rec agent.Record, act Actor) bool {
+		by := act.Name
+		return by == "ria" && rec.Agent == "newsletter"
+	}
 	var answered []string
-	srv.Agents.Answer = func(id string, step int, approve bool, answers map[string]string, by string) error {
+	srv.Agents.Answer = func(id string, step int, approve bool, answers map[string]string, act Actor) error {
+		by := act.Name
 		answered = append(answered, id+" "+by)
 		return nil
 	}
@@ -152,5 +157,49 @@ func TestAnApproverSeesAndDecidesOnlyTheirAgentsRuns(t *testing.T) {
 	}
 	if len(answered) != 1 || answered[0] != "run-20261014-000000b1 ria" {
 		t.Errorf("answered %v", answered)
+	}
+}
+
+// The hooks are handed the session, not only the name. An administrator
+// signed in from a read-only token is offered nothing to approve, and a
+// session capped at reader carries its cap across, so the command line can
+// refuse what the credential could not do.
+func TestApprovalsAreDecidedByTheSessionNotThePerson(t *testing.T) {
+	srv, _ := setup(t)
+	st := wireStudio(srv)
+	var seen []Actor
+	srv.Agents.MayApprove = func(rec agent.Record, act Actor) bool {
+		seen = append(seen, act)
+		return !act.Limits.ReadOnly && act.Role == auth.RoleAdmin
+	}
+	answered := 0
+	srv.Agents.Answer = func(id string, step int, approve bool, answers map[string]string, act Actor) error {
+		answered++
+		return nil
+	}
+	look := agent.Action{Op: "read_page", Input: map[string]any{"page": "x"}}
+	waitingRun(st, "run-20261020-000000c1", "newsletter", look, "it asks first", time.Now())
+
+	ro, _, err := srv.Tokens.IssueScoped("ro", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin,
+		auth.Scope{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := get(t, srv, "/approvals", ro).Body.String(); strings.Contains(body, "newsletter") {
+		t.Error("a read-only session was offered a run to approve")
+	}
+	w := postForm(t, srv, "/approvals/act", ro, "batch=x&run=run-20261020-000000c1:2")
+	if answered != 0 || w.Code != 403 {
+		t.Errorf("a read-only session let something go ahead: %d answered, %d", answered, w.Code)
+	}
+
+	capped, _, err := srv.Tokens.Issue("capped", "editor", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen = nil
+	get(t, srv, "/approvals", capped)
+	if len(seen) == 0 || seen[0].Name != "editor" || seen[0].Role != auth.RoleReader {
+		t.Errorf("the command line was not told the session's cap: %+v", seen)
 	}
 }

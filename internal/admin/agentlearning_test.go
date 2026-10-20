@@ -34,11 +34,12 @@ func TestTheLearningScreenShowsTheWeeksAndTheLessons(t *testing.T) {
 				Trials: []lessons.Trial{{Model: "m", Better: true, Why: "helped"}}},
 		}, nil
 	}
-	srv.Agents.AdoptLesson = func(name, id string, taintedOK bool, by string) error {
+	srv.Agents.AdoptLesson = func(name, id string, taintedOK bool, act Actor) error {
+		by := act.Name
 		adopted = append(adopted, name+" "+id+" "+map[bool]string{true: "read", false: "unread"}[taintedOK]+" "+by)
 		return nil
 	}
-	srv.Agents.RetireLesson = func(name, id, why, by string) error {
+	srv.Agents.RetireLesson = func(name, id, why string, _ Actor) error {
 		retired = append(retired, name+" "+id+" "+why)
 		return nil
 	}

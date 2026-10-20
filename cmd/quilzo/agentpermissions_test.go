@@ -10,10 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/provenance"
+	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
 
@@ -191,5 +195,198 @@ func TestRecordsAreAskedAboutTheirCollection(t *testing.T) {
 	}
 	if got := call("quilzo_write", "write_record", map[string]any{"collection": "samples", "fields": map[string]any{"name": "x"}}); strings.Contains(got, "no binding") || strings.Contains(got, `"error"`) {
 		t.Errorf("tech could not write samples: %s", got)
+	}
+}
+
+// The session decides, not the person: a read-only credential decides
+// nothing, an administrator's credential capped at reader no longer
+// approves through the role, and a sponsor's credential confined to another
+// part of the site cannot reach the agent. The sponsor's own reader token
+// still decides, as answering for an agent is a right over that agent.
+func TestTheSessionsLimitsCapWhoDecidesWhatAnAgentWaitsFor(t *testing.T) {
+	root, id := waitingRunWithPolicy(t, auth.Binding{Principal: "ola", Role: auth.RoleReader, Resource: "/"})
+	if err := agentIdentityCmdAs(root, "sponsor", []string{"tidy", "ola"}, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	readOnly := asAdmin("sam")
+	readOnly.Limits.ReadOnly = true
+	capped := asAdmin("sam")
+	capped.Role = auth.RoleReader
+	sponsorReadOnly := someone("ola")
+	sponsorReadOnly.Limits.ReadOnly = true
+	confined := someone("ola")
+	confined.Scope = "/blog"
+	for name, c := range map[string]*Caller{"a read-only administrator": readOnly,
+		"an administrator capped at reader": capped, "a read-only sponsor": sponsorReadOnly,
+		"a sponsor confined to /blog": confined} {
+		if err := decideRun(root, id, c); err == nil {
+			t.Errorf("%s decided what the run waits for", name)
+		}
+		if items, _ := waitingFor(root, c, time.Now()); len(items) != 0 {
+			t.Errorf("%s was offered %+v to decide", name, items)
+		}
+	}
+	if err := decideRun(root, id, someone("ola")); err != nil {
+		t.Fatalf("the sponsor's own token could not decide: %v", err)
+	}
+}
+
+// riskyRun is a run dana started, waiting to publish.
+func riskyRun(t *testing.T, root string) agent.Record {
+	t.Helper()
+	id, err := runAgentOnce(root, "tidy", "", false, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := loadAgentRun(root, id)
+	rec.Trace.Waiting.Action = agent.Action{Op: "publish"}
+	if err := writeAgentRun(root, rec); err != nil {
+		t.Fatal(err)
+	}
+	return rec
+}
+
+// The person who started a run does not let its risky step go ahead while
+// somebody else could. They may still decline it, answer its questions and
+// approve a draft change, and whoever else may decide approves it.
+func TestTheStarterDoesNotApproveTheirRunsRiskyStepWhenSomebodyElseCan(t *testing.T) {
+	root, _ := identityStore(t)
+	rec := riskyRun(t, root)
+	approve := &agent.Verdict{N: rec.Trace.Waiting.N, Approve: true}
+	_, err := continueAgentRun(context.Background(), root, rec.ID, approve, asAdmin("dana"))
+	if err == nil || !strings.Contains(err.Error(), "sam") {
+		t.Fatalf("the starter approved their own run's publish, or was not told who can: %v", err)
+	}
+	if alone, err := secondPerson(root, asAdmin("sam"), rec); err != nil || alone {
+		t.Errorf("somebody else was refused, or counted as alone: %v %v", alone, err)
+	}
+	for name, w := range map[string]*agent.Pending{
+		"a question":          {Kind: agent.WaitQuestion},
+		"a change to a draft": {Action: agent.Action{Op: "write_page", Input: map[string]any{"page": "about"}}},
+	} {
+		other := rec
+		other.Trace.Waiting = w
+		if _, err := secondPerson(root, asAdmin("dana"), other); err != nil {
+			t.Errorf("the starter could not decide %s: %v", name, err)
+		}
+	}
+	if err := decideRun(root, rec.ID, asAdmin("dana")); err != nil {
+		t.Errorf("the starter could not decline their own run's publish: %v", err)
+	}
+}
+
+// With nobody else who could decide, the starter approves alone: allowed,
+// so one person can run Quilzo, and said in the record so posture counts it.
+func TestAStarterWithNobodyElseApprovesAloneAndTheRecordSaysSo(t *testing.T) {
+	root, pol := identityStore(t)
+	pol.Revoke("sam", auth.RoleAdmin, "/")
+	if err := saveJSON(policyPath(root), pol); err != nil {
+		t.Fatal(err)
+	}
+	rec := riskyRun(t, root)
+	alone, err := secondPerson(root, asAdmin("dana"), rec)
+	if err != nil || !alone {
+		t.Fatalf("the only person could not approve, or was not alone: %v %v", alone, err)
+	}
+	if err := recordAnswer(root, asAdmin("dana"), rec, agent.Verdict{N: rec.Trace.Waiting.N, Approve: true}); err != nil {
+		t.Fatal(err)
+	}
+	events, _ := audit.Read(auditPath(root))
+	found := false
+	for _, e := range events {
+		found = found || (e.Action == "agent.approve" && e.Detail["alone"] == "true")
+	}
+	if !found {
+		t.Error("an approval made alone was not recorded as one")
+	}
+}
+
+// An approval counts towards publishing, so it takes the publish
+// permission through the caller's own credential; and the person whose
+// agent run wrote a draft approves it only when nobody else may publish.
+func TestApprovingADraftTakesPublishingAndASecondPersonForAModelsWork(t *testing.T) {
+	root, pol := identityStore(t)
+	pol.Grant(auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"})
+	if err := saveJSON(policyPath(root), pol); err != nil {
+		t.Fatal(err)
+	}
+	pol2, err := loadApprovalPolicy(root)
+	if err != nil || !pol2.RequireHumanForAI {
+		t.Fatalf("a person's approval of a model's work is not required by default: %+v %v", pol2, err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prop := collabProposal("ai")
+	setProvenanceAuthor(t, root, s, "dana")
+	if _, err := secondPersonForDraft(root, s, prop, "dana"); err == nil || !strings.Contains(err.Error(), "sam") {
+		t.Errorf("the person whose run wrote the draft approved it with sam there: %v", err)
+	}
+	if alone, err := secondPersonForDraft(root, s, prop, "sam"); err != nil || alone {
+		t.Errorf("sam could not approve: %v %v", alone, err)
+	}
+	if _, err := secondPersonForDraft(root, s, collabProposal("human"), "dana"); err != nil {
+		t.Errorf("a person's own draft was held for a second person: %v", err)
+	}
+}
+
+func collabProposal(kind string) collab.Proposal {
+	return collab.Proposal{Content: "c", Author: "agent/tidy", AuthorKind: kind}
+}
+
+// setProvenanceAuthor marks a page of the draft as written by an agent run
+// that who started.
+func setProvenanceAuthor(t *testing.T, root string, s *store.Store, who string) {
+	t.Helper()
+	ids, err := site.PageIDsAt(s, site.RefDraft)
+	if err != nil || len(ids) == 0 {
+		t.Fatalf("the store has no draft pages: %v", err)
+	}
+	idx, err := loadProvenance(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for page, id := range ids {
+		if err := idx.Set(page, provenance.Record{ContentHash: id, SourceType: provenance.TrainedAlgorithmicMedia,
+			Author: who, Note: "written by the agent tidy"}); err != nil {
+			t.Fatal(err)
+		}
+		break
+	}
+	if err := saveJSON(provPath(root), idx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A reader's approval of a change used to count towards publishing it.
+func TestAReadersApprovalDoesNotCount(t *testing.T) {
+	root, pol := identityStore(t)
+	pol.Grant(auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"})
+	if err := saveJSON(policyPath(root), pol); err != nil {
+		t.Fatal(err)
+	}
+	ts, _ := loadTokens(root)
+	secret, _, err := ts.Issue("rae", "rae", auth.RoleReader, "/", time.Hour, auth.RoleReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", secret)
+	if err := cmdReview(root, []string{"approve"}); err == nil || !strings.Contains(err.Error(), "publish") {
+		t.Fatalf("a reader approved a change for publication: %v", err)
+	}
+}
+
+// What the admin hands across is what the command line checks: a session
+// from a read-only token or one capped at reader is not rebuilt as an
+// administrator with no limits.
+func TestTheAdminsSessionReachesTheCommandLineWithItsLimits(t *testing.T) {
+	c := sessionCaller(admin.Actor{Name: "sam", Role: auth.RoleReader, Scope: "/blog", Limits: auth.Scope{ReadOnly: true}})
+	if c.Name != "sam" || c.Role != auth.RoleReader || c.Scope != "/blog" || !c.Limits.ReadOnly || !c.Verified ||
+		c.Kind != audit.KindHuman {
+		t.Fatalf("%+v", c)
 	}
 }

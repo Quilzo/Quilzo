@@ -822,3 +822,25 @@ func TestThePolicyIsCheckedAgainstTheSettings(t *testing.T) {
 		t.Fatalf("not looking at the policy is not said: %v", rep.NotChecked)
 	}
 }
+
+// Approvals made alone in the last thirty days are counted, so a one-person
+// installation knows the gap it is running with; older ones are not.
+func TestApprovalsMadeAloneAreCounted(t *testing.T) {
+	r := ruleByID(t, "approval.alone")
+	now := time.Now().UTC()
+	at := func(d time.Duration) string { return now.Add(-d).Format(time.RFC3339) }
+	s := State{Now: now, Audit: []audit.Event{
+		{Action: "agent.approve", At: at(time.Hour), Detail: map[string]string{"alone": "true"}},
+		{Action: "review.approve", At: at(48 * time.Hour), Detail: map[string]string{"alone": "true"}},
+		{Action: "agent.approve", At: at(time.Hour), Detail: map[string]string{"alone": "false"}},
+		{Action: "agent.approve", At: at(40 * 24 * time.Hour), Detail: map[string]string{"alone": "true"}},
+	}}
+	got := r.Check(s)
+	if len(got) != 1 || !strings.HasPrefix(got[0].Detail, "2 approval(s)") {
+		t.Fatalf("%+v", got)
+	}
+	s.Audit = s.Audit[2:3]
+	if got := r.Check(s); len(got) != 0 {
+		t.Errorf("an approval made with somebody else around was counted: %+v", got)
+	}
+}

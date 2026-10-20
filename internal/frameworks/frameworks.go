@@ -236,6 +236,7 @@ var fromRule = map[string][]Ref{
 		{"owasp-llm", "LLM06"}},
 	// The agent control plane's checks.
 	"agent.no-sponsor":           {{"iso-42001", "A.3.2"}, {"eu-ai-act", "Art. 26(2)"}, {"nist-ai-rmf", "GOVERN 2.1"}},
+	"approval.alone":             {{"iso-42001", "A.3.2"}, {"nist-ai-rmf", "GOVERN 2.1"}},
 	"agent.sponsor-gone":         {{"iso-42001", "A.3.2"}, {"eu-ai-act", "Art. 26(2)"}, {"nist-ai-rmf", "GOVERN 2.1"}},
 	"agent.memory-held":          {{"iso-42001", "A.7.4"}, {"owasp-llm", "LLM04"}},
 	"model.personal-data-leaves": {{"iso-42001", "A.10.3"}, {"gdpr", "Art. 28"}},

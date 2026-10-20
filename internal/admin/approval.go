@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,6 +61,11 @@ type Approvals struct {
 	// screen still works and somebody has to think to open it. That is the
 	// state this exists to improve on, not one it refuses to run in.
 	Notify func(*collab.Proposal)
+	// SecondPerson says whether by may approve a proposal given who made
+	// it, and whether they would be approving it alone: the person whose
+	// agent run wrote a draft approves it only when nobody else may
+	// publish. Nil approves as before.
+	SecondPerson func(prop collab.Proposal, by string) (alone bool, err error)
 }
 
 // approvalState is what the review screen shows.
@@ -267,6 +273,14 @@ func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
 			"proposed, so an approval now would name content nobody offered")
 		return
 	}
+	alone := false
+	if s.Approvals.SecondPerson != nil {
+		var serr error
+		if alone, serr = s.Approvals.SecondPerson(*prop, p.Name); serr != nil {
+			s.approvalRedirect(w, r, "", serr.Error())
+			return
+		}
+	}
 	if err := prop.Approve(p.Name, strings.TrimSpace(r.FormValue("note")),
 		time.Now()); err != nil {
 		s.approvalRedirect(w, r, "", err.Error())
@@ -277,7 +291,7 @@ func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auditPub(p, "approval.approve", "/", map[string]string{
-		"commit": shortHash(prop.Content)})
+		"commit": shortHash(prop.Content), "alone": strconv.FormatBool(alone)})
 	s.approvalRedirect(w, r, "recorded", "")
 }
 

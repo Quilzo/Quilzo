@@ -23,11 +23,11 @@ import (
 // Evals is evaluation as the admin reaches it.
 type Evals struct {
 	Cases  func(agent string) ([]evals.Case, error)
-	Add    func(agent string, c evals.Case, by string) (evals.Case, error)
-	Remove func(agent, id, by string) error
+	Add    func(agent string, c evals.Case, by Actor) (evals.Case, error)
+	Remove func(agent, id string, by Actor) error
 	// Start begins an evaluation and returns at once; it runs on in the
 	// background and Running says so until it ends.
-	Start   func(agent string, k int, model bool, by string) error
+	Start   func(agent string, k int, model bool, by Actor) error
 	Running func(agent string) (time.Time, bool)
 	Reports func(agent string, limit int) ([]evals.Report, error)
 }
@@ -274,7 +274,7 @@ func (s *Server) handleEvalsAct(w http.ResponseWriter, r *http.Request) {
 		if c.Goal == "" {
 			c.Goal = rec.Goal
 		}
-		c, err = s.Evals.Add(name, c, p.Name)
+		c, err = s.Evals.Add(name, c, p.actor())
 		if err != nil {
 			back("e", err.Error())
 			return
@@ -285,7 +285,7 @@ func (s *Server) handleEvalsAct(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		c, err := s.Evals.Add(name, evals.Case{Goal: strings.TrimSpace(r.FormValue("goal")), Expect: expectFromForm(r)}, p.Name)
+		c, err := s.Evals.Add(name, evals.Case{Goal: strings.TrimSpace(r.FormValue("goal")), Expect: expectFromForm(r)}, p.actor())
 		if err != nil {
 			back("e", err.Error())
 			return
@@ -297,7 +297,7 @@ func (s *Server) handleEvalsAct(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		if err := s.Evals.Remove(name, id, p.Name); err != nil {
+		if err := s.Evals.Remove(name, id, p.actor()); err != nil {
 			back("e", err.Error())
 			return
 		}
@@ -311,7 +311,7 @@ func (s *Server) handleEvalsAct(w http.ResponseWriter, r *http.Request) {
 		if k < 1 || k > evals.MaxK {
 			k = 3
 		}
-		if err := s.Evals.Start(name, k, r.FormValue("model") == "on", p.Name); err != nil {
+		if err := s.Evals.Start(name, k, r.FormValue("model") == "on", p.actor()); err != nil {
 			back("e", err.Error())
 			return
 		}
