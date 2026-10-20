@@ -78,6 +78,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"query": "the words to look for",
 			"limit": "optional, default 20",
 		},
+		Area:     "/",
 		Keywords: []string{"find", "search", "where", "lookup", "locate"},
 	}, func(a map[string]any) (any, error) {
 		query, _ := a["query"].(string)
@@ -95,6 +96,12 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		// Dropped rather than filtered at the edge, so nothing about what
 		// exists leaks through a count.
 		src.Settings = nil
+		// Pages the caller may not read are not searched at all, and the
+		// index is not shared, as it no longer describes every page.
+		if src.Pages, err = visiblePages(root, caller, src.Pages); err != nil {
+			return nil, err
+		}
+		src.Commit = ""
 
 		hits := find.Search(query, src, limit)
 		if len(hits) == 0 {
@@ -128,8 +135,13 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"due":   "optional: true for only what needs attention",
 			"owner": "optional: only pages this person is responsible for",
 		},
+		Area:     "/",
 		Keywords: []string{"checked", "review", "stale", "accuracy", "audit", "due"},
 	}, func(arg map[string]any) (any, error) {
+		may, err := pageCheck(root, caller, auth.ActView)
+		if err != nil {
+			return nil, err
+		}
 		st, err := openChecked(root)
 		if err != nil {
 			return nil, err
@@ -146,7 +158,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 
 		var b strings.Builder
 		for _, r := range rows {
-			if dueOnly && !checked.NeedsAttention(r.State) {
+			if !may(r.Page) || (dueOnly && !checked.NeedsAttention(r.State)) {
 				continue
 			}
 			if owner != "" && r.Owner != owner {
@@ -198,8 +210,13 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"page":     "optional: one page, or every page with notes",
 			"resolved": "optional: true to include the ones somebody dealt with",
 		},
+		Area:     "/",
 		Keywords: []string{"notes", "comments", "review", "feedback", "remarks"},
 	}, func(arg map[string]any) (any, error) {
+		may, err := pageCheck(root, caller, auth.ActView)
+		if err != nil {
+			return nil, err
+		}
 		st, err := openNotes(root)
 		if err != nil {
 			return nil, err
@@ -214,6 +231,9 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 
 		var b strings.Builder
 		for _, page := range pages {
+			if !may(page) {
+				continue
+			}
 			notes, lerr := st.List(page)
 			if lerr != nil {
 				continue
@@ -821,6 +841,9 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		if dir == "" {
 			dir = "templates"
 		}
+		if err := everyDraftPage(root, s, caller); err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
 		files, err := renderBundle(root, dir)
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
@@ -848,6 +871,9 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		pages, err := draftPages(root)
 		if err != nil {
 			return nil, err
+		}
+		if err := everyPage(root, caller, pages); err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 		files, err := export.Export(export.Format(f), export.Site{Pages: pages},
 			time.Now())

@@ -2918,6 +2918,32 @@ func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
 	return append(a11y.CheckAll(rendered), extra...), nil
 }
 
+// deniedChanges are the pages a publish of draft would change that this
+// session may not publish, at most a few of them, named.
+func (s *Server) deniedChanges(p principal, draft string) []string {
+	if s.Policy == nil || draft == "" {
+		return nil
+	}
+	changes, err := site.Diff(s.Store, s.Store.GetRef(site.RefLive), draft)
+	if err != nil {
+		return []string{"(the changes could not be read: " + err.Error() + ")"}
+	}
+	var out []string
+	for _, c := range changes {
+		id := c.After
+		if id == "" {
+			id = c.Before
+		}
+		if s.Store.IsTree(id) || s.allows(p, auth.ActPublish, pageResource(c.Path)) {
+			continue
+		}
+		if out = append(out, c.Path); len(out) == 5 {
+			break
+		}
+	}
+	return out
+}
+
 func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
@@ -2941,6 +2967,18 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	draft := s.Store.GetRef(site.RefDraft)
+
+	// Each page the publish would change, asked about its own path: a deny
+	// of publishing on /legal is not seen by the check on "/" above.
+	if denied := s.deniedChanges(p, draft); len(denied) > 0 {
+		msg := fmt.Sprintf("Publishing the draft would change %s, which you may not publish.",
+			strings.Join(denied, ", "))
+		s.audit("publish", "/", map[string]string{"outcome": "refused", "by": p.Name, "reason": "authorisation"})
+		s.render(w, r, "review.html", map[string]any{"Status": http.StatusForbidden,
+			"Nav": "review", "Title": "Review", "Principal": p,
+			"CanPublish": false, "Error": msg})
+		return
+	}
 
 	// Every check about the content, first and unwaivable.
 	//

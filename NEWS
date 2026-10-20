@@ -416,6 +416,21 @@ Unreleased
 
 ** Fixed
 
+*** A deny or a grant on part of the site holds on the machine interface.
+    Its page operations asked about the whole site, so somebody denied
+    /legal could list, read, search, compare, write and export it over MCP,
+    and somebody granted only /blog could use none of it.  Each page is
+    now asked about its own path.
+
+*** Publishing asks about every page it would change, on the command
+    line, in the admin and over MCP.  A deny of publishing on one page was
+    not seen by the check on the whole site, so publishing the draft
+    published that page too.
+
+*** An export is refused to somebody who may not read every page and
+    every collection in it, on the command line, in the admin and over
+    MCP, rather than handing them what they may not read.
+
 *** What an agent waits for is decided by the session, not the person.
     A session made from a read-only token approves nothing, and one capped
     at reader or confined to part of the site approves only what that

@@ -130,10 +130,16 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 
 	srv.Register(mcp.Operation{
 		Name: "list_pages", NeedsRole: "reader", Summary: "list pages in the draft and whether they differ from live",
+		// Area "/": anybody who may read somewhere passes the first check,
+		// and each page is then asked about its own path (pageauth.go).
+		Area:     "/",
 		Keywords: []string{"pages", "list", "content", "what"},
 	}, func(map[string]any) (any, error) {
 		pages, err := site.PagesAt(s, site.RefDraft)
 		if err != nil {
+			return nil, err
+		}
+		if pages, err = visiblePages(root, caller, pages); err != nil {
 			return nil, err
 		}
 		names := make([]string, 0, len(pages))
@@ -147,9 +153,13 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 	srv.Register(mcp.Operation{
 		Name: "read_page", NeedsRole: "reader", Summary: "read one page's fields",
 		Args:     map[string]string{"page": "the page name"},
+		Area:     "/",
 		Keywords: []string{"read", "get", "page", "content", "fields"},
 	}, func(a map[string]any) (any, error) {
 		name, _ := a["page"].(string)
+		if err := authorise(root, caller, auth.ActView, pageResource(name)); err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
 		pages, err := site.PagesAt(s, site.RefDraft)
 		if err != nil {
 			return nil, err
@@ -190,6 +200,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			"query": "the words to look for",
 			"limit": "optional, default and maximum 20",
 		},
+		Area:     "/",
 		Keywords: []string{"search", "content", "pages", "words", "which page"},
 	}, func(a map[string]any) (any, error) {
 		query, _ := a["query"].(string)
@@ -198,6 +209,11 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		}
 		pages, err := site.PagesAt(s, site.RefDraft)
 		if err != nil {
+			return nil, err
+		}
+		// The index is built over what the caller may read, so a hidden
+		// page shapes neither the hits nor their ranks.
+		if pages, err = visiblePages(root, caller, pages); err != nil {
 			return nil, err
 		}
 		idx := search.Build(s.GetRef(site.RefDraft), pages)
@@ -230,14 +246,21 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			"page":  "the page to compare against",
 			"limit": "optional, default and maximum 20",
 		},
+		Area:     "/",
 		Keywords: []string{"similar", "related", "like", "nearest", "duplicate"},
 	}, func(a map[string]any) (any, error) {
 		name, _ := a["page"].(string)
 		if strings.TrimSpace(name) == "" {
 			return nil, &mcp.Refusal{Reason: "similar_pages needs a page"}
 		}
+		if err := authorise(root, caller, auth.ActView, pageResource(name)); err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
 		pages, err := site.PagesAt(s, site.RefDraft)
 		if err != nil {
+			return nil, err
+		}
+		if pages, err = visiblePages(root, caller, pages); err != nil {
 			return nil, err
 		}
 		idx := vector.Build(s.GetRef(site.RefDraft), pages, search.Tokenise)
@@ -263,12 +286,29 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 
 	srv.Register(mcp.Operation{
 		Name: "diff", NeedsRole: "reader", Summary: "what differs between the draft and what is live",
+		Area:     "/",
 		Keywords: []string{"diff", "changes", "pending", "review"},
 	}, func(map[string]any) (any, error) {
 		changes, err := site.Diff(s, s.GetRef(site.RefLive), s.GetRef(site.RefDraft))
 		if err != nil {
 			return nil, err
 		}
+		may, err := pageCheck(root, caller, auth.ActView)
+		if err != nil {
+			return nil, err
+		}
+		whole := authorise(root, caller, auth.ActView, "/") == nil
+		kept := changes[:0]
+		for _, c := range changes {
+			id := c.After
+			if id == "" {
+				id = c.Before
+			}
+			if (s.IsTree(id) && whole) || (!s.IsTree(id) && may(c.Path)) {
+				kept = append(kept, c)
+			}
+		}
+		changes = kept
 		if len(changes) == 0 {
 			return "no differences", nil
 		}
@@ -289,15 +329,17 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			"page":   "page name: letters, digits, dot, dash, underscore",
 			"fields": "object of field names to string values",
 		},
-		Writes: true, NeedsRole: "author",
+		Writes: true, NeedsRole: "author", Area: "/",
 		Keywords: []string{"write", "edit", "create", "update", "page", "change"},
 	}, func(a map[string]any) (any, error) {
-		if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
-			return nil, &mcp.Refusal{Reason: err.Error()}
-		}
 		name, _ := a["page"].(string)
 		if strings.TrimSpace(name) == "" {
 			return nil, &mcp.Refusal{Reason: "no page name given"}
+		}
+		// The page's own path, so a deny on /legal stops a write to
+		// legal/notice and a grant on /blog reaches blog/*.
+		if err := authorise(root, caller, auth.ActEditDraft, pageResource(name)); err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 		fields, _ := a["fields"].(map[string]any)
 		if len(fields) == 0 {
@@ -368,6 +410,9 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		Keywords: []string{"publish", "live", "release", "deploy", "ship"},
 	}, func(map[string]any) (any, error) {
 		if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
+		if err := mayPublishChanges(root, s, caller, ""); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 		draft := s.GetRef(site.RefDraft)
@@ -464,6 +509,9 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		Name: "check_accessibility", NeedsRole: "reader", Summary: "run the accessibility checks on the draft",
 		Keywords: []string{"check", "accessibility", "a11y", "wcag", "blocking"},
 	}, func(map[string]any) (any, error) {
+		if err := everyDraftPage(root, s, caller); err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
 		reports, err := checkAccessibility(root, s, s.GetRef(site.RefDraft), tplDir)
 		if err != nil {
 			return nil, err
@@ -483,6 +531,9 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		Name: "check_provenance", NeedsRole: "reader", Summary: "which pages lack an AI-content mark",
 		Keywords: []string{"check", "provenance", "ai", "marked", "article 50"},
 	}, func(map[string]any) (any, error) {
+		if err := everyDraftPage(root, s, caller); err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
 		unmarked, err := unmarkedAt(root, s, s.GetRef(site.RefDraft))
 		if err != nil {
 			return nil, err

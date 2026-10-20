@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -130,6 +131,22 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	pages, err := s.Transfer.Pages()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// An export is every page, so every page must be this session's to
+	// read; a deny on part of the site is not seen by the check on "/".
+	// Refused rather than left out, so nobody keeps a copy believing it
+	// whole.
+	var hidden []string
+	for name := range pages {
+		if !s.allows(p, auth.ActView, pageResource(name)) {
+			hidden = append(hidden, name)
+		}
+	}
+	if len(hidden) > 0 {
+		sort.Strings(hidden)
+		s.transferRedirect(w, r, "", fmt.Sprintf("an export holds every page, and %d of them are not yours "+
+			"to read, %s among them", len(hidden), hidden[0]))
 		return
 	}
 	format := export.Format(r.FormValue("format"))

@@ -1528,6 +1528,13 @@ func cmdPublish(root string, args []string) error {
 		return fmt.Errorf("there is nothing to publish: no page has been " +
 			"drafted yet. quilzo add NAME FILE drafts one")
 	}
+	// Each page the publish would change, asked about its own path: a deny
+	// of publishing on /legal is not seen by a check on "/".
+	if err := mayPublishChanges(root, s, caller, target); err != nil {
+		record(root, caller.auditRecord("publish", "/", audit.Denied,
+			map[string]string{"reason": "authorisation"}))
+		return err
+	}
 	// Every check about the content, run here and by every other surface.
 	//
 	// They used to be five blocks in this function, and only this function:
