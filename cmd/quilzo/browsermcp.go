@@ -461,6 +461,11 @@ func browserGrantCall(ctx context.Context, root string, g browserGrant, m agent.
 			if err := authorise(root, caller, auth.ActEditDraft, "/mcp/browser/"+grant); err != nil {
 				return "", &mcp.Refusal{Reason: err.Error()}
 			}
+			// What a press or a typed word does is an agent's, and is
+			// refused while its record could not be written.
+			if err := auditReady(root); err != nil {
+				return "", &mcp.Refusal{Reason: err.Error()}
+			}
 		}
 	}
 	s, serr := grantSessionFor(root, g, m, caller, tok, now)

@@ -246,6 +246,13 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 	if err := authorise(root, caller, action, "/integrations/"+in.Name); err != nil {
 		return refuse(err.Error())
 	}
+	// A tool that changes something elsewhere leaves no trace here but
+	// its record, so it is not called while that could not be written.
+	if in.Writes {
+		if err := auditReady(root); err != nil {
+			return refuse(err.Error())
+		}
+	}
 	who := gatewayCallerKey(tok)
 	gatewayMu.Lock()
 	st, err := loadGatewayState(root)

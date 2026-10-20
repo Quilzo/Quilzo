@@ -1367,10 +1367,15 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	// agent receipt). As each step ends rather than when the run does, so a
 	// run cut off half way still left a record of what it did; and once
 	// more when it ends, for the step no checkpoint follows.
+	//
+	// No action is performed while its record could not be written (SP
+	// 800-53 AU-5): the log is asked before each one (auditReady), and a
+	// step whose record was refused ends the run at the next action.
 	recorded := 0
 	if from.Prior != nil {
 		recorded = len(from.Prior.Trace.Steps)
 	}
+	var unrecorded error
 	recordSteps := func(t agent.Trace) {
 		for ; recorded < len(t.Steps); recorded++ {
 			st := t.Steps[recorded]
@@ -1380,12 +1385,25 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 			for k, v := range stepEvidence(root, from.RunID, st) {
 				r.Detail[k] = v
 			}
-			record(root, r)
+			if err := recordE(root, r); err != nil {
+				fmt.Fprintf(os.Stderr, "%s%v%s\n", red, err, reset)
+				if unrecorded == nil {
+					unrecorded = fmt.Errorf("step %d's record was not written (%v), so this run does nothing more", st.N, err)
+				}
+			}
 		}
 	}
+	runner.Admit = func(agent.Action) error {
+		if unrecorded != nil {
+			return unrecorded
+		}
+		return auditReady(root)
+	}
 	if from.Eval != nil {
+		// An evaluation's actions are played against its cases and leave
+		// nothing behind, so there is nothing for the log to hold.
 		runner.Perform, runner.Record = from.Eval.perform(runner.Perform), func(agent.Receipt) {}
-		recordSteps = func(agent.Trace) {}
+		recordSteps, runner.Admit = func(agent.Trace) {}, nil
 	} else {
 		keep := runner.Checkpoint
 		runner.Checkpoint = func(t agent.Trace) {

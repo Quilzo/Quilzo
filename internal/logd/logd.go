@@ -229,6 +229,19 @@ func Listen(path string) (net.Listener, error) {
 	return l, nil
 }
 
+// Reachable reports whether a writer is listening at path, without
+// submitting anything: a connection that sends nothing is closed by the
+// writer without a word (see handle). It is the check made before an
+// action that must be recorded, so the action is refused rather than
+// performed while its record could not be written.
+func Reachable(path string) error {
+	conn, err := net.DialTimeout("unix", path, 2*time.Second)
+	if err != nil {
+		return fmt.Errorf("the log writer is not reachable at %s: %w", path, err)
+	}
+	return conn.Close()
+}
+
 // Submit sends one record to the writer.
 //
 // The client learns the sequence number it was given, which is what lets a

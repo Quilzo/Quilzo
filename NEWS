@@ -416,6 +416,18 @@ Unreleased
 
 ** Fixed
 
+*** Agents do nothing while their actions cannot be recorded.  With the
+    log writer down, the audit key unreadable, the log's disk nearly full
+    or the last record refused, an agent's run used to go on acting with
+    no record of what it did.  Each action is now checked against the log
+    first and refused while it could not be written, and the run stops
+    with that reason; a step whose record was refused stops the run
+    before its next action.  The same holds for changes made over the
+    machine interface, presses in a browser an outside agent drives, and
+    tools forwarded to another system through the MCP gateway; reading
+    goes on.  What people do in the admin and on the command line still
+    goes ahead with the failure reported, as before.
+
 *** Writes that happen at the same time no longer undo each other's
     security decisions.  A sign-in in the admin could write back a token
     that the command line had just revoked; a publish sending webhooks

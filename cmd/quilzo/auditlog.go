@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -179,8 +180,12 @@ func openAudit(root string) (*audit.Log, error) {
 // A failure to log is reported on stderr rather than returned. That is a real
 // trade: NIST allows for alerting on audit failure, and the alternative — a
 // publish refused because a log file is full — trades an availability problem
-// for an accountability one. Reporting loudly and continuing is the choice, and
-// `quilzo auditlog verify` is what catches a gap afterwards.
+// for an accountability one. Reporting loudly and continuing is the choice
+// for what a person does, and `quilzo auditlog verify` is what catches a gap
+// afterwards. What an agent does is the other way round (SP 800-53 AU-5): it
+// is asked about first (auditReady) and refused while its record could not
+// be written, because an agent acting unrecorded is the gap nobody can
+// explain afterwards.
 func record(root string, r audit.Record) {
 	if err := recordE(root, r); err != nil {
 		fmt.Fprintf(os.Stderr, "%s%v%s\n", red, err, reset)
@@ -194,6 +199,73 @@ func record(root string, r audit.Record) {
 // record prints the failure and carries on, which is right for a page save
 // that is already in the store; for a decision the caller has to be told.
 func recordE(root string, r audit.Record) error {
+	err := writeRecord(root, r)
+	noteAuditWrite(root, err)
+	return err
+}
+
+// auditFaults holds, by store, the last failure to write its log in this
+// process, until a write that succeeds clears it. A probe can tell that
+// the writer listens and the file opens, not that the next record fits:
+// a full disk, a writer refusing, a chain it cannot extend show only in a
+// write, and are remembered from it.
+var auditFaults sync.Map
+
+func auditKey(root string) string {
+	if abs, err := filepath.Abs(root); err == nil {
+		return abs
+	}
+	return root
+}
+
+func noteAuditWrite(root string, err error) {
+	if err != nil {
+		auditFaults.Store(auditKey(root), err)
+		return
+	}
+	auditFaults.Delete(auditKey(root))
+}
+
+// auditHeadroom is the space the log's filesystem must have left for an
+// agent's action to go ahead: room for thousands of records, so the one
+// about to be written is not the one that fills it.
+const auditHeadroom = 8 << 20
+
+// auditReady says whether an action whose record must exist may go ahead:
+// the log can take a record now, as far as can be known without writing
+// one. Agents' actions ask it first and are refused while it says no
+// (SP 800-53 AU-5); what people do still goes ahead and is reported.
+func auditReady(root string) error {
+	refuse := func(why string) error {
+		return fmt.Errorf("the audit log cannot take a record (%s), so nothing an agent does is performed "+
+			"until it can: quilzo auditlog verify", why)
+	}
+	if v, ok := auditFaults.Load(auditKey(root)); ok {
+		return refuse("the last record was not written: " + v.(error).Error())
+	}
+	if sock := logSocketPath(root); fileExists(sock) {
+		if err := logd.Reachable(sock); err != nil {
+			return refuse(err.Error())
+		}
+		return nil
+	}
+	if _, err := openAudit(root); err != nil {
+		return refuse(err.Error())
+	}
+	f, err := os.OpenFile(auditPath(root), os.O_WRONLY|os.O_APPEND|os.O_CREATE, keyMode(root))
+	if err != nil {
+		return refuse(err.Error())
+	}
+	if err := f.Close(); err != nil {
+		return refuse(err.Error())
+	}
+	if free, ok := audit.FreeBytes(auditDir(root)); ok && free < auditHeadroom {
+		return refuse(fmt.Sprintf("%d bytes are left where it is kept", free))
+	}
+	return nil
+}
+
+func writeRecord(root string, r audit.Record) error {
 	// A separate writer, if one is running. Its presence is the configuration:
 	// the socket existing means somebody set this up, and going around it would
 	// make the separation optional at exactly the moment it matters.

@@ -120,6 +120,15 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			return fmt.Errorf("the machine interface is turned off until about %s: %s",
 				p.Until.UTC().Format("15:04 UTC"), p.Reason)
 		}
+		// A change made through this interface is an agent's, and is
+		// refused while its record could not be written (auditReady).
+		// Reads go on, and their records are what tell this process the
+		// log is back.
+		if op.Writes {
+			if err := auditReady(root); err != nil {
+				return err
+			}
+		}
 		if op.Area != "" {
 			return authoriseUnder(root, caller, action, op.Area)
 		}
