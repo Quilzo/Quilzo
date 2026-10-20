@@ -12,7 +12,7 @@ import (
 // A bundle can be served from a subdirectory.
 //
 // Every link a page carries is rooted, which is right for a site at the root of
-// a host and wrong for one at /demo2 — a project page, a demo, anything behind
+// a host and wrong for one at /preview — a project page, a demo, anything behind
 // a proxy that mounts the site at a path. Copied into a subdirectory as
 // rendered, the navigation, the pictures and the whole stylesheet resolve one
 // level too high, so the pages are all present and the site does not work.
@@ -36,17 +36,17 @@ func TestABundleCanBeMovedUnderAPrefix(t *testing.T) {
 		"media/abc": []byte{0x89, 'P', 'N', 'G'},
 	}
 
-	out := Rebase(files, "demo2")
+	out := Rebase(files, "preview")
 	html := string(out["index.html"])
 
 	for _, want := range []string{
-		`href="/demo2/site.css"`,
-		`href="/demo2/shop"`,
-		`src="/demo2/media/abc"`,
-		`action="/demo2/form/wholesale"`,
-		`content="/demo2/media/abc"`,
-		`srcset="/demo2/media/small 480w, /demo2/media/big 1200w"`,
-		`poster="/demo2/media/poster"`,
+		`href="/preview/site.css"`,
+		`href="/preview/shop"`,
+		`src="/preview/media/abc"`,
+		`action="/preview/form/wholesale"`,
+		`content="/preview/media/abc"`,
+		`srcset="/preview/media/small 480w, /preview/media/big 1200w"`,
+		`poster="/preview/media/poster"`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("the markup does not carry %s:\n%s", want, html)
@@ -66,16 +66,16 @@ func TestABundleCanBeMovedUnderAPrefix(t *testing.T) {
 	}
 
 	css := string(out["site.css"])
-	for _, want := range []string{`url(/demo2/fonts/Inter.woff2)`,
-		`url("/demo2/media/abc")`} {
+	for _, want := range []string{`url(/preview/fonts/Inter.woff2)`,
+		`url("/preview/media/abc")`} {
 		if !strings.Contains(css, want) {
 			t.Errorf("the stylesheet does not carry %s:\n%s", want, css)
 		}
 	}
 
 	man := string(out["manifest.webmanifest"])
-	for _, want := range []string{`"start_url":"/demo2/"`, `"scope":"/demo2/"`,
-		`"url":"/demo2/shop"`} {
+	for _, want := range []string{`"start_url":"/preview/"`, `"scope":"/preview/"`,
+		`"url":"/preview/shop"`} {
 		if !strings.Contains(man, want) {
 			t.Errorf("the manifest does not carry %s:\n%s", want, man)
 		}
@@ -95,12 +95,12 @@ func TestABundleCanBeMovedUnderAPrefix(t *testing.T) {
 
 // The prefix is written one way however it is given.
 func TestThePrefixIsNormalised(t *testing.T) {
-	for _, given := range []string{"demo2", "/demo2", "demo2/", "/demo2/",
-		"  /demo2/  "} {
+	for _, given := range []string{"preview", "/preview", "preview/", "/preview/",
+		"  /preview/  "} {
 		out := Rebase(map[string][]byte{
 			"index.html": []byte(`<a href="/shop">Shop</a>`),
 		}, given)
-		if got := string(out["index.html"]); got != `<a href="/demo2/shop">Shop</a>` {
+		if got := string(out["index.html"]); got != `<a href="/preview/shop">Shop</a>` {
 			t.Errorf("prefix %q produced %s", given, got)
 		}
 	}
@@ -145,9 +145,9 @@ func TestABundlesAssetsCarryTheirFormat(t *testing.T) {
 	}
 
 	// And the two passes compose: named, then moved under a prefix.
-	moved := Rebase(out, "/demo2")
+	moved := Rebase(out, "/preview")
 	if !strings.Contains(string(moved["index.html"]),
-		`src="/demo2/media/`+id+`.png"`) {
+		`src="/preview/media/`+id+`.png"`) {
 		t.Errorf("naming and rebasing do not compose:\n%s",
 			string(moved["index.html"]))
 	}
@@ -233,14 +233,14 @@ func TestEverySrcSetCandidateNamesAFileInTheBundle(t *testing.T) {
 		"media/" + small: {0x89, 'P', 'N', 'G'},
 	}
 	out := Rebase(Named(files, map[string]string{id: ".jpg", small: ".jpg"}),
-		"/demo2")
+		"/preview")
 
 	html := string(out["index.html"])
 	for _, m := range regexp.MustCompile(`srcset="([^"]+)"`).
 		FindAllStringSubmatch(html, -1) {
 		for _, candidate := range strings.Split(m[1], ",") {
 			url := strings.Fields(strings.TrimSpace(candidate))[0]
-			path := strings.TrimPrefix(url, "/demo2/")
+			path := strings.TrimPrefix(url, "/preview/")
 			if path == url {
 				t.Errorf("the candidate %s was not moved under the prefix, so "+
 					"a browser choosing it gets a 404", url)

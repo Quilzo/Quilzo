@@ -272,7 +272,7 @@ Help link opens its own.
 | **Canaries and decoys** | Values nothing should read, and tokens that open nothing and tell on whoever holds them. | `quilzo canary plant`, `shield decoy add` |
 | **Access reviews, vendors, notices** | Reviewer campaigns, a vendor register reconciled against real credentials, and GDPR notices with their deadlines. | `quilzo access`, `vendor`, `notify` |
 | **Code scanning** | Any scanner's alerts (SARIF) triaged by what a change introduced; a merge gate on what is new, never on the debt; dependency findings you can actually fix; a leaked secret closes only when rotated. | `quilzo appsec triage\|gate\|rotated`, `sarif read`, `sca scan` |
-| **Questionnaires and reminders** | Security questionnaires answered from claims checked against the register; reminders to people inside working hours. | `quilzo attest fill`, `remind send` |
+| **Reminders** | Reminders to people inside working hours. | `quilzo remind send` |
 
 ### The shield: Quilzo defends itself
 

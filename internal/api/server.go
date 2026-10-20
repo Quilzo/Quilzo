@@ -774,7 +774,7 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 				//
 				// This gate refused invalid content and then wrote nothing
 				// down, while every other write path — the CLI, the admin,
-				// MCP, the importer, sections, Telegram — goes through
+				// MCP, the importer, sections — goes through
 				// gateWrite, which records. So a page written here was
 				// permanently indistinguishable from one nobody ever checked.
 				//

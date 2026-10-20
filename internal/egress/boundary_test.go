@@ -131,11 +131,10 @@ func TestFetchStillConsultsTheMode(t *testing.T) {
 
 // And the clients it hands out still refuse to follow a redirect.
 //
-// The four protocols on the other end of these — a model API, a collector, a
-// timestamping authority, the Telegram Bot API — do not redirect, so
-// following one is all risk and no function. For Telegram it is a credential
-// leak rather than an abstract risk: the bot token is a path segment, and Go
-// strips the Authorization header across hosts but cannot strip a URL.
+// The protocols on the other end of these — a model API, a collector, a
+// timestamping authority — do not redirect, so following one is all risk and
+// no function: Go strips the Authorization header across hosts, but not a
+// credential carried in the URL itself.
 func TestTheProtocolClientsRefuseRedirects(t *testing.T) {
 	body, err := os.ReadFile("../fetch/speaking.go")
 	if err != nil {
@@ -144,7 +143,7 @@ func TestTheProtocolClientsRefuseRedirects(t *testing.T) {
 	if !strings.Contains(string(body), "CheckRedirect") {
 		t.Fatal("fetch.Speaking no longer sets CheckRedirect, so Go's " +
 			"default applies:\n  up to ten hops, to wherever the far end " +
-			"names, carrying the bot token in\n  the URL it was asked to " +
+			"names, carrying any credential in\n  the URL it was asked to " +
 			"forward")
 	}
 }

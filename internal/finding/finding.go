@@ -6,8 +6,8 @@
 // # Why one type and not five
 //
 // A detection fired. A dependency has a CVE. A control failed its check. A
-// questionnaire answer is missing. A vendor's certification lapsed. Five
-// products sell these as five things, with five queues, five owners and five
+// vendor's certification lapsed. Code has a weakness. Five products sell
+// these as five things, with five queues, five owners and five
 // definitions of "closed" — and a small team then spends its attention on the
 // seams rather than on the work.
 //
@@ -62,8 +62,6 @@ const (
 	FromVulnerability Kind = "vulnerability"
 	// FromControl is a configuration check that failed.
 	FromControl Kind = "control"
-	// FromQuestionnaire is an unanswered or failing assurance question.
-	FromQuestionnaire Kind = "questionnaire"
 	// FromVendor is something wrong with a third party you rely on.
 	FromVendor Kind = "vendor"
 	// FromCode is a weakness in something this organisation wrote.
@@ -79,7 +77,7 @@ const (
 // Kinds lists them, for a caller validating input.
 func Kinds() []Kind {
 	return []Kind{FromDetection, FromVulnerability, FromControl,
-		FromQuestionnaire, FromVendor, FromCode}
+		FromVendor, FromCode}
 }
 
 func (k Kind) known() bool {

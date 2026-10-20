@@ -22,8 +22,8 @@ import (
 // authorship somebody asking questions most needs — recorded nothing.
 //
 // Every other surface already did. `quilzo add` writes content.add, the agent
-// interface writes mcp.write_page, the content API writes through OnWrite, a
-// Telegram message writes telegram.publish. This interface recorded deleting a
+// interface writes mcp.write_page, and the content API writes through
+// OnWrite. This interface recorded deleting a
 // page, editing its sections and removing a selection of them, so the gap did
 // not look like a policy — it looked like whichever handler somebody had in
 // mind at the time.

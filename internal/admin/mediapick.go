@@ -21,10 +21,9 @@ import (
 // # The gap this closes
 //
 // A media id is the SHA-256 of the file's bytes, which is the right name for
-// a stored object and an impossible thing to type. The Telegram editor knew
-// that and offered a list; the browser did not, so attaching a photograph to
-// a section meant copying sixty-four hexadecimal characters from one screen
-// to another and hoping. Everything else about the page builder works without
+// a stored object and an impossible thing to type. Without a list to choose
+// from, attaching a photograph to a section meant copying sixty-four
+// hexadecimal characters from one screen to another and hoping. Everything else about the page builder works without
 // a mouse and reads correctly to a screen reader, and then this one field
 // asked for a feat of transcription.
 //
@@ -212,8 +211,7 @@ func currentValue(st *store.Store, page string, at int, path string) (string, bo
 // sameAsset reports whether a stored value names this file.
 //
 // A field may hold the bare id or the path the public site serves it at, and
-// both are written by real interfaces — the Telegram editor accepts either.
-// Comparing only one of them would leave the grid showing nothing selected on
+// both are written by real interfaces. Comparing only one of them would leave the grid showing nothing selected on
 // a section that is correctly filled in.
 func sameAsset(value, id string) bool {
 	if id == "" {

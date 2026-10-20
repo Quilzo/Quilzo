@@ -19,8 +19,8 @@ import (
 
 // The queue, on a screen.
 //
-// Detections, vulnerabilities, failed controls, vendor and questionnaire
-// gaps and weaknesses in code are one kind of thing — internal/finding makes
+// Detections, vulnerabilities, failed controls, vendor gaps and weaknesses
+// in code are one kind of thing — internal/finding makes
 // that argument and this is the screen it was waiting for. Before it, the
 // only way to see what was wrong was a command that printed twenty lines, and
 // the only way to decide anything was a second command that took the id from
@@ -360,8 +360,6 @@ func kindLabel(k finding.Kind) string {
 		return "Vulnerabilities"
 	case finding.FromControl:
 		return "Controls"
-	case finding.FromQuestionnaire:
-		return "Questionnaires"
 	case finding.FromVendor:
 		return "Vendors"
 	case finding.FromCode:
@@ -379,8 +377,6 @@ func kindOne(k finding.Kind) string {
 		return "Vulnerability"
 	case finding.FromControl:
 		return "Control"
-	case finding.FromQuestionnaire:
-		return "Questionnaire"
 	case finding.FromVendor:
 		return "Vendor"
 	case finding.FromCode:

@@ -2770,8 +2770,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	// AU-3, and it was missing from the most common write in the product.
 	//
 	// Every other surface records a page write: `quilzo add` does, the agent
-	// interface does, the content API does through OnWrite, a Telegram message
-	// does. This interface recorded deleting a page, editing its sections and
+	// interface does, and the content API does through OnWrite. This interface recorded deleting a page, editing its sections and
 	// removing a selection of them — and not the ordinary save. So somebody
 	// editing the text of a live legal page left an entry saying it was
 	// published and nothing saying who changed what, while the same edit from

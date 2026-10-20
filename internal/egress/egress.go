@@ -8,8 +8,8 @@
 // A deployment on a classified or otherwise isolated network has to be able to
 // state, and show, that this process opens no connection off the host. Before
 // this package it could not: internal/fetch was the main path, and assist,
-// telegram, otlp and timestamp each built their own http.Client. Six places,
-// no list of them, and no way to answer "what would this talk to" except by
+// otlp and timestamp each built their own http.Client. Several places, no
+// list of them, and no way to answer "what would this talk to" except by
 // reading all of it and hoping.
 //
 // That is the difference between a claim and evidence. NIST SP 800-53 CM-7
