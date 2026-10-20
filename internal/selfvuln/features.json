@@ -372,7 +372,8 @@
   ],
   "slices": [
    "*",
-   "chatbots"
+   "chatbots",
+   "scim"
   ],
   "sort": [
    "*",
