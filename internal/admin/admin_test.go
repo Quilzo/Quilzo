@@ -902,7 +902,7 @@ func TestAStateIsConsumedExactlyOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	o.pending = map[string]*oidc.Request{req.State: req}
+	o.pending = map[string]*oidcPending{req.State: {req: req}}
 
 	if got := o.take(req.State); got == nil {
 		t.Fatal("a valid state was not found")

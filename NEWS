@@ -416,6 +416,40 @@ Unreleased
 
 ** Fixed
 
+*** The provisioning token ends.  Whoever holds it can create people and,
+    through a mapped group, make them administrators, and it worked for
+    ever.  `quilzo scim token` now makes one that lasts 180 days (--days,
+    at most 365); `quilzo scim status`, the Provisioning screen and the
+    posture check scim.token-expiring say when it ends, a month ahead.
+    An ended token is refused, which also stops the identity provider
+    taking access away, so make the next one before then.  A token made
+    before this release keeps working for 180 days from when it was made,
+    and for at least 30 days from the first time it is used after the
+    upgrade.
+
+*** Single sign-on through OpenID Connect finishes only in the browser
+    that started it.  The callback address of a sign-in somebody else
+    began at the provider, opened in another browser, signed that browser
+    in as them (login CSRF).  Starting a sign-in now sets a cookie the
+    callback requires, as SAML sign-in already did.
+
+*** A member's recovery code opens the account to add a new passkey and
+    nothing else, for fifteen minutes.  It used to give an ordinary
+    session: the members' pages, posting, new recovery codes, removing
+    passkeys and deleting the account.  Adding the passkey ends that
+    session and signs the member in as a passkey sign-in would.
+
+*** A REST integration's request body is checked against the schema its
+    declaration gives before it is sent.  A field the schema does not
+    list is refused unless the schema allows other properties, so a model
+    steered by something it read cannot add one the API would accept.
+
+*** The fediverse inbox checks the body against the digest the signature
+    covered, and only that one.  A sender that signed only the older
+    Digest header could have its body replaced by anybody on the way who
+    added a Content-Digest of their own, because the unsigned header was
+    the one read.
+
 *** Agents do nothing while their actions cannot be recorded.  With the
     log writer down, the audit key unreadable, the log's disk nearly full
     or the last record refused, an agent's run used to go on acting with

@@ -274,3 +274,37 @@ func TestAnInvitationIsUsedOnceAndExpires(t *testing.T) {
 	}
 	_ = inv
 }
+
+// A recovery code's session signs nobody in, and is good for adding a
+// passkey for fifteen minutes; an ordinary session is not one.
+func TestARecoverySessionIsForAPasskeyAndBrief(t *testing.T) {
+	s, clock := newStore(t)
+	m, _, err := s.Create("Ada", key("k1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, err := s.StartRecoverySession(m.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SessionMember(rec); !errors.Is(err, ErrRecovering) {
+		t.Errorf("a recovery session signed in: %v", err)
+	}
+	if got, err := s.RecoveringMember(rec); err != nil || got.ID != m.ID {
+		t.Errorf("the recovery session is not for its member: %v %v", got.ID, err)
+	}
+	full, err := s.StartSession(m.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RecoveringMember(full); err == nil {
+		t.Error("an ordinary session counted as a recovery")
+	}
+	*clock = clock.Add(RecoveryLife + time.Second)
+	if _, err := s.RecoveringMember(rec); err == nil {
+		t.Error("a recovery session outlived its fifteen minutes")
+	}
+	if _, err := s.SessionMember(full); err != nil {
+		t.Errorf("the ordinary session ended with it: %v", err)
+	}
+}

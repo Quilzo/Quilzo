@@ -442,3 +442,48 @@ func TestSearchDoesNotNameAPageAVisitorCannotRead(t *testing.T) {
 		}
 	}
 }
+
+// A recovery code opens the account for one thing, a new passkey: not the
+// members' pages, not new codes, not deleting it. Adding the passkey ends
+// that session and begins an ordinary one.
+func TestARecoveryCodeOpensTheAccountOnlyToAddAPasskey(t *testing.T) {
+	st, store := memberSite(t, "open")
+	v := &visitor{t: t, st: st, site: "same-origin"}
+	_, out := signUp(t, v, newDevice(t), "Ada", "")
+	code := out["codes"].([]any)[0].(string)
+	id := v.memberID(t)
+	v.form("/account/signout", nil)
+	if w := v.form("/account/recover", url.Values{"code": {code}}); w.Code != http.StatusSeeOther || v.cookie == "" {
+		t.Fatalf("recovering: %d", w.Code)
+	}
+	recovery := v.cookie
+	if w := v.do(http.MethodGet, "/lounge", nil, ""); w.Code == 200 || strings.Contains(w.Body.String(), "The lounge") {
+		t.Errorf("a recovery code's session read a members' page: %d", w.Code)
+	}
+	if w := v.form("/account/codes", nil); strings.Contains(w.Body.String(), "Your new recovery codes") {
+		t.Error("a recovery code's session made new recovery codes")
+	}
+	v.form("/account/delete", url.Values{"confirm": {"delete"}})
+	if _, err := store.Get(id); err != nil {
+		t.Fatal("a recovery code's session deleted the account")
+	}
+	if body := v.do(http.MethodGet, "/account", nil, "").Body.String(); !strings.Contains(body, "Add a new passkey, Ada") {
+		t.Fatalf("the account page does not offer the new passkey:\n%s", body)
+	}
+	w, start := v.json("/account/passkey/start", nil)
+	if w.Code != 200 {
+		t.Fatalf("a recovery code's session could not start a passkey: %d %v", w.Code, start)
+	}
+	if w, out := v.json("/account/passkey/finish", newDevice(t).registration(t, start["challenge"].(string))); w.Code != 200 {
+		t.Fatalf("adding the passkey: %d %v", w.Code, out)
+	}
+	if v.cookie == recovery {
+		t.Fatal("the recovery code's session went on after the passkey was added")
+	}
+	if _, err := store.SessionMember(recovery); err == nil {
+		t.Error("the recovery code's session still signs in")
+	}
+	if w := v.do(http.MethodGet, "/lounge", nil, ""); w.Code != 200 || !strings.Contains(w.Body.String(), "The lounge") {
+		t.Errorf("after the new passkey the member is not signed in: %d", w.Code)
+	}
+}

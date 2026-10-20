@@ -237,3 +237,38 @@ func TestATargetURISignatureIsAccepted(t *testing.T) {
 			"%d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+// A sender that signed only the older Digest: the body swapped under a
+// Content-Digest of the swapper's own, which the signature never covered,
+// is refused. The unsigned header used to be the one checked.
+func TestAnUnsignedContentDigestCannotStandInForASignedDigest(t *testing.T) {
+	signer, doc := remoteFixture(t)
+	st := wiredSite(func(string) ([]byte, error) { return doc(nil), nil })
+	now := time.Unix(1787000000, 0)
+
+	r := httptest.NewRequest("POST", "/@/inbox", stringReader(followBody))
+	r.Host = "marginalia.example"
+	httpsig.SetContentDigest(r, []byte(followBody))
+	r.Header.Del("Content-Digest")
+	if err := httpsig.Sign(r, "https://r.example/users/dana#main-key",
+		httpsig.RSAPKCS1SHA256, signer,
+		[]string{"@method", "@authority", "@path", "digest"}, now); err != nil {
+		t.Fatal(err)
+	}
+	evil := `{"id":"https://r.example/9","type":"Undo",` +
+		`"actor":"https://r.example/users/dana",` +
+		`"object":{"id":"https://r.example/1","type":"Follow"}}`
+	attack := httptest.NewRequest("POST", "/@/inbox", stringReader(evil))
+	attack.Host = "marginalia.example"
+	for _, h := range []string{"Signature-Input", "Signature", "Digest"} {
+		attack.Header.Set(h, r.Header.Get(h))
+	}
+	httpsig.SetContentDigest(attack, []byte(evil))
+	attack.Header.Set("Digest", r.Header.Get("Digest"))
+
+	rec := httptest.NewRecorder()
+	st.inbox(rec, attack)
+	if rec.Code < 400 {
+		t.Fatalf("a body swapped under an unsigned Content-Digest was accepted (status %d)", rec.Code)
+	}
+}

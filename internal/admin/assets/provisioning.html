@@ -16,6 +16,9 @@
 
 <h2>Connection</h2>
 <p>{{if .TokenSet}}A token is set, so the identity provider can provision.{{else}}No token is set, so nothing can provision.{{end}}</p>
+{{if .TokenEnded}}<p class="notice bad" role="alert">The token ended on {{.TokenEnds}}, so the identity provider can change nothing here, not even take access away. Make a new token and give it to the identity provider.</p>
+{{else if .TokenEndsSoon}}<p class="notice" role="status">The token ends on {{.TokenEnds}}. Make a new one and give it to the identity provider before then, or provisioning stops, taking access away included.</p>
+{{else if .TokenEnds}}<p class="hint">It ends on {{.TokenEnds}}.</p>{{end}}
 <form method="post" action="/provisioning/act" class="actions">
   <button type="submit" name="do" value="token">{{if .TokenSet}}Make a new token{{else}}Make a token{{end}}</button>
   {{if .TokenSet}}<button type="submit" name="do" value="revoke" class="danger">Revoke the token</button>{{end}}

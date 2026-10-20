@@ -46,6 +46,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -604,6 +605,41 @@ func CheckContentDigest(r *http.Request, body []byte) error {
 		"this request carries no body digest, so the signature covers the " +
 			"envelope and not the letter: a signature made for one body " +
 			"would be accepted on another")
+}
+
+// CheckSignedDigest verifies the body against every digest header the
+// signature covered, and refuses a signature that covered none.
+//
+// CheckContentDigest alone checks whichever header is there, Content-Digest
+// first, signed or not. A sender that signed only the older Digest could
+// then have its body replaced by anybody on the way who added a
+// Content-Digest of their own for the new body: the signed header was never
+// read and the unsigned one matched. Only what was signed counts.
+func CheckSignedDigest(r *http.Request, body []byte, s *Signed) error {
+	if s == nil {
+		return errors.New("there is no signature to check the body against")
+	}
+	checked := false
+	for _, name := range []string{ContentDigest, LegacyDigest} {
+		if !s.Covers(strings.ToLower(name)) {
+			continue
+		}
+		checked = true
+		raw := strings.TrimSpace(r.Header.Get(name))
+		if raw == "" {
+			return fmt.Errorf("the signature covers %s and the request has none", name)
+		}
+		one := r.Clone(r.Context())
+		one.Header = http.Header{}
+		one.Header.Set(name, raw)
+		if err := CheckContentDigest(one, body); err != nil {
+			return err
+		}
+	}
+	if !checked {
+		return errors.New("this signature does not cover a body digest, so it says nothing about the body")
+	}
+	return nil
 }
 
 // CoversBody reports whether a verified signature included a body digest.

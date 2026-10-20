@@ -46,7 +46,7 @@ func newSCIM(t *testing.T) (string, scimClient) {
 	if err := cmdAuth(root, []string{"grant", "boss", "admin"}); err != nil {
 		t.Fatal(err)
 	}
-	token, err := newSCIMToken(root)
+	token, _, err := newSCIMToken(root, scimTokenDays)
 	if err != nil {
 		t.Fatal(err)
 	}
