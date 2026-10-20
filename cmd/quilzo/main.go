@@ -1529,7 +1529,7 @@ func cmdPublish(root string, args []string) error {
 	// publish off looking for a broken image.
 	if target == "" && s.GetRef(site.RefDraft) == "" {
 		return fmt.Errorf("there is nothing to publish: no page has been " +
-			"drafted yet. quilzo add NAME FILE drafts one")
+			"drafted yet. quilzo add NAME=FILE.json drafts one")
 	}
 	// Each page the publish would change, asked about its own path: a deny
 	// of publishing on /legal is not seen by a check on "/".
@@ -2037,6 +2037,18 @@ func cmdA11y(root string, args []string) error {
 	total := 0
 	for _, r := range reports {
 		total += len(r.Findings)
+	}
+	if reports == nil {
+		reports = []*a11y.Report{}
+	}
+	// What a program reads: every page's findings, and what was and was
+	// not checked, which is as much a part of the answer as the findings.
+	if w.JSON(map[string]any{"pages": len(reports), "findings": total, "blocking": blocking,
+		"reports": reports}) {
+		if blocking > 0 {
+			return fmt.Errorf("%d blocking failure(s)", blocking)
+		}
+		return nil
 	}
 	fmt.Printf("%d page(s) checked, %d finding(s), %d blocking\n",
 		len(reports), total, blocking)

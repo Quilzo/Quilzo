@@ -441,6 +441,24 @@ Unreleased
     it is short and bound.  An app's consented token, a CI job's own
     token (quilzo trust) and key-bound tokens work as before.
 
+*** The site's search finds pages published while it runs.  The index
+    was built once, when `quilzo site` started, so a page published
+    afterwards could not be found until a restart.  It is now built again
+    from the live commit the first time somebody searches after a
+    publish, as are the vectors behind /api/v1/similar and
+    /api/v1/search/vector.
+
+*** A run waiting for a person is never pruned.  Runs are kept up to
+    five hundred, oldest removed first, and that count took away runs
+    still waiting on a question, and runs a process was working on.  Only
+    finished runs are removed now.
+
+*** `quilzo --json a11y` answers in JSON: the pages checked, every
+    finding, and what was and was not checked on each page.
+
+*** `quilzo publish` with nothing drafted names the add command as it is
+    typed: quilzo add NAME=FILE.json.
+
 *** Writes that happen at the same time no longer undo each other's
     security decisions.  A sign-in in the admin could write back a token
     that the command line had just revoked; a publish sending webhooks

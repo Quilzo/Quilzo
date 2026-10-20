@@ -135,7 +135,7 @@ func (st *Site) searchData(query string, pages map[string]any) map[string]any {
 		"query": query, "asked": query != "", "results": []any{},
 		"count": float64(0), "empty": false,
 	}
-	if query == "" || st.Search == nil {
+	if query == "" || st.searchIndex() == nil {
 		return data
 	}
 
