@@ -756,22 +756,16 @@ func cmdServe(root string, args []string) error {
 	//
 	// And the estate's schedule, which does nothing until an administrator
 	// sets one with quilzo estate auto.
-	jobs := []upkeep.Job{estateJob(root), collectJob(root),
-		// The posture, rescanned on the same schedule, so a check that
-		// starts failing is a finding in the queue rather than something
-		// waiting for somebody to open the Security screen.
-		postureJob(root, *tplDir, posture.ServerFacts{AdminAddr: *addr,
-			PublicAddr: *publicAddr, BehindProxy: *behindProxy})}
-	if job, ok := retentionJob(root); ok {
-		jobs = append(jobs, job)
+	// And Quilzo's own log, read by the rules whenever it has grown, with
+	// the shipped rules in place if the store had none.
+	if err := ensureRules(root, "server-start"); err != nil {
+		fmt.Fprintf(os.Stderr, "  %s%v%s\n", dim, err, reset)
 	}
-	// This binary against the Go vulnerability database, hourly, told to
-	// the shield; and whether the binary is still itself.
-	jobs = append(jobs, selfJob(root))
-	// And an agent or app that keeps trying what it was refused.
-	jobs = append(jobs, agentwatchJob(root))
-	// And what agents remember, past its time.
-	jobs = append(jobs, memoryJob(root))
+	// The posture, rescanned on the same schedule, so a check that starts
+	// failing is a finding in the queue rather than something waiting for
+	// somebody to open the Security screen.
+	jobs := upkeepJobs(root, postureJob(root, *tplDir, posture.ServerFacts{AdminAddr: *addr,
+		PublicAddr: *publicAddr, BehindProxy: *behindProxy}))
 	upkeepCtx, stopUpkeep := context.WithCancel(context.Background())
 	defer stopUpkeep()
 	go upkeep.Run(upkeepCtx, upkeep.Every, func(j upkeep.Job, n int, err error) {
@@ -785,6 +779,10 @@ func cmdServe(root string, args []string) error {
 				"declares%s\n", dim, count(n, "submission"), reset)
 		case "estate":
 			fmt.Printf("  %sestate: synced %s%s\n", dim, count(n, "tool"), reset)
+		case "detect":
+			if n > 0 {
+				fmt.Printf("  %sdetect: opened %s from Quilzo's own log%s\n", dim, count(n, "finding"), reset)
+			}
 		}
 	}, jobs...)
 
@@ -1418,6 +1416,24 @@ func cmdServe(root string, args []string) error {
 func sessionCaller(by admin.Actor) *Caller {
 	return &Caller{Name: by.Name, Kind: audit.KindHuman, Verified: true,
 		Role: by.Role, Scope: by.Scope, Limits: by.Limits}
+}
+
+// upkeepJobs is everything the server does on its timer, around the
+// posture scan it is given.
+func upkeepJobs(root string, posture upkeep.Job) []upkeep.Job {
+	jobs := []upkeep.Job{estateJob(root), collectJob(root), posture}
+	if job, ok := retentionJob(root); ok {
+		jobs = append(jobs, job)
+	}
+	// This binary against the Go vulnerability database, hourly, told to
+	// the shield; and whether the binary is still itself.
+	jobs = append(jobs, selfJob(root))
+	// And an agent or app that keeps trying what it was refused.
+	jobs = append(jobs, agentwatchJob(root))
+	// And what agents remember, past its time.
+	jobs = append(jobs, memoryJob(root))
+	// And Quilzo's own log, read by the detection rules whenever it grew.
+	return append(jobs, detectJob(root))
 }
 
 // retentionJob sweeps submissions past the retention their form declares.

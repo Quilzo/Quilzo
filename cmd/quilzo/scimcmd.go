@@ -159,6 +159,10 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 	// day it was first made and an unchanged sync writes nothing.
 	satisfied := make([]bool, len(want))
 	changed := false
+	// What provisioning gave and took, recorded one by one below: the role
+	// is what a rule about somebody being made an administrator reads, and
+	// a group mapped to admin is a way to make one.
+	var granted, revoked []auth.Binding
 	kept := p.Bindings[:0]
 	for _, b := range p.Bindings {
 		if b.GrantedBy != scimBy || !strings.EqualFold(b.Principal, name) {
@@ -176,6 +180,7 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 			kept = append(kept, b)
 		} else {
 			changed = true
+			revoked = append(revoked, b)
 		}
 	}
 	p.Bindings = kept
@@ -201,10 +206,25 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 			return err
 		}
 		changed = true
+		granted = append(granted, x)
 	}
 	if changed {
 		if err := saveJSON(policyPath(root), p); err != nil {
 			return err
+		}
+	}
+	for _, set := range []struct {
+		action string
+		list   []auth.Binding
+	}{{"scim.granted", granted}, {"scim.revoked", revoked}} {
+		for _, b := range set.list {
+			role := string(b.Role)
+			if b.Permission != "" {
+				role = string(b.Permission)
+			}
+			record(root, audit.Record{Action: set.action, Resource: b.Resource, Outcome: audit.Success,
+				Principal: scimBy, Kind: audit.KindService, Verified: true,
+				Detail: map[string]string{"subject": name, "role": role, "deny": fmt.Sprintf("%t", b.Deny)}})
 		}
 	}
 

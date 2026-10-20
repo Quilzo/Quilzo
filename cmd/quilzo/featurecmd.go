@@ -866,6 +866,12 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 		return nil, err
 	}
 	var secrets []string
+	// Each endpoint a package adds, changes or takes away is recorded on its
+	// own, as `quilzo webhook add` records one: an endpoint is somewhere this
+	// organisation's events go, and a package installed from CI is not a
+	// reason for that to go unseen by whoever watches webhooks.
+	type hookChange struct{ action, url, types string }
+	var hookChanges []hookChange
 	for _, h := range p.Webhooks {
 		switch act[feature.Ref{Kind: "webhook", Name: h.URL}] {
 		case feature.Add:
@@ -875,13 +881,18 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 			}
 			hooks.Endpoints = append(hooks.Endpoints, webhook.Endpoint{URL: h.URL, Secret: secret, Types: h.Types, Note: h.Note})
 			secrets = append(secrets, h.URL+"  "+secret)
+			hookChanges = append(hookChanges, hookChange{"webhook.add", h.URL, strings.Join(h.Types, ",")})
 		case feature.Change:
 			for i := range hooks.Endpoints {
 				if hooks.Endpoints[i].URL == h.URL {
 					hooks.Endpoints[i].Types, hooks.Endpoints[i].Note = h.Types, h.Note
 				}
 			}
+			hookChanges = append(hookChanges, hookChange{"webhook.change", h.URL, strings.Join(h.Types, ",")})
 		}
+	}
+	for _, url := range removing("webhook") {
+		hookChanges = append(hookChanges, hookChange{"webhook.remove", url, ""})
 	}
 	if gone := removing("webhook"); len(gone) > 0 {
 		kept := hooks.Endpoints[:0]
@@ -1004,8 +1015,22 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 	if len(by) > 1 {
 		detail["by"] = by[0]
 	}
+	// What its card said, so the record shows how risky the install was
+	// judged and how many people it took, not only how much it changed.
+	card := p.MakeCard()
+	detail["risk"], detail["approvers"] = card.Risk, fmt.Sprint(card.Approvers)
 	if err := recordE(root, caller.auditRecord("feature.installed", "/", audit.Success, detail)); err != nil {
 		return nil, err
+	}
+	pkg := p.Name
+	for _, h := range hookChanges {
+		d := map[string]string{"endpoint": h.url, "feature": pkg}
+		if h.types != "" {
+			d["types"] = h.types
+		}
+		if err := recordE(root, caller.auditRecord(h.action, "/", audit.Success, d)); err != nil {
+			return nil, err
+		}
 	}
 	return secrets, nil
 }

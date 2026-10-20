@@ -27,6 +27,7 @@ import (
 	"github.com/quilzo/quilzo/internal/spool"
 	"github.com/quilzo/quilzo/internal/ssf"
 	"github.com/quilzo/quilzo/internal/telemetry"
+	"github.com/quilzo/quilzo/internal/upkeep"
 )
 
 // Events pushed to the server, the moment they happen.
@@ -67,18 +68,51 @@ func useSpool(root string, fn func(*spool.Spool) error) error {
 // raise to the automations. A site with no rules has nothing to run, which
 // is not a failure here; anything else that stops the pass is recorded.
 func detectInServer(root string, sp *spool.Spool) {
-	caller := &Caller{Name: "detect-on-arrival", Kind: audit.KindService, Verified: true}
+	_, _ = detectAs(root, sp, "detect-on-arrival")
+}
+
+// detectAs runs one pass as a service with the name given, and says how
+// many findings it opened.
+func detectAs(root string, sp *spool.Spool, name string) (int, error) {
+	caller := &Caller{Name: name, Kind: audit.KindService, Verified: true}
 	sum, err := detectPass(root, "", 0, caller, sp)
 	if errors.Is(err, errNoRules) {
-		return
+		return 0, nil
 	}
 	if err != nil {
 		record(root, audit.Record{Action: "detect.run", Resource: "/findings", Outcome: audit.Failure,
 			Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: true,
 			Detail: map[string]string{"error": onOneLine(err.Error())}})
-		return
+		return 0, err
 	}
 	automateFindings(root, sum.New)
+	return len(sum.New), nil
+}
+
+// detectJob runs the rules over Quilzo's own log on the server's timer.
+//
+// The rules about Quilzo itself, what agents did and the correlations
+// across them ran when somebody typed `quilzo detect run`, when a feed
+// pushed events, or when scheduled collection brought some in. An
+// installation that governs agents and collects from nowhere ran none of
+// them, and nothing was checked in a quiet hour even where collection was
+// set up. Now each tick in which the log has grown past what the rules
+// last read runs a pass, and what it raises goes to the automations like
+// anything that arrives.
+func detectJob(root string) upkeep.Job {
+	return upkeep.Job{Name: "detect", Do: func(now time.Time) (int, error) {
+		grew, err := selfLogGrew(root)
+		if err != nil || !grew {
+			return 0, err
+		}
+		opened := 0
+		err = withSpool(root, func(sp *spool.Spool) error {
+			n, derr := detectAs(root, sp, "detect-schedule")
+			opened = n
+			return derr
+		})
+		return opened, err
+	}}
 }
 
 // -- feeds, kept --------------------------------------------------------------

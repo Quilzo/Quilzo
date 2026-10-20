@@ -14,7 +14,9 @@
           "field": "raw.action",
           "op": "equals",
           "values": [
-            "access.grant"
+            "access.grant",
+            "auth.granted",
+            "scim.granted"
           ]
         }
       },
@@ -49,6 +51,52 @@
         "message": "access.grant",
         "raw": {
           "action": "access.grant",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human",
+          "role": "admin"
+        }
+      }
+    },
+    {
+      "name": "made an administrator on the command line",
+      "match": true,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "auth.granted",
+        "raw": {
+          "action": "auth.granted",
+          "outcome": "success",
+          "resource": "/",
+          "kind": "human",
+          "role": "admin"
+        }
+      }
+    },
+    {
+      "name": "made an administrator by provisioning",
+      "match": true,
+      "event": {
+        "source": "quilzo/audit",
+        "time": "2026-10-01T09:00:00Z",
+        "received": "2026-10-01T09:00:05Z",
+        "class": 6003,
+        "disposition": 1,
+        "actor": {
+          "issuer": "quilzo",
+          "value": "p_1a2b3c"
+        },
+        "message": "scim.granted",
+        "raw": {
+          "action": "scim.granted",
           "outcome": "success",
           "resource": "/",
           "kind": "human",
