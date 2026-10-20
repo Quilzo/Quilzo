@@ -76,6 +76,9 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 			s.SSO.Providers = append(s.SSO.Providers, p)
 		}
 	}
+	if t, ok, err := readSCIMToken(root, s.Now); err == nil && ok {
+		s.SSO.SCIMTokenEnds = t.Expires
+	}
 
 	// The agent interface: whether it answers, which apps may connect, and
 	// which connections hold administrator scope.

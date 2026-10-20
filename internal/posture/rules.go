@@ -629,6 +629,29 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "scim.token-expiring",
+		Title:    "The provisioning token is about to end, or has",
+		Severity: High,
+		Controls: []string{"IA-5", "AC-2(3)"},
+		OWASP:    "A07:2025 Authentication Failures",
+		Why: "Provisioning is how the identity provider takes access away when " +
+			"somebody leaves or changes team. When its token ends, every change " +
+			"it sends is refused, deactivations included, and the people it " +
+			"would have removed keep what they had.",
+		Check: func(s State) []Finding {
+			end := s.SSO.SCIMTokenEnds
+			if end.IsZero() || end.After(s.Now.Add(30*24*time.Hour)) {
+				return nil
+			}
+			when := "ends " + end.UTC().Format("2 Jan 2006")
+			if !end.After(s.Now) {
+				when = "ended " + end.UTC().Format("2 Jan 2006")
+			}
+			return []Finding{{Resource: "scim/token", Detail: "the provisioning token " + when,
+				Fix: "quilzo scim token  # then give the new token to the identity provider"}}
+		},
+	},
+	{
 		ID:       "sso.unusable",
 		Title:    "An identity provider is set up and cannot sign anybody in",
 		Severity: Medium,

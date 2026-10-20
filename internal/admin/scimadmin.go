@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/scim"
@@ -25,6 +26,8 @@ type SCIMAdmin struct {
 	Unmap       func(group, by string) error
 	NewToken    func(by string) (string, error)
 	RevokeToken func(by string) error
+	// TokenEnds is when the provisioning token stops working, if one is set.
+	TokenEnds func() (time.Time, bool, error)
 }
 
 type scimGroupRow struct {
@@ -66,6 +69,14 @@ func (s *Server) renderProvisioning(w http.ResponseWriter, r *http.Request, p pr
 		return
 	}
 	data["TokenSet"] = set
+	if s.SCIM.TokenEnds != nil {
+		if ends, ok, terr := s.SCIM.TokenEnds(); terr == nil && ok {
+			now := time.Now()
+			data["TokenEnds"] = ends.Format("2 January 2006")
+			data["TokenEnded"] = !now.Before(ends)
+			data["TokenEndsSoon"] = now.Before(ends) && ends.Sub(now) < 30*24*time.Hour
+		}
+	}
 	var groups []scimGroupRow
 	for _, g := range st.Groups {
 		groups = append(groups, scimGroupRow{Name: g.DisplayName, Means: st.Mapping[g.DisplayName], Members: len(g.Members)})

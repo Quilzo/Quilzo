@@ -15,6 +15,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/jsonschema"
 )
 
 // REST APIs as tools.
@@ -32,8 +33,10 @@ import (
 //
 // A call is built only from what the operation declares: its path with each
 // placeholder escaped, its declared query parameters, and a JSON body when it
-// takes one. An argument the operation does not declare is refused rather
-// than passed on, so a model cannot add a parameter the person never read.
+// takes one, checked against the body's declared schema (internal/jsonschema).
+// An argument the operation does not declare is refused rather than passed
+// on, so a model cannot add a parameter, or a body field, the person never
+// read.
 // The request goes over https, to the declared host and nowhere else, with
 // no redirects followed, the integration's credential added here, and the
 // answer cut off at MaxResult.
@@ -157,6 +160,12 @@ func restRequest(in agent.Integration, o agent.Operation, args map[string]any) (
 	}
 	var body []byte
 	if b, ok := args["body"]; ok && len(o.Body) > 0 {
+		// The body goes out only as its declaration describes it: a model's
+		// arguments are what something it read may have steered, and a field
+		// the API would also accept is the one it was steered to add.
+		if err := jsonschema.Check(o.Body, b); err != nil {
+			return "", nil, fmt.Errorf("%s: %w", o.Name, err)
+		}
 		var err error
 		if body, err = json.Marshal(b); err != nil {
 			return "", nil, err

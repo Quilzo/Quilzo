@@ -112,6 +112,23 @@ func (st *Site) signedIn(r *http.Request) (member.Member, bool) {
 	return m, true
 }
 
+// recovering is the member a recovery code's session is for: signed in to
+// add a passkey and to nothing else (member.Session.Recovery).
+func (st *Site) recovering(r *http.Request) (member.Member, bool) {
+	if !st.membersOn() {
+		return member.Member{}, false
+	}
+	c, err := r.Cookie(MemberCookie)
+	if err != nil {
+		return member.Member{}, false
+	}
+	m, err := st.Members.Store.RecoveringMember(c.Value)
+	if err != nil {
+		return member.Member{}, false
+	}
+	return m, true
+}
+
 // sameSite reports whether a request came from this site's own pages.
 //
 // Sec-Fetch-Site where the browser sends it, which every current one does;
@@ -242,8 +259,11 @@ func (st *Site) account(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		m, ok := st.signedIn(r)
-		st.renderAccount(w, accountView{Member: m, SignedIn: ok,
-			Done: r.URL.Query().Get("done")}, http.StatusOK)
+		v := accountView{Member: m, SignedIn: ok, Done: r.URL.Query().Get("done")}
+		if !ok {
+			v.Member, v.Recovering = st.recovering(r)
+		}
+		st.renderAccount(w, v, http.StatusOK)
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -428,6 +448,9 @@ func (st *Site) signinFinish(w http.ResponseWriter, r *http.Request) {
 func (st *Site) passkeyStart(w http.ResponseWriter, r *http.Request) {
 	m, ok := st.signedIn(r)
 	if !ok {
+		m, ok = st.recovering(r)
+	}
+	if !ok {
 		jsonError(w, http.StatusUnauthorized, "Sign in first.")
 		return
 	}
@@ -451,6 +474,11 @@ func (st *Site) passkeyStart(w http.ResponseWriter, r *http.Request) {
 
 func (st *Site) passkeyFinish(w http.ResponseWriter, r *http.Request) {
 	m, ok := st.signedIn(r)
+	recovering := false
+	if !ok {
+		m, ok = st.recovering(r)
+		recovering = ok
+	}
 	if !ok {
 		jsonError(w, http.StatusUnauthorized, "Sign in first.")
 		return
@@ -475,6 +503,20 @@ func (st *Site) passkeyFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st.audit("member.passkey-added", m.ID, r, true)
+	// The new passkey is what a recovery was for: the code's session ends
+	// and an ordinary one begins, as a sign-in with that passkey would.
+	if recovering {
+		if c, err := r.Cookie(MemberCookie); err == nil {
+			st.Members.Store.EndSession(c.Value)
+		}
+		token, err := st.Members.Store.StartSession(m.ID)
+		if err != nil {
+			jsonError(w, http.StatusInternalServerError, "The passkey was added. Sign in with it.")
+			return
+		}
+		st.setSession(w, token)
+		st.audit("member.recovered", m.ID, r, true)
+	}
 	replyJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -523,7 +565,10 @@ func (st *Site) accountForm(w http.ResponseWriter, r *http.Request, action strin
 				"Each code works once; check it and try another."}, http.StatusUnauthorized)
 			return
 		}
-		token, err := st.Members.Store.StartSession(m.ID)
+		// A session for adding a passkey and nothing else: a code is one
+		// factor, written down, and what it opens is bound to a new passkey
+		// before it is used for anything.
+		token, err := st.Members.Store.StartRecoverySession(m.ID)
 		if err != nil {
 			st.renderAccount(w, accountView{Problem: "That account cannot be signed in to."},
 				http.StatusForbidden)
@@ -533,6 +578,16 @@ func (st *Site) accountForm(w http.ResponseWriter, r *http.Request, action strin
 		st.audit("member.recover", m.ID, r, true)
 		back("recovered")
 		return
+	}
+	if action == "signout" {
+		if _, rec := st.recovering(r); rec {
+			if c, err := r.Cookie(MemberCookie); err == nil {
+				st.Members.Store.EndSession(c.Value)
+			}
+			clearSession(w)
+			back("signed-out")
+			return
+		}
 	}
 
 	m, ok := st.signedIn(r)
@@ -637,9 +692,11 @@ func (st *Site) siteName() string {
 type accountView struct {
 	Member   member.Member
 	SignedIn bool
-	Done     string
-	Problem  string
-	Codes    []string
+	// Recovering is a recovery code's session, which may add a passkey.
+	Recovering bool
+	Done       string
+	Problem    string
+	Codes      []string
 	// Filled in by renderAccount.
 	Site, Invite, Nonce, Message string
 	MemberPages                  []memberPage
@@ -659,7 +716,7 @@ type passkeyRow struct{ ID, Label, Added, Used string }
 // doneMessages are the only things a redirect can make the page say, so the
 // address cannot be used to put words on it.
 var doneMessages = map[string]string{
-	"recovered":       "Signed in with a recovery code, which will not work again. Add a new passkey now.",
+	"recovered":       "The recovery code worked, and will not work again. Add a new passkey now: until you do, that is all this does, for fifteen minutes.",
 	"signed-out":      "You are signed out.",
 	"renamed":         "Your name is changed.",
 	"passkey-added":   "The passkey is added.",
@@ -772,7 +829,7 @@ func (st *Site) membersOnlyGate(w http.ResponseWriter, path string) {
 var accountTemplate = template.Must(template.New("account").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{if .V.SignedIn}}Your account{{else}}Sign in{{end}} — {{.V.Site}}</title>
+<title>{{if .V.SignedIn}}Your account{{else if .V.Recovering}}Add a passkey{{else}}Sign in{{end}} — {{.V.Site}}</title>
 <meta name="robots" content="noindex">
 <link rel="stylesheet" href="/site.css">
 <link rel="stylesheet" href="/ask.css">
@@ -831,6 +888,17 @@ var accountTemplate = template.Must(template.New("account").Parse(`<!doctype htm
     <input id="confirm" name="confirm" autocomplete="off" required>
     <button type="submit" class="qz-button-quiet">Delete my account</button></form>
 </section>
+{{else if .V.Recovering}}
+<h1 id="account-h">Add a new passkey, {{.V.Member.Name}}</h1>
+<section class="qz-turn" aria-labelledby="new-key-h">
+  <h2 id="new-key-h">Your new passkey</h2>
+  <p>Your recovery code opened your account for this one step. Once your device has made a passkey, you are signed in with it as usual.</p>
+  <p><label for="passkey-label">Name for the new passkey</label><br>
+  <input id="passkey-label" maxlength="40" placeholder="My laptop"></p>
+  <p><button type="button" id="add-passkey" class="qz-button">Add a passkey</button></p>
+  <form method="post" action="/account/signout" class="qz-inline"><button type="submit" class="qz-button-quiet">Stop and sign out</button></form>
+</section>
+<noscript><p class="qz-problem">Passkeys are a feature of your browser that a page reaches with JavaScript, so adding one needs it switched on.</p></noscript>
 {{else}}
 <h1 id="account-h">Sign in to {{.V.Site}}</h1>
 <section class="qz-turn" aria-labelledby="in-h">

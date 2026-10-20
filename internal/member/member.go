@@ -89,6 +89,12 @@ type Session struct {
 	Member  string    `json:"member"`
 	Created time.Time `json:"created"`
 	Seen    time.Time `json:"seen"`
+	// Recovery marks a session a recovery code started. It is good for
+	// one thing, adding a passkey, for RecoveryLife: a code is a single
+	// factor written on paper, and the account it opens is to be bound to
+	// a new passkey before anything else is done with it (SP 800-63B-4
+	// on account recovery).
+	Recovery bool `json:"recovery,omitempty"`
 }
 
 // Invite is an unused invitation, for a site whose sign-up is by invitation.
@@ -106,6 +112,9 @@ const (
 	SessionIdle = 14 * 24 * time.Hour
 	// SessionMax ends any session this long after it began, used or not.
 	SessionMax = 90 * 24 * time.Hour
+	// RecoveryLife is how long a recovery code's session may wait for the
+	// new passkey it is for.
+	RecoveryLife = 15 * time.Minute
 	// InviteLife is how long an invitation code may wait to be used.
 	InviteLife = 14 * 24 * time.Hour
 	// RecoveryCodes is how many codes a new account is given.
@@ -121,6 +130,9 @@ var (
 	ErrNotFound = errors.New("no such member")
 	ErrDisabled = errors.New("this account is disabled")
 	ErrNoCode   = errors.New("that code is not valid")
+	// ErrRecovering is a session a recovery code started, which signs
+	// nobody in until a passkey is added.
+	ErrRecovering = errors.New("this session is for adding a passkey")
 )
 
 // Store is a site's members, in a directory.
@@ -439,6 +451,16 @@ func (s *Store) Delete(id string) error {
 // StartSession signs a member in and returns the token for the cookie. Only
 // its hash is kept.
 func (s *Store) StartSession(id string) (string, error) {
+	return s.startSession(id, false)
+}
+
+// StartRecoverySession begins the session a recovery code opens: good
+// for adding a passkey and nothing else (see Session.Recovery).
+func (s *Store) StartRecoverySession(id string) (string, error) {
+	return s.startSession(id, true)
+}
+
+func (s *Store) startSession(id string, recovery bool) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m, err := s.read(id)
@@ -453,7 +475,7 @@ func (s *Store) StartSession(id string) (string, error) {
 		return "", err
 	}
 	now := s.now()
-	b, _ := json.Marshal(Session{Member: id, Created: now, Seen: now})
+	b, _ := json.Marshal(Session{Member: id, Created: now, Seen: now, Recovery: recovery})
 	if err := atomicfile.Write(s.sessionPath(token), b, 0o600); err != nil {
 		return "", err
 	}
@@ -466,36 +488,55 @@ func (s *Store) StartSession(id string) (string, error) {
 // minute after the last refreshes it, so an active session stays alive and
 // an idle one does not, without a write on every request.
 func (s *Store) SessionMember(token string) (Member, error) {
-	if !reToken.MatchString(token) {
+	m, recovery, err := s.session(token)
+	if err == nil && recovery {
+		return Member{}, ErrRecovering
+	}
+	return m, err
+}
+
+// RecoveringMember is the member a recovery code's session is for, while
+// it still is; any other session is not one.
+func (s *Store) RecoveringMember(token string) (Member, error) {
+	m, recovery, err := s.session(token)
+	if err == nil && !recovery {
 		return Member{}, ErrNotFound
+	}
+	return m, err
+}
+
+func (s *Store) session(token string) (Member, bool, error) {
+	if !reToken.MatchString(token) {
+		return Member{}, false, ErrNotFound
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	path := s.sessionPath(token)
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return Member{}, ErrNotFound
+		return Member{}, false, ErrNotFound
 	}
 	var sess Session
 	if json.Unmarshal(b, &sess) != nil {
-		return Member{}, ErrNotFound
+		return Member{}, false, ErrNotFound
 	}
 	now := s.now()
-	if now.Sub(sess.Seen) > SessionIdle || now.Sub(sess.Created) > SessionMax {
+	if now.Sub(sess.Seen) > SessionIdle || now.Sub(sess.Created) > SessionMax ||
+		(sess.Recovery && now.Sub(sess.Created) > RecoveryLife) {
 		_ = os.Remove(path)
-		return Member{}, ErrNotFound
+		return Member{}, false, ErrNotFound
 	}
 	m, err := s.read(sess.Member)
 	if err != nil || m.Disabled {
 		_ = os.Remove(path)
-		return Member{}, ErrNotFound
+		return Member{}, false, ErrNotFound
 	}
 	if now.Sub(sess.Seen) > time.Minute {
 		sess.Seen = now
 		nb, _ := json.Marshal(sess)
 		_ = atomicfile.Write(path, nb, 0o600)
 	}
-	return m, nil
+	return m, sess.Recovery, nil
 }
 
 // EndSession signs one browser out.

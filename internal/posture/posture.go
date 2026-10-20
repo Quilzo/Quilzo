@@ -273,6 +273,9 @@ type ChatbotFact struct {
 type SSOFacts struct {
 	Checked   bool          `json:"checked"`
 	Providers []SSOProvider `json:"providers,omitempty"`
+	// SCIMTokenEnds is when the provisioning token stops working; zero
+	// when there is none.
+	SCIMTokenEnds time.Time `json:"scim_token_ends,omitzero"`
 }
 
 // SSOProvider is one SAML identity provider.

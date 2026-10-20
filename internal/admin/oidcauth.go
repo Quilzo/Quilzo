@@ -5,6 +5,7 @@ package admin
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"fmt"
 	"net/http"
@@ -60,7 +61,20 @@ type OIDC struct {
 	Domains []string
 
 	mu      sync.Mutex
-	pending map[string]*oidc.Request
+	pending map[string]*oidcPending
+}
+
+// oidcPending is a sign-in in progress: the request, and the hash of the
+// secret in the cookie of the browser that started it.
+//
+// The state alone was not enough. Whoever started a sign-in at the
+// provider could hand their callback address to somebody else, whose
+// browser would then finish it and be signed in as them, working in the
+// wrong account without knowing (login CSRF). The cookie ties the
+// response to the browser that asked, as the SAML sign-in already does.
+type oidcPending struct {
+	req     *oidc.Request
+	binding [32]byte
 }
 
 // DefaultSessionTTL is how long an OIDC session lasts.
@@ -69,9 +83,14 @@ type OIDC struct {
 // enough that a laptop left on a train stops being a credential overnight.
 const DefaultSessionTTL = 8 * time.Hour
 
-// start begins a sign-in.
-func (o *OIDC) start(w http.ResponseWriter, r *http.Request) {
+// start begins a sign-in, for the browser that holds cookie.
+func (o *OIDC) start(w http.ResponseWriter, r *http.Request, cookie string) {
 	req, err := oidc.NewRequest(o.RedirectURI)
+	if err != nil {
+		http.Error(w, "cannot begin sign-in", http.StatusInternalServerError)
+		return
+	}
+	secret, err := randomToken(32)
 	if err != nil {
 		http.Error(w, "cannot begin sign-in", http.StatusInternalServerError)
 		return
@@ -82,12 +101,12 @@ func (o *OIDC) start(w http.ResponseWriter, r *http.Request) {
 	// verifier is the one value PKCE depends on the client keeping to itself.
 	o.mu.Lock()
 	if o.pending == nil {
-		o.pending = map[string]*oidc.Request{}
+		o.pending = map[string]*oidcPending{}
 	}
 	// Sweep expired attempts on every start, so an abandoned sign-in cannot
 	// accumulate into a memory leak somebody has to notice.
 	for k, v := range o.pending {
-		if v.Expired(time.Now()) {
+		if v.req.Expired(time.Now()) {
 			delete(o.pending, k)
 		}
 	}
@@ -96,15 +115,19 @@ func (o *OIDC) start(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "too many sign-ins in progress", http.StatusTooManyRequests)
 		return
 	}
-	o.pending[req.State] = req
+	o.pending[req.State] = &oidcPending{req: req, binding: sha256.Sum256([]byte(secret))}
 	o.mu.Unlock()
 
+	// Lax, because the provider sends the browser back with a top-level GET
+	// from its own site, which Lax lets through and nothing else does.
+	http.SetCookie(w, &http.Cookie{Name: cookie, Value: secret, Path: "/", HttpOnly: true,
+		Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: int(oidc.MaxRequestAge.Seconds())})
 	http.Redirect(w, r, o.Provider.AuthorizationURL(o.ClientID, req, nil),
 		http.StatusSeeOther)
 }
 
 // take consumes a pending request, so a state cannot be replayed.
-func (o *OIDC) take(state string) *oidc.Request {
+func (o *OIDC) take(state string) *oidcPending {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	for k, v := range o.pending {
@@ -116,8 +139,8 @@ func (o *OIDC) take(state string) *oidc.Request {
 	return nil
 }
 
-// callback finishes a sign-in.
-func (o *OIDC) callback(ctx context.Context, r *http.Request) (string, error) {
+// callback finishes a sign-in, in the browser that started it.
+func (o *OIDC) callback(ctx context.Context, r *http.Request, cookie string) (string, error) {
 	if e := r.URL.Query().Get("error"); e != "" {
 		return "", fmt.Errorf("the provider refused: %s (%s)", e,
 			r.URL.Query().Get("error_description"))
@@ -127,12 +150,20 @@ func (o *OIDC) callback(ctx context.Context, r *http.Request) (string, error) {
 		return "", fmt.Errorf("no state parameter; this response did not come " +
 			"from a sign-in this server started")
 	}
-	req := o.take(state)
-	if req == nil {
+	p := o.take(state)
+	if p == nil {
 		return "", fmt.Errorf("this state does not match a sign-in in progress. " +
 			"It has already been used, it expired, or the request did not " +
 			"originate here")
 	}
+	c, err := r.Cookie(cookie)
+	if err != nil {
+		return "", fmt.Errorf("this sign-in was started in another browser. Start again here")
+	}
+	if got := sha256.Sum256([]byte(c.Value)); subtle.ConstantTimeCompare(got[:], p.binding[:]) != 1 {
+		return "", fmt.Errorf("this sign-in was started in another browser. Start again here")
+	}
+	req := p.req
 	if req.Expired(time.Now()) {
 		return "", fmt.Errorf("this sign-in took too long; start again")
 	}
@@ -234,7 +265,16 @@ func (s *Server) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	s.OIDC.start(w, r)
+	s.OIDC.start(w, r, s.oidcCookie(r))
+}
+
+// oidcCookie names the cookie an OIDC sign-in is bound to: __Host- where
+// the browser is on TLS, so no other path or subdomain can set it.
+func (s *Server) oidcCookie(r *http.Request) string {
+	if r.TLS != nil || s.behindTLSProxy() {
+		return "__Host-quilzo_oidc"
+	}
+	return "quilzo_oidc"
 }
 
 // handleOIDCCallback finishes one.
@@ -246,7 +286,11 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	principal, err := s.OIDC.callback(ctx, r)
+	cn := s.oidcCookie(r)
+	// Spent either way: the binding is for one sign-in.
+	http.SetCookie(w, &http.Cookie{Name: cn, Value: "", Path: "/", HttpOnly: true,
+		Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	principal, err := s.OIDC.callback(ctx, r, cn)
 	if err != nil {
 		s.refuseSignIn(w, r, err.Error(), "")
 		return

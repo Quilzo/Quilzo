@@ -9,13 +9,16 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/atomicfile"
@@ -37,30 +40,102 @@ const scimBy = "scim"
 
 func scimStore(root string) *scim.Store { return &scim.Store{Path: scimPath(root)} }
 
-// newSCIMToken makes the provisioning token, keeps its hash, and returns it
-// once. A new one replaces the old: there is one provisioning connection.
-func newSCIMToken(root string) (string, error) {
+// The provisioning token works for a limited time. Whoever holds it can
+// create people and, through a mapped group, make them administrators, so
+// a copy must stop working; it is replaced before it ends, with warning
+// (the posture rule scim.token-expiring), because an ended token also
+// stops the identity provider taking access away.
+const (
+	scimTokenDays    = 180
+	scimTokenMaxDays = 365
+	// scimTokenGrace is what a token made before tokens ended is given
+	// from when it is first read, so nobody's provisioning stops unwarned.
+	scimTokenGrace = 30 * 24 * time.Hour
+)
+
+// scimToken is what is kept of the provisioning token: its hash, and when
+// it was made and ends.
+type scimToken struct {
+	Hash    string    `json:"hash"`
+	Created time.Time `json:"created"`
+	Expires time.Time `json:"expires"`
+}
+
+// newSCIMToken makes the provisioning token, lasting days, keeps its hash,
+// and returns it once. A new one replaces the old: there is one
+// provisioning connection.
+func newSCIMToken(root string, days int) (string, scimToken, error) {
+	if days <= 0 || days > scimTokenMaxDays {
+		return "", scimToken{}, fmt.Errorf("a provisioning token lasts from 1 to %d days", scimTokenMaxDays)
+	}
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return "", err
+		return "", scimToken{}, err
 	}
 	token := "qzscim_" + base64.RawURLEncoding.EncodeToString(b)
 	sum := sha256.Sum256([]byte(token))
-	if err := atomicfile.Write(scimTokenPath(root), []byte(hex.EncodeToString(sum[:])), 0o600); err != nil {
-		return "", err
+	now := time.Now().UTC()
+	kept := scimToken{Hash: hex.EncodeToString(sum[:]), Created: now, Expires: now.AddDate(0, 0, days)}
+	if err := saveSCIMToken(root, kept); err != nil {
+		return "", scimToken{}, err
 	}
-	return token, nil
+	return token, kept, nil
 }
 
-// scimAuthenticate compares a presented token's hash with the kept one.
+func saveSCIMToken(root string, t scimToken) error {
+	b, err := json.Marshal(t)
+	if err != nil {
+		return err
+	}
+	return atomicfile.Write(scimTokenPath(root), b, 0o600)
+}
+
+// readSCIMToken is the kept token, and whether there is one. A token kept
+// as a bare hash, from before tokens ended, is given an end now and kept
+// with it: the later of scimTokenDays after it was made and scimTokenGrace
+// from now.
+func readSCIMToken(root string, now time.Time) (scimToken, bool, error) {
+	path := scimTokenPath(root)
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return scimToken{}, false, nil
+	}
+	if err != nil {
+		return scimToken{}, false, err
+	}
+	var t scimToken
+	if text := strings.TrimSpace(string(b)); strings.HasPrefix(text, "{") {
+		if err := json.Unmarshal(b, &t); err != nil || t.Hash == "" || t.Expires.IsZero() {
+			return scimToken{}, false, fmt.Errorf("%s cannot be read; make a new token: quilzo scim token", path)
+		}
+		return t, true, nil
+	} else {
+		fi, serr := os.Stat(path)
+		if serr != nil {
+			return scimToken{}, false, serr
+		}
+		t = scimToken{Hash: text, Created: fi.ModTime().UTC(), Expires: fi.ModTime().UTC().AddDate(0, 0, scimTokenDays)}
+		if grace := now.UTC().Add(scimTokenGrace); t.Expires.Before(grace) {
+			t.Expires = grace
+		}
+		if err := saveSCIMToken(root, t); err != nil {
+			return scimToken{}, false, err
+		}
+	}
+	return t, true, nil
+}
+
+// scimAuthenticate compares a presented token's hash with the kept one,
+// and refuses one that has ended.
 func scimAuthenticate(root, token string) bool {
-	want, err := os.ReadFile(scimTokenPath(root))
-	if err != nil || token == "" {
+	now := time.Now()
+	want, ok, err := readSCIMToken(root, now)
+	if err != nil || !ok || token == "" || !now.Before(want.Expires) {
 		return false
 	}
 	sum := sha256.Sum256([]byte(token))
 	got := hex.EncodeToString(sum[:])
-	return subtle.ConstantTimeCompare([]byte(got), []byte(strings.TrimSpace(string(want)))) == 1
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want.Hash)) == 1
 }
 
 // validMapping reports whether a group may be mapped to this: a role, a
@@ -342,15 +417,29 @@ func cmdSCIM(root string, args []string) error {
 		}); err != nil {
 			return err
 		}
-		_, terr := os.Stat(scimTokenPath(root))
-		if w.JSON(map[string]any{"token": terr == nil, "users": users, "active": active,
-			"groups": groups, "mapping": mapping}) {
+		now := time.Now()
+		tok, set, terr := readSCIMToken(root, now)
+		if terr != nil {
+			return terr
+		}
+		out := map[string]any{"token": set, "users": users, "active": active,
+			"groups": groups, "mapping": mapping}
+		if set {
+			out["token_expires"] = tok.Expires.Format(time.RFC3339)
+		}
+		if w.JSON(out) {
 			return nil
 		}
-		if terr != nil {
+		switch {
+		case !set:
 			w.Human("  no provisioning token; quilzo scim token makes one\n")
-		} else {
-			w.Human("  provisioning is set up at /scim/v2 on the admin\n")
+		case !now.Before(tok.Expires):
+			w.Human("  %sthe provisioning token ended on %s, so the identity provider can change nothing, "+
+				"not even take access away: quilzo scim token makes a new one%s\n",
+				red, tok.Expires.Format("2 January 2006"), reset)
+		default:
+			w.Human("  provisioning is set up at /scim/v2 on the admin; its token ends on %s\n",
+				tok.Expires.Format("2 January 2006"))
 		}
 		w.Human("  %d people (%d active), %d groups\n", users, active, groups)
 		names := make([]string, 0, len(mapping))
@@ -373,13 +462,20 @@ func cmdSCIM(root string, args []string) error {
 			w.Human("the provisioning token is revoked; the identity provider can change nothing\n")
 			return note("scim.token-revoked", "")
 		}
-		token, err := newSCIMToken(root)
+		fs := flag.NewFlagSet("scim token", flag.ContinueOnError)
+		days := fs.Int("days", scimTokenDays, fmt.Sprintf("how many days it works, at most %d", scimTokenMaxDays))
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		token, kept, err := newSCIMToken(root, *days)
 		if err != nil {
 			return err
 		}
 		w.Human("%s\n", token)
 		w.Human("  %sgive this to the identity provider as its bearer token, with the URL\n"+
-			"  https://YOUR-ADMIN/scim/v2. Shown once; it replaces any earlier one%s\n", dim, reset)
+			"  https://YOUR-ADMIN/scim/v2. Shown once; it replaces any earlier one, and ends on %s:\n"+
+			"  make a new one before then, or provisioning stops, taking access away included%s\n",
+			dim, kept.Expires.Format("2 January 2006"), reset)
 		return note("scim.token-made", "")
 	case "map":
 		if len(args) != 3 {
@@ -441,11 +537,15 @@ func scimHooks(root string) *admin.SCIMAdmin {
 			return note("scim.unmapped", by, group)
 		},
 		NewToken: func(by string) (string, error) {
-			t, err := newSCIMToken(root)
+			t, _, err := newSCIMToken(root, scimTokenDays)
 			if err != nil {
 				return "", err
 			}
 			return t, note("scim.token-made", by, "")
+		},
+		TokenEnds: func() (time.Time, bool, error) {
+			t, ok, err := readSCIMToken(root, time.Now())
+			return t.Expires, ok, err
 		},
 		RevokeToken: func(by string) error {
 			if err := os.Remove(scimTokenPath(root)); err != nil && !errors.Is(err, os.ErrNotExist) {

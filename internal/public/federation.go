@@ -439,7 +439,9 @@ func (st *Site) verifyInbox(r *http.Request, a activitypub.Activity,
 				"say which server it was for and these bytes verify at any " +
 				"inbox. Sign @method with @authority and @path, or @target-uri")
 	}
-	if err := httpsig.CheckContentDigest(r, body); err != nil {
+	// The digest the signature covered, and only that: a digest header
+	// it did not cover is one anybody on the way could have set.
+	if err := httpsig.CheckSignedDigest(r, body, signed); err != nil {
 		return err
 	}
 	return nil
