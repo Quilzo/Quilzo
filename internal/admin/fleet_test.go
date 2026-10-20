@@ -29,9 +29,13 @@ func TestTheFleetIsAnAdministratorsMapOfWhoCalledWhat(t *testing.T) {
 				{From: "agent:tidy", To: "tool:tracker", Calls: 1, Last: now}},
 				Shadow: []fleet.Sighting{{Service: "OpenAI", Where: "api.openai.com", Who: "okta:rae", Source: "zscaler/web", Count: 4, Last: now}}}, nil
 		},
-		Register: func(cardURL, name, by string) error { registered = append(registered, cardURL+"|"+by); return nil },
-		Remove:   func(name, by string) error { return nil },
-		Check:    func() ([]string, error) { return []string{"help-desk"}, nil },
+		Register: func(cardURL, name string, act Actor) error {
+			by := act.Name
+			registered = append(registered, cardURL+"|"+by)
+			return nil
+		},
+		Remove: func(name string, _ Actor) error { return nil },
+		Check:  func() ([]string, error) { return []string{"help-desk"}, nil },
 	}
 	body := get(t, srv, "/fleet", token).Body.String()
 	for _, want := range []string{"Who called what", `class="agmap fleetmap"`, "dana → tidy: 3 calls", "1 tool nobody pinned",

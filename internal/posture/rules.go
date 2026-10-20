@@ -269,6 +269,38 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "approval.alone",
+		Title:    "Risky steps approved by the person who started them",
+		Severity: Medium,
+		Controls: []string{"AC-5"},
+		Why: "A payment, a publication or a message sent by an agent was let go " +
+			"ahead by the same person whose run or draft it was, because nobody " +
+			"else could approve it. One person asking and answering is the gap " +
+			"separation of duties exists to close; it is allowed so a one-person " +
+			"installation still works, and counted so it is a known gap.",
+		Check: func(s State) []Finding {
+			since := s.Now.Add(-30 * 24 * time.Hour)
+			n := 0
+			for _, e := range s.Audit {
+				if e.Detail["alone"] != "true" {
+					continue
+				}
+				if at, err := time.Parse(time.RFC3339, e.At); err == nil && at.Before(since) {
+					continue
+				}
+				n++
+			}
+			if n == 0 {
+				return nil
+			}
+			return []Finding{{
+				Detail: fmt.Sprintf("%d approval(s) in the last 30 days were made alone by the person "+
+					"whose run or draft it was", n),
+				Fix: "quilzo auth grant SOMEONE-ELSE approve --on /@agents/NAME  # or publisher, for drafts",
+			}}
+		},
+	},
+	{
 		ID:       "agent.sponsor-gone",
 		Title:    "An agent's sponsor can no longer act here",
 		Severity: High,

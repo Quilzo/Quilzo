@@ -45,31 +45,33 @@ func wireFeatures(srv *Server) *featureCalls {
 			}
 			return p, p.MakeCard(), p.MakePlan(feature.State{}, nil), nil
 		},
-		Install: func(body []byte, rows, by string) (string, []string, error) {
+		Install: func(body []byte, rows string, act Actor) (string, []string, error) {
+			by := act.Name
 			c.installed = append(c.installed, by)
 			c.rows = append(c.rows, rows)
 			return "", c.secrets, nil
 		},
-		Draft: func(description, by string) ([]byte, []string, string, error) {
+		Draft: func(description string, _ Actor) ([]byte, []string, string, error) {
 			c.drafted = append(c.drafted, description)
 			if strings.Contains(description, "broken") {
 				return []byte(`{"format":1,"name":"x"}`), nil, "the package is not usable: a title is required", nil
 			}
 			return feature.Example(), []string{`left out "agents": a draft holds content blocks only`}, "", nil
 		},
-		FromData: func(name string, data []byte, by string) ([]byte, string, int, string, []string, error) {
+		FromData: func(name string, data []byte, _ Actor) ([]byte, string, int, string, []string, error) {
 			c.fromName = name
 			return feature.Example(), "0123456789abcdef01234567", 3, "samples", nil, nil
 		},
-		Decide: func(id string, approve bool, by string) error {
+		Decide: func(id string, approve bool, act Actor) error {
+			by := act.Name
 			c.decided = append(c.decided, id+" "+by)
 			return nil
 		},
-		Remove: func(name, by string) error {
+		Remove: func(name string, _ Actor) error {
 			c.removed = append(c.removed, name)
 			return nil
 		},
-		Rollback: func(name, by string) (string, error) { return "", nil },
+		Rollback: func(name string, _ Actor) (string, error) { return "", nil },
 	}
 	return c
 }

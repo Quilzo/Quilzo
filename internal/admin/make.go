@@ -39,16 +39,16 @@ type FeatureHooks struct {
 	// kept from a spreadsheet to import with it. Secrets are new webhooks'
 	// signing secrets, shown once on the response and never in a
 	// redirect, a log or a later page.
-	Install func(body []byte, rows, by string) (string, []string, error)
+	Install func(body []byte, rows string, by Actor) (string, []string, error)
 	// Draft asks a model for a package from a description; invalid says
 	// why the draft would not install yet.
-	Draft func(description, by string) (body []byte, notes []string, invalid string, err error)
+	Draft func(description string, by Actor) (body []byte, notes []string, invalid string, err error)
 	// FromData makes a package from a spreadsheet or JSON list, keeping
 	// its rows under an id until the install.
-	FromData func(name string, data []byte, by string) (body []byte, rows string, count int, into string, notes []string, err error)
-	Decide   func(id string, approve bool, by string) error
-	Remove   func(name, by string) error
-	Rollback func(name, by string) (string, error)
+	FromData func(name string, data []byte, by Actor) (body []byte, rows string, count int, into string, notes []string, err error)
+	Decide   func(id string, approve bool, by Actor) error
+	Remove   func(name string, by Actor) error
+	Rollback func(name string, by Actor) (string, error)
 }
 
 var (
@@ -148,7 +148,7 @@ func (s *Server) handleMakeDraft(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
-	body, notes, invalid, err := s.Features.Draft(r.FormValue("description"), p.Name)
+	body, notes, invalid, err := s.Features.Draft(r.FormValue("description"), p.actor())
 	if err != nil {
 		makeBack(w, r, "", err)
 		return
@@ -194,7 +194,7 @@ func (s *Server) handleMakeFrom(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = strings.TrimSuffix(hdr.Filename, filepathExt(hdr.Filename))
 	}
-	body, rows, count, into, notes, err := s.Features.FromData(name, data, p.Name)
+	body, rows, count, into, notes, err := s.Features.FromData(name, data, p.actor())
 	if err != nil {
 		makeBack(w, r, "", err)
 		return
@@ -264,7 +264,7 @@ func (s *Server) handleMakeAct(w http.ResponseWriter, r *http.Request) {
 			makeBack(w, r, "", errors.New("those records are not ones this screen kept"))
 			return
 		}
-		id, secrets, err := s.Features.Install(body, rows, p.Name)
+		id, secrets, err := s.Features.Install(body, rows, p.actor())
 		switch {
 		case err != nil:
 			makeBack(w, r, "", err)
@@ -285,7 +285,7 @@ func (s *Server) handleMakeAct(w http.ResponseWriter, r *http.Request) {
 			makeBack(w, r, "", errors.New("that is not a request"))
 			return
 		}
-		if err := s.Features.Decide(id, do == "approve", p.Name); err != nil {
+		if err := s.Features.Decide(id, do == "approve", p.actor()); err != nil {
 			makeBack(w, r, "", err)
 			return
 		}
@@ -297,14 +297,14 @@ func (s *Server) handleMakeAct(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if do == "remove" {
-			if err := s.Features.Remove(name, p.Name); err != nil {
+			if err := s.Features.Remove(name, p.actor()); err != nil {
 				makeBack(w, r, "", err)
 				return
 			}
 			makeBack(w, r, name+" was removed. Page removals are in the draft, and records people entered are kept.", nil)
 			return
 		}
-		id, err := s.Features.Rollback(name, p.Name)
+		id, err := s.Features.Rollback(name, p.actor())
 		switch {
 		case err != nil:
 			makeBack(w, r, "", err)

@@ -223,6 +223,13 @@ func prepareContinue(root, id string, v *agent.Verdict, caller *Caller) (agent.R
 		if err := mayApprove(root, caller, prior); err != nil {
 			return none, nil, err
 		}
+		// And a second person for a risky step the caller's own run took,
+		// when there is one (agentpermissions.go). Declining is never held.
+		if v.Approve {
+			if _, err := secondPerson(root, caller, prior); err != nil {
+				return none, nil, err
+			}
+		}
 	} else if err := authorise(root, caller, auth.ActRunAgents, auth.AgentResource(prior.Agent)); err != nil {
 		return none, nil, err
 	}
@@ -306,6 +313,14 @@ func recordAnswer(root string, caller *Caller, prior agent.Record, v agent.Verdi
 		"step": fmt.Sprint(w.N), "what": what}
 	if w.Kind != "" {
 		detail["kind"] = w.Kind
+	}
+	if v.Approve {
+		// Made alone: the person who started the run let its risky step go
+		// ahead because nobody else could. Said in the record, and counted
+		// by posture, so it is a known gap rather than a hidden one.
+		if alone, _ := secondPerson(root, caller, prior); alone {
+			detail["alone"] = "true"
+		}
 	}
 	if len(v.Answers) > 0 {
 		var pairs []string

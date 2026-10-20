@@ -248,11 +248,13 @@ func (s *Server) runAllowed(w http.ResponseWriter, r *http.Request, id string) (
 		return p, false
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	if s.Policy == nil || s.Policy.Evaluate(p.Name, auth.ActManageAgents, auth.AreaAgents).Allowed {
+	// The session, not the person: a credential capped below managing
+	// agents does not manage them here because its holder could elsewhere.
+	if s.allows(p, auth.ActManageAgents, auth.AreaAgents) {
 		return p, true
 	}
 	if s.Agents != nil && s.Agents.RunGet != nil && s.Agents.MayApprove != nil && agent.ValidRecordID(id) {
-		if rec, err := s.Agents.RunGet(id); err == nil && s.Agents.MayApprove(rec, p.Name) {
+		if rec, err := s.Agents.RunGet(id); err == nil && s.Agents.MayApprove(rec, p.actor()) {
 			return p, true
 		}
 	}
@@ -371,7 +373,7 @@ func (s *Server) handleAgentEdit(w http.ResponseWriter, r *http.Request) {
 			case desc == "":
 				data["DraftError"] = "describe what the agent is for"
 			default:
-				d, err := s.Agents.Draft(desc, p.Name)
+				d, err := s.Agents.Draft(desc, p.actor())
 				if err != nil {
 					data["DraftError"] = err.Error()
 					break
@@ -579,7 +581,7 @@ func (s *Server) handleAgentsAct(w http.ResponseWriter, r *http.Request) {
 		}
 		m, ferr := manifestFromForm(r, base)
 		if ferr == nil {
-			ferr = s.Agents.Save(m, isNew, p.Name)
+			ferr = s.Agents.Save(m, isNew, p.actor())
 		}
 		if ferr != nil {
 			if isNew {
@@ -614,7 +616,7 @@ func (s *Server) handleAgentsAct(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		if serr := s.Agents.Save(m, false, p.Name); serr != nil {
+		if serr := s.Agents.Save(m, false, p.actor()); serr != nil {
 			back(page, "", serr)
 			return
 		}
@@ -624,14 +626,14 @@ func (s *Server) handleAgentsAct(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		back(page, "It asks about every kind of action again.", s.Agents.Unearn(name, p.Name))
+		back(page, "It asks about every kind of action again.", s.Agents.Unearn(name, p.actor()))
 	case "remove":
 		if !exists || s.Agents.Remove == nil {
 			http.NotFound(w, r)
 			return
 		}
 		back("/agents", name+" is no longer declared. Its past runs are kept.",
-			s.Agents.Remove(name, p.Name))
+			s.Agents.Remove(name, p.actor()))
 	case "run":
 		if !exists || s.Agents.Run == nil {
 			http.NotFound(w, r)
@@ -642,7 +644,7 @@ func (s *Server) handleAgentsAct(w http.ResponseWriter, r *http.Request) {
 			back(page, "", fmt.Errorf("say what it should do in a few lines"))
 			return
 		}
-		id, rerr := s.Agents.Run(name, goal, r.FormValue("model") != "", p.Name)
+		id, rerr := s.Agents.Run(name, goal, r.FormValue("model") != "", p.actor())
 		if id == "" {
 			back(page, "", rerr)
 			return
@@ -1069,7 +1071,7 @@ func (s *Server) handleRunAct(w http.ResponseWriter, r *http.Request,
 				}
 			}
 		}
-		if aerr := s.Agents.Answer(id, step, verdict != "decline", answers, p.Name); aerr != nil {
+		if aerr := s.Agents.Answer(id, step, verdict != "decline", answers, p.actor()); aerr != nil {
 			back(page, "", aerr)
 			return
 		}
@@ -1085,7 +1087,7 @@ func (s *Server) handleRunAct(w http.ResponseWriter, r *http.Request,
 			http.NotFound(w, r)
 			return
 		}
-		back(page, "Asked it to stop. It stops within a second, wherever it is.", s.Agents.Stop(id, p.Name))
+		back(page, "Asked it to stop. It stops within a second, wherever it is.", s.Agents.Stop(id, p.actor()))
 	case "person":
 		// A person's own hands on the page of a run they have taken over.
 		// The run's process performs what is left and records it as theirs;
@@ -1135,7 +1137,7 @@ func (s *Server) handleRunAct(w http.ResponseWriter, r *http.Request,
 			return
 		}
 		back(page, "Continued from where it was cut off.",
-			s.Agents.Resume(id, p.Name))
+			s.Agents.Resume(id, p.actor()))
 	case "replay":
 		if s.Agents.Replay == nil {
 			http.NotFound(w, r)
@@ -1145,7 +1147,7 @@ func (s *Server) handleRunAct(w http.ResponseWriter, r *http.Request,
 			back(page, "", fmt.Errorf("say which step to run it again from"))
 			return
 		}
-		newID, rerr := s.Agents.Replay(id, step, p.Name)
+		newID, rerr := s.Agents.Replay(id, step, p.actor())
 		if newID == "" {
 			back(page, "", rerr)
 			return

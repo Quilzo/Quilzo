@@ -40,7 +40,8 @@ func TestABrowserRunShowsWhatItWouldPress(t *testing.T) {
 		return jpeg, nil
 	}
 	var stopped []string
-	srv.Agents.Stop = func(run, by string) error {
+	srv.Agents.Stop = func(run string, act Actor) error {
+		by := act.Name
 		stopped = append(stopped, run+" "+by)
 		return nil
 	}

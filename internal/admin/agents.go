@@ -37,11 +37,11 @@ type Agents struct {
 	// what a declaration is validated against.
 	Known func() []string
 	// Save stores a declaration after validating it; Remove withdraws one.
-	Save   func(m agent.Manifest, isNew bool, by string) error
-	Remove func(name, by string) error
+	Save   func(m agent.Manifest, isNew bool, by Actor) error
+	Remove func(name string, by Actor) error
 	// Run runs an agent once and keeps the run, returning its identifier.
 	// A run that ended badly is still kept, and still returns one.
-	Run func(name, goal string, model bool, by string) (string, error)
+	Run func(name, goal string, model bool, by Actor) (string, error)
 	// Runs lists kept runs, newest first, of one agent or all of them.
 	Runs func(name string) ([]agent.Record, error)
 	// Currency is the gateway's, for what runs cost; empty when it prices
@@ -51,14 +51,14 @@ type Agents struct {
 	// MayApprove says whether a person may decide what a run waits for: its
 	// agent's sponsor, or the approve permission on the agent or on what it
 	// would change. The command line decides it, as it enforces it.
-	MayApprove func(rec agent.Record, by string) bool
+	MayApprove func(rec agent.Record, by Actor) bool
 	// Frames are the pictures a run's browser kept, in order, and whether
 	// there is one of what it shows now; Frame is one picture's bytes, 0
 	// being the one of now. Nil when nothing is kept.
 	Frames func(id string) ([]RunFrame, bool)
 	Frame  func(id string, n int) ([]byte, error)
 	// Stop asks a run that is going on to stop, wherever it is.
-	Stop func(id, by string) error
+	Stop func(id string, by Actor) error
 	// Outputs are what a run's commands printed, kept, in order; Output is
 	// one of them, whole as kept. Nil when nothing is kept.
 	Outputs func(id string) []RunOutput
@@ -66,22 +66,22 @@ type Agents struct {
 	// Answer decides the action a run is waiting on, Resume continues one
 	// that was cut off, and Replay runs one again from after a step and
 	// returns the new run.
-	Answer func(id string, step int, approve bool, answers map[string]string, by string) error
+	Answer func(id string, step int, approve bool, answers map[string]string, by Actor) error
 	// Earned is what an agent has earned by its record: each kind of
 	// action, how far towards earning it, whether its evaluations still let
 	// it count, and why not. Unearn sends everything back to asking.
 	Earned func(name string) (EarnedView, error)
-	Unearn func(name, by string) error
+	Unearn func(name string, by Actor) error
 	// Lessons are what an agent learnt from its mistakes (internal/lessons);
 	// AdoptLesson and RetireLesson are a person's decisions about one.
 	Lessons      func(name string) ([]lessons.Lesson, error)
-	AdoptLesson  func(name, id string, taintedOK bool, by string) error
-	RetireLesson func(name, id, why, by string) error
+	AdoptLesson  func(name, id string, taintedOK bool, by Actor) error
+	RetireLesson func(name, id, why string, by Actor) error
 	// Bundle is a run's replay bundle: one HTML file of its steps, the
 	// pictures a person was asked about, and its receipt with proofs.
 	Bundle func(id string) ([]byte, error)
-	Resume func(id, by string) error
-	Replay func(id string, step int, by string) (string, error)
+	Resume func(id string, by Actor) error
+	Replay func(id string, step int, by Actor) (string, error)
 	// Person leaves one thing a person did to the page of a run they are
 	// taking over, for the process holding it; nil when this build offers
 	// no take-over. A browser run only: a person's hands are on a page.
@@ -90,7 +90,7 @@ type Agents struct {
 	// Draft asks a model for a declaration from a description, read
 	// through the checker; nil when this build drafts nothing. It saves
 	// nothing.
-	Draft func(description, by string) (AgentDraft, error)
+	Draft func(description string, by Actor) (AgentDraft, error)
 }
 
 // PersonInput is one thing a person did to a run's page while taking it

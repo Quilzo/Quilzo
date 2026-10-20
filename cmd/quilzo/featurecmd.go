@@ -1431,7 +1431,7 @@ func orderAgents(ms []agent.Manifest) []agent.Manifest {
 }
 
 // featureHooks are the Make screen's reach into the feature store.
-func featureHooks(root string, signedIn func(string) *Caller) *admin.FeatureHooks {
+func featureHooks(root string, signedIn func(admin.Actor) *Caller) *admin.FeatureHooks {
 	return &admin.FeatureHooks{
 		Installed: func() ([]feature.Installed, error) {
 			m, err := loadInstalledFeatures(root)
@@ -1449,7 +1449,7 @@ func featureHooks(root string, signedIn func(string) *Caller) *admin.FeatureHook
 		Check: func(body []byte) (*feature.Package, feature.Card, feature.Plan, error) {
 			return checkFeature(root, body)
 		},
-		Install: func(body []byte, rowsID, by string) (string, []string, error) {
+		Install: func(body []byte, rowsID string, by admin.Actor) (string, []string, error) {
 			caller := signedIn(by)
 			if err := authorise(root, caller, auth.ActInstall, "/"); err != nil {
 				return "", nil, err
@@ -1473,7 +1473,7 @@ func featureHooks(root string, signedIn func(string) *Caller) *admin.FeatureHook
 			}
 			return "", o.Secrets, err
 		},
-		Draft: func(description, by string) ([]byte, []string, string, error) {
+		Draft: func(description string, by admin.Actor) ([]byte, []string, string, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), featureDraftTimeout)
 			defer cancel()
 			d, err := draftFeature(ctx, root, description, signedIn(by))
@@ -1482,7 +1482,7 @@ func featureHooks(root string, signedIn func(string) *Caller) *admin.FeatureHook
 			}
 			return d.Body, d.Notes, d.Invalid, nil
 		},
-		FromData: func(name string, data []byte, by string) ([]byte, string, int, string, []string, error) {
+		FromData: func(name string, data []byte, _ admin.Actor) ([]byte, string, int, string, []string, error) {
 			in, err := feature.Infer(name, data)
 			if err != nil {
 				return nil, "", 0, "", nil, err
@@ -1497,11 +1497,11 @@ func featureHooks(root string, signedIn func(string) *Caller) *admin.FeatureHook
 			}
 			return append(body, '\n'), id, len(in.Rows), in.Collection, in.Notes, nil
 		},
-		Decide: func(id string, approve bool, by string) error {
+		Decide: func(id string, approve bool, by admin.Actor) error {
 			return decideFeature(root, id, approve, signedIn(by))
 		},
-		Remove: func(name, by string) error { return removeFeature(root, name, signedIn(by)) },
-		Rollback: func(name, by string) (string, error) {
+		Remove: func(name string, by admin.Actor) error { return removeFeature(root, name, signedIn(by)) },
+		Rollback: func(name string, by admin.Actor) (string, error) {
 			_, o, err := rollbackFeature(root, name, signedIn(by))
 			if o.Waiting != nil {
 				return o.Waiting.ID, err

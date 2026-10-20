@@ -26,7 +26,8 @@ func wireEvals(srv *Server) *evalFake {
 	f := &evalFake{cases: map[string][]evals.Case{}, reports: map[string][]evals.Report{}}
 	srv.Evals = &Evals{
 		Cases: func(a string) ([]evals.Case, error) { f.mu.Lock(); defer f.mu.Unlock(); return f.cases[a], nil },
-		Add: func(a string, c evals.Case, by string) (evals.Case, error) {
+		Add: func(a string, c evals.Case, act Actor) (evals.Case, error) {
+			by := act.Name
 			if err := c.Validate(); err != nil {
 				return c, err
 			}
@@ -36,7 +37,7 @@ func wireEvals(srv *Server) *evalFake {
 			f.cases[a] = append(f.cases[a], c)
 			return c, nil
 		},
-		Remove: func(a, id, by string) error {
+		Remove: func(a, id string, _ Actor) error {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			for i, c := range f.cases[a] {
@@ -47,7 +48,8 @@ func wireEvals(srv *Server) *evalFake {
 			}
 			return fmt.Errorf("no case %s", id)
 		},
-		Start: func(a string, k int, model bool, by string) error {
+		Start: func(a string, k int, model bool, act Actor) error {
+			by := act.Name
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			f.started = append(f.started, fmt.Sprintf("%s k=%d model=%v by=%s", a, k, model, by))
@@ -68,7 +70,7 @@ func TestAKeptRunBecomesATestCase(t *testing.T) {
 	st := wireStudio(srv)
 	f := wireEvals(srv)
 	st.declared["answers"] = agent.Manifest{Name: "answers"}
-	id, _ := srv.Agents.Run("answers", "find the refunds policy", false, "editor")
+	id, _ := srv.Agents.Run("answers", "find the refunds policy", false, Actor{Name: "editor"})
 
 	page := get(t, srv, "/agents/run/"+id, token).Body.String()
 	if !strings.Contains(page, "Keep as a test case") || !strings.Contains(page, `name="uses" value="search" checked`) ||
