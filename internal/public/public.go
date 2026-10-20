@@ -139,6 +139,12 @@ type Site struct {
 	// which is the honest state for a site that has not built one — a search
 	// box that returns nothing is worse than no search box.
 	Search *search.Index
+	// IndexLive keeps Search the index of what is published now: built
+	// again, once, from the live commit when a publish has moved it since
+	// (searchIndex). A server started before a page was published could
+	// otherwise never find it.
+	IndexLive bool
+	searchMu  sync.Mutex
 	// Licence declares terms for automated crawlers under Really Simple
 	// Licensing. Empty means no terms are declared, which is not the same as
 	// permitting everything — it is saying nothing, and saying nothing is the
@@ -700,7 +706,7 @@ var xmlTextReplacer = strings.NewReplacer(
 // program asking a question and getting an answer it does not have to parse out
 // of markup.
 func (st *Site) searchAPI(w http.ResponseWriter, r *http.Request) {
-	if st.Search == nil {
+	if st.searchIndex() == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -741,7 +747,11 @@ func (st *Site) searchAPI(w http.ResponseWriter, r *http.Request) {
 // page of results short when hidden pages ranked high.
 func (st *Site) searchVisible(q string, visible map[string]any, n int) []search.Result {
 	out := []search.Result{}
-	for _, res := range st.Search.Search(q, n*3) {
+	idx := st.searchIndex()
+	if idx == nil {
+		return out
+	}
+	for _, res := range idx.Search(q, n*3) {
 		if _, ok := visible[res.Page]; ok {
 			out = append(out, res)
 			if len(out) == n {
@@ -750,6 +760,28 @@ func (st *Site) searchVisible(q string, visible map[string]any, n int) []search.
 		}
 	}
 	return out
+}
+
+// searchIndex is the search index to answer from. With IndexLive it is
+// the index of the commit published now, built again under its own lock
+// the first time it is asked for after a publish; the build is once per
+// publish, not per request. With nothing published it is what there was.
+func (st *Site) searchIndex() *search.Index {
+	if !st.IndexLive {
+		return st.Search
+	}
+	live := st.Store.GetRef(st.ref())
+	st.searchMu.Lock()
+	defer st.searchMu.Unlock()
+	if live == "" || (st.Search != nil && st.Search.Commit == live) {
+		return st.Search
+	}
+	pages, err := site.PagesAt(st.Store, live)
+	if err != nil {
+		return st.Search
+	}
+	st.Search = search.Build(live, pages)
+	return st.Search
 }
 
 // PermissionsPolicy is what a published page may ask the browser for.

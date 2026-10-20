@@ -506,8 +506,11 @@ func replayAgentRunLive(root, id string, n int, caller *Caller) (string, error) 
 	})
 }
 
-// pruneAgentRuns removes the oldest runs past the limit. Names sort by day
-// and then arbitrarily within it, which is near enough for a limit.
+// pruneAgentRuns removes the oldest finished runs past the limit. A run
+// waiting for a person, or one a process is working on, is never removed:
+// it was the oldest-first count alone, so five hundred newer runs took
+// away a question somebody had not answered yet, and the work waiting on
+// it with no record of why it stopped.
 func pruneAgentRuns(root string) error {
 	return pruneRunsIn(agentRunsDir(root), MaxAgentRuns)
 }
@@ -540,7 +543,15 @@ func pruneRunsIn(dir string, max int) error {
 		all = append(all, aged{n, fi.ModTime()})
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].at.Before(all[j].at) })
-	for _, a := range all[:len(all)-max] {
+	over := len(all) - max
+	for _, a := range all {
+		if over <= 0 {
+			break
+		}
+		if runUnfinished(filepath.Join(dir, a.name)) {
+			continue
+		}
+		over--
 		if err := os.Remove(filepath.Join(dir, a.name)); err != nil {
 			return err
 		}
@@ -550,6 +561,28 @@ func pruneRunsIn(dir string, max int) error {
 		_ = os.RemoveAll(filepath.Join(dir, strings.TrimSuffix(a.name, ".json")+".shell"))
 	}
 	return nil
+}
+
+// runUnfinished reports whether a kept run is waiting for a person or
+// being worked on, and so is not history yet. One that cannot be read is
+// treated as unfinished: removing what could not be looked at is the
+// direction that loses a question.
+func runUnfinished(path string) bool {
+	b, err := readBounded(path, 16<<20)
+	if err != nil {
+		return true
+	}
+	var rec struct {
+		State string `json:"state"`
+		Trace struct {
+			Waiting json.RawMessage `json:"Waiting"`
+		} `json:"trace"`
+	}
+	if json.Unmarshal(b, &rec) != nil {
+		return true
+	}
+	w := strings.TrimSpace(string(rec.Trace.Waiting))
+	return rec.State == agent.Running || (w != "" && w != "null")
 }
 
 func loadAgentRun(root, id string) (agent.Record, error) {

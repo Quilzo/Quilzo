@@ -18,6 +18,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/api"
@@ -104,13 +105,16 @@ func cmdSite(root string, args []string) error {
 		st.Locales = locales
 	}
 
-	// The index is built from what is live, at startup. Building it from the
-	// draft would make the search box return pages nobody has published, which
-	// is a content leak however it is labelled.
-	// The vector index is built once, from what is live, at the same moment
-	// the search index is. Rebuilding per request would embed every page to
-	// answer one query.
+	// The index is built from what is live, at startup, and again from the
+	// live commit after each publish (public.Site.IndexLive). Building it
+	// from the draft would make the search box return pages nobody has
+	// published, which is a content leak however it is labelled.
+	// The vector index is built from what is live at the same moments.
+	// Rebuilding per request would embed every page to answer one query, so
+	// it is rebuilt once per publish, when it is next asked for.
 	var vecIndex *vector.Index
+	var vecMu sync.Mutex
+	st.IndexLive = true
 
 	// Which environment this server is serving. Production unless told
 	// otherwise, so a store that has never configured environments behaves
@@ -287,7 +291,18 @@ func cmdSite(root string, args []string) error {
 			Throttle:     throttle.New(throttlePolicy(cfg)),
 			ReloadTokens: tokenReloader(root, toks),
 			Tokenise:     search.Tokenise,
-			Vectors:      func() *vector.Index { return vecIndex },
+			Vectors: func() *vector.Index {
+				live := s.GetRef(st.Ref)
+				vecMu.Lock()
+				defer vecMu.Unlock()
+				if live == "" || (vecIndex != nil && vecIndex.Commit == live) {
+					return vecIndex
+				}
+				if pages, perr := site.PagesAt(s, live); perr == nil {
+					vecIndex = vector.Build(live, pages, search.Tokenise)
+				}
+				return vecIndex
+			},
 			OnAuthFailure: func(source string, failures int) {
 				// The reaction ASVS 5.0 asks for above five failures an hour.
 				// An audit record rather than an email, because this program
