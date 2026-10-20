@@ -165,9 +165,11 @@ var settings = []Setting{
 			"interface, the MCP gateway and A2A, publishing, rolling back, " +
 			"granting, managing tokens and agents and installing need a token " +
 			"bound to the program's key and proved on each request (DPoP), or " +
-			"one that lasts an hour or less: an app's consented token, an " +
-			"exchanged session, a CI job's token. Reading and drafting take a " +
-			"bearer token, as most clients send.",
+			"one that lasts an hour or less: an app's consented token or a CI " +
+			"job's token. A session exchanged from a token counts as that " +
+			"token does, so exchanging a copied long-lived token gets round " +
+			"nothing. Reading and drafting take a bearer token, as most " +
+			"clients send.",
 		Weaker: func(v string) (bool, string) {
 			if b, err := strconv.ParseBool(v); err == nil && !b {
 				return true, "a long-lived bearer token copied from a log or a crash dump can publish and administer from anywhere"

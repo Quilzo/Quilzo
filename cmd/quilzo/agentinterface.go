@@ -247,14 +247,17 @@ func appCallRecord(c *mcp.Caller, tool, op string, rerr *mcp.Error) audit.Record
 // the person it acts for, with the token's own limits, recorded as a model
 // acting, because that is what calls an interface built for agents.
 func remoteCaller(tok auth.Token) *Caller {
+	life, bound := tok.Assurance()
 	return &Caller{Name: tok.Principal, Role: tok.Role, Scope: tok.Resource, Limits: tok.Scope,
 		Kind: audit.KindAI, Model: "mcp-client", Verified: true, Remote: true, Grant: tok.Grant,
-		Bound: tok.Key != "", Life: time.Unix(tok.ExpiresAt, 0).Sub(time.Unix(tok.CreatedAt, 0))}
+		Bound: bound, Life: life}
 }
 
 // shortLived is how long a bearer token may last and still do what is
-// risky from another machine: an app's consented access token, a session
-// exchanged for minutes, a CI job's token.
+// risky from another machine: an app's consented access token, a CI job's
+// token, or a session exchanged from one of those or from a bound token.
+// A session exchanged from a long-lived bearer token is judged by that
+// token (auth.Token.Assurance).
 const shortLived = time.Hour
 
 // riskyNeedsProof refuses a risky operation to a token that is worth
@@ -273,9 +276,10 @@ func riskyNeedsProof(root string, c *Caller, need auth.Role) error {
 		return nil
 	}
 	return fmt.Errorf("this needs %s, and from another machine that takes a token bound to the program's key "+
-		"(DPoP) or one that lasts an hour or less; this is a bearer token that lasts %s. Exchange it for a "+
-		"fifteen-minute session at /token/exchange, connect as an app, or bind a key: quilzo token keygen, "+
-		"then quilzo token issue --key", need, c.Life.Round(time.Hour))
+		"(DPoP) or one that lasts an hour or less; this is a bearer token that lasts %s, or a session exchanged "+
+		"from one, which is worth as much to whoever copies it. Bind a key (quilzo token keygen, then quilzo "+
+		"token issue --key), connect as an app, or let a CI job sign in as itself (quilzo trust add)",
+		need, c.Life.Round(time.Hour))
 }
 
 // remoteRefusal is what the agent interface adds to the command line's
