@@ -97,7 +97,7 @@ func samlFetch(addr string) ([]byte, error) {
 func samlUsage() error {
 	return fmt.Errorf("usage: quilzo saml list | show NAME | metadata NAME | presets | " +
 		"add NAME --metadata FILE|URL --url https://YOUR-ADMIN [--preset okta] " +
-		"[--domain d] [--require-mfa] [--required] [--fingerprint SHA256] | remove NAME")
+		"[--domain d] [--required] [--fingerprint SHA256] | remove NAME")
 }
 
 func cmdSAML(root string, args []string) error {
@@ -157,8 +157,7 @@ func cmdSAML(root string, args []string) error {
 		}
 		return recordE(root, caller.auditRecord("saml.add", "/", audit.Success, map[string]string{
 			"provider": c.Name, "entity": c.EntityID, "certs": fmt.Sprint(len(c.Certs)),
-			"domains": strings.Join(c.Domains, ","), "required": fmt.Sprint(c.Required),
-			"mfa": fmt.Sprint(c.RequireMFA)}))
+			"domains": strings.Join(c.Domains, ","), "required": fmt.Sprint(c.Required)}))
 	case "remove":
 		if len(args) < 2 {
 			return samlUsage()
@@ -209,8 +208,10 @@ func samlShow(c *saml.Config) error {
 	if len(c.Domains) > 0 {
 		w.Human("\n  domains %s%s\n", strings.Join(c.Domains, ", "), map[bool]string{true: " (required)"}[c.Required])
 	}
-	if c.RequireMFA {
-		w.Human("  a second factor is required\n")
+	if c.SaysMFA() {
+		w.Human("  second factor  from %s when it says so; otherwise a passkey here\n", c.Name)
+	} else {
+		w.Human("  second factor  a passkey here: %s has no way set up to say it used one\n", c.Name)
 	}
 	return nil
 }
@@ -229,7 +230,6 @@ func samlAdd(root string, args []string) (*saml.Config, error) {
 	principal := fs.String("principal", "", `"nameid" (the default) or "attribute:NAME"`)
 	required := fs.Bool("required", false, "people in the domains must sign in this way")
 	breakGlass := fs.String("break-glass", "", "people who may still use a token or passkey, comma-separated")
-	mfa := fs.Bool("require-mfa", false, "refuse a sign-in the provider does not say used a second factor")
 	fingerprint := fs.String("fingerprint", "", "the SHA-256 fingerprint you checked at the provider")
 	replace := fs.Bool("replace", false, "replace a provider with this name")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -255,7 +255,7 @@ func samlAdd(root string, args []string) (*saml.Config, error) {
 		return nil, err
 	}
 	c := saml.Config{Name: name, URL: strings.TrimRight(*adminURL, "/"), EntityID: m.EntityID,
-		SSOURL: m.SSOURL, Principal: *principal, Required: *required, RequireMFA: *mfa, Preset: *preset}
+		SSOURL: m.SSOURL, Principal: *principal, Required: *required, Preset: *preset}
 	if p, ok := saml.Presets[*preset]; ok {
 		c.Label, c.MFAContexts, c.MFAAttribute, c.MFAValues, c.NameIDFormat =
 			p.Label, p.MFAContexts, p.MFAAttribute, p.MFAValues, p.NameIDFormat

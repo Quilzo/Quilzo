@@ -48,6 +48,10 @@ type oidcConfig struct {
 	Domains []string `json:"domains,omitempty"`
 	// Tenant is the Entra tenant's identifier.
 	Tenant string `json:"tenant,omitempty"`
+	// MFAACR are the acr values that mean the provider used more than one
+	// factor, asked for on every sign-in; an amr naming mfa says so without
+	// them.
+	MFAACR []string `json:"mfa_acr,omitempty"`
 }
 
 // providerLabel is what the sign-in button calls a preset.
@@ -112,6 +116,8 @@ func oidcConfigure(root string, args []string) error {
 	domains := fs.String("domain", "",
 		"the organisation's domain(s), comma-separated")
 	tenant := fs.String("tenant", "", "the Microsoft Entra tenant ID")
+	mfaACR := fs.String("mfa-acr", "", "acr values that mean a second factor was used, comma-separated "+
+		"(urn:okta:loa:2fa:any, or a Keycloak level)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -173,6 +179,11 @@ func oidcConfigure(root string, args []string) error {
 		RequireVerifiedEmail: !*allowUnverified,
 		Provider:             *provider, Domains: doms, Tenant: *tenant,
 	}
+	for _, v := range strings.Split(*mfaACR, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			cfg.MFAACR = append(cfg.MFAACR, v)
+		}
+	}
 	if err := saveJSON(oidcPath(root), cfg); err != nil {
 		return err
 	}
@@ -184,6 +195,7 @@ func oidcConfigure(root string, args []string) error {
 		Detail: map[string]string{
 			"issuer": cfg.Issuer, "client": cfg.ClientID, "claim": cfg.Claim,
 			"provider": cfg.Provider, "domains": strings.Join(cfg.Domains, ","),
+			"mfa_acr": strings.Join(cfg.MFAACR, " "),
 		},
 	})
 
@@ -195,9 +207,29 @@ func oidcConfigure(root string, args []string) error {
 		dim, oidcSecretEnv, reset)
 	w.Human("  %sa secret kept beside the data it protects travels with every "+
 		"backup%s\n", dim, reset)
+	w.Human("\n  %s%s%s\n", dim, secondFactorHint(cfg), reset)
 	w.Human("\n  %squilzo oidc check — talk to the provider and report what it "+
 		"offers%s\n", dim, reset)
 	return nil
+}
+
+// secondFactorHint is what an operator has to do at the provider for its
+// sign-ins to count as two factors here, rather than each one waiting for
+// a passkey.
+func secondFactorHint(cfg *oidcConfig) string {
+	switch {
+	case cfg.Provider == "microsoft":
+		return "a sign-in counts as two factors when its ID token says so: in the app registration, " +
+			"Token configuration > Add optional claim > ID, add amr and auth_time"
+	case cfg.Provider == "google":
+		return "a sign-in counts as two factors when Google says so, which it does for verified apps; " +
+			"otherwise people confirm with a passkey here"
+	case len(cfg.MFAACR) > 0:
+		return "a sign-in counts as two factors when its acr is " + strings.Join(cfg.MFAACR, " or ") +
+			", or its amr names mfa, about a sign-in no older than a session here"
+	}
+	return "a sign-in counts as two factors when its ID token's amr names mfa and its auth_time is " +
+		"recent; otherwise people confirm with a passkey here. Name acr values that mean it with --mfa-acr"
 }
 
 func oidcStatus(root string) error {
@@ -217,7 +249,7 @@ func oidcStatus(root string) error {
 	}
 	if w.JSON(map[string]any{
 		"configured": true, "issuer": cfg.Issuer, "client_id": cfg.ClientID,
-		"claim": cfg.Claim, "secret_set": secretSet(),
+		"claim": cfg.Claim, "secret_set": secretSet(), "mfa_acr": cfg.MFAACR,
 	}) {
 		return nil
 	}
@@ -228,6 +260,7 @@ func oidcStatus(root string) error {
 	if cfg.RequireVerifiedEmail && cfg.Claim == "email" {
 		w.Human("  %sunverified addresses are refused%s\n", dim, reset)
 	}
+	w.Human("  %s%s%s\n", dim, secondFactorHint(cfg), reset)
 	if !secretSet() {
 		w.Human("  %s%s is not set%s\n", yellow, oidcSecretEnv, reset)
 	}
@@ -273,6 +306,8 @@ func oidcCheck(root string, args []string) error {
 	w.Human("  authorize    %s\n", p.Discovery.AuthorizationEndpoint)
 	w.Human("  token        %s\n", p.Discovery.TokenEndpoint)
 	w.Human("  keys         %s\n", p.Discovery.JWKSURI)
+	w.Human("  claims       %s\n", map[bool]string{true: "read: amr and auth_time are asked for by name",
+		false: "not read: amr and auth_time come only if the provider sends them anyway"}[p.Discovery.ClaimsParameterSupported])
 
 	w.Human("\n%salgorithms%s\n", bold, reset)
 	w.Human("  provider     %s\n", strings.Join(p.Discovery.SigningAlgs, ", "))

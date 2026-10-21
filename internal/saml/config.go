@@ -38,10 +38,11 @@ type Config struct {
 	// token or a passkey is refused for them, except for BreakGlass.
 	Required   bool     `json:"required,omitempty"`
 	BreakGlass []string `json:"break_glass,omitempty"`
-	// RequireMFA refuses a sign-in the provider does not say used more
-	// than one factor: an AuthnContext in MFAContexts, or MFAAttribute
-	// holding one of MFAValues.
-	RequireMFA   bool     `json:"require_mfa,omitempty"`
+	// MFAContexts, or MFAAttribute holding one of MFAValues, is how this
+	// provider says a sign-in used more than one factor. A sign-in it does
+	// not say that about is one factor, and the person confirms it with
+	// their passkey. The contexts are read, never asked for: a provider
+	// that cannot meet a requested context refuses the sign-in.
 	MFAContexts  []string `json:"mfa_contexts,omitempty"`
 	MFAAttribute string   `json:"mfa_attribute,omitempty"`
 	MFAValues    []string `json:"mfa_values,omitempty"`
@@ -75,8 +76,10 @@ var PresetOrder = []string{"okta", "entra", "google", "jumpcloud", "onelogin", "
 
 // Presets are the identity providers people use, by key.
 var Presets = map[string]Preset{
-	"okta": {Label: "Okta", MFAContexts: []string{refedsMFA}, NameIDFormat: FormatEmail,
-		Where: "Applications > Create App Integration > SAML 2.0"},
+	// Okta sends no multi-factor context, but sends session.amr (pwd, mfa,
+	// ...) as an attribute statement named amr.
+	"okta": {Label: "Okta", MFAAttribute: "amr", MFAValues: []string{"mfa"}, NameIDFormat: FormatEmail,
+		Where: "Applications > Create App Integration > SAML 2.0; add the attribute statement amr = session.amr"},
 	"entra": {Label: "Microsoft Entra ID", MFAAttribute: msAuthnMethods, MFAValues: []string{msMultipleAuth},
 		Where: "Enterprise applications > New application > Create your own > SAML"},
 	"google": {Label: "Google Workspace", NameIDFormat: FormatEmail,
@@ -137,10 +140,6 @@ func (c *Config) Validate() error {
 	if c.Required && len(c.Domains) == 0 {
 		return errors.New("requiring single sign-on needs the domains it applies to")
 	}
-	if c.RequireMFA && len(c.MFAContexts) == 0 && (c.MFAAttribute == "" || len(c.MFAValues) == 0) {
-		return errors.New("requiring more than one factor needs the authentication contexts, " +
-			"or the attribute and values, that say so")
-	}
 	return nil
 }
 
@@ -186,13 +185,9 @@ func (c *Config) Provider() (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	var contexts []string
-	if c.RequireMFA {
-		contexts = c.MFAContexts
-	}
 	return &Provider{EntityID: c.EntityID, SSOURL: c.SSOURL, Keys: keys,
 		ServiceEntityID: c.ServiceEntityID(), ACS: c.ACS(), NameIDFormat: c.NameIDFormat,
-		ForceAuthn: c.ForceAuthn, AuthnContexts: contexts}, nil
+		ForceAuthn: c.ForceAuthn}, nil
 }
 
 // PrincipalOf is the name the access policy knows this person by: the
@@ -224,6 +219,12 @@ func (c *Config) PrincipalOf(a *Assertion) (string, error) {
 		}
 	}
 	return v, nil
+}
+
+// SaysMFA reports whether this provider has a way to say a sign-in used
+// more than one factor.
+func (c *Config) SaysMFA() bool {
+	return len(c.MFAContexts) > 0 || (c.MFAAttribute != "" && len(c.MFAValues) > 0)
 }
 
 // MFA reports whether the assertion says more than one factor was used,

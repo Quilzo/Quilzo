@@ -24,7 +24,6 @@ func TestTheRequestSaysWhatTheResponseIsCheckedAgainst(t *testing.T) {
 	p.SSOURL = "https://idp.northwind.example/sso?tenant=north&x=1"
 	p.NameIDFormat = FormatEmail
 	p.ForceAuthn = true
-	p.AuthnContexts = []string{"https://refeds.org/profile/mfa"}
 	id, err := NewRequestID()
 	if err != nil || len(id) != 33 || id[0] != '_' {
 		t.Fatalf("id %q %v", id, err)
@@ -63,8 +62,10 @@ func TestTheRequestSaysWhatTheResponseIsCheckedAgainst(t *testing.T) {
 		}
 	}
 	s := string(x)
-	for _, want := range []string{"<saml:Issuer>" + tSP + "</saml:Issuer>", `Format="` + FormatEmail + `"`,
-		`Comparison="minimum"`, "https://refeds.org/profile/mfa"} {
+	if strings.Contains(s, "RequestedAuthnContext") {
+		t.Error("a context was asked for: a provider that cannot meet it refuses the sign-in")
+	}
+	for _, want := range []string{"<saml:Issuer>" + tSP + "</saml:Issuer>", `Format="` + FormatEmail + `"`} {
 		if !strings.Contains(s, want) {
 			t.Errorf("the request lacks %s", want)
 		}

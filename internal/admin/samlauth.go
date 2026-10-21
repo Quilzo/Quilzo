@@ -310,14 +310,20 @@ func (s *Server) samlACS(w http.ResponseWriter, r *http.Request, cfg *saml.Confi
 		fail(err.Error())
 		return
 	}
-	if cfg.RequireMFA && !cfg.MFA(a) {
-		fail(label(cfg) + " did not say you used a second factor, and this site requires one. " +
-			"Sign in at " + label(cfg) + " with your second factor and try again.")
-		return
-	}
-	s.finishSSO(w, r, principal, "saml:"+cfg.Name, saml.SessionTTL(a, s.sessionMax(), now),
+	s.finishSSO(w, r, principal, "saml:"+cfg.Name, saml.SessionTTL(a, s.sessionMax(), now), samlProof(cfg, a),
 		map[string]string{"provider": cfg.Name, "issuer": a.Issuer, "assertion": a.ID,
 			"context": a.AuthnContext}, clear)
+}
+
+// samlProof is what an assertion says about factors, in the way this
+// provider was set up to say it: an AuthnContext, or an attribute value,
+// meaning more than one factor. Anything else is one factor, and the
+// person confirms with their passkey here.
+func samlProof(cfg *saml.Config, a *saml.Assertion) ssoProof {
+	if cfg.MFA(a) {
+		return ssoProof{MFA: true, Said: "AuthnContext " + a.AuthnContext}
+	}
+	return ssoProof{Said: "no second factor said: AuthnContext " + a.AuthnContext}
 }
 
 func label(c *saml.Config) string {
@@ -330,7 +336,7 @@ func label(c *saml.Config) string {
 // finishSSO is the end every single sign-on shares: refused if suspended or
 // not in the access policy, otherwise a session of this program's own.
 func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, how string,
-	ttl time.Duration, detail map[string]string, before func()) {
+	ttl time.Duration, proof ssoProof, detail map[string]string, before func()) {
 	if s.suspended(principal) {
 		before()
 		s.refuseSignIn(w, r, principal+" is suspended here: the identity provider deactivated or removed them.", "")
@@ -348,7 +354,7 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, ho
 		s.refuseSignIn(w, r, "The identity provider's own session ends in under a minute. Sign in there again.", "")
 		return
 	}
-	secret, tok, err := s.Tokens.IssueSession(how+":"+principal, principal, s.roleFor(principal), "/", ttl, auth.RoleAdmin, auth.MethodSSO)
+	secret, tok, err := s.Tokens.IssueSession(how+":"+principal, principal, s.roleFor(principal), "/", ttl, auth.RoleAdmin, proof.method())
 	if err != nil {
 		before()
 		s.refuseSignIn(w, r, "the session could not be created: "+err.Error(), "")
@@ -366,6 +372,7 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, ho
 		d[k] = v
 	}
 	s.audit("session.start", "/", d)
+	s.auditProof(principal, tok.ID, proof)
 	stepUp, serr := s.signInCheck(r, principal, tok.ID, "sso", false)
 	if serr != nil {
 		before()
@@ -373,7 +380,7 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, ho
 		return
 	}
 	s.signInDone(r, tok.ID)
-	next := s.lockoutProven(r, principal, startPath(r))
+	next := s.ssoNext(r, principal, proof)
 	before()
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: secret, Path: "/", HttpOnly: true,
@@ -652,7 +659,7 @@ func (s *Server) handleSSOAct(w http.ResponseWriter, r *http.Request) {
 func (s *Server) samlFromForm(r *http.Request) (saml.Config, *saml.IdPMetadata, error) {
 	c := saml.Config{Name: strings.TrimSpace(r.FormValue("name")), URL: strings.TrimSpace(r.FormValue("url")),
 		Preset: r.FormValue("preset"), Principal: strings.TrimSpace(r.FormValue("principal")),
-		Required: r.FormValue("required") == "on", RequireMFA: r.FormValue("mfa") == "on"}
+		Required: r.FormValue("required") == "on"}
 	if pr, ok := saml.Presets[c.Preset]; ok {
 		c.Label, c.MFAContexts, c.MFAAttribute, c.MFAValues, c.NameIDFormat =
 			pr.Label, pr.MFAContexts, pr.MFAAttribute, pr.MFAValues, pr.NameIDFormat

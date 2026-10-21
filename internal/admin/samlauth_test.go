@@ -4,6 +4,8 @@
 package admin
 
 import (
+	"bytes"
+	"compress/flate"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -12,6 +14,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -246,9 +249,10 @@ func sessionOf(w *httptest.ResponseRecorder) *http.Cookie {
 }
 
 func TestASAMLSignInMakesASession(t *testing.T) {
-	srv, _ := samlServer(t, nil)
+	srv, _ := samlServer(t, saysMFA)
 	id, relay, cookie := start(t, srv)
-	w := postACS(t, srv, relay, response(t, resp{who: "dana.reyes@northwind.example", inResponseTo: id}), cookie)
+	w := postACS(t, srv, relay, response(t, resp{who: "dana.reyes@northwind.example", inResponseTo: id,
+		context: refeds}), cookie)
 	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/today" {
 		t.Fatalf("%d %s\n%s", w.Code, w.Header().Get("Location"), w.Body.String())
 	}
@@ -302,12 +306,6 @@ func TestSAMLRefusals(t *testing.T) {
 			id, relay, c := start(t, srv)
 			return postACS(t, srv, relay, response(t, resp{who: "dana.reyes@northwind.example", inResponseTo: id}), c)
 		}, "suspended"},
-		{"a second factor required and not used", func(c *saml.Config) {
-			c.RequireMFA, c.MFAContexts = true, []string{"https://refeds.org/profile/mfa"}
-		}, func(t *testing.T, srv *Server) *httptest.ResponseRecorder {
-			id, relay, c := start(t, srv)
-			return postACS(t, srv, relay, response(t, resp{who: "dana.reyes@northwind.example", inResponseTo: id}), c)
-		}, "second factor"},
 	}
 	for _, c := range cases {
 		t.Run(c.why, func(t *testing.T) {
@@ -329,17 +327,85 @@ func TestSAMLRefusals(t *testing.T) {
 	}
 }
 
-// The control for the MFA case: the same requirement, met.
-func TestASecondFactorWhenSaidIsAccepted(t *testing.T) {
-	srv, _ := samlServer(t, func(c *saml.Config) {
-		c.RequireMFA, c.MFAContexts = true, []string{"https://refeds.org/profile/mfa"}
-	})
+const refeds = "https://refeds.org/profile/mfa"
+
+// saysMFA sets a provider up to say a sign-in used more than one factor,
+// as the presets that can do so are.
+func saysMFA(c *saml.Config) { c.MFAContexts = []string{refeds} }
+
+// A sign-in counts as two factors only when the provider says so, and
+// nothing is asked for that a provider could refuse the sign-in over. Said,
+// the session is level 2; not said, or by a provider with no way to say it
+// (Google's), it is one factor and waits for the person's passkey, offering
+// nothing that would only say the same again.
+func TestASingleSignOnIsTwoFactorsOnlyWhenTheProviderSaysSo(t *testing.T) {
+	srv, _ := samlServer(t, saysMFA)
 	id, relay, c := start(t, srv)
-	w := postACS(t, srv, relay, response(t, resp{who: "dana.reyes@northwind.example", inResponseTo: id,
-		context: "https://refeds.org/profile/mfa"}), c)
-	if sessionOf(w) == nil {
-		t.Fatalf("%d\n%s", w.Code, firstLines(w.Body.String(), 30))
+	if strings.Contains(requested(t, srv), "RequestedAuthnContext") {
+		t.Error("a context was asked for: a provider that cannot meet it refuses the sign-in")
 	}
+	w := postACS(t, srv, relay, response(t, resp{who: "dana.reyes@northwind.example", inResponseTo: id,
+		context: refeds}), c)
+	if tok := sessionToken(t, srv, w); tok.Level() != 2 || !tok.HasMethod(auth.MethodSSO) {
+		t.Fatalf("said: level %d, %v", tok.Level(), tok.Methods)
+	}
+
+	// Required single sign-on is met by a one-factor sign-on too: it came
+	// through the provider, and waits for the passkey rather than being
+	// turned away.
+	required := func(c *saml.Config) { saysMFA(c); c.Required = true }
+	for name, edit := range map[string]func(*saml.Config){"not said": required, "cannot say": nil} {
+		srv, _ := samlServer(t, edit)
+		id, relay, c := start(t, srv)
+		w := postACS(t, srv, relay, response(t, resp{who: "dana.reyes@northwind.example", inResponseTo: id}), c)
+		if w.Header().Get("Location") != "/signin/verify" {
+			t.Fatalf("%s: sent to %q", name, w.Header().Get("Location"))
+		}
+		tok := sessionToken(t, srv, w)
+		if tok.Level() != 1 || !tok.HasMethod(auth.MethodSSOOneFactor) || !tok.SingleSignOn() {
+			t.Fatalf("%s: level %d, %v", name, tok.Level(), tok.Methods)
+		}
+		session := sessionOf(w)
+		if g := browse(srv, "GET", "/", session, nil); g.Code != http.StatusSeeOther || g.Header().Get("Location") != "/signin/verify" {
+			t.Errorf("%s: a one-factor sign-on opening the pages: %d %s", name, g.Code, g.Header().Get("Location"))
+		}
+		page := browse(srv, "GET", "/signin/verify", session, nil).Body.String()
+		if !strings.Contains(page, "did not say it used a second factor") || strings.Contains(page, "Sign in again with single sign-on") ||
+			!strings.Contains(page, "no passkey here yet") {
+			t.Errorf("%s: the confirm page:\n%s", name, firstLines(page, 40))
+		}
+	}
+}
+
+// requested is the AuthnRequest a sign-in sends the provider, inflated.
+func requested(t *testing.T, srv *Server) string {
+	t.Helper()
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/signin/saml/corp", nil))
+	loc, _ := url.Parse(w.Header().Get("Location"))
+	raw, err := base64.StdEncoding.DecodeString(loc.Query().Get("SAMLRequest"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := io.ReadAll(flate.NewReader(bytes.NewReader(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+// sessionToken is the stored session a sign-in's cookie names.
+func sessionToken(t *testing.T, srv *Server, w *httptest.ResponseRecorder) auth.Token {
+	t.Helper()
+	c := sessionOf(w)
+	if c == nil {
+		t.Fatalf("no session: %d\n%s", w.Code, firstLines(w.Body.String(), 30))
+	}
+	tok, err := srv.Tokens.Authenticate(c.Value, time.Now())
+	if tok == nil {
+		t.Fatalf("the session does not authenticate: %v", err)
+	}
+	return *tok
 }
 
 func TestAResponseIsUsedOnce(t *testing.T) {
@@ -494,5 +560,16 @@ func TestServiceMetadataIsServed(t *testing.T) {
 	}
 	if w := get(t, srv, "/saml/none/metadata", ""); w.Code != http.StatusNotFound {
 		t.Errorf("an unknown provider: %d", w.Code)
+	}
+}
+
+// Okta says a second factor in an attribute statement, amr = session.amr,
+// and its preset reads that.
+func TestOktasSecondFactorIsReadFromItsAMRAttribute(t *testing.T) {
+	p := saml.Presets["okta"]
+	c := &saml.Config{MFAAttribute: p.MFAAttribute, MFAValues: p.MFAValues}
+	if !c.MFA(&saml.Assertion{Attributes: map[string][]string{"amr": {"pwd", "mfa", "swk"}}}) ||
+		c.MFA(&saml.Assertion{Attributes: map[string][]string{"amr": {"pwd"}}}) || len(p.MFAContexts) != 0 {
+		t.Errorf("the Okta preset: %+v", p)
 	}
 }

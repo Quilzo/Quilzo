@@ -163,7 +163,12 @@ func TestTheCeilingTurnsPasskeysOffUntilThePersonProvesThemselves(t *testing.T) 
 	}
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.RemoteAddr = "192.0.2.10:5000"
-	if next := srv.lockoutProven(r, "dana", "/"); !strings.Contains(next, "m=") {
+	// A sign-on the provider did not say used two factors proves nothing.
+	srv.ssoNext(r, "dana", ssoProof{})
+	if d, _ := srv.Lockout.Check("dana", "192.0.2.10", time.Now()); !d.Disabled {
+		t.Fatal("a one-factor sign-on turned the passkeys back on")
+	}
+	if next := srv.ssoNext(r, "dana", ssoProof{MFA: true}); !strings.Contains(next, "m=") {
 		t.Errorf("signing on did not tell dana about the failures: %q", next)
 	}
 	if w := dana.signInFrom(t, srv, "192.0.2.10:5000"); w.Code != http.StatusOK {

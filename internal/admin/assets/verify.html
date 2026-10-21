@@ -34,7 +34,8 @@
     </div>{{end}}
     <div class="card">
       <h2>Ask an administrator</h2>
-      <p>Another administrator can let you in from <em>Sign-ins</em>, once they are sure it is you. Nobody can do it for their own session.</p>
+      {{if .FirstFactor}}<p>{{if not .Passkey}}You have no passkey here yet. {{end}}An administrator can give you a link that adds a passkey for you, from <em>People</em>; you then confirm with it.</p>
+      {{else}}<p>Another administrator can let you in from <em>Sign-ins</em>, once they are sure it is you. Nobody can do it for their own session.</p>{{end}}
     </div>
     <div class="card notme">
       <h2>This wasn't me</h2>

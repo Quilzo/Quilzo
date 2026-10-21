@@ -60,13 +60,6 @@ func (p *Provider) AuthnRequestURL(id, relayState string, now time.Time) (string
 		attr(&x, "AllowCreate", "true")
 		x.WriteString(`/>`)
 	}
-	if len(p.AuthnContexts) > 0 {
-		x.WriteString(`<samlp:RequestedAuthnContext Comparison="minimum">`)
-		for _, c := range p.AuthnContexts {
-			x.WriteString(`<saml:AuthnContextClassRef>` + escape(c) + `</saml:AuthnContextClassRef>`)
-		}
-		x.WriteString(`</samlp:RequestedAuthnContext>`)
-	}
 	x.WriteString(`</samlp:AuthnRequest>`)
 
 	var z bytes.Buffer

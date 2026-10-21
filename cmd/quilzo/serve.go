@@ -1250,7 +1250,7 @@ func cmdServe(root string, args []string) error {
 			RedirectURI: cfg.RedirectURI, Claim: cfg.Claim,
 			RequireVerifiedEmail: cfg.RequireVerifiedEmail,
 			Label:                cfg.providerLabel(), Tenant: cfg.Tenant,
-			Domains: cfg.Domains,
+			Domains: cfg.Domains, MFAACR: cfg.MFAACR,
 		}
 		if cfg.Provider == "google" {
 			srv.OIDC.HostedDomains = cfg.Domains
@@ -1334,7 +1334,7 @@ func cmdServe(root string, args []string) error {
 				Principal: c.AddedBy, Kind: audit.KindHuman, Verified: true,
 				Detail: map[string]string{"provider": c.Name, "entity": c.EntityID,
 					"certs": fmt.Sprint(len(c.Certs)), "domains": strings.Join(c.Domains, ","),
-					"required": fmt.Sprint(c.Required), "mfa": fmt.Sprint(c.RequireMFA)}})
+					"required": fmt.Sprint(c.Required)}})
 			return nil
 		},
 		Remove: func(name, by string) error {

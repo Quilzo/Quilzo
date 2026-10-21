@@ -708,6 +708,11 @@ type principal struct {
 const firstFactorOnly = "You signed in with a token, which is one factor. Confirm it is you with your passkey, " +
 	"or sign in again through single sign-on."
 
+// ssoFirstFactorOnly is what a single sign-on is told when the identity
+// provider did not say it used more than one factor.
+const ssoFirstFactorOnly = "Your organisation's sign-in did not say it used a second factor, so it counts as one. " +
+	"Confirm it is you with your passkey."
+
 // mfaEnforced reports whether two factors are compulsory now: from
 // MFAFrom, the end of the grace an installation was given when two
 // factors became the rule.
@@ -753,6 +758,9 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 		if s.mfaEnforced(time.Now()) {
 			if p.StepUp == "" {
 				p.StepUp = firstFactorOnly
+				if hasMethod(p.Methods, auth.MethodSSOOneFactor) {
+					p.StepUp = ssoFirstFactorOnly
+				}
 			}
 		} else {
 			p.Grace = s.MFAFrom.UTC().Format("2 January 2006")
@@ -2043,7 +2051,8 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 	// An organisation that requires single sign-on has it on every request,
 	// not only at the sign-in form: a session that did not come through the
 	// identity provider is refused, whichever way it was made.
-	if why := s.ssoRequired(p.Name); why != "" && !hasMethod(p.Methods, auth.MethodSSO) {
+	if why := s.ssoRequired(p.Name); why != "" && !hasMethod(p.Methods, auth.MethodSSO) &&
+		!hasMethod(p.Methods, auth.MethodSSOOneFactor) {
 		s.audit("session.refused", "/", map[string]string{"by": p.Name, "session": p.TokenID,
 			"why": "single sign-on is required"})
 		s.clearCookie(w, r, "quilzo_token")
