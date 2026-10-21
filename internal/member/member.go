@@ -82,6 +82,9 @@ type Member struct {
 	// Recovery counts the unused recovery codes; the codes themselves are
 	// kept only as hashes, under recovery/.
 	Recovery int `json:"recovery"`
+	// FailedBefore is how many failed sign-ins came before the last one
+	// that worked, for the member to be told.
+	FailedBefore int `json:"failed_before,omitempty"`
 }
 
 // Session is one signed-in browser.
@@ -296,6 +299,22 @@ func (s *Store) Used(id string, cred webauthn.Credential) error {
 		}
 	}
 	m.LastSeen = now
+	return s.write(m)
+}
+
+// FailedBefore records how many failed sign-ins came before the one just
+// made, for the account page to say.
+func (s *Store) FailedBefore(id string, n int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, err := s.read(id)
+	if err != nil {
+		return err
+	}
+	if m.FailedBefore == n {
+		return nil
+	}
+	m.FailedBefore = n
 	return s.write(m)
 }
 
@@ -809,15 +828,19 @@ func randomToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// newCode is a recovery or invitation code: 80 random bits, in four groups
+// newCode is a recovery or invitation code: 120 random bits, in six groups
 // of letters and digits a person can read back without confusing 0 and O.
+// A code is found by its hash, so it cannot be salted or stretched; its
+// length is what keeps a copy of the hashes from being turned back into
+// codes: NIST SP 800-63B-4 asks at least 112 bits of a look-up secret kept
+// that way.
 func newCode() (string, error) {
-	b := make([]byte, 10)
+	b := make([]byte, 15)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
 	s := codeEncoding.EncodeToString(b)
-	return s[0:4] + "-" + s[4:8] + "-" + s[8:12] + "-" + s[12:16], nil
+	return s[0:4] + "-" + s[4:8] + "-" + s[8:12] + "-" + s[12:16] + "-" + s[16:20] + "-" + s[20:24], nil
 }
 
 // Crockford's alphabet: no I, L, O or U.

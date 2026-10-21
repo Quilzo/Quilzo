@@ -218,11 +218,12 @@ var (
 )
 
 // stepUpFailed notes a failed confirmation from the session r carries, if
-// it is one asked to confirm.
-func (s *Server) stepUpFailed(r *http.Request) {
+// it is one asked to confirm, and returns whose session it is ("" when it
+// is not one).
+func (s *Server) stepUpFailed(r *http.Request) string {
 	p, err := s.authenticate(r)
 	if err != nil || p.StepUp == "" {
-		return
+		return ""
 	}
 	stepUpFailsMu.Lock()
 	stepUpFails[p.TokenID]++
@@ -235,6 +236,7 @@ func (s *Server) stepUpFailed(r *http.Request) {
 	if third && s.SignInSignal != nil {
 		s.SignInSignal(p.Name, "verification-failing", "three failed passkey confirmations from a session asked to confirm it is them")
 	}
+	return p.Name
 }
 
 func (s *Server) verifyPrincipal(w http.ResponseWriter, r *http.Request) (principal, bool) {
@@ -334,6 +336,7 @@ var signalWords = map[string]string{
 	"new-network": "new network provider", "new-ip": "new address", "anonymous-network": "Tor",
 	"hosting-network": "hosting provider", "dormant": "back after months", "unusual-hour": "unusual hour",
 	"session-moved": "session moved", "verification-failing": "verification failing",
+	"account-locked": "locked out after failed sign-ins",
 }
 
 var riskTone = map[string]string{"high": "critical", "medium": "warning", "low": "low", "none": "good", "": "good"}
@@ -360,6 +363,7 @@ func (s *Server) handleSignIns(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data["Waiting"] = waiting
+	data["Held"] = s.heldRows(now)
 	if s.Automations == nil || s.Automations.SignIns == nil {
 		data["NoHistory"] = "This build was started without sign-in checks, so where people signed in from is not kept."
 		s.render(w, r, "signins.html", data)

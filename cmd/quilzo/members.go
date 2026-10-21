@@ -14,6 +14,7 @@ import (
 	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/lockout"
 	"github.com/quilzo/quilzo/internal/member"
 	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/throttle"
@@ -80,6 +81,8 @@ func siteMembers(root string, cfg *config.Config, base string) *public.Members {
 	return &public.Members{
 		Store: store, Mode: mode, Party: party,
 		Limit: throttle.New(throttlePolicy(cfg)),
+		// Beside the accounts, as private as they are.
+		Lockout: &lockout.Store{Path: filepath.Join(membersDir(root), "lockout.json")},
 		Audit: func(action, id, source string, ok bool) {
 			outcome := audit.Success
 			if !ok {

@@ -1,5 +1,6 @@
 {{template "head" .}}
 <h1>Today</h1>
+{{if .Message}}<p class="notice" role="status">{{.Message}}</p>{{end}}
 <p class="lead">{{.Date}}. What is waiting for you, then what is happening in the parts of the store you work in.</p>
 
 <section aria-labelledby="waiting">

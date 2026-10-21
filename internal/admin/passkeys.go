@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/webauthn"
 )
 
@@ -545,6 +546,21 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusServiceUnavailable, errNoPasskeyStore)
 		return
 	}
+	// Slowed per source like every other way in, before anything is read.
+	src := throttle.Subject{Source: sourceOf(r)}
+	if s.Throttle != nil {
+		if d := s.Throttle.Check(src); !d.Allowed {
+			s.tooManyAttempts(w, r, d)
+			return
+		}
+	}
+	failed := func() {
+		if s.Throttle != nil {
+			if d, alert := s.Throttle.Fail(src); alert && s.OnAuthFailure != nil {
+				s.OnAuthFailure(src.Source, d.Failures)
+			}
+		}
+	}
 	party, err := s.partyFor(r)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err)
@@ -579,11 +595,19 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		// The same answer as a bad signature, and deliberately: telling a
 		// stranger that a credential is unknown is telling them which ones are
 		// not.
-		s.stepUpFailed(r)
+		if held := s.stepUpFailed(r); held != "" {
+			s.lockoutFail(r, held)
+		}
+		failed()
 		writeJSONError(w, http.StatusUnauthorized, errSignIn)
 		return
 	}
 	cred := s.Passkeys.Credentials[idx]
+	// A credential the store knows names its account, so its failures count
+	// against that account, from where they come (lockout.go).
+	if !s.lockoutCheck(w, r, cred.Principal) {
+		return
+	}
 
 	// Checked against the site this credential was registered for, not the one
 	// this request claims to be.
@@ -597,7 +621,12 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		s.stepUpFailed(r)
+		held := s.stepUpFailed(r)
+		failed()
+		s.lockoutFail(r, cred.Principal)
+		if held != "" && !strings.EqualFold(held, cred.Principal) {
+			s.lockoutFail(r, held)
+		}
 		writeJSONError(w, http.StatusUnauthorized, errSignIn)
 		return
 	}
@@ -701,6 +730,9 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 			next = "/signin/verify"
 		}
 	}
+	// The count starts again from a place now familiar, and the person is
+	// told what came before, if anything did.
+	next = s.lockoutSucceed(r, cred.Principal, next)
 
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: secret, Path: "/",

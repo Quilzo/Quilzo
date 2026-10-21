@@ -20,8 +20,10 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/lockout"
 	"github.com/quilzo/quilzo/internal/member"
 	"github.com/quilzo/quilzo/internal/search"
 	"github.com/quilzo/quilzo/internal/webauthn"
@@ -101,11 +103,16 @@ type visitor struct {
 	cookie string
 	// site is what the browser reports in Sec-Fetch-Site.
 	site string
+	// from is the address it connects from, when not the usual one.
+	from string
 }
 
 func (v *visitor) do(method, path string, body []byte, ctype string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, bytes.NewReader(body))
 	req.RemoteAddr = "203.0.113.9:4000"
+	if v.from != "" {
+		req.RemoteAddr = v.from
+	}
 	if ctype != "" {
 		req.Header.Set("Content-Type", ctype)
 	}
@@ -485,5 +492,55 @@ func TestARecoveryCodeOpensTheAccountOnlyToAddAPasskey(t *testing.T) {
 	}
 	if w := v.do(http.MethodGet, "/lounge", nil, ""); w.Code != 200 || !strings.Contains(w.Body.String(), "The lounge") {
 		t.Errorf("after the new passkey the member is not signed in: %d", w.Code)
+	}
+}
+
+// Somebody trying a member's passkey from elsewhere is locked out of the
+// account from there, with the same answer as any failure; the member,
+// from where they signed up, signs straight in. A recovery code lets the
+// passkeys work from everywhere again.
+func TestFailuresFromElsewhereLockOutThePlaceNotTheMember(t *testing.T) {
+	st, _ := memberSite(t, "open")
+	st.Members.Lockout = &lockout.Store{Path: filepath.Join(t.TempDir(), "lockout.json")}
+	ada := &visitor{t: t, st: st, site: "same-origin"}
+	d := newDevice(t)
+	_, out := signUp(t, ada, d, "Ada", "")
+	code := out["codes"].([]any)[0].(string)
+	id := ada.memberID(t)
+	ada.form("/account/signout", nil)
+
+	guesser := &visitor{t: t, st: st, site: "same-origin", from: "198.51.100.20:5000"}
+	forged := &device{key: newDevice(t).key, id: d.id, count: 50}
+	var failed string
+	for i := 0; i < lockout.Threshold; i++ {
+		w := signIn(t, guesser, forged)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("guess %d: %d", i+1, w.Code)
+		}
+		failed = w.Body.String()
+	}
+	right := &device{key: d.key, id: d.id, count: 100}
+	w := signIn(t, guesser, right)
+	if w.Code != http.StatusUnauthorized || w.Body.String() != failed || guesser.cookie != "" {
+		t.Fatalf("the right passkey from the locked-out place: %d %s", w.Code, w.Body)
+	}
+	d.count = 200
+	if w := signIn(t, ada, d); w.Code != http.StatusOK {
+		t.Fatalf("Ada was locked out of her own account at home: %d %s", w.Code, w.Body)
+	}
+	if page := ada.do(http.MethodGet, "/account", nil, ""); !strings.Contains(page.Body.String(),
+		"10 failed sign-ins to your account came before your last one") {
+		t.Error("Ada was not told about the failures")
+	}
+	ada.form("/account/signout", nil)
+
+	if held, _ := st.Members.Lockout.Held(time.Now()); len(held) != 1 || held[0].Name != id {
+		t.Fatalf("held: %+v", held)
+	}
+	if w := ada.form("/account/recover", url.Values{"code": {code}}); w.Code != http.StatusSeeOther {
+		t.Fatalf("recovering: %d", w.Code)
+	}
+	if held, _ := st.Members.Lockout.Held(time.Now()); len(held) != 0 {
+		t.Errorf("a recovery code left the account held: %+v", held)
 	}
 }

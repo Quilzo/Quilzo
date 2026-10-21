@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/board"
+	"github.com/quilzo/quilzo/internal/lockout"
 	"github.com/quilzo/quilzo/internal/member"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/webauthn"
@@ -62,6 +63,10 @@ type Members struct {
 	Party webauthn.Party
 	// Limit bounds sign-ups, sign-ins and recovery attempts per address.
 	Limit *throttle.Limiter
+	// Lockout is smart lockout for a member's failing passkey: the places
+	// it is tried from are locked out of the account, not the member
+	// (internal/lockout).
+	Lockout *lockout.Store
 	// Audit records what happened to an account, by its random id. Never a
 	// name: the audit log outlives an account, and an erased account must
 	// not be readable there.
@@ -379,6 +384,10 @@ func (st *Site) signupFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	st.setSession(w, token)
 	st.audit("member.signup", m.ID, r, true)
+	// Where they signed up from is a place they use.
+	if st.Members.Lockout != nil {
+		_, _ = st.Members.Lockout.Succeed(m.ID, sourceOf(r), time.Now())
+	}
 	replyJSON(w, http.StatusOK, map[string]any{"codes": codes})
 }
 
@@ -422,6 +431,16 @@ func (st *Site) signinFinish(w http.ResponseWriter, r *http.Request) {
 		refuse("")
 		return
 	}
+	// Refused with the same answer as any failure: a lockout said as one
+	// would tell somebody holding a credential id that it is an account's.
+	src := sourceOf(r)
+	if st.Members.Lockout != nil {
+		if d, lerr := st.Members.Lockout.Check(m.ID, src, time.Now()); lerr == nil && !d.Allowed {
+			st.audit("member.signin-held", m.ID, r, false)
+			refuse(m.ID)
+			return
+		}
+	}
 	used, err := st.Members.Party.Verify(cred, in.Challenge, in.Assertion)
 	if errors.Is(err, webauthn.ErrUserNotVerified) && !m.Disabled {
 		// Said as itself, because the signature verified: this is the
@@ -431,8 +450,18 @@ func (st *Site) signinFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil || m.Disabled {
+		if err != nil && st.Members.Lockout != nil {
+			if _, ev, lerr := st.Members.Lockout.Fail(m.ID, src, time.Now()); lerr == nil && ev != lockout.NoEvent {
+				st.audit("member."+string(ev), m.ID, r, false)
+			}
+		}
 		refuse(m.ID)
 		return
+	}
+	if st.Members.Lockout != nil {
+		if since, lerr := st.Members.Lockout.Succeed(m.ID, src, time.Now()); lerr == nil {
+			_ = st.Members.Store.FailedBefore(m.ID, since)
+		}
 	}
 	_ = st.Members.Store.Used(m.ID, used)
 	token, err := st.Members.Store.StartSession(m.ID)
@@ -576,6 +605,13 @@ func (st *Site) accountForm(w http.ResponseWriter, r *http.Request, action strin
 		}
 		st.setSession(w, token)
 		st.audit("member.recover", m.ID, r, true)
+		// The member proved themselves another way, so their passkeys work
+		// again from everywhere.
+		if st.Members.Lockout != nil {
+			if held, _ := st.Members.Lockout.Unlock(m.ID, time.Now()); held {
+				st.audit("member.unlocked", m.ID, r, true)
+			}
+		}
 		back("recovered")
 		return
 	}
@@ -848,6 +884,7 @@ var accountTemplate = template.Must(template.New("account").Parse(`<!doctype htm
 {{end}}
 {{if .V.SignedIn}}
 <h1>Hello, {{.V.Member.Name}}</h1>
+{{with .V.Member.FailedBefore}}<p class="qz-notice" role="status">{{.}} failed sign-in{{if ne . 1}}s{{end}} to your account came before your last one. If {{if eq . 1}}it was{{else}}they were{{end}} not you, your passkey kept {{if eq . 1}}it{{else}}them{{end}} out.</p>{{end}}
 {{if .V.MemberPages}}<section class="qz-turn" aria-labelledby="pages-h">
   <h2 id="pages-h">For members</h2>
   <ul>{{range .V.MemberPages}}<li><a href="{{.Href}}">{{.Title}}</a></li>{{end}}</ul>

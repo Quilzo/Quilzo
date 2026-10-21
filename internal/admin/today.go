@@ -167,7 +167,8 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, r, "today.html", map[string]any{
-		"CanAsk": s.askAllowed(p), "Answer": answer, "Views": views, "CanKeep": canKeep,
+		"Message": r.URL.Query().Get("m"),
+		"CanAsk":  s.askAllowed(p), "Answer": answer, "Views": views, "CanKeep": canKeep,
 		"Title": "Today", "Nav": "today", "Principal": p,
 		"Waiting": waiting, "WaitingTotal": total, "MoreWaiting": total - len(waiting),
 		"Brief": s.briefFor(p, briefFacts(all, lines, now), now),

@@ -57,13 +57,11 @@ func saveConfig(root string, c *config.Config) error {
 // three different ideas of how many attempts are free.
 func throttlePolicy(c *config.Config) throttle.Policy {
 	return throttle.Policy{
-		On:      c.Bool("auth.throttle"),
 		After:   c.Int("auth.throttle.after"),
 		Ceiling: c.Int("auth.throttle.ceiling"),
 		Base:    c.Dur("auth.throttle.base"),
 		Max:     c.Dur("auth.throttle.max"),
 		Window:  time.Hour,
-		Hard:    c.Bool("auth.lockout.hard"),
 		Alert:   c.Int("auth.lockout.alert"),
 	}
 }
@@ -82,7 +80,7 @@ func throttlePolicy(c *config.Config) throttle.Policy {
 // loaded none — so this limit is the whole of what replaces them.
 //
 // Deliberately not a separate config setting. An operator who tightens
-// auth.throttle tightens this with it, which is what they meant.
+// auth.throttle.* tightens this with it, which is what they meant.
 func sharePolicy(c *config.Config) throttle.Policy {
 	p := throttlePolicy(c)
 	p.After = 1
@@ -133,6 +131,9 @@ func configShow(root string) error {
 		}
 	}
 	w.Human("%d setting(s), %d changed from the default\n", len(effs), changed)
+	for _, why := range c.Dropped() {
+		w.Human("  %sleft out of the file: %s%s\n", dim, why, reset)
+	}
 	if changed == 0 {
 		w.Human("  %severything is at its default, which is the intended "+
 			"posture%s\n", dim, reset)

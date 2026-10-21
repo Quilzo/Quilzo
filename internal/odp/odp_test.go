@@ -44,6 +44,7 @@ func TestTheListIsClosedAndEachDeclarationCanBeKept(t *testing.T) {
 		"ac-07_odp.01": "5", "ac-02.05_odp": "15 minutes", "ac-12_odp": "8 hours",
 		"ia-05_odp.01": "365 days", "au-11_odp": "6 years", "ac-07_odp.02": "15 minutes",
 		"ac-07_odp.03": "delay next logon prompt per {{ insert: param, ac-07_odp.05 }}\nnotify system administrator",
+		"ac-07_odp.04": "30 minutes",
 	}
 	for id, v := range ok {
 		p, _ := Lookup(id)
@@ -53,7 +54,7 @@ func TestTheListIsClosedAndEachDeclarationCanBeKept(t *testing.T) {
 	}
 	refused := map[string]string{
 		"ac-07_odp.02": "1 day",       // counted over an hour, not a day
-		"ac-07_odp.04": "24 hours",    // a hard lockout lasts an hour
+		"ac-07_odp.04": "24 hours",    // the first lockout lasts half an hour
 		"ac-07_odp.05": "exponential", // described, not declared
 		"ac-12_odp":    "13 hours",    // longer than any session may last
 		"ac-02.05_odp": "1 minute",    // shorter than the floor on idling
@@ -125,8 +126,8 @@ func TestChangingThePolicyTakesTwo(t *testing.T) {
 	}
 }
 
-// A declaration is a floor: stricter is allowed, weaker is not, and the
-// switches a declared action needs cannot be turned off.
+// A declaration is a floor: stricter is allowed, weaker is not. An action is
+// declared and met with nothing to set, because all three are always done.
 func TestADeclarationIsAFloorUnderItsSetting(t *testing.T) {
 	pol := &Policy{Declared: []Declared{
 		{Param: "ac-07_odp.01", Value: "5"},
@@ -141,8 +142,9 @@ func TestADeclarationIsAFloorUnderItsSetting(t *testing.T) {
 	if err := cfg.Set("auth.throttle.after", "8", "a reason", "dana"); !errors.As(err, &below) || below.Floor.Param != "ac-07_odp.01" {
 		t.Fatalf("weaker allowed with a reason: %v", err)
 	}
-	if err := cfg.Set("auth.throttle", "false", "a reason", "dana"); !errors.As(err, &below) {
-		t.Fatalf("the throttle the limit depends on was turned off: %v", err)
+	lock := pol.Declared[2]
+	if !Met(lock, config.New()) || len(Enforce(config.New(), lock)) != 0 {
+		t.Fatal("locking out is not met as shipped")
 	}
 	if err := cfg.Set("session.idle", "0s", "", "dana"); err == nil {
 		t.Fatal("idle sign-out turned off under a policy requiring it")
@@ -154,7 +156,7 @@ func TestADeclarationIsAFloorUnderItsSetting(t *testing.T) {
 	// Below the floor by hand: Unmet says so, and Enforce says what to set.
 	unmet := config.New().WithFloors(Floors(pol))
 	if len(unmet.Unmet()) == 0 {
-		t.Fatal("defaults below the policy (idle 0, no hard lockout) are not unmet")
+		t.Fatal("defaults below the policy (idle 0) are not unmet")
 	}
 	for _, d := range pol.Declared {
 		for k, v := range Enforce(unmet, d) {
@@ -166,8 +168,8 @@ func TestADeclarationIsAFloorUnderItsSetting(t *testing.T) {
 	if u := unmet.Unmet(); len(u) != 0 {
 		t.Fatalf("still unmet after enforcing: %+v", u)
 	}
-	if unmet.Raw("session.idle") != "30m" || unmet.Raw("auth.lockout.hard") != "true" {
-		t.Fatalf("enforced to %s / %s", unmet.Raw("session.idle"), unmet.Raw("auth.lockout.hard"))
+	if unmet.Raw("session.idle") != "30m" {
+		t.Fatalf("enforced to %s", unmet.Raw("session.idle"))
 	}
 }
 

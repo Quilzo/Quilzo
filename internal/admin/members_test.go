@@ -58,7 +58,7 @@ func TestTheMembersScreenManagesAccounts(t *testing.T) {
 
 	// An invitation code is shown once, in the response that made it.
 	w := postForm(t, srv, "/members/act", token, "do=invite&note=for+Bo")
-	code := regexp.MustCompile(`<code>([0-9A-Z]{4}(?:-[0-9A-Z]{4}){3})</code>`).FindStringSubmatch(w.Body.String())
+	code := regexp.MustCompile(`<code>([0-9A-Z]{4}(?:-[0-9A-Z]{4}){5})</code>`).FindStringSubmatch(w.Body.String())
 	if w.Code != http.StatusOK || code == nil {
 		t.Fatalf("making an invitation: %d", w.Code)
 	}

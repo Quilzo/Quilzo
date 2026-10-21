@@ -30,6 +30,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -144,7 +145,22 @@ type Config struct {
 	file   File
 	now    func() time.Time
 	floors map[string][]Floor
+	// dropped are the values Parse left out, each with why.
+	dropped []string
 }
+
+// retired are settings this version no longer has, with what replaced each.
+// Each was a way to weaken something that can no longer be weakened, so a
+// file still holding one loads without it, rather than not at all.
+var retired = map[string]string{
+	"auth.throttle":     "throttling is always on",
+	"auth.lockout.hard": "smart lockout locks out the places failures come from instead",
+}
+
+// Dropped are the values in the file this configuration left out, and why:
+// a retired setting, or a value outside a setting's hard bounds. Saving the
+// configuration removes them from the file.
+func (c *Config) Dropped() []string { return c.dropped }
 
 // WithFloors attaches the organisation's policy, by setting key. Set and
 // Unset refuse a value below any floor; reading is unaffected.
@@ -201,6 +217,10 @@ func Parse(body []byte) (*Config, error) {
 	// predict, and finding that out when the setting is first read means
 	// finding out in the middle of serving a request.
 	for key, v := range c.file.Values {
+		if why, ok := retired[key]; ok {
+			c.drop(key, fmt.Sprintf("%s is no longer a setting: %s", key, why))
+			continue
+		}
 		s, ok := Lookup(key)
 		if !ok {
 			return nil, fmt.Errorf(
@@ -208,10 +228,27 @@ func Parse(body []byte) (*Config, error) {
 					"check `quilzo config list` for the current name", key)
 		}
 		if err := s.Validate(v); err != nil {
+			// Its default instead: the bounds are where a value stops being
+			// safe, and the default is inside them.
+			var out *ErrOutOfBounds
+			if errors.As(err, &out) {
+				c.drop(key, fmt.Sprintf("%s: %s; %s is used instead", key, err, s.Default))
+				continue
+			}
 			return nil, fmt.Errorf("%s: %w", key, err)
 		}
 	}
+	for key := range retired {
+		c.dropAcceptance(key)
+	}
+	sort.Strings(c.dropped)
 	return c, nil
+}
+
+func (c *Config) drop(key, why string) {
+	delete(c.file.Values, key)
+	c.dropAcceptance(key)
+	c.dropped = append(c.dropped, why)
 }
 
 // WithClock is for tests, which cannot wait ninety days.

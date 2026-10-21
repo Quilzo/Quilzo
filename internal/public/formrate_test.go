@@ -151,19 +151,7 @@ func TestSpendAndFailShareTheCounter(t *testing.T) {
 	}
 }
 
-// A limiter switched off allows everything, which is what it is for.
-func TestAnOffLimiterRefusesNothing(t *testing.T) {
-	policy := throttle.Default()
-	policy.On = false
-	st, _ := rateSite(t, policy)
-	for i := 0; i < 20; i++ {
-		if got := valid(st, fmt.Sprint(i)).Code; got == http.StatusTooManyRequests {
-			t.Fatalf("submission %d was limited with the throttle off", i)
-		}
-	}
-}
-
-// And no limiter at all is the same, rather than a nil dereference.
+// No limiter at all limits nothing, rather than being a nil dereference.
 func TestNoLimiterIsNotACrash(t *testing.T) {
 	st, _ := rateSite(t, throttle.Default())
 	st.Forms.Limit = nil

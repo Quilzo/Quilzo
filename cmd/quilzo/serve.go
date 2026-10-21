@@ -131,6 +131,9 @@ func cmdServe(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	for _, why := range cfg.Dropped() {
+		fmt.Fprintf(os.Stderr, "  %sconfiguration: %s%s\n", dim, why, reset)
+	}
 	srv, err := admin.New(s, pol, toks, design.Layouts)
 	if err != nil {
 		return err
@@ -224,6 +227,9 @@ func cmdServe(root string, args []string) error {
 	srv.MFAFrom = mfaFrom(root, time.Now())
 	// The one-time links that give people their passkeys (enrolcmd.go).
 	srv.Enrol, srv.EnrolBlocked = enrolStore(root), enrolBlocked(root)
+	// Smart lockout for the failures that belong to an account, kept in the
+	// store so every process and every restart counts the same failures.
+	srv.Lockout = lockoutStore(root)
 	srv.SessionPlace, srv.SessionMovedTo, srv.Reported, srv.SignInSignal = sessionHooks(root)
 	srv.Automations = &admin.AutomationsAdmin{
 		Engine:  automationEngineAsync(root),

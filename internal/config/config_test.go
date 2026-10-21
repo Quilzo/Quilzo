@@ -4,6 +4,7 @@
 package config
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -23,25 +24,25 @@ func fresh() *Config {
 // value needs a reason, and that reason is recorded and reported.
 func TestAWeakerValueIsAllowedButNeedsAReason(t *testing.T) {
 	c := fresh()
-	err := c.Set("auth.throttle", "false", "", "dana")
+	err := c.Set("publish.require_a11y", "false", "", "dana")
 	if err == nil {
-		t.Fatal("throttling was switched off with no reason given")
+		t.Fatal("the accessibility gate was switched off with no reason given")
 	}
 	var need *ErrNeedsAcceptance
 	if !as(err, &need) {
 		t.Fatalf("refused with %T, want *ErrNeedsAcceptance: %v", err, err)
 	}
-	if !strings.Contains(err.Error(), "unlimited") {
+	if !strings.Contains(err.Error(), "inaccessible") {
 		t.Errorf("the refusal does not say what is given up: %v", err)
 	}
 
 	// With a reason, it is simply allowed. This is the half people expect to
 	// be missing.
-	if err := c.Set("auth.throttle", "false", "load test, staging only",
+	if err := c.Set("publish.require_a11y", "false", "a migration, staging only",
 		"dana"); err != nil {
 		t.Fatalf("a reasoned change was still refused: %v", err)
 	}
-	if c.Bool("auth.throttle") {
+	if c.Bool("publish.require_a11y") {
 		t.Error("the setting did not take effect")
 	}
 }
@@ -81,7 +82,7 @@ func TestAnAcceptedRiskIsReportedUntilItIsFixed(t *testing.T) {
 func TestAnAcceptanceExpires(t *testing.T) {
 	now := when
 	c := New().WithClock(func() time.Time { return now })
-	if err := c.Set("auth.throttle", "false", "staging", "dana"); err != nil {
+	if err := c.Set("publish.require_a11y", "false", "staging", "dana"); err != nil {
 		t.Fatal(err)
 	}
 	if c.Weakened()[0].Expired {
@@ -97,7 +98,7 @@ func TestAnAcceptanceExpires(t *testing.T) {
 // and that is the case worth showing loudest: the difference between a
 // decision and an accident is whether somebody wrote down why.
 func TestAWeakValueWithNoAcceptanceIsStillReported(t *testing.T) {
-	c, err := Parse([]byte(`{"values":{"auth.throttle":"false"}}`))
+	c, err := Parse([]byte(`{"values":{"publish.require_a11y":"false"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,12 +139,62 @@ func TestAValueThatDoesNotParseIsRefused(t *testing.T) {
 	for _, tc := range [][2]string{
 		{"auth.throttle.after", "lots"},
 		{"auth.throttle.base", "1 second"},
-		{"auth.throttle", "yes please"},
+		{"publish.require_a11y", "yes please"},
 		{"site.csp.mode", "maybe"},
 		{"api.page.max", "-1"},
 	} {
 		if err := c.Set(tc[0], tc[1], "reason", "dana"); err == nil {
 			t.Errorf("%s = %q was accepted", tc[0], tc[1])
+		}
+	}
+}
+
+// The throttle's numbers have bounds no reason steps outside: past them the
+// limit stops being one, which no circumstance makes right.
+func TestAThrottleValueOutsideItsBoundsIsRefusedWhateverTheReason(t *testing.T) {
+	c := fresh()
+	for _, tc := range [][2]string{
+		{"auth.throttle.after", "11"},
+		{"auth.throttle.ceiling", "500"},
+		{"auth.throttle.ceiling", "3"},
+		{"auth.throttle.base", "100ms"},
+		{"auth.throttle.max", "2h"},
+		{"auth.lockout.alert", "0"},
+		{"auth.lockout.alert", "50"},
+	} {
+		var out *ErrOutOfBounds
+		if err := c.Set(tc[0], tc[1], "a penetration test", "dana"); !errors.As(err, &out) {
+			t.Errorf("%s = %s: %v", tc[0], tc[1], err)
+		}
+	}
+	for _, key := range []string{"auth.throttle", "auth.lockout.hard"} {
+		if err := c.Set(key, "false", "a reason", "dana"); err == nil {
+			t.Errorf("%s is still a setting", key)
+		}
+	}
+}
+
+// A file from before the bounds, or holding a switch that is no longer one,
+// still loads: each such value is left out, said, and gone from the file once
+// it is saved.
+func TestAFileWithARetiredOrOutOfBoundsValueLoadsWithoutIt(t *testing.T) {
+	c, err := Parse([]byte(`{"values":{"auth.throttle":"false","auth.lockout.hard":"true",` +
+		`"auth.throttle.max":"6h","api.rate.burst":"40"},` +
+		`"accepted":[{"key":"auth.throttle","value":"false","reason":"load test"},` +
+		`{"key":"auth.throttle.max","value":"6h","reason":"why not"}]}`))
+	if err != nil {
+		t.Fatalf("the file did not load: %v", err)
+	}
+	if got := c.Dropped(); len(got) != 3 || !strings.Contains(strings.Join(got, "\n"), "auth.throttle.max: 6h is outside its bounds, 1s to 1h; 15m is used instead") {
+		t.Errorf("dropped %q", got)
+	}
+	if c.Dur("auth.throttle.max") != 15*time.Minute || c.Int("api.rate.burst") != 40 {
+		t.Errorf("max %s, burst %d", c.Dur("auth.throttle.max"), c.Int("api.rate.burst"))
+	}
+	body, _ := c.Bytes()
+	for _, gone := range []string{"auth.throttle\"", "auth.lockout.hard", "6h"} {
+		if strings.Contains(string(body), gone) {
+			t.Errorf("saved with %s still in it: %s", gone, body)
 		}
 	}
 }
@@ -204,10 +255,9 @@ func TestTheDefaultsAreTheOnesWeMeanToShip(t *testing.T) {
 		key  string
 		want string
 	}{
-		{"auth.throttle", "true"},
 		{"auth.throttle.after", "5"},     // ASVS 5.0 alerting threshold
 		{"auth.throttle.ceiling", "100"}, // ASVS 5.0 hourly ceiling
-		{"auth.lockout.hard", "false"},   // soft, so it cannot be aimed at a victim
+		{"auth.lockout.alert", "5"},      // ASVS 5.0: more than five deserves a reaction
 		{"publish.require_a11y", "true"},
 		{"publish.require_types", "true"},
 		{"site.csp.mode", "enforce"},
@@ -226,7 +276,7 @@ func TestTheDefaultsAreTheOnesWeMeanToShip(t *testing.T) {
 func TestAConfigurationSurvivesARoundTrip(t *testing.T) {
 	c := fresh()
 	c.Set("api.rate.burst", "40", "", "dana")
-	c.Set("auth.throttle.ceiling", "500", "penetration test window", "sam")
+	c.Set("token.ttl.default", "20000h", "penetration test window", "sam")
 
 	body, err := c.Bytes()
 	if err != nil {
@@ -239,7 +289,7 @@ func TestAConfigurationSurvivesARoundTrip(t *testing.T) {
 	if back.Int("api.rate.burst") != 40 {
 		t.Error("a plain value did not survive")
 	}
-	if back.Int("auth.throttle.ceiling") != 500 {
+	if back.Dur("token.ttl.default") != 20000*time.Hour {
 		t.Error("a weakened value did not survive")
 	}
 	w := back.Weakened()

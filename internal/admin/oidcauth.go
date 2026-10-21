@@ -341,6 +341,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.signInDone(r, tok.ID)
+	next := s.lockoutProven(r, principal, startPath(r))
 
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: secret, Path: "/",
@@ -356,7 +357,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/signin/verify", http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, startPath(r), http.StatusSeeOther)
+	http.Redirect(w, r, next, http.StatusSeeOther)
 }
 
 // oidcTTL is the provider's own session length or session.max, whichever

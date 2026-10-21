@@ -63,6 +63,7 @@ import (
 	"github.com/quilzo/quilzo/internal/federate"
 	"github.com/quilzo/quilzo/internal/fedramp"
 	"github.com/quilzo/quilzo/internal/icons"
+	"github.com/quilzo/quilzo/internal/lockout"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"html/template"
 	"io"
@@ -192,6 +193,9 @@ type Server struct {
 	// such as a lockdown in force, or nothing.
 	Enrol        *enrol.Store
 	EnrolBlocked func(now time.Time) string
+	// Lockout is smart lockout for the failures that belong to an account
+	// (lockout.go).
+	Lockout *lockout.Store
 	// MFAFrom is when two factors became compulsory for every person here.
 	// Zero, the default, is always: an installation is given a grace only
 	// by setting it, and only before it, is one factor let through.
@@ -1394,6 +1398,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/signin/verify/report", s.handleStepUpReport)
 	mux.HandleFunc("/security/signins", s.handleSignIns)
 	mux.HandleFunc("/security/signins/act", s.handleSignInsAct)
+	mux.HandleFunc("/security/signins/unlock", s.handleSignInsUnlock)
 	mux.HandleFunc("/security/automations", s.handleAutomations)
 	mux.HandleFunc("/security/shield", s.handleShield)
 	mux.HandleFunc("/security/shield/act", s.handleShieldAct)
@@ -2656,10 +2661,10 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 // This is the process that has one. So the state goes on the posture screen,
 // which is where somebody asking "is something happening" already looks.
 //
-// Without it, auth.lockout.hard could be switched on and its consequences were
-// unobservable on every surface: no way to see that an account or an address
-// was locked out, or that the alert threshold had been crossed, short of
-// reading the audit log for auth.failures and counting.
+// Without it, the throttle's consequences were unobservable on every surface:
+// no way to see that an address had reached the ceiling, or that the alert
+// threshold had been crossed, short of reading the audit log for
+// auth.failures and counting.
 //
 // The subjects are opaque by construction — the limiter holds HMACs — so this
 // reports counts and timings and cannot say who. That is the package's own
