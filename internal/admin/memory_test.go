@@ -21,7 +21,7 @@ func memoryRig(t *testing.T) (*Server, string, string, *memory.Store) {
 	if err := srv.Policy.Grant(auth.Binding{Principal: "rae", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	rae, _, _ := srv.Tokens.Issue("rae", "rae", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	rae, _, _ := srv.Tokens.IssueSession("rae", "rae", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	st := &memory.Store{Dir: t.TempDir()}
 	srv.Memory = &MemoryAdmin{Store: st,
 		Confirm: func(id, by string) error { _, err := st.Confirm(id, by, time.Now(), time.Hour); return err },

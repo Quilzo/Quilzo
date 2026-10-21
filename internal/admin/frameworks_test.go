@@ -61,7 +61,7 @@ func TestFrameworksAreForWhoeverMayGrant(t *testing.T) {
 		Role: auth.RolePublisher, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	tok, _, err := srv.Tokens.Issue("p", "pub", auth.RolePublisher, "/", time.Hour, auth.RolePublisher)
+	tok, _, err := srv.Tokens.IssueSession("p", "pub", auth.RolePublisher, "/", time.Hour, auth.RolePublisher, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}

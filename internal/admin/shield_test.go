@@ -33,7 +33,7 @@ func wireShield(t *testing.T, srv *Server) (root, second string) {
 	if err := srv.Policy.Grant(auth.Binding{Principal: "lee", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	secret, _, err := srv.Tokens.Issue("lee", "lee", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	secret, _, err := srv.Tokens.IssueSession("lee", "lee", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}

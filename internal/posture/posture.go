@@ -276,6 +276,11 @@ type SSOFacts struct {
 	// SCIMTokenEnds is when the provisioning token stops working; zero
 	// when there is none.
 	SCIMTokenEnds time.Time `json:"scim_token_ends,omitzero"`
+	// MFAFrom is when two factors became compulsory for every person;
+	// NoSecondFactor are the people with access who have neither a passkey
+	// nor single sign-on covering their address.
+	MFAFrom        time.Time `json:"mfa_from,omitzero"`
+	NoSecondFactor []string  `json:"no_second_factor,omitempty"`
 }
 
 // SSOProvider is one SAML identity provider.

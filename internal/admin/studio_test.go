@@ -316,8 +316,8 @@ func TestTheStudioIsForWhoeverMayGrant(t *testing.T) {
 		Role: auth.RolePublisher, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	lesser, _, err := srv.Tokens.Issue("w", "writer", auth.RolePublisher, "/",
-		time.Hour, auth.RolePublisher)
+	lesser, _, err := srv.Tokens.IssueSession("w", "writer", auth.RolePublisher, "/",
+		time.Hour, auth.RolePublisher, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -586,8 +586,8 @@ func TestOnlyAnAdministratorAnswersARun(t *testing.T) {
 		Role: auth.RolePublisher, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	lesser, _, err := srv.Tokens.Issue("w", "writer", auth.RolePublisher, "/",
-		time.Hour, auth.RolePublisher)
+	lesser, _, err := srv.Tokens.IssueSession("w", "writer", auth.RolePublisher, "/",
+		time.Hour, auth.RolePublisher, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}

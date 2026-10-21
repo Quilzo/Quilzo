@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // cookieFrom returns the session cookie a response set.
@@ -29,7 +31,7 @@ func cookieFrom(w *httptest.ResponseRecorder) string {
 // signing out could not revoke it without destroying the token somebody signs
 // in with. The cookie holds an eight-hour session exchanged from it.
 func TestTheCookieNeverHoldsThePastedToken(t *testing.T) {
-	srv, token := setup(t)
+	srv, token := tokenSignIn(t)
 	w := signInPost(srv, token)
 	session := cookieFrom(w)
 	if session == "" {
@@ -92,7 +94,7 @@ func TestEverySignInPathMintsASession(t *testing.T) {
 func TestSigningOutEndsAnIdentityProviderSession(t *testing.T) {
 	srv, _ := setup(t)
 	secret, _, err := srv.Tokens.IssueSession("oidc:editor", "editor",
-		srv.roleFor("editor"), "/", DefaultSessionTTL, "admin")
+		srv.roleFor("editor"), "/", DefaultSessionTTL, "admin", auth.MethodSSO)
 	if err != nil {
 		t.Fatal(err)
 	}

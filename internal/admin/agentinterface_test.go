@@ -295,7 +295,7 @@ func TestAnAppIsNeverGivenMoreThanThePerson(t *testing.T) {
 	if err := r.srv.Policy.Grant(auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	rae, _, err := r.srv.Tokens.Issue("rae", "rae", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	rae, _, err := r.srv.Tokens.IssueSession("rae", "rae", auth.RoleReader, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +313,7 @@ func TestAnAppIsNeverGivenMoreThanThePerson(t *testing.T) {
 	}
 	// A token carrying more than the person's role offers no more: what is
 	// offered is what the access policy gives them.
-	big, _, err := r.srv.Tokens.Issue("rae-big", "rae", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	big, _, err := r.srv.Tokens.IssueSession("rae-big", "rae", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +361,7 @@ func TestAppsFromHostsNotAllowedCannotAsk(t *testing.T) {
 func TestOnlyAnAdministratorDecidesWhatMayConnect(t *testing.T) {
 	r := newIfaceRig(t)
 	r.srv.Policy.Grant(auth.Binding{Principal: "rae", Role: auth.RoleAuthor, Resource: "/"})
-	rae, _, _ := r.srv.Tokens.Issue("rae", "rae", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	rae, _, _ := r.srv.Tokens.IssueSession("rae", "rae", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	for _, action := range []url.Values{
 		{"action": {"allow-host"}, "host": {"evil.example"}},
 		{"action": {"register"}, "name": {"x"}, "redirects": {"https://evil.example/cb"}},
@@ -430,7 +430,7 @@ func TestTheInterfaceRefusesOtherSitesPagesAndReadOnlyTokensStillRead(t *testing
 func TestErrorPagesKeepTheirScript(t *testing.T) {
 	r := newIfaceRig(t)
 	r.srv.Policy.Grant(auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"})
-	rae, _, _ := r.srv.Tokens.Issue("rae", "rae", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	rae, _, _ := r.srv.Tokens.IssueSession("rae", "rae", auth.RoleReader, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	for _, w := range []*httptest.ResponseRecorder{
 		r.do(t, "GET", "/integrations", rae, nil, nil),
 		r.do(t, "GET", "/oauth/authorize?client_id=x", r.token, nil, nil),
@@ -469,7 +469,7 @@ func TestAConnectionsReceiptIsForThePersonItActedFor(t *testing.T) {
 		t.Fatalf("%d %q %v", w.Code, asked, w.Header())
 	}
 	r.srv.Policy.Grant(auth.Binding{Principal: "rae", Role: auth.RoleAuthor, Resource: "/"})
-	rae, _, _ := r.srv.Tokens.Issue("rae", "rae", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	rae, _, _ := r.srv.Tokens.IssueSession("rae", "rae", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	asked = ""
 	for _, q := range []string{id, "gr_00000000000000ff", ""} {
 		w := r.do(t, "GET", "/apps/receipt?id="+q, rae, nil, nil)

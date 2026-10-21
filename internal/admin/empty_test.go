@@ -43,8 +43,8 @@ func emptyStore(t *testing.T) (*Server, string) {
 		t.Fatal(err)
 	}
 	ts := &auth.TokenStore{}
-	secret, _, err := ts.Issue("test", "editor", auth.RoleAdmin, "/",
-		time.Hour, auth.RoleAdmin)
+	secret, _, err := ts.IssueSession("test", "editor", auth.RoleAdmin, "/",
+		time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}

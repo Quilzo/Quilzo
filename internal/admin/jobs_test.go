@@ -33,7 +33,7 @@ func asJob(t *testing.T, job string) (*Server, string) {
 		}
 	}
 	ts := &auth.TokenStore{}
-	secret, _, err := ts.Issue("test", "worker", top, "/", time.Hour, top)
+	secret, _, err := ts.IssueSession("test", "worker", top, "/", time.Hour, top, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestAPermissionWorksThroughThePersonsOwnSession(t *testing.T) {
 	srv, _ := setup(t)
 	srv.Policy.Grant(auth.Binding{Principal: "ria", Role: auth.RoleReader, Resource: "/"})
 	srv.Policy.Grant(auth.Binding{Principal: "ria", Permission: auth.ActInstall, Resource: "/"})
-	tok, _, err := srv.Tokens.Issue("ria", "ria", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	tok, _, err := srv.Tokens.IssueSession("ria", "ria", auth.RoleReader, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestAPermissionWorksThroughThePersonsOwnSession(t *testing.T) {
 	if w := get(t, srv, "/people", tok); w.Code != http.StatusForbidden {
 		t.Errorf("install-features opened People: %d", w.Code)
 	}
-	capped, _, err := srv.Tokens.Issue("capped", "editor", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	capped, _, err := srv.Tokens.IssueSession("capped", "editor", auth.RoleReader, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestTheDataScreenShowsOnlyTheCollectionsGranted(t *testing.T) {
 	srv.Data = &Data{Tree: func() (string, error) { return tree, nil },
 		Commit: func(next, msg, by string) error { wrote = append(wrote, msg); return nil }}
 	srv.Policy.Grant(auth.Binding{Principal: "tech", Role: auth.RoleAuthor, Resource: auth.DataResource("samples")})
-	tok, _, err := srv.Tokens.Issue("tech", "tech", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	tok, _, err := srv.Tokens.IssueSession("tech", "tech", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}

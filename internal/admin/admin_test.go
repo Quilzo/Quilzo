@@ -64,7 +64,10 @@ func setup(t *testing.T) (*Server, string) {
 		t.Fatal(err)
 	}
 	ts := &auth.TokenStore{}
-	secret, _, err := ts.Issue("test", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	// Signed in as a person is, with a passkey: the admin takes two factors
+	// on every request, and a test not about signing in should not be
+	// stopped at the door.
+	secret, _, err := ts.IssueSession("test", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,6 +83,21 @@ func setup(t *testing.T) (*Server, string) {
 	idx := provenance.NewIndex()
 	srv.LoadProvenance = func() (*provenance.Index, error) { return idx, nil }
 	srv.SaveProvenance = func(i *provenance.Index) error { idx = i; return nil }
+	return srv, secret
+}
+
+// tokenSignIn is setup for a test about signing in with a token, or about
+// holding one: the token is a long-lived one for editor, and the store is
+// in the grace before two factors are compulsory, the one state in which a
+// token alone still reaches the admin.
+func tokenSignIn(t *testing.T) (*Server, string) {
+	t.Helper()
+	srv, _ := setup(t)
+	secret, _, err := srv.Tokens.Issue("cli", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.MFAFrom = time.Now().Add(14 * 24 * time.Hour)
 	return srv, secret
 }
 
@@ -227,8 +245,8 @@ func TestPermissionsAreEnforcedNotJustHidden(t *testing.T) {
 		Principal: "writer", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	secret, _, err := srv.Tokens.Issue("w", "writer", auth.RoleAuthor, "/",
-		time.Hour, auth.RoleAdmin)
+	secret, _, err := srv.Tokens.IssueSession("w", "writer", auth.RoleAuthor, "/",
+		time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,8 +375,8 @@ func TestNewlyIssuedTokensWorkWithoutARestart(t *testing.T) {
 		Principal: "newcomer", Role: auth.RoleReader, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	secret, _, err := srv.Tokens.Issue("late", "newcomer", auth.RoleReader, "/",
-		time.Hour, auth.RoleAdmin)
+	secret, _, err := srv.Tokens.IssueSession("late", "newcomer", auth.RoleReader, "/",
+		time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -736,8 +754,8 @@ func TestThePostureDashboardNeedsAdministrator(t *testing.T) {
 	withPosture(srv, brokenPosture())
 
 	ts := &auth.TokenStore{}
-	secret, _, err := ts.Issue("reader", "kit", auth.RoleReader, "/",
-		time.Hour, auth.RoleAdmin)
+	secret, _, err := ts.IssueSession("reader", "kit", auth.RoleReader, "/",
+		time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}

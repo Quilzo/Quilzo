@@ -29,3 +29,27 @@ func TestAProvisioningTokenAboutToEndIsReported(t *testing.T) {
 		}
 	}
 }
+
+// Somebody without a second factor is reported before the grace ends, more
+// urgently in its last days, and after it as somebody who cannot get in.
+func TestPeopleWithoutASecondFactorAreReported(t *testing.T) {
+	r := ruleByID(t, "mfa.no-second-factor")
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	state := func(from time.Time, who ...string) State {
+		return State{Now: now, SSO: SSOFacts{MFAFrom: from, NoSecondFactor: who}}
+	}
+	if got := r.Check(state(now.AddDate(0, 0, 10))); len(got) != 0 {
+		t.Errorf("nobody without one was reported: %+v", got)
+	}
+	got := r.Check(state(now.AddDate(0, 0, 10), "pat"))
+	if len(got) != 1 || got[0].Severity != Medium || !strings.Contains(got[0].Detail, "become compulsory") {
+		t.Errorf("ten days before: %+v", got)
+	}
+	if got := r.Check(state(now.AddDate(0, 0, 2), "pat")); len(got) != 1 || got[0].Severity != High {
+		t.Errorf("two days before: %+v", got)
+	}
+	if got := r.Check(state(now.AddDate(0, 0, -1), "pat", "lee")); len(got) != 1 || !strings.Contains(got[0].Detail, "cannot sign in") ||
+		!strings.Contains(got[0].Detail, "pat, lee") {
+		t.Errorf("after: %+v", got)
+	}
+}

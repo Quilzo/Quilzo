@@ -167,7 +167,7 @@ func TestAKeptViewFollowsAccessAndAReaderIsNotOfferedAsking(t *testing.T) {
 	srv, _ := setup(t)
 	labData(t, srv)
 	srv.Policy.Grant(auth.Binding{Principal: "ria", Role: auth.RoleReader, Resource: "/"})
-	tok, _, err := srv.Tokens.Issue("ria", "ria", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	tok, _, err := srv.Tokens.IssueSession("ria", "ria", auth.RoleReader, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}

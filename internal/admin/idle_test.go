@@ -53,13 +53,13 @@ func browse(srv *Server, method, path string, c *http.Cookie, headers map[string
 // A sign-in lasts session.max, whatever signed somebody in — and never
 // longer than the credential it came from, which in this test is an hour.
 func TestASignInLastsWhatTheOrganisationSays(t *testing.T) {
-	srv, token := setup(t)
+	srv, token := tokenSignIn(t)
 	withSettings(t, srv, map[string]string{"session.max": "30m"})
 	c := sessionCookie(t, srv, token)
 	if c.MaxAge < 1790 || c.MaxAge > 1800 {
 		t.Fatalf("the cookie lasts %ds, not thirty minutes", c.MaxAge)
 	}
-	srv2, token2 := setup(t)
+	srv2, token2 := tokenSignIn(t)
 	withSettings(t, srv2, map[string]string{"session.max": "8h"})
 	if c := sessionCookie(t, srv2, token2); c.MaxAge > 3600 {
 		t.Fatalf("a session outlived its credential: %ds", c.MaxAge)
@@ -70,7 +70,7 @@ func TestASignInLastsWhatTheOrganisationSays(t *testing.T) {
 // typing, or the page saying so, keeps it; a screen refreshing itself
 // does not.
 func TestASessionNobodyUsesEnds(t *testing.T) {
-	srv, token := setup(t)
+	srv, token := tokenSignIn(t)
 	withSettings(t, srv, map[string]string{"session.idle": "10m"})
 	c := sessionCookie(t, srv, token)
 	person := map[string]string{"Sec-Fetch-Mode": "navigate", "Sec-Fetch-User": "?1"}

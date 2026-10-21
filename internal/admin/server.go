@@ -186,6 +186,10 @@ type Server struct {
 	// code sent by email (SP 800-63B-4 3.1.3.1 forbids email for this).
 	SignInRisk  func(SignInFacts) SignInVerdict
 	Automations *AutomationsAdmin
+	// MFAFrom is when two factors became compulsory for every person here.
+	// Zero, the default, is always: an installation is given a grace only
+	// by setting it, and only before it, is one factor let through.
+	MFAFrom time.Time
 	// SessionPlace says where a request comes from, for binding sessions;
 	// SessionMovedTo puts a session seen elsewhere to the rules; Reported
 	// is a person saying a sign-in was not them; SignInSignal raises one
@@ -678,7 +682,26 @@ type principal struct {
 	// revoke the session it was issued for rather than only forgetting it.
 	TokenID string
 	Session bool
+	// Level is the assurance level the request is made at (auth.Token.Level)
+	// and Methods how its session was signed in to; Bearer says the
+	// credential came in an Authorization header rather than the session
+	// cookie a browser holds. Grace is set while one factor is still let
+	// through, with the date two become compulsory.
+	Level   int
+	Methods []string
+	Bearer  bool
+	Grace   string
 }
+
+// firstFactorOnly is what a session signed in with a token alone is told:
+// a token is one factor, and a person's every request carries two.
+const firstFactorOnly = "You signed in with a token, which is one factor. Confirm it is you with your passkey, " +
+	"or sign in again through single sign-on."
+
+// mfaEnforced reports whether two factors are compulsory now: from
+// MFAFrom, the end of the grace an installation was given when two
+// factors became the rule.
+func (s *Server) mfaEnforced(now time.Time) bool { return !now.Before(s.MFAFrom) }
 
 // authenticate resolves a request to a principal.
 //
@@ -689,6 +712,7 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 	s.refresh()
 	header := r.Header.Get("Authorization")
 	raw := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+	bearer := raw != ""
 	if raw == "" {
 		if c, err := r.Cookie("quilzo_token"); err == nil {
 			raw = c.Value
@@ -706,10 +730,25 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 		}
 		return principal{}, err
 	}
-	return principal{
+	p := principal{
 		Name: tok.Principal, Role: tok.Role, Scope: tok.Resource,
 		Limits: tok.Scope, TokenID: tok.ID, Session: tok.IsSession(), StepUp: tok.StepUp,
-		Bound: tok.Bound}, nil
+		Bound: tok.Bound, Level: tok.Level(), Methods: tok.Methods, Bearer: bearer}
+	// Two factors on every request a person makes (SP 800-63B-4 AAL2), not
+	// only at the sign-in form: a token pasted into the form, or sent in a
+	// header, is one, and the session it makes waits for a passkey as a
+	// held session does. Before MFAFrom it is let through, and told when
+	// that ends.
+	if p.Level < 2 {
+		if s.mfaEnforced(time.Now()) {
+			if p.StepUp == "" {
+				p.StepUp = firstFactorOnly
+			}
+		} else {
+			p.Grace = s.MFAFrom.UTC().Format("2 January 2006")
+		}
+	}
+	return p, nil
 }
 
 // linksTo is the references pointing at a page, in the current draft.
@@ -1978,6 +2017,28 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 			p.StepUp = reason
 		}
 	}
+	// A credential sent in a header is a program's, and a program is not a
+	// person who can confirm anything: refused here outright rather than
+	// sent to a page it cannot use.
+	if p.Bearer && p.Level < 2 && s.mfaEnforced(time.Now()) {
+		http.Error(w, "the admin is for people signed in with two factors, and a token is one. "+
+			"Programs use the command line on this machine, the API or the agent interface",
+			http.StatusUnauthorized)
+		return principal{}, false
+	}
+	// An organisation that requires single sign-on has it on every request,
+	// not only at the sign-in form: a session that did not come through the
+	// identity provider is refused, whichever way it was made.
+	if why := s.ssoRequired(p.Name); why != "" && !hasMethod(p.Methods, auth.MethodSSO) {
+		s.audit("session.refused", "/", map[string]string{"by": p.Name, "session": p.TokenID,
+			"why": "single sign-on is required"})
+		s.clearCookie(w, r, "quilzo_token")
+		w.WriteHeader(http.StatusUnauthorized)
+		s.render(w, r, "signin.html", map[string]any{"Title": "Sign in", "OIDC": s.OIDC != nil,
+			"OIDCLabel": s.oidcLabel(), "SSO": s.ssoChoices(),
+			"Error": "Your organisation requires signing in through " + why + "."})
+		return principal{}, false
+	}
 	// A session waiting to prove its person goes nowhere else first.
 	if p.StepUp != "" && !stepUpOpen(r.URL.Path) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
@@ -1997,6 +2058,15 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 		}
 	}
 	return p, true
+}
+
+func hasMethod(methods []string, m string) bool {
+	for _, x := range methods {
+		if x == m {
+			return true
+		}
+	}
+	return false
 }
 
 // tooManyAttempts answers a throttled request.

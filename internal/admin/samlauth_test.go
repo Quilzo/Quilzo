@@ -403,7 +403,7 @@ func TestAWorkAddressFindsItsProvider(t *testing.T) {
 func TestRequiredSSOClosesTheTokenFrontDoor(t *testing.T) {
 	srv, token := samlServer(t, func(c *saml.Config) { c.Required = true })
 	_ = srv.Policy.Grant(auth.Binding{Principal: "dana.reyes@northwind.example", Role: auth.RoleAdmin, Resource: "/"})
-	secret, _, err := srv.Tokens.Issue("dana-cli", "dana.reyes@northwind.example", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	secret, _, err := srv.Tokens.IssueSession("dana-cli", "dana.reyes@northwind.example", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,7 +427,7 @@ func TestRequiredSSOClosesTheTokenFrontDoor(t *testing.T) {
 	srv2, _ := samlServer(t, func(c *saml.Config) {
 		c.Required, c.BreakGlass = true, []string{"dana.reyes@northwind.example"}
 	})
-	secret2, _, _ := srv2.Tokens.Issue("dana-cli", "dana.reyes@northwind.example", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	secret2, _, _ := srv2.Tokens.IssueSession("dana-cli", "dana.reyes@northwind.example", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	req := httptest.NewRequest("POST", "/signin", strings.NewReader(url.Values{"token": {secret2}}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()

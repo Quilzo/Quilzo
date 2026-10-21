@@ -218,6 +218,9 @@ func cmdServe(root string, args []string) error {
 	go inb.run(inboundCtx)
 	// Sign-ins are judged as they are made, and the rules act on them.
 	srv.SignInRisk = signInRisk(root)
+	// Two factors on every request a person makes, from the date this
+	// installation was given (see mfa.go).
+	srv.MFAFrom = mfaFrom(root, time.Now())
 	srv.SessionPlace, srv.SessionMovedTo, srv.Reported, srv.SignInSignal = sessionHooks(root)
 	srv.Automations = &admin.AutomationsAdmin{
 		Engine:  automationEngineAsync(root),

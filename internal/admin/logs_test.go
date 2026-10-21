@@ -17,8 +17,8 @@ import (
 func logServer(t *testing.T, events []audit.Event, sep bool) (*Server, string) {
 	t.Helper()
 	s, _ := setup(t)
-	tok, _, err := s.Tokens.Issue("a", "dana", auth.RoleAdmin, "/", time.Hour,
-		auth.RoleAdmin)
+	tok, _, err := s.Tokens.IssueSession("a", "dana", auth.RoleAdmin, "/", time.Hour,
+		auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,8 +177,8 @@ func TestNoAccessIsNotAnEmptyLog(t *testing.T) {
 // and is worth reading to plan an attack as well as to investigate one.
 func TestTheLogNeedsAdmin(t *testing.T) {
 	s, _ := logServer(t, realLog(t, 2), true)
-	reader, _, err := s.Tokens.Issue("r", "kit", auth.RoleReader, "/",
-		time.Hour, auth.RoleAdmin)
+	reader, _, err := s.Tokens.IssueSession("r", "kit", auth.RoleReader, "/",
+		time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}

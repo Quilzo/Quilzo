@@ -52,7 +52,7 @@ func proved(t *testing.T, key *ecdsa.PrivateKey, method, url, token string) stri
 func TestABoundTokenNeedsAProofByItsKey(t *testing.T) {
 	r := newIfaceRig(t)
 	key, thumb := programKey(t)
-	secret, tok, err := r.srv.Tokens.Issue("program", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	secret, tok, err := r.srv.Tokens.IssueSession("program", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func exchange(t *testing.T, srv *Server, form url.Values, proof string) *httptes
 // A token is exchanged for a narrower one that lasts minutes, bound to the
 // key that proved when one did; it never widens.
 func TestATokenIsExchangedForANarrowerShortOne(t *testing.T) {
-	srv, token := setup(t)
+	srv, token := tokenSignIn(t)
 	form := url.Values{"grant_type": {grantTokenExchange}, "subject_token": {token},
 		"subject_token_type": {typeAccessToken}, "scope": {"reader"}, "resource": {"/about"}}
 	w := exchange(t, srv, form, "")

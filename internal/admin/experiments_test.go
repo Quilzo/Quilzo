@@ -60,7 +60,7 @@ func TestAGrantOnOnePageCoversATestOnIt(t *testing.T) {
 	pol.Grant(auth.Binding{Principal: "pat", Role: auth.RolePublisher, Resource: "/pricing-b"})
 	pol.Grant(auth.Binding{Principal: "pat", Role: auth.RoleAuthor, Resource: "/"})
 	ts := &auth.TokenStore{}
-	token, _, err := ts.Issue("t", "pat", auth.RolePublisher, "/", time.Hour, auth.RoleAdmin)
+	token, _, err := ts.IssueSession("t", "pat", auth.RolePublisher, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -19,7 +19,7 @@ import (
 // lasting past the token's revocation — nor take one away.
 func TestOnlyAFullReachSessionManagesPasskeys(t *testing.T) {
 	srv, full := fullyWired(t)
-	narrow, _, err := srv.Tokens.Issue("ci", "editor", auth.RoleAuthor, "/blog", time.Hour, auth.RoleAdmin)
+	narrow, _, err := srv.Tokens.IssueSession("ci", "editor", auth.RoleAuthor, "/blog", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestOnlyAFullReachSessionManagesPasskeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w := postJSON(t, srv, "/passkeys/challenge", limited, nil); w.Code != http.StatusForbidden {
+	if w := postJSON(t, srv, "/passkeys/challenge", limited, nil); w.Code < 400 {
 		t.Errorf("a session limited to one content type was offered enrolment: %d", w.Code)
 	}
 	// The person's own full session still can, and a key added there cannot

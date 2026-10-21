@@ -774,6 +774,63 @@ type Token struct {
 	// chose that key. Zero when the parent was bound, whose own key had to
 	// prove the exchange.
 	Inherits int64 `json:"inherits,omitempty"`
+
+	// Methods is how a session was signed in to, in the order the person
+	// proved themselves; AAL is the authentication assurance level that
+	// makes (SP 800-63B-4); AuthAt is when they last proved themselves on
+	// it. Recorded so the rule that a person's every request carries two
+	// factors is checked against what happened, not against which sign-in
+	// form was used.
+	Methods []string `json:"methods,omitempty"`
+	AAL     int      `json:"aal,omitempty"`
+	AuthAt  int64    `json:"auth_at,omitempty"`
+}
+
+// How a session was signed in to.
+const (
+	// MethodPasskey is a passkey that asked for its PIN, fingerprint or
+	// face: something held and something known or are, two factors at
+	// once, and phishing-resistant.
+	MethodPasskey = "passkey"
+	// MethodSSO is a sign-in through the organisation's identity provider.
+	MethodSSO = "sso"
+	// MethodToken is a long-lived token: something held, one factor.
+	MethodToken = "token"
+)
+
+// LevelOf is the assurance level a set of methods reaches: 2 with a
+// passkey, which is two factors on its own, or single sign-on; 1 with a
+// token alone.
+func LevelOf(methods []string) int {
+	for _, m := range methods {
+		if m == MethodPasskey || m == MethodSSO {
+			return 2
+		}
+	}
+	return 1
+}
+
+// Level is the assurance level a request with this token is made at. A
+// long-lived token, and a session that does not say how it began, are one
+// factor.
+func (t Token) Level() int {
+	if !t.IsSession() {
+		return 1
+	}
+	if t.AAL > 0 {
+		return t.AAL
+	}
+	return LevelOf(t.Methods)
+}
+
+// HasMethod reports whether a session was signed in to by method.
+func (t Token) HasMethod(method string) bool {
+	for _, m := range t.Methods {
+		if m == method {
+			return true
+		}
+	}
+	return false
 }
 
 // Assurance is what a copy of this token would be worth to whoever took
@@ -939,14 +996,28 @@ func (ts *TokenStore) IssueScoped(name, principal string, role Role,
 // ago — each sign-in adds one, and a store that only ever grows is a store
 // somebody eventually edits by hand.
 func (ts *TokenStore) IssueSession(name, principal string, role Role,
-	resource string, ttl time.Duration, issuerRole Role) (
+	resource string, ttl time.Duration, issuerRole Role, methods ...string) (
 	secret string, t Token, err error) {
 
 	if ttl > MaxSessionTTL {
 		ttl = MaxSessionTTL
 	}
-	return ts.issue(name, principal, role, resource, ttl, issuerRole, Scope{},
+	secret, t, err = ts.issue(name, principal, role, resource, ttl, issuerRole, Scope{},
 		true)
+	if err != nil || len(methods) == 0 {
+		return secret, t, err
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == t.ID {
+			ts.Tokens[i].Methods = append([]string(nil), methods...)
+			ts.Tokens[i].AAL = LevelOf(methods)
+			ts.Tokens[i].AuthAt = time.Now().Unix()
+			t = ts.Tokens[i]
+		}
+	}
+	return secret, t, nil
 }
 
 // SessionRetention is how long an ended session is kept before it is removed.
@@ -1157,6 +1228,9 @@ func (ts *TokenStore) ExchangeProved(parentSecret string, role Role, resource st
 		// about which one wins.
 		Scope: parent.Scope.Narrow(Scope{}),
 		Key:   thumbprint,
+		// A token is one factor, and a session made from one is too, until
+		// its person proves themselves another way (see Level).
+		Methods: []string{MethodToken}, AAL: 1, AuthAt: now.Unix(),
 	}
 	// A parent bound to no key gives its sessions no more assurance than
 	// it has: exchanging a copied bearer token, with a key of the copier's
