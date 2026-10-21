@@ -1,0 +1,125 @@
+{{/*
+  Add a passkey through a one-time link. Its own document, like the sign-in
+  page, because the person opening it is not signed in and this adds a
+  passkey for them and reaches nothing else. One of the pages whose policy
+  permits a script, by nonce; the ceremony is the Passkeys screen's.
+*/}}
+<!doctype html>
+<html lang="en"{{if .Theme}} data-theme="{{.Theme}}"{{end}}>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<title>Add a passkey — Quilzo</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body class="signin-page">
+<main id="main" class="signin">
+  <section class="signin-panel">
+    <p class="brand">{{template "lockup" .}}</p>
+    <h1>Add a passkey</h1>
+    {{if .Gone}}<p class="notice bad" role="alert">{{.Gone}}.</p>
+    <p>Ask whoever gave it to you for a new one.</p>
+    {{else}}
+    <p class="lead">This link adds a passkey for <strong>{{.Who}}</strong>, once, until {{.Ends}}. It does nothing else, and once the passkey is added you sign in with it.</p>
+    <div class="field"><label for="label">Name for this passkey</label>
+      <input id="label" maxlength="40" placeholder="My laptop"></div>
+    <p class="actions"><button type="button" id="add" data-secret="{{.Secret}}">Add a passkey</button></p>
+    <p id="msg" class="help" role="status"></p>
+    <noscript><p class="notice bad">Passkeys are a feature of your browser that a page reaches with JavaScript, so adding one needs it switched on.</p></noscript>
+    {{end}}
+  </section>
+</main>
+{{if not .Gone}}<script nonce="{{.Nonce}}">
+(function () {
+  "use strict";
+  var button = document.getElementById("add");
+  var label = document.getElementById("label");
+  var message = document.getElementById("msg");
+  var secret = button.getAttribute("data-secret");
+
+  function toBytes(s) {
+    s = s.replace(/-/g, "+").replace(/_/g, "/");
+    while (s.length % 4) { s += "="; }
+    var raw = atob(s), out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) { out[i] = raw.charCodeAt(i); }
+    return out;
+  }
+  function toText(buffer) {
+    var bytes = new Uint8Array(buffer), s = "";
+    for (var i = 0; i < bytes.length; i++) { s += String.fromCharCode(bytes[i]); }
+    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function post(url, body) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(body || {})
+    }).then(function (response) {
+      return response.json().then(function (data) {
+        if (!response.ok) { throw new Error(data.error || "that did not work"); }
+        return data;
+      });
+    });
+  }
+  function say(text) { message.textContent = text; }
+
+  button.addEventListener("click", function () {
+    if (!window.PublicKeyCredential) {
+      say("This browser does not support passkeys.");
+      return;
+    }
+    button.disabled = true;
+    say("Waiting for your device…");
+    var challenge = null;
+    post("/enrol/challenge", { secret: secret }).then(function (start) {
+      challenge = start.challenge;
+      var exclude = (start.exclude || []).map(function (id) {
+        return { type: "public-key", id: toBytes(id) };
+      });
+      return navigator.credentials.create({
+        publicKey: {
+          challenge: toBytes(start.challenge),
+          rp: { id: start.rp.id, name: start.rp.name || "Quilzo" },
+          user: { id: toBytes(start.user.id), name: start.user.name, displayName: start.user.displayName },
+          pubKeyCredParams: [
+            { type: "public-key", alg: -7 },
+            { type: "public-key", alg: -8 },
+            { type: "public-key", alg: -257 }
+          ],
+          authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
+          excludeCredentials: exclude,
+          timeout: 120000,
+          attestation: start.attestation || "none"
+        }
+      });
+    }).then(function (credential) {
+      if (!credential) { throw new Error("no passkey was created"); }
+      var made = credential.response;
+      if (!made.getPublicKey || !made.getPublicKey()) {
+        throw new Error("this browser cannot report the key in a form this server reads. Use a current browser.");
+      }
+      return post("/enrol/register", {
+        secret: secret,
+        id: credential.id,
+        challenge: challenge,
+        label: label.value,
+        clientDataJSON: toText(made.clientDataJSON),
+        authenticatorData: toText(made.getAuthenticatorData()),
+        publicKey: toText(made.getPublicKey()),
+        algorithm: made.getPublicKeyAlgorithm()
+      });
+    }).then(function (done) {
+      say("Added. Sign in with it now.");
+      window.location.assign(done.next || "/signin/passkey");
+    }).catch(function (err) {
+      button.disabled = false;
+      say(err && err.message ? err.message : "that did not work");
+    });
+  });
+})();
+</script>{{end}}
+</body>
+</html>

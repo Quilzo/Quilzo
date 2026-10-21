@@ -56,8 +56,9 @@ func TestEveryScreenIsReachableFromSomewhere(t *testing.T) {
 
 	// The WebAuthn ceremony endpoints, which a script callsrather than a link
 	// or a form reaching. They are the only such endpoints in the program:
-	// passkeys.html and passkeysignin.html are the two pages whose policy
+	// passkeys.html and passkeysignin.html are the pages whose policy
 	// permits a script, by nonce, and these are what that script talks to.
+	// enrol.html is the third, under /enrol/, a subtree needing a secret.
 	//
 	// Written down rather than matched by prefix, so a sixth passkey route
 	// added later is reported rather than excused by a pattern.

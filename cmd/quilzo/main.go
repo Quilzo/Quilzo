@@ -79,7 +79,7 @@ func usage() {
           templates cannot execute anything.
 
 content
-  quilzo init                              create a content store
+  quilzo init [--admin NAME]               create a content store, and its first administrator
   quilzo add NAME=FILE.json [...]          stage pages into a draft
   quilzo add ... --based-on ID --merge     keep both edits unless you collided
   quilzo find WORDS                        a page, screen, setting, type or file
@@ -514,6 +514,7 @@ access
   quilzo boundary show                     what each part holds, and what running two together costs
   quilzo boundary credentials              what collecting each source costs to hold
   quilzo auth revoke WHO [--on PATH]       take a grant back
+  quilzo auth enrol WHO [--for 24h]        a one-time link that adds their passkey (--revoke ends it)
   quilzo auth recover                      break-glass when every admin token is lost
   quilzo auth list | roles
   quilzo token issue NAME --principal WHO  an API credential, shown once
@@ -808,7 +809,10 @@ func main() {
 	var err error
 	switch cmd {
 	case "init":
-		err = cmdInit(root)
+		_, existed := os.Stat(root)
+		if err = cmdInit(root); err == nil {
+			err = initAdmin(root, cmdArgs, existed != nil)
+		}
 	case "add":
 		err = cmdAdd(root, cmdArgs)
 	case "checked":
@@ -1195,20 +1199,24 @@ func splitFlags(args []string, valued map[string]bool) (flags, positional []stri
 }
 
 func cmdInit(root string) error {
+	// main builds the writer; a test calling this first has not.
+	if w == nil {
+		w = out.New(false)
+	}
 	_, existed := os.Stat(root)
 	s, err := open(root)
 	if err != nil {
 		return err
 	}
 	if existed != nil {
-		fmt.Printf("created %s\n", s.Root())
-		fmt.Printf("  %scontent is immutable and addressed by hash; publishing "+
+		w.Human("created %s\n", s.Root())
+		w.Human("  %scontent is immutable and addressed by hash; publishing "+
 			"moves a pointer%s\n", dim, reset)
 		if err := ensureRules(root, "init"); err != nil {
 			return err
 		}
 	} else {
-		fmt.Printf("reusing %s\n", s.Root())
+		w.Human("reusing %s\n", s.Root())
 	}
 	return nil
 }

@@ -9,6 +9,20 @@ Unreleased
 
 ** Added
 
+*** Enrolment links: how somebody gets their first passkey.  `quilzo
+    auth enrol NAME`, or Give a passkey enrolment link beside them on the
+    People screen, makes a one-time link that adds a passkey for that
+    person and does nothing else.  It works once, ends within a day
+    (--for sets less), and is replaced by a newer link for the same
+    person; only its hash is kept, guessing at links is throttled, none
+    works during a lockdown, and giving and using one are recorded.  `quilzo
+    init --admin NAME` makes a new store with its first administrator and
+    prints their link, so a new store has two factors from its first day;
+    an upgraded one keeps its fourteen days.  Links default to
+    http://localhost:8080, because a browser refuses an IP address as the
+    site a passkey belongs to; admin.base_url sets another.  `quilzo
+    serve` says to open a loopback admin as localhost.
+
 *** The demonstration comes back out.  `quilzo demo remove` says what
     taking the Marginalia demonstration out of a store would remove, and
     with --yes removes it: its pages, records, types, listings, forms,

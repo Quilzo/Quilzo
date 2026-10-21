@@ -7,12 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/enrol"
 )
 
 // Managing people, and managing the credentials they hold.
@@ -207,8 +209,9 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(names)
 
 	s.render(w, r, "people.html", map[string]any{
-		"Nav": "people", "Title": "People", "Principal": p, "People": people,
-		"Roles": auth.Roles, "Jobs": auth.Jobs, "Permissions": auth.Permissions, "AppRoles": s.appRoles(),
+		"Nav": "people", "Title": "People", "Principal": p, "People": people, "Enrol": s.Enrol != nil,
+		"Waiting": s.enrolWaiting(now),
+		"Roles":   auth.Roles, "Jobs": auth.Jobs, "Permissions": auth.Permissions, "AppRoles": s.appRoles(),
 		"ActiveWithin": activeWithin.String(),
 		"Known":        names, "Message": r.URL.Query().Get("m"),
 		"Error": r.URL.Query().Get("e"),
@@ -342,6 +345,69 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 var errNoSuchBinding = errors.New("no such binding")
 
 // handlePeopleRevoke removes a binding.
+// handlePeopleEnrol gives somebody a one-time link that adds their passkey
+// (internal/enrol). Shown once, on a page of its own, never put in an
+// address where it would be kept in a history or a log.
+func (s *Server) handlePeopleEnrol(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.postFrom(w, r, auth.ActGrant)
+	if !ok {
+		return
+	}
+	if s.Enrol == nil {
+		s.peopleBack(w, r, "this server was started without enrolment links")
+		return
+	}
+	who := strings.TrimSpace(r.FormValue("principal"))
+	held := false
+	for _, b := range s.Policy.Snapshot() {
+		held = held || (!b.Deny && strings.EqualFold(b.Principal, who))
+	}
+	if who == "" || !held {
+		s.peopleBack(w, r, "a passkey would sign "+who+" in to nothing: grant them something first")
+		return
+	}
+	secret, l, err := s.Enrol.Issue(who, p.Name, enrol.MaxLife, time.Now())
+	if err != nil {
+		s.peopleBack(w, r, err.Error())
+		return
+	}
+	s.audit("enrol.issued", "/", map[string]string{"by": p.Name, "for": who,
+		"expires": l.Expires.Format(time.RFC3339)})
+	scheme := "http://"
+	if r.TLS != nil || s.behindTLSProxy() {
+		scheme = "https://"
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	s.render(w, r, "message.html", map[string]any{"Title": "Enrolment link", "Principal": p, "Nav": "people",
+		"Heading": "A passkey enrolment link for " + who,
+		"Body": "Give " + who + " this, the way you would give a key; it is shown once. Opened before " +
+			l.Expires.UTC().Format("15:04 UTC on 2 January") + ", it adds their passkey and does nothing else: " +
+			scheme + r.Host + enrolStart + secret})
+}
+
+// handlePeopleEnrolRevoke ends the link waiting for somebody, before
+// anybody opens it.
+func (s *Server) handlePeopleEnrolRevoke(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.postFrom(w, r, auth.ActGrant)
+	if !ok {
+		return
+	}
+	if s.Enrol == nil {
+		s.peopleBack(w, r, "this server was started without enrolment links")
+		return
+	}
+	who := strings.TrimSpace(r.FormValue("principal"))
+	gone, err := s.Enrol.Revoke(who, time.Now())
+	if err != nil {
+		s.peopleBack(w, r, err.Error())
+		return
+	}
+	if gone {
+		s.audit("enrol.revoked", "/", map[string]string{"by": p.Name, "for": who})
+	}
+	http.Redirect(w, r, "/people?m="+url.QueryEscape("no enrolment link waits for "+who+" now"), http.StatusSeeOther)
+}
+
 func (s *Server) handlePeopleRevoke(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.postFrom(w, r, auth.ActGrant)
 	if !ok {
@@ -537,4 +603,20 @@ func (s *Server) audit(action, resource string, detail map[string]string) {
 	if s.Audit != nil {
 		s.Audit(action, resource, detail)
 	}
+}
+
+// enrolWaiting is who has an enrolment link waiting, by name.
+func (s *Server) enrolWaiting(now time.Time) map[string]bool {
+	out := map[string]bool{}
+	if s.Enrol == nil {
+		return out
+	}
+	links, err := s.Enrol.Waiting(now)
+	if err != nil {
+		return out
+	}
+	for _, l := range links {
+		out[l.Principal] = true
+	}
+	return out
 }

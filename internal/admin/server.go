@@ -59,6 +59,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/dpop"
+	"github.com/quilzo/quilzo/internal/enrol"
 	"github.com/quilzo/quilzo/internal/federate"
 	"github.com/quilzo/quilzo/internal/fedramp"
 	"github.com/quilzo/quilzo/internal/icons"
@@ -186,6 +187,11 @@ type Server struct {
 	// code sent by email (SP 800-63B-4 3.1.3.1 forbids email for this).
 	SignInRisk  func(SignInFacts) SignInVerdict
 	Automations *AutomationsAdmin
+	// Enrol holds the one-time links that add a person's passkey
+	// (enrolment.go); EnrolBlocked says why links may not be used now,
+	// such as a lockdown in force, or nothing.
+	Enrol        *enrol.Store
+	EnrolBlocked func(now time.Time) string
 	// MFAFrom is when two factors became compulsory for every person here.
 	// Zero, the default, is always: an installation is given a grace only
 	// by setting it, and only before it, is one factor let through.
@@ -1503,6 +1509,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/people", s.handlePeople)
 	mux.HandleFunc("/people/grant", s.handlePeopleGrant)
 	mux.HandleFunc("/people/revoke", s.handlePeopleRevoke)
+	mux.HandleFunc("/people/enrol", s.handlePeopleEnrol)
+	mux.HandleFunc("/people/enrol/revoke", s.handlePeopleEnrolRevoke)
 	mux.HandleFunc("/sessions/revoke", s.handleSessionRevoke)
 	mux.HandleFunc("/provenance", s.handleProvenance)
 	mux.HandleFunc("/provenance/set", s.handleProvenanceSet)
@@ -1519,6 +1527,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/passkeys/challenge", s.handlePasskeyChallenge)
 	mux.HandleFunc("/passkeys/register", s.handlePasskeyRegister)
 	mux.HandleFunc("/passkeys/remove", s.handlePasskeyRemove)
+	mux.HandleFunc("/enrol/", s.handleEnrol)
 	mux.HandleFunc("/signin/passkey", s.handlePasskeySignIn)
 	mux.HandleFunc("/signin/passkey/challenge", s.handlePasskeySignInChallenge)
 	mux.HandleFunc("/signin/passkey/verify", s.handlePasskeyVerify)

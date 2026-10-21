@@ -23,6 +23,7 @@ import (
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/travel"
 	"github.com/quilzo/quilzo/internal/webauthn"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -221,6 +222,8 @@ func cmdServe(root string, args []string) error {
 	// Two factors on every request a person makes, from the date this
 	// installation was given (see mfa.go).
 	srv.MFAFrom = mfaFrom(root, time.Now())
+	// The one-time links that give people their passkeys (enrolcmd.go).
+	srv.Enrol, srv.EnrolBlocked = enrolStore(root), enrolBlocked(root)
 	srv.SessionPlace, srv.SessionMovedTo, srv.Reported, srv.SignInSignal = sessionHooks(root)
 	srv.Automations = &admin.AutomationsAdmin{
 		Engine:  automationEngineAsync(root),
@@ -1379,21 +1382,16 @@ func cmdServe(root string, args []string) error {
 			sh.guard.Wrap(shield.Admin, srv.Handler()))}
 
 	fmt.Printf("admin on http://%s\n", *addr)
-	// Both commands. A token names the role it may act up to; a binding is
-	// what grants one. Naming only the token -- which this line did -- sends
-	// somebody to a sign-in that works and then refuses them on every screen,
-	// which reads as a broken admin rather than a missing step.
-	//
-	// Grant first, because then the token is issued to a principal who already
-	// holds a role and there is no second step to forget. It works because
-	// issuing is permitted while no token exists and the principal is already
-	// in the policy, which is the bootstrap in privilege.go.
-	fmt.Printf("  %ssign in: quilzo auth grant you admin%s\n", dim, reset)
-	fmt.Printf("  %s         quilzo token issue you --principal you --role admin%s\n",
-		dim, reset)
-	if len(toks.Tokens) == 0 {
-		fmt.Printf("  %sno tokens exist yet, so nobody can sign in%s\n", yellow, reset)
+	// A passkey belongs to a name, and a browser refuses an address as one,
+	// so the loopback default is opened as localhost.
+	if host, port, err := net.SplitHostPort(*addr); err == nil && (host == "127.0.0.1" || host == "::1") {
+		fmt.Printf("  %sopen it as http://localhost:%s: passkeys need a name, not an address%s\n", dim, port, reset)
 	}
+	// People sign in with a passkey, two factors at once; somebody without
+	// one is given a link that adds it. A token alone is one factor and
+	// reaches only "Confirm it's you" (see mfa.go).
+	fmt.Printf("  %ssign in with a passkey; somebody without one gets a link that adds it:%s\n", dim, reset)
+	fmt.Printf("  %s    quilzo auth enrol NAME   (on a new store, quilzo init --admin NAME)%s\n", dim, reset)
 	if *openBrowser {
 		// After the address is printed and before the listener blocks. A
 		// browser that arrives a moment early retries; one that never opens

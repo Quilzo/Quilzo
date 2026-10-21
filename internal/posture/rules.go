@@ -658,7 +658,7 @@ var rules = []Rule{
 			return []Finding{{Resource: "people/second-factor",
 				Detail: fmt.Sprintf("%d %s no passkey or single sign-on, so cannot sign in to the admin: %s",
 					len(s.SSO.NoSecondFactor), plural(len(s.SSO.NoSecondFactor), "person has", "people have"), who),
-				Fix: "sign them in through single sign-on, or give them a passkey enrolment link"}}
+				Fix: "quilzo auth enrol NAME  # a one-time link that adds their passkey"}}
 		},
 	},
 	{

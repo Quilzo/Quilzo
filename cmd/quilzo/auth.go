@@ -149,6 +149,8 @@ func cmdAuth(root string, args []string) error {
 		return authList(root)
 	case "recover":
 		return cmdRecover(root, args[1:])
+	case "enrol", "enroll":
+		return authEnrol(root, args[1:])
 	case "explain":
 		return authExplain(root, args[1:])
 	case "roles":
@@ -166,6 +168,7 @@ func authUsage() error {
   deny <principal> <role|permission> [--on /path] [--note "..."]
   revoke <principal> <role|permission|job|APP/ROLE> [--on /path]
   list
+  enrol <principal> [--for 24h] [--revoke]   a one-time link that adds their passkey
   explain <principal> <action> [--on /path]
   roles
 
