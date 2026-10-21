@@ -570,6 +570,10 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		webauthn.Assertion
 		Challenge string `json:"challenge"`
+		// Expect names whose page this sign-in is made from, when it is made
+		// in place after an idle sign-out: whatever that page holds is theirs,
+		// and only they carry on with it.
+		Expect string `json:"expect"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeJSONError(w, http.StatusBadRequest, err)
@@ -664,6 +668,11 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 				"quilzo auth grant %s author", cred.Principal, cred.Principal))
 		return
 	}
+	if body.Expect != "" && !strings.EqualFold(body.Expect, cred.Principal) {
+		writeJSONError(w, http.StatusConflict, fmt.Errorf(
+			"that passkey is somebody else's, and this page is %s's. Sign in from the sign-in page", body.Expect))
+		return
+	}
 
 	// Proving a stepped-up session's person: the same person, by passkey,
 	// from a session marked as having to. That session is replaced by this
@@ -731,15 +740,17 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// The count starts again from a place now familiar, and the person is
-	// told what came before, if anything did.
-	next = s.lockoutSucceed(r, cred.Principal, next)
+	// told what came before, if anything did: on the page they land on, or
+	// in place by a page that signed in without leaving.
+	notice := s.lockoutNotice(r, cred.Principal)
+	next = s.withNotice(next, notice)
 
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: secret, Path: "/",
 		HttpOnly: true, SameSite: http.SameSiteStrictMode,
 		Secure: r.TLS != nil || s.behindTLSProxy(), MaxAge: int(s.sessionMax().Seconds()),
 	})
-	writeJSON(w, map[string]any{"ok": true, "next": next})
+	writeJSON(w, map[string]any{"ok": true, "next": next, "notice": notice})
 }
 
 // handlePasskeyRemove deletes one of the caller's own keys.

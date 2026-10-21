@@ -156,7 +156,7 @@ func TestADeclarationIsAFloorUnderItsSetting(t *testing.T) {
 	// Below the floor by hand: Unmet says so, and Enforce says what to set.
 	unmet := config.New().WithFloors(Floors(pol))
 	if len(unmet.Unmet()) == 0 {
-		t.Fatal("defaults below the policy (idle 0) are not unmet")
+		t.Fatal("defaults below the policy (idle an hour, declared thirty minutes) are not unmet")
 	}
 	for _, d := range pol.Declared {
 		for k, v := range Enforce(unmet, d) {

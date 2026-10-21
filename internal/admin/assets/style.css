@@ -2836,6 +2836,8 @@ dialog.idle-warn { max-width: 26rem; padding: 24px; border: 0; border-radius: va
 dialog.idle-warn::backdrop { background: color-mix(in srgb, var(--scrim, #000) 32%, transparent); }
 dialog.idle-warn h2 { margin: 0 0 8px; }
 dialog.idle-warn p { margin: 0 0 20px; }
+dialog.idle-warn p[role="status"]:empty { display: none; }
+dialog.idle-warn .btn-text { margin-left: 12px; }
 
 /* The organisation's policy: a label before each value, and a form that
    stacks rather than spreading across the card. */

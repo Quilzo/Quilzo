@@ -149,9 +149,10 @@ func TestAValueThatDoesNotParseIsRefused(t *testing.T) {
 	}
 }
 
-// The throttle's numbers have bounds no reason steps outside: past them the
-// limit stops being one, which no circumstance makes right.
-func TestAThrottleValueOutsideItsBoundsIsRefusedWhateverTheReason(t *testing.T) {
+// The throttle's numbers and the idle sign-out have bounds no reason steps
+// outside: past them the limit stops being one, which no circumstance makes
+// right.
+func TestAValueOutsideItsBoundsIsRefusedWhateverTheReason(t *testing.T) {
 	c := fresh()
 	for _, tc := range [][2]string{
 		{"auth.throttle.after", "11"},
@@ -161,6 +162,9 @@ func TestAThrottleValueOutsideItsBoundsIsRefusedWhateverTheReason(t *testing.T) 
 		{"auth.throttle.max", "2h"},
 		{"auth.lockout.alert", "0"},
 		{"auth.lockout.alert", "50"},
+		{"session.idle", "0s"},
+		{"session.idle", "2h"},
+		{"session.idle", "1m"},
 	} {
 		var out *ErrOutOfBounds
 		if err := c.Set(tc[0], tc[1], "a penetration test", "dana"); !errors.As(err, &out) {
@@ -190,6 +194,10 @@ func TestAFileWithARetiredOrOutOfBoundsValueLoadsWithoutIt(t *testing.T) {
 	}
 	if c.Dur("auth.throttle.max") != 15*time.Minute || c.Int("api.rate.burst") != 40 {
 		t.Errorf("max %s, burst %d", c.Dur("auth.throttle.max"), c.Int("api.rate.burst"))
+	}
+	if never, err := Parse([]byte(`{"values":{"session.idle":"0s"}}`)); err != nil || len(never.Dropped()) != 1 ||
+		never.Dur("session.idle") != time.Hour {
+		t.Errorf("an idle sign-out that was off: %v", err)
 	}
 	body, _ := c.Bytes()
 	for _, gone := range []string{"auth.throttle\"", "auth.lockout.hard", "6h"} {
@@ -258,6 +266,7 @@ func TestTheDefaultsAreTheOnesWeMeanToShip(t *testing.T) {
 		{"auth.throttle.after", "5"},     // ASVS 5.0 alerting threshold
 		{"auth.throttle.ceiling", "100"}, // ASVS 5.0 hourly ceiling
 		{"auth.lockout.alert", "5"},      // ASVS 5.0: more than five deserves a reaction
+		{"session.idle", "1h"},           // NIST SP 800-63B-4 AAL2's inactivity limit
 		{"publish.require_a11y", "true"},
 		{"publish.require_types", "true"},
 		{"site.csp.mode", "enforce"},

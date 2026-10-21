@@ -38,6 +38,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/config"
 )
 
@@ -120,7 +121,7 @@ var Params = []Param{
 		Means: "the delay doubles from auth.throttle.base to auth.throttle.max, and nothing is accepted past auth.throttle.ceiling failures in an hour"},
 	{ID: "ac-02.05_odp", Control: "AC-2(5)", Label: "time period of expected inactivity or description of when to log out",
 		Kind: Period, How: Set, Setting: "session.idle", Stricter: "lower",
-		Means: "the admin signs a person out after this long with nobody using the page"},
+		Means: "the admin signs a person out after this long with nobody using the page, and after fifteen minutes at most anybody who can grant access"},
 	{ID: "ac-12_odp", Control: "AC-12", Label: "conditions or trigger events", Kind: Period, How: Set,
 		Setting: "session.max", Stricter: "lower",
 		Means: "a sign-in to the admin ends after this long, and sooner on signing out or when its credential is revoked"},
@@ -380,16 +381,10 @@ func Effective(p Param, cfg *config.Config) string {
 			"after %d failures in an hour nothing is accepted until the hour passes",
 			cfg.Dur("auth.throttle.base"), cfg.Dur("auth.throttle.max"), cfg.Int("auth.throttle.ceiling"))
 	case "ac-02.05_odp":
-		if d := cfg.Dur("session.idle"); d > 0 {
-			return Words(d) + " of inactivity"
-		}
-		return "never: no inactivity sign-out is set"
+		return idleWords(cfg)
 	case "ac-12_odp":
-		s := Words(cfg.Dur("session.max")) + " after signing in; on signing out; when the credential that started it is revoked"
-		if d := cfg.Dur("session.idle"); d > 0 {
-			s += "; after " + Words(d) + " of inactivity"
-		}
-		return s
+		return Words(cfg.Dur("session.max")) + " after signing in; on signing out; when the credential that started " +
+			"it is revoked; after " + idleWords(cfg)
 	case "ia-05_odp.01":
 		return "API tokens: at most " + Words(cfg.Dur("token.ttl.max")) + "; sign-in sessions: at most " +
 			Words(cfg.Dur("session.max")) + "; passkeys: replaced when lost or compromised"
@@ -416,4 +411,14 @@ func Met(d Declared, cfg *config.Config) bool {
 		}
 	}
 	return true
+}
+
+// idleWords is the inactivity sign-out in words: session.idle, and less for
+// anybody who can grant access when that is shorter.
+func idleWords(cfg *config.Config) string {
+	d := cfg.Dur("session.idle")
+	if d <= auth.PrivilegedIdle {
+		return Words(d) + " of inactivity"
+	}
+	return Words(d) + " of inactivity, " + Words(auth.PrivilegedIdle) + " for anybody who can grant access"
 }

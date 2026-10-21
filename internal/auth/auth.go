@@ -876,6 +876,12 @@ func (t *Token) IsSession() bool { return t.Parent != "" || t.Session }
 // working day is not doing the job a session exists for.
 const MaxSessionTTL = 12 * time.Hour
 
+// PrivilegedIdle is the longest anybody who can grant access may leave the
+// admin unused, whatever session.idle allows everybody else: NIST SP
+// 800-63B-4's inactivity limit at AAL3, because who can grant access can
+// make anybody anything.
+const PrivilegedIdle = 15 * time.Minute
+
 // DefaultSessionTTL is what you get without asking. Short enough that a leaked
 // session is usually expired before anyone finds it, long enough to run a CI
 // job without re-exchanging mid-flight.

@@ -73,15 +73,28 @@ func (s *Server) lockoutFail(r *http.Request, name string) {
 // lockoutSucceed records a sign-in that worked, and returns where to send
 // the person, told how many failures came before it when there were any.
 func (s *Server) lockoutSucceed(r *http.Request, name, next string) string {
+	return s.withNotice(next, s.lockoutNotice(r, name))
+}
+
+// lockoutNotice records a sign-in that worked, and is what to tell the
+// person about the failures that came before it, if any did.
+func (s *Server) lockoutNotice(r *http.Request, name string) string {
 	if s.Lockout == nil {
-		return next
+		return ""
 	}
 	since, err := s.Lockout.Succeed(name, sourceOf(r), time.Now())
 	if err != nil || since == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d failed %s on your account since you last signed in. If those were not you, tell your "+
+		"security team.", since, map[bool]string{true: "sign-in", false: "sign-ins"}[since == 1])
+}
+
+// withNotice is next, saying msg when there is one.
+func (s *Server) withNotice(next, msg string) string {
+	if msg == "" {
 		return next
 	}
-	msg := fmt.Sprintf("%d failed %s on your account since you last signed in. If those were not you, tell your "+
-		"security team.", since, map[bool]string{true: "sign-in", false: "sign-ins"}[since == 1])
 	sep := "?"
 	if strings.Contains(next, "?") {
 		sep = "&"

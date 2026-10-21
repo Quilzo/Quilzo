@@ -264,15 +264,33 @@ func (s *Server) sessionMax() time.Duration {
 	return DefaultSessionTTL
 }
 
+// DefaultIdle is session.idle's default, for a server with no settings.
+const DefaultIdle = time.Hour
+
 // sessionIdle is how long the admin may go unused before a session ends
-// (session.idle); zero is never.
+// (session.idle).
 func (s *Server) sessionIdle() time.Duration {
 	if s.Settings != nil && s.Settings.Load != nil {
 		if cfg, err := s.Settings.Load(); err == nil && cfg != nil {
-			return cfg.Dur("session.idle")
+			if d := cfg.Dur("session.idle"); d > 0 {
+				return d
+			}
 		}
 	}
-	return 0
+	return DefaultIdle
+}
+
+// idleFor is how long name may leave the admin unused: session.idle, and
+// no more than auth.PrivilegedIdle for anybody who can grant access
+// anywhere.
+func (s *Server) idleFor(name string) time.Duration {
+	idle := s.sessionIdle()
+	if idle > auth.PrivilegedIdle && s.Policy != nil {
+		if need, _ := auth.Needs(auth.ActGrant); s.Policy.Highest(name).AtLeast(need) {
+			return auth.PrivilegedIdle
+		}
+	}
+	return idle
 }
 
 // settingGroupLabel names a settings group in words.
