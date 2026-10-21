@@ -59,6 +59,8 @@
 {{range .People}}
 <section class="person">
   <h3>{{.Name}}{{if .IsSelf}} <span class="tag">you</span>{{end}}</h3>
+  {{if and $.Enrol (not .IsSelf)}}<form method="post" action="/people/enrol" class="inline"><input type="hidden" name="principal" value="{{.Name}}"><button type="submit" class="btn-text">Give a passkey enrolment link</button></form>
+  {{if index $.Waiting .Name}}<form method="post" action="/people/enrol/revoke" class="inline"><input type="hidden" name="principal" value="{{.Name}}"><button type="submit" class="btn-text">End their waiting enrolment link</button></form>{{end}}{{end}}
   <p class="hint">
     {{if .LastSeen.IsZero}}has never used a credential
     {{else}}last seen {{.LastSeen.Format "2 Jan 2006, 15:04"}}{{end}}

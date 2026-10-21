@@ -1081,6 +1081,11 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 		// decisions back to a range.
 		// Takes away an agent's program; it then runs only by walking its
 		// manifest or with a model.
+		"auth enrol.revoke": {
+			GUI: "/people",
+			NoMCP: "an enrolment link adds a passkey, a way in as a person; a model giving or " +
+				"ending one is a model deciding who may sign in",
+		},
 		"agent program.remove": {
 			GUI: "/agents",
 			NoMCP: "what runs as an agent, with a run's reach, is an " +
