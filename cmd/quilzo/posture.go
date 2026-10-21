@@ -21,6 +21,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auditstream"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/frameworks"
 	"github.com/quilzo/quilzo/internal/memory"
@@ -83,6 +84,11 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 		s.SSO.MFAFrom = from
 	}
 	s.SSO.NoSecondFactor = withoutSecondFactor(root)
+	if mustConfig(root).Raw("siem.stream.url") != "" {
+		var c auditstream.Cursor
+		_ = loadJSON(streamCursorPath(root), &c)
+		s.Stream = posture.StreamFacts{Set: true, Sent: c.Sent, Failures: c.Failures, Since: c.Since, Error: c.Error}
+	}
 
 	// The agent interface: whether it answers, which apps may connect, and
 	// which connections hold administrator scope.

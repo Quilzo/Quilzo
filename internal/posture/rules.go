@@ -629,6 +629,29 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "siem.stream-failing",
+		Title:    "The audit log is not reaching the SIEM",
+		Severity: Medium,
+		Controls: []string{"AU-4(1)", "AU-5", "AU-9(2)"},
+		OWASP:    "A09:2025 Logging and Alerting Failures",
+		Why: "The stream keeps the audit log where Quilzo cannot reach it. While " +
+			"it fails, records pile up here, and a person who takes the store " +
+			"over in that time can take the record of it too.",
+		Check: func(s State) []Finding {
+			if !s.Stream.Set || s.Stream.Failures == 0 || s.Now.Sub(s.Stream.Since) < time.Hour {
+				return nil
+			}
+			sev := Medium
+			if s.Now.Sub(s.Stream.Since) > 24*time.Hour {
+				sev = High
+			}
+			return []Finding{{Severity: sev, Resource: "siem/stream",
+				Detail: fmt.Sprintf("sending has failed since %s, %d tries, after record %d: %s",
+					s.Stream.Since.UTC().Format("15:04 2 Jan"), s.Stream.Failures, s.Stream.Sent, s.Stream.Error),
+				Fix: "quilzo siem stream status, then check the receiver; nothing is lost while it fails"}}
+		},
+	},
+	{
 		ID:       "mfa.no-second-factor",
 		Title:    "Somebody with access has no second factor",
 		Severity: High,
