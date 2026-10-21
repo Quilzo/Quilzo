@@ -13,8 +13,8 @@ import (
 // throttle.Snapshot and Limiter.State were written "for `quilzo auth
 // throttled`", which does not exist — and could not, as written: the counters
 // live in the memory of the process holding the limiter, and the command line
-// is a different process. So auth.lockout.hard could be switched on and its
-// consequences were unobservable on every surface.
+// is a different process. So the throttle's consequences were unobservable on
+// every surface.
 func TestTheSecurityScreenShowsWhoIsBeingSlowedDown(t *testing.T) {
 	s := &Server{}
 	if got := s.throttled(); got != nil {

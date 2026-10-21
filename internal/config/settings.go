@@ -5,13 +5,15 @@ package config
 
 import (
 	"fmt"
-	"github.com/quilzo/quilzo/internal/clientip"
 	"net"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/clientip"
+	"github.com/quilzo/quilzo/internal/throttle"
 )
 
 // Every setting, in one table.
@@ -29,19 +31,10 @@ import (
 // real users out by failing their logins for them. Both are written out.
 var settings = []Setting{
 	// -- authentication throttling -------------------------------------------
-	{
-		Key: "auth.throttle", Kind: Bool, Default: "true",
-		Summary:  "slow down repeated authentication failures",
-		Params:   []string{"ac-07_odp.03"},
-		Controls: []string{"IA-5", "AC-7"},
-		OWASP:    "A07:2025 Authentication Failures",
-		Why: "NIST SP 800-63B-4 says a verifier SHALL rate-limit failed " +
-			"authentication attempts, and it is the single control that " +
-			"turns a guessable credential from a certainty into a cost. " +
-			"Turning it off means an attacker gets unlimited attempts at " +
-			"every token in the store.",
-		Weaker: offIsWeaker("failed authentication attempts become unlimited"),
-	},
+	//
+	// Always on, and each number held between hard bounds (internal/throttle):
+	// a value outside them is refused, and no reason accepts it, because a
+	// limit that can be raised far enough is no limit at all.
 	{
 		Key: "auth.throttle.after", Kind: Int, Default: "5",
 		Summary:  "failures before delays begin",
@@ -50,9 +43,8 @@ var settings = []Setting{
 		Why: "ASVS 5.0 asks that more than five failures in an hour on one " +
 			"account triggers a reaction. Five is that number. Raising it " +
 			"buys tolerance for people who mistype, at the cost of giving an " +
-			"attacker that many free attempts per window.",
-		Weaker: atMost(10, "an attacker gets %s free attempts before anything "+
-			"slows them down; NIST suggests no more than 10"),
+			"attacker that many free attempts per window; NIST suggests no " +
+			"more than 10, which is the most this accepts.",
 	},
 	{
 		Key: "auth.throttle.ceiling", Kind: Int, Default: "100",
@@ -60,10 +52,10 @@ var settings = []Setting{
 		Params:   []string{"ac-07_odp.05"},
 		Controls: []string{"AC-7", "IA-5"},
 		Why: "ASVS 5.0 puts the ceiling at 100 failed attempts per hour on a " +
-			"single account. Past this the account stops answering for the " +
-			"rest of the window however long the caller waits.",
-		Weaker: atMost(100, "%s failures an hour is above the 100 ASVS 5.0 "+
-			"allows, which is enough attempts to matter against a weak secret"),
+			"single account, which is the most this accepts. Past it the " +
+			"account stops answering for the rest of the window however long " +
+			"the caller waits. At least 10, because a ceiling a handful of " +
+			"attempts reaches lets anybody keep a name's owner out for an hour.",
 	},
 	{
 		Key: "auth.throttle.base", Kind: Duration, Default: "1s",
@@ -72,39 +64,19 @@ var settings = []Setting{
 		Why: "The delay doubles: 1s, 2s, 4s, and so on to the maximum. A " +
 			"person who mistyped waits a second; a script trying a dictionary " +
 			"is stopped by the same rule without anybody deciding it is an " +
-			"attack.",
-		Weaker: atLeastDur(time.Second, "a first delay of %s is short enough "+
-			"that an attacker barely notices it"),
+			"attack. At least a second, below which an attacker barely " +
+			"notices it.",
 	},
 	{
 		Key: "auth.throttle.max", Kind: Duration, Default: "15m",
-		Summary:  "the longest a soft lockout lasts",
+		Summary:  "the longest a delay grows to",
 		Params:   []string{"ac-07_odp.05"},
 		Controls: []string{"AC-7"},
 		Why: "The delay stops doubling here. This is deliberately not very " +
 			"long, because the delay is a cost imposed on whoever is failing " +
-			"and an attacker can be failing on somebody else's behalf.",
-		Weaker: atMostDur(time.Hour, "a %s soft lockout is long enough to be "+
-			"worth triggering deliberately: an attacker who can fail your "+
-			"logins for you can keep you out for that long"),
-	},
-	{
-		Key: "auth.lockout.hard", Kind: Bool, Default: "false",
-		Summary:  "lock an account outright instead of slowing it down",
-		Params:   []string{"ac-07_odp.03"},
-		Controls: []string{"AC-7"},
-		OWASP:    "A07:2025 Authentication Failures",
-		Why: "Off by default, and this is a considered choice rather than a " +
-			"weaker one. ASVS 5.0 requires documenting how a design prevents " +
-			"malicious account lockout, and a hard lockout is the mechanism " +
-			"that makes it possible: anyone who knows a principal's name can " +
-			"lock them out by failing authentication on their behalf. The " +
-			"soft lockout above costs an attacker the same time and cannot be " +
-			"aimed at somebody else. Some compliance regimes ask for a hard " +
-			"lockout by name, which is why it is here.",
-		// Deliberately not marked weaker. It is a real trade rather than a
-		// reduction, and the audit finding it deserves belongs in the posture
-		// scan where the DoS consequence can be explained in full.
+			"and an attacker can be failing on somebody else's behalf. At " +
+			"most an hour: longer is worth triggering deliberately, to keep " +
+			"somebody out.",
 	},
 	{
 		Key: "auth.lockout.alert", Kind: Int, Default: "5",
@@ -113,10 +85,9 @@ var settings = []Setting{
 		Controls: []string{"AU-6", "SI-4"},
 		Why: "ASVS 5.0: more than five failures per hour on one account " +
 			"should trigger some reaction. Here the reaction is an audit " +
-			"record a SIEM rule can match, because this program does not send " +
-			"email and pretending otherwise would be worse.",
-		Weaker: atMost(20, "at %s failures an hour, a slow credential-stuffing "+
-			"run stays under the alert and is never reported"),
+			"record a SIEM rule can match. Between 1 and 20: above that, a " +
+			"slow credential-stuffing run stays under the alert and is never " +
+			"reported.",
 	},
 
 	// -- content -------------------------------------------------------------
@@ -1288,6 +1259,50 @@ func All() []Setting { return append([]Setting(nil), settings...) }
 // the operator believes the first.
 var reBrandColour = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
 
+// hardBounds are the settings held between bounds no reason steps outside:
+// a count, or a duration in nanoseconds.
+var hardBounds = map[string][2]int64{
+	"auth.throttle.after":   {0, throttle.MostFree},
+	"auth.throttle.ceiling": {throttle.LeastCeiling, throttle.MostCeiling},
+	"auth.throttle.base":    {int64(throttle.LeastDelay), int64(throttle.LongestDelay)},
+	"auth.throttle.max":     {int64(throttle.LeastDelay), int64(throttle.LongestDelay)},
+	"auth.lockout.alert":    {1, throttle.LatestAlert},
+}
+
+// ErrOutOfBounds is a value outside a setting's hard bounds.
+type ErrOutOfBounds struct {
+	Key, Value, Least, Most string
+}
+
+func (e *ErrOutOfBounds) Error() string {
+	return fmt.Sprintf("%s is outside its bounds, %s to %s", e.Value, e.Least, e.Most)
+}
+
+// shortDuration writes a duration as a person would: 1h, not 1h0m0s.
+func shortDuration(d time.Duration) string {
+	s := d.String()
+	if strings.HasSuffix(s, "m0s") {
+		s = strings.TrimSuffix(s, "0s")
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
+	}
+	return s
+}
+
+func (s Setting) bounds(n int64) error {
+	b, ok := hardBounds[s.Key]
+	if !ok || (n >= b[0] && n <= b[1]) {
+		return nil
+	}
+	if s.Kind == Duration {
+		return &ErrOutOfBounds{Key: s.Key, Value: shortDuration(time.Duration(n)),
+			Least: shortDuration(time.Duration(b[0])), Most: shortDuration(time.Duration(b[1]))}
+	}
+	return &ErrOutOfBounds{Key: s.Key, Value: strconv.FormatInt(n, 10),
+		Least: strconv.FormatInt(b[0], 10), Most: strconv.FormatInt(b[1], 10)}
+}
+
 // Validate checks a value against a setting's kind.
 func (s Setting) Validate(v string) error {
 	switch s.Kind {
@@ -1299,6 +1314,9 @@ func (s Setting) Validate(v string) error {
 		if n < 0 {
 			return fmt.Errorf("%d is negative", n)
 		}
+		if err := s.bounds(int64(n)); err != nil {
+			return err
+		}
 	case Duration:
 		d, err := time.ParseDuration(v)
 		if err != nil {
@@ -1306,6 +1324,9 @@ func (s Setting) Validate(v string) error {
 		}
 		if d < 0 {
 			return fmt.Errorf("%s is negative", d)
+		}
+		if err := s.bounds(int64(d)); err != nil {
+			return err
 		}
 		if s.Key == "session.max" && (d < 5*time.Minute || d > 12*time.Hour) {
 			return fmt.Errorf("a sign-in lasts between 5m and 12h; %s is outside that", d)

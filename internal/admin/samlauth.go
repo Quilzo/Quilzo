@@ -373,6 +373,7 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, ho
 		return
 	}
 	s.signInDone(r, tok.ID)
+	next := s.lockoutProven(r, principal, startPath(r))
 	before()
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: secret, Path: "/", HttpOnly: true,
@@ -388,7 +389,7 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, ho
 		http.Redirect(w, r, "/signin/verify", http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, startPath(r), http.StatusSeeOther)
+	http.Redirect(w, r, next, http.StatusSeeOther)
 }
 
 // suspended reports whether somebody is suspended: a live deny of the

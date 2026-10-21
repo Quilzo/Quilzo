@@ -20,10 +20,15 @@
 // attacker must know who you are", which is a downgrade wearing the costume of
 // a control.
 //
-// So the default is a soft lockout: the delay doubles with each failure and
-// decays with time. It costs an attacker exactly what a hard lockout costs
-// them, and costs the victim a wait rather than an outage. Hard lockout exists
-// because some compliance regimes name it, and it is off unless asked for.
+// So this is a soft lockout: the delay doubles with each failure and decays
+// with time. It costs an attacker exactly what a hard lockout costs them, and
+// costs the victim a wait rather than an outage. Where a person's account does
+// need locking, internal/lockout locks the places the failures come from out
+// of it, and leaves the person's own places working.
+//
+// It cannot be switched off, and its numbers are held between bounds whatever
+// the configuration says (Bounded): a limit somebody can raise to a million is
+// not a limit.
 //
 // Two other things this must not do:
 //
@@ -51,8 +56,6 @@ import (
 
 // Policy is the configuration, already resolved from config settings.
 type Policy struct {
-	// On is the whole mechanism. Off means every attempt is allowed through.
-	On bool
 	// After is how many failures are free before delays begin.
 	After int
 	// Ceiling is failures per Window after which nothing is accepted for the
@@ -63,10 +66,6 @@ type Policy struct {
 	Max  time.Duration
 	// Window is how long failures are remembered. Older ones decay.
 	Window time.Duration
-	// Hard turns the soft lockout into a real one: past Ceiling the subject
-	// stays locked until Window elapses with no further attempts, rather than
-	// until the delay expires.
-	Hard bool
 	// Alert is the failure count in a Window that deserves a record somebody
 	// will look at.
 	Alert int
@@ -77,10 +76,52 @@ type Policy struct {
 // a test can state the numbers it expects.
 func Default() Policy {
 	return Policy{
-		On: true, After: 5, Ceiling: 100,
+		After: 5, Ceiling: 100,
 		Base: time.Second, Max: 15 * time.Minute,
-		Window: time.Hour, Hard: false, Alert: 5,
+		Window: time.Hour, Alert: 5,
 	}
+}
+
+// The bounds a policy is held to. The configuration refuses a value outside
+// them, and New holds a policy built any other way to them too, except
+// LeastCeiling, which only the configuration enforces: a policy derived from
+// the configured one may be stricter than a person could be (a share takes
+// half a form's ceiling).
+const (
+	// MostFree is the most failures that may be free: NIST SP 800-63B-4
+	// suggests no more than 10.
+	MostFree = 10
+	// LeastCeiling and MostCeiling bound the failures in a window after
+	// which nothing is accepted. ASVS 5.0 allows at most 100 an hour; fewer
+	// than 10 would let anybody who knows a name keep its owner out for an
+	// hour with a handful of attempts.
+	LeastCeiling = 10
+	MostCeiling  = 100
+	// LeastDelay is the shortest first delay, below which an attacker does
+	// not notice it.
+	LeastDelay = time.Second
+	// LongestDelay is the longest a delay may grow to: any longer is worth
+	// triggering deliberately, to keep somebody else out.
+	LongestDelay = time.Hour
+	// LatestAlert is the most failures in a window before one is reported;
+	// a slow run under it would never be.
+	LatestAlert = 20
+)
+
+// Bounded is the policy held to the bounds.
+func (p Policy) Bounded() Policy {
+	if p.Window <= 0 {
+		p.Window = time.Hour
+	}
+	p.After = max(0, min(p.After, MostFree))
+	p.Ceiling = max(1, min(p.Ceiling, MostCeiling))
+	p.Base = max(LeastDelay, min(p.Base, LongestDelay))
+	if p.Max <= 0 {
+		p.Max = 15 * time.Minute
+	}
+	p.Max = max(p.Base, min(p.Max, LongestDelay))
+	p.Alert = max(1, min(p.Alert, LatestAlert))
+	return p
 }
 
 // Subject is who or what is being throttled.
@@ -123,15 +164,7 @@ type record struct {
 
 // New returns a limiter.
 func New(p Policy) *Limiter {
-	if p.Window <= 0 {
-		p.Window = time.Hour
-	}
-	if p.Base <= 0 {
-		p.Base = time.Second
-	}
-	if p.Max <= 0 {
-		p.Max = 15 * time.Minute
-	}
+	p = p.Bounded()
 	key := make([]byte, 32)
 	// A per-process key. It does not need to survive a restart: the counters
 	// do not either, and a restart clearing the throttle is a property to
@@ -159,8 +192,8 @@ type Decision struct {
 	RetryAfter time.Duration
 	// Failures is how many are on record for this subject in the window.
 	Failures int
-	// Locked reports a hard lockout rather than a delay, so a caller can say
-	// which one happened.
+	// Locked reports the ceiling reached rather than a delay, so a caller can
+	// say which one happened.
 	Locked bool
 	// Why is the sentence to show the person waiting.
 	Why string
@@ -170,9 +203,6 @@ type Decision struct {
 // Fail and Succeed do that — so a caller that checks and then never attempts
 // has not consumed anything.
 func (l *Limiter) Check(s Subject) Decision {
-	if !l.policy.On {
-		return Decision{Allowed: true}
-	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.now()
@@ -196,12 +226,6 @@ func (l *Limiter) checkOne(key string, now time.Time) Decision {
 	}
 	if r.failures >= l.policy.Ceiling {
 		wait := l.policy.Window - now.Sub(r.first)
-		if l.policy.Hard {
-			// Hard: the window restarts on every attempt, so the subject stays
-			// locked until they stop trying. This is the DoS-shaped behaviour
-			// and it is why the mode is off by default.
-			wait = l.policy.Window - now.Sub(r.last)
-		}
 		if wait < 0 {
 			wait = 0
 		}
@@ -240,9 +264,6 @@ func (l *Limiter) checkOne(key string, now time.Time) Decision {
 // Fail records a failed attempt and returns the decision that now applies,
 // plus whether this attempt crossed the alerting threshold.
 func (l *Limiter) Fail(s Subject) (Decision, bool) {
-	if !l.policy.On {
-		return Decision{Allowed: true}, false
-	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.now()
@@ -379,20 +400,11 @@ func (l *Limiter) sweep(now time.Time) {
 	}
 }
 
-// expired reports whether a record has decayed out of the window.
-//
-// Measured from the first failure normally, and from the last one under hard
-// lockout — because "locked until they stop trying" is what a hard lockout
-// means, and measuring from the first failure would release the account while
-// the attack was still running. That difference is the whole distinction
-// between the two modes, and it is also exactly why the hard one is a denial
-// of service: an attacker who keeps failing keeps the victim out.
+// expired reports whether a record has decayed out of the window, measured
+// from its first failure: measured from the last, an attacker who kept
+// failing would keep the subject out for as long as they liked.
 func (l *Limiter) expired(r *record, now time.Time) bool {
-	from := r.first
-	if l.policy.Hard {
-		from = r.last
-	}
-	return now.Sub(from) > l.policy.Window
+	return now.Sub(r.first) > l.policy.Window
 }
 
 // keys returns the storage keys for a subject, principal first.
@@ -462,13 +474,6 @@ func round(d time.Duration) time.Duration {
 		return d.Round(time.Millisecond)
 	}
 	return d.Round(time.Second)
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // randRead is crypto/rand.Read, named so the panic above reads clearly.

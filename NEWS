@@ -9,6 +9,30 @@ Unreleased
 
 ** Added
 
+*** Smart lockout.  Ten failed passkey sign-ins to one account from places
+    it is not used from lock those places out of it for thirty minutes,
+    doubling each time up to a day; the person's own places (the networks
+    they have signed in from) keep working, so nobody can lock somebody out
+    by failing in their name.  A hundred failures in a row from anywhere
+    turn passkey sign-in to the account off until the person signs in with
+    single sign-on or another administrator unlocks it on the Sign-ins
+    screen, which lists who is locked out.  Nobody unlocks themselves there,
+    and somebody who administers the whole site is unlocked only by another
+    who does; at the store's machine, `quilzo auth unlock NAME` is how a
+    store whose only administrator is locked out gets them back, with the
+    short-lived token `quilzo auth recover` issues when no other is left.  Lockouts are recorded,
+    raise the account-locked sign-in signal, and the person is told how many
+    failures came before their next sign-in.  The counts are kept in
+    lockout.json, shared by every process and kept across restarts.  Site
+    members get the same, with a recovery code as the other way back in, and
+    the same answer as any failure, so a lockout tells nobody an account
+    exists.  Throttling can no longer be switched off and its numbers are
+    held between bounds (at most 10 free failures, a ceiling between 10 and
+    100 an hour, delays between 1s and 1h, an alert by 20 failures); a
+    configuration holding auth.throttle, auth.lockout.hard or a number
+    outside its bounds loads without it, and quilzo serve and quilzo config
+    say so.  New members' recovery codes and invitations are 120 bits.
+
 *** Enrolment links: how somebody gets their first passkey.  `quilzo
     auth enrol NAME`, or Give a passkey enrolment link beside them on the
     People screen, makes a one-time link that adds a passkey for that
@@ -761,9 +785,9 @@ correct about its own job and wrong about what another part was doing with it.
 
 *** A lockout nobody could see.  The throttle's snapshot was written for a
     command that does not exist and, as written, could not: the counters live
-    in the memory of the process holding them.  `auth.lockout.hard` could be
-    switched on and its consequences were unobservable on every surface.  The
-    state is on the admin's posture screen now — how many, how hard, how long,
+    in the memory of the process holding them, so the throttle's consequences
+    were unobservable on every surface.  The state is on the admin's posture
+    screen now — how many, how hard, how long,
     and no names, because the list of principals currently being attacked is
     itself worth protecting.
 
@@ -1089,8 +1113,8 @@ feature release.
 
 *** Four ways a credential was less than it said it was.
 
-*** A lockout nobody could see.  auth.lockout.hard could be switched on and
-    its consequences were unobservable on every surface.
+*** A lockout nobody could see.  The throttle's consequences were
+    unobservable on every surface.
 
 ** Data
 

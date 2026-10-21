@@ -24,9 +24,8 @@ import (
 //
 // So every auth.throttle.* and auth.lockout.* setting was silently ignored on
 // that port. The studio does authenticate tokens and does use its limiter, so
-// an operator who set auth.lockout.hard or raised auth.throttle.max got the
-// compiled-in numbers there and their own everywhere else — and nothing said
-// so on either side.
+// an operator who lowered auth.throttle.after got the compiled-in numbers
+// there and their own everywhere else — and nothing said so on either side.
 //
 // # Why a source walk
 //

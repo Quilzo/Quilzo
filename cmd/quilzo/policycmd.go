@@ -41,13 +41,7 @@ func floorsFor(root string) map[string][]config.Floor {
 		if p.How != odp.Set {
 			continue
 		}
-		keys := []string{p.Setting}
-		if p.Kind == odp.Choice {
-			keys = []string{"auth.throttle", "auth.lockout.hard", "auth.lockout.alert"}
-		}
-		for _, k := range keys {
-			out[k] = append(out[k], config.Floor{Param: p.ID, Broken: err.Error()})
-		}
+		out[p.Setting] = append(out[p.Setting], config.Floor{Param: p.ID, Broken: err.Error()})
 	}
 	return out
 }
@@ -210,7 +204,7 @@ func policyParams() error {
 		how := map[odp.How]string{odp.Set: "declare it; it becomes a floor under " + p.Setting,
 			odp.Fixed:     "declare it; accepted when the program's behaviour meets it",
 			odp.Described: "exported only; the program describes it"}[p.How]
-		if p.How == odp.Set && p.Kind == odp.Choice {
+		if p.Kind == odp.Choice {
 			how = "declare one or more, separated by ;"
 		}
 		w.Human("  %s%-13s%s %-8s %s\n                %s\n                %s%s%s\n", bold, p.ID, reset, p.Control, p.Label, p.Means, dim, how, reset)

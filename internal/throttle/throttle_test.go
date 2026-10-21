@@ -162,41 +162,6 @@ func TestAnAttackerCannotLockSomebodyElseOut(t *testing.T) {
 	}
 }
 
-// Hard lockout is available because compliance regimes name it, and it behaves
-// as named: the window restarts on every attempt, so a subject under continuous
-// attack stays locked. That is the DoS this is off by default to avoid, and the
-// test says so out loud rather than leaving it implied.
-func TestHardLockoutIsAvailableAndIsTheDenialOfServiceItSoundsLike(t *testing.T) {
-	p := Default()
-	p.Hard = true
-	p.Ceiling = 10
-	now := start
-	l := at(New(p), &now)
-	victim := Subject{Principal: "dana"}
-
-	for i := 0; i < 10; i++ {
-		l.Fail(victim)
-		now = now.Add(time.Minute)
-	}
-	if l.Check(victim).Allowed {
-		t.Fatal("hard lockout did not lock")
-	}
-	// The attacker keeps failing once an hour; the victim never gets back in.
-	for i := 0; i < 5; i++ {
-		now = now.Add(59 * time.Minute)
-		l.Fail(victim)
-	}
-	if l.Check(victim).Allowed {
-		t.Error("hard lockout released while the attack continued, which " +
-			"means it is not doing what the setting claims")
-	}
-	// Which is exactly why the default is off.
-	if Default().Hard {
-		t.Error("hard lockout is the default; it is a denial of service " +
-			"anybody can aim at anybody else")
-	}
-}
-
 // -- not an oracle ------------------------------------------------------------
 
 // Failing against a principal that does not exist must look exactly like
@@ -373,20 +338,32 @@ func TestConcurrentUseIsSafe(t *testing.T) {
 	wg.Wait()
 }
 
-// -- switched off -------------------------------------------------------------
+// -- held to its bounds ------------------------------------------------------
 
-// Off means off, and it has to actually mean it: a customer who turns this off
-// has accepted a risk, and half-applying their setting would be worse than
-// either answer.
-func TestTurningItOffAllowsEverything(t *testing.T) {
-	p := Default()
-	p.On = false
-	l := New(p)
+// There is no off switch, and a policy asking for more than the bounds gets
+// the bounds: whatever built it, a limit somebody could raise without end is
+// not a limit.
+func TestAPolicyIsHeldToItsBounds(t *testing.T) {
+	loose := Policy{After: 1000, Ceiling: 1_000_000, Base: time.Millisecond, Max: 24 * time.Hour}
+	b := loose.Bounded()
+	if b.After != MostFree || b.Ceiling != MostCeiling || b.Base != LeastDelay ||
+		b.Max != LongestDelay || b.Alert != 1 || b.Window != time.Hour {
+		t.Fatalf("held to %+v", b)
+	}
+	now := start
+	l := at(New(loose), &now)
 	s := Subject{Principal: "dana"}
+	for i := 0; i < MostFree; i++ {
+		l.Fail(s)
+	}
+	if d, _ := l.Fail(s); d.Allowed {
+		t.Error("more failures were free than the bound allows")
+	}
 	for i := 0; i < 500; i++ {
-		if d, _ := l.Fail(s); !d.Allowed {
-			t.Fatalf("attempt %d was refused with throttling off", i)
-		}
+		l.Fail(s)
+	}
+	if d := l.Check(s); d.Allowed || !d.Locked || d.RetryAfter > time.Hour {
+		t.Errorf("past the ceiling: %+v", d)
 	}
 }
 

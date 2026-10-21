@@ -5,7 +5,7 @@
 <p class="lead">Every sign-in to this admin in the last thirty days, where it appeared to come from, and the sessions waiting for their person to prove it is them. {{.Geo}}</p>
 
 <h2>Waiting to confirm it is them</h2>
-<p class="hint">They see <a href="/signin/verify">Confirm it's you</a> until they prove it with a passkey or a code, or you let them in.</p>
+<p class="hint">They see <a href="/signin/verify">Confirm it's you</a> until they prove it with a passkey or a fresh single sign-on, or you let them in.</p>
 {{if .Waiting}}<ul class="auto-list">{{range .Waiting}}<li class="auto-card waiting">
   <div class="auto-head"><span class="wf-band warning"><span class="wf-icon">{{icon "error"}}</span>Waiting</span><strong>{{.Person}}</strong><span class="hint">since {{.Since}}</span></div>
   <p>{{.Reason}}</p>
@@ -13,6 +13,15 @@
     <button type="submit" name="do" value="letin" class="btn-tonal">Let them in<span class="visually-hidden"> {{.Person}}</span></button>
     <button type="submit" name="do" value="signout" class="btn-outlined">Sign them out<span class="visually-hidden"> {{.Person}}</span></button></form>
 </li>{{end}}</ul>{{else}}<p>Nobody is waiting.</p>{{end}}
+
+<h2>Locked out</h2>
+<p class="hint">Failed sign-ins that belong to an account lock out the places they come from, after ten, for half an hour and then longer; the places the person signs in from keep working. A hundred in a row turn their passkey sign-in off until somebody turns it back on.</p>
+{{if .Held}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Person</th><th scope="col">Held</th><th scope="col"><span class="visually-hidden">Unlock</span></th></tr></thead>
+  <tbody>{{range .Held}}<tr><th scope="row">{{.Person}}</th>
+    <td>{{if .Disabled}}<span class="tag tag-bad">passkey sign-in off</span>{{else}}unfamiliar places until {{.Until}}{{end}}</td>
+    <td><form method="post" action="/security/signins/unlock"><input type="hidden" name="person" value="{{.Person}}"><button type="submit" class="btn-text">Unlock</button></form></td></tr>{{end}}</tbody>
+</table></div>{{else}}<p>Nobody is locked out.</p>{{end}}
 
 <h2>Recent</h2>
 {{if .NoHistory}}<p class="notice bad">{{.NoHistory}}</p>{{else if .Rows}}<div class="table-wrap"><table>

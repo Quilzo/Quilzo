@@ -515,6 +515,7 @@ access
   quilzo boundary credentials              what collecting each source costs to hold
   quilzo auth revoke WHO [--on PATH]       take a grant back
   quilzo auth enrol WHO [--for 24h]        a one-time link that adds their passkey (--revoke ends it)
+  quilzo auth unlock WHO                   let them sign in again after a lockout
   quilzo auth recover                      break-glass when every admin token is lost
   quilzo auth list | roles
   quilzo token issue NAME --principal WHO  an API credential, shown once

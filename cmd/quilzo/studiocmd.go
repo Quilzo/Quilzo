@@ -64,7 +64,7 @@ func cmdStudio(root string, args []string) error {
 		// interface and the API cannot end up with three different ideas of
 		// how many attempts are free" — and this was the fourth surface,
 		// built after that sentence was written, holding throttle.Default().
-		// Every auth.throttle and auth.lockout setting was silently ignored
+		// Every auth.throttle setting was silently ignored
 		// on this port, and the studio does authenticate tokens, so the
 		// policy mattered here.
 		Throttle: throttle.New(throttlePolicy(mustConfig(root))),

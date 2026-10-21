@@ -99,21 +99,23 @@ type Param struct {
 var Params = []Param{
 	{ID: "ac-07_odp.01", Control: "AC-7", Label: "number", Kind: Number, How: Set,
 		Setting: "auth.throttle.after", Stricter: "lower",
-		Means: "consecutive failed sign-ins allowed in an hour before the next is delayed; throttling must be on"},
+		Means: "consecutive failed sign-ins allowed in an hour before the next is delayed"},
 	{ID: "ac-07_odp.02", Control: "AC-7", Label: "time period", Kind: Period, How: Fixed,
 		Stricter: "higher",
 		Means:    "failed sign-ins are counted over an hour; a declared period of an hour or less is met"},
-	{ID: "ac-07_odp.03", Control: "AC-7", Label: "action", Kind: Choice, How: Set,
+	{ID: "ac-07_odp.03", Control: "AC-7", Label: "action", Kind: Choice, How: Fixed,
 		Choices: []string{
 			"delay next logon prompt per {{ insert: param, ac-07_odp.05 }}",
 			"lock the account or node for {{ insert: param, ac-07_odp.04 }}",
 			"notify system administrator",
 		},
-		Means: "what happens past the limit: delaying needs throttling on, locking needs auth.lockout.hard, " +
-			"notifying needs an alert threshold; locking until an administrator releases it is not something this program does"},
+		Means: "all three, always: the next attempt is delayed, the places failing are locked out of the account, " +
+			"and an alert is recorded; locking until an administrator releases it is not something this program does, " +
+			"because the person may also release it by proving themselves another way"},
 	{ID: "ac-07_odp.04", Control: "AC-7", Label: "time period", Kind: Period, How: Fixed,
 		Stricter: "higher",
-		Means:    "a hard lockout lasts until an hour passes with no further attempt; a declared period of an hour or less is met"},
+		Means: "the places failing are locked out of the account for 30 minutes, doubling with each further lockout up to " +
+			"24 hours; a declared period of 30 minutes or less is met"},
 	{ID: "ac-07_odp.05", Control: "AC-7", Label: "delay algorithm", How: Described,
 		Means: "the delay doubles from auth.throttle.base to auth.throttle.max, and nothing is accepted past auth.throttle.ceiling failures in an hour"},
 	{ID: "ac-02.05_odp", Control: "AC-2(5)", Label: "time period of expected inactivity or description of when to log out",
@@ -154,7 +156,7 @@ func IDs() []string {
 // fixed is the value a Fixed parameter has, as a period.
 var fixed = map[string]time.Duration{
 	"ac-07_odp.02": time.Hour,
-	"ac-07_odp.04": time.Hour,
+	"ac-07_odp.04": 30 * time.Minute,
 	// au-11: never pruned; longer than any declaration.
 	"au-11_odp": 1<<63 - 1,
 }
@@ -173,6 +175,10 @@ func (p Param) Check(declared string) error {
 		return fmt.Errorf("%s is this program's description of what it does (%s); "+
 			"it is exported, and the settings it describes are what to declare", p.ID, p.Means)
 	case Fixed:
+		if p.Kind == Choice {
+			_, err := p.choices(declared)
+			return err
+		}
 		d, err := ParsePeriod(declared)
 		if err != nil {
 			return fmt.Errorf("%s: %w", p.ID, err)
@@ -315,7 +321,6 @@ func (p Param) Allows(declared string) func(value string) bool {
 }
 
 // Floors turns a policy into the floors config.Config enforces, by setting.
-// Choices become floors on the switches they need.
 func Floors(pol *Policy) map[string][]config.Floor {
 	out := map[string][]config.Floor{}
 	if pol == nil {
@@ -326,45 +331,14 @@ func Floors(pol *Policy) map[string][]config.Floor {
 		if !ok || p.How != Set {
 			continue
 		}
-		if p.Kind == Choice {
-			idx, err := p.choices(d.Value)
-			if err != nil {
-				continue
-			}
-			for _, i := range idx {
-				key, allows := choiceNeeds(i)
-				out[key] = append(out[key], config.Floor{Param: p.ID, Declared: d.Value, Allows: allows})
-			}
-			continue
-		}
 		f := config.Floor{Param: p.ID, Declared: d.Value, Allows: p.Allows(d.Value)}
 		out[p.Setting] = append(out[p.Setting], f)
-		// A limit on failed attempts is a limit only while attempts are
-		// counted at all.
-		if p.ID == "ac-07_odp.01" {
-			out["auth.throttle"] = append(out["auth.throttle"], config.Floor{Param: p.ID, Declared: d.Value,
-				Allows: func(v string) bool { return v == "true" }})
-		}
 	}
 	return out
 }
 
-// choiceNeeds is the setting an AC-7 action needs, and the values that
-// provide it, by the index into the parameter's Choices.
-func choiceNeeds(i int) (string, func(string) bool) {
-	switch i {
-	case 0:
-		return "auth.throttle", func(v string) bool { return v == "true" }
-	case 1:
-		return "auth.lockout.hard", func(v string) bool { return v == "true" }
-	default:
-		return "auth.lockout.alert", func(v string) bool { n, err := parseNumber(v); return err == nil && n > 0 }
-	}
-}
-
 // Enforce is the change to a setting that makes it meet a declaration it
-// does not: the declared value itself for a Number or a Period, the switch
-// for a choice. Empty when it is met already.
+// does not: the declared value itself. Empty when it is met already.
 func Enforce(cfg *config.Config, d Declared) map[string]string {
 	p, ok := Lookup(d.Param)
 	if !ok || p.How != Set {
@@ -376,17 +350,13 @@ func Enforce(cfg *config.Config, d Declared) map[string]string {
 			if f.Allows(cfg.Raw(key)) {
 				continue
 			}
-			switch {
-			case key == p.Setting && p.Kind == Number:
+			switch p.Kind {
+			case Number:
 				n, _ := parseNumber(d.Value)
 				out[key] = strconv.Itoa(n)
-			case key == p.Setting && p.Kind == Period:
+			case Period:
 				dur, _ := ParsePeriod(d.Value)
 				out[key] = goDuration(dur)
-			case key == "auth.lockout.alert":
-				out[key] = "5"
-			default:
-				out[key] = "true"
 			}
 		}
 	}
@@ -398,24 +368,13 @@ func Enforce(cfg *config.Config, d Declared) map[string]string {
 func Effective(p Param, cfg *config.Config) string {
 	switch p.ID {
 	case "ac-07_odp.01":
-		if !cfg.Bool("auth.throttle") {
-			return "no limit: throttling is off"
-		}
 		return strconv.Itoa(cfg.Int("auth.throttle.after"))
-	case "ac-07_odp.02", "ac-07_odp.04":
+	case "ac-07_odp.02":
 		return "1 hour"
+	case "ac-07_odp.04":
+		return "30 minutes, doubling with each further lockout up to 24 hours"
 	case "ac-07_odp.03":
-		var out []string
-		if cfg.Bool("auth.throttle") {
-			out = append(out, p.Choices[0])
-		}
-		if cfg.Bool("auth.lockout.hard") {
-			out = append(out, p.Choices[1])
-		}
-		if cfg.Int("auth.lockout.alert") > 0 {
-			out = append(out, p.Choices[2])
-		}
-		return strings.Join(out, "\n")
+		return strings.Join(p.Choices, "\n")
 	case "ac-07_odp.05":
 		return fmt.Sprintf("the delay before the next attempt starts at %s and doubles with each failure up to %s; "+
 			"after %d failures in an hour nothing is accepted until the hour passes",

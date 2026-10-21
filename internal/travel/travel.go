@@ -100,7 +100,7 @@ func (s Signal) Severity() string { return Severity(s.Kind) }
 // Severity is a signal kind's weight.
 func Severity(kind string) string {
 	switch kind {
-	case "impossible-travel", "anonymous-network", "session-moved":
+	case "impossible-travel", "anonymous-network", "session-moved", "account-locked":
 		return "high"
 	case "new-country", "new-network", "hosting-network", "dormant", "verification-failing":
 		return "medium"
