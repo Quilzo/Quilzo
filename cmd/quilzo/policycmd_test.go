@@ -40,10 +40,17 @@ func twoAdmins(t *testing.T) (root, dana, lee string) {
 	if err := cmdInit(root); err != nil {
 		t.Fatal(err)
 	}
-	for _, who := range []string{"dana", "lee"} {
-		if err := cmdAuth(root, []string{"grant", who, "admin"}); err != nil {
-			t.Fatal(err)
+	// Straight into the policy: a second administrator granted by the
+	// first would wait for a third (internal/dual).
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		for _, who := range []string{"dana", "lee"} {
+			if err := p.Grant(auth.Binding{Principal: who, Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+				return err
+			}
 		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 	ts, err := loadTokens(root)
 	if err != nil {

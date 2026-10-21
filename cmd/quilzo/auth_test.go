@@ -17,6 +17,7 @@ func TestAJobIsGrantedFromTheCommandLineAndKeepsToItsArea(t *testing.T) {
 	if err := cmdAuth(root, []string{"grant", "boss", "admin"}); err != nil {
 		t.Fatal(err)
 	}
+	asOnly(t, root, "boss")
 	if err := cmdAuth(root, []string{"grant", "sam", "analyst", "--for", "30d"}); err != nil {
 		t.Fatal(err)
 	}

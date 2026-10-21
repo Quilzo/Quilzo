@@ -379,6 +379,9 @@ var IdentityKeys = map[string]bool{
 	// one who opened it; whoever holds the log's key can still answer the
 	// question the entry exists for, which is who looked at whose profile.
 	"subject": true,
+	// Who asked for a change a second administrator decided, and who
+	// approved it (internal/dual, the shield and the policy).
+	"proposed_by": true, "approved_by": true,
 }
 
 // pseudonymDetail returns detail with identity values pseudonymised, leaving

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/dual"
 	publishgate "github.com/quilzo/quilzo/internal/gate"
 	"github.com/quilzo/quilzo/internal/oidc"
 	"github.com/quilzo/quilzo/internal/posture"
@@ -80,6 +82,7 @@ func setup(t *testing.T) (*Server, string) {
 	// the real set; a nil one is refused by handlePublish, because a build
 	// that cannot run the checks must not report that they passed.
 	srv.ContentGates = noGates
+	srv.Dual = &Dual{Store: &dual.Store{Path: filepath.Join(dir, "dual.json")}}
 	idx := provenance.NewIndex()
 	srv.LoadProvenance = func() (*provenance.Index, error) { return idx, nil }
 	srv.SaveProvenance = func(i *provenance.Index) error { idx = i; return nil }

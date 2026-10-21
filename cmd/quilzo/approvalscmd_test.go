@@ -15,11 +15,7 @@ import (
 func TestApprovalsListWhatARunWaitsOnAndHowToDecideIt(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
-	for _, g := range [][]string{{"grant", "dana", "admin"}, {"grant", "sam", "admin"}, {"grant", "rae", "reader"}} {
-		if err := cmdAuth(root, g); err != nil {
-			t.Fatal(err)
-		}
-	}
+	seedPolicy(t, root, [2]string{"dana", "admin"}, [2]string{"sam", "admin"}, [2]string{"rae", "reader"})
 	standInModel(t)
 	declaredAutonomy(t, root)
 	if err := declareAgent(root, asker("tidy"), true, true, asAdmin("dana")); err != nil {

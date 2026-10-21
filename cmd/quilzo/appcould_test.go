@@ -45,7 +45,13 @@ func TestCouldAnAppDoItIsAskedOfWhatAdmitsItsCalls(t *testing.T) {
 	if a := ask(reader.ID, "list_pages", ""); a.Could || !strings.Contains(a.Why, "interface is off") {
 		t.Fatalf("with the interface off: %+v", a)
 	}
-	if err := cmdConfig(root, []string{"set", "mcp.remote", "true", "--accept-risk", "apps are asked about here"}); err != nil {
+	// Straight into the file: a weaker setting set by a command waits for a
+	// second administrator, and this test is not about that.
+	cfg := mustConfig(root)
+	if err := cfg.Set("mcp.remote", "true", "apps are asked about here", "dana"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConfig(root, cfg); err != nil {
 		t.Fatal(err)
 	}
 	if a := ask(reader.ID, "list_pages", ""); !a.Could || a.App != "Notes app" || a.For != "dana" || len(a.Then) == 0 {

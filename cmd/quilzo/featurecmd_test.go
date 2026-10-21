@@ -26,11 +26,7 @@ func featureSite(t *testing.T) string {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
-	for _, g := range [][]string{{"grant", "dana", "admin"}, {"grant", "sam", "admin"}, {"grant", "rae", "reader"}} {
-		if err := cmdAuth(root, g); err != nil {
-			t.Fatal(err)
-		}
-	}
+	seedPolicy(t, root, [2]string{"dana", "admin"}, [2]string{"sam", "admin"}, [2]string{"rae", "reader"})
 	return root
 }
 

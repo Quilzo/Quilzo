@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/throttle"
 )
 
@@ -264,6 +265,16 @@ func configSet(root string, args []string) error {
 		}
 		return err
 	}
+	// Accepted by the configuration, and weaker than the default or fewer
+	// approvers than now: it waits for a second administrator, who applies
+	// it on approving.
+	if second, why := dual.SettingNeedsSecond(mustConfig(root), key, value); second {
+		apply, err := proposeSecond(root, caller, dual.Setting, fmt.Sprintf("set %s to %s: %s", key, value, why),
+			dual.SettingChange{Key: key, Value: value, Reason: reason}, reason)
+		if err != nil || !apply {
+			return err
+		}
+	}
 	if err := saveConfig(root, c); err != nil {
 		return err
 	}
@@ -296,13 +307,24 @@ func configUnset(root string, args []string) error {
 		return err
 	}
 	before := c.Raw(args[0])
+	caller := resolveCaller(root, "")
+	// Back to a default that needs fewer approvers than now waits for a
+	// second administrator too.
+	if st, ok := config.Lookup(args[0]); ok {
+		if second, why := dual.SettingNeedsSecond(c, args[0], st.Default); second {
+			apply, err := proposeSecond(root, caller, dual.Setting, fmt.Sprintf("set %s to %s: %s", args[0], st.Default, why),
+				dual.SettingChange{Key: args[0], Value: st.Default}, "")
+			if err != nil || !apply {
+				return err
+			}
+		}
+	}
 	if err := c.Unset(args[0]); err != nil {
 		return err
 	}
 	if err := saveConfig(root, c); err != nil {
 		return err
 	}
-	caller := resolveCaller(root, "")
 	record(root, caller.auditRecord("config.unset", "/", audit.Success,
 		map[string]string{"setting": args[0], "from": before,
 			"to": c.Raw(args[0])}))

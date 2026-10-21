@@ -68,7 +68,7 @@ func TestATokenIsBoundToAProgramsKey(t *testing.T) {
 	if err := cmdToken(root, []string{"issue", "bad", "--principal", "dana", "--key", keyFile}); err == nil {
 		t.Error("a private key was taken for binding")
 	}
-	if err := cmdToken(root, []string{"issue", "program", "--principal", "dana", "--key", keyFile + ".pub"}); err != nil {
+	if err := cmdToken(root, []string{"issue", "program", "--principal", "dana", "--role", "publisher", "--key", keyFile + ".pub"}); err != nil {
 		t.Fatal(err)
 	}
 	ts, _ := loadTokens(root)
@@ -125,7 +125,13 @@ func TestRiskyActsFromAnotherMachineNeedAProofOrAShortToken(t *testing.T) {
 			t.Errorf("%s was refused: %v", name, err)
 		}
 	}
-	if err := cmdConfig(root, []string{"set", "token.proof_for_risky", "false", "--accept-risk", "test"}); err != nil {
+	// Weakened straight in the file: by a command it waits for a second
+	// administrator, and this test is not about that.
+	cfg := mustConfig(root)
+	if err := cfg.Set("token.proof_for_risky", "false", "test", "dana"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConfig(root, cfg); err != nil {
 		t.Fatal(err)
 	}
 	if err := remoteRefusal(root, long, auth.RolePublisher); err != nil {

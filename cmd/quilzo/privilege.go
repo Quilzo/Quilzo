@@ -251,6 +251,12 @@ var commandNeeds = map[string]need{
 	"policy params": {action: auth.ActView},
 	"policy export": {action: auth.ActView},
 	"shield":        {action: auth.ActGrant},
+	// Privileged changes waiting for a second administrator: deciding one
+	// is a whole-site administrator's; receiving an approved token is
+	// whoever asked for it, as issuing one is.
+	"pending":        {action: auth.ActGrant},
+	"pending list":   {action: auth.ActView},
+	"pending redeem": {action: auth.ActToken},
 	// What may act as people through the agent interface, and ending it.
 	"apps":               {action: auth.ActGrant},
 	"apps receipt":       {action: auth.ActView},

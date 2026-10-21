@@ -196,6 +196,9 @@ type Server struct {
 	// Lockout is smart lockout for the failures that belong to an account
 	// (lockout.go).
 	Lockout *lockout.Store
+	// Dual is the privileged changes waiting for a second administrator
+	// (dual.go).
+	Dual *Dual
 	// MFAFrom is when two factors became compulsory for every person here.
 	// Zero, the default, is always: an installation is given a grace only
 	// by setting it, and only before it, is one factor let through.
@@ -1525,6 +1528,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/people/revoke", s.handlePeopleRevoke)
 	mux.HandleFunc("/people/enrol", s.handlePeopleEnrol)
 	mux.HandleFunc("/people/enrol/revoke", s.handlePeopleEnrolRevoke)
+	mux.HandleFunc("/people/pending", s.handlePeoplePending)
 	mux.HandleFunc("/sessions/revoke", s.handleSessionRevoke)
 	mux.HandleFunc("/provenance", s.handleProvenance)
 	mux.HandleFunc("/provenance/set", s.handleProvenanceSet)

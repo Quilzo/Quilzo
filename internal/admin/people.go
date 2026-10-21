@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/enrol"
 )
 
@@ -210,8 +211,8 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 
 	s.render(w, r, "people.html", map[string]any{
 		"Nav": "people", "Title": "People", "Principal": p, "People": people, "Enrol": s.Enrol != nil,
-		"Waiting": s.enrolWaiting(now),
-		"Roles":   auth.Roles, "Jobs": auth.Jobs, "Permissions": auth.Permissions, "AppRoles": s.appRoles(),
+		"Waiting": s.enrolWaiting(now), "Pending": s.pendingRows(p, now),
+		"Roles": auth.Roles, "Jobs": auth.Jobs, "Permissions": auth.Permissions, "AppRoles": s.appRoles(),
 		"ActiveWithin": activeWithin.String(),
 		"Known":        names, "Message": r.URL.Query().Get("m"),
 		"Error": r.URL.Query().Get("e"),
@@ -323,6 +324,20 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 			bindings = append(bindings, b)
 		}
 		role, on = auth.Role(job.Name), "its areas"
+	}
+	// Making somebody an administrator of anything waits for a second
+	// administrator, who makes the change on approving it.
+	if !base.Deny && dual.Privileged(bindings) {
+		apply, msg, err := s.proposeSecond(p, dual.Grant, fmt.Sprintf("make %s %s on %s", who, role, on),
+			dual.GrantChange{Bindings: bindings}, base.Note)
+		if err != nil {
+			s.peopleBack(w, r, err.Error())
+			return
+		}
+		if !apply {
+			s.peopleBack(w, r, msg)
+			return
+		}
 	}
 	if err := s.changePolicy(func(p *auth.Policy) error {
 		for _, b := range bindings {

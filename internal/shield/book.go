@@ -289,39 +289,6 @@ func ProposeRelease(root, why, by string, now time.Time) (Proposal, error) {
 	return p, err
 }
 
-// ReleaseOnMachine lets every playbook act again, from the command line on
-// the machine, and keeps it in the history like any other change.
-func ReleaseOnMachine(root, why, by string, now time.Time) (Proposal, error) {
-	// Recorded first and released second: a release that happened is never
-	// reported as one that failed because its history could not be
-	// written afterwards.
-	if st, err := Load(root); err != nil {
-		return Proposal{}, err
-	} else if st.Watching == nil {
-		return Proposal{}, errors.New("the playbooks are not being held")
-	}
-	p := Proposal{ID: newID(), Release: true, Why: why, By: by, At: now,
-		Outcome: "applied on the machine", DecidedBy: by, Decided: now}
-	err := changeBook(root, func(bk *Book) error {
-		var keep []Proposal
-		for _, q := range bk.Pending {
-			if q.Release {
-				q.Outcome, q.DecidedBy, q.Decided = "replaced on the machine", by, now
-				bk.Decided = append(bk.Decided, q)
-				continue
-			}
-			keep = append(keep, q)
-		}
-		bk.Pending = keep
-		bk.Decided = append(bk.Decided, p)
-		return nil
-	})
-	if err != nil {
-		return Proposal{}, err
-	}
-	return p, release(root, now)
-}
-
 // Withdraw takes back a waiting change; only its proposer may.
 func Withdraw(root, id, by string, now time.Time) (Proposal, error) {
 	var out Proposal
@@ -342,44 +309,6 @@ func Withdraw(root, id, by string, now time.Time) (Proposal, error) {
 		return fmt.Errorf("no change %s is waiting", id)
 	})
 	return out, err
-}
-
-// SetOnMachine applies a change directly, from the command line on the
-// machine, and keeps it in the history like any other.
-func SetOnMachine(root string, pb Playbook, remove bool, why, by string, now time.Time) (Proposal, error) {
-	_, shipped := builtin(pb.Name)
-	pb.Builtin = shipped
-	if remove && shipped {
-		return Proposal{}, errors.New("a playbook Quilzo ships is turned off, not removed")
-	}
-	if !remove {
-		if err := pb.Validate(); err != nil {
-			return Proposal{}, err
-		}
-	}
-	p := Proposal{ID: newID(), Playbook: pb, Remove: remove, Why: why, By: by, At: now,
-		Outcome: "applied on the machine", DecidedBy: by, Decided: now}
-	err := changeBook(root, func(bk *Book) error {
-		if _, exists := bk.current(pb.Name); remove && !exists {
-			return fmt.Errorf("there is no playbook %s", pb.Name)
-		}
-		// A change made here replaces one waiting for the same playbook,
-		// which would otherwise be approved over it later.
-		var keep []Proposal
-		for _, q := range bk.Pending {
-			if q.Playbook.Name == pb.Name {
-				q.Outcome, q.DecidedBy, q.Decided = "replaced on the machine", by, now
-				bk.Decided = append(bk.Decided, q)
-				continue
-			}
-			keep = append(keep, q)
-		}
-		bk.Pending = keep
-		bk.apply(p)
-		bk.Decided = append(bk.Decided, p)
-		return nil
-	})
-	return p, err
 }
 
 // Library is the playbooks in force as a server reads them on each
