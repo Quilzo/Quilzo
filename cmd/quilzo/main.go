@@ -558,6 +558,7 @@ compliance evidence
   quilzo policy show | params              the organisation's NIST parameters, declared and in effect
   quilzo policy propose ac-12_odp="8 hours" --reason "…"   a change, approved by a second administrator
   quilzo policy approve | decline | withdraw ID
+  quilzo pending [list] | approve | decline | withdraw | redeem ID   privileged changes, approved by a second administrator
   quilzo policy import ssp.json --reason "…" | export   OSCAL in (profile, SSP, component), OSCAL out
 
 agents and integrations
@@ -1055,6 +1056,8 @@ func main() {
 		err = cmdSelf(root, cmdArgs)
 	case "policy":
 		err = cmdPolicy(root, cmdArgs)
+	case "pending":
+		err = cmdPending(root, cmdArgs)
 	case "feed":
 		err = cmdFeed(cmdArgs)
 	case "source":

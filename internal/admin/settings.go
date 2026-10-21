@@ -5,12 +5,14 @@ package admin
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/dual"
 )
 
 // Configuration in the admin.
@@ -147,6 +149,15 @@ func (s *Server) handleSettingSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	before := cfg.Raw(key)
+	// Weaker than the default, or fewer approvers than now, waits for a
+	// second administrator; going back to the default can be the second.
+	next := value
+	if r.FormValue("reset") == "1" {
+		if st, ok := config.Lookup(key); ok {
+			next = st.Default
+		}
+	}
+	second, why := dual.SettingNeedsSecond(cfg, key, next)
 
 	if r.FormValue("reset") == "1" {
 		if err := cfg.Unset(key); err != nil {
@@ -175,6 +186,18 @@ func (s *Server) handleSettingSave(w http.ResponseWriter, r *http.Request) {
 		}
 		s.settingsBack(w, r, err.Error())
 		return
+	}
+	if second {
+		apply, msg, err := s.proposeSecond(p, dual.Setting, fmt.Sprintf("set %s to %s: %s", key, next, why),
+			dual.SettingChange{Key: key, Value: next, Reason: reason}, reason)
+		if err != nil {
+			s.settingsBack(w, r, err.Error())
+			return
+		}
+		if !apply {
+			s.settingsBack(w, r, msg+" Requests are on the People screen.")
+			return
+		}
 	}
 	if err := s.Settings.Save(cfg); err != nil {
 		s.settingsBack(w, r, err.Error())

@@ -4,6 +4,18 @@
 {{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
 
+{{if .Pending}}<h2>Waiting for a second administrator</h2>
+<p class="hint">Making somebody an administrator, an administrator's token, a weaker setting, fewer approvers and moving the audit log each take two administrators: one asks, another approves.</p>
+<ul class="auto-list">{{range .Pending}}<li class="auto-card waiting">
+  <div class="auto-head"><span class="wf-band as-written warning"><span class="wf-icon">{{icon "error"}}</span>Waiting</span><strong>{{.What}}</strong></div>
+  <p>Asked by {{.By}} at {{.At.UTC.Format "15:04 2 Jan"}}{{if .Why}}: “{{.Why}}”{{end}}. {{.Words}}.</p>
+  <form method="post" action="/people/pending" class="auto-controls"><input type="hidden" name="id" value="{{.ID}}">
+    {{if .CanDecide}}<button type="submit" name="do" value="approve" class="btn-tonal">Approve<span class="visually-hidden"> {{.What}}</span></button>
+    <button type="submit" name="do" value="decline" class="btn-outlined">Decline<span class="visually-hidden"> {{.What}}</span></button>{{end}}
+    {{if .CanTakeBack}}<button type="submit" name="do" value="withdraw" class="btn-text">Withdraw<span class="visually-hidden"> {{.What}}</span></button>{{end}}
+  </form>
+</li>{{end}}</ul>{{end}}
+
 <h2>Add or change access</h2>
 <p class="hint">
   Pick somebody this store already knows, or name a new person. Typing a name

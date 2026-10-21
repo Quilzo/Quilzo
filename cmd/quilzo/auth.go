@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/dual"
 )
 
 // Access lives beside the content rather than inside it. The object store is
@@ -320,6 +321,20 @@ func authGrant(root string, args []string) error {
 		}
 	}
 	by2 := grantedBy(root, *by)
+	// Making somebody an administrator of anything waits for a second
+	// administrator, who applies it on approving.
+	if !*deny && dual.Privileged(bindings) {
+		staged := make([]auth.Binding, 0, len(bindings))
+		for _, b := range bindings {
+			b.GrantedBy, b.Note, b.Expires = by2, *note, expires
+			staged = append(staged, b)
+		}
+		apply, err := proposeSecond(root, resolveCaller(root, ""), dual.Grant,
+			fmt.Sprintf("make %s %s on %s", rest[0], rest[1], *on), dual.GrantChange{Bindings: staged}, *note)
+		if err != nil || !apply {
+			return err
+		}
+	}
 	if _, err := updatePolicy(root, func(p *auth.Policy) error {
 		for _, b := range bindings {
 			b.Deny, b.GrantedBy, b.Note, b.Expires = *deny, by2, *note, expires
@@ -674,7 +689,12 @@ func strongestRole(pol *auth.Policy, principal, resource string) auth.Role {
 	return best
 }
 
-func tokenIssue(root string, args []string) error {
+func tokenIssue(root string, args []string) error { return tokenIssueAs(root, args, false) }
+
+// tokenIssueAs issues a token; approved says a second administrator has
+// already agreed to it (quilzo pending redeem), which an administrator's
+// token waits for otherwise.
+func tokenIssueAs(root string, args []string, approved bool) error {
 	fs := flag.NewFlagSet("issue", flag.ContinueOnError)
 	principal := fs.String("principal", "", "who the token acts as")
 	role := fs.String("role", string(auth.RoleReader), "role the token carries")
@@ -769,6 +789,16 @@ func tokenIssue(root string, args []string) error {
 	thumb := ""
 	if *keyFile != "" {
 		if thumb, err = publicKeyThumbprint(*keyFile); err != nil {
+			return err
+		}
+	}
+	// An administrator's token can make anybody anything, so issuing one
+	// waits for a second administrator, and is issued to whoever asked.
+	if auth.Role(*role) == auth.RoleAdmin && !approved {
+		apply, err := proposeSecond(root, resolveCaller(root, ""), dual.Token,
+			fmt.Sprintf("an administrator's token %q acting as %s on %s", rest[0], *principal, *on),
+			dual.TokenChange{Args: args}, "")
+		if err != nil || !apply {
 			return err
 		}
 	}

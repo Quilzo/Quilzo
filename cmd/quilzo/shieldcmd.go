@@ -474,22 +474,21 @@ func shieldPlaybook(root string, args []string) error {
 		// The common change, without writing a file.
 		fs := flag.NewFlagSet("shield playbook mode", flag.ContinueOnError)
 		why := fs.String("why", "", "why (required)")
-		onMachine := fs.Bool("now", false, "apply it here, on the machine, without a second administrator")
 		pos, err := parseAnywhere(fs, args[1:])
 		if err != nil {
 			return err
 		}
 		if len(pos) != 2 {
-			return errors.New("usage: quilzo shield playbook mode NAME act|watch|off --why TEXT [--now]")
+			return errors.New("usage: quilzo shield playbook mode NAME act|watch|off --why TEXT")
 		}
 		pb, ok := shieldPlaybookNamed(bk, pos[0])
 		if !ok {
 			return fmt.Errorf("there is no playbook %s", pos[0])
 		}
 		pb.Mode = pos[1]
-		return shieldPropose(root, c, by, pb, false, *why, *onMachine, now)
-	case "propose", "set":
-		fs := flag.NewFlagSet("shield playbook "+args[0], flag.ContinueOnError)
+		return shieldPropose(root, c, by, pb, false, *why, now)
+	case "propose":
+		fs := flag.NewFlagSet("shield playbook propose", flag.ContinueOnError)
 		file := fs.String("file", "", "the playbook as it will be, as JSON")
 		remove := fs.String("remove", "", "a playbook added here, to remove")
 		why := fs.String("why", "", "why (required)")
@@ -510,7 +509,7 @@ func shieldPlaybook(root string, args []string) error {
 				return fmt.Errorf("%s: %w", *file, err)
 			}
 		}
-		return shieldPropose(root, c, by, pb, *remove != "", *why, args[0] == "set", now)
+		return shieldPropose(root, c, by, pb, *remove != "", *why, now)
 	case "approve", "decline":
 		if len(args) != 2 {
 			return fmt.Errorf("usage: quilzo shield playbook %s ID", args[0])
@@ -535,28 +534,39 @@ func shieldPlaybook(root string, args []string) error {
 		w.Human("%swithdrawn%s %s\n", green, reset, proposalWords(p))
 		return nil
 	}
-	return errors.New("usage: quilzo shield playbook list | show NAME | mode NAME act|watch|off --why TEXT [--now] | " +
-		"propose --file F --why TEXT | set --file F --why TEXT | approve ID | decline ID | withdraw ID")
+	return errors.New("usage: quilzo shield playbook list | show NAME | mode NAME act|watch|off --why TEXT | " +
+		"propose --file F --why TEXT | approve ID | decline ID | withdraw ID")
 }
 
-func shieldPropose(root string, c *Caller, by string, pb shield.Playbook, remove bool, why string, onMachine bool, now time.Time) error {
-	var p shield.Proposal
-	var err error
-	if onMachine {
-		p, err = shield.SetOnMachine(root, pb, remove, why, by, now)
-	} else {
-		p, err = shield.Propose(root, pb, remove, why, by, now)
-	}
+func shieldPropose(root string, c *Caller, by string, pb shield.Playbook, remove bool, why string, now time.Time) error {
+	p, err := shield.Propose(root, pb, remove, why, by, now)
 	if err != nil {
 		return err
 	}
-	shieldAudit(root, c, map[bool]string{true: "shield.playbook-set", false: "shield.playbook-proposed"}[onMachine],
-		audit.Success, map[string]string{"proposal": p.ID, "change": proposalWords(p), "why": why})
-	if w.JSON(p) {
+	shieldAudit(root, c, "shield.playbook-proposed", audit.Success,
+		map[string]string{"proposal": p.ID, "change": proposalWords(p), "why": why})
+	return shieldAloneOr(root, c, by, p, now)
+}
+
+// shieldAloneOr approves a change its proposer made as the only
+// administrator, saying so in the record, and otherwise says how another
+// administrator approves it.
+func shieldAloneOr(root string, c *Caller, by string, p shield.Proposal, now time.Time) error {
+	if onlyAdministrator(root, by) {
+		d, err := shield.Decide(root, p.ID, by, true, true, now)
+		if err != nil {
+			return err
+		}
+		shieldAudit(root, c, "shield.playbook-"+d.Outcome, audit.Success, map[string]string{
+			"proposal": d.ID, "change": proposalWords(d), "proposed_by": d.By, "alone": "true"})
+		if w.JSON(d) {
+			return nil
+		}
+		w.Human("%s%s%s %s; you are the only administrator, and the record says it was approved alone\n",
+			green, d.Outcome, reset, proposalWords(d))
 		return nil
 	}
-	if onMachine {
-		w.Human("%sapplied on the machine%s %s\n", green, reset, proposalWords(p))
+	if w.JSON(p) {
 		return nil
 	}
 	w.Human("%sproposed%s %s (%s); another administrator approves it with\n  quilzo shield playbook approve %s\n",
@@ -601,29 +611,17 @@ func shieldHold(root string, args []string) error {
 func shieldRelease(root string, args []string) error {
 	fs := flag.NewFlagSet("shield release", flag.ContinueOnError)
 	why := fs.String("why", "", "why (required)")
-	now := fs.Bool("now", false, "let them act here, on the machine, without a second administrator")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	c, by := shieldBy(root)
-	var p shield.Proposal
-	var err error
-	if *now {
-		p, err = shield.ReleaseOnMachine(root, *why, by, time.Now())
-	} else {
-		p, err = shield.ProposeRelease(root, *why, by, time.Now())
-	}
+	now := time.Now()
+	p, err := shield.ProposeRelease(root, *why, by, now)
 	if err != nil {
 		return err
 	}
-	shieldAudit(root, c, map[bool]string{true: "shield.released", false: "shield.release-proposed"}[*now],
-		audit.Success, map[string]string{"proposal": p.ID, "why": *why})
-	if *now {
-		w.Human("%sthe playbooks act again%s\n", green, reset)
-		return nil
-	}
-	w.Human("%sproposed%s; another administrator approves it with\n  quilzo shield playbook approve %s\n", yellow, reset, p.ID)
-	return nil
+	shieldAudit(root, c, "shield.release-proposed", audit.Success, map[string]string{"proposal": p.ID, "why": *why})
+	return shieldAloneOr(root, c, by, p, now)
 }
 
 func shieldRepair(root string) error {

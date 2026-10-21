@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/out"
 )
 
@@ -85,9 +86,16 @@ func cmdAuditDir(root string, args []string) error {
 		return fmt.Errorf("%s is not a directory", abs)
 	}
 	// Repointing every reader at a different log is the single most sensitive
-	// thing in this command, and it recorded nothing. Written to the OLD log
-	// before the pointer moves, so the change is in the record that was being
-	// kept at the time rather than only in the one it moves to.
+	// thing in this command, so it waits for a second administrator, who
+	// moves it on approving (applyDual).
+	apply, err := proposeSecond(root, resolveCaller(root, ""), dual.AuditLog, "move the audit log to "+abs,
+		dual.AuditLogChange{Dir: abs}, "")
+	if err != nil || !apply {
+		return err
+	}
+	// Written to the OLD log before the pointer moves, so the change is in
+	// the record that was being kept at the time rather than only in the one
+	// it moves to.
 	record(root, resolveCaller(root, "").auditRecord("auditlog.dir", "/",
 		audit.Success, map[string]string{"from": auditDir(root), "to": abs}))
 	if err := setAuditDir(root, abs); err != nil {

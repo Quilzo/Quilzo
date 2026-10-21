@@ -544,8 +544,8 @@ func HoldAll(root, by, reason string, now time.Time) error {
 	})
 }
 
-// release lets the playbooks act again; a second person approves it
-// (Book), or the machine does it (ReleaseOnMachine).
+// release lets the playbooks act again, once a second administrator
+// approves it (Book).
 func release(root string, now time.Time) error {
 	return Change(root, now, func(st *State) error {
 		if st.Watching == nil {

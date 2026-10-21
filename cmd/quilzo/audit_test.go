@@ -190,7 +190,7 @@ func TestEveryPrivilegedCommandWritesAnAuditRecord(t *testing.T) {
 	required := map[string]string{
 		"authGrant":     "auth.",
 		"authRevoke":    "auth.revoke",
-		"tokenIssue":    "token.issue",
+		"tokenIssueAs":  "token.issue",
 		"tokenExchange": "token.exchange",
 		"tokenRevoke":   "token.revoke",
 		"cmdImport":     "import",

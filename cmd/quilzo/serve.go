@@ -13,6 +13,7 @@ import (
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/controls"
 	"github.com/quilzo/quilzo/internal/detect"
+	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/estate"
 	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/fedramp"
@@ -230,6 +231,8 @@ func cmdServe(root string, args []string) error {
 	// Smart lockout for the failures that belong to an account, kept in the
 	// store so every process and every restart counts the same failures.
 	srv.Lockout = lockoutStore(root)
+	srv.Dual = &admin.Dual{Store: dualStore(root),
+		Apply: func(r dual.Request, by string) error { return applyDual(root, r, by) }}
 	srv.SessionPlace, srv.SessionMovedTo, srv.Reported, srv.SignInSignal = sessionHooks(root)
 	srv.Automations = &admin.AutomationsAdmin{
 		Engine:  automationEngineAsync(root),

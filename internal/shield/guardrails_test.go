@@ -207,8 +207,8 @@ func TestHoldingEveryPlaybookTakesOnePersonAndLettingThemActTakesTwo(t *testing.
 	if st, _ := Load(r.Root); st.Watching != nil {
 		t.Fatal("still held after approval")
 	}
-	if _, err := ReleaseOnMachine(r.Root, "x", "root", r.clock); err == nil {
-		t.Fatal("released what was not held")
+	if _, err := ProposeRelease(r.Root, "x", "root", r.clock); err == nil {
+		t.Fatal("proposed releasing what was not held")
 	}
 }
 
@@ -442,7 +442,11 @@ func TestAHoldDoesNotSkipStagesWhenItIsReleased(t *testing.T) {
 	if a, b := cross(), cross(); a.Mode != "held" || b.Stage != 2 {
 		t.Fatalf("held: %+v %+v", a, b)
 	}
-	if _, err := ReleaseOnMachine(r.Root, "fixed", "dana", r.clock); err != nil {
+	rel, err := ProposeRelease(r.Root, "fixed", "dana", r.clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Decide(r.Root, rel.ID, "lee", true, false, r.clock); err != nil {
 		t.Fatal(err)
 	}
 	r.Guard.Refresh()

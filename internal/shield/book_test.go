@@ -142,34 +142,19 @@ func TestProposalsAreChecked(t *testing.T) {
 func TestSettingAShippedPlaybookBackKeepsNothing(t *testing.T) {
 	root := t.TempDir()
 	pb, _ := inForce(t, root, "admin-hunting")
-	pb.Mode = "watch"
-	SetOnMachine(root, pb, false, "testing", "operator", t0)
-	pb.Mode = "act"
-	SetOnMachine(root, pb, false, "back", "operator", t0)
+	for _, mode := range []string{"watch", "act"} {
+		pb.Mode = mode
+		p, err := Propose(root, pb, false, "testing", "dana", t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Decide(root, p.ID, "sam", true, false, t0); err != nil {
+			t.Fatal(err)
+		}
+	}
 	bk, _ := LoadBook(root)
 	if len(bk.Playbooks) != 0 {
 		t.Fatalf("kept %+v", bk.Playbooks)
-	}
-}
-
-func TestAChangeOnTheMachineReplacesOneWaiting(t *testing.T) {
-	root := t.TempDir()
-	pb, _ := inForce(t, root, "admin-hunting")
-	pb.Mode = "watch"
-	p, _ := Propose(root, pb, false, "x", "dana", t0)
-	pb.Mode = "off"
-	m, err := SetOnMachine(root, pb, false, "incident", "operator", t0)
-	if err != nil || m.Outcome != "applied on the machine" {
-		t.Fatalf("%+v %v", m, err)
-	}
-	if _, err := Decide(root, p.ID, "sam", true, false, t0); err == nil {
-		t.Fatal("the replaced proposal was approved over the machine's change")
-	}
-	if got, _ := inForce(t, root, "admin-hunting"); got.Mode != "off" {
-		t.Fatal("the machine's change is not in force")
-	}
-	if _, err := SetOnMachine(root, pb, true, "x", "operator", t0); err == nil {
-		t.Fatal("a shipped playbook was removed on the machine")
 	}
 }
 
@@ -198,7 +183,10 @@ func TestTheLibraryFollowsTheFile(t *testing.T) {
 	}
 	pb := Builtins()[0]
 	pb.Mode = "off"
-	SetOnMachine(root, pb, false, "x", "operator", t0)
+	p, _ := Propose(root, pb, false, "x", "dana", t0)
+	if _, err := Decide(root, p.ID, "sam", true, false, t0); err != nil {
+		t.Fatal(err)
+	}
 	l.Refresh()
 	if l.Get()[0].Mode != "off" {
 		t.Fatal("the change was not read")

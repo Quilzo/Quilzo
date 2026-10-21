@@ -243,6 +243,9 @@ var coverage = map[string]surfaces{
 			"person's, so a page an agent reads cannot steer what Quilzo " +
 			"refuses or lets in",
 	},
+	"pending": {GUI: "/people",
+		NoMCP: "every change waiting here makes somebody more powerful or hides what they did; " +
+			"a model proposing or approving one is a model deciding who may do what"},
 	"policy": {GUI: "/security/parameters", MCP: []string{"policy_status"},
 		Why: "an agent reads which parameters are declared and whether each " +
 			"is met; proposing and approving them is two administrators', " +
@@ -1193,7 +1196,7 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 				"agent that could clear one could quietly unmark " +
 				"model-generated media — the same line drawn for licences",
 		},
-		"shield playbook .remove": {
+		"shield playbook propose.remove": {
 			// A playbook added here is removed from the Shield screen, where
 			// it was added, and the removal is a proposal like any other
 			// change to what Quilzo does on its own.

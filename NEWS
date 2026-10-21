@@ -9,6 +9,24 @@ Unreleased
 
 ** Added
 
+*** Privileged changes take two administrators (NIST SP 800-53 AC-5,
+    CM-5(4), AU-9(5)).  Making somebody an administrator of anything,
+    issuing an administrator's token, a setting weaker than its default,
+    fewer approvals for a change (review.required_approvals or
+    approval.required_humans, including putting one back to a lower
+    default) and moving the audit log each wait for a second
+    administrator, on the command line or on the People and Settings
+    screens.  They are listed on the People screen under Waiting for a
+    second administrator and by `quilzo pending`; another administrator
+    approves or declines (`quilzo pending approve|decline ID`, or the
+    buttons), which makes the change, and whoever asked may withdraw it.
+    An approved administrator's token is issued only to whoever asked,
+    within a day: `quilzo pending redeem ID`.  A request waits a week.  A
+    store with one administrator is not left stuck: their change is made
+    as they ask and recorded as approved alone, as shield changes now are
+    too.  The shield's `--now` and `playbook set`, which changed playbooks
+    on the machine without a second administrator, are gone.
+
 *** Sessions end at NIST's limits, and signing in again keeps the page.
     The admin signs out a browser nobody has used for session.idle, now an
     hour by default and held between five minutes and an hour, with no
