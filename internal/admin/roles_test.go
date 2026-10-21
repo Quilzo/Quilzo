@@ -157,7 +157,7 @@ func asRole(t *testing.T, role auth.Role) (*Server, string) {
 		t.Fatal(err)
 	}
 	ts := &auth.TokenStore{}
-	secret, _, err := ts.Issue("test", "someone", role, "/", time.Hour, role)
+	secret, _, err := ts.IssueSession("test", "someone", role, "/", time.Hour, role, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,6 +208,9 @@ func TestAReadOnlyTokenCannotWriteThroughTheInterface(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv.Policy, srv.Tokens = pol, ts
+	// In the grace before two factors are compulsory, the one time a token
+	// alone reaches the admin, its limits still hold.
+	srv.MFAFrom = time.Now().Add(time.Hour)
 
 	// Reading is what it is for.
 	if w := get(t, srv, "/", secret); w.Code != http.StatusOK {
@@ -252,8 +255,8 @@ func TestANarrowTokenCannotEscalateThroughTheInterface(t *testing.T) {
 	srv, _ := setup(t)
 
 	// "editor" is an admin in the policy. This token is not.
-	reader, _, err := srv.Tokens.Issue("ci", "editor", auth.RoleReader, "/",
-		time.Hour, auth.RoleAdmin)
+	reader, _, err := srv.Tokens.IssueSession("ci", "editor", auth.RoleReader, "/",
+		time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,8 +309,8 @@ func TestANarrowTokenCannotEscalateThroughTheInterface(t *testing.T) {
 func TestATokenScopedToASubtreeDoesNotReachTheWholeStore(t *testing.T) {
 	srv, _ := setup(t)
 
-	scoped, _, err := srv.Tokens.Issue("blog-bot", "editor", auth.RoleAdmin,
-		"/blog", time.Hour, auth.RoleAdmin)
+	scoped, _, err := srv.Tokens.IssueSession("blog-bot", "editor", auth.RoleAdmin,
+		"/blog", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -416,6 +416,23 @@ Unreleased
 
 ** Fixed
 
+*** Two factors on every request a person makes to the admin (NIST SP
+    800-63B-4 AAL2), checked on each request rather than at the sign-in
+    form.  A session now records how it was signed in to, its assurance
+    level and when.  A passkey, which asks for its PIN, fingerprint or
+    face, is two factors; single sign-on counts as two; a token is one.
+    Signing in by pasting a token gives a session that reaches only
+    "Confirm it's you" until the person's passkey confirms it.  A token
+    sent in an Authorization header is refused by the admin's screens;
+    programs use the command line, the API or the agent interface.  A
+    passkey is added from a two-factor session.  Single sign-on required
+    now holds on every request, so a session that did not come through
+    the identity provider is refused however it was made.  An
+    installation gets fourteen days from the first start of this version:
+    until then a token alone still works, every page says when that ends,
+    and the posture check mfa.no-second-factor names who has no passkey
+    or single sign-on.
+
 *** The provisioning token ends.  Whoever holds it can create people and,
     through a mapped group, make them administrators, and it worked for
     ever.  `quilzo scim token` now makes one that lasts 180 days (--days,

@@ -333,6 +333,14 @@ func (s *Server) mayEnrol(who principal) error {
 			"session with all of it; this one carries less (%s on %s). Sign in with %s's own "+
 			"credentials to add one", who.Name, who.Role, orRoot(who.Scope), who.Name)
 	}
+	// A new passkey is bound from a session already at the level it gives
+	// (SP 800-63B-4 4.1): a token alone, which anybody holding a copy has,
+	// would otherwise turn itself into two factors. Before two factors are
+	// compulsory, a token's session may add the first one.
+	if who.Level < 2 && s.mfaEnforced(time.Now()) {
+		return fmt.Errorf("a passkey is added from a session signed in with two factors, and this one " +
+			"was signed in with a token alone. An administrator can give you an enrolment link")
+	}
 	return nil
 }
 
@@ -646,8 +654,15 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 	// A session token, exactly as the OIDC path mints one: the passkey
 	// authenticated, and everything after this is local. The role is what the
 	// policy already grants — a session, not a promotion.
+	// How it was signed in to: a passkey, after whatever the session it
+	// replaces had already proved, so a single sign-on session confirmed
+	// with a passkey is still one that came through the identity provider.
+	methods := []string{auth.MethodPasskey}
+	if stepped != nil {
+		methods = append(append([]string(nil), stepped.Methods...), auth.MethodPasskey)
+	}
 	secret, tok, err := s.Tokens.IssueSession("passkey:"+cred.Principal, cred.Principal,
-		s.roleFor(cred.Principal), "/", s.sessionMax(), auth.RoleAdmin)
+		s.roleFor(cred.Principal), "/", s.sessionMax(), auth.RoleAdmin, methods...)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err)
 		return
@@ -661,7 +676,7 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 	// With what the authenticator said, so the log answers which sign-ins
 	// came from a synced passkey and which from a key that exists once.
 	s.audit("session.start", "/", map[string]string{"by": cred.Principal, "session": tok.ID,
-		"how": "passkey", "label": cred.Label, "user_verified": strconv.FormatBool(used.UserVerified),
+		"how": "passkey", "aal": strconv.Itoa(tok.Level()), "label": cred.Label, "user_verified": strconv.FormatBool(used.UserVerified),
 		"backup_eligible": strconv.FormatBool(used.BackupEligible),
 		"backed_up":       strconv.FormatBool(used.BackupState)})
 	if s.OnSignIn != nil {

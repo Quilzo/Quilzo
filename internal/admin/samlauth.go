@@ -348,7 +348,7 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, ho
 		s.refuseSignIn(w, r, "The identity provider's own session ends in under a minute. Sign in there again.", "")
 		return
 	}
-	secret, tok, err := s.Tokens.IssueSession(how+":"+principal, principal, s.roleFor(principal), "/", ttl, auth.RoleAdmin)
+	secret, tok, err := s.Tokens.IssueSession(how+":"+principal, principal, s.roleFor(principal), "/", ttl, auth.RoleAdmin, auth.MethodSSO)
 	if err != nil {
 		before()
 		s.refuseSignIn(w, r, "the session could not be created: "+err.Error(), "")

@@ -629,6 +629,39 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "mfa.no-second-factor",
+		Title:    "Somebody with access has no second factor",
+		Severity: High,
+		Controls: []string{"IA-2", "IA-2(1)"},
+		OWASP:    "A07:2025 Authentication Failures",
+		Why: "Every person signs in to the admin with two factors (SP 800-63B-4 " +
+			"AAL2): a passkey, or single sign-on. A token alone is one, and " +
+			"anybody holding a copy has it. Before two factors are compulsory, " +
+			"these people still get in with a token; after, they cannot get in " +
+			"at all until they have one.",
+		Check: func(s State) []Finding {
+			if len(s.SSO.NoSecondFactor) == 0 {
+				return nil
+			}
+			who := strings.Join(s.SSO.NoSecondFactor, ", ")
+			if !s.SSO.MFAFrom.IsZero() && s.Now.Before(s.SSO.MFAFrom) {
+				sev := Medium
+				if s.SSO.MFAFrom.Sub(s.Now) < 3*24*time.Hour {
+					sev = High
+				}
+				return []Finding{{Severity: sev, Resource: "people/second-factor",
+					Detail: fmt.Sprintf("two factors become compulsory on %s, and %d %s no passkey or single sign-on: %s",
+						s.SSO.MFAFrom.UTC().Format("2 Jan 2006"), len(s.SSO.NoSecondFactor),
+						plural(len(s.SSO.NoSecondFactor), "person has", "people have"), who),
+					Fix: "each adds a passkey under Passkeys in the admin before then"}}
+			}
+			return []Finding{{Resource: "people/second-factor",
+				Detail: fmt.Sprintf("%d %s no passkey or single sign-on, so cannot sign in to the admin: %s",
+					len(s.SSO.NoSecondFactor), plural(len(s.SSO.NoSecondFactor), "person has", "people have"), who),
+				Fix: "sign them in through single sign-on, or give them a passkey enrolment link"}}
+		},
+	},
+	{
 		ID:       "scim.token-expiring",
 		Title:    "The provisioning token is about to end, or has",
 		Severity: High,

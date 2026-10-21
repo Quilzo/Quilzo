@@ -55,7 +55,7 @@ func TestTheFleetIsAnAdministratorsMapOfWhoCalledWhat(t *testing.T) {
 	if err := srv.Policy.Grant(auth.Binding{Principal: "rae", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	rae, _, _ := srv.Tokens.Issue("rae", "rae", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	rae, _, _ := srv.Tokens.IssueSession("rae", "rae", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if w := get(t, srv, "/fleet", rae); w.Code != http.StatusForbidden {
 		t.Fatalf("an author saw the fleet: %d", w.Code)
 	}

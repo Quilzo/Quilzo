@@ -120,6 +120,7 @@
 {{if .NavGroups}}{{template "rail" .}}{{end}}
 
 <main id="main" tabindex="-1" class="shell">
+{{with .Principal}}{{if .Grace}}<p class="notice warn" role="status">You signed in with one factor. From {{.Grace}}, signing in here takes two: <a href="/passkeys">add a passkey</a> now.</p>{{end}}{{end}}
 {{end}}
 
 {{/*

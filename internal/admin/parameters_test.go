@@ -22,7 +22,7 @@ func TestThePolicyScreenTakesTwo(t *testing.T) {
 	if err := srv.Policy.Grant(auth.Binding{Principal: "second", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	second, _, err := srv.Tokens.Issue("second", "second", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	second, _, err := srv.Tokens.IssueSession("second", "second", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}

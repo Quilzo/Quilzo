@@ -321,7 +321,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// The provider authenticated; everything after this is local.
 	secret, tok, err := s.Tokens.IssueSession(
 		"oidc:"+principal, principal, s.roleFor(principal), "/",
-		s.oidcTTL(), auth.RoleAdmin)
+		s.oidcTTL(), auth.RoleAdmin, auth.MethodSSO)
 	if err != nil {
 		s.refuseSignIn(w, r, "the session could not be created: "+err.Error(), "")
 		return

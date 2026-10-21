@@ -145,8 +145,8 @@ func TestConversationsAreForWhoeverMayEditTheSite(t *testing.T) {
 		Role: auth.RoleReader, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	reader, _, err := srv.Tokens.Issue("r", "looker", auth.RoleReader, "/",
-		time.Hour, auth.RoleReader)
+	reader, _, err := srv.Tokens.IssueSession("r", "looker", auth.RoleReader, "/",
+		time.Hour, auth.RoleReader, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}

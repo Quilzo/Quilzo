@@ -73,11 +73,11 @@ func TestTheSignInFormIsThrottled(t *testing.T) {
 // a working credential for the rest of the working day — in a proxy log, on a
 // shared machine, in whatever copied the Authorization header.
 func TestSigningOutRevokesTheSession(t *testing.T) {
-	srv, parent := setup(t)
+	srv, _ := setup(t)
 
 	// A session, the way OIDC and passkeys mint one.
-	session, tok, err := srv.Tokens.Exchange(parent, auth.RoleNone, "",
-		time.Hour, time.Now())
+	session, tok, err := srv.Tokens.IssueSession("passkey:editor", "editor", auth.RoleAdmin, "/",
+		time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestSigningOutRevokesTheSession(t *testing.T) {
 // It is somebody's own credential, used deliberately. Revoking it because they
 // closed a tab would destroy the thing they signed in with.
 func TestSigningOutDoesNotRevokeALongLivedToken(t *testing.T) {
-	srv, token := setup(t)
+	srv, token := tokenSignIn(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/signout", nil)
 	req.Header.Set("Authorization", "Bearer "+token)

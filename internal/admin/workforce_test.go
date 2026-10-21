@@ -136,8 +136,8 @@ func TestOnlyAnAdministratorSeesAnybodysScore(t *testing.T) {
 		Role: auth.RoleAuthor, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	secret, _, err := srv.Tokens.Issue("w", "writer", auth.RoleAuthor, "/",
-		time.Hour, auth.RoleAdmin)
+	secret, _, err := srv.Tokens.IssueSession("w", "writer", auth.RoleAuthor, "/",
+		time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}

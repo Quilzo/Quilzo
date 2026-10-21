@@ -60,8 +60,8 @@ func scoped(t *testing.T, bindings ...auth.Binding) (*Server, map[string]string)
 			continue
 		}
 		seen[b.Principal] = true
-		secret, _, err := ts.Issue("test-"+b.Principal, b.Principal,
-			auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+		secret, _, err := ts.IssueSession("test-"+b.Principal, b.Principal,
+			auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 		if err != nil {
 			t.Fatal(err)
 		}

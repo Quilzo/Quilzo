@@ -121,7 +121,7 @@ func TestAnApproverSeesAndDecidesOnlyTheirAgentsRuns(t *testing.T) {
 	if err := srv.Policy.Grant(auth.Binding{Principal: "ria", Role: auth.RoleReader, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	tok, _, err := srv.Tokens.Issue("ria", "ria", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	tok, _, err := srv.Tokens.IssueSession("ria", "ria", auth.RoleReader, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestApprovalsAreDecidedByTheSessionNotThePerson(t *testing.T) {
 		t.Errorf("a read-only session let something go ahead: %d answered, %d", answered, w.Code)
 	}
 
-	capped, _, err := srv.Tokens.Issue("capped", "editor", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	capped, _, err := srv.Tokens.IssueSession("capped", "editor", auth.RoleReader, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}

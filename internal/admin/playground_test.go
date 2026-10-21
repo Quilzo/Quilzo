@@ -224,8 +224,8 @@ func TestTheHiddenRuleSurvivesTheFlexLayout(t *testing.T) {
 // somebody's hand, because the token carries its own role.
 func TestRemovingAGrantDoesNotRevokeTheirCredential(t *testing.T) {
 	s, _ := setup(t)
-	tok, _, err := s.Tokens.Issue("theirs", "sam", auth.RoleAuthor, "/",
-		time.Hour, auth.RoleAdmin)
+	tok, _, err := s.Tokens.IssueSession("theirs", "sam", auth.RoleAuthor, "/",
+		time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,8 +251,8 @@ func TestRemovingAGrantDoesNotRevokeTheirCredential(t *testing.T) {
 // A person invisible on this screen is a person nobody removes.
 func TestSomebodyWithNoGrantsStillAppears(t *testing.T) {
 	s, _ := setup(t)
-	if _, _, err := s.Tokens.Issue("orphan", "ghost", auth.RoleReader, "/",
-		time.Hour, auth.RoleAdmin); err != nil {
+	if _, _, err := s.Tokens.IssueSession("orphan", "ghost", auth.RoleReader, "/",
+		time.Hour, auth.RoleAdmin, auth.MethodPasskey); err != nil {
 		t.Fatal(err)
 	}
 	body, _ := fetchPeople(t, s)
@@ -287,8 +287,8 @@ func TestThePeopleWritesAreGuarded(t *testing.T) {
 // fetchPeople renders the page for an admin.
 func fetchPeople(t *testing.T, s *Server) (string, int) {
 	t.Helper()
-	tok, _, err := s.Tokens.Issue("admin-view", "dana", auth.RoleAdmin, "/",
-		time.Hour, auth.RoleAdmin)
+	tok, _, err := s.Tokens.IssueSession("admin-view", "dana", auth.RoleAdmin, "/",
+		time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}

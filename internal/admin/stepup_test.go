@@ -22,7 +22,7 @@ func TestASteppedUpSessionReachesNothingUntilLetIn(t *testing.T) {
 	if err := srv.Policy.Grant(auth.Binding{Principal: "ada", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	adaToken, _, err := srv.Tokens.Issue("laptop", "ada", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	adaToken, _, err := srv.Tokens.IssueSession("laptop", "ada", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,6 +113,7 @@ func TestAStepUpThatCannotBeRecordedRefusesTheSignIn(t *testing.T) {
 		t.Fatal(err)
 	}
 	adaToken, _, _ := srv.Tokens.Issue("laptop", "ada", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	srv.MFAFrom = time.Now().Add(time.Hour)
 	srv.SignInRisk = func(SignInFacts) SignInVerdict { return SignInVerdict{StepUp: true, Reason: "Sydney"} }
 	saves := 0
 	srv.SaveTokens = func(*auth.TokenStore) error {
@@ -196,7 +197,7 @@ func TestASessionUsedSomewhereElseIsCaught(t *testing.T) {
 	if err := srv.Policy.Grant(auth.Binding{Principal: "ada", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
-	adaToken, _, _ := srv.Tokens.Issue("laptop", "ada", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	adaToken, _, _ := srv.Tokens.IssueSession("laptop", "ada", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
 	country := map[string]string{"198.51.100.7": "GB", "198.51.100.8": "GB", "203.0.113.5": "AU"}
 	srv.SessionPlace = func(addr, agent string) SessionContext {
 		d := "Chrome on Windows"

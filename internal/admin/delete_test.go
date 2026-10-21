@@ -115,8 +115,8 @@ func TestRemovingAPageNeedsPermissionToEdit(t *testing.T) {
 		t.Fatal(err)
 	}
 	ts := &auth.TokenStore{}
-	token, _, err := ts.Issue("t", "onlooker", auth.RoleReader, "/",
-		time.Hour, auth.RoleReader)
+	token, _, err := ts.IssueSession("t", "onlooker", auth.RoleReader, "/",
+		time.Hour, auth.RoleReader, auth.MethodPasskey)
 	if err != nil {
 		t.Fatal(err)
 	}
