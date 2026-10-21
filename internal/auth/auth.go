@@ -792,15 +792,19 @@ const (
 	// face: something held and something known or are, two factors at
 	// once, and phishing-resistant.
 	MethodPasskey = "passkey"
-	// MethodSSO is a sign-in through the organisation's identity provider.
+	// MethodSSO is a sign-in through the organisation's identity provider
+	// that said it used more than one factor.
 	MethodSSO = "sso"
+	// MethodSSOOneFactor is a sign-in through the identity provider that
+	// did not say so: one factor, as far as this program can know.
+	MethodSSOOneFactor = "sso-1fa"
 	// MethodToken is a long-lived token: something held, one factor.
 	MethodToken = "token"
 )
 
 // LevelOf is the assurance level a set of methods reaches: 2 with a
-// passkey, which is two factors on its own, or single sign-on; 1 with a
-// token alone.
+// passkey, which is two factors on its own, or a single sign-on that said
+// it used two; 1 with a token, or a single sign-on that did not say.
 func LevelOf(methods []string) int {
 	for _, m := range methods {
 		if m == MethodPasskey || m == MethodSSO {
@@ -821,6 +825,12 @@ func (t Token) Level() int {
 		return t.AAL
 	}
 	return LevelOf(t.Methods)
+}
+
+// SingleSignOn reports whether a session came through the identity
+// provider, whatever it said about factors.
+func (t Token) SingleSignOn() bool {
+	return t.HasMethod(MethodSSO) || t.HasMethod(MethodSSOOneFactor)
 }
 
 // HasMethod reports whether a session was signed in to by method.

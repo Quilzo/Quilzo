@@ -635,8 +635,8 @@ var rules = []Rule{
 		Controls: []string{"IA-2", "IA-2(1)"},
 		OWASP:    "A07:2025 Authentication Failures",
 		Why: "Every person signs in to the admin with two factors (SP 800-63B-4 " +
-			"AAL2): a passkey, or single sign-on. A token alone is one, and " +
-			"anybody holding a copy has it. Before two factors are compulsory, " +
+			"AAL2): a passkey, or a single sign-on whose provider says it used " +
+			"two. A token alone is one, and anybody holding a copy has it. Before two factors are compulsory, " +
 			"these people still get in with a token; after, they cannot get in " +
 			"at all until they have one.",
 		Check: func(s State) []Finding {

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/oidc"
 )
@@ -32,7 +33,7 @@ func TestAnOIDCSignInFinishesOnlyWhereItStarted(t *testing.T) {
 		if cookie != nil {
 			r.AddCookie(cookie)
 		}
-		_, err := o.callback(context.Background(), r, "quilzo_oidc")
+		_, _, err := o.callback(context.Background(), r, "quilzo_oidc")
 		return err
 	}
 	for name, c := range map[string]*http.Cookie{
@@ -55,7 +56,7 @@ func TestStartingAnOIDCSignInSetsItsCookie(t *testing.T) {
 	o := &OIDC{RedirectURI: "https://cms.example/auth/callback", ClientID: "cms",
 		Provider: &oidc.Provider{Discovery: oidc.Discovery{AuthorizationEndpoint: "https://idp.example/authorize"}}}
 	w := httptest.NewRecorder()
-	o.start(w, httptest.NewRequest(http.MethodGet, "/signin/oidc", nil), "quilzo_oidc")
+	o.start(w, httptest.NewRequest(http.MethodGet, "/signin/oidc", nil), "quilzo_oidc", 8*time.Hour)
 	var set *http.Cookie
 	for _, c := range w.Result().Cookies() {
 		if c.Name == "quilzo_oidc" {

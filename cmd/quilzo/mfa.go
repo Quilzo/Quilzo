@@ -67,8 +67,9 @@ func mfaFromIfSet(root string) (time.Time, bool) {
 
 // withoutSecondFactor are the people with access here who have no way to
 // sign in with two factors: no passkey, and no single sign-on that covers
-// their address. Agents are not people and are left out, as is anybody
-// whose only bindings deny.
+// their address and can say it used two (a SAML provider with no way set
+// up to say so cannot). Agents are not people and are left out, as is
+// anybody whose only bindings deny.
 func withoutSecondFactor(root string) []string {
 	pol, err := loadPolicy(root)
 	if err != nil || pol == nil {
@@ -84,7 +85,7 @@ func withoutSecondFactor(root string) []string {
 	oidc, _ := loadOIDC(root)
 	covered := func(name string) bool {
 		for i := range samls {
-			if samls[i].Owns(name) {
+			if samls[i].Owns(name) && samls[i].SaysMFA() {
 				return true
 			}
 		}

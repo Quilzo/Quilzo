@@ -4,12 +4,14 @@
 package main
 
 import (
+	"os"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/posture"
+	"github.com/quilzo/quilzo/internal/saml"
 )
 
 // The grace is written down the first time it is asked for and read the
@@ -43,5 +45,33 @@ func TestTheGraceIsWrittenOnceAndThePeopleWithoutASecondFactorAreNamed(t *testin
 	st := Observe(root, t.TempDir(), posture.ServerFacts{})
 	if !st.SSO.MFAFrom.Equal(from) || !slices.Contains(st.SSO.NoSecondFactor, "pat") {
 		t.Errorf("posture sees %s and %v", st.SSO.MFAFrom, st.SSO.NoSecondFactor)
+	}
+}
+
+// Single sign-on covers somebody only when its provider can say it used two
+// factors; a provider with no way set up to say so leaves them needing a
+// passkey, and posture names them.
+func TestSingleSignOnCoversOnlyWhenItCanSayTwoFactors(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	if err := cmdAuth(root, []string{"grant", "dana@northwind.example", "author"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(samlDir(root), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	c := saml.Config{Name: "corp", Domains: []string{"northwind.example"}}
+	if err := saveJSON(samlFile(root, c.Name), c); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(withoutSecondFactor(root), "dana@northwind.example") {
+		t.Error("a provider that cannot say two factors was counted as one")
+	}
+	c.MFAContexts = []string{"https://refeds.org/profile/mfa"}
+	if err := saveJSON(samlFile(root, c.Name), c); err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(withoutSecondFactor(root), "dana@northwind.example") {
+		t.Error("a provider that says two factors did not cover its people")
 	}
 }

@@ -9,13 +9,34 @@ Unreleased
 
 ** Added
 
+*** Single sign-on counts as two factors only when the identity provider
+    says so.  An OIDC sign-in asks for one no older than session.max
+    (max_age), for amr and auth_time by name where the provider reads the
+    claims parameter, and for the acr values named with `quilzo oidc
+    configure --mfa-acr`; it counts as two factors when its ID token's amr
+    names mfa or its acr is one of those, and its auth_time is that recent.
+    A SAML sign-in counts when the assertion says so, in the context or
+    attribute its preset names; nothing is asked for, because a provider
+    that cannot meet a requested context refuses the sign-in.  The Okta
+    preset reads an attribute statement named amr whose value is
+    session.amr.  Anything else is one factor: the session waits at
+    "Confirm it's you" for the person's passkey, which a Google Workspace
+    SAML sign-in always does.  A second factor is always required, so
+    `quilzo saml add --require-mfa` and the Second factor checkbox are
+    gone.  For Microsoft Entra, add the optional claims amr and auth_time
+    to the ID token; `quilzo oidc configure` and `quilzo oidc status` say
+    what each provider needs, and `quilzo oidc check` whether it reads the
+    claims parameter.  Posture counts a SAML provider as covering its
+    people only when it can say two factors.
+
 *** Smart lockout.  Ten failed passkey sign-ins to one account from places
     it is not used from lock those places out of it for thirty minutes,
     doubling each time up to a day; the person's own places (the networks
     they have signed in from) keep working, so nobody can lock somebody out
     by failing in their name.  A hundred failures in a row from anywhere
     turn passkey sign-in to the account off until the person signs in with
-    single sign-on or another administrator unlocks it on the Sign-ins
+    a single sign-on that says it used two factors, or another
+    administrator unlocks it on the Sign-ins
     screen, which lists who is locked out.  Nobody unlocks themselves there,
     and somebody who administers the whole site is unlocked only by another
     who does; at the store's machine, `quilzo auth unlock NAME` is how a
@@ -458,7 +479,8 @@ Unreleased
     800-63B-4 AAL2), checked on each request rather than at the sign-in
     form.  A session now records how it was signed in to, its assurance
     level and when.  A passkey, which asks for its PIN, fingerprint or
-    face, is two factors; single sign-on counts as two; a token is one.
+    face, is two factors; a single sign-on is two when the identity
+    provider says it used two; a token is one.
     Signing in by pasting a token gives a session that reaches only
     "Confirm it's you" until the person's passkey confirms it.  A token
     sent in an Authorization header is refused by the admin's screens;
@@ -469,7 +491,7 @@ Unreleased
     installation gets fourteen days from the first start of this version:
     until then a token alone still works, every page says when that ends,
     and the posture check mfa.no-second-factor names who has no passkey
-    or single sign-on.
+    or single sign-on that can say it used two factors.
 
 *** The provisioning token ends.  Whoever holds it can create people and,
     through a mapped group, make them administrators, and it worked for

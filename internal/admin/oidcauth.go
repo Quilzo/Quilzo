@@ -9,6 +9,7 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -59,6 +60,10 @@ type OIDC struct {
 	// Domains limit a preferred_username principal to addresses in these
 	// domains, which the tenant has verified it owns.
 	Domains []string
+	// MFAACR are the acr values that mean the provider used more than one
+	// factor, asked for on every sign-in. Without them, only an amr naming
+	// mfa says so (RFC 8176).
+	MFAACR []string
 
 	mu      sync.Mutex
 	pending map[string]*oidcPending
@@ -77,19 +82,79 @@ type oidcPending struct {
 	binding [32]byte
 }
 
+// ssoProof is what an identity provider said about how somebody signed in
+// there: whether it counts as two factors here, and in what words, for the
+// record.
+type ssoProof struct {
+	MFA  bool
+	Said string
+}
+
+// method is the session's sign-in method for what the provider said.
+func (p ssoProof) method() string {
+	if p.MFA {
+		return auth.MethodSSO
+	}
+	return auth.MethodSSOOneFactor
+}
+
+// authTimeSkew is how far a provider's clock may be behind this one when
+// it says when somebody signed in.
+const authTimeSkew = 5 * time.Minute
+
+// proof reads what an ID token says about how its person signed in.
+//
+// Two factors only when the provider says so, and about a sign-in recent
+// enough to be this one: an amr naming mfa (RFC 8176), or an acr the
+// operator named as meaning it, with an auth_time no older than the
+// max_age asked for. A provider that says nothing, or says it about a
+// sign-in days ago, is one factor, and the person confirms with their
+// passkey here.
+func (o *OIDC) proof(c *oidc.Claims, maxAge time.Duration, now time.Time) ssoProof {
+	at, _ := c.Raw["auth_time"].(float64)
+	if at <= 0 {
+		return ssoProof{Said: "no auth_time: the provider did not say when you signed in there"}
+	}
+	if since := now.Sub(time.Unix(int64(at), 0)); maxAge > 0 && since > maxAge+authTimeSkew {
+		return ssoProof{Said: "auth_time " + since.Round(time.Minute).String() + " ago, longer than " + maxAge.String()}
+	}
+	var amr []string
+	if list, ok := c.Raw["amr"].([]any); ok {
+		for _, v := range list {
+			if s, ok := v.(string); ok {
+				amr = append(amr, s)
+			}
+		}
+	}
+	for _, m := range amr {
+		if m == "mfa" {
+			return ssoProof{MFA: true, Said: "amr " + strings.Join(amr, " ")}
+		}
+	}
+	acr := rawString(c, "acr")
+	for _, want := range o.MFAACR {
+		if acr != "" && acr == want {
+			return ssoProof{MFA: true, Said: "acr " + acr}
+		}
+	}
+	return ssoProof{Said: fmt.Sprintf("no second factor said: amr %q, acr %q", strings.Join(amr, " "), acr)}
+}
+
 // DefaultSessionTTL is how long an OIDC session lasts.
 //
 // Eight hours: a working day, so nobody is signed out mid-task, and short
 // enough that a laptop left on a train stops being a credential overnight.
 const DefaultSessionTTL = 8 * time.Hour
 
-// start begins a sign-in, for the browser that holds cookie.
-func (o *OIDC) start(w http.ResponseWriter, r *http.Request, cookie string) {
+// start begins a sign-in, for the browser that holds cookie, asking the
+// provider for a sign-in no older than maxAge.
+func (o *OIDC) start(w http.ResponseWriter, r *http.Request, cookie string, maxAge time.Duration) {
 	req, err := oidc.NewRequest(o.RedirectURI)
 	if err != nil {
 		http.Error(w, "cannot begin sign-in", http.StatusInternalServerError)
 		return
 	}
+	req.MaxAge, req.ACRValues = maxAge, o.MFAACR
 	secret, err := randomToken(32)
 	if err != nil {
 		http.Error(w, "cannot begin sign-in", http.StatusInternalServerError)
@@ -140,50 +205,50 @@ func (o *OIDC) take(state string) *oidcPending {
 }
 
 // callback finishes a sign-in, in the browser that started it.
-func (o *OIDC) callback(ctx context.Context, r *http.Request, cookie string) (string, error) {
+func (o *OIDC) callback(ctx context.Context, r *http.Request, cookie string) (string, ssoProof, error) {
 	if e := r.URL.Query().Get("error"); e != "" {
-		return "", fmt.Errorf("the provider refused: %s (%s)", e,
+		return "", ssoProof{}, fmt.Errorf("the provider refused: %s (%s)", e,
 			r.URL.Query().Get("error_description"))
 	}
 	state := r.URL.Query().Get("state")
 	if state == "" {
-		return "", fmt.Errorf("no state parameter; this response did not come " +
+		return "", ssoProof{}, fmt.Errorf("no state parameter; this response did not come " +
 			"from a sign-in this server started")
 	}
 	p := o.take(state)
 	if p == nil {
-		return "", fmt.Errorf("this state does not match a sign-in in progress. " +
+		return "", ssoProof{}, fmt.Errorf("this state does not match a sign-in in progress. " +
 			"It has already been used, it expired, or the request did not " +
 			"originate here")
 	}
 	c, err := r.Cookie(cookie)
 	if err != nil {
-		return "", fmt.Errorf("this sign-in was started in another browser. Start again here")
+		return "", ssoProof{}, fmt.Errorf("this sign-in was started in another browser. Start again here")
 	}
 	if got := sha256.Sum256([]byte(c.Value)); subtle.ConstantTimeCompare(got[:], p.binding[:]) != 1 {
-		return "", fmt.Errorf("this sign-in was started in another browser. Start again here")
+		return "", ssoProof{}, fmt.Errorf("this sign-in was started in another browser. Start again here")
 	}
 	req := p.req
 	if req.Expired(time.Now()) {
-		return "", fmt.Errorf("this sign-in took too long; start again")
+		return "", ssoProof{}, fmt.Errorf("this sign-in took too long; start again")
 	}
 
 	tokens, err := o.Provider.Exchange(ctx, o.ClientID, o.Secret, req,
 		r.URL.Query().Get("code"))
 	if err != nil {
-		return "", err
+		return "", ssoProof{}, err
 	}
 
 	claims, err := o.Provider.Verifier(o.ClientID).Verify(tokens.IDToken, req.Nonce)
 	if err != nil {
-		return "", err
+		return "", ssoProof{}, err
 	}
 
 	principal, err := o.principalFor(claims)
 	if err != nil {
-		return "", err
+		return "", ssoProof{}, err
 	}
-	return principal, nil
+	return principal, o.proof(claims, req.MaxAge, time.Now()), nil
 }
 
 // rawString reads a claim the Claims struct does not name.
@@ -265,7 +330,7 @@ func (s *Server) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	s.OIDC.start(w, r, s.oidcCookie(r))
+	s.OIDC.start(w, r, s.oidcCookie(r), s.sessionMax())
 }
 
 // oidcCookie names the cookie an OIDC sign-in is bound to: __Host- where
@@ -290,7 +355,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// Spent either way: the binding is for one sign-in.
 	http.SetCookie(w, &http.Cookie{Name: cn, Value: "", Path: "/", HttpOnly: true,
 		Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
-	principal, err := s.OIDC.callback(ctx, r, cn)
+	principal, proof, err := s.OIDC.callback(ctx, r, cn)
 	if err != nil {
 		s.refuseSignIn(w, r, err.Error(), "")
 		return
@@ -321,7 +386,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// The provider authenticated; everything after this is local.
 	secret, tok, err := s.Tokens.IssueSession(
 		"oidc:"+principal, principal, s.roleFor(principal), "/",
-		s.oidcTTL(), auth.RoleAdmin, auth.MethodSSO)
+		s.oidcTTL(), auth.RoleAdmin, proof.method())
 	if err != nil {
 		s.refuseSignIn(w, r, "the session could not be created: "+err.Error(), "")
 		return
@@ -335,13 +400,14 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	if s.OnSignIn != nil {
 		s.OnSignIn(principal, tok.ID)
 	}
+	s.auditProof(principal, tok.ID, proof)
 	stepUp, serr := s.signInCheck(r, principal, tok.ID, "sso", false)
 	if serr != nil {
 		s.refuseSignIn(w, r, serr.Error(), "")
 		return
 	}
 	s.signInDone(r, tok.ID)
-	next := s.lockoutProven(r, principal, startPath(r))
+	next := s.ssoNext(r, principal, proof)
 
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: secret, Path: "/",
@@ -358,6 +424,27 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, next, http.StatusSeeOther)
+}
+
+// auditProof records what the provider said about factors, and whether it
+// counted as two.
+func (s *Server) auditProof(principal, session string, p ssoProof) {
+	s.audit("signin.factors", "/", map[string]string{"by": principal, "session": session,
+		"two_factors": strconv.FormatBool(p.MFA), "said": p.Said})
+}
+
+// ssoNext is where a single sign-on goes: on, when the provider said it
+// used two factors, and the person's passkeys work again if a lockout had
+// turned them off; to "Confirm it's you" when it did not, once two factors
+// are compulsory.
+func (s *Server) ssoNext(r *http.Request, principal string, p ssoProof) string {
+	if p.MFA {
+		return s.lockoutProven(r, principal, startPath(r))
+	}
+	if s.mfaEnforced(time.Now()) {
+		return "/signin/verify"
+	}
+	return startPath(r)
 }
 
 // oidcTTL is the provider's own session length or session.max, whichever

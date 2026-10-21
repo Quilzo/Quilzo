@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +35,9 @@ type Discovery struct {
 	// not offer S256 is a provider this refuses, because the alternative is
 	// plain — which is PKCE with the protection removed.
 	CodeChallengeMethods []string `json:"code_challenge_methods_supported"`
+	// ClaimsParameterSupported says the provider reads the claims request
+	// parameter, which is how amr and auth_time are asked for by name.
+	ClaimsParameterSupported bool `json:"claims_parameter_supported"`
 }
 
 // Provider is a configured identity provider with a cached key set.
@@ -431,6 +435,13 @@ type Request struct {
 	// matches the one from the authorization request.
 	RedirectURI string
 	CreatedAt   time.Time
+	// MaxAge, when set, asks the provider to have the person sign in again
+	// if they last did longer ago than this, and to say when they did
+	// (auth_time, which a provider must then return).
+	MaxAge time.Duration
+	// ACRValues, when set, are the authentication context classes asked
+	// for, in order of preference.
+	ACRValues []string
 }
 
 // MaxRequestAge bounds how long a sign-in may take.
@@ -495,6 +506,17 @@ func (p *Provider) AuthorizationURL(clientID string, r *Request, scopes []string
 	// S256 always. The plain method sends the verifier itself, which is PKCE
 	// with the part that does the work removed.
 	q.Set("code_challenge_method", "S256")
+	if r.MaxAge > 0 {
+		q.Set("max_age", strconv.Itoa(int(r.MaxAge.Seconds())))
+	}
+	if len(r.ACRValues) > 0 {
+		q.Set("acr_values", strings.Join(r.ACRValues, " "))
+	}
+	// How the person signed in, asked for by name where the provider reads
+	// the claims parameter: Google sends amr only when asked this way.
+	if p.Discovery.ClaimsParameterSupported {
+		q.Set("claims", `{"id_token":{"amr":{"essential":true},"auth_time":{"essential":true}}}`)
+	}
 
 	sep := "?"
 	if strings.Contains(p.Discovery.AuthorizationEndpoint, "?") {

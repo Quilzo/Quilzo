@@ -120,10 +120,6 @@ type Provider struct {
 	// ForceAuthn asks the provider to sign the person in again rather than
 	// reuse its own session.
 	ForceAuthn bool
-	// AuthnContexts, when set, are asked for in the request
-	// (Comparison="minimum"); whether the answer satisfied them is the
-	// caller's to check against Assertion.AuthnContext.
-	AuthnContexts []string
 }
 
 // Assertion is what a verified assertion says.

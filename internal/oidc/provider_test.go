@@ -10,7 +10,9 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"math/big"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -227,5 +229,34 @@ func TestTheCommonRefusalsExplainTheFix(t *testing.T) {
 	}
 	if gh.AuthorizationEndpoint != "" {
 		t.Fatal("fixture is wrong")
+	}
+}
+
+// A sign-in asks for one no older than the session it will make, for the
+// contexts the operator named, and, where the provider reads the claims
+// parameter, for amr and auth_time by name.
+func TestTheAuthorizationRequestAsksHowAndWhen(t *testing.T) {
+	p := &Provider{Discovery: Discovery{AuthorizationEndpoint: "https://idp.example/authorize"}}
+	r, err := NewRequest("https://cms.example/auth/callback")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, _ := url.Parse(p.AuthorizationURL("cms", r, nil))
+	for _, k := range []string{"max_age", "acr_values", "claims"} {
+		if plain.Query().Has(k) {
+			t.Errorf("%s asked for when nothing called for it", k)
+		}
+	}
+	r.MaxAge, r.ACRValues = 8*time.Hour, []string{"urn:okta:loa:2fa:any", "phr"}
+	p.Discovery.ClaimsParameterSupported = true
+	u, _ := url.Parse(p.AuthorizationURL("cms", r, nil))
+	q := u.Query()
+	if q.Get("max_age") != "28800" || q.Get("acr_values") != "urn:okta:loa:2fa:any phr" {
+		t.Errorf("max_age %q, acr_values %q", q.Get("max_age"), q.Get("acr_values"))
+	}
+	var claims map[string]map[string]map[string]bool
+	if err := json.Unmarshal([]byte(q.Get("claims")), &claims); err != nil ||
+		!claims["id_token"]["amr"]["essential"] || !claims["id_token"]["auth_time"]["essential"] {
+		t.Errorf("claims %q: %v", q.Get("claims"), err)
 	}
 }

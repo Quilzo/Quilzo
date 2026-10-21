@@ -277,8 +277,11 @@ func (s *Server) handleStepUp(w http.ResponseWriter, r *http.Request) {
 	}
 	s.render(w, r, "verify.html", map[string]any{
 		"Title": "Confirm it's you", "Who": p.Name, "Reason": p.StepUp,
-		"Passkey": s.hasPasskey(p.Name), "SingleSignOn": s.OIDC != nil || len(s.ssoChoices()) > 0,
-		"Error": r.URL.Query().Get("e"),
+		"Passkey": s.hasPasskey(p.Name), "FirstFactor": p.Level < 2,
+		// Signing on again cannot help a sign-on that said it used one
+		// factor: it would say so again.
+		"SingleSignOn": (s.OIDC != nil || len(s.ssoChoices()) > 0) && !hasMethod(p.Methods, auth.MethodSSOOneFactor),
+		"Error":        r.URL.Query().Get("e"),
 	})
 }
 
