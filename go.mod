@@ -17,7 +17,10 @@ go 1.27
 // path to a fix. That is the cost of the zero-dependency argument being
 // true: there is one dependency, and it has to be current.
 //
-// 1.27.2 because govulncheck found twelve reachable standard-library
-// vulnerabilities in 1.27.0 on 9 October 2026 (among them two in
-// html/template, which renders every admin screen), all fixed in 1.27.2.
-toolchain go1.27.2
+// 1.27.3 because govulncheck found GO-2026-6809 on 21 October 2026:
+// crypto/x509 still trusted intermediate certificates known to be
+// compromised, reachable through every outbound TLS connection this program
+// makes (model calls, single sign-on, webhooks, federation), fixed in
+// 1.27.3. 1.27.2 had fixed twelve found in 1.27.0, among them two in
+// html/template, which renders every admin screen.
+toolchain go1.27.3
