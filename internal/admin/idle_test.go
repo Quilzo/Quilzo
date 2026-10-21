@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/config"
 )
 
@@ -126,4 +127,57 @@ func (c *idleClock) anyID() string {
 		return id
 	}
 	return ""
+}
+
+// Anybody who can grant access is signed out after fifteen minutes unused,
+// whatever session.idle allows everybody else; and the idle sign-out is on
+// with no settings at all.
+func TestWhoCanGrantAccessIsSignedOutSooner(t *testing.T) {
+	srv, token := tokenSignIn(t)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "pat", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	pat, _, err := srv.Tokens.Issue("p", "pat", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	person := map[string]string{"Sec-Fetch-Mode": "navigate", "Sec-Fetch-User": "?1"}
+	for _, c := range []struct {
+		settings map[string]string
+		token    string
+		want     string
+	}{
+		{nil, token, `content="900"`},
+		{nil, pat, `content="3600"`},
+		{map[string]string{"session.idle": "20m"}, pat, `content="1200"`},
+		{map[string]string{"session.idle": "10m"}, token, `content="600"`},
+	} {
+		srv.Settings = nil
+		if c.settings != nil {
+			withSettings(t, srv, c.settings)
+		}
+		body := browse(srv, http.MethodGet, "/", sessionCookie(t, srv, c.token), person).Body.String()
+		if !strings.Contains(body, `name="quilzo-idle" `+c.want) || !strings.Contains(body, `name="quilzo-who"`) {
+			t.Errorf("%v: wanted %s", c.settings, c.want)
+		}
+	}
+
+	// And the server holds to it: sixteen minutes unused ends the
+	// administrator's session and not the author's.
+	srv.Settings = nil
+	for _, c := range []struct {
+		token string
+		ends  bool
+	}{{token, true}, {pat, false}} {
+		cookie := sessionCookie(t, srv, c.token)
+		browse(srv, http.MethodGet, "/", cookie, person)
+		tok, _ := srv.Tokens.Authenticate(cookie.Value, time.Now())
+		srv.idle.mu.Lock()
+		srv.idle.last[tok.ID] = time.Now().Add(-16 * time.Minute)
+		srv.idle.mu.Unlock()
+		w := browse(srv, http.MethodGet, "/", cookie, person)
+		if ended := strings.Contains(w.Header().Get("Location"), "e=idle"); ended != c.ends {
+			t.Errorf("%s after sixteen minutes: %d %s", tok.Principal, w.Code, w.Header().Get("Location"))
+		}
+	}
 }

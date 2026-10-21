@@ -175,3 +175,57 @@ func TestTheCeilingTurnsPasskeysOffUntilThePersonProvesThemselves(t *testing.T) 
 		t.Errorf("after a single sign-on, the passkey is still off: %d %s", w.Code, w.Body)
 	}
 }
+
+// verifyAs is a passkey sign-in made in place, from the page of the person
+// named, as the page does after an idle sign-out.
+func (f *fakeAuthenticator) verifyAs(t *testing.T, srv *Server, expect string) *httptest.ResponseRecorder {
+	t.Helper()
+	challenge, _ := decodeBody(t, postJSON(t, srv, "/signin/passkey/challenge", "", nil))["challenge"].(string)
+	f.count++
+	cd := f.clientData(t, "webauthn.get", challenge)
+	ad := f.authData()
+	sum := sha256.Sum256(cd)
+	digest := sha256.Sum256(append(append([]byte{}, ad...), sum[:]...))
+	sig, err := ecdsa.SignASN1(rand.Reader, f.key, digest[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return postJSON(t, srv, "/signin/passkey/verify", "", map[string]any{
+		"id": enc(f.id), "challenge": challenge, "expect": expect,
+		"clientDataJSON": enc(cd), "authenticatorData": enc(ad), "signature": enc(sig),
+	})
+}
+
+// Signing in again in place carries on with the page only for the person
+// it was theirs: somebody else's passkey is refused and makes no session.
+// The person is told, in place, of any failures before.
+func TestSigningInAgainInPlaceIsForThePagesPerson(t *testing.T) {
+	srv := enrolling(t)
+	srv.Lockout = &lockout.Store{Path: filepath.Join(t.TempDir(), "lockout.json")}
+	if err := srv.Policy.Grant(auth.Binding{Principal: "erin", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	keys := map[string]*fakeAuthenticator{}
+	for _, who := range []string{"dana", "erin"} {
+		secret, _, err := srv.Enrol.Issue(who, "editor", time.Hour, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys[who] = newFake(t, who+"-key")
+		if w := keys[who].enrol(t, srv, secret); w.Code != http.StatusOK {
+			t.Fatalf("enrolling %s: %d %s", who, w.Code, w.Body)
+		}
+	}
+	w := keys["erin"].verifyAs(t, srv, "dana")
+	if w.Code != http.StatusConflict || cookieFrom(w) != "" {
+		t.Fatalf("erin carried on with dana's page: %d %s", w.Code, w.Body)
+	}
+	srv.Lockout.Fail("dana", "203.0.113.7", time.Now())
+	w = keys["dana"].verifyAs(t, srv, "dana")
+	if w.Code != http.StatusOK || cookieFrom(w) == "" {
+		t.Fatalf("dana in place: %d %s", w.Code, w.Body)
+	}
+	if notice, _ := decodeBody(t, w)["notice"].(string); !strings.HasPrefix(notice, "1 failed sign-in on your account") {
+		t.Errorf("the notice in place: %q", notice)
+	}
+}

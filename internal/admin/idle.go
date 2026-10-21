@@ -35,8 +35,8 @@ type idleClock struct {
 // reports whether it did; otherwise it notes this request as use when a
 // person made it.
 func (s *Server) idleOver(w http.ResponseWriter, r *http.Request, p principal) bool {
-	idle := s.sessionIdle()
-	if idle <= 0 || !p.Session || p.TokenID == "" || !fromBrowser(r) {
+	idle := s.idleFor(p.Name)
+	if !p.Session || p.TokenID == "" || !fromBrowser(r) {
 		return false
 	}
 	now := time.Now()

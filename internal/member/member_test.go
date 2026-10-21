@@ -308,3 +308,11 @@ func TestARecoverySessionIsForAPasskeyAndBrief(t *testing.T) {
 		t.Errorf("the ordinary session ended with it: %v", err)
 	}
 }
+
+// A member signs in again within thirty days whatever they do: NIST SP
+// 800-63B-4's longest sign-in at AAL1.
+func TestAMemberSignsInAgainWithinThirtyDays(t *testing.T) {
+	if SessionMax > 30*24*time.Hour || SessionIdle > SessionMax {
+		t.Errorf("a member's sign-in lasts %s, idle %s", SessionMax, SessionIdle)
+	}
+}

@@ -113,8 +113,10 @@ type Invite struct {
 const (
 	// SessionIdle ends a session nobody has used for this long.
 	SessionIdle = 14 * 24 * time.Hour
-	// SessionMax ends any session this long after it began, used or not.
-	SessionMax = 90 * 24 * time.Hour
+	// SessionMax ends any session this long after it began, used or not:
+	// thirty days, the most NIST SP 800-63B-4 allows a sign-in at AAL1 to
+	// last, after which the member signs in again with their passkey.
+	SessionMax = 30 * 24 * time.Hour
 	// RecoveryLife is how long a recovery code's session may wait for the
 	// new passkey it is for.
 	RecoveryLife = 15 * time.Minute

@@ -1027,10 +1027,11 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	}
 	if p, ok := data["Principal"].(principal); ok {
 		data["Initial"] = initialOf(p.Name)
-		// The page tells the server somebody is there, and warns before
-		// the end, only where the end applies (idle.go).
-		if idle := s.sessionIdle(); idle > 0 && p.Session && fromBrowser(r) {
-			data["IdleSeconds"] = int(idle.Seconds())
+		// The page tells the server somebody is there, warns before the
+		// end and offers to sign in again in place, only where the end
+		// applies (idle.go).
+		if p.Session && fromBrowser(r) {
+			data["IdleSeconds"] = int(s.idleFor(p.Name).Seconds())
 		}
 	}
 

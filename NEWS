@@ -9,6 +9,18 @@ Unreleased
 
 ** Added
 
+*** Sessions end at NIST's limits, and signing in again keeps the page.
+    The admin signs out a browser nobody has used for session.idle, now an
+    hour by default and held between five minutes and an hour, with no
+    way to switch it off; anybody who can grant access is signed out after
+    fifteen minutes at most.  A minute before, the page warns as it did;
+    afterwards it offers to sign in again with the person's passkey where
+    it is, so a half-written page is not lost.  Only the person whose
+    page it was carries on: somebody else's passkey is refused, and is
+    told to use the sign-in page.  A configuration holding session.idle
+    0s, or more than an hour, loads with the default and says so.  Site
+    members sign in again after thirty days, not ninety.
+
 *** Single sign-on counts as two factors only when the identity provider
     says so.  An OIDC sign-in asks for one no older than session.max
     (max_age), for amr and auth_time by name where the provider reads the

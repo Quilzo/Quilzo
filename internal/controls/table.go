@@ -17,7 +17,7 @@ var table = []Implementation{
 		Customer:  "Sets end dates, acts on the stale-credential findings, and deprovisions leavers in the identity provider.",
 		Where:     []string{"quilzo token stale", "/security", "internal/scim"}},
 	{Control: "AC-2(5)", Title: "Inactivity Logout", Responsibility: Shared,
-		Statement: "With session.idle set, a browser session to the admin that nobody has used for that long is revoked on its next request, and the person is told why. The page reports keys, clicks and scrolls at most every half minute and warns a minute before the end; a screen refreshing itself does not count as use.",
+		Statement: "A browser session to the admin that nobody has used for session.idle (an hour by default, five minutes to an hour, never off) is revoked on its next request, and fifteen minutes at most for anybody who can grant access. The page reports keys, clicks and scrolls at most every half minute, warns a minute before the end, and afterwards offers to sign in again with the same person's passkey without leaving the page; a screen refreshing itself does not count as use.",
 		Customer:  "Chooses the period, or declares it as the organisation's parameter.",
 		Where:     []string{"internal/admin/idle.go", "/settings", "/security/parameters"}},
 	{Control: "AC-2(7)", Title: "Privileged User Accounts", Responsibility: Shared,

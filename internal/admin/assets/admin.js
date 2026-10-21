@@ -294,19 +294,111 @@
   }
   // Signing out a session nobody is using (session.idle). The server
   // decides; the page tells it somebody is here — a key, a click, a
-  // scroll — at most every half minute, and warns a minute before the end
-  // so a person who is reading can stay.
+  // scroll — at most every half minute, warns a minute before the end so
+  // a person who is reading can stay, and afterwards offers to sign in
+  // again with their passkey without leaving the page, so nothing on it
+  // is lost. Only the person the page was theirs carries on with it.
   (function () {
     var meta = document.querySelector('meta[name="quilzo-idle"]');
     var idle = meta ? parseInt(meta.content, 10) * 1000 : 0;
     if (!(idle > 0)) return;
-    var told = Date.now(), used = told, warning = null;
-    function out() { location.href = "/signin?e=idle"; }
+    var whoMeta = document.querySelector('meta[name="quilzo-who"]');
+    var who = whoMeta ? whoMeta.content : "";
+    var told = Date.now(), used = told, warning = null, ended = false;
+    function close() {
+      if (warning) { warning.close(); warning.remove(); warning = null; }
+    }
     function tell() {
+      if (ended) return;
       told = Date.now();
       fetch("/session/alive", { method: "POST", credentials: "same-origin", cache: "no-store" })
-        .then(function (r) { if (r.status === 401) out(); }, function () {});
-      if (warning) { warning.close(); warning.remove(); warning = null; }
+        .then(function (r) { if (r.status === 401) signedOut(); }, function () {});
+      close();
+    }
+    function bytes(s) {
+      s = s.replace(/-/g, "+").replace(/_/g, "/");
+      while (s.length % 4) { s += "="; }
+      var raw = atob(s), out = new Uint8Array(raw.length);
+      for (var i = 0; i < raw.length; i++) { out[i] = raw.charCodeAt(i); }
+      return out;
+    }
+    function text(buffer) {
+      var b = new Uint8Array(buffer), s = "";
+      for (var i = 0; i < b.length; i++) { s += String.fromCharCode(b[i]); }
+      return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    }
+    function post(url, body) {
+      return fetch(url, { method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })
+        .then(function (r) {
+          return r.json().then(function (d) {
+            if (!r.ok) { throw new Error(d.error || "that did not work"); }
+            return d;
+          });
+        });
+    }
+    // The session has ended: say so, and offer the passkey, in place.
+    function signedOut() {
+      if (ended) return;
+      ended = true;
+      close();
+      warning = document.createElement("dialog");
+      warning.className = "idle-warn";
+      warning.setAttribute("aria-labelledby", "idle-warn-title");
+      var h = document.createElement("h2");
+      h.id = "idle-warn-title";
+      h.textContent = "Signed out";
+      var p = document.createElement("p");
+      p.textContent = "Nobody used the admin for " + Math.round(idle / 60000) + " minutes, so you were signed out, " +
+        "as your organisation requires. Sign in again with your passkey to carry on here: nothing on this page is lost.";
+      var said = document.createElement("p");
+      said.setAttribute("role", "status");
+      var again = document.createElement("button");
+      again.type = "button";
+      again.textContent = "Use my passkey";
+      var other = document.createElement("a");
+      other.href = "/signin?e=idle";
+      other.className = "btn-text";
+      other.textContent = "Sign in another way";
+      again.addEventListener("click", function () {
+        again.disabled = true;
+        said.textContent = "Waiting for your device…";
+        var challenge = null;
+        post("/signin/passkey/challenge").then(function (start) {
+          challenge = start.challenge;
+          return navigator.credentials.get({ publicKey: { challenge: bytes(start.challenge),
+            rpId: start.rpId, userVerification: "required", timeout: 120000 } });
+        }).then(function (c) {
+          if (!c) { throw new Error("no passkey was offered"); }
+          return post("/signin/passkey/verify", { id: c.id, challenge: challenge, expect: who,
+            clientDataJSON: text(c.response.clientDataJSON),
+            authenticatorData: text(c.response.authenticatorData),
+            signature: text(c.response.signature) });
+        }).then(function (done) {
+          // A sign-in held back for its person to confirm goes there.
+          if (done.next && done.next.indexOf("/signin/verify") === 0) { location.href = done.next; return; }
+          ended = false;
+          told = used = Date.now();
+          if (!done.notice) { close(); return; }
+          said.textContent = done.notice;
+          again.textContent = "Carry on";
+          again.disabled = false;
+          again.onclick = close;
+          other.remove();
+        }).catch(function (err) {
+          again.disabled = false;
+          said.textContent = err && err.message ? err.message : "that did not work";
+        });
+      });
+      // Not dismissed by Escape: behind it is a page that can no longer
+      // save, and the two ways out are the ones offered.
+      warning.addEventListener("cancel", function (e) { e.preventDefault(); });
+      warning.append(h, p, said);
+      if (window.PublicKeyCredential) { warning.append(again); }
+      warning.append(other);
+      document.body.append(warning);
+      warning.showModal();
+      (window.PublicKeyCredential ? again : other).focus();
     }
     function use() {
       used = Date.now();
@@ -334,12 +426,19 @@
       stay.focus();
     }
     setInterval(function () {
+      if (ended) return;
       var now = Date.now(), left = idle - (now - told);
       // Use the throttle held back is told before it could matter.
       if (used > told && (now - told > 30000 || left <= 60000)) { tell(); return; }
       // Past the end, and a moment more, the server signs the session out
-      // on the next request and says why; reloading makes that request.
-      if (left <= -2000) { location.reload(); return; }
+      // on the next request, which this makes, and the page offers to
+      // sign in again where it is.
+      if (left <= -2000) {
+        fetch("/session/alive", { method: "POST", credentials: "same-origin", cache: "no-store" })
+          .then(function (r) { if (r.status === 401) { signedOut(); } else { told = Date.now(); } },
+            function () {});
+        return;
+      }
       if (left <= 60000 && !warning) warn();
     }, 5000);
   })();

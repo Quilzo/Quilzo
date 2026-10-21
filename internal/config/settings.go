@@ -172,14 +172,16 @@ var settings = []Setting{
 			"so a browser left open overnight is still signed in in the morning"),
 	},
 	{
-		Key: "session.idle", Kind: Duration, Default: "0s",
-		Summary:  "sign out of the admin after this long with nobody using the page; 0 never",
+		Key: "session.idle", Kind: Duration, Default: "1h",
+		Summary:  "sign out of the admin after this long with nobody using the page",
 		Controls: []string{"AC-2(5)", "AC-11", "AC-12"},
 		Params:   []string{"ac-02.05_odp"},
-		Why: "Off unless the organisation asks for it, because a person writing a long " +
-			"page sends nothing while they type. When it is on, the page reports that " +
-			"somebody is typing, scrolling or clicking, warns a minute before signing " +
-			"out, and keeps them signed in if they answer. At least five minutes.",
+		Why: "An hour, the most NIST SP 800-63B-4 allows at AAL2, and fifteen minutes " +
+			"for anybody who can grant access. The page reports that somebody is " +
+			"typing, scrolling or clicking, so a person writing a long page is not " +
+			"signed out; it warns a minute before, keeps them signed in if they " +
+			"answer, and afterwards lets them sign in again with their passkey " +
+			"without leaving the page. Between five minutes and an hour.",
 	},
 
 	// -- the HTTP API ---------------------------------------------------------
@@ -1260,13 +1262,16 @@ func All() []Setting { return append([]Setting(nil), settings...) }
 var reBrandColour = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
 
 // hardBounds are the settings held between bounds no reason steps outside:
-// a count, or a duration in nanoseconds.
+// a count, or a duration in nanoseconds. The throttle's are internal/throttle's;
+// session.idle's are NIST SP 800-63B-4's AAL2 inactivity limit above and,
+// below, the shortest a person reading a page is not interrupted by.
 var hardBounds = map[string][2]int64{
 	"auth.throttle.after":   {0, throttle.MostFree},
 	"auth.throttle.ceiling": {throttle.LeastCeiling, throttle.MostCeiling},
 	"auth.throttle.base":    {int64(throttle.LeastDelay), int64(throttle.LongestDelay)},
 	"auth.throttle.max":     {int64(throttle.LeastDelay), int64(throttle.LongestDelay)},
 	"auth.lockout.alert":    {1, throttle.LatestAlert},
+	"session.idle":          {int64(5 * time.Minute), int64(time.Hour)},
 }
 
 // ErrOutOfBounds is a value outside a setting's hard bounds.
@@ -1330,10 +1335,6 @@ func (s Setting) Validate(v string) error {
 		}
 		if s.Key == "session.max" && (d < 5*time.Minute || d > 12*time.Hour) {
 			return fmt.Errorf("a sign-in lasts between 5m and 12h; %s is outside that", d)
-		}
-		if s.Key == "session.idle" && d != 0 && d < 5*time.Minute {
-			return fmt.Errorf("signing out after %s idle would interrupt people reading a page; "+
-				"give at least 5m, or 0 for never", d)
 		}
 	case Bool:
 		if _, err := strconv.ParseBool(v); err != nil {
