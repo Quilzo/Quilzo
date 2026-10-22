@@ -919,6 +919,8 @@ func main() {
 	case "siem":
 		if len(cmdArgs) > 0 && cmdArgs[0] == "verify" {
 			err = cmdSiemVerify(root, cmdArgs[1:])
+		} else if len(cmdArgs) > 0 && cmdArgs[0] == "stream" {
+			err = cmdSiemStream(root, cmdArgs[1:])
 		} else {
 			err = cmdSiem(root, cmdArgs)
 		}

@@ -106,6 +106,13 @@ func (l *Log) Append(data []byte) int {
 	return len(l.leaves) - 1
 }
 
+// Clone is a copy of the log, which can grow without changing this one.
+func (l *Log) Clone() *Log {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return &Log{leaves: append([][]byte(nil), l.leaves...)}
+}
+
 // Size is the number of entries.
 func (l *Log) Size() int {
 	l.mu.RLock()

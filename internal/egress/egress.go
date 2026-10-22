@@ -170,6 +170,12 @@ var Purposes = []Purpose{
 		Without: "reminders are not sent in Slack",
 	},
 	{
+		Name: "siem",
+		What: "pushing the audit log to a SIEM as it is written (siem.stream.url)",
+		Without: "the audit log is kept here only. quilzo siem still exports it " +
+			"for somebody to carry across",
+	},
+	{
 		Name:    "telemetry",
 		What:    "exporting traces and metrics to an OTLP collector",
 		Without: "nothing is exported. A collector on loopback still receives",

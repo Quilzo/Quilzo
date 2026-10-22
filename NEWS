@@ -9,6 +9,20 @@ Unreleased
 
 ** Added
 
+*** The audit log streams to a SIEM as it is written.  Set
+    siem.stream.url (https, or http to this machine) and quilzo serve
+    pushes every fifteen seconds: OCSF batches that follow each other
+    exactly, each with the chain envelope, every record's Merkle leaf and
+    a tree head signed with Ed25519 and ML-DSA, the request signed as an
+    HTTP message (RFC 9421) over its body's digest, with a key kept for
+    this.  The receiver can prove it holds every record, unchanged; the
+    cursor moves only when it takes a batch, and a receiver that says it
+    holds less is sent the rest again.  People stay pseudonymous unless
+    siem.stream.reveal is set, and a SIEM off this network needs
+    siem.stream.allow_remote; both are weaker settings, so they take two
+    administrators.  `quilzo siem stream status | key | send`, and posture
+    reports a stream failing for an hour.
+
 *** Privileged changes take two administrators (NIST SP 800-53 AC-5,
     CM-5(4), AU-9(5)).  Making somebody an administrator of anything,
     issuing an administrator's token, a setting weaker than its default,

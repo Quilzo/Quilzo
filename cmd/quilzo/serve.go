@@ -786,6 +786,10 @@ func cmdServe(root string, args []string) error {
 		PublicAddr: *publicAddr, BehindProxy: *behindProxy}))
 	upkeepCtx, stopUpkeep := context.WithCancel(context.Background())
 	defer stopUpkeep()
+	// The audit log out to a SIEM as it is written, on its own quicker
+	// timer; how it is going is kept where status and posture read it, and
+	// a failure is not written to the log it is failing to send.
+	go upkeep.Run(upkeepCtx, StreamEvery, func(upkeep.Job, int, error) {}, streamJob(root))
 	go upkeep.Run(upkeepCtx, upkeep.Every, func(j upkeep.Job, n int, err error) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  %s%s: %v%s\n", dim, j.Name, err, reset)

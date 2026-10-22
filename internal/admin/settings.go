@@ -342,6 +342,8 @@ func settingGroupLabel(key string) string {
 		return "Desktop cells"
 	case "passkey":
 		return "Passkeys"
+	case "siem":
+		return "The audit log, streamed to a SIEM"
 	case "token":
 		return "API tokens"
 	case "api":

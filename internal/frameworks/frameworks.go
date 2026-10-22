@@ -240,6 +240,7 @@ var fromRule = map[string][]Ref{
 	"agent.reviewer-not-second":  {{"iso-42001", "A.6.2.4"}, {"nist-ai-rmf", "MANAGE 2.2"}},
 	"scim.token-expiring":        {{"iso-27001", "A.5.18"}, {"soc2", "CC6.2"}},
 	"mfa.no-second-factor":       {{"iso-27001", "A.8.5"}, {"soc2", "CC6.1"}},
+	"siem.stream-failing":        {{"iso-27001", "A.8.15"}, {"soc2", "CC7.2"}},
 	"agent.sponsor-gone":         {{"iso-42001", "A.3.2"}, {"eu-ai-act", "Art. 26(2)"}, {"nist-ai-rmf", "GOVERN 2.1"}},
 	"agent.memory-held":          {{"iso-42001", "A.7.4"}, {"owasp-llm", "LLM04"}},
 	"model.personal-data-leaves": {{"iso-42001", "A.10.3"}, {"gdpr", "Art. 28"}},

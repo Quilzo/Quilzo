@@ -292,6 +292,15 @@ type SSOProvider struct {
 
 // InterfaceFacts is the agent interface as set up: whether it answers, and
 // which apps may connect to it on people's behalf.
+// StreamFacts is the audit log's push to a SIEM (siem.stream.url).
+type StreamFacts struct {
+	Set      bool      `json:"set"`
+	Sent     int64     `json:"sent"`
+	Failures int       `json:"failures,omitempty"`
+	Since    time.Time `json:"since,omitzero"`
+	Error    string    `json:"error,omitempty"`
+}
+
 type InterfaceFacts struct {
 	Checked bool `json:"checked"`
 	On      bool `json:"on"`
@@ -409,6 +418,7 @@ type State struct {
 	AI         AIFacts           `json:"ai"`
 	SSO        SSOFacts          `json:"sso"`
 	Interface  InterfaceFacts    `json:"interface"`
+	Stream     StreamFacts       `json:"stream"`
 	Now        time.Time         `json:"-"`
 	Extra      map[string]string `json:"extra,omitempty"`
 }

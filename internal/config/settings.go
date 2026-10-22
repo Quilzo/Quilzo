@@ -1021,6 +1021,33 @@ var settings = []Setting{
 			"URL. Loopback and private addresses need no flag.",
 	},
 	{
+		Key: "siem.stream.url", Kind: Text, Default: "",
+		Summary:  "a SIEM to push the audit log to as it is written",
+		Controls: []string{"AU-4(1)", "AU-6(4)", "AU-9(2)"},
+		Why: "The audit log kept where Quilzo cannot reach it, so a person who " +
+			"takes the store over cannot take the record of it too. Batches of " +
+			"OCSF, each following the last, carrying a signed tree head and an " +
+			"HTTP message signature, so the receiver can prove nothing was " +
+			"dropped or changed. Empty sends nothing; quilzo siem exports by hand.",
+	},
+	{
+		Key: "siem.stream.allow_remote", Kind: Bool, Default: "false",
+		Summary: "permit a SIEM that is not on this machine or network",
+		Why: "The audit log says who did what, when, from where. Sending it to " +
+			"a hosted service is a disclosure that should be a sentence " +
+			"somebody typed rather than a consequence of pasting an address. " +
+			"Loopback and private addresses need no flag.",
+		Weaker: onIsWeaker("the audit log leaves this network"),
+	},
+	{
+		Key: "siem.stream.reveal", Kind: Bool, Default: "false",
+		Summary: "send people's names in the stream instead of pseudonyms",
+		Why: "The stream carries the pseudonyms the log keeps, which whoever " +
+			"holds the log's key can turn back into names. Revealing them " +
+			"hands every name to the receiving system and to whoever can read it.",
+		Weaker: onIsWeaker("people's names leave in the audit stream"),
+	},
+	{
 		Key: "telemetry.timeout", Kind: Duration, Default: "5s",
 		Summary: "how long one trace export may take",
 		Why: "Telemetry must not outlive the thing it describes. There is no " +
@@ -1197,6 +1224,16 @@ var settings = []Setting{
 
 // -- the shapes a floor takes ------------------------------------------------
 
+// onIsWeaker is the setting whose being on gives something up.
+func onIsWeaker(cost string) func(string) (bool, string) {
+	return func(v string) (bool, string) {
+		if b, err := strconv.ParseBool(v); err == nil && b {
+			return true, cost
+		}
+		return false, ""
+	}
+}
+
 func offIsWeaker(cost string) func(string) (bool, string) {
 	return func(v string) (bool, string) {
 		if b, err := strconv.ParseBool(v); err == nil && !b {
@@ -1341,6 +1378,13 @@ func (s Setting) Validate(v string) error {
 			return fmt.Errorf("%q is not true or false", v)
 		}
 	case Text:
+		if s.Key == "siem.stream.url" && v != "" {
+			u, err := url.Parse(v)
+			if err != nil || u.Host == "" || u.User != nil ||
+				(u.Scheme != "https" && !(u.Scheme == "http" && isLoopbackHost(u.Hostname()))) {
+				return fmt.Errorf("%q is not an https address (http only to this machine)", v)
+			}
+		}
 		if s.Key == "admin.brand.colour" && v != "" {
 			// The same pattern the admin enforces, checked here as well so a
 			// bad value is refused when it is set rather than ignored when it
@@ -1495,4 +1539,13 @@ func (s Setting) IsWeaker(v string) (bool, string) {
 		return false, ""
 	}
 	return s.Weaker(v)
+}
+
+// isLoopbackHost reports a host name that is this machine.
+func isLoopbackHost(h string) bool {
+	if h == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
 }
