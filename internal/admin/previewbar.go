@@ -57,6 +57,18 @@ import (
 // outer one — which is the arrangement where "back" does something different
 // depending on what you last clicked. One document, one history.
 
+// esc is html.EscapeString by name. It was a local variable holding the
+// function, which escapes exactly the same and which CodeQL cannot see
+// through: it reported the page name in the panel as reflected cross-site
+// scripting, on every analysis, about text this escapes.
+func esc(s string) string { return html.EscapeString(s) }
+
+// urlArg puts a value into a link: query-escaped for the URL, then escaped
+// for the attribute the URL sits in. The second changes nothing the first
+// produces, which is the point — each layer escapes for its own place, so
+// neither has to be trusted to have done the other's job.
+func urlArg(s string) string { return html.EscapeString(url.QueryEscape(s)) }
+
 // previewBar returns the panel to inject into a preview.
 //
 // It is built from what the page actually carries: its type's fields when it
@@ -64,8 +76,6 @@ import (
 // the page-level links and nothing invented.
 func previewBar(page string, body any, t schema.Type, typed bool) string {
 	var b strings.Builder
-	esc := html.EscapeString
-	q := url.QueryEscape
 
 	// A pill in the corner that opens a panel, rather than a panel across
 	// the top that has to be closed. The panel was a <details open> fixed
@@ -99,7 +109,7 @@ func previewBar(page string, body any, t schema.Type, typed bool) string {
 			`<a href="/sections?page=%s">Arrange sections</a> · `+
 			`<a href="/">All pages</a> · `+
 			`<a href="/preview/%s?plain=1">Hide this panel</a></p>`,
-		q(page), q(page), q(page))
+		urlArg(page), urlArg(page), urlArg(page))
 
 	if fields := previewFields(body, t, typed); len(fields) > 0 {
 		b.WriteString(`<p class="qz-what">Fields</p><ul class="qz-list">`)
@@ -108,7 +118,7 @@ func previewBar(page string, body any, t schema.Type, typed bool) string {
 			// control id="f-KEY", so a fragment lands on the one you clicked
 			// rather than at the top of a form with eleven boxes in it.
 			fmt.Fprintf(&b,
-				`<li><a href="/page/%s#f-%s">%s</a>`, q(page), q(f.key), esc(f.label))
+				`<li><a href="/page/%s#f-%s">%s</a>`, urlArg(page), urlArg(f.key), esc(f.label))
 			if f.preview != "" {
 				fmt.Fprintf(&b, ` <span class="qz-peek">%s</span>`, esc(f.preview))
 			}
@@ -127,7 +137,7 @@ func previewBar(page string, body any, t schema.Type, typed bool) string {
 		for _, sec := range placed {
 			fmt.Fprintf(&b,
 				`<li><a href="/sections/fields?page=%s&amp;at=%d">%s</a>`,
-				q(page), sec.Index, esc(sec.Kind))
+				urlArg(page), sec.Index, esc(sec.Kind))
 			if sec.Unknown {
 				b.WriteString(` <span class="qz-peek">not a kind this build ` +
 					`knows, so it renders as nothing</span>`)

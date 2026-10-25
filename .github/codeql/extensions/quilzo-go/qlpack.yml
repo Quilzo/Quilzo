@@ -1,0 +1,13 @@
+# What CodeQL cannot read for itself about this project's escaping.
+#
+# Every entry here is a function whose output is escaped by code CodeQL
+# does not model, with the reason it is safe. Each one removes findings, so
+# each one is a claim somebody can check: if the code it describes changes,
+# the claim has to be made again or deleted.
+name: quilzo/go-escaping
+version: 0.0.1
+library: true
+extensionTargets:
+  codeql/go-all: "*"
+dataExtensions:
+  - models/*.yml

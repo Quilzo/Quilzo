@@ -72,6 +72,20 @@ jobs:
           # should not be gated on formatting.
           go build ./...
 
+      # The project's own models: .github/codeql/extensions/quilzo-go says,
+      # with the reason for each, which functions escape their output in ways
+      # CodeQL cannot read for itself — internal/tmpl, an autoescaping engine
+      # it does not model as it models html/template, chief among them. The
+      # action does not pick up a model pack from the repository by itself,
+      # so it is named here. --additional-packs adds to the search path rather
+      # than replacing it, so the action's own pack for analysing only a pull
+      # request's changes is still found alongside it.
+      - if: matrix.language == 'go'
+        shell: bash
+        run: |
+          printf 'CODEQL_ACTION_EXTRA_OPTIONS={"database":{"run-queries":["--additional-packs=%s/.github/codeql/extensions","--model-packs=quilzo/go-escaping"]}}\n' \
+            "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
         with:

@@ -15,7 +15,6 @@ import (
 	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
-	"github.com/quilzo/quilzo/internal/automate"
 	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/upkeep"
 )
@@ -141,7 +140,6 @@ func remindSponsors(root string, now time.Time) (int, error) {
 		_ = json.Unmarshal(b, &told)
 	}
 	kept := map[string]string{}
-	notify := automationActions(root)["notify"]
 	n := 0
 	for name, id := range set.Identities {
 		until := id.Expires.UTC().Format(time.RFC3339)
@@ -150,17 +148,15 @@ func remindSponsors(root string, now time.Time) (int, error) {
 			continue
 		}
 		left := id.Expires.Sub(now)
-		if !strings.Contains(id.Sponsor, "@") || left <= 0 || left > renewalNotice || notify.Run == nil {
+		if !strings.Contains(id.Sponsor, "@") || left <= 0 || left > renewalNotice {
 			continue
 		}
-		ev := automate.Event{Kind: "signal", Subject: "agent:" + name, At: now,
-			Summary: fmt.Sprintf("The agent %s stops running on %s unless it is renewed. You answer for it: "+
-				"renew it if it is still needed (quilzo agent renew %s), or let it end.",
-				name, id.Expires.UTC().Format("2 January 2006"), name),
-			Fields: map[string]string{"owner": id.Sponsor, "signal": "identity-ending"}}
+		summary := fmt.Sprintf("The agent %s stops running on %s unless it is renewed. You answer for it: "+
+			"renew it if it is still needed (quilzo agent renew %s), or let it end.",
+			name, id.Expires.UTC().Format("2 January 2006"), name)
 		detail := map[string]string{"agent": name, "owner": id.Sponsor, "until": until}
 		outcome := audit.Success
-		if _, err := notify.Run(ev, map[string]string{"to": "person"}); err != nil {
+		if _, err := tellPerson(root, id.Sponsor, summary); err != nil {
 			detail["error"], outcome = err.Error(), audit.Failure
 		}
 		// Told, or tried and recorded: either way not again every sweep.

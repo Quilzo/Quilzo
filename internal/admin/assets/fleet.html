@@ -87,25 +87,5 @@
 {{end}}
 {{end}}
 
-<h2>AI used directly, not through Quilzo</h2>
-<p class="hint">From the security events this install collects (web proxies, DNS, the identity provider's
-  app grants) and its own agents' connections. Not forbidden here, but unseen by the gateway, the budgets
-  and the log.</p>
-{{if .Shadow}}
-<div class="table-wrap">
-<table>
-  <thead><tr><th scope="col">Service</th><th scope="col">Where</th><th scope="col">Who</th>
-    <th scope="col">Seen by</th><th scope="col">Times</th><th scope="col">Last</th></tr></thead>
-  <tbody>
-  {{range .Shadow}}
-  <tr><th scope="row">{{.Service}}</th><td><code>{{.Where}}</code></td><td>{{or .Who "somebody"}}</td>
-    <td>{{.Source}}</td><td>{{.Count}}</td><td>{{when .Last.Unix}}</td></tr>
-  {{end}}
-  </tbody>
-</table>
-</div>
-{{else}}
-<p>None seen in the last {{.Days}} days.</p>
-{{end}}
 {{end}}
 {{template "foot" .}}

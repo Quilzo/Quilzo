@@ -14,7 +14,6 @@ import (
 	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
-	"github.com/quilzo/quilzo/internal/automate"
 	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/shield"
@@ -54,51 +53,51 @@ func newShieldHost(root string) *shieldHost {
 	}}
 	lib := &shield.Library{Root: root}
 	h := &shieldHost{root: root, guard: g}
-	acts := automationActions(root)
-	tell := func(id string) func(r shield.Response, s shield.Signal) {
-		return func(r shield.Response, s shield.Signal) {
-			act, ok := acts[id]
-			if !ok {
-				return
+	titleOf := func(name string) string {
+		for _, pb := range lib.Get() {
+			if pb.Name == name {
+				return pb.Title
 			}
-			title := r.Playbook
-			for _, pb := range lib.Get() {
-				if pb.Name == r.Playbook {
-					title = pb.Title
-				}
-			}
-			ev := automate.Event{Kind: "signal", Subject: "shield:" + r.Playbook, At: r.At,
-				Summary: shieldSummary(title, r, s, g.State(r.At)),
-				Fields:  map[string]string{"signal": s.Name, "playbook": r.Playbook, "severity": "high"}}
-			out, err := act.Run(ev, map[string]string{"to": "security"})
-			detail := map[string]string{"playbook": r.Playbook, "step": id, "did": out}
-			outcome := audit.Success
-			if err != nil {
-				detail["error"], outcome = err.Error(), audit.Failure
-			}
-			record(root, audit.Record{Action: "shield." + id, Resource: "/", Outcome: outcome,
-				Principal: "shield", Kind: audit.KindService, Verified: true, Detail: detail})
-			// And whoever answers for the agent it is about: the security
-			// contact handles the incident, the sponsor knows the agent.
-			if id != "notify" {
-				return
-			}
-			sponsor := sponsorOf(root, agentOf(s))
+		}
+		return name
+	}
+	done := func(r shield.Response, step, did string, err error, extra map[string]string) {
+		detail := map[string]string{"playbook": r.Playbook, "step": step, "did": did}
+		for k, v := range extra {
+			detail[k] = v
+		}
+		outcome := audit.Success
+		if err != nil {
+			detail["error"], outcome = err.Error(), audit.Failure
+		}
+		record(root, audit.Record{Action: "shield." + step, Resource: "/", Outcome: outcome,
+			Principal: "shield", Kind: audit.KindService, Verified: true, Detail: detail})
+	}
+	// The security contact handles the incident; the sponsor knows the
+	// agent it is about, and is told too.
+	notify := func(r shield.Response, s shield.Signal) {
+		summary := shieldSummary(titleOf(r.Playbook), r, s, g.State(r.At))
+		sponsor := sponsorOf(root, agentOf(s))
+		inBackground(func() {
+			did, err := tellSecurity(root, summary)
+			done(r, "notify", did, err, nil)
 			if !strings.Contains(sponsor, "@") {
 				return
 			}
-			ev.Fields["owner"] = sponsor
-			detail = map[string]string{"playbook": r.Playbook, "step": id, "did": "told the agent's sponsor", "owner": sponsor}
-			outcome = audit.Success
-			if _, err := act.Run(ev, map[string]string{"to": "person"}); err != nil {
-				detail["error"], outcome = err.Error(), audit.Failure
-			}
-			record(root, audit.Record{Action: "shield." + id, Resource: "/", Outcome: outcome,
-				Principal: "shield", Kind: audit.KindService, Verified: true, Detail: detail})
-		}
+			_, err = tellPerson(root, sponsor, summary)
+			done(r, "notify", "told the agent's sponsor", err, map[string]string{"owner": sponsor})
+		})
+	}
+	// A case is the security team's, in whatever reads this audit log as
+	// it is written (Vaigil, or another SIEM): this record is the request,
+	// carrying what it needs to open one.
+	openCase := func(r shield.Response, s shield.Signal) {
+		done(r, "open-case", "asked the security team's tools, which read this log, to open a case", nil,
+			map[string]string{"title": titleOf(r.Playbook), "signal": s.Name, "subject": s.Subject,
+				"severity": "high", "summary": shieldSummary(titleOf(r.Playbook), r, s, g.State(r.At))})
 	}
 	h.engine = &shield.Engine{Root: root, Guard: g, Playbooks: lib.Get,
-		Notify: tell("notify"), OpenCase: tell("open-case"),
+		Notify: notify, OpenCase: openCase,
 		Record: func(action string, d map[string]string) {
 			record(root, audit.Record{Action: action, Resource: "/", Outcome: audit.Success,
 				Principal: "shield", Kind: audit.KindService, Verified: true, Detail: d})

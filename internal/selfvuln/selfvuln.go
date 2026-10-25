@@ -42,9 +42,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/quilzo/quilzo/internal/sca"
-	"github.com/quilzo/quilzo/internal/vuln"
 )
 
 //go:embed stdlib.json.gz
@@ -55,8 +52,8 @@ var embeddedMap []byte
 
 // Snapshot is the database's standard-library records.
 type Snapshot struct {
-	Modified time.Time    `json:"modified"`
-	Records  []sca.Record `json:"records"`
+	Modified time.Time `json:"modified"`
+	Records  []Record  `json:"records"`
 	// Source says where it came from: "embedded at release" or a file.
 	Source string `json:"source"`
 }
@@ -195,7 +192,7 @@ func Assess(snap Snapshot, goVersion string, linked Linked, fm FeatureMap, explo
 					}
 				}
 			}
-			var spec sca.Specific
+			var spec Specific
 			if len(a.Specific) > 0 && json.Unmarshal(a.Specific, &spec) == nil {
 				for _, im := range spec.Imports {
 					imports = append(imports, im.Path)
@@ -285,7 +282,7 @@ func decide(f *Finding, imports []string, symbols map[string][]string, linked Li
 
 // within reports whether version is in an OSV range, and the fix that ends
 // that part of it.
-func within(rg sca.VRange, version string) (bool, string) {
+func within(rg VRange, version string) (bool, string) {
 	intro := ""
 	open := false
 	for _, e := range rg.Events {
@@ -320,7 +317,7 @@ func less(a, b string) bool {
 	x, okx := goVersion(a)
 	y, oky := goVersion(b)
 	if !okx || !oky {
-		c, ok := vuln.Compare(a, b)
+		c, ok := compare(a, b)
 		return ok && c < 0
 	}
 	for i := range x {

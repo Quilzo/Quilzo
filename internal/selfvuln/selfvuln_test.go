@@ -15,27 +15,25 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/quilzo/quilzo/internal/sca"
 )
 
 var t0 = time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 
 // record is an advisory for the standard library, affecting [intro, fixed)
 // in pkg's symbols.
-func record(id, intro, fixed, pkg string, symbols ...string) sca.Record {
+func record(id, intro, fixed, pkg string, symbols ...string) Record {
 	spec, _ := json.Marshal(map[string]any{"imports": []map[string]any{{"path": pkg, "symbols": symbols}}})
-	events := []sca.Event{{Introduced: intro}}
+	events := []Event{{Introduced: intro}}
 	if fixed != "" {
-		events = append(events, sca.Event{Fixed: fixed})
+		events = append(events, Event{Fixed: fixed})
 	}
-	return sca.Record{ID: id, Aliases: []string{"CVE-" + id}, Summary: "a flaw in " + pkg,
-		Affected: []sca.Affected{{Package: sca.Package{Ecosystem: "Go", Name: "stdlib"},
-			Ranges: []sca.VRange{{Type: "SEMVER", Events: events}}, Specific: spec}}}
+	return Record{ID: id, Aliases: []string{"CVE-" + id}, Summary: "a flaw in " + pkg,
+		Affected: []Affected{{Package: Package{Ecosystem: "Go", Name: "stdlib"},
+			Ranges: []VRange{{Type: "SEMVER", Events: events}}, Specific: spec}}}
 }
 
 func TestEachFlawIsDecidedByWhatIsLinkedAndWhoUsesIt(t *testing.T) {
-	snap := Snapshot{Records: []sca.Record{
+	snap := Snapshot{Records: []Record{
 		record("GO-1", "0", "1.27.1", "image/jpeg", "Decode"),       // uploads only
 		record("GO-2", "0", "1.27.1", "image/jpeg", "DecodeConfig"), // not linked
 		record("GO-3", "0", "1.27.1", "net/http", "Server.Serve"),   // every server
@@ -83,19 +81,19 @@ func TestEachFlawIsDecidedByWhatIsLinkedAndWhoUsesIt(t *testing.T) {
 
 func TestRangesAreReadAsTheDatabaseWritesThem(t *testing.T) {
 	cases := []struct {
-		events []sca.Event
+		events []Event
 		v      string
 		in     bool
 	}{
-		{[]sca.Event{{Introduced: "0"}, {Fixed: "1.26.5"}, {Introduced: "1.27.0-0"}, {Fixed: "1.27.2"}}, "1.27.0", true},
-		{[]sca.Event{{Introduced: "0"}, {Fixed: "1.26.5"}, {Introduced: "1.27.0-0"}, {Fixed: "1.27.2"}}, "1.26.7", false},
-		{[]sca.Event{{Introduced: "1.27.0"}, {LastAffected: "1.27.0"}}, "1.27.0", true},
-		{[]sca.Event{{Introduced: "1.27.0"}, {LastAffected: "1.27.0"}}, "1.27.1", false},
-		{[]sca.Event{{Introduced: "1.20.0"}}, "1.27.0", true},
-		{[]sca.Event{{Introduced: "1.28.0"}}, "1.27.0", false},
+		{[]Event{{Introduced: "0"}, {Fixed: "1.26.5"}, {Introduced: "1.27.0-0"}, {Fixed: "1.27.2"}}, "1.27.0", true},
+		{[]Event{{Introduced: "0"}, {Fixed: "1.26.5"}, {Introduced: "1.27.0-0"}, {Fixed: "1.27.2"}}, "1.26.7", false},
+		{[]Event{{Introduced: "1.27.0"}, {LastAffected: "1.27.0"}}, "1.27.0", true},
+		{[]Event{{Introduced: "1.27.0"}, {LastAffected: "1.27.0"}}, "1.27.1", false},
+		{[]Event{{Introduced: "1.20.0"}}, "1.27.0", true},
+		{[]Event{{Introduced: "1.28.0"}}, "1.27.0", false},
 	}
 	for i, c := range cases {
-		if in, _ := within(sca.VRange{Type: "SEMVER", Events: c.events}, c.v); in != c.in {
+		if in, _ := within(VRange{Type: "SEMVER", Events: c.events}, c.v); in != c.in {
 			t.Errorf("%d: %s in %+v is %v", i, c.v, c.events, in)
 		}
 	}

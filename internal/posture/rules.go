@@ -144,13 +144,13 @@ var rules = []Rule{
 	},
 	{
 		ID:       "ai.shadow-use",
-		Title:    "AI services are used directly, not through Quilzo",
+		Title:    "An agent's program uses an AI service directly, not through Quilzo",
 		Severity: Medium,
 		Controls: []string{"CM-8", "SA-9"},
-		Why: "Somebody, or an agent's program, reached an AI service in the last week " +
+		Why: "An agent's own program reached a model provider in the last week " +
 			"without the gateway: nothing masked what was sent, no budget counted it, " +
-			"and the log does not hold it. Often a person trying something; sometimes " +
-			"the company's data leaving by the side door.",
+			"and the log of what the model was told does not hold it. Often a library's " +
+			"default; sometimes the data leaving by the side door.",
 		Check: func(s State) []Finding {
 			names := make([]string, 0, len(s.AI.ShadowAI))
 			for n := range s.AI.ShadowAI {
@@ -160,8 +160,8 @@ var rules = []Rule{
 			var out []Finding
 			for _, n := range names {
 				out = append(out, Finding{Resource: "/fleet",
-					Detail: fmt.Sprintf("%s, by %d people or agents", n, s.AI.ShadowAI[n]),
-					Fix:    "the Fleet screen says who; offer them a model route through the gateway, or ask them to stop"})
+					Detail: fmt.Sprintf("%s, by %d agents", n, s.AI.ShadowAI[n]),
+					Fix:    "the Fleet screen says which; give the agent a model route through the gateway, or take the host out of its network grant"})
 			}
 			return out
 		},

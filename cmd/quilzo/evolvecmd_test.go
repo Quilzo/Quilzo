@@ -326,6 +326,11 @@ time.sleep(5)
 `},
 	} {
 		t.Run(name, func(t *testing.T) {
+			if name == "its output area locked" && os.Geteuid() == 0 {
+				// Its output is read by this process, and root reads past
+				// a directory's permissions, so the lock locks nothing.
+				t.Skip("root reads everything")
+			}
 			why, seed := seed[0], seed[1]
 			prog := filepath.Join(t.TempDir(), "seed.py")
 			if err := os.WriteFile(prog, []byte(seed), 0o600); err != nil {

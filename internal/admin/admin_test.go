@@ -4,7 +4,6 @@
 package admin
 
 import (
-	"github.com/quilzo/quilzo/internal/render"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/render"
 
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -989,4 +990,24 @@ func oidcClaims(email string, verified bool) *oidc.Claims {
 	return &oidc.Claims{
 		Subject: "subject-1", Email: email, EmailVerified: verified,
 	}
+}
+
+// whole fails a page that did not render to the end.
+func whole(t *testing.T, body string) {
+	t.Helper()
+	if strings.Contains(body, "render error") || !strings.Contains(body, "</html>") {
+		t.Fatalf("the page did not render to the end:\n%s", firstLines(body, 12))
+	}
+}
+
+// decideForm posts a form to path as the holder of token would from a page.
+func decideForm(t *testing.T, srv *Server, path, token string, form url.Values) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	return w
 }

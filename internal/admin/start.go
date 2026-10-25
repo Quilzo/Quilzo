@@ -113,7 +113,7 @@ func (s *Server) startState(p principal) []step {
 			Body: "Publishing moves one pointer. Nothing is overwritten and the " +
 				"previous version is still addressable, so rolling back is the " +
 				"pointer moving again rather than a restore from a backup.",
-			Where: "/publish", What: "Review and publish",
+			Where: "/review", What: "Review and publish",
 			Done: published, DoneNote: "live",
 		},
 		{

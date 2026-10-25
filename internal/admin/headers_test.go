@@ -119,6 +119,17 @@ func TestAPreviewedPageShowsItsPictures(t *testing.T) {
 	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "image/") {
 		t.Fatalf("Content-Type = %q", ct)
 	}
+	// Opened on its own, the browser's image viewer may style itself, and
+	// nothing may run.
+	csp := w.Header().Get("Content-Security-Policy")
+	for _, want := range []string{"default-src 'none'", "style-src 'unsafe-inline'", "sandbox"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("a picture opened on its own is served with %q, missing %q", csp, want)
+		}
+	}
+	if strings.Contains(csp, "script-src") {
+		t.Errorf("a picture's policy allows script: %q", csp)
+	}
 	// Not without a credential.
 	if w := get(t, srv, "/media/"+id, ""); w.Code == http.StatusOK {
 		t.Fatal("media was served without signing in")

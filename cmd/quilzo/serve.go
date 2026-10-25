@@ -8,22 +8,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/quilzo/quilzo/internal/api"
-	"github.com/quilzo/quilzo/internal/clientip"
-	"github.com/quilzo/quilzo/internal/config"
-	"github.com/quilzo/quilzo/internal/controls"
-	"github.com/quilzo/quilzo/internal/detect"
-	"github.com/quilzo/quilzo/internal/dual"
-	"github.com/quilzo/quilzo/internal/estate"
-	"github.com/quilzo/quilzo/internal/evals"
-	"github.com/quilzo/quilzo/internal/fedramp"
-	"github.com/quilzo/quilzo/internal/listen"
-	"github.com/quilzo/quilzo/internal/logd"
-	"github.com/quilzo/quilzo/internal/odp"
-	"github.com/quilzo/quilzo/internal/remind"
-	"github.com/quilzo/quilzo/internal/throttle"
-	"github.com/quilzo/quilzo/internal/travel"
-	"github.com/quilzo/quilzo/internal/webauthn"
 	"net"
 	"net/http"
 	"os"
@@ -31,6 +15,20 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/api"
+	"github.com/quilzo/quilzo/internal/clientip"
+	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/controls"
+	"github.com/quilzo/quilzo/internal/dual"
+	"github.com/quilzo/quilzo/internal/evals"
+	"github.com/quilzo/quilzo/internal/fedramp"
+	"github.com/quilzo/quilzo/internal/listen"
+	"github.com/quilzo/quilzo/internal/logd"
+	"github.com/quilzo/quilzo/internal/odp"
+	"github.com/quilzo/quilzo/internal/throttle"
+	"github.com/quilzo/quilzo/internal/travel"
+	"github.com/quilzo/quilzo/internal/webauthn"
 
 	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/agent"
@@ -50,8 +48,6 @@ import (
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/gate"
 	"github.com/quilzo/quilzo/internal/i18n"
-	"github.com/quilzo/quilzo/internal/incident"
-	"github.com/quilzo/quilzo/internal/indicator"
 	"github.com/quilzo/quilzo/internal/lessons"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/media"
@@ -69,7 +65,6 @@ import (
 	"github.com/quilzo/quilzo/internal/sitereport"
 	"github.com/quilzo/quilzo/internal/taxonomy"
 	"github.com/quilzo/quilzo/internal/upkeep"
-	"github.com/quilzo/quilzo/internal/vuln"
 	"github.com/quilzo/quilzo/internal/webhook"
 )
 
@@ -179,12 +174,7 @@ func cmdServe(root string, args []string) error {
 		return saveTokens(root, t)
 	}
 	srv.Audit = func(action, resource string, detail map[string]string) {
-		by := detail["by"]
-		record(root, audit.Record{
-			Action: action, Resource: resource, Outcome: audit.Success,
-			Principal: by, Kind: audit.KindHuman, Verified: true,
-			Detail: detail,
-		})
+		record(root, adminRecord(action, resource, detail))
 	}
 
 	srv.Settings = &admin.Settings{
@@ -214,14 +204,8 @@ func cmdServe(root string, args []string) error {
 	srv.Features = featureHooks(root, signedIn)
 	srv.FeatureProgram = featureProgram(root)
 	srv.AppRoles = func() ([]auth.AppRole, error) { return appRoles(root) }
-	// Events other systems push, the moment they happen.
-	inb := newInboundServer(root)
-	srv.Inbound = inb
-	srv.Feeds = feedsHooks(root, inb)
-	inboundCtx, stopInbound := context.WithCancel(context.Background())
-	defer stopInbound()
-	go inb.run(inboundCtx)
-	// Sign-ins are judged as they are made, and the rules act on them.
+	// Sign-ins are judged as they are made, and the sign-in policy acts on
+	// them (signinpolicy.go).
 	srv.SignInRisk = signInRisk(root)
 	// Two factors on every request a person makes, from the date this
 	// installation was given (see mfa.go).
@@ -234,9 +218,8 @@ func cmdServe(root string, args []string) error {
 	srv.Dual = &admin.Dual{Store: dualStore(root),
 		Apply: func(r dual.Request, by string) error { return applyDual(root, r, by) }}
 	srv.SessionPlace, srv.SessionMovedTo, srv.Reported, srv.SignInSignal = sessionHooks(root)
-	srv.Automations = &admin.AutomationsAdmin{
-		Engine:  automationEngineAsync(root),
-		SignIns: (&travel.Store{Dir: signinsPath(root)}).Since,
+	srv.SignIns = &admin.SignInHistory{
+		Recent: (&travel.Store{Dir: signinsPath(root)}).Since,
 		Geo: func() string {
 			_, desc, err := cachedGeo(root)
 			if err != nil {
@@ -501,210 +484,6 @@ func cmdServe(root string, args []string) error {
 				c.RequireVerifiedEmail, true
 		},
 	}
-	srv.Events = &admin.Events{Open: eventsOpener(root)}
-	srv.Findings = findingsCapability(root)
-	srv.Workforce = &admin.Workforce{
-		Load: func(now time.Time) (*estate.Estate, estate.Outcome, error) {
-			return buildEstate(root, now)
-		},
-		History: func() ([]estate.Summary, error) { return loadHistory(root) },
-		Status:  func() (admin.SyncStatus, error) { return syncStatus(root) },
-		Sync: func(by string) error {
-			if syncRunning(root) {
-				return fmt.Errorf("the tools are being read already")
-			}
-			// In the background: a read paced to the tools' limits can take
-			// longer than a browser waits. The lock inside estateSync is
-			// what keeps two from overlapping; this check is only so the
-			// button can say so.
-			go func() {
-				caller := &Caller{Name: by, Kind: audit.KindHuman, Verified: true}
-				if _, err := estateSync(root, time.Now().UTC(), caller,
-					false); err != nil {
-					fmt.Fprintf(os.Stderr, "  %sestate sync: %v%s\n", dim, err,
-						reset)
-				}
-			}()
-			return nil
-		},
-	}
-	srv.Detections = &admin.Detections{
-		Load: func(now time.Time) (admin.DetectionView, error) {
-			t, err := loadTuning(root, "", now)
-			return admin.DetectionView{Rules: t.Rules, Stats: t.Stats,
-				Proposals: t.Proposals, Suppressions: t.Suppressions,
-				Hits: t.Hits}, err
-		},
-		Ring: func(rule string, ring detect.Ring, because, by string,
-			kind audit.Kind) error {
-			return setRing(root, "", rule, ring, because, by, kind)
-		},
-		Suppress: func(sp detect.Suppression) error {
-			_, err := addSuppression(root, "", sp)
-			return err
-		},
-		Unsuppress: func(id, by string, kind audit.Kind) error {
-			return removeSuppression(root, id, by, kind)
-		},
-	}
-	srv.Vulns = &admin.Vulns{
-		Load: func(now time.Time) (admin.VulnView, error) {
-			v, err := loadVulnView(root, now)
-			seen := map[string]bool{}
-			var assets []string
-			for _, c := range v.Inventory {
-				if a := c.Where.String(); !seen[a] {
-					seen[a] = true
-					assets = append(assets, a)
-				}
-			}
-			sort.Strings(assets)
-			return admin.VulnView{Advisories: v.Advisories,
-				Tree: v.Tree, Tags: v.Tags, Assets: assets,
-				Components: len(v.Inventory), Matched: v.Matched,
-				Assessments: v.Assessments, History: v.History,
-				AdvisoriesAt: v.AdvisoriesAt, InventoryAt: v.InventoryAt}, err
-		},
-		// From the screen an assessment always names something the screen
-		// showed, so it is refused if the store does not know it.
-		Assess: func(a vuln.Assessment) error {
-			return recordAssessment(root, a, true)
-		},
-		Tag: func(tag vuln.AssetTag, by string) error {
-			return setAssetTag(root, &Caller{Name: by, Kind: audit.KindHuman,
-				Verified: true}, tag)
-		},
-		Untag: func(match, by string) error {
-			return removeAssetTag(root, &Caller{Name: by,
-				Kind: audit.KindHuman, Verified: true}, match)
-		},
-	}
-	srv.Cases = &admin.Cases{
-		List: func() ([]*incident.Incident, error) { return listIncidents(root) },
-		Get: func(id string) (*incident.Incident, error) {
-			return loadIncident(root, id)
-		},
-		Regimes: func() []string { return loadRegimes(root) },
-		Playbooks: func() ([]incident.Playbook, error) {
-			return loadPlaybooks(root)
-		},
-		Actions: func(id string) ([]admin.ActionOffer, error) {
-			all, err := loadActions(root)
-			if err != nil || len(all) == 0 {
-				return nil, err
-			}
-			i, err := loadIncident(root, id)
-			if err != nil {
-				return nil, err
-			}
-			var out []admin.ActionOffer
-			for _, a := range all {
-				targets, terr := actionTargets(root, i, a, time.Now().UTC())
-				if terr != nil {
-					return nil, terr
-				}
-				out = append(out, admin.ActionOffer{Name: a.Name,
-					Title: a.Title, Effect: a.Effect, Reverts: a.Reverts,
-					Reversible: a.Reversible(), Targets: targets})
-			}
-			return out, nil
-		},
-		ActRequest: func(id, by, name, target, why string) error {
-			return requestAct(root, id, &Caller{Name: by,
-				Kind: audit.KindHuman, Verified: true}, name, target, why,
-				time.Now().UTC())
-		},
-		ActApprove: func(id, by string, act int) (int, error) {
-			return approveAct(root, id, &Caller{Name: by,
-				Kind: audit.KindHuman, Verified: true}, act, time.Now().UTC())
-		},
-		ActUndo: func(id, by string, act int, why string) (int, error) {
-			return undoAct(root, id, &Caller{Name: by,
-				Kind: audit.KindHuman, Verified: true}, act, why,
-				time.Now().UTC())
-		},
-		// Signed in to the admin: a person, verified.
-		Declare: func(title string, grade incident.Grade, regimes,
-			findings []string, by string) (string, error) {
-			i, err := declareIncident(root, &Caller{Name: by,
-				Kind: audit.KindHuman, Verified: true}, title, grade, regimes,
-				findings, time.Now().UTC())
-			if err != nil {
-				return "", err
-			}
-			return i.ID, nil
-		},
-		Act: func(id, by string, a incident.Action) error {
-			_, err := actOnIncident(root, id, &Caller{Name: by,
-				Kind: audit.KindHuman, Verified: true}, a, time.Now().UTC())
-			return err
-		},
-	}
-	srv.People = func() map[string]string {
-		aliases, err := loadAliases(root)
-		if err != nil {
-			return nil
-		}
-		out := make(map[string]string, len(aliases))
-		for id, a := range aliases {
-			out[id] = a.Person
-		}
-		return out
-	}
-	srv.Indicators = &admin.Indicators{
-		List: func(now time.Time) ([]indicator.Indicator,
-			map[string]admin.IndicatorHits, error) {
-			set, err := loadIndicators(root)
-			if err != nil {
-				return nil, nil, err
-			}
-			q, err := loadQueue(root, now)
-			if err != nil {
-				return nil, nil, err
-			}
-			hits := map[string]admin.IndicatorHits{}
-			for id, h := range countIntelHits(q) {
-				hits[id] = admin.IndicatorHits{Findings: h.Findings,
-					Real: h.Real, False: h.False, Last: h.Last}
-			}
-			return set.All(), hits, nil
-		},
-		Add: func(kind, value, source, note, until, by string) (int, int,
-			bool, error) {
-			now := time.Now().UTC()
-			i, err := makeIndicator(kind, value, source, note, until, now)
-			if err != nil {
-				return 0, 0, false, err
-			}
-			res, err := takeIndicators(root, &Caller{Name: by,
-				Kind: audit.KindHuman, Verified: true},
-				[]indicator.Indicator{i}, indicator.Report{Read: 1}, now)
-			return res.Hits, res.Opened, res.Known > 0, err
-		},
-		Remove: func(id, by string) error {
-			return removeIndicator(root, &Caller{Name: by,
-				Kind: audit.KindHuman, Verified: true}, id)
-		},
-	}
-	srv.Reminders = &admin.Reminders{
-		Preview: func(now time.Time) (remind.Config, []remind.Message,
-			[]remind.Held, map[remind.Channel]string, error) {
-			c, msgs, held, err := remindPlan(root, now)
-			if err != nil {
-				return c, nil, nil, nil, err
-			}
-			_, missing := remindSenders(root, c)
-			return c, msgs, held, missing, nil
-		},
-		Ledger: func() ([]remind.Sent, error) { return loadLedger(root) },
-		Enable: func(on bool, by string) error {
-			// Signed in to the admin: a person, verified.
-			return setRemindEnabled(root, on, by, audit.KindHuman)
-		},
-		Send: func(now time.Time, by string) (int, int, error) {
-			return remindSendNow(root, now, by, audit.KindHuman)
-		},
-	}
 	srv.Assistants = assistantsCapability(root)
 	srv.Models = gatewayCapability(root)
 	srv.Research = researchScreens(root)
@@ -772,16 +551,9 @@ func cmdServe(root string, args []string) error {
 	// not a thing the program did. See internal/upkeep for why this sweeps
 	// here while scheduled publishing keeps its external timer.
 	//
-	// And the estate's schedule, which does nothing until an administrator
-	// sets one with quilzo estate auto.
-	// And Quilzo's own log, read by the rules whenever it has grown, with
-	// the shipped rules in place if the store had none.
-	if err := ensureRules(root, "server-start"); err != nil {
-		fmt.Fprintf(os.Stderr, "  %s%v%s\n", dim, err, reset)
-	}
 	// The posture, rescanned on the same schedule, so a check that starts
-	// failing is a finding in the queue rather than something waiting for
-	// somebody to open the Security screen.
+	// failing is on the record (and with the security contact) rather than
+	// waiting for somebody to open the Security screen.
 	jobs := upkeepJobs(root, postureJob(root, *tplDir, posture.ServerFacts{AdminAddr: *addr,
 		PublicAddr: *publicAddr, BehindProxy: *behindProxy}))
 	upkeepCtx, stopUpkeep := context.WithCancel(context.Background())
@@ -799,12 +571,6 @@ func cmdServe(root string, args []string) error {
 		case "retention":
 			fmt.Printf("  %sretention: removed %s past the period their form "+
 				"declares%s\n", dim, count(n, "submission"), reset)
-		case "estate":
-			fmt.Printf("  %sestate: synced %s%s\n", dim, count(n, "tool"), reset)
-		case "detect":
-			if n > 0 {
-				fmt.Printf("  %sdetect: opened %s from Quilzo's own log%s\n", dim, count(n, "finding"), reset)
-			}
 		}
 	}, jobs...)
 
@@ -1438,7 +1204,7 @@ func sessionCaller(by admin.Actor) *Caller {
 // upkeepJobs is everything the server does on its timer, around the
 // posture scan it is given.
 func upkeepJobs(root string, posture upkeep.Job) []upkeep.Job {
-	jobs := []upkeep.Job{estateJob(root), collectJob(root), posture}
+	jobs := []upkeep.Job{posture}
 	if job, ok := retentionJob(root); ok {
 		jobs = append(jobs, job)
 	}
@@ -1448,9 +1214,7 @@ func upkeepJobs(root string, posture upkeep.Job) []upkeep.Job {
 	// And an agent or app that keeps trying what it was refused.
 	jobs = append(jobs, agentwatchJob(root))
 	// And what agents remember, past its time.
-	jobs = append(jobs, memoryJob(root))
-	// And Quilzo's own log, read by the detection rules whenever it grew.
-	return append(jobs, detectJob(root))
+	return append(jobs, memoryJob(root))
 }
 
 // retentionJob sweeps submissions past the retention their form declares.

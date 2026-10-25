@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -49,29 +50,83 @@ func selfBinary() (selfvuln.Linked, string, error) {
 	return self.linked, self.started, self.linkedErr
 }
 
-// exploitedIDs is which advisory ids the feeds this store loaded (CISA KEV
-// and the like) attest as exploited.
+// kevPath is where the advisories known to be exploited are kept: the CVE
+// ids of CISA's Known Exploited Vulnerabilities catalogue, as an operator
+// last gave it (quilzo self kev).
+func kevPath(root string) string { return filepath.Join(root, "self", "kev.json") }
+
+// exploitedIDs is which advisory ids are known to be exploited.
 func exploitedIDs(root string) func(ids []string) bool {
 	known := map[string]bool{}
-	if advs, err := loadAdvisories(storedAdvisories(root)); err == nil {
-		for _, a := range advs {
-			if len(a.Exploited) == 0 {
-				continue
-			}
-			known[a.ID] = true
-			for _, al := range a.Aliases {
-				known[al] = true
+	if b, err := os.ReadFile(kevPath(root)); err == nil {
+		var kept struct {
+			IDs []string `json:"ids"`
+		}
+		if json.Unmarshal(b, &kept) == nil {
+			for _, id := range kept.IDs {
+				known[strings.ToUpper(id)] = true
 			}
 		}
 	}
 	return func(ids []string) bool {
 		for _, id := range ids {
-			if known[id] {
+			if known[strings.ToUpper(id)] {
 				return true
 			}
 		}
 		return false
 	}
+}
+
+// selfKEV keeps the CVE ids of CISA's catalogue of vulnerabilities known to
+// be exploited, so a flaw in this build that is being exploited is
+// contained at once (the shield turns off the features it reaches through)
+// rather than waiting for a person. Read from a file the operator fetched;
+// nothing is fetched here.
+func selfKEV(root string, args []string) error {
+	if len(args) != 1 {
+		return errors.New("usage: quilzo self kev known_exploited_vulnerabilities.json " +
+			"(from https://www.cisa.gov/known-exploited-vulnerabilities-catalog; read here, nothing is fetched)")
+	}
+	b, err := readBounded(args[0], 64<<20)
+	if err != nil {
+		return err
+	}
+	var cat struct {
+		DateReleased    string `json:"dateReleased"`
+		Vulnerabilities []struct {
+			CVE string `json:"cveID"`
+		} `json:"vulnerabilities"`
+	}
+	if err := json.Unmarshal(b, &cat); err != nil {
+		return fmt.Errorf("%s is not CISA's catalogue: %w", args[0], err)
+	}
+	var ids []string
+	for _, v := range cat.Vulnerabilities {
+		if id := strings.ToUpper(strings.TrimSpace(v.CVE)); strings.HasPrefix(id, "CVE-") {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return fmt.Errorf("%s names no vulnerability; it is not the catalogue, or it is empty", args[0])
+	}
+	sort.Strings(ids)
+	out, err := json.Marshal(map[string]any{"released": cat.DateReleased, "ids": ids})
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(kevPath(root)), 0o700); err != nil {
+		return err
+	}
+	if err := atomicfile.Write(kevPath(root), out, 0o600); err != nil {
+		return err
+	}
+	caller := resolveCaller(root, flagToken)
+	record(root, caller.auditRecord("self.kev-updated", "/security/inventory", audit.Success,
+		map[string]string{"vulnerabilities": fmt.Sprint(len(ids)), "released": cat.DateReleased}))
+	w.Human("%skept%s %d vulnerabilities known to be exploited, the catalogue of %s\n", green, reset,
+		len(ids), nonEmpty(cat.DateReleased, "an unknown date"))
+	return selfCheck(root)
 }
 
 // selfReport is a self-check's result, as kept and shown.
@@ -176,8 +231,10 @@ func cmdSelf(root string, args []string) error {
 		return selfUpdate(root, args[1:])
 	case "vex":
 		return selfVEX(root)
+	case "kev":
+		return selfKEV(root, args[1:])
 	}
-	return fmt.Errorf("unknown self command %q; try check, verify, update or vex", args[0])
+	return fmt.Errorf("unknown self command %q; try check, verify, update, kev or vex", args[0])
 }
 
 func selfCheck(root string) error {

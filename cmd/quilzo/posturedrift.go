@@ -5,18 +5,18 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/quilzo/quilzo/internal/atomicfile"
-	"github.com/quilzo/quilzo/internal/shield"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/shield"
+
 	"github.com/quilzo/quilzo/internal/audit"
-	"github.com/quilzo/quilzo/internal/finding"
 	"github.com/quilzo/quilzo/internal/posture"
-	"github.com/quilzo/quilzo/internal/telemetry"
 	"github.com/quilzo/quilzo/internal/upkeep"
 )
 
@@ -27,91 +27,130 @@ import (
 // agent that started being refused, a chatbot made public without saying it
 // is automated: each was true for as long as nobody looked. The scan is
 // cheap and reads only this store, so it runs on the server's schedule
-// instead, and what it finds goes where every other security problem goes —
-// the findings queue — where it can be assigned, gathered into an incident
-// and ruled on.
+// instead, and what it finds is put on the record: a check that starts
+// failing is written to the audit log once (posture.drifted), and once more
+// when a later scan in which that check ran no longer reports it
+// (posture.restored). The audit log is what a security team's tools read as
+// it is written — Vaigil, or another SIEM (siem.stream.url) — so that is
+// where it is triaged, and the security contact is told at once of a newly
+// failing check that is high or critical.
 //
-// A finding is opened the first time its check reports it and goes stale
-// when a later scan, in which that check ran, no longer does. A check that
-// could not run (its input was not gathered) changes nothing either way:
-// silence from a check that did not look is not a fix.
+// A check that could not run (its input was not gathered) changes nothing
+// either way: silence from a check that did not look is not a fix.
 
-// postureSource is what a drift finding's Source starts with.
-const postureSource = "posture/"
-
-func postureSeverity(s posture.Severity) telemetry.Severity {
-	switch s {
-	case posture.Critical:
-		return telemetry.SeverityCritical
-	case posture.High:
-		return telemetry.SeverityHigh
-	case posture.Medium:
-		return telemetry.SeverityMedium
-	case posture.Low:
-		return telemetry.SeverityLow
-	}
-	return telemetry.SeverityInfo
+// driftItem is one failing check, as last reported.
+type driftItem struct {
+	Rule     string           `json:"rule"`
+	Resource string           `json:"resource,omitempty"`
+	Severity posture.Severity `json:"severity"`
+	Title    string           `json:"title"`
+	Since    time.Time        `json:"since"`
 }
 
-// postureDrift scans, records what is newly failing, stales what has been
-// fixed, and returns how many findings it opened.
+// driftState is every check failing at the last scan, by rule and resource.
+type driftState struct {
+	Failing map[string]driftItem `json:"failing"`
+}
+
+func driftPath(root string) string { return filepath.Join(root, "self", "drift.json") }
+
+func driftKey(rule, resource string) string { return rule + "|" + resource }
+
+// loadDrift is what the last scan found failing.
+func loadDrift(root string) (driftState, error) {
+	st := driftState{Failing: map[string]driftItem{}}
+	b, err := os.ReadFile(driftPath(root))
+	if errors.Is(err, os.ErrNotExist) {
+		return st, nil
+	}
+	if err != nil {
+		return st, err
+	}
+	if err := json.Unmarshal(b, &st); err != nil {
+		return st, fmt.Errorf("self/drift.json: %w", err)
+	}
+	if st.Failing == nil {
+		st.Failing = map[string]driftItem{}
+	}
+	return st, nil
+}
+
+// postureDrift scans, records what is newly failing and what is fixed, and
+// returns how many of each.
 func postureDrift(root string, state posture.State, now time.Time) (int, int, error) {
 	sup, _ := loadSuppressions(root)
 	rep := posture.Scan(state, sup)
 
-	path := findingsPath(root)
-	unlock, err := finding.Lock(path)
+	path := driftPath(root)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return 0, 0, err
+	}
+	unlock, err := atomicfile.Lock(path + ".lock")
 	if err != nil {
 		return 0, 0, err
 	}
 	defer unlock()
-	reg, cursors, err := finding.Load(path)
+	st, err := loadDrift(root)
 	if err != nil {
 		return 0, 0, err
 	}
-	opened := 0
 	reported := map[string]bool{}
+	opened, fixed := 0, 0
 	for _, f := range rep.Findings {
-		what := f.Resource
-		if what == "" {
-			what = f.Rule
+		key := driftKey(f.Rule, f.Resource)
+		reported[key] = true
+		if _, known := st.Failing[key]; known {
+			continue
 		}
+		st.Failing[key] = driftItem{Rule: f.Rule, Resource: f.Resource, Severity: f.Severity,
+			Title: f.Title, Since: now}
+		opened++
 		var refs []string
 		for _, r := range f.Refs {
 			refs = append(refs, r.String())
 		}
-		fd := finding.Finding{Kind: finding.FromControl, Title: f.Title,
-			Source:   postureSource + f.Rule,
-			Entity:   telemetry.ID{Issuer: "quilzo", Value: what},
-			Severity: postureSeverity(f.Severity), State: finding.Open,
-			Evidence: []finding.Evidence{{At: now, Source: "posture",
-				What: f.Detail + bearsOn(refs)}}}
-		rec, isNew := reg.Record(fd, now)
-		if rec != nil {
-			reported[rec.ID] = true
-		}
-		if isNew {
-			opened++
+		record(root, audit.Record{Action: "posture.drifted", Resource: "/security",
+			Outcome: audit.Success, Principal: "quilzo", Kind: audit.KindService, Verified: true,
+			Detail: map[string]string{"rule": f.Rule, "resource": f.Resource, "severity": string(f.Severity),
+				"title": f.Title, "detail": f.Detail + bearsOn(refs), "fix": f.Fix}})
+		if f.Severity == posture.Critical || f.Severity == posture.High {
+			summary := fmt.Sprintf("%s: %s. %s", f.Title, f.Detail, f.Fix)
+			if f.Resource != "" {
+				summary = fmt.Sprintf("%s (%s): %s. %s", f.Title, f.Resource, f.Detail, f.Fix)
+			}
+			inBackground(func() { _, _ = tellSecurity(root, strings.TrimSpace(summary)) })
 		}
 	}
 	skipped := map[string]bool{}
 	for _, id := range rep.Skipped {
-		skipped[postureSource+id] = true
+		skipped[id] = true
 	}
-	staled := reg.Unreported(func(f finding.Finding) bool {
-		return strings.HasPrefix(f.Source, postureSource) && !skipped[f.Source]
-	}, reported)
-	if err := finding.Save(path, reg, cursors); err != nil {
-		return opened, len(staled), err
+	for key, it := range st.Failing {
+		if reported[key] || skipped[it.Rule] {
+			continue
+		}
+		delete(st.Failing, key)
+		fixed++
+		record(root, audit.Record{Action: "posture.restored", Resource: "/security",
+			Outcome: audit.Success, Principal: "quilzo", Kind: audit.KindService, Verified: true,
+			Detail: map[string]string{"rule": it.Rule, "resource": it.Resource, "severity": string(it.Severity),
+				"title": it.Title, "since": it.Since.UTC().Format(time.RFC3339)}})
 	}
-	if opened > 0 || len(staled) > 0 {
+	if opened > 0 || fixed > 0 {
+		b, err := json.MarshalIndent(st, "", " ")
+		if err != nil {
+			return opened, fixed, err
+		}
+		if err := atomicfile.Write(path, b, 0o600); err != nil {
+			return opened, fixed, err
+		}
 		record(root, audit.Record{Action: "posture.drift", Resource: "/security",
 			Outcome: audit.Success, Principal: "quilzo", Kind: audit.KindService,
 			Verified: true,
 			Detail: map[string]string{"opened": fmt.Sprint(opened),
-				"fixed": fmt.Sprint(len(staled))}})
+				"fixed": fmt.Sprint(fixed)}})
 	}
-	return opened, len(staled), nil
+	return opened, fixed, nil
 }
 
 func bearsOn(refs []string) string {

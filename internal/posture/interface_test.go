@@ -153,7 +153,7 @@ func TestShadowAIAndAChangedCardAreFindings(t *testing.T) {
 	s := State{Now: time.Now(), AI: AIFacts{Checked: true, ShadowAI: map[string]int{"OpenAI": 3, "Anthropic": 1},
 		CardsChanged: []string{"help-desk"}}}
 	got := rules(s)
-	if len(got["ai.shadow-use"]) != 2 || got["ai.shadow-use"][1] != "OpenAI, by 3 people or agents" ||
+	if len(got["ai.shadow-use"]) != 2 || got["ai.shadow-use"][1] != "OpenAI, by 3 agents" ||
 		len(got["fleet.card-changed"]) != 1 || !strings.Contains(got["fleet.card-changed"][0], "help-desk") {
 		t.Fatalf("%v", got)
 	}

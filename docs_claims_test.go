@@ -254,14 +254,14 @@ func TestTheLicenceTextIsOneText(t *testing.T) {
 
 // Every copy carries the licence and the notices.
 //
-// A binary is a copy of the Go standard library, the endoflife.date data, the
-// Go vulnerability records, the typeface and the icons as well as of Quilzo,
+// A binary is a copy of the Go standard library, the Go vulnerability
+// records, the FedRAMP indicators, the typeface and the icons as well as of Quilzo,
 // and their licences ask for their notices to go with it. So NOTICE names each
 // of them, and the release and the container image carry LICENSE and NOTICE.
 func TestEveryCopyCarriesTheLicenceAndNotices(t *testing.T) {
 	notice := read(t, "NOTICE")
 	for _, embedded := range []string{"Go standard library", "internal/admin/assets/fonts",
-		"internal/admin/assets/icons", "internal/icons", "internal/lifecycle",
+		"internal/admin/assets/icons", "internal/icons",
 		"internal/selfvuln", "internal/fedramp"} {
 		if !strings.Contains(notice, embedded) {
 			t.Errorf("NOTICE does not name %s, which the binary carries", embedded)

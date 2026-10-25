@@ -7,11 +7,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/quilzo/quilzo/internal/assurance"
-	"github.com/quilzo/quilzo/internal/finding"
-	"github.com/quilzo/quilzo/internal/telemetry"
 )
 
 // Measuring a control across a group, and the one decision that decides
@@ -384,61 +381,4 @@ func Assess(t *Tree, scope string, controls []assurance.Control,
 		return out[i].Control < out[j].Control
 	})
 	return g, out
-}
-
-// Findings turns divergence into the register everything else works from.
-func Findings(t *Tree, g Group, in []Divergence,
-	now time.Time) []finding.Finding {
-
-	var out []finding.Finding
-	add := func(d Divergence, sev telemetry.Severity, title, what string) {
-		f := finding.Finding{
-			Kind: finding.FromControl, Title: title, Source: "entity",
-			Entity: telemetry.ID{Issuer: "control",
-				Value: d.Control + "@" + d.Scope},
-			Severity: sev, State: finding.Open, Seen: 1,
-			First: g.Period.From, Last: now,
-			Evidence: []finding.Evidence{{
-				At: now, Source: "entity", What: what,
-			}},
-		}
-		f.ID = finding.Key(f.Kind, f.Source, f.Entity)
-		out = append(out, f)
-	}
-	for _, d := range in {
-		if len(d.Silent) > 0 && len(d.Silent) < len(d.By) {
-			what := fmt.Sprintf(
-				"evidenced in %d of %d compan(ies) under %s. A group report "+
-					"showing the union of this evidence would be green, and "+
-					"the companies with nothing would be discovered by an "+
-					"auditor", len(d.By)-len(d.Silent), len(d.By), d.Scope)
-			if len(d.Coverable) > 0 {
-				what += fmt.Sprintf(
-					". %s have an ancestor that does evidence it, so the "+
-						"work there is recording why that counts rather "+
-						"than standing up a control",
-					strings.Join(sortedKeys(d.Coverable), ", "))
-			}
-			add(d, telemetry.SeverityHigh,
-				fmt.Sprintf("%s has no evidence in %s", d.Control,
-					strings.Join(d.Silent, ", ")), what)
-			continue
-		}
-		if !d.Even() {
-			add(d, telemetry.SeverityMedium,
-				fmt.Sprintf("%s is in a different state in different "+
-					"companies", d.Control),
-				d.Why())
-		}
-		if len(d.Assumed) > 0 {
-			add(d, telemetry.SeverityLow,
-				fmt.Sprintf("%s is inherited by %s with nothing recorded",
-					d.Control, strings.Join(d.Assumed, ", ")),
-				"the evidence genuinely reaches them, so nothing here is "+
-					"wrong. At audit the subsidiary still has to say why "+
-					"the parent's control counts for this examination, and "+
-					"that is a conversation nobody has had")
-		}
-	}
-	return finding.Rank(out, now)
 }

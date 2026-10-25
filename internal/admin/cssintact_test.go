@@ -80,6 +80,41 @@ func TestAWideTableDoesNotTakeThePageWithIt(t *testing.T) {
 	}
 }
 
+// Every table is inside one. The rule above is no help to a table outside it:
+// the passkeys list was, and on a phone its Remove buttons sat 90px off the
+// right edge with the whole screen scrolling sideways to reach them.
+func TestEveryTableIsInsideATableWrap(t *testing.T) {
+	names, err := assets.ReadDir("assets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range names {
+		if !strings.HasSuffix(n.Name(), ".html") {
+			continue
+		}
+		b, err := assets.ReadFile("assets/" + n.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		src := string(b)
+		for at := strings.Index(src, "<table"); at >= 0; {
+			before := src[:at]
+			wrap := strings.LastIndex(before, `class="table-wrap"`)
+			if wrap < 0 || strings.LastIndex(before, "</table>") > wrap ||
+				strings.Contains(before[wrap:], "</div>") {
+				t.Errorf("%s:%d: a table outside a .table-wrap scrolls the "+
+					"whole page sideways on a narrow screen", n.Name(),
+					strings.Count(before, "\n")+1)
+			}
+			next := strings.Index(src[at+1:], "<table")
+			if next < 0 {
+				break
+			}
+			at += 1 + next
+		}
+	}
+}
+
 // A fieldset can be narrower than its content wants to be.
 //
 // Every browser gives a fieldset min-inline-size: min-content in its own

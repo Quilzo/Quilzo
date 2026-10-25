@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/assurance"
-	"github.com/quilzo/quilzo/internal/finding"
-	"github.com/quilzo/quilzo/internal/telemetry"
 )
 
 // What a framework's requirements add up to, and the three ways that figure
@@ -321,70 +319,4 @@ func Adopting(report Report, standings []Standing) string {
 			report.EqualShare*100)
 	}
 	return b.String()
-}
-
-// Findings turns the standings into the register everything else works from.
-func Findings(report Report, standings []Standing,
-	now time.Time) []finding.Finding {
-
-	var out []finding.Finding
-	add := func(s Standing, sev telemetry.Severity, title, what string) {
-		f := finding.Finding{
-			Kind: finding.FromControl, Title: title, Source: "crosswalk",
-			Entity: telemetry.ID{Issuer: "requirement",
-				Value: s.Requirement.Key()},
-			Severity: sev, State: finding.Open, Seen: 1,
-			First: report.Period.From, Last: now,
-			Evidence: []finding.Evidence{{
-				At: now, Source: "crosswalk", What: what,
-			}},
-		}
-		f.ID = finding.Key(f.Kind, f.Source, f.Entity)
-		out = append(out, f)
-	}
-	for _, s := range standings {
-		switch s.State {
-		case Unmapped:
-			add(s, telemetry.SeverityMedium,
-				fmt.Sprintf("%s has nothing mapped to it", s.Requirement.Key()),
-				fmt.Sprintf("%q — nobody has recorded whether any control "+
-					"addresses this, and an unmapped requirement is the one "+
-					"a coverage percentage leaves out of its denominator",
-					s.Requirement.Title))
-		case Partial:
-			add(s, telemetry.SeverityMedium,
-				fmt.Sprintf("%s is only partly addressed",
-					s.Requirement.Key()),
-				fmt.Sprintf("%q — nothing covers: %s", s.Requirement.Title,
-					strings.Join(s.Remainders, "; ")))
-		case Unevidenced:
-			add(s, telemetry.SeverityHigh,
-				fmt.Sprintf("%s is mapped and not evidenced",
-					s.Requirement.Key()),
-				s.Why())
-		}
-	}
-	if report.Suspicious() {
-		f := finding.Finding{
-			Kind: finding.FromControl, Source: "crosswalk",
-			Entity: telemetry.ID{Issuer: "framework",
-				Value: report.Framework},
-			Severity: telemetry.SeverityLow, State: finding.Open, Seen: 1,
-			First: report.Period.From, Last: now,
-			Title: fmt.Sprintf(
-				"%.0f%% of the %s crosswalk claims exact equality",
-				report.EqualShare*100, report.Framework),
-			Evidence: []finding.Evidence{{
-				At: now, Source: "crosswalk",
-				What: "two organisations writing independently about the " +
-					"same subject do not produce the same concept that " +
-					"often. A crosswalk that says they do is one somebody " +
-					"clicked through, and it will be taken apart by an " +
-					"auditor rather than by a report",
-			}},
-		}
-		f.ID = finding.Key(f.Kind, f.Source, f.Entity)
-		out = append(out, f)
-	}
-	return finding.Rank(out, now)
 }

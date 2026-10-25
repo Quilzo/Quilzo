@@ -4,7 +4,6 @@
 package admin
 
 import (
-	"github.com/quilzo/quilzo/internal/telemetry"
 	"net/http"
 	"path/filepath"
 	"sort"
@@ -507,12 +506,6 @@ func fullyWired(t *testing.T) (*Server, string) {
 		},
 		Commit: func(string, string, string) error { return nil },
 	}
-	// A queue with something in it, so the findings screens render rows,
-	// filters and a detail page rather than only their empty states.
-	srv.Findings = newFakeRegister(
-		detectionFinding("admin-dana", "failed sign-in", telemetry.SeverityHigh),
-	).wire()
-
 	return srv, token
 }
 

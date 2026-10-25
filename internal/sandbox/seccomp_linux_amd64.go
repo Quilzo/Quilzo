@@ -8,6 +8,7 @@ import "syscall"
 const (
 	auditArch = 0xc000003e // AUDIT_ARCH_X86_64
 	sysClone  = syscall.SYS_CLONE
+	sysListen = syscall.SYS_LISTEN
 	sysSocket = syscall.SYS_SOCKET
 )
 

@@ -11,7 +11,6 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
-	"github.com/quilzo/quilzo/internal/incident"
 	"github.com/quilzo/quilzo/internal/memory"
 )
 
@@ -105,21 +104,6 @@ func waitingFor(root string, c *Caller, now time.Time) ([]waitingItem, error) {
 				out = append(out, waitingItem{Source: "feature", Agent: p.Name, What: what,
 					Why:     "risk " + p.Card.Risk + ": " + strings.Join(p.Card.Because, "; ") + "; asked by " + p.RequestedBy,
 					Commits: "installs", Since: p.At, Decide: "quilzo feature approve " + p.ID})
-			}
-		}
-	}
-	if admin {
-		if list, err := listIncidents(root); err == nil {
-			for _, inc := range list {
-				for _, a := range inc.Acts {
-					if a.State != incident.ActRequested || a.Requested.By == c.Name {
-						continue
-					}
-					out = append(out, waitingItem{Source: "case", Agent: "case " + inc.ID,
-						What: a.Title + " on " + a.Target, Why: "asked by " + a.Requested.By,
-						Commits: "acts", Since: a.Requested.At,
-						Decide: fmt.Sprintf("quilzo incident act-approve %s %d", inc.ID, a.ID)})
-				}
 			}
 		}
 	}

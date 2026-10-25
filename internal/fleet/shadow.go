@@ -4,16 +4,25 @@
 package fleet
 
 import (
-	"net/url"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/quilzo/quilzo/internal/telemetry"
 )
 
-// The AI services people and programs reach directly: model APIs and the
-// assistants' own apps. A host is matched exactly or as a subdomain of one
+// An agent's own program reaching an AI service directly.
+//
+// An agent's models are meant to be called through the gateway, where what
+// is sent is masked, counted against a budget and written down. Its program
+// runs in a box whose outbound connections are on the record
+// (agent.egress), so one that went to a model provider by itself is in the
+// log, and is worth a person's look: not forbidden here, but unseen by the
+// gateway, the budget and the log of what the model was told.
+//
+// What people across the estate reach — proxy and DNS logs, app grants —
+// is in those systems' logs, and so is Vaigil's to find.
+
+// The AI services a program reaches directly: model APIs and the
+// assistants' own sites. A host is matched exactly or as a subdomain of one
 // of these, so lookalikes (openai.com.example.net) are not.
 var aiHosts = map[string]string{
 	"openai.com": "OpenAI", "chatgpt.com": "OpenAI",
@@ -62,104 +71,46 @@ func AIService(host string) (string, bool) {
 	}
 }
 
-// aiApps are the assistants' names as an identity provider's app grants
-// and a browser's extension list give them.
-var aiApps = map[string]string{
-	"chatgpt": "OpenAI", "openai": "OpenAI", "claude": "Anthropic", "anthropic": "Anthropic",
-	"gemini": "Google Gemini", "perplexity": "Perplexity", "copilot": "Microsoft Copilot",
-	"otter.ai": "Otter.ai", "fireflies.ai": "Fireflies.ai", "deepseek": "DeepSeek", "grok": "xAI",
-	"mistral": "Mistral", "poe": "Poe",
+// Reach is one outbound connection an agent's program made, as the log
+// recorded it.
+type Reach struct {
+	At    time.Time
+	Agent string
+	Host  string
 }
 
-// AIApp names the AI service an app's name is, when it is one.
-func AIApp(name string) (string, bool) {
-	n := strings.ToLower(strings.TrimSpace(name))
-	if s, ok := aiApps[n]; ok {
-		return s, true
-	}
-	for word := range strings.FieldsSeq(strings.NewReplacer("-", " ", "_", " ", "(", " ", ")", " ").Replace(n)) {
-		if s, ok := aiApps[word]; ok {
-			return s, true
-		}
-	}
-	return "", false
-}
-
-// Sighting is somebody reaching an AI service directly, as one source saw it.
+// Sighting is an agent's program reaching an AI service directly.
 type Sighting struct {
 	Service string    `json:"service"`
 	Where   string    `json:"where"`
 	Who     string    `json:"who"`
-	Source  string    `json:"source"`
 	Count   int       `json:"count"`
 	First   time.Time `json:"first"`
 	Last    time.Time `json:"last"`
 }
 
-// rawHostish and rawAppish are the keys a source puts a destination or an
-// app's name under.
-var (
-	rawHostish = []string{"host", "domain", "url", "uri", "dest", "destination", "server", "sni", "fqdn", "query"}
-	rawAppish  = []string{"app", "application", "client_name", "oauth", "extension", "service"}
-)
-
-// Sightings finds direct use of AI services in security events, one per
-// service, place, person and source, most recent first. own are sources to
-// leave out, such as Quilzo's own model gateway.
-func Sightings(events []telemetry.Event, own func(telemetry.Event) bool) []Sighting {
-	type key struct{ service, where, who, source string }
+// Sightings finds the reaches that went to an AI service, one per service,
+// host and agent, most recent first.
+func Sightings(in []Reach) []Sighting {
+	type key struct{ where, who string }
 	seen := map[key]*Sighting{}
-	note := func(ev telemetry.Event, service, where string) {
-		who := ev.Actor.String()
-		if who == "" {
-			who = ev.Device.String()
+	for _, r := range in {
+		service, ok := AIService(r.Host)
+		if !ok {
+			continue
 		}
-		k := key{service, where, who, ev.Source}
+		k := key{strings.ToLower(r.Host), r.Agent}
 		s := seen[k]
 		if s == nil {
-			s = &Sighting{Service: service, Where: where, Who: who, Source: ev.Source, First: ev.Time, Last: ev.Time}
+			s = &Sighting{Service: service, Where: k.where, Who: r.Agent, First: r.At, Last: r.At}
 			seen[k] = s
 		}
 		s.Count++
-		if ev.Time.Before(s.First) {
-			s.First = ev.Time
+		if r.At.Before(s.First) {
+			s.First = r.At
 		}
-		if ev.Time.After(s.Last) {
-			s.Last = ev.Time
-		}
-	}
-	for _, ev := range events {
-		if own != nil && own(ev) {
-			continue
-		}
-		found := map[string]string{}
-		for _, o := range ev.Observables {
-			switch o.Kind {
-			case telemetry.ObservableHostname, telemetry.ObservableDomain, telemetry.ObservableURL:
-				if h := hostOf(o.Value); h != "" {
-					if s, ok := AIService(h); ok {
-						found[h] = s
-					}
-				}
-			}
-		}
-		for k, v := range ev.Raw {
-			lk := strings.ToLower(k)
-			if containsAny(lk, rawHostish) {
-				if h := hostOf(v); h != "" {
-					if s, ok := AIService(h); ok {
-						found[h] = s
-					}
-				}
-			}
-			if containsAny(lk, rawAppish) {
-				if s, ok := AIApp(v); ok {
-					found["app: "+short(v, 60)] = s
-				}
-			}
-		}
-		for where, service := range found {
-			note(ev, service, where)
+		if r.At.After(s.Last) {
+			s.Last = r.At
 		}
 	}
 	out := make([]Sighting, 0, len(seen))
@@ -173,35 +124,4 @@ func Sightings(events []telemetry.Event, own func(telemetry.Event) bool) []Sight
 		return out[i].Where+out[i].Who < out[j].Where+out[j].Who
 	})
 	return out
-}
-
-// hostOf is the host in a hostname, a domain or an address.
-func hostOf(v string) string {
-	v = strings.TrimSpace(v)
-	if v == "" || len(v) > 2048 {
-		return ""
-	}
-	if strings.Contains(v, "://") {
-		u, err := url.Parse(v)
-		if err != nil {
-			return ""
-		}
-		return u.Hostname()
-	}
-	if i := strings.IndexAny(v, "/?#"); i >= 0 {
-		v = v[:i]
-	}
-	if strings.ContainsAny(v, " \t@") {
-		return ""
-	}
-	return v
-}
-
-func containsAny(s string, parts []string) bool {
-	for _, p := range parts {
-		if strings.Contains(s, p) {
-			return true
-		}
-	}
-	return false
 }

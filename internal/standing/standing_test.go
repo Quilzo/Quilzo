@@ -20,13 +20,14 @@ func TestTheRegisterIsWellFormed(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := Look()
-	if s.Roles < 8 || s.Powers < 15 {
+	if s.Roles < 5 || s.Powers < 12 {
 		t.Fatalf("%+v", s)
 	}
-	if s.Reaching == 0 {
-		t.Fatal("nothing reaches outside its situation, which would mean " +
-			"this package has nothing to say")
-	}
+	// Every role here today acts inside its own situation: the ones that
+	// reached outside (an incident's commander, a detection's promoter, a
+	// work item's assignee) left with the security team's tools for
+	// Vaigil. TestAPowerThatOutlivesItsSituationIsAStandingAct keeps the
+	// rule for the next one.
 	if s.Contained == 0 {
 		t.Fatal("everything reaches outside, which would mean the " +
 			"distinction is not being drawn")
@@ -79,34 +80,39 @@ func TestACallHostNeedsNoStandingAuthority(t *testing.T) {
 	}
 }
 
-// TestPromotingADetectionIsAStandingAct.
-func TestPromotingADetectionIsAStandingAct(t *testing.T) {
-	pro, ok := Find("proving", "promoter")
-	if !ok {
-		t.Fatal("no promoter role")
-	}
+// A power that outlives its situation is a standing act: refused with no
+// standing authority, and with the reason, refused to a reader, allowed to
+// somebody who may publish. Built here because no role this program has
+// today reaches outside; the rule is what keeps the next one honest.
+func TestAPowerThatOutlivesItsSituationIsAStandingAct(t *testing.T) {
+	pro := Situational{Package: "example", Name: "promoter", What: "moves a rule to live",
+		Held: "by being somebody other than whoever proposed it", Ends: "at the promotion",
+		Powers: []Power{{Name: "promote", Outside: true, Needs: auth.ActPublish,
+			Why: "a rule reaching live alerts everybody for as long as it runs"},
+			{Name: "look", Why: "reading the candidate changes nothing"}}}
 	if pro.Contained() {
 		t.Fatal("promoting a rule to live was classified as contained")
+	}
+	if err := Allows(pro, "look", "grace", nil, "/"); err != nil {
+		t.Fatalf("a contained power needed authority: %v", err)
 	}
 	// With no policy at all, it is refused and says why.
 	err := Allows(pro, "promote", "grace", nil, "/")
 	if err == nil {
-		t.Fatal("a rule reached live with no standing authority anywhere")
+		t.Fatal("a power reaching outside was allowed with no standing authority anywhere")
 	}
 	if !strings.Contains(err.Error(), "alerts everybody") {
 		t.Fatalf("%v", err)
 	}
-
-	// A reader who happens to be the reviewer is still refused.
+	// A reader who happens to hold the role is still refused.
 	p := &auth.Policy{}
 	if err := p.Grant(auth.Binding{Principal: "grace",
 		Role: auth.RoleReader, Resource: "/"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := Allows(pro, "promote", "grace", p, "/"); err == nil {
-		t.Fatal("a reader promoted a detection to live")
+		t.Fatal("a reader used a power that reaches outside")
 	}
-
 	// Somebody who may publish is not.
 	if err := p.Grant(auth.Binding{Principal: "ada",
 		Role: auth.RolePublisher, Resource: "/"}); err != nil {
@@ -132,21 +138,6 @@ func TestWithdrawingConsentHasNoFloorAtAll(t *testing.T) {
 	p, _ := sc.Power("withdraw-consent")
 	if !strings.Contains(p.Why, "nobody's to refuse") {
 		t.Fatalf("why = %q", p.Why)
-	}
-}
-
-// TestExcusingADefinitionOfDoneOutlivesTheItem.
-func TestExcusingADefinitionOfDoneOutlivesTheItem(t *testing.T) {
-	w, ok := Find("work", "assignee")
-	if !ok {
-		t.Fatal("no assignee role")
-	}
-	// Moving your own work is contained; excusing a requirement is not.
-	if err := Allows(w, "move", "grace", nil, "/"); err != nil {
-		t.Fatalf("moving an item needed authority: %v", err)
-	}
-	if err := Allows(w, "excuse", "grace", nil, "/"); err == nil {
-		t.Fatal("excusing a requirement needed nothing")
 	}
 }
 

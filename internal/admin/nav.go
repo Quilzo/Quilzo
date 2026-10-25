@@ -59,12 +59,12 @@ type destination struct {
 // dashboard, which are three answers to "can I show somebody this is right" —
 // so Assurance, which is the word the people who ask for it use.
 var groups = []string{
-	"Content",             // what you make
-	"Release",             // how it goes out
-	"Assurance",           // evidence that it is right
-	"Security operations", // what is wrong, and what is being done about it
-	"Administration",      // who may do what, and what this talks to
-	"Reference",           // how any of it works
+	"Content",        // what you make
+	"Release",        // how it goes out
+	"Assurance",      // evidence that it is right
+	"Protection",     // what Quilzo is doing to defend itself
+	"Administration", // who may do what, and what this talks to
+	"Reference",      // how any of it works
 }
 
 // destinations is every screen, in the default order.
@@ -121,31 +121,16 @@ var destinations = []destination{
 	{"security", "Security", "/security", "Assurance", "security", auth.ActView},
 	{"logs", "Log", "/logs", "Assurance", "logging", auth.ActView},
 
-	// The working half of security: the queue, and the events it is raised
-	// from. Apart from Assurance, which is evidence that the system is right;
-	// this is the list of what is currently wrong.
-	{"findings", "Findings", "/findings", "Security operations", "detection", auth.ActGrant},
-	{"risk", "Risk", "/security/risk", "Security operations", "detection", auth.ActGrant},
-	{"cases", "Cases", "/security/cases", "Security operations", "cases", auth.ActGrant},
-	{"events", "Events", "/security/events", "Security operations", "detection", auth.ActGrant},
-	{"hunt", "Hunt", "/security/hunt", "Security operations", "detection", auth.ActGrant},
-	{"detections", "Detections", "/security/detections", "Security operations", "detection", auth.ActGrant},
-	{"indicators", "Indicators", "/security/indicators", "Security operations", "detection", auth.ActGrant},
-	{"vulns", "Vulnerabilities", "/security/vulns", "Security operations", "vulnerabilities", auth.ActGrant},
-	// People and their machines, from what the company's tools say. Admin
-	// only: a person's score is a file on an employee.
-	{"workforce", "Workforce risk", "/workforce", "Security operations", "workforce", auth.ActGrant},
-	// What happens next, and who signed in from where.
-	// What Quilzo is doing to protect itself, and the playbooks deciding it.
-	{"shield", "Shield", "/security/shield", "Security operations", "shield", auth.ActGrant},
-	{"automations", "Automations", "/security/automations", "Security operations", "automations", auth.ActGrant},
-	{"signins", "Sign-ins", "/security/signins", "Security operations", "automations", auth.ActGrant},
-	{"feeds", "Feeds", "/security/feeds", "Security operations", "collect", auth.ActGrant},
+	// What Quilzo is doing to protect itself, the playbooks deciding it,
+	// and who signed in from where. The queue a security team works from —
+	// findings, cases, vulnerabilities, the estate — is Vaigil's, which
+	// reads this program's audit log as it is written.
+	{"shield", "Shield", "/security/shield", "Protection", "shield", auth.ActGrant},
+	{"signins", "Sign-ins", "/security/signins", "Protection", "automations", auth.ActGrant},
 
 	{"agents", "Agents", "/agents", "Administration", "agents", auth.ActManageAgents},
 	// Beside Agents: every agent, Quilzo's and other vendors', the apps and
-	// tool servers and model routes, who called what, and the AI use
-	// nobody registered.
+	// tool servers and model routes, and who called what.
 	{"fleet", "Fleet", "/fleet", "Administration", "fleet", auth.ActGrant},
 	{"people", "People", "/people", "Administration", "people", auth.ActGrant},
 	// The site's own accounts, beside the people who run it.
@@ -212,12 +197,12 @@ const DocsBase = "https://quilzo.github.io/"
 // the documentation exists to correct.
 var docSections = map[string]bool{
 	// One page per screen, named by the destination table above.
-	"agent-interface": true, "agents": true, "api": true, "assistant": true, "automations": true, "cases": true,
-	"chatbots": true, "collect": true, "design": true, "detection": true, "fleet": true, "forms": true,
+	"agent-interface": true, "agents": true, "api": true, "assistant": true, "automations": true,
+	"chatbots": true, "design": true, "fleet": true, "forms": true,
 	"growth": true, "integrations": true, "languages": true, "logging": true, "make": true, "media": true, "members": true,
 	"memory": true, "models": true, "pages": true, "passkeys": true, "people": true, "provenance": true,
 	"provisioning": true, "publishing": true, "research": true, "security": true, "settings": true, "shield": true, "sso": true,
-	"start": true, "structure": true, "today": true, "transfer": true, "types": true, "vulnerabilities": true, "workforce": true,
+	"start": true, "structure": true, "today": true, "transfer": true, "types": true,
 
 	// Guides no screen owns, because they explain a concept or a surface
 	// rather than a destination. Named individually so that one quietly
@@ -483,11 +468,7 @@ func groupOf(key string) string {
 // auth.AreaSecurity: a whole-site role covers them all, so nothing changes
 // for anybody granted on "/".
 var screenAreas = map[string]string{
-	"findings": auth.AreaSecurity, "risk": auth.AreaSecurity, "cases": auth.AreaSecurity,
-	"events": auth.AreaSecurity, "hunt": auth.AreaSecurity, "detections": auth.AreaSecurity,
-	"indicators": auth.AreaSecurity, "vulns": auth.AreaSecurity, "workforce": auth.AreaSecurity,
-	"automations": auth.AreaSecurity, "signins": auth.AreaSecurity, "feeds": auth.AreaSecurity,
-	"shield":   auth.AreaSecurity,
+	"signins": auth.AreaSecurity, "shield": auth.AreaSecurity,
 	"agents":   auth.AreaAgents,
 	"records":  auth.AreaData,
 	"security": auth.AreaCompliance, "logs": auth.AreaLog,

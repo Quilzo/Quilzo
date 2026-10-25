@@ -67,7 +67,9 @@ func TestEveryRecordFromACallerNamesItsModel(t *testing.T) {
 			}
 		}
 	}
-	if checked < 50 {
+	// Thirty-one when the security team's commands left for Vaigil; a
+	// floor well under that, so a scan that stopped matching fails.
+	if checked < 25 {
 		t.Errorf("only %d records checked; the test has stopped finding them", checked)
 	}
 }

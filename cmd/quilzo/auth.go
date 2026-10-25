@@ -335,7 +335,9 @@ func authGrant(root string, args []string) error {
 			return err
 		}
 	}
-	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+	// The policy as it now stands, for the consequence shown below: the one
+	// read before the change does not hold it.
+	written, err := updatePolicy(root, func(p *auth.Policy) error {
 		for _, b := range bindings {
 			b.Deny, b.GrantedBy, b.Note, b.Expires = *deny, by2, *note, expires
 			if err := p.Grant(b); err != nil {
@@ -343,9 +345,11 @@ func authGrant(root string, args []string) error {
 			}
 		}
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
+	p = written
 
 	verb := "granted"
 	if *deny {
@@ -794,12 +798,28 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	}
 	// An administrator's token can make anybody anything, so issuing one
 	// waits for a second administrator, and is issued to whoever asked.
+	//
+	// Except the first token a store has, for the administrator its policy
+	// names alone (bootstrapIssue): that is how a fresh install gets its
+	// first credential, nobody holds one to approve it with, and asking for
+	// a second administrator left it waiting for somebody who could not
+	// exist. It is the only administrator's change, made alone, and the
+	// record says how it came about.
 	if auth.Role(*role) == auth.RoleAdmin && !approved {
-		apply, err := proposeSecond(root, resolveCaller(root, ""), dual.Token,
-			fmt.Sprintf("an administrator's token %q acting as %s on %s", rest[0], *principal, *on),
-			dual.TokenChange{Args: args}, "")
-		if err != nil || !apply {
-			return err
+		if bootstrapIssue(root, "token", append([]string{"issue"}, args...)) && onlyAdministrator(root, *principal) {
+			c := resolveCaller(root, "")
+			if err := recordE(root, c.auditRecord("dual.approved", "/", audit.Success, map[string]string{
+				"kind": string(dual.Token), "alone": "true", "bootstrap": "true",
+				"what": fmt.Sprintf("the store's first token, for its only administrator %s", *principal)})); err != nil {
+				return err
+			}
+		} else {
+			apply, err := proposeSecond(root, resolveCaller(root, ""), dual.Token,
+				fmt.Sprintf("an administrator's token %q acting as %s on %s", rest[0], *principal, *on),
+				dual.TokenChange{Args: args}, "")
+			if err != nil || !apply {
+				return err
+			}
 		}
 	}
 	ts, err := loadTokens(root)
@@ -834,6 +854,14 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 		},
 	})
 
+	// --json is global, so a program issuing a token reads it rather than
+	// scraping the line it was printed on.
+	if w.JSON(map[string]any{"token": secret, "id": tok.ID, "principal": tok.Principal,
+		"role": tok.Role, "resource": tok.Resource,
+		"expires": time.Unix(tok.ExpiresAt, 0).UTC().Format(time.RFC3339),
+		"key":     tok.Key, "scope": tok.Scope.String()}) {
+		return nil
+	}
 	fmt.Printf("%s%s%s\n", bold, secret, reset)
 	fmt.Printf("\n  %sid %s · %s on %s · expires %s%s\n", dim, tok.ID, tok.Role,
 		tok.Resource, time.Unix(tok.ExpiresAt, 0).UTC().Format("2006-01-02"), reset)

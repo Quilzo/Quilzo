@@ -212,14 +212,6 @@ var commandNeeds = map[string]need{
 	"demo":      {action: auth.ActPublish},
 	"template":  {action: auth.ActEditDraft},
 	"templates": {action: auth.ActEditDraft},
-	// The theme is what every page is rendered against, so changing it changes
-	// what every reader sees — the same authority as changing the template, and
-	// for the same reason.
-	// Deciding a risk is acceptable is a statement the organisation stands
-	// behind — the same weight as putting something in front of the public,
-	// and far heavier than editing a draft. `finding story` reads and is
-	// checked separately below.
-	"finding": {action: auth.ActPublish},
 	// Declaring a chatbot is a publish: a public one is a new way for anybody
 	// on the internet to reach what the site says and what it offers to do.
 	"assistant":      {action: auth.ActPublish},
@@ -258,24 +250,13 @@ var commandNeeds = map[string]need{
 	"pending list":   {action: auth.ActView},
 	"pending redeem": {action: auth.ActToken},
 	// What may act as people through the agent interface, and ending it.
-	"apps":               {action: auth.ActGrant},
-	"apps receipt":       {action: auth.ActView},
-	"apps could":         {action: auth.ActView},
-	"shield status":      {action: auth.ActView},
-	"shield list":        {action: auth.ActView},
-	"shield dry-run":     {action: auth.ActView},
-	"shield playbook":    {action: auth.ActGrant},
-	"automate":           {action: auth.ActGrant},
-	"automate list":      {action: auth.ActView},
-	"automate runs":      {action: auth.ActView},
-	"automate templates": {action: auth.ActView},
-	// Feeds bring in what other systems say, and what they say reaches
-	// the automations. Adding one is the whole site's decision (the
-	// command asks for it again); reading them is a view.
-	"inbound":        {action: auth.ActGrant},
-	"inbound list":   {action: auth.ActView},
-	"inbound status": {action: auth.ActView},
-	"inbound help":   {action: auth.ActView},
+	"apps":            {action: auth.ActGrant},
+	"apps receipt":    {action: auth.ActView},
+	"apps could":      {action: auth.ActView},
+	"shield status":   {action: auth.ActView},
+	"shield list":     {action: auth.ActView},
+	"shield dry-run":  {action: auth.ActView},
+	"shield playbook": {action: auth.ActGrant},
 	// Where sign-ins come from is the whole site's decision.
 	"geo":        {action: auth.ActGrant},
 	"geo status": {action: auth.ActView},
@@ -315,7 +296,6 @@ var commandNeeds = map[string]need{
 	"personalise":      {action: auth.ActView},
 	"personalise list": {action: auth.ActView},
 	"personalise test": {action: auth.ActView},
-	"finding story":    {action: auth.ActView},
 
 	// Planting a canary commits the organisation to acting when it fires,
 	// and puts a row in the audit log saying so. The same weight as a
@@ -364,86 +344,16 @@ var commandNeeds = map[string]need{
 	// built for the run. Performs nothing outside itself.
 	"errand": {action: auth.ActView},
 
-	// A board built for the run, to make an argument about states.
-	"work": {action: auth.ActView},
-
 	// A flow and a week of runs, both built for the run. Executes nothing.
 	"flow": {action: auth.ActView},
-
-	// Reads rule files and compiles them. Writes nothing.
-	"sigma": {action: auth.ActView},
-
-	// A candidate and a week of synthetic telemetry, both built for the
-	// run. Promotes nothing outside itself.
-	"proving": {action: auth.ActView},
-
-	// Reads a scanner's output file and reports on it. Writes only where
-	// the caller asked for an output path.
-	"sarif": {action: auth.ActView},
-
-	// Reads a bill and an advisory file and matches them. Writes nothing.
-	"sca": {action: auth.ActView},
-
-	// Runs correlations over events built for the run. Reads no store.
-	"correlate": {action: auth.ActView},
-
-	// The reporting table, and an incident built for the run. Notifies
-	// nobody: internal/notify is what sends anything.
-	// A live incident names what went wrong and who knew when. The table
-	// of deadlines and the worked example name nothing.
-	"incident":        {action: auth.ActGrant},
-	"incident duties": {action: auth.ActView},
-	"incident demo":   {action: auth.ActView},
-	// The checklists themselves name no incident.
-	"incident playbooks": {action: auth.ActView},
-
-	// Feed freshness, over mirrors built for the run. Fetches nothing:
-	// internal/fetch is what reaches a network.
-	"feed": {action: auth.ActView},
-
-	// Log source mappings, and a check against records a caller supplies.
-	// Fetches nothing.
-	// Adding a mapping decides what an application's records become.
-	"source":       {action: auth.ActGrant},
-	"source list":  {action: auth.ActView},
-	"source check": {action: auth.ActView},
 
 	// The register of situational authority. A table about this program's
 	// own design, which changes nothing.
 	"standing": {action: auth.ActView},
 
-	// What each part of this program holds. A table about its own
-	// architecture; reads no store and reaches nothing.
-	"boundary": {action: auth.ActView},
-
 	// Arithmetic and a self-check. It reads nothing, writes nothing and
 	// touches no store, so it is a view.
 	"sframe": {action: auth.ActView},
-
-	// Baselining a codebase's debt decides what this organisation stops
-	// reporting, and recording a rotation asserts that a credential is
-	// dead: both are publishes. Reading a run and gating on it touch
-	// nothing.
-	"appsec":        {action: auth.ActPublish},
-	"appsec triage": {action: auth.ActView},
-	"appsec gate":   {action: auth.ActView},
-
-	// A decision about somebody's access is signed and appended to the
-	// audit chain: the same authority as publishing. Opening a campaign is
-	// an ordinary write, and reading one is a view.
-	"access":       {action: auth.ActPublish},
-	"access open":  {action: auth.ActEditDraft},
-	"access list":  {action: auth.ActView},
-	"access items": {action: auth.ActView},
-	"access close": {action: auth.ActView},
-
-	// Signing off a third party's access is a statement the organisation
-	// stands behind: the same authority as publishing. Reading the
-	// register and comparing it against the connectors are views.
-	"vendor":           {action: auth.ActPublish},
-	"vendor list":      {action: auth.ActView},
-	"vendor show":      {action: auth.ActView},
-	"vendor reconcile": {action: auth.ActView},
 
 	// Granting an outside firm access to this organisation's evidence is a
 	// commercial decision with a contract behind it, and issuing a package
@@ -476,102 +386,6 @@ var commandNeeds = map[string]need{
 	"assurance report":   {action: auth.ActView},
 	"assurance show":     {action: auth.ActView},
 	"assurance controls": {action: auth.ActView},
-
-	// Deciding a vulnerability does not apply is a statement the
-	// organisation stands behind and is appended to the audit chain rather
-	// than edited: the same authority as publishing. Reading the queue is a
-	// view.
-	// The analyst reads every finding and spends the model budget.
-	"analyst":      {action: auth.ActGrant},
-	"analyst plan": {action: auth.ActView},
-	// An action changes something in somebody else's tool.
-	"action":           {action: auth.ActGrant},
-	"action catalogue": {action: auth.ActView},
-	// Whose an identifier is decides whose activity is whose.
-	"identity": {action: auth.ActGrant},
-	// Collection reads other tools with stored credentials and writes the
-	// event store.
-	"collect": {action: auth.ActGrant},
-	// An indicator raises findings about whoever touched it.
-	"intel":        {action: auth.ActGrant},
-	"vuln":         {action: auth.ActPublish},
-	"vuln queue":   {action: auth.ActView},
-	"vuln why":     {action: auth.ActView},
-	"vuln reasons": {action: auth.ActView},
-	"vuln plan":    {action: auth.ActView},
-	"vuln vex":     {action: auth.ActView},
-	"vuln assets":  {action: auth.ActView},
-
-	// Storing a credential for another company's system is the heaviest
-	// thing here, and running a connector is an ordinary write. Reading a
-	// manifest is a view; probing makes a request and returns field names
-	// rather than data, which is still a read of somebody else's system and
-	// is checked as an edit.
-	"connect":       {action: auth.ActPublish},
-	"connect run":   {action: auth.ActEditDraft},
-	"connect probe": {action: auth.ActEditDraft},
-	"connect list":  {action: auth.ActView},
-	"connect check": {action: auth.ActView},
-	// Listing what ships is reading the binary. Adding one installs a file
-	// that can reach another company's system with a stored credential,
-	// which is the weight of storing the credential itself.
-	"connect catalogue": {action: auth.ActView},
-	// Scores name employees, so the estate is an administrator's; building
-	// it writes findings, as detect run does, and a summary is reading.
-	"estate":       {action: auth.ActGrant},
-	"estate build": {action: auth.ActEditDraft},
-	"estate show":  {action: auth.ActView},
-	// Reminders name people and what they have not done, and send messages
-	// to every employee: an administrator's, all of it.
-	"remind":      {action: auth.ActGrant},
-	"connect add": {action: auth.ActPublish},
-
-	"workforce":          {action: auth.ActPublish},
-	"workforce coverage": {action: auth.ActView},
-	"workforce propose":  {action: auth.ActView},
-	"workforce people":   {action: auth.ActView},
-	"workforce gaps":     {action: auth.ActView},
-
-	"notify":          {action: auth.ActPublish},
-	"notify add":      {action: auth.ActEditDraft},
-	"notify object":   {action: auth.ActEditDraft},
-	"notify draft":    {action: auth.ActEditDraft},
-	"notify publish":  {action: auth.ActEditDraft},
-	"notify contacts": {action: auth.ActView},
-	"notify list":     {action: auth.ActView},
-	"notify plan":     {action: auth.ActView},
-	"notify inbox":    {action: auth.ActView},
-
-	"spool":        {action: auth.ActPublish},
-	"spool add":    {action: auth.ActEditDraft},
-	"spool stats":  {action: auth.ActView},
-	"spool verify": {action: auth.ActView},
-
-	"canary":        {action: auth.ActPublish},
-	"canary mint":   {action: auth.ActView},
-	"canary watch":  {action: auth.ActView},
-	"canary status": {action: auth.ActView},
-
-	// Running rules over a file and ranking the result. Reads, writes
-	// nothing, and is the job an analyst does first.
-	"triage": {action: auth.ActView},
-
-	// Counting values in a file it is handed. No store, no network, no
-	// writes. The person running it is hunting, which is the job view exists
-	// for.
-	"hunt": {action: auth.ActView},
-
-	// Reading rule files and running them against their own fixtures. No
-	// store, no network, no writes — the same authority as looking at the
-	// repository the rules live in, which is where they are reviewed.
-	"detect": {action: auth.ActView},
-
-	// Reading a file somebody hands it and saying whether the events in it
-	// are usable. Touches no store and writes nothing, so it is the authority
-	// to look rather than the authority to change anything — and the person
-	// most likely to run it is whoever is writing a connector, who may well
-	// have been given nothing else.
-	"telemetry": {action: auth.ActView},
 
 	"theme": {action: auth.ActEditDraft},
 	// Sections are content: adding, moving and removing one writes a draft
@@ -1287,13 +1101,7 @@ func bootstrapIssue(root, cmd string, args []string) bool {
 // is looked up before its command, so "board held" can be moderation while
 // "board add", opening a board, stays a whole-site publish.
 var commandAreas = map[string]string{
-	"finding": auth.AreaSecurity, "incident": auth.AreaSecurity, "intel": auth.AreaSecurity,
-	"vuln": auth.AreaSecurity, "analyst": auth.AreaSecurity, "action": auth.AreaSecurity,
-	"identity": auth.AreaSecurity, "collect": auth.AreaSecurity, "source": auth.AreaSecurity,
-	"connect": auth.AreaSecurity, "estate": auth.AreaSecurity, "remind": auth.AreaSecurity,
-	"workforce": auth.AreaSecurity, "hunt": auth.AreaSecurity, "detect": auth.AreaSecurity,
-	"sigma": auth.AreaSecurity, "proving": auth.AreaSecurity, "correlate": auth.AreaSecurity,
-	"siem": auth.AreaSecurity, "automate": auth.AreaSecurity, "inbound": auth.AreaSecurity,
+	"siem":          auth.AreaSecurity,
 	"shield status": auth.AreaSecurity, "shield list": auth.AreaSecurity, "shield dry-run": auth.AreaSecurity,
 	"posture": auth.AreaCompliance, "compliance": auth.AreaCompliance, "self check": auth.AreaCompliance,
 	"policy show": auth.AreaCompliance, "policy params": auth.AreaCompliance, "policy export": auth.AreaCompliance,

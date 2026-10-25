@@ -4,9 +4,11 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 )
 
@@ -46,8 +48,8 @@ func TestAJobIsGrantedFromTheCommandLineAndKeepsToItsArea(t *testing.T) {
 		return secret
 	}
 	t.Setenv("QUILZO_TOKEN", issueFor("sam"))
-	if err := authoriseCommand(root, "finding", []string{"list"}); err != nil {
-		t.Errorf("an analyst cannot list findings: %v", err)
+	if err := authoriseCommand(root, "shield", []string{"status"}); err != nil {
+		t.Errorf("an analyst cannot read the shield: %v", err)
 	}
 	for _, c := range [][]string{{"publish"}, {"auth", "grant", "x", "admin"}, {"add", "x=y.json"}, {"inbox"}} {
 		if err := authoriseCommand(root, c[0], c[1:]); err == nil {
@@ -110,5 +112,60 @@ func TestAnAuditorReadsFromTheCommandLineAndChangesNothing(t *testing.T) {
 		if err := authoriseCommand(root, c[0], c[1:]); err == nil {
 			t.Errorf("a reader over the site may run %v", c)
 		}
+	}
+}
+
+// What a grant lets somebody do is said from the policy as it is written,
+// not from the copy read before the change: it said "nothing" for every
+// grant, an administrator's included.
+func TestAGrantSaysWhatItLetsThemDo(t *testing.T) {
+	root := connectStore(t)
+	_, read := captureStdout(t)
+	err := cmdAuth(root, []string{"grant", "dana", "author", "--on", "/blog"})
+	out := read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "can now: nothing") || !strings.Contains(out, "edit-draft") {
+		t.Fatalf("the consequence is not what was granted:\n%s", out)
+	}
+}
+
+// A fresh install's first credential: the first token, for the
+// administrator the policy names alone, is issued without a second
+// administrator nobody could be; the next one is not issued without a
+// token at all.
+func TestTheOnlyAdministratorGetsTheirFirstToken(t *testing.T) {
+	root := connectStore(t)
+	t.Setenv("QUILZO_TOKEN", "")
+	t.Setenv("HOME", t.TempDir())
+	if err := cmdAuth(root, []string{"grant", "dana", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := authoriseCommand(root, "token", []string{"issue", "laptop", "--principal", "dana"}); err != nil {
+		t.Fatalf("the first token was refused: %v", err)
+	}
+	if err := tokenIssue(root, []string{"laptop", "--principal", "dana"}); err != nil {
+		t.Fatal(err)
+	}
+	ts, _ := loadTokens(root)
+	if len(ts.Tokens) != 1 || ts.Tokens[0].Role != auth.RoleAdmin {
+		t.Fatalf("no administrator's token was issued: %+v", ts.Tokens)
+	}
+	if pend, _ := dualStore(root).Pending(time.Now()); len(pend) != 0 {
+		t.Fatalf("it waits for a second administrator: %+v", pend)
+	}
+	if err := authoriseCommand(root, "token", []string{"issue", "again", "--principal", "dana"}); err == nil {
+		t.Fatal("a second token was issued with no token presented")
+	}
+	evs, _ := audit.Read(auditPath(root))
+	boot := false
+	for _, e := range evs {
+		if e.Action == "dual.approved" && e.Detail["bootstrap"] == "true" {
+			boot = true
+		}
+	}
+	if !boot {
+		t.Error("the record does not say the first token was the bootstrap")
 	}
 }

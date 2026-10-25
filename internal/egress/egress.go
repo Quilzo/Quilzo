@@ -158,16 +158,11 @@ var Purposes = []Purpose{
 	},
 	{
 		Name: "mail",
-		What: "sending mail through the configured relay: notices to " +
-			"customers and reminders to staff",
-		Without: "no mail is sent. Notices wait in the outbox, and " +
-			"reminders are not sent by mail",
-	},
-	{
-		Name: "slack",
-		What: "sending reminders to people as direct messages from a " +
-			"Slack app, through slack.com only",
-		Without: "reminders are not sent in Slack",
+		What: "sending mail through the configured relay: the security " +
+			"contact told what the shield did or which sign-in had to be " +
+			"confirmed, an agent's sponsor told it is about to stop",
+		Without: "no mail is sent. What would have been said is in the " +
+			"audit log, and on the Shield and Sign-ins screens",
 	},
 	{
 		Name: "siem",
@@ -179,33 +174,6 @@ var Purposes = []Purpose{
 		Name:    "telemetry",
 		What:    "exporting traces and metrics to an OTLP collector",
 		Without: "nothing is exported. A collector on loopback still receives",
-	},
-	{
-		Name: "action",
-		What: "doing one declared thing to a company's own tool during an " +
-			"incident — suspending an account — after a second person has " +
-			"approved the exact call",
-		Without: "no action can be taken from here. Playbook steps are " +
-			"still recorded; each is carried out by a person in the tool " +
-			"itself",
-	},
-	{
-		Name: "connector",
-		What: "reading a company's own tools — an identity provider, an " +
-			"MDM, a training platform — over the endpoints a connector " +
-			"manifest declares",
-		Without: "no connector runs. Nothing is pulled from any tool, and " +
-			"the workforce reconciliation has only the files somebody " +
-			"exported by hand",
-	},
-	{
-		Name: "signals",
-		What: "reading the keys another system signs its security events " +
-			"with, and asking it to start, check or stop the stream it " +
-			"sends them on (OpenID Shared Signals)",
-		Without: "shared signals cannot be verified, so every one is " +
-			"refused. Okta event hooks and signed webhooks still arrive: " +
-			"they need no connection from here",
 	},
 	{
 		Name: "sso",

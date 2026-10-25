@@ -183,6 +183,20 @@ var settings = []Setting{
 			"answer, and afterwards lets them sign in again with their passkey " +
 			"without leaving the page. Between five minutes and an hour.",
 	},
+	{
+		Key: "signin.adaptive", Kind: Bool, Default: "true",
+		Summary:  "a sign-in that looks like somebody else must confirm it is its person",
+		Controls: []string{"IA-10", "AC-7", "SI-4"},
+		Why: "Each sign-in to the admin is judged against the person's own: one " +
+			"further from the last than a plane could go, through Tor or a rented " +
+			"server, a session that moved to another device or country, or an " +
+			"administrator in a country they have never signed in from gets no " +
+			"session until they confirm it with a passkey, and the security " +
+			"contact hears of the worst of them (NIST SP 800-53 IA-10). Off, those " +
+			"sign-ins get in like any other.",
+		Weaker: offIsWeaker("a sign-in from the other side of the world, through Tor, or " +
+			"with a session copied to another machine gets in like any other"),
+	},
 
 	// -- the HTTP API ---------------------------------------------------------
 	{

@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -249,6 +250,23 @@ func TestASandboxedProcessCannotOpenATCPConnection(t *testing.T) {
 		t.Fatalf("the helper did not reach the dial, so this proves nothing "+
 			"about the sandbox: %v\n%s", err, out)
 	}
+	if !SeccompSupported() {
+		return
+	}
+	// The ways round the rule that plain TCP does not take: a Multipath TCP
+	// socket, which Landlock's rules do not see, Go's own listener (MPTCP
+	// by default since Go 1.24), and listening on a socket never bound,
+	// which binds it without asking.
+	for _, open := range []string{"mptcp-dialled", "mptcp-socket", "listened", "autobound"} {
+		if strings.Contains(string(out), open+"\n") {
+			t.Errorf("a sandboxed process got %s\n%s", open, out)
+		}
+	}
+	for _, shut := range []string{"mptcp-denied", "mptcp-socket-denied", "listen-denied", "autobind-denied"} {
+		if !strings.Contains(string(out), shut+"\n") {
+			t.Errorf("the helper did not say %s\n%s", shut, out)
+		}
+	}
 }
 
 func TestSandboxDialHelper(t *testing.T) {
@@ -276,10 +294,45 @@ func TestSandboxDialHelper(t *testing.T) {
 		// the first version of this test passed against a build with the
 		// network restriction removed.
 		fmt.Println("dial-denied")
+		mptcpDoors(os.Getenv("QUILZO_SANDBOX_DIAL"))
 		return
 	}
 	c.Close()
 	fmt.Println("dialled")
+}
+
+// mptcpDoors tries what a plain TCP rule does not decide, and says how
+// each went, one marker a line.
+func mptcpDoors(addr string) {
+	say := func(err error, open, shut string) {
+		if err != nil {
+			fmt.Println(shut)
+			return
+		}
+		fmt.Println(open)
+	}
+	var d net.Dialer
+	d.SetMultipathTCP(true)
+	c, err := d.Dial("tcp", addr)
+	if c != nil {
+		c.Close()
+	}
+	say(err, "mptcp-dialled", "mptcp-denied")
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 262)
+	if err == nil {
+		syscall.Close(fd)
+	}
+	say(err, "mptcp-socket", "mptcp-socket-denied")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if ln != nil {
+		ln.Close()
+	}
+	say(err, "listened", "listen-denied")
+	if fd, err = syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0); err == nil {
+		err = syscall.Listen(fd, 1)
+		syscall.Close(fd)
+	}
+	say(err, "autobound", "autobind-denied")
 }
 
 // Asking for the network leaves it alone.

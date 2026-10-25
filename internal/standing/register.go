@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // Register is every situational role in this program.
@@ -49,29 +47,6 @@ func Register() []Situational {
 			},
 		},
 		{
-			Package: "incident", Name: "commander",
-			What: "decides what happens during an incident",
-			Held: "whoever takes the role when one is declared",
-			Ends: "when the incident closes",
-			Powers: []Power{
-				{Name: "direct", Why: "telling responders what to do next " +
-					"is the job, and it ends with the incident"},
-				{Name: "decide-trigger", Outside: true,
-					Needs: auth.ActPublish,
-					Why: "recording awareness or materiality starts a " +
-						"regulatory clock that outlives the incident and " +
-						"binds the organisation. internal/auth makes " +
-						"publishing the sharp rung because it is the only " +
-						"action with an outside observer, and a " +
-						"supervisory authority is the outside observer " +
-						"this one has"},
-				{Name: "waive", Outside: true, Needs: auth.ActPublish,
-					Why: "deciding an obligation does not apply is a " +
-						"statement a regulator may later ask about, and it " +
-						"survives the incident by years"},
-			},
-		},
-		{
 			Package: "errand", Name: "owner",
 			What: "the person who agreed to do something in a call",
 			Held: "by having said so; internal/errand carries the sentence",
@@ -82,23 +57,6 @@ func Register() []Situational {
 					"task that one person said they would do"},
 				{Name: "decline", Why: "the same, and refusing work you " +
 					"were never granted is not an escalation"},
-			},
-		},
-		{
-			Package: "proving", Name: "promoter",
-			What: "moves a detection between rings",
-			Held: "by being somebody other than whoever proposed it",
-			Ends: "at the promotion; it is not a standing position",
-			Powers: []Power{
-				{Name: "promote", Outside: true, Needs: auth.ActPublish,
-					Why: "a rule reaching live alerts everybody and " +
-						"changes what the estate sees for as long as it " +
-						"runs. Nothing about the candidate's own history " +
-						"bounds that"},
-				{Name: "retire", Outside: true, Needs: auth.ActPublish,
-					Why: "withdrawing a detection removes coverage " +
-						"everybody else is relying on, and the absence is " +
-						"the hardest kind of change to notice"},
 			},
 		},
 		{
@@ -124,20 +82,6 @@ func Register() []Situational {
 				{Name: "eject-scribe", Why: "removing the note-taker ends " +
 					"the recording of one call. That anybody present can " +
 					"do it is the design rather than an oversight"},
-			},
-		},
-		{
-			Package: "work", Name: "assignee",
-			What: "the person an item is owned by",
-			Held: "by assignment on the board",
-			Ends: "when the item is finished or reassigned",
-			Powers: []Power{
-				{Name: "move", Why: "moving your own work between four " +
-					"states affects one item on one board"},
-				{Name: "excuse", Outside: true, Needs: auth.ActPublish,
-					Why: "waiving a requirement in a definition of done is " +
-						"the record an auditor reads a year later, and it " +
-						"outlives both the item and the person"},
 			},
 		},
 	}

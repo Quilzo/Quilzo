@@ -7,6 +7,58 @@ has the rest.
 Unreleased
 ==========
 
+** Security operations are Vaigil now
+
+*** A security team's tools left Quilzo for Vaigil
+    (https://github.com/Vaigil/vaigil), which began as this half of the
+    program: collecting from other systems (connect, collect, inbound,
+    source, spool, telemetry and the Feeds and Events screens), detections,
+    Sigma, correlations and the trial ring (detect, sigma, correlate,
+    proving, hunt, triage), the finding queue and risk (finding, analyst),
+    cases and incidents with their regulatory clocks, actions on other
+    platforms, automations, vulnerabilities (vuln, sca, sarif, appsec, feed,
+    reachability), the estate and workforce risk, vendors, access reviews,
+    reminders, notices to customers, work tracking, estate canaries, and the
+    MCP tools over all of them.  Their screens are gone from the admin, and
+    the Security operations menu is Protection: Shield and Sign-ins.
+    Quilzo keeps what it needs to defend itself, and hands its audit log
+    to Vaigil, or to any SIEM that reads OCSF, as it is written
+    (siem.stream.url).
+
+*** A risky sign-in has to confirm it is its person, built in and on.
+    Impossible travel, a session copied to another device or country, Tor
+    or a hosting provider, an administrator in a country they have never
+    signed in from, or three unfamiliar things at once: the session is
+    held until a passkey or a fresh single sign-on confirms it, and the
+    security contact is mailed about the worst of them.  This was a set of
+    automation rules nobody had until they added them; it is now the
+    setting signin.adaptive (NIST SP 800-53 IA-10), on by default, and off
+    is a weaker setting that takes two administrators.  A person reporting
+    that a sign-in was not them ends every session they hold.
+
+*** Posture drift is on the record.  A check that starts failing is
+    written to the audit log once (posture.drifted), and again when it is
+    fixed (posture.restored); a high or critical one is mailed to the
+    security contact.  It used to open a finding in the queue that left.
+
+*** The shield's "open a case" asks for one in the audit log
+    (shield.open-case, with the playbook, signal, subject and a summary),
+    where the security team's tools pick it up; "notify" mails the security
+    contact and the agent's sponsor directly.  Neither keeps the request
+    that raised the signal waiting on a mail server any more: mail is sent
+    in the background, and the command line waits up to thirty seconds for
+    it before it exits.
+
+*** quilzo self kev FILE keeps the CVE ids of CISA's catalogue of
+    vulnerabilities known to be exploited, so a flaw in this build that is
+    being exploited is contained at once.  It was read from the
+    vulnerability workbench's imports, which left.
+
+*** Mail is configured in mail.json (notify/mail.json is still read).
+    Shadow AI on the Fleet screen is what agents' own programs reached
+    around the gateway; what people across the estate reach is in its
+    proxy and DNS logs, which are Vaigil's.
+
 ** Added
 
 *** The audit log streams to a SIEM as it is written.  Set
@@ -518,6 +570,66 @@ Unreleased
     No run may use a person's desktop.
 
 ** Fixed
+
+*** Getting started's "Publish it" opens Review.  It linked to /publish,
+    which only takes the publish form, so the one link on the first screen
+    a new installation shows that matters most answered "POST only".
+
+*** Passkeys and Inventory fit a phone.  The passkey list was the one
+    table in the admin outside a scrolling frame, so its Remove buttons sat
+    off the right edge and the whole screen scrolled sideways; a sentence
+    naming a file by its whole path did the same on Inventory.  A test now
+    fails on a table outside the frame.
+
+*** A picture opened on its own is shown as a picture.  The admin's
+    style policy refused the styles the browser gives an image or a film
+    it displays by itself, with an error in the console for each, so the
+    picture sat in the corner of a white page.  Media shown in place now
+    has a policy of its own: the browser's styles, and nothing that runs.
+
+*** CodeQL reads this program's escaping.  Its cross-site scripting rule
+    reported every page the public site renders, and its cookie rule every
+    cookie the admin sets, and the required check failed any change large
+    enough to touch them.  A model pack in .github/codeql/extensions says
+    which functions escape and why, each claim recorded with what would
+    make it wrong in docs/codeql-dismissals.md, and three small changes let
+    the analyser follow the rest; twenty-one of twenty-two alerts are gone
+    without a dismissal.
+
+*** A fresh install gets its first token again.  `quilzo auth grant you
+    admin` then `quilzo token issue laptop --principal you`, the way the
+    manual says, waited for a second administrator nobody could be: the
+    first token in a store, for the only administrator the policy names,
+    is now that administrator's change, made alone, and recorded as the
+    bootstrap (dual.approved, bootstrap true).  A second token still
+    needs one presented.
+
+*** What the admin does is in the audit log.  Its records took their
+    principal from the detail's "by", and publishing from the browser,
+    adding and resolving a note, editing a picture, exchanging a token and
+    enforcing the organisation's policy were written without one, so the
+    log refused each of them (AU-3: who) and kept nothing; so were the
+    refusals at the door, with nobody signed in: a wrong enrolment link, a
+    refused single sign-on, an account locked by somebody's guesses.  Each
+    now names who acted, a refusal at the door is kept as an anonymous,
+    unverified caller, and a refusal or a failure is recorded as one
+    rather than as a success.  A test walks the admin's source and fails
+    on a record that says nobody.
+
+*** A grant says what it lets somebody do.  The line after `quilzo auth
+    grant` was worked out from the policy as it was before the grant, so
+    it said "can now: nothing" for every grant.
+
+*** A sandboxed program can no longer reach the network through
+    Multipath TCP.  Landlock's TCP rules do not apply to MPTCP sockets
+    (seen on Linux 6.18), and Go has opened its listeners as MPTCP by
+    default since 1.24, so an extension whose network was denied could
+    still connect anywhere and listen, and an agent's program could
+    listen inside its box.  The system call filter now says MPTCP does
+    not exist, which Go and the C libraries fall back to plain TCP on,
+    and refuses listen(2), which binds a socket that has no address
+    without asking Landlock.  Extensions, which are not hardened, now
+    get this part of the filter whenever their network is denied.
 
 *** Two factors on every request a person makes to the admin (NIST SP
     800-63B-4 AAL2), checked on each request rather than at the sign-in

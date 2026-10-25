@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package fleet is every agent an organisation runs or uses, Quilzo's own
-// and other vendors', and the AI use nobody registered.
+// and other vendors', and what agents' own programs reached around the
+// gateway.
 //
 // Quilzo's own agents, the apps people connected, the tool servers and the
 // model routes are already known to it. Other vendors' agents are not, and
@@ -12,12 +13,9 @@
 // says it is and can do, who answers for it here, and whether the card has
 // changed since somebody looked.
 //
-// The other half is what nobody registered. Every security event Quilzo
-// collects (proxy and DNS logs, the identity provider's app grants, its own
-// agents' connections) can show somebody reaching an AI service directly.
-// Each such sighting is shadow AI: not forbidden by this package, but
-// unseen by the gateway, the budget and the log, and so worth a person's
-// look.
+// What nobody registered — somebody reaching an AI service directly, seen
+// in the proxy and DNS logs of the estate — is in those logs, and so is
+// Vaigil's to find, not this program's.
 package fleet
 
 import (

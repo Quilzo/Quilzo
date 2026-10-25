@@ -2764,6 +2764,11 @@ body:has(> .sidenav) > main { width: 100%; }
 /* A notice can name a file by its whole path; it wraps rather than
    pushing the page wider. */
 .notice { overflow-wrap: anywhere; }
+/* So can a sentence. The binary's verdict on Inventory names the file to keep
+   the release's checksums in, and on a phone that one path made the whole
+   screen scroll sideways. break-word only breaks what would not otherwise fit,
+   so ordinary prose wraps exactly as before. */
+main p, main li, main dd { overflow-wrap: break-word; }
 
 /* Single sign-on: values to copy whole, and the sign-in page's buttons. */
 .sso-card { margin: 0 0 16px; }

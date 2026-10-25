@@ -177,17 +177,12 @@ type Server struct {
 	Boards *BoardsAdmin
 	// SCIM is provisioning from an identity provider. See scimadmin.go.
 	SCIM *SCIMAdmin
-	// Inbound answers /feeds/NAME: events other systems push here, each
-	// proving where it came from rather than holding a session.
-	Inbound http.Handler
-	// Feeds is the Feeds screen. See feeds.go.
-	Feeds *FeedsAdmin
-	// SignInRisk judges each sign-in as it is made (see automations.go);
-	// Automations are the rules and their history. A session they hold
-	// back is confirmed with a passkey or a fresh single sign-on, never a
-	// code sent by email (SP 800-63B-4 3.1.3.1 forbids email for this).
-	SignInRisk  func(SignInFacts) SignInVerdict
-	Automations *AutomationsAdmin
+	// SignInRisk judges each sign-in as it is made (see signins.go);
+	// SignIns is where people signed in from. A session it holds back is
+	// confirmed with a passkey or a fresh single sign-on, never a code sent
+	// by email (SP 800-63B-4 3.1.3.1 forbids email for this).
+	SignInRisk func(SignInFacts) SignInVerdict
+	SignIns    *SignInHistory
 	// Enrol holds the one-time links that add a person's passkey
 	// (enrolment.go); EnrolBlocked says why links may not be used now,
 	// such as a lockdown in force, or nothing.
@@ -225,13 +220,6 @@ type Server struct {
 	// inventory, the store's own integrity, the vault and the anchors.
 	Assurance *Assurance
 
-	// Running is the operational side of the same question: whether the
-	// things that should be happening are happening. Separate from
-	// Assurance because they are read by different people at different
-	// times — evidence answers an auditor once a year, and this answers
-	// whoever is on duty today.
-	Running *Running
-
 	// Experiments are the site's A/B tests.
 	Experiments *Experiments
 	// Personalise is the site's personalisation rules.
@@ -250,34 +238,6 @@ type Server struct {
 	// public site at /ask/NAME.
 	Assistants *Assistants
 
-	// Findings is the finding register: what the producers recorded, with
-	// the audit log's decisions applied.
-	Findings *Findings
-
-	// Workforce is the estate: what the company's tools say about its
-	// people and machines, joined and scored.
-	Workforce *Workforce
-
-	// Reminders tells people what the estate says they still have to do.
-	Reminders *Reminders
-
-	// Detections is the rules: what each has been worth, its ring, and
-	// what is suppressed.
-	Detections *Detections
-	// Vulns is the vulnerability workbench. Nil means none was wired.
-	Vulns *Vulns
-	// Cases is the incident store. Nil means none was wired.
-	Cases *Cases
-	// Indicators is the indicator store. Nil means none was wired.
-	Indicators *Indicators
-	// People gives the address each identifier is known by: what joins
-	// one person across platforms. Nil means nobody is joined.
-	People func() map[string]string
-
-	// Events is the telemetry store. Separate from Running because one is
-	// about whether collection is working and the other is what was
-	// collected, and a person opens them at different moments.
-	Events *Events
 	// Transfer moves whole sites in and out, and applies starters.
 	Transfer *Transfer
 	// Decentralised renders the published site so its IPFS identifier can be
@@ -671,7 +631,7 @@ type principal struct {
 	Name string
 	// StepUp is why this session must prove its person before anything
 	// else; empty when it need not. Bound is where it was issued to. See
-	// automations.go.
+	// signins.go.
 	StepUp, Bound string
 	// Role is the role the *token* carries, which may be narrower than the one
 	// the policy grants Name. It was captured here and then used only to print
@@ -1358,28 +1318,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/integrity", s.handleIntegrityScreen)
 	mux.HandleFunc("/security/verify", s.handleVerify)
 	mux.HandleFunc("/security/agents", s.handleAgentsScreen)
-	mux.HandleFunc("/security/running", s.handleRunningScreen)
-	mux.HandleFunc("/security/events", s.handleEventsScreen)
-	mux.HandleFunc("/findings", s.handleFindings)
-	mux.HandleFunc("/security/hunt", s.handleHunt)
-	mux.HandleFunc("/security/entity/", s.handleEntity)
-	mux.HandleFunc("/security/risk", s.handleRisk)
-	mux.HandleFunc("/security/indicators", s.handleIndicators)
-	mux.HandleFunc("/security/indicators/act", s.handleIndicatorsAct)
-	mux.HandleFunc("/security/cases", s.handleCases)
-	mux.HandleFunc("/security/cases/act", s.handleCasesAct)
-	mux.HandleFunc("/security/case/", s.handleCase)
-	mux.HandleFunc("/security/vulns", s.handleVulns)
-	mux.HandleFunc("/security/vulns/act", s.handleVulnsAct)
-	mux.HandleFunc("/security/vuln/", s.handleVuln)
-	mux.HandleFunc("/security/detections", s.handleDetections)
-	mux.HandleFunc("/security/detections/act", s.handleDetectionsAct)
-	mux.HandleFunc("/workforce", s.handleWorkforce)
-	mux.HandleFunc("/workforce/person/", s.handleWorkforcePerson)
-	mux.HandleFunc("/workforce/devices", s.handleWorkforceDevices)
-	mux.HandleFunc("/workforce/sync", s.handleWorkforceSync)
-	mux.HandleFunc("/workforce/reminders", s.handleReminders)
-	mux.HandleFunc("/workforce/reminders/act", s.handleRemindersAct)
 	mux.HandleFunc("/models", s.handleModels)
 	mux.HandleFunc("/analytics", s.handleAnalytics)
 	mux.HandleFunc("/experiments", s.handleExperiments)
@@ -1411,13 +1349,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/signins", s.handleSignIns)
 	mux.HandleFunc("/security/signins/act", s.handleSignInsAct)
 	mux.HandleFunc("/security/signins/unlock", s.handleSignInsUnlock)
-	mux.HandleFunc("/security/automations", s.handleAutomations)
 	mux.HandleFunc("/security/shield", s.handleShield)
 	mux.HandleFunc("/security/shield/act", s.handleShieldAct)
-	mux.HandleFunc("/security/automations/rule", s.handleAutomationRule)
-	mux.HandleFunc("/security/feeds", s.handleFeeds)
-	mux.HandleFunc("/security/feeds/act", s.handleFeedsAct)
-	mux.HandleFunc("/security/automations/act", s.handleAutomationsAct)
 	mux.HandleFunc("/provisioning", s.handleProvisioning)
 	mux.HandleFunc("/provisioning/act", s.handleProvisioningAct)
 	mux.HandleFunc("/boards", s.handleBoards)
@@ -1430,8 +1363,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/assistants/save", s.handleAssistantSave)
 	mux.HandleFunc("/assistants/action", s.handleAssistantAction)
 	mux.HandleFunc("/assistants/remove", s.handleAssistantRemove)
-	mux.HandleFunc("/findings/", s.handleFinding)
-	mux.HandleFunc("/findings/decide", s.handleFindingDecide)
 	mux.HandleFunc("/languages", s.handleLanguages)
 	mux.HandleFunc("/languages/add", s.handleLanguageAdd)
 	mux.HandleFunc("/languages/translated", s.handleLanguageTranslated)
@@ -1619,9 +1550,6 @@ func (s *Server) Handler() http.Handler {
 	// its own token, not a person's session; see internal/scim.
 	if s.SCIM != nil && s.SCIM.Handler != nil {
 		mux.Handle("/scim/v2/", s.shieldable("scim", s.SCIM.Handler))
-	}
-	if s.Inbound != nil {
-		mux.Handle("/feeds/", s.shieldable("feeds", s.Inbound))
 	}
 	// /docs and /docs/img/ used to be served from here. The manual is now
 	// published at DocsBase and the footer links straight to it — deliberately
@@ -3112,8 +3040,8 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 			details = append(details, f.String())
 		}
 		s.audit("publish.refused", "/", map[string]string{
-			"gate": refused.Check.Name,
-			"how":  strconv.Itoa(len(refused.Findings)),
+			"by": p.Name, "gate": refused.Check.Name,
+			"how": strconv.Itoa(len(refused.Findings)),
 		})
 		s.render(w, r, "message.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Title": "Not published", "Principal": p,
@@ -3344,7 +3272,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	pub, err := site.Publish(s.Store, "")
 	if err != nil {
 		s.audit("publish", "/", map[string]string{
-			"outcome": "failed", "detail": err.Error()})
+			"by": p.Name, "outcome": "failed", "detail": err.Error()})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -3364,6 +3292,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// recorded next to it rather than left to be inferred from what happened
 	// to be failing at the time.
 	s.audit("publish", "/", map[string]string{
+		"by":      p.Name,
 		"commit":  shortHash(pub.Published),
 		"changes": fmt.Sprintf("%d", len(pub.Changes)),
 		"waived":  strings.Join(waived, ","),

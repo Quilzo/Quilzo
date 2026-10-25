@@ -26,8 +26,7 @@ func TestTheFleetIsAnAdministratorsMapOfWhoCalledWhat(t *testing.T) {
 				{ID: "tool:tracker", Kind: fleet.KindTool, Name: "tracker", Flags: []string{"1 tool nobody pinned"}},
 				{ID: "external:help-desk", Kind: fleet.KindExternal, Name: "help-desk", Owner: "dana"},
 			}, Edges: []fleet.Edge{{From: "person:dana", To: "agent:tidy", Calls: 3, Last: now},
-				{From: "agent:tidy", To: "tool:tracker", Calls: 1, Last: now}},
-				Shadow: []fleet.Sighting{{Service: "OpenAI", Where: "api.openai.com", Who: "okta:rae", Source: "zscaler/web", Count: 4, Last: now}}}, nil
+				{From: "agent:tidy", To: "tool:tracker", Calls: 1, Last: now}}}, nil
 		},
 		Register: func(cardURL, name string, act Actor) error {
 			by := act.Name
@@ -39,7 +38,7 @@ func TestTheFleetIsAnAdministratorsMapOfWhoCalledWhat(t *testing.T) {
 	}
 	body := get(t, srv, "/fleet", token).Body.String()
 	for _, want := range []string{"Who called what", `class="agmap fleetmap"`, "dana → tidy: 3 calls", "1 tool nobody pinned",
-		"Other vendors&#39; agents", "api.openai.com", "okta:rae", `name="card"`} {
+		"Other vendors&#39; agents", `name="card"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the screen lacks %q", want)
 		}

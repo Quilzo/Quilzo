@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -273,6 +274,16 @@ func Restrict(r Rules) (Status, error) {
 // everything else, since setting up the rest needs calls it refuses.
 func filterLast(r Rules, st *Status) error {
 	if !r.Hardened {
+		// TCP denied by Landlock alone is denied to plain TCP sockets:
+		// the network part of the filter is what makes it every socket.
+		if !st.NetworkDenied {
+			return nil
+		}
+		if err := applyNetSeccomp(); err != nil {
+			st.NetworkWhy = strings.TrimPrefix(st.NetworkWhy+"; this architecture has no system "+
+				"call filter, so a program that asks for Multipath TCP, or listens without "+
+				"binding, still reaches the network", "; ")
+		}
 		return nil
 	}
 	if err := applySeccomp(); err != nil {
