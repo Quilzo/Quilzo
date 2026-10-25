@@ -174,12 +174,7 @@ func cmdServe(root string, args []string) error {
 		return saveTokens(root, t)
 	}
 	srv.Audit = func(action, resource string, detail map[string]string) {
-		by := detail["by"]
-		record(root, audit.Record{
-			Action: action, Resource: resource, Outcome: audit.Success,
-			Principal: by, Kind: audit.KindHuman, Verified: true,
-			Detail: detail,
-		})
+		record(root, adminRecord(action, resource, detail))
 	}
 
 	srv.Settings = &admin.Settings{

@@ -3040,8 +3040,8 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 			details = append(details, f.String())
 		}
 		s.audit("publish.refused", "/", map[string]string{
-			"gate": refused.Check.Name,
-			"how":  strconv.Itoa(len(refused.Findings)),
+			"by": p.Name, "gate": refused.Check.Name,
+			"how": strconv.Itoa(len(refused.Findings)),
 		})
 		s.render(w, r, "message.html", map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Title": "Not published", "Principal": p,
@@ -3272,7 +3272,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	pub, err := site.Publish(s.Store, "")
 	if err != nil {
 		s.audit("publish", "/", map[string]string{
-			"outcome": "failed", "detail": err.Error()})
+			"by": p.Name, "outcome": "failed", "detail": err.Error()})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -3292,6 +3292,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// recorded next to it rather than left to be inferred from what happened
 	// to be failing at the time.
 	s.audit("publish", "/", map[string]string{
+		"by":      p.Name,
 		"commit":  shortHash(pub.Published),
 		"changes": fmt.Sprintf("%d", len(pub.Changes)),
 		"waived":  strings.Join(waived, ","),

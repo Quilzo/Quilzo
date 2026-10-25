@@ -235,7 +235,7 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	detail["for"], detail["role"], detail["credential"] = tok.Principal, string(tok.Role), tok.ID
+	detail["by"], detail["for"], detail["role"], detail["credential"] = tok.Principal, tok.Principal, string(tok.Role), tok.ID
 	s.audit("credential.exchanged", tok.Resource, detail)
 	kind := "Bearer"
 	if tok.Key != "" {

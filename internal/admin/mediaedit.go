@@ -208,7 +208,7 @@ func (s *Server) handleMediaEdit(w http.ResponseWriter, r *http.Request) {
 			problem = err.Error()
 		} else {
 			s.audit("media.edit", "/", map[string]string{
-				"from": medialib.ShortID(id), "id": medialib.ShortID(f.ID),
+				"by": p.Name, "from": medialib.ShortID(id), "id": medialib.ShortID(f.ID),
 				"did": e.Describe(),
 			})
 			http.Redirect(w, r, "/media?m="+url.QueryEscape(

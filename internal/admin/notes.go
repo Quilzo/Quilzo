@@ -163,7 +163,7 @@ func (s *Server) handleNoteAdd(w http.ResponseWriter, r *http.Request) {
 	// and can be removed, so "somebody left this and somebody took it away"
 	// has to be answerable from the log rather than from the directory, which
 	// is the thing that changed.
-	s.audit("note.add", "/"+page, map[string]string{"id": n.ID, "field": n.Field})
+	s.audit("note.add", "/"+page, map[string]string{"by": p.Name, "id": n.ID, "field": n.Field})
 
 	// Back to whichever screen this was said from, by the same mechanism the
 	// preference toggles use — and for the same reason: every response here
@@ -190,7 +190,7 @@ func (s *Server) handleNoteResolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit("note.resolve", pageResource(page),
-		map[string]string{"id": r.FormValue("id")})
+		map[string]string{"by": p.Name, "id": r.FormValue("id")})
 	goBack(w, r)
 }
 

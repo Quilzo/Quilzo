@@ -571,6 +571,30 @@ Unreleased
 
 ** Fixed
 
+*** A fresh install gets its first token again.  `quilzo auth grant you
+    admin` then `quilzo token issue laptop --principal you`, the way the
+    manual says, waited for a second administrator nobody could be: the
+    first token in a store, for the only administrator the policy names,
+    is now that administrator's change, made alone, and recorded as the
+    bootstrap (dual.approved, bootstrap true).  A second token still
+    needs one presented.
+
+*** What the admin does is in the audit log.  Its records took their
+    principal from the detail's "by", and publishing from the browser,
+    adding and resolving a note, editing a picture, exchanging a token and
+    enforcing the organisation's policy were written without one, so the
+    log refused each of them (AU-3: who) and kept nothing; so were the
+    refusals at the door, with nobody signed in: a wrong enrolment link, a
+    refused single sign-on, an account locked by somebody's guesses.  Each
+    now names who acted, a refusal at the door is kept as an anonymous,
+    unverified caller, and a refusal or a failure is recorded as one
+    rather than as a success.  A test walks the admin's source and fails
+    on a record that says nobody.
+
+*** A grant says what it lets somebody do.  The line after `quilzo auth
+    grant` was worked out from the policy as it was before the grant, so
+    it said "can now: nothing" for every grant.
+
 *** A sandboxed program can no longer reach the network through
     Multipath TCP.  Landlock's TCP rules do not apply to MPTCP sockets
     (seen on Linux 6.18), and Go has opened its listeners as MPTCP by

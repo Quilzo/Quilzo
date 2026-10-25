@@ -8,14 +8,15 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/quilzo/quilzo/internal/anchor"
-	"github.com/quilzo/quilzo/internal/fetch"
-	"github.com/quilzo/quilzo/internal/logd"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/anchor"
+	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/logd"
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/dual"
@@ -750,4 +751,29 @@ func auditAnchor(root string) error {
 		"  nobody involved can alter — including whoever runs this machine%s\n",
 		dim, reset)
 	return nil
+}
+
+// adminRecord is an audit record for what the admin reports, from the
+// detail it reports it with.
+//
+// A person signed in names themselves as "by", and is a verified human. A
+// refusal at the door has nobody signed in — a wrong enrolment link, a
+// failed single sign-on, an account locked by somebody else's guesses —
+// and was written with no principal at all, which the log refuses (AU-3),
+// so the attempts it most needed to keep were the ones it lost. Those are
+// recorded as an anonymous caller, not verified, and a refusal is recorded
+// as one: they were all written as successes.
+func adminRecord(action, resource string, detail map[string]string) audit.Record {
+	r := audit.Record{Action: action, Resource: resource, Outcome: audit.Success,
+		Principal: detail["by"], Kind: audit.KindHuman, Verified: true, Detail: detail}
+	if r.Principal == "" {
+		r.Principal, r.Kind, r.Verified = "anonymous", audit.KindUnknown, false
+	}
+	switch {
+	case strings.HasSuffix(action, "refused") || strings.HasSuffix(action, ".denied"):
+		r.Outcome = audit.Denied
+	case detail["outcome"] == "failed" || strings.HasSuffix(action, "-failed") || strings.HasSuffix(action, ".failed"):
+		r.Outcome = audit.Failure
+	}
+	return r
 }
