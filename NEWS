@@ -519,6 +519,17 @@ Unreleased
 
 ** Fixed
 
+*** A sandboxed program can no longer reach the network through
+    Multipath TCP.  Landlock's TCP rules do not apply to MPTCP sockets
+    (seen on Linux 6.18), and Go has opened its listeners as MPTCP by
+    default since 1.24, so an extension whose network was denied could
+    still connect anywhere and listen, and an agent's program could
+    listen inside its box.  The system call filter now says MPTCP does
+    not exist, which Go and the C libraries fall back to plain TCP on,
+    and refuses listen(2), which binds a socket that has no address
+    without asking Landlock.  Extensions, which are not hardened, now
+    get this part of the filter whenever their network is denied.
+
 *** Two factors on every request a person makes to the admin (NIST SP
     800-63B-4 AAL2), checked on each request rather than at the sign-in
     form.  A session now records how it was signed in to, its assurance

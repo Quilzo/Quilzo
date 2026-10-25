@@ -14,5 +14,9 @@ func applySeccomp() error {
 	return errors.New("this build has no system call filter for this architecture")
 }
 
+func applyNetSeccomp() error {
+	return errors.New("this build has no system call filter for this architecture")
+}
+
 // SeccompSupported says this build can filter system calls here.
 func SeccompSupported() bool { return false }

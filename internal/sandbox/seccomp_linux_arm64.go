@@ -8,6 +8,7 @@ package sandbox
 const (
 	auditArch = 0xc00000b7 // AUDIT_ARCH_AARCH64
 	sysClone  = 220
+	sysListen = 201
 	sysSocket = 198
 )
 

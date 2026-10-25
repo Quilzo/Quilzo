@@ -102,6 +102,22 @@ func TestTheFilterRefusesWhatAConfinedProgramMustNotDo(t *testing.T) {
 	if got := call(sysSocket, syscall.AF_INET6, syscall.SOCK_DGRAM); got != retAllow {
 		t.Errorf("a datagram socket: %#x", got)
 	}
+	// Multipath TCP, which Landlock's TCP rules do not see, is said not to
+	// exist, so a program falls back to TCP; plain TCP, asked for by name
+	// or by default, is not.
+	for _, fam := range []uint64{syscall.AF_INET, syscall.AF_INET6} {
+		if got := call(sysSocket, fam, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK, ipprotoMPTCP); got != retErrno|uint32(syscall.EPROTONOSUPPORT) {
+			t.Errorf("an MPTCP socket in family %d: %#x", fam, got)
+		}
+		for _, proto := range []uint64{0, syscall.IPPROTO_TCP} {
+			if got := call(sysSocket, fam, syscall.SOCK_STREAM, proto); got != retAllow {
+				t.Errorf("a TCP socket in family %d, protocol %d: %#x", fam, proto, got)
+			}
+		}
+	}
+	if got := call(sysListen, 3, 1); got != eperm {
+		t.Errorf("listen: %#x, want refused", got)
+	}
 	// Everything else is allowed, or a program cannot start.
 	for _, nr := range []uint32{0, 1, 2, 39, 57, 59, 60, 231, 444, 445, 446} {
 		if !contains(denied(), nr) && nr != sysClone && nr != sysSocket {
@@ -118,6 +134,38 @@ func TestTheFilterRefusesWhatAConfinedProgramMustNotDo(t *testing.T) {
 		if got := call(0x40000000 | 1); got != retErrno|uint32(syscall.ENOSYS) {
 			t.Errorf("an x32 call: %#x", got)
 		}
+	}
+}
+
+// An extension's filter is the network part alone: the same sockets
+// refused, listening refused, and everything else let through, including
+// the calls the hardened filter refuses.
+func TestTheNetworkFilterIsTheSocketRulesAlone(t *testing.T) {
+	p := netFilter()
+	eperm := retErrno | uint32(syscall.EPERM)
+	call := func(nr uint32, args ...uint64) uint32 { return run(t, p, auditArch, nr, args...) }
+	if got := call(sysSocket, syscall.AF_INET, syscall.SOCK_STREAM, ipprotoMPTCP); got != retErrno|uint32(syscall.EPROTONOSUPPORT) {
+		t.Errorf("an MPTCP socket: %#x", got)
+	}
+	if got := call(sysSocket, syscall.AF_UNIX, syscall.SOCK_STREAM); got != retErrno|uint32(syscall.EAFNOSUPPORT) {
+		t.Errorf("a local socket: %#x", got)
+	}
+	if got := call(sysSocket, syscall.AF_INET, syscall.SOCK_RAW); got != eperm {
+		t.Errorf("a raw socket: %#x", got)
+	}
+	if got := call(sysListen, 3, 1); got != eperm {
+		t.Errorf("listen: %#x", got)
+	}
+	for _, nr := range append([]uint32{0, 1, 59, sysClone}, denied()...) {
+		if got := call(nr); got != retAllow {
+			t.Errorf("call %d: %#x, want allowed", nr, got)
+		}
+	}
+	if got := call(sysSocket, syscall.AF_INET, syscall.SOCK_STREAM); got != retAllow {
+		t.Errorf("a TCP socket: %#x", got)
+	}
+	if got := run(t, p, 0x40000003, 1); got != retKillProcess {
+		t.Errorf("a call from another architecture: %#x", got)
 	}
 }
 
@@ -184,7 +232,8 @@ func TestAHardenedProcessIsConfined(t *testing.T) {
 	want := map[string]syscall.Errno{"unshare": syscall.EPERM, "ptrace": syscall.EPERM, "keyctl": syscall.EPERM,
 		"mount": syscall.EPERM, "io_uring": syscall.EPERM, "clone3": syscall.ENOSYS,
 		"packet socket": syscall.EAFNOSUPPORT, "raw socket": syscall.EPERM, "connect elsewhere": syscall.EACCES,
-		"unix socket": syscall.EAFNOSUPPORT}
+		"unix socket": syscall.EAFNOSUPPORT, "mptcp socket": syscall.EPROTONOSUPPORT,
+		"listen unbound": syscall.EPERM}
 	for name, e := range want {
 		if got := syscall.Errno(r.Errnos[name]); got != e {
 			t.Errorf("%s: %v, want %v", name, got, e)
@@ -194,6 +243,9 @@ func TestAHardenedProcessIsConfined(t *testing.T) {
 		if !r.Allowed[name] {
 			t.Errorf("%s was refused", name)
 		}
+	}
+	if r.Allowed["go listen"] {
+		t.Error("a hardened process listened, through Go's default Multipath TCP")
 	}
 	if r.Files != 64 {
 		t.Errorf("open files limited to %d", r.Files)
@@ -248,6 +300,15 @@ func TestHardenedHelper(t *testing.T) {
 	try("raw socket", sysSocket, syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_ICMP)
 	try("tcp socket", sysSocket, syscall.AF_INET, syscall.SOCK_STREAM, 0)
 	try("unix socket", sysSocket, syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	try("mptcp socket", sysSocket, syscall.AF_INET, syscall.SOCK_STREAM, ipprotoMPTCP)
+	if fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0); err == nil {
+		try("listen unbound", sysListen, uintptr(fd), 1)
+		syscall.Close(fd)
+	}
+	if ln, err := net.Listen("tcp", "127.0.0.1:0"); err == nil {
+		r.Allowed["go listen"] = true
+		ln.Close()
+	}
 	try("getpid", syscall.SYS_GETPID)
 	// A pair of sockets joined to each other reaches nothing else, and
 	// stays allowed: runtimes use it to talk to their own children.
