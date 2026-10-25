@@ -42,6 +42,7 @@ func TestAFlaggedAgentReachesTheShieldAndItsSponsorOnce(t *testing.T) {
 	if lost, how := trustLost(root, "tidy"); lost.IsZero() || !strings.Contains(how, "agentwatch flagged it") {
 		t.Fatalf("the flag did not cost it its earned autonomy: %v %q", lost, how)
 	}
+	finishBackground(10 * time.Second)
 	evs, _ := audit.Read(auditPath(root))
 	var flagged, security, sponsor, cases int
 	for _, e := range evs {

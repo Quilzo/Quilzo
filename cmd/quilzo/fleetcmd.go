@@ -24,8 +24,6 @@ import (
 	"github.com/quilzo/quilzo/internal/gateway"
 	"github.com/quilzo/quilzo/internal/oauthas"
 	"github.com/quilzo/quilzo/internal/shield"
-	"github.com/quilzo/quilzo/internal/spool"
-	"github.com/quilzo/quilzo/internal/telemetry"
 )
 
 // The fleet: every agent this organisation runs or uses, who called what,
@@ -411,33 +409,25 @@ func recentUsage(root string, since time.Time) []gateway.Usage {
 	return out
 }
 
-// shadowAI is direct use of AI services: in the security events collected
-// from other systems, and in this install's own agents' connections.
+// shadowAI is agents' own programs reaching AI services directly, from the
+// log's records of where each reached (agent.egress).
 func shadowAI(root string, since, now time.Time) []fleet.Sighting {
-	var events []telemetry.Event
-	if sp, err := openSpool(root, spool.Options{}); err == nil {
-		_ = sp.Range(since, now, func(e telemetry.Event) error {
-			events = append(events, e)
-			return nil
-		})
-		_ = sp.Close() // a reader's close, as the other readers make it
+	recs, err := audit.Read(auditPath(root))
+	if err != nil {
+		return nil
 	}
-	// The log's own records of agents' programs reaching a host, as events.
-	if recs, err := audit.Read(auditPath(root)); err == nil {
-		for _, e := range recs {
-			at, err := time.Parse(time.RFC3339, e.At)
-			if e.Action == "agent.egress" && err == nil && !at.Before(since) {
-				events = append(events, telemetry.Event{Time: at, Source: "agents/egress",
-					Actor: telemetry.ID{Issuer: "agent", Value: e.Detail["agent"]},
-					Raw:   map[string]string{"host": e.Detail["host"]}})
-			}
+	var reach []fleet.Reach
+	for _, e := range recs {
+		if e.Action != "agent.egress" {
+			continue
 		}
+		at, err := time.Parse(time.RFC3339Nano, e.At)
+		if err != nil || at.Before(since) || at.After(now) {
+			continue
+		}
+		reach = append(reach, fleet.Reach{At: at, Agent: e.Detail["agent"], Host: e.Detail["host"]})
 	}
-	return fleet.Sightings(events, func(e telemetry.Event) bool {
-		// Quilzo's own model calls go through the gateway; what it collects
-		// about itself is not somebody else's AI use.
-		return strings.HasPrefix(e.Source, "quilzo/")
-	})
+	return fleet.Sightings(reach)
 }
 
 // cmdFleet is `quilzo fleet [--days N] | add CARD_URL [--name N] | remove NAME | check | shadow [--days N]`.
@@ -489,11 +479,11 @@ func cmdFleet(root string, args []string) error {
 				return nil
 			}
 			if len(s) == 0 {
-				w.Human("no direct use of an AI service in the last %d days, in what this install collects\n", *days)
+				w.Human("no agent's program reached an AI service directly in the last %d days\n", *days)
 			}
 			for _, x := range s {
-				w.Human("%s%s%s  %s by %s, %s, last %s (%s)\n", bold, x.Service, reset, x.Where, nonEmpty(x.Who, "somebody"),
-					count(x.Count, "time"), x.Last.UTC().Format("2006-01-02"), x.Source)
+				w.Human("%s%s%s  %s by %s, %s, last %s\n", bold, x.Service, reset, x.Where, nonEmpty(x.Who, "an agent"),
+					count(x.Count, "time"), x.Last.UTC().Format("2006-01-02"))
 			}
 			return nil
 		default:
@@ -539,7 +529,7 @@ func cmdFleet(root string, args []string) error {
 		}
 	}
 	if len(v.Shadow) > 0 {
-		w.Human("\n%sAI used directly, not through Quilzo%s\n", bold, reset)
+		w.Human("\n%sAI reached by agents' programs directly, not through the gateway%s\n", bold, reset)
 		for _, x := range v.Shadow {
 			w.Human("  %s  %s by %s, %s\n", x.Service, x.Where, nonEmpty(x.Who, "somebody"), count(x.Count, "time"))
 		}

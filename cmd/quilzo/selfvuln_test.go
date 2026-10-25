@@ -4,14 +4,15 @@
 package main
 
 import (
-	"github.com/quilzo/quilzo/internal/shield"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/shield"
+
 	"github.com/quilzo/quilzo/internal/compliance"
-	"github.com/quilzo/quilzo/internal/sca"
 )
 
 // Quilzo's own bill of materials, read the way any bill is read, names its
@@ -26,18 +27,18 @@ func TestOurOwnBillMatchesTheGoDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := sca.ReadBOM(body)
-	if err != nil {
+	var bom struct {
+		Components []struct {
+			PURL string `json:"purl"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(body, &bom); err != nil {
 		t.Fatalf("our own bill does not read as CycloneDX: %v", err)
 	}
 	found := false
-	for _, p := range b.Flat() {
-		eco, name, ok := sca.ParsePURL(p.PURL)
-		if ok && name == "stdlib" {
+	for _, c := range bom.Components {
+		if strings.HasPrefix(c.PURL, "pkg:golang/stdlib@") {
 			found = true
-			if eco != "Go" && eco != "go" && eco != "golang" {
-				t.Errorf("ecosystem %q", eco)
-			}
 		}
 	}
 	if !found {

@@ -42,8 +42,8 @@ type Edge struct {
 	Last  time.Time `json:"last"`
 }
 
-// View is the fleet: everything, who called what, and the AI use nobody
-// registered.
+// View is the fleet: everything, who called what, and the AI services
+// agents' own programs reached around the gateway.
 type View struct {
 	Nodes  []Node     `json:"nodes"`
 	Edges  []Edge     `json:"edges"`

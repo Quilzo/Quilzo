@@ -8,66 +8,76 @@ import (
 	"testing"
 	"time"
 
-	"github.com/quilzo/quilzo/internal/finding"
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/posture"
 )
 
-func driftFindings(t *testing.T, root string) map[string]finding.Finding {
+// driftRecords are the drift records the log holds about one rule.
+func driftRecords(t *testing.T, root, action, rule string) []audit.Event {
 	t.Helper()
-	reg, _, err := finding.Load(findingsPath(root))
+	evs, err := audit.Read(auditPath(root))
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := map[string]finding.Finding{}
-	for _, f := range reg.All(time.Now()) {
-		if strings.HasPrefix(f.Source, postureSource) {
-			out[f.Source+"|"+f.Entity.Value] = f
+	var out []audit.Event
+	for _, e := range evs {
+		if e.Action == action && e.Detail["rule"] == rule {
+			out = append(out, e)
 		}
 	}
 	return out
 }
 
-// A check that starts failing is a finding in the queue, once; fixing it
-// stales the finding; a check that could not run changes nothing.
-func TestAComplianceCheckThatStartsFailingIsAFindingAtOnce(t *testing.T) {
+// A check that starts failing is on the record at once, once; fixing it is
+// on the record too; a check that could not run changes nothing.
+func TestAComplianceCheckThatStartsFailingIsOnTheRecordAtOnce(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
 	state := Observe(root, t.TempDir(), posture.ServerFacts{})
 	state.AI = posture.AIFacts{Checked: true, Chatbots: []posture.ChatbotFact{{
 		Name: "help", Public: true, Disclosed: false, LastEval: time.Now()}}}
 	now := time.Now()
+	const rule = "ai.chatbot-undisclosed"
 
 	opened, _, err := postureDrift(root, state, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	key := postureSource + "ai.chatbot-undisclosed|help"
-	f, ok := driftFindings(t, root)[key]
-	if !ok || opened == 0 || f.Kind != finding.FromControl || f.State != finding.Open {
-		t.Fatalf("the failing check is not an open finding: %+v (opened %d)", f, opened)
+	drifted := driftRecords(t, root, "posture.drifted", rule)
+	if opened == 0 || len(drifted) != 1 || drifted[0].Detail["resource"] != "help" {
+		t.Fatalf("the failing check is not on the record: %+v (opened %d)", drifted, opened)
 	}
-	if !strings.Contains(f.Evidence[0].What, "eu-ai-act Art. 50(1)") {
-		t.Errorf("the finding does not say what it bears on: %s", f.Evidence[0].What)
+	if !strings.Contains(drifted[0].Detail["detail"], "eu-ai-act Art. 50(1)") {
+		t.Errorf("the record does not say what it bears on: %s", drifted[0].Detail["detail"])
+	}
+	if st, _ := loadDrift(root); st.Failing[driftKey(rule, "help")].Rule != rule {
+		t.Errorf("the failing check is not remembered: %+v", st.Failing)
 	}
 
-	// The same failure again is the same finding, not a second one.
-	again, _, _ := postureDrift(root, state, now.Add(time.Hour))
-	if again != 0 {
-		t.Errorf("the same failure opened %d more", again)
+	// The same failure again is not recorded a second time.
+	if again, _, _ := postureDrift(root, state, now.Add(time.Hour)); again != 0 ||
+		len(driftRecords(t, root, "posture.drifted", rule)) != 1 {
+		t.Errorf("the same failure was recorded %d more times", again)
 	}
 
 	// The check could not run: nothing is fixed by not looking.
 	blind := state
 	blind.AI = posture.AIFacts{}
 	if _, fixed, _ := postureDrift(root, blind, now.Add(2*time.Hour)); fixed != 0 ||
-		driftFindings(t, root)[key].State != finding.Open {
-		t.Error("a check that did not run marked its finding fixed")
+		len(driftRecords(t, root, "posture.restored", rule)) != 0 {
+		t.Error("a check that did not run was recorded as fixed")
 	}
 
 	// Fixed, and seen to be fixed.
 	state.AI.Chatbots[0].Disclosed = true
 	if _, fixed, _ := postureDrift(root, state, now.Add(3*time.Hour)); fixed == 0 ||
-		driftFindings(t, root)[key].State != finding.Stale {
-		t.Error("the fixed check's finding is still open")
+		len(driftRecords(t, root, "posture.restored", rule)) != 1 {
+		t.Error("the fixed check was not recorded as fixed")
 	}
+	if st, _ := loadDrift(root); len(st.Failing) != 0 {
+		if _, still := st.Failing[driftKey(rule, "help")]; still {
+			t.Error("the fixed check is still remembered as failing")
+		}
+	}
+	finishBackground(10 * time.Second)
 }

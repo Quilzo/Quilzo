@@ -182,17 +182,6 @@ func TestACrosswalkThatIsMostlyEqualIsCalledOut(t *testing.T) {
 	if !strings.Contains(advice, "take apart") {
 		t.Errorf("the advice does not say what happens next: %q", advice)
 	}
-	out := Findings(report, standings, now)
-	var called bool
-	for _, f := range out {
-		if strings.Contains(f.Title, "claims exact equality") {
-			called = true
-		}
-	}
-	if !called {
-		t.Error("nothing in the register says the crosswalk looks unread")
-	}
-
 	// A mixed crosswalk is not remarked on.
 	maps[0].Relation, maps[0].Remainder = SubsetOf, "the rest of it"
 	for n := 1; n < 9; n++ {
@@ -332,40 +321,6 @@ func TestAdoptingAFrameworkSaysWhatEachPieceOfWorkIs(t *testing.T) {
 	// And the report leads with what nobody has looked at.
 	if !strings.Contains(report.Why(), "nothing mapped to them at all") {
 		t.Errorf("the summary is %q", report.Why())
-	}
-}
-
-func TestFindingsSeparateTheThreeKindsOfGap(t *testing.T) {
-	reqs := []Requirement{
-		req("A.8.5", "secure authentication"),
-		req("A.8.2", "privileged access rights"),
-		req("A.5.7", "threat intelligence"),
-	}
-	maps := []Mapping{
-		mapped("mfa", "ISO27001:A.8.5", Equal),
-		mapped("access-review", "ISO27001:A.8.2", Intersects),
-	}
-	report, standings := Assess("ISO27001", reqs, maps,
-		[]assurance.Coverage{short("mfa"), covered("access-review")}, period)
-	out := Findings(report, standings, now)
-
-	var unmapped, partial, unevidenced bool
-	for _, f := range out {
-		switch {
-		case strings.Contains(f.Title, "nothing mapped"):
-			unmapped = true
-		case strings.Contains(f.Title, "only partly addressed"):
-			partial = true
-			if !strings.Contains(f.Evidence[0].What, "nothing covers") {
-				t.Errorf("the remainder is missing: %q", f.Evidence[0].What)
-			}
-		case strings.Contains(f.Title, "mapped and not evidenced"):
-			unevidenced = true
-		}
-	}
-	if !unmapped || !partial || !unevidenced {
-		t.Errorf("unmapped=%v partial=%v unevidenced=%v",
-			unmapped, partial, unevidenced)
 	}
 }
 

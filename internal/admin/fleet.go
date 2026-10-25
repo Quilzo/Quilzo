@@ -14,8 +14,8 @@ import (
 	"github.com/quilzo/quilzo/internal/fleet"
 )
 
-// Fleet is every agent the organisation runs or uses, who called what, and
-// the AI use nobody registered. See internal/fleet.
+// Fleet is every agent the organisation runs or uses, and who called what.
+// See internal/fleet.
 type Fleet struct {
 	// View is the fleet with the last days of calls.
 	View func(days int) (fleet.View, error)
@@ -180,7 +180,7 @@ func (s *Server) handleFleet(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	data["Groups"], data["Shadow"], data["Days"], data["Map"] = groups, v.Shadow, v.Days, drawFleet(v)
+	data["Groups"], data["Days"], data["Map"] = groups, v.Days, drawFleet(v)
 	data["CanRegister"] = s.Fleet.Register != nil
 	s.render(w, r, "fleet.html", data)
 }

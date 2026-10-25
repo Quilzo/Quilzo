@@ -15,7 +15,6 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
-	"github.com/quilzo/quilzo/internal/incident"
 	"github.com/quilzo/quilzo/internal/memory"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -23,8 +22,8 @@ import (
 // Approvals: everything waiting for a person, in one place.
 //
 // What waits lives where it belongs: an agent's question with its run, a
-// held tool call with the gateway, a change with the review queue, an act
-// on another tool with its case, a memory with the person it is about.
+// held tool call with the gateway, a change with the review queue, a
+// memory with the person it is about.
 // This screen reads each of them and lists what the person looking may
 // decide, grouped by agent and by what deciding commits to, so that
 // nothing waits unseen because it waited somewhere nobody opened.
@@ -173,20 +172,6 @@ func (s *Server) otherApprovals(p principal, now time.Time) []approvalItem {
 					Title: "Approve the change to the site", Commits: "publishes", Href: "/review",
 					Detail: fmt.Sprintf("%d of %d approvals; %s", st.Have, st.Need, clipText(st.Message, 160)),
 					Since:  now})
-			}
-		}
-	}
-	if admin && s.Cases != nil && s.Cases.List != nil {
-		if list, err := s.Cases.List(); err == nil {
-			for _, inc := range list {
-				for _, a := range inc.Acts {
-					if a.State != incident.ActRequested || a.Requested.By == p.Name {
-						continue
-					}
-					out = append(out, approvalItem{Source: "case", Agent: "case " + inc.ID,
-						Title: a.Title + " on " + a.Target, Detail: "asked by " + a.Requested.By + ": " + clipText(a.Requested.Why, 160),
-						Commits: "acts", Href: caseHref(inc.ID), Since: a.Requested.At})
-				}
 			}
 		}
 	}

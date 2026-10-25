@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/quilzo/quilzo/internal/telemetry"
 )
 
 func TestACardOfEitherRevisionIsRead(t *testing.T) {
@@ -67,44 +65,20 @@ func TestAnAIServiceIsKnownByItsHostAndNotByALookalike(t *testing.T) {
 			t.Errorf("%s was taken for %s", host, s)
 		}
 	}
-	if s, ok := AIApp("ChatGPT"); !ok || s != "OpenAI" {
-		t.Fatal(s)
-	}
-	if s, ok := AIApp("Claude for Google Sheets"); !ok || s != "Anthropic" {
-		t.Fatal(s)
-	}
-	if _, ok := AIApp("Slack"); ok {
-		t.Fatal("Slack is an AI app")
-	}
 }
 
-func TestDirectUseOfAnAIServiceIsSeenWhereverASourcePutsIt(t *testing.T) {
-	t0 := time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
-	evs := []telemetry.Event{
-		{Time: t0, Source: "zscaler/web", Actor: telemetry.ID{Issuer: "okta", Value: "dana@shop.example"},
-			Observables: []telemetry.Observable{{Kind: telemetry.ObservableURL, Value: "https://api.openai.com/v1/chat/completions"}}},
-		{Time: t0.Add(time.Hour), Source: "zscaler/web", Actor: telemetry.ID{Issuer: "okta", Value: "dana@shop.example"},
-			Observables: []telemetry.Observable{{Kind: telemetry.ObservableHostname, Value: "api.openai.com"}}},
-		{Time: t0, Source: "google/token", Actor: telemetry.ID{Issuer: "google", Value: "sam@shop.example"},
-			Raw: map[string]string{"app_name": "ChatGPT", "approved": "true"}},
-		{Time: t0, Source: "dns/query", Device: telemetry.ID{Issuer: "kandji", Value: "MBP-12"}, Raw: map[string]string{"query": "claude.ai"}},
-		{Time: t0, Source: "zscaler/web", Actor: telemetry.ID{Value: "rae"},
-			Observables: []telemetry.Observable{{Kind: telemetry.ObservableURL, Value: "https://openai.com.evil.example/"}}},
-		{Time: t0, Source: "quilzo/gateway", Raw: map[string]string{"host": "api.anthropic.com"}},
-	}
-	got := Sightings(evs, func(e telemetry.Event) bool { return e.Source == "quilzo/gateway" })
-	if len(got) != 3 {
-		t.Fatalf("%+v", got)
-	}
-	if got[0].Service != "OpenAI" || got[0].Count != 2 || got[0].Who != "okta:dana@shop.example" || !got[0].Last.Equal(t0.Add(time.Hour)) {
-		t.Fatalf("%+v", got[0])
-	}
-	var app, dns bool
-	for _, s := range got {
-		app = app || (s.Where == "app: ChatGPT" && s.Who == "google:sam@shop.example")
-		dns = dns || (s.Service == "Anthropic" && s.Who == "kandji:MBP-12")
-	}
-	if !app || !dns {
+// An agent's program reaching a model provider is one sighting per agent
+// and host, however often; anything else it reached is not one.
+func TestAnAgentReachingAModelDirectlyIsSeen(t *testing.T) {
+	now := time.Now()
+	got := Sightings([]Reach{
+		{At: now.Add(-2 * time.Hour), Agent: "tidy", Host: "api.openai.com"},
+		{At: now.Add(-time.Hour), Agent: "tidy", Host: "API.OpenAI.com"},
+		{At: now, Agent: "helper", Host: "api.anthropic.com"},
+		{At: now, Agent: "tidy", Host: "pypi.org"},
+	})
+	if len(got) != 2 || got[0].Who != "helper" || got[1].Who != "tidy" || got[1].Count != 2 ||
+		got[1].Service != "OpenAI" || !got[1].First.Equal(now.Add(-2*time.Hour)) {
 		t.Fatalf("%+v", got)
 	}
 }

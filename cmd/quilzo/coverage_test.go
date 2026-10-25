@@ -148,17 +148,6 @@ var coverage = map[string]surfaces{
 			"model answer that about itself",
 	},
 
-	// Work tracking, and the argument for four states.
-	"work": {
-		Why: "it builds a board for the run to show what a team's extra " +
-			"statuses really were; the boards people use arrive with the " +
-			"work, and the argument is one a terminal can make",
-		NoMCP: "a model moving work between states and excusing " +
-			"requirements would be deciding what counts as finished, " +
-			"which is the one judgement a definition of done exists to " +
-			"keep with people",
-	},
-
 	// Automation whose books have to add up.
 	"flow": {
 		Why: "it builds a flow and a week of runs to show three failures " +
@@ -167,58 +156,6 @@ var coverage = map[string]surfaces{
 		NoMCP: "a model that could define a flow could define one whose " +
 			"filter drops everything, and the whole point here is that " +
 			"dropping is a decision somebody signs",
-	},
-
-	// Detection rules in the open standard, compiled and reported on.
-	"sigma": {
-		Why: "it reads rule files from a path and prints what came " +
-			"across; the screen for a rule library arrives with the " +
-			"library, and an import report is a table",
-		NoMCP: "a model that could import rules could import one whose " +
-			"exclusion clause it wrote, and a detection nobody reviewed " +
-			"is the failure this package refuses at every other step",
-	},
-
-	// What a detection has to survive before it reaches anybody.
-	"proving": {
-		Why: "it runs a candidate through the rings against telemetry " +
-			"built for the run; the estate people promote from arrives " +
-			"with the detections, and the gates are an argument a " +
-			"terminal can make",
-		NoMCP: "this is the layer that decides whether a detection " +
-			"reaches anybody, and a model on the inside of it could " +
-			"promote the rule it wrote",
-	},
-
-	// Any scanner's findings, and what the scanner left out.
-	"sarif": {
-		Why: "it reads a file a scanner produced and prints what came " +
-			"across; the queue these alerts land in is internal/appsec's " +
-			"and has its own screen, and an import report is a table",
-		NoMCP: "a tool here would let a model hand this program a set of " +
-			"findings, and a findings queue whose contents nobody can " +
-			"trace to a scanner run is not evidence of anything",
-	},
-
-	// Which dependencies are affected, and which anybody can fix.
-	"sca": {
-		Why: "it reads a bill and an advisory file from a path; the queue " +
-			"these land in is internal/vuln's and has its own screen, " +
-			"and the thing worth seeing here — what is a bump and what " +
-			"is a conversation — is a list",
-		NoMCP: "a tool here would let a model supply the bill, and an " +
-			"inventory nobody can trace to a build is not evidence of " +
-			"what is deployed",
-	},
-
-	// Detections about several events, and when a window may close.
-	"correlate": {
-		Why: "it runs correlations over events built for the run to show " +
-			"what a clock-closed window loses; the alerts these produce " +
-			"land in internal/finding, which has its own screen",
-		NoMCP: "a correlation decides what several events mean together, " +
-			"and a model that could write one could write the window that " +
-			"never closes",
 	},
 
 	// Who has to be told about an incident, and what starts the clock.
@@ -251,31 +188,6 @@ var coverage = map[string]surfaces{
 			"is met; proposing and approving them is two administrators', " +
 			"never a model's, because the policy is the floor under the controls",
 	},
-	"incident": {GUI: "/security/cases", MCP: []string{"incident_status"},
-		Why: "an agent reads which clocks are running and which nobody " +
-			"has started; the decisions that start them are a person's",
-	},
-
-	// How old the databases a scanner compares against are.
-	"feed": {
-		Why: "it shows the freshness of mirrors built for the run; the " +
-			"real ones arrive with the fetching, and what is worth " +
-			"seeing — which feed is behind and whose problem it is — is " +
-			"a table",
-		NoMCP: "this decides whether a clean scan can be read as a clean " +
-			"scan, and a model adjusting a feed's cadence would be " +
-			"adjusting what counts as current",
-	},
-
-	// What a fetched log record means, per platform.
-	"source": {
-		Why: "it lists the mappings and checks one against records a " +
-			"caller supplies; the events these produce land in " +
-			"internal/telemetry, which has its own screen",
-		NoMCP: "a mapping decides what an event means, and a model " +
-			"editing one could make a stream of failures look like a " +
-			"quiet day",
-	},
 
 	// What a situation can hand somebody that a grant did not.
 	"standing": {
@@ -287,17 +199,6 @@ var coverage = map[string]surfaces{
 			"escalation as contained",
 	},
 
-	// Which part holds what, and where the line belongs.
-	"boundary": {
-		Why: "it prints this program's own architecture and the " +
-			"credentials collecting each source costs; the screen that " +
-			"matters here is whether the separation is in force, which " +
-			"internal/logd already answers where it is enforced",
-		NoMCP: "this table is how somebody decides where to run the " +
-			"collector, and a model editing it would be reclassifying a " +
-			"credential that reads an estate as one that reads a log",
-	},
-
 	// End-to-end media encryption, and what it costs on the wire.
 	"sframe": {
 		Why: "it is arithmetic and a self-check over a library; the screen " +
@@ -305,38 +206,6 @@ var coverage = map[string]surfaces{
 			"nothing here for one to show in the meantime",
 		NoMCP: "it takes no input and holds no state, so a tool would be a " +
 			"way to ask a model to read a table that is already printed",
-	},
-
-	// What a code scanner found, and the part it left undone.
-	"appsec": {
-		Why: "it reads a scanner's output and gates a change, which happens " +
-			"in a pipeline rather than on a screen; the screen arrives " +
-			"with the stored register",
-		NoMCP: "the queue names credentials found in source by their " +
-			"location, and a model with a tool here has a list of where " +
-			"the secrets are",
-	},
-
-	// Access reviews, closed by a later import rather than by the
-	// reviewer.
-	"access": {
-		Why: "the campaign is driven from an import and closed by another " +
-			"one; the screen arrives with the stored register, where an " +
-			"unremediated revocation belongs beside every other finding",
-		NoMCP: "whether somebody still needs an access is a question about " +
-			"what they do all day, which is the one thing a model cannot " +
-			"see; Decision.Validate refuses an AI reviewer for that reason",
-	},
-
-	// Third parties, tiered by what they reach.
-	"vendor": {
-		Why: "the register is compared against the connector manifests, " +
-			"which are files an operator reviews at a terminal; the screen " +
-			"arrives with the stored register, where a lingering " +
-			"credential belongs at the top of the same queue",
-		NoMCP: "this register says which third parties hold credentials in " +
-			"this estate and what each can reach, which is the shape of a " +
-			"target list; a model with a tool here has it too",
 	},
 
 	// What an auditor is given, and what they can check without us.
@@ -379,115 +248,6 @@ var coverage = map[string]surfaces{
 			"for that reason",
 	},
 
-	// The vulnerability queue, read from an inventory and a set of
-	// advisories that a connector or a scanner produces.
-	"analyst": {GUI: "/findings",
-		Why: "its suggestions are shown on each finding's page, where a " +
-			"person agrees with them or not",
-		NoMCP: "it is the agent. A model starting the analyst is a model " +
-			"starting a model, with nobody in the loop to have asked for it",
-	},
-	"action": {GUI: "/security/cases",
-		Why: "an action is asked for and approved on the incident's page; " +
-			"installing one and giving it a credential are the operator's",
-		NoMCP: "it changes something in another tool, on somebody's " +
-			"account. A model takes no part: it neither installs one, asks " +
-			"for one, nor approves one",
-	},
-	"identity": {GUI: "/security/entity/",
-		Why: "a person's page shows every identifier known to be theirs; " +
-			"saying whose one is happens once, by the operator",
-		NoMCP: "whose an identifier is decides whose activity is whose. A " +
-			"model that could say it could make one person's activity " +
-			"count as another's",
-	},
-	"collect": {GUI: "/security/events",
-		Why: "what each source sent and when is on the Events screen; " +
-			"installing a connector and a schedule are the operator's",
-		NoMCP: "it reads other tools with stored credentials. A model " +
-			"deciding when that happens is a model spending those " +
-			"credentials",
-	},
-	"intel": {GUI: "/security/indicators",
-		Why: "what an indicator found is a finding, and findings are " +
-			"what an agent reads",
-		NoMCP: "adding an indicator raises findings about whoever touched " +
-			"it, so a model that could add one could accuse anybody; and " +
-			"the list itself is other people's infrastructure, which a " +
-			"model has no use for that the findings do not serve",
-	},
-	"vuln": {GUI: "/security/vulns", MCP: []string{"vuln_plan"},
-		Why: "an agent reads the plan and the counts; deciding that " +
-			"something does not apply stays a person's, and " +
-			"Assessment.Validate refuses an AI author",
-	},
-
-	// One reviewable file per tool, and the credentials to reach them.
-	"connect": {
-		Why: "a connector manifest is reviewed by reading it and a " +
-			"credential is set from the environment; a screen that edited " +
-			"either would be a screen that could point this program at a " +
-			"host nobody approved",
-		NoMCP: "this is the component that holds credentials to every " +
-			"system the company uses, which is exactly what was stolen in " +
-			"the Drift compromise; a model with a tool here has them too",
-	},
-
-	// The tools' records joined, and where they disagree.
-	"estate": {GUI: "/workforce", MCP: []string{"estate_summary"},
-		Why: "an agent gets the numbers — bands, areas, trend, what could " +
-			"not be checked — and never the people; the findings it raised " +
-			"are read one at a time through list_findings"},
-
-	"remind": {GUI: "/workforce/reminders",
-		NoMCP: "it sends a message to every employee with something " +
-			"outstanding, and to their managers; an agent able to do that " +
-			"can send whatever it was talked into to the whole company"},
-
-	// Reconciling people and devices across systems, from a file of
-	// normalised identities.
-	"workforce": {
-		Why: "it reads an export and reports what the join could and could " +
-			"not do; the screen arrives with the connectors that produce " +
-			"those exports on a schedule, rather than with the join",
-		NoMCP: "a model that can merge two people can merge the auditor " +
-			"into the intern; Link.Validate refuses an AI assertion, and a " +
-			"tool that could only propose would be a tool whose one useful " +
-			"call is the one it may not make",
-	},
-
-	// The contact list, the notices and what was delivered.
-	"notify": {
-		Why: "the contact list is personal data and the suppression list " +
-			"is a list of people who asked to be left alone; neither goes " +
-			"in the store a web process serves, so the screen arrives with " +
-			"the customer-facing inbox rather than with the operator's side",
-		NoMCP: "a notice is the organisation speaking to its customers and " +
-			"to a regulator, and Notice.Validate refuses an AI author for " +
-			"that reason; a model may draft one and a person sends it",
-	},
-
-	// The event store. A screen over it is the analyst surface the whole
-	// SIEM half needs, and it arrives with querying rather than with storage.
-	"spool": {
-		GUI: "/security/events",
-		Why: "storing and retaining events is an operator's job at a " +
-			"terminal; the screen arrives with the query surface that " +
-			"reads the store, not with the store",
-		NoMCP: "a model that can run retention can delete the evidence of " +
-			"what it did, and a hold it can lift is not a hold",
-	},
-
-	// A register of secrets and their hiding places, kept as a file the
-	// operator holds rather than in the store the web process serves.
-	"canary": {
-		Why: "the register is the most useful file an attacker inside the " +
-			"estate could read; it does not go in the store a web process " +
-			"can reach, so there is nothing for a screen to render",
-		NoMCP: "handing a model the list of canaries and where they are " +
-			"planted is handing it the one file that defeats all of them",
-	},
-
 	// A site's chatbots. The agent surface builds and tests; it does not
 	// publish and it does not decide what a public one may do.
 	"assistant": {
@@ -509,16 +269,6 @@ var coverage = map[string]surfaces{
 			"is a judgement about somebody's words that a person makes",
 	},
 
-	"automate": {
-		GUI: "/security/automations",
-		NoMCP: "rules decide what is done to people's sessions and accounts; " +
-			"changing them, or approving what they wait for, is a person's job",
-	},
-	"inbound": {
-		GUI: "/security/feeds",
-		NoMCP: "a feed decides whose word reaches the automations; adding one, " +
-			"or handing a transmitter a stream, is a person's decision",
-	},
 	"geo": {
 		GUI: "/security/signins",
 		NoMCP: "where sign-ins are said to come from decides which of them are " +
@@ -582,47 +332,6 @@ var coverage = map[string]surfaces{
 			"its choosing",
 	},
 
-	"finding": {
-		GUI: "/findings",
-		// Read, and propose. A decision stays off this surface: a model that
-		// can close its own findings can close the one that would have
-		// caught it, and Decision.Validate refuses an AI actor besides.
-		MCP: []string{"list_findings", "read_finding", "propose_finding_decision"},
-	},
-
-	// Detections over exported events, ranked. The screen and the agent
-	// surface both come once findings are stored rather than computed per
-	// run, which is the next piece rather than this one.
-	"triage": {
-		GUI: "/findings",
-		MCP: []string{"list_findings"},
-	},
-
-	// Stacking over a file somebody exported, at the point where they are
-	// looking for something and do not yet know what.
-	"hunt": {GUI: "/security/hunt",
-		Why: "the command stacks a file the analyst chose; the screen " +
-			"stacks the store, where the events are",
-		NoMCP: "an agent given the rarity list is given the map of what is " +
-			"least likely to be noticed",
-	},
-
-	// Detections are reviewed, versioned and diffed, so they live in a
-	// repository and the tooling is a command. `detect test` runs in CI on
-	// every change, which a screen cannot.
-	"detect": {GUI: "/security/detections", MCP: []string{"detection_stats"},
-		Why: "a rule is reviewed and diffed like code, so it is tested in " +
-			"the repository; the screen shows what each has been worth and " +
-			"moves rings and suppressions. An agent reads the numbers and " +
-			"the proposals and changes neither: one that could quieten a " +
-			"detection could quieten the one that would have caught it"},
-
-	"telemetry": {
-		Why: "it checks a file a connector produced, at the point where " +
-			"there is no connector yet and nothing in the store to look at",
-		NoMCP: "an agent reading unvalidated telemetry is the thing the " +
-			"validation exists to prevent",
-	},
 	"env":      {GUI: "/publishing", MCP: []string{"pipeline_status"}},
 	"schedule": {GUI: "/publishing", MCP: []string{"pipeline_status"}},
 	"lang":     {GUI: "/languages", MCP: []string{"check_translations"}},

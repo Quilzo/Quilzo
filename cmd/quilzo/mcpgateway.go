@@ -23,7 +23,6 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
-	"github.com/quilzo/quilzo/internal/automate"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/mcpclient"
 	"github.com/quilzo/quilzo/internal/plaintext"
@@ -326,21 +325,16 @@ newest:
 	return id, false, heldNew
 }
 
-// tellHeld tells the security contact a call is waiting for them.
+// tellHeld tells the security contact a call is waiting for them, in the
+// background (background.go).
 func tellHeld(root, integration, tool, id string, tok auth.Token) {
-	notify := automationActions(root)["notify"]
-	if notify.Run == nil {
-		return
-	}
 	by := tok.Principal
 	if tok.Client != "" {
 		by = tok.Client + " for " + tok.Principal
 	}
-	ev := automate.Event{Kind: "signal", Subject: "gateway:" + integration, At: time.Now(),
-		Summary: fmt.Sprintf("%s asks to call %s on %s, which a person approves call by call (%s). "+
-			"Decide on Integrations, or with quilzo integrations approve %s.", by, tool, integration, id, id),
-		Fields: map[string]string{"signal": "gateway-held"}}
-	_, _ = notify.Run(ev, map[string]string{"to": "security"})
+	summary := fmt.Sprintf("%s asks to call %s on %s, which a person approves call by call (%s). "+
+		"Decide on Integrations, or with quilzo integrations approve %s.", by, tool, integration, id, id)
+	inBackground(func() { _, _ = tellSecurity(root, summary) })
 }
 
 // gatewayDecide approves or declines a held call. Somebody other than the

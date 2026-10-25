@@ -14,8 +14,6 @@ import (
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/fleet"
-	"github.com/quilzo/quilzo/internal/spool"
-	"github.com/quilzo/quilzo/internal/telemetry"
 )
 
 // The fleet is who called what as the log recorded it, the things that
@@ -39,17 +37,6 @@ func TestTheFleetIsWhatHappenedNotOnlyWhatWasDeclared(t *testing.T) {
 	if err := os.WriteFile(usagePath(root), []byte(`{"at":"`+now.UTC().Format(time.RFC3339)+`","consumer":"chatbot:help","route":"hosted","in":10,"outcome":"ok"}`+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	sp, err := openSpool(root, spool.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := sp.Append(telemetry.Event{Time: now, Received: now, Class: telemetry.ClassHTTPActivity, Source: "zscaler/web",
-		Actor:       telemetry.ID{Issuer: "okta", Value: "rae@shop.example"},
-		Observables: []telemetry.Observable{{Kind: telemetry.ObservableURL, Value: "https://claude.ai/new"}}}); err != nil {
-		t.Fatal(err)
-	}
-	sp.Close()
-
 	v, err := buildFleet(root, 30, now.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +65,7 @@ func TestTheFleetIsWhatHappenedNotOnlyWhatWasDeclared(t *testing.T) {
 	for _, s := range v.Shadow {
 		shadow[s.Service+" "+s.Who] = true
 	}
-	if !shadow["OpenAI agent:tidy"] || !shadow["Anthropic okta:rae@shop.example"] || len(v.Shadow) != 2 {
+	if !shadow["OpenAI tidy"] || len(v.Shadow) != 1 {
 		t.Fatalf("%+v", v.Shadow)
 	}
 	// Outside the window, nothing called anything.

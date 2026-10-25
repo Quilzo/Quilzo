@@ -14,9 +14,9 @@ import (
 //
 // internal/auth is the standing kind: a binding, an administrator granted
 // it, it is revocable, deny wins wherever it sits. The other kind arrived
-// later and by accident — a call has a host who can eject people, an
-// incident has a commander, an errand has an owner who is the only person
-// who can confirm it. Nobody granted those and they expire when the
+// later and by accident — a call has a host who can eject people, a room
+// has a moderator, an errand has an owner who is the only person who can
+// confirm it. Nobody granted those and they expire when the
 // situation does.
 //
 // That is not wrong. A call host is genuinely not a rung on a site-wide

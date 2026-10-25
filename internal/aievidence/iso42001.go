@@ -90,7 +90,7 @@ func Annex(in Inputs) []Item {
 		y("A.9.3", "Objectives for responsible use of AI system", "the objectives"),
 		s("A.9.4", "Intended use of the AI system", "each agent's purpose is declared and its manifest enforced; other uses are refused"),
 		s("A.10.2", "Allocating responsibilities", fmt.Sprintf("a sponsor for every agent, and for each of the %d other vendors' agents registered here", len(in.External))),
-		s("A.10.3", "Suppliers", fmt.Sprintf("%d model routes and %d tool servers declared; %d sightings of AI used directly, not through Quilzo, in the last week", len(in.Routes), len(in.Tools), shadow)),
+		s("A.10.3", "Suppliers", fmt.Sprintf("%d model routes and %d tool servers declared; %d sightings of agents' programs reaching AI directly, not through the gateway, in the last week", len(in.Routes), len(in.Tools), shadow)),
 		y("A.10.4", "Customers", "the commitments to customers", "end customers' memory can be seen and erased, and SCIM deletion erases it"),
 	}
 	for i := range items {

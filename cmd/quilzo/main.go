@@ -18,15 +18,16 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/quilzo/quilzo/internal/compliance"
-	"github.com/quilzo/quilzo/internal/egress"
-	"github.com/quilzo/quilzo/internal/ext"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/compliance"
+	"github.com/quilzo/quilzo/internal/egress"
+	"github.com/quilzo/quilzo/internal/ext"
 
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -147,23 +148,6 @@ templates and design
   quilzo section set PAGE N path=value     change what a section says
   quilzo section item add PAGE N LIST      add an entry to a list inside one
 
-messengers
-  quilzo triage [FILE] --rules DIR         run the rules, rank what they found
-  quilzo finding list [--state S --kind K] the queue, most urgent first
-  quilzo finding risk                      what is open about each person or thing, added up
-  quilzo finding decide ID STATE           record a decision in the audit chain
-  quilzo finding story [ID]                replay who decided what, and why
-  quilzo canary plant --where W --why Y    plant a value nothing should read
-  quilzo canary watch [FILE] --canaries F  did anything touch one
-  quilzo canary status --canaries F        which ones are still evidence
-  quilzo canary mint [KIND]                a value, shaped like what it imitates
-  quilzo spool add [FILE]                  store events, sealed and digested
-  quilzo spool stats                       what the store covers, and how late things arrive
-  quilzo spool verify                      does every segment match what was signed
-  quilzo spool retain [--apply]            what retention would delete, then delete it
-  quilzo spool hold NAME --why W           pin everything while something is investigated
-  quilzo spool lift NAME                   let retention run again
-
 conversation
   quilzo room list                         every room, and what it is for
   quilzo room open ID --purpose W          start one, with a stated purpose
@@ -183,13 +167,7 @@ sharing a screen
   quilzo scribe law                        what a note-taker may lawfully do, and who must agree
   quilzo scribe demo                       a call with an AI note-taker sitting in it as a member
   quilzo errand demo                       the assistant acting, and why it was allowed to
-  quilzo work demo                         four states, and what the other nine statuses really were
   quilzo flow demo                         automation whose books have to add up
-  quilzo sigma import ./rules              bring your own detections, in the open standard
-  quilzo proving demo                      what a detection has to survive before it goes live
-  quilzo sarif read results.sarif          import any scanner's findings, and what it left out
-  quilzo sca scan --bom sbom.json --osv db.json   which dependencies you can actually fix
-  quilzo correlate demo                    detections about several events, and when a window closes
   quilzo apps list                         apps connected to the agent interface, and what may connect
   quilzo apps allow|disallow HOST          let apps published from HOST ask people to connect; disallow ends theirs
   quilzo apps register NAME --redirect URI an app that cannot publish its own metadata; prints its client_id
@@ -199,6 +177,7 @@ sharing a screen
   quilzo shield status | list [--all]      what Quilzo is doing to protect itself, its playbooks, and what ended
   quilzo self check | verify | vex         known flaws in this build, decided by what is linked; is the binary itself
   quilzo self update vulndb.zip            a newer Go vulnerability database, read offline
+  quilzo self kev FILE.json                which advisories are known to be exploited (CISA KEV)
   quilzo shield lift ID|all [--mistake]    end a protection now; the way out of anything the shield does
   quilzo shield block|slow p_…|CIDR|AS64500 --where site --for 1h --reason "…"   refuse, or give a small budget
   quilzo shield feature chatbot:help|forms|api|… [--level limited] --for 1h --reason "…"
@@ -210,55 +189,10 @@ sharing a screen
   quilzo shield hold --why "…" | release --why "…"   every playbook to watching, and back
   quilzo shield decoy add --where "CI variable"   plant a token that opens nothing and tells on its holder
   quilzo shield trust add CIDR | judge ID mistake|right | repair
-  quilzo incident declare --title T --grade sev2 [--finding ID]   open one, under the regimes set
-  quilzo incident list | show ID           what is open, and each one's clocks and record
-  quilzo incident decide ID aware --because "…"   the decision that starts a clock
-  quilzo incident discharge|waive ID "REGIME" --because "…"   met, or ruled out
-  quilzo incident note|assign|link|watch|reopen|close ID …   the rest of the record
-  quilzo incident playbooks [show ID | check FILE]   the checklists that ship, and yours
-  quilzo incident propose|approve|withdraw ID PLAYBOOK   attach one, agree to it, or take it back
-  quilzo incident step ID PLAYBOOK STEP done|skip|undo --because "…"   what became of a step
-  quilzo incident act ID ACTION ISSUER:VALUE --because "…"   ask for an action on an account the incident is about
-  quilzo incident act-approve ID N         approve it, which sends it; act-undo and act-withdraw take it back
-  quilzo action catalogue | list           what can be done to another tool, and what is installed
-  quilzo action add NAME --org ORG         install one; it has a credential of its own
-  quilzo action remove NAME
-  quilzo incident regimes [eu nis2 …]      which obligations a new incident starts under
-  quilzo incident duties                   who has to be told, how soon, and what starts the clock
-  quilzo incident demo                     an incident, its several clocks, and closing it
-  quilzo feed status                       what the scanner is working from, and how old it is
-  quilzo collect run [SOURCE]              read each platform's new log records, map them, store them
-  quilzo collect file ISSUER/STREAM FILE   the same for a log that arrives as a file
-  quilzo collect status | auto 15m|off     what each source did last, and the schedule
-  quilzo source add MAPPING.json --sample RECORDS.json   a mapping for an application of yours
-  quilzo identity list                     who is known, and by which identifiers on which platforms
-  quilzo identity link ISSUER:VALUE PERSON@…   say whose an identifier is, where a platform does not
-  quilzo identity unlink ISSUER:VALUE      take that back
-  quilzo source list                       every platform whose logs this reads
-  quilzo source check --source okta/system records.json   what a mapping would do with real records
 
 media encryption
   quilzo sframe suites --fps 30            the five RFC 9605 suites, and what each costs
   quilzo sframe check --suite 4            prove this build seals and opens correctly
-
-code scanning
-  quilzo appsec triage ALERTS.jsonl        what this change introduced, grouped by rule
-  quilzo appsec gate ALERTS.jsonl          may it merge; on what is new, never on the debt
-  quilzo appsec accept ALERTS.jsonl        take the existing debt as the baseline
-  quilzo appsec rotated FINGERPRINT        the only thing that closes a secret
-
-access reviews
-  quilzo access open ID [FILE] --scope S   start one, over the systems it covers
-  quilzo access items ID                   what the reviewer is shown, easiest first
-  quilzo access decide ID ACCOUNT VERDICT  keep, revoke or reduce
-  quilzo access close ID [FILE]            which revocations actually happened
-  quilzo access list                       every campaign, and the shape of its decisions
-
-third parties
-  quilzo vendor list                       who they are, tiered by what they reach
-  quilzo vendor show ID                    access, data, and who their processors are
-  quilzo vendor reconcile                  the register against the credentials that exist
-  quilzo vendor review ID                  sign off a relationship, into the audit chain
 
 auditors
   quilzo engagement open ID --firm ...     engage a firm, scoped and with an end date
@@ -283,85 +217,6 @@ assurance
   quilzo assurance show CONTROL            every piece, and the days nobody can speak to
   quilzo assurance record CONTROL OUTCOME  add evidence, into the audit chain as well
   quilzo assurance controls                what this organisation says it does
-
-vulnerabilities
-  quilzo vuln load [--advisories F] [--inventory F]   put the lists in the store, checked
-  quilzo vuln import [--bom F --where A] [--osv P] [--kev F] [--epss F]   from CycloneDX, OSV, CISA and EPSS files
-  quilzo vuln reach --source DIR --where A  whether an asset's source names the vulnerable symbols
-  quilzo vuln ssvc-tree FILE               load CERT/CC's deployer decision table
-  quilzo vuln asset MATCH --exposure E --impact I --because "…"   what you say about your machines
-  quilzo vuln assets                       the tags, and how many assets have none
-  quilzo vuln queue [INVENTORY]            what to work on, not sorted by severity
-  quilzo vuln plan                         the smallest upgrades that clear the most
-  quilzo vuln accept CVE PKG --owner W --until DATE --because "…"   leave it, until a day
-  quilzo vuln vex --author A --id URL      the decisions as an OpenVEX draft
-  quilzo vuln why CVE-ID                   what is known, and who decided what
-  quilzo vuln assess CVE PKG STATUS        record that it does not apply, with a reason
-  quilzo vuln reasons                      the five reasons something is not affected
-
-connecting to a company's tools
-  quilzo connect list                      the connectors installed, and what each can reach
-  quilzo connect check NAME|FILE           read a manifest and say what it may touch
-  quilzo connect catalogue                 the connectors that ship, and what each needs
-  quilzo connect add NAME [--region R]     install a shipped connector as a readable file
-                   [--tenant ID] [--org O]  the Entra tenant, or the Okta organisation
-  quilzo connect secret NAME               store a credential, from the environment
-  quilzo connect probe NAME ENDPOINT       what shape a tool's response is, never its values
-  quilzo connect run NAME [ENDPOINT]       pull records, one JSON object per line
-  quilzo connect run NAME --save           and keep them as the tool's latest read
-
-estate
-  quilzo estate show                       what the tools say, joined, and what could not be
-  quilzo estate build                      put where the tools disagree in the findings register
-  quilzo estate scores [--limit N]         each person's risk and the reasons for it (admins)
-  quilzo estate sync [--remind]            read every installed tool, then build (admins)
-  quilzo estate auto --every 24h [--remind] | --off   have the admin server sync on a schedule
-  quilzo estate sample [--remove]          a made-up company's tools, to try the screens before connecting real ones
-
-reminders
-  quilzo remind preview                    who would be told what, now, and who is held back
-  quilzo remind enable | disable           allow reminders to be sent, or stop them
-  quilzo remind send                       send what is due, inside the configured hours
-
-workforce
-  quilzo workforce coverage [FILE]         did the join work, and what did not
-  quilzo workforce propose [FILE]          matches to confirm, and what would make each wrong
-  quilzo workforce link A B --because W    assert two records are one person
-  quilzo workforce people [FILE]           who exists, where, and on what hardware
-  quilzo workforce gaps [FILE]             what no single system could see
-
-telling people
-  quilzo notify add ISSUER:VALUE           put somebody on the list, with provenance
-  quilzo notify contacts                   who is on it, and who can still be reached
-  quilzo notify object ISSUER:VALUE        record an Article 21 objection
-  quilzo notify erase ISSUER:VALUE         Article 17, and stay suppressed on re-import
-  quilzo notify draft --kind K --subject S write a notice; a breach needs Article 34(2)
-  quilzo notify list                       every notice drafted, and its deadlines
-  quilzo notify plan NOTICE                who would be told, and who would not, and why
-  quilzo notify send NOTICE                deliver it, once per person, exactly once
-  quilzo notify publish NOTICE             the Article 34(3)(c) public communication
-  quilzo notify inbox ISSUER:VALUE         what is waiting for somebody in the app
-  quilzo hunt --field F [FILE]             what is rare, which is what is worth a look
-  quilzo analyst plan                      what the triage agent reads, in order
-  quilzo analyst triage [--limit N] [--dry-run]   a model's first pass over open findings, as suggestions
-  quilzo analyst eval [--k 3]              how reliable it is on what people ruled, and under planted text
-  quilzo intel import FILE --source NAME   indicators from a STIX bundle or a list, then look back
-  quilzo intel add VALUE --source NAME     one indicator; --until DATE, --note "…"
-  quilzo intel list | remove ID            what is held, what each has found, and taking one out
-  quilzo detect test [DIR]                 run every rule against its own fixtures
-  quilzo detect list [DIR]                 the rules, what they read, what they miss
-  quilzo detect fields                     how a rule may compare
-  quilzo detect run [--rules DIR]          run the rules over new events, into the queue
-  quilzo detect stats                      what each rule has been worth, and what to change
-  quilzo detect ring RULE live|trial|off --because "…"   move a rule in or out of the queue
-  quilzo detect suppress RULE FIELD=VALUE --owner W --until DATE --because "…"
-  quilzo detect unsuppress ID              remove a suppression
-  quilzo detect suppressions               what is suppressed, by whom, until when
-  quilzo detect replay [--strict]          every rule over the corpus of events already ruled on
-  quilzo detect learn FINDING              add the event behind a closed finding to the corpus
-  quilzo detect pack [install]             the rules that ship: identity, code, cloud and chain, and across them
-  quilzo telemetry check [FILE]            can a connector's events be used at all
-  quilzo telemetry fields [FILE]           what a detection may refer to
 
 this program
   quilzo --version                         version, copyright and licence
@@ -503,16 +358,10 @@ access
   quilzo auth grant ... --until 2026-12-31 access that ends by itself
   quilzo scim status | token [--revoke]     provisioning from Okta, Entra and others
   quilzo scim map GROUP ROLE|JOB | unmap GROUP   what each of their groups means here
-  quilzo automate list | templates | add TEMPLATE | runs   rules: when this happens, do this
-  quilzo automate mode ID watch|ask|act | on ID | off ID | remove ID | approve RUN | decline RUN
-  quilzo inbound list | add okta|webhook|ssf NAME | connect NAME | verify NAME | status NAME   events pushed here as they happen
-  quilzo inbound rotate NAME | on NAME | off NAME | remove NAME | help
   quilzo geo status | help | network add PREFIX NAME --kind office|vpn ... | network remove PREFIX   where sign-ins come from
   quilzo auth deny WHO ROLE [--on PATH]    a deny wins wherever it sits
   quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
   quilzo standing list                     what a situation can hand somebody, and what it cannot
-  quilzo boundary show                     what each part holds, and what running two together costs
-  quilzo boundary credentials              what collecting each source costs to hold
   quilzo auth revoke WHO [--on PATH]       take a grant back
   quilzo auth enrol WHO [--for 24h]        a one-time link that adds their passkey (--revoke ends it)
   quilzo auth unlock WHO                   let them sign in again after a lockout
@@ -946,14 +795,6 @@ func main() {
 		err = cmdTheme(root, cmdArgs)
 	case "section", "sections":
 		err = cmdSection(root, cmdArgs)
-	case "detect":
-		err = cmdDetect(root, cmdArgs)
-	case "hunt":
-		err = cmdHunt(root, cmdArgs)
-	case "triage":
-		err = cmdTriage(root, cmdArgs)
-	case "finding":
-		err = cmdFinding(root, cmdArgs)
 	case "assistant":
 		err = cmdAssistant(root, cmdArgs)
 	case "inbox":
@@ -962,12 +803,8 @@ func main() {
 		err = cmdMember(root, cmdArgs)
 	case "scim":
 		err = cmdSCIM(root, cmdArgs)
-	case "automate":
-		err = cmdAutomate(root, cmdArgs)
 	case "geo":
 		err = cmdGeo(root, cmdArgs)
-	case "inbound":
-		err = cmdInbound(root, cmdArgs)
 	case "board":
 		err = cmdBoard(root, cmdArgs)
 	case "gateway":
@@ -980,32 +817,6 @@ func main() {
 		err = cmdExperiment(root, cmdArgs)
 	case "personalise":
 		err = cmdPersonalise(root, cmdArgs)
-	case "canary":
-		err = cmdCanary(root, cmdArgs)
-	case "spool":
-		err = cmdSpool(root, cmdArgs)
-	case "notify":
-		err = cmdNotify(root, cmdArgs)
-	case "estate":
-		err = cmdEstate(root, cmdArgs)
-	case "remind":
-		err = cmdRemind(root, cmdArgs)
-	case "workforce":
-		err = cmdWorkforce(root, cmdArgs)
-	case "connect":
-		err = cmdConnect(root, cmdArgs)
-	case "vuln":
-		err = cmdVuln(root, cmdArgs)
-	case "intel":
-		err = cmdIntel(root, cmdArgs)
-	case "collect":
-		err = cmdCollect(root, cmdArgs)
-	case "identity":
-		err = cmdIdentity(root, cmdArgs)
-	case "action":
-		err = cmdAction(root, cmdArgs)
-	case "analyst":
-		err = cmdAnalyst(root, cmdArgs)
 	case "assurance":
 		err = cmdAssurance(root, cmdArgs)
 	case "framework":
@@ -1014,12 +825,6 @@ func main() {
 		err = cmdEntity(root, cmdArgs)
 	case "engagement":
 		err = cmdEngagement(root, cmdArgs)
-	case "vendor":
-		err = cmdVendor(root, cmdArgs)
-	case "access":
-		err = cmdAccess(root, cmdArgs)
-	case "appsec":
-		err = cmdAppsec(root, cmdArgs)
 	case "sframe":
 		err = cmdSframe(cmdArgs)
 	case "screen":
@@ -1034,22 +839,8 @@ func main() {
 		err = cmdScribe(cmdArgs)
 	case "errand":
 		err = cmdErrand(cmdArgs)
-	case "work":
-		err = cmdWork(cmdArgs)
 	case "flow":
 		err = cmdFlow(cmdArgs)
-	case "sigma":
-		err = cmdSigma(cmdArgs)
-	case "proving":
-		err = cmdProving(cmdArgs)
-	case "sarif":
-		err = cmdSarif(cmdArgs)
-	case "sca":
-		err = cmdSCA(cmdArgs)
-	case "correlate":
-		err = cmdCorrelate(cmdArgs)
-	case "incident":
-		err = cmdIncident(root, cmdArgs)
 	case "shield":
 		err = cmdShield(root, cmdArgs)
 	case "apps":
@@ -1060,18 +851,10 @@ func main() {
 		err = cmdPolicy(root, cmdArgs)
 	case "pending":
 		err = cmdPending(root, cmdArgs)
-	case "feed":
-		err = cmdFeed(cmdArgs)
-	case "source":
-		err = cmdSource(root, cmdArgs)
 	case "standing":
 		err = cmdStanding(cmdArgs)
-	case "boundary":
-		err = cmdBoundary(cmdArgs)
 	case "room":
 		err = cmdRoom(root, cmdArgs)
-	case "telemetry":
-		err = cmdTelemetry(root, cmdArgs)
 	case "posture":
 		err = cmdPosture(root, cmdArgs)
 	case "type", "types":
@@ -1136,6 +919,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", cmd)
 		usage()
 		os.Exit(2)
+	}
+	// A message to the security contact the command started is sent before
+	// it exits, or given up on after half a minute rather than hanging.
+	if !finishBackground(30 * time.Second) {
+		fmt.Fprintln(os.Stderr, "a message to the security contact was still being sent after 30s and was abandoned; the audit log has what happened")
 	}
 	if err != nil {
 		w.Error(err)
@@ -1218,9 +1006,6 @@ func cmdInit(root string) error {
 		w.Human("created %s\n", s.Root())
 		w.Human("  %scontent is immutable and addressed by hash; publishing "+
 			"moves a pointer%s\n", dim, reset)
-		if err := ensureRules(root, "init"); err != nil {
-			return err
-		}
 	} else {
 		w.Human("reusing %s\n", s.Root())
 	}

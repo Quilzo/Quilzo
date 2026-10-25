@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
-	"github.com/quilzo/quilzo/internal/telemetry"
 )
 
 var (
@@ -309,54 +308,6 @@ func TestReadinessLeadsWithTheControlsThatHaveNothing(t *testing.T) {
 	}
 	if covs[len(covs)-1].Share() < covs[0].Share() {
 		t.Error("the list is not ordered by how much is missing")
-	}
-}
-
-func TestFindingsSayWhatIsMissingAndWhyItMatters(t *testing.T) {
-	controls := []Control{
-		control("pentest", Annual),
-		{ID: "logs", Name: "log retention", Cadence: Continuous},
-	}
-	in := []Evidence{ev("logs", 0, 90, Operated)}
-	out := Findings(controls, in, half, now)
-	if len(out) == 0 {
-		t.Fatal("nothing was found")
-	}
-	var silent, gap, unowned bool
-	for _, f := range out {
-		switch {
-		case strings.Contains(f.Title, "no evidence for"):
-			silent = true
-			if f.Severity != telemetry.SeverityHigh {
-				t.Errorf("a control with nothing is %v", f.Severity)
-			}
-			if !strings.Contains(f.Evidence[0].What, "denominator") {
-				t.Errorf("the evidence does not say why: %q",
-					f.Evidence[0].What)
-			}
-		case strings.Contains(f.Title, "day(s) with nothing to show"):
-			gap = true
-			if !strings.Contains(f.Evidence[0].What, "gap(s)") {
-				t.Errorf("the gaps are not listed: %q", f.Evidence[0].What)
-			}
-		case strings.Contains(f.Title, "nobody accountable"):
-			unowned = true
-		}
-	}
-	if !silent || !gap || !unowned {
-		t.Errorf("missing findings: silent=%v gap=%v unowned=%v",
-			silent, gap, unowned)
-	}
-}
-
-func TestAGapOfHalfThePeriodOutranksAGapOfADay(t *testing.T) {
-	big := severityOfGap(120, half)
-	small := severityOfGap(1, half)
-	if big <= small {
-		t.Errorf("120 missing days is %v and 1 is %v", big, small)
-	}
-	if small == telemetry.SeverityHigh {
-		t.Error("a single missing day is high")
 	}
 }
 

@@ -50,20 +50,20 @@ func TestAJobOpensItsScreensAndNoOthers(t *testing.T) {
 		firstStop string
 	}{
 		{"analyst",
-			[]string{"/findings", "/security/cases", "/security/events", "/security/hunt", "/security/detections", "/logs"},
+			[]string{"/security/shield", "/security/signins", "/logs"},
 			[]string{"/people", "/access", "/settings", "/page/index", "/security", "/security/frameworks", "/inbox", "/members"},
-			"/findings"},
+			"/security/shield"},
 		{"compliance",
 			[]string{"/security", "/security/frameworks", "/logs"},
-			[]string{"/findings", "/security/cases", "/people", "/page/index", "/inbox"},
+			[]string{"/security/shield", "/security/signins", "/people", "/page/index", "/inbox"},
 			"/security"},
 		{"auditor",
-			[]string{"/security", "/security/frameworks", "/security/rules", "/security/integrity", "/security/inventory", "/security/scan", "/security/agents", "/security/running", "/logs"},
-			[]string{"/findings", "/security/hunt", "/people", "/access", "/page/index", "/inbox", "/boards", "/members"},
+			[]string{"/security", "/security/frameworks", "/security/rules", "/security/integrity", "/security/inventory", "/security/scan", "/security/agents", "/logs"},
+			[]string{"/security/shield", "/security/signins", "/people", "/access", "/page/index", "/inbox", "/boards", "/members"},
 			"/security"},
 		{"support",
 			[]string{"/inbox", "/boards"},
-			[]string{"/findings", "/security", "/logs", "/people", "/page/index", "/members"},
+			[]string{"/security/shield", "/security", "/logs", "/people", "/page/index", "/members"},
 			"/inbox"},
 	} {
 		t.Run(c.job, func(t *testing.T) {

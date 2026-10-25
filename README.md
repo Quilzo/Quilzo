@@ -47,9 +47,11 @@ remembered, spent and was refused is in a signed log you can prove things from.
 Around that gate is everything an organisation running agents needs: a model
 gateway that masks personal data, chatbots that cite their sources, a governed
 MCP gateway in front of your own tool servers, a map of every agent and what it
-called, evidence for the EU AI Act and ISO/IEC 42001, a security console, a
-shield that defends the installation itself, and the content platform the agents
-read and write.
+called, evidence for the EU AI Act and ISO/IEC 42001, a shield that defends
+the installation itself, and the content platform the agents read and write.
+A security team's own tools — the finding queue, cases, vulnerabilities, the
+estate — are [Vaigil](https://github.com/Vaigil/vaigil), which reads Quilzo's
+audit log as it is written.
 
 One static binary. Go, standard library only, no third-party dependencies; the
 few third-party assets it carries (a typeface, icons, public data sets) are
@@ -234,7 +236,7 @@ Help link opens its own.
 | **Governed MCP gateway** | Your MCP servers offered to other vendors' agents through Quilzo: only pinned tools, per-role access, a daily count per caller, Quilzo's credential injected, tools a person approves call by call, every call recorded with an argument digest. | `quilzo integrations gateway NAME --role R`; `/mcp/gateway/NAME`; Integrations → Calls waiting for a person |
 | **A2A 1.0** | An agent card stating each agent's capabilities, budget and oversight, and tasks from other agents (SendMessage, GetTask, ListTasks, CancelTask), each run under the agent's declaration narrowed by the credential that sent it. | Settings `site.agent_card`, `a2a.tasks`; `/a2a` |
 | **Fleet** | Every agent, app, tool server, model route and other vendor's agent (registered by its A2A card), who answers for each, and who called what from the log. | Fleet screen; `quilzo fleet`, `fleet add CARD_URL`, `fleet check` |
-| **Shadow AI** | AI services reached directly, not through Quilzo, found in the events already collected (destinations in proxy and DNS logs, app grants, browser extensions) and in agents' own connections. | Fleet screen; `quilzo fleet shadow`; posture `ai.shadow-use` |
+| **Shadow AI** | Model providers an agent's own program reached around the gateway, from the log's record of its connections. | Fleet screen; `quilzo fleet shadow`; posture `ai.shadow-use` |
 | **Webhooks** | Signed, timestamped, replay-proof notifications when something is published or a form arrives. | `quilzo webhook add URL` |
 | **Traces and SIEM export** | OpenTelemetry GenAI spans for every run; the audit log as OCSF, CEF or JSON lines, still verifiable. | Setting `telemetry.otlp_endpoint`; `quilzo siem ocsf` |
 
@@ -251,28 +253,15 @@ Help link opens its own.
 | **From a sentence or a spreadsheet** | A model drafts a package of content blocks only, never agents, webhooks or links elsewhere; or a CSV or JSON list becomes a type, collection, listing and page, its rows imported with the install. | `quilzo feature draft "…"`, `feature from FILE.csv`, `feature install FILE --rows ROWS`; Make › Describe it, From a spreadsheet |
 | **Roll back, remove, share** | Upgrades remove what a version dropped; roll back or remove as one; export signed with the log's keys, install checking them; package blocks built by hand. | `quilzo feature rollback\|remove NAME`, `feature export NAME --sign`, `feature install FILE --keys K`, `feature capture` |
 
-### Security operations
+### A security team's tools are Vaigil
 
-<p align="center"><img src="docs/screenshots/findings.png" alt="The Findings queue ranked by severity, age, recurrence and ownership" width="860"></p>
-
-| Feature | What it does | How |
-|---|---|---|
-| **Collect** | Logs read directly from Okta, Microsoft Entra, GitHub and EVM chains; mappings for 17 platforms (AWS CloudTrail, Google Workspace, Google Cloud, Azure, Kubernetes, CrowdStrike, Cloudflare, Slack and more) for logs that arrive as files; events pushed by Okta hooks, signed webhooks and OpenID Shared Signals (SSF, CAEP, RISC); your own application's log through a mapping. | `quilzo connect`, `collect run\|file\|auto`, `inbound add`, `source add` |
-| **Detections** | Rules for identity, code, cloud and chain that ship with fixtures, Sigma import, trial rings, suppressions that end, replay over ruled events. | `quilzo detect pack\|test\|run\|replay`, `sigma import`; Detections screen |
-| **Event store** | Events kept sealed and digested in segments, with retention that shows what it would delete first, and holds while something is investigated. | `quilzo spool add\|verify\|retain\|hold` |
-| **Findings and risk** | One queue, ranked; what is open about each person or machine added up. | Findings, Risk screens; `quilzo finding list\|risk\|decide` |
-| **Cases and incidents** | Cases with playbooks, and incidents with the clocks each regime starts (NIS2, GDPR, DORA, SEC, CIRCIA, HIPAA), discharged or waived on the record. | Cases screen; `quilzo incident declare\|decide\|discharge` |
-| **Actions, two-person** | Suspend an account or end its sessions in another tool; the exact request is shown and a second person approves. | `quilzo action add`, `incident act\|act-approve` |
-| **Analyst agent** | A first pass over the queue that can only suggest, measured on what people ruled and under planted text. | `quilzo analyst triage\|eval` |
-| **Hunt, indicators** | What is rare in the events; STIX and lists of indicators, looked back over. | Hunt, Indicators screens; `quilzo hunt`, `intel import` |
-| **Vulnerabilities** | Prioritised by exploitation and exposure (KEV, EPSS, SSVC), with reachability, upgrade plans, accepted risk that ends, and OpenVEX. | `quilzo vuln import\|queue\|plan\|vex`; Vulnerabilities screen |
-| **Workforce risk** | People and their machines joined across HR, identity and device tools, with reasons for each score (administrators only). | `quilzo estate sync\|scores`; Workforce risk screen |
-| **Automations** | When this happens, do this: watch, ask or act. | `quilzo automate`; Automations screen |
-| **Sign-ins** | Where sign-ins come from, offices and VPNs, impossible travel. | `quilzo geo`; Sign-ins screen |
-| **Canaries and decoys** | Values nothing should read, and tokens that open nothing and tell on whoever holds them. | `quilzo canary plant`, `shield decoy add` |
-| **Access reviews, vendors, notices** | Reviewer campaigns, a vendor register reconciled against real credentials, and GDPR notices with their deadlines. | `quilzo access`, `vendor`, `notify` |
-| **Code scanning** | Any scanner's alerts (SARIF) triaged by what a change introduced; a merge gate on what is new, never on the debt; dependency findings you can actually fix; a leaked secret closes only when rotated. | `quilzo appsec triage\|gate\|rotated`, `sarif read`, `sca scan` |
-| **Reminders** | Reminders to people inside working hours. | `quilzo remind send` |
+Collecting from other systems, detections and Sigma, the finding queue,
+cases and incidents with their regulatory clocks, actions on other
+platforms, vulnerabilities (KEV, EPSS, SSVC, VEX, SARIF, SCA), the estate
+and workforce risk, vendors, access reviews and notices to customers are
+**[Vaigil](https://github.com/Vaigil/vaigil)**, which began as that half of
+this program. Quilzo keeps what it needs to defend itself, below, and hands
+its audit log to Vaigil, or to any SIEM that reads OCSF, as it is written.
 
 ### The shield: Quilzo defends itself
 
@@ -283,7 +272,11 @@ Help link opens its own.
 | **Playbooks** | Decided beforehand, acting at once: block a source, slow it, turn a public feature down, lock the admin to passkeys and single sign-on, freeze publishing, pause an agent, cut a model route, suspend a credential or app connection, quarantine an upload. Every protection ends by itself. | Shield screen; `quilzo shield status\|lift` |
 | **Two people, and a dry run** | Changing a playbook takes two administrators; a dry run over the log shows what it would have done first. | `quilzo shield playbook mode`, `shield dry-run` |
 | **Never on the inside** | An administrator's own address keeps the admin; internal networks are never blocked; the command line on the machine always works. | Automatic; `quilzo shield trust add` |
-| **Its own flaws** | The running binary checked against the Go vulnerability database, by what is actually linked, offline; a flaw reachable through one feature turns that feature off. | `quilzo self check\|verify\|vex` |
+| **Decoys** | Tokens that open nothing and addresses nothing links to, which tell on whoever presents or asks for them. | `quilzo shield decoy add` |
+| **Risky sign-ins confirm it is them** | Each sign-in judged against the person's own: impossible travel, Tor or a rented server, a session copied to another device or country, an administrator in a new country. A risky one gets no session until a passkey confirms it, and the security contact hears of the worst; on by default (`signin.adaptive`). | Sign-ins screen; `quilzo geo` |
+| **Drift, told at once** | The posture scan runs on the server's schedule; a check that starts failing, and its fix, are written to the audit log, and a high or critical one is mailed to the security contact. | Security screen; `quilzo posture scan` |
+| **Its own flaws** | The running binary checked against the Go vulnerability database, by what is actually linked, offline; a flaw reachable through one feature turns that feature off, at once when CISA's catalogue says it is being exploited. | `quilzo self check\|verify\|vex\|kev` |
+| **Its log, to a SIEM** | The audit log streamed as it is written, as signed OCSF batches a receiver can prove complete and unchanged. | Setting `siem.stream.url`; `quilzo siem stream status` |
 
 ### Compliance and evidence
 
@@ -420,7 +413,7 @@ Every screen in the admin has a Help link to its own section.
 - [Build an agent](https://quilzo.github.io/agents/), [limits that hold](https://quilzo.github.io/agent-limits/), [evaluations](https://quilzo.github.io/evals/) and [memory](https://quilzo.github.io/memory/)
 - [Models and the gateway](https://quilzo.github.io/models/), [chatbots](https://quilzo.github.io/chatbots/) and [prompt injection in RAG](https://quilzo.github.io/chatbot-safety/)
 - [Connect AI apps over MCP](https://quilzo.github.io/agent-interface/), [the MCP gateway](https://quilzo.github.io/integrations/), [A2A](https://quilzo.github.io/a2a/) and [the fleet](https://quilzo.github.io/fleet/)
-- [Detection](https://quilzo.github.io/detection/), [cases](https://quilzo.github.io/cases/), [the shield](https://quilzo.github.io/shield/) and [AI evidence](https://quilzo.github.io/ai-evidence/)
+- [The shield](https://quilzo.github.io/shield/) and [AI evidence](https://quilzo.github.io/ai-evidence/); detection and cases are [Vaigil's](https://vaigil.github.io/)
 - [docs/cms.md](docs/cms.md): the content platform, in full
 - [SECURITY.md](SECURITY.md): what is and is not bounded, and how to report
 

@@ -203,12 +203,12 @@ func (b Binding) Live(now time.Time) bool {
 // covers that area and nothing else — except for the guarded areas below.
 //
 // That is how a job is given without inventing rungs: a security analyst is
-// an administrator of /@security — the findings, cases and hunts — who can
+// an administrator of /@security — the shield and the sign-ins — who can
 // grant nobody anything, because granting is asked about "/", and who
 // cannot open a page, because pages are asked about their own names.
 const (
-	// AreaSecurity is security operations: findings, events, hunting,
-	// detections, cases, indicators, vulnerabilities, workforce risk.
+	// AreaSecurity is Quilzo protecting itself: the shield, its playbooks,
+	// and who signed in from where.
 	AreaSecurity = "/@security"
 	// AreaCompliance is assurance: the security posture, frameworks,
 	// integrity, inventory and the evidence an assessor asks for.
@@ -222,7 +222,7 @@ const (
 )
 
 // guardedAreas are the areas a role over the site reaches only if it is
-// administrator: security operations, the posture and the audit log.
+// administrator: the protection screens, the posture and the audit log.
 //
 // What is in them is a list of where the defences are thin and a record of
 // who did what, across everybody, and the screens for them always asked for
@@ -262,7 +262,7 @@ type Job struct {
 // bindings it lists: granting one is granting those, and the policy holds
 // nothing but bindings, so what a job allows is always readable in full.
 var Jobs = []Job{
-	{Name: "analyst", Summary: "security operations and the audit log; nothing else",
+	{Name: "analyst", Summary: "the shield, sign-ins and the audit log; nothing else",
 		Bindings: []Binding{{Role: RoleAdmin, Resource: AreaSecurity}, {Role: RoleAdmin, Resource: AreaLog}}},
 	{Name: "compliance", Summary: "the security posture, frameworks and evidence, and the audit log",
 		Bindings: []Binding{{Role: RoleAdmin, Resource: AreaCompliance}, {Role: RoleAdmin, Resource: AreaLog}}},

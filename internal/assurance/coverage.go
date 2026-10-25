@@ -8,9 +8,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/quilzo/quilzo/internal/finding"
-	"github.com/quilzo/quilzo/internal/telemetry"
 )
 
 // What the evidence adds up to, and the four things it does not.
@@ -278,107 +275,6 @@ func Assess(controls []Control, in []Evidence, period Period) (Readiness,
 		return covs[i].Control < covs[j].Control
 	})
 	return out, covs
-}
-
-// Findings turns coverage into the register everything else works from.
-func Findings(controls []Control, in []Evidence, period Period,
-	now time.Time) []finding.Finding {
-
-	byID := map[string]Control{}
-	for _, c := range controls {
-		byID[c.ID] = c
-	}
-	var out []finding.Finding
-	add := func(c Control, sev telemetry.Severity, title, what string) {
-		f := finding.Finding{
-			Kind: finding.FromControl, Title: title, Source: "assurance",
-			Entity:   telemetry.ID{Issuer: "control", Value: c.ID},
-			Severity: sev, State: finding.Open, Seen: 1,
-			Owner: c.Owner, First: period.From, Last: now,
-			Evidence: []finding.Evidence{{
-				At: now, Source: "assurance", What: what,
-			}},
-		}
-		f.ID = finding.Key(f.Kind, f.Source, f.Entity)
-		out = append(out, f)
-	}
-
-	_, covs := Assess(controls, in, period)
-	for _, cov := range covs {
-		c := byID[cov.Control]
-		switch {
-		case cov.Observations == 0 && cov.Stale > 0:
-			add(c, telemetry.SeverityHigh,
-				fmt.Sprintf("%s has evidence, and none of it is about %s",
-					c.Name, period),
-				fmt.Sprintf(
-					"%d piece(s) of evidence exist for this control and all "+
-						"of them fall outside the window. Last year's test "+
-						"is real and is not evidence about this year",
-					cov.Stale))
-		case cov.Observations == 0:
-			add(c, telemetry.SeverityHigh,
-				fmt.Sprintf("%s has no evidence for %s", c.Name, period),
-				"a control with no evidence is indistinguishable from a "+
-					"control nobody performs, and it is the one a "+
-					"percentage leaves out of its denominator")
-		case !cov.Complete():
-			add(c, severityOfGap(missingDays(cov.Gaps), period),
-				fmt.Sprintf("%s has %d day(s) with nothing to show",
-					c.Name, missingDays(cov.Gaps)),
-				fmt.Sprintf("across %d gap(s): %s", len(cov.Gaps),
-					describe(cov.Gaps)))
-		}
-		if cov.Observations > 0 && cov.Expected > 0 && !cov.Proven() {
-			add(c, telemetry.SeverityMedium,
-				fmt.Sprintf("%s happened %d time(s) where %s implies %d",
-					c.Name, cov.Observations, c.Cadence, cov.Expected),
-				"one occurrence shows a thing happened, not that it "+
-					"operates. An auditor samples a population, and a "+
-					"population of one is the thing being sampled")
-		}
-		if cov.Untested() {
-			add(c, telemetry.SeverityLow,
-				fmt.Sprintf("%s has %d observation(s) and not one failure",
-					c.Name, cov.Observations),
-				"either a control that always works or a check that cannot "+
-					"report one. internal/detect refuses a rule that has "+
-					"never matched for the same reason, and the two are "+
-					"indistinguishable from the outside")
-		}
-		if cov.Unobserved > 0 {
-			add(c, telemetry.SeverityLow,
-				fmt.Sprintf("%s could not be observed %d time(s)",
-					c.Name, cov.Unobserved),
-				"a check that could not reach what it was pointed at has "+
-					"not found it compliant and has not found it failing. "+
-					"Those windows are counted as gaps rather than as "+
-					"covered")
-		}
-		if strings.TrimSpace(c.Owner) == "" {
-			add(c, telemetry.SeverityLow,
-				fmt.Sprintf("%s has nobody accountable", c.Name),
-				"a control with no owner is one whose evidence stops "+
-					"arriving without anybody noticing that it has")
-		}
-	}
-	return finding.Rank(out, now)
-}
-
-// severityOfGap scales with how much of the window is missing.
-func severityOfGap(missing int, period Period) telemetry.Severity {
-	days := period.Days()
-	if days <= 0 {
-		return telemetry.SeverityMedium
-	}
-	switch share := float64(missing) / float64(days); {
-	case share >= 0.5:
-		return telemetry.SeverityHigh
-	case share >= 0.1:
-		return telemetry.SeverityMedium
-	default:
-		return telemetry.SeverityLow
-	}
 }
 
 // describe renders gaps the way a report does, at most three.

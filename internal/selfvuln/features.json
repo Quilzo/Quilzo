@@ -32,7 +32,6 @@
   "context": [
    "*",
    "chatbots",
-   "feeds",
    "search-answers",
    "uploads"
   ],
@@ -58,8 +57,7 @@
    "*"
   ],
   "crypto/hmac": [
-   "*",
-   "feeds"
+   "*"
   ],
   "crypto/hpke": [
    "*"
@@ -71,7 +69,6 @@
    "*",
    "boards",
    "chatbots",
-   "feeds",
    "forms",
    "scim",
    "signup"
@@ -83,7 +80,6 @@
    "*",
    "boards",
    "chatbots",
-   "feeds",
    "signup",
    "uploads"
   ],
@@ -91,8 +87,7 @@
    "*"
   ],
   "crypto/subtle": [
-   "*",
-   "feeds"
+   "*"
   ],
   "crypto/tls": [
    "*"
@@ -128,7 +123,6 @@
    "*",
    "api",
    "chatbots",
-   "feeds",
    "mcp",
    "signup"
   ],
@@ -143,7 +137,6 @@
    "*",
    "boards",
    "chatbots",
-   "feeds",
    "forms",
    "scim",
    "signup",
@@ -154,7 +147,6 @@
    "api",
    "boards",
    "chatbots",
-   "feeds",
    "forms",
    "import",
    "mcp",
@@ -174,7 +166,6 @@
    "api",
    "boards",
    "chatbots",
-   "feeds",
    "forms",
    "mcp",
    "scim",
@@ -188,16 +179,12 @@
    "api",
    "boards",
    "chatbots",
-   "feeds",
    "forms",
    "import",
    "mcp",
    "scim",
    "signup",
    "uploads"
-  ],
-  "go/ast": [
-   "*"
   ],
   "go/format": [
    "*"
@@ -220,7 +207,6 @@
   "html": [
    "*",
    "chatbots",
-   "feeds",
    "forms",
    "import"
   ],
@@ -293,7 +279,6 @@
    "api",
    "boards",
    "chatbots",
-   "feeds",
    "forms",
    "import",
    "mcp",
@@ -319,7 +304,6 @@
    "api",
    "boards",
    "chatbots",
-   "feeds",
    "import",
    "search-answers",
    "uploads"
@@ -391,7 +375,6 @@
    "*",
    "api",
    "chatbots",
-   "feeds",
    "forms",
    "scim",
    "uploads"
@@ -401,7 +384,6 @@
    "api",
    "boards",
    "chatbots",
-   "feeds",
    "forms",
    "import",
    "mcp",
@@ -415,7 +397,6 @@
    "api",
    "boards",
    "chatbots",
-   "feeds",
    "scim",
    "signup",
    "uploads"
@@ -431,7 +412,6 @@
    "api",
    "boards",
    "chatbots",
-   "feeds",
    "forms",
    "import",
    "scim",

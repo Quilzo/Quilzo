@@ -46,8 +46,8 @@ func TestAJobIsGrantedFromTheCommandLineAndKeepsToItsArea(t *testing.T) {
 		return secret
 	}
 	t.Setenv("QUILZO_TOKEN", issueFor("sam"))
-	if err := authoriseCommand(root, "finding", []string{"list"}); err != nil {
-		t.Errorf("an analyst cannot list findings: %v", err)
+	if err := authoriseCommand(root, "shield", []string{"status"}); err != nil {
+		t.Errorf("an analyst cannot read the shield: %v", err)
 	}
 	for _, c := range [][]string{{"publish"}, {"auth", "grant", "x", "admin"}, {"add", "x=y.json"}, {"inbox"}} {
 		if err := authoriseCommand(root, c[0], c[1:]); err == nil {

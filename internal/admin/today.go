@@ -11,7 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
-	"github.com/quilzo/quilzo/internal/incident"
+	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/site"
 )
 
@@ -134,21 +134,22 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 			add(n, "Visitor waiting for a reply", "Visitors waiting for a reply", "/inbox", false)
 		}
 	}
-	if visible["findings"] && s.Findings != nil && s.Findings.Queue != nil {
-		if q, _, err := s.Findings.Queue(now); err == nil {
-			add(len(q), "Finding to triage", "Findings to triage", "/findings", true)
+	// What Quilzo is doing to protect itself, and who has to prove it is
+	// them before they can do anything.
+	if visible["shield"] && s.ShieldAdmin != nil && s.ShieldAdmin.Root != "" {
+		if st, err := shield.Load(s.ShieldAdmin.Root); err == nil {
+			add(len(st.Active(now)), "Protection in force, put on by the shield or a person",
+				"Protections in force, put on by the shield or people", "/security/shield", true)
 		}
 	}
-	if visible["cases"] && s.Cases != nil && s.Cases.List != nil {
-		if all, err := s.Cases.List(); err == nil {
-			n := 0
-			for _, inc := range all {
-				if inc.State == incident.Open {
-					n++
-				}
+	if visible["signins"] && s.Tokens != nil {
+		n := 0
+		for _, t := range s.Tokens.Snapshot() {
+			if t.StepUp != "" && !t.Revoked && (t.ExpiresAt == 0 || now.Unix() < t.ExpiresAt) {
+				n++
 			}
-			add(n, "Case open", "Cases open", "/cases", true)
 		}
+		add(n, "Sign-in waiting to confirm it is its person", "Sign-ins waiting to confirm they are their person", "/security/signins", true)
 	}
 
 	var answer *shownView

@@ -6,6 +6,7 @@ package egress
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -31,10 +32,14 @@ func TestTheClientDoesNotFollowARedirectWithTheKey(t *testing.T) {
 
 	req, _ := http.NewRequest(http.MethodGet, tool.URL+"/api/devices", nil)
 	req.Header.Set("X-Api-Key", "k3y")
-	res, err := Client("connector", 5*time.Second).Do(req)
+	res, err := Client("integrations", 5*time.Second).Do(req)
 	if err == nil {
 		res.Body.Close()
 		t.Error("the redirect was followed")
+	} else if !strings.Contains(err.Error(), "redirect") {
+		// Refused for another reason, such as a purpose that does not
+		// exist, proves nothing about redirects.
+		t.Errorf("refused, but not for the redirect: %v", err)
 	}
 	if leaked {
 		t.Error("the key arrived at the host the redirect named")

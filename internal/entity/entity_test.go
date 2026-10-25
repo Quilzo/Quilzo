@@ -401,21 +401,6 @@ func TestTheGroupReportLeadsWithWhatIsUneven(t *testing.T) {
 		t.Errorf("the list starts with %s", divs[0].Control)
 	}
 
-	out := Findings(tree, g, divs, now)
-	var named bool
-	for _, f := range out {
-		if strings.Contains(f.Title, "acme-de") &&
-			strings.Contains(f.Title, "no evidence") {
-			named = true
-			if !strings.Contains(f.Evidence[0].What, "would be green") {
-				t.Errorf("the evidence does not say what a union shows: %q",
-					f.Evidence[0].What)
-			}
-		}
-	}
-	if !named {
-		t.Error("the company with nothing is not named in the register")
-	}
 }
 
 func TestEvidenceWithNoEntityBelongsToTheGroup(t *testing.T) {
